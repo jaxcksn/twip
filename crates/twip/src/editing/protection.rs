@@ -229,13 +229,24 @@ impl Editor {
         }
     }
 
-    /// [`Editor::openings`] of the selection; of floats selected together, those every one's anchor has.
-    fn selection_openings(&self) -> Openings {
+    /// [`Editor::openings`] of the selection, every range of a discontiguous one (its own range alone for command
+    /// `id` when that replaces only it); of floats selected together, those every one's anchor has.
+    fn selection_openings(&self, id: CommandId) -> Openings {
         let at = self.selection_span().map_or_else(Openings::default, |(a, b)| self.openings(&a, &b));
-        self.selected_floats().into_iter().skip(1).fold(at, |at, f| {
-            let o = self.float_point(f).map_or_else(Openings::default, |p| self.openings(&p, &p));
-            Openings { range: at.range && o.range, form: at.form && o.form, section: at.section && o.section }
-        })
+        let both = |x: Openings, o: Openings| Openings { range: x.range && o.range, form: x.form && o.form, section: x.section && o.section };
+        let others = if replaces_primary(id) { &[][..] } else { self.other_ranges() };
+        let at = others.iter().fold(at, |at, (a, b)| both(at, self.openings(a, b)));
+        let cells = if replaces_primary(id) { &[][..] } else { self.other_cells() };
+        let at = cells.iter().fold(at, |at, c| match c {
+            super::selection::Selection::Cells { table, .. } => {
+                both(at, self.table_point(*table).map_or_else(Openings::default, |p| self.openings(&p, &p)))
+            }
+            _ => at,
+        });
+        self.selected_floats()
+            .into_iter()
+            .skip(1)
+            .fold(at, |at, f| both(at, self.float_point(f).map_or_else(Openings::default, |p| self.openings(&p, &p))))
     }
 
     /// Where float `f` is anchored.
@@ -302,7 +313,7 @@ impl Editor {
         }
         refusal(p, command.id(), || match command {
             Command::Delete(d) if self.selection.is_collapsed() => self.delete_span(d).map_or_else(Openings::default, |(a, b)| self.openings(&a, &b)),
-            _ => self.selection_openings(),
+            _ => self.selection_openings(command.id()),
         })
     }
 
@@ -320,15 +331,16 @@ impl Editor {
     /// Why document protection refuses an edit that command `id` would make at the selection: a dialog's or a
     /// gesture's, which isn't a command.
     pub fn protection_refuses(&self, id: CommandId) -> Option<Error> {
-        refusal(self.enforced_protection()?, id, || self.selection_openings())
+        refusal(self.enforced_protection()?, id, || self.selection_openings(id))
     }
 
     /// Whether document protection refuses each command at the selection, for the state: `None` when it's not
     /// enforced.
     pub(super) fn protection_gate(&self) -> Option<impl Fn(CommandId) -> bool + '_> {
         let p = self.enforced_protection()?;
-        let at = self.selection_openings();
-        Some(move |id| refusal(p, id, || at).is_some())
+        let all = self.selection_openings(CommandId::Delete);
+        let own = if self.is_discontiguous() { self.selection_openings(CommandId::InsertText) } else { all };
+        Some(move |id| refusal(p, id, || if replaces_primary(id) { own } else { all }).is_some())
     }
 
     /// What a delete at the caret removes, as [`Editor::delete`] finds it: the grapheme or word beside it in the
@@ -457,9 +469,20 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
+    /// The selection's ranges, each of a discontiguous one (its blocks of cells aside), in document order.
+    fn text_ranges(&mut self) -> Vec<(Position, Position)> {
+        if self.is_discontiguous() { self.selection_ranges() } else { self.selection.ordered(&self.index).into_iter().collect() }
+    }
+
+    /// An editable range on each range of the selection, each with an id of its own, in one step.
     pub(in crate::editing) fn add_editable_range(&mut self, r: EditableRange, fonts: &Fonts) -> Outcome {
-        let Some((a, b)) = self.selection.ordered(&self.index) else { return Outcome::Unchanged("no selection") };
-        let (Some((pa, oa)), Some((pb, ob))) = (a.para_offset(), b.para_offset()) else { return Outcome::unavailable("no text range") };
+        let ranges = self.text_ranges();
+        if ranges.is_empty() {
+            return Outcome::Unchanged("no selection");
+        }
+        let Some(ends) = ranges.iter().map(|(a, b)| Some((a.para_offset()?, b.para_offset()?))).collect::<Option<Vec<_>>>() else {
+            return Outcome::unavailable("no text range");
+        };
         let ids: Vec<i64> = self
             .index
             .para_ids()
@@ -467,32 +490,40 @@ impl Editor {
             .flat_map(|p| p.inlines.iter().filter_map(perm))
             .filter_map(|(_, id, _)| id.parse().ok())
             .collect();
-        let id = ids.iter().max().map_or(1, |m| m + 1);
+        let first = ids.iter().max().map_or(1, |m| m + 1);
         let w = self.cx().w;
         let esc = crate::docx::write::props::esc;
         let who = r.editor.as_deref().map_or_else(|| format!("{w}edGrp=\"everyone\""), |e| format!("{w}ed=\"{}\"", esc(e)));
         let marker = |x: String| Inline::Opaque(Rc::new(Opaque { xml: Raw(Some(Rc::from(x.as_str()))) }));
-        let (start, end) = (marker(format!("<{w}permStart {w}id=\"{id}\" {who}/>")), marker(format!("<{w}permEnd {w}id=\"{id}\"/>")));
-        let steps = if pa == pb && oa == ob {
-            vec![Step::Text { para: pa, range: oa..oa, with: vec![start, end], edges: Edges::default() }]
-        } else {
-            vec![
-                Step::Text { para: pb, range: ob..ob, with: vec![end], edges: Edges::default() },
-                Step::Text { para: pa, range: oa..oa, with: vec![start], edges: Edges::default() },
-            ]
-        };
         let mut tx = self.begin("Editable Range");
-        for s in steps {
-            if self.step(&mut tx, s).is_err() {
-                self.abort(tx);
-                return Outcome::Unchanged("stale selection");
+        // Ranges, last first
+        for (k, &((pa, oa), (pb, ob))) in ends.iter().enumerate().rev() {
+            let id = first + k as i64;
+            let (start, end) = (marker(format!("<{w}permStart {w}id=\"{id}\" {who}/>")), marker(format!("<{w}permEnd {w}id=\"{id}\"/>")));
+            let steps = if pa == pb && oa == ob {
+                vec![Step::Text { para: pa, range: oa..oa, with: vec![start, end], edges: Edges::default() }]
+            } else {
+                vec![
+                    Step::Text { para: pb, range: ob..ob, with: vec![end], edges: Edges::default() },
+                    Step::Text { para: pa, range: oa..oa, with: vec![start], edges: Edges::default() },
+                ]
+            };
+            for s in steps {
+                if self.step(&mut tx, s).is_err() {
+                    self.abort(tx);
+                    return Outcome::Unchanged("stale selection");
+                }
             }
         }
         self.commit(tx, None, fonts)
     }
 
+    /// Removes the editable ranges that reach any range of the selection.
     pub(in crate::editing) fn remove_editable_ranges(&mut self, fonts: &Fonts) -> Outcome {
-        let Some((a, b)) = self.selection.ordered(&self.index) else { return Outcome::Unchanged("no selection") };
+        let ranges = self.text_ranges();
+        if ranges.is_empty() {
+            return Outcome::Unchanged("no selection");
+        }
         // The ids of the ranges around the selection, whoever may edit them.
         let mut open: HashMap<String, Position> = HashMap::new();
         let mut gone: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -504,8 +535,9 @@ impl Editor {
                 if start {
                     open.insert(id, at);
                 } else if let Some(from) = open.remove(&id)
-                    && self.index.cmp(&from, &b).is_le()
-                    && self.index.cmp(&a, &at).is_le()
+                    && ranges
+                        .get(ranges.partition_point(|r| self.index.cmp(&r.1, &from).is_lt()))
+                        .is_some_and(|(a, _)| self.index.cmp(a, &at).is_le())
                 {
                     gone.insert(id);
                 }
@@ -558,6 +590,37 @@ pub fn edits_selection(id: crate::api::command::CommandId, section: bool) -> boo
         || matches!(id, C::InsertHyperlink | C::EditHyperlink | C::RemoveHyperlink | C::InsertPicture | C::InsertField | C::InsertSymbol)
         || (section && matches!(info.group, G::Table | G::Object));
     here && !document
+}
+
+/// Whether command `id` replaces the selection (typing, paste, a break or an insert): of a discontiguous selection,
+/// only the selection's own range, the others deselected.
+pub(super) fn replaces_primary(id: CommandId) -> bool {
+    use CommandId as C;
+    matches!(
+        id,
+        C::InsertText
+            | C::InsertParagraph
+            | C::InsertLineBreak
+            | C::InsertPageBreak
+            | C::InsertColumnBreak
+            | C::InsertSectionBreak
+            | C::InsertTab
+            | C::InsertAlignmentTab
+            | C::InsertSymbol
+            | C::InsertField
+            | C::InsertFormField
+            | C::InsertHyperlink
+            | C::InsertPicture
+            | C::InsertPageNumber
+            | C::InsertNote
+            | C::InsertFootnote
+            | C::InsertEndnote
+            | C::InsertShape
+            | C::InsertTextBox
+            | C::InsertTable
+            | C::Paste
+            | C::PasteText
+    )
 }
 
 /// Whether a protection lets a command run: comments in a comments-only document, filling in forms in a forms one.

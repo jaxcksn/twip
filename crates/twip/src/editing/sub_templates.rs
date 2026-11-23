@@ -1048,7 +1048,9 @@ impl Editor {
 
     pub(super) fn refuse_expanded(&mut self) -> bool {
         let Some((a, b)) = self.selection.ordered(&self.index) else { return false };
-        let Some(field) = self.expanded_in(&a, &b) else { return false };
+        let Some(field) = self.expanded_in(&a, &b).or_else(|| self.other_ranges().iter().find_map(|(a, b)| self.expanded_in(a, b))) else {
+            return false;
+        };
         let part = self.references.by_field.get(&field).and_then(|r| r.part);
         let name = part.and_then(|k| self.doc.glossary.as_ref()?.parts.get(k as usize)).map(|b| b.name.clone());
         self.refused = Some("sub-template");

@@ -29,6 +29,7 @@ mod keys;
 mod list_definitions;
 mod marks;
 mod merge;
+mod multisel;
 mod navigation;
 mod objects;
 mod page_background;

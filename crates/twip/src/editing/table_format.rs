@@ -306,10 +306,46 @@ fn set_exceptions(row: &mut crate::docx::Row, ex: &RowEx, table: &[Option<Border
     row.exceptions = crate::docx::Raw(p.xml().map(|x| std::rc::Rc::from(x.as_str())));
 }
 
+impl TableFormat {
+    /// Whether it formats cells, each selected cell alike.
+    pub(super) fn of_cells(&self) -> bool {
+        matches!(
+            self,
+            TableFormat::CellAlign(_)
+                | TableFormat::CellShading(_)
+                | TableFormat::CellBorders(..)
+                | TableFormat::CellMargins(_)
+                | TableFormat::CellProps(_)
+        )
+    }
+}
+
 impl Editor {
     pub(super) fn table_format(&mut self, f: &TableFormat, fonts: &Fonts) -> Outcome {
+        if f.of_cells() && self.is_discontiguous() {
+            return self.table_format_each(f, fonts);
+        }
         let Some(tg) = self.table_target() else { return Outcome::Unchanged("not in a table") };
         self.table_format_on(tg, f, fonts)
+    }
+
+    /// Cell formatting `f` of a discontiguous selection: each block of cells, and the cells each range is in, in one
+    /// undo step.
+    fn table_format_each(&mut self, f: &TableFormat, fonts: &Fonts) -> Outcome {
+        let mut targets: Vec<super::tables::Target> = Vec::new();
+        for t in self.each_piece(|e| e.table_target()).into_iter().flatten() {
+            if !targets.contains(&t) {
+                targets.push(t);
+            }
+        }
+        if targets.is_empty() {
+            return Outcome::Unchanged("not in a table");
+        }
+        self.begin_batch(Some("Table Properties".into()));
+        for t in targets {
+            self.table_format_on(t, f, fonts);
+        }
+        self.end_batch(true, fonts)
     }
 
     pub(super) fn table_format_on(&mut self, tg: super::tables::Target, f: &TableFormat, fonts: &Fonts) -> Outcome {

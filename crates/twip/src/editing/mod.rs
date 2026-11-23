@@ -44,6 +44,7 @@ pub mod lists;
 mod merge;
 mod move_paras;
 pub mod move_to;
+pub(crate) mod multi;
 pub(crate) use merge::api_id;
 pub mod navigate;
 mod notes;
@@ -117,6 +118,10 @@ struct Drag {
     unit: Granularity,
     at: (f64, f64),
     block: bool,
+    /// Ctrl adds what the drag selects to the selection.
+    adding: bool,
+    /// Alt: a column block.
+    column: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -202,6 +207,10 @@ pub struct Editor {
     requests: Vec<Request>,
     repeat: Option<Command>,
     modes: extend::Modes,
+    /// The other ranges of a discontiguous selection.
+    multi: multi::Multi,
+    /// The ranges selected before a Ctrl click or drag that adds one, while its clicks go on.
+    adding: Option<multi::Adding>,
     mac: bool,
     edit_marks: Vec<Position>,
     back_step: Option<usize>,
@@ -418,6 +427,8 @@ impl Editor {
             requests: Vec::new(),
             repeat: None,
             modes: extend::Modes::default(),
+            multi: multi::Multi::default(),
+            adding: None,
             mac: false,
             edit_marks: Vec::new(),
             back_step: None,
@@ -1362,6 +1373,7 @@ impl Editor {
         }
         let maps = std::mem::take(&mut tx.maps);
         self.map_marks(&maps);
+        self.map_multi(&maps);
         if !matches!(tx.origin, Origin::Undo | Origin::Redo) {
             self.mark_edit();
             self.last_maps = maps;
@@ -1884,7 +1896,7 @@ impl Editor {
         }
         self.shape_story_for_typing(fonts);
         self.object_to_caret();
-        if self.refuse_expanded() || self.refuse_locked() {
+        if self.refuse_replacing() {
             return Outcome::Unchanged("locked");
         }
         let mut tx = self.begin("Typing");
@@ -1973,7 +1985,7 @@ impl Editor {
     }
 
     fn column_break(&mut self, fonts: &Fonts) -> Outcome {
-        if self.refuse_expanded() || self.refuse_locked() {
+        if self.refuse_replacing() {
             return Outcome::Unchanged("locked");
         }
         let at_start = self.selection.is_collapsed()
@@ -2020,7 +2032,7 @@ impl Editor {
         if s.compat() == crate::docx::Compat::Legacy && s.has("splitPgBreakAndParaMark") {
             return self.insert_inline(|run| Inline::Break(BreakKind::Page, run), "Page Break", fonts);
         }
-        if self.refuse_expanded() || self.refuse_locked() {
+        if self.refuse_replacing() {
             return Outcome::Unchanged("locked");
         }
         let mut tx = self.begin("Page Break");
@@ -2070,7 +2082,7 @@ impl Editor {
         if self.mode != Mode::Design && self.activate_picture_control() {
             return Outcome::Unchanged("picture control activated");
         }
-        if self.refuse_expanded() || self.refuse_locked() {
+        if self.refuse_replacing() {
             return Outcome::Unchanged("locked");
         }
         if let Some(o) = self.list_enter(fonts) {
@@ -2164,7 +2176,7 @@ impl Editor {
 
     /// `typing`: the insert joins the typing around it in one undo step.
     fn insert_inlines_typed(&mut self, make: impl Fn(Run) -> Vec<Inline>, label: &'static str, typing: bool, fonts: &Fonts) -> Outcome {
-        if self.refuse_expanded() || self.refuse_locked() {
+        if self.refuse_replacing() {
             return Outcome::Unchanged("locked");
         }
         let mut tx = self.begin(label);
@@ -2197,12 +2209,15 @@ impl Editor {
         }
         // A placeholder deleted shows again
         // Backspace at its start
-        if let Some((_, at, _, s, _)) = self.placeholder_here()
+        if !self.is_discontiguous()
+            && let Some((_, at, _, s, _)) = self.placeholder_here()
             && !(dir == Dir::Back && self.selection.is_collapsed() && at.para_offset().is_some_and(|(_, u)| u.0 == s))
         {
             return Outcome::Unchanged("a placeholder");
         }
-        if let Some(o) = self.delete_cells(dir == Dir::Forward, fonts) {
+        if !self.is_discontiguous()
+            && let Some(o) = self.delete_cells(dir == Dir::Forward, fonts)
+        {
             return o;
         }
         if dir == Dir::Back
@@ -2239,6 +2254,9 @@ impl Editor {
             }
         } else if self.refuse_locked() {
             return Outcome::Unchanged("locked");
+        }
+        if self.is_discontiguous() {
+            return self.multi_delete(dir, fonts);
         }
         let mut tx = self.begin(if dir == Dir::Back { "Backspace" } else { "Delete" });
         if !self.selection.is_collapsed() {
@@ -2845,12 +2863,14 @@ impl Editor {
                             selection::CellShape::Columns => ((0, col), (t.rows.len().saturating_sub(1), col + span - 1)),
                             _ => ((row, col), (row, col + span - 1)),
                         };
+                        let adding = self.zone_press_adds(table, mods);
                         self.set_selection(Selection::Cells {
                             table,
                             anchor: selection::CellRef { row: a.0, col: a.1 },
                             focus: selection::CellRef { row: f.0, col: f.1 },
                             shape,
                         });
+                        self.zone_added(adding);
                         self.drag = None;
                         self.zone_drag = Some((table, selection::CellRef { row: a.0, col: a.1 }, shape));
                         self.requests.push(Request::CapturePointer);
@@ -2869,7 +2889,7 @@ impl Editor {
                         _ => (Granularity::Line, (a, b)),
                     };
                     self.set_selection(Selection::range(a, b, unit));
-                    self.drag = Some(Drag { anchor: a, span: Some((a, b)), unit, at: (x, y), block: false });
+                    self.drag = Some(Drag { anchor: a, span: Some((a, b)), unit, at: (x, y), block: false, adding: false, column: false });
                     self.requests.push(Request::CapturePointer);
                     return;
                 }
@@ -2889,13 +2909,18 @@ impl Editor {
                 if clicks == 1
                     && !mods.shift
                     && !self.text_drag_off
+                    && !mods.alt
                     && self.modes == extend::Modes::default()
                     && self.mode != Mode::ReadOnly
                     && self.highlighter.is_none()
-                    && self.inside_selection(&p)
+                    && (self.inside_selection(&p) || !(mods.ctrl || (self.mac && mods.meta)) && self.inside_any_range(&p))
                 {
                     self.text_drag = Some(interaction::TextDrag { start: (x, y), press: p, moved: false, copy: mods.ctrl, drop: None, menu: false });
+                    self.ctrl_press_on_selection(mods);
                     self.requests.push(Request::CapturePointer);
+                    return;
+                }
+                if self.add_press(p, x, y, clicks, mods) {
                     return;
                 }
                 // The double-click that opens a selected text box puts the caret there.
@@ -2939,14 +2964,14 @@ impl Editor {
                     let span = (unit == Granularity::Word).then_some((sa, sb));
                     let anchor = s.anchor().unwrap_or(p);
                     self.set_selection(s);
-                    self.drag = Some(Drag { anchor, span, unit, at: (x, y), block: false });
+                    self.drag = Some(Drag { anchor, span, unit, at: (x, y), block: false, adding: false, column: false });
                 } else if unit == Granularity::Char {
                     self.set_selection(Selection::Caret(p));
-                    self.drag = Some(Drag { anchor: p, span: None, unit, at: (x, y), block: false });
+                    self.drag = Some(Drag { anchor: p, span: None, unit, at: (x, y), block: false, adding: false, column: false });
                 } else {
                     let (a, b) = self.span(p, unit);
                     self.set_selection(Selection::range(a, b, unit));
-                    self.drag = Some(Drag { anchor: a, span: Some((a, b)), unit, at: (x, y), block: false });
+                    self.drag = Some(Drag { anchor: a, span: Some((a, b)), unit, at: (x, y), block: false, adding: false, column: false });
                 }
                 self.requests.push(Request::CapturePointer);
             }
@@ -2989,6 +3014,9 @@ impl Editor {
                             _ => anchor,
                         };
                         self.set_selection(Selection::Cells { table, anchor: a, focus, shape });
+                        if self.adding.is_some() {
+                            self.multi.primary = Some(self.selection);
+                        }
                     }
                     return;
                 }
@@ -3005,38 +3033,31 @@ impl Editor {
                 if p.story != d.anchor.story {
                     return;
                 }
-                if d.unit == Granularity::Char
-                    && let Some((s, block)) = self.drag_across_cells(d.anchor, p, d.block)
-                {
-                    if let Some(dd) = self.drag.as_mut() {
-                        dd.block |= block;
-                    }
-                    self.selection = s;
+                if d.column {
+                    self.selection = if p.same_place(&d.anchor) { Selection::Caret(p) } else { Selection::Block { anchor: d.anchor, focus: p } };
                     self.pending = None;
                     return;
                 }
-                let s = match (d.unit, d.span) {
-                    (Granularity::Char, _) | (_, None) => {
-                        let (wa, wb) = self.word_span(d.anchor);
-                        let beyond = !(self.index.cmp(&p, &wa) != std::cmp::Ordering::Less && self.index.cmp(&p, &wb) != std::cmp::Ordering::Greater);
-                        if beyond {
-                            let (pa, pb) = self.word_span(p);
-                            if self.index.cmp(&p, &d.anchor) == std::cmp::Ordering::Less {
-                                Selection::range(wb, pa, Granularity::Char)
-                            } else {
-                                let pb = if pb.para_offset() == p.para_offset() && self.at_para_end(p) { self.after_mark(p) } else { pb };
-                                Selection::range(wa, pb, Granularity::Char)
-                            }
-                        } else {
-                            Selection::range(d.anchor, p, Granularity::Char)
-                        }
-                    }
-                    (unit, Some((a, b))) => {
-                        let (pa, pb) = self.span(p, unit);
-                        if self.index.cmp(&p, &a) == std::cmp::Ordering::Less { Selection::range(b, pa, unit) } else { Selection::range(a, pb, unit) }
-                    }
+                let crossed = if d.unit == Granularity::Char { self.drag_across_cells(d.anchor, p, d.block) } else { None };
+                if let Some((_, true)) = crossed
+                    && let Some(dd) = self.drag.as_mut()
+                {
+                    dd.block = true;
+                }
+                let s = match crossed {
+                    Some((s, _)) => s,
+                    None => self.dragged_selection(d, p),
                 };
-                self.selection = self.normalize(s);
+                if d.adding && self.removing() && !self.sweeps_anew(&s) {
+                    return;
+                }
+                self.selection = s;
+                if d.adding {
+                    self.multi.primary = Some(self.selection);
+                    if self.removing() {
+                        self.show_removal(p);
+                    }
+                }
                 self.pending = None;
             }
             PointerKind::Cancel if self.wrap_point_cancel() => {}
@@ -3059,12 +3080,33 @@ impl Editor {
             PointerKind::Up if self.object_drag.is_some() => {
                 self.object_release(fonts);
             }
+            PointerKind::Up if self.text_drag.is_some_and(|d| !d.moved) && self.removing() => {
+                if let Some(d) = self.text_drag.take() {
+                    self.requests.push(Request::ReleasePointer);
+                    self.add_release(d.press, false);
+                }
+            }
             PointerKind::Up if self.text_drag.is_some() => {
+                self.adding = None;
                 self.text_drag_release(fonts);
             }
-            PointerKind::Cancel if self.text_drag.take().is_some() => self.requests.push(Request::ReleasePointer),
-            PointerKind::Up | PointerKind::Cancel if self.zone_drag.take().is_some() => self.requests.push(Request::ReleasePointer),
+            PointerKind::Cancel if self.text_drag.take().is_some() => {
+                self.adding = None;
+                self.requests.push(Request::ReleasePointer);
+            }
+            PointerKind::Up | PointerKind::Cancel if self.zone_drag.take().is_some() => {
+                self.requests.push(Request::ReleasePointer);
+                if self.adding.is_some()
+                    && let Some(at) = self.cells_start(&self.selection)
+                {
+                    self.add_release(at, kind == PointerKind::Cancel);
+                }
+                self.adding = None;
+            }
             PointerKind::Up | PointerKind::Cancel => {
+                if let Some(d) = self.drag.filter(|d| d.adding) {
+                    self.add_release(d.anchor, kind == PointerKind::Cancel);
+                }
                 if self.drag.take().is_some() {
                     self.requests.push(Request::ReleasePointer);
                     self.requests.push(Request::Autoscroll { vx: 0.0, vy: 0.0 });
@@ -3074,6 +3116,33 @@ impl Editor {
                 }
             }
         }
+    }
+
+    /// A selecting drag's selection from its press to `p` within text: by words once it leaves the press's word, by
+    /// its unit for a drag from a double or triple click.
+    fn dragged_selection(&mut self, d: Drag, p: Position) -> Selection {
+        let s = match (d.unit, d.span) {
+            (Granularity::Char, _) | (_, None) => {
+                let (wa, wb) = self.word_span(d.anchor);
+                let beyond = !(self.index.cmp(&p, &wa) != std::cmp::Ordering::Less && self.index.cmp(&p, &wb) != std::cmp::Ordering::Greater);
+                if beyond {
+                    let (pa, pb) = self.word_span(p);
+                    if self.index.cmp(&p, &d.anchor) == std::cmp::Ordering::Less {
+                        Selection::range(wb, pa, Granularity::Char)
+                    } else {
+                        let pb = if pb.para_offset() == p.para_offset() && self.at_para_end(p) { self.after_mark(p) } else { pb };
+                        Selection::range(wa, pb, Granularity::Char)
+                    }
+                } else {
+                    Selection::range(d.anchor, p, Granularity::Char)
+                }
+            }
+            (unit, Some((a, b))) => {
+                let (pa, pb) = self.span(p, unit);
+                if self.index.cmp(&p, &a) == std::cmp::Ordering::Less { Selection::range(b, pa, unit) } else { Selection::range(a, pb, unit) }
+            }
+        };
+        self.normalize(s)
     }
 
     fn drag_across_cells(&mut self, anchor: Position, p: Position, was_block: bool) -> Option<(Selection, bool)> {
@@ -3300,31 +3369,40 @@ impl Editor {
             let dragged = self.object_drag.is_some_and(|d| d.now != d.start) || self.shape_drag.is_some();
             return SelectionView::Object(out, !self.object_fixed(o) && !dragged);
         }
+        if self.is_discontiguous() {
+            return SelectionView::Text(self.multi_rects(pages));
+        }
         if let Selection::Block { .. } = self.selection {
             return SelectionView::Text(
                 self.block_pieces().into_iter().filter(|(page, ..)| pages.contains(page)).map(|(page, r, ..)| (page, r)).collect(),
             );
         }
-        if let Selection::Cells { table, anchor, focus, .. } = self.selection {
-            let (r0, r1) = (anchor.row.min(focus.row), anchor.row.max(focus.row));
-            let (c0, c1) = (anchor.col.min(focus.col), anchor.col.max(focus.col));
-            let mut out = Vec::new();
-            for page in pages {
-                let Some(geo) = self.pages.page(page, &self.index) else { continue };
-                for c in &geo.cells {
-                    let Some(&(t, row, _)) = c.chain.last() else { continue };
-                    if t == table && (r0..=r1).contains(&row) && c.col <= c1 && c.col + c.span.max(1) > c0 {
-                        out.push((page, c.rect));
-                    }
-                }
-            }
-            return SelectionView::Cells(out);
+        if let Selection::Cells { .. } = self.selection {
+            return SelectionView::Cells(self.block_rects(self.selection, pages));
         }
         let Some((a, b)) = self.selection.ordered(&self.index) else { return SelectionView::None };
         if a.same_place(&b) {
             return SelectionView::None;
         }
         SelectionView::Text(self.range_rects(a, b, pages))
+    }
+
+    /// The cells of block `s` on `pages`.
+    pub(super) fn block_rects(&mut self, s: Selection, pages: std::ops::Range<usize>) -> Vec<(usize, [f64; 4])> {
+        let Selection::Cells { table, anchor, focus, .. } = s else { return Vec::new() };
+        let (r0, r1) = (anchor.row.min(focus.row), anchor.row.max(focus.row));
+        let (c0, c1) = (anchor.col.min(focus.col), anchor.col.max(focus.col));
+        let mut out = Vec::new();
+        for page in pages {
+            let Some(geo) = self.pages.page(page, &self.index) else { continue };
+            for c in &geo.cells {
+                let Some(&(t, row, _)) = c.chain.last() else { continue };
+                if t == table && (r0..=r1).contains(&row) && c.col <= c1 && c.col + c.span.max(1) > c0 {
+                    out.push((page, c.rect));
+                }
+            }
+        }
+        out
     }
 
     pub(super) fn range_rects(&mut self, a: Position, b: Position, pages: std::ops::Range<usize>) -> Vec<(usize, [f64; 4])> {
@@ -3732,6 +3810,9 @@ impl Editor {
     pub(super) fn text_within(&mut self, limit: usize, texts: &mut HashMap<ParaId, text::Seen>) -> (String, bool) {
         if let Selection::Block { .. } = self.selection {
             return self.block_text(limit);
+        }
+        if self.is_discontiguous() {
+            return self.multi_text(limit);
         }
         let Some((a, b)) = self.selection.ordered(&self.index) else { return (String::new(), true) };
         let mut out = String::new();

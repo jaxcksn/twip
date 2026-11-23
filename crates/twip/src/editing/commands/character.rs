@@ -380,7 +380,7 @@ impl Editor {
         }
         let Some(ranges) = self.case_ranges() else { return Outcome::unavailable("no word at the caret") };
         let mut tx = self.begin("Change Case");
-        for &(para, a, b) in &ranges {
+        for &(para, a, b) in ranges.iter().rev() {
             let Some(p) = self.index.para(&self.doc, para) else { continue };
             let mut with = Vec::new();
             let mut at = 0u32;

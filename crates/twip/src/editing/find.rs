@@ -202,6 +202,18 @@ impl Editor {
         self.story_paras(Stories::ALL)
     }
 
+    /// The paragraph ids of `story` in document order, tables included, not the text boxes it anchors.
+    pub(crate) fn paras_of(&self, story: super::position::StoryId) -> Vec<ParaId> {
+        if story == super::position::StoryId::Body {
+            return self.story_paras(Stories::default());
+        }
+        let mut out = Vec::new();
+        if let Some(blocks) = self.index.blocks(&self.doc, crate::editing::index::Container::Story(story)) {
+            walk(blocks, &mut out, &mut Vec::new());
+        }
+        out
+    }
+
     /// The paragraph ids of the body (or the sub-template being edited) in document order, tables included, then
     /// those of the stories `also` takes: the text boxes, the headers and footers in part order, the footnotes and the
     /// endnotes in id order.
@@ -315,6 +327,9 @@ impl Editor {
     }
 
     pub fn selection_matches(&self, needle: &str, case: bool) -> bool {
+        if self.is_discontiguous() {
+            return false;
+        }
         let Some((a, b)) = self.selection.ordered(&self.index) else { return false };
         let (Some((pa, ua)), Some((pb, ub))) = (a.para_offset(), b.para_offset()) else { return false };
         let needle: Vec<char> = needle.chars().collect();

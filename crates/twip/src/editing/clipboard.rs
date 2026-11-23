@@ -814,7 +814,10 @@ impl Editor {
         stories
     }
 
-    fn copy_content(&mut self) -> Option<Fragment> {
+    pub(super) fn copy_content(&mut self) -> Option<Fragment> {
+        if self.is_discontiguous() {
+            return self.multi_copy();
+        }
         if matches!(self.selection, Selection::Cells { .. }) {
             let id = self.clipboard.as_ref().map_or(1, |f| f.id + 1);
             return self.copy_cells(id);
@@ -1004,7 +1007,7 @@ impl Editor {
             [Block::Para(p)] if f.open_end => self.smart_spaces(&super::text::UnitText::of(p).text),
             _ => (false, false),
         };
-        if self.refuse_expanded() || self.refuse_locked() {
+        if self.refuse_replacing() {
             return Outcome::Unchanged("locked");
         }
         let mut tx = self.begin("Paste");

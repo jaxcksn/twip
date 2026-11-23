@@ -1099,14 +1099,38 @@ impl Editor {
         self.refuse_lock(false)
     }
 
+    /// [`Editor::refuse_expanded`] and [`Editor::refuse_locked`] for an edit that replaces the selection (typing,
+    /// paste, a break or an insert): of a discontiguous selection it replaces only the selection's own range and
+    /// deselects the others, so only that range is checked.
+    pub(super) fn refuse_replacing(&mut self) -> bool {
+        let multi = std::mem::take(&mut self.multi);
+        let refused = self.refuse_expanded() || self.refuse_locked();
+        if refused {
+            self.multi = multi;
+        }
+        refused
+    }
+
+    /// Whether a lock refuses the edit of selection `s` (cells, a block, an object, a discontiguous selection): each
+    /// paragraph piece it covers.
+    fn pieces_lock(&mut self, s: super::selection::Selection, deletes: bool) -> bool {
+        let was = std::mem::replace(&mut self.selection, s);
+        let pieces = self.selected_ranges();
+        self.selection = was;
+        pieces.into_iter().any(|(para, x, y)| {
+            let story = self.index.para_slot(para).map_or(StoryId::Body, |s| self.index.story(s.container));
+            self.locks(&Position::text(story, para, x), &Position::text(story, para, y), deletes)
+        })
+    }
+
     fn refuse_lock(&mut self, deletes: bool) -> bool {
         let locked = match self.selection.ordered(&self.index) {
-            Some((a, b)) => self.locks(&a, &b, deletes),
-            // Cells, blocks and objects: each paragraph piece they cover
-            None => self.selected_ranges().into_iter().any(|(para, x, y)| {
-                let story = self.index.para_slot(para).map_or(StoryId::Body, |s| self.index.story(s.container));
-                self.locks(&Position::text(story, para, x), &Position::text(story, para, y), deletes)
-            }),
+            Some((a, b)) => {
+                self.locks(&a, &b, deletes)
+                    || self.other_ranges().iter().any(|(a, b)| self.locks(a, b, deletes))
+                    || self.other_cells().to_vec().into_iter().any(|c| self.pieces_lock(c, deletes))
+            }
+            None => self.pieces_lock(self.selection, deletes),
         };
         if locked {
             self.refused = Some("locked");
@@ -1217,11 +1241,17 @@ impl Editor {
         }
         let Some((a, b)) = self.selection.ordered(&self.index) else { return Vec::new() };
         let range = |f: &(FieldId, StoryId, ParaId, usize, Unit, Unit)| (Position::text(f.1, f.2, f.4), Position::text(f.1, f.2, f.5));
-        let mut picked: Vec<(FieldId, StoryId, ParaId, usize, Unit, Unit)> = if !a.same_place(&b) {
+        // Every range of a discontiguous selection, in document order
+        let mut ranges = self.other_ranges().to_vec();
+        if !a.same_place(&b) {
+            let k = ranges.partition_point(|r| self.index.cmp(&r.0, &a).is_lt());
+            ranges.insert(k, (a, b));
+        }
+        let mut picked: Vec<(FieldId, StoryId, ParaId, usize, Unit, Unit)> = if !ranges.is_empty() {
             all.iter()
                 .filter(|f| {
                     let (s, e) = range(f);
-                    self.index.cmp(&s, &b) == std::cmp::Ordering::Less && self.index.cmp(&a, &e) == std::cmp::Ordering::Less
+                    ranges.get(ranges.partition_point(|r| self.index.cmp(&r.1, &s).is_le())).is_some_and(|r| self.index.cmp(&r.0, &e).is_lt())
                 })
                 .cloned()
                 .collect()
