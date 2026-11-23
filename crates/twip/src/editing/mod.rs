@@ -1015,7 +1015,9 @@ impl Editor {
             let index = self.doc.images.len();
             let _ = self.apply_step(tx, Step::AddImage { index, data: Some(data) });
         }
-        let edited: Vec<ParaId> = tx.undo.iter().filter_map(|s| if let Step::Text { para, .. } = s { Some(*para) } else { None }).collect();
+        let mut edited: Vec<ParaId> = tx.undo.iter().filter_map(|s| if let Step::Text { para, .. } = s { Some(*para) } else { None }).collect();
+        let mut seen = std::collections::HashSet::with_capacity(edited.len());
+        edited.retain(|p| seen.insert(*p));
         for para in edited {
             if self.index.para(&self.doc, para).is_some_and(|p| p.inlines.iter().any(|i| matches!(i, Inline::FieldBegin { .. }))) {
                 self.refresh_field_kinds(tx, para);

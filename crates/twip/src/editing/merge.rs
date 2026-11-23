@@ -192,7 +192,7 @@ impl Editor {
     }
 
     pub(super) fn editable(&self, p: &Position) -> bool {
-        if self.doc.controls.values().any(|k| matches!(k.props.kind, ControlKind::Group)) && self.in_group(p, p) {
+        if self.doc.controls.values().any(|k| matches!(k.props.kind, ControlKind::Group)) && self.in_group(p, p, false) {
             return false;
         }
         elements::context(&self.doc, &self.index, &Selection::Caret(*p)).iter().all(|(e, _)| {
@@ -388,16 +388,21 @@ impl Editor {
             if found.is_empty() {
                 continue;
             }
-            // Each run keeps its text outside the matches; a match's replacement goes in the run it starts in.
+            // Each run keeps its text outside the matches; a match's replacement goes in the run it starts in. The
+            // matches a run holds part of start at `first`: those before it end before the run does.
             let mut at = 0;
+            let mut first = 0;
             for (&k, part) in g.iter().zip(&parts) {
                 let (a, b) = (at, at + part.len());
                 at = b;
                 let mut text = String::new();
                 let mut c = a;
-                for &m in &found {
+                while found.get(first).is_some_and(|&m| m + find.len() <= a) {
+                    first += 1;
+                }
+                for &m in found[first..].iter().take_while(|&&m| m < b) {
                     let e = m + find.len();
-                    if e <= a || m >= b {
+                    if e <= a {
                         continue;
                     }
                     if m > c {
@@ -414,13 +419,29 @@ impl Editor {
                 }
             }
         }
-        let mut any = false;
-        for (k, t) in own.into_iter().rev() {
+        // Runs next to each other change in one step, the paragraph as it was: the steps go last to first.
+        let mut spans: Vec<(std::ops::Range<u32>, Vec<Inline>)> = Vec::new();
+        let (mut at, mut from) = (0u32, 0usize);
+        let mut next = usize::MAX;
+        for (k, t) in own {
             let Inline::Text(_, run) = &p.inlines[k] else { continue };
-            let at = units_before(&p.inlines, k);
-            let range = Unit(at)..Unit(at + p.inlines[k].units() as u32);
-            let with = if t.is_empty() { Vec::new() } else { vec![Inline::Text(t, run.clone())] };
-            any |= self.step(tx, Step::Text { para, range, with, edges: Default::default() }).is_ok();
+            at += units_before(&p.inlines[from..], k - from);
+            from = k;
+            let end = at + p.inlines[k].units() as u32;
+            let with = (!t.is_empty()).then(|| Inline::Text(t, run.clone()));
+            let adjacent = k == next;
+            next = k + 1;
+            match spans.last_mut() {
+                Some((r, w)) if adjacent => {
+                    r.end = end;
+                    w.extend(with);
+                }
+                _ => spans.push((at..end, with.into_iter().collect())),
+            }
+        }
+        let mut any = false;
+        for (r, with) in spans.into_iter().rev() {
+            any |= self.step(tx, Step::Text { para, range: Unit(r.start)..Unit(r.end), with, edges: Default::default() }).is_ok();
         }
         if any {
             self.refresh_field_kinds(tx, para);
@@ -465,6 +486,12 @@ impl Editor {
         let ends: Vec<usize> = pieces.iter().skip(1).map(|p| p.1).chain([code.len()]).collect();
         let over: Vec<(usize, usize, usize)> =
             pieces.iter().zip(ends).filter(|&(&(_, at), end)| at < span.end && end > span.start).map(|(&(k, at), end)| (k, at, end)).collect();
+        // A field nested in the argument would be left outside the value written over it.
+        if let (Some(a), Some(b)) = (over.first(), over.last())
+            && p.inlines[a.0..b.0].iter().any(|i| matches!(i, Inline::FieldBegin { .. }))
+        {
+            return false;
+        }
         let mut any = false;
         for (j, &(k, at, end)) in over.iter().enumerate().rev() {
             let mut t = code[at..span.start.max(at)].to_string();
@@ -947,7 +974,7 @@ impl Editor {
     }
 
     fn locks(&self, a: &Position, b: &Position, deletes: bool) -> bool {
-        if self.doc.controls.values().any(|k| matches!(k.props.kind, ControlKind::Group)) && self.in_group(a, b) {
+        if self.doc.controls.values().any(|k| matches!(k.props.kind, ControlKind::Group)) && self.in_group(a, b, deletes) {
             return true;
         }
         let ends = |p: ParaId| self.index.para(&self.doc, p).map_or(&[][..], |q| &q.controls[..]);
@@ -1006,8 +1033,9 @@ impl Editor {
     }
 
     /// Whether `a..b` edits a group control's own content, which only the controls nested in it let change: a group
-    /// around an end that the edit doesn't take whole, unless both ends are in the same control nested in it.
-    pub(super) fn in_group(&self, a: &Position, b: &Position) -> bool {
+    /// around an end, unless both ends are in the same control nested in it, or the edit deletes (`deletes`) the
+    /// group whole.
+    pub(super) fn in_group(&self, a: &Position, b: &Position, deletes: bool) -> bool {
         let collapsed = a == b;
         let is_group = |c: &ControlId| self.doc.controls.get(c).is_some_and(|k| matches!(k.props.kind, ControlKind::Group));
         // The controls around `p`, innermost first, past the inline ones a caret is at the end of
@@ -1023,8 +1051,9 @@ impl Editor {
                 })
                 .collect()
         };
-        let whole =
-            |r: &Option<(Position, Position)>| !collapsed && r.is_some_and(|(s, e)| self.index.cmp(a, &s).is_le() && self.index.cmp(&e, b).is_le());
+        let whole = |r: &Option<(Position, Position)>| {
+            deletes && !collapsed && r.is_some_and(|(s, e)| self.index.cmp(a, &s).is_le() && self.index.cmp(&e, b).is_le())
+        };
         let at_a = around(a);
         let at_b = if collapsed { Vec::new() } else { around(b) };
         let inner_b = if collapsed { at_a.first() } else { at_b.first() };
@@ -1065,8 +1094,8 @@ impl Editor {
             })
             .map(|(k, _)| k)
             .collect();
-        if item.is_none() && at.len() > 1 {
-            return Err(shape("ambiguous namespace"));
+        if at.len() > 1 {
+            return Err(shape(if item.is_none() { "ambiguous namespace" } else { "ambiguous item id" }));
         }
         Ok((ns, item, at))
     }
@@ -1642,9 +1671,10 @@ impl Editor {
                     }
                     _ => run.clone(),
                 };
-                match &r.link {
+                // A link to follow; any other address shows as text.
+                match r.link.as_deref().and_then(super::html::web_address) {
                     Some(address) => {
-                        let code = format!(" HYPERLINK \"{}\" ", address.replace('"', ""));
+                        let code = crate::docx::fields::link_code(&address);
                         out.extend(crate::docx::fields::field_inlines(&code, &r.text, &formatted));
                     }
                     None => out.extend(super::comments::rich::text_inlines(&r.text, &formatted)),
@@ -2023,9 +2053,17 @@ impl Editor {
             let t = self.index.table(&self.doc, table).ok_or_else(no_element)?;
             let last = t.rows.len().saturating_sub(1);
             let (r0, r1) = (anchor.row.min(focus.row).min(last), anchor.row.max(focus.row).min(last));
+            let whole = r0 == 0 && r1 == last;
+            let at = if whole {
+                Vec::new()
+            } else {
+                let lists: Vec<&Vec<ControlId>> = t.rows[r0..=r1].iter().map(|r| &r.controls).collect();
+                let outside: Vec<&Vec<ControlId>> = t.rows[..r0].iter().chain(&t.rows[r1 + 1..]).map(|r| &r.controls).collect();
+                nest(&lists, &outside)?
+            };
             let mut tx = self.begin("Insert Content Control");
             self.pending_controls.push((id, Control::new(props)));
-            let ok = if r0 == 0 && r1 == last {
+            let ok = if whole {
                 let slot = self.index.table_slot(table).ok_or_else(no_element)?;
                 let mut with = t.clone();
                 with.controls.push(id);
@@ -2033,7 +2071,7 @@ impl Editor {
                     .is_ok()
             } else {
                 let mut with = t.rows[r0..=r1].to_vec();
-                with.iter_mut().for_each(|r| r.controls.push(id));
+                with.iter_mut().zip(at).for_each(|(r, k)| r.controls.insert(k, id));
                 tx.stale_tables.push(table);
                 self.step(&mut tx, Step::Rows { table, range: r0..r1 + 1, with, grid: None }).is_ok()
             };
@@ -2208,7 +2246,7 @@ impl Editor {
                 }
                 (ControlKind::Checkbox { checked, unchecked }, ControlOptions::Checkbox(o)) => {
                     if o.checked_symbol.is_some() || o.unchecked_symbol.is_some() {
-                        let was_checked = *checked;
+                        let (was_checked, was_unchecked) = (*checked, *unchecked);
                         let font = |x: &str, name: &str| {
                             let at = x.find(&format!("{name} "))?;
                             let f = x[at..].find("font=\"")? + at + 6;
@@ -2234,9 +2272,10 @@ impl Editor {
                             .map(|s| s.font.clone())
                             .or_else(|| font(&was, "uncheckedState"))
                             .unwrap_or_else(|| "MS Gothic".into());
-                        // The box's state is its face: checked when it shows the checked symbol it had.
+                        // The box's state is its face: checked when it shows the checked symbol it had (its XML's
+                        // when both symbols were one).
                         let on = match &w {
-                            Where::Sym { para, at, .. } => self
+                            Where::Sym { para, at, .. } if was_checked != was_unchecked => self
                                 .index
                                 .para(&self.doc, *para)
                                 .and_then(|q| super::stories::inline_at(q, *at))
@@ -2443,21 +2482,65 @@ fn with_child_val(xml: &str, local: &str, val: &str, w: &str, after: Option<&str
         }
         None
     };
+    let name_end = |tag: &str| tag.find(|c: char| c.is_whitespace() || c == '/' || c == '>').unwrap_or(tag.len());
     if let Some((start, end)) = find(local) {
         let tag = &xml[start..end];
-        let new = match tag.find("val=").map(|v| v + 4) {
-            Some(v) => {
-                let q = tag[v..].chars().next().unwrap_or('"');
-                let close = tag[v + 1..].find(q).map_or(tag.len(), |e| v + 1 + e);
-                format!("{}{}{}", &tag[..v + 1], esc(val), &tag[close..])
+        let new = match attr_value(tag, "val") {
+            Some(v) => format!("{}{}{}", &tag[..v.start], esc(val), &tag[v.end..]),
+            None => {
+                let at = name_end(tag);
+                format!("{} {w}val=\"{}\"{}", &tag[..at], esc(val), &tag[at..])
             }
-            None => tag.replacen(local, &format!("{local} {w}val=\"{}\"", esc(val)), 1),
         };
         return format!("{}{new}{}", &xml[..start], &xml[end..]);
     }
     let child = format!("<{w}{local} {w}val=\"{}\"/>", esc(val));
-    let at = after.and_then(find).map(|(_, e)| e).or_else(|| crate::docx::binding::tag_end(xml).map(|e| e + 1)).unwrap_or(xml.len());
-    format!("{}{child}{}", &xml[..at], &xml[at..])
+    if let Some((_, at)) = after.and_then(find) {
+        return format!("{}{child}{}", &xml[..at], &xml[at..]);
+    }
+    let Some(at) = crate::docx::binding::tag_end(xml).map(|e| e + 1) else { return format!("{xml}{child}") };
+    // A root without children opens for the child
+    match xml[..at].strip_suffix("/>") {
+        Some(head) => {
+            let name = &xml[1..name_end(xml)];
+            format!("{}>{child}</{name}>{}", head.trim_end(), &xml[at..])
+        }
+        None => format!("{}{child}{}", &xml[..at], &xml[at..]),
+    }
+}
+
+/// Where the value of `tag`'s attribute of local name `local` is (`w:val = "x"` as well as `w:val="x"`).
+fn attr_value(tag: &str, local: &str) -> Option<std::ops::Range<usize>> {
+    let b = tag.as_bytes();
+    let space = |i: usize| b.get(i).is_some_and(u8::is_ascii_whitespace);
+    let mut i = tag.find(|c: char| c.is_whitespace() || c == '/' || c == '>')?;
+    loop {
+        while space(i) {
+            i += 1;
+        }
+        let start = i;
+        while i < b.len() && !b[i].is_ascii_whitespace() && !matches!(b[i], b'=' | b'/' | b'>') {
+            i += 1;
+        }
+        let name = &tag[start..i];
+        while space(i) {
+            i += 1;
+        }
+        if name.is_empty() || b.get(i) != Some(&b'=') {
+            return None;
+        }
+        i += 1;
+        while space(i) {
+            i += 1;
+        }
+        let q = *b.get(i).filter(|q| matches!(q, b'"' | b'\''))?;
+        let from = i + 1;
+        let to = from + tag[from..].find(char::from(q))?;
+        if name.rsplit(':').next() == Some(local) {
+            return Some(from..to);
+        }
+        i = to + 1;
+    }
 }
 
 /// A block's block controls, outermost first.
@@ -2651,4 +2734,32 @@ fn new_item_id(xml: &str, n: usize) -> String {
     (a, "second").hash(&mut h);
     let b = h.finish();
     format!("{{{:08X}-{:04X}-4{:03X}-{:04X}-{:012X}}}", a >> 32, (a >> 16) & 0xFFFF, a & 0xFFF, 0x8000 | (b >> 48) & 0x3FFF, b & 0xFFFF_FFFF_FFFF)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::with_child_val;
+
+    #[test]
+    fn a_child_value_is_set_where_its_attribute_is() {
+        let x = r#"<w:date w:fullDate="2026-01-01T00:00:00Z"><w:dateFormat w:val = "M/d/yyyy"/></w:date>"#;
+        assert_eq!(
+            with_child_val(x, "dateFormat", "d MMM", "w:", None),
+            r#"<w:date w:fullDate="2026-01-01T00:00:00Z"><w:dateFormat w:val = "d MMM"/></w:date>"#
+        );
+        let x = r#"<w:date><w:dateFormat w:x="1"/></w:date>"#;
+        assert_eq!(with_child_val(x, "dateFormat", "d", "w:", None), r#"<w:date><w:dateFormat w:val="d" w:x="1"/></w:date>"#);
+    }
+
+    #[test]
+    fn a_child_goes_inside_a_root_without_children() {
+        let x = r#"<w:date w:fullDate="2026-01-01T00:00:00Z"/>"#;
+        let with = with_child_val(x, "dateFormat", "d", "w:", None);
+        assert_eq!(with, r#"<w:date w:fullDate="2026-01-01T00:00:00Z"><w:dateFormat w:val="d"/></w:date>"#);
+        assert_eq!(
+            with_child_val(&with, "lid", "en-GB", "w:", Some("dateFormat")),
+            r#"<w:date w:fullDate="2026-01-01T00:00:00Z"><w:dateFormat w:val="d"/><w:lid w:val="en-GB"/></w:date>"#
+        );
+        assert_eq!(with_child_val("<w:date/>", "lid", "en-GB", "w:", Some("dateFormat")), r#"<w:date><w:lid w:val="en-GB"/></w:date>"#);
+    }
 }

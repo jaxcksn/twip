@@ -123,7 +123,7 @@ export interface RichRun {
   underline?: boolean;
   /** Struck through. */
   strikethrough?: boolean;
-  /** A link address. */
+  /** A link address: a web, mail, FTP or phone one, or a relative one. The run of any other is plain text. */
   link?: string;
 }
 

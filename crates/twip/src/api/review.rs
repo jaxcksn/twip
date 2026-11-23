@@ -150,7 +150,7 @@ pub struct RichRun {
     /// Struck through.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub strikethrough: Option<bool>,
-    /// A link's address.
+    /// A link's address: a web, mail, FTP or phone one, or a relative one. The run of any other is plain text.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub link: Option<String>,
 }

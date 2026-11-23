@@ -152,3 +152,31 @@ fn a_paste_takes_this_sessions_newest_copy() {
     s.run(Command::Paste(Default::default())).expect("pastes");
     assert_eq!(text(s), "alpha beta", "the newer copy pasted over itself");
 }
+
+#[test]
+fn a_pasted_heading_or_list_item_keeps_its_paragraph() {
+    let mut engine = Engine::new(FontLibrary::system_recommended());
+    for (html, text) in [("<h1>Title</h1>", "Title"), ("<ul><li>one</li></ul>", "one")] {
+        let id = engine.create_session(SessionOptions::default());
+        let s = engine.session(id).expect("a session");
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/editor/FX-EMPTY.docx");
+        s.open(&std::fs::read(path).expect("the fixture")).expect("opens");
+        s.paste(&crate::api::input::ClipboardData { text: text.into(), html: Some(html.into()), internal: None }, false);
+        let (style, listed) = s.with_editor(|e| {
+            let p = e.document().sections[0]
+                .blocks
+                .iter()
+                .find_map(|b| match b {
+                    crate::docx::Block::Para(p) if crate::docx::fields::text(p) == text => Some(p),
+                    _ => None,
+                })
+                .expect("the pasted paragraph");
+            (p.style.style_id.clone(), p.style.num.is_some_and(|(n, _)| n != 0))
+        });
+        if text == "Title" {
+            assert_eq!(style.as_deref(), Some("Heading1"), "{html}");
+        } else {
+            assert!(listed, "{html}: in a list");
+        }
+    }
+}

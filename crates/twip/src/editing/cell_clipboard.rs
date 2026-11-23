@@ -79,10 +79,11 @@ impl Editor {
         let g = Grid::of(&t);
         let mut rows = t.rows.clone();
         // A source cell's content as a fresh copy (the block repeats over a larger target).
-        let tile = |r: usize, j: usize| -> Option<Vec<Block>> {
-            let row = &src.rows[r % src.rows.len().max(1)];
-            row.cells.get(j % row.cells.len().max(1)).map(|c| c.blocks.iter().map(fresh).collect())
+        let source = |r: usize, j: usize| {
+            let row = src.rows.get(r % src.rows.len().max(1))?;
+            row.cells.get(j % row.cells.len().max(1))
         };
+        let tile = |r: usize, j: usize| -> Option<Vec<Block>> { source(r, j).map(|c| c.blocks.iter().map(fresh).collect()) };
         // Whole rows
         let at_row_start = !block && self.selection.focus().is_some_and(|p| p.para_offset().is_some_and(|(_, o)| o.0 == 0)) && tg.cols.0 == 0;
         let over_rows = matches!(self.selection, Selection::Cells { shape: CellShape::Rows, .. });
@@ -93,12 +94,9 @@ impl Editor {
             rows.splice(at..at, new);
             // A merged cell the rows land in splits around them: its part below starts again.
             if at > 0 && n > 0 {
-                let g = Grid::of_rows(&rows, t.grid.len());
-                for k in 0..rows[at + n].cells.len() {
-                    let c = g.rows[at + n][k].0;
-                    let above = g.cell_at(at + n - 1, c).filter(|&a| g.rows[at + n - 1][a].0 == c).map(|a| g.rows[at + n - 1][a].2);
-                    if g.continues(at + n, k) && above.is_none_or(|v| v == crate::docx::VMerge::None) {
-                        rows[at + n].cells[k].v_merge = crate::docx::VMerge::Restart;
+                for c in &mut rows[at + n].cells {
+                    if c.v_merge == crate::docx::VMerge::Continue {
+                        c.v_merge = crate::docx::VMerge::Restart;
                     }
                 }
             }
@@ -122,10 +120,22 @@ impl Editor {
         }
         if block {
             // Cell block
-            for (i, r) in (tg.rows.0..=tg.rows.1).enumerate() {
-                let ks: Vec<usize> = (0..rows[r].cells.len())
-                    .filter(|&k| g.rows[r].get(k).is_some_and(|&(c, s, _)| c + s.max(1) > tg.cols.0 && c <= tg.cols.1))
-                    .collect();
+            let at: Vec<(usize, Vec<usize>)> = (tg.rows.0..=tg.rows.1)
+                .map(|r| {
+                    let ks = (0..rows[r].cells.len())
+                        .filter(|&k| g.rows[r].get(k).is_some_and(|&(c, s, _)| c + s.max(1) > tg.cols.0 && c <= tg.cols.1))
+                        .collect();
+                    (r, ks)
+                })
+                .collect();
+            for (i, (r, ks)) in at.iter().enumerate() {
+                for (j, &k) in ks.iter().enumerate() {
+                    if source(i, j).is_some() {
+                        taken.replacing(&rows[*r].cells[k].blocks);
+                    }
+                }
+            }
+            for (i, (r, ks)) in at.into_iter().enumerate() {
                 for (j, k) in ks.into_iter().enumerate() {
                     if let Some(mut b) = tile(i, j) {
                         self.take_in(&mut tx, &mut b, f, &mut taken);
@@ -141,6 +151,17 @@ impl Editor {
             return None;
         };
         let n = rows.len();
+        let place = |i: usize, j: usize| {
+            let r = tg.rows.0 + i;
+            if i == 0 { k0 + j } else { g.cell_at(r.min(t.rows.len() - 1), tg.cols.0).unwrap_or(0) + j }
+        };
+        for (i, row) in src.rows.iter().enumerate().take(n.saturating_sub(tg.rows.0)) {
+            for j in 0..row.cells.len() {
+                if let Some(c) = rows[tg.rows.0 + i].cells.get(place(i, j)) {
+                    taken.replacing(&c.blocks);
+                }
+            }
+        }
         for i in 0..src.rows.len() {
             let r = tg.rows.0 + i;
             if r >= rows.len() {
@@ -154,7 +175,7 @@ impl Editor {
                 rows.push(add);
             }
             for j in 0..src.rows[i].cells.len() {
-                let k = if i == 0 { k0 + j } else { g.cell_at(r.min(t.rows.len() - 1), tg.cols.0).unwrap_or(0) + j };
+                let k = place(i, j);
                 if k < rows[r].cells.len()
                     && let Some(mut b) = tile(i, j)
                 {

@@ -27,14 +27,25 @@ pub struct Origin {
     pub resolver: Option<Rc<Resolver>>,
     /// Its people.
     pub people: People,
+    /// Its main part's root start tag, whose namespace declarations its paragraphs' XML is written under (empty for a
+    /// document not read from a file).
+    pub main: String,
 }
 
 impl Origin {
     /// The origin of `f`, read from `doc` (a document no editor has open): its images move into it.
     pub(super) fn of_document(mut doc: crate::docx::Document, f: &mut Fragment) -> Rc<Origin> {
         let images = used_images(f).into_iter().filter_map(|k| Some((k, std::mem::take(doc.images.get_mut(k)?)))).collect();
-        Rc::new(Origin { key: next_key(), images, resolver: doc.resolver, people: doc.people })
+        let main = root_tag(&doc);
+        Rc::new(Origin { key: next_key(), images, resolver: doc.resolver, people: doc.people, main })
     }
+}
+
+/// The start tag of `doc`'s main part's root, as read.
+fn root_tag(doc: &crate::docx::Document) -> String {
+    let Some(x) = doc.source.as_ref().map(|s| s.xml.as_str()) else { return String::new() };
+    let start = x.char_indices().find(|&(i, c)| c == '<' && x[i + 1..].starts_with(|c: char| c.is_alphabetic())).map_or(0, |(i, _)| i);
+    x[start..x[start..].find('>').map_or(start, |e| start + e + 1)].to_string()
 }
 
 /// The image indices `f` (its notes and comments too) shows, in order.
@@ -241,6 +252,35 @@ fn num_ids(raw: &str, cx: &Cx) -> Vec<i64> {
         .unwrap_or_default()
 }
 
+/// A `w:style`'s `w:default` taken out.
+fn not_default(n: roxmltree::Node) -> Option<(std::ops::Range<usize>, String)> {
+    let a = n.attributes().find(|a| a.name() == "default" && a.namespace() == Some(crate::docx::xml::W)).filter(|_| is_w(n, "style"))?;
+    Some((a.range(), String::new()))
+}
+
+/// `raw`, an element as `from` writes one, declaring the namespaces it has from `from`'s root that `to`'s root
+/// doesn't bind as it does, so it reads the same where `to` writes it.
+fn rebound(raw: &str, from: &Cx, to: &Cx) -> Option<String> {
+    let have: Vec<(Option<String>, String)> =
+        to.parse("<y/>", |_, el| el.namespaces().map(|n| (n.name().map(str::to_string), n.uri().to_string())).collect())?;
+    let decls = from.parse(raw, |text, el| {
+        let head = &text[el.range().start..el.first_child().map_or(el.range().end, |c| c.range().start)];
+        let declared = |name: &str| head.match_indices(name).any(|(i, m)| head[i + m.len()..].starts_with(|c: char| c == '=' || c.is_whitespace()));
+        el.namespaces()
+            .filter(|n| n.name() != Some("xml") && !have.iter().any(|(p, u)| p.as_deref() == n.name() && u == n.uri()))
+            .filter_map(|n| {
+                let name = n.name().map_or_else(|| "xmlns".to_string(), |p| format!("xmlns:{p}"));
+                (!declared(&name)).then(|| format!(" {name}=\"{}\"", crate::docx::write::props::esc(n.uri())))
+            })
+            .collect::<String>()
+    })?;
+    if decls.is_empty() {
+        return Some(raw.to_string());
+    }
+    let at = raw.find(|c: char| c.is_whitespace() || c == '/' || c == '>')?;
+    Some(format!("{}{decls}{}", &raw[..at], &raw[at..]))
+}
+
 /// `raw` with its `w:numId` values mapped.
 fn renumber(raw: &str, cx: &Cx, map: &HashMap<i64, i64>) -> Option<String> {
     rewrite(raw, cx, &|n| {
@@ -253,7 +293,7 @@ impl Editor {
     /// Where a fragment copied from this document comes from: this document, and the images it shows.
     pub(super) fn origin_of(&self, f: &mut Fragment) -> Rc<Origin> {
         let images = used_images(f).into_iter().filter_map(|k| Some((k, self.doc.images.get(k)?.clone()))).collect();
-        Rc::new(Origin { key: self.key, images, resolver: self.doc.resolver.clone(), people: self.doc.people.clone() })
+        Rc::new(Origin { key: self.key, images, resolver: self.doc.resolver.clone(), people: self.doc.people.clone(), main: root_tag(&self.doc) })
     }
 
     /// Makes pasted `blocks`, and the bodies of the notes and comments they refer to, this document's: the images they
@@ -301,7 +341,8 @@ impl Editor {
         });
         self.import_people(blocks, refs, &origin.people);
         if let Some(from) = &origin.resolver {
-            self.import_styles(tx, blocks, refs, from, lists);
+            let main = (!origin.main.is_empty()).then(|| Cx::of_xml(&origin.main));
+            self.import_styles(tx, blocks, refs, from, main.as_ref(), lists);
         }
     }
 
@@ -332,9 +373,11 @@ impl Editor {
     /// The styles and lists `blocks` and `refs` use that this document lacks, brought from `from`: a style and the ones
     /// it is based on, linked to and followed by, a list's definitions under new ids (its paragraphs and styles
     /// renumbered). A style this document has keeps its own definition, as Word's default (destination styles) does.
-    fn import_styles(&mut self, tx: &mut Tx, blocks: &mut [Block], refs: &mut Refs, from: &Resolver, brought: &mut Lists) {
+    /// `main`: how the paragraphs' own XML is written there (`None`: as its styles are).
+    fn import_styles(&mut self, tx: &mut Tx, blocks: &mut [Block], refs: &mut Refs, from: &Resolver, main: Option<&Cx>, brought: &mut Lists) {
         let Some(res) = self.doc.resolver.clone() else { return };
         let (scx, ncx) = (from.styles.cx(), from.numbering.cx());
+        let pcx = main.unwrap_or(&scx);
         let mut want: Vec<String> = Vec::new();
         let mut nums: Vec<i64> = Vec::new();
         let (mut paras, mut tables): (Vec<ParaId>, Vec<TableId>) = (Vec::new(), Vec::new());
@@ -345,7 +388,7 @@ impl Editor {
                 want.extend(p.mark.style_id.iter().cloned());
                 want.extend(p.inlines.iter().filter_map(|i| i.run()?.style_id.clone()));
                 if let Some(x) = p.style.direct.0.as_deref() {
-                    nums.extend(num_ids(x, &scx));
+                    nums.extend(num_ids(x, pcx));
                 }
             }
             Block::Table(t) => {
@@ -380,7 +423,7 @@ impl Editor {
         }
         let Lists { nums: num_map, abstracts: abstract_map } = brought;
         if styles.is_empty() && lists.is_empty() {
-            renumber_blocks(blocks, refs, &scx, num_map);
+            renumber_blocks(blocks, refs, pcx, num_map);
             return;
         }
         let mut next = (*res).clone();
@@ -436,14 +479,21 @@ impl Editor {
                 }
             }
         }
+        // Each style under this document's namespaces, not its default (this document's stays). One based on itself
+        // through its chain comes without its base; one that isn't a style doesn't come, and what uses it shows as
+        // the default style does.
+        let dcx = next.styles.cx();
         for id in &styles {
             let raw = &from.styles.by_id[id].raw;
             let raw = if num_map.is_empty() { Some(raw.clone()) } else { renumber(raw, &scx, num_map) };
-            if let Some(raw) = raw {
+            let Some(raw) = raw.and_then(|r| rewrite(&r, &scx, &not_default)).and_then(|r| rebound(&r, &scx, &dcx)) else { continue };
+            if let Err(crate::docx::styles::StyleEditError::Loop) = next.styles.set_xml(raw.clone())
+                && let Some(raw) = rewrite(&raw, &dcx, &|n| is_w(n, "basedOn").then(|| (n.range(), String::new())))
+            {
                 let _ = next.styles.set_xml(raw);
             }
         }
-        renumber_blocks(blocks, refs, &scx, num_map);
+        renumber_blocks(blocks, refs, pcx, num_map);
         let added = self.doc.added_lists.clone();
         if self.step(tx, Step::Resolver { resolver: Some(Rc::new(next)), added }).is_ok() {
             tx.stale_paras.extend(paras);

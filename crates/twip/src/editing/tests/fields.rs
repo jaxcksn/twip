@@ -61,6 +61,21 @@ fn a_rich_field_result_keeps_its_formatting_and_line_breaks() {
 }
 
 #[test]
+fn a_rich_field_result_links_only_to_addresses_to_follow() {
+    let mut e = Editor::open(&field_doc(" MERGEFIELD X ", "old"), fonts()).expect("opens");
+    let id = send(&mut e, json!({ "type": "query", "q": "elements" }))["answer"][0]["id"].clone();
+    let rich = json!({ "paragraphs": [{ "runs": [{ "text": "bad", "link": "java\tscript:alert(1)" }, { "text": "good", "link": "https://x.test/a\\b" }] }] });
+    let r = send(&mut e, json!({ "type": "command", "command": { "type": "setFieldResults", "results": [{ "id": id, "display": rich }] } }));
+    assert!(r["answer"].get("error").is_none(), "{r}");
+    let shown = result(&e);
+    let links: Vec<String> = crate::docx::fields::spans(&shown)
+        .into_iter()
+        .map(|s| crate::docx::fields::parse(&crate::docx::fields::code_text(&shown, s)).args.first().cloned().unwrap_or_default())
+        .collect();
+    assert_eq!(links, ["https://x.test/a\\b"], "the script address is text: {shown:?}");
+}
+
+#[test]
 fn bookmarks_in_one_paragraph_are_found_in_linear_time() {
     fn time(n: usize) -> std::time::Duration {
         let starts: String = (0..n).map(|i| format!(r#"<w:bookmarkStart w:id="{i}" w:name="b{i}"/>"#)).collect();

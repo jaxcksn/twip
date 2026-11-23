@@ -38,13 +38,72 @@ pub struct Refs {
 }
 
 /// The bookmark names and editing permission ids a paste can't give its pieces: the document's (read once, when a
-/// piece has any) and those earlier pieces took; and the lists earlier pieces brought from another document.
+/// piece has any, past the paragraphs the paste replaces) and those earlier pieces took; the lists earlier pieces
+/// brought from another document; and where the fragment's notes and comments are, for each piece to take its own.
 #[derive(Default)]
 pub(super) struct Taken {
     read: bool,
     names: HashSet<String>,
     ids: HashSet<i64>,
     lists: super::import::Lists,
+    replaced: HashSet<ParaId>,
+    refs: Option<RefIndex>,
+}
+
+impl Taken {
+    /// Content the paste replaces: its markers are no conflict.
+    pub(super) fn replacing(&mut self, blocks: &[Block]) {
+        for b in blocks {
+            match b {
+                Block::Para(p) => {
+                    self.replaced.insert(ParaId(p.id));
+                    for i in &p.inlines {
+                        if let Some((_, tb)) = i.story() {
+                            self.replacing(&tb.blocks);
+                        }
+                    }
+                }
+                Block::Table(t) => t.rows.iter().flat_map(|r| r.cells.iter()).for_each(|c| self.replacing(&c.blocks)),
+            }
+        }
+    }
+}
+
+/// Where each note and comment of a fragment's [`Refs`] is.
+struct RefIndex {
+    notes: HashMap<(crate::docx::NoteKind, i64), usize>,
+    /// A comment's own place and its replies'.
+    comments: HashMap<crate::docx::review::CommentId, Vec<usize>>,
+}
+
+impl RefIndex {
+    fn of(refs: &Refs) -> RefIndex {
+        let notes = refs.notes.iter().enumerate().map(|(k, n)| ((n.0, n.1), k)).collect();
+        let mut comments: HashMap<_, Vec<usize>> = HashMap::new();
+        for (k, c) in refs.comments.iter().enumerate() {
+            comments.entry(c.id).or_default().push(k);
+            if let Some(p) = c.parent.filter(|p| *p != c.id) {
+                comments.entry(p).or_default().push(k);
+            }
+        }
+        RefIndex { notes, comments }
+    }
+
+    /// The notes and comments (with their replies) of `refs` that `blocks` refer to.
+    fn held(&self, refs: &Refs, blocks: &[Block]) -> Refs {
+        let mut notes = Vec::new();
+        super::notes::refs_in(blocks, &mut notes);
+        let mut at: Vec<usize> = notes.iter().filter_map(|n| self.notes.get(n).copied()).collect();
+        at.sort_unstable();
+        at.dedup();
+        let notes = at.iter().map(|&k| refs.notes[k].clone()).collect();
+        let mut ids = Vec::new();
+        super::comments::ids_in_blocks(blocks, &mut ids);
+        let mut at: Vec<usize> = ids.iter().filter_map(|c| self.comments.get(c)).flatten().copied().collect();
+        at.sort_unstable();
+        at.dedup();
+        Refs { notes, comments: at.iter().map(|&k| refs.comments[k].clone()).collect() }
+    }
 }
 
 /// Takes out the markers of comments the fragment holds only part of (its range's start, end and reference): those
@@ -454,7 +513,9 @@ fn join_deleted_marks(blocks: &mut Vec<Block>) {
                 p.inlines.extend(q.inlines);
                 (p.style, p.mark, p.list) = (q.style, q.mark, q.list);
             }
-            (Some(Block::Para(p)), b @ Block::Table(_)) if p.mark.rev.del.is_some() && para_len(p) == Unit(0) => {
+            (Some(Block::Para(p)), b @ Block::Table(_))
+                if p.mark.rev.del.is_some() && p.inlines.iter().all(|i| i.units() == 0 || i.run().is_some_and(|r| r.rev.del.is_some())) =>
+            {
                 out.pop();
                 out.push(b);
             }
@@ -524,20 +585,15 @@ impl Editor {
     /// they refer to, what they show and use from the document `f` came from, and no second bookmark of a name the
     /// document has (a copy's; a cut's or a move's goes with it) or editing permission of an id it has.
     pub(super) fn take_in(&mut self, tx: &mut super::Tx, blocks: &mut [Block], f: &Fragment, taken: &mut Taken) {
-        let imported;
-        let refs = match &f.origin {
-            Some(o) if o.key != self.key || !o.images.is_empty() => {
-                let mut refs = f.refs.clone();
-                self.import(tx, blocks, &mut refs, o, &mut taken.lists);
-                imported = refs;
-                &imported
-            }
-            _ => &f.refs,
-        };
+        // Only those these blocks refer to: a cell block pastes its cells' content piece by piece.
+        let mut refs = taken.refs.get_or_insert_with(|| RefIndex::of(&f.refs)).held(&f.refs, blocks);
+        if let Some(o) = f.origin.as_deref().filter(|o| o.key != self.key || !o.images.is_empty()) {
+            self.import(tx, blocks, &mut refs, o, &mut taken.lists);
+        }
         for (id, c) in adopt(blocks, &f.controls) {
             let _ = self.step(tx, Step::Control { id, control: Some(c) });
         }
-        self.paste_refs(tx, blocks, refs, Some(&f.controls));
+        self.paste_refs(tx, blocks, &refs, Some(&f.controls));
         self.unique_markers(blocks, f.moved, taken);
     }
 
@@ -545,7 +601,7 @@ impl Editor {
     /// paste (`taken`): a bookmark (unless `moved`) goes, a permission takes a new id.
     fn unique_markers(&self, blocks: &mut [Block], moved: bool, taken: &mut Taken) {
         let mut bookmarks = false;
-        let mut perms: Vec<i64> = Vec::new();
+        let mut perms: HashSet<i64> = HashSet::new();
         each_inline(blocks, &mut |i| match i {
             Inline::Bookmark(_) => bookmarks = true,
             Inline::Opaque(o) => perms.extend(o.permission().map(|(_, id)| id)),
@@ -556,7 +612,7 @@ impl Editor {
         }
         if !taken.read {
             taken.read = true;
-            for para in self.index.para_ids() {
+            for para in self.index.para_ids().filter(|p| !taken.replaced.contains(p)) {
                 let Some(p) = self.index.para(&self.doc, para) else { continue };
                 for i in &p.inlines {
                     match i {
@@ -569,12 +625,13 @@ impl Editor {
                 }
             }
         }
-        // New ids follow every id the document and the pieces have.
-        let next = taken.ids.iter().chain(&perms).copied().max().unwrap_or(0);
+        // New ids follow every id the document and the pieces have; past `i64::MAX`, the lowest free ones.
+        let mut next = taken.ids.iter().chain(&perms).copied().max().unwrap_or(0);
+        let mut low = 0i64;
         let (names, ids) = (&taken.names, &taken.ids);
         let mut kept: Vec<String> = Vec::new();
         let mut map: HashMap<i64, i64> = HashMap::new();
-        let mut next = next;
+        let mut given: HashSet<i64> = HashSet::new();
         each_inlines(blocks, &mut |inlines| {
             if bookmarks {
                 inlines.retain(|i| match i {
@@ -593,12 +650,23 @@ impl Editor {
                 let Inline::Opaque(o) = i else { continue };
                 let Some((_, id)) = o.permission() else { continue };
                 let to = *map.entry(id).or_insert_with(|| {
-                    if ids.contains(&id) {
-                        next += 1;
-                        next
-                    } else {
-                        id
+                    if !ids.contains(&id) {
+                        return id;
                     }
+                    let to = match next.checked_add(1) {
+                        Some(n) => {
+                            next = n;
+                            n
+                        }
+                        None => {
+                            while ids.contains(&low) || perms.contains(&low) || given.contains(&low) {
+                                low += 1;
+                            }
+                            low
+                        }
+                    };
+                    given.insert(to);
+                    to
                 });
                 if to != id
                     && let Some(x) = o.xml.0.as_deref().and_then(|x| with_perm_id(x, to))
@@ -616,10 +684,10 @@ impl Editor {
         refs_of(&self.doc, blocks)
     }
 
-    /// Brings back the notes and comments pasted content refers to: under their own ids when those are free (they were
-    /// cut), else as copies under new ids, the pasted references renumbered. The controls in their bodies take new ids
-    /// from `defs`, the definitions they came with; `None` when they are the document's already. Returns the notes'
-    /// stories.
+    /// Brings back the notes and comments pasted content refers to (`refs`, those `blocks` refer to): under their own
+    /// ids when those are free (they were cut), else as copies under new ids, the pasted references renumbered. The
+    /// controls in their bodies take new ids from `defs`, the definitions they came with; `None` when they are the
+    /// document's already. Returns the notes' stories.
     pub(super) fn paste_refs(
         &mut self,
         tx: &mut super::Tx,
@@ -629,17 +697,6 @@ impl Editor {
     ) -> Vec<super::position::StoryId> {
         use crate::docx::NoteKind;
         use crate::docx::review::{CommentId, RangeKind};
-        // Only those these blocks refer to: a cell block pastes its cells' content piece by piece.
-        let mut held = Vec::new();
-        super::notes::refs_in(blocks, &mut held);
-        let mut ids = Vec::new();
-        super::comments::ids_in_blocks(blocks, &mut ids);
-        let ids: HashSet<CommentId> = ids.into_iter().collect();
-        let refs = Refs {
-            notes: refs.notes.iter().filter(|n| held.contains(&(n.0, n.1))).cloned().collect(),
-            comments: refs.comments.iter().filter(|c| ids.contains(&c.id) || c.parent.is_some_and(|p| ids.contains(&p))).cloned().collect(),
-        };
-        let refs = &refs;
         // Every note's new id first, then the references renumbered once: renumbering one at a time would catch
         // references an earlier note was just given.
         let mut to_ids: HashMap<(NoteKind, i64), i64> = HashMap::new();
@@ -996,6 +1053,14 @@ impl Editor {
         }
         let mut middle: Vec<Block> = blocks.clone();
         if let Some(inl) = &first_inlines {
+            // The first paragraph's mark is pasted: the paragraph its text joins ends in it, so takes its properties.
+            if let Some(Block::Para(p)) = middle.first()
+                && (n > 1 || !f.open_end)
+                && self.step(&mut tx, Step::Para { para, style: p.style.clone(), mark: p.mark.clone(), list: p.list.clone() }).is_err()
+            {
+                self.abort(tx);
+                return Outcome::Unchanged("paste failed");
+            }
             middle.remove(0);
             let with = self.fit_inlines(para, inl);
             if self.step(&mut tx, Step::Text { para, range: at..at, with, edges: Default::default() }).is_err() {

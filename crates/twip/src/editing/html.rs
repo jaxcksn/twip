@@ -1,7 +1,9 @@
 //! HTML paste: paragraphs, headings, lists, tables, links and character formatting from another application's HTML
 
+use std::collections::HashMap;
+
 use crate::docx::write::props::{Cx, Props};
-use crate::docx::{Block, Inline, Paragraph};
+use crate::docx::{Block, Inline, Paragraph, VMerge};
 use crate::font::Fonts;
 
 use super::Editor;
@@ -14,6 +16,8 @@ pub(super) const MAX_HTML: usize = 8 << 20;
 const MAX_OPEN: usize = 256;
 /// The deepest table nesting kept; deeper tables read as their cells' paragraphs.
 const MAX_TABLES: usize = 8;
+/// The most table cells a paste makes, nested tables' included; more pastes as text.
+const MAX_CELLS: usize = 1 << 17;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 struct Fmt {
@@ -36,7 +40,8 @@ struct Run {
 enum Kind {
     Body,
     Heading(u8),
-    /// A list item: its list (by order of the outermost lists), numbered, and its level.
+    /// A list item: its list (by order of the lists read; a list nested in one of the other kind is a list of its
+    /// own), numbered, and its level.
     Item {
         list: usize,
         numbered: bool,
@@ -54,8 +59,28 @@ struct Para {
 #[derive(Clone, Debug, PartialEq)]
 enum HBlock {
     Para(Para),
-    /// Rows of cells, each with its column span.
-    Table(Vec<Vec<(usize, Vec<HBlock>)>>),
+    /// A table on its grid: its columns and its rows' cells.
+    Table {
+        cols: usize,
+        rows: Vec<Vec<Slot>>,
+    },
+}
+
+/// A cell as read: its column span, the rows it spans (0: to the table's end) and its content.
+#[derive(Clone, Debug, PartialEq)]
+struct HCell {
+    span: usize,
+    rows: usize,
+    blocks: Vec<HBlock>,
+}
+
+/// A cell on a table's grid: its column, span, vertical merge and content (none where a cell above spans the row).
+#[derive(Clone, Debug, PartialEq)]
+struct Slot {
+    col: usize,
+    span: usize,
+    merge: VMerge,
+    blocks: Vec<HBlock>,
 }
 
 /// An element open while reading.
@@ -69,8 +94,12 @@ struct Open {
 struct Reader {
     out: Vec<HBlock>,
     /// The tables being read, innermost last: rows, and whether a cell is open.
-    tables: Vec<(Vec<Vec<(usize, Vec<HBlock>)>>, bool)>,
+    tables: Vec<(Vec<Vec<HCell>>, bool)>,
+    /// Tables open past [`MAX_TABLES`], read as their cells' paragraphs.
+    deep: usize,
     open: Vec<Open>,
+    /// Elements open past [`MAX_OPEN`], by name: they are inside every element `open` has.
+    over: HashMap<String, usize>,
     /// The lists open: numbered, and the list they are in.
     lists: Vec<(bool, usize)>,
     next_list: usize,
@@ -128,27 +157,170 @@ fn decode(s: &str) -> String {
     out
 }
 
-/// A start tag's attribute, decoded.
+/// A start tag's attribute `name` (lower case), decoded; empty when it has no value.
 fn attr(tag: &str, name: &str) -> Option<String> {
-    let lower = tag.to_ascii_lowercase();
-    let mut from = 0;
-    while let Some(k) = lower[from..].find(name).map(|k| k + from) {
-        from = k + name.len();
-        let before = lower[..k].chars().next_back();
-        let after = lower[from..].trim_start();
-        if !before.is_some_and(char::is_whitespace) || !after.starts_with('=') {
-            continue;
+    let b = tag.as_bytes();
+    let space = |i: usize| b.get(i).is_some_and(u8::is_ascii_whitespace);
+    let mut i = b.iter().position(|c| c.is_ascii_whitespace() || *c == b'/').unwrap_or(b.len());
+    while i < b.len() {
+        let from = i;
+        while space(i) || b.get(i) == Some(&b'/') {
+            i += 1;
         }
-        let v = after[1..].trim_start();
-        let at = tag.len() - v.len();
-        let raw = &tag[at..];
-        let value = match raw.chars().next() {
-            Some(q @ ('"' | '\'')) => raw[1..].split(q).next().unwrap_or(""),
-            _ => raw.split(|c: char| c.is_whitespace() || c == '>').next().unwrap_or(""),
-        };
-        return Some(decode(value));
+        let start = i;
+        while i < b.len() && !b[i].is_ascii_whitespace() && !matches!(b[i], b'=' | b'/' | b'>') {
+            i += 1;
+        }
+        let key = &tag[start..i];
+        while space(i) {
+            i += 1;
+        }
+        let mut value = "";
+        if b.get(i) == Some(&b'=') {
+            i += 1;
+            while space(i) {
+                i += 1;
+            }
+            match b.get(i) {
+                Some(&q @ (b'"' | b'\'')) => {
+                    let s = i + 1;
+                    let e = tag[s..].find(char::from(q)).map_or(b.len(), |e| s + e);
+                    value = &tag[s..e];
+                    i = (e + 1).min(b.len());
+                }
+                _ => {
+                    let s = i;
+                    while i < b.len() && !b[i].is_ascii_whitespace() && b[i] != b'>' {
+                        i += 1;
+                    }
+                    value = &tag[s..i];
+                }
+            }
+        }
+        if !key.is_empty() && key.eq_ignore_ascii_case(name) {
+            return Some(decode(value));
+        }
+        if i == from {
+            i += 1;
+        }
     }
     None
+}
+
+/// Where the tag `rest` starts with ends: its `>`, past those in quoted attribute values (the first `>` when a quote
+/// isn't closed).
+fn tag_end(rest: &str) -> Option<usize> {
+    let mut quote = None;
+    let mut after_eq = false;
+    for (i, &c) in rest.as_bytes().iter().enumerate().skip(1) {
+        if let Some(q) = quote {
+            if c == q {
+                quote = None;
+            }
+            continue;
+        }
+        match c {
+            b'>' => return Some(i),
+            b'"' | b'\'' if after_eq => quote = Some(c),
+            _ => {}
+        }
+        if !c.is_ascii_whitespace() {
+            after_eq = c == b'=';
+        }
+    }
+    rest.find('>')
+}
+
+/// A link's address when it is one to follow: without the tabs and line breaks URL parsers drop, and with a web,
+/// mail, FTP or phone scheme, or none (a relative address).
+pub(super) fn web_address(href: &str) -> Option<String> {
+    let a: String = href.chars().filter(|c| !matches!(c, '\t' | '\n' | '\r')).collect();
+    let a = a.trim_matches(|c: char| c <= ' ');
+    if a.is_empty() {
+        return None;
+    }
+    let scheme = a
+        .split_once(':')
+        .map(|s| s.0)
+        .filter(|s| s.starts_with(|c: char| c.is_ascii_alphabetic()) && s.chars().all(|c| c.is_ascii_alphanumeric() || "+.-".contains(c)));
+    match scheme {
+        Some(s) if !["http", "https", "mailto", "ftp", "tel"].iter().any(|k| s.eq_ignore_ascii_case(k)) => None,
+        _ => Some(a.to_string()),
+    }
+}
+
+/// A table's rows placed on its grid; its cells' content in order instead when it has more rows or columns than a
+/// table can.
+fn placed(rows: Vec<Vec<HCell>>) -> Vec<HBlock> {
+    use super::tables::{MAX_COLUMNS, MAX_ROWS};
+    let rows: Vec<Vec<HCell>> = rows.into_iter().filter(|r| !r.is_empty()).collect();
+    let flat = |rows: Vec<Vec<HCell>>| rows.into_iter().flatten().flat_map(|c| c.blocks).collect();
+    if rows.len() > MAX_ROWS {
+        return flat(rows);
+    }
+    let n = rows.len();
+    // Per column: the rows below that a cell starting there still spans, and its span
+    let mut down = [(0usize, 0usize); MAX_COLUMNS];
+    let mut grid: Vec<Vec<(usize, usize, VMerge, bool)>> = Vec::with_capacity(n);
+    let mut cols = 1;
+    for (r, row) in rows.iter().enumerate() {
+        let mut line = Vec::with_capacity(row.len());
+        let mut col = 0;
+        let mut cells = row.iter();
+        while col < MAX_COLUMNS {
+            if down[col].0 > 0 {
+                let span = down[col].1;
+                down[col].0 -= 1;
+                line.push((col, span, VMerge::Continue, false));
+                col += span;
+                continue;
+            }
+            let Some(c) = cells.next() else {
+                // Past the row's last cell, only those above spanning down
+                col += 1;
+                continue;
+            };
+            if col + c.span > MAX_COLUMNS {
+                return flat(rows);
+            }
+            down[col + 1..col + c.span].fill((0, 0));
+            let below = if c.rows == 0 { n - r - 1 } else { (c.rows - 1).min(n - r - 1) };
+            down[col] = (below, c.span);
+            line.push((col, c.span, if below > 0 { VMerge::Restart } else { VMerge::None }, true));
+            col += c.span;
+        }
+        if cells.next().is_some() {
+            return flat(rows);
+        }
+        cols = line.last().map_or(cols, |&(c, s, _, _)| cols.max(c + s));
+        grid.push(line);
+    }
+    let rows = rows
+        .into_iter()
+        .zip(grid)
+        .map(|(row, line)| {
+            let mut cells = row.into_iter();
+            line.into_iter()
+                .map(|(col, span, merge, own)| Slot {
+                    col,
+                    span,
+                    merge,
+                    blocks: if own { cells.next().map(|c| c.blocks).unwrap_or_default() } else { Vec::new() },
+                })
+                .collect()
+        })
+        .collect();
+    vec![HBlock::Table { cols, rows }]
+}
+
+/// The table cells `blocks` make, nested tables' included.
+fn cells(blocks: &[HBlock]) -> usize {
+    blocks.iter().fold(0, |n, b| match b {
+        HBlock::Para(_) => n,
+        HBlock::Table { cols, rows } => {
+            rows.iter().flatten().fold(n.saturating_add(rows.len().saturating_mul(*cols)), |n, s| n.saturating_add(cells(&s.blocks)))
+        }
+    })
 }
 
 /// A CSS declaration's value in a `style` attribute, lower case.
@@ -168,7 +340,7 @@ impl Reader {
     fn target(&mut self) -> &mut Vec<HBlock> {
         match self.tables.last_mut() {
             Some((rows, true)) => match rows.last_mut().and_then(|r| r.last_mut()) {
-                Some((_, blocks)) => blocks,
+                Some(c) => &mut c.blocks,
                 None => &mut self.out,
             },
             _ => &mut self.out,
@@ -217,14 +389,19 @@ impl Reader {
         if t.is_empty() || t == " " && self.para.is_none() {
             return;
         }
+        self.append(&t);
+    }
+
+    /// `t` added to the paragraph being read, as the open elements format it.
+    fn append(&mut self, t: &str) {
         if self.para.is_none() {
             self.para = Some(Para { kind: Kind::Body, align: self.fmt().2, runs: Vec::new() });
         }
         let (fmt, link, _) = self.fmt();
         let Some(p) = self.para.as_mut() else { return };
         match p.runs.last_mut() {
-            Some(r) if r.fmt == fmt && r.link == link => r.text.push_str(&t),
-            _ => p.runs.push(Run { text: t, fmt, link }),
+            Some(r) if r.fmt == fmt && r.link == link => r.text.push_str(t),
+            _ => p.runs.push(Run { text: t.to_string(), fmt, link }),
         }
     }
 
@@ -241,7 +418,7 @@ impl Reader {
             "s" | "strike" | "del" => fmt.strike = true,
             "sup" => fmt.sup = true,
             "sub" => fmt.sub = true,
-            "a" => link = attr(tag, "href").filter(|h| !h.trim().is_empty() && !h.trim_start().to_ascii_lowercase().starts_with("javascript:")),
+            "a" => link = attr(tag, "href").as_deref().and_then(web_address),
             _ => {}
         }
         if let Some(w) = css(&style, "font-weight") {
@@ -264,7 +441,9 @@ impl Reader {
         }
         match name {
             "br" => {
-                self.text("\u{2028}");
+                if self.skip == 0 {
+                    self.append("\u{2028}");
+                }
                 self.space = true;
                 return;
             }
@@ -283,14 +462,15 @@ impl Reader {
             }
             "ul" | "ol" => {
                 self.end_para();
+                let numbered = name == "ol";
                 let list = match self.lists.last() {
-                    Some(&(_, l)) => l,
-                    None => {
+                    Some(&(n, l)) if n == numbered => l,
+                    _ => {
                         self.next_list += 1;
                         self.next_list - 1
                     }
                 };
-                self.lists.push((name == "ol", list));
+                self.lists.push((numbered, list));
             }
             "li" => {
                 let (numbered, list) = self.lists.last().copied().unwrap_or((false, usize::MAX));
@@ -301,13 +481,17 @@ impl Reader {
             }
             "table" => {
                 self.end_para();
-                if self.tables.len() < MAX_TABLES {
+                if self.deep > 0 || self.tables.len() == MAX_TABLES {
+                    self.deep += 1;
+                } else {
                     self.tables.push((Vec::new(), false));
                 }
             }
             "tr" => {
                 self.end_para();
-                if let Some((rows, open)) = self.tables.last_mut() {
+                if self.deep == 0
+                    && let Some((rows, open)) = self.tables.last_mut()
+                {
                     rows.push(Vec::new());
                     *open = false;
                 }
@@ -317,17 +501,22 @@ impl Reader {
                 if name == "th" {
                     fmt.bold = true;
                 }
-                let span = attr(tag, "colspan").and_then(|s| s.trim().parse::<usize>().ok()).unwrap_or(1).clamp(1, 63);
-                if let Some((rows, open)) = self.tables.last_mut() {
+                let number = |a: &str| attr(tag, a).and_then(|s| s.trim().parse::<usize>().ok());
+                let span = number("colspan").unwrap_or(1).clamp(1, super::tables::MAX_COLUMNS);
+                let down = number("rowspan").unwrap_or(1);
+                if self.deep == 0
+                    && let Some((rows, open)) = self.tables.last_mut()
+                {
                     if rows.is_empty() {
                         rows.push(Vec::new());
                     }
                     if let Some(r) = rows.last_mut() {
-                        r.push((span, Vec::new()));
+                        r.push(HCell { span, rows: down, blocks: Vec::new() });
                     }
                     *open = true;
                 }
             }
+            "img" | "input" | "meta" | "link" | "area" | "base" | "col" | "embed" | "param" | "source" | "track" | "wbr" => return,
             _ => {}
         }
         if name == "pre" {
@@ -339,6 +528,8 @@ impl Reader {
     fn push_open(&mut self, name: &str, fmt: Fmt, link: Option<String>, align: Option<&'static str>) {
         if self.open.len() < MAX_OPEN {
             self.open.push(Open { name: name.to_string(), fmt, link, align });
+        } else {
+            *self.over.entry(name.to_string()).or_default() += 1;
         }
     }
 
@@ -346,8 +537,14 @@ impl Reader {
         if matches!(name, "head" | "style" | "script" | "title" | "template") {
             self.skip = self.skip.saturating_sub(1);
         }
-        if let Some(k) = self.open.iter().rposition(|o| o.name == name) {
-            self.open.truncate(k);
+        match self.over.get_mut(name) {
+            Some(n) if *n > 0 => *n -= 1,
+            _ => {
+                if let Some(k) = self.open.iter().rposition(|o| o.name == name) {
+                    self.open.truncate(k);
+                    self.over.clear();
+                }
+            }
         }
         match name {
             "p" | "div" | "blockquote" | "address" | "section" | "article" | "header" | "footer" | "dt" | "dd" | "figcaption" | "li" | "h1"
@@ -362,17 +559,19 @@ impl Reader {
             }
             "td" | "th" => {
                 self.end_para();
-                if let Some((_, open)) = self.tables.last_mut() {
+                if self.deep == 0
+                    && let Some((_, open)) = self.tables.last_mut()
+                {
                     *open = false;
                 }
             }
             "table" => {
                 self.end_para();
-                if let Some((rows, _)) = self.tables.pop() {
-                    let rows: Vec<_> = rows.into_iter().filter(|r| !r.is_empty()).collect();
-                    if !rows.is_empty() {
-                        self.target().push(HBlock::Table(rows));
-                    }
+                if self.deep > 0 {
+                    self.deep -= 1;
+                } else if let Some((rows, _)) = self.tables.pop() {
+                    let blocks = placed(rows);
+                    self.target().extend(blocks);
                 }
             }
             _ => {}
@@ -387,8 +586,19 @@ fn read(html: &str) -> Vec<HBlock> {
         (Some(a), Some(b)) if a < b => &html[a + "<!--StartFragment-->".len()..b],
         _ => html,
     };
-    let mut r =
-        Reader { out: Vec::new(), tables: Vec::new(), open: Vec::new(), lists: Vec::new(), next_list: 0, para: None, space: true, pre: 0, skip: 0 };
+    let mut r = Reader {
+        out: Vec::new(),
+        tables: Vec::new(),
+        deep: 0,
+        open: Vec::new(),
+        over: HashMap::new(),
+        lists: Vec::new(),
+        next_list: 0,
+        para: None,
+        space: true,
+        pre: 0,
+        skip: 0,
+    };
     let mut rest = html;
     while !rest.is_empty() {
         let Some(k) = rest.find('<') else {
@@ -401,7 +611,7 @@ fn read(html: &str) -> Vec<HBlock> {
             rest = body.find("-->").map_or("", |e| &body[e + 3..]);
             continue;
         }
-        let Some(e) = rest.find('>') else { break };
+        let Some(e) = tag_end(rest) else { break };
         let tag = &rest[1..e];
         rest = &rest[e + 1..];
         if tag.starts_with('!') || tag.starts_with('?') {
@@ -424,10 +634,8 @@ fn read(html: &str) -> Vec<HBlock> {
     }
     r.end_para();
     while let Some((rows, _)) = r.tables.pop() {
-        let rows: Vec<_> = rows.into_iter().filter(|r| !r.is_empty()).collect();
-        if !rows.is_empty() {
-            r.target().push(HBlock::Table(rows));
-        }
+        let blocks = placed(rows);
+        r.target().extend(blocks);
     }
     r.out
 }
@@ -436,11 +644,9 @@ fn read(html: &str) -> Vec<HBlock> {
 fn lists(blocks: &[HBlock], out: &mut Vec<(usize, bool)>) {
     for b in blocks {
         match b {
-            HBlock::Para(Para { kind: Kind::Item { list, numbered, level: 0 }, .. }) if !out.iter().any(|(l, _)| l == list) => {
-                out.push((*list, *numbered))
-            }
+            HBlock::Para(Para { kind: Kind::Item { list, numbered, .. }, .. }) if !out.iter().any(|(l, _)| l == list) => out.push((*list, *numbered)),
             HBlock::Para(_) => {}
-            HBlock::Table(rows) => rows.iter().flatten().for_each(|(_, b)| lists(b, out)),
+            HBlock::Table { rows, .. } => rows.iter().flatten().for_each(|s| lists(&s.blocks, out)),
         }
     }
 }
@@ -456,6 +662,9 @@ impl Editor {
         let read = read(html);
         if read.is_empty() {
             return Outcome::Unchanged("no HTML content");
+        }
+        if cells(&read) > MAX_CELLS {
+            return Outcome::Unchanged("too many table cells");
         }
         let Some(caret) = self.selection.ordered(&self.index).map(|(a, _)| a) else { return Outcome::Unchanged("no caret") };
         let Some(template) = caret.para_offset().and_then(|(p, _)| self.index.para(&self.doc, p)).cloned() else {
@@ -474,8 +683,10 @@ impl Editor {
             }
             let Some(res) = self.doc.resolver.clone() else { break 'paste Outcome::Unchanged("no styles") };
             let cx = self.cx();
-            let blocks = self.html_blocks(&read, &res, &cx, &nums, &template, width, 0);
-            let f = Fragment { id: 0, blocks, open_end: true, ..Default::default() };
+            let blocks = self.html_blocks(&read, &res, &cx, &nums, &template, width);
+            // A last paragraph of a kind or alignment of its own is pasted with its mark; plain text joins the caret's.
+            let open_end = matches!(read.last(), Some(HBlock::Para(p)) if p.kind == Kind::Body && p.align.is_none());
+            let f = Fragment { id: 0, blocks, open_end, ..Default::default() };
             self.paste_fragment(&f, fonts)
         };
         // The new lists go with a paste that pasted nothing.
@@ -483,7 +694,6 @@ impl Editor {
         if matches!(end, Outcome::Changed(_)) { end } else { out }
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn html_blocks(
         &self,
         blocks: &[HBlock],
@@ -492,7 +702,6 @@ impl Editor {
         nums: &[(usize, i64)],
         template: &Paragraph,
         width: f64,
-        depth: usize,
     ) -> Vec<Block> {
         let w = &cx.w;
         let mut out = Vec::new();
@@ -539,7 +748,7 @@ impl Editor {
                         let run = res.run_from_xml(&para.base, rp.xml().as_deref(), cx);
                         match &r.link {
                             Some(address) => {
-                                let code = format!(" HYPERLINK \"{}\" ", address.replace('"', ""));
+                                let code = crate::docx::fields::link_code(address);
                                 inlines.extend(crate::docx::fields::field_inlines(&code, &r.text.replace('\u{2028}', " "), &run));
                             }
                             None => {
@@ -568,43 +777,38 @@ impl Editor {
                         controls: Vec::new(),
                     }));
                 }
-                HBlock::Table(rows) if depth < MAX_TABLES => {
-                    let ncols = rows.iter().map(|r| r.iter().map(|c| c.0).sum::<usize>()).max().unwrap_or(1).clamp(1, super::tables::MAX_COLUMNS);
-                    let empty = (0..rows.len().min(super::tables::MAX_ROWS)).map(|_| Vec::new()).collect();
-                    let mut t = self.new_table(empty, ncols, width, template);
+                HBlock::Table { cols, rows } => {
+                    let mut t = self.new_table(vec![Vec::new()], *cols, width, template);
                     let col = t.grid.first().copied().unwrap_or(width);
-                    for (row, cells) in t.rows.iter_mut().zip(rows) {
-                        let mut kept = Vec::new();
+                    let Some(mut like) = t.rows.pop() else { continue };
+                    let Some(blank) = like.cells.first().cloned() else { continue };
+                    like.cells.clear();
+                    t.rows.reserve(rows.len());
+                    for slots in rows {
+                        let mut row = like.clone();
+                        row.cells.reserve(*cols);
                         let mut at = 0;
-                        for (span, content) in cells {
-                            if at >= ncols {
-                                break;
-                            }
-                            let span = (*span).min(ncols - at);
-                            let Some(mut cell) = row.cells.first().cloned() else { break };
-                            cell.span = span;
-                            cell.width = Some(crate::docx::props::Width::Dxa(col * span as f64));
-                            let blocks = self.html_blocks(content, res, cx, nums, template, col * span as f64, depth + 1);
+                        for s in slots {
+                            row.cells.extend((at..s.col).map(|_| blank.clone()));
+                            let mut cell = blank.clone();
+                            cell.span = s.span;
+                            cell.v_merge = s.merge;
+                            cell.width = Some(crate::docx::props::Width::Dxa(col * s.span as f64));
+                            let blocks = self.html_blocks(&s.blocks, res, cx, nums, template, col * s.span as f64);
                             if !blocks.is_empty() {
-                                cell.blocks = blocks;
+                                let end = std::mem::replace(&mut cell.blocks, blocks);
+                                // A cell ends in a paragraph
+                                if matches!(cell.blocks.last(), Some(Block::Table(_))) {
+                                    cell.blocks.extend(end);
+                                }
                             }
-                            kept.push(cell);
-                            at += span;
+                            row.cells.push(cell);
+                            at = s.col + s.span;
                         }
-                        while at < ncols {
-                            if let Some(c) = row.cells.first().cloned() {
-                                kept.push(c);
-                            }
-                            at += 1;
-                        }
-                        row.cells = kept;
+                        row.cells.extend((at..*cols).map(|_| blank.clone()));
+                        t.rows.push(row);
                     }
                     out.push(Block::Table(t));
-                }
-                HBlock::Table(rows) => {
-                    for (_, content) in rows.iter().flatten() {
-                        out.extend(self.html_blocks(content, res, cx, nums, template, width, depth));
-                    }
                 }
             }
         }
@@ -628,8 +832,8 @@ mod tests {
         );
         assert!(matches!(&b[2], HBlock::Para(Para { kind: Kind::Item { level: 0, numbered: false, .. }, .. })));
         assert!(matches!(&b[4], HBlock::Para(Para { kind: Kind::Item { level: 1, numbered: true, .. }, .. })), "{b:?}");
-        let HBlock::Table(rows) = &b[5] else { panic!("{b:?}") };
-        assert_eq!(rows[0].iter().map(|c| c.0).collect::<Vec<_>>(), [1, 2]);
+        let HBlock::Table { rows, .. } = &b[5] else { panic!("{b:?}") };
+        assert_eq!(rows[0].iter().map(|c| c.span).collect::<Vec<_>>(), [1, 2]);
     }
 
     #[test]
@@ -638,5 +842,158 @@ mod tests {
         let HBlock::Para(p) = &b[0] else { panic!("{b:?}") };
         assert_eq!(p.runs[0].text, "a&b AB &bogus; x");
         assert_eq!(b.len(), 1);
+    }
+
+    /// Each paragraph's text, table cells' in order, with the depth of tables it is in.
+    fn paras(blocks: &[HBlock], depth: usize, out: &mut Vec<(usize, String)>) {
+        for b in blocks {
+            match b {
+                HBlock::Para(p) => out.push((depth, p.runs.iter().map(|r| r.text.as_str()).collect())),
+                HBlock::Table { rows, .. } => rows.iter().flatten().for_each(|s| paras(&s.blocks, depth + 1, out)),
+            }
+        }
+    }
+
+    fn all(html: &str) -> Vec<(usize, String)> {
+        let mut out = Vec::new();
+        paras(&read(html), 0, &mut out);
+        out
+    }
+
+    fn link(html: &str) -> Option<String> {
+        let b = read(html);
+        let HBlock::Para(p) = &b[0] else { panic!("{b:?}") };
+        p.runs.iter().find_map(|r| r.link.clone())
+    }
+
+    #[test]
+    fn a_table_past_the_deepest_nesting_reads_as_its_cells_paragraphs() {
+        let open = "<table><tr><td>".repeat(MAX_TABLES);
+        let close = "</td></tr></table>".repeat(MAX_TABLES);
+        let html = format!("{open}<table><tr><td>x</td></tr><tr><td>y</td></tr></table><p>after</p>{close}<p>out</p>");
+        let got = all(&html);
+        assert_eq!(
+            got,
+            [(MAX_TABLES, "x".to_string()), (MAX_TABLES, "y".into()), (MAX_TABLES, "after".into()), (0, "out".into())],
+            "the deeper table's cells go in its parent's cell, which stays open"
+        );
+        let mut t = &read(&html)[0];
+        for _ in 1..MAX_TABLES {
+            let HBlock::Table { rows, .. } = t else { panic!("{t:?}") };
+            t = &rows[0][0].blocks[0];
+        }
+        let HBlock::Table { rows, .. } = t else { panic!("{t:?}") };
+        assert_eq!(rows.len(), 1, "the deepest table kept has its own one row");
+    }
+
+    #[test]
+    fn an_element_past_the_most_open_closes_itself_only() {
+        let html = format!("<p>{}<b><b>x</b>y</b>z</p>", "<span>".repeat(MAX_OPEN - 2));
+        let b = read(&html);
+        let HBlock::Para(p) = &b[0] else { panic!("{b:?}") };
+        let runs: Vec<(&str, bool)> = p.runs.iter().map(|r| (r.text.as_str(), r.fmt.bold)).collect();
+        assert_eq!(runs, [("xy", true), ("z", false)], "the inner end closes the inner element");
+    }
+
+    #[test]
+    fn cells_below_a_row_spanning_cell_keep_their_columns() {
+        let b = read("<table><tr><td rowspan=2>A</td><td>B</td></tr><tr><td>C</td></tr></table>");
+        let HBlock::Table { cols, rows } = &b[0] else { panic!("{b:?}") };
+        assert_eq!(*cols, 2);
+        let at = |r: usize| rows[r].iter().map(|s| (s.col, s.merge)).collect::<Vec<_>>();
+        assert_eq!(at(0), [(0, VMerge::Restart), (1, VMerge::None)]);
+        assert_eq!(at(1), [(0, VMerge::Continue), (1, VMerge::None)], "C is in the second column");
+        assert_eq!(all("<table><tr><td rowspan=2>A</td><td>B</td></tr><tr><td>C</td></tr></table>").len(), 3);
+    }
+
+    #[test]
+    fn a_table_wider_than_a_table_can_be_reads_as_its_cells_paragraphs() {
+        let cells: String = (0..64).map(|k| format!("<td>c{k}</td>")).collect();
+        let got = all(&format!("<table><tr>{cells}</tr></table>"));
+        assert_eq!(got.len(), 64, "no cell is dropped");
+        assert!(got.iter().all(|(d, _)| *d == 0) && got[63].1 == "c63", "{got:?}");
+    }
+
+    #[test]
+    fn links_to_follow_keep_their_address_and_others_go() {
+        assert_eq!(link("<a href=\"https://x.test/a\">l</a>").as_deref(), Some("https://x.test/a"));
+        assert_eq!(link("<a href=\"page.html#top\">l</a>").as_deref(), Some("page.html#top"));
+        for bad in ["java&#9;script:alert(1)", "javascript:alert(1)", " JavaScript:x", "data:text/html,x", "vbscript:x", "java\nscript:x"] {
+            assert_eq!(link(&format!("<a href=\"{bad}\">l</a>")), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn a_quoted_attribute_holds_its_greater_than_sign() {
+        let b = read("<p><a title=\" href=javascript:x\" href=\"a>b\">Link</a></p>");
+        let HBlock::Para(p) = &b[0] else { panic!("{b:?}") };
+        assert_eq!(p.runs.iter().map(|r| (r.text.as_str(), r.link.as_deref())).collect::<Vec<_>>(), [("Link", Some("a>b"))]);
+    }
+
+    #[test]
+    fn a_line_break_stays_a_line_break() {
+        let b = read("<p>A<br>B <br/> C</p>");
+        let HBlock::Para(p) = &b[0] else { panic!("{b:?}") };
+        assert_eq!(p.runs[0].text, "A\u{2028}B \u{2028}C");
+    }
+
+    #[test]
+    fn a_list_in_a_list_of_the_other_kind_is_a_list_of_its_own() {
+        let b = read("<ul><li>a<ol><li>one</li></ol></li><li>b<ul><li>deep</li></ul></li></ul>");
+        let kinds: Vec<(usize, bool, u8)> = b
+            .iter()
+            .filter_map(|x| {
+                if let HBlock::Para(Para { kind: Kind::Item { list, numbered, level }, .. }) = x { Some((*list, *numbered, *level)) } else { None }
+            })
+            .collect();
+        assert_eq!(kinds, [(0, false, 0), (1, true, 1), (0, false, 0), (0, false, 1)]);
+        let mut used = Vec::new();
+        lists(&b, &mut used);
+        assert_eq!(used, [(0, false), (1, true)]);
+    }
+
+    fn editor() -> Editor {
+        Editor::open(&crate::editing::tests::blank_with(""), crate::editing::tests::fonts()).expect("opens")
+    }
+
+    fn body(e: &Editor) -> &[Block] {
+        &e.document().sections[0].blocks
+    }
+
+    #[test]
+    fn a_cell_holding_only_a_table_ends_in_a_paragraph() {
+        let mut e = editor();
+        let out = e.paste_html("<table><tr><td><table><tr><td>in</td></tr></table></td></tr></table>", crate::editing::tests::fonts());
+        assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
+        let Some(Block::Table(t)) = body(&e).iter().find(|b| matches!(b, Block::Table(_))) else { panic!("a table") };
+        assert!(matches!(t.rows[0].cells[0].blocks.as_slice(), [Block::Table(_), Block::Para(_)]), "{:?}", t.rows[0].cells[0].blocks);
+        let v = super::super::integrity::check(e.document(), e.index(), &e.selection());
+        assert!(v.is_empty(), "{:?}", v.iter().map(|v| v.detail.clone()).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn a_paste_making_too_many_cells_pastes_as_text() {
+        let mut e = editor();
+        let wide: String = (0..63).map(|_| "<td>w</td>").collect();
+        let html = format!("<table><tr>{wide}</tr>{}</table>", "<tr><td>t</td></tr>".repeat(MAX_CELLS / 63));
+        assert!(matches!(e.paste_html(&html, crate::editing::tests::fonts()), Outcome::Unchanged("too many table cells")));
+        assert_eq!(body(&e).len(), 1, "the document is as it was");
+    }
+
+    #[test]
+    fn a_link_address_reads_back_from_its_field() {
+        let mut e = editor();
+        e.paste_html(r#"<p><a href="https://x.test/a\b&quot;c">l</a></p>"#, crate::editing::tests::fonts());
+        let code = body(&e)
+            .iter()
+            .find_map(|b| {
+                if let Block::Para(p) = b {
+                    crate::docx::fields::spans(&p.inlines).first().map(|s| crate::docx::fields::code_text(&p.inlines, *s))
+                } else {
+                    None
+                }
+            })
+            .expect("a field");
+        assert_eq!(crate::docx::fields::parse(&code).args.first().map(String::as_str), Some(r#"https://x.test/a\b"c"#));
     }
 }

@@ -204,7 +204,7 @@ fn a_cut_and_pasted_row_keeps_its_note_and_comment() {
     e.execute(Command::Paste(Default::default()), fonts());
     assert_eq!(table_of(&e).rows.len(), 3);
     let (n, c) = refs(&e);
-    assert_eq!(n.len(), 1);
+    assert_eq!((n.len(), c.len()), (1, 1));
     let d = e.document();
     assert!(n.iter().all(|id| d.footnotes.contains_key(id)), "the note's body is back: {n:?}");
     assert!(c.iter().all(|id| d.comments.by_id.contains_key(&crate::docx::review::CommentId(*id))), "the comment is back: {c:?}");
@@ -239,7 +239,7 @@ fn a_row_pasted_in_another_document_brings_its_note() {
     b.paste_fragment(&frag, fonts());
     assert_eq!(table_of(&b).rows.len(), 3);
     let (n, c) = refs(&b);
-    assert_eq!(n.len(), 1);
+    assert_eq!((n.len(), c.len()), (1, 1));
     let d = b.document();
     assert!(n.iter().all(|id| d.footnotes.contains_key(id)), "the pasted note has a body: {n:?}");
     assert!(c.iter().all(|id| d.comments.by_id.contains_key(&crate::docx::review::CommentId(*id))), "and the comment is there");
@@ -398,24 +398,94 @@ fn a_cut_and_pasted_note_keeps_the_content_control_in_it() {
     assert_eq!(tagged(&saved(&e)), 1, "which saves");
 }
 
-/// A blank document with `style` added to its styles and `body` for its body.
-fn with_style(style: &str, body: &str) -> Vec<u8> {
+/// The package `src` with each XML part as `f` (given its name) makes it.
+fn edited(src: &[u8], f: impl Fn(&str, String) -> String) -> Vec<u8> {
     use std::io::{Read, Write};
-    let src = blank_body(body);
     let mut z = zip::ZipArchive::new(std::io::Cursor::new(src)).unwrap();
     let mut out = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
     for i in 0..z.len() {
-        let mut f = z.by_index(i).unwrap();
-        let name = f.name().unwrap().to_string();
+        let mut part = z.by_index(i).unwrap();
+        let name = part.name().unwrap().to_string();
         let mut data = Vec::new();
-        f.read_to_end(&mut data).unwrap();
-        if name == "word/styles.xml" {
-            data = String::from_utf8(data).unwrap().replacen("</w:styles>", &format!("{style}</w:styles>"), 1).into_bytes();
+        part.read_to_end(&mut data).unwrap();
+        if name.ends_with(".xml") {
+            data = f(&name, String::from_utf8(data).unwrap()).into_bytes();
         }
         out.start_file(name, zip::write::SimpleFileOptions::default()).unwrap();
         out.write_all(&data).unwrap();
     }
     out.finish().unwrap().into_inner()
+}
+
+/// A blank document with `style` added to its styles and `body` for its body.
+fn with_style(style: &str, body: &str) -> Vec<u8> {
+    edited(&blank_body(body), |name, x| if name == "word/styles.xml" { x.replacen("</w:styles>", &format!("{style}</w:styles>"), 1) } else { x })
+}
+
+const W_NS: &str = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+
+/// "plain", "Styled" in style Callout, then "after", copied whole from a document with `style` for Callout and its
+/// styles part's root also declaring `ns`, then pasted at the start of another's "Target".
+fn paste_callout(style: &str, ns: &str) -> Editor {
+    let body = format!(r#"<w:p>{}</w:p><w:p><w:pPr><w:pStyle w:val="Callout"/></w:pPr>{}</w:p><w:p>{}</w:p>"#, t("plain"), t("Styled"), t("after"));
+    let src = edited(
+        &with_style(style, &body),
+        |name, x| if name == "word/styles.xml" { x.replacen("<w:styles ", &format!("<w:styles {ns} "), 1) } else { x },
+    );
+    let mut a = Editor::open(&src, fonts()).unwrap();
+    assert!(a.document().resolver.as_ref().is_some_and(|r| r.styles.get("Callout").is_some()), "the source has the style");
+    select(&mut a, (0, 0), (2, 0));
+    let frag = a.copy().expect("copies");
+    let mut b = ed(&format!("<w:p>{}</w:p>", t("Target")));
+    caret(&mut b, (0, 0));
+    b.paste_fragment(&frag, fonts());
+    b
+}
+
+#[test]
+fn a_style_written_under_its_parts_own_prefix_comes_with_a_paste() {
+    let style = r#"<s:style s:type="paragraph" s:customStyle="1" s:styleId="Callout"><s:name s:val="Callout"/><s:pPr><s:jc s:val="center"/></s:pPr></s:style>"#;
+    let b = paste_callout(style, &format!("xmlns:s=\"{W_NS}\""));
+    assert!(b.document().resolver.as_ref().is_some_and(|r| r.styles.get("Callout").is_some()), "the style came with it");
+    let again = saved(&b);
+    let p = &paras(&again)[1];
+    assert_eq!((p.style.style_id.as_deref(), p.style.jc), (Some("Callout"), crate::docx::props::Jc::Center), "and saves");
+}
+
+#[test]
+fn a_pasted_default_style_is_not_the_default_here() {
+    let style = r#"<w:style w:type="paragraph" w:default="1" w:customStyle="1" w:styleId="Callout"><w:name w:val="Callout"/><w:pPr><w:jc w:val="center"/></w:pPr></w:style>"#;
+    let b = paste_callout(style, "");
+    let res = b.document().resolver.clone().expect("styles");
+    assert!(res.styles.get("Callout").is_some(), "the style came");
+    assert_eq!(res.styles.default_paragraph.as_deref(), Some("Normal"), "this document's default stays");
+    assert_eq!(paras(&b)[1].style.style_id.as_deref(), Some("Callout"));
+}
+
+#[test]
+fn a_list_from_a_document_writing_its_own_prefix_comes_with_a_paste() {
+    let mut a = Editor::open(&blank_with("One\nTwo\nafter"), fonts()).unwrap();
+    select(&mut a, (0, 0), (1, 3));
+    a.execute(Command::SetList(Some(crate::api::command::ListKind::Numbered)), fonts());
+    let saved = crate::docx::write::save(a.document()).expect("saves");
+    let src = edited(&saved, |name, x| {
+        if name == "word/document.xml" {
+            x.replace("<w:", "<v:").replace("</w:", "</v:").replace(" w:", " v:").replace("xmlns:w=", "xmlns:v=")
+        } else {
+            x
+        }
+    });
+    let mut a = Editor::open(&src, fonts()).unwrap();
+    assert!(paras(&a)[1].style.num.is_some(), "the source reads its list");
+    select(&mut a, (0, 0), (2, 0));
+    let frag = a.copy().expect("copies");
+    let mut b = ed(&format!("<w:p>{}</w:p>", t("Target")));
+    caret(&mut b, (0, 0));
+    b.paste_fragment(&frag, fonts());
+    let nums: Vec<i64> = b.document().resolver.as_ref().map(|r| r.numbering.nums.keys().copied().collect()).unwrap_or_default();
+    assert_eq!(nums.len(), 1, "the list's definition came: {nums:?}");
+    let direct = paras(&b)[1].style.direct.0.as_deref().unwrap_or_default().to_string();
+    assert!(direct.contains(&format!("numId v:val=\"{}\"", nums[0])), "the pasted paragraph is in it: {direct}");
 }
 
 #[test]
@@ -512,4 +582,85 @@ fn a_control_filled_from_a_docx_shows_its_pictures() {
     assert!(b.document().images.get(shown[0]).is_some_and(|d| !d.is_empty()), "with its image: {shown:?} of {}", b.document().images.len());
     let again = saved(&b);
     assert!(paras(&again).iter().any(|p| p.inlines.iter().any(|i| matches!(i, Inline::Picture(p, _) if p.image.is_some()))), "and saves");
+}
+
+/// A table of `rows` rows of `cols` cells, the first holding `first` (body XML runs), the rest "x".
+fn table_xml(rows: usize, cols: usize, first: &str) -> String {
+    let grid: String = (0..cols).map(|_| "<w:gridCol w:w=\"144\"/>").collect();
+    let cell = |inner: &str| format!("<w:tc><w:tcPr><w:tcW w:w=\"144\" w:type=\"dxa\"/></w:tcPr><w:p>{inner}</w:p></w:tc>");
+    let body: String = (0..rows)
+        .map(|r| format!("<w:tr>{}</w:tr>", (0..cols).map(|c| cell(if r + c == 0 { first } else { "<w:r><w:t>x</w:t></w:r>" })).collect::<String>()))
+        .collect();
+    format!("<w:tbl><w:tblPr><w:tblW w:w=\"0\" w:type=\"auto\"/></w:tblPr><w:tblGrid>{grid}</w:tblGrid>{body}</w:tbl><w:p/>")
+}
+
+#[test]
+fn cells_pasted_over_the_cell_holding_a_bookmark_keep_it() {
+    let bm = format!(r#"<w:bookmarkStart w:id="1" w:name="Target"/>{}<w:bookmarkEnd w:id="1"/>"#, t("here"));
+    let mut e = ed(&table_xml(1, 2, &bm));
+    rect(&mut e, 0, 0, 0, 0, CellShape::Rect);
+    let f = e.copy().expect("copies");
+    rect(&mut e, 0, 0, 0, 1, CellShape::Rect);
+    e.paste_fragment(&f, fonts());
+    let names: Vec<String> = e.bookmarks().into_iter().map(|b| b.name).collect();
+    assert_eq!(names, ["Target"], "the replaced cell's bookmark is the pasted one, once");
+}
+
+#[test]
+fn a_pasted_permission_past_the_highest_id_takes_a_free_one() {
+    let perm = |id: i64, inner: &str| format!(r#"<w:permStart w:id="{id}" w:edGrp="everyone"/>{inner}<w:permEnd w:id="{id}"/>"#);
+    let mut e = ed(&format!("<w:p>{}</w:p><w:p>{}</w:p><w:p>{}</w:p>", perm(i64::MAX, &t("max")), perm(7, &t("open")), t("dest")));
+    select(&mut e, (1, 0), (1, 4));
+    let f = e.copy().expect("copies");
+    caret(&mut e, (2, 0));
+    e.paste_fragment(&f, fonts());
+    let ids: Vec<i64> = paras(&e)
+        .iter()
+        .flat_map(|p| p.inlines.iter())
+        .filter_map(|i| if let Inline::Opaque(o) = i { o.permission() } else { None })
+        .map(|p| p.1)
+        .collect();
+    assert_eq!(ids.len(), 6, "{ids:?}");
+    assert!(ids.iter().all(|&id| id >= 0), "{ids:?}");
+    let mut u = ids.clone();
+    u.sort_unstable();
+    u.dedup();
+    assert_eq!(u.len(), 3, "the pasted pair has an id of its own: {ids:?}");
+}
+
+#[test]
+fn a_copy_drops_a_paragraph_of_deleted_text_before_a_table() {
+    let d = r#"w:id="1" w:author="a" w:date="2020-01-01T00:00:00Z""#;
+    let p = format!(r#"<w:p><w:pPr><w:rPr><w:del {d}/></w:rPr></w:pPr><w:del {d}><w:r><w:delText>gone</w:delText></w:r></w:del></w:p>"#);
+    let e = ed(&format!("{p}{}", table_xml(1, 1, &t("cell"))));
+    let blocks = e.document().sections[0].blocks[..2].to_vec();
+    let f = crate::editing::clipboard::Fragment { blocks, ..Default::default() }.accepted();
+    assert!(matches!(f.blocks.as_slice(), [Block::Table(_)]), "{:?}", f.blocks);
+}
+
+#[test]
+fn a_cell_block_pasted_from_another_document_takes_each_cells_note_once() {
+    let (rows, cols) = (64, 63);
+    let mut a = ed(&table_xml(rows, cols, &t("x")));
+    rect(&mut a, 0, 0, rows - 1, cols - 1, CellShape::Rect);
+    let mut f = a.copy().expect("copies");
+    let Some(Block::Table(src)) = f.blocks.first_mut() else { panic!("a table") };
+    let mut id = 0;
+    for cell in src.rows.iter_mut().flat_map(|r| r.cells.iter_mut()) {
+        let Some(Block::Para(p)) = cell.blocks.first_mut() else { panic!("a paragraph") };
+        id += 1;
+        let run = p.mark.clone();
+        p.inlines.push(Inline::NoteRef { kind: crate::docx::NoteKind::Foot, id, custom: false, run });
+        let body = vec![Block::Para(p.clone())];
+        f.refs.notes.push((crate::docx::NoteKind::Foot, id, body));
+    }
+    let mut b = ed(&table_xml(rows, cols, &t("y")));
+    rect(&mut b, 0, 0, rows - 1, cols - 1, CellShape::Rect);
+    let start = std::time::Instant::now();
+    b.paste_fragment(&f, fonts());
+    let took = start.elapsed();
+    let (n, _) = refs(&b);
+    assert_eq!(n.len(), rows * cols, "one reference a cell");
+    assert_eq!(b.document().footnotes.len(), rows * cols, "one note each");
+    assert!(took < std::time::Duration::from_secs(5), "pasted in {took:?}");
 }

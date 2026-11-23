@@ -261,6 +261,25 @@ fn a_group_keeps_its_own_content_and_lets_nested_controls_change() {
 }
 
 #[test]
+fn formatting_a_whole_group_is_refused_and_inside_its_controls_applies() {
+    let fill = format!(r#"<w:sdt><w:sdtPr><w:id w:val="7"/><w:richText/></w:sdtPr><w:sdtContent>{}</w:sdtContent></w:sdt>"#, run("fill"));
+    let group = format!(
+        r#"<w:sdt><w:sdtPr><w:id w:val="6"/><w:group/></w:sdtPr><w:sdtContent><w:p>{}{fill}{}</w:p></w:sdtContent></w:sdt><w:p>{}</w:p>"#,
+        run("Dear "),
+        run(" end"),
+        run("after")
+    );
+    let bold = |e: &Editor| matches!(e.document().sections[0].blocks.first(), Some(crate::docx::Block::Para(p)) if p.inlines.iter().any(|i| i.run().is_some_and(|r| r.bold)));
+    let mut e = Editor::open(&blank_body(&group), fonts()).expect("opens");
+    e.execute(Command::SelectAll, fonts());
+    let out = e.execute(Command::SetBold(true), fonts());
+    assert!(refused(&out) && !bold(&e), "{out:?}");
+    select(&mut e, 0, 6, 8);
+    let out = e.execute(Command::SetBold(true), fonts());
+    assert!(matches!(out, Outcome::Changed(_)) && bold(&e), "{out:?}");
+}
+
+#[test]
 fn a_range_between_two_controls_in_a_group_is_refused() {
     let control =
         |id: u32, t: &str| format!(r#"<w:sdt><w:sdtPr><w:id w:val="{id}"/><w:richText/></w:sdtPr><w:sdtContent>{}</w:sdtContent></w:sdt>"#, run(t));

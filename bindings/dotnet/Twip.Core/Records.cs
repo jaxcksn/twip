@@ -302,7 +302,7 @@ public sealed record RichParagraph(IReadOnlyList<RichRun> Runs);
 /// <param name="Italic">Italic.</param>
 /// <param name="Underline">Underlined.</param>
 /// <param name="Strikethrough">Struck through.</param>
-/// <param name="Link">A hyperlink address.</param>
+/// <param name="Link">A hyperlink address: a web, mail, FTP or phone one, or a relative one. The run of any other is plain text.</param>
 public sealed record RichRun(
     string Text,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Bold = null,

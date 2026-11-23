@@ -338,6 +338,21 @@ fn pasting_rows_inside_a_vertical_merge_splits_it() {
 }
 
 #[test]
+fn rows_holding_a_merge_pasted_inside_another_keep_the_merges_apart() {
+    let mut e = chained();
+    cells(&mut e, CellShape::Rows, (0, 0), (1, 1));
+    let f = e.copy_cells(1).expect("copies");
+    caret_in(&mut e, 1, 0);
+    e.paste_cells(&f, fonts());
+    let t = table(&e);
+    let below = 1 + t.rows.len() - 4;
+    assert!(below > 2, "the merge's rows are pasted: {:?}", merges(t));
+    assert!(chains_hold(t), "{:?}", merges(t));
+    assert_eq!(merges(t)[1][0], VMerge::Restart, "{:?}", merges(t));
+    assert_eq!(merges(t)[below][0], VMerge::Restart, "the merged cell's part below starts again: {:?}", merges(t));
+}
+
+#[test]
 fn merge_over_a_gap_row_leaves_unselected_cells_alone() {
     let rows = [
         tr("<w:gridAfter w:val=\"2\"/>", &[tc("A", ""), tc("B", "")]),

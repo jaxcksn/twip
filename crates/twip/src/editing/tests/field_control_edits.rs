@@ -88,6 +88,38 @@ fn a_checked_box_given_a_new_checked_symbol_stays_checked() {
 }
 
 #[test]
+fn an_argument_holding_a_nested_field_is_not_rewritten() {
+    let instr = |s: &str| format!(r#"<w:r><w:instrText xml:space="preserve">{s}</w:instrText></w:r>"#);
+    let fld = |kind: &str| format!(r#"<w:r><w:fldChar w:fldCharType="{kind}"/></w:r>"#);
+    let nested = format!("{}{}{}{}{}", fld("begin"), instr(" PAGE "), fld("separate"), t("1"), fld("end"));
+    let f = format!("{}{}{nested}{}{}{}{}", fld("begin"), instr(" REF \"ab"), instr("cd\" "), fld("separate"), t("v"), fld("end"));
+    let mut e = ed(&format!("<w:p>{f}</w:p>"));
+    let before = inlines(&e, 0);
+    let id = before.iter().find_map(|i| if let Inline::FieldBegin { id, .. } = i { Some(*id) } else { None }).expect("a field");
+    let mut tx = e.begin("Rename");
+    assert!(!e.set_code_arg(&mut tx, id, |_| Some(0), "\"x\""), "the argument spans the nested field");
+    e.abort(tx);
+    assert_eq!(inlines(&e, 0), before);
+}
+
+#[test]
+fn a_box_whose_symbols_are_one_keeps_its_state_given_a_new_symbol() {
+    let w14 = "http://schemas.microsoft.com/office/word/2010/wordml";
+    let sdt = format!(
+        r#"<w:p><w:sdt><w:sdtPr><w:alias w:val="B"/><w:id w:val="3"/><w14:checkbox xmlns:w14="{w14}"><w14:checked w14:val="0"/><w14:checkedState w14:val="2610" w14:font="MS Gothic"/><w14:uncheckedState w14:val="2610" w14:font="MS Gothic"/></w14:checkbox></w:sdtPr><w:sdtContent><w:r><w:rPr><w:rFonts w:ascii="MS Gothic" w:hAnsi="MS Gothic"/></w:rPr><w:t>&#x2610;</w:t></w:r></w:sdtContent></w:sdt></w:p>"#
+    );
+    let mut e = ed(&sdt);
+    let c = *e.document().controls.iter().find(|(_, k)| k.props.alias.as_deref() == Some("B")).map(|(k, _)| k).expect("the box");
+    let xml = |e: &Editor| e.document().controls[&c].props.kind_xml.clone().unwrap_or_default();
+    assert!(xml(&e).contains(r#"w14:checked w14:val="0""#), "{}", xml(&e));
+    let id = crate::editing::elements::id_str(crate::docx::ElementId::Control(c));
+    let set = serde_json::json!({ "id": id, "options": { "uncheckedSymbol": { "font": "Segoe UI Symbol", "character": "\u{2610}" } } });
+    let out = e.execute(Command::SetControl(serde_json::from_value(set).unwrap()), fonts());
+    assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
+    assert!(xml(&e).contains(r#"w14:checked w14:val="0""#), "still unchecked: {}", xml(&e));
+}
+
+#[test]
 fn wrapping_blocks_nests_the_new_control_inside_what_they_share() {
     let x = format!(r#"<w:sdt><w:sdtPr><w:id w:val="9"/><w:richText/></w:sdtPr><w:sdtContent><w:p>{}</w:p></w:sdtContent></w:sdt>"#, t("one"));
     let mut e = ed(&format!("{x}<w:p>{}</w:p>", t("two")));
@@ -154,4 +186,23 @@ fn replacing_in_codes_finds_text_across_runs() {
         .filter_map(|i| if let Inline::Text(s, r) = i { Some((s.as_str(), r.bold)) } else { None })
         .collect();
     assert_eq!(code, [("MERGEFIELD Given", false), ("Name", true)], "each run keeps its formatting");
+}
+
+#[test]
+fn replacing_in_a_code_of_many_runs_is_linear() {
+    let n = 20_000;
+    let runs: String =
+        (0..n).map(|k| format!("<w:r>{}<w:instrText>x</w:instrText></w:r>", if k % 2 == 0 { "<w:rPr><w:b/></w:rPr>" } else { "" })).collect();
+    let f = format!(
+        r#"<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve">SET </w:instrText></w:r>{runs}<w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>v</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>"#
+    );
+    let mut e = ed(&format!("<w:p>{f}</w:p>"));
+    let r: crate::api::command::ReplaceInElements = serde_json::from_value(serde_json::json!({"find": "x", "replace": "y", "in": "code"})).unwrap();
+    let start = std::time::Instant::now();
+    let out = e.execute(Command::ReplaceInElements(r), fonts());
+    let took = start.elapsed();
+    assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
+    let ys = inlines(&e, 0).iter().filter(|i| matches!(i, Inline::Text(s, _) if s == "y")).count();
+    assert_eq!(ys, n, "every run's match is replaced");
+    assert!(took < std::time::Duration::from_secs(5), "replaced in {took:?}");
 }

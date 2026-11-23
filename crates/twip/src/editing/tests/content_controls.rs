@@ -315,3 +315,35 @@ fn setting_a_drop_downs_entries_replaces_them() {
     let x = again.document().controls[&by_alias(&again, "C")].props.kind_xml.clone().unwrap_or_default();
     assert!(x.contains(r#"w:displayText="One""#), "saved: {x}");
 }
+
+#[test]
+fn wrapping_rows_across_a_row_controls_boundary_is_refused() {
+    let cell = "<w:tc><w:tcPr><w:tcW w:w=\"2000\" w:type=\"dxa\"/></w:tcPr><w:p><w:r><w:t>c</w:t></w:r></w:p></w:tc>";
+    let row = format!("<w:tr>{cell}</w:tr>");
+    let body = format!(
+        r#"<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:sdt><w:sdtPr><w:alias w:val="R"/><w:id w:val="9"/><w:richText/></w:sdtPr><w:sdtContent>{row}{row}</w:sdtContent></w:sdt>{row}</w:tbl><w:p/>"#
+    );
+    let mut e = Editor::open(&blank_body(&body), fonts()).expect("opens");
+    let r = by_alias(&e, "R");
+    let rows = |e: &Editor| {
+        e.document().sections[0]
+            .blocks
+            .iter()
+            .find_map(|b| if let Block::Table(t) = b { Some(t.rows.iter().map(|r| r.controls.clone()).collect::<Vec<_>>()) } else { None })
+    };
+    assert_eq!(rows(&e), Some(vec![vec![r], vec![r], vec![]]));
+    let table = e.index().table_ids().next().expect("a table");
+    let cells = |r0: usize, r1: usize| Selection::Cells {
+        table,
+        anchor: super::super::selection::CellRef { row: r0, col: 0 },
+        focus: super::super::selection::CellRef { row: r1, col: 0 },
+        shape: super::super::selection::CellShape::Rows,
+    };
+    e.selection = cells(1, 2);
+    assert!(refused(&cmd(&mut e, json!({ "type": "insertControl", "kind": "richText", "wrapSelection": true }))));
+    assert_eq!(rows(&e), Some(vec![vec![r], vec![r], vec![]]), "nothing changed");
+    e.selection = cells(0, 1);
+    ok(&cmd(&mut e, json!({ "type": "insertControl", "kind": "richText", "wrapSelection": true })));
+    let rs = rows(&e).expect("a table");
+    assert!(rs[0].len() == 2 && rs[0][0] == r && rs[0] == rs[1], "the new control nests inside the one both rows are in: {rs:?}");
+}

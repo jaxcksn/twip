@@ -72,13 +72,15 @@ impl RichText {
                             rp.set(name, xml);
                         }
                     }
-                    if r.link.is_some() && res.styles.by_id.contains_key("Hyperlink") {
+                    // A link to follow; any other address shows as text.
+                    let link = r.link.as_deref().and_then(crate::editing::html::web_address);
+                    if link.is_some() && res.styles.by_id.contains_key("Hyperlink") {
                         rp.set("rStyle", format!("<{w}rStyle {w}val=\"Hyperlink\"/>"));
                     }
                     let run = res.run_from_xml(&para.base, rp.xml().as_deref(), cx);
-                    match &r.link {
+                    match link {
                         Some(address) => {
-                            let code = crate::docx::fields::link_code(address);
+                            let code = crate::docx::fields::link_code(&address);
                             inlines.extend(crate::docx::fields::field_inlines(&code, &r.text, &run));
                         }
                         None => inlines.extend(text_inlines(&r.text, &run)),

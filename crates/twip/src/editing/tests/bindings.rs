@@ -264,6 +264,19 @@ fn writing_a_data_part_matches_its_item_id_as_a_guid() {
 }
 
 #[test]
+fn an_item_id_two_data_parts_answer_to_is_refused() {
+    let mut e = open("FX-MERGE-CONTROLS.docx");
+    let xml = |v: &str| format!("<case xmlns=\"urn:case\"><name>{v}</name></case>");
+    ok(&json_cmd(&mut e, serde_json::json!({ "type": "writeDataPart", "namespace": "urn:case", "xml": xml("a") })));
+    let first = e.document().data_parts[case(e.document())].clone();
+    let variant = format!("{{{}}}", first.item_id.trim_matches(['{', '}']).to_ascii_lowercase());
+    e.doc.data_parts.push(crate::docx::DataPart { item_id: variant.clone(), ..first });
+    let r = json_cmd(&mut e, serde_json::json!({ "type": "writeDataPart", "namespace": "urn:case", "itemId": variant, "xml": xml("b") }));
+    assert!(refused(&r), "{r}");
+    assert!(e.document().data_parts.iter().all(|d| !d.xml.contains("<name>b</name>")), "neither part changed");
+}
+
+#[test]
 fn a_new_data_parts_item_id_is_a_guid() {
     let mut e = open("FX-MERGE-CONTROLS.docx");
     let n = e.document().data_parts.len();
