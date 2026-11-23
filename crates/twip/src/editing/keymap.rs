@@ -1,8 +1,9 @@
 //! Key bindings
 
 use crate::api::command::{
-    Command, DeleteOptions, DeleteUnit, ElementIds, FieldsLocked, InsertField, LevelChange, MoveSelection, MoveUnit, SelectionMode, VerticalDirection,
+    Command, DeleteOptions, DeleteUnit, ElementIds, FieldsLocked, InsertField, MoveSelection, MoveUnit, SelectionMode, VerticalDirection,
 };
+use crate::api::review::Body;
 use crate::api::value::{Direction, LineSpacing, Order, StyleId};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -35,6 +36,9 @@ pub enum Toggle {
     SpaceBefore,
     TrackChanges,
     FieldCodes { all: bool },
+    CaseCycle,
+    DoubleUnderline,
+    WordUnderline,
 }
 
 #[allow(clippy::large_enum_variant, reason = "made once per key press and consumed at once")]
@@ -66,6 +70,15 @@ fn mac(code: &str, m: Mods) -> Option<Bound> {
         "ArrowUp" | "ArrowDown" if cmd => moving(MoveUnit::Document, code == "ArrowDown", m.shift),
         "ArrowLeft" | "ArrowRight" if opt => moving(MoveUnit::Word, code == "ArrowRight", m.shift),
         "ArrowUp" | "ArrowDown" if opt => moving(MoveUnit::Paragraph, code == "ArrowDown", m.shift),
+        // Control, not Command, with Shift: Word for Mac's field keys (Option with Shift types characters).
+        "KeyD" | "KeyT" | "KeyP" if m.ctrl && m.shift && !m.meta && !m.alt => {
+            let code = match code {
+                "KeyD" => "DATE",
+                "KeyT" => "TIME",
+                _ => "PAGE",
+            };
+            Some(Bound::Run(Command::InsertField(InsertField { code: code.into(), display: None, show_code: None })))
+        }
         "Backspace" if opt => deleting(false, true),
         "Delete" if opt => deleting(true, true),
         _ => None,
@@ -82,6 +95,8 @@ pub fn command(code: &str, m: Mods, cx: KeyContext) -> Option<Bound> {
     let (ctrl, alt) = (m.ctrl || m.meta, m.alt);
     let plain = !ctrl && !alt && !shift;
     let style = |id: &str| run(Command::SetParagraphStyle(StyleId(id.into())));
+    let text = |t: &str| run(Command::InsertText(t.into()));
+    let field = |code: &str| run(Command::InsertField(InsertField { code: code.into(), display: None, show_code: None }));
     let toggle = |t| Some(Bound::Toggle(t));
     match code {
         "ArrowLeft" if !alt => moving(if ctrl { MoveUnit::Word } else { MoveUnit::Character }, false, shift),
@@ -108,7 +123,8 @@ pub fn command(code: &str, m: Mods, cx: KeyContext) -> Option<Bound> {
         "ArrowUp" | "ArrowDown" if alt && shift && !ctrl && cx.in_table => {
             run(Command::MoveRows(if code == "ArrowUp" { VerticalDirection::Up } else { VerticalDirection::Down }))
         }
-        "Tab" if cx.list_start && !ctrl && !alt => run(Command::SetListLevel(if shift { LevelChange::Decrease } else { LevelChange::Increase })),
+        // In a list, as Increase and Decrease Indent: a level, or the whole list from its first item.
+        "Tab" if cx.list_start && !ctrl && !alt => run(if shift { Command::DecreaseIndent } else { Command::IncreaseIndent }),
         "Tab" if cx.in_table && ctrl && !alt && !shift => run(Command::InsertTab),
         "Tab" if cx.in_table && !ctrl && !alt => run(Command::MoveToCell(if shift { Order::Previous } else { Order::Next })),
         "Tab" if !alt && !ctrl => run(Command::InsertTab),
@@ -136,6 +152,7 @@ pub fn command(code: &str, m: Mods, cx: KeyContext) -> Option<Bound> {
         "Digit2" if ctrl && alt && !shift => style("Heading2"),
         "Digit3" if ctrl && alt && !shift => style("Heading3"),
         "KeyN" if ctrl && shift && !alt => style("Normal"),
+        "KeyM" if ctrl && alt && !shift => run(Command::AddComment(Body::Text(String::new()))),
         "KeyM" if ctrl && !alt => run(if shift { Command::DecreaseIndent } else { Command::IncreaseIndent }),
         "KeyL" if ctrl && !alt && !shift => run(Command::SetAlignment(crate::api::value::Alignment::Left)),
         "KeyE" if ctrl && !alt && !shift => toggle(Toggle::Align(crate::api::value::Alignment::Center)),
@@ -145,7 +162,22 @@ pub fn command(code: &str, m: Mods, cx: KeyContext) -> Option<Bound> {
         "KeyZ" if ctrl && !alt && shift => run(Command::Redo),
         "KeyY" if ctrl && !alt && !shift => run(Command::Redo),
         "F4" if plain => run(Command::Repeat),
-        "F3" if shift && !ctrl && !alt => run(Command::ChangeCase(crate::api::command::CaseChange::Toggle)),
+        "F3" if shift && !ctrl && !alt => toggle(Toggle::CaseCycle),
+        "KeyC" if ctrl && shift && !alt => run(Command::CopyFormatting),
+        "KeyD" if ctrl && shift && !alt => toggle(Toggle::DoubleUnderline),
+        "KeyW" if ctrl && shift && !alt => toggle(Toggle::WordUnderline),
+        "KeyQ" if ctrl && shift && !alt => run(Command::SetFont("Symbol".into())),
+        "KeyL" if ctrl && shift && !alt => style("ListBullet"),
+        // Special characters
+        "Space" if ctrl && shift && !alt => text("\u{A0}"),
+        "Minus" if ctrl && shift && !alt => text("\u{2011}"),
+        "Minus" if ctrl && !shift && !alt => text("\u{AD}"),
+        "NumpadSubtract" if ctrl && alt && !shift => text("\u{2014}"),
+        "NumpadSubtract" if ctrl && !alt && !shift => text("\u{2013}"),
+        "KeyC" if ctrl && alt && !shift => text("\u{A9}"),
+        "KeyR" if ctrl && alt && !shift => text("\u{AE}"),
+        "KeyT" if ctrl && alt && !shift => text("\u{2122}"),
+        "Period" if ctrl && alt && !shift => text("\u{2026}"),
         "F8" if plain => run(Command::SetSelectionMode(SelectionMode::Extend)),
         "F8" if ctrl && shift && !alt => run(Command::SetSelectionMode(SelectionMode::Block)),
         "F5" if shift && !ctrl && !alt => run(Command::GoBack),
@@ -155,6 +187,10 @@ pub fn command(code: &str, m: Mods, cx: KeyContext) -> Option<Bound> {
         "F9" if ctrl && shift && !alt => run(Command::UnlinkFields(ElementIds::default())),
         "F9" if ctrl && !shift && !alt => run(Command::InsertField(InsertField { code: String::new(), display: None, show_code: None })),
         "F9" if plain => run(Command::UpdateFields(ElementIds::default())),
+        "KeyD" if alt && shift && !ctrl && !cx.mac => field("DATE"),
+        "KeyT" if alt && shift && !ctrl && !cx.mac => field("TIME"),
+        "KeyP" if alt && shift && !ctrl && !cx.mac => field("PAGE"),
+        "KeyL" if ctrl && alt && !shift => field("LISTNUM"),
         "F10" if alt && shift && !ctrl => run(Command::ShowAutoCorrectOptions),
         "F11" if ctrl && !alt => run(Command::SetFieldsLocked(FieldsLocked { locked: !shift, ids: None })),
         _ => None,
@@ -212,6 +248,14 @@ fn mac_layer() {
     assert_eq!(command("KeyB", cmd, mac), Some(Bound::Toggle(Toggle::Bold)));
     assert_eq!(command("ArrowLeft", opt, KeyContext::default()), None);
     assert_eq!(command("ArrowLeft", Mods { ctrl: true, ..Mods::default() }, KeyContext::default()), moving(MoveUnit::Word, false, false));
+    let date = Some(Bound::Run(Command::InsertField(InsertField { code: "DATE".into(), display: None, show_code: None })));
+    assert_eq!(command("KeyD", Mods { ctrl: true, shift: true, ..Mods::default() }, mac), date, "Control+Shift+D");
+    assert_eq!(
+        command("KeyD", Mods { meta: true, shift: true, ..Mods::default() }, mac),
+        Some(Bound::Toggle(Toggle::DoubleUnderline)),
+        "Command+Shift+D"
+    );
+    assert_eq!(command("KeyD", Mods { alt: true, shift: true, ..Mods::default() }, mac), None, "Option+Shift+D types a character");
 }
 
 #[test]
@@ -252,6 +296,8 @@ pub fn toggle_id(t: Toggle) -> crate::api::command::CommandId {
         Toggle::SpaceBefore => C::SetParagraphSpacing,
         Toggle::TrackChanges => C::SetTrackChanges,
         Toggle::FieldCodes { .. } => C::ShowFieldCodes,
+        Toggle::CaseCycle => C::ChangeCase,
+        Toggle::DoubleUnderline | Toggle::WordUnderline => C::SetUnderline,
     }
 }
 

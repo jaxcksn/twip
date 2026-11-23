@@ -1,0 +1,942 @@
+//! Word's keyboard surface: shortcuts and what they do
+
+use super::super::Editor;
+use super::super::keymap::Mods;
+use super::super::position::{Position, StoryId};
+use super::super::selection::Selection;
+use super::{blank_body, fonts, texts, texts_ids};
+use crate::api::command::{CaseChange, Command as C, InsertField};
+use crate::docx::Inline;
+use crate::layout::Unit;
+
+const STYLES: &str = concat!(
+    r#"<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:rPr><w:sz w:val="22"/></w:rPr></w:style>"#,
+    r#"<w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:after="80"/></w:pPr><w:rPr><w:sz w:val="56"/></w:rPr></w:style>"#,
+);
+
+fn styled(body: &str) -> Editor {
+    super::style_model::open_pkg(&super::style_model::pkg(STYLES, body))
+}
+
+fn edit(body: &str) -> Editor {
+    let mut e = Editor::open(&blank_body(body), fonts()).expect("opens");
+    e.complete(fonts());
+    e
+}
+
+const CTRL: Mods = Mods { ctrl: true, shift: false, alt: false, meta: false };
+const CTRL_SHIFT: Mods = Mods { ctrl: true, shift: true, alt: false, meta: false };
+const CTRL_ALT: Mods = Mods { ctrl: true, shift: false, alt: true, meta: false };
+const ALT_SHIFT: Mods = Mods { ctrl: false, shift: true, alt: true, meta: false };
+const SHIFT: Mods = Mods { ctrl: false, shift: true, alt: false, meta: false };
+
+fn select(e: &mut Editor, para: usize, a: u32, b: u32) {
+    let id = texts_ids(e)[para];
+    e.selection = Selection::range(Position::text(StoryId::Body, id, Unit(a)), Position::text(StoryId::Body, id, Unit(b)), Default::default());
+}
+
+fn caret(e: &mut Editor, para: usize, at: u32) {
+    e.selection = Selection::Caret(Position::text(StoryId::Body, texts_ids(e)[para], Unit(at)));
+}
+
+fn press(e: &mut Editor, code: &str, mods: Mods) {
+    let c = e.key_command(code, mods).unwrap_or_else(|| panic!("{code} {mods:?} is bound"));
+    e.execute(c, fonts());
+}
+
+fn para(e: &Editor, n: usize) -> &crate::docx::Paragraph {
+    e.index().para(e.document(), texts_ids(e)[n]).expect("para")
+}
+
+fn sizes(e: &Editor, n: usize) -> Vec<f64> {
+    para(e, n).inlines.iter().filter_map(|i| if let Inline::Text(_, r) = i { Some(r.size) } else { None }).collect()
+}
+
+#[test]
+fn documented_shortcuts_are_bound() {
+    let mut e = edit("<w:p><w:r><w:t>one two</w:t></w:r></w:p>");
+    assert_eq!(e.key_command("KeyM", CTRL_ALT), Some(C::AddComment(crate::api::review::Body::Text(String::new()))));
+    assert_eq!(e.key_command("KeyC", CTRL_SHIFT), Some(C::CopyFormatting));
+    assert_eq!(e.key_command("KeyM", CTRL), Some(C::IncreaseIndent), "Ctrl+M stays");
+    caret(&mut e, 0, 1);
+    press(&mut e, "KeyM", CTRL_ALT);
+    assert_eq!(e.document().comments.by_id.len(), 1, "a comment on the word at the caret");
+}
+
+#[test]
+fn special_characters_and_fields_have_their_keys() {
+    let mut e = edit("<w:p><w:r><w:t>x</w:t></w:r></w:p>");
+    let text = |t: &str| Some(C::InsertText(t.into()));
+    assert_eq!(e.key_command("Space", CTRL_SHIFT), text("\u{A0}"));
+    assert_eq!(e.key_command("Minus", CTRL_SHIFT), text("\u{2011}"));
+    assert_eq!(e.key_command("Minus", CTRL), text("\u{AD}"));
+    assert_eq!(e.key_command("NumpadSubtract", CTRL), text("\u{2013}"));
+    assert_eq!(e.key_command("NumpadSubtract", CTRL_ALT), text("\u{2014}"));
+    assert_eq!(e.key_command("KeyC", CTRL_ALT), text("\u{A9}"));
+    assert_eq!(e.key_command("KeyR", CTRL_ALT), text("\u{AE}"));
+    assert_eq!(e.key_command("KeyT", CTRL_ALT), text("\u{2122}"));
+    assert_eq!(e.key_command("Period", CTRL_ALT), text("\u{2026}"));
+    let field = |code: &str| Some(C::InsertField(InsertField { code: code.into(), display: None, show_code: None }));
+    assert_eq!(e.key_command("KeyD", ALT_SHIFT), field("DATE"));
+    assert_eq!(e.key_command("KeyT", ALT_SHIFT), field("TIME"));
+    assert_eq!(e.key_command("KeyP", ALT_SHIFT), field("PAGE"));
+    assert_eq!(e.key_command("KeyL", CTRL_ALT), field("LISTNUM"));
+    caret(&mut e, 0, 1);
+    press(&mut e, "KeyT", CTRL_ALT);
+    assert_eq!(texts(&e)[0], "x\u{2122}");
+}
+
+#[test]
+fn shift_f3_cycles_lower_upper_and_capitalised() {
+    let mut e = edit("<w:p><w:r><w:t>hello world</w:t></w:r></w:p>");
+    select(&mut e, 0, 0, 11);
+    let mut seen = Vec::new();
+    for _ in 0..4 {
+        press(&mut e, "F3", SHIFT);
+        seen.push(texts(&e)[0].clone());
+    }
+    assert_eq!(seen, ["HELLO WORLD", "Hello World", "hello world", "HELLO WORLD"]);
+    let mut e = edit("<w:p><w:r><w:t>HELLO WORLD.</w:t></w:r></w:p>");
+    select(&mut e, 0, 0, 12);
+    press(&mut e, "F3", SHIFT);
+    assert_eq!(texts(&e)[0], "Hello world.", "a sentence takes Sentence case");
+}
+
+#[test]
+fn change_case_at_a_caret_changes_its_word() {
+    let mut e = edit("<w:p><w:r><w:t>one two three</w:t></w:r></w:p>");
+    caret(&mut e, 0, 5);
+    press(&mut e, "F3", SHIFT);
+    assert_eq!(texts(&e)[0], "one TWO three");
+    assert_eq!(e.selection, Selection::Caret(Position::text(StoryId::Body, texts_ids(&e)[0], Unit(5))), "the caret stays");
+    caret(&mut e, 0, 3);
+    e.execute(C::ChangeCase(CaseChange::Title), fonts());
+    assert_eq!(texts(&e)[0], "One TWO three", "the word the caret ends");
+    caret(&mut e, 0, 13);
+    e.execute(C::Undo, fonts());
+    assert_eq!(texts(&e)[0], "one TWO three", "one undo step");
+}
+
+#[test]
+fn double_and_word_underlines_toggle() {
+    let mut e = edit("<w:p><w:r><w:t>one two</w:t></w:r></w:p>");
+    let underline = |e: &Editor| para(e, 0).inlines.iter().find_map(|i| i.run().map(|r| r.underline.clone())).flatten();
+    select(&mut e, 0, 0, 7);
+    press(&mut e, "KeyD", CTRL_SHIFT);
+    assert_eq!(underline(&e).as_deref(), Some("double"));
+    press(&mut e, "KeyD", CTRL_SHIFT);
+    assert_eq!(underline(&e), None);
+    press(&mut e, "KeyW", CTRL_SHIFT);
+    assert_eq!(underline(&e).as_deref(), Some("words"));
+    press(&mut e, "KeyQ", CTRL_SHIFT);
+    assert!(para(&e, 0).inlines.iter().filter_map(|i| i.run()).all(|r| r.ascii == "Symbol"));
+}
+
+#[test]
+fn font_size_steps_a_point_per_run() {
+    let mut e =
+        edit(r#"<w:p><w:r><w:rPr><w:sz w:val="22"/></w:rPr><w:t>ab</w:t></w:r><w:r><w:rPr><w:sz w:val="29"/></w:rPr><w:t>cd</w:t></w:r></w:p>"#);
+    select(&mut e, 0, 0, 4);
+    e.step_font_size(true, fonts());
+    assert_eq!(sizes(&e, 0), [12.0, 15.5]);
+    e.step_font_size(false, fonts());
+    e.step_font_size(false, fonts());
+    assert_eq!(sizes(&e, 0), [10.0, 13.5]);
+    let mut e = edit(r#"<w:p><w:r><w:rPr><w:sz w:val="2"/></w:rPr><w:t>ab</w:t></w:r></w:p>"#);
+    select(&mut e, 0, 0, 2);
+    e.step_font_size(false, fonts());
+    assert_eq!(sizes(&e, 0), [1.0], "no smaller than a point");
+}
+
+#[test]
+fn increase_indent_steps_along_the_default_tab_stops() {
+    let mut e = edit(r#"<w:p><w:pPr><w:ind w:left="200" w:firstLine="360"/></w:pPr><w:r><w:t>x</w:t></w:r></w:p>"#);
+    caret(&mut e, 0, 0);
+    press(&mut e, "KeyM", CTRL);
+    assert_eq!((para(&e, 0).style.ind_left, para(&e, 0).style.ind_first), (36.0, 18.0), "the next stop; the first line keeps its indent");
+    e.execute(C::IncreaseIndent, fonts());
+    assert_eq!(para(&e, 0).style.ind_left, 72.0);
+    e.execute(C::SetDefaultTabStop(crate::api::value::Points(50.0)), fonts());
+    e.execute(C::DecreaseIndent, fonts());
+    assert_eq!(para(&e, 0).style.ind_left, 50.0, "the document's default tab stop");
+    e.execute(C::DecreaseIndent, fonts());
+    e.execute(C::DecreaseIndent, fonts());
+    assert_eq!(para(&e, 0).style.ind_left, 0.0);
+}
+
+#[test]
+fn increase_indent_changes_a_list_items_level_or_moves_the_whole_list() {
+    let mut e = edit("<w:p><w:r><w:t>one</w:t></w:r></w:p><w:p><w:r><w:t>two</w:t></w:r></w:p>");
+    select(&mut e, 0, 0, 3);
+    let id = |e: &Editor| texts_ids(e)[1];
+    e.selection = Selection::range(
+        Position::text(StoryId::Body, texts_ids(&e)[0], Unit(0)),
+        Position::text(StoryId::Body, id(&e), Unit(3)),
+        Default::default(),
+    );
+    e.execute(C::SetList(Some(crate::api::command::ListKind::Bullet)), fonts());
+    let level = |e: &Editor, n: usize| para(e, n).style.num.map(|(_, l)| l);
+    caret(&mut e, 1, 0);
+    e.execute(C::IncreaseIndent, fonts());
+    assert_eq!((level(&e, 0), level(&e, 1)), (Some(0), Some(1)), "a later item goes a level down");
+    e.execute(C::DecreaseIndent, fonts());
+    assert_eq!(level(&e, 1), Some(0));
+    let left = |e: &Editor, n: usize| para(e, n).style.ind_left;
+    let (a, b) = (left(&e, 0), left(&e, 1));
+    caret(&mut e, 0, 0);
+    e.execute(C::IncreaseIndent, fonts());
+    assert_eq!((level(&e, 0), level(&e, 1)), (Some(0), Some(0)), "the first item moves the list");
+    assert_eq!((left(&e, 0), left(&e, 1)), (a + 36.0, b + 36.0));
+    e.execute(C::Undo, fonts());
+    assert_eq!(left(&e, 0), a, "one undo step");
+}
+
+#[test]
+fn increase_indent_on_list_items_and_plain_paragraphs_together() {
+    let mut e = edit("<w:p><w:r><w:t>one</w:t></w:r></w:p><w:p><w:r><w:t>two</w:t></w:r></w:p><w:p><w:r><w:t>plain</w:t></w:r></w:p>");
+    e.selection = Selection::range(
+        Position::text(StoryId::Body, texts_ids(&e)[0], Unit(0)),
+        Position::text(StoryId::Body, texts_ids(&e)[1], Unit(3)),
+        Default::default(),
+    );
+    e.execute(C::SetList(Some(crate::api::command::ListKind::Bullet)), fonts());
+    let level = |e: &Editor, n: usize| para(e, n).style.num.map(|(_, l)| l);
+    let item_left = para(&e, 1).style.ind_left;
+    e.selection = Selection::range(
+        Position::text(StoryId::Body, texts_ids(&e)[1], Unit(0)),
+        Position::text(StoryId::Body, texts_ids(&e)[2], Unit(5)),
+        Default::default(),
+    );
+    e.execute(C::IncreaseIndent, fonts());
+    assert_eq!(level(&e, 1), Some(1), "the item goes a level down");
+    assert!(para(&e, 1).style.direct.0.as_deref().is_none_or(|x| !x.contains("w:ind ")), "no direct indent on the item");
+    assert_eq!(para(&e, 2).style.ind_left, 36.0, "the plain paragraph steps to the next tab stop");
+    e.execute(C::Undo, fonts());
+    assert_eq!((level(&e, 1), para(&e, 1).style.ind_left, para(&e, 2).style.ind_left), (Some(0), item_left, 0.0), "one undo step");
+}
+
+#[test]
+fn hanging_indent_keys_move_the_other_lines_a_tab_stop() {
+    let mut e = edit("<w:p><w:r><w:t>x</w:t></w:r></w:p>");
+    caret(&mut e, 0, 0);
+    let ind = |e: &Editor| (para(e, 0).style.ind_left, para(e, 0).style.ind_first);
+    e.hanging_indent(true, fonts());
+    assert_eq!(ind(&e), (36.0, -36.0));
+    e.hanging_indent(true, fonts());
+    assert_eq!(ind(&e), (72.0, -72.0), "the first line stays at the margin");
+    e.hanging_indent(false, fonts());
+    e.hanging_indent(false, fonts());
+    assert_eq!(ind(&e), (0.0, 0.0));
+}
+
+#[test]
+fn clearing_paragraph_formatting_keeps_the_style() {
+    let mut e = styled(
+        r#"<w:p><w:pPr><w:pStyle w:val="Title"/><w:jc w:val="center"/><w:ind w:left="720"/><w:spacing w:after="480"/></w:pPr><w:r><w:rPr><w:b/><w:highlight w:val="yellow"/></w:rPr><w:t>x</w:t></w:r></w:p>"#,
+    );
+    caret(&mut e, 0, 0);
+    e.clear_paragraph_formatting(fonts());
+    let p = para(&e, 0);
+    assert_eq!(p.style.style_id.as_deref(), Some("Title"));
+    assert_eq!((p.style.ind_left, p.style.jc, p.style.space_after), (0.0, crate::docx::props::Jc::Left, 4.0), "the style's spacing");
+    let run = p.inlines.iter().find_map(|i| i.run()).expect("a run");
+    assert!(run.bold, "character formatting stays");
+}
+
+#[test]
+fn clear_all_formatting_leaves_plain_text_and_its_highlight() {
+    let mut e = styled(
+        r#"<w:p><w:pPr><w:pStyle w:val="Title"/><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="40"/><w:highlight w:val="yellow"/></w:rPr><w:t>xy</w:t></w:r></w:p>"#,
+    );
+    select(&mut e, 0, 0, 2);
+    e.clear_all_formatting(fonts());
+    let p = para(&e, 0);
+    assert_eq!(p.style.style_id.as_deref(), Some("Normal"), "the default paragraph style");
+    assert_eq!(p.style.jc, crate::docx::props::Jc::Left);
+    let run = p.inlines.iter().find_map(|i| i.run()).expect("a run");
+    assert!(!run.bold && run.size == 11.0 && run.highlight.is_some(), "{run:?}");
+    e.execute(C::Undo, fonts());
+    assert_eq!(para(&e, 0).style.style_id.as_deref(), Some("Title"), "one undo step");
+}
+
+#[test]
+fn list_bullet_comes_with_its_bullet() {
+    let mut e = edit("<w:p><w:r><w:t>x</w:t></w:r></w:p>");
+    caret(&mut e, 0, 0);
+    press(&mut e, "KeyL", CTRL_SHIFT);
+    let p = para(&e, 0);
+    assert_eq!(p.style.style_id.as_deref(), Some("ListBullet"));
+    assert!(p.style.num.is_some_and(|(id, _)| id != 0), "{:?}", p.style.num);
+    assert_eq!(p.list.as_ref().map(|l| l.text.as_str()), Some("\u{F0B7}"));
+    assert_eq!(p.style.ind_left, 18.0);
+    e.execute(C::Undo, fonts());
+    assert!(!e.document().resolver.as_ref().expect("styles").styles.by_id.contains_key("ListBullet"), "one undo step");
+}
+
+#[test]
+fn alt_x_toggles_the_code_before_the_caret() {
+    let mut e = edit("<w:p><w:r><w:t>caf00e9 x</w:t></w:r></w:p>");
+    caret(&mut e, 0, 7);
+    e.toggle_character_code(fonts());
+    assert_eq!(texts(&e)[0], "ca\u{F00E9} x", "the longest code there is: af00e9 is past U+10FFFF");
+    e.execute(C::Undo, fonts());
+    let mut e = edit("<w:p><w:r><w:t>a U+00e9.</w:t></w:r></w:p>");
+    caret(&mut e, 0, 8);
+    e.toggle_character_code(fonts());
+    assert_eq!(texts(&e)[0], "a é.");
+    assert_eq!(e.selection, Selection::Caret(Position::text(StoryId::Body, texts_ids(&e)[0], Unit(3))));
+    e.toggle_character_code(fonts());
+    assert_eq!(texts(&e)[0], "a 00E9.", "and back");
+    e.execute(C::Undo, fonts());
+    assert_eq!(texts(&e)[0], "a é.", "each its own undo step");
+}
+
+fn field_xml(code: &str, result: &str) -> String {
+    format!(
+        r#"<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> {code} </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>{result}</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>"#
+    )
+}
+
+#[test]
+fn f11_selects_the_next_and_previous_field() {
+    let body = format!(
+        r#"<w:p><w:r><w:t xml:space="preserve">a </w:t></w:r>{}<w:r><w:t xml:space="preserve"> b </w:t></w:r>{}</w:p><w:p><w:r><w:t xml:space="preserve">c </w:t></w:r>{}</w:p>"#,
+        field_xml("PAGE", "1"),
+        field_xml("NUMPAGES", "2"),
+        field_xml("DATE", "today"),
+    );
+    let mut e = edit(&body);
+    caret(&mut e, 0, 0);
+    let selected = |e: &Editor| e.selection.ordered(e.index()).map(|(a, b)| (a.para_offset().unwrap(), b.para_offset().unwrap()));
+    let ids = texts_ids(&e);
+    let mut starts = Vec::new();
+    for _ in 0..4 {
+        e.select_field(crate::api::value::Order::Next, fonts());
+        let ((pa, a), (pb, b)) = selected(&e).expect("a selection");
+        assert_eq!(pa, pb);
+        assert!(a < b, "a whole field");
+        starts.push((ids.iter().position(|&p| p == pa).unwrap(), a.0));
+    }
+    assert_eq!(starts.len(), 4);
+    assert_eq!(starts[2], starts[3], "no further than the last");
+    assert!(starts[0] < starts[1] && starts[1] < starts[2] && starts[2].0 == 1);
+    e.select_field(crate::api::value::Order::Previous, fonts());
+    let ((pa, a), _) = selected(&e).unwrap();
+    assert_eq!((ids.iter().position(|&p| p == pa).unwrap(), a.0), starts[1]);
+}
+
+#[test]
+fn f11_skips_nested_fields_and_walks_many_paragraphs() {
+    let nested = format!(
+        r#"<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> IF </w:instrText></w:r>{}<w:r><w:instrText xml:space="preserve"> = 1 "y" "n" </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>y</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>"#,
+        field_xml("PAGE", "1")
+    );
+    let mut body = format!("<w:p><w:r><w:t xml:space=\"preserve\">a </w:t></w:r>{nested}</w:p>");
+    for k in 0..2000 {
+        body.push_str(&format!("<w:p><w:r><w:t>p{k} </w:t></w:r>{}</w:p>", field_xml("PAGE", "1")));
+    }
+    let mut e = edit(&body);
+    let ids = texts_ids(&e);
+    caret(&mut e, 0, 0);
+    let selected = |e: &Editor| e.selection.ordered(e.index()).map(|(a, b)| (a.para_offset().unwrap(), b.para_offset().unwrap())).unwrap();
+    e.select_field(crate::api::value::Order::Next, fonts());
+    let ((pa, a), (pb, b)) = selected(&e);
+    assert_eq!((pa, pb, a), (ids[0], ids[0], Unit(2)));
+    assert_eq!(
+        b,
+        Unit(e.index().para(e.document(), ids[0]).map(|p| p.inlines.iter().map(|i| i.units() as u32).sum()).unwrap()),
+        "the outer field, whole"
+    );
+    e.select_field(crate::api::value::Order::Next, fonts());
+    assert_eq!(selected(&e).0.0, ids[1], "past the field nested in it");
+    caret(&mut e, 1500, 0);
+    e.select_field(crate::api::value::Order::Previous, fonts());
+    assert_eq!(selected(&e).0.0, ids[1499]);
+    e.select_field(crate::api::value::Order::Previous, fonts());
+    assert_eq!(selected(&e).0.0, ids[1498]);
+}
+
+#[test]
+fn paragraphs_move_up_and_down_whole() {
+    let mut e = edit("<w:p><w:r><w:t>one</w:t></w:r></w:p><w:p><w:r><w:t>two</w:t></w:r></w:p><w:p><w:r><w:t>three</w:t></w:r></w:p>");
+    select(&mut e, 1, 1, 2);
+    let sel = e.selection;
+    e.move_paragraphs(true, fonts());
+    assert_eq!(texts(&e), ["two", "one", "three"]);
+    assert_eq!(e.selection, sel, "the paragraph stays selected");
+    e.move_paragraphs(true, fonts());
+    assert_eq!(texts(&e), ["two", "one", "three"], "at the story's start");
+    e.move_paragraphs(false, fonts());
+    e.move_paragraphs(false, fonts());
+    assert_eq!(texts(&e), ["one", "three", "two"], "the story's last paragraph too");
+    e.execute(C::Undo, fonts());
+    assert_eq!(texts(&e), ["one", "two", "three"], "each move its own undo step");
+}
+
+#[test]
+fn a_paragraph_moves_past_a_table_as_one() {
+    let table = r#"<w:tbl><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#;
+    let mut e = edit(&format!("<w:p><w:r><w:t>above</w:t></w:r></w:p>{table}<w:p><w:r><w:t>below</w:t></w:r></w:p>"));
+    caret(&mut e, 2, 0);
+    e.move_paragraphs(true, fonts());
+    assert_eq!(texts(&e), ["above", "below", "cell", ""], "an empty paragraph ends the story");
+}
+
+#[test]
+fn a_tracked_paragraph_move_is_a_move() {
+    let mut e = edit("<w:p><w:r><w:t>one</w:t></w:r></w:p><w:p><w:r><w:t>two</w:t></w:r></w:p><w:p><w:r><w:t>three</w:t></w:r></w:p>");
+    e.execute(C::SetTrackChanges(true), fonts());
+    caret(&mut e, 1, 0);
+    e.move_paragraphs(true, fonts());
+    let moved = e.document().sections[0].blocks.iter().filter_map(|b| if let crate::docx::Block::Para(p) = b { Some(p) } else { None }).any(|p| {
+        p.inlines.iter().filter_map(|i| i.run()).any(|r| {
+            [&r.rev.ins, &r.rev.del]
+                .into_iter()
+                .flatten()
+                .any(|m| matches!(m.kind, crate::docx::review::MarkKind::MoveFrom | crate::docx::review::MarkKind::MoveTo))
+        })
+    });
+    assert!(moved, "moved text is marked as moved");
+    let visible: Vec<String> = texts(&e);
+    assert!(visible.iter().position(|t| t == "two") < visible.iter().position(|t| t == "one"), "{visible:?}");
+    e.execute(C::Undo, fonts());
+    assert_eq!(texts(&e), ["one", "two", "three"]);
+}
+
+/// Three paragraphs, the middle one centred, changes tracked.
+fn tracked_three() -> Editor {
+    let mut e = edit(concat!(
+        "<w:p><w:r><w:t>one</w:t></w:r></w:p>",
+        r#"<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>two</w:t></w:r></w:p>"#,
+        "<w:p><w:r><w:t>three</w:t></w:r></w:p>",
+    ));
+    e.execute(C::SetTrackChanges(true), fonts());
+    e
+}
+
+fn has_moves(e: &Editor) -> (bool, bool) {
+    let (mut to, mut from) = (false, false);
+    for b in &e.document().sections[0].blocks {
+        let crate::docx::Block::Para(p) = b else { continue };
+        for r in p.inlines.iter().filter_map(|i| i.run()) {
+            to |= r.rev.ins.as_ref().is_some_and(|m| m.kind == crate::docx::review::MarkKind::MoveTo);
+            from |= r.rev.del.as_ref().is_some_and(|m| m.kind == crate::docx::review::MarkKind::MoveFrom);
+        }
+    }
+    (to, from)
+}
+
+fn centred(e: &Editor, text: &str) -> bool {
+    e.document().sections[0].blocks.iter().any(|b| {
+        matches!(b, crate::docx::Block::Para(p) if super::super::text::UnitText::of(p).text == text && p.style.jc == crate::docx::props::Jc::Center)
+    })
+}
+
+#[test]
+fn a_tracked_move_of_the_last_paragraph_up_keeps_the_story_s_mark() {
+    for accept in [true, false] {
+        let mut e = tracked_three();
+        caret(&mut e, 2, 2);
+        assert!(matches!(e.move_paragraphs(true, fonts()), crate::editing::commands::Outcome::Changed(_)));
+        assert_eq!(has_moves(&e), (true, true), "moved to and from");
+        let ids = texts_ids(&e);
+        let at = e.selection.focus().and_then(|p| p.para_offset()).unwrap();
+        assert_eq!((texts(&e)[ids.iter().position(|&p| p == at.0).unwrap()].as_str(), at.1), ("three", Unit(2)), "the caret goes with it");
+        if accept {
+            e.execute(C::AcceptAllRevisions(Default::default()), fonts());
+            assert_eq!(texts(&e), ["one", "three", "two"]);
+            assert!(centred(&e, "two"), "the paragraph passed keeps its properties");
+        } else {
+            e.execute(C::RejectAllRevisions(Default::default()), fonts());
+            assert_eq!(texts(&e), ["one", "two", "three"]);
+            assert!(centred(&e, "two") && !centred(&e, "three"));
+        }
+    }
+    let mut e = tracked_three();
+    caret(&mut e, 2, 0);
+    e.move_paragraphs(true, fonts());
+    e.execute(C::Undo, fonts());
+    assert_eq!(texts(&e), ["one", "two", "three"], "one undo step");
+    assert_eq!(has_moves(&e), (false, false));
+}
+
+#[test]
+fn a_tracked_move_down_past_the_last_paragraph() {
+    for accept in [true, false] {
+        let mut e = tracked_three();
+        caret(&mut e, 1, 1);
+        assert!(matches!(e.move_paragraphs(false, fonts()), crate::editing::commands::Outcome::Changed(_)));
+        assert_eq!(has_moves(&e), (true, true));
+        if accept {
+            e.execute(C::AcceptAllRevisions(Default::default()), fonts());
+            assert_eq!(texts(&e), ["one", "three", "two"]);
+            assert!(centred(&e, "two") && !centred(&e, "three"), "each keeps its properties");
+        } else {
+            e.execute(C::RejectAllRevisions(Default::default()), fonts());
+            assert_eq!(texts(&e), ["one", "two", "three"]);
+            assert!(centred(&e, "two") && !centred(&e, "three"));
+        }
+    }
+}
+
+#[test]
+fn a_tracked_move_past_a_table() {
+    let table = r#"<w:tbl><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#;
+    let body = format!("<w:p><w:r><w:t>above</w:t></w:r></w:p>{table}<w:p><w:r><w:t>below</w:t></w:r></w:p><w:p><w:r><w:t>end</w:t></w:r></w:p>");
+    for (para, up, accepted) in [
+        (2, true, vec!["above", "below", "cell", "end"]),
+        (0, false, vec!["cell", "above", "below", "end"]),
+        (3, true, vec!["above", "cell", "end", "below"]),
+    ] {
+        for accept in [true, false] {
+            let mut e = edit(&body);
+            e.execute(C::SetTrackChanges(true), fonts());
+            caret(&mut e, para, 0);
+            assert!(matches!(e.move_paragraphs(up, fonts()), crate::editing::commands::Outcome::Changed(_)), "{para} {up}");
+            assert_eq!(has_moves(&e), (true, true), "{para} {up}");
+            e.execute(if accept { C::AcceptAllRevisions(Default::default()) } else { C::RejectAllRevisions(Default::default()) }, fonts());
+            let want: Vec<&str> = if accept { accepted.clone() } else { vec!["above", "cell", "below", "end"] };
+            assert_eq!(texts(&e), want, "{para} {up} accepted {accept}");
+        }
+    }
+    // The story's last paragraph above a table leaves the story's mark after it.
+    let mut e = edit(&format!("<w:p><w:r><w:t>above</w:t></w:r></w:p>{table}<w:p><w:r><w:t>below</w:t></w:r></w:p>"));
+    e.execute(C::SetTrackChanges(true), fonts());
+    caret(&mut e, 2, 0);
+    e.move_paragraphs(true, fonts());
+    e.execute(C::AcceptAllRevisions(Default::default()), fonts());
+    assert_eq!(texts(&e), ["above", "below", "cell", ""], "as untracked");
+}
+
+#[test]
+fn bookmarks_and_comments_into_the_paragraph_passed_keep_their_text_there() {
+    let body = concat!(
+        r#"<w:p><w:r><w:t>one</w:t></w:r><w:bookmarkStart w:id="1" w:name="mark"/><w:r><w:t>two</w:t></w:r></w:p>"#,
+        r#"<w:p><w:r><w:t>three</w:t></w:r><w:bookmarkEnd w:id="1"/></w:p>"#,
+    );
+    let open = |tracked: bool| {
+        let mut e = edit(body);
+        e.selection = Selection::range(
+            Position::text(StoryId::Body, texts_ids(&e)[0], Unit(3)),
+            Position::text(StoryId::Body, texts_ids(&e)[1], Unit(5)),
+            Default::default(),
+        );
+        e.execute(C::AddComment(crate::api::review::Body::Text("c".into())), fonts());
+        if tracked {
+            e.execute(C::SetTrackChanges(true), fonts());
+        }
+        e
+    };
+    let mut e = open(false);
+    caret(&mut e, 1, 0);
+    assert!(matches!(e.move_paragraphs(true, fonts()), crate::editing::commands::Outcome::Changed(_)), "the move isn't refused");
+    assert_eq!(texts(&e), ["three", "onetwo"]);
+    let kinds = |e: &Editor, n: usize| -> Vec<String> {
+        para(e, n)
+            .inlines
+            .iter()
+            .filter_map(|i| match i {
+                Inline::Bookmark(b) => Some(b.clone()),
+                Inline::Range(r) => Some(format!("{:?}", r.kind)),
+                _ => None,
+            })
+            .collect()
+    };
+    assert!(kinds(&e, 0).is_empty(), "nothing stays in the moved paragraph: {:?}", kinds(&e, 0));
+    assert_eq!(kinds(&e, 1), ["mark", "CommentStart", "CommentEnd", "/mark"], "the ends close where the paragraph was");
+    e.execute(C::Undo, fonts());
+    assert_eq!(texts(&e), ["onetwo", "three"]);
+    // Down: the starts stay where the paragraph was, before the one passed.
+    caret(&mut e, 0, 0);
+    e.move_paragraphs(false, fonts());
+    assert_eq!(texts(&e), ["three", "onetwo"]);
+    assert_eq!(kinds(&e, 0), ["mark", "CommentStart", "CommentEnd", "/mark"]);
+    // Tracked, the moved-from text keeps them.
+    let mut e = open(true);
+    caret(&mut e, 1, 0);
+    assert!(matches!(e.move_paragraphs(true, fonts()), crate::editing::commands::Outcome::Changed(_)));
+    e.execute(C::AcceptAllRevisions(Default::default()), fonts());
+    assert_eq!(texts(&e), ["three", "onetwo"]);
+    let all: Vec<String> = (0..2).flat_map(|n| kinds(&e, n)).collect();
+    assert_eq!(all.iter().filter(|k| k.as_str() == "mark").count(), 1, "one bookmark: {all:?}");
+    assert_eq!(all.iter().filter(|k| k.as_str() == "CommentEnd").count(), 1, "one comment end: {all:?}");
+}
+
+/// Types `text` as the session does: Enter and Tab as their commands, each followed by AutoCorrect.
+fn type_in(e: &mut Editor, text: &str) {
+    use crate::editing::autocorrect::{AutoCorrect, Trigger, may_trigger};
+    let ac = AutoCorrect::default();
+    for c in text.chars() {
+        let (cmd, trigger) = match c {
+            '\n' => (C::InsertParagraph, Some(Trigger::ParagraphEnd)),
+            '\t' => (C::InsertTab, Some(Trigger::Typed)),
+            c => (C::InsertText(c.to_string()), may_trigger(c).then_some(Trigger::Typed)),
+        };
+        e.execute(cmd, fonts());
+        if let Some(t) = trigger {
+            e.auto_correct(&ac, t, fonts());
+        }
+    }
+}
+
+fn link_codes(e: &Editor, n: usize) -> Vec<String> {
+    let p = para(e, n);
+    crate::docx::fields::spans(&p.inlines).into_iter().map(|s| crate::docx::fields::code_text(&p.inlines, s).trim().to_string()).collect()
+}
+
+#[test]
+fn typed_addresses_become_links() {
+    for (typed, code, shown) in [
+        ("See www.example.com. ", r#"HYPERLINK "http://www.example.com""#, "See www.example.com. "),
+        ("Go https://example.com/a?b=1 now", r#"HYPERLINK "https://example.com/a?b=1""#, "Go https://example.com/a?b=1 now"),
+        ("Mail jo@example.org\n", r#"HYPERLINK "mailto:jo@example.org""#, "Mail jo@example.org"),
+        (r"At \\server\share ", r#"HYPERLINK "file:///\\\\server\\share""#, r"At \\server\share "),
+    ] {
+        let mut e = edit("<w:p/>");
+        caret(&mut e, 0, 0);
+        type_in(&mut e, typed);
+        assert_eq!(link_codes(&e, 0), [code], "typing {typed:?}");
+        assert_eq!(
+            texts(&e)[0].replacen(&format!(" {code} "), "", 1).replace('\u{FFFC}', ""),
+            shown,
+            "typing {typed:?}: the code, then the text as typed"
+        );
+    }
+    let mut e = edit("<w:p/>");
+    caret(&mut e, 0, 0);
+    type_in(&mut e, "Www.example.com ");
+    e.execute(C::Undo, fonts());
+    assert!(link_codes(&e, 0).is_empty(), "Ctrl+Z right after takes the link out");
+    assert_eq!(texts(&e)[0], "Www.example.com ");
+    let mut e = edit("<w:p/>");
+    caret(&mut e, 0, 0);
+    type_in(&mut e, "www. example.com x.y ");
+    assert!(link_codes(&e, 0).is_empty(), "not an address");
+}
+
+#[test]
+fn border_lines_typed_then_enter_become_a_bottom_border() {
+    for (typed, line, size) in [
+        ("---", "single", 6),
+        ("___", "single", 12),
+        ("===", "double", 6),
+        ("***", "dotted", 24),
+        ("~~~~", "wave", 6),
+        ("###", "thinThickThinSmallGap", 24),
+    ] {
+        let mut e = edit("<w:p><w:r><w:t>above</w:t></w:r></w:p><w:p/>");
+        caret(&mut e, 1, 0);
+        type_in(&mut e, &format!("{typed}\n"));
+        let p = para(&e, 1);
+        assert_eq!(texts(&e), ["above", "", ""], "{typed}");
+        let b = p.style.border_bottom.as_ref().unwrap_or_else(|| panic!("{typed}: a border"));
+        let xml = p.style.direct.0.as_deref().unwrap_or_default();
+        assert!(xml.contains(&format!(r#"w:val="{line}" w:sz="{size}""#)), "{typed}: {xml}");
+        let _ = b;
+        assert!(para(&e, 2).style.border_bottom.is_none(), "the new paragraph has none");
+        e.execute(C::Undo, fonts());
+        assert_eq!(texts(&e), ["above", typed, ""], "{typed}: Ctrl+Z gives the characters back");
+    }
+    let mut e = edit("<w:p/>");
+    caret(&mut e, 0, 0);
+    type_in(&mut e, "--=\n");
+    assert!(para(&e, 0).style.border_bottom.is_none());
+}
+
+#[test]
+fn tab_at_a_paragraphs_start_indents_it() {
+    let mut e = edit("<w:p><w:r><w:t>text</w:t></w:r></w:p>");
+    caret(&mut e, 0, 0);
+    let ind = |e: &Editor| (para(e, 0).style.ind_left, para(e, 0).style.ind_first);
+    type_in(&mut e, "\t");
+    assert_eq!((texts(&e)[0].as_str(), ind(&e)), ("text", (0.0, 36.0)), "a first-line indent in place of the tab");
+    type_in(&mut e, "\t");
+    assert_eq!(ind(&e), (36.0, 36.0), "then the left indent");
+    e.execute(C::Delete(crate::api::command::DeleteOptions { direction: crate::api::value::Direction::Backward, unit: None }), fonts());
+    assert_eq!(ind(&e), (0.0, 36.0), "Backspace goes back");
+    e.execute(C::Delete(crate::api::command::DeleteOptions { direction: crate::api::value::Direction::Backward, unit: None }), fonts());
+    assert_eq!(ind(&e), (0.0, 0.0));
+    type_in(&mut e, "\t");
+    e.execute(C::Undo, fonts());
+    assert_eq!((texts(&e)[0].as_str(), ind(&e)), ("\ttext", (0.0, 0.0)), "Ctrl+Z right after gives the tab back");
+    let mut e = edit("<w:p/>");
+    caret(&mut e, 0, 0);
+    type_in(&mut e, "\t");
+    assert_eq!(texts(&e)[0], "\t", "an empty paragraph takes the tab");
+    e.indent_keys = false;
+    let mut e2 = edit("<w:p><w:r><w:t>text</w:t></w:r></w:p>");
+    e2.indent_keys = false;
+    caret(&mut e2, 0, 0);
+    type_in(&mut e2, "\t");
+    assert_eq!(texts(&e2)[0], "\ttext", "the option off");
+}
+
+#[test]
+fn autoformat_changes_offer_their_undo_and_stop() {
+    use crate::editing::CorrectionKind as K;
+    use crate::editing::autocorrect::AutoCorrect;
+    // Undo Hyperlink, right after it and once more is typed
+    for more in ["", "x"] {
+        let mut e = edit("<w:p/>");
+        caret(&mut e, 0, 0);
+        type_in(&mut e, "See www.example.com ");
+        assert_eq!(e.auto_format_change().map(|c| (c.kind.clone(), c.from.as_str())), Some((K::Hyperlink, "www.example.com")));
+        assert!(e.correction().is_none(), "not a text correction");
+        assert!(e.correction_view(0..1).is_some_and(|v| !v.rects.is_empty() && v.button.is_some()), "its mark and options button");
+        type_in(&mut e, more);
+        e.revert_correction(fonts());
+        assert!(link_codes(&e, 0).is_empty(), "{more:?}: the link goes");
+        assert_eq!(texts(&e)[0], format!("See www.example.com {more}"));
+        assert!(e.auto_format_change().is_none());
+    }
+    let mut ac = AutoCorrect::default();
+    let mut e = edit("<w:p/>");
+    caret(&mut e, 0, 0);
+    type_in(&mut e, "See www.example.com ");
+    e.stop_auto_format(&mut ac, fonts());
+    assert!(link_codes(&e, 0).is_empty() && !ac.internet_paths, "Stop Automatically Creating Hyperlinks");
+    // Undo Border Line, Stop Automatically Creating Border Lines
+    let mut e = edit("<w:p><w:r><w:t>above</w:t></w:r></w:p><w:p/>");
+    caret(&mut e, 1, 0);
+    type_in(&mut e, "---\n");
+    assert!(matches!(e.auto_format_change().map(|c| &c.kind), Some(K::BorderLine { borders: None })));
+    assert!(e.correction_view(0..1).is_some_and(|v| v.button.is_some()), "its button, the caret in the next paragraph");
+    type_in(&mut e, "y");
+    e.revert_correction(fonts());
+    assert_eq!(texts(&e), ["above", "---", "y"]);
+    assert!(para(&e, 1).style.border_bottom.is_none(), "the border goes");
+    let mut e = edit("<w:p/>");
+    caret(&mut e, 0, 0);
+    type_in(&mut e, "***\n");
+    e.stop_auto_format(&mut ac, fonts());
+    assert!(!ac.border_lines && para(&e, 0).style.border_bottom.is_none());
+    // Undo Automatic Indent, Stop
+    let mut e = edit("<w:p><w:r><w:t>text</w:t></w:r></w:p>");
+    caret(&mut e, 0, 0);
+    type_in(&mut e, "\t");
+    assert!(matches!(e.auto_format_change().map(|c| &c.kind), Some(K::Indent { ind: None })));
+    type_in(&mut e, "z");
+    e.revert_correction(fonts());
+    assert_eq!((texts(&e)[0].as_str(), para(&e, 0).style.ind_first), ("\tztext", 0.0));
+    let mut e = edit("<w:p><w:r><w:t>text</w:t></w:r></w:p>");
+    caret(&mut e, 0, 0);
+    type_in(&mut e, "\t");
+    e.stop_auto_format(&mut ac, fonts());
+    assert!(!e.indent_keys && texts(&e)[0] == "\ttext");
+}
+
+/// Document coordinates of unit `u` of paragraph `para` (its line's middle), `dx` to its right.
+fn at(e: &mut Editor, para: usize, u: u32, dx: f64) -> (f64, f64) {
+    let id = texts_ids(e)[para];
+    let g = e.page_geometries().into_iter().find(|(p, _)| *p == 0).map(|(_, g)| g).expect("page 0");
+    let l = g.lines.iter().find(|l| l.shows(id)).expect("a line");
+    let x = l.stops.iter().find(|s| s.para == id && s.unit == Unit(u)).expect("a stop").x;
+    e.stack().to_doc(0, x + dx, (l.top + l.bottom) / 2.0).expect("on the stack")
+}
+
+#[test]
+fn f2_moves_the_selection_to_the_place_chosen() {
+    use super::super::input::PointerKind;
+    let mut e = edit("<w:p><w:r><w:t>one two</w:t></w:r></w:p><w:p><w:r><w:t>three</w:t></w:r></w:p>");
+    select(&mut e, 0, 0, 4);
+    let sel = e.selection;
+    e.begin_move_to(false);
+    let to = at(&mut e, 1, 5, 0.0);
+    e.pointer_input(PointerKind::Down, to.0, to.1, 1, Mods::default(), fonts());
+    e.pointer_input(PointerKind::Up, to.0, to.1, 1, Mods::default(), fonts());
+    assert_eq!(e.selection, sel, "the click chooses the place, the text stays selected");
+    assert!(e.move_to_pending().and_then(|m| m.target).is_some());
+    e.execute(
+        C::MoveSelection(crate::api::command::MoveSelection {
+            by: crate::api::command::MoveUnit::Character,
+            direction: crate::api::value::Direction::Backward,
+            extend: None,
+        }),
+        fonts(),
+    );
+    assert_eq!(e.selection, sel, "an arrow moves the place");
+    e.execute(C::InsertParagraph, fonts());
+    assert_eq!(texts(&e), ["two", "thre one e"], "Enter moves the text, smart spaces and all");
+    assert!(e.move_to_pending().is_none());
+    select(&mut e, 0, 0, 3);
+    e.begin_move_to(true);
+    e.execute(C::Escape, fonts());
+    e.execute(C::InsertParagraph, fonts());
+    assert_eq!(texts(&e).len(), 3, "Esc gave up: Enter is Enter again");
+}
+
+#[test]
+fn a_right_drag_opens_the_drop_menu() {
+    use super::super::input::PointerKind;
+    use super::super::move_to::DropChoice;
+    for (choice, want) in
+        [(DropChoice::Move, ["two", "three one "]), (DropChoice::Copy, ["one two", "three one "]), (DropChoice::Cancel, ["one two", "three"])]
+    {
+        let mut e = edit("<w:p><w:r><w:t>one two</w:t></w:r></w:p><w:p><w:r><w:t>three</w:t></w:r></w:p>");
+        select(&mut e, 0, 0, 4);
+        let (from, to) = (at(&mut e, 0, 1, 0.0), at(&mut e, 1, 5, 0.0));
+        assert!(e.right_press(from.0, from.1, fonts()));
+        e.pointer_input(PointerKind::Move, to.0, to.1, 0, Mods::default(), fonts());
+        let drop = e.right_release().expect("the menu opens where it dropped");
+        assert_eq!(e.drop_menu(), Some(drop));
+        e.choose_drop(choice, fonts());
+        assert_eq!(texts(&e), want, "{choice:?}");
+        assert!(e.drop_menu().is_none());
+    }
+    let mut e = edit("<w:p><w:r><w:t>one two</w:t></w:r></w:p>");
+    select(&mut e, 0, 0, 4);
+    let from = at(&mut e, 0, 1, 0.0);
+    assert!(e.right_press(from.0, from.1, fonts()));
+    assert_eq!(e.right_release(), None, "a click, not a drag: the context menu's");
+}
+
+#[test]
+fn link_here_bookmarks_the_text_and_links_to_it() {
+    use super::super::input::PointerKind;
+    let mut e = edit("<w:p><w:r><w:t>one two</w:t></w:r></w:p><w:p><w:r><w:t>three</w:t></w:r></w:p>");
+    select(&mut e, 0, 0, 3);
+    let (from, to) = (at(&mut e, 0, 1, 0.0), at(&mut e, 1, 5, 0.0));
+    e.right_press(from.0, from.1, fonts());
+    e.pointer_input(PointerKind::Move, to.0, to.1, 0, Mods::default(), fonts());
+    e.right_release();
+    let out = e.choose_drop(super::super::move_to::DropChoice::Link, fonts());
+    assert!(matches!(out, super::super::commands::Outcome::Refused(_)), "no file name: {out:?}");
+    e.execute(C::SetFileName("Report.docx".into()), fonts());
+    e.right_press(from.0, from.1, fonts());
+    e.pointer_input(PointerKind::Move, to.0, to.1, 0, Mods::default(), fonts());
+    e.right_release();
+    e.choose_drop(super::super::move_to::DropChoice::Link, fonts());
+    assert_eq!(link_codes(&e, 1), [r#"LINK Word.Document.12 "Report.docx" "OLE_LINK1" \a \r"#]);
+    assert!(para(&e, 0).inlines.iter().any(|i| matches!(i, Inline::Bookmark(n) if n == "OLE_LINK1")));
+    e.execute(C::Undo, fonts());
+    assert!(link_codes(&e, 1).is_empty() && !para(&e, 0).inlines.iter().any(|i| matches!(i, Inline::Bookmark(_))), "one undo step");
+}
+
+#[test]
+fn the_highlighter_highlights_what_it_drags_over() {
+    use super::super::input::PointerKind;
+    let mut e = edit("<w:p><w:r><w:t>one two</w:t></w:r></w:p>");
+    caret(&mut e, 0, 0);
+    e.toggle_highlighter(Some(crate::api::value::HighlightColor::Yellow));
+    assert_eq!(e.highlighter(), Some("yellow"));
+    let (from, to) = (at(&mut e, 0, 0, 0.0), at(&mut e, 0, 3, 0.0));
+    let m = Mods::default();
+    e.pointer_input(PointerKind::Down, from.0, from.1, 1, m, fonts());
+    e.pointer_input(PointerKind::Move, to.0, to.1, 0, m, fonts());
+    e.pointer_input(PointerKind::Up, to.0, to.1, 0, m, fonts());
+    let lit: Vec<(String, bool)> =
+        para(&e, 0).inlines.iter().filter_map(|i| if let Inline::Text(t, r) = i { Some((t.clone(), r.highlight.is_some())) } else { None }).collect();
+    assert_eq!(lit, [("one".to_string(), true), (" two".to_string(), false)]);
+    assert!(e.selection.is_collapsed(), "the pen stays a pen");
+    e.execute(C::Escape, fonts());
+    assert_eq!(e.highlighter(), None, "Esc puts it down");
+}
+
+#[test]
+fn ctrl_shift_v_pastes_formatting_until_the_clipboard_changes() {
+    let mut e = edit("<w:p><w:r><w:rPr><w:b/></w:rPr><w:t>bold</w:t></w:r><w:r><w:t xml:space=\"preserve\"> plain</w:t></w:r></w:p>");
+    assert!(!e.paste_takes_formatting("x", None), "no formatting held");
+    caret(&mut e, 0, 1);
+    press(&mut e, "KeyC", CTRL_SHIFT);
+    assert!(e.paste_takes_formatting("x", None), "the clipboard Copy Formatting saw");
+    assert!(e.paste_takes_formatting("x", None));
+    assert!(!e.paste_takes_formatting("y", None), "another copy since");
+    assert!(!e.paste_takes_formatting("x", None), "for good");
+    press(&mut e, "KeyC", CTRL_SHIFT);
+    select(&mut e, 0, 5, 10);
+    e.execute(C::Copy, fonts());
+    assert!(!e.paste_takes_formatting("plain", None), "a copy here changes the clipboard");
+    // The clipboard the host had at Copy Formatting: another one by the first Ctrl+Shift+V is a copy made elsewhere.
+    e.execute(C::CopyFormatting, fonts());
+    e.clipboard_at_copy_formatting("before", None);
+    assert!(!e.paste_takes_formatting("copied elsewhere", None));
+    e.execute(C::CopyFormatting, fonts());
+    e.clipboard_at_copy_formatting("before", None);
+    assert!(e.paste_takes_formatting("before", None));
+}
+
+#[test]
+fn a_style_separator_reads_back() {
+    let mut e = edit(concat!(
+        r#"<w:p><w:pPr><w:rPr><w:vanish/><w:specVanish/></w:rPr></w:pPr><w:r><w:t>Head</w:t></w:r></w:p>"#,
+        r#"<w:p><w:r><w:t xml:space="preserve"> body</w:t></w:r></w:p><w:p><w:r><w:t>next</w:t></w:r></w:p>"#,
+    ));
+    assert_eq!(texts(&e), ["Head body", "next"], "one paragraph as read");
+    let ids = texts_ids(&e);
+    assert_eq!(e.hidden_marks(ids[0]), [(Unit(4), true)]);
+    assert!(e.hidden_marks(ids[1]).is_empty());
+    caret(&mut e, 0, 0);
+}
+
+#[test]
+fn a_hidden_mark_with_spec_vanish_off_is_no_style_separator() {
+    for (spec, separator) in [(r#"<w:specVanish w:val="0"/>"#, false), ("<w:specVanish/>", true)] {
+        let e = edit(&format!(
+            r#"<w:p><w:r><w:t>one</w:t></w:r></w:p><w:p><w:pPr><w:rPr><w:vanish/>{spec}</w:rPr></w:pPr><w:r><w:t>end</w:t></w:r></w:p>"#
+        ));
+        assert_eq!(e.hidden_marks(texts_ids(&e)[1]), [(Unit(3), separator)], "{spec}");
+    }
+}
+
+/// Whether one laid-out line on page 0 shows both paragraphs.
+fn one_line(e: &mut Editor, a: crate::layout::ParaId, b: crate::layout::ParaId) -> bool {
+    let g = e.page_geometries().into_iter().find(|(p, _)| *p == 0).map(|(_, g)| g).expect("page 0");
+    g.lines.iter().any(|l| l.shows(a) && l.shows(b))
+}
+
+#[test]
+fn ctrl_alt_enter_inserts_a_style_separator() {
+    let mut e = edit(concat!(
+        r#"<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t xml:space="preserve">Head body</w:t></w:r></w:p>"#,
+        "<w:p><w:r><w:t>next</w:t></w:r></w:p>",
+    ));
+    caret(&mut e, 0, 4);
+    assert!(matches!(e.insert_style_separator(fonts()), crate::editing::commands::Outcome::Changed(_)));
+    assert_eq!(texts(&e), ["Head", " body", "next"], "the paragraph splits at the caret");
+    let ids = texts_ids(&e);
+    assert_eq!(e.hidden_marks(ids[0]), [(Unit(4), true)], "its mark is a style separator");
+    assert!(para(&e, 0).mark.hidden);
+    assert_eq!(e.selection, Selection::Caret(Position::text(StoryId::Body, ids[1], Unit(0))), "the caret after it");
+    e.complete(fonts());
+    assert!(one_line(&mut e, ids[0], ids[1]), "the two lay out as one");
+    assert!(!one_line(&mut e, ids[1], ids[2]));
+    // Saved and opened again, it reads as one paragraph with a style separator.
+    let mut again = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
+    again.complete(fonts());
+    assert_eq!(texts(&again), ["Head body", "next"]);
+    assert_eq!(again.hidden_marks(texts_ids(&again)[0]), [(Unit(4), true)]);
+    e.execute(C::Undo, fonts());
+    assert_eq!(texts(&e), ["Head body", "next"], "one undo step");
+    assert!(!para(&e, 0).mark.hidden);
+    // At a paragraph's end the mark itself becomes one, joining the next paragraph.
+    caret(&mut e, 0, 9);
+    e.insert_style_separator(fonts());
+    assert_eq!(texts(&e), ["Head body", "next"]);
+    let ids = texts_ids(&e);
+    assert_eq!(e.hidden_marks(ids[0]), [(Unit(9), true)]);
+    e.complete(fonts());
+    assert!(one_line(&mut e, ids[0], ids[1]));
+}
+
+#[test]
+fn tab_on_a_lists_first_item_moves_the_list() {
+    let mut e = edit("<w:p><w:r><w:t>one</w:t></w:r></w:p><w:p><w:r><w:t>two</w:t></w:r></w:p>");
+    e.selection = Selection::range(
+        Position::text(StoryId::Body, texts_ids(&e)[0], Unit(0)),
+        Position::text(StoryId::Body, texts_ids(&e)[1], Unit(3)),
+        Default::default(),
+    );
+    e.execute(C::SetList(Some(crate::api::command::ListKind::Numbered)), fonts());
+    let (left, level) = (|e: &Editor, n: usize| para(e, n).style.ind_left, |e: &Editor, n: usize| para(e, n).style.num.map(|(_, l)| l));
+    let a = left(&e, 1);
+    caret(&mut e, 1, 0);
+    press(&mut e, "Tab", Mods::default());
+    assert_eq!(level(&e, 1), Some(1), "a later item goes a level down");
+    press(&mut e, "Tab", SHIFT);
+    assert_eq!((level(&e, 1), left(&e, 1)), (Some(0), a));
+    caret(&mut e, 0, 0);
+    press(&mut e, "Tab", Mods::default());
+    assert_eq!((level(&e, 0), left(&e, 1)), (Some(0), a + 36.0), "the first item takes the list along");
+    press(&mut e, "Tab", SHIFT);
+    assert_eq!(left(&e, 1), a);
+}

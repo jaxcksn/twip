@@ -182,6 +182,21 @@ impl Nav<'_> {
         }
     }
 
+    /// The paragraph after (or before) `para` in its story, in text order, into and out of tables.
+    pub fn para_beside(&self, para: ParaId, forward: bool) -> Option<ParaId> {
+        let s = self.idx.para_slot(para)?;
+        let mut at = if forward { self.after(s.container, s.block) } else { self.before(s.container, s.block) }?;
+        // Each row end passed is a row further on.
+        loop {
+            match at.place {
+                Place::Text { para, .. } => return Some(para),
+                Place::RowEnd { table, row } => {
+                    at = if forward { self.after_row(at.story, table, row) } else { self.before_row_end(at.story, table, row) }?;
+                }
+            }
+        }
+    }
+
     pub fn next_para(&self, pos: Position) -> Position {
         self.right(self.para_end(pos), false)
     }

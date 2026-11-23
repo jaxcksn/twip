@@ -23,6 +23,8 @@ pub(super) struct TextDrag {
     pub moved: bool,
     pub copy: bool,
     pub drop: Option<Position>,
+    /// A right-button drag: its release opens the drop menu.
+    pub menu: bool,
 }
 
 impl Editor {
@@ -85,16 +87,24 @@ impl Editor {
             }
             return Some(Outcome::Moved);
         }
+        let Some(drop) = d.drop else {
+            if let Some(o) = object {
+                self.selection = o;
+            }
+            return Some(Outcome::Unchanged("no drop place"));
+        };
+        Some(self.drop_selection(drop, d.copy, object, fonts))
+    }
+
+    /// Moves (or copies) the selected text to `drop` as a drag and drop does: one undo step, a tracked move when
+    /// changes are tracked, the moved text selected after. `object`: the inline object selection the text stands for.
+    pub(super) fn drop_selection(&mut self, drop: Position, copy: bool, object: Option<Selection>, fonts: &Fonts) -> Outcome {
         let restore = |e: &mut Self| {
             if let Some(o) = object {
                 e.selection = o;
             }
         };
-        let Some(drop) = d.drop else {
-            restore(self);
-            return Some(Outcome::Unchanged("no drop place"));
-        };
-        let Some((a, b)) = self.selection.ordered(&self.index) else { return Some(Outcome::Unchanged("no selection")) };
+        let Some((a, b)) = self.selection.ordered(&self.index) else { return Outcome::Unchanged("no selection") };
         // Where the story dropped in is hosted: a text box's float, a note's reference.
         let in_box = match drop.story {
             super::position::StoryId::TextBox(f) => self.index.float_anchor(f).and_then(|para| {
@@ -111,13 +121,13 @@ impl Editor {
         let inside = |p: &Position| self.index.cmp(&a, p) != std::cmp::Ordering::Greater && self.index.cmp(p, &b) != std::cmp::Ordering::Greater;
         if inside(&drop) || in_box.is_some_and(|p| inside(&p)) {
             restore(self);
-            return Some(Outcome::Unchanged("dropped on the selection"));
+            return Outcome::Unchanged("dropped on the selection");
         }
         // What a drop pastes is what Copy takes.
-        let mut frag = self.clip()?;
-        frag.moved = !d.copy;
+        let Some(mut frag) = self.clip() else { return Outcome::Unchanged("nothing to move") };
+        frag.moved = !copy;
         let sel = self.selection;
-        let moving = !d.copy && self.tracking() && self.moves_whole();
+        let moving = !copy && self.tracking() && self.moves_whole();
         let mut marks = (Vec::new(), Vec::new());
         let mut placed: Option<(Position, Position)> = None;
         let paste = |e: &mut Self, placed: &mut Option<(Position, Position)>| {
@@ -166,10 +176,10 @@ impl Editor {
             }
             ok
         };
-        self.begin_batch(Some(if d.copy { "Copy" } else { "Move" }.into()));
+        self.begin_batch(Some(if copy { "Copy" } else { "Move" }.into()));
         // Paste and delete, together or not at all
         #[allow(clippy::if_same_then_else, reason = "the order differs: each call moves what the other one sees")]
-        let done = if d.copy {
+        let done = if copy {
             paste(self, &mut placed)
         } else if after {
             paste(self, &mut placed) && delete(self, &mut placed)
@@ -179,7 +189,7 @@ impl Editor {
         if !done {
             self.end_batch(false, fonts);
             restore(self);
-            return Some(Outcome::Unchanged("nothing dropped"));
+            return Outcome::Unchanged("nothing dropped");
         }
         if moving && !marks.0.is_empty() && !marks.1.is_empty() {
             self.record_move(&marks.0, &marks.1, fonts);
@@ -191,7 +201,7 @@ impl Editor {
         } else if let Some((s, t)) = placed {
             self.selection = self.normalize(Selection::range(s, t, super::selection::Granularity::Char));
         }
-        Some(self.end_batch(true, fonts))
+        self.end_batch(true, fonts)
     }
 
     pub(super) fn paste_moved(&mut self, f: &super::clipboard::Fragment, out: &Outcome, fonts: &Fonts) {

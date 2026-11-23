@@ -410,6 +410,16 @@ impl Props {
 /// WordprocessingML's), unescaped. `None` too for an element with other prefixes its part's root declares: a
 /// `w:shd`'s attributes are WordprocessingML's.
 pub fn attr_of(xml: &str, name: &str) -> Option<String> {
+    in_w(xml, |el| crate::docx::xml::attr(el, name).map(str::to_string))?
+}
+
+/// Whether on/off child `local` of the properties element `xml` (as [`attr_of`] takes it) is present and on.
+pub fn flag_of(xml: &str, local: &str) -> bool {
+    in_w(xml, |el| crate::docx::xml::flag(el, local)).flatten().unwrap_or(false)
+}
+
+/// `f` on the element `xml`, its own prefix declared as WordprocessingML's.
+fn in_w<T>(xml: &str, f: impl FnOnce(roxmltree::Node) -> T) -> Option<T> {
     let tag = xml.trim_start().strip_prefix('<')?;
     let qname = tag.split(|c: char| c.is_whitespace() || c == '/' || c == '>').next()?;
     let decl = match qname.split_once(':') {
@@ -418,7 +428,7 @@ pub fn attr_of(xml: &str, name: &str) -> Option<String> {
     };
     let text = format!("<x {decl}>{xml}</x>");
     let doc = roxmltree::Document::parse(&text).ok()?;
-    crate::docx::xml::attr(doc.root_element().first_element_child()?, name).map(str::to_string)
+    Some(f(doc.root_element().first_element_child()?))
 }
 
 /// `name="value"` pairs of a start tag as written: each value with its quotes, still escaped.

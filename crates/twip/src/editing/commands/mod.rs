@@ -135,6 +135,9 @@ impl Editor {
     }
 
     fn execute_editable(&mut self, cmd: Command, fonts: &Fonts) -> Outcome {
+        if let Some(out) = self.move_to_command(&cmd, fonts) {
+            return out;
+        }
         // A built-in style the document doesn't define yet joins it first, in the same undo step.
         if let Some(b) = self.built_in_named(&cmd) {
             if matches!(cmd, Command::SetTableStyle(_)) && self.table_target().is_none() {

@@ -2260,10 +2260,21 @@ fn tab_changes_the_level_of_list_items() {
     let at = |e: &super::super::Editor, i: usize| Position::text(StoryId::Body, super::super::tests::para_id(e, i), Unit(0));
     assert_eq!((level(&e, 2), level(&e, 3)), (Some(0), Some(0)), "1. and 2.");
     e.set_caret_for_benchmark(Selection::Caret(at(&e, 2)));
+    let left = |e: &super::super::Editor, i: usize| match &e.document().sections[0].blocks[i] {
+        crate::docx::Block::Para(p) => p.style.ind_left,
+        _ => 0.0,
+    };
+    let was = left(&e, 3);
     let tab = e.key_command("Tab", Mods::default()).unwrap();
     assert!(matches!(e.execute(tab, fonts()), super::super::Outcome::Changed(_)), "the first item");
-    assert_eq!(level(&e, 2), Some(1));
+    assert_eq!((level(&e, 2), left(&e, 3) > was), (Some(0), true), "the first item takes the whole list along");
     e.execute(Command::Undo, fonts());
+    e.indent_keys = false;
+    let tab = e.key_command("Tab", Mods::default()).unwrap();
+    e.execute(tab, fonts());
+    assert_eq!(level(&e, 2), Some(1), "with the AutoFormat option off, a level down");
+    e.execute(Command::Undo, fonts());
+    e.indent_keys = true;
     let before = texts(&e);
     e.set_caret_for_benchmark(Selection::Text {
         anchor: at(&e, 3),
@@ -2295,7 +2306,9 @@ fn tab_in_a_cells_list_item_changes_its_level() {
     let para = found.expect("a level-two item in a cell");
     e.set_caret_for_benchmark(Selection::Caret(super::super::position::Position::text(StoryId::Body, para, Unit(0))));
     let tab = e.key_command("Tab", Mods::default()).unwrap();
-    assert!(matches!(tab, Command::SetListLevel(_)), "{tab:?}");
+    assert!(matches!(tab, Command::IncreaseIndent), "the list's Tab, not the next cell: {tab:?}");
+    e.execute(tab, fonts());
+    assert_eq!(e.index().para(e.document(), para).and_then(|p| p.style.num).map(|(_, l)| l), Some(2));
 }
 
 #[test]

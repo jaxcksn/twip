@@ -74,12 +74,25 @@ impl Editor {
             })
         } else {
             let direct_ind = Props::parse(p.style.direct.0.as_deref(), "pPr", &self.cx()).get("ind").is_some();
-            if !(left > 0.0 && p.style.ind_first == 0.0 && direct_ind) {
+            let first = p.style.ind_first;
+            if !self.indent_keys || !direct_ind || !((left > 0.0 && first >= 0.0) || first > 0.0) {
                 self.abort(tx);
                 return None;
             }
-            let l = twips((((left - 0.01) / 18.0).floor() * 18.0).max(0.0));
-            self.repara(&mut tx, para, &|p, w| p.set("ind", format!("<{w}ind {w}left=\"{l}\" {w}firstLine=\"0\"/>")))
+            // Back the way Tab came: the left indent a tab stop back, then the first line's indent.
+            if first > 0.0 {
+                let cx = self.cx();
+                let ind = if left > 0.0 {
+                    let tab = self.tab_grid();
+                    vec![("left", Some(twips(((left - 1e-6) / tab).ceil().max(1.0) * tab - tab).to_string())), ("start", None)]
+                } else {
+                    vec![("firstLine", Some("0".to_string()))]
+                };
+                self.repara(&mut tx, para, &|p, _| p.attrs("ind", &ind, &cx))
+            } else {
+                let l = twips((((left - 0.01) / 18.0).floor() * 18.0).max(0.0));
+                self.repara(&mut tx, para, &|p, w| p.set("ind", format!("<{w}ind {w}left=\"{l}\" {w}firstLine=\"0\"/>")))
+            }
         };
         if !ok {
             self.abort(tx);
@@ -88,7 +101,7 @@ impl Editor {
         Some(self.commit(tx, None, fonts))
     }
 
-    fn list_items(&self, paras: &[ParaId]) -> Vec<(ParaId, (i64, i64))> {
+    pub(super) fn list_items(&self, paras: &[ParaId]) -> Vec<(ParaId, (i64, i64))> {
         let num = |&para: &ParaId| Some((para, self.index.para(&self.doc, para)?.style.num.filter(|(id, _)| *id != 0)?));
         paras.iter().filter_map(num).collect()
     }
@@ -204,9 +217,6 @@ impl Editor {
     }
 
     pub(super) fn new_list(&mut self, tx: &mut Tx, bullet: bool) -> i64 {
-        let Some(res) = self.doc.resolver.clone() else { return 0 };
-        let abstract_id = res.numbering.abstracts.keys().copied().chain(self.doc.added_lists.iter().map(|l| l.abstract_id)).max().unwrap_or(-1) + 1;
-        let num_id = res.numbering.nums.keys().copied().chain(self.doc.added_lists.iter().map(|l| l.num_id)).max().unwrap_or(0) + 1;
         let mut levels = String::new();
         for k in 0..9 {
             let left = 720 * (k + 1);
@@ -228,8 +238,26 @@ impl Editor {
                 r#"<w:lvl w:ilvl="{k}"><w:start w:val="1"/><w:numFmt w:val="{fmt}"/><w:lvlText w:val="{text}"/><w:lvlJc w:val="{jc}"/><w:pPr><w:ind w:left="{left}" w:hanging="{hanging}"/></w:pPr>{rpr}</w:lvl>"#
             ));
         }
+        self.add_list_xml(tx, "hybridMultilevel", &levels)
+    }
+
+    /// The single-level bullet list Word gives the List Bullet style, linked to style `style`.
+    pub(super) fn new_style_bullets(&mut self, tx: &mut Tx, style: &str) -> i64 {
+        let level = format!(
+            r#"<w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="bullet"/><w:pStyle w:val="{}"/><w:lvlText w:val="{}"/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="360" w:hanging="360"/></w:pPr><w:rPr><w:rFonts w:ascii="Symbol" w:hAnsi="Symbol" w:hint="default"/></w:rPr></w:lvl>"#,
+            crate::docx::write::props::esc(style),
+            '\u{F0B7}'
+        );
+        self.add_list_xml(tx, "singleLevel", &level)
+    }
+
+    /// Adds a list of `levels` (`w:lvl` elements), returning its number id; 0 when it couldn't be added.
+    fn add_list_xml(&mut self, tx: &mut Tx, multi: &str, levels: &str) -> i64 {
+        let Some(res) = self.doc.resolver.clone() else { return 0 };
+        let abstract_id = res.numbering.abstracts.keys().copied().chain(self.doc.added_lists.iter().map(|l| l.abstract_id)).max().unwrap_or(-1) + 1;
+        let num_id = res.numbering.nums.keys().copied().chain(self.doc.added_lists.iter().map(|l| l.num_id)).max().unwrap_or(0) + 1;
         let abstract_xml = format!(
-            r#"<w:abstractNum xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" w:abstractNumId="{abstract_id}"><w:multiLevelType w:val="hybridMultilevel"/>{levels}</w:abstractNum>"#
+            r#"<w:abstractNum xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" w:abstractNumId="{abstract_id}"><w:multiLevelType w:val="{multi}"/>{levels}</w:abstractNum>"#
         );
         let part = format!(
             r#"<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">{abstract_xml}<w:num xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" w:numId="{num_id}"><w:abstractNumId w:val="{abstract_id}"/></w:num></w:numbering>"#

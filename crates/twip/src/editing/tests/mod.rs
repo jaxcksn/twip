@@ -23,6 +23,7 @@ mod fuzz;
 mod history;
 mod into_tables;
 mod json;
+mod keys;
 mod list_definitions;
 mod merge;
 mod navigation;

@@ -7,6 +7,7 @@ use crate::docx::Inline;
 use crate::docx::RunStyle;
 use crate::docx::write::props::Props;
 use crate::font::Fonts;
+use crate::layout::Unit;
 
 use super::Outcome;
 use crate::editing::format::{Format, Toggle};
@@ -326,16 +327,58 @@ impl Editor {
         )
     }
 
-    pub(in crate::editing) fn change_case(&mut self, to: CaseChange, fonts: &Fonts) -> Outcome {
-        if self.selection.is_collapsed() {
-            return Outcome::unavailable("nothing selected");
+    /// What Change Case works on: the selected text, or the word at a collapsed caret.
+    fn case_ranges(&mut self) -> Option<Vec<(crate::layout::ParaId, crate::layout::Unit, crate::layout::Unit)>> {
+        if !self.selection.is_collapsed() {
+            return Some(self.selected_ranges().into_iter().filter(|r| r.1 < r.2).collect());
         }
+        let (para, at) = self.caret()?.para_offset()?;
+        let (a, b) = crate::editing::text::UnitText::of(self.index.para(&self.doc, para)?).word_touching(at)?;
+        Some(vec![(para, a, b)])
+    }
+
+    /// The case Shift+F3 changes the selection (the word at a collapsed caret) to next: lowercase text to UPPERCASE,
+    /// UPPERCASE to Capitalize Each Word (Sentence case for a selection ending a sentence), any other to lowercase.
+    pub fn case_cycle(&mut self) -> Option<CaseChange> {
+        let ranges = self.case_ranges()?;
+        let (mut upper, mut lower, mut last) = (false, false, None);
+        for &(para, a, b) in &ranges {
+            let Some(p) = self.index.para(&self.doc, para) else { continue };
+            let mut at = 0u32;
+            for i in &p.inlines {
+                let n = i.units() as u32;
+                let (s, e) = (at, at + n);
+                at = e;
+                let Inline::Text(text, _) = i else { continue };
+                if e <= a.0 || s >= b.0 {
+                    continue;
+                }
+                let (from, to) = (a.0.max(s) - s, b.0.min(e) - s);
+                for c in text.chars().skip(from as usize).take((to - from) as usize) {
+                    upper |= c.is_uppercase();
+                    lower |= c.is_lowercase();
+                    if !c.is_whitespace() {
+                        last = Some(c);
+                    }
+                }
+            }
+        }
+        let sentence = !self.selection.is_collapsed() && matches!(last, Some('.' | '!' | '?'));
+        Some(match (lower, upper) {
+            (true, false) => CaseChange::Upper,
+            (false, true) if sentence => CaseChange::Sentence,
+            (false, true) => CaseChange::Title,
+            _ => CaseChange::Lower,
+        })
+    }
+
+    pub(in crate::editing) fn change_case(&mut self, to: CaseChange, fonts: &Fonts) -> Outcome {
         if self.refuse_expanded() || self.refuse_locked_content() {
             return Outcome::Unchanged("locked");
         }
-        let ranges: Vec<_> = self.selected_ranges().into_iter().filter(|r| r.1 < r.2).collect();
+        let Some(ranges) = self.case_ranges() else { return Outcome::unavailable("no word at the caret") };
         let mut tx = self.begin("Change Case");
-        for (para, a, b) in ranges {
+        for &(para, a, b) in &ranges {
             let Some(p) = self.index.para(&self.doc, para) else { continue };
             let mut with = Vec::new();
             let mut at = 0u32;
@@ -379,6 +422,20 @@ impl Editor {
             }
         }
         self.keep_selection_through(&tx);
+        // A caret inside the word stays as far from its end.
+        if let (crate::editing::selection::Selection::Caret(c), [(para, _, b)]) = (self.selection, &ranges[..])
+            && let Some((p, at)) = c.para_offset()
+            && p == *para
+        {
+            let end = tx.maps.iter().fold(crate::editing::position::Position::text(c.story, p, *b), |q, m| m.apply(q));
+            if let Some((_, e)) = end.para_offset() {
+                self.selection = crate::editing::selection::Selection::Caret(crate::editing::position::Position::text(
+                    c.story,
+                    p,
+                    Unit(e.0.saturating_sub(b.0 - at.0)),
+                ));
+            }
+        }
         self.commit(tx, None, fonts)
     }
 
@@ -419,7 +476,34 @@ impl Editor {
         }
         let ppr = whole.then(|| strip(p.style.direct.0.as_deref(), "pPr", &["sectPr", "rPr", "pPrChange"]).xml());
         self.painter = Some((rpr.xml(), ppr));
+        self.painter_claim = Some(None);
         Outcome::Moved
+    }
+
+    /// Whether Ctrl+Shift+V, pasting clipboard `text` (and `html`), pastes the painter's formatting instead: it holds
+    /// formatting Copy Formatting took and the clipboard hasn't changed since. A copy here changes it; one elsewhere
+    /// shows as other clipboard data than the first Ctrl+Shift+V after Copy Formatting saw.
+    pub fn paste_takes_formatting(&mut self, text: &str, html: Option<&str>) -> bool {
+        let Some(claim) = self.painter_claim.filter(|_| self.painter.is_some()) else { return false };
+        let now = clipboard_fingerprint(text, html);
+        match claim {
+            Some(seen) if seen != now => {
+                self.painter_claim = None;
+                false
+            }
+            _ => {
+                self.painter_claim = Some(Some(now));
+                true
+            }
+        }
+    }
+
+    /// The clipboard as it is at Copy Formatting (`text`, `html`), when the host can tell: Ctrl+Shift+V then pastes
+    /// formatting only while the clipboard is still that, so a copy made elsewhere before the first Ctrl+Shift+V counts.
+    pub fn clipboard_at_copy_formatting(&mut self, text: &str, html: Option<&str>) {
+        if self.painter_claim.is_some() && self.painter.is_some() {
+            self.painter_claim = Some(Some(clipboard_fingerprint(text, html)));
+        }
     }
 
     /// The run of `para`'s first unit from `from`, or its mark's.
@@ -538,4 +622,12 @@ fn cases() {
     assert_eq!(run("Hello", CaseChange::Toggle), "hELLO");
     assert_eq!(run("Hello", CaseChange::Upper), "HELLO");
     assert_eq!(run("Hello", CaseChange::Lower), "hello");
+}
+
+/// What tells one clipboard's content from another's.
+fn clipboard_fingerprint(text: &str, html: Option<&str>) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    (text, html).hash(&mut h);
+    h.finish()
 }

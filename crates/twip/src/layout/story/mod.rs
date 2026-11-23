@@ -226,7 +226,7 @@ fn layout_in(
     memos: &mut Memos,
 ) -> Result<Rc<StoryLayout>, Yield> {
     let last = if cell.is_some() { None } else { env.ctx.env.normal.as_ref() };
-    let blocks = super::join::laid_in(blocks, env.ctx.env.text.review.view, last);
+    let blocks = super::join::laid_in(blocks, env.ctx.env.text.review.view, last, env.ctx.env.text.compat == crate::docx::model::Compat::Legacy);
     let children = child_ids(&blocks, Some(width), env, cell, memos)?;
     let probe = StoryKey { hf, ..StoryKey::new(children.clone(), Some(width), cell, env, &blocks) };
     cached(memos, |c| &mut c.stories, probe, story_bytes, |m| layout_with(&blocks, &children, width, env, cell, (0, 0), &[], hf, m))
@@ -234,7 +234,12 @@ fn layout_in(
 
 /// The story's text from piece `at.1` of block `at.0` on, laid out at `width` (not cached).
 pub fn layout_from(blocks: &[&Block], width: f64, env: &StoryEnv, at: (usize, usize), memos: &mut Memos) -> Result<StoryLayout, Yield> {
-    let blocks = super::join::laid_in(blocks, env.ctx.env.text.review.view, env.ctx.env.normal.as_ref());
+    let blocks = super::join::laid_in(
+        blocks,
+        env.ctx.env.text.review.view,
+        env.ctx.env.normal.as_ref(),
+        env.ctx.env.text.compat == crate::docx::model::Compat::Legacy,
+    );
     let children = child_ids(&blocks, Some(width), env, None, memos)?;
     layout_with(&blocks, &children, width, env, None, at, &[], None, memos)
 }

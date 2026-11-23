@@ -939,6 +939,43 @@ impl Editor {
             .collect()
     }
 
+    /// `f`'s blocks, whole, in `container` before block `at` (no paragraph split), inside the block controls `dest`, as
+    /// one step: what moving paragraphs puts between blocks. The copies' first and last paragraphs.
+    pub(super) fn paste_blocks(
+        &mut self,
+        f: &Fragment,
+        container: super::index::Container,
+        at: usize,
+        dest: &[crate::docx::ControlId],
+        fonts: &Fonts,
+    ) -> Option<(ParaId, ParaId)> {
+        if self.refuse_expanded() || self.refuse_locked() {
+            return None;
+        }
+        let mut tx = self.begin("Paste");
+        let mut blocks: Vec<Block> = f.blocks.iter().map(fresh).collect();
+        self.take_in(&mut tx, &mut blocks, f, &mut Taken::default());
+        for b in &mut blocks {
+            match b {
+                Block::Para(p) => p.controls.splice(0..0, dest.iter().copied()),
+                Block::Table(t) => t.controls.splice(0..0, dest.iter().copied()),
+            };
+        }
+        let ids: Vec<ParaId> = blocks.iter().filter_map(|b| if let Block::Para(p) = b { Some(ParaId(p.id)) } else { None }).collect();
+        let (&a, &b) = (ids.first()?, ids.last()?);
+        if self.step(&mut tx, Step::Blocks { container, range: at..at, with: blocks }).is_err() {
+            self.abort(tx);
+            return None;
+        }
+        for p in ids {
+            if let Some(q) = self.index.para(&self.doc, p).cloned() {
+                let with = self.fit_inlines(p, &q.inlines);
+                let _ = self.step(&mut tx, Step::Restyle { para: p, inlines: with });
+            }
+        }
+        matches!(self.commit(tx, None, fonts), Outcome::Changed(_)).then_some((a, b))
+    }
+
     pub fn paste_fragment(&mut self, f: &Fragment, fonts: &Fonts) -> Outcome {
         if let Some(o) = self.paste_cells(f, fonts) {
             return o;

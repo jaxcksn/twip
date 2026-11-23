@@ -21,7 +21,7 @@ use super::{
 
 // Content widths
 fn content_widths(blocks: &[Block], env: &StoryEnv, fixed: bool, memos: &mut Memos) -> Result<Rc<(i64, i64, i64)>, Yield> {
-    let laid = crate::layout::join::laid(blocks, env.ctx.env.text.review.view);
+    let laid = crate::layout::join::laid(blocks, env.ctx.env.text.review.view, env.ctx.env.text.compat == crate::docx::model::Compat::Legacy);
     let cell = Some(CellEnds { fixed, ..CellEnds::default() });
     let probe = StoryKey::new(child_ids(&laid, None, env, cell, memos)?, None, cell, env, &laid);
     cached(memos, |c| &mut c.cell_widths, probe, |_| std::mem::size_of::<(i64, i64, i64)>(), |m| content_widths_uncached(&laid, env, fixed, m))
@@ -30,7 +30,7 @@ fn content_widths(blocks: &[Block], env: &StoryEnv, fixed: bool, memos: &mut Mem
 fn vertical_width(blocks: &[Block], env: &StoryEnv, memos: &mut Memos) -> Result<i64, Yield> {
     let view = env.ctx.env.text.review.view;
     let mut w = 6;
-    for b in &crate::layout::join::laid(blocks, view) {
+    for b in &crate::layout::join::laid(blocks, view, env.ctx.env.text.compat == crate::docx::model::Compat::Legacy) {
         let LaidBlock::Para(laid) = b else { continue };
         let p = laid.para();
         let space = laid.shape_space_in(env.fields, env.notes, &env.ctx, true, memos)?;

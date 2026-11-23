@@ -782,15 +782,38 @@ impl Editor {
             Format::ClearFormatting => self.format_runs("Clear Formatting", &|p, _, _| *p = Props::parse(None, "rPr", &Cx::of_xml(NEW_ROOT)), fonts),
             Format::Indent(more) => {
                 let more = *more;
+                self.indent_list(more, fonts).unwrap_or_else(|| self.indent_plain(more, fonts))
+            }
+            Format::Hanging(more) => {
+                let (more, tab) = (*more, self.tab_grid());
                 self.format_paras(
-                    "Indent",
+                    "Hanging Indent",
                     &|p, cx, q| {
-                        let left = if more { q.style.ind_left + 36.0 } else { (q.style.ind_left - 36.0).max(0.0) };
-                        p.attrs("ind", &[("left", Some(twips(left))), ("start", None)], cx)
+                        // The first line stays where it is; the other lines move to the next or last tab stop.
+                        let first_line = q.style.ind_left + q.style.ind_first;
+                        let left = grid_step(q.style.ind_left, tab, more);
+                        let first = first_line - left;
+                        let (first, hanging) = if first < 0.0 { (None, Some(twips(-first))) } else { (Some(twips(first)), None) };
+                        p.attrs("ind", &[("left", Some(twips(left))), ("start", None), ("firstLine", first), ("hanging", hanging)], cx)
                     },
                     fonts,
                 )
             }
+            &Format::StepFont(grow) => self.format_runs(
+                "Font Size",
+                &|p, w, run| {
+                    let next = if grow { run.size + 1.0 } else { run.size - 1.0 };
+                    let hp = ((next * 2.0).round() as i64).clamp(2, 3276);
+                    p.set("sz", format!("<{w}sz {w}val=\"{hp}\"/>"));
+                    p.set("szCs", format!("<{w}szCs {w}val=\"{hp}\"/>"));
+                },
+                fonts,
+            ),
+            Format::ClearParagraph => self.format_paras_direct(
+                "Reset Paragraph",
+                &|p, _, _| p.kids.retain(|(n, _)| matches!(n.as_str(), "pStyle" | "rPr" | "sectPr" | "pPrChange" | "cnfStyle" | "divId")),
+                fonts,
+            ),
             Format::ParaBorders(which) => {
                 let which = which.clone();
                 self.format_paras(
@@ -834,6 +857,201 @@ impl Editor {
     }
 }
 
+impl Editor {
+    /// The default tab stop, which indents step along.
+    pub(super) fn tab_grid(&self) -> f64 {
+        let t = self.doc.settings.default_tab;
+        if t >= 1.0 { t } else { 36.0 }
+    }
+
+    /// Increase or Decrease Indent on the selected paragraphs that aren't list items: their left indents to the next (or
+    /// last) default tab stop.
+    fn indent_plain(&mut self, more: bool, fonts: &Fonts) -> Outcome {
+        let tab = self.tab_grid();
+        let twips = |pt: f64| ((pt * 20.0).round() as i64).to_string();
+        self.format_paras(
+            "Indent",
+            &|p, cx, q| {
+                if q.style.num.is_none_or(|(id, _)| id == 0) {
+                    p.attrs("ind", &[("left", Some(twips(grid_step(q.style.ind_left, tab, more)))), ("start", None)], cx);
+                }
+            },
+            fonts,
+        )
+    }
+
+    /// Increase or Decrease Indent with list items selected: the whole list moves when its first selected item is the
+    /// list's first (at the first level), else the items change level; other paragraphs selected with them step along the
+    /// tab grid, in the same undo step. `None` when no selected paragraph is a list item.
+    fn indent_list(&mut self, more: bool, fonts: &Fonts) -> Option<Outcome> {
+        if self.style_target.is_some() {
+            return None;
+        }
+        let paras = self.selected_paras();
+        let items = self.list_items(&paras);
+        let &(first, (num, ilvl)) = items.first()?;
+        let whole = ilvl == 0 && self.first_in_list(first, num);
+        let list = move |e: &mut Self| if whole { e.shift_list(num, more, fonts) } else { e.list_level(!more, fonts) };
+        if items.len() == paras.len() {
+            return Some(list(self));
+        }
+        Some(self.joined("Indent", fonts, |e| {
+            let items = list(e);
+            if matches!(items, Outcome::Refused(_)) {
+                return items;
+            }
+            let plain = e.indent_plain(more, fonts);
+            if matches!(plain, Outcome::Changed(_)) { plain } else { items }
+        }))
+    }
+
+    /// Whether no paragraph before `para` in its container (tables in it too) is in list `num`: a backward walk that
+    /// stops at the nearest earlier item.
+    fn first_in_list(&self, para: ParaId, num: i64) -> bool {
+        use crate::docx::Block;
+        let Some(slot) = self.index.para_slot(para) else { return false };
+        let Some(blocks) = self.index.blocks(&self.doc, slot.container) else { return false };
+        let mut stack = vec![blocks[..slot.block.min(blocks.len())].iter().rev()];
+        while let Some(it) = stack.last_mut() {
+            match it.next() {
+                None => {
+                    stack.pop();
+                }
+                Some(Block::Para(p)) if p.style.num.is_some_and(|(id, _)| id == num) => return false,
+                Some(Block::Para(_)) => {}
+                // The last cell's blocks are walked first.
+                Some(Block::Table(t)) => stack.extend(t.rows.iter().flat_map(|r| &r.cells).map(|c| c.blocks.iter().rev())),
+            }
+        }
+        true
+    }
+
+    /// Moves every level of list `num` a default tab stop right (or left, no further than the margin).
+    fn shift_list(&mut self, num: i64, more: bool, fonts: &Fonts) -> Outcome {
+        use crate::api::command::{ListApplyTo, ListDefinitionChange};
+        use crate::api::value::Points;
+        let Some(mut levels) = self.list_levels(num) else { return Outcome::Unchanged("no list") };
+        let tab = self.tab_grid();
+        let least = levels.iter().map(|l| l.number_position.0.min(l.text_indent.0)).fold(f64::MAX, f64::min);
+        let by = if more { tab } else { -tab.min(least.max(0.0)) };
+        if by == 0.0 {
+            return Outcome::Unchanged("the list is at the margin");
+        }
+        for l in &mut levels {
+            l.number_position = Points(l.number_position.0 + by);
+            l.text_indent = Points(l.text_indent.0 + by);
+            l.tab = l.tab.map(|t| Points(t.0 + by));
+        }
+        self.set_list_definition(ListDefinitionChange { levels, apply_to: ListApplyTo::WholeList, name: None }, fonts)
+    }
+
+    /// The hidden paragraph marks of `para`: where each paragraph a vanished mark joined onto it as read ends, then its
+    /// own mark at its end when that is hidden (made since reading: it joins the next paragraph), each with whether it
+    /// is a style separator (`specVanish`).
+    pub fn hidden_marks(&self, para: ParaId) -> Vec<(Unit, bool)> {
+        let Some(p) = self.index.para(&self.doc, para) else { return Vec::new() };
+        let parts = p.src.as_ref().filter(|s| s.joined.len() + 1 == s.ranges.len()).map_or(&[][..], |s| &s.joined[..]);
+        let own = p
+            .mark
+            .hidden
+            .then(|| (super::step::para_len(p), p.mark.direct.0.as_deref().is_some_and(|x| crate::docx::write::props::flag_of(x, "specVanish"))));
+        parts.iter().map(|j| (Unit(j.end), j.spec_vanish)).chain(own).collect()
+    }
+
+    /// Ctrl+Alt+Enter: a style separator, a hidden paragraph mark (`w:vanish`, `w:specVanish`) that runs the paragraph
+    /// before it into the one after, each keeping its own properties. At a paragraph's end with a paragraph after it,
+    /// that paragraph's mark becomes one; elsewhere the paragraph splits at the caret as Enter splits it (a selection
+    /// replaced) and the first part's mark becomes one. One undo step, the caret after it.
+    pub fn insert_style_separator(&mut self, fonts: &Fonts) -> Outcome {
+        if self.refuse_expanded() || self.refuse_locked() {
+            return Outcome::Unchanged("locked");
+        }
+        let Some((para, at)) = self.selection.focus().and_then(|p| p.para_offset()) else { return Outcome::unavailable("no caret in text") };
+        let Some(slot) = self.index.para_slot(para) else { return Outcome::Unchanged("no paragraph") };
+        let at_end = self.selection.is_collapsed()
+            && self.index.para(&self.doc, para).is_some_and(|p| super::step::para_len(p) == at)
+            && matches!(self.index.blocks(&self.doc, slot.container).and_then(|b| b.get(slot.block + 1)), Some(crate::docx::Block::Para(_)));
+        self.joined("Style Separator", fonts, |e| {
+            let target = if at_end {
+                para
+            } else {
+                let out = e.execute(super::commands::Command::InsertParagraph, fonts);
+                if !matches!(out, Outcome::Changed(_)) {
+                    return out;
+                }
+                // The paragraph before the caret's
+                let Some(here) = e.selection.focus().and_then(|p| p.para_offset()).and_then(|(p, _)| e.index.para_slot(p)) else {
+                    return Outcome::Unchanged("no paragraph");
+                };
+                match here.block.checked_sub(1).and_then(|b| e.index.blocks(&e.doc, here.container)?.get(b)) {
+                    Some(crate::docx::Block::Para(p)) => ParaId(p.id),
+                    _ => return Outcome::Unchanged("no paragraph"),
+                }
+            };
+            e.separator_mark(target, fonts)
+        })
+    }
+
+    /// `para`'s mark made a style separator.
+    fn separator_mark(&mut self, para: ParaId, fonts: &Fonts) -> Outcome {
+        let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
+        let cx = self.cx();
+        let (Some(again), Some(p)) = (self.para_again(para, None, &res, &cx), self.index.para(&self.doc, para)) else {
+            return Outcome::Unchanged("no paragraph");
+        };
+        let mut props = Props::parse(p.mark.direct.0.as_deref(), "rPr", &cx);
+        let w = &cx.w;
+        props.set("vanish", format!("<{w}vanish/>"));
+        props.set("specVanish", format!("<{w}specVanish/>"));
+        let mark = res.rerun_xml(again.mark_base(), &p.mark, props.xml().as_deref(), &cx);
+        let (style, list) = (p.style.clone(), p.list.clone());
+        let mut tx = self.begin("Style Separator");
+        if self.step(&mut tx, Step::Para { para, style, mark, list }).is_err() {
+            self.abort(tx);
+            return Outcome::Unchanged("the mark stayed");
+        }
+        tx.stale_paras.push(para);
+        self.commit(tx, None, fonts)
+    }
+
+    /// Ctrl+] and Ctrl+[: the selection's font sizes a point larger or smaller, each run its own.
+    pub fn step_font_size(&mut self, grow: bool, fonts: &Fonts) -> Outcome {
+        self.format(&Format::StepFont(grow), fonts)
+    }
+
+    /// Ctrl+T and Ctrl+Shift+T: the selected paragraphs' hanging indent a default tab stop larger or smaller, the first
+    /// line staying where it is.
+    pub fn hanging_indent(&mut self, more: bool, fonts: &Fonts) -> Outcome {
+        self.format(&Format::Hanging(more), fonts)
+    }
+
+    /// Ctrl+Q: the selected paragraphs' direct formatting removed, their styles kept.
+    pub fn clear_paragraph_formatting(&mut self, fonts: &Fonts) -> Outcome {
+        self.format(&Format::ClearParagraph, fonts)
+    }
+
+    /// Clear All Formatting: the selection's direct character formatting (its highlight aside) and character styles
+    /// removed, and its paragraphs' direct formatting, the paragraphs in the default paragraph style. One undo step.
+    pub fn clear_all_formatting(&mut self, fonts: &Fonts) -> Outcome {
+        self.joined("Clear Formatting", fonts, |e| {
+            let runs = e.format_runs(
+                "Clear Formatting",
+                &|p, _, _| p.kids.retain(|(n, _)| matches!(n.as_str(), "highlight" | "ins" | "del" | "moveFrom" | "moveTo" | "rPrChange")),
+                fonts,
+            );
+            if matches!(runs, Outcome::Refused(_)) {
+                return runs;
+            }
+            let paras = e.format_paras_direct(
+                "Clear Formatting",
+                &|p, _, _| p.kids.retain(|(n, _)| matches!(n.as_str(), "rPr" | "sectPr" | "pPrChange" | "cnfStyle" | "divId")),
+                fonts,
+            );
+            if matches!(paras, Outcome::Changed(_)) { paras } else { runs }
+        })
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Format {
     Set(Toggle, bool),
@@ -844,8 +1062,32 @@ pub enum Format {
     FontFamily(String),
     ClearFormatting,
     Indent(bool),
+    /// A hanging indent one tab stop larger (or smaller).
+    Hanging(bool),
+    /// Every run's size a point larger (or smaller).
+    StepFont(bool),
+    /// The paragraphs' direct formatting removed, their styles kept.
+    ClearParagraph,
     ParaStyle(String),
     CharStyle(String),
     ParaBorders(String),
     ParaShading(Option<u32>),
+}
+
+/// `left` moved to the next (or last) multiple of `tab`, within 0 to 1584 points.
+fn grid_step(left: f64, tab: f64, more: bool) -> f64 {
+    let at = left / tab;
+    let to = if more { (at + 1e-6).floor() + 1.0 } else { (at - 1e-6).ceil() - 1.0 };
+    (to * tab).clamp(0.0, 1584.0)
+}
+
+#[test]
+fn indents_step_along_the_tab_grid() {
+    assert_eq!(grid_step(0.0, 36.0, true), 36.0);
+    assert_eq!(grid_step(10.0, 36.0, true), 36.0);
+    assert_eq!(grid_step(36.0, 36.0, true), 72.0);
+    assert_eq!(grid_step(40.0, 36.0, false), 36.0);
+    assert_eq!(grid_step(36.0, 36.0, false), 0.0);
+    assert_eq!(grid_step(0.0, 36.0, false), 0.0);
+    assert_eq!(grid_step(1580.0, 36.0, true), 1584.0);
 }

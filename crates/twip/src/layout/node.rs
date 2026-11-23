@@ -70,11 +70,11 @@ impl<'a> Blocks<'a> {
     }
 
     /// Blocks `first..=last` of one story laid out as one paragraph (see [`super::join::laid_para`]).
-    pub fn laid_para(&self, first: usize, last: usize) -> Option<super::join::LaidPara<'_>> {
+    pub fn laid_para(&self, first: usize, last: usize, legacy: bool) -> Option<super::join::LaidPara<'_>> {
         let b = self.body.len();
         match last < b {
-            true => super::join::laid_para(self.body.get(first..=last)?),
-            false => super::join::laid_para(self.tail.get(first.checked_sub(b)?..=last - b)?),
+            true => super::join::laid_para(self.body.get(first..=last)?, legacy),
+            false => super::join::laid_para(self.tail.get(first.checked_sub(b)?..=last - b)?, legacy),
         }
     }
 

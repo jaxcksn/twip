@@ -26,6 +26,11 @@ pub struct AutoCorrect {
     pub dashes: bool,
     pub numbered_lists: bool,
     pub bulleted_lists: bool,
+    /// AutoFormat: three or more of `-`, `_`, `=`, `*`, `~` or `#` alone in a paragraph, then Enter, make a border
+    /// below it.
+    pub border_lines: bool,
+    /// AutoFormat: an Internet address, email address or network path, then a space or Enter, becomes a link.
+    pub internet_paths: bool,
     pub entries: Option<HashMap<String, String>>,
     pub first_letter_exceptions: Option<Vec<String>>,
     pub initial_caps_exceptions: Option<Vec<String>>,
@@ -46,6 +51,8 @@ impl Default for AutoCorrect {
             dashes: true,
             numbered_lists: true,
             bulleted_lists: true,
+            border_lines: true,
+            internet_paths: true,
             entries: None,
             first_letter_exceptions: None,
             initial_caps_exceptions: None,
@@ -119,6 +126,76 @@ fn list_start(before: &[char], ac: &AutoCorrect) -> Option<bool> {
         ['*' | '-'] if ac.bulleted_lists => Some(true),
         _ => None,
     }
+}
+
+/// The bottom border a border line's character makes: its line style and width in eighths of a point.
+pub fn border_line(text: &[char]) -> Option<(&'static str, u32)> {
+    let &c = text.first()?;
+    if text.len() < 3 || text.iter().any(|&x| x != c) {
+        return None;
+    }
+    Some(match c {
+        '-' => ("single", 6),
+        '_' => ("single", 12),
+        '=' => ("double", 6),
+        '*' => ("dotted", 24),
+        '~' => ("wave", 6),
+        '#' => ("thinThickThinSmallGap", 24),
+        _ => return None,
+    })
+}
+
+/// The longest address or path taken, in characters.
+const MAX_PATH: usize = 2048;
+
+/// Where an Internet address, email address or network path ends `before` (the text up to the space or paragraph end
+/// that finishes it): its first character, how many it has (closing punctuation left out) and the link's address.
+pub fn internet_path(before: &[char]) -> Option<(usize, usize, String)> {
+    let start = before.iter().rposition(|c| c.is_whitespace() || *c == super::text::OBJECT).map_or(0, |i| i + 1);
+    if before.len() - start > MAX_PATH {
+        return None;
+    }
+    let word = &before[start..];
+    let lead = word.iter().take_while(|c| matches!(c, '(' | '[' | '<' | '"' | '\'' | '\u{201C}' | '\u{2018}')).count();
+    let core = &word[lead..];
+    let trail = core.iter().rev().take_while(|c| ends_word(**c) || matches!(c, ')' | ']' | '>' | '"' | '\'' | '\u{201D}' | '\u{2019}')).count();
+    let core = &core[..core.len() - trail];
+    // What it can be is told from the characters: text is made only for an address.
+    let after = |prefix: &str| {
+        core.len() > prefix.len()
+            && core.iter().zip(prefix.chars()).all(|(c, p)| c.to_ascii_lowercase() == p)
+            && core[prefix.len()..].iter().any(|c| c.is_alphanumeric())
+    };
+    let text = || core.iter().collect::<String>();
+    let address = if ["http://", "https://", "ftp://", "file://", "mailto:", "news:"].iter().any(|p| after(p)) {
+        text()
+    } else if after("www.") {
+        format!("http://{}", text())
+    } else if after("ftp.") {
+        format!("ftp://{}", text())
+    } else if core.starts_with(&['\\', '\\']) && core.get(2).is_some_and(|c| c.is_alphanumeric()) && core[2..].contains(&'\\') {
+        format!("file:///{}", text())
+    } else if core.contains(&'@') && is_email(&text()) {
+        format!("mailto:{}", text())
+    } else {
+        return None;
+    };
+    Some((start + lead, core.len(), address))
+}
+
+/// `local@domain.tld`, as Word takes an email address.
+fn is_email(t: &str) -> bool {
+    let Some((local, domain)) = t.split_once('@') else { return false };
+    !local.is_empty()
+        && local.chars().all(|c| {
+            c.is_alphanumeric()
+                || matches!(c, '.' | '-' | '_' | '+')
+                || matches!(c, '!' | '#' | '$' | '%' | '&' | '\'' | '*' | '/' | '=' | '?' | '^' | '`' | '{' | '|' | '}' | '~')
+        })
+        && domain.chars().all(|c| c.is_alphanumeric() || matches!(c, '.' | '-'))
+        && domain.split('.').filter(|l| !l.is_empty()).count() >= 2
+        && !domain.starts_with('.')
+        && !domain.ends_with('.')
 }
 
 pub fn may_trigger(c: char) -> bool {
@@ -394,6 +471,30 @@ impl Editor {
                 e.toggle_list(bullet, fonts)
             });
         }
+        // AutoFormat as you type
+        if trigger == Trigger::Typed
+            && before.last() == Some(&'\t')
+            && let Some(out) = self.tab_indent(caret.story, para, before.len(), fonts)
+        {
+            return out;
+        }
+        if trigger == Trigger::ParagraphEnd
+            && ac.border_lines
+            && let Some((line, size)) = border_line(&before)
+        {
+            return self.border_line(caret.story, para, before.len(), line, size, fonts);
+        }
+        if ac.internet_paths
+            && let Some(end) = match trigger {
+                Trigger::ParagraphEnd => Some(before.len()),
+                Trigger::Typed => before.last().filter(|c| c.is_whitespace()).map(|_| before.len() - 1),
+            }
+            && let Some((start, n, address)) = internet_path(&before[..end])
+            && let Some(out) = self.auto_link(caret, para, start..start + n, address, fonts)
+        {
+            return out;
+        }
+        let Some(p) = self.index.para(&self.doc, para) else { return Outcome::Unchanged("no paragraph") };
         let cell_start = self.index.para_slot(para).is_some_and(|s| matches!(s.container, super::index::Container::Cell { .. }) && s.block == 0);
         let Some(fix) = correction(&before, trigger, cell_start, ac) else { return Outcome::Unchanged("nothing to correct") };
         let (a, b) = (Unit(fix.range.start as u32), Unit(fix.range.end as u32));
@@ -461,15 +562,144 @@ impl Editor {
         }
         let range = Unit(end.0.saturating_sub(chars.len() as u32))..end;
         let to = chars.iter().collect();
-        self.correction = Some(super::Correction { para, range, from: fix.from.clone(), to, typed: 0 });
+        self.correction = Some(super::Correction { para, range, from: fix.from.clone(), to, typed: 0, kind: super::CorrectionKind::Text });
         self.commit(tx, None, fonts)
     }
 
+    /// Tab typed at the start of a paragraph with text: a first-line indent of a default tab stop in place of the tab,
+    /// or, with one already, the left indent a tab stop further. Its own undo step; none in a list or a hanging indent.
+    fn tab_indent(&mut self, story: super::position::StoryId, para: crate::layout::ParaId, at: usize, fonts: &Fonts) -> Option<Outcome> {
+        if !self.indent_keys || at != 1 || self.para_list(para).is_some() {
+            return None;
+        }
+        let p = self.index.para(&self.doc, para)?;
+        if !matches!(p.inlines.iter().find(|i| i.units() > 0), Some(crate::docx::Inline::Tab(_))) || super::step::para_len(p).0 < 2 {
+            return None;
+        }
+        let (left, first) = (p.style.ind_left, p.style.ind_first);
+        if first < 0.0 {
+            return None;
+        }
+        let ind = self.direct_ppr(para, "ind");
+        let (pa, pb) = (Position::text(story, para, Unit(0)), Position::text(story, para, Unit(1)));
+        if self.kept(crate::api::command::CommandId::InsertText, &pa, &pb) || self.kept(crate::api::command::CommandId::SetIndents, &pa, &pb) {
+            return None;
+        }
+        let tab = self.tab_grid();
+        let twips = |pt: f64| ((pt * 20.0).round() as i64).to_string();
+        let cx = self.cx();
+        let set: Vec<(&str, Option<String>)> = if first > 0.0 {
+            vec![("left", Some(twips((left + tab).min(1584.0)))), ("start", None)]
+        } else {
+            vec![("firstLine", Some(twips(tab))), ("hanging", None)]
+        };
+        let mut tx = self.begin("AutoFormat");
+        let ok = self.step(&mut tx, Step::Text { para, range: Unit(0)..Unit(1), with: Vec::new(), edges: Default::default() }).is_ok()
+            && self.repara(&mut tx, para, &|p, _| p.attrs("ind", &set, &cx));
+        if !ok {
+            self.abort(tx);
+            return Some(Outcome::Unchanged("the indent didn't change"));
+        }
+        self.selection = Selection::Caret(pa);
+        let out = self.commit(tx, None, fonts);
+        self.auto_formatted(para, Unit(0)..Unit(0), "\t".into(), super::CorrectionKind::Indent { ind });
+        Some(out)
+    }
+
+    /// The direct paragraph property `local` of `para` (in its `w:pPr`), as written.
+    fn direct_ppr(&self, para: crate::layout::ParaId, local: &str) -> Option<String> {
+        let p = self.index.para(&self.doc, para)?;
+        crate::docx::write::props::Props::parse(p.style.direct.0.as_deref(), "pPr", &self.cx()).get(local).map(str::to_string)
+    }
+
+    /// The AutoFormat change just made, which its AutoCorrect Options undo or stop.
+    fn auto_formatted(&mut self, para: crate::layout::ParaId, range: Range<Unit>, from: String, kind: super::CorrectionKind) {
+        let mut c = super::Correction { para, range, from, to: String::new(), typed: 0, kind };
+        c.to = self.text_in(&c).unwrap_or_default();
+        self.correction = Some(c);
+    }
+
+    /// A border line typed, then Enter: the paragraph's `n` characters go and it takes the line as its bottom border.
+    fn border_line(
+        &mut self,
+        story: super::position::StoryId,
+        para: crate::layout::ParaId,
+        n: usize,
+        line: &str,
+        size: u32,
+        fonts: &Fonts,
+    ) -> Outcome {
+        use crate::api::command::CommandId as C;
+        let (pa, pb) = (Position::text(story, para, Unit(0)), Position::text(story, para, Unit(n as u32)));
+        if self.kept(C::InsertText, &pa, &pb) || self.kept(C::SetParagraphBorders, &pa, &pb) {
+            return Outcome::Unchanged("the line is kept");
+        }
+        let borders = self.direct_ppr(para, "pBdr");
+        let typed = self.index.para(&self.doc, para).map(|p| super::text::UnitText::of(p).text.chars().take(n).collect()).unwrap_or_default();
+        let mut tx = self.begin("AutoFormat");
+        let bottom = |w: &str| format!("<{w}pBdr><{w}bottom {w}val=\"{line}\" {w}sz=\"{size}\" {w}space=\"1\" {w}color=\"auto\"/></{w}pBdr>");
+        let ok = self.step(&mut tx, Step::Text { para, range: Unit(0)..Unit(n as u32), with: Vec::new(), edges: Default::default() }).is_ok()
+            && self.repara(&mut tx, para, &|p, w| p.set("pBdr", bottom(w)));
+        if !ok {
+            self.abort(tx);
+            return Outcome::Unchanged("the line stayed");
+        }
+        let out = self.commit(tx, None, fonts);
+        self.auto_formatted(para, Unit(0)..Unit(0), typed, super::CorrectionKind::BorderLine { borders });
+        out
+    }
+
+    /// An Internet or network path typed, then a space or Enter: `range` of `para` becomes a link to `address`, the
+    /// caret where it was. Its own undo step; `None` when it is in a field already or kept.
+    fn auto_link(&mut self, caret: Position, para: crate::layout::ParaId, range: Range<usize>, address: String, fonts: &Fonts) -> Option<Outcome> {
+        let story = self.index.para_slot(para).map(|s| self.index.story(s.container))?;
+        let (a, b) = (Unit(range.start as u32), Unit(range.end as u32));
+        let p = self.index.para(&self.doc, para)?;
+        let mut at = 0u32;
+        let mut starts = Vec::with_capacity(p.inlines.len());
+        for i in &p.inlines {
+            starts.push(at);
+            at += i.units() as u32;
+        }
+        let unit = |k: usize| starts.get(k).copied().unwrap_or(at);
+        if crate::docx::fields::spans(&p.inlines).iter().any(|f| unit(f.begin) < b.0 && a.0 <= unit(f.end)) {
+            return None;
+        }
+        let (pa, pb) = (Position::text(story, para, a), Position::text(story, para, b));
+        if self.kept(crate::api::command::CommandId::InsertHyperlink, &pa, &pb) {
+            return None;
+        }
+        let typed = super::text::UnitText::of(p).text.chars().skip(range.start).take(range.len()).collect();
+        self.selection = Selection::range(pa, pb, super::selection::Granularity::Char);
+        let out = self.joined("AutoFormat", fonts, |e| e.insert_hyperlink(crate::api::command::Hyperlink { address, text: None }, fonts));
+        if matches!(out, Outcome::Changed(_))
+            && let Some(p) = self.index.para(&self.doc, para)
+            && let Some(end) = field_end_at(&p.inlines, a.0)
+        {
+            self.auto_formatted(para, a..Unit(end), typed, super::CorrectionKind::Hyperlink);
+        }
+        self.selection = match (self.selection, caret.para_offset()) {
+            (Selection::Caret(end), Some((p, off))) if p == para => match end.para_offset() {
+                Some((q, e)) => Selection::Caret(Position::text(caret.story, q, Unit(e.0 + off.0 - b.0))),
+                None => Selection::Caret(caret),
+            },
+            _ => Selection::Caret(caret),
+        };
+        Some(out)
+    }
+
     pub fn correction_view(&mut self, pages: std::ops::Range<usize>) -> Option<super::view::CorrectionView> {
-        let c = self.correction()?.clone();
-        let story = self.caret().map(|p| p.story)?;
-        let rects = self.range_rects(Position::text(story, c.para, c.range.start), Position::text(story, c.para, c.range.end), pages);
-        let near = self.caret().and_then(|p| p.para_offset()).is_some_and(|(p, at)| p == c.para && at >= c.range.start && at.0 <= c.range.end.0 + 1);
+        let c = self.live_correction()?.clone();
+        let story = self.index.para_slot(c.para).map(|s| self.index.story(s.container))?;
+        let (a, b) = (Position::text(story, c.para, c.range.start), Position::text(story, c.para, c.range.end));
+        // A border or an indent changes no text: its mark is where the paragraph starts.
+        let rects = if c.range.is_empty() {
+            self.caret_at(a).map(|v| vec![(v.page, [v.x, v.top, v.x + 1.0, v.bottom])]).unwrap_or_default()
+        } else {
+            self.range_rects(a, b, pages)
+        };
+        let near = matches!(c.kind, super::CorrectionKind::BorderLine { .. })
+            || self.caret().and_then(|p| p.para_offset()).is_some_and(|(p, at)| p == c.para && at >= c.range.start && at.0 <= c.range.end.0 + 1);
         let button = near
             .then(|| {
                 rects.last().map(|&(page, r)| {
@@ -484,18 +714,51 @@ impl Editor {
 
     pub(super) fn follow_correction(&mut self, typed: usize, edited: bool) {
         let caret = self.caret().and_then(|p| p.para_offset());
+        // A border line's paragraph ended with Enter: its mark stays while the caret is in the paragraph after it.
+        let after = self.correction.as_ref().filter(|c| matches!(c.kind, super::CorrectionKind::BorderLine { .. })).and_then(|c| {
+            let s = self.index.para_slot(c.para)?;
+            match self.index.blocks(&self.doc, s.container)?.get(s.block + 1)? {
+                crate::docx::Block::Para(q) => Some(crate::layout::ParaId(q.id)),
+                crate::docx::Block::Table(_) => None,
+            }
+        });
         let Some(c) = &mut self.correction else { return };
         let from = if edited { c.range.end } else { c.range.start };
-        let keep = caret.is_some_and(|(p, at)| p == c.para && at >= from);
+        let keep = caret.is_some_and(|(p, at)| (p == c.para && at >= from) || Some(p) == after);
         c.typed += typed;
         if !keep || c.typed > 14 {
             self.correction = None;
         }
     }
 
-    /// The correction mark, while its range still holds the corrected text.
-    pub fn correction(&self) -> Option<&super::Correction> {
+    /// The automatic change just made, while its range still holds what it made.
+    fn live_correction(&self) -> Option<&super::Correction> {
         self.correction.as_ref().filter(|c| self.text_in(c).is_some_and(|t| t == c.to))
+    }
+
+    /// The AutoCorrect replacement just made, while its range still holds the corrected text.
+    pub fn correction(&self) -> Option<&super::Correction> {
+        self.live_correction().filter(|c| c.kind == super::CorrectionKind::Text)
+    }
+
+    /// The AutoFormat change just made (a link, a border line, an indent), while it stands: what its AutoCorrect
+    /// Options undo ([`Self::revert_correction`]) or stop ([`Self::stop_auto_format`]).
+    pub fn auto_format_change(&self) -> Option<&super::Correction> {
+        self.live_correction().filter(|c| c.kind != super::CorrectionKind::Text)
+    }
+
+    /// Stop Automatically Creating Hyperlinks (Border Lines, Indents): the AutoFormat change just made undone and its
+    /// option turned off.
+    pub fn stop_auto_format(&mut self, ac: &mut AutoCorrect, fonts: &Fonts) -> Outcome {
+        let Some(kind) = self.auto_format_change().map(|c| c.kind.clone()) else { return Outcome::unavailable("no AutoFormat change") };
+        let out = self.revert_correction(fonts);
+        match kind {
+            super::CorrectionKind::Hyperlink => ac.internet_paths = false,
+            super::CorrectionKind::BorderLine { .. } => ac.border_lines = false,
+            super::CorrectionKind::Indent { .. } => self.indent_keys = false,
+            super::CorrectionKind::Text => {}
+        }
+        out
     }
 
     fn text_in(&self, c: &super::Correction) -> Option<String> {
@@ -508,14 +771,20 @@ impl Editor {
         self.correction().map(|c| c.to.clone())
     }
 
+    /// Change Back (Undo Hyperlink, Undo Border Line, Undo Automatic Indent): the automatic change just made undone, by
+    /// Undo right after it, else put back as it was.
     pub fn revert_correction(&mut self, fonts: &Fonts) -> Outcome {
-        if self.correction().is_none() {
+        if self.live_correction().is_none() {
             self.correction = None;
             return Outcome::unavailable("no correction");
         }
         let Some(c) = self.correction.take() else { return Outcome::unavailable("no correction") };
-        if self.history.next_undo() == Some("AutoCorrect") && c.typed == 0 {
+        let label = if c.kind == super::CorrectionKind::Text { "AutoCorrect" } else { "AutoFormat" };
+        if self.history.next_undo() == Some(label) && c.typed == 0 {
             return self.execute(super::commands::Command::Undo, fonts);
+        }
+        if c.kind != super::CorrectionKind::Text {
+            return self.revert_auto_format(c, fonts);
         }
         let Some(story) = self.caret().map(|p| p.story) else { return Outcome::Unchanged("no caret") };
         let Some(run) = self.run_at(&Position::text(story, c.para, Unit(c.range.start.0 + 1))) else { return Outcome::Unchanged("no run") };
@@ -524,6 +793,43 @@ impl Editor {
         if self.step(&mut tx, Step::Text { para: c.para, range: c.range.clone(), with, edges: Default::default() }).is_err() {
             self.abort(tx);
             return Outcome::Unchanged("revert failed");
+        }
+        self.commit(tx, None, fonts)
+    }
+
+    /// An AutoFormat change put back once more was done after it: the link's text plain again, the characters typed in
+    /// place of the border, the tab in place of the indent.
+    fn revert_auto_format(&mut self, c: super::Correction, fonts: &Fonts) -> Outcome {
+        let Some(story) = self.index.para_slot(c.para).map(|s| self.index.story(s.container)) else { return Outcome::Unchanged("no paragraph") };
+        let start = Position::text(story, c.para, c.range.start);
+        let caret = self.selection;
+        let out = match &c.kind {
+            super::CorrectionKind::Hyperlink => {
+                self.selection = Selection::Caret(Position::text(story, c.para, Unit(c.range.start.0 + 1)));
+                let out = self.remove_hyperlink(fonts);
+                if !matches!(out, Outcome::Changed(_)) {
+                    self.selection = caret;
+                }
+                return out;
+            }
+            super::CorrectionKind::BorderLine { borders } => (c.from.clone(), "pBdr", borders.clone()),
+            super::CorrectionKind::Indent { ind } => ("\t".to_string(), "ind", ind.clone()),
+            super::CorrectionKind::Text => return Outcome::Unchanged("not an AutoFormat change"),
+        };
+        let (text, local, was) = out;
+        let Some(run) = self.run_at(&start).or_else(|| self.index.para(&self.doc, c.para).map(|p| p.mark.clone())) else {
+            return Outcome::Unchanged("no run");
+        };
+        let with = if text == "\t" { vec![crate::docx::Inline::Tab(run)] } else { vec![crate::docx::Inline::Text(text, run)] };
+        let mut tx = self.begin("AutoFormat");
+        let ok = self.step(&mut tx, Step::Text { para: c.para, range: c.range.start..c.range.start, with, edges: Default::default() }).is_ok()
+            && self.repara(&mut tx, c.para, &|p, _| match &was {
+                Some(x) => p.set(local, x.clone()),
+                None => p.remove(local),
+            });
+        if !ok {
+            self.abort(tx);
+            return Outcome::Unchanged("the change stayed");
         }
         self.commit(tx, None, fonts)
     }
@@ -537,6 +843,22 @@ impl Editor {
         p.set("vertAlign", format!("<{w}vertAlign {w}val=\"superscript\"/>"));
         Some(res.rerun_xml(&base, run, p.xml().as_deref(), &cx))
     }
+}
+
+/// The unit after the end of the field that begins at unit `at` of `inlines`.
+fn field_end_at(inlines: &[crate::docx::Inline], at: u32) -> Option<u32> {
+    let mut u = 0u32;
+    for (k, i) in inlines.iter().enumerate() {
+        if u == at && matches!(i, crate::docx::Inline::FieldBegin { .. }) {
+            let s = crate::docx::fields::span_at(inlines, k)?;
+            return Some(inlines[..=s.end].iter().map(|i| i.units() as u32).sum());
+        }
+        u += i.units() as u32;
+        if u > at {
+            return None;
+        }
+    }
+    None
 }
 
 /// The run of each unit of `range` in `p`, the one before for a unit without one.

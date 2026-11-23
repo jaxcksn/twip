@@ -96,6 +96,9 @@ impl Editor {
         if self.end_modes() {
             return Outcome::Moved;
         }
+        if self.drop_menu.take().is_some() || self.highlighter.take().is_some() {
+            return Outcome::Moved;
+        }
         if self.object_cancel() || self.shape_cancel() || self.shape_insert.take().is_some() {
             return Outcome::Moved;
         }

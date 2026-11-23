@@ -6,6 +6,7 @@ mod bindings;
 pub mod bookmarks;
 mod borders_dialog;
 mod cell_clipboard;
+mod char_code;
 pub mod clipboard;
 mod clipped;
 pub mod commands;
@@ -39,6 +40,8 @@ mod list_dialogs;
 mod list_gallery;
 pub mod lists;
 mod merge;
+mod move_paras;
+pub mod move_to;
 pub(crate) use merge::api_id;
 pub mod navigate;
 mod notes;
@@ -121,6 +124,22 @@ pub struct Correction {
     /// The text the correction put in `range`.
     pub to: String,
     pub typed: usize,
+    pub kind: CorrectionKind,
+}
+
+/// What an automatic change made, which its AutoCorrect Options offer to undo or stop.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CorrectionKind {
+    /// AutoCorrect replaced the text typed (`from`) in the range.
+    Text,
+    /// AutoFormat made the address typed (`from`) a link: the range is the link's field.
+    Hyperlink,
+    /// AutoFormat made the characters typed (`from`) the paragraph's bottom border; the paragraph's borders before it, as
+    /// written (`w:pBdr`).
+    BorderLine { borders: Option<String> },
+    /// AutoFormat made the Tab typed at the paragraph's start an indent; the paragraph's indents before it, as written
+    /// (`w:ind`).
+    Indent { ind: Option<String> },
 }
 
 pub struct Editor {
@@ -133,6 +152,9 @@ pub struct Editor {
     pending: Option<Run>,
     /// The format painter's formatting: a run's `w:rPr`, and a paragraph's `w:pPr` when it took the paragraph's too.
     painter: Option<(Option<String>, Option<Option<String>>)>,
+    /// Ctrl+Shift+V pastes the painter's formatting: since Copy Formatting, with the clipboard it first saw then (its
+    /// fingerprint), until the clipboard changes.
+    painter_claim: Option<Option<u64>>,
     correction: Option<Correction>,
     drag: Option<Drag>,
     pages: Pages,
@@ -182,6 +204,15 @@ pub struct Editor {
     tab_stop: Option<(Selection, TableId, (usize, usize))>,
     mode: Mode,
     pub live_layout: bool,
+    /// AutoFormat's "set left- and first-indent with tabs and backspaces": Tab and Backspace at a paragraph's start
+    /// change its indents.
+    pub indent_keys: bool,
+    /// F2 or Shift+F2 waiting for its place.
+    move_to: Option<move_to::MoveTo>,
+    /// Where the open drop menu of a right-button drag drops the text.
+    drop_menu: Option<Position>,
+    /// The highlighter's colour (`w:highlight` value), while it is on.
+    highlighter: Option<String>,
     pub view_settings: view::ViewSettings,
     elems: std::collections::HashMap<crate::docx::ElementId, elements::Element>,
     changes: elements::Changes,
@@ -325,6 +356,7 @@ impl Editor {
             goal_x: None,
             pending: None,
             painter: None,
+            painter_claim: None,
             correction: None,
             drag: None,
             pages: Pages::default(),
@@ -366,6 +398,10 @@ impl Editor {
             tab_stop: None,
             mode: Mode::Editing,
             live_layout: true,
+            indent_keys: true,
+            move_to: None,
+            drop_menu: None,
+            highlighter: None,
             view_settings: view::ViewSettings::default(),
             elems: std::collections::HashMap::new(),
             changes: elements::Changes::default(),
@@ -2585,6 +2621,7 @@ impl Editor {
             return;
         }
         match kind {
+            PointerKind::Down if self.move_to_press(x, y, fonts) => {}
             PointerKind::Down => {
                 let mods = if self.modes.extend > 0 && clicks == 1 { keymap::Mods { shift: true, ..mods } } else { mods };
                 self.goal_x = None;
@@ -2706,8 +2743,14 @@ impl Editor {
                 if clicks == 2 && self.note_jump(p) {
                     return;
                 }
-                if clicks == 1 && !mods.shift && self.modes == extend::Modes::default() && self.mode != Mode::ReadOnly && self.inside_selection(&p) {
-                    self.text_drag = Some(interaction::TextDrag { start: (x, y), press: p, moved: false, copy: mods.ctrl, drop: None });
+                if clicks == 1
+                    && !mods.shift
+                    && self.modes == extend::Modes::default()
+                    && self.mode != Mode::ReadOnly
+                    && self.highlighter.is_none()
+                    && self.inside_selection(&p)
+                {
+                    self.text_drag = Some(interaction::TextDrag { start: (x, y), press: p, moved: false, copy: mods.ctrl, drop: None, menu: false });
                     self.requests.push(Request::CapturePointer);
                     return;
                 }
@@ -2874,6 +2917,9 @@ impl Editor {
                 if self.drag.take().is_some() {
                     self.requests.push(Request::ReleasePointer);
                     self.requests.push(Request::Autoscroll { vx: 0.0, vy: 0.0 });
+                }
+                if kind == PointerKind::Up {
+                    self.highlighter_release(fonts);
                 }
             }
         }
@@ -3219,7 +3265,14 @@ impl Editor {
             formatting_marks: Vec::new(),
             boundaries: Vec::new(),
             field_shading: Vec::new(),
-            drop: self.text_drag.filter(|d| d.moved).and_then(|d| d.drop).or(self.drop).and_then(|p| self.caret_at(p)),
+            drop: self
+                .text_drag
+                .filter(|d| d.moved)
+                .and_then(|d| d.drop)
+                .or(self.drop)
+                .or(self.drop_menu)
+                .or(self.move_to.and_then(|m| m.target))
+                .and_then(|p| self.caret_at(p)),
             cursor: self.drag_cursor().unwrap_or(self.cursor),
         }
     }
@@ -3395,6 +3448,8 @@ impl Editor {
 
     pub fn copy(&mut self) -> Option<clipboard::Fragment> {
         let f = self.clip()?;
+        // The clipboard changes: Ctrl+Shift+V pastes it, not the painter's formatting.
+        self.painter_claim = None;
         self.requests.push(Request::Clipboard { text: f.text(), html: Some(f.html()) });
         self.clipboard = Some(f.clone());
         Some(f)

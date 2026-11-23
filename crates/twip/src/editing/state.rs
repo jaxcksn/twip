@@ -382,6 +382,11 @@ impl Editor {
             mac: self.mac,
         };
         match super::keymap::command(code, mods, cx)? {
+            // Tab takes a list along from its first item as an AutoFormat option: off, it changes the level.
+            Bound::Run(c @ (Command::IncreaseIndent | Command::DecreaseIndent)) if code == "Tab" && !self.indent_keys => {
+                use crate::api::command::LevelChange;
+                Some(Command::SetListLevel(if c == Command::IncreaseIndent { LevelChange::Increase } else { LevelChange::Decrease }))
+            }
             Bound::Run(c) => Some(c),
             Bound::Toggle(t) => self.toggled(t),
         }
@@ -394,6 +399,9 @@ impl Editor {
         if let Toggle::FieldCodes { all } = t {
             return self.field_codes_toggle(all).map(Command::ShowFieldCodes);
         }
+        if let Toggle::CaseCycle = t {
+            return self.case_cycle().map(Command::ChangeCase);
+        }
         let f = self.format_state()?;
         let c = &f.character;
         let on = |v: &Tri<bool>| *v != Tri::Uniform(true);
@@ -402,6 +410,10 @@ impl Editor {
             Toggle::Italic => Command::SetItalic(on(&c.italic)),
             Toggle::Underline => {
                 Command::SetUnderline(if c.underline == Tri::Uniform(UnderlineStyle::Single) { UnderlineStyle::None } else { UnderlineStyle::Single })
+            }
+            Toggle::DoubleUnderline | Toggle::WordUnderline => {
+                let u = if t == Toggle::DoubleUnderline { UnderlineStyle::Double } else { UnderlineStyle::Words };
+                Command::SetUnderline(if c.underline == Tri::Uniform(u) { UnderlineStyle::None } else { u })
             }
             Toggle::Subscript => Command::SetSubscript(on(&c.subscript)),
             Toggle::Superscript => Command::SetSuperscript(on(&c.superscript)),
@@ -417,7 +429,7 @@ impl Editor {
                     contextual: None,
                 })
             }
-            Toggle::TrackChanges | Toggle::FieldCodes { .. } => return None,
+            Toggle::TrackChanges | Toggle::FieldCodes { .. } | Toggle::CaseCycle => return None,
         })
     }
 

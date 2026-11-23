@@ -505,7 +505,7 @@ impl Editor {
         {
             let story = self.index.para_slot(para).map_or(StoryId::Body, |s| self.index.story(s.container));
             let press = Position::text(story, para, offset);
-            self.text_drag = Some(super::interaction::TextDrag { start: (x, y), press, moved: false, copy: ctrl, drop: None });
+            self.text_drag = Some(super::interaction::TextDrag { start: (x, y), press, moved: false, copy: ctrl, drop: None, menu: false });
             self.requests.push(Request::CapturePointer);
         }
         true

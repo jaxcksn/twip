@@ -248,8 +248,30 @@ impl Editor {
 
     /// Adds built-in style `b` from its definition, as one undo step.
     pub(super) fn add_built_in(&mut self, b: &crate::services::styles::builtin::BuiltIn, fonts: &Fonts) -> Outcome {
-        let Some(w) = self.doc.resolver.as_ref().map(|r| r.styles.cx().w) else { return Outcome::Unchanged("no styles") };
-        let raw = crate::services::styles::builtin::definition(b, &w);
+        let Some(cx) = self.doc.resolver.as_ref().map(|r| r.styles.cx()) else { return Outcome::Unchanged("no styles") };
+        let w = cx.w.clone();
+        let mut raw = crate::services::styles::builtin::definition(b, &w);
+        // List Bullet comes with its own bullet list.
+        if b.id == "ListBullet" {
+            use crate::docx::write::props::Props;
+            let mut tx = self.begin("New Style");
+            let num = self.new_style_bullets(&mut tx, b.id);
+            if num == 0 {
+                self.abort(tx);
+                return Outcome::Unchanged("the list couldn't be added");
+            }
+            self.commit(tx, None, fonts);
+            let mut style = Props::parse(Some(&raw), "style", &cx);
+            let mut ppr = Props::parse(style.get("pPr"), "pPr", &cx);
+            ppr.set("numPr", format!("<{w}numPr><{w}numId {w}val=\"{num}\"/></{w}numPr>"));
+            ppr.set("contextualSpacing", format!("<{w}contextualSpacing/>"));
+            if let Some(x) = ppr.xml() {
+                style.set("pPr", x);
+            }
+            if let Some(x) = style.xml() {
+                raw = x;
+            }
+        }
         self.edit_styles("New Style", |s| s.set_xml(raw), fonts)
     }
 

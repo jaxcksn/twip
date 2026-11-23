@@ -360,6 +360,13 @@ impl UnitText {
         (start, end)
     }
 
+    /// The word `u` is in or at either end of, the one after it when it ends one word and starts another.
+    pub fn word_touching(&self, u: Unit) -> Option<(Unit, Unit)> {
+        let words = self.words();
+        let touching = |w: &&(Unit, Unit, Class)| w.2 == Class::Word && w.0 <= u && u <= w.1;
+        words.iter().filter(touching).find(|w| u < w.1).or_else(|| words.iter().find(touching)).map(|w| (w.0, w.1))
+    }
+
     pub fn letters_around(&self, u: Unit) -> Option<(Unit, Unit)> {
         self.words().into_iter().find(|w| w.2 == Class::Word && w.0 < u && u < w.1).map(|w| (w.0, w.1))
     }

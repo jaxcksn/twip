@@ -284,7 +284,10 @@ impl<'d> PageFill<'d, '_> {
         let j = match self.pass.joined.get(&key) {
             Some(j) => j.clone(),
             None => {
-                let Some(LaidPara::Joined(j)) = self.sec.blocks.laid_para(bi, end) else { return Some((LaidPara::One(p), bi)) };
+                let Some(LaidPara::Joined(j)) = self.sec.blocks.laid_para(bi, end, self.ctx.env.text.compat == crate::docx::model::Compat::Legacy)
+                else {
+                    return Some((LaidPara::One(p), bi));
+                };
                 self.pass.joined.insert(key, j.clone());
                 j
             }

@@ -45,6 +45,30 @@ fn units_before(inlines: &[Inline], k: usize) -> u32 {
     inlines[..k].iter().map(|i| i.units() as u32).sum()
 }
 
+/// The first (or last) outermost field in `inlines` that starts after (or before) unit `from`, when given: its units.
+fn outer_field(inlines: &[Inline], first: bool, from: Option<u32>) -> Option<(Unit, Unit)> {
+    let (mut depth, mut at, mut pick) = (0usize, 0u32, None);
+    for (k, i) in inlines.iter().enumerate() {
+        match i {
+            Inline::FieldBegin { .. } => {
+                if depth == 0 && from.is_none_or(|u| if first { at > u } else { at < u }) {
+                    pick = Some((k, at));
+                    if first {
+                        break;
+                    }
+                }
+                depth += 1;
+            }
+            Inline::FieldEnd { .. } => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+        at += i.units() as u32;
+    }
+    let (k, start) = pick?;
+    let s = crate::docx::fields::span_at(inlines, k)?;
+    Some((Unit(start), Unit(units_before(inlines, s.end) + 1)))
+}
+
 fn bad(name: &str) -> Refused {
     Error::invalid(format!("bad {name}"))
 }
@@ -1215,6 +1239,37 @@ impl Editor {
             }
         }
         picked.into_iter().map(|f| (f.0, f.2)).collect()
+    }
+
+    /// F11 and Shift+F11: selects the next (or previous) field in the story, the outermost of nested ones, from where
+    /// the selection starts. A walk from the caret's paragraph that stops at the first one: the model holds no field
+    /// across paragraphs (reading keeps such a field's result as text), so each paragraph's nesting starts at 0.
+    pub fn select_field(&mut self, order: crate::api::value::Order, fonts: &Fonts) -> Outcome {
+        let Some((a, _)) = self.selection.ordered(&self.index) else { return Outcome::Unchanged("no caret") };
+        let Some((from, at)) = a.para_offset() else { return Outcome::Unchanged("no caret") };
+        let next = order == crate::api::value::Order::Next;
+        let found = {
+            let nav = self.nav();
+            let mut para = from;
+            loop {
+                let Some(p) = nav.idx.para(nav.doc, para) else { break None };
+                if let Some((s, e)) = outer_field(&p.inlines, next, (para == from).then_some(at.0)) {
+                    break Some((para, s, e));
+                }
+                match nav.para_beside(para, next) {
+                    Some(q) => para = q,
+                    None => break None,
+                }
+            }
+        };
+        let Some((para, s, e)) = found else { return Outcome::Unchanged("no field there") };
+        self.history.break_typing();
+        self.set_selection(Selection::range(Position::text(a.story, para, s), Position::text(a.story, para, e), super::selection::Granularity::Char));
+        if let Some(p) = self.caret() {
+            self.ensure(&p, fonts);
+            self.scroll_to_caret(fonts);
+        }
+        Outcome::Moved
     }
 
     fn set_views(&mut self, fields: &[(FieldId, ParaId)], view: FieldView) {

@@ -39,8 +39,15 @@ impl JoinMap {
     }
 }
 
+/// Whether `b`'s mark joins it to the next paragraph: a tracked deletion `view` hides, or a vanished mark (a hidden
+/// paragraph mark, a style separator) made since reading, which joins as reading joins one.
 fn hides_mark(b: &Block, view: MarkupView) -> bool {
-    matches!(b, Block::Para(p) if view.hides(&p.mark.rev))
+    matches!(b, Block::Para(p) if view.hides(&p.mark.rev) || p.mark.hidden)
+}
+
+/// Whether mark `r` is a style separator (`w:specVanish`).
+fn spec_vanish(r: &crate::docx::Run) -> bool {
+    r.direct.0.as_deref().is_some_and(|x| crate::docx::write::props::flag_of(x, "specVanish"))
 }
 
 pub fn chain_end<B: Borrow<Block>>(blocks: &[B], i: usize, view: MarkupView) -> usize {
@@ -109,24 +116,41 @@ pub struct Joined {
 }
 
 impl Joined {
-    fn new(paras: &[&Paragraph]) -> Option<Joined> {
+    /// `paras` as one paragraph. A deleted mark's paragraph takes the next one's properties; a vanished mark's joins
+    /// the next as reading joins them ([`crate::docx::resolve::joined_style`]; `legacy`: compat ≤ 14).
+    fn new(paras: &[&Paragraph], legacy: bool) -> Option<Joined> {
         let (&last, before) = paras.split_last()?;
         let &first = before.first()?;
         let mut inlines = Vec::with_capacity(paras.iter().map(|p| p.inlines.len() + 1).sum());
         let mut rest = Vec::with_capacity(before.len());
         let mut at = 0u32;
+        // The properties and list label so far, the content units so far, and an empty style separator's properties
+        let (mut style, mut list) = (first.style.clone(), first.list.clone());
+        let (mut shown, mut spec): (u32, Option<Rc<crate::docx::ParaStyle>>) = (0, None);
         for w in paras.windows(2) {
             let (p, next) = (w[0], w[1]);
             inlines.extend(p.inlines.iter().cloned());
             inlines.push(Inline::Text(MARK.to_string(), p.mark.clone()));
-            at += p.inlines.iter().map(Inline::units).sum::<usize>() as u32 + 1;
+            let own = p.inlines.iter().map(Inline::units).sum::<usize>() as u32;
+            at += own + 1;
+            shown += own;
             rest.push((ParaId(next.id), Unit(at)));
+            if p.mark.hidden {
+                if !legacy && own == 0 && spec_vanish(&p.mark) {
+                    spec = spec.or_else(|| Some(p.style.clone()));
+                }
+                let from = if shown == 0 { 0 } else { at };
+                style = Rc::new(crate::docx::resolve::joined_style(&style, &next.style, from, spec.take().as_deref(), legacy));
+                list = list.or_else(|| next.list.clone());
+            } else {
+                (style, list) = (next.style.clone(), next.list.clone());
+            }
         }
         inlines.extend(last.inlines.iter().cloned());
         let para = Paragraph {
-            style: last.style.clone(),
+            style,
             mark: last.mark.clone(),
-            list: last.list.clone(),
+            list,
             inlines,
             src: None,
             id: last.id,
@@ -190,12 +214,12 @@ impl LaidPara<'_> {
     }
 }
 
-pub fn laid_para<B: Borrow<Block>>(chain: &[B]) -> Option<LaidPara<'_>> {
+pub fn laid_para<B: Borrow<Block>>(chain: &[B], legacy: bool) -> Option<LaidPara<'_>> {
     let paras: Vec<&Paragraph> = chain.iter().filter_map(|b| if let Block::Para(p) = b.borrow() { Some(p) } else { None }).collect();
     match paras[..] {
         [] => None,
         [p] => Some(LaidPara::One(p)),
-        _ => Joined::new(&paras).map(|j| LaidPara::Joined(Rc::new(j))),
+        _ => Joined::new(&paras, legacy).map(|j| LaidPara::Joined(Rc::new(j))),
     }
 }
 
@@ -205,12 +229,18 @@ pub enum LaidBlock<'a> {
     Table(&'a Table),
 }
 
-pub fn laid<B: Borrow<Block>>(blocks: &[B], view: MarkupView) -> Vec<LaidBlock<'_>> {
-    laid_in(blocks, view, None)
+/// `blocks` as laid out, paragraphs joined by hidden marks as one (`legacy`: compat ≤ 14).
+pub fn laid<B: Borrow<Block>>(blocks: &[B], view: MarkupView, legacy: bool) -> Vec<LaidBlock<'_>> {
+    laid_in(blocks, view, None, legacy)
 }
 
 /// [`laid`] for a story whose own final mark has the properties `last` (a header, footer, text box or notes story).
-pub fn laid_in<'a, B: Borrow<Block>>(blocks: &'a [B], view: MarkupView, last: Option<&'a Rc<crate::docx::ParaStyle>>) -> Vec<LaidBlock<'a>> {
+pub fn laid_in<'a, B: Borrow<Block>>(
+    blocks: &'a [B],
+    view: MarkupView,
+    last: Option<&'a Rc<crate::docx::ParaStyle>>,
+    legacy: bool,
+) -> Vec<LaidBlock<'a>> {
     let mut out = Vec::with_capacity(blocks.len());
     let mut i = 0;
     while let Some(b) = blocks.get(i) {
@@ -221,7 +251,7 @@ pub fn laid_in<'a, B: Borrow<Block>>(blocks: &'a [B], view: MarkupView, last: Op
             }
             Block::Para(p) => {
                 let end = chain_end(blocks, i, view);
-                let chain = laid_para(&blocks[i..=end]).unwrap_or(LaidPara::One(p));
+                let chain = laid_para(&blocks[i..=end], legacy).unwrap_or(LaidPara::One(p));
                 out.push(LaidBlock::Para(match joined_target(blocks, end, view, last) {
                     Some(style) => chain.restyled(style.clone()),
                     None => chain,
@@ -274,7 +304,7 @@ mod tests {
         assert_eq!(chain_start(&blocks, 3, view), 3);
         assert_eq!(chain_end(&blocks, 3, view), 3);
         assert_eq!(chain_end(&blocks, 0, MarkupView::All), 0);
-        let laid = laid(&blocks, view);
+        let laid = laid(&blocks, view, false);
         assert_eq!(laid.len(), 2);
         let LaidBlock::Para(LaidPara::Joined(j)) = &laid[0] else { panic!("a joined paragraph") };
         assert_eq!(ParaId(j.para.id), id(&blocks[2]));
