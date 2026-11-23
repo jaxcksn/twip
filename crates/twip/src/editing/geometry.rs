@@ -66,6 +66,8 @@ pub struct GLine {
     pub region: Turn,
     /// The page directions its text runs and its lines stack by text flow alone.
     pub axes: [f64; 4],
+    /// Along the line as laid out, the left and right of the list number or bullet drawn on it.
+    pub label: Option<(f64, f64)>,
 }
 
 impl GLine {
@@ -457,6 +459,7 @@ impl PageGeometry {
                 Some((a.para, a.unit, [l.x + r[0], l.y + r[1], l.x + r[2], l.y + r[3]]))
             })
             .collect();
+        let label = l.line.label.map(|(a, b)| (l.x + a, l.x + b));
         self.lines.push(GLine {
             story,
             chain: chain.clone(),
@@ -469,6 +472,7 @@ impl PageGeometry {
             turn: l.turn,
             region: l.region,
             axes: l.axes,
+            label,
         });
     }
 

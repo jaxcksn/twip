@@ -52,6 +52,20 @@ pub(super) fn styles(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Resu
             last.insert(id, n.range().start);
         }
     }
+    // Where defaults or latent styles the part lacks go: after the root's start tag, latent styles after the defaults.
+    let open = root.range().start + xml[root.range().start..].find('>').ok_or("a styles part without its start tag")? + 1;
+    let defaults = root.children().find(|n| is_w(*n, "docDefaults"));
+    if defaults.is_none()
+        && let Some(d) = &styles.defaults_raw
+    {
+        splices.push((open..open, d.clone()));
+    }
+    if !root.children().any(|n| is_w(n, "latentStyles"))
+        && let Some(l) = &styles.latent.raw
+    {
+        let at = defaults.map_or(open, |d| d.range().end);
+        splices.push((at..at, l.clone()));
+    }
     for n in root.children().filter(|n| n.is_element()) {
         let was = &xml[n.range()];
         if is_w(n, "style") {
@@ -82,6 +96,7 @@ pub(super) fn styles(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Resu
     if splices.is_empty() {
         return Ok(());
     }
+    // Stable: inserted defaults stay before inserted latent styles.
     splices.sort_by_key(|s| s.0.start);
     let mut out = String::with_capacity(xml.len());
     let mut at = 0;

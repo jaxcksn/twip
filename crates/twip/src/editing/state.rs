@@ -75,7 +75,12 @@ pub(super) fn fold<T: PartialEq>(values: impl IntoIterator<Item = T>) -> Tri<T> 
 }
 
 fn underline_of(r: &RunStyle) -> UnderlineStyle {
-    match r.underline.as_deref() {
+    underline_style(r.underline.as_deref())
+}
+
+/// The underline a `w:u` value draws.
+pub(super) fn underline_style(v: Option<&str>) -> UnderlineStyle {
+    match v {
         None | Some("none") => UnderlineStyle::None,
         Some("words") => UnderlineStyle::Words,
         Some("double") => UnderlineStyle::Double,
@@ -116,8 +121,13 @@ const HIGHLIGHTS: [HighlightColor; 15] = [
 ];
 
 fn highlight_of(r: &RunStyle) -> NoneOr<HighlightColor> {
+    highlight_color(r.highlight)
+}
+
+/// The highlight colour of a highlight's RGB.
+pub(super) fn highlight_color(rgb: Option<u32>) -> NoneOr<HighlightColor> {
     let named = |rgb: u32| HIGHLIGHTS.into_iter().find(|h| crate::docx::props::highlight(super::commands::highlight_value(*h)) == Some(rgb));
-    match r.highlight.and_then(named) {
+    match rgb.and_then(named) {
         Some(h) => NoneOr::Value(h),
         None => NoneOr::None,
     }
@@ -326,7 +336,12 @@ impl Editor {
         let style = self.index.para(&self.doc, para_id)?.style.clone();
         let list = self.para_list(para_id);
         let run = runs[0].clone();
-        let character = self::character(&runs.iter().map(|r| &**r).collect::<Vec<_>>());
+        // With list numbers selected, the number's formatting, as it draws in the clicked paragraph
+        let label = self.list_label_selection().and_then(|l| self.index.para(&self.doc, l.para)).and_then(|p| p.list.as_ref()).map(|l| l.run.clone());
+        let character = match label {
+            Some(l) => self::character(&[&l]),
+            None => self::character(&runs.iter().map(|r| &**r).collect::<Vec<_>>()),
+        };
         let mut styles: Vec<(Rc<ParaStyle>, Option<bool>)> =
             paras.iter().filter_map(|&p| Some((self.index.para(&self.doc, p)?.style.clone(), self.para_list(p)))).collect();
         styles.dedup_by(|a, b| Rc::ptr_eq(&a.0, &b.0) && a.1 == b.1);

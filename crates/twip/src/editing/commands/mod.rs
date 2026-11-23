@@ -13,12 +13,11 @@ mod tables;
 pub(in crate::editing) mod tabs;
 mod text;
 
-#[cfg(test)]
-pub(crate) use character::underline_value;
 pub use character::{LigatureFlags, OpenTypeChange};
-pub(crate) use character::{THEME_COLOR, THEME_FILL, colour_attrs, highlight_value, rgb_value, with_attr};
+pub(crate) use character::{THEME_COLOR, THEME_FILL, colour_attrs, highlight_value, rgb_value, underline_value, with_attr};
 pub use page::{MarginSide, PageNumberAlign, PageNumberSpot};
 pub use tables::RowExceptionsEdit;
+pub(in crate::editing) use tables::cell_borders;
 pub use text::BreakClear;
 
 use crate::api::command::CommandId;
@@ -149,6 +148,9 @@ impl Editor {
         if let Some(out) = self.move_to_command(&cmd, fonts) {
             return out;
         }
+        if let Some(out) = self.list_label_command(&cmd, fonts) {
+            return out;
+        }
         // A built-in style the document doesn't define yet joins it first, in the same undo step.
         if let Some(b) = self.built_in_named(&cmd) {
             if matches!(cmd, Command::SetTableStyle(_)) && self.table_target().is_none() {
@@ -206,6 +208,10 @@ impl Editor {
             c => c,
         };
         let moving = matches!(cmd, Command::MoveSelection(_));
+        // Any navigation ends a number selection, the caret moved or not.
+        if moving {
+            self.list_label = None;
+        }
         if !matches!(cmd, Command::GoBack) {
             self.back_step = None;
         }

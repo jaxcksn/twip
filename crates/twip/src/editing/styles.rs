@@ -146,6 +146,10 @@ impl Editor {
         let raw = &raw.to_string();
         let res = self.doc.resolver.as_ref()?;
         let mut next = (**res).clone();
+        // The defaults formatted as a style: alone, not over themselves.
+        if self.defaults_target {
+            (next.styles.doc_rpr, next.styles.doc_ppr) = Default::default();
+        }
         next.styles.set_xml(raw.clone()).ok()?;
         let style = next.styles.by_id.values().find(|s| s.raw == *raw)?;
         let cx = next.styles.cx();
@@ -558,7 +562,7 @@ impl Editor {
     pub(super) fn set_style_meta(&mut self, m: crate::api::command::StyleMetaChange, fonts: &Fonts) -> Outcome {
         use crate::api::services::StyleVisibility;
         let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
-        let Some(style) = res.styles.get(&m.id.0) else { return Outcome::Refused(Error::unavailable("no such style")) };
+        let Some(style) = res.styles.get(&m.id.0) else { return self.set_latent_meta(&m, fonts) };
         let cx = res.styles.cx();
         let w = cx.w.clone();
         let mut el = Props::parse(Some(&style.raw), "style", &cx);
@@ -589,6 +593,42 @@ impl Editor {
         self.edit_styles("Style Options", |s| s.set_xml(raw), fonts)
     }
 
+    /// The document defaults as a paragraph style's XML: its `w:pPr` and `w:rPr`.
+    fn defaults_stand_in(&self) -> Option<String> {
+        let res = self.doc.resolver.as_ref()?;
+        let cx = res.styles.cx();
+        let w = cx.w.clone();
+        let defaults = res.styles.defaults_raw.clone().unwrap_or_else(|| format!("<{w}docDefaults/>"));
+        let parts = Props::parse(Some(&defaults), "docDefaults", &cx);
+        let inner = |wrapper: &str, part: &str| {
+            parts.get(wrapper).and_then(|x| Props::parse(Some(x), wrapper, &cx).get(part).map(str::to_string)).unwrap_or_default()
+        };
+        Some(format!(
+            "<{w}style {w}type=\"paragraph\" {w}styleId=\"DocumentDefaults\"><{w}name {w}val=\"Document Defaults\"/>{}{}</{w}style>",
+            inner("pPrDefault", "pPr"),
+            inner("rPrDefault", "rPr")
+        ))
+    }
+
+    /// The document's default formatting, without a dialog: text before any style's (resolved), and what the
+    /// defaults set themselves (the rest unavailable: the application's apply).
+    pub fn document_defaults(&self) -> Option<super::style_defs::DefaultsDefinition> {
+        let raw = self.defaults_stand_in()?;
+        let own = self.doc.resolver.as_ref()?.styles.style_from_xml(&raw)?;
+        // Text in a style that sets nothing: the defaults alone.
+        let w = self.doc.resolver.as_ref()?.styles.cx().w;
+        let (character, paragraph, tabs) = self.style_formatting_state(&format!(
+            "<{w}style {w}type=\"paragraph\" {w}styleId=\"DocumentDefaults\"><{w}name {w}val=\"Document Defaults\"/></{w}style>"
+        ))?;
+        Some(super::style_defs::DefaultsDefinition {
+            own_character: super::style_defs::own_character(&own.base.rpr, &character),
+            own_paragraph: super::style_defs::own_paragraph(&own.base.ppr, &paragraph),
+            character,
+            paragraph,
+            tabs,
+        })
+    }
+
     /// Sets the document's default formatting: the formatting commands run on the defaults as if they were a style.
     pub(super) fn set_document_defaults(&mut self, d: crate::api::command::DocumentDefaults, fonts: &Fonts) -> Outcome {
         self.set_document_defaults_with(d, None, None, fonts)
@@ -603,19 +643,6 @@ impl Editor {
         colour: Option<crate::api::value::AutoOr<crate::api::drawing::ColourValue>>,
         fonts: &Fonts,
     ) -> Outcome {
-        let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
-        let cx = res.styles.cx();
-        let w = cx.w.clone();
-        let defaults = res.styles.defaults_raw.clone().unwrap_or_else(|| format!("<{w}docDefaults/>"));
-        let parts = Props::parse(Some(&defaults), "docDefaults", &cx);
-        let inner = |wrapper: &str, part: &str| {
-            parts.get(wrapper).and_then(|x| Props::parse(Some(x), wrapper, &cx).get(part).map(str::to_string)).unwrap_or_default()
-        };
-        let stand_in = format!(
-            "<{w}style {w}type=\"paragraph\" {w}styleId=\"DocumentDefaults\"><{w}name {w}val=\"Document Defaults\"/>{}{}</{w}style>",
-            inner("pPrDefault", "pPr"),
-            inner("rPrDefault", "rPr")
-        );
         let mut commands = Vec::new();
         if let Some(f) = d.font.filter(|f| !f.trim().is_empty()) {
             commands.push(Command::SetFont(f));
@@ -635,19 +662,57 @@ impl Editor {
         if let Some(i) = d.indents {
             commands.push(Command::SetIndents(i));
         }
-        let mut edited = match self.format_style(&stand_in, commands, fonts) {
+        self.format_defaults(commands, theme_font, colour, fonts)
+    }
+
+    /// Sets the document's default formatting with any character and paragraph formatting commands but frames, run
+    /// on the defaults as on a style, as one undo step. Every style's text lays out again.
+    pub fn set_default_formatting(&mut self, commands: Vec<Command>, fonts: &Fonts) -> Outcome {
+        use crate::api::command::CommandId as C;
+        if let Some(c) = commands.iter().find(|c| matches!(c.id(), C::SetFrame | C::RemoveFrame)) {
+            return Outcome::invalid(&format!("{:?} doesn't set a default", c.id()));
+        }
+        self.format_defaults(commands, None, None, fonts)
+    }
+
+    /// Formats the defaults with `commands`, then a theme font and a theme colour, as one undo step.
+    fn format_defaults(
+        &mut self,
+        commands: Vec<Command>,
+        theme_font: Option<crate::docx::ThemeFont>,
+        colour: Option<crate::api::value::AutoOr<crate::api::drawing::ColourValue>>,
+        fonts: &Fonts,
+    ) -> Outcome {
+        if let Some(out) = self.refuse_like(&Command::SetDocumentDefaults(Default::default())) {
+            return out;
+        }
+        let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
+        let Some(stand_in) = self.defaults_stand_in() else { return Outcome::Unchanged("no styles") };
+        let cx = res.styles.cx();
+        let w = cx.w.clone();
+        let defaults = res.styles.defaults_raw.clone().unwrap_or_else(|| format!("<{w}docDefaults/>"));
+        let parts = Props::parse(Some(&defaults), "docDefaults", &cx);
+        let inner = |wrapper: &str, part: &str| {
+            parts.get(wrapper).and_then(|x| Props::parse(Some(x), wrapper, &cx).get(part).map(str::to_string)).unwrap_or_default()
+        };
+        self.defaults_target = true;
+        let mut edited = self.format_style(&stand_in, commands, fonts);
+        if let Ok(x) = &mut edited
+            && (theme_font.is_some() || colour.is_some())
+        {
+            self.style_target = Some(std::mem::take(x));
+            let font = theme_font.map(|f| self.set_theme_font(f, fonts));
+            let colour = colour.map(|c| self.set_font_colour(c, fonts));
+            *x = self.style_target.take().unwrap_or_default();
+            if let Some(Outcome::Refused(e)) = [font, colour].into_iter().flatten().find(|o| matches!(o, Outcome::Refused(_))) {
+                edited = Err(e);
+            }
+        }
+        self.defaults_target = false;
+        let edited = match edited {
             Ok(x) => x,
             Err(e) => return Outcome::Refused(e),
         };
-        if theme_font.is_some() || colour.is_some() {
-            self.style_target = Some(edited);
-            let font = theme_font.map(|f| self.set_theme_font(f, fonts));
-            let colour = colour.map(|c| self.set_font_colour(c, fonts));
-            edited = self.style_target.take().unwrap_or_default();
-            if let Some(Outcome::Refused(e)) = [font, colour].into_iter().flatten().find(|o| matches!(o, Outcome::Refused(_))) {
-                return Outcome::Refused(e);
-            }
-        }
         let el = Props::parse(Some(&edited), "style", &cx);
         if [("pPrDefault", "pPr"), ("rPrDefault", "rPr")].iter().all(|&(wrapper, part)| el.get(part).unwrap_or_default() == inner(wrapper, part)) {
             return Outcome::Unchanged("already so");
@@ -732,6 +797,18 @@ impl Editor {
         edit: impl FnOnce(&mut Styles) -> Result<Vec<String>, StyleEditError>,
         fonts: &Fonts,
     ) -> Outcome {
+        self.edit_styles_relabel(label, edit, false, fonts)
+    }
+
+    /// [`Self::edit_styles`], and with `relabel` every list paragraph is numbered again: an edit that changes the
+    /// lists styles number with.
+    pub(crate) fn edit_styles_relabel(
+        &mut self,
+        label: &'static str,
+        edit: impl FnOnce(&mut Styles) -> Result<Vec<String>, StyleEditError>,
+        relabel: bool,
+        fonts: &Fonts,
+    ) -> Outcome {
         let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
         let mut next = (*res).clone();
         let changed = match edit(&mut next.styles) {
@@ -768,6 +845,11 @@ impl Editor {
             .collect();
         tx.stale_paras.extend(paras);
         tx.stale_tables.extend(tables);
+        if relabel {
+            let lists: Vec<crate::layout::ParaId> = self.list_paras().into_iter().map(|(p, _, _)| p).collect();
+            tx.stale_paras.extend(lists);
+            tx.relabel = true;
+        }
         self.commit(tx, None, fonts)
     }
 }

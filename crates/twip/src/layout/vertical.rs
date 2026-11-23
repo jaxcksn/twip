@@ -391,6 +391,7 @@ fn map_line(l: &super::fragment::PlacedLine, f: &ItemMap, ox: f64, oy: f64) -> s
         mark: line.mark,
         texts: line.texts.clone(),
         expansions: line.expansions.clone(),
+        label: line.label,
     };
     super::fragment::PlacedLine { x: l.x, y: l.y, line: Rc::new(line) }
 }

@@ -193,10 +193,16 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
                 })
             })
         };
+        let mut label: Option<(f64, f64)> = None;
         for (k, ix) in (line.start..line.end).enumerate() {
             let p = &pieces[ix];
             let st = &sp.styles[p.style as usize];
             let x = x0 + line.xs[k];
+            // List label: the pieces that draw (not a legacy level's spacing)
+            if p.kind == Kind::ListNumber && (st.face.is_some() || p.object.is_some()) && line.widths[k] > 0.0 {
+                let (a, b) = (x, x + line.widths[k]);
+                label = Some(label.map_or((a, b), |(l, r)| (l.min(a), r.max(b))));
+            }
             while let Some((_, q)) = places.next_if(|e| e.0 == Some(k)) {
                 flush(&mut run, &mut out);
                 out.extend(caret(x, q));
@@ -409,6 +415,7 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
             mark,
             texts: texts.into_boxed_slice(),
             expansions: expansions.into_boxed_slice(),
+            label,
         }
     }
 }

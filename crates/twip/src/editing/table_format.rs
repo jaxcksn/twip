@@ -8,6 +8,19 @@ use super::commands::Outcome;
 use super::step::{Step, TableProps};
 use super::table::Grid;
 
+/// A table's band sizes ([`Editor::table_band_sizes`]).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TableBands {
+    /// Rows in each band, as it lays out.
+    pub rows: u32,
+    /// Columns in each band, as it lays out.
+    pub columns: u32,
+    /// Its own rows in each band, over its style's.
+    pub own_rows: Option<u32>,
+    /// Its own columns in each band, over its style's.
+    pub own_columns: Option<u32>,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum TableFormat {
     CellAlign(String),
@@ -30,6 +43,8 @@ pub enum TableFormat {
         exceptions: Option<RowEx>,
     },
     CellSpacing(f64),
+    /// The table's own rows and columns in each style band (`None` keeps one, `Some(None)` leaves it to the style).
+    Bands(Option<Option<u32>>, Option<Option<u32>>),
     Alt(crate::api::command::TableAltText),
     /// AutoFit to the window or to fixed widths: the layout, the table's width and its columns' widths.
     Fit {
@@ -210,7 +225,7 @@ fn nil() -> Border {
     Border { style: "nil".into(), width: 0.0, space: 0.0, shadow: false, color: None, color_theme: None }
 }
 
-fn border_xml(w: &str, name: &str, b: &Border) -> String {
+pub(super) fn border_xml(w: &str, name: &str, b: &Border) -> String {
     if !b.visible() {
         return format!("<{w}{name} {w}val=\"nil\"/>");
     }
@@ -333,6 +348,39 @@ impl TableFormat {
 }
 
 impl Editor {
+    /// Sets the selection's table's own band sizes, over its style's: rows and columns in each band (`None` keeps
+    /// one, `Some(None)` leaves it to the style), 1 to 32767.
+    pub fn set_table_band_sizes(&mut self, rows: Option<Option<u32>>, columns: Option<Option<u32>>, fonts: &Fonts) -> Outcome {
+        for n in [rows, columns].into_iter().flatten().flatten() {
+            if let Err(e) = super::commands::bounds::within("the band size", n as f64, 1.0, 32767.0) {
+                return Outcome::Refused(e);
+            }
+        }
+        if let Some(out) = self.refuse_like(&crate::api::command::Command::SetTableAlignment(Default::default())) {
+            return out;
+        }
+        if self.enforced_protection().is_some_and(|p| p.formatting) {
+            return Outcome::Refused(crate::api::error::Error::new(crate::api::error::ErrorCode::NotAllowed, "formatting is restricted"));
+        }
+        self.table_format(&TableFormat::Bands(rows, columns), fonts)
+    }
+
+    /// The selection's table's band sizes as it lays out, and its own ones (none: its style's).
+    pub fn table_band_sizes(&self) -> Option<TableBands> {
+        let tg = self.table_target()?;
+        let t = self.index.table(&self.doc, tg.table)?;
+        let res = self.doc.resolver.as_ref()?;
+        let cx = self.cx();
+        let own = t
+            .direct
+            .0
+            .as_deref()
+            .and_then(|raw| cx.parse(raw, |_, n| crate::docx::props::TblProps::parse(Some(n), &res.styles.colours)))
+            .unwrap_or_default();
+        let size = |v: i64| v.clamp(1, u32::MAX as i64) as u32;
+        Some(TableBands { rows: size(t.bands.0), columns: size(t.bands.1), own_rows: own.row_band.map(size), own_columns: own.col_band.map(size) })
+    }
+
     pub(super) fn table_format(&mut self, f: &TableFormat, fonts: &Fonts) -> Outcome {
         if f.of_cells() && self.is_discontiguous() {
             return self.table_format_each(f, fonts);
@@ -635,6 +683,29 @@ impl Editor {
                 let layout = if *fixed { "fixed" } else { "autofit" };
                 set_own(&mut props, "tblLayout", format!("<{w}tblLayout {w}type=\"{layout}\"/>"), &cx);
                 grid = Some(gr);
+            }
+            TableFormat::Bands(rows_n, cols_n) => {
+                let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
+                let mut p = crate::docx::write::props::Props::parse(t.direct.0.as_deref(), "tblPr", &cx);
+                p.reorder(crate::docx::write::props::TBLPR);
+                for (n, name) in [(rows_n, "tblStyleRowBandSize"), (cols_n, "tblStyleColBandSize")] {
+                    match n {
+                        Some(Some(n)) => p.set(name, format!("<{w}{name} {w}val=\"{n}\"/>")),
+                        Some(None) => p.remove(name),
+                        None => {}
+                    }
+                }
+                props.direct = crate::docx::Raw(p.xml().map(|x| std::rc::Rc::from(x.as_str())));
+                let mut tbl = res.styles.table_region(res.styles.table_style(t.style_id.as_deref()), &[]).tbl.clone();
+                let direct = props
+                    .direct
+                    .0
+                    .as_deref()
+                    .and_then(|raw| cx.parse(raw, |_, n| crate::docx::props::TblProps::parse(Some(n), &res.styles.colours)))
+                    .unwrap_or_default();
+                tbl.merge(&direct);
+                props.bands = (tbl.row_band.unwrap_or(0), tbl.col_band.unwrap_or(0));
+                restyle = true;
             }
             TableFormat::TableWidth(v) => props.width = *v,
             TableFormat::TableAlign(j) => props.jc = *j,

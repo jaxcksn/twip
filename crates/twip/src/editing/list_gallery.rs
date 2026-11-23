@@ -206,7 +206,15 @@ impl Editor {
         let w = cx.w.clone();
         let colours = next.styles.colours;
         next.numbering.set_abstract_xml(
-            super::list_defs::abstract_xml(abstract_id, None, &super::list_defs::complete(levels), None, &[], &[], &cx),
+            super::list_defs::abstract_xml(
+                abstract_id,
+                None,
+                super::list_defs::Levels::Shown(&super::list_defs::complete(levels)),
+                None,
+                &[],
+                &[],
+                &cx,
+            ),
             &colours,
         )?;
         next.numbering.set_num_xml(format!("<{w}num {w}numId=\"{num_id}\"><{w}abstractNumId {w}val=\"{abstract_id}\"/></{w}num>"), &colours)?;

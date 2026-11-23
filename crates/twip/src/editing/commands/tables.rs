@@ -154,7 +154,7 @@ impl Editor {
 }
 
 /// `setCellBorders`'s edges and line.
-fn cell_borders(b: CellBorders) -> (Edges, Border) {
+pub(in crate::editing) fn cell_borders(b: CellBorders) -> (Edges, Border) {
     {
         let edges = match b.edges {
             BorderEdges::All => Edges::All,

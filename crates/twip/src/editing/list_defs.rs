@@ -6,7 +6,7 @@ use std::rc::Rc;
 use crate::api::command::{
     FollowNumber, LevelAlignment, ListApplyTo, ListDefinitionChange, ListIndents, ListLevel, NumberFormat, NumberingMode, NumberingValue,
 };
-use crate::api::value::{Points, StyleId};
+use crate::api::value::{AutoOr, Color, HighlightColor, NoneOr, Points, StyleId, UnderlineStyle};
 use crate::docx::numbering::{Level, Numbering};
 use crate::docx::props::TabKind;
 use crate::docx::resolve::Resolver;
@@ -23,12 +23,266 @@ const LVL: &[&str] = &["start", "numFmt", "lvlRestart", "pStyle", "isLgl", "suff
 /// CT_AbstractNum's children in schema order.
 const ABSTRACT: &[&str] = &["nsid", "multiLevelType", "tmpl", "name", "styleLink", "numStyleLink", "lvl"];
 
+/// A list level's number style: every style Twip numbers with, and any other as the document names it.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+pub enum NumberStyle {
+    /// 1, 2, 3.
+    #[default]
+    Decimal,
+    /// I, II, III.
+    UpperRoman,
+    /// i, ii, iii.
+    LowerRoman,
+    /// A, B, C.
+    UpperLetter,
+    /// a, b, c.
+    LowerLetter,
+    /// 1st, 2nd, 3rd.
+    Ordinal,
+    /// One, Two, Three.
+    CardinalText,
+    /// First, Second, Third.
+    OrdinalText,
+    /// 01, 02, 03.
+    DecimalZero,
+    /// A bullet: the level's text in its font, or its picture.
+    Bullet,
+    /// No number.
+    None,
+    /// - 1 -, - 2 -, - 3 -.
+    NumberInDash,
+    /// 1, …, 9, A, B: hexadecimal.
+    Hex,
+    /// *, †, ‡, §, then doubled.
+    Chicago,
+    /// а, б, в.
+    RussianLower,
+    /// А, Б, В.
+    RussianUpper,
+    /// क, ख, ग.
+    HindiVowels,
+    /// अ, आ, इ.
+    HindiConsonants,
+    /// १, २, ३.
+    HindiNumbers,
+    /// ก, ข, ค.
+    ThaiLetters,
+    /// ๑, ๒, ๓.
+    ThaiNumbers,
+    /// A style Twip numbers in decimal, by the name the document gives it.
+    Other(String),
+}
+
+impl NumberStyle {
+    /// Every style but [`NumberStyle::Other`].
+    pub const NAMED: [NumberStyle; 21] = [
+        NumberStyle::Decimal,
+        NumberStyle::UpperRoman,
+        NumberStyle::LowerRoman,
+        NumberStyle::UpperLetter,
+        NumberStyle::LowerLetter,
+        NumberStyle::Ordinal,
+        NumberStyle::CardinalText,
+        NumberStyle::OrdinalText,
+        NumberStyle::DecimalZero,
+        NumberStyle::Bullet,
+        NumberStyle::None,
+        NumberStyle::NumberInDash,
+        NumberStyle::Hex,
+        NumberStyle::Chicago,
+        NumberStyle::RussianLower,
+        NumberStyle::RussianUpper,
+        NumberStyle::HindiVowels,
+        NumberStyle::HindiConsonants,
+        NumberStyle::HindiNumbers,
+        NumberStyle::ThaiLetters,
+        NumberStyle::ThaiNumbers,
+    ];
+
+    /// The `w:numFmt` it is written as.
+    pub fn val(&self) -> &str {
+        match self {
+            NumberStyle::Decimal => "decimal",
+            NumberStyle::UpperRoman => "upperRoman",
+            NumberStyle::LowerRoman => "lowerRoman",
+            NumberStyle::UpperLetter => "upperLetter",
+            NumberStyle::LowerLetter => "lowerLetter",
+            NumberStyle::Ordinal => "ordinal",
+            NumberStyle::CardinalText => "cardinalText",
+            NumberStyle::OrdinalText => "ordinalText",
+            NumberStyle::DecimalZero => "decimalZero",
+            NumberStyle::Bullet => "bullet",
+            NumberStyle::None => "none",
+            NumberStyle::NumberInDash => "numberInDash",
+            NumberStyle::Hex => "hex",
+            NumberStyle::Chicago => "chicago",
+            NumberStyle::RussianLower => "russianLower",
+            NumberStyle::RussianUpper => "russianUpper",
+            NumberStyle::HindiVowels => "hindiVowels",
+            NumberStyle::HindiConsonants => "hindiConsonants",
+            NumberStyle::HindiNumbers => "hindiNumbers",
+            NumberStyle::ThaiLetters => "thaiLetters",
+            NumberStyle::ThaiNumbers => "thaiNumbers",
+            NumberStyle::Other(v) => v,
+        }
+    }
+
+    /// The style a `w:numFmt` names: decimal when it names none.
+    pub fn of_val(v: &str) -> NumberStyle {
+        if v.is_empty() {
+            return NumberStyle::Decimal;
+        }
+        NumberStyle::NAMED.into_iter().find(|f| f.val() == v).unwrap_or_else(|| NumberStyle::Other(v.to_string()))
+    }
+
+    /// The style a [`NumberFormat`] is.
+    pub fn of_format(f: NumberFormat) -> NumberStyle {
+        NumberStyle::of_val(f.val())
+    }
+
+    /// The [`NumberFormat`] it is, as [`NumberFormat::of_val`] reads it.
+    pub fn format(&self) -> NumberFormat {
+        NumberFormat::of_val(self.val())
+    }
+
+    /// Whether it can be written: an [`NumberStyle::Other`] name is 1 to 64 ASCII letters and digits.
+    pub fn writable(&self) -> bool {
+        match self {
+            NumberStyle::Other(v) => (1..=64).contains(&v.len()) && v.bytes().all(|b| b.is_ascii_alphanumeric()),
+            _ => true,
+        }
+    }
+}
+
+/// A list level's number or bullet formatting of its own (`None`: not set, so the paragraph's applies). The font is
+/// the level's [`ListLevel::font`].
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct LabelFormat {
+    /// Bold.
+    pub bold: Option<bool>,
+    /// Italic.
+    pub italic: Option<bool>,
+    /// The underline.
+    pub underline: Option<UnderlineStyle>,
+    /// The size.
+    pub size: Option<Points>,
+    /// The colour, or automatic.
+    pub color: Option<AutoOr<Color>>,
+    /// The highlight, or none.
+    pub highlight: Option<NoneOr<HighlightColor>>,
+}
+
+impl LabelFormat {
+    /// The formatting a level's `w:rPr` gives its number.
+    pub fn of(r: &crate::docx::props::RunProps) -> LabelFormat {
+        use crate::docx::props::toggle;
+        let flag = |bit: u16| (r.toggles_set & bit != 0).then_some(r.toggles & bit != 0);
+        LabelFormat {
+            bold: flag(toggle::B),
+            italic: flag(toggle::I),
+            underline: r.underline.as_deref().map(|u| super::state::underline_style(Some(u))),
+            size: r.size.map(Points),
+            color: r.color.map(|c| c.map_or(AutoOr::Auto, |c| AutoOr::Value(Color(c)))),
+            highlight: r.highlight.map(super::state::highlight_color),
+        }
+    }
+
+    /// A level's `w:rPr` with the formatting that differs from `was` written or removed.
+    fn write(&self, was: &LabelFormat, rpr: &mut Props, w: &str) {
+        let flag = |rpr: &mut Props, on: Option<bool>, names: [&str; 2]| {
+            for n in names {
+                match on {
+                    Some(true) => rpr.set(n, format!("<{w}{n}/>")),
+                    Some(false) => rpr.set(n, format!("<{w}{n} {w}val=\"0\"/>")),
+                    None => rpr.remove(n),
+                }
+            }
+        };
+        if self.bold != was.bold {
+            flag(rpr, self.bold, ["b", "bCs"]);
+        }
+        if self.italic != was.italic {
+            flag(rpr, self.italic, ["i", "iCs"]);
+        }
+        if self.underline != was.underline {
+            match self.underline {
+                Some(u) => rpr.set("u", format!("<{w}u {w}val=\"{}\"/>", super::commands::underline_value(u))),
+                None => rpr.remove("u"),
+            }
+        }
+        if self.size != was.size {
+            for n in ["sz", "szCs"] {
+                match self.size {
+                    Some(s) => rpr.set(n, format!("<{w}{n} {w}val=\"{}\"/>", (s.0 * 2.0).round() as i64)),
+                    None => rpr.remove(n),
+                }
+            }
+        }
+        if self.color != was.color {
+            match self.color {
+                Some(AutoOr::Auto) => rpr.set("color", format!("<{w}color {w}val=\"auto\"/>")),
+                Some(AutoOr::Value(c)) => rpr.set("color", format!("<{w}color {w}val=\"{:06X}\"/>", c.0 & 0xFF_FFFF)),
+                None => rpr.remove("color"),
+            }
+        }
+        if self.highlight != was.highlight {
+            match self.highlight {
+                Some(NoneOr::Value(h)) => rpr.set("highlight", format!("<{w}highlight {w}val=\"{}\"/>", super::commands::highlight_value(h))),
+                Some(NoneOr::None) => rpr.set("highlight", format!("<{w}highlight {w}val=\"none\"/>")),
+                None => rpr.remove("highlight"),
+            }
+        }
+    }
+}
+
+/// A list level in full: what [`ListLevel`] shows, with its number style (whatever [`ListLevel::format`] can name)
+/// and its number's own formatting.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct LevelDefinition {
+    /// The level. Its `format` is the one `format` here gives ([`NumberStyle::format`]); setting a level, `format`
+    /// here is the one written.
+    pub level: ListLevel,
+    /// The number style.
+    pub format: NumberStyle,
+    /// The number's own formatting.
+    pub label: LabelFormat,
+}
+
+impl LevelDefinition {
+    /// `level` with the style and number formatting `was` has where `level` keeps them: its style when `level.format`
+    /// is the one `was` shows, its number's formatting always.
+    pub fn kept(level: &ListLevel, was: Option<&LevelDefinition>) -> LevelDefinition {
+        let format = match was {
+            Some(w) if w.format.format() == level.format => w.format.clone(),
+            _ => NumberStyle::of_format(level.format),
+        };
+        LevelDefinition { level: level.clone(), format, label: was.map(|w| w.label.clone()).unwrap_or_default() }
+    }
+
+    /// Refused: an unwritable number style, a size out of 1 to 1638 pt.
+    pub fn check(&self) -> Result<(), crate::api::error::Error> {
+        if !self.format.writable() {
+            return Err(crate::api::error::Error::invalid("a number style is 1 to 64 ASCII letters and digits"));
+        }
+        match self.label.size {
+            Some(s) => super::commands::bounds::within("the size", s.0, 1.0, 1638.0),
+            None => Ok(()),
+        }
+    }
+}
+
 /// A level as the API shows it.
 pub fn list_level(l: &Level) -> ListLevel {
+    level_definition(l).level
+}
+
+/// A level in full.
+pub fn level_definition(l: &Level) -> LevelDefinition {
     let left = l.ppr.ind_left.unwrap_or(0.0);
     let first = l.ppr.ind_first.unwrap_or(0.0);
-    ListLevel {
-        format: NumberFormat::of_val(&l.fmt),
+    let format = NumberStyle::of_val(&l.fmt);
+    let level = ListLevel {
+        format: format.format(),
         text: l.text.clone(),
         start: l.start.max(0) as u32,
         alignment: match l.jc.as_str() {
@@ -52,12 +306,13 @@ pub fn list_level(l: &Level) -> ListLevel {
             _ => None,
         },
         picture: None,
-    }
+    };
+    LevelDefinition { level, format, label: LabelFormat::of(&l.rpr) }
 }
 
-/// A `w:lvl` for level `k` set to `new`: `old` (its XML and its API view) edited where they differ, so what the API
+/// A `w:lvl` for level `k` set to `def`: `old` (its XML and its view) edited where they differ, so what the view
 /// doesn't show is kept.
-fn level_xml(k: usize, old: Option<(&str, &ListLevel)>, new: &ListLevel, pic: Option<Option<i64>>, cx: &Cx) -> String {
+fn level_xml(k: usize, old: Option<(&str, &LevelDefinition)>, def: &LevelDefinition, pic: Option<Option<i64>>, cx: &Cx) -> String {
     let w = &cx.w;
     let mut p = Props::parse(old.map(|o| o.0), "lvl", cx);
     p.reorder(LVL);
@@ -65,13 +320,15 @@ fn level_xml(k: usize, old: Option<(&str, &ListLevel)>, new: &ListLevel, pic: Op
         p = Props::parse(Some(&format!("<{w}lvl {w}ilvl=\"{k}\"><{w}start {w}val=\"1\"/></{w}lvl>")), "lvl", cx);
         p.reorder(LVL);
     }
-    let was = old.map(|o| o.1.clone()).unwrap_or_else(|| ListLevel { start: 1, ..ListLevel::default() });
+    let blank = LevelDefinition { level: ListLevel { start: 1, ..ListLevel::default() }, ..LevelDefinition::default() };
+    let was_def = old.map_or(&blank, |o| o.1);
+    let (was, new) = (&was_def.level, &def.level);
     let val = |name: &str, v: &str| format!("<{w}{name} {w}val=\"{}\"/>", esc(v));
     if old.is_none() || was.start != new.start {
         p.set("start", val("start", &new.start.to_string()));
     }
-    if old.is_none() || was.format != new.format {
-        p.set("numFmt", val("numFmt", new.format.val()));
+    if old.is_none() || was_def.format != def.format {
+        p.set("numFmt", val("numFmt", def.format.val()));
     }
     if old.is_none() || was.restart_after != new.restart_after {
         match new.restart_after {
@@ -128,15 +385,19 @@ fn level_xml(k: usize, old: Option<(&str, &ListLevel)>, new: &ListLevel, pic: Op
             p.set("pPr", x);
         }
     }
-    if old.is_none() || was.font != new.font {
+    if old.is_none() || was.font != new.font || was_def.label != def.label {
         let mut rpr = Props::parse(p.get("rPr"), "rPr", cx);
-        match &new.font {
-            Some(f) => {
-                let f = esc(f);
-                rpr.set("rFonts", format!("<{w}rFonts {w}ascii=\"{f}\" {w}hAnsi=\"{f}\" {w}hint=\"default\"/>"));
+        rpr.reorder(crate::docx::write::props::RPR);
+        if old.is_none() || was.font != new.font {
+            match &new.font {
+                Some(f) => {
+                    let f = esc(f);
+                    rpr.set("rFonts", format!("<{w}rFonts {w}ascii=\"{f}\" {w}hAnsi=\"{f}\" {w}hint=\"default\"/>"));
+                }
+                None => rpr.remove("rFonts"),
             }
-            None => rpr.remove("rFonts"),
         }
+        def.label.write(&was_def.label, &mut rpr, w);
         match rpr.xml() {
             Some(x) => p.set("rPr", x),
             None => p.remove("rPr"),
@@ -174,20 +435,38 @@ fn level_tab(ppr: &mut Props, tab: Option<Points>, cx: &Cx) {
 /// A level's picture bullet change: `None` keeps it, `Some(None)` removes it, `Some(Some(id))` sets it.
 pub(super) type PicChange = Option<Option<i64>>;
 
-/// A level a `w:num` defines in its `w:lvlOverride`: its `w:lvl` and that level as the API shows it.
-pub(super) type Override = Option<(String, ListLevel)>;
+/// A level a `w:num` defines in its `w:lvlOverride`: its `w:lvl` and that level in full.
+pub(super) type Override = Option<(String, LevelDefinition)>;
+
+/// The levels an edit sets.
+#[derive(Clone, Copy)]
+pub(super) enum Levels<'a> {
+    /// As the API shows them: each keeps the number style and number formatting it has ([`LevelDefinition::kept`]).
+    Shown(&'a [ListLevel]),
+    /// In full.
+    Full(&'a [LevelDefinition]),
+}
+
+impl Levels<'_> {
+    fn len(self) -> usize {
+        match self {
+            Levels::Shown(l) => l.len(),
+            Levels::Full(l) => l.len(),
+        }
+    }
+
+    /// Level `k` as it is to be, over `was`.
+    fn at(self, k: usize, was: Option<&LevelDefinition>) -> Option<LevelDefinition> {
+        match self {
+            Levels::Shown(l) => l.get(k).map(|l| LevelDefinition::kept(l, was)),
+            Levels::Full(l) => l.get(k).cloned(),
+        }
+    }
+}
 
 /// A `w:abstractNum` with its levels from `levels` (edited from `old`'s where it has them). A level `over` names is
 /// the `w:num`'s: a copy (a new id) takes it as edited, else it is left to [`num_xml`].
-pub(super) fn abstract_xml(
-    id: i64,
-    old: Option<&str>,
-    levels: &[ListLevel],
-    name: Option<&str>,
-    pics: &[PicChange],
-    over: &[Override],
-    cx: &Cx,
-) -> String {
+pub(super) fn abstract_xml(id: i64, old: Option<&str>, levels: Levels, name: Option<&str>, pics: &[PicChange], over: &[Override], cx: &Cx) -> String {
     let w = &cx.w;
     let blank = format!("<{w}abstractNum {w}abstractNumId=\"{id}\"><{w}multiLevelType {w}val=\"hybridMultilevel\"/></{w}abstractNum>");
     let was_id = old.and_then(|o| attr_of(o, "abstractNumId"));
@@ -210,18 +489,19 @@ pub(super) fn abstract_xml(
         None => {}
     }
     let parsed = old.and_then(|o| cx.parse(o, |text, el| crate::docx::numbering::parse_abstract(el, text, &Default::default()))).flatten();
-    for (k, new) in levels.iter().enumerate().take(9) {
+    for k in 0..levels.len().min(9) {
         let over = over.get(k).and_then(Option::as_ref);
         if over.is_some() && !copy {
             continue;
         }
         let raw = a.kids.iter().position(|(n, x)| n == "lvl" && attr_of(x, "ilvl").as_deref() == Some(&k.to_string()));
-        let old_level = parsed.as_ref().and_then(|(_, abs)| abs.levels.get(k).cloned().flatten()).map(|l| list_level(&l));
+        let old_level = parsed.as_ref().and_then(|(_, abs)| abs.levels.get(k).cloned().flatten()).map(|l| level_definition(&l));
         let base = match over {
             Some((x, v)) => Some((x.as_str(), v)),
             None => raw.map(|i| a.kids[i].1.as_str()).zip(old_level.as_ref()),
         };
-        let xml = level_xml(k, base, new, pics.get(k).copied().flatten(), cx);
+        let Some(new) = levels.at(k, base.map(|b| b.1)) else { continue };
+        let xml = level_xml(k, base, &new, pics.get(k).copied().flatten(), cx);
         match raw {
             Some(i) => a.kids[i].1 = xml,
             None => a.add("lvl", xml),
@@ -243,14 +523,15 @@ fn override_levels(raw: &str, cx: &Cx) -> [Option<String>; 9] {
 }
 
 /// A `w:num` with the levels it overrides edited to `levels`; `None` when it overrides none of them.
-fn num_xml(raw: &str, levels: &[ListLevel], pics: &[PicChange], over: &[Override], cx: &Cx) -> Option<String> {
+fn num_xml(raw: &str, levels: Levels, pics: &[PicChange], over: &[Override], cx: &Cx) -> Option<String> {
     let mut m = Props::parse(Some(raw), "num", cx);
     let mut changed = false;
     for (_, x) in m.kids.iter_mut().filter(|(n, _)| n == "lvlOverride") {
         let Some(k) = attr_of(x, "ilvl").and_then(|v| v.parse::<usize>().ok()) else { continue };
-        let (Some(Some((lvl, view))), Some(new)) = (over.get(k), levels.get(k)) else { continue };
+        let Some(Some((lvl, view))) = over.get(k) else { continue };
+        let Some(new) = levels.at(k, Some(view)) else { continue };
         let mut o = Props::parse(Some(x), "lvlOverride", cx);
-        o.set("lvl", level_xml(k, Some((lvl, view)), new, pics.get(k).copied().flatten(), cx));
+        o.set("lvl", level_xml(k, Some((lvl, view)), &new, pics.get(k).copied().flatten(), cx));
         *x = o.xml()?;
         changed = true;
     }
@@ -275,15 +556,20 @@ impl Editor {
 
     /// The nine levels of `num` as the API shows them, with their picture bullets.
     pub fn list_levels(&self, num: i64) -> Option<Vec<ListLevel>> {
+        Some(self.list_level_definitions(num)?.into_iter().map(|d| d.level).collect())
+    }
+
+    /// The nine levels of `num` in full, with their picture bullets.
+    pub fn list_level_definitions(&self, num: i64) -> Option<Vec<LevelDefinition>> {
         let res = self.doc.resolver.as_ref()?;
         let levels = res.numbering.levels(num, &res.styles)?;
         Some(
             levels
                 .iter()
                 .map(|l| {
-                    let Some(l) = l else { return ListLevel { start: 1, ..ListLevel::default() } };
-                    let mut v = list_level(l);
-                    v.picture = l
+                    let Some(l) = l else { return LevelDefinition { level: ListLevel { start: 1, ..ListLevel::default() }, ..Default::default() } };
+                    let mut v = level_definition(l);
+                    v.level.picture = l
                         .pic_bullet
                         .and_then(|id| res.numbering.pic_bullets.get(&id))
                         .and_then(|p| p.image)
@@ -293,6 +579,31 @@ impl Editor {
                 })
                 .collect(),
         )
+    }
+
+    /// The list of the paragraph the selection's focus is in, in full: what a host shows as the current list and
+    /// its levels, without a dialog. `None` outside a list.
+    pub fn list_definition(&self) -> Option<ListDefinition> {
+        let para = self.selection.focus().and_then(|p| p.para_offset()).map(|(p, _)| p)?;
+        let (num, ilvl) = self.index.para(&self.doc, para)?.style.num.filter(|(n, _)| *n != 0)?;
+        self.list_definition_of(num, ilvl)
+    }
+
+    /// List `num` in full, with `ilvl` its level shown as current.
+    pub fn list_definition_of(&self, num: i64, ilvl: i64) -> Option<ListDefinition> {
+        let res = self.doc.resolver.as_ref()?;
+        let abs = res.numbering.abstracts.get(&res.numbering.abstract_of(num, &res.styles)?)?;
+        let own = res.numbering.abstracts.get(&res.numbering.nums.get(&num)?.abstract_id);
+        let levels = self.list_level_definitions(num)?;
+        let level = ilvl.clamp(0, 8) as u8;
+        Some(ListDefinition {
+            id: num,
+            name: abs.name.clone().filter(|n| !n.is_empty()),
+            style: own.and_then(|a| a.num_style_link.clone()).or_else(|| abs.style_link.clone()).map(StyleId),
+            bullet: levels.get(level as usize).is_some_and(|l| l.format == NumberStyle::Bullet),
+            level,
+            levels,
+        })
     }
 
     /// The editable list paragraphs in the order lists number through them: each paragraph's id and `(numId, ilvl)`.
@@ -403,8 +714,28 @@ impl Editor {
         (changes, add)
     }
 
-    pub(super) fn set_list_definition(&mut self, mut d: ListDefinitionChange, fonts: &Fonts) -> Outcome {
+    pub(super) fn set_list_definition(&mut self, d: ListDefinitionChange, fonts: &Fonts) -> Outcome {
+        let now = self.selection_list().and_then(|(_, n, _)| self.list_level_definitions(n)).unwrap_or_default();
+        let levels = d.levels.iter().enumerate().map(|(k, l)| LevelDefinition::kept(l, now.get(k))).collect();
+        self.set_list_levels(ListLevelsChange { levels, apply_to: d.apply_to, name: d.name }, fonts)
+    }
+
+    /// Defines the selection's list (or a new one) with levels in full: [`Command::SetListDefinition`] with every
+    /// number style and the numbers' own formatting. Refused for a number style that can't be written or a size out
+    /// of bounds.
+    ///
+    /// [`Command::SetListDefinition`]: crate::api::command::Command::SetListDefinition
+    pub fn set_list_levels(&mut self, change: ListLevelsChange, fonts: &Fonts) -> Outcome {
+        if let Some(e) = change.levels.iter().find_map(|l| l.check().err()) {
+            return Outcome::Refused(e);
+        }
+        if let Some(out) = self.refuse_like(&crate::api::command::Command::SetListDefinition(Default::default())) {
+            return out;
+        }
         let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
+        let mut defs = change.levels;
+        defs.truncate(9);
+        let mut d = ListDefinitionChange { levels: defs.iter().map(|l| l.level.clone()).collect(), apply_to: change.apply_to, name: change.name };
         let paras = self.selected_paras();
         let here = self.selection_list();
         let current = here.map(|(_, n, _)| n);
@@ -430,17 +761,20 @@ impl Editor {
             }
         }
         let (pics, new_pics) = self.picture_changes(&d.levels, current);
+        for (def, l) in defs.iter_mut().zip(&d.levels) {
+            def.level = l.clone();
+        }
         let Some((first, num, _)) = here else {
             // Outside a list: a new one, for the selected paragraphs.
             let (abstract_id, num_id) = res.numbering.free_ids();
             let assign: Vec<(ParaId, i64)> = paras.iter().map(|&p| (p, num_id)).collect();
-            let levels = complete(&d.levels);
-            let links = links(&levels, &[], num_id);
+            let levels = complete_definitions(&defs);
+            let links = links(&complete(&d.levels), &[], num_id);
             return self.edit_lists(
                 "Define List",
                 |r, cx| {
                     add_pictures(&mut r.numbering, &new_pics, cx);
-                    let a = abstract_xml(abstract_id, None, &levels, d.name.as_deref(), &pics, &[], cx);
+                    let a = abstract_xml(abstract_id, None, Levels::Full(&levels), d.name.as_deref(), &pics, &[], cx);
                     r.numbering.set_abstract_xml(a, &r.styles.colours)?;
                     let w = &cx.w;
                     r.numbering.set_num_xml(
@@ -461,7 +795,7 @@ impl Editor {
         let over: Vec<Override> = override_levels(&num_raw, &cx)
             .into_iter()
             .enumerate()
-            .map(|(k, x)| Some((x?, list_level(res.numbering.nums.get(&num)?.level_overrides.get(&(k as i64))?))))
+            .map(|(k, x)| Some((x?, level_definition(res.numbering.nums.get(&num)?.level_overrides.get(&(k as i64))?))))
             .collect();
         if whole {
             let links = links(&d.levels, &now, num);
@@ -469,9 +803,9 @@ impl Editor {
                 "Define List",
                 |r, cx| {
                     add_pictures(&mut r.numbering, &new_pics, cx);
-                    let a = abstract_xml(abstract_id, old.as_deref(), &d.levels, d.name.as_deref(), &pics, &over, cx);
+                    let a = abstract_xml(abstract_id, old.as_deref(), Levels::Full(&defs), d.name.as_deref(), &pics, &over, cx);
                     r.numbering.set_abstract_xml(a, &r.styles.colours)?;
-                    if let Some(m) = num_xml(&num_raw, &d.levels, &pics, &over, cx) {
+                    if let Some(m) = num_xml(&num_raw, Levels::Full(&defs), &pics, &over, cx) {
                         r.numbering.set_num_xml(m, &r.styles.colours)?;
                     }
                     link_styles(r, &links, abstract_id, cx)
@@ -504,7 +838,7 @@ impl Editor {
             "Define List",
             |r, cx| {
                 add_pictures(&mut r.numbering, &new_pics, cx);
-                let a = abstract_xml(new_abstract, old.as_deref(), &d.levels, d.name.as_deref(), &pics, &over, cx);
+                let a = abstract_xml(new_abstract, old.as_deref(), Levels::Full(&defs), d.name.as_deref(), &pics, &over, cx);
                 r.numbering.set_abstract_xml(a, &r.styles.colours)?;
                 let w = &cx.w;
                 let starts: String = starts
@@ -625,8 +959,42 @@ fn add_pictures(n: &mut Numbering, pics: &[(i64, usize)], cx: &Cx) {
     }
 }
 
+/// Nine levels in full: `levels`, then the default ones after them.
+fn complete_definitions(levels: &[LevelDefinition]) -> Vec<LevelDefinition> {
+    let shown: Vec<ListLevel> = levels.iter().map(|l| l.level.clone()).collect();
+    complete(&shown).into_iter().enumerate().map(|(k, l)| levels.get(k).cloned().unwrap_or_else(|| LevelDefinition::kept(&l, None))).collect()
+}
+
+/// A list as [`Editor::list_definition`] reads it.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ListDefinition {
+    /// The list (`numId`): paragraphs number together exactly when theirs is the same.
+    pub id: i64,
+    /// Its name, which ListNum fields name it by.
+    pub name: Option<String>,
+    /// The list style it is defined by.
+    pub style: Option<StyleId>,
+    /// Whether the current level is a bullet.
+    pub bullet: bool,
+    /// The current level, 0 to 8.
+    pub level: u8,
+    /// Its nine levels.
+    pub levels: Vec<LevelDefinition>,
+}
+
+/// [`Editor::set_list_levels`]' options: [`ListDefinitionChange`] with its levels in full.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ListLevelsChange {
+    /// The levels, from the first: level `k` defines level `k`; levels past its end are kept.
+    pub levels: Vec<LevelDefinition>,
+    /// What they apply to.
+    pub apply_to: ListApplyTo,
+    /// The list's name; none keeps it, empty removes it.
+    pub name: Option<String>,
+}
+
 /// Nine levels: `levels`, then the default ones after them.
-pub(super) fn complete(levels: &[ListLevel]) -> Vec<ListLevel> {
+pub fn complete(levels: &[ListLevel]) -> Vec<ListLevel> {
     (0..9)
         .map(|k| {
             levels.get(k).cloned().unwrap_or_else(|| ListLevel {
