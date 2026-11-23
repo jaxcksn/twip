@@ -382,3 +382,24 @@ fn editable_ranges_match_in_linear_time() {
     }
     panic!("{a:.2} ms for 4000 ranges, {b:.2} ms for 16000 (4x)");
 }
+
+#[test]
+fn formatting_selected_cells_is_refused_over_a_locked_control() {
+    use super::super::selection::{CellRef, CellShape};
+    let cell = |inner: &str| format!("<w:tc><w:tcPr><w:tcW w:w=\"2000\" w:type=\"dxa\"/></w:tcPr>{inner}</w:tc>");
+    let locked = r#"<w:p><w:sdt><w:sdtPr><w:id w:val="5"/><w:lock w:val="sdtContentLocked"/></w:sdtPr><w:sdtContent><w:r><w:t>abc</w:t></w:r></w:sdtContent></w:sdt></w:p>"#;
+    let body = format!(
+        "<w:tbl><w:tblGrid><w:gridCol w:w=\"2000\"/><w:gridCol w:w=\"2000\"/></w:tblGrid><w:tr>{}{}</w:tr></w:tbl><w:p/>",
+        cell(&format!("<w:p>{}</w:p>", run("free"))),
+        cell(locked)
+    );
+    for cmd in [Command::SetBold(true), Command::SetAlignment(Alignment::Center)] {
+        let mut e = Editor::open(&blank_body(&body), fonts()).expect("opens");
+        let table = e.index().table_ids().next().expect("a table");
+        e.set_selection(Selection::Cells { table, anchor: CellRef { row: 0, col: 0 }, focus: CellRef { row: 0, col: 1 }, shape: CellShape::Rect });
+        let rev = e.revision();
+        let out = e.execute(cmd.clone(), fonts());
+        assert!(matches!(&out, Outcome::Refused(err) if err.message == "locked"), "{cmd:?}: {out:?}");
+        assert_eq!(e.revision(), rev, "{cmd:?}");
+    }
+}

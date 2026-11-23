@@ -222,7 +222,7 @@ fn table_again(t: &Table, res: &Resolver, cx: &Cx) -> Option<(TableProps, Option
 pub(super) fn ruby_again(r: &Ruby, base: &RunProps, edit: Option<(&RubyEdit, bool)>, res: &Resolver, cx: &Cx) -> Option<Rc<Ruby>> {
     use crate::docx::xml::is_w;
     let raw = r.xml.0.as_deref()?;
-    let (splices, parts) = cx.parse(raw, |text, el| {
+    let (mut splices, parts) = cx.parse(raw, |text, el| {
         let off = text.len() - raw.len() - "</x>".len();
         let mut splices: Vec<(std::ops::Range<usize>, String)> = Vec::new();
         let mut parts: [Vec<(String, Option<String>)>; 2] = [Vec::new(), Vec::new()];
@@ -232,17 +232,17 @@ pub(super) fn ruby_again(r: &Ruby, base: &RunProps, edit: Option<(&RubyEdit, boo
                 let rpr = run.children().find(|c| is_w(*c, "rPr"));
                 let mut xml = rpr.map(|n| text[n.range()].to_string());
                 let old = if k == 0 { &r.base } else { &r.text };
+                // Runs with text, new properties going before their first child
+                let first = run.children().find(|c| is_w(*c, "t")).and_then(|_| run.first_child());
                 if let Some((edit, _)) = edit.filter(|e| k == 0 || e.1)
+                    && let Some(first) = first
                     && let Some((_, old)) = old.get(parts[k].len()).or(old.last())
                 {
                     let now = edit(xml.as_deref(), old);
                     if now != xml {
                         let at = match rpr {
                             Some(n) => n.range().start - off..n.range().end - off,
-                            None => {
-                                let open = run.range().start + text[run.range()].find('>').map_or(0, |e| e + 1) - off;
-                                open..open
-                            }
+                            None => first.range().start - off..first.range().start - off,
                         };
                         splices.push((at, now.clone().unwrap_or_default()));
                         xml = now;
@@ -273,7 +273,9 @@ pub(super) fn ruby_again(r: &Ruby, base: &RunProps, edit: Option<(&RubyEdit, boo
         return None;
     }
     let mut xml = raw.to_string();
-    for (at, with) in splices.into_iter().rev() {
+    // Last first, in document order
+    splices.sort_unstable_by_key(|(at, _)| std::cmp::Reverse(at.start));
+    for (at, with) in splices {
         xml.replace_range(at, &with);
     }
     Some(Rc::new(Ruby { base: base_text, text, xml: crate::docx::Raw(Some(Rc::from(xml.as_str()))), ..(*r).clone() }))

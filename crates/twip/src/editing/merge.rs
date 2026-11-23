@@ -1072,8 +1072,15 @@ impl Editor {
     }
 
     fn refuse_lock(&mut self, deletes: bool) -> bool {
-        let Some((a, b)) = self.selection.ordered(&self.index) else { return false };
-        if self.locks(&a, &b, deletes) {
+        let locked = match self.selection.ordered(&self.index) {
+            Some((a, b)) => self.locks(&a, &b, deletes),
+            // Cells, blocks and objects: each paragraph piece they cover
+            None => self.selected_ranges().into_iter().any(|(para, x, y)| {
+                let story = self.index.para_slot(para).map_or(StoryId::Body, |s| self.index.story(s.container));
+                self.locks(&Position::text(story, para, x), &Position::text(story, para, y), deletes)
+            }),
+        };
+        if locked {
             self.refused = Some("locked");
             self.events.push(super::input::Notice::Refused { sub_template: None, element: None });
             return true;

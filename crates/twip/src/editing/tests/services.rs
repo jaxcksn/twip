@@ -408,3 +408,27 @@ fn find_replace_and_spelling_reach_every_story() {
         assert!(s.state().spelling.misspellings > body, "notes, boxes and headers are counted too");
     });
 }
+
+#[test]
+fn check_accessibility_reaches_an_inline_shapes_text() {
+    use crate::docx::{Block, Inline, Paragraph};
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-OBJ.docx");
+    let mut doc = crate::docx::read_editable(&std::fs::read(path).expect("the fixture")).expect("reads");
+    let floats = |doc: &crate::docx::Document| crate::services::dialogs::issues(doc).into_iter().filter(|i| i.id.starts_with("float:")).count();
+    let before = floats(&doc);
+    let paras = || doc.sections.iter().flat_map(|s| &s.blocks).filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None });
+    let float =
+        paras().flat_map(|p| &p.inlines).find(|i| matches!(i, Inline::Float(f, _) if f.image.is_some())).cloned().expect("a floating picture");
+    let (mut pic, run) = paras()
+        .flat_map(|p| &p.inlines)
+        .find_map(|i| if let Inline::Picture(pc, r) = i { Some((pc.clone(), r.clone())) } else { None })
+        .expect("an inline picture");
+    let first = paras().next().cloned().expect("a paragraph");
+    let inner = Paragraph { inlines: vec![float], ..first };
+    let text_box = crate::docx::TextBox { blocks: vec![Block::Para(inner)], insets: [0.0; 4], outline: 0.0, auto_fit: false, v_anchor: 0, flow: 0 };
+    pic.text = Some(Box::new(crate::docx::InlineText { id: crate::docx::next_para_id(), text_box }));
+    let Some(Block::Para(host)) = doc.sections[0].blocks.iter_mut().find(|b| matches!(b, Block::Para(_))) else { panic!("a paragraph") };
+    host.inlines.push(Inline::Picture(pic, run));
+    assert!(before > 0, "setup: the fixture's floating picture has no alt text");
+    assert_eq!(floats(&doc), before + 1, "the copy in the inline shape's text is listed too");
+}

@@ -735,8 +735,22 @@ fn expanding_references_is_linear_in_the_references() {
         let t = std::time::Instant::now();
         e.execute(super::super::sub_templates::rules("SUBTEMPLATE", "Sub-templates"), fonts());
         e.complete(fonts());
+        let took = t.elapsed().as_secs_f64();
         assert!(e.references().by_field.len() > idle, "the references");
-        t.elapsed().as_secs_f64()
+        let shown: Vec<ParaId> = e
+            .references()
+            .by_field
+            .values()
+            .filter(|r| {
+                r.resolution == super::super::sub_templates::Resolution::Resolved
+                    && e.index().para_slot(r.at).is_some_and(|s| e.index().story(s.container) == StoryId::Body)
+            })
+            .map(|r| r.at)
+            .collect();
+        assert_eq!(shown.len(), 400, "the body's references resolve");
+        let expansions = &e.expansions.as_ref().expect("expansions").paras;
+        assert!(shown.iter().all(|p| expansions.contains_key(p)), "each shows its body");
+        took
     };
     let (few, many) = (time(0), time(20_000));
     assert!(many < few * 3.0 + 0.5, "{few}s with no idle references, {many}s with 20000");
@@ -783,11 +797,43 @@ fn a_body_from_another_docx_brings_its_notes_comments_and_lists() {
     let want = lists_and_notes(&crate::docx::read_editable(&source).expect("reads"));
     assert!(!want.0.is_empty() && !want.1.is_empty(), "the source's lists and notes");
     assert_eq!(lists_and_notes(e.document()), want);
-    let comments = |d: &crate::docx::Document| d.comments.by_id.len();
-    assert!(comments(e.document()) >= 1, "its comment comes along");
+    let source_doc = crate::docx::read_editable(&source).expect("reads");
+    let comments = comments_and_anchors(&source_doc);
+    assert!(comments.iter().any(|c| !c.1.is_empty()), "the source's anchored comment: {comments:?}");
+    assert_eq!(comments_and_anchors(e.document()), comments, "its comments come along on the same text");
     let saved = crate::docx::write::save(e.document()).expect("saves");
     let again = crate::docx::read_editable(&saved).expect("reads again");
     assert_eq!(lists_and_notes(&again), want, "as saved");
+    assert_eq!(comments_and_anchors(&again), comments, "comments as saved");
+}
+
+/// Each comment's text and the body text it is anchored on, sorted.
+fn comments_and_anchors(doc: &crate::docx::Document) -> Vec<(String, String)> {
+    use crate::docx::review::RangeKind;
+    let text = |blocks: &[Block]| -> String {
+        blocks
+            .iter()
+            .filter_map(|b| if let Block::Para(p) = b { Some(super::super::text::UnitText::of(p).text) } else { None })
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let mut anchored: std::collections::HashMap<i64, String> = std::collections::HashMap::new();
+    let mut open: Vec<i64> = Vec::new();
+    for b in doc.sections.iter().flat_map(|s| &s.blocks) {
+        let Block::Para(p) = b else { continue };
+        for i in &p.inlines {
+            match i {
+                Inline::Range(r) if r.kind == RangeKind::CommentStart => open.push(r.id),
+                Inline::Range(r) if r.kind == RangeKind::CommentEnd => open.retain(|x| *x != r.id),
+                Inline::Text(t, _) => open.iter().for_each(|id| anchored.entry(*id).or_default().push_str(t)),
+                _ => {}
+            }
+        }
+    }
+    let mut out: Vec<(String, String)> =
+        doc.comments.by_id.values().map(|c| (text(&c.body), anchored.get(&c.id.0).cloned().unwrap_or_default())).collect();
+    out.sort();
+    out
 }
 
 #[test]
@@ -833,8 +879,84 @@ fn a_replaced_body_keeps_its_pictures_images() {
     let want = picture_bytes(&crate::docx::read_editable(&docx).unwrap());
     assert!(!want.is_empty());
     e.execute(Command::ReplaceBody(crate::api::command::ReplaceBody { from: crate::api::value::Bytes(docx) }), fonts());
-    picture_bytes(e.document());
+    assert_eq!(picture_bytes(e.document()), want, "live");
     let saved = crate::docx::write::save(e.document()).expect("saves");
     let again = Editor::open(&saved, fonts()).expect("reopens");
     assert_eq!(picture_bytes(again.document()), want);
+}
+
+#[test]
+fn a_replaced_body_keeps_the_bookmarks_it_shares_with_the_old_one() {
+    let mark =
+        |text: &str| format!(r#"<w:p><w:bookmarkStart w:id="0" w:name="Chapter"/><w:r><w:t>{text}</w:t></w:r><w:bookmarkEnd w:id="0"/></w:p>"#);
+    let mut e = Editor::open(&super::blank_body(&mark("Old")), fonts()).expect("opens");
+    e.complete(fonts());
+    assert!(e.bookmark("Chapter").is_some(), "setup: the template's bookmark");
+    let from = crate::api::value::Bytes(super::blank_body(&mark("New")));
+    e.execute(Command::ReplaceBody(crate::api::command::ReplaceBody { from }), fonts());
+    let found = e.bookmark("Chapter").expect("the new body's bookmark");
+    assert_eq!(text_of(&e, found.start.para), "New");
+    let again = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
+    assert!(again.bookmark("Chapter").is_some(), "as saved");
+}
+
+/// A package of `body` with one list, `numId` 1, of format `fmt`.
+fn numbered_package(body: &str, fmt: &str) -> Vec<u8> {
+    use crate::layout::tests::package_bytes;
+    const W: &str = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+    const NS: &str = concat!(
+        r#"xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" "#,
+        r#"xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" "#,
+        r#"xmlns:wpg="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup""#
+    );
+    let ct = r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/></Types>"#;
+    let rels = r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#;
+    let doc_rels = r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId9" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/></Relationships>"#;
+    let document = format!(
+        r#"<?xml version="1.0"?><w:document {NS}><w:body>{body}<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:body></w:document>"#
+    );
+    let numbering = format!(
+        r#"<?xml version="1.0"?><w:numbering xmlns:w="{W}"><w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="{fmt}"/><w:lvlText w:val="%1."/><w:lvlJc w:val="left"/></w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num></w:numbering>"#
+    );
+    package_bytes(&[
+        ("[Content_Types].xml", ct),
+        ("_rels/.rels", rels),
+        ("word/_rels/document.xml.rels", doc_rels),
+        ("word/document.xml", &document),
+        ("word/numbering.xml", &numbering),
+    ])
+    .expect("a package")
+}
+
+#[test]
+fn a_replaced_body_brings_the_lists_of_its_group_shapes_text() {
+    use crate::layout::tests::shapes::{PT, anchor, sp};
+    let item = r#"<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr><w:r><w:t>item</w:t></w:r></w:p>"#;
+    let boxed = sp(0, 0, 80, 80, "rect", "", "FFFFFF")
+        .replace("<wps:bodyPr/>", &format!("<wps:txbx><w:txbxContent>{item}</w:txbxContent></wps:txbx><wps:bodyPr/>"));
+    let group = format!(
+        r#"<wpg:wgp><wpg:cNvGrpSpPr/><wpg:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{w}" cy="{w}"/><a:chOff x="0" y="0"/><a:chExt cx="{w}" cy="{w}"/></a:xfrm></wpg:grpSpPr>{boxed}</wpg:wgp>"#,
+        w = 100 * PT,
+    );
+    let source = numbered_package(&format!("<w:p>{}</w:p>", anchor(72, 300, 100, 100, 1, false, 1, &group)), "upperRoman");
+    let mut e = Editor::open(&numbered_package(item, "decimal"), fonts()).expect("opens");
+    e.complete(fonts());
+    let formats = |doc: &crate::docx::Document| -> Vec<String> {
+        let res = doc.resolver.as_ref().expect("styles");
+        let mut out = Vec::new();
+        for p in doc.sections.iter().flat_map(|s| &s.blocks).filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None }) {
+            for i in &p.inlines {
+                let Inline::Float(f, _) = i else { continue };
+                for q in f.parts.iter().filter_map(|g| g.text_box.as_ref()).flat_map(|t| &t.blocks) {
+                    let Block::Para(q) = q else { continue };
+                    out.extend(q.style.num.and_then(|(n, l)| res.numbering.level(n, l, &res.styles)).map(|l| l.fmt.clone()));
+                }
+            }
+        }
+        out
+    };
+    assert_eq!(formats(&crate::docx::read_editable(&source).expect("reads")), ["upperRoman"], "setup: the source's list");
+    e.execute(Command::ReplaceBody(crate::api::command::ReplaceBody { from: crate::api::value::Bytes(source) }), fonts());
+    let saved = crate::docx::write::save(e.document()).expect("saves");
+    assert_eq!(formats(&crate::docx::read_editable(&saved).expect("reads again")), ["upperRoman"], "its own list, as saved");
 }

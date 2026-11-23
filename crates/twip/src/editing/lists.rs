@@ -185,8 +185,9 @@ impl Editor {
         };
         let list_style = res.styles.by_id.contains_key("ListParagraph");
         for &para in &paras {
-            // A paragraph in a list keeps its level.
-            let ilvl = kind(self, para).map_or(ilvl, |(_, (_, own))| own.clamp(0, 8));
+            // A paragraph in a list keeps its level, where the list has it.
+            let defined = |l: i64| self.doc.resolver.as_ref().is_some_and(|r| r.numbering.level(num, l, &r.styles).is_some());
+            let ilvl = kind(self, para).map(|(_, (_, own))| own.clamp(0, 8)).filter(|&own| defined(own)).unwrap_or(ilvl);
             let ok = self.repara(&mut tx, para, &|p, w| {
                 p.set("numPr", format!("<{w}numPr><{w}ilvl {w}val=\"{ilvl}\"/><{w}numId {w}val=\"{num}\"/></{w}numPr>"));
                 p.remove("ind");
@@ -340,8 +341,15 @@ pub(super) fn counted(res: &Resolver, p: &Paragraph, uncounted: bool, cx: &Cx) -
 
 /// Whether a paragraph's direct `w:pPr` sets a `w:numId` itself (one in its tracked earlier properties doesn't).
 pub(super) fn direct_num(ppr: Option<&str>, cx: &Cx) -> bool {
-    let Some(x) = ppr.filter(|x| x.contains("numId")) else { return false };
-    !x.contains("pPrChange") || cx.parse(x, |_, el| ParaProps::parse(Some(el), &Default::default()).num_id.is_some()).unwrap_or(false)
+    let Some(x) = ppr else { return false };
+    let b = x.as_bytes();
+    // A `numId` start tag
+    let tag = x.match_indices("numId").any(|(i, _)| {
+        matches!(i.checked_sub(1).map(|k| b[k]), Some(b':' | b'<'))
+            && b.get(i + 5).is_some_and(|c| matches!(c, b'/' | b'>') || c.is_ascii_whitespace())
+    });
+    tag && (!(x.contains("pPrChange") || x.contains("<!--"))
+        || cx.parse(x, |_, el| ParaProps::parse(Some(el), &Default::default()).num_id.is_some()).unwrap_or(false))
 }
 
 /// Each paragraph in `blocks` and the text boxes anchored in them, as the reader reaches them.

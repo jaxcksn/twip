@@ -124,10 +124,10 @@ fn a_style_of_another_kind_is_refused() {
     let mut e = fixture();
     let o = e.execute(Command::SetParagraphStyle(StyleId("GridAccent".into())), fonts());
     let p = e.index().para(e.document(), texts_ids(&e)[0]).expect("a paragraph");
-    assert!(!matches!(o, super::super::commands::Outcome::Changed(_)), "{o:?}");
+    assert!(matches!(o, super::super::commands::Outcome::Refused(_)), "{o:?}");
     assert_ne!(p.style.style_id.as_deref(), Some("GridAccent"));
     e.execute(Command::InsertTable(TableSize { rows: 2, columns: 2 }), fonts());
     let o = e.execute(Command::SetTableStyle(StyleId("Heading1".into())), fonts());
-    assert!(!matches!(o, super::super::commands::Outcome::Changed(_)), "{o:?}");
+    assert!(matches!(o, super::super::commands::Outcome::Refused(_)), "{o:?}");
     assert!(matches!(e.execute(Command::SetTableStyle(StyleId("GridAccent".into())), fonts()), super::super::commands::Outcome::Changed(_)));
 }

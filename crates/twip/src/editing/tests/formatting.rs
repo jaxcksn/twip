@@ -359,3 +359,53 @@ fn a_built_in_style_not_applied_is_not_added() {
     assert!(!e.document().resolver.as_ref().expect("styles").styles.by_id.contains_key("TableGrid1"), "not in a table");
     assert_eq!(e.history().undo_depth(), undo);
 }
+
+fn replace_font(from: &str, to: &str, bold: Option<bool>) -> C {
+    C::ReplaceFont(crate::api::command::ReplaceFont {
+        from: from.into(),
+        to: to.into(),
+        scope: crate::api::command::ReplaceScope::Document,
+        bold,
+        italic: None,
+    })
+}
+
+#[test]
+fn a_bold_only_font_replacement_skips_a_regular_symbol() {
+    let sym = |e: &Editor| first_para(e).inlines.iter().find_map(|i| if let Inline::Sym { font, .. } = i { Some(font.clone()) } else { None });
+    let mut e = edit(r#"<w:p><w:r><w:t>a</w:t></w:r><w:r><w:sym w:font="Wingdings" w:char="F04A"/></w:r></w:p>"#);
+    assert_eq!(sym(&e).as_deref(), Some("Wingdings"), "the fixture's symbol");
+    e.execute(replace_font("Wingdings", "Webdings", Some(true)), fonts());
+    assert_eq!(sym(&e).as_deref(), Some("Wingdings"), "the symbol isn't bold");
+    e.execute(replace_font("Wingdings", "Webdings", Some(false)), fonts());
+    assert_eq!(sym(&e).as_deref(), Some("Webdings"), "a regular-weight replacement takes it");
+}
+
+#[test]
+fn a_font_replaced_in_a_rubys_annotation_and_base_keeps_its_xml() {
+    let arial = r#"<w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/></w:rPr>"#;
+    let rb = format!(
+        r#"<w:ruby><w:rubyPr><w:hps w:val="10"/><w:hpsRaise w:val="18"/><w:hpsBaseText w:val="20"/><w:lid w:val="ja-JP"/></w:rubyPr><w:rt><w:r>{arial}<w:t>kan</w:t></w:r></w:rt><w:rubyBase><w:r>{arial}<w:t>K</w:t></w:r></w:rubyBase></w:ruby>"#
+    );
+    let mut e = edit(&format!(r#"<w:p><w:r><w:t>ab</w:t></w:r><w:r>{rb}</w:r></w:p>"#));
+    e.execute(replace_font("Arial", "Times New Roman", None), fonts());
+    let fonts_of = |r: &crate::docx::Ruby| -> Vec<String> { r.base.iter().chain(&r.text).map(|(_, run)| run.ascii.clone()).collect() };
+    let (r, _) = ruby(&e);
+    assert_eq!(fonts_of(&r), ["Times New Roman", "Times New Roman"]);
+    let xml = r.xml.0.as_deref().expect("its XML").to_string();
+    assert_eq!(xml.matches("w:ascii=\"Times New Roman\"").count(), 2, "{xml}");
+    let again = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reads");
+    assert_eq!(fonts_of(&ruby(&again).0), ["Times New Roman", "Times New Roman"], "as saved");
+}
+
+#[test]
+fn bold_over_a_ruby_leaves_an_empty_run_in_its_base_alone() {
+    let rb = RUBY.replace("<w:t>K</w:t></w:r></w:rubyBase>", "<w:t>K</w:t></w:r><w:r/></w:rubyBase>");
+    let mut e = edit(&format!(r#"<w:p><w:r><w:t>ab</w:t></w:r><w:r>{rb}</w:r></w:p>"#));
+    e.execute(Command::SelectAll, fonts());
+    e.execute(C::SetBold(true), fonts());
+    let (r, _) = ruby(&e);
+    let xml = r.xml.0.as_deref().expect("its XML").to_string();
+    assert!(xml.contains("<w:r/></w:rubyBase>"), "no properties beside the empty run: {xml}");
+    assert!(r.base.iter().all(|(_, run)| run.bold), "the base text is bold");
+}

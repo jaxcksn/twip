@@ -466,6 +466,15 @@ impl Editor {
                 .collect(),
         };
         let links = links(&d.levels, &[], new_num);
+        // The list's start values go with its first paragraph
+        let head = self.list_paras().into_iter().find(|(_, n, _)| *n == num).map(|(p, _, _)| p);
+        let mut starts: Vec<(i64, i64)> = match res.numbering.nums.get(&num) {
+            Some(m) if head.is_some_and(|h| assign.iter().any(|(p, _)| *p == h)) => {
+                m.start_overrides.iter().filter(|(k, _)| (0..9).contains(*k)).map(|(&k, &v)| (k, v)).collect()
+            }
+            _ => Vec::new(),
+        };
+        starts.sort_unstable();
         self.edit_lists(
             "Define List",
             |r, cx| {
@@ -473,8 +482,12 @@ impl Editor {
                 let a = abstract_xml(new_abstract, old.as_deref(), &d.levels, d.name.as_deref(), &pics, &over, cx);
                 r.numbering.set_abstract_xml(a, &r.styles.colours)?;
                 let w = &cx.w;
+                let starts: String = starts
+                    .iter()
+                    .map(|(k, v)| format!("<{w}lvlOverride {w}ilvl=\"{k}\"><{w}startOverride {w}val=\"{v}\"/></{w}lvlOverride>"))
+                    .collect();
                 r.numbering.set_num_xml(
-                    format!("<{w}num {w}numId=\"{new_num}\"><{w}abstractNumId {w}val=\"{new_abstract}\"/></{w}num>"),
+                    format!("<{w}num {w}numId=\"{new_num}\"><{w}abstractNumId {w}val=\"{new_abstract}\"/>{starts}</{w}num>"),
                     &r.styles.colours,
                 )?;
                 link_styles(r, &links, new_abstract, cx)
@@ -651,7 +664,7 @@ fn link_styles(r: &mut Resolver, links: &[Link], abstract_id: i64, cx: &Cx) -> O
             None => p.remove("numPr"),
         });
         changed.extend(r.styles.set_xml(raw).ok()?);
-        let Some((_, k)) = to else { continue };
+        let Some((num, k)) = to else { continue };
         let others: Vec<(i64, String)> = r
             .numbering
             .abstracts
@@ -664,6 +677,18 @@ fn link_styles(r: &mut Resolver, links: &[Link], abstract_id: i64, cx: &Cx) -> O
         for (a, raw) in others {
             let keep = (a == abstract_id).then_some(*k);
             r.numbering.set_abstract_xml(unlinked(&raw, id, keep, cx), &r.styles.colours)?;
+        }
+        // The instances' own levels
+        let nums: Vec<(i64, String)> = r
+            .numbering
+            .nums
+            .iter()
+            .filter(|(n, m)| m.level_overrides.iter().any(|(j, l)| (**n, *j) != (*num, *k as i64) && l.pstyle.as_deref() == Some(id)))
+            .map(|(n, m)| (*n, m.raw.clone()))
+            .collect();
+        for (n, raw) in nums {
+            let keep = (n == *num).then_some(*k);
+            r.numbering.set_num_xml(unlinked_num(&raw, id, keep, cx), &r.styles.colours)?;
         }
     }
     changed.sort();
@@ -679,12 +704,35 @@ fn unlinked(raw: &str, id: &str, keep: Option<usize>, cx: &Cx) -> String {
         if keep.is_some_and(|k| attr_of(x, "ilvl").as_deref() == Some(&k.to_string())) {
             continue;
         }
-        let mut l = Props::parse(Some(x), "lvl", cx);
-        l.reorder(LVL);
-        if l.get("pStyle").and_then(|p| attr_of(p, "val")).as_deref() == Some(id) {
-            l.remove("pStyle");
-            *x = l.xml().unwrap_or_default();
+        if let Some(l) = unlinked_level(x, id, cx) {
+            *x = l;
         }
     }
     a.xml().unwrap_or_else(|| raw.to_string())
+}
+
+/// A `w:num` whose overriding levels (but `keep`) no longer link to the style `id`.
+fn unlinked_num(raw: &str, id: &str, keep: Option<usize>, cx: &Cx) -> String {
+    let mut m = Props::parse(Some(raw), "num", cx);
+    for (_, x) in m.kids.iter_mut().filter(|(n, _)| n == "lvlOverride") {
+        if keep.is_some_and(|k| attr_of(x, "ilvl").as_deref() == Some(&k.to_string())) {
+            continue;
+        }
+        let mut o = Props::parse(Some(x), "lvlOverride", cx);
+        if let Some(l) = o.get("lvl").and_then(|l| unlinked_level(l, id, cx)) {
+            o.set("lvl", l);
+            *x = o.xml().unwrap_or_default();
+        }
+    }
+    m.xml().unwrap_or_else(|| raw.to_string())
+}
+
+/// A `w:lvl` without its `w:pStyle`; `None` when that isn't `id`.
+fn unlinked_level(x: &str, id: &str, cx: &Cx) -> Option<String> {
+    let mut l = Props::parse(Some(x), "lvl", cx);
+    l.reorder(LVL);
+    (l.get("pStyle").and_then(|p| attr_of(p, "val")).as_deref() == Some(id)).then(|| {
+        l.remove("pStyle");
+        l.xml().unwrap_or_default()
+    })
 }

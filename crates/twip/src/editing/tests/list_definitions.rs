@@ -430,3 +430,78 @@ fn a_picture_bullet_definition_adds_its_image_once() {
     e.execute(Command::Undo, fonts());
     assert!(e.document().resolver.as_ref().unwrap().numbering.pic_bullets.is_empty(), "undone");
 }
+
+#[test]
+fn linking_a_style_to_a_level_ends_its_link_in_a_lists_own_level() {
+    let styles = "<w:style w:type=\"paragraph\" w:styleId=\"Sub\"><w:name w:val=\"Sub\"/><w:basedOn w:val=\"Normal\"/><w:pPr><w:numPr><w:ilvl w:val=\"1\"/><w:numId w:val=\"1\"/></w:numPr></w:pPr></w:style>";
+    let over = format!(
+        "<w:num w:numId=\"1\"><w:abstractNumId w:val=\"0\"/><w:lvlOverride w:ilvl=\"1\">{}</w:lvlOverride></w:num>",
+        lvl(1, "lowerLetter", "%2)", "<w:pStyle w:val=\"Sub\"/>")
+    );
+    let nums = numbering(&(abstract_of(0, &levels("decimal", |i| format!("%{}.", i + 1))) + &over));
+    let mut e = editor(&pkg(&np("A", 1, 0), Some(&nums), styles));
+    assert_eq!(e.list_levels(1).unwrap()[1].linked_style, Some(StyleId("Sub".into())), "setup: the override links it");
+    caret_in(&mut e, 0);
+    let level =
+        ListLevel { format: NumberFormat::Decimal, text: "%1.".into(), start: 1, linked_style: Some(StyleId("Sub".into())), ..Default::default() };
+    e.execute(Command::SetListDefinition(ListDefinitionChange { levels: vec![level], apply_to: ListApplyTo::WholeList, name: None }), fonts());
+    let links = |e: &mut Editor| e.list_levels(1).unwrap().iter().map(|l| l.linked_style.clone()).collect::<Vec<_>>();
+    let want: Vec<Option<StyleId>> = std::iter::once(Some(StyleId("Sub".into()))).chain(std::iter::repeat_n(None, 8)).collect();
+    assert_eq!(links(&mut e), want);
+    let bytes = saved(&e);
+    let xml = part(&bytes, "word/numbering.xml");
+    assert_eq!(xml.matches("<w:pStyle w:val=\"Sub\"/>").count(), 1, "{xml}");
+    assert!(xml.contains("<w:lvlOverride w:ilvl=\"1\">"), "the override's other formatting stays: {xml}");
+    assert_eq!(links(&mut editor(&bytes)), want, "as saved");
+}
+
+#[test]
+fn a_new_list_from_a_lists_first_paragraph_keeps_its_start() {
+    let abs = abstract_of(0, &levels("decimal", |i| format!("%{}.", i + 1)));
+    let num = "<w:num w:numId=\"5\"><w:abstractNumId w:val=\"0\"/><w:lvlOverride w:ilvl=\"0\"><w:startOverride w:val=\"7\"/></w:lvlOverride></w:num>";
+    let body = np("A", 5, 0) + &np("B", 5, 0) + &np("C", 5, 0);
+    let labels = |e: &Editor| (0..3).map(|n| label(e, n)).collect::<Vec<_>>();
+    for (from, want) in [(0, ["7)", "8)", "9)"]), (1, ["7.", "1)", "2)"])] {
+        let mut e = editor(&pkg(&body, Some(&numbering(&(abs.clone() + num))), ""));
+        assert_eq!(labels(&e), ["7.", "8.", "9."], "setup: the list starts at 7");
+        let mut ls = levels_of(&mut e, from);
+        ls[0].text = "%1)".into();
+        caret_in(&mut e, from);
+        e.execute(Command::SetListDefinition(ListDefinitionChange { levels: ls, apply_to: ListApplyTo::ThisPointForward, name: None }), fonts());
+        assert_eq!(labels(&e), want, "from paragraph {from}");
+        assert_eq!(labels(&editor(&saved(&e))), want, "from paragraph {from}, as saved");
+    }
+}
+
+#[test]
+fn a_style_named_num_id_is_not_direct_numbering() {
+    let styles = concat!(
+        "<w:style w:type=\"paragraph\" w:styleId=\"Heading1\"><w:name w:val=\"heading 1\"/><w:basedOn w:val=\"Normal\"/><w:pPr><w:numPr><w:numId w:val=\"1\"/></w:numPr></w:pPr></w:style>",
+        "<w:style w:type=\"paragraph\" w:customStyle=\"1\" w:styleId=\"numId\"><w:name w:val=\"numId\"/><w:basedOn w:val=\"Normal\"/><w:pPr><w:numPr><w:numId w:val=\"1\"/></w:numPr></w:pPr></w:style>",
+    );
+    let mut lv = vec![lvl(0, "decimal", "%1.", "<w:pStyle w:val=\"Heading1\"/>")];
+    lv.extend((1..9).map(|i| lvl(i, "decimal", &format!("%{}.", i + 1), "")));
+    let nums = numbering(&(abstract_of(0, &lv.concat()) + &num(1, 0)));
+    let body = p("H", "<w:pStyle w:val=\"Heading1\"/>") + &p("X", "<w:pStyle w:val=\"numId\"/>");
+    let mut e = editor(&pkg(&body, Some(&nums), styles));
+    assert_eq!((label(&e, 0), label(&e, 1)), ("1.".into(), String::new()), "setup: the level's own style shows the label");
+    let mut ls = levels_of(&mut e, 0);
+    ls[0].text = "%1)".into();
+    caret_in(&mut e, 0);
+    e.execute(Command::SetListDefinition(ListDefinitionChange { levels: ls, apply_to: ListApplyTo::WholeList, name: None }), fonts());
+    assert_eq!((label(&e, 0), label(&e, 1)), ("1)".into(), String::new()));
+    let again = editor(&saved(&e));
+    assert_eq!((label(&again, 0), label(&again, 1)), ("1)".into(), String::new()), "as a reload labels them");
+}
+
+#[test]
+fn numbering_a_bullet_into_a_list_without_its_level_takes_the_lists_level() {
+    let nums =
+        numbering(&(abstract_of(0, &lvl(0, "decimal", "%1.", "")) + &abstract_of(1, &levels("bullet", |_| "o".into())) + &num(1, 0) + &num(2, 1)));
+    let mut e = editor(&pkg(&(np("A", 1, 0) + &np("B", 2, 2)), Some(&nums), ""));
+    assert_eq!((label(&e, 0), label(&e, 1)), ("1.".into(), "o".into()), "setup");
+    caret_in(&mut e, 1);
+    e.execute(Command::SetList(Some(ListKind::Numbered)), fonts());
+    assert_eq!(para(&e, 1).style.num, Some((1, 0)), "the list's own level");
+    assert_eq!(label(&e, 1), "2.");
+}

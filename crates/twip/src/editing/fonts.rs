@@ -145,34 +145,35 @@ impl Editor {
                 let base = again.base(at);
                 at += units;
                 let Some(run) = i.run() else { continue };
-                let mut with = i.clone();
-                let mut patched = false;
-                if styled(run, r) {
-                    let mut props = Props::parse(run.direct.0.as_deref(), "rPr", &cx);
-                    if patch(&mut props, run, r, filtered, &cx) {
-                        with = with_run(i, &res.rerun_xml(base, run, props.xml().as_deref(), &cx));
-                        patched = true;
-                    }
-                }
-                let mut renamed = false;
-                match &mut with {
-                    Inline::Sym { font, .. } if font.eq_ignore_ascii_case(&r.from) => {
-                        *font = r.to.clone();
-                        renamed = true;
-                    }
+                let own = styled(run, r);
+                let restyled = own
+                    .then(|| {
+                        let mut props = Props::parse(run.direct.0.as_deref(), "rPr", &cx);
+                        patch(&mut props, run, r, filtered, &cx).then(|| res.rerun_xml(base, run, props.xml().as_deref(), &cx))
+                    })
+                    .flatten();
+                let symbol = matches!(i, Inline::Sym { font, .. } if own && font.eq_ignore_ascii_case(&r.from));
+                let ruby = match i {
                     Inline::Ruby(ruby, _) => {
                         let edit = |xml: Option<&str>, run: &RunStyle| {
                             let mut props = Props::parse(xml, "rPr", &cx);
                             if styled(run, r) && patch(&mut props, run, r, filtered, &cx) { props.xml() } else { xml.map(str::to_string) }
                         };
-                        if let Some(n) = super::format::ruby_again(ruby, base, Some((&edit, true)), &res, &cx) {
-                            (*ruby, renamed) = (n, true);
-                        }
+                        super::format::ruby_again(ruby, base, Some((&edit, true)), &res, &cx)
                     }
+                    _ => None,
+                };
+                if restyled.is_none() && !symbol && ruby.is_none() {
+                    continue;
+                }
+                let mut with = with_run(i, restyled.as_ref().unwrap_or(run));
+                match (&mut with, ruby) {
+                    (Inline::Sym { font, .. }, _) if symbol => *font = r.to.clone(),
+                    (Inline::Ruby(old, _), Some(n)) => *old = n,
                     _ => {}
                 }
                 let locked_here = para_locked || open.iter().any(locked);
-                if (patched || renamed) && tally(1, locked_here) {
+                if tally(1, locked_here) {
                     match units {
                         0 => zero.get_or_insert_with(|| p.inlines.clone())[k] = with,
                         _ => steps.push(Step::Text { para, range, with: vec![with], edges: Default::default() }),

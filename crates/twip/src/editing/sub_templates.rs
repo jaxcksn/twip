@@ -141,6 +141,11 @@ fn each_para(blocks: &mut [Block], f: &mut dyn FnMut(&mut Paragraph)) {
             Block::Para(p) => {
                 f(p);
                 for i in &mut p.inlines {
+                    if let Inline::Float(fl, _) = i {
+                        for tb in fl.parts.iter_mut().filter_map(|part| part.text_box.as_mut()) {
+                            each_para(&mut tb.blocks, f);
+                        }
+                    }
                     if let Some(tb) = i.story_mut() {
                         each_para(&mut tb.blocks, f);
                     }
@@ -680,14 +685,27 @@ impl Editor {
     }
 
     /// Makes `im`'s references the document's, in `tx`: its lists join the document's under ids of their own, its
-    /// bookmarks named as the document's go, and its notes and comments come too (a glossary part can hold neither: its
-    /// comments go, and a note refuses it). Returns the stories and paragraphs to format again once it is in.
+    /// bookmarks named as the document's go (as the body it replaces names them, they stay), and its notes and comments
+    /// come too (a glossary part can hold neither: its comments go, and a note refuses it). Returns the stories and
+    /// paragraphs to format again once it is in.
     fn adopt_imported(&mut self, tx: &mut super::Tx, im: &mut Imported, glossary: bool) -> Result<(HashSet<StoryId>, HashSet<ParaId>), &'static str> {
         use crate::docx::review::RangeKind;
         if glossary && !im.refs.notes.is_empty() {
             return Err("a sub-template can't hold footnotes or endnotes");
         }
-        let taken: HashSet<String> = self.bookmarks().into_iter().map(|b| b.name.to_lowercase()).collect();
+        let replaced =
+            |p: &ParaId| !glossary && self.index.para_slot(*p).is_some_and(|s| self.index.host(self.index.story(s.container)) == StoryId::Body);
+        let taken: HashSet<String> = self
+            .index
+            .para_ids()
+            .filter(|p| !replaced(p))
+            .filter_map(|p| self.index.para(&self.doc, p))
+            .flat_map(|p| p.inlines.iter())
+            .filter_map(|i| match i {
+                Inline::Bookmark(n) if !n.starts_with('/') => Some(n.to_lowercase()),
+                _ => None,
+            })
+            .collect();
         let mut paras = HashSet::new();
         each_para(&mut im.blocks, &mut |p| {
             paras.insert(ParaId(p.id));

@@ -16,6 +16,26 @@ fn with_rules() -> Editor {
     e
 }
 
+/// The shown expansions' layouts, by paragraph.
+fn expansion_layouts(e: &Editor) -> std::collections::HashMap<ParaId, std::rc::Rc<crate::layout::expansion::Expansion>> {
+    e.expansions.as_ref().expect("expansions").paras.clone()
+}
+
+/// Each of `before`'s paragraphs is laid out again, and no other.
+fn laid_out_again(
+    before: &std::collections::HashMap<ParaId, std::rc::Rc<crate::layout::expansion::Expansion>>,
+    after: &std::collections::HashMap<ParaId, std::rc::Rc<crate::layout::expansion::Expansion>>,
+) {
+    let keys = |m: &std::collections::HashMap<ParaId, _>| {
+        let mut k: Vec<ParaId> = m.keys().copied().collect();
+        k.sort_unstable_by_key(|p| p.0);
+        k
+    };
+    assert!(!before.is_empty(), "setup: shown expansions");
+    assert_eq!(keys(before), keys(after), "the same paragraphs show expansions");
+    assert!(before.iter().all(|(k, a)| !std::rc::Rc::ptr_eq(&a.content, &after[k].content)), "the expansions were laid out again");
+}
+
 fn violation() -> Command {
     Command::EditSubTemplate(SubTemplateName { name: "Violation".into(), category: None })
 }
@@ -48,22 +68,19 @@ fn a_default_tab_stop_set_in_a_sub_template_relays_the_document_on_close() {
 #[test]
 fn a_default_tab_stop_change_relays_the_shown_expansions() {
     let mut e = with_rules();
-    let before: Vec<_> = e.expansions.as_ref().expect("expansions").paras.values().map(|x| x.content.clone()).collect();
-    assert!(!before.is_empty());
+    let before = expansion_layouts(&e);
     e.execute(Command::SetDefaultTabStop(Points(144.0)), fonts());
     e.complete(fonts());
-    let after: Vec<_> = e.expansions.as_ref().expect("expansions").paras.values().map(|x| x.content.clone()).collect();
-    assert!(before.iter().zip(&after).all(|(a, b)| !std::rc::Rc::ptr_eq(a, b)), "the expansions were laid out again");
+    laid_out_again(&before, &expansion_layouts(&e));
 }
 
 #[test]
 fn new_hyphenation_patterns_relay_the_shown_expansions() {
     let mut e = with_rules();
-    let before: Vec<_> = e.expansions.as_ref().expect("expansions").paras.values().map(|x| x.content.clone()).collect();
+    let before = expansion_layouts(&e);
     e.set_hyphenation(Some(crate::layout::hyphenate::Hyphenation::default()));
     e.complete(fonts());
-    let after: Vec<_> = e.expansions.as_ref().expect("expansions").paras.values().map(|x| x.content.clone()).collect();
-    assert!(before.iter().zip(&after).all(|(a, b)| !std::rc::Rc::ptr_eq(a, b)), "the expansions were laid out again");
+    laid_out_again(&before, &expansion_layouts(&e));
 }
 
 #[test]

@@ -1624,11 +1624,14 @@ pub fn issues(doc: &crate::docx::Document) -> Vec<AccessibilityIssue> {
                                 if f.image.is_some() && alt(&f.alt, f.shape.as_deref()) == Alt::Missing && !placeholder(f.image) {
                                     out.push(AccessibilityIssue { id: format!("float:{}", f.id), text: TEXT.into(), tip: false });
                                 }
-                                if let Some(tb) = &f.text_box {
+                                for tb in f.parts.iter().filter_map(|g| g.text_box.as_ref()) {
                                     walk(doc, &tb.blocks, out);
                                 }
                             }
                             _ => {}
+                        }
+                        if let Some((_, tb)) = i.story() {
+                            walk(doc, &tb.blocks, out);
                         }
                         at += i.units() as u32;
                     }

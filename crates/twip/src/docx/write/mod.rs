@@ -3434,6 +3434,8 @@ fn same_inline(x: &Inline, y: &Inline) -> bool {
         }
         // A resized picture is written patched.
         (Inline::Picture(a, r), Inline::Picture(b, q)) => a.image == b.image && a.w == b.w && a.h == b.h && a.alt == b.alt && Rc::ptr_eq(r, q),
+        // A ruby whose text was formatted is written anew.
+        (Inline::Ruby(a, r), Inline::Ruby(b, q)) => (Rc::ptr_eq(a, b) || a.xml.0.as_deref() == b.xml.0.as_deref()) && Rc::ptr_eq(r, q),
         _ => {
             std::mem::discriminant(x) == std::mem::discriminant(y)
                 && match (x.run(), y.run()) {

@@ -44,10 +44,14 @@ fn colours() -> crate::docx::props::ThemeColours {
 fn an_empty_paragraph_default_survives_setting_the_character_defaults() {
     let st = r#"<w:docDefaults><w:rPrDefault><w:rPr><w:sz w:val="22"/></w:rPr></w:rPrDefault><w:pPrDefault/></w:docDefaults>"#;
     let mut e = open_pkg(&pkg(st, "<w:p><w:r><w:t>x</w:t></w:r></w:p>"));
+    let ppr = format!("{:?}", styles(&e).doc_ppr);
     let d = crate::api::command::DocumentDefaults { size: Some(crate::api::value::Points(14.0)), ..Default::default() };
     e.execute(Command::SetDocumentDefaults(d), fonts());
     let again = reopened(&e);
-    assert_eq!(format!("{:?}", styles(&again).doc_ppr), format!("{:?}", styles(&e).doc_ppr), "pPr defaults after reopen");
+    for (e, when) in [(&e, "live"), (&again, "after reopen")] {
+        assert_eq!(styles(e).doc_rpr.size, Some(14.0), "the size, {when}");
+        assert_eq!(format!("{:?}", styles(e).doc_ppr), ppr, "pPr defaults, {when}");
+    }
 }
 
 #[test]
@@ -59,9 +63,13 @@ fn an_empty_character_default_survives_setting_the_paragraph_defaults() {
         spacing: Some(crate::api::command::ParagraphSpacing { after: Some(AutoOr::Value(Points(6.0))), ..Default::default() }),
         ..Default::default()
     };
+    let rpr = format!("{:?}", styles(&e).doc_rpr);
     e.execute(Command::SetDocumentDefaults(d), fonts());
     let again = reopened(&e);
-    assert_eq!(format!("{:?}", styles(&again).doc_rpr), format!("{:?}", styles(&e).doc_rpr), "rPr defaults after reopen");
+    for (e, when) in [(&e, "live"), (&again, "after reopen")] {
+        assert_eq!(styles(e).doc_ppr.space_after, Some(6.0), "the spacing, {when}");
+        assert_eq!(format!("{:?}", styles(e).doc_rpr), rpr, "rPr defaults, {when}");
+    }
 }
 
 const JOIN_STYLES: &str = r#"<w:docDefaults><w:rPrDefault><w:rPr><w:sz w:val="24"/></w:rPr></w:rPrDefault><w:pPrDefault/></w:docDefaults>
@@ -99,7 +107,16 @@ fn a_paragraph_joined_by_a_hidden_mark_keeps_its_first_part_through_italic() {
     let mut e = joined();
     e.execute(Command::SelectAll, fonts());
     e.execute(Command::SetItalic(true), fonts());
-    assert_eq!(joined_runs(&e), joined_runs(&reopened(&e)), "same as reopen");
+    let italic = |e: &Editor| -> Vec<(String, bool)> {
+        first_para(e).inlines.iter().filter_map(|i| if let Inline::Text(t, r) = i { Some((t.to_string(), r.italic)) } else { None }).collect()
+    };
+    let again = reopened(&e);
+    for (e, when) in [(&e, "live"), (&again, "after reopen")] {
+        let runs = italic(e);
+        assert_eq!(runs.iter().map(|r| r.0.as_str()).collect::<String>(), "Head Body", "both parts' text, {when}");
+        assert!(runs.iter().all(|r| r.1), "italic, {when}: {runs:?}");
+    }
+    assert_eq!(joined_runs(&e), joined_runs(&again), "same as reopen");
 }
 
 #[test]
@@ -208,28 +225,37 @@ fn deleting_a_custom_table_style_falls_back_to_the_default_one() {
     let mut e = open_pkg(&pkg(&st, body));
     let style_id = |e: &Editor| e.index().table_ids().next().and_then(|t| e.index().table(e.document(), t).and_then(|t| t.style_id.clone()));
     assert_eq!(style_id(&e).as_deref(), Some("Cust"));
-    e.edit_styles("Delete Style", |s| s.delete("Cust"), fonts());
-    assert_eq!(style_id(&e), style_id(&reopened(&e)));
+    let out = e.edit_styles("Delete Style", |s| s.delete("Cust"), fonts());
+    assert!(matches!(out, super::super::commands::Outcome::Changed(_)), "{out:?}");
+    assert!(styles(&e).get("Cust").is_none(), "deleted");
+    let again = reopened(&e);
+    for (e, when) in [(&e, "live"), (&again, "after reopen")] {
+        assert_eq!(styles(e).default_table.as_deref(), Some("TableNormal"), "{when}");
+        assert_eq!(style_id(e).as_deref(), Some("TableNormal"), "the default table style, {when}");
+    }
 }
 
 #[test]
 fn finding_a_style_edits_users_is_linear_in_the_styles() {
-    const N: usize = 30_000;
-    let mut st = String::from(r#"<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>"#);
-    for i in 0..N {
-        st.push_str(&format!(r#"<w:style w:type="paragraph" w:styleId="Z{i:06}"><w:name w:val="Z{i:06}"/></w:style>"#));
-    }
-    // The same document twice: its paragraphs use the first changed id, then the last one; only the membership test differs.
-    let time = |id: usize| {
-        let body: String = (0..N).map(|_| format!(r#"<w:p><w:pPr><w:pStyle w:val="Z{id:06}"/></w:pPr></w:p>"#)).collect();
+    // `n` styles and `n` paragraphs in the last one: a scan of the styles for each paragraph, wherever it finds the
+    // style, grows with the square.
+    let time = |n: usize| {
+        let mut st = String::from(r#"<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>"#);
+        for i in 0..n {
+            st.push_str(&format!(r#"<w:style w:type="paragraph" w:styleId="Z{i:06}"><w:name w:val="Z{i:06}"/></w:style>"#));
+        }
+        let last = n - 1;
+        let body: String = (0..n).map(|_| format!(r#"<w:p><w:pPr><w:pStyle w:val="Z{last:06}"/></w:pPr></w:p>"#)).collect();
         let mut e = open_pkg(&pkg(&st, &body));
         let t = std::time::Instant::now();
         let d = crate::api::command::DocumentDefaults { size: Some(crate::api::value::Points(14.0)), ..Default::default() };
         e.execute(Command::SetDocumentDefaults(d), fonts());
-        t.elapsed().as_secs_f64()
+        let took = t.elapsed().as_secs_f64();
+        assert_eq!(first_para(&e).mark.size, 14.0, "the paragraphs follow the default");
+        took
     };
-    let (first, last) = (time(0), time(N - 1));
-    assert!(last < first * 2.0 + 0.5, "first {first}s, last {last}s");
+    let (small, large) = (time(15_000), time(30_000));
+    assert!(large < small * 3.0 + 0.05, "{small}s for 15000, {large}s for 30000");
 }
 
 #[test]
@@ -396,6 +422,7 @@ fn a_style_edit_with_track_changes_on_records_no_revisions() {
     let st = r#"<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>"#;
     let mut e = open_pkg(&pkg(st, "<w:p><w:r><w:t>x</w:t></w:r></w:p>"));
     e.execute(Command::SetTrackChanges(true), fonts());
+    assert!(e.tracking(), "setup: tracking");
     let raw = styles(&e)
         .get("Normal")
         .expect("Normal")
@@ -558,4 +585,81 @@ fn a_table_style_dialog_refuses_an_indent_or_cell_margin_out_of_range() {
         let got = e.style_dialog_table_format(&v, &DialogValues::TableProperties(start.clone()), &DialogValues::TableProperties(now));
         assert!(got.is_err(), "indent {indent}, margin {margin}");
     }
+}
+
+#[test]
+fn renaming_a_linked_style_keeps_its_character_halfs_formatting() {
+    use crate::api::services::StyleOpen;
+    use crate::api::value::StyleId;
+    let st = LINKED.replace(
+        "<w:style w:type=\"character\" w:customStyle=\"1\" w:styleId=\"FooChar\">",
+        concat!(
+            "<w:style w:type=\"paragraph\" w:customStyle=\"1\" w:styleId=\"Quote\"><w:name w:val=\"Quote\"/><w:basedOn w:val=\"Normal\"/><w:link w:val=\"QuoteChar\"/></w:style>",
+            "<w:style w:type=\"character\" w:customStyle=\"1\" w:styleId=\"QuoteChar\"><w:name w:val=\"Quote Char\"/><w:basedOn w:val=\"DefaultParagraphFont\"/><w:link w:val=\"Quote\"/><w:rPr><w:i/></w:rPr></w:style>",
+            "<w:style w:type=\"character\" w:customStyle=\"1\" w:styleId=\"FooChar\">"
+        ),
+    );
+    let mut e = open_pkg(&pkg(&st, r#"<w:p><w:r><w:rPr><w:rStyle w:val="QuoteChar"/></w:rPr><w:t>q</w:t></w:r></w:p>"#));
+    let italic = |e: &Editor| first_para(e).inlines.iter().find_map(|i| if let Inline::Text(_, r) = i { Some(r.italic) } else { None });
+    assert_eq!(italic(&e), Some(true), "setup: the character style's italic");
+    let was = dialog(&e, StyleOpen::Modify(StyleId("Quote".into())));
+    let mut now = was.clone();
+    now.name = "Quotation".into();
+    let v = e.style_dialog_update(&was, now, fonts()).expect("updates");
+    e.style_dialog_apply(v, fonts());
+    assert_eq!(styles(&e).get("Quote").map(|s| s.name.as_str()), Some("Quotation"), "renamed");
+    assert!(styles(&e).get("QuoteChar").is_some_and(|s| s.raw.contains("<w:i/>")), "the character half keeps its formatting");
+    assert_eq!((italic(&e), italic(&reopened(&e))), (Some(true), Some(true)));
+}
+
+#[test]
+fn a_style_dialog_refuses_another_type_than_the_style_it_opened_on() {
+    use crate::api::command::ListLevel;
+    use crate::api::services::{StyleDialogType, StyleOpen};
+    use crate::api::value::StyleId;
+    let mut e = linked();
+    let raw = styles(&e).get("Heading1").expect("Heading1").raw.clone();
+    let rev = e.revision();
+    let mut v = dialog(&e, StyleOpen::Modify(StyleId("Heading1".into())));
+    v.kind = StyleDialogType::List;
+    v.list_levels = vec![ListLevel { text: "%1.".into(), start: 1, ..Default::default() }];
+    assert!(matches!(e.style_dialog_apply(v, fonts()), super::super::commands::Outcome::Refused(_)));
+    assert_eq!((styles(&e).get("Heading1").map(|s| s.raw.clone()), e.revision()), (Some(raw), rev), "nothing changed");
+}
+
+#[test]
+fn a_table_style_dialog_change_takes_an_unchanged_border_past_the_range() {
+    use crate::api::services::{DialogValues, StyleOpen};
+    use crate::api::value::{Points, StyleId};
+    let mut e = open_pkg(&pkg(&GRID.replacen("w:sz=\"4\"", "w:sz=\"96\"", 1), "<w:p/>"));
+    let was = dialog(&e, StyleOpen::Modify(StyleId("TableGrid".into())));
+    assert_eq!(was.border.as_ref().map(|b| b.width), Some(Points(12.0)), "setup: a 12 pt line, as read");
+    let mut now = was.clone();
+    now.size = Points(20.0);
+    let v = e.style_dialog_update(&was, now, fonts()).expect("a size change leaves the border alone");
+    assert_eq!(v.size, Points(20.0));
+    let mut start = e.borders_shading_values(Some(&v.pending), false).expect("borders and shading");
+    start.top = was.border.clone();
+    let mut fill = start.clone();
+    fill.fill = crate::api::value::NoneOr::Value(crate::api::value::Color(0xFFFF00));
+    e.style_dialog_table_format(&v, &DialogValues::BordersShading(start.clone()), &DialogValues::BordersShading(fill)).expect("a shading change");
+    let mut wide = start.clone();
+    wide.bottom = was.border.clone();
+    assert!(
+        e.style_dialog_table_format(&v, &DialogValues::BordersShading(start), &DialogValues::BordersShading(wide)).is_err(),
+        "a new line past 6 pt"
+    );
+}
+
+#[test]
+fn a_built_in_table_style_outside_a_table_adds_nothing() {
+    use crate::api::value::StyleId;
+    let mut e = Editor::open(&super::blank_body("<w:p><w:r><w:t>text</w:t></w:r></w:p>"), fonts()).expect("opens");
+    e.complete(fonts());
+    assert!(styles(&e).get("TableSimple1").is_none(), "setup: a style the document lacks");
+    let (rev, undo) = (e.revision(), e.history().undo_depth());
+    let out = e.execute(Command::SetTableStyle(StyleId("TableSimple1".into())), fonts());
+    assert!(matches!(out, super::super::commands::Outcome::Unchanged(_)), "{out:?}");
+    assert!(styles(&e).get("TableSimple1").is_none(), "no definition added");
+    assert_eq!((e.revision(), e.history().undo_depth()), (rev, undo), "no undo step");
 }

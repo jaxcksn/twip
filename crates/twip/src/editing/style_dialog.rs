@@ -305,7 +305,9 @@ impl Editor {
         let res = self.doc.resolver.clone().ok_or_else(|| Error::unavailable("no styles"))?;
         let cx = res.styles.cx();
         let w = cx.w.clone();
-        super::commands::bounds::border(now.border.as_ref())?;
+        if now.border != was.border {
+            super::commands::bounds::border(now.border.as_ref())?;
+        }
         let para = matches!(now.kind, StyleDialogType::Paragraph | StyleDialogType::Linked);
         let table = now.kind == StyleDialogType::Table;
         let mut commands = Vec::new();
@@ -427,7 +429,7 @@ impl Editor {
         }
         // The style the dialog opened on, as it was
         if let StyleOpen::Modify(id) = &v.open
-            && styles.get(&id.0).is_none_or(|s| s.id != style.id || s.kind != style.kind)
+            && styles.get(&id.0).is_none_or(|s| s.id != style.id || s.kind != style.kind || s.kind != kind_of(v.kind))
         {
             return Outcome::invalid("the style's id and type are the ones the dialog opened on");
         }
@@ -495,10 +497,9 @@ impl Editor {
         let char_xml = char_xml.or_else(|| {
             let half =
                 style.link.as_deref().and_then(|l| styles.get(l)).filter(|c| c.kind == StyleKind::Character && c.link.as_deref() == Some(&id))?;
-            (!creating && style.kind == StyleKind::Paragraph).then(|| {
-                let rpr = Props::parse(Some(&raw), "style", &cx).get("rPr").map(str::to_string);
-                set_child(&half.raw, &cx, "rPr", rpr)
-            })
+            let rpr = Props::parse(Some(&raw), "style", &cx).get("rPr").map(str::to_string);
+            let was = styles.get(&id).and_then(|s| Props::parse(Some(&s.raw), "style", &cx).get("rPr").map(str::to_string));
+            (!creating && style.kind == StyleKind::Paragraph && rpr != was).then(|| set_child(&half.raw, &cx, "rPr", rpr))
         });
         self.joined(label, fonts, |e| {
             let out = e.edit_styles(
@@ -663,13 +664,16 @@ impl Editor {
         let mut raw = v.pending.clone();
         match (start, now) {
             (DialogValues::BordersShading(a), DialogValues::BordersShading(b)) => {
-                for e in [&b.top, &b.bottom, &b.left, &b.right, &b.between, &b.inside_vertical, &b.diagonal_down, &b.diagonal_up] {
-                    super::commands::bounds::border(e.as_ref())?;
-                }
                 let edges = |x: &crate::api::services::BordersShadingDialog| {
                     (x.top.clone(), x.left.clone(), x.bottom.clone(), x.right.clone(), x.between.clone(), x.inside_vertical.clone())
                 };
                 let edged = edges(a) != edges(b);
+                // The lines written: every edge when one changed, a diagonal when it did
+                let written = [&b.top, &b.bottom, &b.left, &b.right, &b.between, &b.inside_vertical].map(|e| (e, edged));
+                let crossed = [(&b.diagonal_down, a.diagonal_down != b.diagonal_down), (&b.diagonal_up, a.diagonal_up != b.diagonal_up)];
+                for (e, _) in written.into_iter().chain(crossed).filter(|x| x.1) {
+                    super::commands::bounds::border(e.as_ref())?;
+                }
                 // A diagonal as set when it changed (nil once turned off), else as the style has it.
                 let cross = |side: &str, was: &Option<crate::api::command::Border>, now: &Option<crate::api::command::Border>| {
                     (was != now).then(|| line(side, now))

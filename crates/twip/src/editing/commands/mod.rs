@@ -137,6 +137,9 @@ impl Editor {
     fn execute_editable(&mut self, cmd: Command, fonts: &Fonts) -> Outcome {
         // A built-in style the document doesn't define yet joins it first, in the same undo step.
         if let Some(b) = self.built_in_named(&cmd) {
+            if matches!(cmd, Command::SetTableStyle(_)) && self.table_target().is_none() {
+                return Outcome::Unchanged("not in a table");
+            }
             let label = crate::api::catalog::info(cmd.id()).map_or("Style", |i| i.label.as_str());
             let pending = self.pending.clone();
             self.begin_batch(Some(label.into()));
