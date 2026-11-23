@@ -148,6 +148,7 @@ fn clip_cut(children: &Rc<[Child]>, lo: f64, hi: f64, top: f64, bottom: f64, bor
                 pitch: placed.line.pitch,
                 baseline: placed.line.baseline,
                 below: placed.line.below,
+                after: placed.line.after,
                 atoms,
                 changed: placed.line.changed,
                 mark: placed.line.mark,

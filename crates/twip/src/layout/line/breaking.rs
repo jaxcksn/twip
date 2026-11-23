@@ -18,15 +18,35 @@ struct Fit {
     leaders: Vec<(usize, Leader)>,
 }
 
-/// The style a line of a joined paragraph ([`ParaStyle::joined`]) takes its indents, alignment and tabs from: that of
-/// the paragraph its first character is in; a line starting at a paragraph's first character starts at the vanished
-/// mark before it, so it is the earlier paragraph's.
-pub(super) fn line_style<'a>(style: &'a ParaStyle, pieces: &[Piece], start: usize) -> &'a ParaStyle {
+/// The style a line of a joined paragraph takes its indents, alignment and tabs from: while hidden text shows, that of
+/// its part ([`ShapedPara::parts`]); else ([`ParaStyle::joined`]) that of the paragraph its first character is in, where
+/// a line starting at a paragraph's first character starts at the vanished mark before it, so it is the earlier
+/// paragraph's.
+pub(super) fn line_style<'a>(sp: &'a ShapedPara, style: &'a ParaStyle, pieces: &[Piece], line: &Line) -> &'a ParaStyle {
+    if let Some(part) = sp.parts.as_ref().and_then(|p| p.get(line.part)) {
+        return &part.style;
+    }
+    start_style(style, pieces, line.start)
+}
+
+fn start_style<'a>(style: &'a ParaStyle, pieces: &[Piece], start: usize) -> &'a ParaStyle {
     if style.joined.is_empty() {
         return style;
     }
     let u = pieces[start.min(pieces.len())..].iter().find_map(|p| p.src).map_or(0, |u| u.0);
     style.joined.iter().rev().find(|(at, _)| *at < u).map_or(style, |(_, s)| s)
+}
+
+/// Where each part of a joined paragraph after the first starts in `pieces`, while hidden text shows.
+fn part_starts(sp: &ShapedPara, pieces: &[Piece]) -> Vec<usize> {
+    let Some(parts) = &sp.parts else { return Vec::new() };
+    parts[1..].iter().map(|p| pieces.iter().position(|q| q.src.is_some_and(|u| u.0 >= p.start)).unwrap_or(pieces.len())).collect()
+}
+
+/// The part of a joined paragraph `pieces[start]` is in, and where the next one starts (the end without one).
+fn part_at(bounds: &[usize], start: usize, n: usize) -> (usize, usize) {
+    let k = bounds.partition_point(|&b| b <= start);
+    (k, bounds.get(k).copied().unwrap_or(n))
 }
 
 pub fn break_paragraph(sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, mark: &Run, frame: &Frame, fonts: &Fonts, continued: bool) -> Vec<Line> {
@@ -40,10 +60,31 @@ pub fn break_paragraph(sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, mar
     let mut hyphens = 0;
     let mut word_from = frame.word_from;
     let all = *frame;
+    let (bounds, all_pieces) = (part_starts(sp, pieces), pieces);
+    let mut part = 0;
     loop {
         let at_limit = all.hyphen_limit > 0 && hyphens >= all.hyphen_limit;
         let frame = &Frame { hyphenate: all.hyphenate && !at_limit, word_from, ..all };
-        let style = line_style(style, pieces, start);
+        // Shown joined parts
+        let shown = sp.parts.as_ref().and_then(|p| p.get(part));
+        let hi = bounds.get(part).copied().unwrap_or(n);
+        let pieces = &all_pieces[..hi.max(start).min(n)];
+        let (style, line_size) = match shown {
+            Some(part) => (&*part.style, &*part.style),
+            None => (start_style(style, pieces, start), line_size),
+        };
+        if shown.is_some() && start >= hi {
+            // Empty part
+            let mut line = Line { part, ..Line::empty(start) };
+            size(&mut line, sp, all_pieces, line_size, mark, fonts, true, frame);
+            part_end(&mut line, sp, part);
+            lines.push(line);
+            if part >= bounds.len() {
+                break;
+            }
+            (part, first) = (part + 1, true);
+            continue;
+        }
         let right = frame.width - style.ind_right;
         let wrap_right = if frame.no_wrap { f64::INFINITY } else { right + wp_extension(style, frame) };
         let left = style.ind_left + if first { style.ind_first } else { 0.0 };
@@ -54,25 +95,37 @@ pub fn break_paragraph(sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, mar
         };
         let mut fit = fit_line(sp, pieces, start, left, wrap_right, style, frame, planned.map(|e| e.0), false);
         fit.hyphen |= planned.is_some_and(|e| e.1);
-        let end = fit.end.max(start + 1).min(n.max(start + 1));
-        let is_last = end >= n;
+        let end = fit.end.max(start + 1).min(hi.max(start + 1));
+        let is_last = end >= hi;
         // Compat 15: a line at the limit that ends at an optional hyphen starts the count again.
         let counts = fit.hyphen && !(at_limit && frame.compat == Compat::Generic);
         hyphens = if counts { hyphens + 1 } else { 0 };
         if !fit.hyphen {
             word_from = Some(end);
         }
-        let mut line =
-            Line { end: end.min(n), xs: fit.xs, widths: fit.widths, hard: fit.hard, hyphen: fit.hyphen, leaders: fit.leaders, ..Line::empty(start) };
+        let mut line = Line {
+            end: end.min(n),
+            xs: fit.xs,
+            widths: fit.widths,
+            hard: fit.hard,
+            hyphen: fit.hyphen,
+            leaders: fit.leaders,
+            part,
+            ..Line::empty(start)
+        };
         if !frame.no_wrap {
             align(&mut line, sp, pieces, style, frame, left, right, is_last);
         } else {
             fit_text(&mut line, pieces, right - 1.0);
         }
-        size(&mut line, sp, pieces, line_size, mark, fonts, is_last, frame);
-        lines.push(line);
+        size(&mut line, sp, pieces, line_size, mark, fonts, end >= n, frame);
         first = false;
-        if end >= n {
+        if shown.is_some() && is_last && part < bounds.len() {
+            part_end(&mut line, sp, part);
+            (part, first) = (part + 1, true);
+        }
+        lines.push(line);
+        if end >= n && part >= bounds.len() {
             break;
         }
         start = end;
@@ -86,13 +139,20 @@ pub fn break_paragraph(sp: &ShapedPara, pieces: &[Piece], style: &ParaStyle, mar
             lines.push(line);
         }
     }
-    if lines.is_empty() || n == 0 {
+    if lines.is_empty() || n == 0 && sp.parts.is_none() {
         lines.clear();
         let mut line = Line::empty(0);
         size(&mut line, sp, pieces, style, mark, fonts, true, frame);
         lines.push(line);
     }
     lines
+}
+
+/// The space after a joined paragraph's part, below its last line: the gap to the next part.
+fn part_end(line: &mut Line, sp: &ShapedPara, part: usize) {
+    let gap = sp.parts.as_ref().and_then(|p| p.get(part + 1)).map_or(0.0, |p| p.gap);
+    line.pitch += gap;
+    line.after = gap;
 }
 
 fn wp_extension(style: &ParaStyle, frame: &Frame) -> f64 {
@@ -144,7 +204,16 @@ pub fn band(
     fonts: &Fonts,
     force: bool,
 ) -> Result<(Vec<Line>, usize), f64> {
-    let (line_size, style) = (style, line_style(style, pieces, start));
+    let bounds = part_starts(sp, pieces);
+    let (part, hi) = part_at(&bounds, start, pieces.len());
+    let shown = sp.parts.as_ref().and_then(|p| p.get(part)).map(|q| &*q.style);
+    let (line_size, style) = match shown {
+        Some(s) => (s, s),
+        None => (style, start_style(style, pieces, start)),
+    };
+    let first_line = first_line || shown.is_some() && part > 0 && bounds.get(part - 1) == Some(&start);
+    let total = pieces.len();
+    let pieces = &pieces[..hi.max(start).min(total)];
     let n = pieces.len();
     let right_edge = frame.width - style.ind_right;
     let mut segs: Vec<Line> = Vec::new();
@@ -254,14 +323,17 @@ pub fn band(
     }
     let mut merged = segs[0].clone();
     merged.end = s;
-    size(&mut merged, sp, pieces, line_size, mark, fonts, s >= n, frame);
+    size(&mut merged, sp, pieces, line_size, mark, fonts, s >= total, frame);
+    if shown.is_some() && s >= n && part < bounds.len() {
+        part_end(&mut merged, sp, part);
+    }
     for l in &mut segs {
         l.ascent = merged.ascent;
         l.descent = merged.descent;
         l.pitch = merged.pitch;
         l.baseline = merged.baseline;
         l.below = merged.below;
-        (l.align, l.vertical) = (merged.align, merged.vertical);
+        (l.align, l.vertical, l.part, l.after) = (merged.align, merged.vertical, part, merged.after);
     }
     Ok((segs, s))
 }

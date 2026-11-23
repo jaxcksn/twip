@@ -53,6 +53,9 @@ pub(crate) fn div_chain(divs: &HashMap<i64, Division>, id: Option<i64>) -> Vec<i
     out
 }
 
+/// The most paragraphs a paragraph's [`ParaStyle::parts`] keep.
+pub const MAX_PARTS: usize = 256;
+
 /// The style of `later` joined onto `first`, the paragraph before it (`at` units long) whose mark is vanished: the
 /// first one's indents, alignment, tabs and space before (unless it is empty), the first one's borders and shading,
 /// the last one's other properties. An empty first paragraph gives nothing but a style separator's (`spec`, in compat
@@ -60,6 +63,12 @@ pub(crate) fn div_chain(divs: &HashMap<i64, Division>, id: Option<i64>) -> Vec<i
 /// shading from the paragraph of its first character, so `joined` keeps the later one's own.
 pub fn joined_style(first: &ParaStyle, later: &Rc<ParaStyle>, at: u32, spec: Option<&ParaStyle>, legacy: bool) -> ParaStyle {
     let mut style = (**later).clone();
+    style.parts = match first.parts.len() {
+        // Parts, at most MAX_PARTS
+        MAX_PARTS.. => first.parts.clone(),
+        0 => Rc::from([Rc::new(first.clone()), later.clone()]),
+        _ => first.parts.iter().cloned().chain([later.clone()]).collect(),
+    };
     if let (0, Some(s)) = (at, spec) {
         (style.ind_left, style.ind_right, style.ind_first, style.jc) = (s.ind_left, s.ind_right, s.ind_first, s.jc);
     }
@@ -256,6 +265,7 @@ impl Resolver {
             direct: Raw::default(),
             change: None,
             joined: Rc::from([]),
+            parts: Rc::from([]),
         }
     }
 

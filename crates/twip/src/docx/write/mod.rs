@@ -5247,7 +5247,7 @@ impl Saver<'_, '_> {
             v = pos("positionV", &f.v_relative, &f.v_align, f.v_offset),
             cx = cx,
             cy = cy,
-            wrap = wrap_xml("wp:", &f.wrap, &f.wrap_text),
+            wrap = wrap_xml("wp:", &f.wrap, &f.wrap_text, f.poly.as_deref(), f.poly.is_some()),
             kind = match f.shape.as_deref().map(|s| s.nv.name.as_str()).filter(|n| !n.is_empty()) {
                 Some(n) => props::esc(n),
                 None => (if f.text_box.is_some() { "Text Box" } else { "Picture" }).to_string(),
@@ -5635,8 +5635,8 @@ struct Placement {
     h: Option<(String, Option<String>, f64)>,
     v: Option<(String, Option<String>, f64)>,
     size: Option<(f64, f64)>,
-    /// Wrapping (`wrap`, `wrap_text`, behind the text) and the anchor lock, when changed.
-    wrap: Option<(String, String, bool)>,
+    /// Wrapping (`wrap`, `wrap_text`, behind the text, the wrap polygon and whether it changed), when changed.
+    wrap: Option<(String, String, bool, Option<Rc<[(f64, f64)]>>, bool)>,
     locked: Option<bool>,
     z: Option<u32>,
     /// The alternative text (`wp:docPr/@descr`).
@@ -5690,7 +5690,8 @@ impl Placement {
             h: pos((&a.h_relative, &a.h_align, a.h_offset), (&b.h_relative, &b.h_align, b.h_offset)),
             v: pos((&a.v_relative, &a.v_align, a.v_offset), (&b.v_relative, &b.v_align, b.v_offset)),
             size: (ne(a.w, b.w) || ne(a.h, b.h)).then_some((b.w, b.h)),
-            wrap: (a.wrap != b.wrap || a.wrap_text != b.wrap_text || a.behind != b.behind).then(|| (b.wrap.clone(), b.wrap_text.clone(), b.behind)),
+            wrap: (a.wrap != b.wrap || a.wrap_text != b.wrap_text || a.behind != b.behind || a.poly != b.poly)
+                .then(|| (b.wrap.clone(), b.wrap_text.clone(), b.behind, b.poly.clone(), a.poly != b.poly)),
             locked: (a.locked != b.locked).then_some(b.locked),
             z: (a.z != b.z).then_some(b.z),
             alt: (a.alt != b.alt).then(|| b.alt.to_string()),
@@ -5772,7 +5773,7 @@ impl Placement {
         }
         if let Some((start, end)) = find_tag(&s, "anchor", 0) {
             let mut tag = s[start..end].to_string();
-            if let Some((_, _, behind)) = &self.wrap {
+            if let Some((_, _, behind, ..)) = &self.wrap {
                 tag = set_attr(&tag, "behindDoc", if *behind { "1" } else { "0" });
             }
             if let Some(z) = self.z {
@@ -5800,8 +5801,8 @@ impl Placement {
                 .rsplit_once(':')
                 .map_or(String::new(), |(p, _)| format!("{p}:"));
             s.replace_range(start..end, &tag);
-            if let Some((wrap, text, _)) = &self.wrap {
-                let x = wrap_xml(&p, wrap, text);
+            if let Some((wrap, text, _, poly, edited)) = &self.wrap {
+                let x = wrap_xml(&p, wrap, text, poly.as_deref(), *edited);
                 let old = ["wrapSquare", "wrapTight", "wrapThrough", "wrapTopAndBottom", "wrapNone"].iter().find_map(|n| element(&s, n));
                 match old {
                     Some(r) => s.replace_range(r, &x),
@@ -5929,16 +5930,28 @@ fn find_tag(s: &str, local: &str, from: usize) -> Option<(usize, usize)> {
     None
 }
 
-/// A drawing's wrap element (`p`: the drawing prefix with its colon).
-fn wrap_xml(p: &str, wrap: &str, text: &str) -> String {
+/// A drawing's wrap element (`p`: the drawing prefix with its colon): a tight or through wrap's polygon is `poly` (box
+/// fractions), or the object's box; `edited` marks one the user changed.
+fn wrap_xml(p: &str, wrap: &str, text: &str, poly: Option<&[(f64, f64)]>, edited: bool) -> String {
     match wrap {
         "square" => format!("<{p}wrapSquare wrapText=\"{text}\"/>"),
         "tight" | "through" => {
-            // A rectangle the size of the object (21600 is the whole of each side).
+            use std::fmt::Write as _;
+            // 21600 is the whole of each side.
+            const BOX: [(f64, f64); 5] = [(0.0, 0.0), (0.0, 1.0), (1.0, 1.0), (1.0, 0.0), (0.0, 0.0)];
             let n = if wrap == "tight" { "wrapTight" } else { "wrapThrough" };
-            format!(
-                "<{p}{n} wrapText=\"{text}\"><{p}wrapPolygon edited=\"0\"><{p}start x=\"0\" y=\"0\"/><{p}lineTo x=\"0\" y=\"21600\"/><{p}lineTo x=\"21600\" y=\"21600\"/><{p}lineTo x=\"21600\" y=\"0\"/><{p}lineTo x=\"0\" y=\"0\"/></{p}wrapPolygon></{p}{n}>"
-            )
+            let (points, edited) = match poly.filter(|q| q.len() >= 2) {
+                Some(q) => (q, edited),
+                None => (&BOX[..], false),
+            };
+            let mut s = format!("<{p}{n} wrapText=\"{text}\"><{p}wrapPolygon edited=\"{}\">", if edited { 1 } else { 0 });
+            for (k, &(x, y)) in points.iter().enumerate() {
+                let el = if k == 0 { "start" } else { "lineTo" };
+                let c = |v: f64| (v * 21600.0).round().clamp(i32::MIN as f64, i32::MAX as f64) as i64;
+                let _ = write!(s, "<{p}{el} x=\"{}\" y=\"{}\"/>", c(x), c(y));
+            }
+            let _ = write!(s, "</{p}wrapPolygon></{p}{n}>");
+            s
         }
         "topAndBottom" => format!("<{p}wrapTopAndBottom/>"),
         _ => format!("<{p}wrapNone/>"),

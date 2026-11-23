@@ -27,6 +27,8 @@ pub struct Fragment {
     pub origin: Option<Rc<super::import::Origin>>,
     /// A drag's move: its bookmarks go with it, though the document still has them until the drag deletes them.
     pub moved: bool,
+    /// Its plain text keeps hidden text, which showed where it was copied.
+    pub hidden_text: bool,
 }
 
 /// The notes and comments a fragment refers to, as they were when it was copied: pasting brings them back (a cut's
@@ -330,11 +332,11 @@ pub(super) fn fresh(b: &Block) -> Block {
     }
 }
 
-fn plain(blocks: &[Block], out: &mut String) {
+fn plain(blocks: &[Block], hidden: bool, out: &mut String) {
     for b in blocks {
         match b {
             Block::Para(p) => {
-                out.extend(super::text::Seen::of(p, |r| !r.hidden, true).chars.into_iter().map(super::plain_char));
+                out.extend(super::text::Seen::of(p, |r| hidden || !r.hidden, true).chars.into_iter().map(super::plain_char));
                 out.push('\n');
             }
             Block::Table(t) => {
@@ -344,7 +346,7 @@ fn plain(blocks: &[Block], out: &mut String) {
                             out.push('\t');
                         }
                         let mut s = String::new();
-                        plain(&c.blocks, &mut s);
+                        plain(&c.blocks, hidden, &mut s);
                         out.push_str(s.trim_end_matches('\n').replace('\n', " ").as_str());
                     }
                     out.push('\n');
@@ -533,7 +535,7 @@ impl Fragment {
 
     pub fn text(&self) -> String {
         let mut s = String::new();
-        plain(&self.blocks, &mut s);
+        plain(&self.blocks, self.hidden_text, &mut s);
         if self.open_end && s.ends_with('\n') {
             s.pop();
         }
@@ -561,6 +563,7 @@ impl Editor {
 
     pub fn copy_fragment(&mut self) -> Option<Fragment> {
         let mut f = self.copy_content()?;
+        f.hidden_text = self.doc.review.show_hidden;
         strip_partial_comments(&mut f.blocks);
         f.refs = self.refs_of(&f.blocks);
         Some(f)

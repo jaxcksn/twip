@@ -53,7 +53,7 @@ pub fn hf_layout(
     }
     let laid = crate::layout::join::laid_in(
         blocks,
-        env.ctx.env.text.review.view,
+        &env.ctx.env.text.review,
         env.ctx.env.normal.as_ref(),
         env.ctx.env.text.compat == crate::docx::model::Compat::Legacy,
     );

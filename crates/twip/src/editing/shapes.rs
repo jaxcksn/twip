@@ -95,6 +95,10 @@ pub(super) struct ShapeDrag {
 }
 
 impl ShapeDrag {
+    pub fn moved(&self) -> bool {
+        self.now != self.start
+    }
+
     fn new(
         f: FloatId,
         root: [f64; 4],
@@ -864,15 +868,45 @@ impl Editor {
     }
 
     pub fn group_objects(&mut self, fonts: &crate::font::Fonts) -> super::commands::Outcome {
+        let ids = self.selected_floats();
+        self.group_floats(&ids, "Group", fonts)
+    }
+
+    /// The objects the last Ungroup made, while each is still in the document: what Regroup groups again.
+    pub fn regroupable(&self) -> Option<&[FloatId]> {
+        let ids = self.ungrouped.as_deref()?;
+        (ids.len() >= 2 && ids.iter().all(|&f| self.float_of(f).is_some())).then_some(ids)
+    }
+
+    /// Groups again the objects the last Ungroup made (Word's Group > Regroup), wherever they were moved since: one
+    /// undo step ("Regroup"), the new group selected. Refused when one of them is gone (deleted, grouped again or
+    /// undone) or read-only.
+    pub fn regroup_objects(&mut self, fonts: &crate::font::Fonts) -> super::commands::Outcome {
+        use super::commands::Outcome;
+        if self.mode == super::Mode::ReadOnly {
+            return Outcome::unavailable("read-only");
+        }
+        let Some(ids) = self.regroupable().map(<[FloatId]>::to_vec) else { return Outcome::unavailable("nothing to regroup") };
+        let (sel, child, also) = (self.selection, self.object_child.take(), self.object_also.take());
+        self.selection = super::selection::Selection::Object(ObjectRef::Floating(ids[0]));
+        self.object_also = Some((ids[0], ids[1..].to_vec()));
+        let out = self.group_floats(&ids, "Regroup", fonts);
+        match out {
+            super::commands::Outcome::Changed(_) => self.ungrouped = None,
+            _ => (self.selection, self.object_child, self.object_also) = (sel, child, also),
+        }
+        out
+    }
+
+    fn group_floats(&mut self, ids: &[FloatId], label: &'static str, fonts: &crate::font::Fonts) -> super::commands::Outcome {
         use super::commands::Outcome;
         use crate::drawing::units::Emu;
         use crate::drawing::{GroupShape, NonVisual, Shape, ShapeKind, Spans, Xfrm};
-        let ids = self.selected_floats();
         if ids.len() < 2 {
             return Outcome::unavailable("select two or more objects to group");
         }
         let mut members = Vec::new();
-        for &f in &ids {
+        for &f in ids {
             let (Some(m), Some((page, r))) = (self.float_of(f).cloned(), self.float_box(f, fonts)) else { return Outcome::Unchanged("no float") };
             if m.shape.is_none() {
                 return Outcome::unsupported("only shapes and pictures with shape properties group");
@@ -937,7 +971,7 @@ impl Editor {
             order: usize::MAX / 2,
             ..first
         };
-        self.replace_floats("Group", &ids, anchor, vec![(g, u)], fonts)
+        self.replace_floats(label, ids, anchor, vec![(g, u)], fonts)
     }
 
     pub fn ungroup_objects(&mut self, fonts: &crate::font::Fonts) -> super::commands::Outcome {
@@ -1009,7 +1043,11 @@ impl Editor {
         if new.is_empty() {
             return Outcome::Unchanged("an empty group");
         }
-        self.replace_floats("Ungroup", &[g], anchor, new, fonts)
+        let out = self.replace_floats("Ungroup", &[g], anchor, new, fonts);
+        if matches!(out, Outcome::Changed(_)) {
+            self.ungrouped = Some(self.selected_floats());
+        }
+        out
     }
 }
 

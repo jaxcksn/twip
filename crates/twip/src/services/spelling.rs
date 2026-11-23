@@ -233,6 +233,58 @@ pub fn selected_range(e: &Editor) -> Option<(ParaId, usize, usize)> {
     (pa == pb).then_some((pa, ua.0 as usize, ub.0 as usize))
 }
 
+/// The longest word [`word_at_selection`] gives, characters.
+pub const MAX_WORD: usize = 64;
+
+/// The word the selection is in: its paragraph, units, text and language.
+#[derive(Clone, Debug, PartialEq)]
+pub struct WordAt {
+    /// The paragraph the word is in.
+    pub para: ParaId,
+    /// The word's first unit.
+    pub start: Unit,
+    /// The unit after the word's last.
+    pub end: Unit,
+    /// The word's text.
+    pub word: String,
+    /// The word's language (`default` for text without one).
+    pub language: String,
+}
+
+/// The word the selection is in or selects, when the selection is in one paragraph and within one word: letters,
+/// digits and apostrophes and hyphens between them, at most [`MAX_WORD`] characters.
+pub fn word_at_selection(e: &Editor, default: &str) -> Option<WordAt> {
+    let (para, a, b) = selected_range(e)?;
+    let text = check_text(e, para);
+    let k = text.units.partition_point(|&u| (u as usize) < a);
+    let part = |c: char| c.is_alphanumeric();
+    let joins = |i: usize| {
+        matches!(text.chars.get(i), Some('\'' | '\u{2019}' | '-'))
+            && i > 0
+            && text.chars.get(i - 1).is_some_and(|&c| part(c))
+            && text.chars.get(i + 1).is_some_and(|&c| part(c))
+    };
+    let inside = |i: usize| text.chars.get(i).is_some_and(|&c| part(c)) || joins(i);
+    let mut start = k;
+    while start > 0 && k - start <= MAX_WORD && inside(start - 1) {
+        start -= 1;
+    }
+    let mut end = k;
+    while end < text.chars.len() && end - start <= MAX_WORD && inside(end) {
+        end += 1;
+    }
+    if start == end || end - start > MAX_WORD {
+        return None;
+    }
+    let (us, ue) = text.units_of(start, end);
+    if b > ue.0 as usize {
+        return None;
+    }
+    let word: String = text.chars[start..end].iter().collect();
+    let language = Spellers::language_at(e, para, us.0 as usize, default);
+    Some(WordAt { para, start: us, end: ue, word, language })
+}
+
 /// The body's paragraph ids in document order, tables included.
 pub fn paras_in_order(e: &Editor) -> Vec<ParaId> {
     e.story_paras(crate::editing::find::Stories::default())
@@ -535,6 +587,21 @@ impl Spellers {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_word_at_the_caret_spans_letters_and_inner_apostrophes() {
+        use crate::editing::tests::{blank_with, fonts};
+        let mut e = Editor::open(&blank_with("A quick fox's den."), fonts()).expect("opens");
+        e.complete(fonts());
+        let para = crate::editing::tests::para_id(&e, 0);
+        e.select_range(para, Unit(4), Unit(4), fonts());
+        let at = word_at_selection(&e, "en-US").expect("a word");
+        assert_eq!((at.word.as_str(), at.start, at.end, at.language.as_str()), ("quick", Unit(2), Unit(7), "en-US"));
+        e.select_range(para, Unit(9), Unit(9), fonts());
+        assert_eq!(word_at_selection(&e, "en-US").expect("a word").word, "fox's");
+        e.select_range(para, Unit(2), Unit(9), fonts());
+        assert!(word_at_selection(&e, "en-US").is_none(), "past the word");
+    }
 
     #[test]
     fn languages_match_by_tag_or_primary_language() {

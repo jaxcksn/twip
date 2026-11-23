@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::docx::model::*;
-use crate::docx::review::MarkupView;
+use crate::docx::review::ReviewView;
 use crate::font::Fonts;
 
 use super::LayoutCtx;
@@ -276,19 +276,20 @@ fn compare(doc: &Document, shadow: &Shadow) -> Result<Option<Span>, ()> {
     Ok(found)
 }
 
-fn close(span: Span, blocks: &[Block], view: MarkupView) -> Span {
+fn close(span: Span, blocks: &[Block], review: &ReviewView) -> Span {
+    let view = review.view;
     let bordered = |i: usize| matches!(blocks.get(i), Some(Block::Para(p)) if border_key(p.para_style_in(view)).is_some());
     let mut s = span;
-    let first = chain_start(blocks, s.first, view);
+    let first = chain_start(blocks, s.first, review);
     if first < s.first {
         s.first = first;
         s.row = None;
     }
     if s.first > 0 && bordered(s.first - 1) {
-        s.first = chain_start(blocks, s.first - 1, view);
+        s.first = chain_start(blocks, s.first - 1, review);
         s.row = None;
     }
-    let next = chain_end(blocks, s.new_end, view);
+    let next = chain_end(blocks, s.new_end, review);
     if s.new_end < blocks.len() && bordered(next) {
         s.old_end += next + 1 - s.new_end;
         s.new_end = next + 1;
@@ -297,10 +298,11 @@ fn close(span: Span, blocks: &[Block], view: MarkupView) -> Span {
     s
 }
 
-fn restart_page(base: &[PageRecord], span: &Span, blocks: &[Block], view: MarkupView) -> usize {
-    let mut g = chain_start(blocks, span.first.min(blocks.len()), view);
+fn restart_page(base: &[PageRecord], span: &Span, blocks: &[Block], review: &ReviewView) -> usize {
+    let view = review.view;
+    let mut g = chain_start(blocks, span.first.min(blocks.len()), review);
     while g > 0 && matches!(&blocks[g - 1], Block::Para(p) if p.para_style_in(view).keep_next) {
-        g = chain_start(blocks, g - 1, view);
+        g = chain_start(blocks, g - 1, review);
     }
     let before = |pg: &PageRecord| pg.bodies.first().is_some_and(|b| (b.token.section, b.token.flow.block) < (span.section, g));
     let mut r = base.iter().rposition(before).unwrap_or(0);
@@ -807,7 +809,7 @@ impl DocumentLayout {
         if seeded {
             job.seed((*b.finished.known).clone(), b.finished.records.iter().map(|p| p.hf_full).collect());
         }
-        let closed = span.map(|s| close(s, &doc.sections[s.section].blocks, doc.review.view));
+        let closed = span.map(|s| close(s, &doc.sections[s.section].blocks, &doc.review));
         let base = &b.finished.records;
         #[cfg(test)]
         let forced = FORCE_FIRST_PAGE.get();
@@ -817,7 +819,7 @@ impl DocumentLayout {
         let r = match &closed {
             _ if forced || base.is_empty() => 0,
             Some(s) => {
-                let r = restart_page(base, s, &doc.sections[s.section].blocks, doc.review.view);
+                let r = restart_page(base, s, &doc.sections[s.section].blocks, &doc.review);
                 let notes = job.note_numbers().clone();
                 let latest = b.table.as_ref();
                 crate::prof::time("layout:row-restart", || {

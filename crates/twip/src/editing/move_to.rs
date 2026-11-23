@@ -20,6 +20,8 @@ pub enum DropChoice {
     Copy,
     /// Link Here: a `LINK` field to the text, bookmarked where it is.
     Link,
+    /// Create Hyperlink Here: a link to a hidden bookmark on the text, showing the text.
+    Hyperlink,
     /// Cancel.
     Cancel,
 }
@@ -99,15 +101,14 @@ impl Editor {
         self.drop_selection(target, copy, None, fonts)
     }
 
-    /// A right-button press inside the selected text starts a drag that ends in the drop menu.
+    /// A right-button press inside the selected text starts a drag that ends in the drop menu, while text drag and
+    /// drop is on, the document editable and no extend mode on.
     pub fn right_press(&mut self, x: f64, y: f64, fonts: &Fonts) -> bool {
-        if self.mode == super::Mode::ReadOnly {
+        self.drop_menu = None;
+        if !self.text_drags() {
             return false;
         }
-        let Some(p) = self.hit(x, y, fonts) else { return false };
-        if !self.inside_selection(&p) {
-            return false;
-        }
+        let Some(p) = self.hit(x, y, fonts).filter(|p| self.inside_selection(p)) else { return false };
         self.text_drag = Some(super::interaction::TextDrag { start: (x, y), press: p, moved: false, copy: false, drop: None, menu: true });
         self.requests.push(super::input::Request::CapturePointer);
         true
@@ -119,23 +120,50 @@ impl Editor {
         let d = self.text_drag.take_if(|d| d.menu)?;
         self.requests.push(super::input::Request::ReleasePointer);
         let drop = d.drop.filter(|p| d.moved && !self.inside_selection(p))?;
-        self.drop_menu = Some(drop);
+        self.drop_menu = Some((drop, self.revision));
         Some(drop)
     }
 
-    /// Where the open drop menu drops the text.
+    /// Where the open drop menu drops the text; `None` once the document changed after it opened.
     pub fn drop_menu(&self) -> Option<Position> {
-        self.drop_menu
+        self.drop_menu.filter(|&(_, at)| at == self.revision).map(|(p, _)| p)
     }
 
-    /// The drop menu's choice. Link Here needs the document's file name.
+    /// The drop menu's choice, as one undo step. Link Here needs the document's file name.
     pub fn choose_drop(&mut self, choice: DropChoice, fonts: &Fonts) -> Outcome {
-        let Some(drop) = self.drop_menu.take() else { return Outcome::unavailable("no drop menu open") };
+        let Some((drop, at)) = self.drop_menu.take() else { return Outcome::unavailable("no drop menu open") };
+        if at != self.revision {
+            return Outcome::Unchanged("the document changed");
+        }
         match choice {
             DropChoice::Move | DropChoice::Copy => self.drop_at(drop, choice == DropChoice::Copy, fonts),
             DropChoice::Link => self.link_drop(drop, fonts),
+            DropChoice::Hyperlink => self.hyperlink_here(drop, fonts),
             DropChoice::Cancel => Outcome::Moved,
         }
+    }
+
+    /// Create Hyperlink Here: a hidden bookmark (`_Hlk…`) on the selected text, and at `drop` a link to it showing
+    /// the text. One undo step.
+    fn hyperlink_here(&mut self, drop: Position, fonts: &Fonts) -> Outcome {
+        use crate::api::command::Hyperlink;
+        let Some(source) = self.selection.ordered(&self.index) else { return Outcome::Unchanged("no selection") };
+        let text = self.selected_text();
+        if text.is_empty() || !self.editable(&drop) || self.kept(CommandId::InsertHyperlink, &drop, &drop) {
+            return Outcome::Unchanged("kept");
+        }
+        let names: std::collections::HashSet<String> = self.bookmarks().into_iter().map(|b| b.name.to_ascii_lowercase()).collect();
+        let first = 100_000_000 + self.generation % 800_000_000;
+        let Some(name) = (first..first + 10_000).map(|n| format!("_Hlk{n}")).find(|n| !names.contains(&n.to_ascii_lowercase())) else {
+            return Outcome::Unchanged("no bookmark name");
+        };
+        self.begin_batch(Some("Create Hyperlink".into()));
+        self.set_selection(Selection::range(source.0, source.1, super::selection::Granularity::Char));
+        let mut ok = matches!(self.execute(super::commands::Command::InsertBookmark(name.clone()), fonts), Outcome::Changed(_));
+        self.set_selection(Selection::Caret(drop));
+        let link = Hyperlink { address: format!("#{name}"), text: Some(text) };
+        ok &= matches!(self.execute(super::commands::Command::InsertHyperlink(link), fonts), Outcome::Changed(_));
+        self.end_batch(ok, fonts)
     }
 
     /// Link Here: the selection bookmarked (`OLE_LINKn`), and at `drop` a `LINK` field to it showing its text. One

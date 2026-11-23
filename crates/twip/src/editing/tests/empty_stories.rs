@@ -16,7 +16,7 @@ const REL: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relatio
 
 /// The blank package with `body` and `sect` children for the section, plus parts `(file, rel type, content type, xml)`
 /// related as `rIdP0`, `rIdP1`, ...
-fn build(body: &str, sect: &str, parts: &[(&str, &str, &str, &str)]) -> Vec<u8> {
+pub(super) fn build(body: &str, sect: &str, parts: &[(&str, &str, &str, &str)]) -> Vec<u8> {
     let blank = crate::docx::blank::blank_docx();
     let read = |name: &str| crate::docx::package::read(&blank, &[], name).expect("reads").expect(name);
     let mut rels = read("word/_rels/document.xml.rels");

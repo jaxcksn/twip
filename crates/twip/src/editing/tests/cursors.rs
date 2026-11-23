@@ -166,3 +166,80 @@ fn cursor_over_a_checkbox_is_the_arrow() {
         .expect("a checkbox");
     assert_eq!(hover(&mut e, 0, x, y, Mods::default()), Cursor::Default);
 }
+
+#[test]
+fn cursor_over_the_selection_is_the_arrow_and_a_refused_drop_is_not_allowed() {
+    use crate::api::command::{Command, DocumentProtection, ProtectionKind};
+    let mut e = fixture("FX-TEXT.docx");
+    let g = page(&mut e, 0);
+    let l = g.lines.iter().find(|l| g.stories[l.story].story == StoryId::Body && l.stops.len() > 8).expect("a line");
+    let y = (l.top + l.bottom) / 2.0;
+    let (from, inside, outside) = (l.stops[1].x, (l.stops[2].x + l.stops[3].x) / 2.0, (l.stops[7].x + l.stops[8].x) / 2.0);
+    drag(&mut e, 0, (from + 0.1, y), (l.stops[5].x, y), Mods::default());
+    assert_eq!(hover(&mut e, 0, inside, y, Mods::default()), Cursor::Default);
+    assert_eq!(hover(&mut e, 0, outside, y, Mods::default()), Cursor::Text);
+    let p = DocumentProtection { kind: Some(ProtectionKind::ReadOnly), enforce: Some(true), ..DocumentProtection::default() };
+    e.execute(Command::SetDocumentProtection(p), fonts());
+    at(&mut e, PointerKind::Down, 0, inside, y, Mods::default());
+    at(&mut e, PointerKind::Move, 0, outside, y, Mods::default());
+    assert_eq!(e.view(0..0).cursor, Cursor::NotAllowed);
+    at(&mut e, PointerKind::Cancel, 0, outside, y, Mods::default());
+}
+
+#[test]
+fn selection_bounds_cover_the_selected_text_and_a_turned_frame() {
+    use super::super::view::Outline;
+    let mut e = fixture("FX-TEXT.docx");
+    let g = page(&mut e, 0);
+    let l = g.lines.iter().find(|l| g.stories[l.story].story == StoryId::Body && l.stops.len() > 8).expect("a line");
+    let y = (l.top + l.bottom) / 2.0;
+    assert_eq!(e.selection_bounds(0..1), Default::default(), "a caret");
+    drag(&mut e, 0, (l.stops[1].x + 0.1, y), (l.stops[5].x, y), Mods::default());
+    let b = e.selection_bounds(0..1);
+    assert_eq!(b.bounds.len(), 1);
+    let r = b.bounds[0].1;
+    assert!(r[0] <= l.stops[1].x + 0.5 && r[2] >= l.stops[5].x - 0.5 && r[1] <= y && r[3] >= y, "{r:?}");
+    let turned = Outline { page: 0, rect: [0.0, 0.0, 20.0, 10.0], rot: 90.0 }.turned_box();
+    assert!(turned.iter().zip([5.0, -5.0, 15.0, 15.0]).all(|(a, b)| (a - b).abs() < 1e-9), "{turned:?}");
+}
+
+fn canvas(e: &mut Editor, pg: usize, x: f64, y: f64, clicks: u8) -> Option<super::super::gestures::CanvasGesture> {
+    let (dx, dy) = e.stack().to_doc(pg, x, y).expect("on the stack");
+    e.canvas_press(dx, dy, clicks, Mods::default(), fonts()).map(|g| g.gesture)
+}
+
+fn canvas_drag(e: &mut Editor, pg: usize, from: (f64, f64), to: (f64, f64)) -> Option<super::super::gestures::CanvasGesture> {
+    at(e, PointerKind::Down, pg, from.0, from.1, Mods::default());
+    at(e, PointerKind::Move, pg, to.0, to.1, Mods::default());
+    let (dx, dy) = e.stack().to_doc(pg, to.0, to.1).expect("on the stack");
+    let g = e.canvas_release(dx, dy).map(|g| g.gesture);
+    at(e, PointerKind::Cancel, pg, to.0, to.1, Mods::default());
+    g
+}
+
+#[test]
+fn canvas_gestures_name_object_table_and_note_presses() {
+    use super::super::gestures::CanvasGesture as G;
+    let mut e = fixture("FX-OBJ.docx");
+    let (pg, [x0, y0, x1, y1]) = float_picture(&mut e);
+    let (xm, ym) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
+    assert_eq!(canvas(&mut e, pg, xm, ym, 1), None);
+    assert_eq!(canvas(&mut e, pg, xm, ym, 2), Some(G::ObjectDoubleClick));
+    at(&mut e, PointerKind::Down, pg, xm, ym, Mods::default());
+    at(&mut e, PointerKind::Up, pg, xm, ym, Mods::default());
+    assert_eq!(canvas(&mut e, pg, x1, y1, 1), None, "a handle press starts a drag");
+    assert_eq!(canvas_drag(&mut e, pg, (x1, y1), (x1 + 6.0, y1 + 6.0)), Some(G::ObjectResizeDrag));
+    assert_eq!(canvas_drag(&mut e, pg, (xm, ym), (xm + 6.0, ym)), None, "a move is objectDrag's");
+
+    let mut e = fixture("FX-TBL-BASIC.docx");
+    let g = page(&mut e, 0);
+    let table = g.rows.iter().find(|r| r.outer.is_empty() && r.row == 0).map(|r| r.table).expect("a table");
+    let [tx0, ty0, ..] = g.rows.iter().find(|r| r.table == table).expect("a row").rect;
+    let cell = g.cells.iter().find(|c| c.chain.len() == 1 && c.chain[0] == (table, 0, 0)).expect("the first cell");
+    let [cx0, cy0, _, cy1] = cell.rect;
+    assert_eq!(canvas(&mut e, 0, cx0 + 5.0 * PX, (cy0 + cy1) / 2.0, 1), Some(G::TableZoneClick));
+    let handle = (tx0 - 6.0 * PX, ty0 - 6.0 * PX);
+    assert_eq!(hover(&mut e, 0, handle.0, handle.1, Mods::default()), Cursor::Move);
+    assert_eq!(canvas(&mut e, 0, handle.0, handle.1, 1), None);
+    assert_eq!(canvas_drag(&mut e, 0, handle, (handle.0 + 20.0, handle.1 + 20.0)), Some(G::TableMoveDrag));
+}

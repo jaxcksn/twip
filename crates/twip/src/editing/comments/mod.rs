@@ -54,10 +54,10 @@ struct Known {
 }
 
 #[derive(Clone, Copy, Debug)]
-struct ThreadRange {
-    root: CommentId,
-    start: Position,
-    end: Position,
+pub(in crate::editing) struct ThreadRange {
+    pub root: CommentId,
+    pub start: Position,
+    pub end: Position,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -377,7 +377,7 @@ impl Editor {
     }
 
     /// The threads' ranges in story order: kept while edits touch no paragraph with comment marks and no comment.
-    fn thread_ranges(&mut self) -> Rc<Vec<ThreadRange>> {
+    pub(in crate::editing) fn thread_ranges(&mut self) -> Rc<Vec<ThreadRange>> {
         if self.doc.comments.by_id.is_empty() {
             self.comments.known = None;
             return Rc::default();

@@ -311,6 +311,10 @@ pub struct ParaStyle {
     /// tabs from the paragraph its first character is in: the unit each one after the first starts at, and its own
     /// style. Empty otherwise.
     pub joined: Rc<[(u32, Rc<ParaStyle>)]>,
+    /// Paragraphs joined onto this one's start through vanished marks: each one's own style, this one's last, as they
+    /// show while hidden text does. Empty otherwise; a chain longer than [`super::resolve::MAX_PARTS`] keeps its first
+    /// ones only, fewer than its joins, and so shows joined.
+    pub parts: Rc<[Rc<ParaStyle>]>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

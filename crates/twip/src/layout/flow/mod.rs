@@ -268,7 +268,7 @@ impl<'d> PageFill<'d, '_> {
         let blocks = &self.sec.blocks;
         let in_note = blocks.stories.first().is_some_and(|&s| bi >= s);
         let last = if in_note { self.ctx.env.normal.as_ref() } else { None };
-        let Some(style) = blocks.joined_target(end, view, last) else { return Some((laid, end)) };
+        let Some(style) = blocks.joined_target(end, &self.ctx.env.text.review, last) else { return Some((laid, end)) };
         let r = laid.restyled(style.clone());
         self.pass.restyled.insert(key, r.clone());
         Some((r, end))
@@ -276,7 +276,7 @@ impl<'d> PageFill<'d, '_> {
 
     fn laid_chain(&mut self, bi: usize) -> Option<(LaidPara<'d>, usize)> {
         let Some(Block::Para(p)) = self.sec.blocks.get(bi) else { return None };
-        let end = self.sec.blocks.chain_end(bi, self.ctx.env.text.review.view);
+        let end = self.sec.blocks.chain_end(bi, &self.ctx.env.text.review);
         if end == bi {
             return Some((LaidPara::One(p), bi));
         }
@@ -308,7 +308,7 @@ impl<'d> PageFill<'d, '_> {
     ) -> Result<Rc<ParaLines>, Yield> {
         let p = laid.para();
         let view = self.ctx.env.text.review.view;
-        let (prev, next) = self.sec.blocks.neighbours(bi, end, view);
+        let (prev, next) = self.sec.blocks.neighbours(bi, end, &self.ctx.env.text.review);
         let style = p.para_style_in(view);
         let breaks_first = |b: Option<&Block>| {
             let Some(Block::Para(q)) = b else { return false };
@@ -348,7 +348,7 @@ impl<'d> PageFill<'d, '_> {
             return Ok(tb.clone());
         }
         let env = StoryEnv { ctx: self.ctx, fields: self.fields, notes: self.note_numbers };
-        let prev = self.sec.blocks.neighbours(bi, bi, self.ctx.env.text.review.view).0;
+        let prev = self.sec.blocks.neighbours(bi, bi, &self.ctx.env.text.review).0;
         let tb = crate::prof::time("table", || super::table::layout(t, width, &env, prev, false, memos))?;
         hold(&mut self.pass.held.tables, &tb);
         if !varies {
@@ -535,7 +535,8 @@ impl<'d> PageFill<'d, '_> {
 
     // Blocks not laid out
     fn skip_block(&self, cur: &mut ColumnCursor, generic: bool) -> bool {
-        let vanished = matches!(self.sec.blocks.get(cur.pos.block), Some(Block::Para(p)) if super::paragraph::vanished(p));
+        let vanished =
+            matches!(self.sec.blocks.get(cur.pos.block), Some(Block::Para(p)) if super::paragraph::vanished(p, self.ctx.env.text.review.show_hidden));
         if cur.pos.at.at_start()
             && let Some(end) = self.deleted_before_table(cur.pos.block)
         {
@@ -747,7 +748,7 @@ impl<'d> PageFill<'d, '_> {
     fn after_kept(&self, block: usize, style: &ParaStyle) -> f64 {
         let text = &self.ctx.env.text;
         let after = space_after(text, style);
-        match self.sec.blocks.neighbours(block, block, text.review.view).1 {
+        match self.sec.blocks.neighbours(block, block, &text.review).1 {
             Some(next) => gap(text, style, after, next, 0.0),
             None => after,
         }

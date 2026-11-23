@@ -509,7 +509,7 @@ impl<'d> Paginator<'d, '_> {
         };
         page.body_area = page.body_area.or(Some(band));
         Rc::make_mut(&mut page.effects).merge(&b.effects);
-        let last = sec.blocks.chain_end(b.end.flow.block, self.ctx.env.text.review.view).min(sec.blocks.len().saturating_sub(1));
+        let last = sec.blocks.chain_end(b.end.flow.block, &self.ctx.env.text.review).min(sec.blocks.len().saturating_sub(1));
         let shown = sec.blocks.range(token.flow.block..last + 1);
         let end = b.end.clone();
         let page_h = space.page_h;

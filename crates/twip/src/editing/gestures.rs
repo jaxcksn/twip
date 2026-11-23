@@ -3,6 +3,7 @@
 use crate::api::services::{AreaKind, GestureId, GestureTarget, MenuTarget};
 use crate::font::Fonts;
 
+use super::geometry::Zone;
 use super::input::PointerKind;
 use super::keymap::Mods;
 use super::position::{Position, StoryId};
@@ -17,6 +18,43 @@ pub(crate) struct Gesture {
     pub target: GestureTarget,
 }
 
+/// A canvas press or drag beyond the bindable gestures: a double-click on a picture, shape or text box, a drag of
+/// its resize handles or of a shape's rotate or adjust handle, a drag of a table's move handle, a click in a table's
+/// cell, row or column selection zone or on its insert mark, a double-click on a note reference or a note's mark, a Click and Type
+/// double-click in the blank area, and a double-click between pages, which shows or hides the white space there.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CanvasGesture {
+    /// A double-click on a picture, shape or text box.
+    ObjectDoubleClick,
+    /// A drag of an object's resize handle.
+    ObjectResizeDrag,
+    /// A drag of a shape's rotate or adjust handle.
+    ShapeHandleDrag,
+    /// A drag of a table's move handle.
+    TableMoveDrag,
+    /// A click in a table's cell, row or column selection zone.
+    TableZoneClick,
+    /// A click on a table's insert mark between rows or columns.
+    TableInsertClick,
+    /// A double-click on a note reference or a note's own mark.
+    NoteDoubleClick,
+    /// A Click and Type double-click in the blank area.
+    ClickAndType,
+    /// A double-click between pages, which shows or hides the white space there.
+    PageGapDoubleClick,
+}
+
+/// A canvas gesture, its page (from 1) and what it is on.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CanvasPress {
+    /// The gesture.
+    pub gesture: CanvasGesture,
+    /// The page pressed on, from 1.
+    pub page: u32,
+    /// What it is on: a menu target or an area.
+    pub target: GestureTarget,
+}
+
 fn area(kind: AreaKind) -> GestureTarget {
     GestureTarget::Area { kind }
 }
@@ -25,7 +63,11 @@ const TEXT: GestureTarget = GestureTarget::Menu(MenuTarget::Text);
 
 impl Editor {
     pub fn dragging(&self) -> bool {
-        self.object_drag.is_some() || self.shape_drag.is_some() || self.border_drag.is_some() || self.table_drag.is_some()
+        self.object_drag.is_some()
+            || self.shape_drag.is_some()
+            || self.border_drag.is_some()
+            || self.table_drag.is_some()
+            || self.wrap_point_dragging()
     }
 
     pub fn pointer_input(&mut self, kind: PointerKind, x: f64, y: f64, clicks: u8, mods: Mods, fonts: &Fonts) {
@@ -73,7 +115,11 @@ impl Editor {
 
     pub(crate) fn press_gesture(&mut self, x: f64, y: f64, clicks: u8, mods: Mods, fonts: &Fonts) -> Option<Gesture> {
         use GestureId as G;
-        let (page, _, py) = self.stack().page_at(x, y)?;
+        let stack = self.stack();
+        if clicks >= 2 && stack.toggles_white_space(y, 3.0 / self.viewport.zoom.max(0.1)) {
+            return None;
+        }
+        let (page, _, py) = stack.page_at(x, y)?;
         self.ensure_page(page, fonts);
         let band = self.pages.page(page, &self.index)?.body_area;
         let found = |id, target| Some(Gesture { id, page: page as u32 + 1, target });
@@ -162,6 +208,65 @@ impl Editor {
         };
         let page = self.stack().page_at(x, y).map_or(self.near, |(p, ..)| p);
         Some(Gesture { id, page: page as u32 + 1, target })
+    }
+
+    /// The canvas gesture a press at (`x`, `y`) makes, before the press runs.
+    pub fn canvas_press(&mut self, x: f64, y: f64, clicks: u8, mods: Mods, fonts: &Fonts) -> Option<CanvasPress> {
+        use CanvasGesture as C;
+        let (page, ..) = self.stack().page_at(x, y)?;
+        let found = |gesture, target| Some(CanvasPress { gesture, page: page as u32 + 1, target });
+        if mods.shift {
+            return None;
+        }
+        if clicks == 2 && self.stack().toggles_white_space(y, 3.0 / self.viewport.zoom.max(0.1)) {
+            return found(C::PageGapDoubleClick, GestureTarget::Area { kind: AreaKind::Margin });
+        }
+        if self.handle_at(x, y, fonts).is_some() || self.shape_handle_at(x, y).is_some() {
+            return None;
+        }
+        if let Some(s) = self.object_hit(x, y, fonts) {
+            let (control, text_box) = self
+                .with_selection(s, |e| (e.selected_picture_control().is_some(), e.selected_object().is_some_and(|o| o.kind == ObjectKind::TextBox)));
+            let target = GestureTarget::Menu(if text_box { MenuTarget::TextBox } else { MenuTarget::Picture });
+            return if clicks == 2 && !control { found(C::ObjectDoubleClick, target) } else { None };
+        }
+        match self.zone_hit(x, y, fonts) {
+            Some(Zone::Cell(..) | Zone::Row(..) | Zone::Column(..)) => return found(C::TableZoneClick, GestureTarget::Menu(MenuTarget::Table)),
+            Some(Zone::InsertColumn(..) | Zone::InsertRow(..)) => return found(C::TableInsertClick, GestureTarget::Menu(MenuTarget::Table)),
+            Some(Zone::Table(_)) => return None,
+            None => {}
+        }
+        if clicks == 2 && !mods.ctrl && self.click_and_type_at(x, y, fonts).is_some() {
+            return found(C::ClickAndType, TEXT);
+        }
+        if clicks == 2
+            && self.bar_hit(x, y, fonts).is_none()
+            && let Some(p) = self.hit(x, y, fonts)
+            && self.note_pair(p).is_some()
+        {
+            return found(C::NoteDoubleClick, TEXT);
+        }
+        None
+    }
+
+    /// The canvas gesture a release at (`x`, `y`) ends, before the release runs: a drag that moved.
+    pub fn canvas_release(&mut self, x: f64, y: f64) -> Option<CanvasPress> {
+        use CanvasGesture as C;
+        let object = |e: &Editor| {
+            let text_box = e.selected_object().is_some_and(|o| o.kind == ObjectKind::TextBox);
+            GestureTarget::Menu(if text_box { MenuTarget::TextBox } else { MenuTarget::Picture })
+        };
+        let (gesture, target) = if self.object_drag.as_ref().is_some_and(|d| d.handle.is_some() && d.now != d.start) {
+            (C::ObjectResizeDrag, object(self))
+        } else if self.shape_drag.as_ref().is_some_and(|d| d.moved()) {
+            (C::ShapeHandleDrag, object(self))
+        } else if self.table_drag.as_ref().is_some_and(|d| d.now != d.start) {
+            (C::TableMoveDrag, GestureTarget::Menu(MenuTarget::Table))
+        } else {
+            return None;
+        };
+        let page = self.stack().page_at(x, y).map_or(self.near, |(p, ..)| p);
+        Some(CanvasPress { gesture, page: page as u32 + 1, target })
     }
 
     pub(crate) fn context_press(&mut self, x: f64, y: f64, fonts: &Fonts) {
@@ -367,6 +472,27 @@ mod tests {
         f.double_click(margin);
         f.s().text("X");
         assert!(!f.has("Type here."));
+    }
+
+    #[test]
+    fn the_selection_bar_selects_header_lines_while_the_header_is_edited() {
+        let mut f = Fixture::open("editor/FX-STORIES.docx");
+        let page = f.page();
+        let header = Point { x: page.left + page.width / 2.0, y: page.top + 30.0 };
+        f.double_click(header);
+        assert_eq!(f.s().state().selection.story, Story::Header);
+        let line = f.at("First-page header");
+        let margin = Point { x: page.left + 30.0, y: line.y };
+        f.click(margin, 1, NONE);
+        assert_eq!(f.s().state().selection.text.as_deref(), Some("First-page header"));
+        f.click(margin, 1, CTRL);
+        assert_eq!((f.s().state().selection.story, f.s().state().selection.text.as_deref()), (Story::Header, Some("First-page header")));
+        let body = f.at("This paragraph anchors");
+        f.double_click(body);
+        let margin = Point { x: page.left + 30.0, y: body.y };
+        f.click(margin, 1, NONE);
+        assert_eq!(f.s().state().selection.story, Story::Body);
+        assert!(f.s().state().selection.text.as_deref().is_some_and(|t| t.starts_with("This paragraph anchors")));
     }
 
     #[test]

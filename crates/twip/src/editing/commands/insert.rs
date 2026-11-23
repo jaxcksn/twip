@@ -1,6 +1,7 @@
 //! Insert commands
 
 use crate::api::command::{Hyperlink, HyperlinkEdit, Picture};
+use crate::api::value::ObjectWrap;
 use crate::docx::{FieldId, Inline};
 use crate::font::Fonts;
 
@@ -15,14 +16,39 @@ pub(crate) struct LinkHere {
 
 impl Editor {
     pub(in crate::editing) fn insert_picture_with(&mut self, p: Picture, fonts: &Fonts) -> Outcome {
-        let Some(alt) = p.alt_text.filter(|a| !a.is_empty()) else { return self.insert_picture(p.data.0, fonts) };
-        self.joined("Insert Picture", fonts, |e| match e.insert_picture(p.data.0, fonts) {
-            o @ Outcome::Changed(_) => match e.object_cmd(crate::editing::objects::ObjectCmd::AltText(alt, None), fonts) {
-                a @ Outcome::Changed(_) => a,
-                _ => o,
-            },
-            o => o,
+        let alt = p.alt_text.filter(|a| !a.is_empty());
+        let wrap = self.default_picture_wrap;
+        if alt.is_none() && wrap == ObjectWrap::Inline {
+            return self.insert_picture(p.data.0, fonts);
+        }
+        self.joined("Insert Picture", fonts, |e| {
+            let mut out = e.insert_picture(p.data.0, fonts);
+            if !matches!(out, Outcome::Changed(_)) {
+                return out;
+            }
+            if let Some(alt) = alt
+                && let a @ Outcome::Changed(_) = e.object_cmd(crate::editing::objects::ObjectCmd::AltText(alt, None), fonts)
+            {
+                out = a;
+            }
+            if wrap != ObjectWrap::Inline
+                && let w @ Outcome::Changed(_) = e.set_object_wrap(wrap, fonts)
+            {
+                out = w;
+            }
+            out
         })
+    }
+
+    /// Sets the wrap pictures are inserted with (Word's "Insert/paste pictures as", and Wrap Text > Set as Default
+    /// Layout): in line with the text by default. An editor setting, not saved, no undo step.
+    pub fn set_default_picture_wrap(&mut self, wrap: ObjectWrap) {
+        self.default_picture_wrap = wrap;
+    }
+
+    /// The wrap pictures are inserted with.
+    pub fn default_picture_wrap(&self) -> ObjectWrap {
+        self.default_picture_wrap
     }
 
     pub(in crate::editing) fn insert_hyperlink(&mut self, h: Hyperlink, fonts: &Fonts) -> Outcome {

@@ -403,3 +403,42 @@ fn formatting_selected_cells_is_refused_over_a_locked_control() {
         assert_eq!(e.revision(), rev, "{cmd:?}");
     }
 }
+
+#[test]
+fn a_delete_beside_shown_hidden_text_is_checked_where_it_deletes() {
+    use super::super::view::MarkOptions;
+    use crate::api::command::{DeleteOptions, DeleteUnit};
+    use crate::api::value::Direction;
+    let hidden = r#"<w:r><w:rPr><w:vanish/></w:rPr><w:t>secret</w:t></w:r>"#;
+    let back = |unit| Command::Delete(DeleteOptions { direction: Direction::Backward, unit });
+    // Document protection: "Shown " is read-only, the hidden text an editable range.
+    let body = format!(r#"<w:p>{}<w:permStart w:id="1" w:edGrp="everyone"/>{hidden}<w:permEnd w:id="1"/></w:p>"#, run("Shown "));
+    let mut e = lay(&body);
+    let p = DocumentProtection { kind: Some(ProtectionKind::ReadOnly), enforce: Some(true), ..Default::default() };
+    e.execute(Command::SetDocumentProtection(p), fonts());
+    e.set_mark_options(MarkOptions { hidden: true, ..MarkOptions::default() });
+    e.complete(fonts());
+    select(&mut e, 0, 12, 12);
+    assert!(matches!(e.execute(back(None), fonts()), Outcome::Changed(_)), "the hidden 't' is deleted");
+    assert_eq!(texts(&e)[0], "Shown secre");
+    assert!(matches!(e.execute(back(Some(DeleteUnit::Word)), fonts()), Outcome::Changed(_)), "and the hidden word");
+    assert_eq!(texts(&e)[0], "Shown ");
+    let before = texts(&e);
+    assert!(refused(&e.execute(back(None), fonts())), "the read-only space isn't");
+    assert_eq!(texts(&e), before);
+    // A locked control around "Shown ".
+    let sdt = r#"<w:sdt><w:sdtPr><w:id w:val="5"/><w:lock w:val="sdtContentLocked"/><w:text/></w:sdtPr><w:sdtContent><w:r><w:t xml:space="preserve">Shown </w:t></w:r></w:sdtContent></w:sdt>"#;
+    let mut e = lay(&format!("<w:p>{sdt}{hidden}</w:p>"));
+    e.set_mark_options(MarkOptions { hidden: true, ..MarkOptions::default() });
+    e.complete(fonts());
+    let len = |e: &Editor| texts(e)[0].chars().count();
+    let end = len(&e) as u32;
+    select(&mut e, 0, end, end);
+    assert!(matches!(e.execute(back(None), fonts()), Outcome::Changed(_)), "the unlocked hidden 't' is deleted");
+    assert_eq!(texts(&e)[0], "Shown secre");
+    let start = end - 6;
+    select(&mut e, 0, start, start);
+    let before = texts(&e);
+    assert!(refused(&e.execute(back(None), fonts())), "the locked space isn't");
+    assert_eq!(texts(&e), before);
+}

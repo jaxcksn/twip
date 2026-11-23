@@ -136,7 +136,7 @@ pub struct UnitText {
 
 impl UnitText {
     pub fn of(p: &Paragraph) -> UnitText {
-        UnitText::build(p, |_| false, false)
+        UnitText::build(p, |_| false, false, false)
     }
 
     pub fn of_view(p: &Paragraph, view: MarkupView) -> UnitText {
@@ -145,20 +145,25 @@ impl UnitText {
 
     /// The units as `view` shows them: the revisions it hides are hidden units that keep their characters.
     pub fn in_view(p: &Paragraph, view: MarkupView) -> UnitText {
-        UnitText::build(p, |rev| view.hides(rev), false)
+        UnitText::build(p, |rev| view.hides(rev), false, false)
+    }
+
+    /// [`Self::in_view`] in the document's view: hidden text is no hidden unit while it shows.
+    pub fn in_review(p: &Paragraph, review: &crate::docx::review::ReviewView) -> UnitText {
+        UnitText::build(p, |rev| review.view.hides(rev), false, review.show_hidden)
     }
 
     pub fn masked(p: &Paragraph, mask: impl Fn(&RunRevisions) -> bool) -> UnitText {
-        UnitText::build(p, mask, true)
+        UnitText::build(p, mask, true, false)
     }
 
-    fn build(p: &Paragraph, mask: impl Fn(&RunRevisions) -> bool, blank: bool) -> UnitText {
+    fn build(p: &Paragraph, mask: impl Fn(&RunRevisions) -> bool, blank: bool, show_hidden: bool) -> UnitText {
         let mut text = String::new();
         let mut bytes = Vec::new();
         let mut hidden = Vec::new();
         for i in &p.inlines {
             let masked = i.run().is_some_and(|r| mask(&r.rev));
-            let h = masked || i.run().is_some_and(|r| r.hidden);
+            let h = masked || (!show_hidden && i.run().is_some_and(|r| r.hidden));
             let blank = masked && blank;
             let mut push = |c: char, text: &mut String| {
                 bytes.push(text.len());

@@ -226,7 +226,7 @@ fn layout_in(
     memos: &mut Memos,
 ) -> Result<Rc<StoryLayout>, Yield> {
     let last = if cell.is_some() { None } else { env.ctx.env.normal.as_ref() };
-    let blocks = super::join::laid_in(blocks, env.ctx.env.text.review.view, last, env.ctx.env.text.compat == crate::docx::model::Compat::Legacy);
+    let blocks = super::join::laid_in(blocks, &env.ctx.env.text.review, last, env.ctx.env.text.compat == crate::docx::model::Compat::Legacy);
     let children = child_ids(&blocks, Some(width), env, cell, memos)?;
     let probe = StoryKey { hf, ..StoryKey::new(children.clone(), Some(width), cell, env, &blocks) };
     cached(memos, |c| &mut c.stories, probe, story_bytes, |m| layout_with(&blocks, &children, width, env, cell, (0, 0), &[], hf, m))
@@ -236,7 +236,7 @@ fn layout_in(
 pub fn layout_from(blocks: &[&Block], width: f64, env: &StoryEnv, at: (usize, usize), memos: &mut Memos) -> Result<StoryLayout, Yield> {
     let blocks = super::join::laid_in(
         blocks,
-        env.ctx.env.text.review.view,
+        &env.ctx.env.text.review,
         env.ctx.env.normal.as_ref(),
         env.ctx.env.text.compat == crate::docx::model::Compat::Legacy,
     );
@@ -279,14 +279,15 @@ pub fn layout_with(
         let from = if bi == start.0 { start.1 } else { 0 };
         match b {
             _ if bi < start.0 => {}
-            LaidBlock::Para(laid) if super::paragraph::vanished(laid.para()) && !(cell.is_some() && bi + 1 == blocks.len()) => {}
+            LaidBlock::Para(laid)
+                if super::paragraph::vanished(laid.para(), text.review.show_hidden) && !(cell.is_some() && bi + 1 == blocks.len()) => {}
             // Paragraphs joined by hidden marks at the story's end that show nothing aren't laid out (a cell's last
             // paragraph keeps its line).
             LaidBlock::Para(laid)
                 if cell.is_none()
                     && bi + 1 == blocks.len()
                     && view.hides(&laid.para().mark.rev)
-                    && super::paragraph::shows_nothing(laid.para(), view) => {}
+                    && super::paragraph::shows_nothing(laid.para(), view, text.review.show_hidden) => {}
             LaidBlock::Para(laid) => stack_para(&w, &mut st, bi, laid, from, memos)?,
             LaidBlock::Table(t) => stack_table(&w, &mut st, bi, t, memos)?,
         }

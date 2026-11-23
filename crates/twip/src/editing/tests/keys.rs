@@ -791,6 +791,55 @@ fn a_right_drag_opens_the_drop_menu() {
 }
 
 #[test]
+fn create_hyperlink_here_links_to_a_hidden_bookmark_on_the_text() {
+    use super::super::input::PointerKind;
+    use super::super::move_to::DropChoice;
+    let mut e = edit("<w:p><w:r><w:t>one two</w:t></w:r></w:p><w:p><w:r><w:t>three</w:t></w:r></w:p>");
+    select(&mut e, 0, 0, 3);
+    let (from, to) = (at(&mut e, 0, 1, 0.0), at(&mut e, 1, 5, 0.0));
+    assert!(e.right_press(from.0, from.1, fonts()));
+    e.pointer_input(PointerKind::Move, to.0, to.1, 0, Mods::default(), fonts());
+    e.right_release().expect("dropped");
+    e.choose_drop(DropChoice::Hyperlink, fonts());
+    assert_eq!(texts(&e)[0], "one two", "the text stays");
+    let name = e.bookmarks().into_iter().map(|b| b.name).find(|n| n.starts_with("_Hlk")).expect("a hidden bookmark on the source");
+    let codes = link_codes(&e, 1);
+    assert!(codes.len() == 1 && codes[0].starts_with("HYPERLINK") && codes[0].contains(&format!("#{name}")), "{codes:?}");
+    e.execute(C::Undo, fonts());
+    assert_eq!(texts(&e), ["one two", "three"], "one undo step");
+    assert!(e.bookmarks().is_empty());
+}
+
+#[test]
+fn the_drop_menu_closes_when_the_document_changes_or_drags_are_off() {
+    use super::super::input::PointerKind;
+    use super::super::move_to::DropChoice;
+    let mut e = edit("<w:p><w:r><w:t>one two</w:t></w:r></w:p><w:p><w:r><w:t>three</w:t></w:r></w:p>");
+    select(&mut e, 0, 0, 3);
+    let sel = e.selection;
+    let (from, to) = (at(&mut e, 0, 1, 0.0), at(&mut e, 1, 5, 0.0));
+    let drag = |e: &mut Editor| {
+        assert!(e.right_press(from.0, from.1, fonts()));
+        e.pointer_input(PointerKind::Move, to.0, to.1, 0, Mods::default(), fonts());
+        e.right_release().expect("dropped");
+    };
+    drag(&mut e);
+    e.execute(C::InsertText("1".into()), fonts());
+    assert!(e.drop_menu().is_none(), "the document changed");
+    assert!(matches!(e.choose_drop(DropChoice::Move, fonts()), super::super::commands::Outcome::Unchanged(_)));
+    assert_eq!(texts(&e), ["1 two", "three"]);
+    e.execute(C::Undo, fonts());
+    e.selection = sel;
+    drag(&mut e);
+    e.set_text_drag_and_drop(false);
+    assert!(e.drop_menu().is_none(), "drags turned off");
+    assert!(!e.right_press(from.0, from.1, fonts()), "no right drag while off");
+    e.set_text_drag_and_drop(true);
+    e.execute(C::SetSelectionMode(crate::api::command::SelectionMode::Extend), fonts());
+    assert!(!e.right_press(from.0, from.1, fonts()), "no right drag in extend mode");
+}
+
+#[test]
 fn link_here_bookmarks_the_text_and_links_to_it() {
     use super::super::input::PointerKind;
     let mut e = edit("<w:p><w:r><w:t>one two</w:t></w:r></w:p><w:p><w:r><w:t>three</w:t></w:r></w:p>");

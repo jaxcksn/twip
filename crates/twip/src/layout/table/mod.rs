@@ -198,11 +198,12 @@ fn layout_with(
     if let Some(runs) = layout_runs(t) {
         return layout_runs_of(t, &runs, text_w, env, prev, measure, nested, memos);
     }
-    match in_view(t, env.ctx.env.text.review.view, env.ctx.expansions) {
+    match in_view(t, &env.ctx.env.text.review, env.ctx.expansions) {
         None => layout_shown(t, text_w, env, prev, measure, reuse, nested, memos),
         Some(v) => {
             let mut tb = v.expand(&*layout_shown(&v.table, text_w, env, prev, measure, None, nested, memos)?);
             if hidden_tail(t)
+                && !env.ctx.env.text.review.show_hidden
                 && env.ctx.env.text.compat == Compat::Legacy
                 && let Some(tb) = Rc::get_mut(&mut tb)
             {
@@ -362,11 +363,13 @@ struct ViewTable {
     rows: Vec<Option<Vec<usize>>>,
 }
 
-fn in_view(t: &Table, view: MarkupView, expansions: Option<&super::expansion::Expansions>) -> Option<ViewTable> {
+fn in_view(t: &Table, review: &crate::docx::review::ReviewView, expansions: Option<&super::expansion::Expansions>) -> Option<ViewTable> {
+    let (view, show_hidden) = (review.view, review.show_hidden);
+    let vanished = |r: &crate::docx::Row| r.vanished && !show_hidden;
     let original = view == MarkupView::Original;
     let grid = t.table_grid_in(view);
     let differs = |c: &Cell| view.hides_cell(&c.rev) || c.v_merge_in(view) != c.v_merge || original && c.rev.change.is_some();
-    let hides = t.rows.iter().any(|r| r.vanished || view.hides_row(&r.rev) || original && r.rev.change.is_some() || r.cells.iter().any(differs));
+    let hides = t.rows.iter().any(|r| vanished(r) || view.hides_row(&r.rev) || original && r.rev.change.is_some() || r.cells.iter().any(differs));
     let shown_row = |ri: usize| expansions.and_then(|e| e.rows.get(&(super::ids::TableId(t.id), ri)));
     let expanded = expansions.is_some_and(|e| !e.rows.is_empty()) && (0..t.rows.len()).any(|ri| shown_row(ri).is_some());
     if !hides && !expanded && grid == t.grid.as_slice() && !(original && t.change.is_some()) {
@@ -374,7 +377,9 @@ fn in_view(t: &Table, view: MarkupView, expansions: Option<&super::expansion::Ex
     }
     let mut table = t.clone();
     table.grid = grid.to_vec();
-    carry_hidden_bottoms(&mut table);
+    if !show_hidden {
+        carry_hidden_bottoms(&mut table);
+    }
     if let Some(p) = t.change.as_ref().and_then(|c| c.previous.as_ref()).filter(|_| original) {
         p.restore_table(&mut table);
     }
@@ -390,7 +395,7 @@ fn in_view(t: &Table, view: MarkupView, expansions: Option<&super::expansion::Ex
                 rows.push(Some((0..r.cells.len()).map(|k| k.min(n - 1)).collect()));
                 return Some(r);
             }
-            if r.vanished || view.hides_row(&r.rev) {
+            if vanished(&r) || view.hides_row(&r.rev) {
                 rows.push(None);
                 return None;
             }

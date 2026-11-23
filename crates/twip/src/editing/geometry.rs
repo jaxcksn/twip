@@ -4,7 +4,7 @@ use std::collections::HashSet;
 use std::rc::Rc;
 
 use crate::docx::VMerge;
-use crate::layout::fragment::{Item, LineFragment, PageFragment};
+use crate::layout::fragment::{BoxFragment, BoxKind, Child, Item, LineFragment, PageChild, PageFragment};
 use crate::layout::traverse::{CellNode, LineNode, SpatialNode, StoryRef, spatial_tree};
 use crate::layout::{FloatId, ParaId, TableId, Unit};
 
@@ -123,6 +123,8 @@ pub struct PageGeometry {
     pub lines: Vec<GLine>,
     pub cells: Vec<GCell>,
     pub rows: Vec<GRow>,
+    /// Each footnote or endnote area, separator included (left, top, right, bottom).
+    pub notes: Vec<[f64; 4]>,
     paras: HashSet<ParaId>,
     tables: HashSet<TableId>,
     after_break: std::collections::HashMap<ParaId, Unit>,
@@ -158,6 +160,11 @@ impl PageGeometry {
     pub fn build(page: &PageFragment, idx: &DocIndex, shows: Option<u32>, memo: &mut LineMemo) -> Option<PageGeometry> {
         let tree = spatial_tree(page, false)?;
         let mut g = PageGeometry { w: page.w, h: page.h, body_area: page.body_area, ..PageGeometry::default() };
+        for c in page.children.iter() {
+            if let PageChild::Body(b) = c {
+                note_areas(&b.children, b.offset.0, b.offset.1, 0, &mut g.notes);
+            }
+        }
         for s in &tree.stories {
             let (story, float) = match s.story {
                 StoryRef::Body => (StoryId::Body, None),
@@ -208,6 +215,11 @@ impl PageGeometry {
         }
         g.split_bodies();
         Some(g)
+    }
+
+    /// Whether (`x`, `y`) is in a footnote or endnote area.
+    pub fn in_notes(&self, x: f64, y: f64) -> bool {
+        self.notes.iter().any(|r| r[0] <= x && x <= r[2] && r[1] <= y && y <= r[3])
     }
 
     fn split_bodies(&mut self) {
@@ -316,7 +328,7 @@ impl PageGeometry {
                 Some((a.para, a.unit, [l.x + r[0], l.y + r[1], l.x + r[2], l.y + r[3]]))
             })
             .collect();
-        self.lines.push(GLine { story, chain: chain.clone(), paras, top: l.y, bottom: l.y + l.line.pitch, pictures, stops, repeat });
+        self.lines.push(GLine { story, chain: chain.clone(), paras, top: l.y, bottom: l.y + l.line.pitch - l.line.after, pictures, stops, repeat });
     }
 
     /// The line's paragraphs and stops, the paragraph ends its breaks leave, and whether all of it depends on the
@@ -566,8 +578,10 @@ impl PageGeometry {
         deepest(&mut found)
     }
 
-    pub fn selection_bar(&self, x: f64, y: f64, left: f64) -> Option<usize> {
-        let si = self.stories.iter().position(|s| s.story == StoryId::Body && s.float.is_none() && y >= s.rect[1] && y <= s.rect[3])?;
+    /// The line the selection bar at (`x`, `y`) selects: the bar is the page's left margin, up to `left`, beside the
+    /// lines of the stories `want` takes (never a text box's).
+    pub fn selection_bar(&self, x: f64, y: f64, left: f64, want: &dyn Fn(StoryId) -> bool) -> Option<usize> {
+        let si = self.stories.iter().position(|s| want(s.story) && s.float.is_none() && y >= s.rect[1] && y <= s.rect[3])?;
         if x < 0.0 || x > left {
             return None;
         }
@@ -809,4 +823,30 @@ impl Pages {
         out.dedup();
         out
     }
+}
+
+/// Note areas
+fn note_areas(children: &[Child], dx: f64, dy: f64, depth: usize, out: &mut Vec<[f64; 4]>) {
+    // Notes sit in a body's columns, a few boxes deep; deeper boxes are floats' and tables' content.
+    if depth > 4 {
+        return;
+    }
+    for c in children {
+        let Child::Box(b) = c else { continue };
+        match b.kind {
+            BoxKind::Notes => {
+                let (x, y) = (dx + b.offset.0, dy + b.offset.1);
+                let top = b.children.iter().filter_map(|c| if let Child::Box(p) = c { first_group(p) } else { None }).reduce(f64::min);
+                if let Some(top) = top {
+                    out.push([x, y + top, x + b.size.0, y + top + b.size.1]);
+                }
+            }
+            BoxKind::Body | BoxKind::Column => note_areas(&b.children, dx + b.offset.0, dy + b.offset.1, depth + 1, out),
+            _ => {}
+        }
+    }
+}
+
+fn first_group(b: &BoxFragment) -> Option<f64> {
+    b.children.iter().filter_map(|c| if let Child::Group { offset, .. } = c { Some(b.offset.1 + offset.1) } else { None }).reduce(f64::min)
 }

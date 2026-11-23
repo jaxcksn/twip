@@ -183,7 +183,7 @@ impl Renderer {
         let (top, bottom) = (-f.origin_y, -f.origin_y + f.height / f.dpr);
         let shown: Vec<usize> = (0..stack.pages.len())
             .filter(|&i| {
-                let [_, y, _, h] = stack.pages[i];
+                let Some([_, y, _, h]) = stack.shown(i) else { return false };
                 !((y + h) * k < top || y * k > bottom)
             })
             .collect();

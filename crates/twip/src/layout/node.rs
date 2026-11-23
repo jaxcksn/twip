@@ -2,7 +2,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::docx::review::MarkupView;
+use crate::docx::review::ReviewView;
 use std::rc::Rc;
 
 use crate::docx::{Block, Inline, NoteKind, ParaStyle, Paragraph, Section};
@@ -33,11 +33,11 @@ impl<'a> Blocks<'a> {
         Blocks { body: &self.body[..n.min(b)], tail: self.tail[..n.saturating_sub(b).min(self.tail.len())].to_vec(), stories: Vec::new() }
     }
 
-    pub fn chain_end(&self, i: usize, view: MarkupView) -> usize {
+    pub fn chain_end(&self, i: usize, review: &ReviewView) -> usize {
         let (b, story_end) = (self.body.len(), self.story_end(i));
         match i < b {
-            true => super::join::chain_end(&self.body[..story_end.min(b)], i, view),
-            false => b + super::join::chain_end(&self.tail[..story_end.saturating_sub(b)], i - b, view),
+            true => super::join::chain_end(&self.body[..story_end.min(b)], i, review),
+            false => b + super::join::chain_end(&self.tail[..story_end.saturating_sub(b)], i - b, review),
         }
     }
 
@@ -84,30 +84,35 @@ impl<'a> Blocks<'a> {
     }
 
     /// [`super::join::next_shown_mark`] from block `from` in the story holding block `from - 1`.
-    pub fn next_shown_mark(&self, from: usize, view: MarkupView) -> Option<&Paragraph> {
+    pub fn next_shown_mark(&self, from: usize, review: &crate::docx::review::ReviewView) -> Option<&Paragraph> {
         let (b, end) = (self.body.len(), self.story_end(from.saturating_sub(1)));
         match from <= b {
-            true => super::join::next_shown_mark(&self.body[..end.min(b)], from, view),
-            false => super::join::next_shown_mark(&self.tail[..end - b], from - b, view),
+            true => super::join::next_shown_mark(&self.body[..end.min(b)], from, review),
+            false => super::join::next_shown_mark(&self.tail[..end - b], from - b, review),
         }
     }
 
     /// [`super::join::joined_target`] of a chain ending at block `end`, in its story.
-    pub fn joined_target<'s>(&'s self, end: usize, view: MarkupView, last: Option<&'s Rc<ParaStyle>>) -> Option<&'s Rc<ParaStyle>> {
+    pub fn joined_target<'s>(
+        &'s self,
+        end: usize,
+        review: &crate::docx::review::ReviewView,
+        last: Option<&'s Rc<ParaStyle>>,
+    ) -> Option<&'s Rc<ParaStyle>> {
         let (b, story_end) = (self.body.len(), self.story_end(end));
         match end < b {
-            true => super::join::joined_target(&self.body[..story_end.min(b)], end, view, last),
-            false => super::join::joined_target(&self.tail[..story_end - b], end - b, view, last),
+            true => super::join::joined_target(&self.body[..story_end.min(b)], end, review, last),
+            false => super::join::joined_target(&self.tail[..story_end - b], end - b, review, last),
         }
     }
 
-    pub fn neighbours(&self, first: usize, last: usize, view: MarkupView) -> (Option<&'a ParaStyle>, Option<&'a ParaStyle>) {
+    pub fn neighbours(&self, first: usize, last: usize, review: &ReviewView) -> (Option<&'a ParaStyle>, Option<&'a ParaStyle>) {
         let style = |b: Option<&'a Block>| match b {
-            Some(Block::Para(p)) => Some(&**p.para_style_in(view)),
+            Some(Block::Para(p)) => Some(&**p.para_style_in(review.view)),
             _ => None,
         };
         let prev = if first > 0 { style(self.get(first - 1)) } else { None };
-        (prev, style(self.get(self.chain_end(last + 1, view))))
+        (prev, style(self.get(self.chain_end(last + 1, review))))
     }
 }
 

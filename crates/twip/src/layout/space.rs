@@ -39,7 +39,11 @@ pub struct ShapeSpace {
     /// Fitted regions keep their natural widths (still never broken).
     pub unfitted: bool,
     pub view: MarkupView,
+    /// Hidden text is laid out.
+    pub show_hidden: bool,
     pub join: Option<std::rc::Rc<super::join::JoinMap>>,
+    /// While hidden text shows, the paragraphs vanished marks joined into this one, each laid out as its own.
+    pub parts: Option<super::text::Parts>,
     pub float: Option<std::rc::Rc<crate::docx::Float>>,
     pub hide: Option<u64>,
     pub expansion: Option<std::rc::Rc<super::expansion::Expansion>>,
@@ -60,6 +64,8 @@ pub struct MetricRules {
     pub dash_breaks: bool,
     /// Compat ≤ 14: a kerned run fits its lines with the font's legacy `kern` table pairs, drawn with its GPOS kerning.
     pub kern_table_fit: bool,
+    /// Optional hyphens show as `¬`, taking their width, a break after each (the display option).
+    pub show_optional_hyphens: bool,
 }
 
 pub type BorderKey = Option<std::rc::Rc<BorderGroup>>;

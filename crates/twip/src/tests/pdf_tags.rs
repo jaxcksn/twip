@@ -19,3 +19,27 @@ fn a_shown_sub_template_body_is_tagged_at_its_reference() {
     assert_eq!(structure.matches("Lbl").count(), 4, "{structure}");
     assert!(dump.lines().filter(|l| l.trim() == "text Violation notice").count() == 2, "both bodies are drawn");
 }
+
+#[test]
+fn the_printed_document_leaves_out_shown_hidden_text() {
+    let body = r#"<w:p><w:r><w:t xml:space="preserve">Shown </w:t></w:r><w:r><w:rPr><w:vanish/></w:rPr><w:t>secret</w:t></w:r><w:r><w:t xml:space="preserve"> end</w:t></w:r></w:p>"#;
+    let mut e = crate::editing::Editor::open(&crate::editing::tests::blank_body(body), crate::editing::tests::fonts()).expect("opens");
+    e.complete(crate::editing::tests::fonts());
+    e.set_markup_view(crate::docx::review::MarkupView::NoMarkup);
+    assert!(e.lays_out_as_printed(false));
+    e.set_mark_options(crate::editing::view::MarkOptions { hidden: true, optional_hyphens: true, ..crate::editing::view::MarkOptions::default() });
+    assert!(!e.lays_out_as_printed(false) && !e.lays_out_as_printed(true));
+    let doc = e.printed_document(false);
+    assert!(!doc.review.show_hidden && !doc.review.show_optional_hyphens && doc.review.view == crate::docx::review::MarkupView::NoMarkup);
+    let snapshot = crate::layout::layout(&doc, crate::editing::tests::fonts());
+    let pdf =
+        crate::pdf::export::export_with(&doc, &snapshot, "", &Default::default(), None, Some(crate::editing::tests::fonts())).expect("exports").0;
+    let text = crate::pdf::output::dump(pdf);
+    assert!(text.contains("Shown") && !text.contains("secret"), "{text}");
+    e.complete(crate::editing::tests::fonts());
+    let shown = crate::pdf::export::export_with(e.document(), &e.snapshot(), "", &Default::default(), None, Some(crate::editing::tests::fonts()))
+        .expect("exports")
+        .0;
+    assert!(crate::pdf::output::dump(shown).contains("secret"), "the editor's own layout has it");
+    assert!(e.printed_document(true).review.show_hidden);
+}

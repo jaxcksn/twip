@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::docx::model::{Block, Inline, NoteKind, Paragraph, Table};
-use crate::docx::review::MarkupView;
+use crate::docx::review::ReviewView;
 
 use super::LayoutCtx;
 use super::ids::{ParaId, Unit};
@@ -39,10 +39,11 @@ impl JoinMap {
     }
 }
 
-/// Whether `b`'s mark joins it to the next paragraph: a tracked deletion `view` hides, or a vanished mark (a hidden
-/// paragraph mark, a style separator) made since reading, which joins as reading joins one.
-fn hides_mark(b: &Block, view: MarkupView) -> bool {
-    matches!(b, Block::Para(p) if view.hides(&p.mark.rev) || p.mark.hidden)
+/// Whether `b`'s mark joins it to the next paragraph: a tracked deletion the markup view hides, or, while hidden text
+/// doesn't show, a vanished mark (a hidden paragraph mark, a style separator) made since reading, which joins as
+/// reading joins one.
+fn hides_mark(b: &Block, review: &ReviewView) -> bool {
+    matches!(b, Block::Para(p) if review.view.hides(&p.mark.rev) || (p.mark.hidden && !review.show_hidden))
 }
 
 /// Whether mark `r` is a style separator (`w:specVanish`).
@@ -50,46 +51,51 @@ fn spec_vanish(r: &crate::docx::Run) -> bool {
     r.direct.0.as_deref().is_some_and(|x| crate::docx::write::props::flag_of(x, "specVanish"))
 }
 
-pub fn chain_end<B: Borrow<Block>>(blocks: &[B], i: usize, view: MarkupView) -> usize {
+pub fn chain_end<B: Borrow<Block>>(blocks: &[B], i: usize, review: &ReviewView) -> usize {
     let para = |k: usize| blocks.get(k).is_some_and(|b| matches!(b.borrow(), Block::Para(_)));
     let mut j = i;
-    while para(j + 1) && blocks.get(j).is_some_and(|b| hides_mark(b.borrow(), view)) {
+    while para(j + 1) && blocks.get(j).is_some_and(|b| hides_mark(b.borrow(), review)) {
         j += 1;
     }
     j
 }
 
-pub fn chain_start<B: Borrow<Block>>(blocks: &[B], i: usize, view: MarkupView) -> usize {
+pub fn chain_start<B: Borrow<Block>>(blocks: &[B], i: usize, review: &ReviewView) -> usize {
     let mut s = i.min(blocks.len());
-    while s > 0 && hides_mark(blocks[s - 1].borrow(), view) {
+    while s > 0 && hides_mark(blocks[s - 1].borrow(), review) {
         s -= 1;
     }
     s
 }
 
+/// Whether a row is hidden: hidden text (while it doesn't show) or a row change the markup view hides.
+fn row_hidden(r: &crate::docx::Row, review: &ReviewView) -> bool {
+    (r.vanished && !review.show_hidden) || review.view.hides_row(&r.rev)
+}
+
 /// Whether every row of `t` is hidden.
-pub fn table_hidden(t: &Table, view: MarkupView) -> bool {
-    t.rows.iter().all(|r| r.vanished || view.hides_row(&r.rev))
+pub fn table_hidden(t: &Table, review: &ReviewView) -> bool {
+    t.rows.iter().all(|r| row_hidden(r, review))
 }
 
 /// The first paragraph of a shown table: its first shown row's first cell, into a table that starts it.
-fn table_first(t: &Table, view: MarkupView) -> Option<&Paragraph> {
-    let row = t.rows.iter().find(|r| !(r.vanished || view.hides_row(&r.rev)))?;
+fn table_first<'a>(t: &'a Table, review: &ReviewView) -> Option<&'a Paragraph> {
+    let row = t.rows.iter().find(|r| !row_hidden(r, review))?;
     match row.cells.first()?.blocks.first()? {
         Block::Para(p) => Some(p),
-        Block::Table(t) => table_first(t, view),
+        Block::Table(t) => table_first(t, review),
     }
 }
 
 /// The paragraph whose mark a hidden mark at the end of a chain joins when no paragraph follows it: the next shown mark
 /// in text order from `blocks[from]` on, past hidden marks and tables whose rows are all hidden; a shown table's first
 /// cell paragraph counts. `None` at the end of `blocks`.
-pub fn next_shown_mark<B: Borrow<Block>>(blocks: &[B], from: usize, view: MarkupView) -> Option<&Paragraph> {
+pub fn next_shown_mark<'a, B: Borrow<Block>>(blocks: &'a [B], from: usize, review: &ReviewView) -> Option<&'a Paragraph> {
     blocks.get(from..)?.iter().find_map(|b| match b.borrow() {
-        Block::Para(p) if !view.hides(&p.mark.rev) => Some(p),
+        Block::Para(p) if !review.view.hides(&p.mark.rev) => Some(p),
         Block::Para(_) => None,
-        Block::Table(t) if table_hidden(t, view) => None,
-        Block::Table(t) => table_first(t, view),
+        Block::Table(t) if table_hidden(t, review) => None,
+        Block::Table(t) => table_first(t, review),
     })
 }
 
@@ -98,14 +104,15 @@ pub fn next_shown_mark<B: Borrow<Block>>(blocks: &[B], from: usize, view: Markup
 pub fn joined_target<'a, B: Borrow<Block>>(
     blocks: &'a [B],
     end: usize,
-    view: MarkupView,
+    review: &ReviewView,
     last: Option<&'a Rc<crate::docx::ParaStyle>>,
 ) -> Option<&'a Rc<crate::docx::ParaStyle>> {
+    let view = review.view;
     let Some(Block::Para(p)) = blocks.get(end).map(Borrow::borrow) else { return None };
     if !view.hides(&p.mark.rev) {
         return None;
     }
-    let style = next_shown_mark(blocks, end + 1, view).map_or(last, |q| Some(q.para_style_in(view)))?;
+    let style = next_shown_mark(blocks, end + 1, review).map_or(last, |q| Some(q.para_style_in(view)))?;
     (!Rc::ptr_eq(style, p.para_style_in(view))).then_some(style)
 }
 
@@ -230,14 +237,14 @@ pub enum LaidBlock<'a> {
 }
 
 /// `blocks` as laid out, paragraphs joined by hidden marks as one (`legacy`: compat ≤ 14).
-pub fn laid<B: Borrow<Block>>(blocks: &[B], view: MarkupView, legacy: bool) -> Vec<LaidBlock<'_>> {
-    laid_in(blocks, view, None, legacy)
+pub fn laid<'a, B: Borrow<Block>>(blocks: &'a [B], review: &ReviewView, legacy: bool) -> Vec<LaidBlock<'a>> {
+    laid_in(blocks, review, None, legacy)
 }
 
 /// [`laid`] for a story whose own final mark has the properties `last` (a header, footer, text box or notes story).
 pub fn laid_in<'a, B: Borrow<Block>>(
     blocks: &'a [B],
-    view: MarkupView,
+    review: &ReviewView,
     last: Option<&'a Rc<crate::docx::ParaStyle>>,
     legacy: bool,
 ) -> Vec<LaidBlock<'a>> {
@@ -250,9 +257,9 @@ pub fn laid_in<'a, B: Borrow<Block>>(
                 i += 1;
             }
             Block::Para(p) => {
-                let end = chain_end(blocks, i, view);
+                let end = chain_end(blocks, i, review);
                 let chain = laid_para(&blocks[i..=end], legacy).unwrap_or(LaidPara::One(p));
-                out.push(LaidBlock::Para(match joined_target(blocks, end, view, last) {
+                out.push(LaidBlock::Para(match joined_target(blocks, end, review, last) {
                     Some(style) => chain.restyled(style.clone()),
                     None => chain,
                 }));
@@ -273,7 +280,7 @@ pub fn piece_para(shaped: &ShapedPara, i: usize, para: ParaId) -> ParaId {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::docx::review::{AuthorId, MarkKind, RevisionId, RevisionMark};
+    use crate::docx::review::{AuthorId, MarkKind, MarkupView, RevisionId, RevisionMark};
 
     fn blocks(paras: &[(&str, bool)]) -> Vec<Block> {
         let texts: Vec<String> = paras.iter().map(|p| p.0.to_string()).collect();
@@ -299,12 +306,13 @@ mod tests {
     fn hidden_marks_join_their_paragraphs_with_the_next() {
         let blocks = blocks(&[("ab", true), ("", true), ("cde", false), ("f", true)]);
         let view = MarkupView::NoMarkup;
-        assert_eq!(chain_end(&blocks, 0, view), 2);
-        assert_eq!(chain_start(&blocks, 2, view), 0);
-        assert_eq!(chain_start(&blocks, 3, view), 3);
-        assert_eq!(chain_end(&blocks, 3, view), 3);
-        assert_eq!(chain_end(&blocks, 0, MarkupView::All), 0);
-        let laid = laid(&blocks, view, false);
+        let review = ReviewView { view, ..ReviewView::default() };
+        assert_eq!(chain_end(&blocks, 0, &review), 2);
+        assert_eq!(chain_start(&blocks, 2, &review), 0);
+        assert_eq!(chain_start(&blocks, 3, &review), 3);
+        assert_eq!(chain_end(&blocks, 3, &review), 3);
+        assert_eq!(chain_end(&blocks, 0, &ReviewView { view: MarkupView::All, ..ReviewView::default() }), 0);
+        let laid = laid(&blocks, &review, false);
         assert_eq!(laid.len(), 2);
         let LaidBlock::Para(LaidPara::Joined(j)) = &laid[0] else { panic!("a joined paragraph") };
         assert_eq!(ParaId(j.para.id), id(&blocks[2]));
@@ -327,8 +335,31 @@ mod tests {
         let table = d.sections[0].blocks.iter().find(|b| matches!(b, Block::Table(_))).cloned().expect("a table");
         let mut blocks = blocks(&[("a", true), ("b", true)]);
         blocks.push(table);
-        assert_eq!(chain_end(&blocks, 0, MarkupView::NoMarkup), 1);
-        assert_eq!(chain_end(&blocks, 1, MarkupView::NoMarkup), 1);
-        assert_eq!(chain_start(&blocks, 2, MarkupView::NoMarkup), 0);
+        let review = ReviewView { view: MarkupView::NoMarkup, ..ReviewView::default() };
+        assert_eq!(chain_end(&blocks, 0, &review), 1);
+        assert_eq!(chain_end(&blocks, 1, &review), 1);
+        assert_eq!(chain_start(&blocks, 2, &review), 0);
+    }
+
+    #[test]
+    fn a_deleted_mark_before_a_hidden_table_joins_into_it_while_hidden_text_shows() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/review/FX-REVIEW-TABLES.docx");
+        let d = super::super::tests::doc(&path).expect("the tables fixture");
+        let Some(Block::Table(mut table)) = d.sections[0].blocks.iter().find(|b| matches!(b, Block::Table(_))).cloned() else { panic!("a table") };
+        for r in &mut table.rows {
+            r.vanished = true;
+            r.rev = Default::default();
+        }
+        let mut blocks = blocks(&[("a", true)]);
+        blocks.push(Block::Table(table));
+        blocks.extend(super::super::tests::plain_doc(&["after".to_string()]).expect("plain").sections.remove(0).blocks);
+        let Block::Table(t) = &blocks[1] else { unreachable!() };
+        let first = table_first(t, &ReviewView { show_hidden: true, ..ReviewView::default() }).map(|p| p.id);
+        let hidden = ReviewView { view: MarkupView::NoMarkup, ..ReviewView::default() };
+        let shown = ReviewView { show_hidden: true, ..hidden.clone() };
+        assert!(table_hidden(t, &hidden) && !table_hidden(t, &shown));
+        assert_eq!(next_shown_mark(&blocks, 1, &hidden).map(|p| p.id), Some(id(&blocks[2]).0), "past the hidden table");
+        assert_eq!(next_shown_mark(&blocks, 1, &shown).map(|p| p.id), first, "into the shown table's first cell");
+        assert!(first.is_some());
     }
 }

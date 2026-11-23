@@ -54,6 +54,10 @@ pub struct Line {
     pub align: Align,
     /// It is a vertical line: its runs take an em/64 more ascent and descent.
     pub vertical: bool,
+    /// The joined paragraph's part it is in, while hidden text shows ([`ShapedPara::parts`]).
+    pub part: usize,
+    /// The space after its text within its pitch, to the next part's first line.
+    pub after: f64,
 }
 
 /// A line's `w:textAlignment`, `auto` resolved.
@@ -122,6 +126,8 @@ impl Line {
             shade: None,
             align: Align::Baseline,
             vertical: false,
+            part: 0,
+            after: 0.0,
         }
     }
 }
@@ -393,8 +399,8 @@ pub fn break_lines_uncached(
     // is in, the top rule only above the first line and the bottom rule only below the last.
     let (mut a, n) = (0, lines.len());
     while a < n {
-        let s = line_style(style, pieces, lines[a].start);
-        let b = (a + 1..n).find(|&b| !std::ptr::eq(line_style(style, pieces, lines[b].start), s)).unwrap_or(n);
+        let s = line_style(shaped, style, pieces, &lines[a]);
+        let b = (a + 1..n).find(|&b| !std::ptr::eq(line_style(shaped, style, pieces, &lines[b]), s)).unwrap_or(n);
         let before = if a == 0 && opens { prev.clone() } else { continued_key(s) };
         let next = if b == n { space.borders.1.clone() } else { continued_key(s) };
         let gap = if b == n { space.shade_gap } else { 0.0 };

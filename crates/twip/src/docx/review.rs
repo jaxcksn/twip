@@ -808,11 +808,15 @@ impl AuthorPalette {
     }
 }
 
-/// How the document shows its review: the markup view and the author colours.
+/// How the document shows its review: the markup view and the author colours; and whether hidden text and optional
+/// hyphens show (laid out, as Word's display options show them). View state: never saved.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ReviewView {
     pub view: MarkupView,
     pub palette: Rc<AuthorPalette>,
+    pub show_hidden: bool,
+    /// Optional hyphens show as `¬` (laid out with their width).
+    pub show_optional_hyphens: bool,
 }
 
 /// New revision, comment, paragraph and durable ids for this document, past every id it was read with.

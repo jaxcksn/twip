@@ -447,7 +447,7 @@ fn edited(src: &[u8], f: impl Fn(&str, String) -> String) -> Vec<u8> {
 }
 
 /// A blank document with `style` added to its styles and `body` for its body.
-fn with_style(style: &str, body: &str) -> Vec<u8> {
+pub(super) fn with_style(style: &str, body: &str) -> Vec<u8> {
     edited(&blank_body(body), |name, x| if name == "word/styles.xml" { x.replacen("</w:styles>", &format!("{style}</w:styles>"), 1) } else { x })
 }
 

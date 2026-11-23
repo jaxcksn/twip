@@ -7,6 +7,7 @@ pub mod bookmarks;
 mod borders_dialog;
 mod cell_clipboard;
 mod char_code;
+pub mod click_type;
 pub mod clipboard;
 mod clipped;
 pub mod commands;
@@ -26,6 +27,7 @@ pub mod geometry;
 pub(crate) mod gestures;
 mod goback;
 pub mod history;
+pub mod hover;
 mod html;
 pub mod import;
 pub mod index;
@@ -76,6 +78,7 @@ pub mod tables;
 pub mod text;
 mod touched;
 pub mod view;
+mod wrap_points;
 
 #[cfg(test)]
 pub(crate) mod tests;
@@ -168,6 +171,12 @@ pub struct Editor {
     object_child: Option<(crate::layout::FloatId, crate::drawing::ChildPath)>,
     object_also: Option<(crate::layout::FloatId, Vec<crate::layout::FloatId>)>,
     shape_drag: Option<shapes::ShapeDrag>,
+    /// The selected float's wrap points being edited.
+    wrap_edit: Option<wrap_points::WrapEdit>,
+    /// The objects the last Ungroup made, for Regroup.
+    ungrouped: Option<Vec<crate::layout::FloatId>>,
+    /// The wrap a picture is inserted with (Word's "Insert/paste pictures as").
+    default_picture_wrap: crate::api::value::ObjectWrap,
     snaps: snap::SnapLines,
     shape_insert: Option<shapes::ShapeInsert>,
     toggled_checkbox: Option<objects::ToggledCheckbox>,
@@ -196,6 +205,12 @@ pub struct Editor {
     back_from: Option<Position>,
     last_maps: Vec<step::Map>,
     text_drag: Option<interaction::TextDrag>,
+    drag_out: Option<(Selection, u64)>,
+    text_drag_off: bool,
+    mark_options: view::MarkOptions,
+    click_and_type_off: bool,
+    white_space_hidden: bool,
+    click_and_type_style: Option<String>,
     clipboard: Option<clipboard::Fragment>,
     /// The document's identity among those open: what tells a fragment copied from it from one copied elsewhere.
     key: u64,
@@ -209,8 +224,8 @@ pub struct Editor {
     pub indent_keys: bool,
     /// F2 or Shift+F2 waiting for its place.
     move_to: Option<move_to::MoveTo>,
-    /// Where the open drop menu of a right-button drag drops the text.
-    drop_menu: Option<Position>,
+    /// Where the open drop menu of a right-button drag drops the text, and the revision it opened at.
+    drop_menu: Option<(Position, u64)>,
     /// The highlighter's colour (`w:highlight` value), while it is on.
     highlighter: Option<String>,
     pub view_settings: view::ViewSettings,
@@ -255,6 +270,12 @@ pub struct Editor {
     marks: Vec<merge::Mark>,
     update_token: u64,
     hover: Option<(f64, f64)>,
+    /// The [`Editor::generation`] when the pointer last moved: a tooltip hides once the document changes.
+    hover_generation: u64,
+    /// The last hover tooltip looked up, and what for.
+    hover_cache: Option<(hover::HoverKey, Option<hover::Hovered>)>,
+    #[cfg(test)]
+    hover_lookups: usize,
     /// A style's XML that formatting commands edit instead of the selection ([`Editor::format_style`]).
     style_target: Option<String>,
     /// The table style part formatting commands edit, when they edit a table style.
@@ -370,6 +391,9 @@ impl Editor {
             object_child: None,
             object_also: None,
             shape_drag: None,
+            wrap_edit: None,
+            ungrouped: None,
+            default_picture_wrap: crate::api::value::ObjectWrap::Inline,
             snaps: snap::SnapLines::default(),
             shape_insert: None,
             toggled_checkbox: None,
@@ -395,6 +419,12 @@ impl Editor {
             back_from: None,
             last_maps: Vec::new(),
             text_drag: None,
+            drag_out: None,
+            text_drag_off: false,
+            mark_options: view::MarkOptions::default(),
+            click_and_type_off: false,
+            white_space_hidden: false,
+            click_and_type_style: None,
             tab_stop: None,
             mode: Mode::Editing,
             live_layout: true,
@@ -433,6 +463,10 @@ impl Editor {
             marks: Vec::new(),
             update_token: 0,
             hover: None,
+            hover_generation: 0,
+            hover_cache: None,
+            #[cfg(test)]
+            hover_lookups: 0,
             style_target: None,
             style_part: None,
             recent_lists: Vec::new(),
@@ -518,6 +552,50 @@ impl Editor {
         self.doc.review.view = view;
         self.relayout_review();
         Outcome::Moved
+    }
+
+    /// Which formatting marks show. Showing hidden text or optional hyphens lays the document out again with them.
+    pub fn set_mark_options(&mut self, o: view::MarkOptions) -> Outcome {
+        if self.mark_options == o {
+            return Outcome::Unchanged("already shown");
+        }
+        self.mark_options = o;
+        let (hidden, hyphens) = (o.shows_hidden_text(), o.shows_optional_hyphens());
+        if (self.doc.review.show_hidden, self.doc.review.show_optional_hyphens) != (hidden, hyphens) {
+            (self.doc.review.show_hidden, self.doc.review.show_optional_hyphens) = (hidden, hyphens);
+            self.relayout_review();
+        }
+        Outcome::Moved
+    }
+
+    /// Whether the editor's own layout is the document as printed: no markup, hidden text and optional hyphens as
+    /// `hidden_text` (Word's Print hidden text option) has them, no shown sub-templates.
+    pub fn lays_out_as_printed(&self, hidden_text: bool) -> bool {
+        let r = &self.doc.review;
+        r.view == crate::docx::review::MarkupView::NoMarkup
+            && r.show_hidden == hidden_text
+            && !r.show_optional_hyphens
+            && !self.shows_expansions()
+            && self.editing_sub_template().is_none()
+    }
+
+    /// The document as printed, to lay out on its own when [`Editor::lays_out_as_printed`] is false: no markup, hidden
+    /// text only with `hidden_text`, optional hyphens only where a line breaks at them.
+    pub fn printed_document(&self, hidden_text: bool) -> crate::docx::Document {
+        let mut doc = self.doc.clone();
+        doc.review.view = crate::docx::review::MarkupView::NoMarkup;
+        (doc.review.show_hidden, doc.review.show_optional_hyphens) = (hidden_text, false);
+        doc
+    }
+
+    /// Which formatting marks show.
+    pub fn mark_options(&self) -> view::MarkOptions {
+        self.mark_options
+    }
+
+    /// The formatting marks on `pages` that the mark options show.
+    pub fn shown_marks(&mut self, pages: std::ops::Range<usize>) -> Vec<view::FormattingMark> {
+        self.formatting_marks_with(pages, self.mark_options)
     }
 
     pub fn set_author_color(&mut self, author: crate::docx::review::AuthorId, color: u32) -> Outcome {
@@ -637,7 +715,37 @@ impl Editor {
     }
 
     pub fn stack(&self) -> PageStack {
-        PageStack::of(&self.layout.snapshot())
+        let snapshot = self.layout.snapshot();
+        if !self.white_space_hidden {
+            return PageStack::of(&snapshot);
+        }
+        let (info, pages) = (snapshot.info(), snapshot.pages());
+        let margins = |i: usize| {
+            let Some(s) = info.get(i).and_then(|p| self.doc.sections.get(p.section)) else { return (0.0, 0.0) };
+            match pages.get(i).and_then(|p| Some((p.h, p.body_area?))) {
+                Some((h, (top, bottom))) if crate::layout::vertical::of_section(s.text_flow).is_none() => (top, h - bottom),
+                _ => (s.top.abs(), s.bottom.abs()),
+            }
+        };
+        PageStack::hiding_white_space(&snapshot, margins)
+    }
+
+    /// Hides or shows the white space between pages: above and below each page's body, with the headers and footers.
+    pub fn set_white_space_hidden(&mut self, hidden: bool) -> Outcome {
+        if self.white_space_hidden == hidden {
+            return Outcome::Unchanged("already so");
+        }
+        if hidden {
+            self.close_header_footer();
+        }
+        self.white_space_hidden = hidden;
+        self.hover_cache = None;
+        Outcome::Moved
+    }
+
+    /// Whether the white space between pages is hidden.
+    pub fn white_space_hidden(&self) -> bool {
+        self.white_space_hidden
     }
 
     /// Puts back a selection [`Editor::selection`] gave, as it was before an edit that was refused.
@@ -2137,7 +2245,7 @@ impl Editor {
             }
             return Outcome::Unchanged("row end");
         };
-        let Some(t) = self.index.para(&self.doc, para).map(|q| UnitText::in_view(q, self.doc.review.view)) else {
+        let Some(t) = self.index.para(&self.doc, para).map(|q| UnitText::in_review(q, &self.doc.review)) else {
             return Outcome::Unchanged("no paragraph");
         };
         let typing = |at| TypingRun { para, at, kind: if dir == Dir::Back { Typing::Backspace } else { Typing::Delete } };
@@ -2540,16 +2648,14 @@ impl Editor {
     }
 
     fn bar_hit(&mut self, x: f64, y: f64, fonts: &Fonts) -> Option<(Position, Position)> {
-        if self.editing() != StoryId::Body {
-            return None;
-        }
+        let ctx = self.editing();
         let stack = self.stack();
         let (page, px, py) = stack.page_at(x, y)?;
         self.ensure_page(page, fonts);
         let geo = self.pages.page(page, &self.index)?;
         let section = self.snapshot().info().get(page).map_or(0, |i| i.section);
         let left = self.doc.sections.get(section).map_or(72.0, |s| s.left) - 1.5 / self.viewport.zoom.max(0.1);
-        let i = geo.selection_bar(px, py, left)?;
+        let i = geo.selection_bar(px, py, left, &|s| stories::reachable(ctx, s) && !matches!(s, StoryId::BuildingBlock(_)))?;
         self.near = page;
         self.line_span_of(&geo, i)
     }
@@ -2626,10 +2732,20 @@ impl Editor {
                 let mods = if self.modes.extend > 0 && clicks == 1 { keymap::Mods { shift: true, ..mods } } else { mods };
                 self.goal_x = None;
                 self.history.break_typing();
+                if !mods.shift && self.wrap_points_press(x, y, mods.ctrl, fonts) {
+                    return;
+                }
                 if self.region_title_click(x, y, fonts) {
                     return;
                 }
                 if !mods.shift && self.expansion_click(x, y, clicks, fonts) {
+                    return;
+                }
+                if clicks >= 2 && !mods.shift && self.stack().toggles_white_space(y, 3.0 / self.viewport.zoom.max(0.1)) {
+                    self.drag = None;
+                    if clicks == 2 {
+                        self.set_white_space_hidden(!self.white_space_hidden);
+                    }
                     return;
                 }
                 if self.story_click(x, y, clicks, fonts) {
@@ -2728,6 +2844,8 @@ impl Editor {
                 if let Some((a, b)) = self.bar_hit(x, y, fonts) {
                     let (unit, (a, b)) = match clicks {
                         _ if mods.ctrl || clicks >= 3 => {
+                            // Story selection
+                            self.selection = Selection::Caret(a);
                             self.select_all();
                             return;
                         }
@@ -2739,12 +2857,22 @@ impl Editor {
                     self.requests.push(Request::CapturePointer);
                     return;
                 }
+                if clicks == 2
+                    && !mods.shift
+                    && !mods.ctrl
+                    && let Some(t) = self.click_and_type_at(x, y, fonts)
+                {
+                    self.drag = None;
+                    self.click_and_type(t, fonts);
+                    return;
+                }
                 let Some(p) = self.hit(x, y, fonts) else { return };
                 if clicks == 2 && self.note_jump(p) {
                     return;
                 }
                 if clicks == 1
                     && !mods.shift
+                    && !self.text_drag_off
                     && self.modes == extend::Modes::default()
                     && self.mode != Mode::ReadOnly
                     && self.highlighter.is_none()
@@ -2807,6 +2935,9 @@ impl Editor {
                 self.requests.push(Request::CapturePointer);
             }
             PointerKind::Move => {
+                if self.wrap_point_move(x, y) {
+                    return;
+                }
                 if self.text_drag.is_some() {
                     self.text_drag_move(x, y, mods.ctrl, fonts);
                     return;
@@ -2891,6 +3022,10 @@ impl Editor {
                 };
                 self.selection = self.normalize(s);
                 self.pending = None;
+            }
+            PointerKind::Cancel if self.wrap_point_cancel() => {}
+            PointerKind::Up if self.wrap_point_dragging() => {
+                self.wrap_point_release(fonts);
             }
             PointerKind::Cancel if self.object_cancel() => {}
             PointerKind::Cancel if self.shape_cancel() => {}
@@ -3029,14 +3164,14 @@ impl Editor {
 
     fn word_span(&self, p: Position) -> (Position, Position) {
         let Some((para, off)) = p.para_offset() else { return (p, p) };
-        let Some(t) = self.index.para(&self.doc, para).map(|q| UnitText::in_view(q, self.doc.review.view)) else { return (p, p) };
+        let Some(t) = self.index.para(&self.doc, para).map(|q| UnitText::in_review(q, &self.doc.review)) else { return (p, p) };
         let (a, b) = t.word_at(off);
         (Position::text(p.story, para, a), Position::text(p.story, para, b))
     }
 
     fn sentence_span(&self, p: Position) -> (Position, Position) {
         let Some((para, off)) = p.para_offset() else { return (p, p) };
-        let Some(t) = self.index.para(&self.doc, para).map(|q| UnitText::in_view(q, self.doc.review.view)) else { return (p, p) };
+        let Some(t) = self.index.para(&self.doc, para).map(|q| UnitText::in_review(q, &self.doc.review)) else { return (p, p) };
         let (a, b) = t.sentence_at(off);
         (Position::text(p.story, para, a), Position::text(p.story, para, b))
     }
@@ -3057,6 +3192,9 @@ impl Editor {
     /// Sets the part of the document the host shows: what a screen move pages by, and what pointer tolerances scale
     /// with.
     pub fn set_viewport(&mut self, v: Viewport) {
+        if v.zoom != self.viewport.zoom {
+            self.hover_cache = None;
+        }
         self.viewport = v;
     }
 
@@ -3098,6 +3236,24 @@ impl Editor {
         if let Some(c) = self.caret_view() {
             self.requests.push(Request::ScrollIntoView { page: c.page, rect: [c.x, c.top, c.x + 1.0, c.bottom], at_top: true });
         }
+    }
+
+    /// Where the selection is on `pages`: nothing for a caret.
+    pub fn selection_bounds(&mut self, pages: std::ops::Range<usize>) -> view::SelectionBounds {
+        let mut out = view::SelectionBounds::default();
+        match self.selection_view(pages) {
+            SelectionView::None => {}
+            SelectionView::Text(r) | SelectionView::Cells(r) => out.rects = r,
+            SelectionView::Object(f, _) => out.frames = f,
+        }
+        let boxes = out.rects.iter().copied().chain(out.frames.iter().map(|f| (f.page, f.turned_box())));
+        for (page, r) in boxes {
+            match out.bounds.iter_mut().find(|(p, _)| *p == page) {
+                Some((_, b)) => *b = [b[0].min(r[0]), b[1].min(r[1]), b[2].max(r[2]), b[3].max(r[3])],
+                None => out.bounds.push((page, r)),
+            }
+        }
+        out
     }
 
     fn selection_view(&mut self, pages: std::ops::Range<usize>) -> SelectionView {
@@ -3246,9 +3402,10 @@ impl Editor {
             story,
             fade,
             guide: self.border_drag.as_ref().map(|d| (d.page, d.guide())),
-            anchor,
+            anchor: anchor.filter(|_| self.mark_options.all || self.mark_options.anchors),
             ghost,
             shapes: self.shape_frames(visible_pages.clone()),
+            wrap_points: self.wrap_points(visible_pages.clone()),
             guides,
             measures,
             original,
@@ -3270,7 +3427,7 @@ impl Editor {
                 .filter(|d| d.moved)
                 .and_then(|d| d.drop)
                 .or(self.drop)
-                .or(self.drop_menu)
+                .or(self.drop_menu())
                 .or(self.move_to.and_then(|m| m.target))
                 .and_then(|p| self.caret_at(p)),
             cursor: self.drag_cursor().unwrap_or(self.cursor),
@@ -3294,11 +3451,25 @@ impl Editor {
     }
 
     pub fn formatting_marks(&mut self, pages: std::ops::Range<usize>) -> Vec<view::FormattingMark> {
+        self.formatting_marks_with(pages, view::MarkOptions::ALL)
+    }
+
+    /// The formatting marks `o` shows on `pages`, as Word draws them: spaces, tabs, breaks with their labels, the
+    /// paragraph, cell and row marks and hidden text's underline.
+    pub fn formatting_marks_with(&mut self, pages: std::ops::Range<usize>, o: view::MarkOptions) -> Vec<view::FormattingMark> {
         use view::{FormattingMark, MarkKind};
         let mut out = Vec::new();
+        if !o.any() {
+            return out;
+        }
+        let (spaces, tabs, paragraphs) = (o.all || o.spaces, o.all || o.tabs, o.all || o.paragraphs);
         let mut texts: HashMap<ParaId, UnitText> = HashMap::new();
+        let snapshot = self.snapshot();
         for page in pages {
             let Some(geo) = self.pages.page(page, &self.index) else { continue };
+            // Sections ending on the page
+            let info = snapshot.info();
+            let sections = info.get(page).map_or(0, |i| i.section)..info.get(page + 1).map_or(self.doc.sections.len(), |i| i.section + 1);
             for line in &geo.lines {
                 for &para in line.paras.iter() {
                     let text = match texts.entry(para) {
@@ -3310,25 +3481,93 @@ impl Editor {
                     };
                     let stops: Vec<&geometry::Stop> = line.stops.iter().filter(|s| s.para == para).collect();
                     let (top, bottom) = (line.top, line.bottom);
-                    for w in stops.windows(2) {
-                        let (a, b) = (w[0], w[1]);
-                        if b.unit.0 != a.unit.0 + 1 {
-                            continue;
-                        }
+                    let right = geo.stories[line.story].rect[2];
+                    for (k, a) in stops.iter().enumerate() {
+                        // Break at a line's end
+                        let b = match stops.get(k + 1) {
+                            Some(b) if b.unit.0 == a.unit.0 + 1 => **b,
+                            Some(_) => continue,
+                            None if matches!(text.char_at(a.unit), Some('\u{c}' | '\u{2028}')) => geometry::Stop { x: a.x, ..**a },
+                            None => continue,
+                        };
                         let mut mark = |kind, x0: f64, x1: f64| out.push(FormattingMark { page, kind, at: [x0, top, x1, bottom] });
-                        if text.is_hidden(a.unit) {
+                        if o.shows_hidden_text() && text.is_hidden(a.unit) {
                             mark(MarkKind::Hidden, a.x, b.x);
                         }
+                        let brk = || {
+                            let q = self.index.para(&self.doc, para)?;
+                            match stories::inline_at(q, a.unit)? {
+                                crate::docx::Inline::Break(crate::docx::BreakKind::Page, _) => Some(MarkKind::PageBreak),
+                                crate::docx::Inline::Break(crate::docx::BreakKind::Column, _) => Some(MarkKind::ColumnBreak),
+                                _ => None,
+                            }
+                        };
                         match text.char_at(a.unit) {
-                            Some(' ') => mark(MarkKind::Space, a.x, b.x),
-                            Some('\t') => mark(MarkKind::Tab, a.x, b.x),
-                            Some('\u{2028}') => mark(MarkKind::LineBreak, a.x, b.x),
-                            Some('\u{c}') => mark(MarkKind::Break, a.x, geo.w),
+                            Some(' ') if spaces => mark(MarkKind::Space, a.x, b.x),
+                            Some('\u{a0}') if spaces => mark(MarkKind::NonBreakingSpace, a.x, b.x),
+                            Some('\u{2011}') if o.all => mark(MarkKind::NonBreakingHyphen, a.x, b.x),
+                            Some('\t') if tabs => mark(MarkKind::Tab, a.x, b.x),
+                            Some('\u{2028}') if paragraphs => mark(MarkKind::LineBreak, a.x, b.x),
+                            Some('\u{c}') if paragraphs => mark(brk().unwrap_or(MarkKind::Break), a.x, right.max(b.x)),
                             _ => {}
                         }
                     }
-                    if let Some(end) = stops.iter().find(|s| s.unit == text.len()) {
-                        out.push(FormattingMark { page, kind: MarkKind::Paragraph, at: [end.x, top, end.x, bottom] });
+                    if !paragraphs {
+                        continue;
+                    }
+                    if let Some(last) = stops.last().filter(|s| s.unit != text.len() && self.doc.review.show_hidden && o.shows_hidden_text())
+                        && self.index.para(&self.doc, para).is_some_and(|q| shown_join_at(q, last.unit))
+                    {
+                        out.push(FormattingMark { page, kind: MarkKind::HiddenParagraph, at: [last.x, top, last.x, bottom] });
+                    }
+                    // Paragraph mark after a closing break
+                    let after_break = stops.last().filter(|s| s.unit.0 + 1 == text.len().0 && text.char_at(s.unit) == Some('\u{c}'));
+                    let end = match stops.iter().find(|s| s.unit == text.len()) {
+                        Some(s) => s.x,
+                        None if after_break.is_some() => right,
+                        None => continue,
+                    };
+                    let slot = self.index.para_slot(para);
+                    let kind = match slot.map(|s| s.container) {
+                        Some(index::Container::Cell { table, row, cell })
+                            if self.index.table(&self.doc, table).and_then(|t| t.rows.get(row)?.cells.get(cell)).map(|c| c.blocks.len())
+                                == slot.map(|s| s.block + 1) =>
+                        {
+                            MarkKind::CellEnd
+                        }
+                        // A hidden mark shown apart
+                        _ if self.doc.review.show_hidden
+                            && o.shows_hidden_text()
+                            && self.index.para(&self.doc, para).is_some_and(|q| q.mark.hidden) =>
+                        {
+                            MarkKind::HiddenParagraph
+                        }
+                        _ => MarkKind::Paragraph,
+                    };
+                    out.push(FormattingMark { page, kind, at: [end, top, end, bottom] });
+                    if let Some(index::Container::Section(k)) = slot.map(|s| s.container)
+                        && sections.contains(&k)
+                        && slot.is_some_and(|s| s.block + 1 == self.doc.sections[k].blocks.len())
+                        && let Some(next) = self.doc.sections.get(k + 1)
+                    {
+                        out.push(FormattingMark { page, kind: MarkKind::SectionBreak(next.break_kind), at: [end, top, right.max(end), bottom] });
+                    }
+                }
+            }
+            if paragraphs {
+                // End-of-row marks
+                let mut first: std::collections::HashMap<(TableId, usize), (f64, f64)> = std::collections::HashMap::new();
+                for l in &geo.lines {
+                    if let Some(c) = l.chain.last() {
+                        let e = first.entry((c.0, c.1)).or_insert((l.top, l.bottom));
+                        if l.top < e.0 {
+                            *e = (l.top, l.bottom);
+                        }
+                    }
+                }
+                for r in geo.rows.iter().filter(|r| !r.repeat) {
+                    if let Some(&(top, bottom)) = first.get(&(r.table, r.row)) {
+                        out.push(FormattingMark { page, kind: MarkKind::RowEnd, at: [r.rect[2], top, r.rect[2], bottom] });
                     }
                 }
             }
@@ -3464,7 +3703,7 @@ impl Editor {
     #[cfg(test)]
     pub(crate) fn read_text(&self, para: ParaId, a: Unit, b: Unit) -> String {
         let Some(p) = self.index.para(&self.doc, para) else { return String::new() };
-        seen_text(p, self.doc.review.view).text_in(a, b).map(plain_char).collect()
+        seen_text(p, &self.doc.review).text_in(a, b).map(plain_char).collect()
     }
 
     pub fn selected_text_within(&mut self, limit: usize) -> Option<String> {
@@ -3492,7 +3731,7 @@ impl Editor {
                         std::collections::hash_map::Entry::Occupied(o) => o.into_mut(),
                         std::collections::hash_map::Entry::Vacant(v) => {
                             let Some(p) = self.index.para(&self.doc, para) else { break };
-                            v.insert(seen_text(p, self.doc.review.view))
+                            v.insert(seen_text(p, &self.doc.review))
                         }
                     };
                     let end = match b.para_offset() {
@@ -3543,9 +3782,17 @@ pub(crate) fn plain_char(c: char) -> char {
     }
 }
 
-/// A paragraph's text as it reads: what markup view `view` shows without hidden text, fields as their results.
-fn seen_text(p: &Paragraph, view: crate::docx::review::MarkupView) -> text::Seen {
-    text::Seen::of(p, |r| !r.hidden && !view.hides(&r.rev), true)
+/// A paragraph's text as it reads: what the markup view shows, hidden text only while it shows, fields as their
+/// results.
+fn seen_text(p: &Paragraph, review: &crate::docx::review::ReviewView) -> text::Seen {
+    text::Seen::of(p, |r| (review.show_hidden || !r.hidden) && !review.view.hides(&r.rev), true)
+}
+
+/// Whether a paragraph joined to `p` through its vanished mark ends at `u`, its parts showing on their own lines while
+/// hidden text shows.
+fn shown_join_at(p: &Paragraph, u: Unit) -> bool {
+    let Some(src) = &p.src else { return false };
+    p.style.parts.len() == src.joined.len() + 1 && src.joined.iter().any(|j| j.end == u.0)
 }
 
 /// The deepest nesting an edit may make, in table levels. The reader refuses parts nested deeper than

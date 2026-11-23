@@ -27,7 +27,7 @@ pub struct LineAt {
 
 impl Nav<'_> {
     fn text(&self, para: ParaId) -> Option<UnitText> {
-        self.idx.para(self.doc, para).map(|p| UnitText::in_view(p, self.doc.review.view))
+        self.idx.para(self.doc, para).map(|p| UnitText::in_review(p, &self.doc.review))
     }
 
     fn story_of_container(&self, c: Container) -> StoryId {

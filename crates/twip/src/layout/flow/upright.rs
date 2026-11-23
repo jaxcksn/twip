@@ -36,7 +36,7 @@ impl<'d> PageFill<'d, '_> {
         let text = crate::layout::env::TextEnv { vertical: None, ..self.ctx.env.text.clone() };
         let le = crate::layout::LayoutEnv { text, ..self.ctx.env.clone() };
         let env = StoryEnv { ctx: LayoutCtx { env: &le, ..self.ctx }, fields: self.fields, notes: self.note_numbers };
-        let prev = self.sec.blocks.neighbours(bi, bi, self.ctx.env.text.review.view).0;
+        let prev = self.sec.blocks.neighbours(bi, bi, &self.ctx.env.text.review).0;
         let tb = crate::layout::table::layout(t, col.bottom.to_pt() - col.top.to_pt(), &env, prev, false, memos)?;
         let (bl, br) = crate::layout::table::outer_box(&tb);
         let h: f64 = tb.rows.iter().filter(|r| !r.hidden).map(|r| r.height).sum::<f64>() + tb.bottom_border;

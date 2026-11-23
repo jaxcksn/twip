@@ -1082,7 +1082,7 @@ impl<'d> PageFill<'d, '_> {
                 let w = r - u;
                 let relaid = if relay && legacy && !t.fixed && !text.no_constrained_autofit {
                     let env = StoryEnv { ctx: self.ctx, fields: self.fields, notes: self.note_numbers };
-                    let prev = self.sec.blocks.neighbours(bi, bi, text.review.view).0;
+                    let prev = self.sec.blocks.neighbours(bi, bi, &text.review).0;
                     let laid = crate::layout::table::layout(&crate::layout::table::in_column(t, col.width, &env), w, &env, prev, false, memos)?;
                     hold(&mut self.pass.held.tables, &laid);
                     Some(laid)

@@ -369,8 +369,8 @@ impl<'d> PageFill<'d, '_> {
     /// them (or they end the body): they aren't laid out.
     pub(super) fn deleted_before_table(&self, bi: usize) -> Option<usize> {
         let view = self.ctx.env.text.review.view;
-        let end = self.sec.blocks.chain_end(bi, view);
-        let shows_nothing = |k: usize| matches!(self.sec.blocks.get(k), Some(Block::Para(p)) if crate::layout::paragraph::shows_nothing(p, view));
+        let end = self.sec.blocks.chain_end(bi, &self.ctx.env.text.review);
+        let shows_nothing = |k: usize| matches!(self.sec.blocks.get(k), Some(Block::Para(p)) if crate::layout::paragraph::shows_nothing(p, view, self.ctx.env.text.review.show_hidden));
         let last = matches!(self.sec.blocks.get(end), Some(Block::Para(p)) if view.hides(&p.mark.rev));
         let next = self.sec.blocks.get(end + 1);
         let own = self.sec.section.blocks.len();
@@ -386,10 +386,10 @@ impl<'d> PageFill<'d, '_> {
     pub(super) fn hidden_table_before(&self, end: usize) -> f64 {
         let view = self.ctx.env.text.review.view;
         let blocks = &self.sec.blocks;
-        if !matches!(blocks.get(end + 1), Some(Block::Table(t)) if crate::layout::join::table_hidden(t, view)) {
+        if !matches!(blocks.get(end + 1), Some(Block::Table(t)) if crate::layout::join::table_hidden(t, &self.ctx.env.text.review)) {
             return 0.0;
         }
-        blocks.next_shown_mark(end + 1, view).map_or(0.0, |q| space_before(&self.ctx.env.text, q.para_style_in(view)))
+        blocks.next_shown_mark(end + 1, &self.ctx.env.text.review).map_or(0.0, |q| space_before(&self.ctx.env.text, q.para_style_in(view)))
     }
 
     /// Paragraph `bi`'s own space before.

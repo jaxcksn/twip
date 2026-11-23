@@ -264,6 +264,7 @@ impl Editor {
             };
             new.push(Mark { id, severity, message: mark.message });
         }
+        self.hover_cache = None;
         if m.clear.unwrap_or(false) {
             self.marks.clear();
         }
@@ -300,18 +301,20 @@ impl Editor {
         (out, tip)
     }
 
+    /// The hover tooltip in the kinds the API names (a note reference's has none yet).
     pub fn hover_tooltip(&mut self) -> Option<(crate::api::services::TooltipKind, super::view::Tooltip)> {
-        use crate::api::services::TooltipKind;
-        let (x, y) = self.hover?;
-        let (page, hx, hy) = self.stack().page_at(x, y)?;
-        if let (_, Some(t)) = self.mark_views(page..page + 1) {
-            return Some((TooltipKind::Mark, t));
-        }
-        let link = self.hit_laid_out(x, y).and_then(|p| self.link_at(p))?;
-        let (a, b) = self.locate(ElementId::Field(link.field)).and_then(|w| self.element_range(&w))?;
-        let rect =
-            self.range_rects(a, b, page..page + 1).into_iter().map(|(_, r)| r).find(|r| r[0] <= hx && hx <= r[2] && r[1] <= hy && hy <= r[3])?;
-        Some((TooltipKind::Link, super::view::Tooltip { text: link.address, page, rect }))
+        use super::hover::HoverTip as H;
+        use crate::api::services::TooltipKind as K;
+        let (tip, t, _) = self.hover_tip()?;
+        let (tip, t) = (*tip, t.clone());
+        let kind = match tip {
+            H::Mark => K::Mark,
+            H::Link => K::Link,
+            H::Revision => K::Revision,
+            H::Comment => K::Comment,
+            H::Note | H::WhiteSpace => return None,
+        };
+        Some((kind, t))
     }
 
     pub fn select_element(&mut self, id: &crate::api::value::ElementId, reveal: bool, fonts: &Fonts) -> Outcome {
@@ -712,6 +715,7 @@ impl Editor {
 
     pub(super) fn set_hover(&mut self, x: f64, y: f64) {
         self.hover = Some((x, y));
+        self.hover_generation = self.generation;
         if self.mode == super::Mode::ReadOnly {
             self.hover_region = None;
             return;
@@ -1318,7 +1322,7 @@ impl Editor {
         self.field_views(targets, if show { FieldView::Code } else { FieldView::Result })
     }
 
-    pub(super) fn field_codes_toggle(&self, all: bool) -> Option<crate::api::command::ShowFieldCodes> {
+    pub fn field_codes_toggle(&self, all: bool) -> Option<crate::api::command::ShowFieldCodes> {
         let targets: Vec<(FieldId, ParaId)> =
             if all { self.all_fields().iter().map(|f| (f.0, f.2)).collect() } else { self.fields_here(None, false) };
         let &(f, para) = targets.first()?;

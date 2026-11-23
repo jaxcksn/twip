@@ -386,6 +386,8 @@ pub struct LineFragment {
     pub baseline: f64,
     /// The spacing a multiple adds below the line's text, within its pitch.
     pub below: f64,
+    /// The space after a joined paragraph's part shown on its own, below the line within its pitch.
+    pub after: f64,
     pub atoms: Box<[Atom]>,
     pub changed: bool,
     pub mark: Option<Unit>,
