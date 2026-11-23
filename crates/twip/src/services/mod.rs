@@ -7,6 +7,7 @@ pub mod fields;
 pub mod find;
 pub mod lists;
 pub mod menu;
+pub mod pages;
 pub mod ruler;
 pub mod spelling;
 pub mod styles;
@@ -169,13 +170,8 @@ pub fn headings(e: &mut crate::editing::Editor) -> Vec<crate::api::services::Hea
     spelling::paras_in_order(e)
         .into_iter()
         .filter_map(|id| {
-            let p = index.para(doc, id)?;
-            let level = a11y::roles::heading_level(doc, p)?;
-            let view = doc.review.view;
-            let t = crate::editing::text::Seen::of(p, |r| !view.hides(&r.rev), true);
-            let text: String = t.chars.into_iter().map(|c| if c.is_control() || c == crate::editing::text::OBJECT { ' ' } else { c }).collect();
-            let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
-            (!text.is_empty()).then(|| crate::api::services::Heading {
+            let (level, text) = listed_heading(doc, index.para(doc, id)?)?;
+            Some(crate::api::services::Heading {
                 id: crate::api::value::HeadingId(id.0.to_string()),
                 level,
                 text,
@@ -183,4 +179,46 @@ pub fn headings(e: &mut crate::editing::Editor) -> Vec<crate::api::services::Hea
             })
         })
         .collect()
+}
+
+/// `p`'s heading level and the text it shows under the review view, when it is a heading [`headings`] lists.
+fn listed_heading(doc: &crate::docx::Document, p: &crate::docx::Paragraph) -> Option<(u32, String)> {
+    let level = a11y::roles::heading_level(doc, p)?;
+    let view = doc.review.view;
+    let t = crate::editing::text::Seen::of(p, |r| !view.hides(&r.rev), true);
+    let text: String = t.chars.into_iter().map(|c| if c.is_control() || c == crate::editing::text::OBJECT { ' ' } else { c }).collect();
+    let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    (!text.is_empty()).then_some((level, text))
+}
+
+/// The heading the selection's focus is under (the nearest at or before it in the body, [`headings`]'s ids), as a
+/// navigation pane highlights it: one pass back to that heading. `None` before the first heading or outside the body
+/// (while a sub-template is edited, its body).
+pub fn current_heading(e: &crate::editing::Editor) -> Option<crate::api::value::HeadingId> {
+    use crate::editing::position::StoryId;
+    let at = e.selection().focus()?;
+    let body = e.editing_sub_template().map_or(StoryId::Body, StoryId::BuildingBlock);
+    let (para, _) = at.para_offset().filter(|_| at.story == body)?;
+    let doc = e.document();
+    let h = e.heading_of(para, |p| listed_heading(doc, p).is_some())?;
+    Some(crate::api::value::HeadingId(h.0.to_string()))
+}
+
+/// The heading each of `paras` is under (the nearest at or before it in the body, [`headings`]'s ids), for grouping
+/// find results by heading: one pass over the body. `None` for a paragraph before the first heading or outside the
+/// body.
+pub fn headings_over(e: &crate::editing::Editor, paras: &[crate::layout::ParaId]) -> Vec<Option<crate::api::value::HeadingId>> {
+    use std::collections::HashMap;
+    let mut under: HashMap<crate::layout::ParaId, Option<crate::layout::ParaId>> = paras.iter().map(|&p| (p, None)).collect();
+    let (doc, index) = (e.document(), e.index());
+    let mut current = None;
+    for id in spelling::paras_in_order(e) {
+        if index.para(doc, id).is_some_and(|p| listed_heading(doc, p).is_some()) {
+            current = Some(id);
+        }
+        if let Some(h) = under.get_mut(&id) {
+            *h = current;
+        }
+    }
+    paras.iter().map(|p| under.get(p).copied().flatten().map(|h| crate::api::value::HeadingId(h.0.to_string()))).collect()
 }

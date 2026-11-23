@@ -1031,7 +1031,7 @@ fn links(levels: &[ListLevel], was: &[ListLevel], num: i64) -> Vec<Link> {
 }
 
 /// The document's paragraph style for a level's link: `id`, or the built-in style it names under its name.
-fn linkable(styles: &crate::docx::styles::Styles, id: &str) -> Option<String> {
+pub(super) fn linkable(styles: &crate::docx::styles::Styles, id: &str) -> Option<String> {
     let paragraph = |s: &&crate::docx::styles::Style| s.kind == crate::docx::styles::StyleKind::Paragraph;
     if let Some(s) = styles.get(id).filter(paragraph) {
         return Some(s.id.clone());

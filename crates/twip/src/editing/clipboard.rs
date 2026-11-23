@@ -566,6 +566,7 @@ impl Editor {
         Some(self.completed(f))
     }
 
+    /// Copied content with what copying keeps beside its blocks: its hidden text, the notes and comments it refers to.
     fn completed(&mut self, mut f: Fragment) -> Fragment {
         f.hidden_text = self.doc.review.show_hidden;
         strip_partial_comments(&mut f.blocks);

@@ -32,6 +32,7 @@ mod merge;
 mod multisel;
 mod navigation;
 mod objects;
+mod outline;
 mod page_background;
 mod perf;
 mod picture_controls;

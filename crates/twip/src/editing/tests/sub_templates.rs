@@ -996,3 +996,17 @@ fn a_shown_body_in_a_tbrl_section_is_hit_and_outlined_where_it_is_drawn() {
     let (x, y) = e.stack().to_doc(pg, (r[0] + r[2]) / 2.0, (r[1] + r[3]) / 2.0).expect("on the stack");
     assert_eq!(e.expansion_at(x, y).map(|h| h.0), Some(field), "hit where it is drawn");
 }
+
+#[test]
+fn the_current_heading_is_the_sub_template_s_while_it_is_edited() {
+    let (mut e, reference) = expanded();
+    click_line(&mut e, reference, 1);
+    click_line(&mut e, reference, 2);
+    assert_eq!(e.editing_sub_template(), Some(0));
+    let first = body_para(&e, 0, 0);
+    e.select_range(first, Unit(0), Unit(0), fonts());
+    assert_eq!(e.outline_level(first), Some(1), "Violation's heading");
+    let id = crate::api::value::HeadingId(first.0.to_string());
+    assert!(crate::services::headings(&mut e).iter().any(|h| h.id == id), "listed");
+    assert_eq!(crate::services::current_heading(&e), Some(id));
+}

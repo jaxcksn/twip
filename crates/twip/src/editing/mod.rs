@@ -46,6 +46,7 @@ mod merge;
 mod move_paras;
 pub mod move_to;
 pub(crate) mod multi;
+pub mod outline;
 pub(crate) use merge::api_id;
 mod marquee;
 pub mod navigate;

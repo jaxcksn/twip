@@ -70,7 +70,7 @@ fn header_text(e: &Editor) -> String {
     e.document().stories.values().map(|b| text_of(b)).collect()
 }
 
-fn floats(blocks: &[Block]) -> Vec<&crate::docx::Float> {
+pub(super) fn floats(blocks: &[Block]) -> Vec<&crate::docx::Float> {
     blocks
         .iter()
         .filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None })
@@ -79,7 +79,7 @@ fn floats(blocks: &[Block]) -> Vec<&crate::docx::Float> {
         .collect()
 }
 
-fn anchored_box(content: &str) -> String {
+pub(super) fn anchored_box(content: &str) -> String {
     let w = 12700 * 100;
     format!(
         r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="5" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="page"><wp:posOffset>{w}</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>{w}</wp:posOffset></wp:positionV><wp:extent cx="{w}" cy="{w}"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/><wp:docPr id="7" name="S7"/><a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:wsp><wps:cNvSpPr/><wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{w}" cy="{w}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></wps:spPr><wps:txbx>{content}</wps:txbx><wps:bodyPr/></wps:wsp></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#
