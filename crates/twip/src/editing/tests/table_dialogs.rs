@@ -194,7 +194,7 @@ fn borders_and_shading_show_a_merged_cells_last_row_bottom() {
     let cell = |merge: &str, t: &str| {
         format!("<w:tc><w:tcPr><w:tcW w:w=\"2000\" w:type=\"dxa\"/>{merge}</w:tcPr><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:tc>")
     };
-    let borders = r#"<w:tblBorders><w:top w:val="single" w:sz="8" w:space="0" w:color="000000"/><w:bottom w:val="single" w:sz="8" w:space="0" w:color="000000"/></w:tblBorders>"#;
+    let borders = r#"<w:tblBorders><w:top w:val="single" w:sz="8" w:space="0" w:color="000000"/><w:bottom w:val="single" w:sz="24" w:space="0" w:color="FF0000"/></w:tblBorders>"#;
     let xml = format!(
         r#"<w:tbl><w:tblPr><w:tblW w:w="4000" w:type="dxa"/>{borders}</w:tblPr><w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/></w:tblGrid><w:tr>{}{}</w:tr><w:tr>{}{}</w:tr></w:tbl><w:p/>"#,
         cell(r#"<w:vMerge w:val="restart"/>"#, "a"),
@@ -207,6 +207,8 @@ fn borders_and_shading_show_a_merged_cells_last_row_bottom() {
     for row in [0, 1] {
         e.set_selection(Selection::Cells { table, anchor: CellRef { row, col: 0 }, focus: CellRef { row, col: 0 }, shape: CellShape::Rect });
         let v = e.table_borders_shading(ShadingTarget::Cell).expect("the dialog opens");
-        assert!(v.top.is_some() && v.bottom.is_some(), "row {row}: the merged cell's outer edges: {:?} {:?}", v.top, v.bottom);
+        let edge = |b: &Option<crate::api::command::Border>| b.as_ref().map(|b| (b.width.0, b.color));
+        assert_eq!(edge(&v.top), Some((1.0, AutoOr::Value(Color(0x000000)))), "row {row}: the merged cell's top");
+        assert_eq!(edge(&v.bottom), Some((3.0, AutoOr::Value(Color(0xFF0000)))), "row {row}: the merged cell's last row's bottom");
     }
 }

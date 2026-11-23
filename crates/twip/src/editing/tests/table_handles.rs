@@ -454,11 +454,86 @@ fn a_column_border_drag_widens_a_grid_shorter_than_its_cells() {
     let geo = e.page_geometries().into_iter().find(|(p, _)| *p == 0).map(|(_, g)| g).expect("page 0");
     let row = geo.rows.iter().find(|r| !r.repeat).expect("a row");
     let (x, _) = *row.edges.iter().find(|(_, k)| *k == 1).expect("edge 1");
+    let mut edges = row.edges.clone();
+    edges.sort_by_key(|e| e.1);
+    let was: Vec<f64> = edges.windows(2).map(|w| w[1].0 - w[0].0).collect();
     drag(&mut e, (x, (row.rect[1] + row.rect[3]) / 2.0), (20.0, 0.0), ALT, true);
     let widths = cell_widths(&e);
     assert_eq!(widths.len(), 3);
     assert!(widths.iter().all(|w| *w > 0.0), "{widths:?}");
+    let moved = [was[0] + 20.0, was[1] - 20.0, was[2]];
+    assert!(widths.iter().zip(moved).all(|(w, m)| (w - m).abs() < 0.1), "{widths:?} from {was:?}: the columns at edge 1 share the move");
     assert_eq!(first_table(&e).grid.len(), 3, "the grid has a column for each cell");
+}
+
+/// The caret in the first table's first cell.
+fn caret_in_table(e: &mut Editor) {
+    let d = Drawn::of(e);
+    click(e, d.rows[0][0] + 10.0, (d.rows[0][1] + d.rows[0][3]) / 2.0);
+    assert!(e.table_edges().is_some(), "the caret is in the table");
+}
+
+/// A table 100% wide whose grid lists 50pt columns: its columns draw far wider than its grid says.
+fn percent_wide() -> Editor {
+    let cell = r#"<w:tc><w:tcPr><w:tcW w:w="1000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>x</w:t></w:r></w:p></w:tc>"#;
+    opened(&format!(
+        r#"<w:p><w:r><w:t>Before</w:t></w:r></w:p><w:tbl><w:tblPr><w:tblW w:w="5000" w:type="pct"/><w:tblInd w:w="0" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="1000"/><w:gridCol w:w="1000"/></w:tblGrid><w:tr>{cell}{cell}</w:tr><w:tr>{cell}{cell}</w:tr></w:tbl><w:p><w:r><w:t>After</w:t></w:r></w:p>"#
+    ))
+}
+
+#[test]
+fn a_row_border_move_keeps_the_tables_width_and_grid() {
+    let mut e = percent_wide();
+    caret_in_table(&mut e);
+    let (width, grid) = (first_table(&e).width, first_table(&e).grid.clone());
+    let edges = e.table_edges().expect("edges");
+    let (at, _) = edges.rows[1];
+    let out = e.execute(Command::MoveTableRowBoundary(crate::api::command::BoundaryMove { index: 1, to: Points(at + 20.0) }), fonts());
+    assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
+    let t = first_table(&e);
+    assert!(t.rows[0].height.is_some(), "the row takes the height");
+    assert_eq!((t.width, &t.grid), (width, &grid), "the width and columns stay as they were");
+}
+
+#[test]
+fn moving_the_left_edge_moves_the_indent_by_as_much() {
+    let mut e = percent_wide();
+    caret_in_table(&mut e);
+    let indent = first_table(&e).ind;
+    let at = e.table_edges().expect("edges").columns[0];
+    let out = e.execute(Command::MoveTableColumnBoundary(crate::api::command::BoundaryMove { index: 0, to: Points(at + 10.0) }), fonts());
+    assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
+    assert!((first_table(&e).ind - indent - 10.0).abs() < 0.1, "indent {indent} → {}", first_table(&e).ind);
+    e.complete(fonts());
+    let now = e.table_edges().expect("edges").columns[0];
+    assert!((now - at - 10.0).abs() < 0.1, "the left edge {at} → {now}");
+}
+
+#[test]
+fn a_boundary_move_where_a_short_grid_ends_keeps_the_tables_width() {
+    let mut e = short_grid_of(r#"<w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid>"#);
+    caret_in_table(&mut e);
+    let was = e.table_edges().expect("edges").columns;
+    assert_eq!(was.len(), 4, "{was:?}");
+    let out = e.execute(Command::MoveTableColumnBoundary(crate::api::command::BoundaryMove { index: 1, to: Points(was[1] + 20.0) }), fonts());
+    assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
+    let now = e.table_edges().expect("edges").columns;
+    assert!((now[1] - was[1] - 20.0).abs() < 0.1, "{was:?} → {now:?}");
+    assert!((now[2] - was[2]).abs() < 0.1 && (now[3] - was[3]).abs() < 0.1, "the boundaries right of it stay: {was:?} → {now:?}");
+}
+
+#[test]
+fn the_resize_handle_stops_a_row_at_the_longest_height() {
+    let cell = r#"<w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>x</w:t></w:r></w:p></w:tc>"#;
+    let mut e = opened(&format!(
+        r#"<w:p><w:r><w:t>Before</w:t></w:r></w:p><w:tbl><w:tblPr><w:tblW w:w="2000" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:trPr><w:trHeight w:val="6000" w:hRule="exact"/></w:trPr>{cell}</w:tr></w:tbl><w:p><w:r><w:t>After</w:t></w:r></w:p>"#
+    ));
+    let d = Drawn::of(&mut e);
+    let r = d.rows[0];
+    drag(&mut e, (r[2] + 2.25, r[3] + 2.25), (0.0, 2000.0), NONE, true);
+    let (h, rule) = first_table(&e).rows[0].height.clone().expect("a height");
+    assert_eq!(rule, "exact");
+    assert!(h > 300.0 && h <= 1584.0, "{h}");
 }
 
 #[test]

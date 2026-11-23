@@ -190,7 +190,10 @@ impl Editor {
             Some(&(col, _, _)) => col,
             None => cells.last().map_or(0, |&(col, span, _)| col + span.max(1)),
         };
-        let (dx, first, indent) = (to - at, t.grid.first().copied().unwrap_or(0.0), t.ind);
+        // The first column as drawn: the drag below resizes from it.
+        let geo = self.pages.page(edges.page, &self.index);
+        let first = drawn_grid(t, edges.table, geo.as_deref(), g.cols).first().copied().unwrap_or(0.0);
+        let (dx, indent) = (to - at, t.ind);
         let drag = |border, dx: f64| BorderDrag {
             table: edges.table,
             border,
@@ -209,7 +212,7 @@ impl Editor {
             return Outcome::Unchanged("already there");
         }
         if k > 0 {
-            let shift = k == t.grid.len();
+            let shift = k == g.cols;
             return self.apply_border_drag(BorderDrag { shift, ..drag(Border::Column(k), dx) }, fonts).unwrap_or(Outcome::Unchanged("stale table"));
         }
         // The left edge: the first column takes the change, the table's indent the move.
@@ -260,6 +263,9 @@ impl Editor {
 
     /// Resizes as a border drag ending where `d` is.
     fn apply_border_drag(&mut self, d: BorderDrag, fonts: &Fonts) -> Option<Outcome> {
+        if let Border::Row(r) = d.border {
+            return self.apply_row_drag(d, r, fonts);
+        }
         let t = self.index.table(&self.doc, d.table)?;
         let old_sum: f64 = t.grid.iter().sum();
         let (n, sized) = (t.rows.len(), !matches!(t.width, Width::Auto | Width::Nil));
@@ -404,34 +410,14 @@ impl Editor {
                             Some((_, rule)) if rule == "exact" => "exact",
                             _ => "atLeast",
                         };
-                        super::table_format::set_height(row, Some(((h * sy).max(1.0), rule.to_string())), &cx);
+                        super::table_format::set_height(row, Some(((h * sy).min(MAX.max(h)).max(1.0), rule.to_string())), &cx);
                     }
                 }
             }
-            Border::Row(r) => {
-                let mut before = 0.0;
-                for p in 0..d.page {
-                    self.ensure_page(p, fonts);
-                    if let Some(geo) = self.pages.page(p, &self.index) {
-                        before +=
-                            geo.rows.iter().filter(|x| x.table == d.table && x.row == r && !x.repeat).map(|x| x.rect[3] - x.rect[1]).sum::<f64>();
-                    }
-                }
-                let h = (before + d.guide()[1] - d.row_top).clamp(1.0, MAX);
-                let row = rows.get_mut(r)?;
-                let rule = match &row.height {
-                    Some((_, rule)) if rule == "exact" => "exact",
-                    _ => "atLeast",
-                };
-                super::table_format::set_height(row, Some((h, rule.to_string())), &cx);
-            }
+            Border::Row(_) => {}
         }
         let new_sum: f64 = grid.iter().sum();
-        let mut tx = self.begin(match d.border {
-            Border::Row(_) => "Row Height",
-            Border::Handle => "Resize Table",
-            Border::Column(_) => "Column Width",
-        });
+        let mut tx = self.begin(if d.border == Border::Handle { "Resize Table" } else { "Column Width" });
         let stepped =
             crate::prof::time("edit:rows-step", || self.step(&mut tx, Step::Rows { table: d.table, range: 0..n, with: rows, grid: Some(grid) }));
         if stepped.is_err() {
@@ -479,6 +465,30 @@ impl Editor {
                     let _ = self.step(&mut tx, Step::Rows { table: outer, range: 0..n, with: orows, grid: Some(og) });
                 }
             }
+        }
+        Some(self.commit(tx, None, fonts))
+    }
+
+    /// A row border drag: row `r` alone takes the height, the table's columns and width as they are.
+    fn apply_row_drag(&mut self, d: BorderDrag, r: usize, fonts: &Fonts) -> Option<Outcome> {
+        let mut before = 0.0;
+        for p in 0..d.page {
+            self.ensure_page(p, fonts);
+            if let Some(geo) = self.pages.page(p, &self.index) {
+                before += geo.rows.iter().filter(|x| x.table == d.table && x.row == r && !x.repeat).map(|x| x.rect[3] - x.rect[1]).sum::<f64>();
+            }
+        }
+        let h = (before + d.guide()[1] - d.row_top).clamp(1.0, MAX);
+        let mut row = self.index.table(&self.doc, d.table)?.rows.get(r)?.clone();
+        let rule = match &row.height {
+            Some((_, rule)) if rule == "exact" => "exact",
+            _ => "atLeast",
+        };
+        super::table_format::set_height(&mut row, Some((h, rule.to_string())), &self.cx());
+        let mut tx = self.begin("Row Height");
+        if self.step(&mut tx, Step::Rows { table: d.table, range: r..r + 1, with: vec![row], grid: None }).is_err() {
+            self.abort(tx);
+            return Some(Outcome::Unchanged("stale table"));
         }
         Some(self.commit(tx, None, fonts))
     }

@@ -73,20 +73,23 @@ pub(super) fn full_grid(t: &Table, cols: usize) -> Vec<f64> {
     g
 }
 
-/// Vertical merges made whole: a continuation under no merged cell starting in its column, and a merge start that
+/// Vertical merges made whole: a continuation under no merged cell over the same columns, and a merge start that
 /// nothing continues, stop being merged.
 pub(super) fn tidy_merges(rows: &mut [Row]) {
-    let state = |line: &[(usize, VMerge)], col: usize| line.binary_search_by_key(&col, |a| a.0).map_or(VMerge::None, |i| line[i].1);
-    let mut next: Vec<(usize, VMerge)> = Vec::new();
-    let mut line: Vec<(usize, VMerge)> = Vec::new();
+    let state = |line: &[(usize, usize, VMerge)], col: usize, span: usize| {
+        line.binary_search_by_key(&col, |a| a.0).ok().filter(|&i| line[i].1 == span).map_or(VMerge::None, |i| line[i].2)
+    };
+    let mut next: Vec<(usize, usize, VMerge)> = Vec::new();
+    let mut line: Vec<(usize, usize, VMerge)> = Vec::new();
     for row in rows.iter_mut() {
         let mut col = row.grid_before;
         for c in &mut row.cells {
-            if c.v_merge == VMerge::Continue && state(&line, col) == VMerge::None {
+            let span = c.span.max(1);
+            if c.v_merge == VMerge::Continue && state(&line, col, span) == VMerge::None {
                 c.v_merge = VMerge::None;
             }
-            next.push((col, c.v_merge));
-            col += c.span.max(1);
+            next.push((col, span, c.v_merge));
+            col += span;
         }
         std::mem::swap(&mut line, &mut next);
         next.clear();
@@ -95,11 +98,12 @@ pub(super) fn tidy_merges(rows: &mut [Row]) {
     for row in rows.iter_mut().rev() {
         let mut col = row.grid_before;
         for c in &mut row.cells {
-            if c.v_merge == VMerge::Restart && state(&line, col) != VMerge::Continue {
+            let span = c.span.max(1);
+            if c.v_merge == VMerge::Restart && state(&line, col, span) != VMerge::Continue {
                 c.v_merge = VMerge::None;
             }
-            next.push((col, c.v_merge));
-            col += c.span.max(1);
+            next.push((col, span, c.v_merge));
+            col += span;
         }
         std::mem::swap(&mut line, &mut next);
         next.clear();
@@ -338,11 +342,9 @@ impl Editor {
             with.rotate_right(1);
         }
         // Row-level controls stay over contiguous rows.
-        let order = || t.rows[..a].iter().chain(&with).chain(&t.rows[b + 1..]);
-        let split = with.iter().flat_map(|r| r.controls.iter()).any(|c| {
-            let at: Vec<usize> = order().enumerate().filter(|(_, r)| r.controls.contains(c)).map(|(k, _)| k).collect();
-            at.last().zip(at.first()).is_some_and(|(l, f)| l - f + 1 != at.len())
-        });
+        let order = t.rows[..a].iter().chain(&with).chain(&t.rows[b + 1..]);
+        let moved: std::collections::HashSet<crate::docx::ControlId> = with.iter().flat_map(|r| r.controls.iter().copied()).collect();
+        let split = control_rows(order).iter().any(|(c, &(first, last, n))| moved.contains(c) && last - first + 1 != n);
         if split {
             return self.region_boundary();
         }
@@ -682,7 +684,20 @@ impl Editor {
         if top == bottom && first_ks.len() < 2 {
             return Outcome::Unchanged("one cell");
         }
+        // A vertical merge the selection cuts
+        let below = |k: usize| {
+            let c = g.rows[bottom][k].0;
+            g.cell_at(bottom + 1, c).is_some_and(|kk| g.rows[bottom + 1][kk].0 == c && g.continues(bottom + 1, kk))
+        };
+        if first_ks.clone().any(|k| g.continues(top, k)) || picked.last().is_some_and(|(_, ks)| ks.clone().any(below)) {
+            return Outcome::Unchanged("the selection cuts a merged cell");
+        }
+        // Each cell-level content control keeps its cell's boundary.
         let lead = first_ks.start;
+        let controls = &t.rows[top].cells[lead].controls;
+        if picked.iter().any(|(r, ks)| t.rows[*r].cells[ks.clone()].iter().any(|c| c.controls != *controls)) {
+            return self.region_boundary();
+        }
         let width: f64 = (c0..=c1).filter_map(|c| t.grid.get(c)).sum();
         let mut content: Vec<Block> = Vec::new();
         let mut rows = t.rows.clone();
@@ -698,7 +713,6 @@ impl Editor {
                 }
             }
             let mut merged = row.cells[ks.start].clone();
-            merged.controls = ks.clone().map(|k| &t.rows[r].cells[k].controls).find(|c| !c.is_empty()).cloned().unwrap_or_default();
             merged.span = c1 - c0 + 1;
             merged.width = Some(Width::Dxa(width));
             merged.v_merge = if top == bottom {
@@ -1057,7 +1071,10 @@ impl Editor {
             }),
             Container::Story(StoryId::HeaderFooter(_)) => section(self.story_section(container)).map(page),
             Container::Story(StoryId::Footnote(_) | StoryId::Endnote(_)) => section(self.story_section(container)).map(column_width),
-            Container::Story(StoryId::Body | StoryId::BuildingBlock(_)) => section(0).map(column_width),
+            Container::Story(StoryId::BuildingBlock(part)) => {
+                section(self.surface.as_ref().filter(|s| s.part == part).map_or(0, |s| s.section)).map(column_width)
+            }
+            Container::Story(StoryId::Body) => section(0).map(column_width),
         };
         w.unwrap_or(468.0).max(1.0)
     }
@@ -1215,16 +1232,25 @@ impl Editor {
 }
 
 pub(super) fn cuts_region(t: &Table, r0: usize, r1: usize, within: bool) -> bool {
-    let mut ids: Vec<crate::docx::ControlId> = t.rows.iter().flat_map(|r| r.controls.iter().copied()).collect();
-    ids.sort_unstable();
-    ids.dedup();
-    ids.into_iter().any(|c| {
-        let rows: Vec<usize> = t.rows.iter().enumerate().filter(|(_, r)| r.controls.contains(&c)).map(|(k, _)| k).collect();
-        let inside = rows.iter().any(|&k| r0 <= k && k <= r1);
-        let all_in = rows.iter().all(|&k| r0 <= k && k <= r1);
-        let covers = (r0..=r1).all(|k| rows.contains(&k));
-        inside && !covers && (within || !all_in)
+    let all = control_rows(&t.rows);
+    let picked = control_rows(t.rows.iter().take(r1.saturating_add(1)).skip(r0));
+    picked.iter().any(|(c, &(_, _, n))| {
+        let all_in = all.get(c).is_some_and(|&(first, last, _)| r0 <= first && last <= r1);
+        let covers = r1.checked_sub(r0).is_some_and(|d| n == d + 1);
+        !covers && (within || !all_in)
     })
+}
+
+/// Each row-level control over `rows`: the first and last row it is on, and how many rows it is on.
+pub(super) fn control_rows<'a>(rows: impl IntoIterator<Item = &'a Row>) -> std::collections::HashMap<crate::docx::ControlId, (usize, usize, usize)> {
+    let mut out = std::collections::HashMap::new();
+    for (k, r) in rows.into_iter().enumerate() {
+        for &c in &r.controls {
+            let e = out.entry(c).or_insert((k, k, 0));
+            (e.1, e.2) = (k, e.2 + 1);
+        }
+    }
+    out
 }
 
 pub(super) const NEW_POSITION: TablePos = TablePos {

@@ -15,7 +15,7 @@ use super::super::position::{Position, StoryId};
 use super::super::selection::Selection;
 use super::super::step::{Edges, Step, StepError, para_len};
 use super::super::{Editor, Tx};
-use super::index::{Found, Item, Spot, found, revisions};
+use super::index::{Found, Item, Revision, RevisionKind, Spot, found, revisions};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Scope {
@@ -46,6 +46,8 @@ struct Pick {
     /// In a selection: the block-level changes it touches, where they are.
     blocks: Option<HashSet<(Spot, RevisionId)>>,
     inside: Option<HashMap<ParaId, Range<u32>>>,
+    /// In a selection: the run marks of each paragraph a row insertion or deletion it takes holds, by their id.
+    tied: HashMap<ParaId, HashSet<RevisionId>>,
     moves: HashSet<Rc<str>>,
     move_ranges: HashSet<i64>,
 }
@@ -107,6 +109,7 @@ fn decide(r: &Run, accept: bool, take: impl Fn(&RevisionMark) -> bool) -> Option
 
 fn resolve_inlines(p: &Paragraph, pick: &Pick, accept: bool) -> Option<(Vec<Inline>, Vec<Range<u32>>)> {
     let inside = pick.inside.as_ref().map(|i| i.get(&ParaId(p.id)).cloned());
+    let tied = pick.tied.get(&ParaId(p.id));
     let cuts: Vec<u32> = inside.clone().flatten().map(|r| vec![r.start, r.end]).unwrap_or_default();
     let mut cache: HashMap<(*const RunStyle, bool), Option<(bool, Run)>> = HashMap::new();
     let mut out: Vec<(Inline, bool)> = Vec::with_capacity(p.inlines.len());
@@ -146,7 +149,8 @@ fn resolve_inlines(p: &Paragraph, pick: &Pick, accept: bool) -> Option<(Vec<Inli
                 Some(None) => false,
                 Some(Some(x)) => x.start <= at && at + n <= x.end,
             };
-            let d = cache.entry((Rc::as_ptr(r), in_range)).or_insert_with(|| decide(r, accept, |m| pick.run(m, in_range))).clone();
+            let take = |m: &RevisionMark| pick.run(m, in_range) || tied.is_some_and(|t| t.contains(&m.id));
+            let d = cache.entry((Rc::as_ptr(r), in_range)).or_insert_with(|| decide(r, accept, take)).clone();
             match d {
                 None => out.push((piece, false)),
                 Some((remove, run)) => {
@@ -257,7 +261,7 @@ impl Editor {
 
     fn pick(&mut self, scope: &Scope) -> Option<Pick> {
         let f = found(&self.doc, &self.index);
-        let base = |who: Who| Pick { who, blocks: None, inside: None, moves: HashSet::new(), move_ranges: HashSet::new() };
+        let base = |who: Who| Pick { who, blocks: None, inside: None, tied: HashMap::new(), moves: HashSet::new(), move_ranges: HashSet::new() };
         let ids = |ids: &[RevisionId]| Who::Ids(ids.iter().copied().collect());
         let pick = match scope {
             Scope::All => {
@@ -285,8 +289,7 @@ impl Editor {
             Scope::Selection => match self.selection {
                 Selection::Caret(c) => {
                     let list = revisions(&self.doc, &self.index);
-                    let idx = &self.index;
-                    let r = list.iter().rfind(|r| r.story == c.story && idx.cmp(&r.start, &c).is_le() && idx.cmp(&c, &r.end).is_le())?;
+                    let r = holding(&list, &self.index, c, c)?;
                     let picked: HashSet<RevisionId> = r.ids.iter().copied().collect();
                     return Some(base(ids(&r.ids)).with_moves(&f, |it| picked.contains(&it.mark.id)));
                 }
@@ -327,11 +330,35 @@ impl Editor {
 
     /// The pick of the changes `touches` takes, the text of each paragraph `covered` gives.
     fn place_pick(&self, f: &Found, touches: impl Fn(&Item) -> bool, covered: impl Fn(ParaId) -> Option<Range<u32>>) -> Pick {
-        let blocks: HashSet<(Spot, RevisionId)> =
+        let mut blocks: HashSet<(Spot, RevisionId)> =
             f.items.iter().filter(|it| it.run.is_none() && touches(it)).map(|it| (it.spot, it.mark.id)).collect();
         let paras: HashSet<ParaId> = f.items.iter().filter_map(|it| it.run.as_ref().map(|r| r.0)).collect();
         let inside: HashMap<ParaId, Range<u32>> = paras.into_iter().filter_map(|p| Some((p, covered(p)?))).collect();
-        let p = Pick { who: Who::All, blocks: Some(blocks), inside: Some(inside), moves: HashSet::new(), move_ranges: HashSet::new() };
+        // A row inserted or deleted goes or stays whole: the same revision's marks anywhere in its cells with it.
+        let rows: HashSet<(TableId, usize, RevisionId)> = f
+            .items
+            .iter()
+            .filter(|it| matches!(it.kind, RevisionKind::RowInsert | RevisionKind::RowDelete) && blocks.contains(&(it.spot, it.mark.id)))
+            .filter_map(|it| if let Spot::Row(t, r) = it.spot { Some((t, r, it.mark.id)) } else { None })
+            .collect();
+        let mut tied: HashMap<ParaId, HashSet<RevisionId>> = HashMap::new();
+        if !rows.is_empty() {
+            let ids: HashSet<RevisionId> = rows.iter().map(|r| r.2).collect();
+            for it in f.items.iter().filter(|it| ids.contains(&it.mark.id)) {
+                let id = it.mark.id;
+                let within = |it: &Item| self.index.chain_of(&it.start).iter().any(|l| rows.contains(&(l.table, l.row, id)));
+                match &it.run {
+                    Some((para, _)) if within(it) => {
+                        tied.entry(*para).or_default().insert(id);
+                    }
+                    None if !blocks.contains(&(it.spot, id)) && within(it) => {
+                        blocks.insert((it.spot, id));
+                    }
+                    _ => {}
+                }
+            }
+        }
+        let p = Pick { who: Who::All, blocks: Some(blocks), inside: Some(inside), tied, moves: HashSet::new(), move_ranges: HashSet::new() };
         p.with_moves(f, touches)
     }
 
@@ -525,10 +552,14 @@ impl Editor {
         }
         let mut new_grid = grid.filter(|_| !accept).map(|g| g.previous.clone());
         if !gone.is_empty() {
-            let mut g = new_grid.clone().unwrap_or_else(|| t.grid.clone());
-            if crate::editing::tables::remove_cells(&mut rows, &gone, &mut g) {
-                new_grid = Some(g);
-            }
+            // The cells go from the columns as they are; a saved grid over the columns left is the one to restore.
+            let mut g = t.grid.clone();
+            let narrowed = crate::editing::tables::remove_cells(&mut rows, &gone, &mut g);
+            new_grid = match new_grid {
+                Some(saved) if saved.len() == g.len() => Some(saved),
+                _ if narrowed => Some(g),
+                saved => saved,
+            };
             merges = true;
         }
         if merges {
@@ -579,16 +610,12 @@ impl Editor {
         self.repair_selection();
     }
 
-    /// The revision the selection is in (a caret before its end, or a range within it): its first mark's id, as
-    /// the revision list names it.
+    /// The revision the selection is in (a caret in it or at either end, or a range within it), the one Accept and
+    /// Reject in the selection take: its first mark's id, as the revision list names it.
     pub fn revision_here(&mut self) -> Option<crate::docx::review::RevisionId> {
         let (a, b) = self.selection.ordered(&self.index)?;
-        let caret = a.same_place(&b);
         let (list, _) = self.review_list.get(self.generation, &self.doc, &self.index);
-        let idx = &self.index;
-        list.iter()
-            .find(|r| r.story == a.story && idx.cmp(&r.start, &a).is_le() && idx.cmp(&b, &r.end).is_le() && (!caret || idx.cmp(&a, &r.end).is_lt()))
-            .and_then(|r| r.ids.first().copied())
+        holding(list, &self.index, a, b).and_then(|r| r.ids.first().copied())
     }
 
     pub(in crate::editing) fn go_to_revision(&mut self, back: bool, fonts: &Fonts) -> Outcome {
@@ -620,6 +647,11 @@ impl Editor {
         }
         Outcome::Moved
     }
+}
+
+/// The innermost revision in `list` holding `a..b`, its ends included.
+fn holding<'l>(list: &'l [Revision], idx: &DocIndex, a: Position, b: Position) -> Option<&'l Revision> {
+    list.iter().rfind(|r| r.story == a.story && idx.cmp(&r.start, &a).is_le() && idx.cmp(&b, &r.end).is_le())
 }
 
 fn covered(doc: &Document, idx: &DocIndex, s: Position, e: Position, para: ParaId) -> Option<Range<u32>> {

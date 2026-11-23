@@ -103,10 +103,8 @@ fn own_xml(f: &TableFormat, props: &mut TableProps, rows: &mut [crate::docx::Row
         }
         TableFormat::TableIndent(_) => Some(("tblInd", width_xml(w, "tblInd", &Width::Dxa(props.ind)))),
         TableFormat::TableWidth(_) | TableFormat::ColumnWidth(_) => Some(("tblW", width_xml(w, "tblW", &props.width))),
-        TableFormat::CellSpacing(_) => Some((
-            "tblCellSpacing",
-            if props.cell_spacing > 0.0 { width_xml(w, "tblCellSpacing", &Width::Dxa(props.cell_spacing)) } else { String::new() },
-        )),
+        // Written when zero too: without its own, the table takes its style's.
+        TableFormat::CellSpacing(_) => Some(("tblCellSpacing", width_xml(w, "tblCellSpacing", &Width::Dxa(props.cell_spacing)))),
         _ => None,
     };
     if let Some((name, xml)) = table {
@@ -527,7 +525,12 @@ impl Editor {
                 // The whole table takes it, rows read from tables joined to it too.
                 rows.iter_mut().for_each(|r| r.table_shading = None);
             }
-            &TableFormat::CellSpacing(v) => props.cell_spacing = ((v.max(0.0)) * 20.0).round() / 20.0,
+            &TableFormat::CellSpacing(v) => {
+                props.cell_spacing = ((v.max(0.0)) * 20.0).round() / 20.0;
+                if props.cell_spacing == t.cell_spacing {
+                    return Outcome::Unchanged("already so");
+                }
+            }
             TableFormat::Alt(a) => {
                 let mut alt = t.alt.as_deref().cloned().unwrap_or_default();
                 if let Some(v) = &a.title {
@@ -578,7 +581,11 @@ impl Editor {
                         }
                     }
                 }
-                (props.fixed, props.width) = (*fixed, *width);
+                // As its own too: a style's layout or width doesn't come back when it is resolved again.
+                props.fixed = *fixed;
+                set_width(&mut props, *width, &cx);
+                let layout = if *fixed { "fixed" } else { "autofit" };
+                set_own(&mut props, "tblLayout", format!("<{w}tblLayout {w}type=\"{layout}\"/>"), &cx);
                 grid = Some(gr);
             }
             TableFormat::TableWidth(v) => props.width = *v,

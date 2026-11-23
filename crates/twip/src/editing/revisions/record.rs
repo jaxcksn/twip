@@ -699,7 +699,9 @@ impl Recording {
         let lost =
             pairs.iter().zip(old).any(|(p, o)| p.iter().flatten().any(|&(i, k)| k.is_none() && i.is_some_and(|i| !self.own_cell(&o.cells[i]))));
         let retain = lost && !gained;
-        let grid = if retain { None } else { grid };
+        let mut grid = if retain { None } else { grid };
+        // Cells this author inserted that a retained row loses: they go outright, with their columns.
+        let mut own: Vec<(usize, usize)> = Vec::new();
         let mut notes = Vec::new();
         let mut rows = Vec::with_capacity(with.len().max(old.len()));
         let mut changed = grid.as_ref().is_some_and(|g| *g != t.grid);
@@ -714,8 +716,10 @@ impl Recording {
                         rows.push(self.ins_row(n.clone(), ids));
                         changed = true;
                     }
-                    let (r, c) = self.kept_row(o, &with[k], pairs[i].as_deref(), retain, ids, &mut notes);
+                    let mut lost_own = Vec::new();
+                    let (r, c) = self.kept_row(o, &with[k], pairs[i].as_deref(), retain, ids, &mut notes, &mut lost_own);
                     changed |= c;
+                    own.extend(lost_own.into_iter().map(|k| (rows.len(), k)));
                     rows.push(r);
                     next = k + 1;
                 }
@@ -734,6 +738,12 @@ impl Recording {
         }
         // Rejecting inserted cells drops their columns again.
         let grid_changed = !gained && grid.as_ref().is_some_and(|g| *g != t.grid);
+        if !own.is_empty() {
+            let mut g = t.grid.clone();
+            if crate::editing::tables::remove_cells(&mut rows, &own, &mut g) {
+                grid = Some(g);
+            }
+        }
         let mut out: Vec<Step> = if changed { self.table_change(table, grid_changed, doc, idx, ids).into_iter().collect() } else { Vec::new() };
         out.push(Step::Rows { table, range, with: rows, grid });
         out.extend(self.note_steps(notes, doc, ids));
@@ -741,7 +751,8 @@ impl Recording {
     }
 
     /// `n` kept in place of `o`, with `pairs` matching their cells when the count changes. With `retain`, the row
-    /// keeps `o`'s layout over the grid as it was, its lost cells marked deleted.
+    /// keeps `o`'s layout over the grid as it was, its lost cells marked deleted; those this author inserted stay as
+    /// they are, their places in the row added to `own`, for the caller to remove.
     #[allow(clippy::too_many_arguments, reason = "the rows, how their cells match, then the recording state")]
     fn kept_row(
         &mut self,
@@ -751,6 +762,7 @@ impl Recording {
         retain: bool,
         ids: &mut IdCounter,
         notes: &mut Vec<(NoteKind, i64)>,
+        own: &mut Vec<usize>,
     ) -> (Row, bool) {
         let mut r = n.clone();
         if retain {
@@ -776,6 +788,10 @@ impl Recording {
                             c.blocks = self.moved_in(&o.cells[i].blocks, &c.blocks, ids, notes);
                         }
                         cells.push(c);
+                    }
+                    (Some(i), None) if retain && self.own_cell(&o.cells[i]) => {
+                        own.push(cells.len());
+                        cells.push(o.cells[i].clone());
                     }
                     (Some(i), None) if retain => cells.push(self.cell_mark(o.cells[i].clone(), CellMarkKind::Delete, ids)),
                     (None, Some(k)) => cells.push(self.cell_mark(n.cells[k].clone(), CellMarkKind::Insert, ids)),

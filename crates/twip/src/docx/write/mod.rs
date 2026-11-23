@@ -2391,7 +2391,7 @@ impl<'a, 'i> Saver<'a, 'i> {
                             fix.push(("tblLayout", format!("<{w}tblLayout {w}type=\"{v}\"/>"), before("tblLayout")));
                         }
                         if a.cell_spacing != t.cell_spacing {
-                            let tag = if t.cell_spacing > 0.0 { width(&w, "tblCellSpacing", &Width::Dxa(t.cell_spacing)) } else { String::new() };
+                            let tag = width(&w, "tblCellSpacing", &Width::Dxa(t.cell_spacing));
                             fix.push(("tblCellSpacing", tag, before("tblCellSpacing")));
                         }
                         // The table's own shading; its style's stays the style's.
