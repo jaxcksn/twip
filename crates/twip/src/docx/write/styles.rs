@@ -36,6 +36,7 @@ pub(super) fn styles(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Resu
             Some((dir, _)) => format!("{dir}/styles.xml"),
             None => "styles.xml".to_string(),
         };
+        let part = package::free_name(&src.package, parts, &part)?;
         package::add_part(&src.package, parts, &src.main, &part, STYLES_TYPE, STYLES_REL)?;
         package::set(parts, &part, xml.into_bytes());
         return Ok(());

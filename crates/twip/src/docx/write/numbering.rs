@@ -38,6 +38,7 @@ pub(super) fn numbering(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> R
             Some((dir, _)) => format!("{dir}/numbering.xml"),
             None => "numbering.xml".to_string(),
         };
+        let part = package::free_name(&src.package, parts, &part)?;
         package::add_part(&src.package, parts, &src.main, &part, NUMBERING_TYPE, NUMBERING_REL)?;
         package::set(parts, &part, xml.into_bytes());
         return Ok(());

@@ -44,6 +44,8 @@ pub struct Spans {
     pub xfrm: Option<Range<usize>>,
     pub geom: Option<Range<usize>>,
     pub fill: Option<Range<usize>>,
+    /// A picture's `pic:blipFill`, beside its properties.
+    pub blip: Option<Range<usize>>,
     pub line: Option<Range<usize>>,
     pub effects: Option<Range<usize>>,
     pub body: Option<Range<usize>>,
@@ -400,7 +402,8 @@ impl GroupShape {
     }
 
     /// Grows the child box to take in every child, or with `tight` fits it to them, and `xfrm` with it: how far each
-    /// edge moved out (left, top, right, bottom).
+    /// edge of the frame moved out (left, top, right, bottom). A flipped axis shows the child box mirrored, so the frame
+    /// moves the other way along it and the children stay where they show.
     pub fn fit_children(&mut self, xfrm: &mut Xfrm, tight: bool) -> [i64; 4] {
         let (mut lo, mut hi) = ([i64::MAX; 2], [i64::MIN; 2]);
         for c in &self.children {
@@ -420,7 +423,10 @@ impl GroupShape {
                 continue;
             }
             let k = if e > 0 { xfrm.ext[a].0 as f64 / e as f64 } else { 1.0 };
-            let (before, after) = (((o - no) as f64 * k).round() as i64, ((ne - o - e) as f64 * k).round() as i64);
+            let (mut before, mut after) = (((o - no) as f64 * k).round() as i64, ((ne - o - e) as f64 * k).round() as i64);
+            if [xfrm.flip_h, xfrm.flip_v][a] {
+                std::mem::swap(&mut before, &mut after);
+            }
             xfrm.off[a].0 -= before;
             xfrm.ext[a].0 += before + after;
             self.child_off[a].0 = no;
@@ -465,6 +471,28 @@ mod tests {
         assert_eq!(leaves[0].path, vec![0]);
         assert_eq!(leaves[1].rect, [172.0, 130.0, 192.0, 160.0]);
         assert_eq!(leaves[1].path, vec![1, 0]);
+    }
+
+    #[test]
+    fn a_tight_fit_keeps_a_flipped_groups_children_where_they_show() {
+        for (flip_h, flip_v) in [(false, false), (true, false), (false, true), (true, true)] {
+            let mut g = group(
+                [0, 0],
+                [100 * PT, 100 * PT],
+                [0, 0],
+                [100 * PT, 100 * PT],
+                vec![rect_shape([10 * PT, 20 * PT], [20 * PT, 30 * PT]), rect_shape([0, 0], [100 * PT, 100 * PT])],
+            );
+            (g.xfrm.flip_h, g.xfrm.flip_v) = (flip_h, flip_v);
+            let before = g.leaves([0.0, 0.0, 100.0, 100.0])[0].rect;
+            let Shape { xfrm, kind: ShapeKind::Group(gs), .. } = &mut g else { panic!("a group") };
+            gs.children.pop();
+            let grow = gs.fit_children(xfrm, true);
+            let pt = |e: i64| e as f64 / PT as f64;
+            let rect = [-pt(grow[0]), -pt(grow[1]), 100.0 + pt(grow[2]), 100.0 + pt(grow[3])];
+            let after = g.leaves(rect)[0].rect;
+            assert!(before.iter().zip(after).all(|(a, b)| (a - b).abs() < 1e-9), "{flip_h} {flip_v}: {before:?} {after:?}");
+        }
     }
 
     #[test]

@@ -153,8 +153,10 @@ impl<K: CacheKey, V> Boundary<K, V> {
                 v.insert(Slot::One(Entry { key: K::from_probe(probe), value, used: generation, bytes }));
             }
             Bucket::Occupied(mut o) => match o.get_mut().entries_mut().iter_mut().find(|e| e.key.matches(probe)) {
+                // A refreshed entry: the key holds what the value and its bytes were made from.
                 Some(e) => {
                     self.total = self.total - e.bytes + bytes;
+                    e.key = K::from_probe(probe);
                     e.value = value;
                     e.used = generation;
                     e.bytes = bytes;
@@ -464,6 +466,32 @@ mod tests {
         assert_eq!(b.lookup(&1).as_deref().map(String::as_str), Some("one"));
         assert!(b.lookup(&3).is_none(), "same bucket, different key");
         assert_eq!(b.counts(), (1, 1));
+    }
+
+    #[derive(Debug)]
+    struct Loose(u32, u32);
+
+    impl CacheKey for Loose {
+        type Probe<'a> = (u32, u32);
+        fn bucket(p: &(u32, u32)) -> u64 {
+            u64::from(p.0)
+        }
+        fn matches(&self, p: &(u32, u32)) -> bool {
+            self.0 == p.0
+        }
+        fn from_probe(p: &(u32, u32)) -> Loose {
+            Loose(p.0, p.1)
+        }
+    }
+
+    #[test]
+    fn a_refreshed_entry_keeps_the_key_it_was_made_from() {
+        let mut b: Boundary<Loose, String> = Boundary::new("test");
+        b.insert(&(1, 1000), Rc::new("large".into()), 1000);
+        b.insert(&(1, 5), Rc::new("small".into()), 5);
+        let keys: Vec<(u32, u32)> = b.buckets.values().flat_map(Slot::entries).map(|e| (e.key.0, e.key.1)).collect();
+        assert_eq!(keys, [(1, 5)]);
+        assert_eq!(b.total, 5);
     }
 
     #[test]

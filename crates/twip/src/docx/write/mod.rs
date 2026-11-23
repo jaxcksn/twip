@@ -105,19 +105,18 @@ pub fn edited_parts(doc: &Document) -> Result<Vec<(String, Vec<u8>)>, String> {
 /// nested one's, or one an earlier save gave), made one no drawing has: Word repairs a document with duplicates.
 /// Bookmark ids too, a part's start and end alike, when another part has them (each part numbers its new ones).
 fn unique_ids(src: &Source, parts: &mut [(String, Vec<u8>)]) -> Result<(), String> {
-    const DRAWING: &[&str] = &["docPr"];
-    const BOOKMARK: &[&str] = &["bookmarkStart", "bookmarkEnd"];
     let content = |n: &str| n.ends_with(".xml") && !n.contains("_rels/");
-    let holds = |b: &[u8], names: &[&str]| names.iter().any(|n| b.windows(n.len()).any(|w| w == n.as_bytes()));
-    let wanted: Vec<&[&str]> = [DRAWING, BOOKMARK].into_iter().filter(|names| parts.iter().any(|(n, b)| content(n) && holds(b, names))).collect();
+    let holds = |b: &[u8], tags: IdTags| tags.1.iter().any(|n| b.windows(n.len()).any(|w| w == n.as_bytes()));
+    let wanted: Vec<IdTags> =
+        [DRAWING_TAGS, BOOKMARK_TAGS].into_iter().filter(|tags| parts.iter().any(|(n, b)| content(n) && holds(b, *tags))).collect();
     if wanted.is_empty() {
         return Ok(());
     }
     let mut taken: Vec<std::collections::HashSet<i64>> = vec![Default::default(); wanted.len()];
     let mut scan = |xml: &str| {
-        for (names, t) in wanted.iter().zip(&mut taken) {
-            if holds(xml.as_bytes(), names) {
-                t.extend(tag_ids(xml, names).into_iter().map(|(_, id)| id));
+        for (tags, t) in wanted.iter().zip(&mut taken) {
+            if holds(xml.as_bytes(), *tags) {
+                t.extend(tag_ids(xml, *tags).into_iter().map(|(_, id)| id));
             }
         }
     };
@@ -142,8 +141,8 @@ fn unique_ids(src: &Source, parts: &mut [(String, Vec<u8>)]) -> Result<(), Strin
             }
         }
     }
-    for (names, taken) in wanted.into_iter().zip(&mut taken) {
-        let paired = names == BOOKMARK;
+    for (tags, taken) in wanted.into_iter().zip(&mut taken) {
+        let paired = tags.1 == BOOKMARK_TAGS.1;
         let mut next = 1i64;
         let mut free = |taken: &mut std::collections::HashSet<i64>, mine: &std::collections::HashSet<i64>| -> Result<i64, String> {
             while taken.contains(&next) || mine.contains(&next) {
@@ -152,9 +151,9 @@ fn unique_ids(src: &Source, parts: &mut [(String, Vec<u8>)]) -> Result<(), Strin
             taken.insert(next);
             Ok(next)
         };
-        for (name, bytes) in parts.iter_mut().filter(|(n, b)| content(n) && holds(b, names)) {
+        for (name, bytes) in parts.iter_mut().filter(|(n, b)| content(n) && holds(b, tags)) {
             let xml = std::str::from_utf8(bytes).map_err(|e| format!("{name}: {e}"))?;
-            let ids = tag_ids(xml, names);
+            let ids = tag_ids(xml, tags);
             let mut fix = Vec::new();
             if paired {
                 // The part's ids another part has, each given one neither has (its start's and end's alike).
@@ -188,41 +187,82 @@ fn unique_ids(src: &Source, parts: &mut [(String, Vec<u8>)]) -> Result<(), Strin
     Ok(())
 }
 
-/// The `id` (any prefix) of each start tag named one of `names` (any prefix) in XML, with its value's byte range, in
-/// order. Tags start at a `<` (text and attribute values hold none) and their attributes are read in order.
-fn tag_ids(xml: &str, names: &[&str]) -> Vec<(Range<usize>, i64)> {
-    let b = xml.as_bytes();
-    let ws = |i: &mut usize| {
-        while b.get(*i).is_some_and(u8::is_ascii_whitespace) {
-            *i += 1;
-        }
-    };
+/// What [`tag_ids`] looks for: elements of a namespace and local names, and the namespace of their `id` attribute
+/// (`None`: unprefixed).
+type IdTags = (&'static str, &'static [&'static str], Option<&'static str>);
+
+/// `wp:docPr/@id`.
+const DRAWING_TAGS: IdTags = (super::xml::WP, &["docPr"], None);
+
+/// `w:bookmarkStart/@w:id` and `w:bookmarkEnd/@w:id`.
+const BOOKMARK_TAGS: IdTags = (W, &["bookmarkStart", "bookmarkEnd"], Some(W));
+
+/// The `id` of each start tag `tags` names in XML, its value read as XML reads it (references resolved), with its value's
+/// byte range, in order. Prefixes are resolved by the declarations in scope; one the XML doesn't declare (a fragment's,
+/// bound around it) is taken to be the one wanted. Comments, CDATA sections, processing instructions and declarations
+/// hold no tags.
+fn tag_ids(xml: &str, (ns, names, id_ns): IdTags) -> Vec<(Range<usize>, i64)> {
+    use std::borrow::Cow;
+    fn decode(v: &str) -> Cow<'_, str> {
+        if v.contains('&') { Cow::Owned(crate::docx::binding::unescape(v)) } else { Cow::Borrowed(v) }
+    }
     let mut out = Vec::new();
+    // The declarations in scope (prefix, URI; "" the default), and where each open element's start.
+    let mut decls: Vec<(&str, Cow<str>)> = Vec::new();
+    let mut scopes: Vec<usize> = Vec::new();
+    let mut attrs: Vec<(&str, &str, usize)> = Vec::new();
     let mut at = 0;
-    while let Some(lt) = xml[at..].find('<').map(|k| at + k) {
-        let name_end = xml[lt + 1..].find(|c: char| c.is_ascii_whitespace() || c == '>' || c == '/').map_or(xml.len(), |e| lt + 1 + e);
-        at = name_end;
-        let qname = &xml[lt + 1..name_end];
-        if !names.contains(&qname.rsplit(':').next().unwrap_or(qname)) {
+    'tags: while let Some(lt) = xml[at..].find('<').map(|k| at + k) {
+        let rest = &xml[lt..];
+        for (open, close) in [("<!--", "-->"), ("<![CDATA[", "]]>"), ("<?", "?>"), ("<!", ">")] {
+            if let Some(body) = rest.strip_prefix(open) {
+                at = body.find(close).map_or(xml.len(), |e| lt + open.len() + e + close.len());
+                continue 'tags;
+            }
+        }
+        if rest.starts_with("</") {
+            if let Some(n) = scopes.pop() {
+                decls.truncate(n);
+            }
+            at = lt + 2;
             continue;
         }
-        let mut i = name_end;
-        loop {
-            ws(&mut i);
-            let Some(eq) = xml[i..].find(['=', '>', '/']).map(|e| i + e).filter(|&e| b[e] == b'=') else { break };
-            let attr = xml[i..eq].trim_end();
-            i = eq + 1;
-            ws(&mut i);
-            let Some(&q) = b.get(i).filter(|q| matches!(q, b'"' | b'\'')) else { break };
-            let Some(end) = xml[i + 1..].find(char::from(q)).map(|e| i + 1 + e) else { break };
-            if (attr == "id" || attr.ends_with(":id"))
-                && let Ok(id) = xml[i + 1..end].trim().parse()
-            {
-                out.push((i + 1..end, id));
+        let Some(gt) = crate::docx::binding::tag_end(rest).map(|e| lt + e) else { break };
+        let head = &xml[lt..gt];
+        let closed = head.ends_with('/');
+        let head = head.trim_end_matches('/');
+        let qname = &head[1..head.find(|c: char| c.is_ascii_whitespace()).unwrap_or(head.len())];
+        attrs.clear();
+        let mark = decls.len();
+        for (name, value, r) in crate::docx::binding::tag_attrs(head) {
+            if let Some(prefix) = name.strip_prefix("xmlns").filter(|p| p.is_empty() || p.starts_with(':')) {
+                decls.push((prefix.strip_prefix(':').unwrap_or(prefix), decode(value)));
+            } else {
+                // The value's start: its quote's after the `=`.
+                let v0 = lt + r.end - 1 - value.len();
+                attrs.push((name, value, v0));
             }
-            i = end + 1;
         }
-        at = i;
+        let resolves = |prefix: &str, uri: &str| decls.iter().rev().find(|(p, _)| *p == prefix).is_none_or(|(_, u)| u == uri);
+        let (prefix, local) = qname.split_once(':').unwrap_or(("", qname));
+        if names.contains(&local) && resolves(prefix, ns) {
+            for &(name, value, v0) in &attrs {
+                let found = match (name.split_once(':'), id_ns) {
+                    (None, None) => name == "id",
+                    (Some((p, "id")), Some(uri)) => resolves(p, uri),
+                    _ => false,
+                };
+                if found && let Ok(id) = decode(value).trim().parse() {
+                    out.push((v0..v0 + value.len(), id));
+                }
+            }
+        }
+        if closed {
+            decls.truncate(mark);
+        } else {
+            scopes.push(mark);
+        }
+        at = gt + 1;
     }
     out
 }
@@ -248,21 +288,30 @@ fn property_parts(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<
         }
     }
     if now.core != read.core {
-        let name = core.clone().unwrap_or_else(|| "docProps/core.xml".into());
+        let name = match &core {
+            Some(n) => n.clone(),
+            None => package::free_name(&src.package, parts, "docProps/core.xml")?,
+        };
         if core.is_none() {
             package::add_part(&src.package, parts, "", &name, "application/vnd.openxmlformats-package.core-properties+xml", p::CORE)?;
         }
         package::set(parts, &name, p::core_xml(core_x.as_deref(), &now).into_bytes());
     }
     if now.app != read.app {
-        let name = app.clone().unwrap_or_else(|| "docProps/app.xml".into());
+        let name = match &app {
+            Some(n) => n.clone(),
+            None => package::free_name(&src.package, parts, "docProps/app.xml")?,
+        };
         if app.is_none() {
             package::add_part(&src.package, parts, "", &name, "application/vnd.openxmlformats-officedocument.extended-properties+xml", p::APP)?;
         }
         package::set(parts, &name, p::app_xml(app_x.as_deref(), &now).into_bytes());
     }
     if now.custom != read.custom {
-        let name = custom.clone().unwrap_or_else(|| "docProps/custom.xml".into());
+        let name = match &custom {
+            Some(n) => n.clone(),
+            None => package::free_name(&src.package, parts, "docProps/custom.xml")?,
+        };
         if custom.is_none() {
             package::add_part(&src.package, parts, "", &name, "application/vnd.openxmlformats-officedocument.custom-properties+xml", p::CUSTOM)?;
         }
@@ -498,6 +547,7 @@ fn settings_part(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(
         Some(n) => n,
         None => {
             let name = src.main.rsplit_once('/').map_or_else(|| "settings.xml".into(), |(dir, _)| format!("{dir}/settings.xml"));
+            let name = package::free_name(&src.package, parts, &name)?;
             let ct = "application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml";
             package::add_part(&src.package, parts, &src.main, &name, ct, SETTINGS)?;
             name
@@ -1162,12 +1212,26 @@ fn sect_with_page(sect: &str, w: &str, p: &SectionPage, was: Option<&SectionPage
         for (el, was, now) in [("headerReference", &was.headers, &p.headers), ("footerReference", &was.footers, &p.footers)] {
             for (slot, t) in ["default", "first", "even"].into_iter().enumerate() {
                 if was[slot].is_some() && was[slot] != now[slot] {
-                    let open = format!("<{w}{el} ");
+                    let (open, ty) = (format!("<{w}{el}"), format!("{w}type"));
                     let mut at = open_end;
                     while let Some(k) = s[at..].find(&open).map(|k| at + k) {
-                        let end = s[k..].find("/>").map_or(s.len(), |e| k + e + 2);
-                        let tag = &s[k..end];
-                        if tag.contains(&format!("{w}type=\"{t}\"")) || (t == "default" && !tag.contains(&format!("{w}type="))) {
+                        let name_end = k + open.len();
+                        let Some(gt) = crate::docx::binding::tag_end(&s[k..]).map(|e| k + e) else { break };
+                        if !s[name_end..].starts_with(|c: char| c.is_ascii_whitespace() || c == '/' || c == '>') {
+                            at = name_end;
+                            continue;
+                        }
+                        let head = &s[k..gt];
+                        // Its slot: `w:type`, default when it has none.
+                        let slot_of = crate::docx::binding::tag_attrs(head.trim_end_matches('/'))
+                            .find(|(name, ..)| *name == ty)
+                            .map(|(_, v, _)| crate::docx::binding::unescape(v));
+                        let end = if head.ends_with('/') {
+                            gt + 1
+                        } else {
+                            s[gt..].find(&format!("</{w}{el}>")).map_or(gt + 1, |e| gt + e + w.len() + el.len() + 3)
+                        };
+                        if slot_of.as_deref().map_or("default", str::trim) == t {
                             s.replace_range(k..end, "");
                             break;
                         }
@@ -1603,7 +1667,7 @@ fn box_contents(xml: &str) -> Vec<Range<usize>> {
         if !named || !matches!(xml.as_bytes().get(k + "txbxContent".len()), Some(b'>' | b'/' | b' ' | b'\t' | b'\r' | b'\n')) {
             continue;
         }
-        let Some(gt) = xml[k..].find('>').map(|g| k + g) else { break };
+        let Some(gt) = crate::docx::binding::tag_end(&xml[k..]).map(|g| k + g) else { break };
         if close {
             depth = depth.saturating_sub(1);
             if depth == 0 {
@@ -2439,9 +2503,8 @@ impl<'a, 'i> Saver<'a, 'i> {
                 .or_else(|| row.cells.iter().find_map(|c| self.cell_node(c)).and_then(|tc| tc.ancestors().skip(1).find(|a| is_w(*a, "tr"))));
             let from = from.filter(|tr| rows_seen.insert(tr.range().start));
             if let Some(at) = from.map(|tr| tr.range().start) {
-                let keep = open.iter().zip(&row.controls).take_while(|(a, b)| a == b).count();
                 while let Some(r) = loose.next_if(|r| r.start < at) {
-                    wrap(&mut out, &row.controls[..keep], &mut open, self);
+                    wrap(&mut out, &self.loose_within(&r, &open, &row.controls), &mut open, self);
                     out.push_str(&self.src_text(r));
                 }
             }
@@ -2475,9 +2538,8 @@ impl<'a, 'i> Saver<'a, 'i> {
                         // A source cell's markup is written once (a split cell's other part has none).
                         let tc = self.cell_node(c).filter(|tc| cells_seen.insert(tc.range().start));
                         if let Some(at) = tc.map(|tc| tc.range().start) {
-                            let keep = cells_open.iter().zip(&c.controls).take_while(|(a, b)| a == b).count();
                             while let Some(r) = row_loose.next_if(|r| r.start < at) {
-                                wrap(&mut out, &c.controls[..keep], &mut cells_open, self);
+                                wrap(&mut out, &self.loose_within(&r, &cells_open, &c.controls), &mut cells_open, self);
                                 out.push_str(&self.src_text(r));
                             }
                         }
@@ -2496,20 +2558,42 @@ impl<'a, 'i> Saver<'a, 'i> {
                         out.push_str(&self.blocks_xml(orig, &c.blocks, &cell_loose)?);
                         out.push_str(&format!("</{w}tc>"));
                     }
-                    wrap(&mut out, &[], &mut cells_open, self);
                     for r in row_loose {
+                        wrap(&mut out, &self.loose_within(&r, &cells_open, &[]), &mut cells_open, self);
                         out.push_str(&self.src_text(r));
                     }
+                    wrap(&mut out, &[], &mut cells_open, self);
                     out.push_str(&close);
                 }
             }
         }
-        wrap(&mut out, &[], &mut open, self);
         for r in loose {
+            wrap(&mut out, &self.loose_within(&r, &open, &[]), &mut open, self);
             out.push_str(&self.src_text(r));
         }
+        wrap(&mut out, &[], &mut open, self);
         out.push_str(&close);
         Ok(out)
+    }
+
+    /// The row or cell controls markup read at `r` between rows (or cells) is written in: of those `open` (after the
+    /// last written) or `next` (around the next) holds, the ones read around it, else the ones both share.
+    fn loose_within(&self, r: &Range<usize>, open: &[ControlId], next: &[ControlId]) -> Vec<ControlId> {
+        let shared = open.iter().zip(next).take_while(|(a, b)| a == b).count();
+        let (last, coming) = (self.read_within(open, r), self.read_within(next, r).max(shared));
+        if last > coming { open[..last].to_vec() } else { next[..coming].to_vec() }
+    }
+
+    /// How many of `controls` (outermost first) were read around source range `r` in this part.
+    fn read_within(&self, controls: &[ControlId], r: &Range<usize>) -> usize {
+        controls
+            .iter()
+            .take_while(|id| {
+                self.controls.get(id).is_some_and(|c| {
+                    c.at.is_some_and(|(a, b)| a < r.start && r.end <= b && self.xml.get(a..a + c.open.len()) == Some(c.open.as_str()))
+                })
+            })
+            .count()
     }
 
     /// The source cell a cell's paragraphs were read from.
@@ -3007,7 +3091,7 @@ impl<'a, 'i> Saver<'a, 'i> {
 
     /// `xml` with each `wp:docPr` given a new id (a copied drawing's must be unique).
     fn new_doc_pr_ids(&self, xml: &str) -> String {
-        let ids: Vec<(Range<usize>, u32)> = tag_ids(xml, &["docPr"])
+        let ids: Vec<(Range<usize>, u32)> = tag_ids(xml, DRAWING_TAGS)
             .into_iter()
             .map(|(r, _)| {
                 let id = self.ids.get();
@@ -4986,14 +5070,17 @@ fn picture_patched(src: &str, p: Placement, was: Option<usize>, now: Option<usiz
         let (w, h) = p.size.unwrap_or_default();
         let x = drawing::vml_size(src, w, h);
         return match (image, find_tag(&x, "imagedata", 0)) {
-            (Some(k), Some((start, end))) => match x[start..end].find(":id=\"") {
-                Some(a) => {
-                    let v0 = start + a + 5;
-                    let v1 = x[v0..end].find('"').map_or(end, |e| v0 + e);
-                    format!("{}{NEW_IMAGE}{k}{}", &x[..v0], &x[v1..])
+            // Its `r:id`, else the `o:relid` read when it has none.
+            (Some(k), Some((start, end))) => {
+                match x[start..end].find(":id=\"").map(|a| a + 5).or_else(|| x[start..end].find(":relid=\"").map(|a| a + 8)) {
+                    Some(a) => {
+                        let v0 = start + a;
+                        let v1 = x[v0..end].find('"').map_or(end, |e| v0 + e);
+                        format!("{}{NEW_IMAGE}{k}{}", &x[..v0], &x[v1..])
+                    }
+                    None => x,
                 }
-                None => x,
-            },
+            }
             _ => x,
         };
     }
@@ -5410,7 +5497,11 @@ fn add_images(package: &[u8], images: &[Vec<u8>], parts: &mut Vec<(String, Vec<u
         // Each new image's name replaced by its relationship's id.
         let mut fix: Vec<(Range<usize>, &str)> = {
             let dom = roxmltree::Document::parse(&xml).map_err(|e| e.to_string())?;
-            dom.descendants().flat_map(|n| n.attributes()).filter_map(|a| Some((a.range_value(), given.get(a.value())?.as_str()))).collect()
+            dom.descendants()
+                .flat_map(|n| n.attributes())
+                .filter(|a| a.namespace() == Some(R) || a.namespace() == Some(O) && a.name() == "relid")
+                .filter_map(|a| Some((a.range_value(), given.get(a.value())?.as_str())))
+                .collect()
         };
         fix.sort_by_key(|(r, _)| std::cmp::Reverse(r.start));
         for (r, rid) in fix {
@@ -5738,7 +5829,8 @@ impl Placement {
             let close = format!("</{prefix}blip>");
             let stop = if s[start..end].ends_with("/>") { Some(end) } else { s[end..].find(&close).map(|c| end + c + close.len()) };
             if let Some(stop) = stop {
-                s.replace_range(start..stop, &format!(r#"<{prefix}blip r:embed="{NEW_IMAGE}{k}"/>"#));
+                // Its own relationship namespace: the old blip may have declared it.
+                s.replace_range(start..stop, &format!(r#"<{prefix}blip xmlns:r="{R}" r:embed="{NEW_IMAGE}{k}"/>"#));
             }
         }
         if let Some((w, h)) = self.size {
@@ -6042,18 +6134,22 @@ fn tr_pr(w: &str, r: &Row, people: &People) -> String {
     if r.hidden {
         s.push_str(&format!("<{w}hidden/>"));
     }
-    if let Some(jc) = r.jc {
-        let v = match jc {
-            Jc::Center => "center",
-            Jc::Right => "right",
-            _ => "left",
-        };
-        s.push_str(&format!("<{w}jc {w}val=\"{v}\"/>"));
-    }
+    s.push_str(&row_jc(w, r.jc));
     for (_, tag) in revisions::row_marks(w, &r.rev, people) {
         s.push_str(&tag);
     }
     if s.is_empty() { s } else { format!("<{w}trPr>{s}</{w}trPr>") }
+}
+
+/// A row's `w:jc` (empty for none).
+fn row_jc(w: &str, jc: Option<Jc>) -> String {
+    let Some(jc) = jc else { return String::new() };
+    let v = match jc {
+        Jc::Center => "center",
+        Jc::Right => "right",
+        _ => "left",
+    };
+    format!("<{w}jc {w}val=\"{v}\"/>")
 }
 
 /// A row's grid gaps before and after its cells, as its `w:trPr` has them.
@@ -6096,6 +6192,9 @@ fn tr_changes(w: &str, gaps: Option<[usize; 2]>, was: Option<&Row>, now: &Row) -
             None => String::new(),
         };
         out.push(("trHeight", tag));
+    }
+    if was.is_none_or(|x| x.jc != now.jc) {
+        out.push(("jc", row_jc(w, now.jc)));
     }
     out
 }
@@ -6298,7 +6397,7 @@ mod tests {
     #[test]
     fn ids_are_read_from_tags_not_text() {
         let xml = r#"<w:t>a:docPr id="5" x</w:t><wp:docPr descr='b id="6"' id="7" name="n"/><w:bookmarkStart w:name="m" w:id="8"/><docPr id='9'>"#;
-        let ids: Vec<i64> = tag_ids(xml, &["docPr"])
+        let ids: Vec<i64> = tag_ids(xml, DRAWING_TAGS)
             .into_iter()
             .map(|(r, id)| {
                 assert_eq!(xml[r].parse::<i64>().ok(), Some(id));
@@ -6306,7 +6405,18 @@ mod tests {
             })
             .collect();
         assert_eq!(ids, [7, 9]);
-        assert_eq!(tag_ids(xml, &["bookmarkStart"]).into_iter().map(|(_, id)| id).collect::<Vec<_>>(), [8]);
+        assert_eq!(tag_ids(xml, BOOKMARK_TAGS).into_iter().map(|(_, id)| id).collect::<Vec<_>>(), [8]);
+    }
+
+    #[test]
+    fn ids_are_read_by_namespace_and_as_xml_reads_them() {
+        let wp = super::super::xml::WP;
+        let xml = format!(
+            r#"<r xmlns:wp="{wp}" xmlns:w="{W}"><!-- <wp:docPr id="1"/> --><x:docPr xmlns:x="urn:x" id="2"/><wp:docPr id="&#51;" name="n"/><q:docPr xmlns:q="{wp}" id=" 4 "/><w:bookmarkStart x:id="5" xmlns:x="urn:x" w:id="6"/><![CDATA[<wp:docPr id="7"/>]]><s xmlns:wp="urn:x"><wp:docPr id="8"/></s><wp:docPr id="9"/></r>"#
+        );
+        let ids: Vec<(String, i64)> = tag_ids(&xml, DRAWING_TAGS).into_iter().map(|(r, id)| (xml[r].to_string(), id)).collect();
+        assert_eq!(ids, [("&#51;".to_string(), 3), (" 4 ".to_string(), 4), ("9".to_string(), 9)]);
+        assert_eq!(tag_ids(&xml, BOOKMARK_TAGS).into_iter().map(|(_, id)| id).collect::<Vec<_>>(), [6]);
     }
 
     fn render_fixture(name: &str) -> (Vec<u8>, Document) {
@@ -6422,6 +6532,96 @@ mod tests {
         format!(
             r#"<w:tbl><w:tblPr><w:tblW w:w="2000" w:type="dxa"/>{pr}</w:tblPr><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:tr>{tc}<w:tcPr><w:tcW w:w="2000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>{text}</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#
         )
+    }
+
+    #[test]
+    fn a_boxs_content_starts_after_its_whole_start_tag() {
+        let xml = r#"<wps:txbx><w:txbxContent x:a="1>2" y='3>4'><w:p/></w:txbxContent></wps:txbx><v:textbox><w:txbxContent/></v:textbox>"#;
+        let got: Vec<&str> = box_contents(xml).into_iter().map(|r| &xml[r]).collect();
+        assert_eq!(got, ["<w:p/>"]);
+    }
+
+    #[test]
+    fn a_kept_rows_alignment_is_written_and_taken_off() {
+        let mut doc = body_doc(&format!("{}<w:p/>", one_cell("", "<w:tc>", "a")));
+        first_table(&mut doc).rows[0].jc = Some(Jc::Center);
+        let saved = save(&doc).expect("saves");
+        let mut again = crate::docx::read_editable(&saved).expect("reads again");
+        assert_eq!(first_table(&mut again).rows[0].jc, Some(Jc::Center), "{}", part_text(&saved, "word/document.xml"));
+        first_table(&mut again).rows[0].jc = None;
+        let saved = save(&again).expect("saves");
+        let mut back = crate::docx::read_editable(&saved).expect("reads again");
+        assert_eq!(first_table(&mut back).rows[0].jc, None, "{}", part_text(&saved, "word/document.xml"));
+    }
+
+    #[test]
+    fn markup_before_a_controls_first_row_stays_in_the_control() {
+        let row =
+            |t: &str| format!(r#"<w:tr><w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:tc></w:tr>"#);
+        let body = format!(
+            r#"<w:tbl><w:tblPr><w:tblW w:w="2000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:bookmarkStart w:id="1" w:name="table"/><w:sdt xmlns:x="{W}"><w:sdtPr><w:id w:val="5"/></w:sdtPr><w:sdtContent><x:bookmarkStart x:id="7" x:name="rows"/>{}<x:bookmarkEnd x:id="7"/></w:sdtContent></w:sdt>{}<w:bookmarkEnd w:id="1"/></w:tbl><w:p/>"#,
+            row("a"),
+            row("b")
+        );
+        let mut doc = body_doc(&body);
+        let t = first_table(&mut doc);
+        assert!(!t.rows[0].controls.is_empty() && t.rows[1].controls.is_empty(), "the first row is in the control");
+        t.rows[1].jc = Some(Jc::Center);
+        let saved = save(&doc).expect("saves");
+        let xml = part_text(&saved, "word/document.xml");
+        roxmltree::Document::parse(&xml).unwrap_or_else(|e| panic!("well formed: {e}: {xml}"));
+        let at = |s: &str| xml.find(s).unwrap_or_else(|| panic!("{s} in {xml}"));
+        assert!(at(r#"w:name="table""#) < at("<w:sdt ") && at("<w:sdt ") < at(r#"x:name="rows""#), "{xml}");
+    }
+
+    #[test]
+    fn a_header_reference_goes_by_its_parsed_slot() {
+        let doc = body_doc("<w:p/>");
+        let mut was = doc.sections[0].page();
+        was.headers = [Some("rId1".into()), Some("rId2".into()), None];
+        let mut now = was.clone();
+        now.headers[0] = None;
+        let sect = r#"<w:sectPr><w:headerReference w:type = 'default' r:id="rId1"/><w:headerReference w:type="first" r:id="rId2"/></w:sectPr>"#;
+        let out = sect_with_page(sect, "w:", &now, Some(&was), None, &People::default());
+        assert!(!out.contains("rId1") && out.contains(r#"<w:headerReference w:type="first" r:id="rId2"/>"#), "{out}");
+    }
+
+    #[test]
+    fn a_new_blip_declares_its_relationship_namespace() {
+        let a = super::super::xml::A;
+        let src = r#"<w:drawing><a:graphic><a:blip xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:embed="rId1"/></a:graphic></w:drawing>"#;
+        let out = Placement { blip: Some(2), ..Placement::default() }.apply(src);
+        let xml = format!(r#"<x xmlns:w="{W}" xmlns:a="{a}">{out}</x>"#);
+        let dom = roxmltree::Document::parse(&xml).unwrap_or_else(|e| panic!("well formed: {e}: {out}"));
+        let blip = dom.descendants().find(|n| n.tag_name().name() == "blip").expect("a blip");
+        assert_eq!(blip.attribute((R, "embed")), Some(format!("{NEW_IMAGE}2").as_str()));
+    }
+
+    #[test]
+    fn a_vml_picture_named_by_its_relid_takes_its_new_image() {
+        let src = r#"<w:pict><v:shape style="width:1pt;height:1pt"><v:imagedata o:relid="rId3" o:title=""/></v:shape></w:pict>"#;
+        let out = picture_patched(src, Placement::default(), Some(0), Some(1));
+        assert!(out.contains(&format!(r#"o:relid="{NEW_IMAGE}1""#)), "{out}");
+        let src = r#"<w:pict><v:shape style="width:1pt;height:1pt"><v:imagedata r:id="rId3" o:relid="rId4"/></v:shape></w:pict>"#;
+        let out = picture_patched(src, Placement::default(), Some(0), Some(1));
+        assert!(out.contains(&format!(r#"r:id="{NEW_IMAGE}1""#)) && out.contains(r#"o:relid="rId4""#), "{out}");
+    }
+
+    #[test]
+    fn only_relationship_attributes_take_a_new_images_id() {
+        use std::io::Write;
+        let mut z = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        z.start_file("[Content_Types].xml", zip::write::SimpleFileOptions::default()).expect("a part");
+        z.write_all(br#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"></Types>"#).expect("written");
+        let package = z.finish().expect("a package").into_inner();
+        let (wp, a) = (super::super::xml::WP, super::super::xml::A);
+        let xml = format!(
+            r#"<w:document xmlns:w="{W}" xmlns:wp="{wp}" xmlns:a="{a}" xmlns:r="{R}"><wp:docPr id="1" descr="{NEW_IMAGE}0"/><a:blip r:embed="{NEW_IMAGE}0"/></w:document>"#
+        );
+        let mut parts = vec![("word/document.xml".to_string(), xml.into_bytes())];
+        add_images(&package, &[crate::render::svg::png(1, 1, &[0, 0, 0, 255])], &mut parts).expect("adds the image");
+        let out = String::from_utf8(parts[0].1.clone()).expect("text");
+        assert!(out.contains(&format!(r#"descr="{NEW_IMAGE}0""#)) && out.contains(r#"r:embed="rIdCeImg1""#), "{out}");
     }
 
     fn edit_first_cell(t: &mut Table) {

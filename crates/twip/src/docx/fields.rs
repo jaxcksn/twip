@@ -844,8 +844,12 @@ fn bookmark_texts(
     }
     let mut whole: Option<Whole> = None;
     let mut ends: Option<HashMap<&str, Vec<usize>>> = None;
-    // Inlines the bookmarks cutting a field read on their own: linear in the paragraph
+    // The texts of the fields the bookmarks cut, by where each begins.
+    let mut inner: HashMap<usize, Whole> = HashMap::new();
+    // Inlines read for them: linear in the paragraph
     let mut budget = 16 * p.inlines.len() + 4096;
+    // The fields begun before the bookmark read last, by where they begin: the code ends of those whose codes may hold it.
+    let (mut next_field, mut codes) = (0, Vec::new());
     for (k, i) in p.inlines.iter().enumerate() {
         let Inline::Bookmark(name) = i else { continue };
         if name.starts_with('/') {
@@ -857,7 +861,15 @@ fn bookmark_texts(
             continue;
         }
         let whole = whole.get_or_insert_with(|| Whole::of(&p.inlines));
-        let start = whole.fields.iter().rfind(|s| s.begin < k && k < s.code_end()).map_or(k, |s| s.code_end() + 1);
+        // One in a field's code starts at the result of the innermost field whose code holds it.
+        while let Some(f) = whole.fields.get(next_field).filter(|f| f.begin < k) {
+            codes.push(f.code_end());
+            next_field += 1;
+        }
+        while codes.last().is_some_and(|&e| e <= k) {
+            codes.pop();
+        }
+        let start = codes.last().map_or(k, |&e| e + 1);
         let ends = ends.get_or_insert_with(|| {
             let mut m: HashMap<&str, Vec<usize>> = HashMap::new();
             for (e, i) in p.inlines.iter().enumerate() {
@@ -871,26 +883,107 @@ fn bookmark_texts(
         });
         let stop = ends.get(name.as_str()).and_then(|v| v.get(v.partition_point(|&e| e < start)).copied()).unwrap_or(p.inlines.len());
         let start = start.min(stop);
-        let part = &p.inlines[start..stop];
         let after = |v: &[usize]| v.get(v.partition_point(|&x| x < start)).copied().filter(|&x| x < stop);
         let note = after(&whole.notes).and_then(|x| if let Inline::NoteRef { kind, id, .. } = &p.inlines[x] { Some((*kind, *id)) } else { None });
-        let cuts = !(whole.clean[start] && whole.clean[stop]);
-        let (mut text, first) = if cuts && budget >= part.len() {
-            budget -= part.len();
-            let first = part.iter().zip(shown(part)).find_map(|(i, s)| match (i, s) {
-                (Inline::Text(_, r), Shown::Itself) if !r.hidden => Some(r),
-                _ => None,
-            });
-            (visible(part), first)
-        } else {
-            // Past the budget: the whole paragraph
-            let text = &whole.text[whole.at[start]..whole.at[stop]];
-            (text[..floor_char(text, MAX_BOOKMARK_TEXT)].to_string(), after(&whole.firsts).and_then(|x| p.inlines[x].run()))
+        let mut text = String::new();
+        let first = match slice_text(&p.inlines, whole, &mut inner, &mut budget, start..stop, &mut text) {
+            Some(first) => first,
+            None => {
+                // Past the budget, or fields that overlap without nesting: the whole paragraph's text there
+                text.clear();
+                let all = &whole.text[whole.at[start]..whole.at[stop]];
+                text.push_str(&all[..floor_char(all, MAX_BOOKMARK_TEXT)]);
+                after(&whole.firsts)
+            }
         };
         text.truncate(floor_char(&text, MAX_BOOKMARK_TEXT));
         marks.insert(key.clone(), text);
-        found(&key, first, note);
+        found(&key, first.and_then(|x| p.inlines[x].run()), note);
     }
+}
+
+/// The text of `inlines[range]` as [`visible`] shows that slice, onto `out` (at most about [`MAX_BOOKMARK_TEXT`]):
+/// a field it cuts shows its own inlines, read from that field's inside's [`Whole`] (made once, in `inner`, by where
+/// the field begins), the fields it holds whole from `root`. With the first shown run's inline. `None` when making
+/// them would pass `budget` (inlines read) or for fields that overlap without nesting.
+fn slice_text(
+    inlines: &[Inline],
+    root: &Whole,
+    inner: &mut HashMap<usize, Whole>,
+    budget: &mut usize,
+    range: std::ops::Range<usize>,
+    out: &mut String,
+) -> Option<Option<usize>> {
+    let (s, t) = (range.start, range.end);
+    if s == t {
+        return Some(None);
+    }
+    // A frame: `None` the paragraph, else the inside of the field beginning there (its first inline after its begin).
+    let lo = |f: Option<usize>| f.map_or(0, |b| b + 1);
+    let made = |f: &FieldSpan, inner: &mut HashMap<usize, Whole>, budget: &mut usize, lo: usize| -> Option<usize> {
+        let (b, e) = (lo + f.begin, lo + f.end);
+        if let std::collections::hash_map::Entry::Vacant(v) = inner.entry(b) {
+            *budget = budget.checked_sub(e - b)?;
+            v.insert(Whole::of(&inlines[b + 1..e]));
+        }
+        Some(b)
+    };
+    // Into the innermost field holding both ends.
+    let mut top: Option<usize> = None;
+    loop {
+        let w = top.map_or(root, |b| &inner[&b]);
+        let l = lo(top);
+        let (Some(g), Some(h)) = (w.outer_at(s - l), w.outer_at(t - l)) else { break };
+        if g.begin != h.begin {
+            break;
+        }
+        let g = *g;
+        *budget = budget.checked_sub(1)?;
+        top = Some(made(&g, inner, budget, l)?);
+    }
+    // The fields cut at each end, outermost first, where they are in the paragraph.
+    let chain = |at: usize, inner: &mut HashMap<usize, Whole>, budget: &mut usize| -> Option<Vec<FieldSpan>> {
+        let (mut steps, mut f) = (Vec::new(), top);
+        loop {
+            let w = f.map_or(root, |b| &inner[&b]);
+            let l = lo(f);
+            if w.clean[at - l] {
+                return Some(steps);
+            }
+            let g = *w.outer_at(at - l)?;
+            *budget = budget.checked_sub(1)?;
+            let b = made(&g, inner, budget, l)?;
+            steps.push(FieldSpan { begin: l + g.begin, sep: None, end: l + g.end });
+            f = Some(b);
+        }
+    };
+    let left = chain(s, inner, budget)?;
+    let right = chain(t, inner, budget)?;
+    let mut first = None;
+    let mut piece = |f: Option<usize>, a: usize, b: usize| {
+        let w = f.map_or(root, |k| &inner[&k]);
+        let l = lo(f);
+        if out.len() <= MAX_BOOKMARK_TEXT {
+            out.push_str(&w.text[w.at[a - l]..w.at[b - l]]);
+        }
+        if first.is_none() {
+            first = w.firsts.get(w.firsts.partition_point(|&x| x < a - l)).filter(|&&x| x < b - l).map(|&x| l + x);
+        }
+    };
+    // The cut fields at the start, innermost first: from the start to each one's end, then on after it.
+    let mut from = s;
+    for (k, g) in left.iter().enumerate().rev() {
+        let a = left.get(k + 1).map_or(s, |n| n.end + 1);
+        piece(Some(g.begin), a, g.end);
+        from = g.end + 1;
+    }
+    let to = right.first().map_or(t, |h| h.begin);
+    piece(top, from.min(to), to);
+    // Then into those cut at the end, outermost first.
+    for (k, h) in right.iter().enumerate() {
+        piece(Some(h.begin), h.begin + 1, right.get(k + 1).map_or(t, |n| n.begin));
+    }
+    Some(first)
 }
 
 /// The largest char boundary of `s` at most `n`.
@@ -898,14 +991,15 @@ fn floor_char(s: &str, n: usize) -> usize {
     (0..=n.min(s.len())).rev().find(|&k| s.is_char_boundary(k)).unwrap_or(0)
 }
 
-/// A paragraph's fields and its text as [`visible`] shows it: where each inline's text starts in it, whether each
-/// place between inlines is outside every field (a slice between two such places shows as that part of the text), its
-/// note references and its shown text that isn't hidden.
+/// A paragraph's (or a field's inside's) fields and its text as [`visible`] shows it: where each inline's text starts
+/// in it, whether each place between inlines is outside every field (a slice between two such places shows as that
+/// part of the text), its outermost fields, its note references and its shown text that isn't hidden.
 struct Whole {
     fields: Vec<FieldSpan>,
     text: String,
     at: Vec<usize>,
     clean: Vec<bool>,
+    tops: Vec<usize>,
     notes: Vec<usize>,
     firsts: Vec<usize>,
 }
@@ -939,7 +1033,22 @@ impl Whole {
                 open == 0
             })
             .collect();
-        Whole { fields, text, at, clean, notes, firsts }
+        let mut tops = Vec::new();
+        let mut reach = None;
+        for (k, f) in fields.iter().enumerate() {
+            if reach.is_none_or(|e| f.begin > e) {
+                tops.push(k);
+                reach = Some(f.end);
+            }
+        }
+        Whole { fields, text, at, clean, tops, notes, firsts }
+    }
+
+    /// The outermost field holding place `p` (between inlines `p - 1` and `p`).
+    fn outer_at(&self, p: usize) -> Option<&FieldSpan> {
+        let k = self.tops.partition_point(|&i| self.fields[i].begin < p);
+        let f = &self.fields[*self.tops.get(k.checked_sub(1)?)?];
+        (p <= f.end).then_some(f)
     }
 }
 
@@ -1557,6 +1666,141 @@ mod tests {
         let doc = crate::docx::read(&bytes).expect("reads");
         let Some(Block::Para(p)) = doc.sections[0].blocks.get(1) else { panic!("two paragraphs") };
         assert_eq!(text(p), "Lorem");
+    }
+
+    /// A field's markers for tests: begin (of `kind`, showing `value`), separator, end.
+    fn markers(run: &Run) -> impl Fn(u64, Option<FieldKind>, Option<&str>) -> [Inline; 3] + '_ {
+        move |id, kind, value| {
+            let begin = Inline::FieldBegin {
+                id: FieldId(id),
+                kind,
+                lock: false,
+                dirty: false,
+                view: FieldView::Result,
+                label: None,
+                value: value.map(str::to_string),
+                form: None,
+                run: run.clone(),
+            };
+            [begin, Inline::FieldSep { id: FieldId(id), run: run.clone() }, Inline::FieldEnd { id: FieldId(id), run: run.clone() }]
+        }
+    }
+
+    /// Each wanted bookmark's text in a paragraph of `inlines`.
+    fn marks_of(inlines: Vec<Inline>, wanted: &[&str]) -> HashMap<String, String> {
+        let doc = crate::docx::read(&crate::docx::blank::blank_docx()).expect("the blank document reads");
+        let Some(Block::Para(blank)) = doc.sections[0].blocks.first() else { panic!("a paragraph") };
+        let p = Paragraph { inlines, ..blank.clone() };
+        let wanted = wanted.iter().map(|w| w.to_ascii_lowercase()).collect();
+        let (mut names, mut marks) = (std::collections::HashSet::new(), HashMap::new());
+        bookmark_texts(&p, &wanted, &mut names, &mut marks, &mut |_, _, _| {});
+        marks
+    }
+
+    #[test]
+    fn a_slice_shows_as_visible_shows_it_wherever_it_cuts_fields() {
+        let doc = crate::docx::read(&crate::docx::blank::blank_docx()).expect("the blank document reads");
+        let Some(Block::Para(p)) = doc.sections[0].blocks.first() else { panic!("a paragraph") };
+        let run = p.mark.clone();
+        let hidden = std::rc::Rc::new(super::super::model::RunStyle { hidden: true, ..(*run).clone() });
+        let f = markers(&run);
+        let t = |s: &str| Inline::Text(s.into(), run.clone());
+        // "a {IF {PAGE: 7 [3]} = 1 "{MERGEFIELD x}" "n"} b {HYPERLINK [link]} c"
+        let ([b1, s1, e1], [b2, s2, e2], [b3, s3, e3], [b4, s4, e4]) =
+            (f(1, Some(FieldKind::If), None), f(2, Some(FieldKind::Page), Some("7")), f(3, None, None), f(4, None, None));
+        let v = vec![
+            t("a "),
+            b1,
+            t(" IF "),
+            b2,
+            t(" PAGE "),
+            s2,
+            t("3"),
+            e2,
+            t(" = 1 \""),
+            b3,
+            t(" MERGEFIELD x "),
+            s3,
+            t("«x»"),
+            e3,
+            t("\" \"n\" "),
+            s1,
+            Inline::Text("h".into(), hidden),
+            t("y"),
+            e1,
+            t(" b "),
+            b4,
+            t(" HYPERLINK "),
+            s4,
+            t("link"),
+            e4,
+            t(" c"),
+        ];
+        let root = Whole::of(&v);
+        let (mut inner, mut budget) = (HashMap::new(), usize::MAX);
+        for s in 0..=v.len() {
+            for e in s..=v.len() {
+                let mut out = String::new();
+                let first = slice_text(&v, &root, &mut inner, &mut budget, s..e, &mut out).expect("nested fields");
+                assert_eq!(out, visible(&v[s..e]), "{s}..{e}");
+                let want = v[s..e].iter().zip(shown(&v[s..e])).position(|(i, s)| matches!((i, s), (Inline::Text(_, r), Shown::Itself) if !r.hidden));
+                assert_eq!(first, want.map(|k| s + k), "{s}..{e}");
+            }
+        }
+    }
+
+    #[test]
+    fn many_bookmarks_in_one_fields_result_each_show_their_part_of_it() {
+        let doc = crate::docx::read(&crate::docx::blank::blank_docx()).expect("the blank document reads");
+        let Some(Block::Para(p)) = doc.sections[0].blocks.first() else { panic!("a paragraph") };
+        let run = p.mark.clone();
+        let [b, sep, end] = markers(&run)(1, Some(FieldKind::Page), Some("1"));
+        let names: Vec<String> = (0..32).map(|k| format!("m{k}")).collect();
+        let mut v = vec![b, Inline::Text(" PAGE ".into(), run.clone()), sep];
+        v.extend(names.iter().map(|n| Inline::Bookmark(n.clone())));
+        v.extend((0..1000).map(|k| Inline::Text(char::from(b'a' + (k % 26) as u8).to_string(), run.clone())));
+        v.push(end);
+        v.extend(names.iter().map(|n| Inline::Bookmark(format!("/{n}"))));
+        let want: String = (0..1000).map(|k| char::from(b'a' + (k % 26) as u8)).collect();
+        let wanted: Vec<&str> = names.iter().map(String::as_str).collect();
+        let marks = marks_of(v, &wanted);
+        for n in &names {
+            assert_eq!(marks.get(n), Some(&want), "{n}");
+        }
+    }
+
+    #[test]
+    fn a_bookmark_in_codes_starts_at_the_innermost_fields_result() {
+        let doc = crate::docx::read(&crate::docx::blank::blank_docx()).expect("the blank document reads");
+        let Some(Block::Para(p)) = doc.sections[0].blocks.first() else { panic!("a paragraph") };
+        let run = p.mark.clone();
+        let f = markers(&run);
+        let t = |s: &str| Inline::Text(s.into(), run.clone());
+        let bm = |n: &str| Inline::Bookmark(n.into());
+        let ([b1, s1, e1], [b2, s2, e2]) = (f(1, None, None), f(2, None, None));
+        // {IF {PAGE [x} 5 [y} = 1 r} [z] q, every one ending at the end
+        let v = vec![
+            b1,
+            t(" IF "),
+            b2,
+            bm("x"),
+            t(" PAGE "),
+            s2,
+            t("5"),
+            e2,
+            bm("y"),
+            t(" = 1 "),
+            s1,
+            t("r"),
+            e1,
+            bm("z"),
+            t(" q"),
+            bm("/x"),
+            bm("/y"),
+            bm("/z"),
+        ];
+        let marks = marks_of(v, &["x", "y", "z"]);
+        assert_eq!((marks["x"].as_str(), marks["y"].as_str(), marks["z"].as_str()), ("5 = 1 r q", "r q", " q"));
     }
 
     #[test]

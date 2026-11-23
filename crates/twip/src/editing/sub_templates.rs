@@ -749,7 +749,7 @@ impl Editor {
                 let id = next_abstract;
                 next_abstract += 1;
                 let mut el = Props::parse(Some(&a.raw), "abstractNum", &cx);
-                el.set_own("abstractNumId", &id.to_string());
+                el.set_own("abstractNumId", &id.to_string(), &cx);
                 let raw = el.xml().unwrap_or_else(|| a.raw.clone());
                 numbering
                     .abstracts
@@ -759,7 +759,7 @@ impl Editor {
             let to = next_num;
             next_num += 1;
             let mut el = Props::parse(Some(&num.raw), "num", &cx);
-            el.set_own("numId", &to.to_string());
+            el.set_own("numId", &to.to_string(), &cx);
             el.set("abstractNumId", format!("<{w}abstractNumId {w}val=\"{to_abstract}\"/>"));
             let raw = el.xml().unwrap_or_else(|| num.raw.clone());
             numbering.nums.insert(

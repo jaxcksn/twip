@@ -71,6 +71,22 @@ pub fn resolve(from: &str, target: &str) -> String {
     path.join("/")
 }
 
+/// `name`, else it with the first number before its extension (`document2.xml`, ...) that names no part `package` or
+/// `parts` has: a new part never takes another's place. Part names are compared without case, as packages compare them.
+pub fn free_name(package: &[u8], parts: &[(String, Vec<u8>)], name: &str) -> Result<String, String> {
+    let zin = zip::ZipArchive::new(Cursor::new(package)).map_err(|e| e.to_string())?;
+    let taken: std::collections::HashSet<String> =
+        zin.file_names().filter_map(|n| n.ok().map(|n| n.to_ascii_lowercase())).chain(parts.iter().map(|(n, _)| n.to_ascii_lowercase())).collect();
+    let (stem, ext) = match name.rsplit_once('.') {
+        Some((s, e)) if !e.contains('/') => (s, format!(".{e}")),
+        _ => (name, String::new()),
+    };
+    (1..=taken.len() + 1)
+        .map(|k| if k == 1 { name.to_string() } else { format!("{stem}{k}{ext}") })
+        .find(|n| !taken.contains(&n.to_ascii_lowercase()))
+        .ok_or_else(|| format!("no free part name for {name}"))
+}
+
 /// Adds part `name` to the package's content types (an `Override` of `content_type`) and a relationship of
 /// `rel_type` from `main` to it with a free `rId`, both in `parts`. Either is kept when the package already has it.
 /// The relationship's id is returned. The part's content is set apart ([`set`]).
@@ -149,6 +165,14 @@ mod tests {
         assert_eq!(add_part(&pkg, &mut parts, "word/document.xml", "word/comments.xml", "ct/comments", "rel/comments").expect("kept"), "rId2");
         let again = read(&pkg, &parts, "word/_rels/document.xml.rels").expect("read").expect("there");
         assert_eq!(again.matches("rel/comments").count(), 1);
+    }
+
+    #[test]
+    fn a_new_part_takes_a_name_no_part_has() {
+        let pkg = package(&[("[Content_Types].xml", "<Types/>"), ("word/glossary/Document.xml", "<hdr/>")]);
+        let parts = vec![("word/glossary/document2.xml".to_string(), Vec::new())];
+        assert_eq!(free_name(&pkg, &parts, "word/glossary/document.xml").expect("a name"), "word/glossary/document3.xml");
+        assert_eq!(free_name(&pkg, &parts, "word/styles.xml").expect("a name"), "word/styles.xml");
     }
 
     #[test]

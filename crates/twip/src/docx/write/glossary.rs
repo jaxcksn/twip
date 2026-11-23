@@ -37,6 +37,7 @@ pub(super) fn write(doc: &Document, src: &Source, parts: &mut Vec<(String, Vec<u
                 Some((dir, _)) => format!("{dir}/glossary/document.xml"),
                 None => "glossary/document.xml".to_string(),
             };
+            let name = package::free_name(&src.package, parts, &name)?;
             package::set(parts, &name, g.map.to_glossary_xml(&xml).into_owned().into_bytes());
             package::add_part(&src.package, parts, &src.main, &name, GLOSSARY_TYPE, GLOSSARY_REL)?;
         }
@@ -139,6 +140,30 @@ mod tests {
         let start = xml[..at].rfind("<w:docPart>").unwrap();
         let end = at + xml[at..].find("</w:docPart>").unwrap() + "</w:docPart>".len();
         &xml[start..end]
+    }
+
+    #[test]
+    fn a_new_glossary_takes_a_part_name_no_part_has() {
+        let held = b"<x/>".to_vec();
+        let bytes =
+            write::repackage(&blank::blank_docx(), &[("word/glossary/document.xml".into(), held.clone())], zip::CompressionMethod::Deflated).unwrap();
+        let mut doc = read_editable(&bytes).unwrap();
+        let block = BuildingBlock {
+            name: "Note".into(),
+            category: "General".into(),
+            gallery: Gallery::Custom(1),
+            guid: None,
+            body: Vec::new(),
+            state: PartState::Added,
+            editable: true,
+        };
+        doc.glossary = Some(Glossary { parts: vec![block], map: Default::default() });
+        let saved = write::save(&doc).unwrap();
+        let files = entries(&saved);
+        assert_eq!(files.iter().find(|(n, _)| n == "word/glossary/document.xml").map(|(_, d)| d), Some(&held), "the other part is kept");
+        assert!(files.iter().any(|(n, _)| n == "word/glossary/document2.xml"));
+        let again = read_editable(&saved).unwrap();
+        assert_eq!(again.glossary.as_ref().map(|g| g.parts.len()), Some(1));
     }
 
     #[test]

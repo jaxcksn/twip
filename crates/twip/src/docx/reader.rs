@@ -297,6 +297,7 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
         simple: Vec::new(),
         lossy: false,
         controls: HashMap::new(),
+        bound_runs: HashMap::new(),
         people: People::default(),
         identities: HashMap::new(),
         ids,
@@ -491,12 +492,8 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
     // Bound controls show their data.
     if !doc.data_parts.is_empty() {
         let (controls, parts) = (&mut doc.controls, super::binding::Parts::new(&doc.data_parts));
-        let cx = super::write::props::Cx::of_xml(&xml);
-        let res = &r.res;
-        let resolve = |p: &Paragraph, rpr: &str| {
-            let base = res.para_from_xml(p.style.direct.0.as_deref(), None, &cx).base;
-            Some(res.run_from_xml(&base, Some(rpr), &cx))
-        };
+        let runs = &r.bound_runs;
+        let resolve = |id: ControlId| runs.get(&id).cloned();
         let mut show = |p: &mut Paragraph| {
             super::binding::refresh(p, controls, &parts, &resolve);
         };
@@ -984,6 +981,9 @@ struct Reader {
     lossy: bool,
     /// [`Document::controls`].
     controls: HashMap<ControlId, Control>,
+    /// Each bound inline control's own run (its `w:sdtPr/w:rPr` over its paragraph's base, in its part): what its
+    /// data replaces its placeholder in.
+    bound_runs: HashMap<ControlId, Run>,
     /// Who made the revisions and comments, and the people part's identities by author name.
     people: People,
     identities: HashMap<String, Identity>,
@@ -1851,6 +1851,12 @@ impl Reader {
                         let (mark, segs) = (units_mark(out), self.segs.len());
                         // An inline control's content between its markers.
                         let id = self.control(e);
+                        if self.controls.get(&id).is_some_and(|k| k.props.binding.is_some())
+                            && let Some(rpr) = pr.and_then(|p| child(p, "rPr"))
+                        {
+                            let run = self.with_direct(self.run_style(&self.run_props(base, Some(rpr))), Some(rpr));
+                            self.bound_runs.insert(id, run);
+                        }
                         out.push(Inline::ControlStart(id));
                         self.read_inlines(c, base, pkg, out);
                         out.push(Inline::ControlEnd(id));
@@ -3547,6 +3553,58 @@ fn cell_ids(tc: Node, tc_pr: Option<Node>) -> Option<Rc<crate::docx::CellIds>> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_bound_control_shows_its_data_in_its_own_run_over_its_paragraphs() {
+        let rel = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+        let w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+        // Bold over the paragraph's Big style, in the body and in a header with a prefix of its own.
+        let control = |p: &str| {
+            format!(
+                r#"<{p}p><{p}pPr><{p}pStyle {p}val="Big"/></{p}pPr><{p}sdt><{p}sdtPr><{p}rPr><{p}b/></{p}rPr><{p}showingPlcHdr/><{p}dataBinding {p}prefixMappings="xmlns:d='urn:d'" {p}xpath="/d:data[1]/d:name[1]"/><{p}text/></{p}sdtPr><{p}sdtContent><{p}r><{p}t>Click</{p}t></{p}r></{p}sdtContent></{p}sdt></{p}p>"#
+            )
+        };
+        let files = [
+            (
+                "[Content_Types].xml".to_string(),
+                r#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#.to_string(),
+            ),
+            (
+                "_rels/.rels".to_string(),
+                format!(r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="{rel}/officeDocument" Target="word/document.xml"/></Relationships>"#),
+            ),
+            (
+                "word/_rels/document.xml.rels".to_string(),
+                format!(
+                    r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="{rel}/styles" Target="styles.xml"/><Relationship Id="rId2" Type="{rel}/customXml" Target="../customXml/item1.xml"/><Relationship Id="rId3" Type="{rel}/header" Target="header1.xml"/></Relationships>"#
+                ),
+            ),
+            (
+                "word/styles.xml".to_string(),
+                format!(r#"<w:styles xmlns:w="{w}"><w:style w:type="paragraph" w:styleId="Big"><w:name w:val="Big"/><w:rPr><w:sz w:val="40"/></w:rPr></w:style></w:styles>"#),
+            ),
+            ("customXml/item1.xml".to_string(), r#"<data xmlns="urn:d"><name>Ada</name></data>"#.to_string()),
+            ("word/header1.xml".to_string(), format!(r#"<h:hdr xmlns:h="{w}">{}</h:hdr>"#, control("h:"))),
+            (
+                "word/document.xml".to_string(),
+                format!(
+                    r#"<w:document xmlns:w="{w}" xmlns:r="{rel}"><w:body>{}<w:sectPr><w:headerReference w:type="default" r:id="rId3"/></w:sectPr></w:body></w:document>"#,
+                    control("w:")
+                ),
+            ),
+        ];
+        let files: Vec<(&str, &str)> = files.iter().map(|(n, x)| (n.as_str(), x.as_str())).collect();
+        let bytes = crate::layout::tests::package_bytes(&files).expect("a package");
+        for doc in [crate::docx::read(&bytes).expect("reads"), crate::docx::read_editable(&bytes).expect("reads for editing")] {
+            let header = doc.stories.values().next().expect("the header");
+            for (part, blocks) in [("body", &doc.sections[0].blocks), ("header", header)] {
+                let Some(crate::docx::Block::Para(p)) = blocks.first() else { panic!("a paragraph") };
+                let run = p.inlines.iter().find_map(|i| if let crate::docx::Inline::Text(t, r) = i { (t == "Ada").then_some(r) } else { None });
+                let run = run.unwrap_or_else(|| panic!("{part}: the data shows: {:?}", p.inlines));
+                assert!(run.bold && (run.size - 20.0).abs() < 1e-9, "{part}: bold at the style's size: {} {}", run.bold, run.size);
+            }
+        }
+    }
+
     #[test]
     fn ids_are_seeded_from_whole_attribute_names() {
         let mut ids = super::IdCounter::default();

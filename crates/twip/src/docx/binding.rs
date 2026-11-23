@@ -50,7 +50,7 @@ pub fn guid(id: &str) -> Option<String> {
 }
 
 /// An attribute value's text: the predefined and numeric character references resolved.
-fn unescape(s: &str) -> String {
+pub(crate) fn unescape(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut rest = s;
     while let Some(k) = rest.find('&') {
@@ -328,7 +328,7 @@ pub fn full_date(props: &ControlProps, text: &str) -> Option<String> {
     if text.is_empty() {
         return None;
     }
-    let own = props.kind_xml.as_deref().and_then(|x| attr_of(x, "fullDate")).map(unescape);
+    let own = props.kind_xml.as_deref().and_then(|x| own_attr(x, "fullDate"));
     if let Some(own) = own.filter(|f| shown(props, f) == text) {
         return Some(own);
     }
@@ -348,7 +348,7 @@ pub fn with_full_date(props: &ControlProps, text: &str, w: &str) -> Option<Strin
             lid.as_ref().map_or(String::new(), |l| format!("<{w}lid {w}val=\"{}\"/>", esc(l)))
         )
     });
-    let have = attr_of(&xml, "fullDate").map(unescape);
+    let have = own_attr(&xml, "fullDate");
     if have == want {
         return None;
     }
@@ -379,16 +379,17 @@ pub fn tag_end(x: &str) -> Option<usize> {
     None
 }
 
-/// Where attribute `local` (any prefix, either quote) is in start tag `head` (up to its `>`).
-fn attr_range(head: &str, local: &str) -> Option<Range<usize>> {
+/// Each attribute of start tag `head` (up to its `>`), in order: its qualified name, its value as written (between its
+/// quotes, still escaped) and its range, `name = "value"` whitespace and either quote included.
+pub(crate) fn tag_attrs(head: &str) -> impl Iterator<Item = (&str, &str, Range<usize>)> {
     let b = head.as_bytes();
     let skip = |k: &mut usize| {
         while b.get(*k).is_some_and(u8::is_ascii_whitespace) {
             *k += 1;
         }
     };
-    let mut k = head.find(|c: char| c.is_whitespace() || c == '/')?;
-    loop {
+    let mut k = head.find(|c: char| c.is_whitespace() || c == '/').unwrap_or(head.len());
+    std::iter::from_fn(move || {
         skip(&mut k);
         let start = k;
         while b.get(k).is_some_and(|c| !c.is_ascii_whitespace() && *c != b'=' && *c != b'/') {
@@ -402,11 +403,22 @@ fn attr_range(head: &str, local: &str) -> Option<Range<usize>> {
         k += 1;
         skip(&mut k);
         let q = *b.get(k).filter(|q| **q == b'"' || **q == b'\'')?;
-        k += 1 + head[k + 1..].find(q as char)? + 1;
-        if name.rsplit(':').next() == Some(local) {
-            return Some(start..k);
-        }
-    }
+        let v0 = k + 1;
+        let v1 = v0 + head[v0..].find(q as char)?;
+        k = v1 + 1;
+        Some((name, &head[v0..v1], start..k))
+    })
+}
+
+/// Where attribute `local` (any prefix, either quote) is in start tag `head` (up to its `>`).
+fn attr_range(head: &str, local: &str) -> Option<Range<usize>> {
+    tag_attrs(head).find(|(name, ..)| name.rsplit(':').next() == Some(local)).map(|(.., r)| r)
+}
+
+/// Attribute `local`'s value (any prefix, either quote) on element `xml`'s start tag, unescaped.
+fn own_attr(xml: &str, local: &str) -> Option<String> {
+    let head = &xml[..tag_end(xml)?];
+    tag_attrs(head).find(|(name, ..)| name.rsplit(':').next() == Some(local)).map(|(_, v, _)| unescape(v))
 }
 
 /// The run a control's content takes once it stops showing its placeholder (whose run is the placeholder's style):
@@ -479,13 +491,8 @@ pub fn spans(inlines: &[Inline], controls: &HashMap<ControlId, Control>) -> Vec<
 
 /// Shows each bound control in the paragraph with its node's value from the data parts (one with no value, or one
 /// already showing it, is left); whether one changed. Read time: Word shows the data a document opens with. `resolve`
-/// resolves a control's own `w:rPr` in the paragraph ([`own_run`]).
-pub fn refresh(
-    p: &mut Paragraph,
-    controls: &mut HashMap<ControlId, Control>,
-    parts: &Parts,
-    resolve: &dyn Fn(&Paragraph, &str) -> Option<Run>,
-) -> bool {
+/// gives a control's own run, its `w:rPr` resolved where it was read ([`own_run`]).
+pub fn refresh(p: &mut Paragraph, controls: &mut HashMap<ControlId, Control>, parts: &Parts, resolve: &dyn Fn(ControlId) -> Option<Run>) -> bool {
     let mut changed = false;
     let mut found = spans(&p.inlines, controls);
     // From the end, so earlier ranges stay put; nested controls aren't bound in Word.
@@ -501,7 +508,7 @@ pub fn refresh(
             Some(r) => r,
             None => {
                 let para = &*p;
-                own_run(&ctl.props, &para.inlines, s.inner.start - 1, &para.mark, |x| resolve(para, x))
+                own_run(&ctl.props, &para.inlines, s.inner.start - 1, &para.mark, |_| resolve(s.control))
             }
         };
         p.inlines.splice(s.inner, text_inlines(&want, &run));
@@ -547,6 +554,11 @@ mod tests {
             let dates: Vec<_> = doc.root_element().attributes().filter(|a| a.name() == "fullDate").map(|a| a.value()).collect();
             assert_eq!(dates, ["2027-02-03T00:00:00Z"], "{out}");
         }
+        // Spaces around `=`: a text that isn't a date drops it; one showing it keeps it.
+        let spaced = r#"<w:date w:fullDate = "2026-01-01T00:00:00Z"><w:dateFormat w:val="M/d/yyyy"/></w:date>"#;
+        let out = with_full_date(&props(spaced), "soon", "w:").expect("the date goes");
+        assert!(!out.contains("fullDate"), "{out}");
+        assert_eq!(with_full_date(&props(spaced), "1/1/2026", "w:"), None);
     }
 
     #[test]
