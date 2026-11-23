@@ -51,6 +51,7 @@ mod snap;
 mod steps;
 mod stories;
 mod stories_and_steps;
+mod style_definitions;
 mod style_model;
 mod styles;
 mod sub_template_settings;

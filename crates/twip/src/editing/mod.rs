@@ -37,9 +37,10 @@ pub mod inspect;
 pub mod integrity;
 pub mod interaction;
 pub mod keymap;
-mod list_defs;
+pub mod list_defs;
 mod list_dialogs;
 mod list_gallery;
+pub mod list_labels;
 pub mod lists;
 mod merge;
 mod move_paras;
@@ -67,6 +68,7 @@ pub(crate) mod snap;
 pub mod state;
 pub mod step;
 mod stories;
+pub mod style_defs;
 mod style_dialog;
 mod styles;
 pub use styles::formats_a_style;
@@ -301,6 +303,13 @@ pub struct Editor {
     style_target: Option<String>,
     /// The table style part formatting commands edit, when they edit a table style.
     style_part: Option<&'static str>,
+    /// The list numbers a click selected.
+    list_label: Option<list_labels::LabelHold>,
+    /// A list level's number formatting that character formatting commands edit instead of the selection
+    /// ([`Editor::format_list_label`]).
+    label_target: Option<Box<list_labels::LabelTarget>>,
+    /// The style target is the document defaults: formatted alone.
+    defaults_target: bool,
     /// The lists applied or defined in this session, newest first, by gallery.
     recent_lists: Vec<(crate::api::services::ListGalleryKind, Vec<crate::api::command::ListLevel>)>,
     hover_region: Option<crate::docx::ElementId>,
@@ -494,6 +503,9 @@ impl Editor {
             hover_lookups: 0,
             style_target: None,
             style_part: None,
+            list_label: None,
+            label_target: None,
+            defaults_target: false,
             recent_lists: Vec::new(),
             hover_region: None,
             control_labels: true,
@@ -2943,6 +2955,9 @@ impl Editor {
                     self.click_and_type(t, fonts);
                     return;
                 }
+                if clicks == 1 && !mods.shift && !mods.ctrl && !mods.meta && !mods.alt && self.label_press(x, y, fonts) {
+                    return;
+                }
                 let Some(p) = self.hit(x, y, fonts) else { return };
                 if clicks == 2 && self.note_jump(p) {
                     return;
@@ -3565,6 +3580,7 @@ impl Editor {
             formatting_marks: Vec::new(),
             boundaries: Vec::new(),
             field_shading: Vec::new(),
+            list_labels: self.list_label_rects(visible_pages.clone()),
             drop: self
                 .text_drag
                 .filter(|d| d.moved)

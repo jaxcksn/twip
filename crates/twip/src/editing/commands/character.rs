@@ -250,11 +250,7 @@ impl Editor {
         {
             return Outcome::invalid("a stylistic set is 1…20");
         }
-        // The part the w14 elements go in declares their namespace or not: the styles part when a style is formatted.
-        let cx = match (&self.style_target, &self.doc.resolver) {
-            (Some(_), Some(r)) => r.styles.cx(),
-            _ => self.cx(),
-        };
+        let cx = self.formatted_part_cx();
         self.format_runs(
             "Advanced Font",
             &|p, w, _| {
@@ -391,11 +387,7 @@ impl Editor {
             Ok(e) => e,
             Err(why) => return Outcome::invalid(&why),
         };
-        // The part the w14 elements go in declares their namespace or not: the styles part when a style is formatted.
-        let cx = match (&self.style_target, &self.doc.resolver) {
-            (Some(_), Some(r)) => r.styles.cx(),
-            _ => self.cx(),
-        };
+        let cx = self.formatted_part_cx();
         // Turned off over a style's: Word's own forms of no effect.
         let off = |key: &str| -> String {
             let zeros = |names: &[&'static str]| names.iter().map(|&n| (n, "0")).chain([("algn", "none")]).collect::<Vec<_>>();

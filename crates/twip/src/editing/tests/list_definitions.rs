@@ -553,3 +553,309 @@ fn moving_a_list_keeps_its_levels_other_tab_stops() {
     assert!(level.contains("<w:tab w:val=\"left\" w:pos=\"1440\"/>"), "its kind kept: {level}");
     assert!(level.contains("<w:tab w:val=\"right\" w:leader=\"dot\" w:pos=\"9000\"/>"), "the other stop stays: {level}");
 }
+
+/// Two items of a list whose first level is `fmt` (and `extra` in its `w:lvl`), then a plain paragraph.
+fn list_of(fmt: &str, extra: &str) -> Editor {
+    let lvls: String =
+        (0..9).map(|i| lvl(i, if i == 0 { fmt } else { "decimal" }, &format!("%{}.", i + 1), if i == 0 { extra } else { "" })).collect();
+    let body = format!("{}{}{}", np("one", 1, 0), np("two", 1, 0), p("plain", ""));
+    let mut e = editor(&pkg(&body, Some(&numbering(&format!("{}{}", abstract_of(1, &lvls), num(1, 1)))), ""));
+    e.complete(fonts());
+    e
+}
+
+#[test]
+fn every_number_style_twip_numbers_with_reads_back_as_itself() {
+    use crate::editing::list_defs::NumberStyle;
+    for style in NumberStyle::NAMED {
+        let mut e = list_of(style.val(), "");
+        caret_in(&mut e, 0);
+        let d = e.list_definition().expect("a list");
+        assert_eq!(d.levels[0].format, style, "{}", style.val());
+        assert_eq!(d.levels[0].level.format, style.format());
+    }
+    let mut e = list_of("aiueoFullWidth", "");
+    caret_in(&mut e, 0);
+    assert_eq!(e.list_definition().expect("a list").levels[0].format, NumberStyle::Other("aiueoFullWidth".into()), "unlisted: as named");
+}
+
+#[test]
+fn the_caret_list_reads_without_a_dialog() {
+    let mut e = list_of("decimal", "");
+    caret_in(&mut e, 1);
+    let d = e.list_definition().expect("a list");
+    assert_eq!((d.id, d.level, d.bullet, d.levels.len()), (1, 0, false, 9));
+    assert_eq!(d.levels[0].level.text, "%1.");
+    caret_in(&mut e, 2);
+    assert!(e.list_definition().is_none(), "outside a list");
+}
+
+#[test]
+fn a_level_in_full_sets_its_style_and_its_numbers_formatting() {
+    use crate::api::value::{AutoOr, Color, HighlightColor, NoneOr, UnderlineStyle};
+    use crate::editing::list_defs::{LabelFormat, ListLevelsChange, NumberStyle};
+    let mut e = list_of("decimal", "");
+    caret_in(&mut e, 0);
+    let mut levels = e.list_definition().expect("a list").levels;
+    levels[0].format = NumberStyle::Chicago;
+    levels[0].level.text = "%1".into();
+    levels[0].label = LabelFormat {
+        bold: Some(true),
+        italic: Some(false),
+        underline: Some(UnderlineStyle::Double),
+        size: Some(Points(14.0)),
+        color: Some(AutoOr::Value(Color(0xFF0000))),
+        highlight: Some(NoneOr::Value(HighlightColor::Yellow)),
+    };
+    let out = e.set_list_levels(ListLevelsChange { levels: levels[..1].to_vec(), ..Default::default() }, fonts());
+    assert!(matches!(out, crate::editing::commands::Outcome::Changed(_)), "{out:?}");
+    assert_eq!((label(&e, 0), label(&e, 1)), ("*".to_string(), "†".to_string()), "drawn in the new style");
+    let run = &para(&e, 1).list.as_ref().expect("a label").run;
+    assert!(run.bold && !run.italic && run.size == 14.0 && run.color == Some(0xFF0000), "the label takes it");
+    assert!(!para(&e, 1).mark.bold, "the paragraph doesn't");
+    let read = e.list_definition().expect("a list").levels[0].clone();
+    assert_eq!((read.format, read.label), (NumberStyle::Chicago, levels[0].label.clone()));
+    let xml = part(&saved(&e), "word/numbering.xml");
+    for x in [
+        "w:val=\"chicago\"",
+        "<w:b/>",
+        "<w:bCs/>",
+        "<w:i w:val=\"0\"/>",
+        "<w:u w:val=\"double\"/>",
+        "<w:sz w:val=\"28\"/>",
+        "w:val=\"FF0000\"",
+        "w:val=\"yellow\"",
+    ] {
+        assert!(xml.contains(x), "{x} in {xml}");
+    }
+    // Cleared: the paragraph's formatting applies again.
+    levels[0].label = LabelFormat::default();
+    e.set_list_levels(ListLevelsChange { levels: levels[..1].to_vec(), ..Default::default() }, fonts());
+    assert_eq!(e.list_definition().expect("a list").levels[0].label, LabelFormat::default());
+    assert!(!part(&saved(&e), "word/numbering.xml").contains("<w:b/>"));
+    // Refused: a style name that can't be written, a size out of bounds.
+    levels[0].format = NumberStyle::Other("a\"b".into());
+    assert!(matches!(
+        e.set_list_levels(ListLevelsChange { levels: levels[..1].to_vec(), ..Default::default() }, fonts()),
+        crate::editing::commands::Outcome::Refused(_)
+    ));
+    levels[0].format = NumberStyle::Decimal;
+    levels[0].label.size = Some(Points(0.0));
+    assert!(matches!(
+        e.set_list_levels(ListLevelsChange { levels: levels[..1].to_vec(), ..Default::default() }, fonts()),
+        crate::editing::commands::Outcome::Refused(_)
+    ));
+}
+
+#[test]
+fn the_api_level_keeps_a_style_and_number_formatting_it_cant_show() {
+    use crate::editing::list_defs::NumberStyle;
+    let mut e = list_of("hex", "<w:rPr><w:b/></w:rPr>");
+    caret_in(&mut e, 0);
+    let mut shown = levels_of(&mut e, 0);
+    assert_eq!(shown[0].format, NumberFormat::Decimal, "the API's enum has no hex");
+    shown[0].text_indent = Points(54.0);
+    e.execute(Command::SetListDefinition(ListDefinitionChange { levels: shown[..1].to_vec(), ..Default::default() }), fonts());
+    let d = e.list_definition().expect("a list").levels[0].clone();
+    assert_eq!((d.format, d.label.bold, d.level.text_indent), (NumberStyle::Hex, Some(true), Points(54.0)));
+    // Choosing a style the API names replaces it.
+    shown[0].format = NumberFormat::UpperRoman;
+    e.execute(Command::SetListDefinition(ListDefinitionChange { levels: shown[..1].to_vec(), ..Default::default() }), fonts());
+    assert_eq!(e.list_definition().expect("a list").levels[0].format, NumberStyle::UpperRoman);
+}
+
+#[test]
+fn a_click_on_a_number_formats_the_levels_numbers() {
+    use crate::editing::input::PointerKind;
+    use crate::editing::keymap::Mods;
+    let mut e = list_of("decimal", "");
+    let id = super::texts_ids(&e)[1];
+    let g = e.page_geometries().into_iter().find(|(p, _)| *p == 0).map(|(_, g)| g).expect("page 0");
+    let l = g.lines.iter().find(|l| l.shows(id)).expect("a line");
+    let (a, b) = l.label.expect("the number's extent");
+    let (x, y) = e.stack().to_doc(0, (a + b) / 2.0, (l.top + l.bottom) / 2.0).expect("on the stack");
+    e.pointer_input(PointerKind::Down, x, y, 1, Mods::default(), fonts());
+    e.pointer_input(PointerKind::Up, x, y, 1, Mods::default(), fonts());
+    let sel = e.list_label_selection().cloned().expect("the numbers are selected");
+    assert_eq!((sel.para, sel.list, sel.level), (id, 1, 0));
+    let view = e.view(0..1);
+    assert_eq!(view.list_labels.len(), 2, "both numbers shaded");
+    e.execute(Command::SetBold(true), fonts());
+    e.execute(Command::SetFontColor(crate::api::value::AutoOr::Value(crate::api::value::Color(0x0000FF))), fonts());
+    for n in [0, 1] {
+        let run = &para(&e, n).list.as_ref().expect("a label").run;
+        assert!(run.bold && run.color == Some(0x0000FF), "number {n} formatted");
+        assert!(!para(&e, n).mark.bold, "text {n} isn't");
+    }
+    assert!(e.list_definition().expect("a list").levels[0].label.bold == Some(true));
+    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo, fonts());
+    assert!(!para(&e, 0).list.as_ref().expect("a label").run.bold, "one undo step each");
+    // Clear Formatting isn't number formatting: it ends the number selection and acts on the text.
+    e.pointer_input(PointerKind::Down, x, y, 1, Mods::default(), fonts());
+    e.pointer_input(PointerKind::Up, x, y, 1, Mods::default(), fonts());
+    assert!(e.list_label_selection().is_some());
+    e.execute(Command::ClearFormatting, fonts());
+    assert!(e.list_label_selection().is_none(), "Clear Formatting ends it");
+    assert!(e.view(0..1).list_labels.is_empty(), "no number shaded");
+    // Another selection ends it: formatting goes to the text again.
+    caret_in(&mut e, 0);
+    assert!(e.list_label_selection().is_none());
+    // A click on the text isn't one on the number.
+    let x1 = l.stops.iter().find(|s| s.para == id).expect("a stop").x + 4.0;
+    let (x, y) = e.stack().to_doc(0, x1, (l.top + l.bottom) / 2.0).expect("on the stack");
+    e.pointer_input(PointerKind::Down, x, y, 1, Mods::default(), fonts());
+    e.pointer_input(PointerKind::Up, x, y, 1, Mods::default(), fonts());
+    assert!(e.list_label_selection().is_none());
+}
+
+/// Clicks the middle of the number on paragraph `n`'s first line.
+fn click_number(e: &mut Editor, n: usize) {
+    let (pg, p) = number_point(e, n);
+    click_at(e, pg, p);
+}
+
+/// The page and page point at the middle of paragraph `n`'s number.
+fn number_point(e: &mut Editor, n: usize) -> (usize, [f64; 2]) {
+    let id = super::para_id(e, n);
+    for (pg, g) in e.page_geometries() {
+        if let Some(l) = g.lines.iter().find(|l| l.shows(id) && l.label.is_some()) {
+            let (a, b) = l.label.expect("the number's extent");
+            return (pg, l.page((a + b) / 2.0, (l.top + l.bottom) / 2.0));
+        }
+    }
+    panic!("paragraph {n} has no number drawn")
+}
+
+fn click_at(e: &mut Editor, pg: usize, p: [f64; 2]) {
+    use crate::editing::input::PointerKind;
+    use crate::editing::keymap::Mods;
+    let (x, y) = e.stack().to_doc(pg, p[0], p[1]).expect("on the stack");
+    e.pointer_input(PointerKind::Down, x, y, 1, Mods::default(), fonts());
+    e.pointer_input(PointerKind::Up, x, y, 1, Mods::default(), fonts());
+}
+
+fn label_run(e: &Editor, n: usize) -> crate::docx::Run {
+    para(e, n).list.as_ref().expect("a label").run.clone()
+}
+
+#[test]
+fn a_numbering_part_with_its_own_prefix_takes_number_formatting() {
+    let lvls: String = (0..9)
+        .map(|i| {
+            format!("<ns0:lvl ns0:ilvl=\"{i}\"><ns0:start ns0:val=\"1\"/><ns0:numFmt ns0:val=\"decimal\"/><ns0:lvlText ns0:val=\"%{}.\"/><ns0:lvlJc ns0:val=\"left\"/><ns0:pPr><ns0:ind ns0:left=\"720\" ns0:hanging=\"360\"/></ns0:pPr></ns0:lvl>", i + 1)
+        })
+        .collect();
+    let numbering = format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><ns0:numbering xmlns:ns0=\"{W}\"><ns0:abstractNum ns0:abstractNumId=\"1\">{lvls}</ns0:abstractNum><ns0:num ns0:numId=\"1\"><ns0:abstractNumId ns0:val=\"1\"/></ns0:num></ns0:numbering>"
+    );
+    let mut e = editor(&pkg(&format!("{}{}", np("one", 1, 0), np("two", 1, 0)), Some(&numbering), ""));
+    e.complete(fonts());
+    assert_eq!(label(&e, 0), "1.", "setup: numbered");
+    click_number(&mut e, 0);
+    assert!(e.list_label_selection().is_some(), "the numbers are selected");
+    let out = e.execute(Command::SetBold(true), fonts());
+    assert!(matches!(out, crate::editing::commands::Outcome::Changed(_)), "{out:?}");
+    let lig = Typography { ligatures: Some(Ligatures::All), ..Default::default() };
+    let out = e.execute(Command::SetTypography(lig), fonts());
+    assert!(matches!(out, crate::editing::commands::Outcome::Changed(_)), "{out:?}");
+    assert!(label_run(&e, 1).bold && !para(&e, 1).mark.bold, "the numbers are bold, the text isn't");
+    let xml = part(&saved(&e), "word/numbering.xml");
+    assert!(xml.contains("<ns0:b/>") && !xml.contains("<w:b"), "in the numbering part's names: {xml}");
+    assert!(xml.contains("<ns0:rPr><ns0:b/><ns0:bCs/><w14:ligatures xmlns:w14="), "w14 declared where the part doesn't: {xml}");
+    let again = editor(&saved(&e));
+    let run = label_run(&again, 1);
+    assert!(run.bold && run.typography.ligatures == 15, "a reload draws it: {:?}", run.typography);
+}
+
+#[test]
+fn a_dot_leader_on_a_numbered_line_is_not_its_number() {
+    let leader = "<w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr><w:tabs><w:tab w:val=\"right\" w:leader=\"dot\" w:pos=\"8000\"/></w:tabs></w:pPr><w:r><w:t>Definitions</w:t></w:r><w:r><w:tab/><w:t>5</w:t></w:r></w:p>";
+    let lvls = levels("decimal", |i| format!("%{}.", i + 1));
+    let mut e = editor(&pkg(&format!("{leader}{}", np("two", 1, 0)), Some(&numbering(&format!("{}{}", abstract_of(1, &lvls), num(1, 1)))), ""));
+    e.complete(fonts());
+    let id = super::para_id(&e, 0);
+    let g = e.page_geometries().into_iter().find(|(p, _)| *p == 0).map(|(_, g)| g).expect("page 0");
+    let l = g.lines.iter().find(|l| l.shows(id)).expect("a line");
+    let (a, b) = l.label.expect("the number's extent");
+    let first = l.first_of(id).and_then(|u| l.x_of(id, u)).expect("the text's start");
+    assert!(b <= first + 0.01, "the number ends before the text: {a}..{b}, text at {first}");
+    assert!(b - a < 20.0, "only the number: {a}..{b}");
+    let mid = (l.top + l.bottom) / 2.0;
+    // The text, then the leader
+    let stops: Vec<f64> = l.stops.iter().filter(|s| s.para == id).map(|s| s.x).collect();
+    let (text, dots) = (first + 10.0, (stops[stops.len() - 3] + stops[stops.len() - 2]) / 2.0);
+    for x in [text, dots] {
+        click_at(&mut e, 0, l.page(x, mid));
+        assert!(e.list_label_selection().is_none(), "a click at {x} isn't on the number");
+    }
+    click_number(&mut e, 0);
+    assert!(e.list_label_selection().is_some(), "the number is");
+    let view = e.view(0..1);
+    let band = &view.list_labels.iter().find(|(p, b)| *p == 0 && (b.rect[1] - l.top).abs() < 0.01).expect("the number's shading").1;
+    assert!((band.rect[0] - a).abs() < 0.01 && (band.rect[2] - b).abs() < 0.01, "shading only the number: {:?}", band.rect);
+}
+
+#[test]
+fn a_click_on_a_number_in_a_tbrl_section_selects_the_numbers() {
+    let lvls = levels("decimal", |i| format!("%{}.", i + 1));
+    let brk = "<w:p><w:pPr><w:sectPr><w:pgSz w:w=\"12240\" w:h=\"15840\"/><w:pgMar w:top=\"1440\" w:right=\"1440\" w:bottom=\"1440\" w:left=\"1440\" w:header=\"720\" w:footer=\"720\" w:gutter=\"0\"/><w:textDirection w:val=\"tbRl\"/></w:sectPr></w:pPr></w:p>";
+    let mut e = editor(&pkg(
+        &format!("{}{}{brk}", np("one", 1, 0), np("two", 1, 0)),
+        Some(&numbering(&format!("{}{}", abstract_of(1, &lvls), num(1, 1)))),
+        "",
+    ));
+    e.complete(fonts());
+    let id = super::para_id(&e, 1);
+    let g = e.page_geometries().into_iter().find(|(p, _)| *p == 0).map(|(_, g)| g).expect("page 0");
+    let l = g.lines.iter().find(|l| l.shows(id)).expect("a line");
+    assert_ne!(l.dir(), crate::editing::geometry::LineDir::Horizontal, "setup: the line runs down the page");
+    click_number(&mut e, 1);
+    let sel = e.list_label_selection().cloned().expect("the numbers are selected");
+    assert_eq!((sel.para, sel.list, sel.level), (id, 1, 0));
+}
+
+/// A list whose paragraphs are in a 16 pt bold paragraph style.
+fn styled_list() -> Editor {
+    let style = "<w:style w:type=\"paragraph\" w:styleId=\"Big\"><w:name w:val=\"Big\"/><w:rPr><w:b/><w:bCs/><w:sz w:val=\"32\"/><w:szCs w:val=\"32\"/></w:rPr></w:style>";
+    let lvls = levels("decimal", |i| format!("%{}.", i + 1));
+    let big = |t: &str| p(t, "<w:pStyle w:val=\"Big\"/><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr>");
+    let mut e = editor(&pkg(&format!("{}{}", big("one"), big("two")), Some(&numbering(&format!("{}{}", abstract_of(1, &lvls), num(1, 1)))), style));
+    e.complete(fonts());
+    e
+}
+
+#[test]
+fn number_formatting_starts_from_the_number_as_it_draws() {
+    use crate::api::state::Tri;
+    let mut e = styled_list();
+    assert_eq!(label_run(&e, 0).size, 16.0, "setup: the number draws at the style's size");
+    click_number(&mut e, 0);
+    e.execute(Command::GrowFont, fonts());
+    assert_eq!((label_run(&e, 0).size, label_run(&e, 1).size), (18.0, 18.0), "grown from 16 pt");
+    e.execute(Command::ShrinkFont, fonts());
+    assert_eq!(label_run(&e, 0).size, 16.0, "shrunk from 18 pt");
+    assert_eq!(e.format_state().expect("a state").character.bold, Tri::Uniform(true), "the number's formatting: bold, from its style");
+    e.execute(Command::SetBold(false), fonts());
+    assert!(!label_run(&e, 0).bold && para(&e, 0).mark.bold, "the number isn't bold; the text still is");
+    assert!(part(&saved(&e), "word/numbering.xml").contains("<w:b w:val=\"0\"/>"), "turned off over the style");
+    assert_eq!(e.format_state().expect("a state").character.bold, Tri::Uniform(false));
+    assert!(!label_run(&editor(&saved(&e)), 1).bold, "as a reload draws it");
+}
+
+#[test]
+fn the_state_shows_the_selected_numbers_formatting() {
+    use crate::api::state::Tri;
+    let mut e = list_of("decimal", "");
+    click_number(&mut e, 0);
+    e.execute(Command::SetBold(true), fonts());
+    assert_eq!(e.format_state().expect("a state").character.bold, Tri::Uniform(true), "the number's");
+    assert!(!para(&e, 0).mark.bold, "the text isn't bold");
+    // Home at the paragraph's start leaves the caret where it is, and ends the number selection.
+    e.execute(
+        Command::MoveSelection(MoveSelection { by: MoveUnit::LineEdge, direction: crate::api::value::Direction::Backward, extend: None }),
+        fonts(),
+    );
+    assert!(e.list_label_selection().is_none(), "navigation ends it");
+    assert_eq!(e.format_state().expect("a state").character.bold, Tri::Uniform(false), "the text's again");
+}

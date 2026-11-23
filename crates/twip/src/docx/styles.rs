@@ -488,6 +488,17 @@ impl Styles {
         Ok(all)
     }
 
+    /// Replaces the latent styles from their `w:latentStyles` XML.
+    pub fn set_latent_xml(&mut self, raw: String) -> Result<(), StyleEditError> {
+        let cx = self.cx();
+        let latent = cx
+            .parse(&raw, |text, n| super::xml::is_w(n, "latentStyles").then(|| LatentStyles::parse(n, text)))
+            .flatten()
+            .ok_or(StyleEditError::Malformed)?;
+        self.latent = LatentStyles { raw: Some(raw), ..latent };
+        Ok(())
+    }
+
     /// The prefix and declarations a style's XML is written with.
     pub fn cx(&self) -> super::write::props::Cx {
         if self.root.is_empty() {

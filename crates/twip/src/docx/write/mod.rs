@@ -2098,6 +2098,12 @@ impl<'a, 'i> Saver<'a, 'i> {
         Props::parse(t.direct.0.as_deref(), "tblPr", &self.cx).get("shd").map(str::to_string)
     }
 
+    /// A table's own band sizes as written in its `w:tblPr` (not its style's).
+    fn direct_bands(&self, t: &Table) -> [Option<String>; 2] {
+        let p = Props::parse(t.direct.0.as_deref(), "tblPr", &self.cx);
+        ["tblStyleRowBandSize", "tblStyleColBandSize"].map(|n| p.get(n).map(str::to_string))
+    }
+
     fn table(&mut self, a: &Table, b: &Table) -> Result<(), String> {
         let same_rows = a.rows.len() == b.rows.len()
             && a.rows.iter().zip(&b.rows).all(|(x, y)| {
@@ -2399,6 +2405,12 @@ impl<'a, 'i> Saver<'a, 'i> {
                         if self.direct_shd(a) != own {
                             fix.push(("shd", own.unwrap_or_default(), before("shd")));
                         }
+                        let (was, now) = (self.direct_bands(a), self.direct_bands(t));
+                        for (k, name) in ["tblStyleRowBandSize", "tblStyleColBandSize"].into_iter().enumerate() {
+                            if was[k] != now[k] {
+                                fix.push((name, now[k].clone().unwrap_or_default(), before(name)));
+                            }
+                        }
                         if a.alt != t.alt {
                             let (title, description) = t.alt.as_deref().map_or(("", ""), |a| (a.title.as_str(), a.description.as_str()));
                             let tag = |name: &str, v: &str| if v.is_empty() { String::new() } else { format!("<{w}{name} {w}val=\"{}\"/>", props::esc(v)) };
@@ -2437,14 +2449,14 @@ impl<'a, 'i> Saver<'a, 'i> {
                         if fix.is_empty() { self.xml[p.range()].to_string() } else { self.spliced(p.range(), fix)? }
                     }
                     (Some(p), None) => self.xml[p.range()].to_string(),
-                    (None, _) => tbl_pr(&w, t, self.direct_shd(t).as_deref(), self.people),
+                    (None, _) => tbl_pr(&w, t, self.direct_shd(t).as_deref(), &self.direct_bands(t), self.people),
                 });
                 close
             }
             None => {
                 out.push_str(&format!("<{w}tbl>"));
                 let shd = self.direct_shd(t);
-                out.push_str(&tbl_pr(&w, t, shd.as_deref(), self.people));
+                out.push_str(&tbl_pr(&w, t, shd.as_deref(), &self.direct_bands(t), self.people));
                 format!("</{w}tbl>")
             }
         };
@@ -6076,7 +6088,7 @@ fn shading(w: &str, fill: Option<u32>) -> String {
 
 /// A table's `w:tblPr` from the model (its resolved properties written as direct ones, its tracked change last), in
 /// CT_TblPr order.
-fn tbl_pr(w: &str, t: &Table, shd: Option<&str>, people: &People) -> String {
+fn tbl_pr(w: &str, t: &Table, shd: Option<&str>, bands: &[Option<String>; 2], people: &People) -> String {
     let mut s = format!("<{w}tblPr>");
     if let Some(id) = &t.style_id {
         s.push_str(&format!("<{w}tblStyle {w}val=\"{}\"/>", props::esc(id)));
@@ -6086,6 +6098,9 @@ fn tbl_pr(w: &str, t: &Table, shd: Option<&str>, people: &People) -> String {
     s.push_str(&overlap);
     if t.bidi_visual {
         s.push_str(&format!("<{w}bidiVisual/>"));
+    }
+    for b in bands.iter().flatten() {
+        s.push_str(b);
     }
     s.push_str(&width(w, "tblW", &t.width));
     match t.jc {

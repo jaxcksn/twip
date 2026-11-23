@@ -393,6 +393,9 @@ pub struct LineFragment {
     pub mark: Option<Unit>,
     pub texts: Box<[([f64; 4], crate::docx::Picture)]>,
     pub expansions: Box<[([f64; 4], Rc<super::expansion::Expansion>)]>,
+    /// The extent of the line's list number or bullet along it, as its atoms are measured: what it draws, without
+    /// its suffix.
+    pub label: Option<(f64, f64)>,
 }
 
 impl LineFragment {

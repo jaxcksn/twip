@@ -371,6 +371,17 @@ impl Editor {
         Cx::of_xml(self.doc.source.as_ref().map_or(NEW_ROOT, |s| s.xml.as_str()))
     }
 
+    /// The names of the part character formatting is written in: the numbering part when a list's number is
+    /// formatted, the styles part when a style is, else the document's. Whether it declares the w14 namespace
+    /// follows.
+    pub(super) fn formatted_part_cx(&self) -> Cx {
+        match (&self.label_target, &self.style_target, &self.doc.resolver) {
+            (Some(t), _, _) => t.cx.clone(),
+            (None, Some(_), Some(r)) => r.styles.cx(),
+            _ => self.cx(),
+        }
+    }
+
     pub(super) fn region_of_para(&self, para: ParaId, res: &Resolver) -> Option<Region> {
         let slot = self.index.para_slot(para)?;
         let Container::Cell { table, row, cell } = slot.container else { return None };
@@ -562,6 +573,9 @@ impl Editor {
         settle: &dyn Fn(&mut Props, &str, &RunStyle) -> bool,
         fonts: &Fonts,
     ) -> Outcome {
+        if self.label_target.is_some() {
+            return self.format_label_part(edit, settle);
+        }
         if self.style_target.is_some() {
             return self.format_style_part("rPr", &|p, cx, _, run| edit(p, &cx.w, run));
         }

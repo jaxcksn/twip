@@ -39,7 +39,7 @@ impl Graphics {
         // leave the highlight untouched.
         let (shade, blend) = if page.is_dark() { (Color::rgb(0x2C_2C2C), BlendMode::Screen) } else { (Color::rgb(0xD9_D9D9), BlendMode::Multiply) };
         let shade = twip_graphics::paint::Paint { blend, ..aliased(shade) };
-        for (_, b) in view.field_shading.iter().filter(|(pg, _)| *pg == i) {
+        for (_, b) in view.field_shading.iter().chain(&view.list_labels).filter(|(pg, _)| *pg == i) {
             fill_band(rec, b, shade);
         }
         for (_, b) in view.fade.iter().filter(|(pg, _)| *pg == i) {
