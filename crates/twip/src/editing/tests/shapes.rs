@@ -796,3 +796,83 @@ fn typing_in_a_text_box_keeps_its_anchor_paragraphs_shaping() {
     assert!(shaped <= 20 && entries <= 20, "{shaped} paragraphs shaped and {entries} entries kept for 20 keystrokes in the box");
     same_as_full(&mut e);
 }
+
+fn chain_texts(e: &Editor) -> Vec<(u64, crate::drawing::ShapeText, Option<u32>)> {
+    let mut v = Vec::new();
+    for b in &e.document().sections[0].blocks {
+        if let crate::docx::Block::Para(p) = b {
+            for i in &p.inlines {
+                if let crate::docx::Inline::Float(f, _) = i
+                    && let Some(sp) = f.shape.as_deref().and_then(|s| s.sp())
+                {
+                    v.push((f.id, sp.text.clone(), sp.chain));
+                }
+            }
+        }
+    }
+    v
+}
+
+#[test]
+fn break_link_leaves_the_boxes_after_it_a_chain_of_their_own_and_saves() {
+    use crate::drawing::ShapeText as T;
+    let mut e = linked_boxes();
+    let ids = floats(&e);
+    e.set_selection(Selection::Object(ObjectRef::Floating(FloatId(ids[0]))));
+    let link = e.text_box_link().expect("in a chain");
+    assert_eq!((link.index, link.count, link.next), (0, 3, Some(FloatId(ids[1]))));
+    assert!(matches!(e.unlink_text_box(fonts()), super::super::Outcome::Changed(_)));
+    assert_eq!(e.text_box_link(), None, "the first box is alone");
+    let c = chain_texts(&e);
+    assert!(matches!((&c[0].1, c[0].2), (T::Story, None)), "{c:?}");
+    assert!(matches!((&c[1].1, c[1].2), (T::Story, Some(_))) && matches!(c[2].1, T::Linked { seq: 1, .. }), "{c:?}");
+    same_as_full(&mut e);
+    let lines = page_lines(&e);
+    assert!(!lines.iter().any(|l| l.0.starts_with('P') && l.1 > 250.0), "the story stops in the first box: {lines:?}");
+    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let mut again = Editor::open(&bytes, fonts()).expect("reopens");
+    again.set_selection(Selection::Object(ObjectRef::Floating(FloatId(floats(&again)[1]))));
+    assert_eq!(again.text_box_link().map(|l| (l.index, l.count)), Some((0, 2)), "the rest are a chain");
+    assert!(box_text(&again).is_some_and(|t| t.starts_with("P1")));
+    // One undo joins them again; redo breaks them again.
+    e.undo(true, fonts());
+    assert_eq!(e.text_box_link().map(|l| l.count), Some(3));
+    let _ = e.execute(super::super::commands::Command::Redo, fonts());
+    assert_eq!(e.text_box_link(), None);
+}
+
+#[test]
+fn create_link_takes_a_click_on_an_empty_text_box_and_the_text_flows_into_it() {
+    let story: String =
+        (1..=8).map(|i| format!("<w:p><w:r><w:t>P{i} words to fill the boxes in turn, one after another.</w:t></w:r></w:p>")).collect();
+    let rect = sp(0, 0, 150, 60, "rect", "", "FFFFFF").replace(r#"<wps:cNvSpPr/>"#, r#"<wps:cNvSpPr txBox="1"/>"#);
+    let full = rect.replace("<wps:bodyPr/>", &format!(r#"<wps:txbx><w:txbxContent>{story}</w:txbxContent></wps:txbx><wps:bodyPr/>"#));
+    let empty = rect.replace("<wps:bodyPr/>", r#"<wps:txbx><w:txbxContent><w:p/></w:txbxContent></wps:txbx><wps:bodyPr/>"#);
+    let mut e = editor(&format!(
+        "<w:p><w:r><w:t>Text</w:t></w:r>{}{}</w:p>",
+        anchor(72, 300, 150, 60, 1, false, 1, &full),
+        anchor(250, 300, 150, 60, 2, false, 2, &empty)
+    ));
+    let ids = floats(&e);
+    e.set_selection(Selection::Object(ObjectRef::Floating(FloatId(ids[0]))));
+    assert!(!e.can_link_to(FloatId(ids[0])), "not to itself");
+    assert!(e.begin_linking() == super::super::Outcome::Moved);
+    assert_eq!(hover(&mut e, [300.0, 330.0]), super::super::input::Cursor::Pointer, "the pouring pointer over the empty box");
+    click(&mut e, 300.0, 330.0);
+    assert!(!e.linking());
+    let link = e.text_box_link().expect("linked");
+    assert_eq!((link.index, link.count, link.next), (0, 2, Some(FloatId(ids[1]))));
+    same_as_full(&mut e);
+    let lines = page_lines(&e);
+    assert!(lines.iter().any(|l| l.0.starts_with("P2") && l.1 > 250.0), "the text goes on in the second box: {lines:?}");
+    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let xml = crate::docx::package::read(&bytes, &[], "word/document.xml").expect("reads").expect("the main part");
+    assert!(xml.contains(r#"<wps:txbx id="1">"#) && xml.contains(r#"<wps:linkedTxbx id="1" seq="1"/>"#), "{xml}");
+    let mut again = Editor::open(&bytes, fonts()).expect("reopens");
+    again.set_selection(Selection::Object(ObjectRef::Floating(FloatId(floats(&again)[0]))));
+    assert_eq!(again.text_box_link().map(|l| l.count), Some(2));
+    e.undo(true, fonts());
+    assert_eq!(e.text_box_link(), None);
+    let _ = e.execute(super::super::commands::Command::Redo, fonts());
+    assert_eq!(e.text_box_link().map(|l| l.count), Some(2), "redone");
+}

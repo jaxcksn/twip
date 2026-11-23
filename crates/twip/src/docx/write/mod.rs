@@ -3046,7 +3046,11 @@ impl<'a, 'i> Saver<'a, 'i> {
             let mut src = if copied.is_some() { self.xml[r.clone()].to_string() } else { self.src_text(r.clone()) };
             let text: Vec<drawing::Edit> = own.map_or(Vec::new(), |x| box_contents(&src).into_iter().map(|b| (b, x.clone())).collect());
             if drawing::is_vml(&src) {
-                push(&drawing::vml_patch(&drawing::apply(&src, text), was, f));
+                // What VML can't say is written as DrawingML.
+                match drawing::vml_patch(&drawing::apply(&src, text), was, f).or_else(|| self.new_float_xml(f, run)) {
+                    Some(x) => push(&x),
+                    None => push(&src),
+                }
                 continue;
             }
             // The shape's own properties first (their ranges are in the source as read), then its placement.
@@ -4122,7 +4126,14 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                 // A VML float's edits patch its VML (`style`, fill and stroke attributes).
                 let text = s.src_text(src.clone());
                 if drawing::is_vml(&text) {
-                    let now = drawing::vml_patch(&text, a, b);
+                    // What VML can't say is written as DrawingML.
+                    let now = drawing::vml_patch(&text, a, b).or_else(|| {
+                        let run = ps.iter().flat_map(|p| p.inlines.iter()).find_map(|i| match i {
+                            Inline::Float(f, r) if f.id == b.id => Some(r),
+                            _ => None,
+                        })?;
+                        s.new_float_xml(b, run)
+                    })?;
                     return (now != text).then(|| (src, Placement { replace: Some(now), ..Placement::default() }));
                 }
                 // The shape's own properties (their ranges are in the source as read), then its placement.
@@ -4131,7 +4142,7 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                 if let (Some(at), Some(tb)) = (drawing::story_added(a, b), b.text_box.as_ref())
                     && let Ok(blocks) = s.nested_blocks(&tb.blocks)
                 {
-                    let txbx = format!("<wps:txbx><{w}txbxContent>{blocks}</{w}txbxContent></wps:txbx>", w = s.w);
+                    let txbx = format!("{}<{w}txbxContent>{blocks}</{w}txbxContent></wps:txbx>", drawing::txbx_open(b.shape.as_deref()), w = s.w);
                     shape.get_or_insert_with(Vec::new).push((at..at, txbx));
                 }
                 // A floating picture control drops the fallback copy beside it: its bare Choice drawing.
@@ -4497,9 +4508,10 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                     // A whole field (its runs) or a simple field: reformatted, every run of it takes the formatting.
                     // A content control around a resized picture: its drawing with the new extents.
                     if let Some(size) = resized(self, i).filter(|_| Rc::as_ptr(&run) == self.orig[i].run) {
-                        let p = Placement { size: Some((size.0, size.1)), alt: Some(size.2.to_string()), ..Placement::default() };
+                        let was = self.orig[i].size.as_ref();
+                        let p = Placement { decorative: None, nv: None, ..size.placement(was) };
                         let src = self.src(range.clone());
-                        let x = picture_patched(&src, p, self.orig[i].size.as_ref().and_then(|s| s.4), size.4);
+                        let x = self.s.picture_patched(&src, p, was, &size);
                         self.flush();
                         self.open_to(self.stack.len());
                         self.out.push_str(&x);
@@ -4520,13 +4532,9 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                         // A resized or reformatted inline picture: its drawing with the new extents and properties.
                         self.add(to, None, None);
                         self.flush_text();
-                        let mut p = Placement {
-                            size: Some((size.0, size.1)),
-                            alt: Some(size.2.to_string()),
-                            decorative: Some(decorative(&size.3)),
-                            ..Placement::default()
-                        };
-                        if let (Some(a), Some(b)) = (self.orig[i].size.as_ref().and_then(|s| s.3.as_deref()), size.3.as_deref()) {
+                        let was = self.orig[i].size.as_ref();
+                        let mut p = size.placement(was);
+                        if let (Some(a), Some(b)) = (was.and_then(|s| s.0.shape.as_deref()), size.0.shape.as_deref()) {
                             let d = self.s.choice_drawing(range.clone()).unwrap_or(range.clone());
                             p.shape = drawing::shape_changed(a, b, d.start, &self.s.src_text(d.clone()));
                             // an edited shape drops its VML fallback.
@@ -4535,7 +4543,7 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                             }
                         }
                         let src = self.s.src_text(range.clone());
-                        let x = picture_patched(&src, p, self.orig[i].size.as_ref().and_then(|s| s.4), size.4);
+                        let x = self.s.picture_patched(&src, p, self.orig[i].size.as_ref(), &size);
                         self.pend.push_str(&x);
                     } else {
                         self.add(to, None, Some(range.clone()))
@@ -5083,11 +5091,74 @@ fn checkbox_xml(src: &str, face: char) -> String {
     s
 }
 
-/// An inline picture's size, alternative text and shape tree.
-type PicState = (f64, f64, Rc<str>, Option<Box<crate::drawing::Shape>>, Option<usize>);
+/// An inline picture or shape as it is, compared but for its text's blocks (written as its own container).
+#[derive(Clone, Debug)]
+struct PicState(Picture);
+
+impl PartialEq for PicState {
+    fn eq(&self, o: &PicState) -> bool {
+        self.0.same_but_story(&o.0)
+    }
+}
 
 fn picture_size(i: &Inline) -> Option<PicState> {
-    if let Inline::Picture(p, _) = i { Some((p.w, p.h, p.alt.clone(), p.shape.clone(), p.image)) } else { None }
+    if let Inline::Picture(p, _) = i { Some(PicState(p.clone())) } else { None }
+}
+
+impl PicState {
+    /// The placement patch a kept picture's drawing takes to be this from `was`.
+    fn placement(&self, was: Option<&PicState>) -> Placement {
+        let p = &self.0;
+        let a = was.map(|w| &w.0);
+        Placement {
+            size: Some((p.w, p.h)),
+            alt: Some(p.alt.to_string()),
+            decorative: Some(decorative(&p.shape)),
+            effect: Some(p.effect),
+            nv: nv_changed(a.and_then(|a| a.shape.as_deref()), p.shape.as_deref()),
+            lock: a.filter(|a| a.lock_aspect != p.lock_aspect).map(|_| p.lock_aspect),
+            ..Placement::default()
+        }
+    }
+}
+
+impl Saver<'_, '_> {
+    /// A kept picture's drawing (`src`) as it is now: its extents, alternative text and, when it shows another image
+    /// than it was read with, a blip naming that image. A VML picture edited past what VML says is written as
+    /// DrawingML.
+    fn picture_patched(&self, src: &str, p: Placement, was: Option<&PicState>, now: &PicState) -> String {
+        if drawing::is_vml(src) {
+            let a = was.and_then(|w| w.0.shape.as_deref());
+            match drawing::vml_picture_patch(src, a, now.0.shape.as_deref(), now.0.w, now.0.h) {
+                Some(x) => return picture_relinked(x, was.and_then(|w| w.0.image), now.0.image),
+                None => {
+                    if let Some(x) = self.new_picture_xml(&now.0) {
+                        return x;
+                    }
+                }
+            }
+        }
+        picture_patched(src, p, was.and_then(|w| w.0.image), now.0.image)
+    }
+}
+
+/// A VML picture's text naming image `now` when it shows another than `was`.
+fn picture_relinked(x: String, was: Option<usize>, now: Option<usize>) -> String {
+    let image = now.filter(|_| now != was);
+    match (image, find_tag(&x, "imagedata", 0)) {
+        // Its `r:id`, else the `o:relid` read when it has none.
+        (Some(k), Some((start, end))) => {
+            match x[start..end].find(":id=\"").map(|a| a + 5).or_else(|| x[start..end].find(":relid=\"").map(|a| a + 8)) {
+                Some(a) => {
+                    let v0 = start + a;
+                    let v1 = x[v0..end].find('"').map_or(end, |e| v0 + e);
+                    format!("{}{NEW_IMAGE}{k}{}", &x[..v0], &x[v1..])
+                }
+                None => x,
+            }
+        }
+        _ => x,
+    }
 }
 
 /// A kept picture's drawing (`src`) as it is now: its extents, alternative text and, when it shows another image
@@ -5253,7 +5324,7 @@ impl Saver<'_, '_> {
             concat!(
                 r#"<{w}drawing><wp:anchor xmlns:wp="{wp}" distT="{dt}" distB="{db}" distL="{dl}" distR="{dr}" simplePos="0" relativeHeight="{id}" "#,
                 r#"behindDoc="{behind}" locked="{locked}" layoutInCell="{cell}" allowOverlap="{overlap}"><wp:simplePos x="0" y="0"/>{h}{v}"#,
-                r#"<wp:extent cx="{cx}" cy="{cy}"/><wp:effectExtent {ee}/>{wrap}<wp:docPr id="{id}" name="{kind} {id}"{descr}/>"#,
+                r#"<wp:extent cx="{cx}" cy="{cy}"/><wp:effectExtent {ee}/>{wrap}<wp:docPr id="{id}" name="{name}"{title}{descr}/>"#,
                 r#"<wp:cNvGraphicFramePr>{locks}</wp:cNvGraphicFramePr><a:graphic xmlns:a="{a}">{graphic}</a:graphic>{sizes}</wp:anchor></{w}drawing>"#
             ),
             w = self.w,
@@ -5273,11 +5344,12 @@ impl Saver<'_, '_> {
             v = pos("positionV", &f.v_relative, &f.v_align, f.v_offset),
             cx = cx,
             cy = cy,
-            wrap = wrap_xml("wp:", &f.wrap, &f.wrap_text, f.poly.as_deref(), f.poly.is_some()),
-            kind = match f.shape.as_deref().map(|s| s.nv.name.as_str()).filter(|n| !n.is_empty()) {
+            wrap = wrap_xml("wp:", &f.wrap, &f.wrap_text, f.poly.as_deref(), f.poly_edited),
+            name = match f.shape.as_deref().map(|s| s.nv.name.as_str()).filter(|n| !n.is_empty()) {
                 Some(n) => props::esc(n),
-                None => (if f.text_box.is_some() { "Text Box" } else { "Picture" }).to_string(),
+                None => format!("{} {id}", if f.text_box.is_some() { "Text Box" } else { "Picture" }),
             },
+            title = f.shape.as_deref().map_or(String::new(), |s| title_attr(&s.nv)),
             descr = descr_attr(&f.alt),
             locks = if f.lock_aspect { format!(r#"<a:graphicFrameLocks xmlns:a="{A}" noChangeAspect="1"/>"#) } else { String::new() },
             graphic = graphic,
@@ -5323,7 +5395,6 @@ impl Saver<'_, '_> {
                 esc(ch.encode_utf8(&mut [0; 4]))
             ));
         }
-        // A shape put in line with text: its tree in a `wp:inline`.
         // A copy pasted into the part it came from: its source XML (its relationships are this part's), at its size now,
         // with drawing ids of its own.
         if let Inline::Picture(p, _) = i
@@ -5338,13 +5409,22 @@ impl Saver<'_, '_> {
             let x = if drawing::is_vml(x) {
                 drawing::vml_size(x, p.w, p.h)
             } else {
-                Placement { size: Some((p.w, p.h)), alt: Some(p.alt.to_string()), ..Placement::default() }.apply(x)
+                Placement { size: Some((p.w, p.h)), alt: Some(p.alt.to_string()), effect: Some(p.effect), ..Placement::default() }.apply(x)
             };
             return Some(self.new_doc_pr_ids(&x));
         }
-        if let Inline::Picture(p, _) = i
-            && let Some(shape) = p.shape.as_deref().filter(|s| p.image.is_none() || s.pic().is_none_or(|q| q.blip.image.is_some()))
-        {
+        if let Inline::Picture(p, _) = i {
+            return self.new_picture_xml(p);
+        }
+        object_xml(&self.w, i)
+    }
+}
+
+impl Saver<'_, '_> {
+    /// A picture or shape written from the model, as a new inline drawing.
+    fn new_picture_xml(&self, p: &Picture) -> Option<String> {
+        // A shape put in line with text: its tree in a `wp:inline`.
+        if let Some(shape) = p.shape.as_deref().filter(|s| p.image.is_none() || s.pic().is_none_or(|q| q.blip.image.is_some())) {
             let id = self.ids.get();
             self.ids.set(id + 1);
             let emu = |pt: f64| (pt * 12700.0).round() as i64;
@@ -5353,11 +5433,11 @@ impl Saver<'_, '_> {
             shape.xfrm.ext = [crate::drawing::units::Emu(cx), crate::drawing::units::Emu(cy)];
             const WP: &str = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
             const A: &str = "http://schemas.openxmlformats.org/drawingml/2006/main";
-            let name = if shape.nv.name.is_empty() { "Shape".to_string() } else { props::esc(&shape.nv.name) };
+            let name = if shape.nv.name.is_empty() { format!("Shape {id}") } else { props::esc(&shape.nv.name) };
             return Some(format!(
                 concat!(
                     r#"<{w}drawing><wp:inline xmlns:wp="{wp}" distT="0" distB="0" distL="0" distR="0"><wp:extent cx="{cx}" cy="{cy}"/>"#,
-                    r#"<wp:effectExtent {ee}/><wp:docPr id="{id}" name="{name} {id}"{descr}/><wp:cNvGraphicFramePr>{locks}"#,
+                    r#"<wp:effectExtent {ee}/><wp:docPr id="{id}" name="{name}"{title}{descr}/><wp:cNvGraphicFramePr>{locks}"#,
                     r#"</wp:cNvGraphicFramePr><a:graphic xmlns:a="{a}">{graphic}</a:graphic></wp:inline></{w}drawing>"#
                 ),
                 locks = if p.lock_aspect { format!(r#"<a:graphicFrameLocks xmlns:a="{A}" noChangeAspect="1"/>"#) } else { String::new() },
@@ -5370,6 +5450,7 @@ impl Saver<'_, '_> {
                 id = id,
                 name = name,
                 descr = descr_attr(&p.alt),
+                title = title_attr(&shape.nv),
                 graphic = drawing::graphic_data(
                     &shape,
                     &|path: &[u16]| self.nested_blocks(&p.text.as_ref().filter(|_| path.is_empty())?.text_box.blocks).ok(),
@@ -5377,42 +5458,46 @@ impl Saver<'_, '_> {
                 ),
             ));
         }
-        if let Inline::Picture(p, _) = i {
-            let image = p.image?;
-            let id = self.ids.get();
-            self.ids.set(id + 1);
-            let emu = |pt: f64| (pt * 12700.0).round() as i64;
-            let (cx, cy) = (emu(p.w), emu(p.h));
-            const WP: &str = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
-            const A: &str = "http://schemas.openxmlformats.org/drawingml/2006/main";
-            const PIC: &str = "http://schemas.openxmlformats.org/drawingml/2006/picture";
-            const R: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
-            return Some(format!(
-                concat!(
-                    r#"<{w}drawing><wp:inline xmlns:wp="{wp}" distT="0" distB="0" distL="0" distR="0"><wp:extent cx="{cx}" cy="{cy}"/>"#,
-                    r#"<wp:effectExtent {ee}/><wp:docPr id="{id}" name="Picture {id}"{descr}/><wp:cNvGraphicFramePr>"#,
-                    r#"<a:graphicFrameLocks xmlns:a="{a}" noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic xmlns:a="{a}">"#,
-                    r#"<a:graphicData uri="{pic}"><pic:pic xmlns:pic="{pic}"><pic:nvPicPr><pic:cNvPr id="0" name="Picture {id}"/>"#,
-                    r#"<pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip xmlns:r="{r}" r:embed="{new}{image}"/><a:stretch><a:fillRect/>"#,
-                    r#"</a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{cx}" cy="{cy}"/></a:xfrm>"#,
-                    r#"<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></{w}drawing>"#
-                ),
-                w = self.w,
-                wp = WP,
-                a = A,
-                pic = PIC,
-                r = R,
-                new = NEW_IMAGE,
-                cx = cx,
-                cy = cy,
-                id = id,
-                image = image,
-                descr = descr_attr(&p.alt),
-                ee = effect_extent(p.effect),
-            ));
-        }
-        object_xml(&self.w, i)
+        // A picture without its shape tree.
+        let image = p.image?;
+        let id = self.ids.get();
+        self.ids.set(id + 1);
+        let emu = |pt: f64| (pt * 12700.0).round() as i64;
+        let (cx, cy) = (emu(p.w), emu(p.h));
+        const WP: &str = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
+        const A: &str = "http://schemas.openxmlformats.org/drawingml/2006/main";
+        const PIC: &str = "http://schemas.openxmlformats.org/drawingml/2006/picture";
+        const R: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+        Some(format!(
+            concat!(
+                r#"<{w}drawing><wp:inline xmlns:wp="{wp}" distT="0" distB="0" distL="0" distR="0"><wp:extent cx="{cx}" cy="{cy}"/>"#,
+                r#"<wp:effectExtent {ee}/><wp:docPr id="{id}" name="Picture {id}"{descr}/><wp:cNvGraphicFramePr>"#,
+                r#"<a:graphicFrameLocks xmlns:a="{a}" noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic xmlns:a="{a}">"#,
+                r#"<a:graphicData uri="{pic}"><pic:pic xmlns:pic="{pic}"><pic:nvPicPr><pic:cNvPr id="0" name="Picture {id}"/>"#,
+                r#"<pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip xmlns:r="{r}" r:embed="{new}{image}"/><a:stretch><a:fillRect/>"#,
+                r#"</a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{cx}" cy="{cy}"/></a:xfrm>"#,
+                r#"<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></{w}drawing>"#
+            ),
+            w = self.w,
+            wp = WP,
+            a = A,
+            pic = PIC,
+            r = R,
+            new = NEW_IMAGE,
+            cx = cx,
+            cy = cy,
+            id = id,
+            image = image,
+            descr = descr_attr(&p.alt),
+            ee = effect_extent(p.effect),
+        ))
     }
+}
+
+/// A new drawing's `wp:docPr` title and hidden mark: none when it has neither.
+fn title_attr(nv: &crate::drawing::NonVisual) -> String {
+    let title = if nv.title.is_empty() { String::new() } else { format!(r#" title="{}""#, props::esc(&nv.title)) };
+    if nv.hidden { format!(r#"{title} hidden="1""#) } else { title }
 }
 
 /// A new drawing's `wp:docPr/@descr`, its alternative text: none when it has none.
@@ -5661,7 +5746,7 @@ struct Placement {
     h: Option<(String, Option<String>, f64)>,
     v: Option<(String, Option<String>, f64)>,
     size: Option<(f64, f64)>,
-    /// Wrapping (`wrap`, `wrap_text`, behind the text, the wrap polygon and whether it changed), when changed.
+    /// Wrapping (`wrap`, `wrap_text`, behind the text, the wrap polygon and whether it was edited), when changed.
     wrap: Option<(String, String, bool, Option<Rc<[(f64, f64)]>>, bool)>,
     locked: Option<bool>,
     z: Option<u32>,
@@ -5669,10 +5754,16 @@ struct Placement {
     alt: Option<String>,
     /// The decorative mark (`adec:decorative` in `wp:docPr`'s extension list).
     decorative: Option<bool>,
+    /// The name, title and hidden mark (`wp:docPr`'s `name`, `title` and `hidden`).
+    nv: Option<(String, String, bool)>,
+    /// Lock aspect ratio (`a:graphicFrameLocks/@noChangeAspect`).
+    lock: Option<bool>,
     /// A new picture (an image of [`Document::images`]): the blip names it ([`NEW_IMAGE`]).
     blip: Option<usize>,
     /// The distance from the text (`distT`, `distB`, `distL`, `distR`), `allowOverlap` and `layoutInCell`.
     dist: Option<[f64; 4]>,
+    /// An inline picture's effect extents (`wp:effectExtent`: left, top, right, bottom).
+    effect: Option<[f64; 4]>,
     overlap: Option<bool>,
     in_cell: Option<bool>,
     /// The shape's own properties, as edits in the drawing's text: applied first.
@@ -5716,14 +5807,17 @@ impl Placement {
             h: pos((&a.h_relative, &a.h_align, a.h_offset), (&b.h_relative, &b.h_align, b.h_offset)),
             v: pos((&a.v_relative, &a.v_align, a.v_offset), (&b.v_relative, &b.v_align, b.v_offset)),
             size: (ne(a.w, b.w) || ne(a.h, b.h)).then_some((b.w, b.h)),
-            wrap: (a.wrap != b.wrap || a.wrap_text != b.wrap_text || a.behind != b.behind || a.poly != b.poly)
-                .then(|| (b.wrap.clone(), b.wrap_text.clone(), b.behind, b.poly.clone(), a.poly != b.poly)),
+            wrap: (a.wrap != b.wrap || a.wrap_text != b.wrap_text || a.behind != b.behind || a.poly != b.poly || a.poly_edited != b.poly_edited)
+                .then(|| (b.wrap.clone(), b.wrap_text.clone(), b.behind, b.poly.clone(), b.poly_edited)),
             locked: (a.locked != b.locked).then_some(b.locked),
             z: (a.z != b.z).then_some(b.z),
             alt: (a.alt != b.alt).then(|| b.alt.to_string()),
             decorative: (decorative(&a.shape) != decorative(&b.shape)).then(|| decorative(&b.shape)),
+            nv: nv_changed(a.shape.as_deref(), b.shape.as_deref()),
+            lock: (a.lock_aspect != b.lock_aspect).then_some(b.lock_aspect),
             blip: b.image.filter(|_| a.image != b.image),
             dist: a.dist.iter().zip(&b.dist).any(|(x, y)| ne(*x, *y)).then_some(b.dist),
+            effect: None,
             overlap: (a.allow_overlap != b.allow_overlap).then_some(b.allow_overlap),
             in_cell: (a.layout_in_cell != b.layout_in_cell).then_some(b.layout_in_cell),
             shape: None,
@@ -5740,6 +5834,8 @@ impl Placement {
             || p.locked.is_some()
             || p.alt.is_some()
             || p.decorative.is_some()
+            || p.nv.is_some()
+            || p.lock.is_some()
             || p.blip.is_some()
             || p.z.is_some();
         (any || p.dist.is_some() || p.overlap.is_some() || p.in_cell.is_some()).then_some(p)
@@ -5841,14 +5937,48 @@ impl Placement {
                 }
             }
         }
+        if let Some(e) = self.effect {
+            let ee = effect_extent(e);
+            match find_tag(&s, "effectExtent", 0) {
+                Some((start, end)) => {
+                    let p = &s[start + 1..end].split(|c: char| c.is_whitespace() || c == '/' || c == '>').next().unwrap_or("").to_string();
+                    s.replace_range(start..end, &format!("<{p} {ee}/>"));
+                }
+                // None: after the extent (the schema's order: extent, effectExtent, docPr, ...).
+                None if e != [0.0; 4] => {
+                    if let Some((at, p)) = find_tag(&s, "extent", 0).map(|(start, end)| {
+                        let name = s[start + 1..end].split(|c: char| c.is_whitespace() || c == '/' || c == '>').next().unwrap_or("");
+                        (end, name.rsplit_once(':').map_or(String::new(), |(p, _)| format!("{p}:")))
+                    }) {
+                        s.insert_str(at, &format!("<{p}effectExtent {ee}/>"));
+                    }
+                }
+                None => {}
+            }
+        }
         if let Some(alt) = &self.alt
             && let Some((start, end)) = find_tag(&s, "docPr", 0)
         {
             let tag = set_attr(&s[start..end], "descr", &props::esc(alt));
             s.replace_range(start..end, &tag);
         }
+        if let Some((name, title, hidden)) = &self.nv
+            && let Some((start, end)) = find_tag(&s, "docPr", 0)
+        {
+            let mut tag = set_attr(&s[start..end], "name", &props::esc(name));
+            if !title.is_empty() || tag.contains(" title=\"") {
+                tag = set_attr(&tag, "title", &props::esc(title));
+            }
+            if *hidden || tag.contains(" hidden=\"") {
+                tag = set_attr(&tag, "hidden", if *hidden { "1" } else { "0" });
+            }
+            s.replace_range(start..end, &tag);
+        }
         if let Some(on) = self.decorative {
             s = set_decorative(&s, on);
+        }
+        if let Some(on) = self.lock {
+            s = set_lock_aspect(&s, on);
         }
         // The first blip (the picture's) replaced by one naming the new image; its effects go with the old picture.
         if let Some(k) = self.blip
@@ -5890,6 +6020,54 @@ fn same_rev(a: &RunStyle, b: &RunStyle) -> bool {
 /// The first start tag named `local` (any prefix) at or after `from`: its byte range.
 /// The decorative mark's extension (`a:ext/@uri`).
 const DECORATIVE: &str = "{C183D7F6-B498-43B3-948B-1728B52AA6E4}";
+
+/// A drawing's XML with its lock aspect ratio on or off: `noChangeAspect` on its frame's locks (`a:graphicFrameLocks`
+/// in `wp:cNvGraphicFramePr`, made when it has none).
+fn set_lock_aspect(s: &str, on: bool) -> String {
+    const A: &str = "http://schemas.openxmlformats.org/drawingml/2006/main";
+    let mut s = s.to_string();
+    let v = if on { "1" } else { "0" };
+    // A picture's own locks say it too: off there as well.
+    if !on {
+        let mut from = 0;
+        while let Some((start, end)) = find_tag(&s, "picLocks", from) {
+            let tag = set_attr(&s[start..end], "noChangeAspect", "0");
+            s.replace_range(start..end, &tag);
+            from = start + tag.len();
+        }
+    }
+    if let Some((start, end)) = find_tag(&s, "graphicFrameLocks", 0) {
+        let tag = set_attr(&s[start..end], "noChangeAspect", v);
+        s.replace_range(start..end, &tag);
+        return s;
+    }
+    let locks = format!(r#"<a:graphicFrameLocks xmlns:a="{A}" noChangeAspect="{v}"/>"#);
+    match find_tag(&s, "cNvGraphicFramePr", 0) {
+        Some((start, end)) if s[start..end].ends_with("/>") => {
+            let open = s[start..end - 2].trim_end().to_string();
+            let name = open[1..].split_whitespace().next().unwrap_or("wp:cNvGraphicFramePr").to_string();
+            s.replace_range(start..end, &format!("{open}>{locks}</{name}>"));
+        }
+        Some((_, end)) => s.insert_str(end, &locks),
+        // None: after the `wp:docPr` (the schema's order: docPr, cNvGraphicFramePr, graphic).
+        None => {
+            if let Some(at) = element(&s, "docPr").map(|r| r.end) {
+                let prefix = find_tag(&s, "docPr", 0).and_then(|(a, b)| {
+                    s[a + 1..b].split(|c: char| c.is_whitespace() || c == '/' || c == '>').next()?.rsplit_once(':').map(|(p, _)| p.to_string())
+                });
+                let p = prefix.map_or(String::new(), |p| format!("{p}:"));
+                s.insert_str(at, &format!("<{p}cNvGraphicFramePr>{locks}</{p}cNvGraphicFramePr>"));
+            }
+        }
+    }
+    s
+}
+
+/// A drawing's new name, title and hidden mark, when they changed.
+fn nv_changed(a: Option<&crate::drawing::Shape>, b: Option<&crate::drawing::Shape>) -> Option<(String, String, bool)> {
+    let (a, b) = (&a?.nv, &b?.nv);
+    ((&a.name, &a.title, a.hidden) != (&b.name, &b.title, b.hidden)).then(|| (b.name.clone(), b.title.to_string(), b.hidden))
+}
 
 fn decorative(shape: &Option<Box<crate::drawing::Shape>>) -> bool {
     shape.as_ref().is_some_and(|s| s.nv.decorative)

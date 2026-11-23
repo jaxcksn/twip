@@ -114,14 +114,32 @@ impl Editor {
         Some(FillValue::Solid { colour: value })
     }
 
-    /// The first watermark section `section`'s pages show, else the first in any header.
+    /// The first watermark section `section`'s pages show: in its default header, its first page's when it has a
+    /// different first page, its even pages' when the document has different odd and even pages (a header it lacks
+    /// is the section before's).
     fn shown_watermark(&self, section: usize) -> Option<(&Float, &crate::docx::Run)> {
         let sections = &self.doc.sections;
-        let shown: Vec<&String> = (0..3)
-            .filter_map(|slot| (0..=section.min(sections.len().saturating_sub(1))).rev().find_map(|k| sections[k].headers[slot].as_ref()))
-            .collect();
-        let names = shown.into_iter().chain(sections.iter().flat_map(|s| s.headers.iter().flatten()));
-        names.filter_map(|n| self.doc.stories.get(n)).find_map(|b| first_watermark(b))
+        let last = section.min(sections.len().checked_sub(1)?);
+        let used = [true, sections[last].title_pg, self.doc.settings.even_and_odd];
+        let shown = (0..3).filter(|&slot| used[slot]).filter_map(|slot| (0..=last).rev().find_map(|k| sections[k].headers[slot].as_ref()));
+        shown.filter_map(|n| self.doc.stories.get(n)).find_map(|b| first_watermark(b))
+    }
+
+    /// The picture of the watermark section `section`'s pages show: its image's bytes (`None` for a text watermark or
+    /// none).
+    pub fn watermark_image(&self, section: usize) -> Option<&[u8]> {
+        let (f, _) = self.shown_watermark(section)?;
+        let wm::Watermark::Picture(p) = wm::of(f)? else { return None };
+        self.doc.images.get(p.image?).map(Vec::as_slice)
+    }
+
+    /// The page background's picture (Fill Effects > Picture or Texture): its image's bytes.
+    pub fn page_fill_image(&self) -> Option<&[u8]> {
+        let k = match self.doc.page_fill.as_ref()? {
+            crate::drawing::paint::Fill::Blip(b) => b.image?,
+            _ => return None,
+        };
+        self.doc.images.get(k).map(Vec::as_slice)
     }
 
     /// The watermark section `section`'s pages show: the first in its headers, else in any header.

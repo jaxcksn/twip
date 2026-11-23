@@ -47,8 +47,10 @@ mod move_paras;
 pub mod move_to;
 pub(crate) mod multi;
 pub(crate) use merge::api_id;
+mod marquee;
 pub mod navigate;
 mod notes;
+pub mod object_props;
 pub mod objects;
 pub mod picture_controls;
 mod pictures;
@@ -71,6 +73,7 @@ mod stories;
 pub mod style_defs;
 mod style_dialog;
 mod styles;
+pub mod text_links;
 pub use styles::formats_a_style;
 pub mod sub_templates;
 pub use crate::docx::grid as table;
@@ -186,6 +189,16 @@ pub struct Editor {
     shape_drag: Option<shapes::ShapeDrag>,
     /// The selected float's wrap points being edited.
     wrap_edit: Option<wrap_points::WrapEdit>,
+    /// The text box whose text Create Link's pointer is to take on.
+    linking: Option<crate::layout::FloatId>,
+    /// Word's Select Objects is on.
+    select_objects: bool,
+    /// A Select Objects rectangle being dragged.
+    marquee: Option<marquee::Marquee>,
+    /// The selected float's anchor being dragged.
+    anchor_drag: Option<marquee::AnchorDrag>,
+    /// The number the last new object's name took (0: not yet counted), as Word numbers them.
+    object_number: u32,
     /// The objects the last Ungroup made, for Regroup.
     ungrouped: Option<Vec<crate::layout::FloatId>>,
     /// The wrap a picture is inserted with (Word's "Insert/paste pictures as").
@@ -422,6 +435,11 @@ impl Editor {
             object_also: None,
             shape_drag: None,
             wrap_edit: None,
+            object_number: 0,
+            linking: None,
+            select_objects: false,
+            marquee: None,
+            anchor_drag: None,
             ungrouped: None,
             default_picture_wrap: crate::api::value::ObjectWrap::Inline,
             snaps: snap::SnapLines::default(),
@@ -2822,6 +2840,15 @@ impl Editor {
                 if !mods.shift && self.wrap_points_press(x, y, mods.ctrl, fonts) {
                     return;
                 }
+                if self.linking_press(x, y, fonts) {
+                    return;
+                }
+                if !mods.shift && self.anchor_press(x, y) {
+                    return;
+                }
+                if !mods.shift && !mods.ctrl && self.marquee_press(x, y, fonts) {
+                    return;
+                }
                 if self.region_title_click(x, y, fonts) {
                     return;
                 }
@@ -3032,7 +3059,7 @@ impl Editor {
                 self.requests.push(Request::CapturePointer);
             }
             PointerKind::Move => {
-                if self.wrap_point_move(x, y) {
+                if self.wrap_point_move(x, y) || self.marquee_move(x, y) || self.anchor_move(x, y) {
                     return;
                 }
                 if self.text_drag.is_some() {
@@ -3117,6 +3144,13 @@ impl Editor {
                 self.pending = None;
             }
             PointerKind::Cancel if self.wrap_point_cancel() => {}
+            PointerKind::Cancel if self.marquee_cancel() => {}
+            PointerKind::Up if self.marquee.is_some() => {
+                self.marquee_release(fonts);
+            }
+            PointerKind::Up if self.anchor_drag.is_some() => {
+                self.anchor_release(fonts);
+            }
             PointerKind::Up if self.wrap_point_dragging() => {
                 self.wrap_point_release(fonts);
             }
@@ -3426,7 +3460,12 @@ impl Editor {
                         }
                     }
                     selection::ObjectRef::Inline { para, offset } => {
-                        out.extend(self.inline_frame(&geo, para, offset).map(|(rect, rot)| view::Outline { page, rect, rot }))
+                        // Turned live by a rotate drag: an inline object isn't laid out until the drop.
+                        let turn = match &self.shape_drag {
+                            Some(d) if d.obj == o && d.handle == shapes::ShapeHandle::Rotate => d.angle(),
+                            _ => self.inline_turn(para, offset),
+                        };
+                        out.extend(self.inline_frame(&geo, para, offset).map(|(rect, rot)| view::Outline { page, rect, rot: rot + turn }))
                     }
                 }
             }
@@ -3503,6 +3542,7 @@ impl Editor {
         let selection = self.selection_view(visible.clone());
         let story = self.editing();
         let anchor = match self.selection {
+            _ if self.anchor_drag.is_some() => self.anchor_drag_view(),
             Selection::Object(selection::ObjectRef::Floating(f)) => {
                 let locked = self.selected_object().and_then(|o| o.locked) == Some(true);
                 let moving = self.object_drag.filter(|d| d.handle.is_none() && d.now != d.start && !locked);
@@ -3510,15 +3550,12 @@ impl Editor {
                     let (para, ..) = self.anchor_at(d.over, self.index.float_anchor(f)?, d.on_over(d.placed(d.rect(false))))?;
                     Some((d.over, para))
                 });
-                let at = |e: &mut Self, page: usize, para: ParaId| {
-                    let geo = e.pages.page(page, &e.index)?;
-                    let first = geo.lines.iter().find(|l| l.span_of(para).is_some())?;
-                    let x = geo.lines.iter().filter_map(|l| l.span_of(para).map(|(x0, _)| x0)).fold(f64::MAX, f64::min);
-                    Some((page, first.page(x, first.top)))
-                };
                 match to {
-                    Some((page, para)) => at(self, page, para),
-                    None => self.index.float_anchor(f).and_then(|para| (0..self.pages.len()).find_map(|page| at(self, page, para))),
+                    Some((page, para)) => self.anchor_point(page, para).map(|p| (page, p)),
+                    None => self.index.float_anchor(f).and_then(|para| {
+                        let page = *self.pages.pages_of(para, self.near, &self.index).first()?;
+                        self.anchor_point(page, para).map(|p| (page, p))
+                    }),
                 }
             }
             _ => None,
@@ -3561,6 +3598,7 @@ impl Editor {
             fade,
             guide: self.border_drag.as_ref().map(|d| (d.page, d.page_guide())),
             anchor: anchor.filter(|_| self.mark_options.all || self.mark_options.anchors),
+            marquee: self.marquee_rect(),
             ghost,
             shapes: self.shape_frames(visible_pages.clone()),
             wrap_points: self.wrap_points(visible_pages.clone()),

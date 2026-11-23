@@ -431,7 +431,9 @@ impl Editor {
         let one = 0.75 / self.viewport.zoom.max(0.1);
         let (obj, rect, rot) = match self.selection {
             Selection::Object(o @ ObjectRef::Floating(f)) => self.float_frame(f, page).map(|(r, rot)| (o, r, rot)),
-            Selection::Object(o @ ObjectRef::Inline { para, offset }) => self.inline_frame(&geo, para, offset).map(|(r, rot)| (o, r, rot)),
+            Selection::Object(o @ ObjectRef::Inline { para, offset }) => {
+                self.inline_frame(&geo, para, offset).map(|(r, rot)| (o, r, rot + self.inline_turn(para, offset)))
+            }
             _ => None,
         }
         .filter(|(o, ..)| !self.object_fixed(*o) && !self.gesture_kept(crate::api::command::CommandId::SetObjectSize))?;
@@ -688,8 +690,10 @@ impl Editor {
         if (pic.w - w).abs() < 1e-9 && (pic.h - h).abs() < 1e-9 {
             return Outcome::Unchanged("same size");
         }
+        let was = (pic.w, pic.h, pic.shape.as_deref().map_or(0.0, |s| s.xfrm.rot.degrees()));
         pic.w = w;
         pic.h = h;
+        super::shapes::refit_turn(pic, was);
         let mut tx = self.begin("Resize Object");
         if self.step(&mut tx, Step::Restyle { para, inlines }).is_err() {
             self.abort(tx);
@@ -759,7 +763,9 @@ impl Editor {
         let (w, h) = (((w * 20.0).round() / 20.0).max(1.0), ((h * 20.0).round() / 20.0).max(1.0));
         let image = self.pending_image(data);
         let emu = crate::drawing::units::Emu::from_pt;
-        let shape = Some(Box::new(crate::drawing::Shape::picture(image, emu(w), emu(h))));
+        let mut shape = crate::drawing::Shape::picture(image, emu(w), emu(h));
+        shape.nv.name = self.new_object_name("Picture");
+        let shape = Some(Box::new(shape));
         let image = Some(image);
         let out = self.insert_inline(
             |run| {
@@ -800,8 +806,12 @@ impl Editor {
         if matches!(caret.story, StoryId::Footnote(_) | StoryId::Endnote(_)) {
             return Outcome::unavailable("floating objects don't go in notes");
         }
-        let Some(p) = self.index.para(&self.doc, para) else { return Outcome::Unchanged("no paragraph") };
+        if self.index.para(&self.doc, para).is_none() {
+            return Outcome::Unchanged("no paragraph");
+        }
         let Some(run) = self.run_at(&caret) else { return Outcome::Unchanged("no run") };
+        let name = self.new_object_name("Text Box");
+        let Some(p) = self.index.para(&self.doc, para) else { return Outcome::Unchanged("no paragraph") };
         let r = res.para_from_xml(None, None, &cx);
         let text_run = res.run_from_xml(&r.base, None, &cx);
         let pid = crate::docx::next_para_id();
@@ -843,6 +853,7 @@ impl Editor {
             dist: [3.6, 3.6, 9.0, 9.0],
             effect: [0.0; 4],
             poly: None,
+            poly_edited: false,
             behind: false,
             allow_overlap: true,
             layout_in_cell: true,
@@ -858,7 +869,7 @@ impl Editor {
                 crate::drawing::NewShape::TextBox,
                 crate::drawing::units::Emu::from_pt(144.0),
                 crate::drawing::units::Emu::from_pt(72.0),
-                "Text Box",
+                &name,
             ))),
             rot_swap: false,
             vml: false,
@@ -1020,6 +1031,8 @@ impl Editor {
         }) else {
             return Outcome::Unchanged("no float");
         };
+        let mut n = n;
+        self.rewrap(fl, &mut n);
         if n == **fl {
             return Outcome::Unchanged("already so");
         }
@@ -1198,6 +1211,7 @@ impl Editor {
             dist: [0.0, 0.0, 9.0, 9.0],
             effect: pic.effect,
             poly: None,
+            poly_edited: false,
             behind,
             allow_overlap: true,
             layout_in_cell: true,
@@ -1216,6 +1230,8 @@ impl Editor {
         if let Some(deg) = float.shape.as_ref().map(|s| s.xfrm.rot.normalized().degrees()) {
             super::shapes::rotate_to(&mut float, &[], deg, self.doc.settings.compat_mode);
         }
+        let unwrapped = crate::docx::Float { wrap: "none".into(), ..float.clone() };
+        self.rewrap(&unwrapped, &mut float);
         self.begin_batch(Some("Wrap Text".into()));
         let mut tx = self.begin("Wrap Text");
         if let Some((c, inline)) = control {
@@ -1341,7 +1357,7 @@ impl Editor {
         self.commit_float(f, moved, None, label, fonts)
     }
 
-    fn commit_float(
+    pub(super) fn commit_float(
         &mut self,
         f: FloatId,
         moved: crate::docx::Float,
@@ -1349,6 +1365,10 @@ impl Editor {
         label: &'static str,
         fonts: &Fonts,
     ) -> Outcome {
+        // A frame is placed by its paragraphs' `w:framePr`, and stays with them.
+        if self.float_of(f).is_some_and(crate::docx::Float::is_frame) {
+            return self.commit_frame(f, &moved, label, fonts);
+        }
         let Some(anchor) = self.index.float_anchor(f) else { return Outcome::Unchanged("no anchor") };
         let Some(p) = self.index.para(&self.doc, anchor) else { return Outcome::Unchanged("no anchor") };
         let mut inlines = p.inlines.clone();
@@ -1358,6 +1378,8 @@ impl Editor {
         }) else {
             return Outcome::Unchanged("no float");
         };
+        let mut moved = moved;
+        self.rewrap(fl, &mut moved);
         **fl = moved;
         fit_picture_control(fl, &self.doc.controls);
         let mut tx = self.begin(label);

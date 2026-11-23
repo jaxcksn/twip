@@ -2109,7 +2109,11 @@ impl Editor {
                     alt: "".into(),
                     lock_aspect: true,
                     effect: [0.0; 4],
-                    shape: Some(Box::new(crate::drawing::Shape::picture(image, emu(size.0), emu(size.1)))),
+                    shape: Some(Box::new({
+                        let mut s = crate::drawing::Shape::picture(image, emu(size.0), emu(size.1));
+                        s.nv.name = self.new_object_name("Picture");
+                        s
+                    })),
                     text: None,
                     src: Default::default(),
                 };

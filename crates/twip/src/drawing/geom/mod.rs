@@ -264,6 +264,25 @@ impl Geom {
     }
 }
 
+impl Geom {
+    /// The outline its filled paths make: the flattened subpath enclosing the most area (a line's path when none is
+    /// filled).
+    pub fn outline(&self) -> Vec<[f64; 2]> {
+        let area = |pts: &[[f64; 2]]| {
+            let n = pts.len();
+            (0..n).map(|i| pts[i][0] * pts[(i + 1) % n][1] - pts[(i + 1) % n][0] * pts[i][1]).sum::<f64>().abs() / 2.0
+        };
+        let filled = self.paths.iter().any(|p| p.fill != PathFill::None);
+        self.paths
+            .iter()
+            .filter(|p| !filled || p.fill != PathFill::None)
+            .flat_map(|p| flatten(&p.segs))
+            .map(|(pts, _)| pts)
+            .max_by(|a, b| area(a).total_cmp(&area(b)))
+            .unwrap_or_default()
+    }
+}
+
 fn flatten(segs: &[Seg]) -> Vec<(Vec<[f64; 2]>, bool)> {
     let mut out: Vec<(Vec<[f64; 2]>, bool)> = Vec::new();
     let mut at = [0.0, 0.0];

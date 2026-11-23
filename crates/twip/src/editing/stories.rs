@@ -78,7 +78,12 @@ impl Editor {
                 self.body_return = None;
                 h
             }
-            (true, true) if self.object_hit(x, y, fonts).is_none() => return true,
+            // In the body area only a header's objects and the selected one's handles take a press.
+            (true, true)
+                if self.object_hit(x, y, fonts).is_none() && self.handle_at(x, y, fonts).is_none() && self.shape_handle_at(x, y).is_none() =>
+            {
+                return true;
+            }
             _ => return false,
         };
         self.near = page;
@@ -90,6 +95,13 @@ impl Editor {
 
     pub(super) fn escape(&mut self) -> Outcome {
         if self.end_wrap_points() {
+            return Outcome::Moved;
+        }
+        if self.marquee_cancel() || self.end_linking() {
+            return Outcome::Moved;
+        }
+        if self.select_objects {
+            self.set_select_objects(false);
             return Outcome::Moved;
         }
         if self.text_drag.take().is_some() {

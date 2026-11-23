@@ -25,6 +25,10 @@ impl Editor {
     }
 
     fn shape_at(&mut self, x: f64, y: f64, mods: Mods, fonts: &Fonts) -> Cursor {
+        // Create Link: the pointer over a box the text can go on in, the arrow elsewhere.
+        if self.linking() {
+            return if self.link_target_at(x, y, fonts).is_some() { Cursor::Pointer } else { Cursor::Default };
+        }
         if !mods.shift
             && let Some((.., hit, _)) = self.wrap_point_at(x, y)
         {
@@ -32,6 +36,9 @@ impl Editor {
                 super::wrap_points::PolyHit::Vertex(_) => Cursor::Move,
                 super::wrap_points::PolyHit::Edge(_) => Cursor::Crosshair,
             };
+        }
+        if !mods.shift && self.anchor_hit(x, y).is_some() {
+            return Cursor::Move;
         }
         if !mods.shift {
             if !mods.ctrl
@@ -54,6 +61,10 @@ impl Editor {
             if (mods.ctrl || mods.meta || self.mode == Mode::ReadOnly) && self.link_under(x, y, fonts).is_some() {
                 return Cursor::Pointer;
             }
+        }
+        // Select Objects: the arrow off objects.
+        if self.select_objects {
+            return Cursor::Default;
         }
         if let Some((_, _, border, .., turn)) = self.border_at(x, y, fonts) {
             return border_cursor(border, turn);
@@ -93,8 +104,11 @@ impl Editor {
         if self.shape_insert.is_some() {
             return Some(Cursor::Crosshair);
         }
-        if self.wrap_point_dragging() {
+        if self.wrap_point_dragging() || self.anchor_drag.is_some() {
             return Some(Cursor::Move);
+        }
+        if self.marquee.is_some() {
+            return Some(Cursor::Default);
         }
         if let Some(d) = &self.border_drag {
             return Some(border_cursor(d.border, d.turn));

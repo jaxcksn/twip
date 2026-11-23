@@ -478,6 +478,21 @@ impl DocIndex {
         }
     }
 
+    /// Float `f`'s text box chain and whether it is the chain's first box.
+    pub fn link(&self, f: FloatId) -> Option<(u32, bool)> {
+        self.links.get(&f).copied()
+    }
+
+    /// The floats of text box chain `chain`, in no order.
+    pub fn chain_members(&self, chain: u32) -> impl Iterator<Item = FloatId> + '_ {
+        self.links.iter().filter(move |(_, l)| l.0 == chain).map(|(f, _)| *f)
+    }
+
+    /// The highest text box chain id in use (0 for none).
+    pub fn max_chain(&self) -> u32 {
+        self.links.values().map(|l| l.0).max().unwrap_or(0)
+    }
+
     pub fn box_story(&self, f: FloatId) -> FloatId {
         match self.links.get(&f) {
             Some(&(c, false)) => self.links.iter().find(|(_, l)| **l == (c, true)).map_or(f, |(h, _)| *h),

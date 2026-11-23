@@ -7,6 +7,7 @@ use crate::drawing::colour::{Colour, ColourBase, ColourMod};
 use crate::drawing::geom::Geometry;
 use crate::drawing::paint::{BlipFill, BlipMode, Cap, Compound, Dash, EffectList, Fill, GradientKind, GradientPath, Join, Line, LineEnd, TileFlip};
 use crate::drawing::text::{AutoFit, BodyProps, VAnchor};
+use crate::drawing::units::Pct;
 use crate::drawing::{Shape, ShapeKind, Spans};
 
 use super::props::esc;
@@ -15,14 +16,62 @@ pub(super) type Edit = (Range<usize>, String);
 
 pub(super) fn changed(was: &Float, now: &Float, text: &str) -> Option<Vec<Edit>> {
     let (Some(a), Some(b), Some(src)) = (was.shape.as_deref(), now.shape.as_deref(), was.src.as_ref()) else { return None };
-    shape_changed(a, b, src.start, text)
+    let mut edits = shape_changed(a, b, src.start, text).unwrap_or_default();
+    link_edits(a, b, text, &mut edits);
+    (!edits.is_empty()).then_some(edits)
 }
 
+/// A text box's link edits, found in its drawing's `text`: a first box's `wps:txbx` takes its chain's id, a box
+/// that goes on from another has its `wps:txbx` replaced by `wps:linkedTxbx`, one that no longer does loses its
+/// `wps:linkedTxbx` ([`story_added`] writes its story), and one moved in a chain has its id and place set.
+fn link_edits(a: &Shape, b: &Shape, text: &str, out: &mut Vec<Edit>) {
+    use crate::drawing::ShapeText as T;
+    let (Some(x), Some(y)) = (a.sp(), b.sp()) else { return };
+    if (&x.text, x.chain) == (&y.text, y.chain) {
+        return;
+    }
+    let linked = |chain: u32, seq: u32| format!(r#"<wps:linkedTxbx id="{chain}" seq="{seq}"/>"#);
+    match (&x.text, &y.text) {
+        (T::Story, T::Story) => {
+            if let (Some(c), Some((start, end))) = (y.chain, super::find_tag(text, "txbx", 0)) {
+                out.push((start..end, set_attr(&text[start..end], "id", &c.to_string())));
+            }
+        }
+        (T::Story, T::Linked { chain, seq }) => {
+            if let Some(r) = super::element(text, "txbx") {
+                out.push((r, linked(*chain, *seq)));
+            }
+        }
+        (T::Linked { .. }, T::Linked { chain, seq }) => {
+            if let Some(r) = super::element(text, "linkedTxbx") {
+                out.push((r, linked(*chain, *seq)));
+            }
+        }
+        (T::Linked { .. }, _) => {
+            if let Some(r) = super::element(text, "linkedTxbx") {
+                out.push((r, String::new()));
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Where a story a shape gained (typed into a shape without one, or a box no longer going on from another) is written
+/// in its drawing: its body properties' place.
 pub(super) fn story_added(was: &Float, now: &Float) -> Option<usize> {
     use crate::drawing::ShapeText;
     let (a, b, src) = (was.shape.as_deref()?, now.shape.as_deref()?, was.src.as_ref()?);
-    let added = was.text_box.is_none() && now.text_box.is_some() && a.sp()?.text == ShapeText::None && b.sp()?.text == ShapeText::Story;
+    let had = matches!(a.sp()?.text, ShapeText::None | ShapeText::Linked { .. });
+    let added = was.text_box.is_none() && now.text_box.is_some() && had && b.sp()?.text == ShapeText::Story;
     added.then(|| a.spans.body.as_ref().map(|r| r.start - src.start)).flatten()
+}
+
+/// A story's `wps:txbx` start tag: with its chain's id when it is a chain's first box.
+pub(super) fn txbx_open(s: Option<&Shape>) -> String {
+    match s.and_then(Shape::sp).and_then(|sp| sp.chain) {
+        Some(c) => format!(r#"<wps:txbx id="{c}">"#),
+        None => "<wps:txbx>".into(),
+    }
 }
 
 pub(super) fn is_vml(text: &str) -> bool {
@@ -38,9 +87,129 @@ pub(super) fn vml_size(text: &str, w: f64, h: f64) -> String {
     format!("{}{}{}", &text[..start], set_attr(tag, "style", &style), &text[end..])
 }
 
-pub(super) fn vml_patch(text: &str, was: &Float, now: &Float) -> String {
+/// Whether VML says what changed from `a` to `b`: what [`vml_patch`] writes (size, place, turn, flips, solid fills
+/// and lines, a line's width, name, title, hidden, a picture's crop and its brightness, contrast, grayscale and black and
+/// white at half). Anything else is written as DrawingML, as Word converts an edited legacy shape.
+pub(super) fn vml_says(a: &Shape, b: &Shape) -> bool {
+    use crate::drawing::paint::{BlipAdjust as A, Fill as F};
+    let solid = |f: &Option<F>| {
+        matches!(f, None | Some(F::None)) || matches!(f, Some(F::Solid(c)) if matches!(c.base, ColourBase::Srgb(_)) && c.mods.is_empty())
+    };
+    let line = |x: &Option<Line>, y: &Option<Line>| {
+        x == y
+            || y.as_ref().is_some_and(|l| {
+                let base = x.clone().unwrap_or_default();
+                solid(&l.fill) && Line { width: l.width, fill: l.fill.clone(), ..base } == *l
+            })
+    };
+    let adjust = |v: &[A]| v.iter().all(|a| matches!(a, A::Lum { .. } | A::Grayscale | A::BiLevel(Pct(50000))));
+    match (&a.kind, &b.kind) {
+        (ShapeKind::Sp(x), ShapeKind::Sp(y)) => {
+            fn rest(s: &crate::drawing::SpShape) -> impl PartialEq + '_ {
+                (&s.geom, &s.effects, &s.body, &s.style, &s.text_path, s.text_box, s.connector)
+            }
+            rest(x) == rest(y) && (x.fill == y.fill || solid(&y.fill)) && line(&x.line, &y.line)
+        }
+        (ShapeKind::Pic(x), ShapeKind::Pic(y)) => {
+            (&x.geom, &x.effects, &x.blip.mode, x.blip.image) == (&y.geom, &y.effects, &y.blip.mode, y.blip.image)
+                && (x.blip.adjust == y.blip.adjust || adjust(&y.blip.adjust))
+                && line(&x.line, &y.line)
+        }
+        (x, y) => x == y,
+    }
+}
+
+/// A VML picture's `v:imagedata` as `b` crops and adjusts it.
+fn imagedata_patch(tag: &str, b: &crate::drawing::paint::BlipFill) -> String {
+    use crate::drawing::paint::BlipAdjust as A;
+    let f = |v: f64| format!("{}f", (v * 65536.0).round() as i64);
+    let mut tag = tag.to_string();
+    for (k, name) in ["cropleft", "croptop", "cropright", "cropbottom"].into_iter().enumerate() {
+        if b.src[k].0 != 0 || tag.contains(&format!(" {name}=\"")) {
+            tag = set_attr(&tag, name, &f(b.src[k].fraction()));
+        }
+    }
+    let (bright, contrast) = b
+        .adjust
+        .iter()
+        .find_map(|a| if let A::Lum { bright, contrast } = a { Some((bright.fraction(), contrast.fraction())) } else { None })
+        .unwrap_or((0.0, 0.0));
+    // The contrast slope and half the brightness, as the reader reads them back.
+    let gain = if contrast <= 0.0 { 1.0 + contrast } else { 1.0 / (1.0 - contrast).max(1e-3) };
+    if gain != 1.0 || tag.contains(" gain=\"") {
+        tag = set_attr(&tag, "gain", &f(gain));
+    }
+    if bright != 0.0 || tag.contains(" blacklevel=\"") {
+        tag = set_attr(&tag, "blacklevel", &f(bright / 2.0));
+    }
+    for (name, on) in [("grayscale", b.adjust.contains(&A::Grayscale)), ("bilevel", b.adjust.iter().any(|a| matches!(a, A::BiLevel(_))))] {
+        if on || tag.contains(&format!(" {name}=\"")) {
+            tag = set_attr(&tag, name, if on { "t" } else { "f" });
+        }
+    }
+    tag
+}
+
+/// A VML inline picture's text as `b` crops and adjusts it, at `w` × `h`; `None` when VML can't say how it changed.
+pub(super) fn vml_picture_patch(text: &str, a: Option<&Shape>, b: Option<&Shape>, w: f64, h: f64) -> Option<String> {
+    let x = vml_size(text, w, h);
+    let (Some(a), Some(b)) = (a, b) else { return Some(x) };
+    if !vml_says(a, b) {
+        return None;
+    }
+    let Some((start, end)) = first_vml_shape(&x) else { return Some(x) };
+    let mut tag = x[start..end].to_string();
+    let mut style = attr(&tag, "style").unwrap_or_default();
+    if a.xfrm.rot != b.xfrm.rot {
+        style = css_set(&style, "rotation", &format!("{}", b.xfrm.rot.degrees()));
+    }
+    if (a.xfrm.flip_h, a.xfrm.flip_v) != (b.xfrm.flip_h, b.xfrm.flip_v) {
+        style = css_set(&style, "flip", flip_css(b));
+    }
+    if a.nv.hidden != b.nv.hidden {
+        style = css_set(&style, "visibility", if b.nv.hidden { "hidden" } else { "visible" });
+    }
+    tag = set_attr(&tag, "style", &style);
+    if a.nv.title != b.nv.title {
+        tag = set_attr(&tag, "title", &b.nv.title);
+    }
+    let mut out = format!("{}{tag}{}", &x[..start], &x[end..]);
+    if let (Some(pa), Some(pb)) = (a.pic(), b.pic())
+        && pa.blip != pb.blip
+        && let Some((i0, i1)) = find_imagedata(&out)
+    {
+        let t = imagedata_patch(&out[i0..i1], &pb.blip);
+        out.replace_range(i0..i1, &t);
+    }
+    Some(out)
+}
+
+fn flip_css(b: &Shape) -> &'static str {
+    match (b.xfrm.flip_h, b.xfrm.flip_v) {
+        (true, true) => "x y",
+        (true, false) => "x",
+        (false, true) => "y",
+        _ => "",
+    }
+}
+
+/// The first `v:imagedata` start tag's range.
+fn find_imagedata(text: &str) -> Option<(usize, usize)> {
+    let k = text.find(":imagedata ")?;
+    let open = text[..k].rfind('<')?;
+    let end = open + crate::docx::binding::tag_end(&text[open..])? + 1;
+    Some((open, end))
+}
+
+/// A VML float's text with `now`'s edits; `None` when VML can't say how it changed ([`vml_says`]).
+pub(super) fn vml_patch(text: &str, was: &Float, now: &Float) -> Option<String> {
     use crate::drawing::paint::Fill as F;
-    let Some((start, end)) = first_vml_shape(text) else { return text.to_string() };
+    if let (Some(a), Some(b)) = (was.shape.as_deref(), now.shape.as_deref())
+        && !vml_says(a, b)
+    {
+        return None;
+    }
+    let Some((start, end)) = first_vml_shape(text) else { return Some(text.to_string()) };
     let mut tag = text[start..end].to_string();
     let pt = |v: f64| format!("{}pt", (v * 20.0).round() / 20.0);
     let mut style = attr(&tag, "style").unwrap_or_default();
@@ -59,18 +228,29 @@ pub(super) fn vml_patch(text: &str, was: &Float, now: &Float) -> String {
             set("rotation", format!("{}", b.xfrm.rot.degrees()));
         }
         if (a.xfrm.flip_h, a.xfrm.flip_v) != (b.xfrm.flip_h, b.xfrm.flip_v) {
-            let f = match (b.xfrm.flip_h, b.xfrm.flip_v) {
-                (true, true) => "x y",
-                (true, false) => "x",
-                (false, true) => "y",
-                _ => "",
-            };
-            set("flip", f.to_string());
+            set("flip", flip_css(b).to_string());
         }
     }
     if (was.z, was.behind) != (now.z, now.behind) {
         let z = i64::from(now.z.max(1)) * if now.behind { -1 } else { 1 };
         set("z-index", z.to_string());
+    }
+    let nv = |s: Option<&Shape>| s.map(|s| (s.nv.name.clone(), s.nv.title.clone(), s.nv.hidden));
+    let (na, nb) = (nv(a), nv(b));
+    if let (Some(x), Some((name, title, hidden))) = (&na, &nb)
+        && na != nb
+    {
+        if x.2 != *hidden {
+            set("visibility", if *hidden { "hidden" } else { "visible" }.to_string());
+        }
+        if x.1 != *title {
+            tag = set_attr(&tag, "title", title);
+        }
+        // Its `id` is its name; a linked text box keeps it: the box before it names it so.
+        let linked = b.and_then(|s| s.sp()).is_some_and(|sp| matches!(sp.text, crate::drawing::ShapeText::Linked { .. }));
+        if x.0 != *name && !linked && !name.is_empty() {
+            tag = set_attr(&tag, "id", name);
+        }
     }
     tag = set_attr(&tag, "style", &style);
     let hex = |c: &Colour| match c.base {
@@ -108,7 +288,15 @@ pub(super) fn vml_patch(text: &str, was: &Float, now: &Float) -> String {
             }
         }
     }
-    format!("{}{tag}{}", &text[..start], &text[end..])
+    let mut out = format!("{}{tag}{}", &text[..start], &text[end..]);
+    if let (Some(pa), Some(pb)) = (a.and_then(Shape::pic), b.and_then(Shape::pic))
+        && pa.blip != pb.blip
+        && let Some((i0, i1)) = find_imagedata(&out)
+    {
+        let t = imagedata_patch(&out[i0..i1], &pb.blip);
+        out.replace_range(i0..i1, &t);
+    }
+    Some(out)
 }
 
 fn first_vml_shape(text: &str) -> Option<(usize, usize)> {
@@ -193,6 +381,10 @@ pub(super) fn apply(src: &str, edits: Vec<Edit>) -> String {
 }
 
 fn shape_edits(a: &Shape, b: &Shape, base: usize, text: &str, out: &mut Vec<Edit>) {
+    shape_edits_in(a, b, base, text, false, out)
+}
+
+fn shape_edits_in(a: &Shape, b: &Shape, base: usize, text: &str, is_child: bool, out: &mut Vec<Edit>) {
     let rel = |r: &Range<usize>| r.start.saturating_sub(base)..r.end.saturating_sub(base);
     let sp = &a.spans;
     let frame = |s: &Shape| (s.xfrm.off, s.xfrm.ext, s.group().map(|g| (g.child_off, g.child_ext)));
@@ -208,6 +400,23 @@ fn shape_edits(a: &Shape, b: &Shape, base: usize, text: &str, out: &mut Vec<Edit
             let closed = text[..end].ends_with("/>");
             out.push((r.start..end, xfrm_tag(b, closed)));
         }
+    }
+    // A group child's name, title and hidden mark, in its own `cNvPr` (the drawing's are in its `wp:docPr`).
+    if is_child
+        && (&a.nv.name, &a.nv.title, a.nv.hidden) != (&b.nv.name, &b.nv.title, b.nv.hidden)
+        && let Some(r) = sp.shape.as_ref().map(rel)
+        && let Some(k) = text.get(r.clone()).and_then(|t| t.find(":cNvPr ").or_else(|| t.find("<cNvPr ")))
+        && let Some(open) = text[..r.start + k + 1].rfind('<')
+        && let Some(end) = text.get(open..).and_then(crate::docx::binding::tag_end).map(|e| open + e + 1)
+    {
+        let mut tag = set_attr(&text[open..end], "name", &b.nv.name);
+        if !b.nv.title.is_empty() || tag.contains(" title=\"") {
+            tag = set_attr(&tag, "title", &b.nv.title);
+        }
+        if b.nv.hidden || tag.contains(" hidden=\"") {
+            tag = set_attr(&tag, "hidden", if b.nv.hidden { "1" } else { "0" });
+        }
+        out.push((open..end, tag));
     }
     match (&a.kind, &b.kind) {
         (ShapeKind::Sp(x), ShapeKind::Sp(y)) => {
@@ -239,7 +448,7 @@ fn shape_edits(a: &Shape, b: &Shape, base: usize, text: &str, out: &mut Vec<Edit
         }
         (ShapeKind::Group(x), ShapeKind::Group(y)) if x.children.len() == y.children.len() => {
             for (ca, cb) in x.children.iter().zip(&y.children) {
-                shape_edits(ca, cb, base, text, out);
+                shape_edits_in(ca, cb, base, text, true, out);
             }
         }
         _ => {}
@@ -819,9 +1028,10 @@ fn shape_xml(s: &Shape, path: &mut Vec<u16>, txbx: Stories, w: &str, ns: Option<
                 opt(sp.effects.as_ref().map(effects_xml)),
             );
             let style = opt(sp.style.as_ref().map(style_xml));
-            let text = match txbx(path).filter(|_| sp.text == crate::drawing::ShapeText::Story) {
-                Some(t) => format!("<wps:txbx><{w}txbxContent>{t}</{w}txbxContent></wps:txbx>"),
-                None => String::new(),
+            let text = match (&sp.text, txbx(path).filter(|_| sp.text == crate::drawing::ShapeText::Story)) {
+                (_, Some(t)) => format!("{}<{w}txbxContent>{t}</{w}txbxContent></wps:txbx>", txbx_open(Some(s))),
+                (crate::drawing::ShapeText::Linked { chain, seq }, None) => format!(r#"<wps:linkedTxbx id="{chain}" seq="{seq}"/>"#),
+                _ => String::new(),
             };
             let body = if sp.connector { "<wps:bodyPr/>".to_string() } else { body_xml(&sp.body) };
             format!("<wps:wsp{ns}>{nv}{kind}{props}{style}{text}{body}</wps:wsp>")
@@ -1028,7 +1238,7 @@ mod round_trip {
         }
         let bytes = crate::docx::write::save(&d).expect("saves");
         let xml = document_xml(&bytes);
-        assert!(xml.contains(r#"name="Star "#) && xml.contains("<wps:cNvCnPr/>"), "{xml}");
+        assert!(xml.matches(r#"name="Star""#).count() == 2 && xml.contains(r#"name="Elbow Connector""#) && xml.contains("<wps:cNvCnPr/>"), "{xml}");
         let again = crate::docx::reader::read_editable(&bytes).expect("reads");
         let Block::Para(p) = &again.sections[0].blocks[0] else { panic!() };
         let read: Vec<_> = p.inlines.iter().filter_map(|i| if let Inline::Float(f, _) = i { f.shape.as_deref().cloned() } else { None }).collect();
@@ -1079,5 +1289,55 @@ mod round_trip {
                 .replace(r#" filled="t""#, ""),
             original
         );
+    }
+
+    #[test]
+    fn a_vml_shape_edited_past_vml_is_saved_as_drawingml() {
+        use crate::drawing::paint::{EffectList, Glow};
+        let mut d = vml_doc();
+        let f = vml_float(&mut d);
+        let s = f.shape.as_deref_mut().expect("a shape");
+        s.nv.hidden = true;
+        s.nv.title = "Box".into();
+        let saved = document_xml(&crate::docx::write::save(&d).expect("saves"));
+        assert!(saved.contains("visibility:hidden") && saved.contains(r#"title="Box""#) && saved.contains("<v:rect"), "VML says these: {saved}");
+        let f = vml_float(&mut d);
+        let glow = Glow { radius: crate::drawing::units::Emu(76200), colour: Colour::srgb(0xFF0000) };
+        f.shape.as_deref_mut().and_then(|s| s.sp_mut()).expect("a shape").effects = Some(EffectList { glow: Some(glow), ..EffectList::default() });
+        let saved = document_xml(&crate::docx::write::save(&d).expect("saves"));
+        assert!(saved.contains("<a:glow") && saved.contains("<wp:anchor") && !saved.contains("<v:rect"), "VML has no glow: {saved}");
+        let again = crate::docx::reader::read_editable(&crate::docx::write::save(&d).expect("saves")).expect("reads");
+        let Block::Para(p) = &again.sections[0].blocks[0] else { panic!() };
+        let back = p.inlines.iter().find_map(|i| if let Inline::Float(f, _) = i { f.shape.clone() } else { None }).expect("the float");
+        assert!(back.nv.hidden && &*back.nv.title == "Box");
+        assert!(back.sp().and_then(|s| s.effects.as_ref()).is_some_and(|e| e.glow.is_some()));
+    }
+
+    #[test]
+    fn a_vml_pictures_adjustments_are_saved_on_its_imagedata() {
+        use crate::drawing::paint::{BlipAdjust, BlipFill, BlipMode};
+        use crate::drawing::units::Pct;
+        let a = crate::drawing::paint::BlipFill {
+            image: Some(0),
+            src: [Pct(0); 4],
+            mode: BlipMode::Stretch([Pct(0); 4]),
+            adjust: Vec::new(),
+            rot_with_shape: true,
+        };
+        let b = BlipFill {
+            adjust: vec![BlipAdjust::Lum { bright: Pct(20000), contrast: Pct(-30000) }, BlipAdjust::Grayscale],
+            src: [Pct(10000), Pct(0), Pct(0), Pct(0)],
+            ..a.clone()
+        };
+        let tag = super::imagedata_patch(r#"<v:imagedata r:id="rId5" o:title=""/>"#, &b);
+        assert!(
+            tag.contains(r#"gain="45875f""#)
+                && tag.contains(r#"blacklevel="6554f""#)
+                && tag.contains(r#"grayscale="t""#)
+                && tag.contains(r#"cropleft="6554f""#),
+            "{tag}"
+        );
+        let back = super::imagedata_patch(&tag, &a);
+        assert!(back.contains(r#"gain="65536f""#) && back.contains(r#"grayscale="f""#), "{back}");
     }
 }
