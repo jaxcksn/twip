@@ -402,3 +402,41 @@ mod page_setup {
         assert_eq!((s[0].pg_start, s[1].pg_start), (Some(5), None));
     }
 }
+
+#[test]
+fn columns_apply_to_the_selected_text_or_from_this_point_on() {
+    use crate::api::command::Columns;
+    use crate::editing::section::{ColumnPreset, ColumnsScope};
+    let body = "<w:p><w:r><w:t>One</w:t></w:r></w:p><w:p><w:r><w:t>Two</w:t></w:r></w:p><w:p><w:r><w:t>Three</w:t></w:r></w:p>";
+    let mut e = Editor::open(&super::blank_body(body), super::fonts()).expect("opens");
+    let two = Columns { count: 2, spacing: None, separator: None, widths: None };
+    let para = |e: &Editor, k: usize| super::para_id(e, k);
+    e.selection = Selection::range(
+        Position::text(StoryId::Body, para(&e, 1), Unit(0)),
+        Position::text(StoryId::Body, para(&e, 1), Unit(3)),
+        crate::editing::selection::Granularity::Char,
+    );
+    let depth = e.history().undo_depth();
+    assert!(matches!(e.set_columns_in(two.clone(), ColumnsScope::SelectedText, false, super::fonts()), super::super::commands::Outcome::Changed(_)));
+    let cols: Vec<usize> = e.document().sections.iter().map(|s| s.columns.num).collect();
+    assert_eq!(cols, [1, 2, 1], "the selected text alone in two columns");
+    assert!(e.document().sections[1..].iter().all(|s| s.break_kind == crate::docx::SectionBreak::Continuous), "continuous breaks");
+    assert_eq!(e.history().undo_depth(), depth + 1, "one undo step");
+    e.undo_many(true, 1, super::fonts());
+    assert_eq!(e.document().sections.len(), 1);
+    e.selection = Selection::Caret(Position::text(StoryId::Body, para(&e, 2), Unit(0)));
+    assert!(matches!(
+        e.set_columns_in(two.clone(), ColumnsScope::ThisPointForward, true, super::fonts()),
+        super::super::commands::Outcome::Changed(_)
+    ));
+    let s = &e.document().sections;
+    assert_eq!((s.len(), s[0].columns.num, s[1].columns.num, s[1].break_kind), (2, 1, 2, crate::docx::SectionBreak::NextColumn));
+    assert!(
+        matches!(e.set_columns_in(two, ColumnsScope::WholeDocument, true, super::fonts()), super::super::commands::Outcome::Refused(_)),
+        "a new column only from here on"
+    );
+    let left = e.column_preset(ColumnPreset::Left);
+    let w: Vec<f64> = left.widths.iter().flatten().map(|c| c.width.0).collect();
+    assert_eq!(left.count, 2);
+    assert!(w[0] < w[1] && (w[0] - (468.0 - 72.0) / 3.0).abs() < 0.01, "{w:?}");
+}

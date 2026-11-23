@@ -44,6 +44,24 @@ pub struct HoverDetail {
 /// A hover tooltip: what it's over, the tip, and for a change or a comment its parts.
 pub type Hovered = (HoverTip, Tooltip, Option<HoverDetail>);
 
+/// A footnote or endnote, as a notes list shows it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct NoteInfo {
+    pub kind: NoteKind,
+    /// Its id in the document.
+    pub id: i64,
+    /// Its reference mark: its custom mark, else its number as laid out (empty before layout reaches it).
+    pub mark: String,
+    /// Its mark is a custom one.
+    pub custom: bool,
+    /// Its text, as its hover tooltip shows it.
+    pub text: String,
+    /// Where its reference is; `None` for a note nothing refers to.
+    pub reference: Option<Position>,
+    /// The page showing its reference, once laid out.
+    pub page: Option<usize>,
+}
+
 /// What a hover tooltip was looked up for: the pointer, the document's generation, the markup view and the story being edited.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct HoverKey {
@@ -98,7 +116,7 @@ impl Editor {
         if let Some(link) = self.link_at(p) {
             let (a, b) = self.locate(crate::docx::ElementId::Field(link.field)).and_then(|w| self.element_range(&w))?;
             let rect = under(self, a, b)?;
-            return Some((HoverTip::Link, Tooltip { text: link.address, page, rect }, None));
+            return Some((HoverTip::Link, Tooltip { text: link.tip.unwrap_or(link.address), page, rect }, None));
         }
         if let Some((at, text)) = self.note_under(p) {
             let end = Position::text(at.story, at.para_offset()?.0, Unit(at.para_offset()?.1.0 + 1));
@@ -130,6 +148,64 @@ impl Editor {
     fn char_before(&self, p: Position) -> Option<Position> {
         let (para, u) = p.para_offset()?;
         Some(Position::text(p.story, para, Unit(u.0.checked_sub(1)?)))
+    }
+
+    /// The footnotes, then the endnotes, each in their references' order (those nothing refers to after, by id):
+    /// their marks, text, references and pages. Separator notes are left out.
+    pub fn notes(&self) -> Vec<NoteInfo> {
+        let mut refs: std::collections::HashMap<(NoteKind, i64), (Position, Option<String>)> = std::collections::HashMap::new();
+        // Each note's first reference in document order
+        for pid in self.paras_in_order() {
+            let Some(p) = self.index.para(&self.doc, pid) else { continue };
+            if !p.inlines.iter().any(|i| matches!(i, Inline::NoteRef { .. })) {
+                continue;
+            }
+            let story = self.index.para_slot(pid).map_or(super::position::StoryId::Body, |s| self.index.story(s.container));
+            let mut at = 0u32;
+            for (k, i) in p.inlines.iter().enumerate() {
+                if let Inline::NoteRef { kind, id, custom, .. } = i {
+                    let mark = custom.then(|| match p.inlines.get(k + 1) {
+                        Some(Inline::Text(t, _)) => t.clone(),
+                        _ => String::new(),
+                    });
+                    refs.entry((*kind, *id)).or_insert((Position::text(story, pid, Unit(at)), mark));
+                }
+                at += i.units() as u32;
+            }
+        }
+        let shown = self.layout.note_refs_shown();
+        [NoteKind::Foot, NoteKind::End]
+            .into_iter()
+            .flat_map(|kind| self.note_stories(kind).into_iter().map(move |s| (kind, s)))
+            .filter_map(|(kind, story)| {
+                let id = match story {
+                    super::position::StoryId::Footnote(id) | super::position::StoryId::Endnote(id) => id,
+                    _ => return None,
+                };
+                let blocks = match kind {
+                    NoteKind::Foot => self.doc.footnotes.get(&id)?,
+                    NoteKind::End => self.doc.endnotes.get(&id)?,
+                };
+                let (reference, custom) = refs.get(&(kind, id)).map_or((None, None), |(p, m)| (Some(*p), m.clone()));
+                let laid = shown.get(&(kind, id));
+                let mut text = tip_text(blocks);
+                // A custom mark is typed in its note too
+                if let Some(m) = custom.as_deref().filter(|m| !m.is_empty())
+                    && let Some(rest) = text.strip_prefix(m)
+                {
+                    text = rest.trim_start().to_string();
+                }
+                Some(NoteInfo {
+                    kind,
+                    id,
+                    custom: custom.is_some(),
+                    mark: custom.unwrap_or_else(|| laid.map_or(String::new(), |(n, _)| n.to_string())),
+                    text,
+                    reference,
+                    page: laid.map(|(_, page)| *page),
+                })
+            })
+            .collect()
     }
 
     /// The footnote or endnote reference at `p` or just before it: where it is, and its note's text.

@@ -3,6 +3,7 @@
 pub mod a11y;
 mod background_dialogs;
 pub mod dialogs;
+pub mod fields;
 pub mod find;
 pub mod lists;
 pub mod menu;

@@ -222,6 +222,75 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
+    /// The separator story `part` of notes of `kind` draws: its plain text (paragraphs `\n` apart) and whether it is
+    /// Word's built-in one (a line, or no continuation notice); `None` for a story the document doesn't have.
+    pub fn note_separator(&self, kind: NoteKind, part: crate::docx::NoteSeparator) -> Option<NoteSeparatorInfo> {
+        let key = part.key(kind);
+        let blocks = self.doc.separators.get(&key)?;
+        let builtin =
+            blocks.len() == 1 && matches!(&blocks[0], Block::Para(p) if p.inlines.len() == 1 && matches!(p.inlines[0], Inline::Separator { .. }));
+        let text = blocks.iter().filter_map(|b| if let Block::Para(p) = b { Some(super::text::UnitText::of(p).text) } else { None });
+        let text: Vec<String> = text.map(|t| t.chars().filter(|c| *c != '\u{FFFC}').collect()).collect();
+        Some(NoteSeparatorInfo { text: text.join("\n"), builtin })
+    }
+
+    /// Sets separator story `part` of notes of `kind`: Word's built-in one (`None`: the line; no continuation notice),
+    /// else `text`'s paragraphs (`\n` apart; empty: no line). One undo step.
+    pub fn set_note_separator(&mut self, kind: NoteKind, part: crate::docx::NoteSeparator, text: Option<&str>, fonts: &Fonts) -> Outcome {
+        use crate::docx::NoteSeparator as S;
+        let key = part.key(kind);
+        let defaults = self.doc.source.as_ref().map(|s| &s.separator_defaults);
+        let builtin = |k: &str| defaults.and_then(|d| d.get(k)).map(|b| b.iter().map(super::clipboard::fresh).collect::<Vec<_>>());
+        let blocks = match text {
+            None if part == S::Notice => None,
+            None => match builtin(&key) {
+                Some(b) => Some(b),
+                None => return Outcome::unavailable("no built-in separator"),
+            },
+            Some(t) => {
+                // A line like the separator's, its text in place of the rule
+                let template = self.doc.separators.get(&key).or_else(|| self.doc.separators.get(&S::Separator.key(kind))).and_then(|b| {
+                    b.iter().find_map(|b| match b {
+                        Block::Para(p) => Some(p.clone()),
+                        Block::Table(_) => None,
+                    })
+                });
+                let Some(template) = template.or_else(|| {
+                    builtin(&S::Separator.key(kind)).and_then(|b| {
+                        b.into_iter().find_map(|b| match b {
+                            Block::Para(p) => Some(p),
+                            Block::Table(_) => None,
+                        })
+                    })
+                }) else {
+                    return Outcome::unavailable("no separator to take after");
+                };
+                let t = crate::docx::xml::legal(t);
+                Some(
+                    t.split('\n')
+                        .map(|line| {
+                            let mut p = template.clone();
+                            p.id = crate::docx::next_para_id();
+                            p.src = None;
+                            let run = p.mark.clone();
+                            p.inlines = if line.is_empty() { Vec::new() } else { vec![Inline::Text(line.trim_end_matches('\r').to_string(), run)] };
+                            Block::Para(p)
+                        })
+                        .collect(),
+                )
+            }
+        };
+        if self.doc.separators.get(&key) == blocks.as_ref() {
+            return Outcome::Unchanged("already so");
+        }
+        let mut tx = self.begin("Note Separator");
+        if self.step(&mut tx, Step::Separator { key, blocks }).is_err() {
+            self.abort(tx);
+            return Outcome::Unchanged("separator failed");
+        }
+        self.commit(tx, None, fonts)
+    }
+
     pub(super) fn set_note_properties(&mut self, p: crate::api::command::NoteProperties, fonts: &Fonts) -> Outcome {
         use crate::api::command::{NotePosition as Pos, NoteRestart as R, NoteScope, NoteType, NumberFormat};
         let foot = p.kind == NoteType::Footnote;
@@ -243,7 +312,8 @@ impl Editor {
         let k = usize::from(!foot);
         let sections: Vec<usize> = match p.apply_to.unwrap_or_default() {
             NoteScope::WholeDocument => (0..self.doc.sections.len()).collect(),
-            NoteScope::ThisSection => vec![self.focus_section()],
+            // This section, or the selected sections when the selection spans several (Word's Apply changes to)
+            NoteScope::ThisSection => self.selected_sections(),
         };
         let mut tx = self.begin("Note Options");
         let mut changed = false;
@@ -535,4 +605,13 @@ impl Editor {
             }
         }
     }
+}
+
+/// A note separator story, as [`Editor::note_separator`] reads it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NoteSeparatorInfo {
+    /// Its plain text, paragraphs `\n` apart (empty for the built-in line).
+    pub text: String,
+    /// It is Word's built-in line.
+    pub builtin: bool,
 }

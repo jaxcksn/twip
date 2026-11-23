@@ -679,6 +679,19 @@ impl DocumentLayout {
         self.published.clone()
     }
 
+    /// The footnote and endnote references of the last finished layout: each note's number as laid out and the first
+    /// page showing its reference.
+    pub fn note_refs_shown(&self) -> HashMap<(NoteKind, i64), (&str, usize)> {
+        let mut out = HashMap::new();
+        let Some(b) = &self.baseline else { return out };
+        for (page, r) in b.finished.records.iter().enumerate() {
+            for (kind, id, number) in &r.effects.notes_shown {
+                out.entry((*kind, *id)).or_insert((number.as_str(), page));
+            }
+        }
+        out
+    }
+
     pub fn revision(&self) -> Revision {
         self.revision
     }

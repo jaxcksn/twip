@@ -881,7 +881,7 @@ fn create_hyperlink_here_links_to_a_hidden_bookmark_on_the_text() {
     assert_eq!(texts(&e)[0], "one two", "the text stays");
     let name = e.bookmarks().into_iter().map(|b| b.name).find(|n| n.starts_with("_Hlk")).expect("a hidden bookmark on the source");
     let codes = link_codes(&e, 1);
-    assert!(codes.len() == 1 && codes[0].starts_with("HYPERLINK") && codes[0].contains(&format!("#{name}")), "{codes:?}");
+    assert!(codes.len() == 1 && codes[0].starts_with("HYPERLINK") && codes[0].contains(&format!(r#"\l "{name}""#)), "{codes:?}");
     e.execute(C::Undo, fonts());
     assert_eq!(texts(&e), ["one two", "three"], "one undo step");
     assert!(e.bookmarks().is_empty());
@@ -1348,4 +1348,28 @@ fn a_tracked_move_of_an_empty_paragraph() {
             assert!(centred(&e, ""));
         }
     }
+}
+
+#[test]
+fn formatting_restrictions_keep_auto_format_unless_it_may_override_them() {
+    use crate::api::command::DocumentProtection;
+    use crate::editing::commands::Outcome;
+    for allow in [false, true] {
+        let mut e = edit("<w:p><w:r><w:t>above</w:t></w:r></w:p><w:p/>");
+        assert!(matches!(e.set_formatting_restrictions(Some(allow), Some(true), None, fonts()), Outcome::Changed(_) | Outcome::Unchanged(_)));
+        let protect = DocumentProtection { formatting: Some(true), enforce: Some(true), ..Default::default() };
+        assert!(matches!(e.execute(C::SetDocumentProtection(protect), fonts()), Outcome::Changed(_)));
+        assert!(matches!(e.set_formatting_restrictions(Some(!allow), None, None, fonts()), Outcome::Refused(_)), "not while enforced");
+        assert!(e.style_switch_blocked(true) && !e.style_switch_blocked(false));
+        caret(&mut e, 1, 0);
+        type_in(&mut e, "---\n");
+        assert_eq!(para(&e, 1).style.border_bottom.is_some(), allow, "override {allow}");
+        let saved = crate::docx::write::save(e.document()).expect("saves");
+        let again = Editor::open(&saved, fonts()).expect("reopens");
+        let s = &again.document().settings;
+        assert_eq!((s.auto_format_override, s.style_lock_theme, s.style_lock_style_set), (allow, true, false));
+    }
+    let e = edit("<w:p><w:r><w:t>a</w:t></w:r></w:p>");
+    let min = e.recommended_minimum_styles();
+    assert!(min.iter().any(|s| s == "Normal"), "{min:?}");
 }

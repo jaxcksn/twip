@@ -601,6 +601,22 @@ impl Editor {
         f
     }
 
+    /// Whole `blocks` of this document as content to paste, as [`Editor::clip`] takes a selection: revisions
+    /// accepted, unpaired markers left out, and the definitions of the controls in them and in the notes and comments
+    /// they refer to kept with them.
+    pub(super) fn whole_fragment(&mut self, blocks: Vec<Block>) -> Fragment {
+        let mut f = Fragment { blocks, ..Default::default() };
+        strip_partial_comments(&mut f.blocks);
+        f.refs = self.refs_of(&f.blocks);
+        let mut f = f.accepted();
+        drop_unpaired(&mut f.blocks);
+        f.controls = controls_of(&f.blocks, &self.doc);
+        for body in f.refs.notes.iter().map(|n| &n.2).chain(f.refs.comments.iter().map(|c| &c.body)) {
+            f.controls.extend(controls_of(body, &self.doc));
+        }
+        f
+    }
+
     /// Pasted `blocks` (fresh copies) made this document's, in `tx`: their controls' definitions, the notes and comments
     /// they refer to, what they show and use from the document `f` came from, and no second bookmark of a name the
     /// document has (a copy's; a cut's or a move's goes with it) or editing permission of an id it has.

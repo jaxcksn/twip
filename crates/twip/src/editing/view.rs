@@ -379,6 +379,8 @@ pub struct View {
     pub formatting_marks: Vec<FormattingMark>,
     pub boundaries: Vec<(usize, [f64; 4])>,
     pub field_shading: Vec<(usize, Band)>,
+    /// The editable regions the author may edit, highlighted ([`super::Editor::editable_region_views`]).
+    pub editable_regions: Vec<(usize, Band)>,
     /// The selected list numbers, shaded.
     pub list_labels: Vec<(usize, Band)>,
 }

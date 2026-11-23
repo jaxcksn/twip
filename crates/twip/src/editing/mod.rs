@@ -21,7 +21,7 @@ mod field_shading;
 pub mod find;
 mod fonts;
 pub mod format;
-mod forms;
+pub mod forms;
 mod frames;
 pub mod geometry;
 pub(crate) mod gestures;
@@ -110,7 +110,9 @@ use geometry::Pages;
 use history::{History, SelectionRecord, Transaction, Typing, TypingRun};
 use index::{Container, DocIndex};
 use input::{PointerKind, Request, Viewport};
+pub use merge::{DateSettings, DateStorage, date_formats, date_settings};
 use navigate::Nav;
+pub use notes::NoteSeparatorInfo;
 use position::{Affinity, Place, Position, StoryId};
 use selection::{Granularity, Selection};
 use step::{Map, Step, StepError, para_len, run_of};
@@ -280,6 +282,8 @@ pub struct Editor {
     editable_cache: std::cell::RefCell<Option<(u64, Rc<protection::EditableRanges>)>>,
     /// Counts the steps that can have changed the editable ranges.
     perm_generation: u64,
+    /// The groups the author is in, for editable ranges ([`Editor::set_editing_groups`]).
+    editing_groups: Vec<String>,
     drop: Option<Position>,
     field_labels: HashMap<String, String>,
     sub_template_rules: Vec<sub_templates::Rule>,
@@ -499,6 +503,7 @@ impl Editor {
             pending_images: Vec::new(),
             editable_cache: Default::default(),
             perm_generation: 0,
+            editing_groups: Vec::new(),
             touched: touched::Touched::new(),
             revision_marks: (0, 0),
             comment_edits: 0,
@@ -1963,7 +1968,7 @@ impl Editor {
         if text == " " && self.mode != Mode::Design && self.selected_picture_unfilled() && self.activate_picture_control() {
             return Outcome::Unchanged("placeholder activated");
         }
-        if text == " "
+        if (text == " " || ((text == "x" || text == "X") && self.selected_form_check_box().is_some()))
             && let Some(p) = self.selected_checkbox()
         {
             return if self.mode == Mode::Design { Outcome::Unchanged("design mode") } else { self.toggle_checkbox(p, fonts) };
@@ -3389,6 +3394,11 @@ impl Editor {
         keymap::Arrows::of(at.geo.lines[at.line].axes)
     }
 
+    /// The page showing `p`, once laid out.
+    pub fn page_showing(&mut self, p: Position) -> Option<usize> {
+        self.caret_at(p).map(|c| c.page)
+    }
+
     fn caret_at(&mut self, focus: Position) -> Option<CaretView> {
         let (para, unit) = focus.para_offset()?;
         let affinity = focus.affinity();
@@ -3622,6 +3632,7 @@ impl Editor {
             formatting_marks: Vec::new(),
             boundaries: Vec::new(),
             field_shading: Vec::new(),
+            editable_regions: Vec::new(),
             list_labels: self.list_label_rects(visible_pages.clone()),
             drop: self
                 .text_drag

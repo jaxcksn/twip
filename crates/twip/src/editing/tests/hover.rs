@@ -172,3 +172,164 @@ fn a_tip_is_looked_up_again_only_once_the_pointer_or_the_document_changes() {
     assert!(e.hover_tip().is_none(), "no change tips outside All Markup");
     assert_eq!(e.hover_lookups, looked + 1);
 }
+
+/// A paragraph of a hyperlink with a ScreenTip, frame and bookmark, then a cross-reference made a link by `\h`, then
+/// the bookmarked paragraph.
+fn linked() -> Editor {
+    let field = |code: &str, shown: &str| {
+        format!(
+            r#"<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve">{code}</w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>{shown}</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>"#
+        )
+    };
+    let body = format!(
+        r#"<w:p>{}<w:r><w:t xml:space="preserve"> and </w:t></w:r>{}</w:p><w:p><w:bookmarkStart w:id="1" w:name="Target"/><w:r><w:t>Here</w:t></w:r><w:bookmarkEnd w:id="1"/></w:p>"#,
+        field(r#" HYPERLINK "https://a.test/" \l "top" \o "Read the guide" \t "_blank" "#, "guide"),
+        field(r#" REF Target \h "#, "Here"),
+    );
+    let mut e = Editor::open(&super::blank_body(&body), fonts()).expect("opens");
+    e.complete(fonts());
+    e
+}
+
+/// The position `after` units into the `n`th field of the first paragraph, and its place on the stack.
+fn in_field(e: &mut Editor, n: usize, after: u32) -> (Position, f64, f64) {
+    let Some(Block::Para(p)) = e.document().sections[0].blocks.first() else { panic!("a paragraph") };
+    let s = crate::docx::fields::spans(&p.inlines)[n];
+    let u: u32 = p.inlines[..s.begin].iter().map(|i| i.units() as u32).sum();
+    let at = Position::text(StoryId::Body, ParaId(p.id), Unit(u + after));
+    let c = e.caret_at(at).expect("laid out");
+    let (x, y) = e.stack().to_doc(c.page, c.x + 1.0, (c.top + c.bottom) / 2.0).expect("on the stack");
+    (at, x, y)
+}
+
+#[test]
+fn a_link_reads_back_its_parts_and_shows_its_screen_tip() {
+    let mut e = linked();
+    let (at, x, y) = in_field(&mut e, 0, 1);
+    let link = e.link_at(at).expect("a link");
+    assert_eq!(
+        (link.address.as_str(), link.target.as_str(), link.bookmark.as_deref(), link.tip.as_deref(), link.frame.as_deref(), link.reference),
+        ("https://a.test/#top", "https://a.test/", Some("top"), Some("Read the guide"), Some("_blank"), false)
+    );
+    e.pointer_input(PointerKind::Move, x, y, 0, Mods::default(), fonts());
+    assert_eq!(tip(&mut e), Some((HoverTip::Link, "Read the guide".into())), "the tip, not the address");
+}
+
+#[test]
+fn a_linked_cross_reference_is_a_link_that_ctrl_click_follows() {
+    let mut e = linked();
+    let (at, x, y) = in_field(&mut e, 1, 1);
+    let link = e.link_at(at).expect("a link");
+    assert_eq!((link.address.as_str(), link.reference), ("#Target", true));
+    e.selection = crate::editing::selection::Selection::Caret(at);
+    assert!(e.link_here().is_none(), "not a hyperlink to edit or remove");
+    e.pointer_input(PointerKind::Move, x, y, 0, Mods::default(), fonts());
+    assert_eq!(tip(&mut e), Some((HoverTip::Link, "#Target".into())));
+    let ctrl = Mods { ctrl: true, ..Mods::default() };
+    e.pointer_input(PointerKind::Down, x, y, 1, ctrl, fonts());
+    e.pointer_input(PointerKind::Up, x, y, 1, ctrl, fonts());
+    let second = match &e.document().sections[0].blocks[1] {
+        Block::Para(p) => ParaId(p.id),
+        Block::Table(_) => panic!("a paragraph"),
+    };
+    assert_eq!(e.selection().anchor().and_then(|a| a.para_offset()).map(|p| p.0), Some(second), "at the bookmark");
+}
+
+#[test]
+fn editing_a_link_address_keeps_its_screen_tip() {
+    let mut e = linked();
+    let (at, ..) = in_field(&mut e, 0, 1);
+    e.selection = crate::editing::selection::Selection::Caret(at);
+    let edit = crate::api::command::HyperlinkEdit { address: Some("https://b.test/".into()), text: None };
+    assert!(matches!(e.edit_hyperlink(edit, fonts()), crate::editing::Outcome::Changed(_)));
+    let link = e.link_here().expect("still a link");
+    assert_eq!((link.address.as_str(), link.bookmark, link.tip.as_deref()), ("https://b.test/", None, Some("Read the guide")));
+    let mut e = linked();
+    e.selection = crate::editing::selection::Selection::Caret(Position::text(
+        StoryId::Body,
+        ParaId(match &e.document().sections[0].blocks[1] {
+            Block::Para(p) => p.id,
+            Block::Table(_) => panic!("a paragraph"),
+        }),
+        Unit(0),
+    ));
+    let parts = crate::editing::commands::LinkParts { bookmark: Some("Target".into()), tip: Some("Go".into()), ..Default::default() };
+    assert_eq!(parts.code(), r#" HYPERLINK \l "Target" \o "Go" "#);
+    assert!(matches!(e.insert_link(parts, Some("go".into()), fonts()), crate::editing::Outcome::Changed(_)));
+}
+
+#[test]
+fn the_notes_list_gives_each_notes_mark_text_reference_and_page() {
+    use crate::api::command::{NoteInsert, NoteType};
+    use crate::docx::NoteKind;
+    let mut e = Editor::open(&super::blank_body("<w:p><w:r><w:t>Body</w:t></w:r></w:p>"), fonts()).expect("opens");
+    let body = |e: &Editor| match &e.document().sections[0].blocks[0] {
+        Block::Para(p) => ParaId(p.id),
+        Block::Table(_) => panic!("a paragraph"),
+    };
+    let at_end = |e: &mut Editor| e.selection = crate::editing::selection::Selection::Caret(Position::text(StoryId::Body, body(e), Unit(4)));
+    for (kind, custom, text) in [(NoteType::Footnote, None, "First"), (NoteType::Footnote, Some("*"), "Starred"), (NoteType::Endnote, None, "Last")] {
+        at_end(&mut e);
+        e.execute(super::super::commands::Command::InsertNote(NoteInsert { kind, custom_mark: custom.map(Into::into) }), fonts());
+        e.execute(super::super::commands::Command::InsertText(text.into()), fonts());
+    }
+    e.complete(fonts());
+    let notes = e.notes();
+    let got: Vec<(NoteKind, &str, bool, &str, Option<usize>)> =
+        notes.iter().map(|n| (n.kind, n.mark.as_str(), n.custom, n.text.as_str(), n.page)).collect();
+    assert_eq!(
+        got,
+        [
+            (NoteKind::Foot, "*", true, "Starred", Some(0)),
+            (NoteKind::Foot, "1", false, "First", Some(0)),
+            (NoteKind::End, "i", false, "Last", Some(0))
+        ],
+        "in their references' order, each inserted before the last"
+    );
+    assert!(notes.iter().all(|n| n.reference.and_then(|r| r.para_offset()).map(|p| p.0) == Some(body(&e))), "referenced from the body");
+}
+
+#[test]
+fn a_note_separator_set_in_a_document_without_notes_is_saved() {
+    use crate::docx::{NoteKind, NoteSeparator as S};
+    // With a settings part, and without one
+    let docs = [open("FX-EMPTY.docx"), Editor::open(&super::blank_body("<w:p><w:r><w:t>Text</w:t></w:r></w:p>"), fonts()).expect("opens")];
+    for mut e in docs {
+        assert!(e.document().footnotes.is_empty(), "no footnotes");
+        assert!(matches!(e.set_note_separator(NoteKind::Foot, S::Notice, Some("Continued"), fonts()), crate::editing::Outcome::Changed(_)));
+        let saved = crate::docx::write::save(e.document()).expect("saves");
+        let again = Editor::open(&saved, fonts()).expect("reopens");
+        assert_eq!(again.note_separator(NoteKind::Foot, S::Notice).map(|s| s.text), Some("Continued".into()), "saved");
+        assert_eq!(again.note_separator(NoteKind::End, S::Notice), None, "no endnote part's notice");
+    }
+}
+
+#[test]
+fn note_separators_are_set_read_back_saved_and_reset() {
+    use crate::docx::{NoteKind, NoteSeparator as S};
+    let mut e = open("FX-STORIES.docx");
+    e.complete(fonts());
+    let sep = |e: &Editor, part| e.note_separator(NoteKind::Foot, part).map(|s| (s.text, s.builtin));
+    assert_eq!(sep(&e, S::Separator), Some((String::new(), true)), "Word's line");
+    assert_eq!(sep(&e, S::Notice), None, "no notice");
+    let depth = e.history().undo_depth();
+    assert!(matches!(e.set_note_separator(NoteKind::Foot, S::Separator, Some("Notes"), fonts()), crate::editing::Outcome::Changed(_)));
+    assert!(matches!(
+        e.set_note_separator(NoteKind::Foot, S::Notice, Some("Continued on the next page"), fonts()),
+        crate::editing::Outcome::Changed(_)
+    ));
+    assert_eq!(e.history().undo_depth(), depth + 2);
+    assert_eq!(sep(&e, S::Separator), Some(("Notes".into(), false)));
+    e.complete(fonts());
+    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let mut again = Editor::open(&saved, fonts()).expect("reopens");
+    assert_eq!(sep(&again, S::Separator), Some(("Notes".into(), false)), "saved");
+    assert_eq!(sep(&again, S::Notice), Some(("Continued on the next page".into(), false)), "the new notice listed in the settings");
+    assert_eq!(sep(&again, S::Continuation), Some((String::new(), true)), "the other kept");
+    assert!(matches!(again.set_note_separator(NoteKind::Foot, S::Notice, None, fonts()), crate::editing::Outcome::Changed(_)));
+    assert!(matches!(again.set_note_separator(NoteKind::Foot, S::Separator, None, fonts()), crate::editing::Outcome::Changed(_)));
+    let twice = Editor::open(&crate::docx::write::save(again.document()).expect("saves"), fonts()).expect("reopens");
+    assert_eq!((sep(&twice, S::Separator), sep(&twice, S::Notice)), (Some((String::new(), true)), None), "reset");
+    e.undo_many(true, 2, fonts());
+    assert_eq!((sep(&e, S::Separator), sep(&e, S::Notice)), (Some((String::new(), true)), None), "undone");
+}

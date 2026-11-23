@@ -671,3 +671,24 @@ fn a_frame_is_selected_moved_and_resized_by_its_border_and_saved_in_its_frame_pr
     assert_eq!(e.frame_allow_overlap(), Some(false));
     assert!(saved_document(&e).contains("suppressOverlap"));
 }
+
+#[test]
+fn note_options_for_this_section_take_every_selected_section() {
+    use crate::api::command::{NoteProperties, NoteScope, NoteType, NumberFormat};
+    let mut e = three_sections(&p("Three"));
+    let (a, b) = (para_of(&e, "One"), para_of(&e, "Two"));
+    e.selection = Selection::range(
+        Position::text(StoryId::Body, a, Unit(1)),
+        Position::text(StoryId::Body, b, Unit(1)),
+        crate::editing::selection::Granularity::Char,
+    );
+    let props = NoteProperties {
+        kind: NoteType::Footnote,
+        format: Some(NumberFormat::LowerRoman),
+        apply_to: Some(NoteScope::ThisSection),
+        ..Default::default()
+    };
+    assert!(matches!(e.execute(Command::SetNoteProperties(props), fonts()), Outcome::Changed(_)));
+    let fmts: Vec<Option<String>> = e.document().sections.iter().map(|s| s.notes[0].fmt.clone()).collect();
+    assert_eq!(fmts, [Some("lowerRoman".into()), Some("lowerRoman".into()), None], "the selected sections");
+}

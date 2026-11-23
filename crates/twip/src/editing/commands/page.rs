@@ -383,6 +383,37 @@ impl Editor {
         })
     }
 
+    /// [`Editor::insert_page_number_at`], with Word's Show number on first page: off, the section takes a different
+    /// first page whose header and footer don't hold the number. One undo step.
+    pub fn insert_page_number_shown(
+        &mut self,
+        format: PageNumberFormat,
+        place: PageNumberSpot,
+        align: Option<PageNumberAlign>,
+        on_first_page: bool,
+        fonts: &Fonts,
+    ) -> Outcome {
+        if on_first_page {
+            return self.insert_page_number_at(format, place, align, fonts);
+        }
+        use crate::editing::commands::Command;
+        self.joined("Page Number", fonts, |e| {
+            // Into the header or footer every page but the first shows
+            let first = e.doc.sections.get(e.focus_section()).is_some_and(|s| s.title_pg);
+            if first {
+                e.execute(Command::SetDifferentFirstPage(false), fonts);
+            }
+            let out = e.insert_page_number_at(format, place, align, fonts);
+            if !matches!(out, Outcome::Changed(_)) {
+                return out;
+            }
+            match e.execute(Command::SetDifferentFirstPage(true), fonts) {
+                Outcome::Refused(why) => Outcome::Refused(why),
+                _ => out,
+            }
+        })
+    }
+
     /// The `w:framePr` attributes (unprefixed) of a frame filling the margin on `side` of the caret's section's
     /// pages, centred down the page.
     fn margin_frame(&self, side: MarginSide) -> String {
@@ -499,4 +530,24 @@ pub enum PageNumberAlign {
     Inside,
     /// On the outside edge.
     Outside,
+}
+
+/// The sample Word's Format Page Numbers shows for page numbers in `format` with chapter numbers `chapter` (its
+/// separator) before them: the first page of chapter 1 (`1-1`, `1-A`), or the first page alone.
+pub fn page_number_sample(format: crate::api::command::NumberFormat, chapter: Option<crate::api::command::ChapterSeparator>) -> String {
+    use crate::api::command::ChapterSeparator as S;
+    let page = crate::docx::numbering::format_number(1, format.val());
+    match chapter {
+        None => page,
+        Some(sep) => {
+            let sep = match sep {
+                S::Hyphen => "-",
+                S::Period => ".",
+                S::Colon => ":",
+                S::EmDash => "\u{2014}",
+                S::EnDash => "\u{2013}",
+            };
+            format!("1{sep}{page}")
+        }
+    }
 }

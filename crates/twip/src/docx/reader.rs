@@ -418,10 +418,13 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
     // Word's built-in separators: one line with no paragraph spacing.
     // ponytail: in the default paragraph style's run font, not the document default's; differs only when that style
     // sets a font or size.
+    let mut separator_defaults = HashMap::new();
     for (tag, t) in [("footnote", "separator"), ("footnote", "continuationSeparator"), ("endnote", "separator"), ("endnote", "continuationSeparator")]
     {
         let key = format!("{tag}:{t}");
-        if doc.separators.contains_key(&key) || (tag == "endnote" && doc.endnotes.is_empty()) || (tag == "footnote" && doc.footnotes.is_empty()) {
+        let used =
+            !(doc.separators.contains_key(&key) || (tag == "endnote" && doc.endnotes.is_empty()) || (tag == "footnote" && doc.footnotes.is_empty()));
+        if !used && !editable {
             continue;
         }
         let xml = format!(
@@ -430,7 +433,10 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
         if let Ok(dom) = roxmltree::Document::parse(&xml) {
             r.in_endnotes = tag == "endnote";
             let blocks = r.read_blocks(dom.root_element(), &mut pkg, None);
-            doc.separators.insert(key, blocks);
+            if used {
+                doc.separators.insert(key.clone(), blocks.clone());
+            }
+            separator_defaults.insert(key, blocks);
         }
     }
     if let (Some(path), Some(dom)) = (&comments_part, &comments_dom) {
@@ -542,6 +548,8 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
             glossary: glossary_src,
             page_background: (doc.page_colour, doc.page_fill.clone()),
             page_theme: doc.page_colour_theme,
+            separators: doc.separators.clone(),
+            separator_defaults,
         }));
     }
     Ok(doc)
@@ -831,6 +839,9 @@ pub(crate) fn read_settings(xml: Option<&str>) -> Settings {
     s.mirror_margins = flag(root, "mirrorMargins").unwrap_or(false);
     s.gutter_at_top = flag(root, "gutterAtTop").unwrap_or(false);
     s.no_form_shading = flag(root, "doNotShadeFormData").unwrap_or(false);
+    s.auto_format_override = flag(root, "autoFormatOverride").unwrap_or(false);
+    s.style_lock_theme = flag(root, "styleLockTheme").unwrap_or(false);
+    s.style_lock_style_set = flag(root, "styleLockQFSet").unwrap_or(false);
     s.default_table_style = child(root, "defaultTableStyle").and_then(val).filter(|v| !v.is_empty()).map(str::to_string);
     s.variables = child(root, "docVars")
         .into_iter()

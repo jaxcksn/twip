@@ -1600,11 +1600,18 @@ impl Editor {
         for l in geo.lines.iter().filter(|l| l.holds(px, py) && reachable(ctx, geo.stories[l.story].host)) {
             let x = l.local([px, py])[0];
             for w in l.stops.windows(2) {
-                if w[1].para == w[0].para && w[1].unit.0 == w[0].unit.0 + 1 && x >= w[0].x && x < w[1].x {
+                // A legacy check box's hidden code lies between its box's stops
+                if w[1].para == w[0].para && w[1].unit.0 > w[0].unit.0 && x >= w[0].x && x < w[1].x {
                     let p = self.index.para(&self.doc, w[0].para)?;
-                    if let Some(Inline::Sym { control: Some(c), .. }) = inline_at(p, w[0].unit)
-                        && matches!(self.doc.controls.get(c).map(|c| &c.props.kind), Some(crate::docx::ControlKind::Checkbox { .. }))
-                    {
+                    let check_box = match inline_at(p, w[0].unit) {
+                        Some(Inline::Sym { control: Some(c), .. }) => {
+                            w[1].unit.0 == w[0].unit.0 + 1
+                                && matches!(self.doc.controls.get(c).map(|c| &c.props.kind), Some(crate::docx::ControlKind::Checkbox { .. }))
+                        }
+                        Some(Inline::FieldBegin { form: Some(f), .. }) => matches!(f.data.kind, crate::docx::forms::FormKind::CheckBox { .. }),
+                        _ => false,
+                    };
+                    if check_box {
                         return Some(Position::text(geo.stories[l.story].story, w[0].para, w[0].unit));
                     }
                 }
@@ -1618,12 +1625,18 @@ impl Editor {
             return None;
         }
         let p = self.checkbox_at(x, y, fonts)?;
-        if self.protection_refuses_at(crate::api::command::CommandId::SetCheckbox, &p, &p).is_some() {
-            return None;
-        }
         let (para, u) = p.para_offset()?;
-        let Some(Inline::Sym { control: Some(c), .. }) = self.index.para(&self.doc, para).and_then(|q| inline_at(q, u)) else { return None };
-        self.doc.controls.get(c).is_some_and(|k| k.props.lock.editable()).then_some(p)
+        match self.index.para(&self.doc, para).and_then(|q| inline_at(q, u))? {
+            // A legacy check box toggles only where forms are filled in
+            Inline::FieldBegin { form: Some(f), .. } => (f.data.enabled && self.fills_forms_at(&p)).then_some(p),
+            Inline::Sym { control: Some(c), .. } => {
+                if self.protection_refuses_at(crate::api::command::CommandId::SetCheckbox, &p, &p).is_some() {
+                    return None;
+                }
+                self.doc.controls.get(c).is_some_and(|k| k.props.lock.editable()).then_some(p)
+            }
+            _ => None,
+        }
     }
 
     pub(super) fn checkbox_press(&mut self, x: f64, y: f64, fonts: &Fonts) -> bool {
@@ -1634,6 +1647,9 @@ impl Editor {
     }
 
     pub(super) fn selected_checkbox(&self) -> Option<Position> {
+        if let Some(p) = self.selected_form_check_box() {
+            return Some(p);
+        }
         if let Selection::Caret(c) = self.selection
             && let Some(t) = self.toggled_checkbox.filter(|t| t.after == c)
         {
@@ -1657,6 +1673,9 @@ impl Editor {
 
     pub(super) fn toggle_checkbox(&mut self, p: Position, fonts: &Fonts) -> Outcome {
         let Some((para, u)) = p.para_offset() else { return Outcome::Unchanged("no checkbox") };
+        if let Some(Inline::FieldBegin { form: Some(_), .. }) = self.index.para(&self.doc, para).and_then(|q| inline_at(q, u)) {
+            return self.toggle_form_check_box(p, fonts);
+        }
         let Some(Inline::Sym { ch, font, run, control: Some(c) }) = self.index.para(&self.doc, para).and_then(|q| inline_at(q, u)).cloned() else {
             return Outcome::Unchanged("no checkbox");
         };

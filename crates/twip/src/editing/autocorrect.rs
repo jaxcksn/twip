@@ -489,7 +489,9 @@ impl Editor {
             let label = if bullet { "Automatic Bullets" } else { "Automatic Numbering" };
             let n = Unit(before.len() as u32);
             let (pa, pb) = (Position::text(caret.story, para, Unit(0)), Position::text(caret.story, para, n));
-            if self.kept(crate::api::command::CommandId::InsertText, &pa, &pb) || self.kept(crate::api::command::CommandId::SetList, &pa, &pb) {
+            if self.kept(crate::api::command::CommandId::InsertText, &pa, &pb)
+                || self.auto_format_kept(crate::api::command::CommandId::SetList, &pa, &pb)
+            {
                 return Outcome::Unchanged("the marker is kept");
             }
             return self.joined(label, fonts, |e| {
@@ -615,7 +617,9 @@ impl Editor {
         }
         let ind = self.direct_ppr(para, "ind");
         let (pa, pb) = (Position::text(story, para, Unit(0)), Position::text(story, para, Unit(1)));
-        if self.kept(crate::api::command::CommandId::InsertText, &pa, &pb) || self.kept(crate::api::command::CommandId::SetIndents, &pa, &pb) {
+        if self.kept(crate::api::command::CommandId::InsertText, &pa, &pb)
+            || self.auto_format_kept(crate::api::command::CommandId::SetIndents, &pa, &pb)
+        {
             return None;
         }
         let tab = self.tab_grid();
@@ -665,7 +669,7 @@ impl Editor {
     ) -> Outcome {
         use crate::api::command::CommandId as C;
         let (pa, pb) = (Position::text(story, para, Unit(0)), Position::text(story, para, Unit(n as u32)));
-        if self.kept(C::InsertText, &pa, &pb) || self.kept(C::SetParagraphBorders, &pa, &pb) {
+        if self.kept(C::InsertText, &pa, &pb) || self.auto_format_kept(C::SetParagraphBorders, &pa, &pb) {
             return Outcome::Unchanged("the line is kept");
         }
         let borders = self.direct_ppr(para, "pBdr");

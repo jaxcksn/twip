@@ -6,7 +6,7 @@ use crate::api::command::{FormFieldChange, FormFieldFill, FormFieldType, TextInp
 use crate::docx::forms::{FormData, FormKind};
 use crate::docx::{ElementId, FieldId, FieldKind, FormField, Inline, Raw};
 use crate::font::Fonts;
-use crate::layout::ParaId;
+use crate::layout::{ParaId, Unit};
 
 use super::Editor;
 use super::commands::Outcome;
@@ -123,6 +123,16 @@ impl Editor {
         };
         let p = self.index.para(&self.doc, para)?;
         p.inlines.iter().any(|i| matches!(i, Inline::FieldBegin { id, form: Some(_), .. } if *id == f)).then_some((f, para))
+    }
+
+    /// The settings and value of the form field `id` names, else of the one at the selection: every option
+    /// `setFormField` sets, its text format, macros, check box size and default and drop-down default among them.
+    pub fn form_data(&self, id: Option<&crate::api::value::ElementId>) -> Option<&FormData> {
+        let (f, para) = self.form_field(id)?;
+        self.index.para(&self.doc, para)?.inlines.iter().find_map(|i| match i {
+            Inline::FieldBegin { id, form: Some(form), .. } if *id == f => Some(&form.data),
+            _ => None,
+        })
     }
 
     /// Applies `edit` to a form field's data; `false` from it changes nothing.
@@ -345,5 +355,216 @@ impl Editor {
             return Outcome::Unchanged("setting failed");
         }
         self.commit(tx, None, fonts)
+    }
+}
+
+/// What a press on a legacy form field asks the host for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FormPress {
+    /// Open a drop-down's list: a click on one in a document protected for filling in forms.
+    OpenList,
+    /// Open the field's options: a double-click on one in a document that isn't.
+    Options,
+}
+
+impl Editor {
+    /// Filling-in-forms protection holds at `p`: it is enforced and `p`'s section is one it protects.
+    pub fn fills_forms_at(&self, p: &crate::editing::position::Position) -> bool {
+        self.enforced_protection().is_some_and(|x| x.edit == crate::docx::review::ProtectionKind::Forms)
+            && self.section_at(p).and_then(|k| self.doc.sections.get(k)).is_some_and(|s| s.form_protected)
+    }
+
+    /// Filling-in-forms protection holds at the selection: Tab and Shift+Tab move between the fields to fill in.
+    pub fn tab_moves_between_form_fields(&self) -> bool {
+        self.mode == super::Mode::Editing && self.selection.focus().is_some_and(|p| self.fills_forms_at(&p))
+    }
+
+    /// The enabled legacy drop-down holding the selection where forms are filled in, in editing mode: the one F4 or
+    /// Alt+Down opens the list of.
+    pub fn selected_form_drop_down(&self) -> Option<FieldId> {
+        if self.mode != super::Mode::Editing {
+            return None;
+        }
+        let (a, b) = self.selection.ordered(&self.index)?;
+        let ((pa, ua), (pb, ub)) = (a.para_offset()?, b.para_offset()?);
+        if pa != pb || !self.fills_forms_at(&a) {
+            return None;
+        }
+        let p = self.index.para(&self.doc, pa)?;
+        crate::docx::fields::spans(&p.inlines).into_iter().find_map(|s| match &p.inlines[s.begin] {
+            Inline::FieldBegin { id, form: Some(form), .. } if form.data.enabled && matches!(form.data.kind, FormKind::DropDown { .. }) => {
+                let (start, end, ..) = self.form_field_range(*id, pa)?;
+                (start <= ua && ub <= end).then_some(*id)
+            }
+            _ => None,
+        })
+    }
+
+    /// The legacy form field drawn at `(x, y)`: its id and paragraph.
+    pub(super) fn form_field_at(&mut self, x: f64, y: f64, fonts: &Fonts) -> Option<(FieldId, ParaId, crate::editing::position::Position)> {
+        let (e, p, _) = self.element_at(x, y, fonts)?;
+        let ElementId::Field(f) = e else { return None };
+        let para = p.para_offset()?.0;
+        let q = self.index.para(&self.doc, para)?;
+        q.inlines.iter().any(|i| matches!(i, Inline::FieldBegin { id, form: Some(_), .. } if *id == f)).then_some((f, para, p))
+    }
+
+    /// What a press of `clicks` at `(x, y)` on a legacy form field asks the host for, in editing mode: a click on a
+    /// drop-down where forms are filled in opens its list; a double-click on any where they aren't, its options.
+    pub fn form_field_press_at(&mut self, x: f64, y: f64, clicks: u8, fonts: &Fonts) -> Option<(FieldId, FormPress)> {
+        if self.mode != super::Mode::Editing {
+            return None;
+        }
+        let (f, para, p) = self.form_field_at(x, y, fonts)?;
+        let data = self.index.para(&self.doc, para)?.inlines.iter().find_map(|i| match i {
+            Inline::FieldBegin { id, form: Some(form), .. } if *id == f => Some(&form.data),
+            _ => None,
+        })?;
+        match (self.fills_forms_at(&p), clicks) {
+            (true, 1) if matches!(data.kind, FormKind::DropDown { .. }) && data.enabled => Some((f, FormPress::OpenList)),
+            (false, 2) => Some((f, FormPress::Options)),
+            _ => None,
+        }
+    }
+
+    /// Where legacy form field `f` of `para` is: its start and end, and its result's.
+    fn form_field_range(&self, f: FieldId, para: ParaId) -> Option<(Unit, Unit, Unit, Unit)> {
+        let p = self.index.para(&self.doc, para)?;
+        let s = form_span(&p.inlines, f)?;
+        let at = |k: usize| Unit(p.inlines[..k].iter().map(|i| i.units() as u32).sum());
+        let result = s.sep.map_or(at(s.end), |k| at(k + 1));
+        Some((at(s.begin), Unit(at(s.end).0 + 1), result, at(s.end)))
+    }
+
+    /// Selects legacy form field `f` of `para` as Tab does: a check box whole, a text field's or drop-down's result.
+    fn select_form_field(&mut self, f: FieldId, para: ParaId, check_box: bool) -> bool {
+        let Some((start, end, a, b)) = self.form_field_range(f, para) else { return false };
+        let Some(slot) = self.index.para_slot(para) else { return false };
+        let story = self.index.story(slot.container);
+        let (a, b) = if check_box { (start, end) } else { (a, b) };
+        self.selection = super::selection::Selection::range(
+            crate::editing::position::Position::text(story, para, a),
+            crate::editing::position::Position::text(story, para, b),
+            super::selection::Granularity::Char,
+        );
+        true
+    }
+
+    /// Moves to the next (or previous) field to fill in, as Tab (Shift+Tab) does where forms are filled in: an
+    /// enabled legacy form field or a content control whose content can be edited, in the selection's story,
+    /// round to the first (last) after the last (first). Selects a check box whole, a text field's or drop-down's
+    /// result, a control's content.
+    pub fn select_next_form_field(&mut self, forward: bool) -> Outcome {
+        use crate::docx::ControlKind;
+        let Some(focus) = self.selection.focus() else { return Outcome::Unchanged("no selection") };
+        let Some((here, at)) = focus.para_offset() else { return Outcome::Unchanged("no paragraph") };
+        let story = focus.story;
+        // Every place to fill in, in order: (paragraph, unit, what)
+        enum Stop {
+            Form(FieldId, bool),
+            Control(crate::docx::ControlId),
+        }
+        let mut stops: Vec<(usize, ParaId, Unit, Stop)> = Vec::new();
+        let mut mine = 0;
+        for (k, para) in self.paras_of(story).into_iter().enumerate() {
+            if para == here {
+                mine = k;
+            }
+            let Some(p) = self.index.para(&self.doc, para) else { continue };
+            let mut u = 0u32;
+            for i in &p.inlines {
+                match i {
+                    Inline::FieldBegin { id, form: Some(form), .. } if form.data.enabled => {
+                        stops.push((k, para, Unit(u), Stop::Form(*id, matches!(form.data.kind, FormKind::CheckBox { .. }))));
+                    }
+                    Inline::ControlStart(c) | Inline::Sym { control: Some(c), .. }
+                        if self.doc.controls.get(c).is_some_and(|k| {
+                            k.props.lock.editable()
+                                && !matches!(k.props.kind, ControlKind::Group | ControlKind::RepeatingSection | ControlKind::RepeatingItem)
+                        }) =>
+                    {
+                        stops.push((k, para, Unit(u), Stop::Control(*c)));
+                    }
+                    _ => {}
+                }
+                u += i.units() as u32;
+            }
+        }
+        if stops.is_empty() {
+            return Outcome::Unchanged("no form fields");
+        }
+        // The stop holding the selection counts as passed
+        let (a, _) = self.selection.ordered(&self.index).unwrap_or((focus, focus));
+        let start = a.para_offset().map_or(at, |x| x.1);
+        let key = |s: &(usize, ParaId, Unit, Stop)| (s.0, s.2);
+        let pick = if forward {
+            stops.iter().find(|s| key(s) > (mine, start)).or(stops.first())
+        } else {
+            // Not the one the selection is in
+            let holds = |s: &(usize, ParaId, Unit, Stop)| {
+                s.0 == mine
+                    && match &s.3 {
+                        Stop::Form(f, _) => self.form_field_range(*f, s.1).is_some_and(|(a, b, ..)| a <= start && start < b),
+                        Stop::Control(c) => self
+                            .locate(ElementId::Control(*c))
+                            .and_then(|w| self.element_range(&w))
+                            .and_then(|(a, b)| Some((a.para_offset()?.1, b.para_offset()?.1)))
+                            .is_some_and(|(a, b)| a <= start && start <= b),
+                    }
+            };
+            stops.iter().rev().find(|s| key(s) < (mine, start) && !holds(s)).or(stops.last())
+        };
+        let Some((_, para, _, stop)) = pick else { return Outcome::Unchanged("no form fields") };
+        let before = self.selection;
+        match stop {
+            Stop::Form(f, check_box) => {
+                self.select_form_field(*f, *para, *check_box);
+            }
+            Stop::Control(c) => {
+                let Some(range) = self.locate(ElementId::Control(*c)).and_then(|w| self.element_range(&w)) else {
+                    return Outcome::Unchanged("stale control");
+                };
+                self.selection = super::selection::Selection::range(range.0, range.1, super::selection::Granularity::Char);
+            }
+        }
+        if self.selection == before { Outcome::Unchanged("already there") } else { Outcome::Moved }
+    }
+
+    /// The legacy check box the selection is on where forms are filled in: the whole field selected, as clicking or
+    /// Tab leaves it.
+    pub(super) fn selected_form_check_box(&self) -> Option<crate::editing::position::Position> {
+        let (a, b) = self.selection.ordered(&self.index)?;
+        let ((pa, ua), (pb, ub)) = (a.para_offset()?, b.para_offset()?);
+        if pa != pb {
+            return None;
+        }
+        let p = self.index.para(&self.doc, pa)?;
+        let f = crate::docx::fields::spans(&p.inlines).into_iter().find_map(|s| match &p.inlines[s.begin] {
+            Inline::FieldBegin { id, form: Some(form), .. } if matches!(form.data.kind, FormKind::CheckBox { .. }) => {
+                let (start, end, ..) = self.form_field_range(*id, pa)?;
+                (start == ua && end == ub).then_some(start)
+            }
+            _ => None,
+        })?;
+        Some(crate::editing::position::Position::text(a.story, pa, f)).filter(|p| self.fills_forms_at(p))
+    }
+
+    /// Toggles the legacy check box whose field starts at `p`, as a click, Space or X does where forms are filled
+    /// in, leaving it selected.
+    pub(super) fn toggle_form_check_box(&mut self, p: crate::editing::position::Position, fonts: &Fonts) -> Outcome {
+        let Some((para, u)) = p.para_offset() else { return Outcome::Unchanged("no check box") };
+        let Some(Inline::FieldBegin { id, form: Some(form), .. }) =
+            self.index.para(&self.doc, para).and_then(|q| super::stories::inline_at(q, u)).cloned()
+        else {
+            return Outcome::Unchanged("no check box");
+        };
+        let FormKind::CheckBox { .. } = form.data.kind else { return Outcome::Unchanged("no check box") };
+        let now = form.data.checked().unwrap_or(false);
+        let fill = FormFieldFill { id: Some(super::merge::api_id(ElementId::Field(id))), text: None, checked: Some(!now), entry: None };
+        let out = self.fill_form_field(fill, fonts);
+        if matches!(out, Outcome::Changed(_)) {
+            self.select_form_field(id, para, true);
+        }
+        out
     }
 }

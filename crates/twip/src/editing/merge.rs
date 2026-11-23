@@ -668,6 +668,166 @@ impl Editor {
         Ok(self.commit(tx, None, fonts))
     }
 
+    /// The items of repeating section `s`, in order: each item's id and the blocks (or rows) of `lists` it spans.
+    fn section_items<'l>(&self, s: ControlId, lists: impl Iterator<Item = &'l Vec<ControlId>>) -> Vec<(ControlId, std::ops::Range<usize>)> {
+        let mut out: Vec<(ControlId, std::ops::Range<usize>)> = Vec::new();
+        for (k, list) in lists.enumerate() {
+            let Some(i) = list.iter().position(|x| *x == s).and_then(|at| list.get(at + 1)) else { continue };
+            match out.last_mut() {
+                Some((last, r)) if last == i && r.end == k => r.end = k + 1,
+                _ => out.push((*i, k..k + 1)),
+            }
+        }
+        out
+    }
+
+    /// Adds an item to repeating section `section`: a copy of its item `item` (by default its last), content and
+    /// all, as Word's + button and Insert Item Before / After do; before that item when `before`, else after it. The
+    /// copy's controls, fields, bookmarks and notes are its own. Refused when the section doesn't allow adding items,
+    /// its content is locked or it is bound to XML data. One undo step; the selection goes to the new item's start.
+    pub fn add_repeating_item(
+        &mut self,
+        section: &crate::api::value::ElementId,
+        item: Option<&crate::api::value::ElementId>,
+        before: bool,
+        fonts: &Fonts,
+    ) -> Outcome {
+        outcome(self.repeating_item_add(section, item, before, fonts))
+    }
+
+    fn repeating_item_add(
+        &mut self,
+        section: &crate::api::value::ElementId,
+        item: Option<&crate::api::value::ElementId>,
+        before: bool,
+        fonts: &Fonts,
+    ) -> Result<Outcome, Refused> {
+        let (e, w) = self.element(section)?;
+        let ElementId::Control(s) = e else { return Err(bad("id")) };
+        let props = self.doc.controls.get(&s).map(|c| c.props.clone()).ok_or_else(no_element)?;
+        if props.kind != ControlKind::RepeatingSection {
+            return Err(bad("id"));
+        }
+        if props.kind_xml.as_deref().is_some_and(|x| x.contains("doNotAllowInsertDeleteSection")) || !props.lock.editable() {
+            return Err(locked());
+        }
+        if props.binding.is_some() || props.rest.iter().any(|(n, _)| n == "dataBinding") {
+            return Err(shape("bound repeating section"));
+        }
+        let want = match item {
+            Some(id) => match self.element(id)?.0 {
+                ElementId::Control(i) => Some(i),
+                ElementId::Field(_) => return Err(bad("item")),
+            },
+            None => None,
+        };
+        let pick = |items: &[(ControlId, std::ops::Range<usize>)]| -> Result<(ControlId, std::ops::Range<usize>), Refused> {
+            match want {
+                Some(i) => items.iter().find(|(x, _)| *x == i).cloned().ok_or_else(|| bad("item")),
+                None => items.last().cloned().ok_or_else(no_element),
+            }
+        };
+        let new_item = ControlId::next();
+        let item_props = |e: &Editor, i: ControlId| {
+            let mut p =
+                e.doc.controls.get(&i).map(|c| c.props.clone()).unwrap_or(ControlProps { kind: ControlKind::RepeatingItem, ..Default::default() });
+            p.rest.retain(|(n, _)| n != "id");
+            Control::new(p)
+        };
+        // The controls each copied list keeps: those around the section, the section, then the new item
+        let lead = |list: &[ControlId]| -> Vec<ControlId> {
+            let at = list.iter().position(|x| *x == s).map_or(0, |k| k + 1);
+            let mut v = list[..at].to_vec();
+            v.push(new_item);
+            v
+        };
+        let inner = |list: &[ControlId]| -> Vec<ControlId> {
+            list.iter().position(|x| *x == s).map_or_else(Vec::new, |k| list.get(k + 2..).unwrap_or(&[]).to_vec())
+        };
+        match w {
+            Where::Blocks { container, range } => {
+                let blocks = self.index.blocks(&self.doc, container).ok_or_else(no_element)?;
+                let items = self.section_items(s, blocks[range.clone()].iter().map(block_controls));
+                let (src, r) = pick(&items)?;
+                let (r, leads): (std::ops::Range<usize>, Vec<Vec<ControlId>>) = (
+                    range.start + r.start..range.start + r.end,
+                    blocks[range.start + r.start..range.start + r.end].iter().map(|b| lead(block_controls(b))).collect(),
+                );
+                let mut copied: Vec<Block> = blocks[r.clone()].to_vec();
+                for b in &mut copied {
+                    let rest = inner(block_controls(b));
+                    match b {
+                        Block::Para(p) => p.controls = rest,
+                        Block::Table(t) => t.controls = rest,
+                    }
+                }
+                let f = self.whole_fragment(copied);
+                self.pending_controls.push((new_item, item_props(self, src)));
+                let mut tx = self.begin("Insert Item");
+                let mut with: Vec<Block> = f.blocks.iter().map(super::clipboard::fresh).collect();
+                self.take_in(&mut tx, &mut with, &f, &mut super::clipboard::Taken::default());
+                for (b, l) in with.iter_mut().zip(leads) {
+                    match b {
+                        Block::Para(p) => p.controls.splice(0..0, l),
+                        Block::Table(t) => t.controls.splice(0..0, l),
+                    };
+                }
+                let first = with.iter().find_map(super::first_para_of);
+                let at = if before { r.start } else { r.end };
+                if self.step(&mut tx, Step::Blocks { container, range: at..at, with }).is_err() {
+                    self.abort(tx);
+                    return Err(no_element());
+                }
+                if let Some(p) = first {
+                    self.selection = Selection::Caret(Position::text(self.index.story(container), p, Unit(0)));
+                }
+                self.made = Some(CommandResult::Element { id: api_id(ElementId::Control(new_item)) });
+                Ok(self.commit(tx, None, fonts))
+            }
+            Where::Rows { table, range } => {
+                let t = self.index.table(&self.doc, table).ok_or_else(no_element)?;
+                let items = self.section_items(s, t.rows[range.clone()].iter().map(|r| &r.controls));
+                let (src, r) = pick(&items)?;
+                let r = range.start + r.start..range.start + r.end;
+                let leads: Vec<Vec<ControlId>> = t.rows[r.clone()].iter().map(|row| lead(&row.controls)).collect();
+                let mut shell = t.clone();
+                shell.controls.clear();
+                shell.rows = t.rows[r.clone()].to_vec();
+                for row in &mut shell.rows {
+                    row.controls = inner(&row.controls);
+                }
+                let f = self.whole_fragment(vec![Block::Table(shell)]);
+                self.pending_controls.push((new_item, item_props(self, src)));
+                let mut tx = self.begin("Insert Item");
+                let mut with: Vec<Block> = f.blocks.iter().map(super::clipboard::fresh).collect();
+                self.take_in(&mut tx, &mut with, &f, &mut super::clipboard::Taken::default());
+                let Some(Block::Table(copy)) = with.pop() else {
+                    self.abort(tx);
+                    return Err(no_element());
+                };
+                let mut rows = copy.rows;
+                for (row, l) in rows.iter_mut().zip(leads) {
+                    row.controls.splice(0..0, l);
+                }
+                let first = rows.first().and_then(|row| row.cells.first()).and_then(|c| c.blocks.iter().find_map(super::first_para_of));
+                let at = if before { r.start } else { r.end };
+                if self.step(&mut tx, Step::Rows { table, range: at..at, with: rows, grid: None }).is_err() {
+                    self.abort(tx);
+                    return Err(no_element());
+                }
+                tx.stale_tables.push(table);
+                if let Some(p) = first
+                    && let Some(slot) = self.index.para_slot(p)
+                {
+                    self.selection = Selection::Caret(Position::text(self.index.story(slot.container), p, Unit(0)));
+                }
+                self.made = Some(CommandResult::Element { id: api_id(ElementId::Control(new_item)) });
+                Ok(self.commit(tx, None, fonts))
+            }
+            _ => Err(shape("inline repeating section")),
+        }
+    }
+
     /// The labelled regions shown: those the selection is in and the one under the pointer. None while read-only or
     /// with `controlLabels` off.
     pub(super) fn region_views(&mut self, pages: std::ops::Range<usize>) -> Vec<super::view::RegionView> {
@@ -832,6 +992,42 @@ impl Editor {
         outcome(r.map(|_| out))
     }
 
+    /// Fills date control `id` with the date `date` (ISO 8601: `YYYY-MM-DD`, with a time and zone or without): its
+    /// text that date in the control's format, its full date that date, so a format without the day or year keeps
+    /// it. One undo step.
+    pub fn fill_control_date(&mut self, id: &crate::api::value::ElementId, date: &str, fonts: &Fonts) -> Outcome {
+        self.begin_batch(Some("Fill Content Control".into()));
+        let r = self.control_date_fill(id, date, fonts);
+        let out = self.end_batch(r.is_ok(), fonts);
+        outcome(r.map(|_| out))
+    }
+
+    fn control_date_fill(&mut self, id: &crate::api::value::ElementId, date: &str, fonts: &Fonts) -> Result<Outcome, Refused> {
+        let (e, _) = self.element(id)?;
+        let ElementId::Control(c) = e else { return Err(bad("id")) };
+        let control = self.doc.controls.get(&c).cloned().ok_or_else(no_element)?;
+        if !matches!(control.props.kind, ControlKind::Date { .. }) {
+            return Err(bad("id"));
+        }
+        if !control.props.lock.editable() {
+            return Err(locked());
+        }
+        let secs = crate::docx::review::Timestamp::parse(date.trim()).utc.ok_or_else(|| bad("date"))?;
+        let full = crate::docx::review::Timestamp::from_utc(secs).raw.to_string();
+        let text = crate::docx::binding::shown(&control.props, &full);
+        if let Some(xml) = crate::docx::binding::with_full_date_value(&control.props, Some(full), &self.cx().w) {
+            let mut control = control;
+            control.props.kind_xml = Some(xml);
+            let mut tx = self.begin("Fill Content Control");
+            if self.step(&mut tx, Step::Control { id: c, control: Some(control) }).is_err() {
+                self.abort(tx);
+                return Err(no_element());
+            }
+            self.commit(tx, None, fonts);
+        }
+        self.control_fill(FillControl { id: id.clone(), text: Some(text), image: None, docx: None, building_block: None }, fonts)
+    }
+
     fn control_fill(&mut self, f: FillControl, fonts: &Fonts) -> Result<Outcome, Refused> {
         let (e, w) = self.element(&f.id)?;
         let ElementId::Control(c) = e else { return Err(bad("id")) };
@@ -858,7 +1054,7 @@ impl Editor {
             let given = f.text.clone().unwrap_or_default();
             let gallery = control.props.gallery();
             let frag = match (&f.building_block, &f.docx, &f.text) {
-                (Some(name), ..) => Some(self.building_block_fragment(name, gallery.as_ref().ok_or_else(|| bad("id"))?.as_deref())?),
+                (Some(name), ..) => Some(self.building_block_fragment(name, &control.props)?),
                 (None, Some(d), _) => Some(self.fragment_of(&d.0)?),
                 (None, None, Some(_)) => None,
                 (None, None, None) => return Err(bad("text")),
@@ -957,18 +1153,24 @@ impl Editor {
         Ok(out)
     }
 
-    /// The live building blocks a gallery of `category` (`None`: any) offers.
-    pub(super) fn gallery_entries<'a>(&'a self, category: Option<&'a str>) -> impl Iterator<Item = &'a crate::docx::BuildingBlock> + 'a {
-        self.doc
-            .glossary
-            .iter()
-            .flat_map(|g| g.parts.iter())
-            .filter(move |b| b.state != crate::docx::PartState::Removed && b.editable && category.is_none_or(|c| b.category == c))
+    /// The live building blocks a gallery control of `gallery` and `category` (each `None`: any) offers.
+    pub fn gallery_entries<'a>(
+        &'a self,
+        gallery: Option<&'a str>,
+        category: Option<&'a str>,
+    ) -> impl Iterator<Item = &'a crate::docx::BuildingBlock> + 'a {
+        self.doc.glossary.iter().flat_map(|g| g.parts.iter()).filter(move |b| {
+            b.state != crate::docx::PartState::Removed
+                && b.editable
+                && category.is_none_or(|c| b.category == c)
+                && gallery.is_none_or(|g| b.gallery.named(g))
+        })
     }
 
-    /// A building block's body, to fill a gallery control with.
-    fn building_block_fragment(&self, name: &str, category: Option<&str>) -> Result<super::clipboard::Fragment, Refused> {
-        let part = self.gallery_entries(category).find(|b| b.name == name).ok_or_else(|| bad("buildingBlock"))?;
+    /// A building block's body, to fill gallery control `props` with.
+    fn building_block_fragment(&self, name: &str, props: &ControlProps) -> Result<super::clipboard::Fragment, Refused> {
+        let Some(crate::docx::KeptKind::Gallery { gallery, category }) = props.kept_kind() else { return Err(bad("id")) };
+        let part = self.gallery_entries(gallery.as_deref(), category.as_deref()).find(|b| b.name == name).ok_or_else(|| bad("buildingBlock"))?;
         let mut blocks = part.body.clone();
         if blocks.len() > 1 && matches!(blocks.last(), Some(Block::Para(p)) if super::step::para_len(p) == Unit(0)) {
             blocks.pop();
@@ -1319,6 +1521,7 @@ impl Editor {
 
     fn set_views(&mut self, fields: &[(FieldId, ParaId)], view: FieldView) {
         let mut hints = Vec::new();
+        let mut shown: Vec<Step> = Vec::new();
         for (f, para) in fields {
             let Some(p) = self.index.para_mut(&mut self.doc, *para) else { continue };
             for i in p.inlines.iter_mut() {
@@ -1328,10 +1531,15 @@ impl Editor {
                 {
                     *v = view;
                     hints.push(super::step::para_hint(&self.index, *para, 0));
+                    if !matches!(shown.last(), Some(Step::FieldViews { para: q, .. }) if q == para) {
+                        shown.push(Step::FieldViews { para: *para, views: Vec::new() });
+                    }
                 }
             }
         }
         self.touched.note(fields.iter().map(|f| f.1));
+        // A field shown otherwise is an element changed
+        self.track_elements(&shown);
         if !hints.is_empty() {
             self.relayout(hints);
         }
@@ -1350,6 +1558,20 @@ impl Editor {
                 .collect();
             if !views.is_empty() {
                 let _ = self.step(&mut tx, Step::FieldViews { para, views });
+            }
+            // An updated result is current
+            let Some(p) = self.index.para(&self.doc, para) else { continue };
+            let stale = |i: &Inline| matches!(i, Inline::FieldBegin { id, dirty: true, .. } if fields.iter().any(|f| f.0 == *id && f.1 == para));
+            if p.inlines.iter().any(stale) {
+                let mut inlines = p.inlines.clone();
+                for i in inlines.iter_mut() {
+                    if stale(i)
+                        && let Inline::FieldBegin { dirty, .. } = i
+                    {
+                        *dirty = false;
+                    }
+                }
+                let _ = self.step(&mut tx, Step::Restyle { para, inlines });
             }
         }
         self.commit(tx, None, fonts)
@@ -2289,6 +2511,119 @@ impl Editor {
         Ok(self.commit(tx, None, fonts))
     }
 
+    /// Inserts a building block gallery content control at the selection, offering the building blocks of
+    /// `gallery` (Word's name for it: `Quick Parts`, `AutoText`, `Custom 1`, ...) and `category` (each `None`: any),
+    /// showing Word's placeholder until one is chosen. Its id is the command's result.
+    pub fn insert_gallery_control(&mut self, gallery: Option<String>, category: Option<String>, fonts: &Fonts) -> Outcome {
+        outcome(self.gallery_insert(gallery, category, fonts))
+    }
+
+    fn gallery_insert(&mut self, gallery: Option<String>, category: Option<String>, fonts: &Fonts) -> Result<Outcome, Refused> {
+        self.editable_target()?;
+        let w = self.cx().w;
+        let kind_xml = crate::docx::KeptKind::Gallery { gallery, category }.part_xml(&w);
+        let props = ControlProps { kind: ControlKind::Other, kind_xml, showing_placeholder: true, ..Default::default() };
+        let id = ControlId::next();
+        self.pending_controls.push((id, Control::new(props)));
+        let out = self.insert_inlines(
+            |run| vec![Inline::ControlStart(id), Inline::Text("Choose a building block.".into(), run), Inline::ControlEnd(id)],
+            "Insert Content Control",
+            fonts,
+        );
+        let Outcome::Changed(_) = out else { return Err(locked()) };
+        self.made = Some(CommandResult::Element { id: api_id(ElementId::Control(id)) });
+        Ok(out)
+    }
+
+    /// Sets building block gallery control `id`'s gallery and category (`Some(None)` clears one: any); what is
+    /// `None` stays. One undo step.
+    pub fn set_gallery_control(
+        &mut self,
+        id: &crate::api::value::ElementId,
+        gallery: Option<Option<String>>,
+        category: Option<Option<String>>,
+        fonts: &Fonts,
+    ) -> Outcome {
+        let r = (|| {
+            let (e, _) = self.element(id)?;
+            let ElementId::Control(c) = e else { return Err(bad("id")) };
+            let mut control = self.doc.controls.get(&c).cloned().ok_or_else(no_element)?;
+            let Some(crate::docx::KeptKind::Gallery { gallery: g, category: k }) = control.props.kept_kind() else { return Err(bad("id")) };
+            let kind = crate::docx::KeptKind::Gallery { gallery: gallery.unwrap_or(g), category: category.unwrap_or(k) };
+            let xml = kind.part_xml(&self.cx().w);
+            if control.props.kind_xml == xml {
+                return Ok(Outcome::Unchanged("already so"));
+            }
+            control.props.kind_xml = xml;
+            let mut tx = self.begin("Content Control Properties");
+            if self.step(&mut tx, Step::Control { id: c, control: Some(control) }).is_err() {
+                self.abort(tx);
+                return Err(no_element());
+            }
+            Ok(self.commit(tx, None, fonts))
+        })();
+        outcome(r)
+    }
+
+    /// Sets date control `id`'s calendar (Word's calendar types: `gregorian`, `hijri`, `hebrew`, `taiwan`,
+    /// `japan`, `thai`, `korea`, `saka`, `gregorianXlitEnglish`, `gregorianXlitFrench`, `gregorianUs`,
+    /// `gregorianMeFrench`, `gregorianArabic`) and what it stores in its data (Store XML contents in the following
+    /// format); what is `None` stays. One undo step.
+    pub fn set_date_control_storage(
+        &mut self,
+        id: &crate::api::value::ElementId,
+        calendar: Option<&str>,
+        storage: Option<DateStorage>,
+        fonts: &Fonts,
+    ) -> Outcome {
+        const CALENDARS: &[&str] = &[
+            "gregorian",
+            "hijri",
+            "hebrew",
+            "taiwan",
+            "japan",
+            "thai",
+            "korea",
+            "saka",
+            "gregorianXlitEnglish",
+            "gregorianXlitFrench",
+            "gregorianUs",
+            "gregorianMeFrench",
+            "gregorianArabic",
+        ];
+        let r = (|| {
+            if calendar.is_some_and(|c| !CALENDARS.contains(&c)) {
+                return Err(bad("calendar"));
+            }
+            let (e, _) = self.element(id)?;
+            let ElementId::Control(c) = e else { return Err(bad("id")) };
+            let mut control = self.doc.controls.get(&c).cloned().ok_or_else(no_element)?;
+            let ControlKind::Date { format, .. } = &control.props.kind else { return Err(bad("id")) };
+            let w = self.cx().w;
+            let esc = crate::docx::write::props::esc;
+            let mut x = control.props.kind_xml.clone().unwrap_or_else(|| format!("<{w}date><{w}dateFormat {w}val=\"{}\"/></{w}date>", esc(format)));
+            let after_lid = if x.contains("lid") { "lid" } else { "dateFormat" };
+            if let Some(s) = storage {
+                x = with_child_val(&x, "storeMappedDataAs", s.xml(), &w, Some(after_lid));
+            }
+            if let Some(cal) = calendar {
+                let after = if x.contains("storeMappedDataAs") { "storeMappedDataAs" } else { after_lid };
+                x = with_child_val(&x, "calendar", cal, &w, Some(after));
+            }
+            if control.props.kind_xml.as_deref() == Some(x.as_str()) {
+                return Ok(Outcome::Unchanged("already so"));
+            }
+            control.props.kind_xml = Some(x);
+            let mut tx = self.begin("Content Control Properties");
+            if self.step(&mut tx, Step::Control { id: c, control: Some(control) }).is_err() {
+                self.abort(tx);
+                return Err(no_element());
+            }
+            Ok(self.commit(tx, None, fonts))
+        })();
+        outcome(r)
+    }
+
     pub(super) fn set_control(&mut self, c: SetControl, fonts: &Fonts) -> Outcome {
         self.picture_writes = true;
         let out = self.control_set(c, fonts);
@@ -2872,5 +3207,157 @@ mod tests {
             r#"<w:date w:fullDate="2026-01-01T00:00:00Z"><w:dateFormat w:val="d"/><w:lid w:val="en-GB"/></w:date>"#
         );
         assert_eq!(with_child_val("<w:date/>", "lid", "en-GB", "w:", Some("dateFormat")), r#"<w:date><w:lid w:val="en-GB"/></w:date>"#);
+    }
+}
+
+/// What a date control stores in its data (`w:storeMappedDataAs`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DateStorage {
+    /// The text it shows.
+    Text,
+    /// The date (`xsd:date`).
+    Date,
+    /// The date and time (`xsd:dateTime`), Word's default.
+    DateTime,
+}
+
+impl DateStorage {
+    fn xml(self) -> &'static str {
+        match self {
+            DateStorage::Text => "text",
+            DateStorage::Date => "date",
+            DateStorage::DateTime => "dateTime",
+        }
+    }
+}
+
+/// A date control's settings as Content Control Properties shows them: display format, locale, calendar and what
+/// it stores (Word's defaults where the control doesn't say).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DateSettings {
+    pub format: String,
+    pub locale: Option<String>,
+    pub calendar: String,
+    pub storage: DateStorage,
+}
+
+/// Date control `props`' settings; `None` for another kind.
+pub fn date_settings(props: &ControlProps) -> Option<DateSettings> {
+    let ControlKind::Date { format, lid } = &props.kind else { return None };
+    let x = props.kind_xml.as_deref().unwrap_or_default();
+    let val = |local: &str| {
+        let at = x.find(&format!(":{local} ")).or_else(|| x.find(&format!("<{local} ")))?;
+        let tag = &x[at..at + crate::docx::binding::tag_end(&x[at..])?];
+        attr_value(tag, "val").map(|r| crate::docx::binding::unescape(&tag[r]))
+    };
+    let storage = match val("storeMappedDataAs").as_deref() {
+        Some("text") => DateStorage::Text,
+        Some("date") => DateStorage::Date,
+        _ => DateStorage::DateTime,
+    };
+    Some(DateSettings {
+        format: if format.is_empty() { "M/d/yyyy".into() } else { format.clone() },
+        locale: lid.clone(),
+        calendar: val("calendar").unwrap_or_else(|| "gregorian".into()),
+        storage,
+    })
+}
+
+/// The display formats a date control's Content Control Properties lists for `locale`.
+pub fn date_formats(locale: &str) -> &'static [&'static str] {
+    const EN_GB: &[&str] = &[
+        "dd/MM/yyyy",
+        "dddd, d MMMM yyyy",
+        "d MMMM yyyy",
+        "dd/MM/yy",
+        "yyyy-MM-dd",
+        "d-MMM-yy",
+        "dd.MM.yyyy",
+        "d MMM. yy",
+        "MMMM yy",
+        "MMM-yy",
+        "dd/MM/yyyy HH:mm",
+        "dd/MM/yyyy HH:mm:ss",
+        "h:mm am/pm",
+        "h:mm:ss am/pm",
+        "HH:mm",
+        "HH:mm:ss",
+    ];
+    const DE: &[&str] = &[
+        "dd.MM.yyyy",
+        "dddd, d. MMMM yyyy",
+        "d. MMMM yyyy",
+        "dd.MM.yy",
+        "yyyy-MM-dd",
+        "d. MMM. yy",
+        "dd. MMM. yyyy",
+        "MMMM yy",
+        "MMM. yy",
+        "dd.MM.yyyy HH:mm",
+        "dd.MM.yyyy HH:mm:ss",
+        "HH:mm",
+        "HH:mm:ss",
+    ];
+    const FR: &[&str] = &[
+        "dd/MM/yyyy",
+        "dddd d MMMM yyyy",
+        "d MMMM yyyy",
+        "dd/MM/yy",
+        "yyyy-MM-dd",
+        "d-MMM-yy",
+        "dd.MM.yy",
+        "d MMM. yy",
+        "MMMM yy",
+        "MMM-yy",
+        "dd/MM/yyyy HH:mm",
+        "dd/MM/yyyy HH:mm:ss",
+        "HH:mm",
+        "HH:mm:ss",
+    ];
+    const ES: &[&str] = &[
+        "dd/MM/yyyy",
+        "dddd, d' de 'MMMM' de 'yyyy",
+        "d' de 'MMMM' de 'yyyy",
+        "dd/MM/yy",
+        "yyyy-MM-dd",
+        "d-MMM-yy",
+        "MMMM' de 'yyyy",
+        "MMM-yy",
+        "dd/MM/yyyy H:mm",
+        "dd/MM/yyyy H:mm:ss",
+        "H:mm",
+        "H:mm:ss",
+    ];
+    const JA: &[&str] = &[
+        "yyyy/MM/dd",
+        "yyyy'年'M'月'd'日'",
+        "yyyy'年'M'月'd'日'dddd",
+        "yy/MM/dd",
+        "yyyy-MM-dd",
+        "yyyy'年'M'月'",
+        "M'月'd'日'",
+        "yyyy/MM/dd H:mm",
+        "H:mm",
+        "H:mm:ss",
+    ];
+    const ZH: &[&str] = &[
+        "yyyy/M/d",
+        "yyyy'年'M'月'd'日'",
+        "yyyy'年'M'月'd'日'dddd",
+        "yyyy-MM-dd",
+        "yyyy'年'M'月'",
+        "M'月'd'日'",
+        "yyyy/M/d H:mm",
+        "H:mm",
+        "H:mm:ss",
+    ];
+    match locale.split(['-', '_']).next().unwrap_or_default().to_ascii_lowercase().as_str() {
+        "en" if !locale.eq_ignore_ascii_case("en-US") && !locale.eq_ignore_ascii_case("en") => EN_GB,
+        "de" => DE,
+        "fr" => FR,
+        "es" => ES,
+        "ja" => JA,
+        "zh" => ZH,
+        _ => crate::services::fields::DATE_PICTURES,
     }
 }

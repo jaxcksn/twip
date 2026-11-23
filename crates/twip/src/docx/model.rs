@@ -1008,6 +1008,41 @@ pub struct Source {
     pub page_background: (Option<u32>, Option<crate::drawing::paint::Fill>),
     /// The page background colour's theme colour as read.
     pub page_theme: Option<ThemeColourRef>,
+    /// The note separator stories as read (as [`Document::separators`], Word's built-in ones among them).
+    pub separators: HashMap<String, Vec<Block>>,
+    /// Word's built-in separator and continuation separator of each kind of note, by [`NoteSeparator::key`].
+    pub separator_defaults: HashMap<String, Vec<Block>>,
+}
+
+/// One of the stories Word draws around a page's notes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum NoteSeparator {
+    /// The line above the notes.
+    Separator,
+    /// The line above notes going on from the page before.
+    Continuation,
+    /// The notice below notes going on to the next page.
+    Notice,
+}
+
+impl NoteSeparator {
+    /// Its note `w:type`.
+    pub fn xml_type(self) -> &'static str {
+        match self {
+            NoteSeparator::Separator => "separator",
+            NoteSeparator::Continuation => "continuationSeparator",
+            NoteSeparator::Notice => "continuationNotice",
+        }
+    }
+
+    /// Its key in [`Document::separators`] for notes of `kind`.
+    pub fn key(self, kind: NoteKind) -> String {
+        let tag = match kind {
+            NoteKind::Foot => "footnote",
+            NoteKind::End => "endnote",
+        };
+        format!("{tag}:{}", self.xml_type())
+    }
 }
 
 /// The glossary part as read: its name and XML, and each building block's `w:docPart` byte range in that XML with
@@ -1087,6 +1122,34 @@ pub enum Gallery {
 }
 
 impl Gallery {
+    /// Whether a gallery control naming gallery `name` (as Word's Content Control Properties name it: `Quick
+    /// Parts`, `AutoText`, `Cover Pages`, ..., `Custom 1`) offers building blocks of this gallery: its built-in and
+    /// custom ones, `Custom 1` to `Custom 5` their own.
+    pub fn named(&self, name: &str) -> bool {
+        let v = self.xml();
+        let base = v.strip_prefix("cust").filter(|_| !matches!(self, Gallery::Custom(_))).map_or(v.as_str(), |b| b);
+        let want: &[&str] = match name.trim() {
+            "Quick Parts" => &["docParts", "QuickParts"],
+            "AutoText" => &["autoTxt", "AutoTxt"],
+            "Cover Pages" => &["coverPg", "CoverPg"],
+            "Equations" => &["eq", "Eq"],
+            "Footers" => &["ftrs", "Ftrs"],
+            "Headers" => &["hdrs", "Hdrs"],
+            "Page Numbers" => &["pgNum", "PgNum"],
+            "Page Numbers (Top of Page)" => &["pgNumT", "PgNumT"],
+            "Page Numbers (Bottom of Page)" => &["pgNumB", "PgNumB"],
+            "Page Numbers (Margins)" => &["pgNumMargins", "PgNumMargins"],
+            "Tables" => &["tbls", "Tbls"],
+            "Table of Contents" => &["tblOfContents", "TblOfContents"],
+            "Text Boxes" => &["txtBox", "TxtBox"],
+            "Watermarks" => &["watermarks", "Watermarks"],
+            "Bibliographies" => &["bib", "Bib"],
+            "" => return true,
+            other => return other.strip_prefix("Custom ").and_then(|n| n.parse::<u8>().ok()).is_some_and(|n| *self == Gallery::Custom(n)),
+        };
+        want.contains(&base)
+    }
+
     pub fn parse(v: &str) -> Gallery {
         match v {
             "placeholder" => Gallery::Placeholder,
@@ -1147,16 +1210,86 @@ pub struct Control {
     pub at: Option<(usize, usize)>,
 }
 
+/// A content control kind the editor keeps as written (`ControlKind::Other`), as its kind element names it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum KeptKind {
+    /// `w:docPartList`: a building block gallery, offering the building blocks of its gallery (by Word's name for it,
+    /// `Quick Parts`, `Custom 1`, ...) and category (`None`: any).
+    Gallery { gallery: Option<String>, category: Option<String> },
+    /// `w:docPartObj`: a building block inserted from a gallery (a cover page, a table of contents).
+    BuildingBlock { gallery: Option<String>, category: Option<String> },
+    /// `w:citation`.
+    Citation,
+    /// `w:bibliography`.
+    Bibliography,
+    /// `w:equation`.
+    Equation,
+}
+
+impl KeptKind {
+    /// A building block gallery's (or building block's) kind element, `w` its prefix: `None` for the other kinds.
+    pub fn part_xml(&self, w: &str) -> Option<String> {
+        use super::write::props::esc;
+        let (name, gallery, category) = match self {
+            KeptKind::Gallery { gallery, category } => ("docPartList", gallery, category),
+            KeptKind::BuildingBlock { gallery, category } => ("docPartObj", gallery, category),
+            _ => return None,
+        };
+        let mut x = format!("<{w}{name}>");
+        if let Some(g) = gallery {
+            x += &format!("<{w}docPartGallery {w}val=\"{}\"/>", esc(g));
+        }
+        if let Some(c) = category {
+            x += &format!("<{w}docPartCategory {w}val=\"{}\"/>", esc(c));
+        }
+        x += &format!("</{w}{name}>");
+        Some(x)
+    }
+}
+
+/// The value of the `val` attribute of `xml`'s first element named `local` (any prefix), unescaped.
+fn child_val(xml: &str, local: &str) -> Option<String> {
+    let at = xml.match_indices(local).map(|(k, _)| k).find(|&k| {
+        let before = xml[..k].chars().next_back();
+        let after = xml[k + local.len()..].chars().next();
+        matches!(before, Some('<' | ':')) && after.is_some_and(|c| c.is_whitespace() || c == '/' || c == '>')
+    })?;
+    let rest = &xml[at..];
+    let head = &rest[..super::binding::tag_end(rest)?];
+    super::binding::tag_attrs(head).find(|(n, ..)| n.rsplit(':').next() == Some("val")).map(|(_, v, _)| super::binding::unescape(v))
+}
+
 impl ControlProps {
     /// A building block gallery (`w:docPartList`): `Some` of its category (`None`: any).
     pub fn gallery(&self) -> Option<Option<String>> {
-        let x = self.kind_xml.as_deref().filter(|x| x.contains("docPartList"))?;
-        let cat = x.find("docPartCategory").and_then(|k| {
-            let rest = &x[k..];
-            let v = rest.find("val=\"")? + 5;
-            Some(rest[v..v + rest[v..].find('"')?].to_string())
-        });
-        Some(cat.filter(|c| !c.is_empty()))
+        match self.kept_kind()? {
+            KeptKind::Gallery { category, .. } => Some(category),
+            _ => None,
+        }
+    }
+
+    /// What a control the editor keeps as written is, from its kind element.
+    pub fn kept_kind(&self) -> Option<KeptKind> {
+        let x = self.kind_xml.as_deref()?.trim_start().strip_prefix('<')?;
+        let name = &x[..x.find(|c: char| c.is_whitespace() || c == '>' || c == '/').unwrap_or(x.len())];
+        let part = || {
+            let v = |n| child_val(x, n).filter(|v| !v.is_empty());
+            (v("docPartGallery"), v("docPartCategory"))
+        };
+        Some(match name.rsplit(':').next()? {
+            "docPartList" => {
+                let (gallery, category) = part();
+                KeptKind::Gallery { gallery, category }
+            }
+            "docPartObj" => {
+                let (gallery, category) = part();
+                KeptKind::BuildingBlock { gallery, category }
+            }
+            "citation" => KeptKind::Citation,
+            "bibliography" => KeptKind::Bibliography,
+            "equation" => KeptKind::Equation,
+            _ => return None,
+        })
     }
 
     /// Whether a drop-down's kind element is `w:comboBox` (`w:dropDownList` otherwise).
@@ -1696,6 +1829,13 @@ pub struct Settings {
     pub default_table_style: Option<String>,
     /// Legacy form fields aren't shaded (`w:doNotShadeFormData`).
     pub no_form_shading: bool,
+    /// AutoFormat as you type may format text the formatting restrictions keep formatting from
+    /// (`w:autoFormatOverride`).
+    pub auto_format_override: bool,
+    /// Formatting restrictions keep the theme and its colours and fonts from changing (`w:styleLockTheme`).
+    pub style_lock_theme: bool,
+    /// Formatting restrictions keep the Quick Style Set from changing (`w:styleLockQFSet`).
+    pub style_lock_style_set: bool,
     /// The document variables (`w:docVars`), in order.
     pub variables: Vec<(String, String)>,
     /// `w:decimalSymbol` and `w:listSeparator`: what `=` formulas read numbers and arguments with.

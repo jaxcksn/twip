@@ -868,8 +868,8 @@ impl Editor {
                     crate::docx::ControlKind::RichText | crate::docx::ControlKind::Other => ElementKind::RichText,
                 };
                 let mut info = control_info(&props);
-                if let Some(category) = props.gallery() {
-                    info.building_blocks = self.gallery_entries(category.as_deref()).map(|b| b.name.clone()).collect();
+                if let Some(crate::docx::KeptKind::Gallery { gallery, category }) = props.kept_kind() {
+                    info.building_blocks = self.gallery_entries(gallery.as_deref(), category.as_deref()).map(|b| b.name.clone()).collect();
                 }
                 let control = Some(Box::new(info));
                 ElementContext {

@@ -21,6 +21,33 @@ impl Editor {
 
     /// The innermost field or content control at a point, and what a press there does.
     pub fn element_under(&mut self, x: f64, y: f64, mods: Mods, fonts: &Fonts) -> Option<(ElementId, PressAction)> {
+        let (element, _, editable) = self.element_at(x, y, fonts)?;
+        let checkbox = matches!(element, ElementId::Control(c) if self.doc.controls.get(&c).is_some_and(|k| matches!(k.props.kind, ControlKind::Checkbox { .. })))
+            || self.legacy_check_box(element);
+        let action = if checkbox && self.checkbox_toggles_at(x, y, fonts).is_some() {
+            PressAction::Toggle
+        } else if (mods.ctrl || mods.meta || self.mode == Mode::ReadOnly) && self.link_under(x, y, fonts).is_some() {
+            PressAction::FollowLink
+        } else if editable && self.mode != Mode::ReadOnly {
+            PressAction::PlaceCaret
+        } else {
+            PressAction::None
+        };
+        Some((element, action))
+    }
+
+    /// Whether `e` is a legacy check box form field.
+    fn legacy_check_box(&self, e: ElementId) -> bool {
+        let ElementId::Field(f) = e else { return false };
+        let Some(super::merge::Where::Inline { para, first, .. }) = self.locate(e) else { return false };
+        self.index.para(&self.doc, para).and_then(|p| p.inlines.get(first)).is_some_and(|i| {
+            matches!(i, crate::docx::Inline::FieldBegin { id, form: Some(form), .. }
+                if *id == f && matches!(form.data.kind, crate::docx::forms::FormKind::CheckBox { .. }))
+        })
+    }
+
+    /// The innermost field or content control drawn at a point, the place the point hits and whether it is editable.
+    pub(super) fn element_at(&mut self, x: f64, y: f64, fonts: &Fonts) -> Option<(ElementId, Position, bool)> {
         let (p, _, editable) = self.hit_test(x, y, fonts)?;
         let (page, px, py) = self.stack().page_at(x, y)?;
         // A hit snaps to a field's edges, so the elements just before and after it are candidates too; the point
@@ -41,17 +68,7 @@ impl Editor {
             })
             .min_by(|a, b| a.1.total_cmp(&b.1))?
             .0;
-        let checkbox = matches!(element, ElementId::Control(c) if self.doc.controls.get(&c).is_some_and(|k| matches!(k.props.kind, ControlKind::Checkbox { .. })));
-        let action = if checkbox && self.checkbox_toggles_at(x, y, fonts).is_some() {
-            PressAction::Toggle
-        } else if (mods.ctrl || mods.meta || self.mode == Mode::ReadOnly) && self.link_under(x, y, fonts).is_some() {
-            PressAction::FollowLink
-        } else if editable && self.mode != Mode::ReadOnly {
-            PressAction::PlaceCaret
-        } else {
-            PressAction::None
-        };
-        Some((element, action))
+        Some((element, p, editable))
     }
 
     /// The innermost element the selection is in or covers, and whether the selection is exactly it.

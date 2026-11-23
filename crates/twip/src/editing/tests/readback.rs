@@ -492,3 +492,27 @@ fn this_point_forward_over_selected_text_keeps_the_text() {
     e.execute(Command::Undo, fonts());
     assert_eq!((wide(&e), super::texts(&e).concat()), (vec![false], "onetwo".to_string()), "one action");
 }
+
+#[test]
+fn a_page_number_left_off_the_first_page_takes_a_different_first_page() {
+    use crate::api::command::{ChapterSeparator, NumberFormat, PageNumberFormat};
+    use crate::editing::commands::{PageNumberAlign, PageNumberSpot, page_number_sample};
+    let mut e = edit(TWO);
+    let out = e.insert_page_number_shown(PageNumberFormat::Page, PageNumberSpot::Footer, Some(PageNumberAlign::Center), false, fonts());
+    assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
+    let s = &e.document().sections[0];
+    assert!(s.title_pg, "a different first page");
+    let holds = |slot: usize| {
+        s.footers[slot].as_ref().and_then(|n| e.document().stories.get(n)).is_some_and(|b| {
+            b.iter()
+                .any(|b| matches!(b, crate::docx::Block::Para(p) if p.inlines.iter().any(|i| matches!(i, crate::docx::Inline::FieldBegin { .. }))))
+        })
+    };
+    assert!(holds(0) && !holds(1), "in the default footer, not the first page's");
+    assert_eq!(e.history().undo_labels().next(), Some("Page Number"), "one action");
+    e.execute(Command::Undo, fonts());
+    assert!(!e.document().sections[0].title_pg);
+    assert_eq!(page_number_sample(NumberFormat::Decimal, Some(ChapterSeparator::Hyphen)), "1-1");
+    assert_eq!(page_number_sample(NumberFormat::UpperLetter, Some(ChapterSeparator::Hyphen)), "1-A");
+    assert_eq!(page_number_sample(NumberFormat::LowerRoman, None), "i");
+}

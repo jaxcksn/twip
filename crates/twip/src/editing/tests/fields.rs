@@ -148,3 +148,37 @@ fn a_bookmark_is_found_without_case() {
     let value = p.inlines.iter().find_map(|i| if let Inline::FieldBegin { value, .. } = i { value.clone() } else { None });
     assert_eq!(value.as_deref(), Some("42"));
 }
+
+#[test]
+fn a_field_reads_back_its_view_and_staleness_and_an_update_clears_it() {
+    let doc = blank_body(
+        r#"<w:p><w:r><w:fldChar w:fldCharType="begin" w:dirty="1"/></w:r><w:r><w:instrText xml:space="preserve"> MERGEFIELD X </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>old</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>"#,
+    );
+    let mut e = Editor::open(&doc, fonts()).expect("opens");
+    let field = |e: &Editor| {
+        let all = crate::editing::elements::enumerate(e.document(), e.index(), &Default::default());
+        let f = all.into_iter().find(|x| x.code.is_some()).expect("a field");
+        (f.showing_code, f.dirty)
+    };
+    assert_eq!(field(&e), (false, true), "dirty as read");
+    let r = send(&mut e, json!({ "type": "command", "command": { "type": "showFieldCodes", "show": true } }));
+    assert!(r["answer"].get("error").is_none(), "{r}");
+    assert_eq!(field(&e), (true, true), "showing its code");
+    let r = send(&mut e, json!({ "type": "command", "command": { "type": "updateFields" } }));
+    assert!(r["answer"].get("error").is_none(), "{r}");
+    assert_eq!(field(&e), (false, false), "an update shows the result and clears the flag");
+    let r = send(&mut e, json!({ "type": "command", "command": { "type": "undo" } }));
+    assert!(r["answer"].get("error").is_none(), "{r}");
+    assert_eq!(field(&e), (true, true));
+}
+
+#[test]
+fn insert_field_opens_on_the_field_at_the_selection() {
+    let body = r#"<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> SEQ Figure \r 3 </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>3</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>"#;
+    let mut e = Editor::open(&super::blank_body(body), super::fonts()).expect("opens");
+    use crate::editing::position::{Position, StoryId};
+    e.selection = crate::editing::selection::Selection::Caret(Position::text(StoryId::Body, super::para_id(&e, 0), crate::layout::Unit(1)));
+    let (_, c) = crate::services::fields::choice_here(&e).expect("a field");
+    assert_eq!((c.name.as_str(), c.args.as_slice()), ("SEQ", &["Figure".to_string()][..]));
+    assert_eq!(c.switches, [("r".to_string(), Some("3".to_string()))]);
+}

@@ -5,12 +5,13 @@ use crate::font::Fonts;
 use super::Editor;
 use super::commands::Outcome;
 use super::index::Slot;
-use super::position::StoryId;
+use super::position::{Position, StoryId};
 use super::readback::BorderLine;
 use super::selection::{ObjectRef, Selection};
 use super::step::Step;
 use crate::api::value::Points;
 use crate::docx::NoteKind;
+use crate::layout::Unit;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum SectionCmd {
@@ -156,6 +157,99 @@ impl Editor {
             e.section_scope = None;
             out
         })
+    }
+
+    /// Sets text columns where Word's Columns dialog applies them: the selected sections, every section, from the
+    /// selection's start on (a continuous section break there, a next-column one when `start_new_column`), or the
+    /// selected text alone (continuous section breaks around it, none at its section's edges). One undo step.
+    pub fn set_columns_in(&mut self, c: crate::api::command::Columns, scope: ColumnsScope, start_new_column: bool, fonts: &Fonts) -> Outcome {
+        use crate::api::command::{Command, SectionBreakKind};
+        if start_new_column && scope != ColumnsScope::ThisPointForward {
+            return Outcome::invalid("a new column starts only from this point forward");
+        }
+        let columns = |e: &mut Editor| e.execute(Command::SetColumns(c), fonts);
+        match scope {
+            ColumnsScope::Sections => columns(self),
+            ColumnsScope::WholeDocument => self.in_section_scope(crate::api::services::ApplyTo::WholeDocument, "Columns", columns, fonts),
+            ColumnsScope::ThisPointForward => self.joined("Columns", fonts, |e| {
+                let Some((start, _)) = e.selection.ordered(&e.index) else { return Outcome::unavailable("no selection") };
+                e.multi = super::multi::Multi::default();
+                e.set_selection(Selection::Caret(start));
+                let kind = if start_new_column { SectionBreakKind::NextColumn } else { SectionBreakKind::Continuous };
+                let out = e.section_break(kind, fonts);
+                if !matches!(out, Outcome::Changed(_)) {
+                    return out;
+                }
+                e.section_scope = Some(e.focus_section()..=e.doc.sections.len().saturating_sub(1));
+                let out = columns(e);
+                e.section_scope = None;
+                out
+            }),
+            ColumnsScope::SelectedText => self.joined("Columns", fonts, |e| {
+                let Some((a, b)) = e.selection.ordered(&e.index) else { return Outcome::unavailable("no selection") };
+                if a.same_place(&b) {
+                    return Outcome::unavailable("no text selected");
+                }
+                let edge = |e: &Editor, p: &Position, end: bool| -> bool {
+                    let Some(k) = e.section_at(p) else { return true };
+                    let blocks = &e.doc.sections[k].blocks;
+                    match (p.para_offset(), end) {
+                        (Some((para, u)), false) => u == Unit(0) && blocks.first().and_then(super::first_para_of) == Some(para),
+                        // A section's last paragraph holds its break: its end is the section's
+                        (Some((para, u)), true) => blocks.last().and_then(super::last_para_of) == Some((para, u)),
+                        (None, _) => true,
+                    }
+                };
+                let (at_start, at_end) = (edge(e, &a, false), edge(e, &b, true));
+                e.multi = super::multi::Multi::default();
+                if !at_end {
+                    e.set_selection(Selection::Caret(b));
+                    let out = e.section_break(SectionBreakKind::Continuous, fonts);
+                    if !matches!(out, Outcome::Changed(_)) {
+                        return out;
+                    }
+                }
+                e.set_selection(Selection::Caret(a));
+                if !at_start {
+                    let out = e.section_break(SectionBreakKind::Continuous, fonts);
+                    if !matches!(out, Outcome::Changed(_)) {
+                        return out;
+                    }
+                }
+                let k = e.focus_section();
+                e.section_scope = Some(k..=k);
+                let out = columns(e);
+                e.section_scope = None;
+                out
+            }),
+        }
+    }
+
+    /// The columns Word's Columns preset `preset` gives the selection's section: equal ones half an inch apart, or
+    /// two with the narrow one (as wide as one of three) on the left or right; its line between kept.
+    pub fn column_preset(&self, preset: ColumnPreset) -> crate::api::command::Columns {
+        use crate::api::command::{ColumnWidth, Columns};
+        use crate::api::value::Points;
+        const SPACE: f64 = 36.0;
+        let s = self.doc.sections.get(self.focus_section());
+        let separator = s.map(|s| s.columns.separator);
+        let width = s.map_or(468.0, |s| s.page_w - s.right - s.left - self.gutter_axes(s.gutter, s.page_w, s.page_h).0);
+        let equal = |n| Columns { count: n, spacing: Some(Points(SPACE)), separator, widths: None };
+        let narrow = ((width - 2.0 * SPACE) / 3.0).max(1.0);
+        let wide = (width - SPACE - narrow).max(1.0);
+        let two = |a: f64, b: f64| Columns {
+            count: 2,
+            spacing: Some(Points(SPACE)),
+            separator,
+            widths: Some(vec![ColumnWidth { width: Points(a), spacing: Points(SPACE) }, ColumnWidth { width: Points(b), spacing: Points(0.0) }]),
+        };
+        match preset {
+            ColumnPreset::One => equal(1),
+            ColumnPreset::Two => equal(2),
+            ColumnPreset::Three => equal(3),
+            ColumnPreset::Left => two(narrow, wide),
+            ColumnPreset::Right => two(wide, narrow),
+        }
     }
 
     /// Sets the page borders of the selection's section, or of every section.
@@ -445,4 +539,32 @@ pub struct PageBordersReadback {
     pub surround_footer: bool,
     /// They're behind the text.
     pub behind_text: bool,
+}
+
+/// Where a Columns change applies, as Word's Columns dialog's Apply to offers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ColumnsScope {
+    /// The sections the selection covers.
+    Sections,
+    /// Every section.
+    WholeDocument,
+    /// From the selection's start on.
+    ThisPointForward,
+    /// The selected text alone.
+    SelectedText,
+}
+
+/// Word's Columns presets.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ColumnPreset {
+    /// One column.
+    One,
+    /// Two equal columns.
+    Two,
+    /// Three equal columns.
+    Three,
+    /// Two, the narrow one on the left.
+    Left,
+    /// Two, the narrow one on the right.
+    Right,
 }

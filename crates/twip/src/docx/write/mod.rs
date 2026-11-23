@@ -67,23 +67,36 @@ pub fn edited_parts(doc: &Document) -> Result<Vec<(String, Vec<u8>)>, String> {
         added.sort_by_key(|(id, _)| **id);
         let removed: Vec<i64> = was.keys().filter(|id| !is.contains_key(id)).copied().collect();
         let tag = if *foot { "footnote" } else { "endnote" };
-        if let Some(xml) = notes_xml(xml, &boxes(&o, &n), &lists, tag, &added, &removed, &doc.controls, &gone_controls(doc), &doc.people)? {
+        let seps = separator_edits(doc, src, tag);
+        let edits = NoteEdits { tag, added: &added, removed: &removed, separators: &seps };
+        let (out, listing) = notes_xml(xml, &boxes(&o, &n), &lists, &edits, doc)?;
+        if let Some(xml) = out {
             parts.push((name.clone(), xml.into_bytes()));
         }
+        list_notes(doc, src, &mut parts, tag, &listing)?;
     }
     // Notes inserted in a document that had no notes part of their kind: the part, its relationship and its type.
     for (foot, notes) in [(true, &doc.footnotes), (false, &doc.endnotes)] {
-        if notes.is_empty() || src.notes.iter().any(|(_, _, f)| *f == foot) {
+        let tag = if foot { "footnote" } else { "endnote" };
+        let separators = doc.separators.keys().any(|k| k.strip_prefix(tag).is_some_and(|r| r.starts_with(':')));
+        if (notes.is_empty() && !separators) || src.notes.iter().any(|(_, _, f)| *f == foot) {
             continue;
         }
         // Both kinds new: the second builds on the first's relationships and content types.
-        let made = new_notes_part(&src.package, &src.main, foot, notes, &parts, &doc.controls, &doc.people)?;
+        let made = new_notes_part(&src.package, &src.main, foot, notes, &parts, doc)?;
         for (n, b) in made {
             match parts.iter_mut().find(|(m, _)| *m == n) {
                 Some(p) => p.1 = b,
                 None => parts.push((n, b)),
             }
         }
+        // Separator stories set since reading are listed, as Word lists its own
+        let listing: Vec<(i64, bool)> = [(-1, "separator"), (0, "continuationSeparator"), (-2, "continuationNotice")]
+            .into_iter()
+            .filter(|(_, t)| doc.separators.contains_key(&format!("{tag}:{t}")))
+            .map(|(id, _)| (id, true))
+            .collect();
+        list_notes(doc, src, &mut parts, tag, &listing)?;
     }
     section_pages(doc, &mut parts)?;
     new_stories(doc, &mut parts)?;
@@ -448,10 +461,7 @@ fn settings_part(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(
     let existing = package::related(&src.package, parts, &src.main, SETTINGS)?;
     let xml = match &existing {
         Some(n) => package::read(&src.package, parts, n)?.unwrap_or_default(),
-        None => format!(
-            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:settings xmlns:w="{W}"/>"#
-        ),
+        None => EMPTY_SETTINGS.to_string(),
     };
     if xml.is_empty() {
         return Ok(());
@@ -527,6 +537,9 @@ fn settings_part(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(
         ("mirrorMargins", read.mirror_margins, now.mirror_margins),
         ("gutterAtTop", read.gutter_at_top, now.gutter_at_top),
         ("doNotShadeFormData", read.no_form_shading, now.no_form_shading),
+        ("autoFormatOverride", read.auto_format_override, now.auto_format_override),
+        ("styleLockTheme", read.style_lock_theme, now.style_lock_theme),
+        ("styleLockQFSet", read.style_lock_style_set, now.style_lock_style_set),
         ("bordersDoNotSurroundHeader", read.borders_do_not_surround_header, now.borders_do_not_surround_header),
         ("bordersDoNotSurroundFooter", read.borders_do_not_surround_footer, now.borders_do_not_surround_footer),
         ("bookFoldPrinting", read.book_fold == Some(false), now.book_fold == Some(false)),
@@ -545,16 +558,26 @@ fn settings_part(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(
     }
     let name = match existing {
         Some(n) => n,
-        None => {
-            let name = src.main.rsplit_once('/').map_or_else(|| "settings.xml".into(), |(dir, _)| format!("{dir}/settings.xml"));
-            let name = package::free_name(&src.package, parts, &name)?;
-            let ct = "application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml";
-            package::add_part(&src.package, parts, &src.main, &name, ct, SETTINGS)?;
-            name
-        }
+        None => add_settings_part(src, parts)?,
     };
     package::set(parts, &name, out.into_bytes());
     Ok(())
+}
+
+/// A settings part with no settings.
+const EMPTY_SETTINGS: &str = concat!(
+    r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>"#,
+    "\n",
+    r#"<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>"#
+);
+
+/// A new settings part beside the main part, with its relationship and content type: its name.
+fn add_settings_part(src: &Source, parts: &mut Vec<(String, Vec<u8>)>) -> Result<String, String> {
+    let name = src.main.rsplit_once('/').map_or_else(|| "settings.xml".into(), |(dir, _)| format!("{dir}/settings.xml"));
+    let name = package::free_name(&src.package, parts, &name)?;
+    let ct = "application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml";
+    package::add_part(&src.package, parts, &src.main, &name, ct, SETTINGS)?;
+    Ok(name)
 }
 
 /// The main part's `w:background` when the page background changed since reading: the model's colour, and its fill.
@@ -1503,21 +1526,32 @@ fn new_notes_part(
     foot: bool,
     notes: &HashMap<i64, Vec<Block>>,
     made: &[(String, Vec<u8>)],
-    controls: &HashMap<ControlId, Control>,
-    people: &People,
+    doc: &Document,
 ) -> Result<Vec<(String, Vec<u8>)>, String> {
+    let (controls, people) = (&doc.controls, &doc.people);
     let (tag, file, rel) = if foot { ("footnote", "footnotes.xml", "footnotes") } else { ("endnote", "endnotes.xml", "endnotes") };
     let ns = r#"xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships""#;
-    let sep = |id: i64, kind: &str| {
-        format!(
-            r#"<w:{tag} w:type="{kind}" w:id="{id}"><w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:r><w:{kind}/></w:r></w:p></w:{tag}>"#
-        )
+    let empty = format!(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:{tag}s {ns}></w:{tag}s>"#
+    );
+    // Word's separator notes, or those set since reading
+    let sep = |id: i64, kind: &str| -> Result<String, String> {
+        let body = match doc.separators.get(&format!("{tag}:{kind}")) {
+            Some(b) => new_blocks_xml(&empty, b, controls, people)?,
+            None => format!(r#"<w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:r><w:{kind}/></w:r></w:p>"#),
+        };
+        Ok(format!(r#"<w:{tag} w:type="{kind}" w:id="{id}">{body}</w:{tag}>"#))
+    };
+    let notice = match doc.separators.contains_key(&format!("{tag}:continuationNotice")) {
+        true => sep(-2, "continuationNotice")?,
+        false => String::new(),
     };
     let shell = format!(
         r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:{tag}s {ns}>{}{}</w:{tag}s>"#,
-        sep(-1, "separator"),
-        sep(0, "continuationSeparator")
+<w:{tag}s {ns}>{}{}{notice}</w:{tag}s>"#,
+        sep(-1, "separator")?,
+        sep(0, "continuationSeparator")?
     );
     let mut ids: Vec<&i64> = notes.keys().collect();
     ids.sort();
@@ -1562,19 +1596,39 @@ fn new_notes_part(
     Ok(vec![(name, xml.into_bytes()), (rels_name, rels.into_bytes()), ("[Content_Types].xml".into(), types.into_bytes())])
 }
 
+/// What saving a notes part changes besides its kept notes' content: notes added and removed whole, and the separator
+/// stories edited (each one's note type and its new content, `None`: gone).
+struct NoteEdits<'a> {
+    tag: &'a str,
+    added: &'a [(&'a i64, &'a Vec<Block>)],
+    removed: &'a [i64],
+    separators: &'a [(&'static str, Option<&'a [Block]>)],
+}
+
+/// The separator stories of the notes `tag` the edits changed: each one's note type and its content now.
+fn separator_edits<'d>(doc: &'d Document, src: &Source, tag: &str) -> Vec<(&'static str, Option<&'d [Block]>)> {
+    ["separator", "continuationSeparator", "continuationNotice"]
+        .into_iter()
+        .filter_map(|t| {
+            let key = format!("{tag}:{t}");
+            let now = doc.separators.get(&key);
+            (now != src.separators.get(&key)).then(|| (t, now.map(Vec::as_slice)))
+        })
+        .collect()
+}
+
 /// A notes part's XML after the edits: its kept notes' edits, `added` notes at the end, `removed` ones taken out.
-#[allow(clippy::too_many_arguments, reason = "the part, its note lists and the document state its rewrite reads")]
+/// The notes part `xml` with its edits, when they change it, and the separator notes whose listing in the settings
+/// changes: each id, and whether it is listed now.
 fn notes_xml(
     xml: &str,
     inner: &[(&[Block], &[Block])],
     lists: &[(&[Block], &[Block])],
-    tag: &str,
-    added: &[(&i64, &Vec<Block>)],
-    removed: &[i64],
-    controls: &HashMap<ControlId, Control>,
-    gone: &[Control],
-    people: &People,
-) -> Result<Option<String>, String> {
+    e: &NoteEdits,
+    doc: &Document,
+) -> Result<(Option<String>, Vec<(i64, bool)>), String> {
+    let (controls, gone, people) = (&doc.controls, &gone_controls(doc), &doc.people);
+    let tag = e.tag;
     let dom = roxmltree::Document::parse(xml).map_err(|e| e.to_string())?;
     let root = dom.root_element();
     let w = match root.lookup_prefix(W) {
@@ -1582,15 +1636,43 @@ fn notes_xml(
         _ => String::new(),
     };
     let mut splices: Vec<Splice> = Vec::new();
+    let id_of = |n: roxmltree::Node| n.attribute((W, "id")).and_then(|v| v.parse::<i64>().ok());
     for n in root.children().filter(|n| is_w(*n, tag)) {
-        if n.attribute((W, "id")).and_then(|v| v.parse::<i64>().ok()).is_some_and(|id| removed.contains(&id)) {
+        if id_of(n).is_some_and(|id| e.removed.contains(&id)) {
             splices.push((n.range(), String::new()));
         }
     }
     let mut text = String::new();
-    for (id, blocks) in added {
+    for (id, blocks) in e.added {
         let body = new_blocks_xml(xml, blocks, controls, people)?;
         text.push_str(&format!("<{w}{tag} {w}id=\"{id}\">{body}</{w}{tag}>"));
+    }
+    // Separator stories: in place, else as a new note under an id below every other
+    let mut listing = Vec::new();
+    let mut free = root.children().filter(|n| is_w(*n, tag)).filter_map(id_of).min().unwrap_or(0).min(0) - 1;
+    for (t, blocks) in e.separators {
+        let had = root.children().find(|n| is_w(*n, tag) && n.attribute((W, "type")) == Some(*t));
+        match (had, blocks) {
+            (Some(n), Some(b)) => {
+                let id = id_of(n).unwrap_or(free);
+                let body = new_blocks_xml(xml, b, controls, people)?;
+                splices.push((n.range(), format!("<{w}{tag} {w}type=\"{t}\" {w}id=\"{id}\">{body}</{w}{tag}>")));
+                listing.push((id, true));
+            }
+            (Some(n), None) => {
+                splices.push((n.range(), String::new()));
+                if let Some(id) = id_of(n) {
+                    listing.push((id, false));
+                }
+            }
+            (None, Some(b)) => {
+                let body = new_blocks_xml(xml, b, controls, people)?;
+                text.push_str(&format!("<{w}{tag} {w}type=\"{t}\" {w}id=\"{free}\">{body}</{w}{tag}>"));
+                listing.push((free, true));
+                free -= 1;
+            }
+            (None, None) => {}
+        }
     }
     if !text.is_empty() {
         let r = root.range();
@@ -1602,8 +1684,57 @@ fn notes_xml(
             splices.push((close..close, text));
         }
     }
-    // One pass: the kept notes' edits and these whole-note splices never overlap (removed notes aren't in `lists`).
-    part_xml_with(xml, inner, lists, &splices, &SectionEdits::default(), controls, gone, people)
+    // One pass: the kept notes' edits and these whole-note splices never overlap (removed notes and separators
+    // aren't in `lists`).
+    Ok((part_xml_with(xml, inner, lists, &splices, &SectionEdits::default(), controls, gone, people)?, listing))
+}
+
+/// The settings' list of the notes `tag` separator notes (`w:footnotePr/w:footnote`) with `listing`'s changes: each
+/// id listed or not.
+fn list_notes(doc: &Document, src: &Source, parts: &mut Vec<(String, Vec<u8>)>, tag: &str, listing: &[(i64, bool)]) -> Result<(), String> {
+    let listed = |id: i64| doc.settings.listed_notes.iter().any(|n| *n == format!("{tag}:{id}"));
+    let changes: Vec<(i64, bool)> = listing.iter().copied().filter(|&(id, on)| listed(id) != on).collect();
+    if changes.is_empty() {
+        return Ok(());
+    }
+    let name = match package::related(&src.package, parts, &src.main, SETTINGS)? {
+        Some(n) => n,
+        None => {
+            let n = add_settings_part(src, parts)?;
+            package::set(parts, &n, EMPTY_SETTINGS.as_bytes().to_vec());
+            n
+        }
+    };
+    let Some(mut out) = package::read(&src.package, parts, &name)? else { return Ok(()) };
+    let pr = format!("{tag}Pr");
+    let (w, at, mut entries) = {
+        let dom = roxmltree::Document::parse(&out).map_err(|e| e.to_string())?;
+        let w = match dom.root_element().lookup_prefix(W) {
+            Some(p) if !p.is_empty() => format!("{p}:"),
+            _ => String::new(),
+        };
+        let el = dom.root_element().children().find(|c| is_w(*c, &pr));
+        let entries: Vec<i64> =
+            el.into_iter().flat_map(|p| p.children().filter(|c| is_w(*c, tag))).filter_map(|c| c.attribute((W, "id"))?.parse().ok()).collect();
+        // Its properties, which the list follows
+        let props: String =
+            el.into_iter().flat_map(|p| p.children().filter(|c| c.is_element() && !is_w(*c, tag))).map(|c| out[c.range()].to_string()).collect();
+        (w, props, entries)
+    };
+    for (id, on) in changes {
+        entries.retain(|e| *e != id);
+        if on {
+            entries.push(id);
+        }
+    }
+    let list: String = entries.iter().map(|id| format!("<{w}{tag} {w}id=\"{id}\"/>")).collect();
+    let body = format!("{at}{list}");
+    set_setting(&mut out, &pr, (!body.is_empty()).then(|| format!("<{w}{pr}>{body}</{w}{pr}>")))?;
+    match parts.iter_mut().find(|(m, _)| *m == name) {
+        Some(p) => p.1 = out.into_bytes(),
+        None => parts.push((name, out.into_bytes())),
+    }
+    Ok(())
 }
 
 /// The controls read that the document no longer has (removed, or emptied of every member).
@@ -5712,6 +5843,8 @@ fn object_xml(w: &str, i: &Inline) -> Option<String> {
         Inline::Sym { ch, font, control: None, .. } => Some(format!("<{w}sym {w}font=\"{}\" {w}char=\"{:04X}\"/>", props::esc(font), *ch as u32)),
         Inline::NoteMark(NoteKind::Foot, ..) => Some(format!("<{w}footnoteRef/>")),
         Inline::NoteMark(NoteKind::End, ..) => Some(format!("<{w}endnoteRef/>")),
+        Inline::Separator { continuation: false, .. } => Some(format!("<{w}separator/>")),
+        Inline::Separator { continuation: true, .. } => Some(format!("<{w}continuationSeparator/>")),
         // each marker is its `fldChar`, in a run of the field's formatting.
         Inline::FieldBegin { lock, dirty, form, .. } => {
             let lock = if *lock { format!(" {w}fldLock=\"1\"") } else { String::new() };

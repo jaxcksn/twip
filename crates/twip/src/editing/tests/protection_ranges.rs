@@ -216,3 +216,53 @@ fn an_editable_paragraph_moves_past_an_editable_one() {
     e.move_paragraphs(true, fonts());
     assert_eq!(texts(&e), ["one", "three", "two"]);
 }
+
+#[test]
+fn enforcing_asks_for_the_password_twice_and_something_to_enforce() {
+    use crate::api::command::{DocumentProtection, ProtectionKind};
+    use crate::editing::commands::Outcome;
+    use crate::editing::protection::restriction_options;
+    let mut e = Editor::open(&super::blank_body("<w:p><w:r><w:t>Text</w:t></w:r></w:p>"), super::fonts()).expect("opens");
+    assert!(matches!(e.start_protection("", "", super::fonts()), Outcome::Refused(_)), "nothing to enforce");
+    let kind = DocumentProtection { kind: Some(ProtectionKind::ReadOnly), ..Default::default() };
+    assert!(matches!(e.execute(crate::editing::commands::Command::SetDocumentProtection(kind), super::fonts()), Outcome::Changed(_)));
+    assert!(matches!(e.start_protection("pw", "wp", super::fonts()), Outcome::Refused(_)), "the passwords differ");
+    assert!(matches!(e.start_protection("pw", "pw", super::fonts()), Outcome::Changed(_)));
+    let p = e.document().settings.protection.as_ref().expect("protected");
+    assert!(p.enforced && p.password.as_ref().is_some_and(|pw| pw.matches("pw")));
+    assert_eq!((restriction_options(ProtectionKind::ReadOnly).exceptions, restriction_options(ProtectionKind::Forms).sections), (true, true));
+    assert!(!restriction_options(ProtectionKind::TrackedChanges).exceptions);
+}
+
+#[test]
+fn editable_ranges_list_their_editors_and_take_groups() {
+    use crate::editing::commands::Outcome;
+    use crate::editing::protection::RangeEditor;
+    let mut e = Editor::open(&blank_body("<w:p><w:r><w:t>one two three</w:t></w:r></w:p>"), fonts()).expect("opens");
+    e.complete(fonts());
+    e.selection = Selection::range(at(&e, 0, 4), at(&e, 0, 7), Granularity::Char);
+    for who in [RangeEditor::Group("everyone".into()), RangeEditor::User("Ada".into()), RangeEditor::Group("editors".into())] {
+        assert!(matches!(e.set_range_editor(who, true, fonts()), Outcome::Changed(_)));
+    }
+    assert!(matches!(e.set_range_editor(RangeEditor::User("Ada".into()), true, fonts()), Outcome::Unchanged(_)), "already one");
+    let list = e.editable_range_list();
+    assert_eq!(list.len(), 1, "one stretch: {list:?}");
+    assert_eq!(list[0].ids.len(), 3);
+    assert_eq!(e.page_showing(list[0].start), Some(0), "on the first page");
+    assert_eq!(e.editors_here().len(), 3);
+    assert!(matches!(e.set_range_editor(RangeEditor::Group("everyone".into()), false, fonts()), Outcome::Changed(_)));
+    assert_eq!(e.editors_here(), [RangeEditor::User("Ada".into()), RangeEditor::Group("editors".into())]);
+    let protect = DocumentProtection { kind: Some(ProtectionKind::ReadOnly), enforce: Some(true), ..Default::default() };
+    assert!(matches!(e.execute(Command::SetDocumentProtection(protect), fonts()), Outcome::Changed(_)));
+    e.selection = Selection::Caret(at(&e, 0, 0));
+    assert!(!e.in_editable_range("Author"));
+    assert!(matches!(e.select_next_editable_range(true), Outcome::Unchanged(_)), "not one the author may edit");
+    e.set_editing_groups(vec!["Editors".into()]);
+    assert!(matches!(e.select_next_editable_range(true), Outcome::Moved), "a member of its group");
+    assert!(e.in_editable_range("Author"));
+    let (bands, marks) = e.editable_region_views(0..1);
+    assert!(!bands.is_empty() && marks.len() == 2, "{bands:?} {marks:?}");
+    e.selection = Selection::Caret(at(&e, 0, 0));
+    assert!(matches!(e.select_all_editable_ranges(), Outcome::Changed(_) | Outcome::Moved));
+    assert!(e.in_editable_range("Author"));
+}

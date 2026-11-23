@@ -483,7 +483,7 @@ impl Editor {
     }
 
     /// The notes of a kind in their references' order, then those the body doesn't refer to in id order.
-    fn notes(&self, kind: NoteKind) -> Vec<StoryId> {
+    pub(super) fn note_stories(&self, kind: NoteKind) -> Vec<StoryId> {
         let map = match kind {
             NoteKind::Foot => &self.doc.footnotes,
             NoteKind::End => &self.doc.endnotes,
@@ -517,7 +517,7 @@ impl Editor {
             StoryId::Endnote(_) => NoteKind::End,
             _ => return None,
         };
-        let notes = self.notes(kind);
+        let notes = self.note_stories(kind);
         let k = notes.iter().position(|&s| s == from)?;
         let to = if forward { notes.get(k + 1) } else { k.checked_sub(1).and_then(|k| notes.get(k)) }?;
         self.nav().story_edge(*to, !forward)

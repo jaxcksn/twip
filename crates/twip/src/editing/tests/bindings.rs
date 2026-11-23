@@ -89,8 +89,9 @@ fn a_gallery_control_takes_a_building_block_of_its_category() {
     .expect("repackages");
     let mut e = Editor::open(&bytes, fonts()).expect("opens");
     let (c, id) = control(&e, "Pick");
-    let category = e.document().controls[&c].props.gallery().expect("a gallery");
-    let names: Vec<String> = e.gallery_entries(category.as_deref()).map(|b| b.name.clone()).collect();
+    let Some(crate::docx::KeptKind::Gallery { gallery, category }) = e.document().controls[&c].props.kept_kind() else { panic!("a gallery") };
+    assert_eq!((gallery.as_deref(), category.as_deref()), (Some("Custom 1"), Some("Sub-templates")));
+    let names: Vec<String> = e.gallery_entries(gallery.as_deref(), category.as_deref()).map(|b| b.name.clone()).collect();
     assert!(names.iter().any(|n| n == "Violation"), "{names:?}");
     run(&mut e, Command::FillControl(FillControl { id: id.clone(), text: None, image: None, docx: None, building_block: Some("Violation".into()) }));
     assert!(texts(&e).iter().any(|t| t == "Violation notice") && !texts(&e).iter().any(|t| t == "Choose"), "{:?}", texts(&e));
@@ -324,4 +325,56 @@ fn a_new_data_parts_item_id_is_a_guid() {
         "{:?}",
         again.data_parts.iter().map(|d| &d.item_id).collect::<Vec<_>>()
     );
+}
+
+#[test]
+fn a_gallery_control_is_inserted_set_and_kept_with_its_gallery_and_category() {
+    use crate::docx::KeptKind;
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-SUBTEMPLATES.docx");
+    let mut e = Editor::open(&std::fs::read(path).expect("fixture"), fonts()).expect("opens");
+    let out = e.insert_gallery_control(Some("Custom 1".into()), None, fonts());
+    assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
+    let kept = |e: &Editor| {
+        let found = e.document().controls.values().find_map(|c| match c.props.kept_kind() {
+            Some(k @ KeptKind::Gallery { .. }) => Some((k, c.props.showing_placeholder)),
+            _ => None,
+        });
+        found.expect("a gallery control")
+    };
+    assert_eq!(kept(&e), (KeptKind::Gallery { gallery: Some("Custom 1".into()), category: None }, true));
+    let c = *e.document().controls.iter().find(|(_, c)| c.props.kept_kind().is_some()).map(|(k, _)| k).expect("the control");
+    let id = super::super::merge::api_id(crate::docx::ElementId::Control(c));
+    assert!(e.gallery_entries(Some("Custom 1"), None).any(|b| b.name == "Violation"), "a Custom 1 entry");
+    assert_eq!(e.gallery_entries(Some("Cover Pages"), None).count(), 0, "not another gallery's");
+    std::mem::take(&mut e.changes);
+    assert!(matches!(e.set_gallery_control(&id, None, Some(Some("Sub-templates".into())), fonts()), Outcome::Changed(_)));
+    assert!(super::content_controls::element_changed(&mut e, crate::docx::ElementId::Control(c)), "the category change is reported");
+    assert_eq!(kept(&e).0, KeptKind::Gallery { gallery: Some("Custom 1".into()), category: Some("Sub-templates".into()) });
+    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let again = Editor::open(&saved, fonts()).expect("reopens");
+    assert_eq!(kept(&again), (KeptKind::Gallery { gallery: Some("Custom 1".into()), category: Some("Sub-templates".into()) }, true));
+}
+
+#[test]
+fn citation_bibliography_and_equation_controls_are_told_apart() {
+    use crate::docx::KeptKind;
+    let sdt = |alias: &str, kind: &str| {
+        format!(
+            r#"<w:sdt><w:sdtPr><w:alias w:val="{alias}"/><w:id w:val="{}"/>{kind}</w:sdtPr><w:sdtContent><w:p><w:r><w:t>{alias}</w:t></w:r></w:p></w:sdtContent></w:sdt>"#,
+            alias.len()
+        )
+    };
+    let body = [
+        sdt("C", "<w:citation/>"),
+        sdt("Bib", "<w:bibliography/>"),
+        sdt("Equa", "<w:equation/>"),
+        sdt("Cover", r#"<w:docPartObj><w:docPartGallery w:val="Cover Pages"/><w:docPartUnique/></w:docPartObj>"#),
+    ]
+    .concat();
+    let e = Editor::open(&super::blank_body(&body), fonts()).expect("opens");
+    let kind = |a: &str| e.document().controls[&control(&e, a).0].props.kept_kind();
+    assert_eq!(kind("C"), Some(KeptKind::Citation));
+    assert_eq!(kind("Bib"), Some(KeptKind::Bibliography));
+    assert_eq!(kind("Equa"), Some(KeptKind::Equation));
+    assert_eq!(kind("Cover"), Some(KeptKind::BuildingBlock { gallery: Some("Cover Pages".into()), category: None }));
 }

@@ -339,8 +339,13 @@ pub fn full_date(props: &ControlProps, text: &str) -> Option<String> {
 /// A date control's `w:date` with the full date `text` shows ([`full_date`]), or without one; `w` its prefix (for
 /// one not read). `None` when it already is so.
 pub fn with_full_date(props: &ControlProps, text: &str, w: &str) -> Option<String> {
+    with_full_date_value(props, full_date(props, text), w)
+}
+
+/// A date control's `w:date` with the full date `want` (`YYYY-MM-DDTHH:MM:SSZ`), or without one; `w` its prefix
+/// (for one not read). `None` when it already is so.
+pub fn with_full_date_value(props: &ControlProps, want: Option<String>, w: &str) -> Option<String> {
     let ControlKind::Date { format, lid } = &props.kind else { return None };
-    let want = full_date(props, text);
     let xml = props.kind_xml.clone().unwrap_or_else(|| {
         format!(
             "<{w}date><{w}dateFormat {w}val=\"{}\"/>{}<{w}storeMappedDataAs {w}val=\"dateTime\"/><{w}calendar {w}val=\"gregorian\"/></{w}date>",

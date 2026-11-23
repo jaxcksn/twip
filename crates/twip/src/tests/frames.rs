@@ -22,17 +22,24 @@ impl Drawn {
 }
 
 fn draw(e: &mut Editor, top: f64, marks: Option<Vec<FormattingMark>>) -> Drawn {
+    draw_with(e, top, &Renderer::default(), |view| {
+        if let Some(m) = marks {
+            view.formatting_marks = m;
+        }
+    })
+}
+
+/// [`draw`] with renderer `r`, the view changed by `edit` first.
+fn draw_with(e: &mut Editor, top: f64, r: &Renderer, edit: impl FnOnce(&mut crate::editing::view::View)) -> Drawn {
     let f = Frame { origin_x: 0.0, origin_y: -top, width: W as f64, height: H as f64, dpr: 1.0, px_per_pt: 1.0, caret: false };
     let visible = Renderer::visible(&e.stack(), &f);
     if visible.end > 0 {
         e.ensure_page(visible.end - 1, fonts());
     }
     let mut view = e.view(visible.clone());
-    if let Some(m) = marks {
-        view.formatting_marks = m;
-    }
-    let (r, mut g) = (Renderer::default(), Graphics::default());
-    g.draw(&r, &view, &e.document().images, &f);
+    edit(&mut view);
+    let mut g = Graphics::default();
+    g.draw(r, &view, &e.document().images, &f);
     let mut px = vec![0u8; W * H * 4];
     let mut target = twip_graphics::cpu::Target::new(&mut px, W as u32, H as u32, W * 4, twip_graphics::cpu::Format::Rgba8).expect("a target");
     g.present(&mut target);
@@ -180,4 +187,27 @@ fn break_labels_cell_and_row_marks_and_special_characters_draw_at_their_marks() 
             |k| k == MarkKind::HiddenParagraph,
         ],
     );
+}
+
+#[test]
+fn editable_regions_draw_pale_gold_under_the_text_and_dark_gold_over_a_dark_page() {
+    use crate::render::appearance::{Appearance, PageMode};
+    let mut e = Editor::open(&crate::editing::tests::blank_body("<w:p><w:r><w:t>Text</w:t></w:r></w:p>"), fonts()).expect("opens");
+    e.complete(fonts());
+    let [px, py, ..] = e.stack().pages[0];
+    // A region over blank paper, 100 pt square from (100, 300) on the page
+    let band = crate::editing::view::Band::upright([100.0, 300.0, 200.0, 400.0]);
+    let region = |view: &mut crate::editing::view::View| view.editable_regions = vec![(0, band)];
+    let (inside, outside) = ((px + 150.0, py + 350.0), (px + 250.0, py + 350.0));
+    let light = draw_with(&mut e, py, &Renderer::default(), region);
+    assert!(paper(light.at(py, outside.0, outside.1)), "paper beside it");
+    let gold = light.at(py, inside.0, inside.1);
+    assert_eq!(&gold[..3], &[0xFF, 0xF2, 0xCC], "Word's pale gold multiplied over white");
+    let mut r = Renderer::default();
+    r.appearance = Appearance::Dark { page: PageMode::Dark };
+    let dark = draw_with(&mut e, py, &r, region);
+    let (page, lit) = (dark.at(py, outside.0, outside.1), dark.at(py, inside.0, inside.1));
+    assert!(page[..3].iter().all(|&v| v < 80), "a dark page: {page:?}");
+    assert!((0..3).all(|c| lit[c] > page[c]), "screened lighter than the page: {lit:?} over {page:?}");
+    assert!(lit[0] > lit[2] && lit[1] > lit[2], "gold, not grey: {lit:?}");
 }

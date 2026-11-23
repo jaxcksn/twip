@@ -42,6 +42,12 @@ impl Graphics {
         for (_, b) in view.field_shading.iter().chain(&view.list_labels).filter(|(pg, _)| *pg == i) {
             fill_band(rec, b, shade);
         }
+        // Editable regions: Word's pale gold, multiplied under the text (screened dark over a dark page)
+        let (gold, blend) = if page.is_dark() { (Color::rgb(0x40_3A1F), BlendMode::Screen) } else { (Color::rgb(0xFF_F2CC), BlendMode::Multiply) };
+        let gold = twip_graphics::paint::Paint { blend, ..aliased(gold) };
+        for (_, b) in view.editable_regions.iter().filter(|(pg, _)| *pg == i) {
+            fill_band(rec, b, gold);
+        }
         for (_, b) in view.fade.iter().filter(|(pg, _)| *pg == i) {
             rec.fill_rect(rect(*b), fade);
         }
