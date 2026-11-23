@@ -610,10 +610,10 @@ impl Editor {
     }
 
     /// The highlight of the ranges and cells on `pages`: only the ranges that reach them are walked.
-    pub(super) fn multi_rects(&mut self, pages: std::ops::Range<usize>) -> Vec<(usize, [f64; 4])> {
+    pub(super) fn multi_rects(&mut self, pages: std::ops::Range<usize>) -> Vec<(usize, super::view::Band)> {
         let mut out = Vec::new();
         for c in self.cell_blocks() {
-            out.extend(self.block_rects(c, pages.clone()));
+            out.extend(self.block_rects(c, pages.clone()).into_iter().map(|(page, r)| (page, super::view::Band::upright(r))));
         }
         let Some(story) = self.selection_story() else { return out };
         // The story's first and last places on the pages

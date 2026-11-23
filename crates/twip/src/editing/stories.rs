@@ -83,7 +83,7 @@ impl Editor {
         };
         self.near = page;
         self.drag = None;
-        self.goal_x = None;
+        self.goal = None;
         self.set_selection(Selection::Caret(Position::text(to.story, to.para, to.unit).with_affinity(to.affinity)));
         true
     }
@@ -511,7 +511,8 @@ impl Editor {
         self.nav().story_edge(*to, !forward)
     }
 
-    pub(super) fn cross_vertical(&mut self, focus: Position, x: f64, down: bool, fonts: &Fonts) -> Option<Position> {
+    /// A line move out of a note or a header or footer to the line beside it on the page, the nearest to `goal`.
+    pub(super) fn cross_vertical(&mut self, focus: Position, goal: [f64; 2], down: bool, fonts: &Fonts) -> Option<Position> {
         let ok: fn(StoryId) -> bool = match focus.story {
             StoryId::HeaderFooter(_) => |s| matches!(s, StoryId::HeaderFooter(_)),
             s if is_note(s) => |s| s == StoryId::Body || is_note(s),
@@ -519,7 +520,9 @@ impl Editor {
         };
         let at = self.nav().line_of(focus)?;
         let cur = &at.geo.lines[at.line];
-        let (top, bottom) = (cur.top, cur.bottom);
+        let band = |l: &super::geometry::GLine| l.band(l.x0(), l.x1());
+        let [_, top, _, bottom] = band(cur);
+        let x = goal[0];
         let mut page = at.page;
         let mut first = true;
         loop {
@@ -529,16 +532,17 @@ impl Editor {
                     .lines
                     .iter()
                     .filter(|l| !l.repeat && ok(geo.stories[l.story].story))
-                    .filter(|l| !first || if down { l.top >= bottom - 0.01 } else { l.bottom <= top + 0.01 })
+                    .filter(|l| !first || if down { band(l)[1] >= bottom - 0.01 } else { band(l)[3] <= top + 0.01 })
                     .min_by(|a, b| {
-                        let ka = if down { a.top } else { -a.bottom };
-                        let kb = if down { b.top } else { -b.bottom };
-                        let dx = |l: &super::geometry::GLine| (l.x0() - x).max(x - l.x1()).max(0.0);
-                        ka.total_cmp(&kb).then(dx(a).total_cmp(&dx(b)))
+                        let (ra, rb) = (band(a), band(b));
+                        let ka = if down { ra[1] } else { -ra[3] };
+                        let kb = if down { rb[1] } else { -rb[3] };
+                        let dx = |r: [f64; 4]| (r[0] - x).max(x - r[2]).max(0.0);
+                        ka.total_cmp(&kb).then(dx(ra).total_cmp(&dx(rb)))
                     });
                 if let Some(l) = best {
                     let story = geo.stories[l.story].story;
-                    let s = l.nearest(x)?;
+                    let s = l.nearest(l.local(goal)[0])?;
                     self.near = page;
                     return Some(Position::text(story, s.para, s.unit));
                 }

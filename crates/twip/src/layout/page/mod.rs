@@ -167,7 +167,7 @@ fn glyph_runs(children: &[Child], dx: f64, dy: f64, out: &mut Vec<(f64, f64, f64
                     }
                 }
             }
-            Child::Items(items) => {
+            Child::Items(items) | Child::Turned { items, .. } => {
                 for it in items.iter() {
                     item(it, dx, dy, out);
                 }

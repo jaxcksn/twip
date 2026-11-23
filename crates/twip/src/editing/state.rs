@@ -380,6 +380,7 @@ impl Editor {
             list_start: self.tab_changes_level(),
             float: matches!(self.selection, Selection::Object(ObjectRef::Floating(_))),
             mac: self.mac,
+            arrows: if code.starts_with("Arrow") { self.caret_arrows() } else { None },
         };
         match super::keymap::command(code, mods, cx)? {
             // Tab takes a list along from its first item as an AutoFormat option: off, it changes the level.

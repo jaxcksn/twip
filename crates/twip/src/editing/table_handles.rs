@@ -77,7 +77,10 @@ impl Editor {
         geo.rows
             .iter()
             .filter(|r| super::stories::reachable(ctx, geo.stories[r.story].host))
-            .filter(|r| px >= r.rect[0] && px <= r.rect[2] && py >= r.rect[1] && py <= r.rect[3])
+            .filter(|r| {
+                let [px, py] = r.turn.back([px, py]);
+                px >= r.rect[0] && px <= r.rect[2] && py >= r.rect[1] && py <= r.rect[3]
+            })
             .max_by_key(|r| r.outer.len())
             .map(|r| TableHover { table: r.table, zone: None })
     }
@@ -135,6 +138,11 @@ impl Editor {
             && let Some(tb) = table_on(&geo, d.table)
         {
             let g = d.guide();
+            // Measures, turned with the table
+            let on = |x: f64, y: f64| {
+                let p = d.turn.at([x, y]);
+                [Pt(p[0]), Pt(p[1])]
+            };
             match d.border {
                 Border::Column(k) => {
                     let row = geo.rows.iter().find(|r| r.table == d.table && r.row == d.row && !r.repeat);
@@ -144,14 +152,14 @@ impl Editor {
                     let widths = [k.checked_sub(1).and_then(edge).map(|a| (a, x)), right];
                     if set.detail == MeasureDetail::Quiet {
                         if let Some((a, b)) = widths.into_iter().flatten().next() {
-                            let at = [Px::of(Pt(x + 8.0 * px)), Px::of(Pt(tb[1] - 24.0 * px))];
+                            let at = on(x + 8.0 * px, tb[1] - 24.0 * px).map(Px::of);
                             measures.push((d.page, Measure::Chip { at, label: length(b - a, set.unit) }));
                         }
                     } else {
-                        let y = Pt(tb[1] - 12.0 * px);
+                        let y = tb[1] - 12.0 * px;
                         for (a, b) in widths.into_iter().flatten() {
                             let label = number(b - a, set.unit);
-                            measures.push((d.page, Measure::Dimension { from: [Pt(a), y], to: [Pt(b), y], label, tone: Tone::Accent }));
+                            measures.push((d.page, Measure::Dimension { from: on(a, y), to: on(b, y), label, tone: Tone::Accent }));
                         }
                         if full(d.snapping) {
                             let free = match d.snapping {
@@ -159,17 +167,17 @@ impl Editor {
                                 Snapping::Free => words::FREE,
                             };
                             let label = format!("Δ {} · {free}", change(x - d.at, set.unit));
-                            let at = [Pt((x - 40.0 * px).max(tb[0])), Pt(tb[3] + 10.0 * px)];
+                            let at = on((x - 40.0 * px).max(tb[0]), tb[3] + 10.0 * px);
                             measures.push((d.page, Measure::Status { at, label, tone: Tone::Accent }));
                         }
                     }
                 }
                 Border::Handle => {
                     let r = [d.span[0], d.row_top, g[0], g[3]];
-                    preview = Some((d.page, r));
+                    preview = Some((d.page, d.turn.rect(r)));
                     let label = size_label(r[2] - r[0], r[3] - r[1], set.unit);
                     let w = label.chars().count() as f64 * 6.0 * px;
-                    measures.push((d.page, Measure::Status { at: [Pt(r[2] - w), Pt(r[3] + 10.0 * px)], label, tone: Tone::Accent }));
+                    measures.push((d.page, Measure::Status { at: on(r[2] - w, r[3] + 10.0 * px), label, tone: Tone::Accent }));
                 }
                 Border::Row(_) => {}
             }
@@ -249,6 +257,7 @@ impl Editor {
             Some(TableZone::RowBorder(r)) => rows.iter().find(|x| x.row == r).map(|x| TableMark::RowBorder { y: x.rect[3], left: x0, right: x1 }),
             Some(TableZone::Move | TableZone::Resize) | None => None,
         };
-        Some(TableHandles { page, corner: first.map(|r| [r.rect[0], r.rect[1]]), end: live.then_some([last.rect[2], last.rect[3]]), mark })
+        let turn = last.turn;
+        Some(TableHandles { page, corner: first.map(|r| [r.rect[0], r.rect[1]]), end: live.then_some([last.rect[2], last.rect[3]]), mark, turn })
     }
 }

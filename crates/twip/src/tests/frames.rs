@@ -122,7 +122,7 @@ fn marks_draw(e: &mut Editor, kinds: &[fn(MarkKind) -> bool]) {
         let (off, on) = (draw(e, top, None), draw(e, top, Some(marks.clone())));
         for m in marks.iter().filter(|m| m.page == page) {
             let Some(k) = kinds.iter().position(|k| k(m.kind)) else { continue };
-            let [x0, t, x1, b] = m.at;
+            let [x0, t, x1, b] = m.at.page();
             let h = b - t;
             // Breaks: their label at the middle, where the dots leave a gap; the rest: their glyph after the start.
             let (a, z) = match m.kind {

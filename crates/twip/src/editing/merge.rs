@@ -285,12 +285,9 @@ impl Editor {
                 for (page, rect) in self.range_rects(a, b, pages.clone()) {
                     if let Some((hp, hx, hy)) = hover
                         && hp == page
-                        && rect[0] <= hx
-                        && hx <= rect[2]
-                        && rect[1] <= hy
-                        && hy <= rect[3]
+                        && rect.contains(hx, hy)
                     {
-                        tip = Some(super::view::Tooltip { text: m.message.clone(), page, rect });
+                        tip = Some(super::view::Tooltip { text: m.message.clone(), page, rect: rect.page() });
                     }
                     out.push(super::view::MarkView { page, rect, severity: m.severity });
                 }
@@ -764,7 +761,7 @@ impl Editor {
                                     && t == table
                                     && range.contains(&row)
                                 {
-                                    grow(page, cell.rect);
+                                    grow(page, cell.page_rect());
                                 }
                             }
                         }
@@ -772,7 +769,7 @@ impl Editor {
                     w => {
                         let (a, b) = self.element_range(&w)?;
                         for (page, r) in self.range_rects(a, b, pages) {
-                            grow(page, r);
+                            grow(page, r.page());
                         }
                     }
                 }

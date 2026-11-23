@@ -13,6 +13,7 @@ use crate::layout::join::LaidBlock;
 use crate::layout::line::break_lines;
 use crate::layout::text::{FieldValues, Kind, shape};
 use crate::layout::units::{EPS, Lu};
+use crate::layout::vertical::{Flow, Turn, Unturned};
 
 use super::{StoryEnv, StoryLayout, layout, layout_from};
 
@@ -451,13 +452,10 @@ fn turned_text(
         let clip = body.is_none() || !tb.auto_fit;
         let bottom = if v.flow == crate::layout::vertical::Flow::DownEast || !clip { f64::INFINITY } else { width + crate::layout::table::INK_SLACK };
         let items = crate::layout::vertical::turned(&story.units, v, frame, across, bottom);
-        let items = if turn.abs() < 1e-9 {
-            items
-        } else {
-            let centre = [(rect[0] + rect[2]) / 2.0, (rect[1] + rect[3]) / 2.0];
-            vec![Item::Turned(Rc::new(crate::layout::fragment::Turned { centre, deg: turn, items }))]
-        };
-        groups.push(Child::Items(items.into()));
+        let centre = [(rect[0] + rect[2]) / 2.0, (rect[1] + rect[3]) / 2.0];
+        let outer = if turn.abs() < 1e-9 { Turn::NONE } else { Turn::about(centre, turn) };
+        let items = if turn.abs() < 1e-9 { items } else { vec![Item::Turned(Rc::new(crate::layout::fragment::Turned { centre, deg: turn, items }))] };
+        groups.push(with_text(items, outer, |outer| crate::layout::vertical::unturned(&story.units, v, frame, across, outer)));
         return Ok(());
     }
     use crate::drawing::text::TextDirection as D;
@@ -471,13 +469,15 @@ fn turned_text(
         lay_lines(tb, quarter, Some((VERTICAL_PITCH, reverse)), env, &mut lines, memos)?;
         let inner =
             Item::Turned(Rc::new(crate::layout::fragment::Turned { centre: [fx, fy], deg: 90.0, items: crate::layout::traverse::items_of(&lines) }));
-        let item = if turn.abs() < 1e-9 {
-            inner
-        } else {
-            let centre = [(rect[0] + rect[2]) / 2.0, (rect[1] + rect[3]) / 2.0];
-            Item::Turned(Rc::new(crate::layout::fragment::Turned { centre, deg: turn, items: vec![inner] }))
-        };
-        groups.push(Child::Items(vec![item].into()));
+        let centre = [(rect[0] + rect[2]) / 2.0, (rect[1] + rect[3]) / 2.0];
+        let outer = if turn.abs() < 1e-9 { Turn::NONE } else { Turn::about(centre, turn) };
+        let item =
+            if turn.abs() < 1e-9 { inner } else { Item::Turned(Rc::new(crate::layout::fragment::Turned { centre, deg: turn, items: vec![inner] })) };
+        // Line stacking
+        let axes = crate::layout::vertical::axes(if reverse { Flow::DownEast } else { Flow::Down });
+        groups.push(with_text(vec![item], outer, |outer| {
+            Rc::new([Unturned { turn: Turn::about([fx, fy], 90.0).then(outer), axes, children: lines.into() }])
+        }));
         return Ok(());
     }
     if body.is_some_and(|b| b.upright) {
@@ -495,8 +495,16 @@ fn turned_text(
     lay_text(tb, frame, env, &mut lines, memos)?;
     let centre = [(rect[0] + rect[2]) / 2.0, (rect[1] + rect[3]) / 2.0];
     let items = crate::layout::traverse::items_of(&lines);
-    groups.push(Child::Items(vec![Item::Turned(Rc::new(crate::layout::fragment::Turned { centre, deg: turn, items }))].into()));
+    let item = Item::Turned(Rc::new(crate::layout::fragment::Turned { centre, deg: turn, items }));
+    groups.push(with_text(vec![item], Turn::about(centre, turn), |outer| {
+        Rc::new([Unturned { turn: outer, axes: Turn::NONE.m, children: lines.into() }])
+    }));
     Ok(())
+}
+
+/// `items` drawing turned text, with that text's lines as `text` gives them under `outer`.
+fn with_text(items: Vec<Item>, outer: Turn, text: impl FnOnce(Turn) -> Rc<[Unturned]>) -> Child {
+    Child::Turned { items: items.into(), text: text(outer) }
 }
 
 // Text boxes

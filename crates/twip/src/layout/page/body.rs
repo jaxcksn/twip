@@ -616,7 +616,7 @@ fn change_bars(space: &BodySpace, body: &mut Vec<Child>) {
                         r.cells.iter().for_each(|cell| lines(&cell.content, dy, &mut row));
                     }
                 }
-                Child::Items(_) => {}
+                Child::Items(_) | Child::Turned { .. } => {}
             }
         }
     }

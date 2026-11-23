@@ -476,9 +476,10 @@ impl Editor {
             if let Some(c) = self.caret_at(r.start).filter(|c| visible.contains(&c.page)) {
                 anchors.push((r.root, c.page, [c.x, c.top]));
             }
-            let rects = self.range_rects(r.start, r.end, visible.clone());
-            if !rects.is_empty() {
-                views.push(CommentView { thread: r.root, rects, active: active == Some(r.root) });
+            let bands = self.range_rects(r.start, r.end, visible.clone());
+            if !bands.is_empty() {
+                let rects = bands.iter().map(|&(page, b)| (page, b.page())).collect();
+                views.push(CommentView { thread: r.root, rects, bands, active: active == Some(r.root) });
             }
         }
         self.near = near;

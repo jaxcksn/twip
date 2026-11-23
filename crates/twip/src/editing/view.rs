@@ -92,18 +92,81 @@ impl PageStack {
     }
 }
 
+/// A box over text: `rect` as its line is laid out, drawn on the page by `turn`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Band {
+    /// The box as the line is laid out.
+    pub rect: [f64; 4],
+    /// Where the line is drawn on the page.
+    pub turn: crate::layout::vertical::Turn,
+}
+
+impl Band {
+    /// A box drawn where it is laid out.
+    pub fn upright(rect: [f64; 4]) -> Band {
+        Band { rect, turn: crate::layout::vertical::Turn::NONE }
+    }
+
+    /// The box on the page that holds it.
+    pub fn page(&self) -> [f64; 4] {
+        self.turn.rect(self.rect)
+    }
+
+    /// Whether the page point `x`, `y` lies in it, edges included.
+    pub fn contains(&self, x: f64, y: f64) -> bool {
+        let [lx, ly] = self.turn.back([x, y]);
+        let [x0, y0, x1, y1] = self.rect;
+        lx >= x0 - 1e-9 && lx <= x1 + 1e-9 && ly >= y0 - 1e-9 && ly <= y1 + 1e-9
+    }
+}
+
+/// A caret on page `page`: a bar across a line running `dir`, in the box from `x`, `top` to `right`, `bottom`
+/// (`right` is `x` for an upright horizontal line's, `bottom` is `top` for an upright vertical one's).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct CaretView {
+    /// The page it is on.
     pub page: usize,
+    /// The box's left.
     pub x: f64,
+    /// The box's top.
     pub top: f64,
+    /// The box's bottom.
     pub bottom: f64,
+    /// The box's right.
+    pub right: f64,
+    /// The way the line runs.
+    pub dir: super::geometry::LineDir,
+    /// The bar's ends: on the line's top side, then on its bottom side.
+    pub ends: [[f64; 2]; 2],
+}
+
+impl CaretView {
+    /// Caret `c` on page `page`.
+    pub fn of(page: usize, c: super::geometry::CaretRect) -> CaretView {
+        CaretView { page, x: c.x, top: c.top, bottom: c.bottom, right: c.right, dir: c.dir, ends: c.ends }
+    }
+
+    /// Whether the bar runs along neither of the page's axes: across a line turned by other than quarter turns.
+    pub fn slanted(&self) -> bool {
+        let [[x0, y0], [x1, y1]] = self.ends;
+        (x1 - x0).abs() > 1e-9 && (y1 - y0).abs() > 1e-9
+    }
+
+    /// The box the bar fills, at least a point thick.
+    pub fn rect(&self) -> [f64; 4] {
+        [self.x, self.top, self.right.max(self.x + 1.0), self.bottom.max(self.top + 1.0)]
+    }
+
+    /// Whether the line it is across runs down or up the page.
+    pub fn vertical(&self) -> bool {
+        self.dir != super::geometry::LineDir::Horizontal
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum SelectionView {
     None,
-    Text(Vec<(usize, [f64; 4])>),
+    Text(Vec<(usize, Band)>),
     Cells(Vec<(usize, [f64; 4])>),
     /// Each selected object's frame, turned as it's drawn, and whether it shows its handles.
     Object(Vec<Outline>, bool),
@@ -175,7 +238,10 @@ pub struct Guides {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct CorrectionView {
+    /// The corrected text's boxes on the page.
     pub rects: Vec<(usize, [f64; 4])>,
+    /// The corrected text's bands, to underline.
+    pub bands: Vec<(usize, Band)>,
     pub button: Option<(usize, [f64; 4])>,
 }
 
@@ -254,6 +320,8 @@ pub struct TableHandles {
     pub corner: Option<[f64; 2]>,
     pub end: Option<[f64; 2]>,
     pub mark: Option<TableMark>,
+    /// Where the table, as laid out, is drawn: the corner, end and mark are as laid out.
+    pub turn: crate::layout::vertical::Turn,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -297,9 +365,9 @@ pub struct View {
     pub table_preview: Option<(usize, [f64; 4])>,
     pub correction: Option<CorrectionView>,
     /// The IME composition showing, to underline.
-    pub composition: Vec<(usize, [f64; 4])>,
+    pub composition: Vec<(usize, Band)>,
     pub cursor: super::input::Cursor,
-    pub spelling: Vec<(usize, [f64; 4])>,
+    pub spelling: Vec<(usize, Band)>,
     pub drop: Option<CaretView>,
     pub marks: Vec<MarkView>,
     pub tooltip: Option<Tooltip>,
@@ -308,14 +376,14 @@ pub struct View {
     pub comment_anchors: Vec<(crate::docx::review::CommentId, usize, [f64; 2])>,
     pub formatting_marks: Vec<FormattingMark>,
     pub boundaries: Vec<(usize, [f64; 4])>,
-    pub field_shading: Vec<(usize, [f64; 4])>,
+    pub field_shading: Vec<(usize, Band)>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct FormattingMark {
     pub page: usize,
     pub kind: MarkKind,
-    pub at: [f64; 4],
+    pub at: Band,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -398,7 +466,10 @@ impl MarkOptions {
 #[derive(Clone, Debug, PartialEq)]
 pub struct CommentView {
     pub thread: crate::docx::review::CommentId,
+    /// The commented text's boxes on the page.
     pub rects: Vec<(usize, [f64; 4])>,
+    /// The commented text's bands, to tint.
+    pub bands: Vec<(usize, Band)>,
     pub active: bool,
 }
 
@@ -439,7 +510,7 @@ impl Severity {
 #[derive(Clone, Debug, PartialEq)]
 pub struct MarkView {
     pub page: usize,
-    pub rect: [f64; 4],
+    pub rect: Band,
     pub severity: Severity,
 }
 
@@ -458,6 +529,20 @@ pub struct Tooltip {
 }
 
 #[cfg(any(test, feature = "inspect"))]
+/// A caret's bar: a vertical line's also gives its right end and the way its line runs.
+fn caret_json(c: CaretView) -> serde_json::Value {
+    let mut v = serde_json::json!({ "page": c.page, "x": r2(c.x), "top": r2(c.top), "bottom": r2(c.bottom) });
+    if c.vertical() {
+        v["right"] = serde_json::json!(r2(c.right));
+        v["line"] = serde_json::json!(format!("{:?}", c.dir));
+    }
+    if c.slanted() {
+        v["ends"] = serde_json::json!(c.ends.map(|p| p.map(r2)));
+    }
+    v
+}
+
+#[cfg(any(test, feature = "inspect"))]
 fn r2(x: f64) -> f64 {
     (x * 100.0).round() / 100.0
 }
@@ -467,7 +552,9 @@ pub fn canonical(v: &View) -> String {
     let rects = |r: &[f64; 4]| serde_json::json!([r2(r[0]), r2(r[1]), r2(r[2]), r2(r[3])]);
     let selection = match &v.selection {
         SelectionView::None => serde_json::Value::Null,
-        SelectionView::Text(rs) => serde_json::json!(rs.iter().map(|(p, r)| serde_json::json!({ "page": p, "rect": rects(r) })).collect::<Vec<_>>()),
+        SelectionView::Text(rs) => {
+            serde_json::json!(rs.iter().map(|(p, b)| serde_json::json!({ "page": p, "rect": rects(&b.page()) })).collect::<Vec<_>>())
+        }
         SelectionView::Cells(rs) => {
             serde_json::json!({ "cells": rs.iter().map(|(p, r)| serde_json::json!({ "page": p, "rect": rects(r) })).collect::<Vec<_>>() })
         }
@@ -480,17 +567,20 @@ pub fn canonical(v: &View) -> String {
         "layout": { "revision": v.snapshot.revision().0, "pages": v.snapshot.pages().len(), "status": format!("{:?}", v.snapshot.status()).split_whitespace().next().unwrap_or("").trim_end_matches(['{', '(']).to_string() },
         "pages": v.stack.pages.iter().map(rects).collect::<Vec<_>>(),
         "visible": [v.pages_visible.start, v.pages_visible.end],
-        "caret": v.caret.map(|c| serde_json::json!({ "page": c.page, "x": r2(c.x), "top": r2(c.top), "bottom": r2(c.bottom) })),
+        "caret": v.caret.map(caret_json),
         "selection": selection,
         "story": format!("{:?}", v.story),
         "cursor": serde_json::to_value(v.cursor).unwrap_or_default(),
     });
     if let Some(d) = v.drop {
-        out["drop"] = serde_json::json!({ "page": d.page, "x": r2(d.x), "top": r2(d.top), "bottom": r2(d.bottom) });
+        out["drop"] = caret_json(d);
     }
     if !v.marks.is_empty() {
         out["marks"] = serde_json::json!(
-            v.marks.iter().map(|m| serde_json::json!({ "page": m.page, "rect": rects(&m.rect), "severity": m.severity.name() })).collect::<Vec<_>>()
+            v.marks
+                .iter()
+                .map(|m| serde_json::json!({ "page": m.page, "rect": rects(&m.rect.page()), "severity": m.severity.name() }))
+                .collect::<Vec<_>>()
         );
     }
     if !v.regions.is_empty() {

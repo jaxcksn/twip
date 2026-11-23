@@ -60,6 +60,7 @@ mod table_structure;
 mod text_units;
 mod tracked_structure;
 mod transactions;
+mod vertical;
 
 use std::path::Path;
 

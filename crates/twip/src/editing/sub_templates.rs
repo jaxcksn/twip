@@ -999,42 +999,41 @@ impl Editor {
 
     pub(super) fn expansion_at(&mut self, x: f64, y: f64) -> Option<(FieldId, u32)> {
         let (page, px, py) = self.stack().page_at(x, y)?;
-        let snapshot = self.layout.snapshot();
-        let (frag, _) = snapshot.page(page)?;
         let mut found = None;
-        for child in frag.children.iter() {
-            let crate::layout::fragment::PageChild::Body(b) = child else { continue };
-            let (bx, by) = b.offset;
-            crate::layout::traverse::lines_in(&b.children, &mut |_, l, dx, dy| {
-                for (r, e) in l.line.expansions.iter() {
-                    let (x0, y0) = (r[0] + dx + l.x + bx, r[1] + dy + l.y + by);
-                    if (x0..=x0 + e.size.0).contains(&px) && (y0..=y0 + e.size.1).contains(&py) {
-                        found = Some((e.field, e.part));
-                    }
-                }
-            });
-        }
+        self.each_expansion(page, &mut |field, part, r, turn| {
+            let [lx, ly] = turn.back([px, py]);
+            if (r[0]..=r[2]).contains(&lx) && (r[1]..=r[3]).contains(&ly) {
+                found = Some((field, part));
+            }
+        });
         found
     }
 
     /// Where a shown sub-template is drawn on `pages`: one rect per page.
     pub(super) fn expansion_rects(&mut self, f: FieldId, pages: std::ops::Range<usize>) -> Vec<(usize, [f64; 4])> {
-        let snapshot = self.layout.snapshot();
         let mut out = Vec::new();
         for page in pages {
-            let Some((frag, _)) = snapshot.page(page) else { continue };
-            for child in frag.children.iter() {
-                let crate::layout::fragment::PageChild::Body(b) = child else { continue };
-                let (bx, by) = b.offset;
-                crate::layout::traverse::lines_in(&b.children, &mut |_, l, dx, dy| {
-                    for (r, e) in l.line.expansions.iter().filter(|(_, e)| e.field == f) {
-                        let (x0, y0) = (r[0] + dx + l.x + bx, r[1] + dy + l.y + by);
-                        out.push((page, [x0, y0, x0 + e.size.0, y0 + e.size.1]));
-                    }
-                });
-            }
+            self.each_expansion(page, &mut |field, _, r, turn| {
+                if field == f {
+                    out.push((page, turn.rect(r)));
+                }
+            });
         }
         out
+    }
+
+    /// Each sub-template shown in the body of page `page`: its field and part, its box as its line is laid out and
+    /// where that line is drawn.
+    fn each_expansion(&mut self, page: usize, f: &mut dyn FnMut(FieldId, u32, [f64; 4], crate::layout::vertical::Turn)) {
+        if self.expansions.as_ref().is_none_or(|x| x.paras.is_empty()) {
+            return;
+        }
+        let snapshot = self.layout.snapshot();
+        self.pages.sync(&snapshot);
+        let Some(g) = self.pages.page(page, &self.index) else { return };
+        for &(field, part, r, turn) in &g.expansions {
+            f(field, part, r, turn);
+        }
     }
 
     pub(super) fn expansion_click(&mut self, x: f64, y: f64, clicks: u8, fonts: &Fonts) -> bool {
