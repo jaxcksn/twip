@@ -84,6 +84,10 @@ fn dump(r: &mut Run) -> Value {
 fn check(r: &mut Run, n: usize, full: bool) {
     let st = inspect(&mut r.e, "caret,integrity,dump", true);
     assert_eq!(st["integrity"], json!([]), "step {n}: integrity");
+    if let Err(why) = r.e.check_review_marks() {
+        panic!("step {n}: revision marks: {why}");
+    }
+    let _ = r.e.review_counts();
     if let Some(p) = st["caret"]["para"].as_u64() {
         let depth = super::scenarios::paragraph(&st["dump"], p as usize)["depth"].as_u64();
         let chain = st["caret"]["chain"].as_array().map(|c| c.len() as u64);

@@ -29,10 +29,10 @@ pub struct JobNotes {
 fn joined_notes(
     notes: &HashMap<i64, Vec<Block>>,
     order: &[i64],
-    view: crate::docx::review::MarkupView,
+    review: &crate::docx::review::ReviewView,
     once: bool,
 ) -> Option<HashMap<i64, Vec<Block>>> {
-    let hidden = |b: Option<&Vec<Block>>| matches!(b.and_then(|b| b.last()), Some(Block::Para(p)) if view.hides(&p.mark.rev));
+    let hidden = |b: Option<&Vec<Block>>| matches!(b.and_then(|b| b.last()), Some(Block::Para(p)) if review.hides(&p.mark.rev));
     if !order.iter().any(|id| hidden(notes.get(id))) {
         return None;
     }
@@ -170,9 +170,8 @@ impl JobNotes {
                 }
             }
         }
-        let view = doc.review.view;
         let foot: Vec<i64> = of(NoteKind::Foot).collect();
-        let joined = [joined_notes(&doc.footnotes, &foot, view, false), joined_notes(&doc.endnotes, &endnotes, view, true)];
+        let joined = [joined_notes(&doc.footnotes, &foot, &doc.review, false), joined_notes(&doc.endnotes, &endnotes, &doc.review, true)];
         JobNotes { numbers, endnotes, ends, separator, paged, keyed, joined }
     }
 

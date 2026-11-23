@@ -37,6 +37,12 @@ fn resolve(e: &mut Editor, accept: bool, scope: Scope) -> Outcome {
         (Scope::Author(a), false) => Command::RejectAllRevisions(by(Some(a))),
         (Scope::Revision(id), true) => Command::AcceptRevision(crate::api::record::revision_id(id)),
         (Scope::Revision(id), false) => Command::RejectRevision(crate::api::record::revision_id(id)),
+        (Scope::Shown, accept) => {
+            let out = e.resolve_shown(accept, fonts());
+            let v = integrity::check(e.document(), e.index(), &e.selection());
+            assert!(v.is_empty(), "integrity after resolving: {v:?}");
+            return out;
+        }
     };
     let out = e.execute(cmd, fonts());
     let v = integrity::check(e.document(), e.index(), &e.selection());
@@ -501,4 +507,79 @@ fn accepting_in_a_column_of_cells_leaves_the_other_columns() {
     e.set_caret_for_benchmark(Selection::Cells { table: id, anchor: cell(0, 1), focus: cell(2, 1), shape: CellShape::Columns });
     resolve(&mut e, true, Scope::Selection);
     assert_eq!(marked(&e), [true, false, true, true, false, true, true, false, true]);
+}
+
+/// Accept All Changes Shown and Reject All Changes Shown take only what Show Markup shows: its kinds and reviewers.
+#[test]
+fn changes_shown_resolve_only_the_shown_kinds_and_reviewers() {
+    for accept in [true, false] {
+        let mut e = open("FX-REVIEW-RUNS.docx");
+        let before = revisions(e.document(), e.index());
+        assert!(before.iter().any(|r| r.kind.is_formatting()) && before.iter().any(|r| !r.kind.is_formatting()), "both kinds");
+        assert_eq!(e.set_show_markup(true, false, true), Outcome::Moved);
+        assert!(matches!(resolve(&mut e, accept, Scope::Shown), Outcome::Changed(_)));
+        let left = revisions(e.document(), e.index());
+        assert_eq!(left.len(), before.iter().filter(|r| r.kind.is_formatting()).count(), "the formatting changes stay");
+        assert!(left.iter().all(|r| r.kind.is_formatting()));
+        e.execute(Command::Undo, fonts());
+        assert_eq!(revisions(e.document(), e.index()), before, "one undo step");
+        // Every reviewer hidden: nothing shown to take.
+        e.set_show_markup(true, true, true);
+        let names: Vec<String> = e.document().people.persons.iter().map(|p| p.name.to_string()).collect();
+        e.set_hidden_reviewers(&names.iter().map(String::as_str).collect::<Vec<_>>());
+        assert!(matches!(resolve(&mut e, accept, Scope::Shown), Outcome::Unchanged(_)));
+        // One reviewer shown: theirs go, the rest stay.
+        let first = e.document().people.persons[0].name.to_string();
+        let others: Vec<&str> = names.iter().map(String::as_str).filter(|n| *n != first).collect();
+        e.set_hidden_reviewers(&others);
+        assert!(matches!(resolve(&mut e, accept, Scope::Shown), Outcome::Changed(_)));
+        let left = revisions(e.document(), e.index());
+        assert!(left.iter().all(|r| r.author.0 != 0), "the shown reviewer's revisions resolved");
+        assert_eq!(left.len(), before.iter().filter(|r| r.author.0 != 0).count());
+    }
+}
+
+/// Accept All Changes and Stop Tracking: every revision accepted in one undo step, and tracking off.
+#[test]
+fn accept_all_and_stop_tracking() {
+    let mut e = open("FX-REVIEW-RUNS.docx");
+    e.set_tracking(true);
+    let depth = e.history().undo_depth();
+    assert!(matches!(e.accept_all_and_stop_tracking(fonts()), Outcome::Changed(_)));
+    assert!(revisions(e.document(), e.index()).is_empty() && !e.tracking());
+    assert_eq!(e.history().undo_depth(), depth + 1);
+    e.execute(Command::Undo, fonts());
+    assert!(!revisions(e.document(), e.index()).is_empty(), "undo brings the revisions back");
+    // Nothing to accept: tracking still stops.
+    let mut e = open("FX-REVIEW-RUNS-ACCEPTED.docx");
+    e.set_tracking(true);
+    assert_eq!(e.accept_all_and_stop_tracking(fonts()), Outcome::Moved);
+    assert!(!e.tracking());
+    // Protection that keeps tracking on refuses both.
+    let mut e = open("FX-REVIEW-PROTECTED.docx");
+    assert!(e.document().settings.protection.as_ref().is_some_and(|p| p.forces_tracking()), "setup: protected for tracked changes");
+    assert!(!matches!(e.accept_all_and_stop_tracking(fonts()), Outcome::Changed(_)));
+    assert!(e.tracking());
+}
+
+/// Protection that forces tracking keeps Track moves and Track formatting on: turning either off is refused, and
+/// formatting is tracked even when the document's settings say not to.
+#[test]
+fn protection_keeps_track_options_on() {
+    let mut e = open("FX-REVIEW-PROTECTED.docx");
+    assert!(e.document().settings.protection.as_ref().is_some_and(|p| p.forces_tracking()), "setup: protected for tracked changes");
+    for (moves, formatting) in [(false, true), (true, false), (false, false)] {
+        assert!(matches!(e.set_track_options(moves, formatting), Outcome::Refused(_)), "{moves} {formatting}");
+    }
+    assert_eq!(e.track_options(), (true, true));
+    let mut doc = e.document().clone();
+    (doc.settings.do_not_track_moves, doc.settings.do_not_track_formatting) = (true, true);
+    let mut e = Editor::with_document(doc, fonts());
+    e.execute(Command::SelectAll, fonts());
+    e.execute(Command::SetBold(true), fonts());
+    let tracked = e.document().sections.iter().flat_map(|s| &s.blocks).any(|b| match b {
+        Block::Para(p) => p.inlines.iter().filter_map(|i| i.run()).any(|r| r.rev.fmt.is_some()),
+        Block::Table(_) => false,
+    });
+    assert!(tracked, "the bold is a formatting revision");
 }

@@ -250,3 +250,47 @@ fn a_comment_edit_keeps_the_other_comments_as_read() {
     assert!(kept.contains("w14:textId") && now.contains(kept), "comment 1 as read: {now}");
     assert!(now.contains(r#"w:initials="GX""#), "comment 0 rewritten: {now}");
 }
+
+/// Delete All Comments takes every thread, resolved ones too, in one undo step; Delete All Comments Shown only those
+/// Show Markup shows; a hidden reviewer's or a hidden kind's comments don't draw.
+#[test]
+fn delete_all_comments_and_the_shown_ones() {
+    let mut e = alpha();
+    select(&mut e, 0, 5);
+    changed(e.add_comment(&RichText::plain("one"), "Ann", fonts()));
+    let first = only_root(&mut e);
+    changed(e.resolve_comment(first, true, fonts()));
+    changed(e.reply_comment(first, &RichText::plain("bob's reply"), "Bob", fonts()));
+    select(&mut e, 6, 10);
+    changed(e.add_comment(&RichText::plain("two"), "Bob", fonts()));
+    let second = e.comment_threads().into_iter().map(|t| t.root).find(|&r| r != first).expect("Bob's thread");
+    changed(e.reply_comment(second, &RichText::plain("ann's reply"), "Ann", fonts()));
+    e.complete(fonts());
+    assert_eq!(e.view(0..1).comments.len(), 2);
+    assert_eq!(e.set_hidden_reviewers(&["Bob"]), Outcome::Moved);
+    e.complete(fonts());
+    let shown: Vec<CommentId> = e.view(0..1).comments.iter().map(|c| c.thread).collect();
+    assert_eq!(shown, vec![first], "Bob's comment doesn't draw");
+    // A thread shows by its first comment: replies by the other reviewer go with it.
+    let by_body = |e: &Editor, text: &str| {
+        e.document().comments.by_id.values().find(|c| RichText::from_blocks(&c.body).to_plain() == text).map(|c| c.id).expect(text)
+    };
+    assert!(e.comment_shown(by_body(&e, "bob's reply")), "Bob's reply in Ann's thread shows");
+    assert!(!e.comment_shown(by_body(&e, "ann's reply")), "Ann's reply in Bob's thread doesn't");
+    assert_eq!((e.review_counts().0.comments, e.review_counts().1.comments), (2, 1));
+    changed(e.delete_all_comments(true, fonts()));
+    let left: Vec<Vec<String>> = threads(&mut e).iter().map(|t| t.1.iter().map(|c| c.1.clone()).collect()).collect();
+    assert_eq!(left, vec![vec!["two".to_string(), "ann's reply".to_string()]], "Bob's thread stays whole");
+    changed(e.execute(Command::Undo, fonts()));
+    assert_eq!(threads(&mut e).len(), 2, "one undo step");
+    assert_eq!(e.set_show_markup(true, true, false), Outcome::Moved);
+    e.complete(fonts());
+    assert!(e.view(0..1).comments.is_empty(), "comments left out of Show Markup don't draw");
+    assert_eq!(e.delete_all_comments(true, fonts()), Outcome::Unchanged("no comment shown"));
+    changed(e.delete_all_comments(false, fonts()));
+    assert!(e.document().comments.by_id.is_empty() && threads(&mut e).is_empty());
+    let mut back = reread(&e);
+    assert!(threads(&mut back).is_empty(), "saved without them");
+    changed(e.execute(Command::Undo, fonts()));
+    assert_eq!(threads(&mut e).len(), 2);
+}

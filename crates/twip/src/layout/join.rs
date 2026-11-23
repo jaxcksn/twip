@@ -43,7 +43,7 @@ impl JoinMap {
 /// doesn't show, a vanished mark (a hidden paragraph mark, a style separator) made since reading, which joins as
 /// reading joins one.
 fn hides_mark(b: &Block, review: &ReviewView) -> bool {
-    matches!(b, Block::Para(p) if review.view.hides(&p.mark.rev) || (p.mark.hidden && !review.show_hidden))
+    matches!(b, Block::Para(p) if review.hides(&p.mark.rev) || (p.mark.hidden && !review.show_hidden))
 }
 
 /// Whether mark `r` is a style separator (`w:specVanish`).
@@ -70,7 +70,7 @@ pub fn chain_start<B: Borrow<Block>>(blocks: &[B], i: usize, review: &ReviewView
 
 /// Whether a row is hidden: hidden text (while it doesn't show) or a row change the markup view hides.
 fn row_hidden(r: &crate::docx::Row, review: &ReviewView) -> bool {
-    (r.vanished && !review.show_hidden) || review.view.hides_row(&r.rev)
+    (r.vanished && !review.show_hidden) || review.hides_row(&r.rev)
 }
 
 /// Whether every row of `t` is hidden.
@@ -109,7 +109,7 @@ pub fn joined_target<'a, B: Borrow<Block>>(
 ) -> Option<&'a Rc<crate::docx::ParaStyle>> {
     let view = review.view;
     let Some(Block::Para(p)) = blocks.get(end).map(Borrow::borrow) else { return None };
-    if !view.hides(&p.mark.rev) {
+    if !review.hides(&p.mark.rev) {
         return None;
     }
     let style = next_shown_mark(blocks, end + 1, review).map_or(last, |q| Some(q.para_style_in(view)))?;

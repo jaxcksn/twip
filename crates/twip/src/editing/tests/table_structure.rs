@@ -1050,3 +1050,32 @@ fn table_to_text_converts_nested_tables_when_asked() {
     assert!(!body_shape(&e).iter().any(|s| s.starts_with("table")), "flattened: {:?}", body_shape(&e));
     assert!(texts(&e).contains(&"x\ty".to_string()), "{:?}", texts(&e));
 }
+
+/// With Track formatting off, a tracked row height, cell shading and vertical merge apply untracked; with it on,
+/// each is a formatting revision.
+#[test]
+fn track_formatting_off_leaves_row_and_cell_changes_untracked() {
+    use crate::api::value::{AutoOr, Color, HeightRule, Points, RowHeight};
+    for formatting in [true, false] {
+        let mut e = three_by_two();
+        e.set_tracking(true);
+        e.set_track_options(true, formatting);
+        caret(&mut e, 0);
+        e.execute(Command::SetRowHeight(AutoOr::Value(RowHeight { height: Points(30.0), rule: HeightRule::Exact })), fonts());
+        e.execute(Command::SetCellShading(Some(Color(0xff0000))), fonts());
+        // A tracked edit that merges cells vertically (Merge Cells itself is untracked, as in Word).
+        let mut rows = table(&e).rows.clone();
+        (rows[0].cells[2].v_merge, rows[1].cells[2].v_merge) = (VMerge::Restart, VMerge::Continue);
+        let (id, grid) = (crate::layout::TableId(table(&e).id), table(&e).grid.clone());
+        assert!(matches!(e.rebuild("Cell Properties", id, rows, grid, (0, 0), fonts()), Outcome::Changed(_)));
+        let t = table(&e);
+        assert!(t.rows[0].height.is_some() && t.rows[0].cells[0].shading.is_some(), "applied");
+        assert_eq!([t.rows[0].cells[2].v_merge, t.rows[1].cells[2].v_merge], [VMerge::Restart, VMerge::Continue], "merged");
+        let changes = (
+            t.rows.iter().any(|r| r.rev.change.is_some()),
+            t.rows.iter().flat_map(|r| &r.cells).any(|c| c.rev.change.is_some()),
+            t.rows.iter().flat_map(|r| &r.cells).any(|c| matches!(c.rev.structural, Some((_, crate::docx::review::CellMarkKind::Merge { .. })))),
+        );
+        assert_eq!(changes, (formatting, formatting, formatting), "track formatting {formatting}");
+    }
+}

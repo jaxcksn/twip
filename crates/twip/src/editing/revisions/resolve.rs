@@ -23,12 +23,15 @@ pub enum Scope {
     All,
     Author(String),
     Revision(RevisionId),
+    /// The revisions Show Markup shows: of the kinds and reviewers shown.
+    Shown,
 }
 
 enum Who {
     All,
     Author(AuthorId),
     Ids(HashSet<RevisionId>),
+    Shown(crate::docx::review::ShowMarkup),
 }
 
 impl Who {
@@ -37,6 +40,7 @@ impl Who {
             Who::All => true,
             Who::Author(a) => m.author == *a,
             Who::Ids(ids) => ids.contains(&m.id),
+            Who::Shown(show) => show.shows(m),
         }
     }
 }
@@ -261,6 +265,29 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
+    /// Accepts or rejects the revisions Show Markup shows (Accept All Changes Shown, Reject All Changes Shown): one undo
+    /// step; those it leaves out stay.
+    pub fn resolve_shown(&mut self, accept: bool, fonts: &Fonts) -> Outcome {
+        self.resolve_revisions(accept, &Scope::Shown, fonts)
+    }
+
+    /// Accepts every revision and turns tracking off (Accept All Changes and Stop Tracking): the acceptance one undo
+    /// step, tracking a setting as Track Changes sets it.
+    pub fn accept_all_and_stop_tracking(&mut self, fonts: &Fonts) -> Outcome {
+        if self.tracking_locked() {
+            return Outcome::unavailable("protection forces tracking");
+        }
+        let out = self.resolve_revisions(true, &Scope::All, fonts);
+        if matches!(out, Outcome::Refused(_)) {
+            return out;
+        }
+        let stopped = self.doc.settings.track_revisions && self.set_tracking(false);
+        match out {
+            Outcome::Unchanged(_) if stopped => Outcome::Moved,
+            o => o,
+        }
+    }
+
     fn pick(&mut self, scope: &Scope) -> Option<Pick> {
         let f = found(&self.doc, &self.index);
         let base = |who: Who| Pick { who, blocks: None, inside: None, tied: HashMap::new(), moves: HashSet::new(), move_ranges: HashSet::new() };
@@ -273,6 +300,15 @@ impl Editor {
             Scope::Author(name) => {
                 let a = AuthorId(self.doc.people.persons.iter().position(|p| &*p.name == name.as_str())? as u32);
                 base(Who::Author(a)).with_moves(&f, |it| it.mark.author == a)
+            }
+            Scope::Shown => {
+                let show = self.doc.review.markup.show.clone();
+                if !f.items.iter().any(|it| show.shows(&it.mark)) {
+                    return None;
+                }
+                let touches = |it: &Item| show.shows(&it.mark);
+                let moves = base(Who::All).with_moves(&f, touches);
+                Pick { who: Who::Shown(show), ..moves }
             }
             Scope::Revision(id) => {
                 let list = revisions(&self.doc, &self.index);
@@ -624,6 +660,190 @@ impl Editor {
         };
         self.selection = s;
         self.repair_selection();
+    }
+
+    /// Whether marks found at `at` still hold: no edit of marks since, nor of a paragraph that holds one unless there
+    /// were none.
+    fn marks_hold(&self, at: (u64, u64), flow: Option<u32>, empty: bool) -> bool {
+        let marks = self.revision_marks;
+        flow == self.index.flow && at.0 == marks.0 && (empty || at.1 == marks.1)
+    }
+
+    /// The revision marks by paragraph, found from the whole document only when no edit could be followed.
+    pub(in crate::editing) fn review_marks(&mut self) -> &super::marks::Marks {
+        let fresh = self.review_marks.as_ref().is_some_and(|(at, flow, m)| self.marks_hold(*at, *flow, m.is_empty()));
+        if !fresh {
+            #[cfg(test)]
+            {
+                self.mark_builds += 1;
+            }
+            let m = crate::prof::time("review:marks", || super::marks::Marks::build(&self.doc, &self.index));
+            self.review_marks = Some((self.revision_marks, self.index.flow, m));
+        }
+        &self.review_marks.as_ref().expect("just found").2
+    }
+
+    /// Follows an edit with the revision marks found before it (as of `was`), if they were.
+    pub(in crate::editing) fn follow_marks(&mut self, was: (u64, u64), tx: &Tx) {
+        let Some((at, flow, mut m)) = self.review_marks.take() else { return };
+        let held = flow == self.index.flow && at.0 == was.0 && (m.is_empty() || at.1 == was.1);
+        if !held {
+            self.review_marks = Some((at, flow, m));
+            return;
+        }
+        // An edit that groups no marks anew can still move where a section's change ends
+        if self.marks_hold(at, flow, m.is_empty()) {
+            if m.follow_ends(&self.doc, &self.index, &tx.targets.paras).is_ok() {
+                self.review_marks = Some((at, flow, m));
+            }
+            return;
+        }
+        if m.patch(&self.doc, &self.index, &tx.undo, &tx.targets.paras).is_ok() {
+            self.review_marks = Some((self.revision_marks, flow, m));
+        }
+    }
+
+    /// Whether the revision marks followed through the edits so far are those the whole document has.
+    #[cfg(test)]
+    pub(in crate::editing) fn check_review_marks(&mut self) -> Result<(), String> {
+        let Some((at, flow, m)) = &self.review_marks else { return Ok(()) };
+        if !self.marks_hold(*at, *flow, m.is_empty()) {
+            return Ok(());
+        }
+        m.same(&super::marks::Marks::build(&self.doc, &self.index))?;
+        let mut listed = super::index::Counts::default();
+        for r in revisions(&self.doc, &self.index) {
+            listed.add(r.kind, 1);
+        }
+        let (all, _) = m.counts(&self.doc.review.markup.show);
+        if all != listed {
+            return Err(format!("counts {all:?} != the list's {listed:?}"));
+        }
+        Ok(())
+    }
+
+    /// Whether a revision of `kind` by `author` shows in a balloon in the review view: All Markup, a balloon mode, its
+    /// kind and reviewer shown; deletions in Balloons mode, formatting changes in either.
+    pub fn in_balloon(&self, kind: RevisionKind, author: crate::docx::review::AuthorId) -> bool {
+        use crate::docx::review::{BalloonMode, MarkupView};
+        let review = &self.doc.review;
+        let mode = review.markup.balloons;
+        if review.view != MarkupView::All || mode == BalloonMode::Inline || !review.markup.show.shows_change(kind.is_formatting(), author) {
+            return false;
+        }
+        kind.is_formatting()
+            || mode == BalloonMode::Balloons && matches!(kind, RevisionKind::Delete | RevisionKind::MovedFrom | RevisionKind::CellDeletion)
+    }
+
+    /// The revisions in balloons beside `visible` pages, by page and line: those starting on the pages' paragraphs.
+    pub(in crate::editing) fn revision_balloons(&mut self, visible: std::ops::Range<usize>) -> Vec<super::super::view::RevisionBalloon> {
+        use crate::docx::review::{BalloonMode, MarkupView};
+        let review = &self.doc.review;
+        if visible.is_empty() || review.view != MarkupView::All || review.markup.balloons == BalloonMode::Inline {
+            return Vec::new();
+        }
+        if self.review_marks().is_empty() {
+            return Vec::new();
+        }
+        let snapshot = self.layout.snapshot();
+        self.pages.sync(&snapshot);
+        let (mut paras, mut blanks, mut starts) = std::mem::take(&mut self.balloon_scratch);
+        paras.clear();
+        blanks.clear();
+        starts.clear();
+        for i in visible.clone() {
+            if let Some(g) = self.pages.page(i, &self.index) {
+                paras.extend(g.paras());
+            }
+        }
+        paras.sort_unstable();
+        paras.dedup();
+        // Paragraphs showing nothing next to them, which layout may have left out, and where their balloons anchor:
+        // after a shown paragraph, the first paragraph past them at its start, else (the story's end, or past the
+        // reach) that shown paragraph's end; before one, its start
+        for &v in &paras {
+            for forward in [true, false] {
+                let from = blanks.len();
+                let mut q = v;
+                let mut at = (v, forward);
+                for _ in 0..super::marks::REACH {
+                    match super::marks::next_para(&self.doc, &self.index, q, forward) {
+                        Some(n) if self.blank(n) && paras.binary_search(&n).is_err() => {
+                            blanks.push((n, v, forward));
+                            q = n;
+                        }
+                        Some(n) if forward => {
+                            at = (n, false);
+                            break;
+                        }
+                        _ => break,
+                    }
+                }
+                for b in &mut blanks[from..] {
+                    (b.1, b.2) = at;
+                }
+            }
+        }
+        blanks.sort_by_key(|b| b.0);
+        blanks.dedup_by_key(|b| b.0);
+        let marks = self.review_marks();
+        starts.extend(paras.iter().chain(blanks.iter().map(|b| &b.0)).flat_map(|&p| marks.starts_in(p)));
+        starts.retain(|s| self.in_balloon(s.kind, s.author));
+        let near = self.near;
+        self.near = visible.start;
+        let mut out = Vec::new();
+        for s in &starts {
+            #[cfg(test)]
+            {
+                self.balloon_lookups += 1;
+            }
+            let c = match blanks.binary_search_by_key(&s.para, |b| b.0) {
+                Ok(i) => {
+                    let (_, para, end) = blanks[i];
+                    paras.binary_search(&para).ok().and_then(|_| self.para_edge(para, end))
+                }
+                Err(_) => match self.caret_at(s.start) {
+                    Some(c) => Some(c),
+                    None => {
+                        let marks = &self.review_marks.as_ref().expect("found above").2;
+                        let end = marks.end_of(&self.doc, &self.index, s);
+                        self.caret_at(end)
+                    }
+                },
+            };
+            if let Some(c) = c.filter(|c| visible.contains(&c.page)) {
+                out.push(super::super::view::RevisionBalloon {
+                    revision: s.id,
+                    kind: s.kind,
+                    author: s.author,
+                    page: c.page,
+                    at: [c.x, c.top, c.bottom],
+                });
+            }
+        }
+        self.near = near;
+        self.balloon_scratch = (paras, blanks, starts);
+        out.sort_by(|a, b| (a.page, a.at[1], a.at[0]).partial_cmp(&(b.page, b.at[1], b.at[0])).unwrap_or(std::cmp::Ordering::Equal));
+        out
+    }
+
+    /// Whether paragraph `p` shows nothing, its mark hidden too: layout leaves it out before a table and at a story's
+    /// end, or joins it to the next. A cell's last paragraph keeps its line.
+    fn blank(&self, p: ParaId) -> bool {
+        let review = &self.doc.review;
+        let at_cell_end = |s: super::super::index::Slot| {
+            matches!(s.container, super::super::index::Container::Cell { .. })
+                && self.index.blocks(&self.doc, s.container).is_some_and(|b| s.block + 1 == b.len())
+        };
+        self.index.para(&self.doc, p).is_some_and(|q| review.hides(&q.mark.rev) && crate::layout::paragraph::shows_nothing(q, review))
+            && !self.index.para_slot(p).is_some_and(at_cell_end)
+    }
+
+    /// The caret at paragraph `para`'s start, or its end (`end`).
+    fn para_edge(&mut self, para: ParaId, end: bool) -> Option<super::super::view::CaretView> {
+        let story = self.index.story(self.index.para_slot(para)?.container);
+        let unit = if end { para_len(self.index.para(&self.doc, para)?) } else { Unit(0) };
+        self.caret_at(Position::text(story, para, unit))
     }
 
     /// The revision the selection is in (a caret in it or at either end, or a range within it), the one Accept and

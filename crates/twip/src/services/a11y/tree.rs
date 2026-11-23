@@ -67,7 +67,7 @@ pub fn tree_with(e: &Editor, spelling: &Spellers, language: &str, cache: &mut Tr
     let lang = document_language(doc, language);
     let context = {
         let mut h = DefaultHasher::new();
-        (&lang, spelling.signature(), std::mem::discriminant(&doc.review.view), doc.comments.by_id.len()).hash(&mut h);
+        (&lang, spelling.signature(), std::mem::discriminant(&doc.review.view), &*doc.review.markup, doc.comments.by_id.len()).hash(&mut h);
         h.finish()
     };
     let mut b = Builder { e, doc, spelling, language, lang, open: Vec::new(), notes: Vec::new(), cache, context, seen: Vec::new() };
@@ -81,7 +81,7 @@ pub fn tree_with(e: &Editor, spelling: &Spellers, language: &str, cache: &mut Tr
 
 /// The paragraphs a tree build read, kept for the next build: a paragraph is read again only when its reading could
 /// differ (its text, its runs' language, review marks and hidden text, its pictures' alternative text and fields'
-/// values, the comments open at its start, the notes before it, the markup view, the spelling).
+/// values, the comments open at its start, the notes before it, the markup view and Show Markup, the spelling).
 #[derive(Default)]
 pub struct TreeCache {
     paras: std::collections::HashMap<u64, Read>,
@@ -896,6 +896,35 @@ mod tests {
         );
         let now = tree_with(&e, &Spellers::default(), "en-US", &mut cache);
         assert_eq!(now, tree(&e, &Spellers::default(), "en-US"), "the cached build is a fresh one");
+    }
+
+    /// Show Markup, balloons and deletion marks change what a paragraph reads: the cached build follows each.
+    #[test]
+    fn the_cached_tree_follows_show_markup() {
+        use crate::docx::review::{BalloonMode, MarkupStyle, TextMark};
+        let (mut e, _) = open("FX-A11Y-REVIEW.docx");
+        let spelling = Spellers::default();
+        let mut cache = TreeCache::default();
+        let base = tree_with(&e, &spelling, "en-US", &mut cache);
+        let names: Vec<String> = e.document().people.persons.iter().map(|p| p.name.to_string()).collect();
+        let names: Vec<&str> = names.iter().map(String::as_str).collect();
+        let caret = MarkupStyle {
+            deletions: crate::docx::review::MarkLook { mark: TextMark::Caret, ..MarkupStyle::default().deletions },
+            ..MarkupStyle::default()
+        };
+        let changes: [(&dyn Fn(&mut Editor), &dyn Fn(&mut Editor)); 3] = [
+            (&|e| _ = e.set_hidden_reviewers(&names), &|e| _ = e.set_hidden_reviewers(&[])),
+            (&|e| _ = e.set_balloon_mode(BalloonMode::Balloons), &|e| _ = e.set_balloon_mode(BalloonMode::CommentsAndFormatting)),
+            (&|e| _ = e.set_markup_style(caret.clone()), &|e| _ = e.set_markup_style(MarkupStyle::default())),
+        ];
+        for (i, (change, undo)) in changes.iter().enumerate() {
+            change(&mut e);
+            let now = tree_with(&e, &spelling, "en-US", &mut cache);
+            assert_eq!(now, tree(&e, &spelling, "en-US"), "change {i}: the cached build is a fresh one");
+            assert_ne!(now, base, "change {i} reads differently");
+            undo(&mut e);
+            assert_eq!(tree_with(&e, &spelling, "en-US", &mut cache), base, "change {i} undone");
+        }
     }
 
     #[test]

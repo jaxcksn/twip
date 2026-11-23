@@ -376,6 +376,8 @@ pub struct View {
     pub regions: Vec<RegionView>,
     pub comments: Vec<CommentView>,
     pub comment_anchors: Vec<(crate::docx::review::CommentId, usize, [f64; 2])>,
+    /// The revisions shown in balloons beside the visible pages, by page, line top and x.
+    pub revision_balloons: Vec<RevisionBalloon>,
     pub formatting_marks: Vec<FormattingMark>,
     pub boundaries: Vec<(usize, [f64; 4])>,
     pub field_shading: Vec<(usize, Band)>,
@@ -467,6 +469,21 @@ impl MarkOptions {
     pub fn any(&self) -> bool {
         self.all || self.tabs || self.spaces || self.paragraphs || self.hidden || self.optional_hyphens
     }
+}
+
+/// A revision shown in a balloon: where its text starts, for the balloon's leader line.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RevisionBalloon {
+    /// Its first mark's id, as the revision list names it.
+    pub revision: crate::docx::review::RevisionId,
+    /// The revision's kind.
+    pub kind: crate::editing::revisions::index::RevisionKind,
+    /// Its author.
+    pub author: crate::docx::review::AuthorId,
+    /// The page its start is on (0-based).
+    pub page: usize,
+    /// The start's caret: x, its line's top and bottom, page points.
+    pub at: [f64; 3],
 }
 
 #[derive(Clone, Debug, PartialEq)]

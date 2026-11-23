@@ -227,10 +227,10 @@ impl Editor {
     /// The innermost tracked change holding `p` (the one starting last): its range and parts.
     fn revision_under(&mut self, p: Position) -> Option<(Position, Position, HoverDetail)> {
         let (list, _) = self.review_list.get(self.generation, &self.doc, &self.index);
-        let idx = &self.index;
+        let (idx, show) = (&self.index, &self.doc.review.markup.show);
         let r = list
             .iter()
-            .filter(|r| r.story == p.story && idx.cmp(&r.start, &p).is_le() && idx.cmp(&p, &r.end).is_lt())
+            .filter(|r| r.shown(show) && r.story == p.story && idx.cmp(&r.start, &p).is_le() && idx.cmp(&p, &r.end).is_lt())
             .max_by(|x, y| idx.cmp(&x.start, &y.start))?;
         let (start, end, kind, author, time) = (r.start, r.end, r.kind, r.author, r.date.clone());
         let body = match kind {
@@ -263,7 +263,7 @@ impl Editor {
         let idx = &self.index;
         let r = ranges
             .iter()
-            .filter(|r| r.start.story == p.story && idx.cmp(&r.start, &p).is_le() && idx.cmp(&p, &r.end).is_lt())
+            .filter(|r| self.comment_shown(r.root) && r.start.story == p.story && idx.cmp(&r.start, &p).is_le() && idx.cmp(&p, &r.end).is_lt())
             .max_by(|x, y| idx.cmp(&x.start, &y.start))?;
         let c = self.doc.comments.by_id.get(&r.root)?;
         let time = c.date_utc.as_ref().or(c.date.as_ref()).cloned();

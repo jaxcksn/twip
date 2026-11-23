@@ -36,6 +36,8 @@ pub struct Recording {
     pub author: AuthorId,
     pub time: Timestamp,
     pub move_name: Option<Rc<str>>,
+    /// Formatting changes are recorded (Track formatting): without it they apply untracked.
+    pub track_formatting: bool,
     label: &'static str,
     /// The step's marks: each step's edits are a revision of their own.
     ins: Option<Rc<RevisionMark>>,
@@ -60,6 +62,7 @@ impl Recording {
             author,
             time,
             move_name,
+            track_formatting: true,
             label,
             ins: None,
             del: None,
@@ -218,7 +221,7 @@ impl Recording {
         }
         let fmt = if self.new_here(old) {
             None
-        } else if !record || same_look(old, new) {
+        } else if !record || !self.track_formatting || same_look(old, new) {
             old.rev.fmt.clone()
         } else {
             let (previous, previous_raw) = match &old.rev.fmt {
@@ -237,7 +240,7 @@ impl Recording {
         if Rc::ptr_eq(old, &new) {
             return new;
         }
-        let change = if same_para(old, &new) {
+        let change = if !self.track_formatting || same_para(old, &new) {
             old.change.clone()
         } else {
             let (previous, previous_raw) = match &old.change {
@@ -251,7 +254,7 @@ impl Recording {
     }
 
     fn section_change(&mut self, s: &Section, page: &SectionPage, ids: &mut IdCounter) -> Option<Rc<SectionChange>> {
-        if *page == s.page() {
+        if *page == s.page() || !self.track_formatting {
             return s.change.clone();
         }
         let (previous, previous_raw) = match &s.change {
@@ -288,7 +291,7 @@ impl Recording {
             }
             Block::Table(mut t) => {
                 t.rows = std::mem::take(&mut t.rows).into_iter().map(|r| self.ins_row(r, ids)).collect();
-                if t.change.is_none() {
+                if self.track_formatting && t.change.is_none() {
                     t.change = Some(Rc::new(TableChange {
                         mark: self.fmt_mark(ids),
                         previous_raw: t.direct.clone(),
@@ -347,7 +350,7 @@ impl Recording {
                 if n.rows.is_empty() {
                     return None;
                 }
-                if n.change.is_none() {
+                if self.track_formatting && n.change.is_none() {
                     n.change = Some(Rc::new(TableChange {
                         mark: self.fmt_mark(ids),
                         previous_raw: t.direct.clone(),
@@ -786,7 +789,7 @@ impl Recording {
             (r.grid_before, r.grid_after, r.w_before, r.w_after) = (o.grid_before, o.grid_after, o.w_before, o.w_after);
         }
         let props = (o.height.clone(), o.cant_split, o.header) != (r.height.clone(), r.cant_split, r.header);
-        if props && r.rev.change.is_none() && !self.new_here_row(o) {
+        if props && self.track_formatting && r.rev.change.is_none() && !self.new_here_row(o) {
             let previous = PreviousProps::Row { height: o.height.clone(), cant_split: o.cant_split, header: o.header };
             r.rev.change = Some(Rc::new(TableChange { mark: self.fmt_mark(ids), previous_raw: o.direct.clone(), previous: Some(previous) }));
         }
@@ -827,7 +830,7 @@ impl Recording {
             let looks =
                 |x: &crate::docx::Cell| (x.width, x.top.clone(), x.left.clone(), x.bottom.clone(), x.right.clone(), x.shading, x.margins, x.no_wrap);
             let restyled = looks(c) != looks(oc) || (&c.v_align, &c.text_direction) != (&oc.v_align, &oc.text_direction);
-            if restyled && c.rev.change.is_none() && !fresh {
+            if restyled && self.track_formatting && c.rev.change.is_none() && !fresh {
                 let b = [oc.top.clone(), oc.left.clone(), oc.bottom.clone(), oc.right.clone()];
                 let previous = PreviousProps::Cell {
                     width: oc.width,
@@ -840,7 +843,7 @@ impl Recording {
                 };
                 c.rev.change = Some(Rc::new(TableChange { mark: self.fmt_mark(ids), previous_raw: oc.direct.clone(), previous: Some(previous) }));
             }
-            if c.v_merge != oc.v_merge && c.rev.structural.is_none() && !fresh {
+            if c.v_merge != oc.v_merge && self.track_formatting && c.rev.structural.is_none() && !fresh {
                 let kind = CellMarkKind::Merge { v_merge: Some(c.v_merge), v_merge_orig: Some(oc.v_merge) };
                 c.rev.structural = Some((self.fmt_mark(ids), kind));
             }
@@ -896,7 +899,7 @@ impl Recording {
         let slot = idx.table_slot(table)?;
         let Block::Table(t) = idx.blocks(doc, slot.container)?.get(slot.block)? else { return None };
         let (change, grid) = (t.change.is_none(), grid && t.grid_change.is_none());
-        if !change && !grid {
+        if !change && !grid || !self.track_formatting {
             return None;
         }
         let mut n = t.clone();

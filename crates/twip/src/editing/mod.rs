@@ -123,6 +123,10 @@ use view::{CaretView, PageStack, SelectionView, View};
 
 pub const IDLE_BUDGET: Duration = Duration::from_millis(4);
 
+/// The comment threads [`Editor::review_counts`] counted, all and shown, and the comment edits and Show Markup they
+/// were counted at.
+type CommentCounts = (u64, Rc<crate::docx::review::Markup>, (u32, u32));
+
 #[derive(Clone, Copy, Debug)]
 struct Drag {
     anchor: Position,
@@ -229,7 +233,7 @@ pub struct Editor {
     table_hover: Option<view::TableHover>,
     zone_drag: Option<(TableId, selection::CellRef, selection::CellShape)>,
     cursor: input::Cursor,
-    saved: (u64, bool),
+    saved: (u64, [bool; 3]),
     origin: Origin,
     batch: Option<Batch>,
     commits: Vec<Committed>,
@@ -321,6 +325,10 @@ pub struct Editor {
     hover_cache: Option<(hover::HoverKey, Option<hover::Hovered>)>,
     #[cfg(test)]
     hover_lookups: usize,
+    #[cfg(test)]
+    balloon_lookups: usize,
+    #[cfg(test)]
+    mark_builds: usize,
     /// A style's XML that formatting commands edit instead of the selection ([`Editor::format_style`]).
     style_target: Option<String>,
     /// The table style part formatting commands edit, when they edit a table style.
@@ -339,6 +347,14 @@ pub struct Editor {
     pub control_labels: bool,
     comments: comments::State,
     review_list: revisions::index::List,
+    /// The revision marks by paragraph as of a [`Editor::revision_marks`] and the sub-template edited, followed edit
+    /// by edit: what balloons and the review counts are worked out from.
+    review_marks: Option<((u64, u64), Option<u32>, revisions::marks::Marks)>,
+    /// The visible pages' paragraphs, the blank paragraphs next to them (with the paragraph their balloons anchor at
+    /// and whether at its end) and the revisions starting in them, kept for the next frame's balloons.
+    balloon_scratch: (Vec<ParaId>, Vec<(ParaId, ParaId, bool)>, Vec<revisions::marks::Start>),
+    /// The comment threads counted.
+    counted: Option<CommentCounts>,
     author: (Rc<str>, Option<crate::docx::review::Identity>),
     author_id: Option<crate::docx::review::AuthorId>,
     move_name: Option<Rc<str>>,
@@ -420,6 +436,7 @@ impl Editor {
 
     pub fn with_document(doc: Document, fonts: &Fonts) -> Editor {
         let index = DocIndex::build(&doc);
+        let doc_hides_white_space = doc.hides_white_space;
         let mut e = Editor {
             doc,
             layout: DocumentLayout::new(),
@@ -466,7 +483,7 @@ impl Editor {
             table_hover: None,
             zone_drag: None,
             cursor: input::Cursor::Text,
-            saved: (0, false),
+            saved: (0, [false; 3]),
             origin: Origin::User,
             batch: None,
             commits: Vec::new(),
@@ -485,7 +502,7 @@ impl Editor {
             text_drag_off: false,
             mark_options: view::MarkOptions::default(),
             click_and_type_off: false,
-            white_space_hidden: false,
+            white_space_hidden: doc_hides_white_space,
             click_and_type_style: None,
             tab_stop: None,
             mode: Mode::Editing,
@@ -530,6 +547,10 @@ impl Editor {
             hover_cache: None,
             #[cfg(test)]
             hover_lookups: 0,
+            #[cfg(test)]
+            balloon_lookups: 0,
+            #[cfg(test)]
+            mark_builds: 0,
             style_target: None,
             style_part: None,
             list_label: None,
@@ -540,6 +561,9 @@ impl Editor {
             control_labels: true,
             comments: comments::State::default(),
             review_list: Default::default(),
+            counted: None,
+            review_marks: None,
+            balloon_scratch: Default::default(),
             author: ("Author".into(), None),
             author_id: None,
             move_name: None,
@@ -551,7 +575,7 @@ impl Editor {
             key: import::next_key(),
             found: None,
         };
-        e.saved.1 = e.doc.settings.track_revisions;
+        e.saved.1 = e.tracking_settings();
         e.elems = elements::by_id(&e.doc, &e.index);
         let start = e.nav().story_edge(StoryId::Body, false).unwrap_or(Position::text(StoryId::Body, ParaId(0), Unit(0)));
         e.selection = Selection::Caret(start);
@@ -599,12 +623,43 @@ impl Editor {
     }
 
     pub fn is_dirty(&self) -> bool {
-        (self.history.position(), self.doc.settings.track_revisions) != self.saved
+        (self.history.position(), self.tracking_settings()) != self.saved
     }
 
     pub fn mark_saved(&mut self) {
         self.history.break_typing();
-        self.saved = (self.history.position(), self.doc.settings.track_revisions);
+        self.saved = (self.history.position(), self.tracking_settings());
+    }
+
+    /// The saved settings outside the history: tracking, and whether moves and formatting are tracked.
+    fn tracking_settings(&self) -> [bool; 3] {
+        let s = &self.doc.settings;
+        [s.track_revisions, s.do_not_track_moves, s.do_not_track_formatting]
+    }
+
+    /// Whether tracking records moves as moves (Track moves) and formatting changes (Track formatting): document
+    /// settings, saved, outside the history as tracking is.
+    pub fn track_options(&self) -> (bool, bool) {
+        let s = &self.doc.settings;
+        (!s.do_not_track_moves, !s.do_not_track_formatting)
+    }
+
+    /// Sets Track moves and Track formatting; turning either off is refused while protection forces tracking.
+    pub fn set_track_options(&mut self, moves: bool, formatting: bool) -> Outcome {
+        if !(moves && formatting) && self.tracking_locked() {
+            return Outcome::unavailable("protection forces tracking");
+        }
+        if self.track_options() == (moves, formatting) {
+            return Outcome::Unchanged("already so");
+        }
+        let s = &mut self.doc.settings;
+        (s.do_not_track_moves, s.do_not_track_formatting) = (!moves, !formatting);
+        Outcome::Moved
+    }
+
+    /// The track options recording follows: both on while protection forces tracking, whatever the settings say.
+    pub(crate) fn recorded_options(&self) -> (bool, bool) {
+        if self.tracking_locked() { (true, true) } else { self.track_options() }
     }
 
     pub fn history(&self) -> &History {
@@ -618,6 +673,56 @@ impl Editor {
         self.doc.review.view = view;
         self.relayout_review();
         Outcome::Moved
+    }
+
+    /// Sets the markup's view settings past the markup view, laying the document out again when they change.
+    fn set_markup(&mut self, change: impl FnOnce(&mut crate::docx::review::Markup), unchanged: &'static str) -> Outcome {
+        let mut m = (*self.doc.review.markup).clone();
+        change(&mut m);
+        if m == *self.doc.review.markup {
+            return Outcome::Unchanged(unchanged);
+        }
+        self.doc.review.markup = Rc::new(m);
+        self.relayout_review();
+        Outcome::Moved
+    }
+
+    /// Which kinds of markup show (Word's Show Markup: Insertions and Deletions, Formatting, Comments). Revisions and
+    /// comments of a kind left out show as if accepted, and are left out of what the review pane lists as shown.
+    pub fn set_show_markup(&mut self, insertions_deletions: bool, formatting: bool, comments: bool) -> Outcome {
+        self.set_markup(
+            |m| (m.show.insertions_deletions, m.show.formatting, m.show.comments) = (insertions_deletions, formatting, comments),
+            "already shown so",
+        )
+    }
+
+    /// The reviewers whose markup does not show (Show Markup, Specific People), by name: every author of that name
+    /// the document has now (one added later under that name shows). Empty: all reviewers show. A name no author of
+    /// the document has is refused.
+    pub fn set_hidden_reviewers(&mut self, names: &[&str]) -> Outcome {
+        let persons = &self.doc.people.persons;
+        if names.iter().any(|n| !persons.iter().any(|p| *p.name == **n)) {
+            return Outcome::invalid("no such reviewer");
+        }
+        let hidden: Vec<crate::docx::review::AuthorId> = (0..persons.len() as u32)
+            .filter(|&i| names.iter().any(|n| *persons[i as usize].name == **n))
+            .map(crate::docx::review::AuthorId)
+            .collect();
+        self.set_markup(|m| m.show.hidden_reviewers = hidden, "already shown so")
+    }
+
+    /// Where revisions show in All Markup: in balloons beside the page or in place.
+    pub fn set_balloon_mode(&mut self, mode: crate::docx::review::BalloonMode) -> Outcome {
+        self.set_markup(|m| m.balloons = mode, "already in that mode")
+    }
+
+    /// How revisions draw: each kind's mark and colour, change bars and cell highlights. Hidden, caret and pound
+    /// marks are for deleted and moved-away text only (as Word offers them): elsewhere refused.
+    pub fn set_markup_style(&mut self, style: crate::docx::review::MarkupStyle) -> Outcome {
+        if [style.insertions, style.formatting, style.moved_to].iter().any(|l| l.mark.hides_text()) {
+            return Outcome::invalid("that mark is for deletions");
+        }
+        self.set_markup(|m| m.style = style, "already drawn so")
     }
 
     /// Which formatting marks show. Showing hidden text or optional hyphens lays the document out again with them.
@@ -1199,7 +1304,9 @@ impl Editor {
         if tx.rec.is_none() {
             let author = self.session_author();
             let secs = crate::clock::unix_secs();
-            tx.rec = Some(revisions::Recording::new(author, crate::docx::review::Timestamp::from_utc(secs), self.move_name.clone(), tx.label));
+            let mut rec = revisions::Recording::new(author, crate::docx::review::Timestamp::from_utc(secs), self.move_name.clone(), tx.label);
+            rec.track_formatting = self.recorded_options().1;
+            tx.rec = Some(rec);
         }
         let Some(rec) = tx.rec.as_mut() else { return self.apply_step(tx, s) };
         let mut ids = std::mem::take(&mut self.doc.review_ids);
@@ -1393,6 +1500,7 @@ impl Editor {
     }
 
     fn effects(&mut self, tx: &mut Tx) {
+        let was = self.revision_marks;
         let mut parts = false;
         let mut hints: Vec<Option<Change>> = Vec::with_capacity(tx.hints.len());
         for (h, s) in tx.hints.iter().zip(&tx.undo).filter(|(_, s)| s.lays_out()) {
@@ -1418,6 +1526,7 @@ impl Editor {
         if regroups {
             self.revision_marks.1 += 1;
         }
+        self.follow_marks(was, tx);
         if !tx.targets.comments.is_empty() {
             self.comment_edits += 1;
         }
@@ -3591,6 +3700,7 @@ impl Editor {
         let visible_pages = visible.clone();
         let (marks, tooltip) = self.mark_views(visible.clone());
         let (comments, comment_anchors) = self.comment_views(visible.clone());
+        let revision_balloons = self.revision_balloons(visible.clone());
         let mut fade = Vec::new();
         if matches!(story, StoryId::HeaderFooter(_)) {
             for page in visible.clone() {
@@ -3629,6 +3739,7 @@ impl Editor {
             regions: self.region_views(visible_pages.clone()),
             comments,
             comment_anchors,
+            revision_balloons,
             spelling: Vec::new(),
             formatting_marks: Vec::new(),
             boundaries: Vec::new(),
@@ -3688,7 +3799,7 @@ impl Editor {
                         std::collections::hash_map::Entry::Occupied(e) => e.into_mut(),
                         std::collections::hash_map::Entry::Vacant(e) => {
                             let Some(p) = self.index.para(&self.doc, para) else { continue };
-                            e.insert(UnitText::of_view(p, self.doc.review.view))
+                            e.insert(UnitText::of_review(p, &self.doc.review))
                         }
                     };
                     let stops: Vec<&geometry::Stop> = line.stops.iter().filter(|s| s.para == para).collect();
@@ -4007,7 +4118,7 @@ pub(crate) fn plain_char(c: char) -> char {
 /// A paragraph's text as it reads: what the markup view shows, hidden text only while it shows, fields as their
 /// results.
 fn seen_text(p: &Paragraph, review: &crate::docx::review::ReviewView) -> text::Seen {
-    text::Seen::of(p, |r| (review.show_hidden || !r.hidden) && !review.view.hides(&r.rev), true)
+    text::Seen::of(p, |r| (review.show_hidden || !r.hidden) && !review.hides(&r.rev), true)
 }
 
 /// Whether a paragraph joined to `p` through its vanished mark ends at `u`, its parts showing on their own lines while

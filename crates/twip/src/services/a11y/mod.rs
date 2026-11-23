@@ -15,7 +15,7 @@ pub use window::{Window, window};
 use std::collections::HashMap;
 
 use crate::api::services::AccessibleMark;
-use crate::docx::review::{AuthorId, CommentId, MarkupView, RangeKind};
+use crate::docx::review::{AuthorId, CommentId, RangeKind, ReviewView};
 use crate::docx::{Block, Document, Inline, Paragraph};
 use crate::editing::Editor;
 use crate::editing::text::{OBJECT, UnitText};
@@ -61,9 +61,9 @@ pub struct ReviewMark {
 /// A run of units carrying one review mark: (start, end, mark).
 pub(super) type MarkSpan = (u32, u32, ReviewMark);
 
-/// The review marks of `p`'s units that `view` shows. `open`: the comments whose ranges are open at its start, kept
+/// The review marks of `p`'s units that `review` shows. `open`: the comments whose ranges are open at its start, kept
 /// up to date for the next paragraph.
-pub(super) fn para_marks(doc: &Document, p: &Paragraph, view: MarkupView, open: &mut Vec<CommentId>) -> Vec<MarkSpan> {
+pub(super) fn para_marks(doc: &Document, p: &Paragraph, review: &ReviewView, open: &mut Vec<CommentId>) -> Vec<MarkSpan> {
     let mut spans: Vec<MarkSpan> = Vec::new();
     let mut at = 0u32;
     // The spans ending where the next run starts (the last run's): only they go on over it.
@@ -79,16 +79,23 @@ pub(super) fn para_marks(doc: &Document, p: &Paragraph, view: MarkupView, open: 
             continue;
         }
         let rev = i.run().map(|r| &r.rev);
-        if rev.is_some_and(|r| view.hides(r)) {
+        if rev.is_some_and(|r| review.hides(r)) {
             at += n;
             live.clear();
             continue;
         }
-        let revs = rev
-            .into_iter()
-            .flat_map(|r| [r.ins.as_ref().map(|m| (ReviewKind::Insertion, m.author)), r.del.as_ref().map(|m| (ReviewKind::Deletion, m.author))]);
-        let comments =
-            open.iter().filter_map(|c| doc.comments.by_id.get(&doc.comments.root(*c))).map(|c| Some((ReviewKind::Comment(c.id), c.author)));
+        let marked = |m: &&std::rc::Rc<crate::docx::review::RevisionMark>| review.markup.show.shows(m);
+        let revs = rev.into_iter().flat_map(|r| {
+            [
+                r.ins.as_ref().filter(marked).map(|m| (ReviewKind::Insertion, m.author)),
+                r.del.as_ref().filter(marked).map(|m| (ReviewKind::Deletion, m.author)),
+            ]
+        });
+        let comments = open
+            .iter()
+            .filter_map(|c| doc.comments.by_id.get(&doc.comments.root(*c)))
+            .filter(|c| review.shows_comment(c.author))
+            .map(|c| Some((ReviewKind::Comment(c.id), c.author)));
         now.clear();
         for (kind, author) in revs.chain(comments).flatten() {
             let mark = ReviewMark { kind, author };
@@ -116,7 +123,7 @@ pub(super) fn marks_of(doc: &Document, para: ParaId) -> Vec<MarkSpan> {
         for b in list {
             match b {
                 Block::Para(p) => {
-                    let spans = para_marks(doc, p, doc.review.view, open);
+                    let spans = para_marks(doc, p, &doc.review, open);
                     if p.id == para.0 {
                         return Some(spans);
                     }
@@ -211,9 +218,8 @@ impl<'a> Reading<'a> {
         open: &mut Vec<CommentId>,
     ) -> Reading<'a> {
         let doc = e.document();
-        let view = doc.review.view;
-        let spans = para_marks(doc, p, view, open);
-        let text = UnitText::of_view(p, view);
+        let spans = para_marks(doc, p, &doc.review, open);
+        let text = UnitText::of_review(p, &doc.review);
         let chars: Vec<char> = text.text.chars().collect();
         let errors = spelling.errors(e, ParaId(p.id), language).unwrap_or_default();
         let codes = crate::docx::fields::hidden_codes(&p.inlines);

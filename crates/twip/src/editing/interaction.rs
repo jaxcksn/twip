@@ -368,6 +368,9 @@ impl Editor {
     }
 
     pub(super) fn moves_whole(&mut self) -> bool {
+        if !self.recorded_options().0 {
+            return false;
+        }
         let Some((a, b)) = self.selection.ordered(&self.index) else { return false };
         let (Some((pa, oa)), Some((pb, ob))) = (a.para_offset(), b.para_offset()) else { return false };
         let whole = if pa == pb {
@@ -381,6 +384,9 @@ impl Editor {
     }
 
     pub(super) fn record_move(&mut self, to: &[Rc<RevisionMark>], from: &[Rc<RevisionMark>], fonts: &Fonts) -> bool {
+        if !self.recorded_options().0 {
+            return false;
+        }
         let (Some(to_first), Some(from_first)) = (to.first(), from.first()) else { return false };
         let id = self.doc.review_ids.next_revision_id();
         let name: Rc<str> = format!("move{id}").into();

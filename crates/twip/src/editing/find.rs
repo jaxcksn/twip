@@ -275,15 +275,15 @@ impl Editor {
     /// Whether the unit at `u` is a space the markup view shows (not a tab, break, object, or hidden or deleted text).
     pub fn space_at(&self, para: ParaId, u: Unit) -> bool {
         let Some(p) = self.index.para(&self.doc, para) else { return false };
-        let view = self.doc.review.view;
-        let t = UnitText::masked(p, |rev| rev.del.is_some() || view.hides(rev));
+        let review = &self.doc.review;
+        let t = UnitText::masked(p, |rev| rev.del.is_some() || review.hides(rev));
         !t.is_hidden(u) && t.char_at(u) == Some(' ')
     }
 
     /// A paragraph's text as Find reads it: what the markup view shows, fields as they show, values aside.
     pub(crate) fn find_text(&self, para: ParaId) -> Seen {
-        let view = self.doc.review.view;
-        self.index.para(&self.doc, para).map_or_else(Seen::default, |p| Seen::of(p, |r| !view.hides(&r.rev), false))
+        let review = &self.doc.review;
+        self.index.para(&self.doc, para).map_or_else(Seen::default, |p| Seen::of(p, |r| !review.hides(&r.rev), false))
     }
 
     fn unit_hits(&self, para: ParaId, needle: &[char], case: bool) -> Vec<(Unit, Unit)> {

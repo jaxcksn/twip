@@ -5,7 +5,7 @@ use std::rc::Rc;
 use crate::docx::Compat;
 use crate::docx::model::*;
 use crate::docx::props::{Border, Jc};
-use crate::docx::review::{MarkupView, ReviewView};
+use crate::docx::review::ReviewView;
 use crate::layout::fragment::Child;
 use crate::layout::ids::{ParaId, TableId};
 use crate::layout::job::{Memos, Yield};
@@ -465,11 +465,15 @@ pub(super) fn assemble(
                 closing: closings.next().copied().flatten(),
             });
         }
-        let changed = review.view.change_bars()
-            && (r.rev.ins.is_some()
-                || r.rev.del.is_some()
-                || r.rev.change.is_some()
-                || cells_geo.iter().any(|g| r.cells[g.ci].rev.structural.is_some() || r.cells[g.ci].rev.change.is_some()));
+        let bars = |m: Option<&crate::docx::review::RevisionMark>| m.is_some_and(|m| review.bars(m));
+        let changed = review.change_bars()
+            && (bars(r.rev.ins.as_deref())
+                || bars(r.rev.del.as_deref())
+                || bars(r.rev.change.as_deref().map(|c| &*c.mark))
+                || cells_geo.iter().any(|g| {
+                    let c = &r.cells[g.ci].rev;
+                    bars(c.structural.as_ref().map(|(m, _)| &**m)) || bars(c.change.as_deref().map(|c| &*c.mark))
+                }));
         let mut top_border = cells.iter().map(|c| space_h(&c.edges[0])).fold(0.0, f64::max);
         let seams: Vec<(f64, f64, Border)> = match ri.checked_sub(1).and_then(|p| geo.get(p)) {
             Some(above) if row_s.is_none() && !framed(t, ri - 1) => {
@@ -858,16 +862,40 @@ fn turn_cell(
     Ok(())
 }
 
-/// A cell's shading, or a tracked inserted or deleted cell's (or row's) author colour over its fill.
+/// A cell's shading, or a tracked inserted, deleted, merged or split cell's (or inserted or deleted row's) highlight over its
+/// fill: the author's colour mixed in, or the markup style's fixed colour.
 fn tint(review: &ReviewView, r: &Row, c: &Cell) -> crate::layout::shade::Shade {
-    let cell =
-        c.rev.structural.as_ref().filter(|(_, k)| matches!(k, crate::docx::review::CellMarkKind::Insert | crate::docx::review::CellMarkKind::Delete));
-    let Some(m) = cell.map(|(m, _)| m).or(r.rev.del.as_ref()).or(r.rev.ins.as_ref()).filter(|_| review.view == MarkupView::All) else {
-        return crate::layout::shade::Shade { fill: c.shading, hatch: c.hatch };
+    use crate::docx::VMerge;
+    use crate::docx::review::{CellMarkKind, MarkColor};
+    let own = crate::layout::shade::Shade { fill: c.shading, hatch: c.hatch };
+    let style = &review.markup.style;
+    let shown = |m: &&std::rc::Rc<crate::docx::review::RevisionMark>| review.marks(m);
+    let cell = c.rev.structural.as_ref().filter(|(m, _)| shown(&m)).map(|(m, k)| match k {
+        CellMarkKind::Insert => (m, style.inserted_cells),
+        CellMarkKind::Delete => (m, style.deleted_cells),
+        CellMarkKind::Merge { v_merge, v_merge_orig } => {
+            let split = *v_merge_orig == Some(VMerge::Continue) && *v_merge != Some(VMerge::Continue);
+            (m, if split { style.split_cells } else { style.merged_cells })
+        }
+    });
+    let row = || {
+        r.rev
+            .del
+            .as_ref()
+            .filter(shown)
+            .map(|m| (m, style.deleted_cells))
+            .or_else(|| r.rev.ins.as_ref().filter(shown).map(|m| (m, style.inserted_cells)))
     };
-    let (a, b) = (review.palette.color(m.author), c.shading.unwrap_or(0xFFFFFF));
-    let mix = |s: u32| ((((a >> s) & 0xFF) + 3 * ((b >> s) & 0xFF)) / 4) << s;
-    crate::layout::shade::Shade { fill: Some(mix(16) | mix(8) | mix(0)), hatch: None }
+    let Some((m, color)) = cell.or_else(row) else { return own };
+    match color {
+        MarkColor::Auto => own,
+        MarkColor::Fixed(f) => crate::layout::shade::Shade { fill: Some(f), hatch: None },
+        MarkColor::ByAuthor => {
+            let (a, b) = (review.palette.color(m.author), c.shading.unwrap_or(0xFFFFFF));
+            let mix = |s: u32| ((((a >> s) & 0xFF) + 3 * ((b >> s) & 0xFF)) / 4) << s;
+            crate::layout::shade::Shade { fill: Some(mix(16) | mix(8) | mix(0)), hatch: None }
+        }
+    }
 }
 
 #[cfg(test)]

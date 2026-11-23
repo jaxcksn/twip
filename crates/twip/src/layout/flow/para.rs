@@ -372,10 +372,10 @@ impl<'d> PageFill<'d, '_> {
     /// The last block of the paragraphs joined from `bi` by deleted marks when they show nothing and a table follows
     /// them (or they end the body): they aren't laid out.
     pub(super) fn deleted_before_table(&self, bi: usize) -> Option<usize> {
-        let view = self.ctx.env.text.review.view;
-        let end = self.sec.blocks.chain_end(bi, &self.ctx.env.text.review);
-        let shows_nothing = |k: usize| matches!(self.sec.blocks.get(k), Some(Block::Para(p)) if crate::layout::paragraph::shows_nothing(p, view, self.ctx.env.text.review.show_hidden));
-        let last = matches!(self.sec.blocks.get(end), Some(Block::Para(p)) if view.hides(&p.mark.rev));
+        let review = &self.ctx.env.text.review;
+        let end = self.sec.blocks.chain_end(bi, review);
+        let shows_nothing = |k: usize| matches!(self.sec.blocks.get(k), Some(Block::Para(p)) if crate::layout::paragraph::shows_nothing(p, review));
+        let last = matches!(self.sec.blocks.get(end), Some(Block::Para(p)) if review.hides(&p.mark.rev));
         let next = self.sec.blocks.get(end + 1);
         let own = self.sec.section.blocks.len();
         let story_end = match end + 1 {

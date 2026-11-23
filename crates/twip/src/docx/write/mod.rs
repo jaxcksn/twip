@@ -535,6 +535,8 @@ fn settings_part(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(
     for (name, was, is) in [
         ("evenAndOddHeaders", read.even_and_odd, now.even_and_odd),
         ("mirrorMargins", read.mirror_margins, now.mirror_margins),
+        ("doNotTrackMoves", read.do_not_track_moves, now.do_not_track_moves),
+        ("doNotTrackFormatting", read.do_not_track_formatting, now.do_not_track_formatting),
         ("gutterAtTop", read.gutter_at_top, now.gutter_at_top),
         ("doNotShadeFormData", read.no_form_shading, now.no_form_shading),
         ("autoFormatOverride", read.auto_format_override, now.auto_format_override),

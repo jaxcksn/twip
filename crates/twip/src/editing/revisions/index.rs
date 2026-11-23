@@ -11,7 +11,7 @@ use super::super::index::DocIndex;
 use super::super::position::{Position, StoryId};
 use super::super::step::para_len;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum RevisionKind {
     Insert,
     Delete,
@@ -29,6 +29,18 @@ pub enum RevisionKind {
 }
 
 impl RevisionKind {
+    /// Whether it is a formatting change (Show Markup's Formatting), not an insertion or deletion.
+    pub fn is_formatting(self) -> bool {
+        matches!(
+            self,
+            RevisionKind::Property
+                | RevisionKind::ParagraphProperty
+                | RevisionKind::TableProperty
+                | RevisionKind::SectionProperty
+                | RevisionKind::CellMerge
+        )
+    }
+
     pub fn name(self) -> &'static str {
         match self {
             RevisionKind::Insert => "Insert",
@@ -59,10 +71,54 @@ pub struct Revision {
     pub date: Option<crate::docx::review::Timestamp>,
 }
 
+impl Revision {
+    /// Whether Show Markup shows it: its kind and reviewer.
+    pub fn shown(&self, show: &crate::docx::review::ShowMarkup) -> bool {
+        show.shows_change(self.kind.is_formatting(), self.author)
+    }
+}
+
+/// Revisions and comment threads by kind, as the reviewing pane's summary counts them.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Counts {
+    /// Inserted text, rows and cells.
+    pub insertions: u32,
+    /// Deleted text, rows and cells.
+    pub deletions: u32,
+    /// Both halves of each move.
+    pub moves: u32,
+    /// Changes of text, paragraph, table, section and cell properties, and cell merges.
+    pub formatting: u32,
+    /// Comment threads.
+    pub comments: u32,
+}
+
+impl Counts {
+    /// The revisions: every kind but comments.
+    pub fn revisions(&self) -> u32 {
+        self.insertions + self.deletions + self.moves + self.formatting
+    }
+
+    /// Counts `n` revisions of `kind`.
+    pub fn add(&mut self, kind: RevisionKind, n: u32) {
+        let count = match kind {
+            RevisionKind::Insert | RevisionKind::RowInsert | RevisionKind::CellInsertion => &mut self.insertions,
+            RevisionKind::Delete | RevisionKind::RowDelete | RevisionKind::CellDeletion => &mut self.deletions,
+            RevisionKind::MovedFrom | RevisionKind::MovedTo => &mut self.moves,
+            RevisionKind::Property
+            | RevisionKind::ParagraphProperty
+            | RevisionKind::TableProperty
+            | RevisionKind::SectionProperty
+            | RevisionKind::CellMerge => &mut self.formatting,
+        };
+        *count += n;
+    }
+}
+
 const CHANNELS: usize = 8;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Channel {
+pub(super) enum Channel {
     Ins,
     Del,
     Row,
@@ -87,7 +143,7 @@ pub(super) enum Spot {
 
 #[derive(Clone, Debug)]
 pub(super) struct Item {
-    channel: Channel,
+    pub channel: Channel,
     pub kind: RevisionKind,
     pub mark: Rc<RevisionMark>,
     pub story: StoryId,
@@ -95,8 +151,10 @@ pub(super) struct Item {
     pub end: Position,
     pub run: Option<(ParaId, Range<u32>)>,
     pub spot: Spot,
-    listed: bool,
+    pub listed: bool,
     seq: usize,
+    /// Which of its paragraph's walked runs (the mark's included) it is on.
+    pub run_no: u32,
 }
 
 #[derive(Debug, Default)]
@@ -136,23 +194,18 @@ pub fn revisions(doc: &Document, idx: &DocIndex) -> Vec<Revision> {
 
 fn revisions_of(items: &[Item]) -> Vec<Revision> {
     let mut out: Vec<Revision> = Vec::new();
-    let mut open: [Option<(usize, usize)>; CHANNELS] = [None; CHANNELS];
-    for it in items.iter().filter(|i| i.listed) {
+    let mut open: [Option<usize>; CHANNELS] = [None; CHANNELS];
+    for (it, starts) in items.iter().zip(starts(items)).filter(|(i, _)| i.listed) {
         let ch = it.channel as usize;
-        let joins = open[ch].filter(|&(e, last)| {
-            let r = &out[e];
-            r.kind == it.kind && r.author == it.mark.author && r.story == it.story && (it.seq == last || it.seq == last + 1)
-        });
-        match joins {
-            Some((e, _)) => {
+        match open[ch] {
+            Some(e) if !starts => {
                 let r = &mut out[e];
                 r.end = it.end;
                 if !r.ids.contains(&it.mark.id) {
                     r.ids.push(it.mark.id);
                 }
-                open[ch] = Some((e, it.seq));
             }
-            None => {
+            _ => {
                 out.push(Revision {
                     story: it.story,
                     start: it.start,
@@ -162,15 +215,58 @@ fn revisions_of(items: &[Item]) -> Vec<Revision> {
                     ids: vec![it.mark.id],
                     date: it.mark.date.clone(),
                 });
-                open[ch] = Some((out.len() - 1, it.seq));
+                open[ch] = Some(out.len() - 1);
             }
         }
     }
     out
 }
 
+/// Whether each item starts a revision: it is listed and doesn't continue the last listed one of its channel (the
+/// same kind, author and story, on the same or the next run, row or paragraph).
+pub(super) fn starts(items: &[Item]) -> Vec<bool> {
+    let mut open: [Option<(RevisionKind, AuthorId, StoryId, usize)>; CHANNELS] = [None; CHANNELS];
+    items
+        .iter()
+        .map(|it| {
+            if !it.listed {
+                return false;
+            }
+            let ch = it.channel as usize;
+            let joins = open[ch]
+                .is_some_and(|(k, a, s, last)| k == it.kind && a == it.mark.author && s == it.story && (it.seq == last || it.seq == last + 1));
+            open[ch] = Some((it.kind, it.mark.author, it.story, it.seq));
+            !joins
+        })
+        .collect()
+}
+
+/// The changes of paragraph `p` alone into `items`, as the whole walk finds them in `story` (`rows`: the marks of the
+/// inserted or deleted rows it is in), and its walked runs; `None` when it holds a text box.
+pub(super) fn para_items(
+    p: &Paragraph,
+    next: Option<&Paragraph>,
+    cell_end: bool,
+    story: StoryId,
+    rows: Vec<RevisionId>,
+    items: &mut Vec<Item>,
+) -> Option<u32> {
+    items.clear();
+    let found = Found { items: std::mem::take(items), ..Found::default() };
+    let mut w = Walk { found, story, seq: [0; CHANNELS], boxes: Vec::new(), rows, run_no: 0 };
+    w.para(p, next, cell_end);
+    *items = w.found.items;
+    w.boxes.is_empty().then_some(w.run_no)
+}
+
+/// How many runs the walk takes in `p`: each run, and its mark unless it ends a cell unmarked.
+pub(super) fn walked_runs(p: &Paragraph, cell_end: bool) -> u32 {
+    let runs = p.inlines.iter().filter(|i| i.run().is_some()).count();
+    u32::try_from(runs).unwrap_or(u32::MAX).saturating_add(u32::from(!(cell_end && p.mark.rev.is_empty())))
+}
+
 pub(super) fn found(doc: &Document, idx: &DocIndex) -> Found {
-    let mut w = Walk { found: Found::default(), story: StoryId::Body, seq: [0; CHANNELS], boxes: Vec::new(), rows: Vec::new() };
+    let mut w = Walk { found: Found::default(), story: StoryId::Body, seq: [0; CHANNELS], boxes: Vec::new(), rows: Vec::new(), run_no: 0 };
     for (k, s) in doc.sections.iter().enumerate() {
         if let Some(c) = &s.change {
             let (start, end) = w.span(&s.blocks);
@@ -215,6 +311,14 @@ pub(super) fn found(doc: &Document, idx: &DocIndex) -> Found {
     w.found
 }
 
+/// The last paragraph of `blocks`, through the tables in them: where a span over them ends.
+pub(super) fn last(bs: &[Block]) -> Option<&Paragraph> {
+    bs.iter().rev().find_map(|b| match b {
+        Block::Para(p) => Some(p),
+        Block::Table(t) => t.rows.iter().rev().flat_map(|r| r.cells.iter().rev()).find_map(|c| last(&c.blocks)),
+    })
+}
+
 struct Walk<'a> {
     found: Found,
     story: StoryId,
@@ -222,6 +326,8 @@ struct Walk<'a> {
     boxes: Vec<(FloatId, &'a [Block])>,
     /// The marks of the inserted or deleted rows being walked: their contents' are the rows' revisions.
     rows: Vec<RevisionId>,
+    /// The paragraph's runs walked so far.
+    run_no: u32,
 }
 
 impl<'a> Walk<'a> {
@@ -239,7 +345,7 @@ impl<'a> Walk<'a> {
         let seq = self.seq[channel as usize];
         let (run, spot) = at;
         let listed = listed && !(matches!(channel, Channel::Ins | Channel::Del) && self.rows.contains(&mark.id));
-        self.found.items.push(Item { channel, kind, mark: mark.clone(), story: self.story, start, end, run, spot, listed, seq });
+        self.found.items.push(Item { channel, kind, mark: mark.clone(), story: self.story, start, end, run, spot, listed, seq, run_no: self.run_no });
     }
 
     fn at(&self, p: &Paragraph, u: u32) -> Position {
@@ -251,12 +357,6 @@ impl<'a> Walk<'a> {
             bs.iter().find_map(|b| match b {
                 Block::Para(p) => Some(p),
                 Block::Table(t) => t.rows.iter().flat_map(|r| r.cells.iter()).find_map(|c| first(&c.blocks)),
-            })
-        }
-        fn last(bs: &[Block]) -> Option<&Paragraph> {
-            bs.iter().rev().find_map(|b| match b {
-                Block::Para(p) => Some(p),
-                Block::Table(t) => t.rows.iter().rev().flat_map(|r| r.cells.iter().rev()).find_map(|c| last(&c.blocks)),
             })
         }
         let none = Position::text(self.story, ParaId(0), Unit(0));
@@ -282,6 +382,7 @@ impl<'a> Walk<'a> {
 
     fn para(&mut self, p: &'a Paragraph, next: Option<&Paragraph>, cell_end: bool) {
         let len = para_len(p).0;
+        self.run_no = 0;
         self.seq[Channel::Para as usize] += 1;
         if let Some(c) = &p.style.change {
             let (start, end) = (self.at(p, 0), self.at(p, len));
@@ -330,6 +431,7 @@ impl<'a> Walk<'a> {
         if let Some(f) = &r.rev.fmt {
             self.push(Channel::Fmt, RevisionKind::Property, &f.mark, start, end, at, true);
         }
+        self.run_no += 1;
     }
 
     fn table(&mut self, t: &'a Table) {

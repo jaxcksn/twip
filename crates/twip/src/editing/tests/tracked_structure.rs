@@ -210,3 +210,67 @@ fn the_revision_at_the_caret_is_the_one_the_selection_resolves() {
     assert!(super::super::revisions::index::revisions(e.document(), e.index()).is_empty());
     assert_eq!(e.revision_here(), None);
 }
+
+/// In Balloons mode a wholly deleted paragraph that shows nothing still has its balloon: before a table, joined to
+/// the next paragraph, at the body's end and at a footnote's end, and a deletion of more paragraphs than the walk
+/// between neighbours reaches, before a table and at the body's end.
+#[test]
+fn wholly_deleted_paragraphs_have_balloons() {
+    use super::empty_stories::{NS, build};
+    use crate::docx::review::BalloonMode;
+    use crate::editing::revisions::index::{RevisionKind, revisions};
+    let del = |id: u32, text: &str| {
+        format!(
+            r#"<w:p><w:pPr><w:rPr><w:del w:id="{id}" w:author="A" w:date="2026-01-0{id}T00:00:00Z"/></w:rPr></w:pPr><w:del w:id="{}" w:author="A" w:date="2026-01-0{id}T00:00:00Z"><w:r><w:delText>{text}</w:delText></w:r></w:del></w:p>"#,
+            id + 10
+        )
+    };
+    let p = |t: &str| format!("<w:p><w:r><w:t>{t}</w:t></w:r></w:p>");
+    // One deletion by B of `n` whole paragraphs, its mark ids from `id`
+    let long = |id: u32, n: u32| {
+        let at = r#"w:author="B" w:date="2026-01-05T00:00:00Z""#;
+        (0..n)
+            .map(|i| {
+                let k = id + 2 * i;
+                format!(
+                    r#"<w:p><w:pPr><w:rPr><w:del w:id="{k}" {at}/></w:rPr></w:pPr><w:del w:id="{}" {at}><w:r><w:delText>gone {i}</w:delText></w:r></w:del></w:p>"#,
+                    k + 1
+                )
+            })
+            .collect::<String>()
+    };
+    let table = format!(
+        r#"<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:tc>{}</w:tc></w:tr></w:tbl>"#,
+        p("cell")
+    );
+    let body = format!(
+        r#"{}{}{table}{}{}<w:p><w:r><w:t>noted</w:t></w:r><w:r><w:footnoteReference w:id="1"/></w:r></w:p>{}{}{table}{}{}{}"#,
+        p("Before"),
+        del(1, "Gone before the table"),
+        del(2, "Gone joined"),
+        p("Kept"),
+        p("Long before the table"),
+        long(100, 70),
+        p("Long at the end"),
+        del(3, "Gone at the end"),
+        long(300, 70),
+    );
+    let foot = format!(
+        r#"<w:footnotes {NS}><w:footnote w:id="1"><w:p><w:r><w:t>note</w:t></w:r></w:p>{}</w:footnote></w:footnotes>"#,
+        del(4, "Gone in the note")
+    );
+    let mut e = Editor::open(&build(&body, "", &[("footnotes.xml", "footnotes", "footnotes", &foot)]), fonts()).expect("opens");
+    e.complete(fonts());
+    e.set_balloon_mode(BalloonMode::Balloons);
+    e.complete(fonts());
+    let mut want: Vec<_> =
+        revisions(e.document(), e.index()).iter().filter(|r| r.kind == RevisionKind::Delete).flat_map(|r| r.ids.first().copied()).collect();
+    assert_eq!(want.len(), 6, "six deletions");
+    let pages = e.snapshot().pages().len();
+    let balloons = e.view(0..pages).revision_balloons;
+    let mut got: Vec<_> = balloons.iter().filter(|b| b.kind == RevisionKind::Delete).map(|b| b.revision).collect();
+    want.sort();
+    got.sort();
+    assert_eq!(got, want, "one balloon per deletion: {balloons:?}");
+    assert!(balloons.iter().all(|b| b.at[1] < b.at[2] && b.page < pages), "anchored on a line: {balloons:?}");
+}

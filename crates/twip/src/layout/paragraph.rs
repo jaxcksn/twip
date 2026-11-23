@@ -75,11 +75,11 @@ pub fn vanished(p: &crate::docx::Paragraph, show_hidden: bool) -> bool {
         })
 }
 
-/// Whether `p` shows nothing in `view`: every run hidden (unless hidden text shows) or a hidden revision (bookmarks
+/// Whether `p` shows nothing in `review`: every run hidden (unless hidden text shows) or a hidden revision (bookmarks
 /// and the like don't count).
-pub fn shows_nothing(p: &crate::docx::Paragraph, view: crate::docx::review::MarkupView, show_hidden: bool) -> bool {
+pub fn shows_nothing(p: &crate::docx::Paragraph, review: &crate::docx::review::ReviewView) -> bool {
     use crate::docx::Inline;
-    let hidden = |r: &crate::docx::Run| (r.hidden && !show_hidden) || view.hides(&r.rev);
+    let hidden = |r: &crate::docx::Run| (r.hidden && !review.show_hidden) || review.hides(&r.rev);
     p.inlines.iter().all(|i| match i {
         Inline::Text(t, r) => t.is_empty() || hidden(r),
         Inline::Bookmark(_) | Inline::Opaque(_) | Inline::Range(_) | Inline::ControlStart(_) | Inline::ControlEnd(_) | Inline::CommentRef { .. } => {

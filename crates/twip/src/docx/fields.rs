@@ -89,9 +89,9 @@ pub fn code_text(inlines: &[Inline], s: FieldSpan) -> String {
     code_where(inlines, s, |_| true)
 }
 
-/// [`code_text`] as `view` shows it: without the revisions the view hides.
-pub fn code_text_in(inlines: &[Inline], s: FieldSpan, view: super::review::MarkupView) -> String {
-    code_where(inlines, s, |r| !view.hides(&r.rev))
+/// [`code_text`] as `review` shows it: without the revisions it hides.
+pub fn code_text_in(inlines: &[Inline], s: FieldSpan, review: &super::review::ReviewView) -> String {
+    code_where(inlines, s, |r| !review.hides(&r.rev))
 }
 
 fn code_where(inlines: &[Inline], s: FieldSpan, keep: impl Fn(&Run) -> bool) -> String {
@@ -271,9 +271,9 @@ pub fn visible(inlines: &[Inline]) -> String {
     visible_where(inlines, &|_| true)
 }
 
-/// [`visible`] as `view` draws it: without hidden text and the revisions the view hides.
-pub fn visible_in(inlines: &[Inline], view: super::review::MarkupView) -> String {
-    visible_where(inlines, &|r| !r.hidden && !view.hides(&r.rev))
+/// [`visible`] as `review` draws it: without hidden text and the revisions it hides.
+pub fn visible_in(inlines: &[Inline], review: &super::review::ReviewView) -> String {
+    visible_where(inlines, &|r| !r.hidden && !review.hides(&r.rev))
 }
 
 /// [`visible`] of the inlines whose runs `keep` takes.
@@ -2039,7 +2039,8 @@ mod tests {
             t(" z", &run),
         ];
         assert_eq!(visible(&v), "a 1secretquiet2nested z");
-        assert_eq!(visible_in(&v, MarkupView::NoMarkup), "a 12 z");
-        assert_eq!(visible_in(&v, MarkupView::All), "a 1secret2nested z");
+        let in_view = |view| crate::docx::review::ReviewView { view, ..Default::default() };
+        assert_eq!(visible_in(&v, &in_view(MarkupView::NoMarkup)), "a 12 z");
+        assert_eq!(visible_in(&v, &in_view(MarkupView::All)), "a 1secret2nested z");
     }
 }

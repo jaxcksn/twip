@@ -13,7 +13,7 @@ use super::props::*;
 use super::resolve::{ParaResolved, Resolver, div_chain};
 use super::review::{
     AuthorId, CellMarkKind, CellRevisions, Comment, CommentId, FormatChange, GridChange, IdCounter, Identity, MarkKind, ParaChange, People,
-    PreviousProps, Protection, ProtectionKind, RangeKind, RangeMark, RevisionId, RevisionMark, RowRevisions, RunRevisions, SectionChange,
+    PreviousProps, Protection, ProtectionKind, RangeKind, RangeMark, RevisionId, RevisionMark, RowRevisions, RunRevisions, SectionChange, ShowMarkup,
     TableChange, Timestamp,
 };
 use super::styles::{Region, Styles, ThemeFonts};
@@ -229,9 +229,10 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
     let drawing_theme = Rc::new(crate::drawing::theme::Theme::parse(theme_xml.as_deref()));
     let settings_xml = part_of("settings").and_then(|p| pkg.read_str(&p));
     let settings = read_settings(settings_xml.as_deref());
-    let colour_map = crate::drawing::theme::ColourMap::parse(
-        settings_xml.as_deref().and_then(|x| roxmltree::Document::parse(x).ok()).as_ref().map(|d| d.root_element()),
-    );
+    let settings_tree = settings_xml.as_deref().and_then(|x| roxmltree::Document::parse(x).ok());
+    let settings_root = settings_tree.as_ref().map(|d| d.root_element());
+    let colour_map = crate::drawing::theme::ColourMap::parse(settings_root);
+    let opening = settings_root.map(opening_view);
     let colours = ThemeColours::new(&drawing_theme, &colour_map);
     let mut styles = Styles::parse(part_of("styles").and_then(|p| pkg.read_str(&p)).as_deref(), colours);
     let mut numbering = Numbering::parse(part_of("numbering").and_then(|p| pkg.read_str(&p)).as_deref(), &colours);
@@ -513,6 +514,10 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
     doc.theme = drawing_theme;
     doc.colour_map = colour_map;
     doc.settings = r.settings;
+    if let Some((show, hides_white_space)) = opening {
+        doc.review.markup = Rc::new(super::review::Markup { show, ..Default::default() });
+        doc.hides_white_space = hides_white_space;
+    }
     doc.people = r.people;
     doc.review_ids = r.ids;
     doc.diagnostics = r.diagnostics;
@@ -825,6 +830,17 @@ fn fold_divs(blocks: &mut [Block], divs: &HashMap<i64, Division>, in_cell: bool)
     }
 }
 
+/// What the document shows when it opens: its Show Markup (`w:revisionView`) and whether the white space between
+/// pages is hidden (`w:doNotDisplayPageBoundaries`).
+fn opening_view(root: Node) -> (ShowMarkup, bool) {
+    let mut show = ShowMarkup::default();
+    if let Some(v) = child(root, "revisionView") {
+        let on = |name| on_off_str(attr(v, name));
+        (show.insertions_deletions, show.formatting, show.comments) = (on("insDel"), on("formatting"), on("comments"));
+    }
+    (show, flag(root, "doNotDisplayPageBoundaries").unwrap_or(false))
+}
+
 pub(crate) fn read_settings(xml: Option<&str>) -> Settings {
     let mut s = Settings { compat_mode: 12, default_tab: 36.0, hyphenation_zone: 18.0, ..Default::default() };
     let Some(doc) = xml.and_then(|x| roxmltree::Document::parse(x).ok()) else { return s };
@@ -863,6 +879,8 @@ pub(crate) fn read_settings(xml: Option<&str>) -> Settings {
     }
     s.consecutive_hyphen_limit = child(root, "consecutiveHyphenLimit").and_then(|n| int(val(n))).unwrap_or(0);
     s.track_revisions = flag(root, "trackRevisions").unwrap_or(false);
+    s.do_not_track_moves = flag(root, "doNotTrackMoves").unwrap_or(false);
+    s.do_not_track_formatting = flag(root, "doNotTrackFormatting").unwrap_or(false);
     s.endnotes_sect_end = child(root, "endnotePr").and_then(|p| child(p, "pos")).and_then(val) == Some("sectEnd");
     for tag in ["footnote", "endnote"] {
         for n in child(root, &format!("{tag}Pr")).into_iter().flat_map(|p| children(p, tag)) {

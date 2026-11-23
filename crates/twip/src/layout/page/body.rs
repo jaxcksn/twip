@@ -483,8 +483,8 @@ pub fn layout_body(
     let shown = crate::layout::expansion::shown(&body);
     body.extend(shown);
     separators(&s.section_in(env.ctx.env.text.review.view).columns, cols, page_top, earlier, &mut body);
-    if env.ctx.env.text.review.view.change_bars() {
-        change_bars(space, &mut body);
+    if env.ctx.env.text.review.change_bars() {
+        change_bars(space, &env.ctx.env.text.review, env.ctx.env.mirror_margins, &mut body);
     }
     if section_end.is_none() {
         if s.line_numbers.as_ref().is_some_and(|l| l.restart == "newPage") {
@@ -602,7 +602,8 @@ fn v_align(va: &str, starts: &[(f64, bool)], geo: &BodyArea, bottom: f64, body: 
 }
 
 // Change bars
-fn change_bars(space: &BodySpace, body: &mut Vec<Child>) {
+fn change_bars(space: &BodySpace, review: &crate::docx::review::ReviewView, mirror_margins: bool, body: &mut Vec<Child>) {
+    use crate::docx::review::BarSide;
     fn lines(children: &[Child], dy: f64, out: &mut dyn FnMut(f64, f64, bool)) {
         for c in children {
             match c {
@@ -628,7 +629,17 @@ fn change_bars(space: &BodySpace, body: &mut Vec<Child>) {
     let mut all = Vec::new();
     lines(body, 0.0, &mut |top, bottom, c| all.push((top, bottom, c)));
     all.sort_by(|a, b| a.0.total_cmp(&b.0));
-    let x = space.area.left - (space.margins.0 / 2.0).min(36.0);
+    let right = match review.markup.style.change_bars {
+        BarSide::Right => true,
+        BarSide::Outside => mirror_margins && space.odd,
+        BarSide::Left | BarSide::None => false,
+    };
+    let x = if right {
+        space.area.left + space.area.width + (space.margins.1 / 2.0).min(36.0) - 0.72
+    } else {
+        space.area.left - (space.margins.0 / 2.0).min(36.0)
+    };
+    let colour = review.change_bar_color();
     let mut bars: Vec<Item> = Vec::new();
     for (k, &(top, bottom, c)) in all.iter().enumerate() {
         if !c {
@@ -638,7 +649,7 @@ fn change_bars(space: &BodySpace, body: &mut Vec<Child>) {
         let bottom = next.filter(|&t| t - bottom <= bottom - top).unwrap_or(bottom);
         match bars.last_mut() {
             Some(Item::Rect { rect, .. }) if top <= rect[3] + 0.01 => rect[3] = rect[3].max(bottom),
-            _ => bars.push(Item::rect([x, top, x + 0.72, bottom], 0)),
+            _ => bars.push(Item::rect([x, top, x + 0.72, bottom], colour)),
         }
     }
     body.push(Child::Items(bars.into()));

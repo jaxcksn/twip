@@ -1853,6 +1853,10 @@ pub struct Settings {
     pub borders_do_not_surround_footer: bool,
     /// `w:trackRevisions`: edits are recorded as revisions.
     pub track_revisions: bool,
+    /// `w:doNotTrackMoves`: moved text is recorded as an insertion and a deletion, not a move.
+    pub do_not_track_moves: bool,
+    /// `w:doNotTrackFormatting`: formatting changes made while tracking are not recorded.
+    pub do_not_track_formatting: bool,
     /// `w:endnotePr/w:pos sectEnd`: endnotes follow their section rather than the document.
     pub endnotes_sect_end: bool,
     /// The note stories `w:footnotePr` / `w:endnotePr` list, as `footnote:<id>` / `endnote:<id>`.
@@ -1966,6 +1970,9 @@ pub struct Document {
     pub comments: Comments,
     /// How the review shows (markup view, author colours): a view setting, never saved.
     pub review: ReviewView,
+    /// The white space between pages hidden when the document opens (`w:doNotDisplayPageBoundaries`): a view
+    /// setting, never saved.
+    pub hides_white_space: bool,
     /// New revision, comment and paragraph ids, past those read.
     pub review_ids: IdCounter,
     /// What reading couldn't keep or make sense of.

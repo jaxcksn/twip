@@ -254,9 +254,8 @@ impl<'d> PageFill<'d, '_> {
 
     fn laid_own(&mut self, bi: usize) -> Option<(LaidPara<'d>, usize)> {
         let (laid, end) = self.laid_chain(bi)?;
-        let view = self.ctx.env.text.review.view;
         let Some(Block::Para(last)) = self.sec.blocks.get(end) else { return Some((laid, end)) };
-        if !view.hides(&last.mark.rev) {
+        if !self.ctx.env.text.review.hides(&last.mark.rev) {
             return Some((laid, end));
         }
         // A hidden last mark takes the next shown mark's properties; at the end of an endnote the story's own final

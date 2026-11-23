@@ -878,6 +878,7 @@ impl<'a> Builder<'a> {
         let mut pend_runs: Vec<(usize, Run)> = Vec::new();
         let mut pend_units: Vec<u32> = Vec::new();
         let view = space.view;
+        let mut stand_in = None;
         if let Some(f) = space.float.clone().filter(|f| !para.inlines.iter().any(|i| matches!(i, Inline::Float(g, _) if g.id == f.id))) {
             let run = para.mark_in(view);
             let mut p = self.new_piece(Kind::Anchor, run, None, run.size, 0.0);
@@ -916,7 +917,29 @@ impl<'a> Builder<'a> {
                 at += inl.units() as u32;
                 continue;
             }
-            if inl.run().is_some_and(|r| (r.hidden && !space.show_hidden) || view.hides(&r.rev)) || shown[k] == Shown::Not {
+            if inl.run().is_some_and(|r| (r.hidden && !space.show_hidden) || space.markup.hides(view, &r.rev)) || shown[k] == Shown::Not {
+                // A deletion drawn as a stand-in character: one for each deletion, at its start.
+                if let Some((c, r)) =
+                    inl.run().filter(|r| !r.hidden || space.show_hidden).and_then(|r| Some((space.markup.stand_in(view, &r.rev)?, r)))
+                    && shown[k] != Shown::Not
+                    && inl.units() > 0
+                {
+                    let id = r.rev.del.as_ref().map(|d| d.id);
+                    if stand_in != id {
+                        let run = run_in(r, view);
+                        if pend_runs.first().is_some_and(|(_, p)| !shapes_alike(p, run)) {
+                            self.flush_text(&mut pend, &mut pend_runs, &mut pend_units)?;
+                        }
+                        if !pend_runs.last().is_some_and(|(_, p)| Rc::ptr_eq(p, run) || **p == **run) {
+                            pend_runs.push((pend_units.len(), run.clone()));
+                        }
+                        pend.push(c);
+                        pend_units.push(at);
+                        stand_in = id;
+                    }
+                    at += inl.units() as u32;
+                    continue;
+                }
                 match inl {
                     _ if evaluated => field += 1,
                     Inline::NoteRef { .. } | Inline::NoteMark(..) => note += 1,
@@ -925,8 +948,12 @@ impl<'a> Builder<'a> {
                 at += inl.units() as u32;
                 continue;
             }
+            if inl.units() > 0 {
+                stand_in = None;
+            }
             if let (Inline::Text(t, run), Shown::Itself) = (inl, &shown[k]) {
-                let run = run_in(run, view);
+                let marked = marked_run(run_in(run, view), view, &space.markup);
+                let run = &marked;
                 if pend_runs.first().is_some_and(|(_, p)| !shapes_alike(p, run)) {
                     self.flush_text(&mut pend, &mut pend_runs, &mut pend_units)?;
                 }
@@ -1617,6 +1644,30 @@ fn word_points(
     (e, at)
 }
 
+/// A run as its revisions' marks show it in `view`: bold or italic where a shown revision's mark is.
+fn marked_run(run: &Run, view: MarkupView, markup: &crate::docx::review::Markup) -> Run {
+    use crate::docx::review::TextMark;
+    if view != MarkupView::All || run.rev.is_empty() {
+        return run.clone();
+    }
+    let (mut bold, mut italic) = (false, false);
+    let marks = [run.rev.ins.as_deref(), run.rev.del.as_deref(), run.rev.fmt.as_deref().map(|f| &*f.mark)];
+    for m in marks.into_iter().flatten().filter(|m| markup.show.shows(m)) {
+        match markup.style.look(m.kind).mark {
+            TextMark::Bold => bold = true,
+            TextMark::Italic => italic = true,
+            _ => {}
+        }
+    }
+    if (!bold || run.bold) && (!italic || run.italic) {
+        return run.clone();
+    }
+    let mut s = (**run).clone();
+    s.bold |= bold;
+    s.italic |= italic;
+    Rc::new(s)
+}
+
 fn shapes_alike(a: &Run, b: &Run) -> bool {
     let RunStyle {
         ascii,
@@ -1927,6 +1978,7 @@ pub fn shape_space(
             show_optional_hyphens: text.review.show_optional_hyphens,
         },
         view: text.review.view,
+        markup: text.review.markup.clone(),
         show_hidden: text.review.show_hidden,
         parts: shown_parts(para, text),
         hyphenate: text

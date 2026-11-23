@@ -143,6 +143,11 @@ impl UnitText {
         UnitText::masked(p, |rev| view.hides(rev))
     }
 
+    /// [`Self::of_view`] as the document's review view shows it: its kinds and reviewers.
+    pub fn of_review(p: &Paragraph, review: &crate::docx::review::ReviewView) -> UnitText {
+        UnitText::masked(p, |rev| review.hides(rev))
+    }
+
     /// The units as `view` shows them: the revisions it hides are hidden units that keep their characters.
     pub fn in_view(p: &Paragraph, view: MarkupView) -> UnitText {
         UnitText::build(p, |rev| view.hides(rev), false, false)
@@ -150,7 +155,7 @@ impl UnitText {
 
     /// [`Self::in_view`] in the document's view: hidden text is no hidden unit while it shows.
     pub fn in_review(p: &Paragraph, review: &crate::docx::review::ReviewView) -> UnitText {
-        UnitText::build(p, |rev| review.view.hides(rev), false, review.show_hidden)
+        UnitText::build(p, |rev| review.hides(rev), false, review.show_hidden)
     }
 
     pub fn masked(p: &Paragraph, mask: impl Fn(&RunRevisions) -> bool) -> UnitText {

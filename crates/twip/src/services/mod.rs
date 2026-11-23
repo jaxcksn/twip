@@ -184,8 +184,7 @@ pub fn headings(e: &mut crate::editing::Editor) -> Vec<crate::api::services::Hea
 /// `p`'s heading level and the text it shows under the review view, when it is a heading [`headings`] lists.
 fn listed_heading(doc: &crate::docx::Document, p: &crate::docx::Paragraph) -> Option<(u32, String)> {
     let level = a11y::roles::heading_level(doc, p)?;
-    let view = doc.review.view;
-    let t = crate::editing::text::Seen::of(p, |r| !view.hides(&r.rev), true);
+    let t = crate::editing::text::Seen::of(p, |r| !doc.review.hides(&r.rev), true);
     let text: String = t.chars.into_iter().map(|c| if c.is_control() || c == crate::editing::text::OBJECT { ' ' } else { c }).collect();
     let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
     (!text.is_empty()).then_some((level, text))
