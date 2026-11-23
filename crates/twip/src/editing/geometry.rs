@@ -589,6 +589,11 @@ impl PageGeometry {
         Some((paras, stops, breaks, pure))
     }
 
+    /// The paragraphs with lines on the page, in no order.
+    pub fn paras(&self) -> impl Iterator<Item = ParaId> + '_ {
+        self.paras.iter().copied()
+    }
+
     pub fn shows_para(&self, p: ParaId) -> bool {
         self.paras.contains(&p)
     }

@@ -354,6 +354,8 @@ pub struct View {
     pub fade: Vec<(usize, [f64; 4])>,
     pub guide: Option<(usize, [f64; 4])>,
     pub anchor: Option<(usize, [f64; 2])>,
+    /// The Select Objects rectangle being dragged: its page and box.
+    pub marquee: Option<(usize, [f64; 4])>,
     pub ghost: Option<Ghost>,
     pub shapes: Vec<ShapeFrame>,
     /// The selected float's wrap polygon while its points are edited.

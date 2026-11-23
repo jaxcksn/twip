@@ -524,6 +524,7 @@ impl Float {
             dist,
             effect,
             poly,
+            poly_edited,
             behind,
             allow_overlap,
             layout_in_cell,
@@ -558,6 +559,7 @@ impl Float {
             && *dist == o.dist
             && *effect == o.effect
             && *poly == o.poly
+            && *poly_edited == o.poly_edited
             && *behind == o.behind
             && *allow_overlap == o.allow_overlap
             && *layout_in_cell == o.layout_in_cell
@@ -606,6 +608,30 @@ pub struct InlineText {
     pub text_box: TextBox,
 }
 
+/// The most vertices a wrap polygon keeps: a longer one read or made is thinned to about this many.
+pub const MAX_WRAP_POINTS: usize = 1024;
+
+/// `pts` thinned to at most [`MAX_WRAP_POINTS`] vertices by keeping every n-th, closed again when it was closed.
+pub fn bounded_polygon(mut pts: Vec<(f64, f64)>) -> Vec<(f64, f64)> {
+    if pts.len() <= MAX_WRAP_POINTS {
+        return pts;
+    }
+    let closed = pts.first() == pts.last();
+    let step = pts.len().div_ceil(MAX_WRAP_POINTS - 1);
+    let mut k = 0;
+    pts.retain(|_| {
+        k += 1;
+        (k - 1) % step == 0
+    });
+    if closed
+        && let Some(&first) = pts.first()
+        && pts.last() != Some(&first)
+    {
+        pts.push(first);
+    }
+    pts
+}
+
 /// An anchored (floating) picture or text box (the FLOAT rules).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Float {
@@ -635,6 +661,8 @@ pub struct Float {
     pub effect: [f64; 4],
     /// The wrap polygon of a tight or through float, as fractions of its box.
     pub poly: Option<Rc<[(f64, f64)]>>,
+    /// The wrap polygon was edited (`wp:wrapPolygon/@edited`): it isn't made again from the object's outline.
+    pub poly_edited: bool,
     pub behind: bool,
     pub allow_overlap: bool,
     pub layout_in_cell: bool,

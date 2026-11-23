@@ -324,6 +324,31 @@ pub fn paint_float_clipped(page: &PageFragment, id: FloatId) -> Vec<Clipped> {
     v
 }
 
+/// The first item `want` takes among paragraph `para`'s lines on `page` (and any turned or loose items), placed on
+/// the page: other paragraphs' lines are skipped unread.
+pub fn find_in_para(page: &PageFragment, para: ParaId, want: &dyn Fn(&Item) -> bool) -> Option<Item> {
+    fn walk(children: &[Child], dx: f64, dy: f64, para: ParaId, want: &dyn Fn(&Item) -> bool) -> Option<Item> {
+        let in_line = |l: &PlacedLine| l.line.items.iter().find(|it| want(it)).map(|it| translated(it, dx + l.x, dy + l.y));
+        children.iter().find_map(|c| match c {
+            Child::Box(b) => walk(&b.children, dx + b.offset.0, dy + b.offset.1, para, want),
+            Child::Group { offset, children } => walk(children, dx + offset.0, dy + offset.1, para, want),
+            Child::Para(p) if p.para == para => p.lines.iter().find_map(in_line),
+            Child::Para(_) => None,
+            Child::Line { para: Some(q), placed } if *q == para => in_line(placed),
+            Child::Line { .. } => None,
+            Child::Table(t) => t.rows.iter().flat_map(|r| r.cells.iter()).find_map(|cell| walk(&cell.content, dx, dy, para, want)),
+            Child::Items(items) | Child::Turned { items, .. } => items.iter().find(|it| want(it)).map(|it| translated(it, dx, dy)),
+        })
+    }
+    page.children.iter().find_map(|c| {
+        let b: &BoxFragment = match c {
+            PageChild::Body(b) => b,
+            PageChild::Header(b) | PageChild::Footer(b) => b,
+        };
+        walk(&b.children, b.offset.0, b.offset.1, para, want)
+    })
+}
+
 pub fn paint_items(page: &PageFragment) -> Vec<Item> {
     let mut v = Vec::new();
     paint(page, &mut |p| v.push(p.absolute()));

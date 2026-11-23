@@ -619,3 +619,58 @@ fn typing_over_everything_keeps_the_last_sections_watermark_through_a_save() {
         assert_eq!(back, want, "{fx}");
     }
 }
+
+#[test]
+fn in_its_header_a_watermark_is_selected_resized_and_deleted() {
+    use super::super::input::PointerKind;
+    use super::super::keymap::Mods;
+    use super::super::selection::{ObjectRef, Selection};
+    let mut e = Editor::open(&crate::docx::blank::blank_docx(), fonts()).expect("opens");
+    run(&mut e, Command::SetWatermark(draft()));
+    e.complete(fonts());
+    let at = |e: &Editor, x: f64, y: f64| e.stack().to_doc(0, x, y).expect("on the stack");
+    let none = Mods::default();
+    let page = e.snapshot().pages()[0].w;
+    // Not from the body: a press on it there goes to the text.
+    let (cx, cy) = at(&e, page / 2.0, 396.0);
+    e.pointer_input(PointerKind::Down, cx, cy, 1, none, fonts());
+    e.pointer_input(PointerKind::Up, cx, cy, 0, none, fonts());
+    assert!(!matches!(e.selection(), Selection::Object(_)), "{:?}", e.selection());
+    // In the header: selected.
+    e.pointer_input(PointerKind::Down, cx, 30.0, 2, none, fonts());
+    e.pointer_input(PointerKind::Up, cx, 30.0, 0, none, fonts());
+    e.complete(fonts());
+    e.pointer_input(PointerKind::Down, cx, cy, 1, none, fonts());
+    e.pointer_input(PointerKind::Up, cx, cy, 0, none, fonts());
+    let Selection::Object(ObjectRef::Floating(f)) = e.selection() else { panic!("the watermark: {:?}", e.selection()) };
+    let w0 = e.float_of(f).map(|fl| fl.w).expect("the watermark");
+    // Its right handle widens it.
+    let (rect, rot) = e.float_frame(f, 0).expect("its frame");
+    // Its right handle and a point 36 pt further along its turned width.
+    let (c, half) = ([(rect[0] + rect[2]) / 2.0, (rect[1] + rect[3]) / 2.0], (rect[2] - rect[0]) / 2.0);
+    let (sin, cos) = rot.to_radians().sin_cos();
+    let along = |d: f64| at(&e, c[0] + d * cos, c[1] + d * sin);
+    let ((hx, hy), (tx, ty)) = (along(half), along(half + 36.0));
+    e.pointer_input(PointerKind::Down, hx, hy, 1, none, fonts());
+    e.pointer_input(PointerKind::Move, tx, ty, 0, none, fonts());
+    e.pointer_input(PointerKind::Up, tx, ty, 0, none, fonts());
+    let w1 = e.float_of(f).map(|fl| fl.w).expect("the watermark");
+    assert!(w1 > w0 + 20.0, "{w0} to {w1}");
+    assert!(crate::docx::watermark::of(e.float_of(f).expect("the watermark")).is_some(), "still a watermark");
+    // Deleted from the header edited (the first page's and even pages' keep theirs, as in Word), so the pages show none.
+    run(&mut e, Command::DeleteObject);
+    assert_eq!(marks(&e).iter().filter(|(_, n)| *n == 0).count(), 1, "{:?}", marks(&e));
+    assert_eq!(e.page_formatting(0).watermark, None);
+    run(&mut e, Command::Undo);
+    assert!(e.page_formatting(0).watermark.is_some());
+}
+
+#[test]
+fn a_picture_watermark_and_page_picture_read_back_their_bytes() {
+    let data = super::open("FX-OBJ.docx").document().images.last().cloned().expect("an image");
+    let mut e = Editor::open(&crate::docx::blank::blank_docx(), fonts()).expect("opens");
+    run(&mut e, Command::SetWatermark(Watermark::Picture(PictureWatermark { image: Bytes(data.clone()), scale: None, washout: Some(true) })));
+    assert_eq!(e.watermark_image(0), Some(&data[..]));
+    run(&mut e, Command::SetPageColor(FillValue::Picture { image: Bytes(data.clone()), tile: None }));
+    assert_eq!(e.page_fill_image(), Some(&data[..]));
+}

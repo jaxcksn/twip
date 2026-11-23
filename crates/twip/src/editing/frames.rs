@@ -210,25 +210,112 @@ impl Editor {
 
     /// Sets the frame's properties on each of its paragraphs, and places it by them.
     pub(super) fn set_frame(&mut self, props: FrameProperties, fonts: &Fonts) -> Outcome {
+        self.set_frame_as(props, None, "Frame", fonts)
+    }
+
+    /// Sets the frame's properties and, given `allow_overlap`, whether it may overlap other frames and floating
+    /// objects (`w:suppressOverlap` off on each of its paragraphs), in one undo step ("Frame").
+    pub fn set_frame_with_overlap(&mut self, props: FrameProperties, allow_overlap: Option<bool>, fonts: &Fonts) -> Outcome {
+        self.set_frame_as(props, allow_overlap, "Frame", fonts)
+    }
+
+    /// [`Editor::set_frame`], as one undo step named `label`.
+    fn set_frame_as(&mut self, props: FrameProperties, allow_overlap: Option<bool>, label: &'static str, fonts: &Fonts) -> Outcome {
+        let overlap = |p: &mut Props, w: &str| match allow_overlap {
+            Some(true) => p.remove("suppressOverlap"),
+            Some(false) => p.set("suppressOverlap", format!("<{w}suppressOverlap/>")),
+            None => {}
+        };
         if self.style_target.is_some() {
-            return self.format_style_part("pPr", &|p, cx, para, _| p.set("framePr", frame_xml(&cx.w, &props, para.style.frame.as_ref())));
+            return self.format_style_part("pPr", &|p, cx, para, _| {
+                p.set("framePr", frame_xml(&cx.w, &props, para.style.frame.as_ref()));
+                overlap(p, &cx.w);
+            });
         }
         let Some(f) = self.frame_here() else { return Outcome::unavailable("the selection isn't in a frame") };
-        let Some((blocks, Some(fr))) = self.frame_paras(f, true, &|p, w, old| p.set("framePr", frame_xml(w, &props, old))) else {
+        let edit = |p: &mut Props, w: &str, old: Option<&FramePr>| {
+            p.set("framePr", frame_xml(w, &props, old));
+            overlap(p, w);
+        };
+        let Some((blocks, Some(fr))) = self.frame_paras(f, true, &edit) else {
             return Outcome::Unchanged("no frame");
         };
         let Some(mut n) = self.float_of(f).cloned() else { return Outcome::Unchanged("no frame") };
+        if let Some(allow) = allow_overlap {
+            n.allow_overlap = allow;
+        }
         let sides = crate::docx::frames::bleed(&blocks);
         if let Some(tb) = &mut n.text_box {
             tb.blocks = blocks;
         }
         crate::docx::frames::place(&mut n, &fr, sides, self.doc.settings.compat() == crate::docx::Compat::Legacy);
         let caret = self.selection;
-        let out = self.set_float(n, "Frame", fonts);
+        let out = self.set_float(n, label, fonts);
         if !matches!(caret, Selection::Object(_)) {
             self.selection = caret;
         }
         out
+    }
+
+    /// A frame dragged to `moved` (its place, or its size by a handle), as its paragraphs' `w:framePr` say it: the
+    /// moved side's alignment becomes an offset from its reference, a dragged size an exact width and an at-least
+    /// height (an exact one stays exact). A drop cap stays in its paragraph; only its size changes.
+    pub(super) fn commit_frame(&mut self, f: FloatId, moved: &crate::docx::Float, label: &'static str, fonts: &Fonts) -> Outcome {
+        let (Some(was), Some(fr)) = (self.float_of(f).cloned(), self.frame_pr(f)) else { return Outcome::Unchanged("no frame") };
+        let mut p = properties(&fr);
+        let drop_cap = fr.drop_cap.as_deref().is_some_and(|d| d != "none");
+        let ne = |a: f64, b: f64| (a - b).abs() > 1e-9;
+        if !drop_cap && (moved.h_align != was.h_align || ne(moved.h_offset, was.h_offset) || moved.h_relative != was.h_relative) {
+            p.horizontal_align = None;
+            // `w:x` holds the place plus one twip.
+            p.horizontal = Points(moved.h_offset + 0.05);
+            p.horizontal_relative = match moved.h_relative.as_str() {
+                "margin" => FrameHorizontalRelative::Margin,
+                "page" => FrameHorizontalRelative::Page,
+                _ => FrameHorizontalRelative::Column,
+            };
+        }
+        if !drop_cap && (moved.v_align != was.v_align || ne(moved.v_offset, was.v_offset) || moved.v_relative != was.v_relative) {
+            p.vertical_align = None;
+            p.vertical_relative = match moved.v_relative.as_str() {
+                "margin" => FrameVerticalRelative::Margin,
+                "page" => FrameVerticalRelative::Page,
+                _ => FrameVerticalRelative::Paragraph,
+            };
+            // From the text `w:y` is the place itself; from the page or margin it is one twip more.
+            let twip = if p.vertical_relative == FrameVerticalRelative::Paragraph { 0.0 } else { 0.05 };
+            p.vertical = Points(moved.v_offset + twip);
+        }
+        if ne(moved.w, was.w) {
+            (p.width_rule, p.width) = (FrameWidthRule::Exactly, Points(moved.w));
+        }
+        if ne(moved.h, was.h) {
+            if p.height_rule == FrameHeightRule::Auto {
+                p.height_rule = FrameHeightRule::AtLeast;
+            }
+            p.height = Points(moved.h);
+        }
+        self.selection = Selection::Object(ObjectRef::Floating(f));
+        self.set_frame_as(p, None, label, fonts)
+    }
+
+    /// Whether the frame the selection is in, or is, may overlap other frames and floating objects (`w:suppressOverlap`
+    /// off).
+    pub fn frame_allow_overlap(&self) -> Option<bool> {
+        let f = self.frame_here()?;
+        let res = self.doc.resolver.as_ref()?;
+        let cx = self.cx();
+        let tb = self.float_of(f)?.text_box.as_ref()?;
+        let apart =
+            tb.blocks.iter().any(|b| matches!(b, Block::Para(p) if res.para_from_xml(p.style.direct.0.as_deref(), None, &cx).style.suppress_overlap));
+        Some(!apart)
+    }
+
+    /// Lets the frame the selection is in, or is, overlap other frames and floating objects, or keeps it apart
+    /// (`w:suppressOverlap` on each of its paragraphs). One undo step ("Frame").
+    pub fn set_frame_allow_overlap(&mut self, allow: bool, fonts: &Fonts) -> Outcome {
+        let Some(props) = self.frame_properties(None) else { return Outcome::unavailable("the selection isn't in a frame") };
+        self.set_frame_with_overlap(props, Some(allow), fonts)
     }
 
     /// Removes the frame: its paragraphs, without their `w:framePr`, go where they were beside the paragraph it was

@@ -250,7 +250,7 @@ impl Editor {
     }
 
     /// Where float `f` is anchored.
-    fn float_point(&self, f: crate::layout::FloatId) -> Option<Position> {
+    pub(super) fn float_point(&self, f: crate::layout::FloatId) -> Option<Position> {
         let para = self.index.float_anchor(f)?;
         Some(Position::text(self.index.story(self.index.para_slot(para)?.container), para, Unit(0)))
     }

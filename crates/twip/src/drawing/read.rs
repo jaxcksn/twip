@@ -54,6 +54,7 @@ fn nv_of(c: Option<Node>) -> NonVisual {
         id: c.attribute("id").and_then(|v| v.parse().ok()).unwrap_or(0),
         name: c.attribute("name").unwrap_or("").to_string(),
         descr: Rc::from(descr),
+        title: Rc::from(c.attribute("title").unwrap_or("")),
         hidden: on(c.attribute("hidden")),
         lock_aspect: false,
         decorative: c.descendants().any(|n| n.tag_name().name() == "decorative" && on(n.attribute("val"))),

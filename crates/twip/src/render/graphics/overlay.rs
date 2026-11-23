@@ -237,6 +237,10 @@ impl Graphics {
                 rec.fill_rect(kurbo::Rect::new(x - h, y - h, x + h, y + h), aliased(Color::rgb(0x00_0000)));
             }
         }
+        // Select Objects' rectangle: a 1 px dashed outline in the object colour.
+        if let Some((_, b)) = view.marquee.filter(|(pg, _)| *pg == i) {
+            rec.stroke_path(&rect_path(rect(b)), &dashed(1.0 / k, 4.0 / k, 2.0 / k), aliased(object));
+        }
         self.table_affordances(rec, r, view, i, f);
         self.object_feedback(rec, r, view, i, f);
         self.marks(rec, r, view, i, f);

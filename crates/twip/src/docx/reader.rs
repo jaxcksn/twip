@@ -2548,7 +2548,7 @@ impl Reader {
         let dist = std::array::from_fn(|i| (st.wrap_dist[i].unwrap_or(dflt[i]) * 20.0).round() / 20.0);
         // Compat 15: a VML float is behind the text only without wrapping.
         let behind = st.z < 0 && (self.res.styles.compat != Compat::Generic || wrap == "none");
-        let poly = v.wrap_coords.filter(|_| matches!(wrap.as_str(), "tight" | "through")).map(Rc::from);
+        let poly = v.wrap_coords.filter(|_| matches!(wrap.as_str(), "tight" | "through")).map(|p| Rc::from(super::bounded_polygon(p)));
         let line = shape.sp().and_then(|s| s.line.as_ref()).or_else(|| shape.pic().and_then(|p| p.line.as_ref()));
         let pen = line.filter(|l| !matches!(l.fill, Some(crate::drawing::paint::Fill::None))).map(|l| l.width.map_or(15.0, |w| w.0 as f64 / 635.0));
         let (h_align, v_align) = (align(&st.h_align), align(&st.v_align));
@@ -2582,6 +2582,8 @@ impl Reader {
                 dist,
                 effect,
                 poly,
+                // A VML wrap polygon (`wrapcoords`) is kept as it is.
+                poly_edited: true,
                 behind,
                 allow_overlap: v.allow_overlap,
                 layout_in_cell: v.allow_in_cell,
@@ -2639,8 +2641,10 @@ impl Reader {
             .any(|n| matches!(n.tag_name().name(), "graphicFrameLocks" | "picLocks") && matches!(n.attribute("noChangeAspect"), Some("1" | "true")));
         if is(item, WP, "inline") {
             let ee = item.children().find(|c| is(*c, WP, "effectExtent"));
-            let e = |n: &str| ee.and_then(|e| emu(e.attribute(n))).unwrap_or(0.0).max(0.0);
-            let effect = [e("l"), e("t"), e("r"), e("b")];
+            // Negative where a turned picture's bounds are narrower than its box (Word writes a quarter-turned
+            // picture's so); never past half the box, so the line box never turns inside out.
+            let e = |n: &str, size: f64| ee.and_then(|e| emu(e.attribute(n))).unwrap_or(0.0).max(-size / 2.0);
+            let effect = [e("l", w), e("t", h), e("r", w), e("b", h)];
             // An inline shape's text: a stand-alone shape's (a group's children's text isn't read inline).
             let group = item.descendants().any(|n| n.tag_name().name() == "wgp");
             let text = txbx.filter(|_| !group).map(|t| Box::new(InlineText { id: next_para_id(), text_box: self.text_box(item, t, pkg) }));
@@ -2710,6 +2714,9 @@ impl Reader {
                     let e = |n: &str| ee.and_then(|e| e.attribute(n)?.parse::<f64>().ok()).map_or(0.0, |v| (v / 635.0).trunc() / 20.0);
                     [e("l"), e("t"), e("r"), e("b")]
                 },
+                poly_edited: wrap_el
+                    .and_then(|w| w.children().find(|c| is(*c, WP, "wrapPolygon")))
+                    .is_some_and(|p| p.attribute("edited").is_some_and(|v| on_off_str(Some(v)))),
                 poly: wrap_el.filter(|_| matches!(wrap, "tight" | "through")).and_then(|w| {
                     let pts: Vec<(f64, f64)> = w
                         .children()
@@ -2718,7 +2725,7 @@ impl Reader {
                         .filter(|q| q.is_element())
                         .filter_map(|q| Some((q.attribute("x")?.parse::<f64>().ok()? / 21600.0, q.attribute("y")?.parse::<f64>().ok()? / 21600.0)))
                         .collect();
-                    (pts.len() >= 2).then(|| Rc::from(pts))
+                    (pts.len() >= 2).then(|| Rc::from(super::bounded_polygon(pts)))
                 }),
                 behind: item.attribute("behindDoc").is_some_and(|v| on_off_str(Some(v))),
                 allow_overlap: item.attribute("allowOverlap").map(|v| on_off_str(Some(v))).unwrap_or(true),

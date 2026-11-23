@@ -114,6 +114,7 @@ pub(crate) fn float(group: Vec<Paragraph>, legacy: bool) -> Float {
         dist: [0.0; 4],
         effect: [0.0; 4],
         poly: None,
+        poly_edited: false,
         behind: false,
         allow_overlap: !apart,
         layout_in_cell: true,
