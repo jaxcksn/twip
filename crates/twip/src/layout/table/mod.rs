@@ -491,15 +491,15 @@ fn layout_shown(
     let mut stories = Vec::new();
     let mut closings = Vec::new();
     let contextual = super::paragraph::contextual_in(&env.ctx.env.text, true);
-    let mark = Some(&env.ctx.env.text.default_style);
+    let mark = Some(env.ctx.env.text.default_style.as_deref());
     let view = env.ctx.env.text.review.view;
-    fn style(b: Option<&Block>, view: crate::docx::review::MarkupView) -> Option<&Option<String>> {
+    fn style(b: Option<&Block>, view: crate::docx::review::MarkupView) -> Option<Option<&str>> {
         match b {
-            Some(Block::Para(p)) => Some(&p.para_style_in(view).style_id),
+            Some(Block::Para(p)) => Some(p.para_style_in(view).style_id.as_deref()),
             _ => None,
         }
     }
-    let drops = |b: Option<&Block>, other: Option<&Option<String>>| {
+    let drops = |b: Option<&Block>, other: Option<Option<&str>>| {
         contextual && matches!(b, Some(Block::Para(p)) if super::paragraph::drops_at_edge(p.para_style_in(view), other))
     };
     crate::prof::time("table:cells", || -> Result<(), Yield> {
@@ -519,7 +519,7 @@ fn layout_shown(
                     let skip = closing_para(c).is_some();
                     let blocks: Vec<&Block> = c.blocks[..if skip { n - 1 } else { n }].iter().collect();
                     let before = match g.ci {
-                        0 if ri == 0 => prev.map(|p| &p.style_id),
+                        0 if ri == 0 => prev.map(|p| p.style_id.as_deref()),
                         0 => mark,
                         ci => style(r.cells[ci - 1].blocks.last(), view),
                     };

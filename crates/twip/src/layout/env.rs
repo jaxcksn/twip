@@ -61,10 +61,10 @@ pub struct TextEnv {
     pub dash_breaks: bool,
     /// `strictFirstAndLastChars`.
     pub strict_kinsoku: bool,
-    pub default_style: Option<String>,
+    pub default_style: Option<std::rc::Rc<str>>,
     pub grow_autofit: bool,
     pub balance_spaces: bool,
-    pub default_east_asia: Option<String>,
+    pub default_east_asia: Option<std::rc::Rc<str>>,
     pub ul_trail_space: bool,
     pub compress_punctuation: bool,
     pub review: ReviewView,
@@ -139,7 +139,7 @@ impl TextEnv {
             breaking_rules: s.compat_mode >= 14 || s.has("applyBreakingRules"),
             dash_breaks: s.compat_mode >= 14,
             strict_kinsoku: s.strict_kinsoku,
-            default_style: doc.resolver.as_ref().and_then(|r| r.styles.default_paragraph.clone()),
+            default_style: doc.resolver.as_ref().and_then(|r| r.styles.default_paragraph.as_deref().map(Into::into)),
             grow_autofit: s.compat() == Compat::Legacy && s.has("growAutofit"),
             balance_spaces: s.has("balanceSingleByteDoubleByteWidth"),
             ul_trail_space: s.has("ulTrailSpace"),
@@ -147,8 +147,8 @@ impl TextEnv {
             review: doc.review.clone(),
             line_grid: None,
             default_east_asia: doc.resolver.as_ref().and_then(|r| match &r.styles.doc_rpr.east_asia {
-                Some(crate::docx::props::FontRef::Theme(t)) if r.theme.ea_unset(t) => Some(String::new()),
-                f => r.font(f),
+                Some(crate::docx::props::FontRef::Theme(t)) if r.theme.ea_unset(t) => Some("".into()),
+                f => r.font(f).map(Into::into),
             }),
             adjust_line_height_in_table: s.has("adjustLineHeightInTable"),
             theme: doc.theme.clone(),
@@ -197,23 +197,38 @@ impl LayoutEnv {
     }
 }
 
+fn walk(blocks: &[crate::docx::Block], out: &mut dyn FnMut(&crate::docx::Float)) {
+    for b in blocks {
+        match b {
+            crate::docx::Block::Para(p) => p.inlines.iter().for_each(|i| {
+                if let crate::docx::Inline::Float(f, _) = i {
+                    out(f);
+                }
+            }),
+            crate::docx::Block::Table(t) => t.rows.iter().flat_map(|r| &r.cells).for_each(|c| walk(&c.blocks, out)),
+        }
+    }
+}
+
+/// Whether `blocks` hold a box of a text box chain: one whose story goes on in others, or one going on with it.
+pub fn chained(blocks: &[crate::docx::Block]) -> bool {
+    use crate::drawing::ShapeText;
+    let mut found = false;
+    walk(blocks, &mut |f| {
+        found |= f
+            .shape
+            .as_deref()
+            .and_then(|s| s.sp())
+            .is_some_and(|sp| matches!((&sp.text, sp.chain), (ShapeText::Story, Some(_)) | (ShapeText::Linked { .. }, _)));
+    });
+    found
+}
+
 fn chains(doc: &Document) -> Rc<[Chain]> {
     use crate::drawing::ShapeText;
     use std::collections::BTreeMap;
     let mut heads: BTreeMap<u32, (crate::docx::TextBox, (u64, [f64; 2]))> = BTreeMap::new();
     let mut later: BTreeMap<u32, Vec<(u32, (u64, [f64; 2]))>> = BTreeMap::new();
-    fn walk(blocks: &[crate::docx::Block], out: &mut dyn FnMut(&crate::docx::Float)) {
-        for b in blocks {
-            match b {
-                crate::docx::Block::Para(p) => p.inlines.iter().for_each(|i| {
-                    if let crate::docx::Inline::Float(f, _) = i {
-                        out(f);
-                    }
-                }),
-                crate::docx::Block::Table(t) => t.rows.iter().flat_map(|r| &r.cells).for_each(|c| walk(&c.blocks, out)),
-            }
-        }
-    }
     let mut each = |f: &crate::docx::Float| {
         let Some(sp) = f.shape.as_deref().and_then(|s| s.sp()) else { return };
         match (&sp.text, sp.chain, &f.text_box) {
@@ -246,6 +261,11 @@ thread_local! {
 
 impl LayoutEnv {
     pub fn new(doc: &Document) -> LayoutEnv {
+        LayoutEnv::with_chains(doc, None)
+    }
+
+    /// [`LayoutEnv::new`] with the document's text box chains when they are known.
+    pub fn with_chains(doc: &Document, chains: Option<Rc<[Chain]>>) -> LayoutEnv {
         #[cfg(test)]
         BUILT.set(BUILT.get() + 1);
         let s = &doc.settings;
@@ -256,7 +276,7 @@ impl LayoutEnv {
             gutter_at_top: s.gutter_at_top,
             book_fold: s.book_fold,
             line_number_run: doc.line_number_run.clone(),
-            chains: chains(doc),
+            chains: chains.unwrap_or_else(|| self::chains(doc)),
             notes_like_ww8: s.compat() == Compat::Legacy && s.has("footnoteLayoutLikeWW8"),
             normal: doc.resolver.as_ref().map(|r| Rc::new(r.paragraph(&Default::default(), None).style)),
         }

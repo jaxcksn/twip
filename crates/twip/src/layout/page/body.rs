@@ -43,7 +43,6 @@ fn balance(
     let state = fill.at.clone();
     let view = fill.ctx.env.text.review.view;
     let spacing: HashMap<_, _> = blocks
-        .blocks
         .iter()
         .filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None })
         .map(|p| {
@@ -417,8 +416,7 @@ pub fn layout_body(
     // The area passes to the next section on the page, drawn after the page's last text.
     // Compat 15: the first section on the page with a footnote reference (on this page or an earlier one) gives the
     // page's footnote area its columns, notes on this page or not.
-    let starts_area =
-        |a: &NoteArea| !a.parts.is_empty() || held.is_some() || sec.blocks.blocks.iter().any(|b| crate::layout::node::has_footnote_refs(b));
+    let starts_area = |a: &NoteArea| !a.parts.is_empty() || held.is_some() || sec.blocks.iter().any(crate::layout::node::has_footnote_refs);
     let (stream, passed) = match stream {
         Some(a) if next_shares && space.hold_notes && starts_area(&a) => {
             // Across columns a later section's notes keep flowing through the columns; in one column they stack.

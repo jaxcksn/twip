@@ -114,6 +114,19 @@ fn inline_chars(i: &Inline) -> impl Iterator<Item = char> + '_ {
     text.chars().chain(one)
 }
 
+/// The character [`UnitText`] gives unit `u` of `p`, without building it.
+pub fn char_at(p: &Paragraph, u: Unit) -> Option<char> {
+    let mut at = 0u32;
+    for i in &p.inlines {
+        let n = i.units() as u32;
+        if u.0 < at + n {
+            return inline_chars(i).nth((u.0 - at) as usize);
+        }
+        at += n;
+    }
+    None
+}
+
 pub struct UnitText {
     pub text: String,
     bytes: Vec<usize>,

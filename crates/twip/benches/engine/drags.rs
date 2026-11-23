@@ -55,18 +55,30 @@ fn along(at: Point, border: Border, d: f64) -> Point {
     }
 }
 
-/// One pointer move of a pressed border, alternating between 10 and 30 px from where it was pressed, with the frame
-/// that shows it. Budget: p95 at most 2 ms of engine time, inside one 8.3 ms frame.
-fn moving(bencher: Bencher, name: &str, border: Border) {
+/// One pointer move of a pressed border with the frame that shows it, live layout on (the default): alternating
+/// between 10 and 30 px from where it was pressed, or with `fresh`, a quarter px further each move, so each lays the
+/// table out at widths it hasn't had.
+fn moving(bencher: Bencher, name: &str, border: Border, fresh: bool) {
     let mut pixels = vec![0u8; (W * H * 4) as usize];
     let (mut engine, id, at) = session(name, border, &mut pixels);
     let s = engine.session(id).expect("the session");
     s.pointer(PointerKind::Down, at, PointerButton::Primary, 1, NONE);
-    let (s, pixels, mut far) = (RefCell::new(s), RefCell::new(pixels), false);
+    let (s, pixels, mut far, mut moved) = (RefCell::new(s), RefCell::new(pixels), false, 10.0);
     bencher
         .with_inputs(|| {
             far = !far;
-            along(at, border, if far { 30.0 } else { 10.0 })
+            moved += 0.25;
+            along(
+                at,
+                border,
+                if fresh {
+                    moved
+                } else if far {
+                    30.0
+                } else {
+                    10.0
+                },
+            )
         })
         .bench_local_values(|to| {
             let mut s = s.borrow_mut();
@@ -111,16 +123,28 @@ fn shape_live(bencher: Bencher) {
     prof.borrow_mut().print("shape_live");
 }
 
-/// A column border's pointer move with its frame. Budget: p95 at most 2 ms of engine time.
+/// A column border's pointer move with its frame, between two places.
 #[divan::bench(args = DOCS, sample_size = 1)]
 fn column_border(bencher: Bencher, name: &str) {
-    moving(bencher, name, Border::Column);
+    moving(bencher, name, Border::Column, false);
 }
 
-/// A row border's pointer move with its frame. Budget: p95 at most 2 ms of engine time.
+/// A column border's pointer move with its frame, each to a new place.
+#[divan::bench(ignore = cfg!(codspeed_build), args = DOCS, sample_size = 1)]
+fn column_border_fresh(bencher: Bencher, name: &str) {
+    moving(bencher, name, Border::Column, true);
+}
+
+/// A row border's pointer move with its frame, between two places.
 #[divan::bench(ignore = cfg!(codspeed_build), args = DOCS, sample_size = 1)]
 fn row_border(bencher: Bencher, name: &str) {
-    moving(bencher, name, Border::Row);
+    moving(bencher, name, Border::Row, false);
+}
+
+/// A row border's pointer move with its frame, each to a new place.
+#[divan::bench(ignore = cfg!(codspeed_build), args = DOCS, sample_size = 1)]
+fn row_border_fresh(bencher: Bencher, name: &str) {
+    moving(bencher, name, Border::Row, true);
 }
 
 /// A column border dragged 20 px (untimed), then released: the resize committed and laid out through the visible

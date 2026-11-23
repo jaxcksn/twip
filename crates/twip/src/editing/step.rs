@@ -391,6 +391,45 @@ impl Targets {
 }
 
 impl TableProps {
+    /// Sets `t`'s properties to these, returning the ones it had.
+    pub(super) fn put(self, t: &mut crate::docx::Table) -> TableProps {
+        let (old, props) = (TableProps::of(t), self);
+        (
+            t.style_id,
+            t.look,
+            t.width,
+            t.jc,
+            t.ind,
+            t.ind_pct,
+            t.ind_set,
+            t.borders,
+            t.fixed,
+            t.bands,
+            t.floating,
+            t.cell_spacing,
+            t.shd,
+            t.alt,
+            t.direct,
+        ) = (
+            props.style_id,
+            props.look,
+            props.width,
+            props.jc,
+            props.ind,
+            props.ind_pct,
+            props.ind_set,
+            props.borders,
+            props.fixed,
+            props.bands,
+            props.floating,
+            props.cell_spacing,
+            props.shd,
+            props.alt,
+            props.direct,
+        );
+        old
+    }
+
     pub fn of(t: &crate::docx::Table) -> TableProps {
         TableProps {
             style_id: t.style_id.clone(),
@@ -1075,48 +1114,9 @@ impl Step {
             }
             Step::TableProps { table, props } => {
                 let t = idx.table_mut(doc, table).ok_or(StepError::Missing)?;
-                let old = TableProps::of(t);
-                (
-                    t.style_id,
-                    t.look,
-                    t.width,
-                    t.jc,
-                    t.ind,
-                    t.ind_pct,
-                    t.ind_set,
-                    t.borders,
-                    t.fixed,
-                    t.bands,
-                    t.floating,
-                    t.cell_spacing,
-                    t.shd,
-                    t.alt,
-                    t.direct,
-                ) = (
-                    props.style_id,
-                    props.look,
-                    props.width,
-                    props.jc,
-                    props.ind,
-                    props.ind_pct,
-                    props.ind_set,
-                    props.borders,
-                    props.fixed,
-                    props.bands,
-                    props.floating,
-                    props.cell_spacing,
-                    props.shd,
-                    props.alt,
-                    props.direct,
-                );
-                let slot = idx.table_slot(table).ok_or(StepError::Missing)?;
-                let hint = idx.top_block(slot.container, slot.block).map(|(section, b, row)| Change {
-                    section,
-                    first: b,
-                    old_end: b + 1,
-                    new_end: b + 1,
-                    row,
-                });
+                let old = props.put(t);
+                idx.table_slot(table).ok_or(StepError::Missing)?;
+                let hint = table_hint(idx, table, None);
                 Ok(Applied { inverse: Step::TableProps { table, props: old }, map: Map::Same, hint })
             }
             Step::Rows { table, range, with, grid } => {
@@ -1126,21 +1126,7 @@ impl Step {
                 }
                 let added = with.len();
                 let single = range.len() == 1 && added == 1;
-                let twip = |w: f64| (w * 20.0).round() / 20.0;
-                let with: Vec<Row> = with
-                    .into_iter()
-                    .map(|mut r| {
-                        for c in &mut r.cells {
-                            if let Some(crate::docx::props::Width::Dxa(w)) = &mut c.width {
-                                *w = twip(*w);
-                            }
-                        }
-                        r
-                    })
-                    .collect();
-                let grid = grid.map(|g| g.into_iter().map(twip).collect::<Vec<f64>>());
-                let removed: Vec<Row> = t.rows.splice(range.clone(), with).collect();
-                let old_grid = grid.map(|g| std::mem::replace(&mut t.grid, g));
+                let (removed, old_grid) = put_rows(t, range.clone(), with, grid);
                 let (mut paras, mut tables) = (HashSet::new(), HashSet::new());
                 let mut kept = HashSet::new();
                 for r in &t.rows[range.start..range.start + added] {
@@ -1153,16 +1139,7 @@ impl Step {
                 idx.replaced_rows(doc, table, range.start, added, &removed);
                 let slot = idx.table_slot(table).ok_or(StepError::Missing)?;
                 let fallback = first_position(doc, idx, slot.container, slot.block);
-                let hint = idx.top_block(slot.container, slot.block).map(|(section, b, row)| Change {
-                    section,
-                    first: b,
-                    old_end: b + 1,
-                    new_end: b + 1,
-                    row: match row {
-                        Some(r) => Some(r),
-                        None => single.then_some(range.start),
-                    },
-                });
+                let hint = table_hint(idx, table, single.then_some(range.start));
                 Ok(Applied {
                     inverse: Step::Rows { table, range: range.start..range.start + added, with: removed, grid: old_grid },
                     map: Map::Removed { paras, tables, rows: Some((table, range.clone(), added as isize - range.len() as isize)), fallback },
@@ -1171,6 +1148,49 @@ impl Step {
             }
         }
     }
+}
+
+/// Puts `with` in place of `t`'s rows in `range` and `grid` (when given) as its grid, every width rounded to a twip:
+/// the rows and the grid it had.
+pub(super) fn put_rows(t: &mut crate::docx::Table, range: Range<usize>, with: Vec<Row>, grid: Option<Vec<f64>>) -> (Vec<Row>, Option<Vec<f64>>) {
+    let twip = |w: f64| (w * 20.0).round() / 20.0;
+    let with = with.into_iter().map(|mut r| {
+        for c in &mut r.cells {
+            if let Some(crate::docx::props::Width::Dxa(w)) = &mut c.width {
+                *w = twip(*w);
+            }
+        }
+        r
+    });
+    let removed = t.rows.splice(range, with).collect();
+    (removed, grid.map(|g| std::mem::replace(&mut t.grid, g.into_iter().map(twip).collect())))
+}
+
+/// Whether `container` is in a header or footer, a text box in one included.
+pub(super) fn in_header_footer(idx: &DocIndex, container: Container) -> bool {
+    matches!(idx.host(idx.story(container)), super::position::StoryId::HeaderFooter(_))
+}
+
+/// Whether `s` changes header or footer text and nothing else.
+pub(super) fn changes_header_footer(idx: &DocIndex, s: &Step) -> bool {
+    let container = match s {
+        Step::Text { para, .. }
+        | Step::Split { para, .. }
+        | Step::Join { first: para, .. }
+        | Step::Para { para, .. }
+        | Step::Restyle { para, .. }
+        | Step::FieldViews { para, .. } => idx.para_slot(*para).map(|s| s.container),
+        Step::Blocks { container, .. } => Some(*container),
+        Step::Rows { table, .. } | Step::TableProps { table, .. } => idx.table_slot(*table).map(|s| s.container),
+        _ => None,
+    };
+    container.is_some_and(|c| in_header_footer(idx, c))
+}
+
+/// Table `table` changed; `row`, when it is a section's own table, the one row of it that did.
+pub(super) fn table_hint(idx: &DocIndex, table: TableId, row: Option<usize>) -> Option<Change> {
+    let slot = idx.table_slot(table)?;
+    idx.top_block(slot.container, slot.block).map(|(section, b, r)| Change { section, first: b, old_end: b + 1, new_end: b + 1, row: r.or(row) })
 }
 
 fn block_id(b: &Block) -> u64 {

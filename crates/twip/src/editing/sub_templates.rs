@@ -493,6 +493,16 @@ impl Editor {
     }
 
     pub(super) fn with_flow<R>(&mut self, f: impl FnOnce(&mut DocumentLayout, &Document) -> R) -> R {
+        if self.table_preview.is_empty() {
+            return self.flow_in(f);
+        }
+        self.swap_table_preview(false);
+        let out = self.flow_in(f);
+        self.swap_table_preview(true);
+        out
+    }
+
+    fn flow_in<R>(&mut self, f: impl FnOnce(&mut DocumentLayout, &Document) -> R) -> R {
         let Some(s) = &mut self.surface else { return f(&mut self.layout, &self.doc) };
         let Some(part) = self.doc.glossary.as_mut().and_then(|g| g.parts.get_mut(s.part as usize)) else {
             return f(&mut self.layout, &self.doc);

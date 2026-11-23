@@ -85,7 +85,7 @@ fn bodies_record_the_fields_they_show() {
     use crate::docx::Block;
     let Some(mut d) = super::plain_doc(&[super::words(400), super::words(20)]) else { return };
     let (_, plain) = layout_records(&d, &fonts(), &mut LayoutCache::new());
-    assert!(plain.iter().flat_map(|p| &p.bodies).all(|b| b.fields == Default::default()), "plain bodies show no page fields");
+    assert!(plain.iter().flat_map(|p| p.bodies.iter()).all(|b| b.fields == Default::default()), "plain bodies show no page fields");
     let Block::Para(p) = &mut d.sections[0].blocks[1] else { unreachable!() };
     let run = p.mark.clone();
     p.inlines.extend(crate::docx::fields::field_inlines("PAGE", "1", &run));

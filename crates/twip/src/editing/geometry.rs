@@ -783,11 +783,16 @@ impl Pages {
     pub fn pages_of(&mut self, para: ParaId, near: usize, idx: &DocIndex) -> Vec<usize> {
         let n = self.len();
         let near = near.min(n.saturating_sub(1));
+        // A header or footer paragraph shows whole on every page with its part: the nearest one.
+        let repeats = idx.para_slot(para).is_some_and(|s| matches!(idx.host(idx.story(s.container)), StoryId::HeaderFooter(_)));
         let mut out = Vec::new();
         for d in 0..n {
             for i in [near.checked_sub(d), (d > 0).then_some(near + d)].into_iter().flatten() {
                 if i < n && self.page(i, idx).is_some_and(|g| g.shows_para(para)) {
                     out.push(i);
+                    if repeats {
+                        return out;
+                    }
                 }
             }
             if !out.is_empty() && d > 0 {

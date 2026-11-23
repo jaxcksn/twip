@@ -152,6 +152,8 @@ pub struct Editor {
     provisional: Option<stories::Provisional>,
     composition: Option<composition::Composition>,
     border_drag: Option<resize::BorderDrag>,
+    /// Tables laid out as a live drag would leave them, in place of the model's.
+    table_preview: Vec<resize::Provisional>,
     table_drag: Option<table_handles::TableDrag>,
     /// A pointer press, move or release is running: its edits are where the pointer is, so they don't scroll to the
     /// caret.
@@ -342,6 +344,7 @@ impl Editor {
             provisional: None,
             composition: None,
             border_drag: None,
+            table_preview: Vec::new(),
             table_drag: None,
             pointing: false,
             table_hover: None,
@@ -509,12 +512,54 @@ impl Editor {
         }
     }
 
+    /// Lays `tables` out in place of the model's tables they copy, until the next edit or preview; the ones laid out
+    /// so before are laid out from the model again.
+    fn set_table_preview(&mut self, tables: Vec<resize::Provisional>) {
+        if self.table_preview == tables {
+            return;
+        }
+        let mut parts = false;
+        let mut hints: Vec<Option<Change>> = Vec::new();
+        for p in self.table_preview.iter().chain(&tables) {
+            match step::table_hint(&self.index, p.id, p.row) {
+                None if self.index.table_slot(p.id).is_some_and(|s| step::in_header_footer(&self.index, s.container)) => parts = true,
+                h => hints.push(h),
+            }
+        }
+        hints.dedup();
+        self.table_preview = tables;
+        self.relayout_parts(hints, parts);
+    }
+
+    /// Swaps the previewed tables with the model's, in (outermost first) or back out (`back`, innermost first).
+    fn swap_table_preview(&mut self, back: bool) {
+        let mut preview = std::mem::take(&mut self.table_preview);
+        let mut swap = |p: &mut resize::Provisional| {
+            if let Some(t) = self.index.table_mut(&mut self.doc, p.id) {
+                std::mem::swap(t, &mut p.table);
+            }
+        };
+        match back {
+            false => preview.iter_mut().for_each(&mut swap),
+            true => preview.iter_mut().rev().for_each(&mut swap),
+        }
+        self.table_preview = preview;
+    }
+
     fn relayout(&mut self, hints: impl IntoIterator<Item = Option<Change>>) {
+        self.relayout_parts(hints, false);
+    }
+
+    /// [`Editor::relayout`], with header or footer text changed too (`parts`).
+    fn relayout_parts(&mut self, hints: impl IntoIterator<Item = Option<Change>>, parts: bool) {
         self.generation += 1;
         // A transaction that lays nothing out (a font rename's tables) can still change what layout reads.
         self.layout.document_changed();
         for h in hints {
             self.layout.edit(Revision(self.generation), h);
+        }
+        if parts {
+            self.layout.edit_parts(Revision(self.generation));
         }
     }
 
@@ -585,10 +630,38 @@ impl Editor {
     fn ensure(&mut self, pos: &Position, fonts: &Fonts) {
         self.sync_expansions(fonts);
         if let Some((para, unit)) = pos.para_offset() {
-            crate::prof::time("editor:layout", || self.with_flow(|l, d| l.through(d, fonts, Target::Position { para, unit })));
+            // Body text, a text box in it included, by its block; headers, footers and notes by the caret's page.
+            let slot = self.index.para_slot(para);
+            let target = slot
+                .and_then(|s| self.index.top_block(s.container, s.block))
+                .map_or(Target::Page(self.near), |(section, block, row)| Target::Block { section, block, row });
+            crate::prof::time("editor:layout", || self.with_flow(|l, d| l.through(d, fonts, target)));
+            let in_note = slot.is_some_and(|s| matches!(self.index.host(self.index.story(s.container)), StoryId::Footnote(_) | StoryId::Endnote(_)));
+            if let Target::Page(mut page) = target
+                && in_note
+            {
+                // A note moves with its reference's line and continues onto the next page.
+                while !self.laid_out_shows(para, unit, pos.affinity(), page)
+                    && matches!(self.layout.snapshot().status(), crate::layout::LayoutStatus::Pending { .. })
+                {
+                    page += 1;
+                    crate::prof::time("editor:layout", || self.with_flow(|l, d| l.through(d, fonts, Target::Page(page))));
+                }
+            }
         }
         let snapshot = self.layout.snapshot();
         self.pages.sync(&snapshot);
+    }
+
+    /// Whether a page from the one before `near` through `last` has the line holding `u` of `para`.
+    fn laid_out_shows(&mut self, para: ParaId, u: Unit, affinity: Affinity, last: usize) -> bool {
+        let snapshot = self.layout.snapshot();
+        self.pages.sync(&snapshot);
+        (self.near.saturating_sub(1)..=last).any(|i| {
+            self.pages
+                .page(i, &self.index)
+                .is_some_and(|g| g.line_at(para, u, affinity).is_some_and(|l| g.lines[l].last_of(para).is_some_and(|end| u <= end)))
+        })
     }
 
     pub fn ensure_page(&mut self, page: usize, fonts: &Fonts) {
@@ -930,6 +1003,10 @@ impl Editor {
         if self.mode == Mode::ReadOnly && !matches!(tx.origin, Origin::Undo | Origin::Redo) {
             return Err(StepError::ReadOnly);
         }
+        if !self.table_preview.is_empty() {
+            self.set_table_preview(Vec::new());
+        }
+        self.border_stepped(&s);
         let added = if self.doc.undeletable.is_empty() { 0 } else { s.pictures_of(&self.doc.undeletable) };
         tx.targets.add(&s);
         tx.pictures |= moves_picture_controls(&s);
@@ -1103,8 +1180,15 @@ impl Editor {
     }
 
     fn effects(&mut self, tx: &mut Tx) {
-        let hints: Vec<Option<Change>> = tx.hints.iter().zip(&tx.undo).filter(|(_, s)| s.lays_out()).map(|(h, _)| *h).collect();
-        crate::prof::time("edit:relayout", || self.relayout(hints));
+        let mut parts = false;
+        let mut hints: Vec<Option<Change>> = Vec::with_capacity(tx.hints.len());
+        for (h, s) in tx.hints.iter().zip(&tx.undo).filter(|(_, s)| s.lays_out()) {
+            match h {
+                None if step::changes_header_footer(&self.index, s) => parts = true,
+                h => hints.push(*h),
+            }
+        }
+        crate::prof::time("edit:relayout", || self.relayout_parts(hints, parts));
         self.touched.note(tx.targets.paras.iter().copied());
         // Table, row and cell marks, and a section's or sub-template's, aren't in the targets.
         if !tx.targets.revisions.is_empty()
@@ -1707,7 +1791,18 @@ impl Editor {
             }
             at = Unit(at.0 + n);
         }
-        let at = self.index.para(&self.doc, para).map(UnitText::of).map_or(at, |t| if t.is_boundary(at) { at } else { t.next_grapheme(at) });
+        // Caret past the typed cluster
+        let plain = |c: char| c.is_ascii_graphic() || c == ' ';
+        let typed = text.rsplit('\n').next().and_then(|l| l.strip_suffix('\r').unwrap_or(l).chars().next_back());
+        let p = self.index.para(&self.doc, para);
+        let ends = typed.is_some_and(plain) && p.is_some_and(|p| text::char_at(p, at).is_none_or(plain));
+        let at = match p {
+            Some(p) if !ends => {
+                let t = UnitText::of(p);
+                if t.is_boundary(at) { at } else { t.next_grapheme(at) }
+            }
+            _ => at,
+        };
         Ok((Position::text(caret.story, para, at), single))
     }
 
@@ -2530,7 +2625,7 @@ impl Editor {
                     && let Some((_, table, resize::Border::Column(k), ..)) = self.border_at(x, y, fonts)
                     && k > 0
                 {
-                    self.border_drag = None;
+                    self.border_cancel();
                     self.history.break_typing();
                     if !self.table_gesture_kept(table, crate::api::command::CommandId::AutoFitColumns) {
                         self.auto_fit_column(table, k - 1, fonts);
@@ -2684,6 +2779,7 @@ impl Editor {
                 if let Some(d) = self.border_drag.as_mut() {
                     d.now = (x, y);
                     d.snapping = if mods.alt { snap::Snapping::Free } else { snap::Snapping::On };
+                    self.border_moved(fonts);
                     return;
                 }
                 if self.table_drag.is_some() {
@@ -2758,7 +2854,7 @@ impl Editor {
             PointerKind::Up if self.shape_drag.is_some() => {
                 self.shape_release(fonts);
             }
-            PointerKind::Cancel if self.border_drag.take().is_some() => self.requests.push(Request::ReleasePointer),
+            PointerKind::Cancel if self.border_cancel() => self.requests.push(Request::ReleasePointer),
             PointerKind::Up if self.border_drag.is_some() => {
                 self.border_release(fonts);
             }
@@ -3103,7 +3199,7 @@ impl Editor {
             selection,
             story,
             fade,
-            guide: self.border_drag.map(|d| (d.page, d.guide())),
+            guide: self.border_drag.as_ref().map(|d| (d.page, d.guide())),
             anchor,
             ghost,
             shapes: self.shape_frames(visible_pages.clone()),

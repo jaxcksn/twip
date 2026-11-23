@@ -292,6 +292,31 @@ fn arrows_between_notes_follow_their_references() {
 }
 
 #[test]
+fn typing_a_note_onto_the_next_page_lays_out_the_carets_page() {
+    let lines: String = (0..300).map(|i| p(&format!("Line {i:03}"))).collect();
+    let mut e = package(&format!("{lines}<w:sectPr>{SEC}</w:sectPr>"), None);
+    let on = |e: &mut Editor, para: ParaId| {
+        caret(e, StoryId::Body, para, 0);
+        e.caret_view().expect("a caret").page
+    };
+    let paras: Vec<ParaId> = (0..300).map(|i| para_of(&e, &format!("Line {i:03}"))).collect();
+    let first_page = paras.iter().take_while(|&&q| on(&mut e, q) == 0).count();
+    // A few lines above the page's end, so the note starts on page 0.
+    caret(&mut e, StoryId::Body, paras[first_page - 4], 8);
+    e.execute(Command::InsertFootnote, fonts());
+    e.complete(fonts());
+    assert!(matches!(story(&e), Some(StoryId::Footnote(_))));
+    assert_eq!(e.caret_view().expect("the note's caret").page, 0);
+    let moved = (0..200).any(|_| {
+        e.execute(Command::InsertText("a note that grows ".into()), fonts());
+        let c = e.caret_view().expect("the caret shows without completing layout");
+        assert!(matches!(e.snapshot().status(), crate::layout::LayoutStatus::Pending { .. }), "laid out only to the caret's page");
+        c.page == 1
+    });
+    assert!(moved, "the note reaches the next page");
+}
+
+#[test]
 fn a_custom_mark_leads_back_to_its_reference() {
     let mut e = open("FX-TEXT.docx");
     e.complete(fonts());
@@ -511,4 +536,46 @@ fn a_removed_frames_paragraphs_join_the_flow_with_the_caret_in_them() {
     assert!(!q.style.in_frame, "out of the frame");
     e.complete(fonts());
     assert!(e.snapshot().pages().len() >= 2, "its page break breaks the page");
+}
+
+#[test]
+fn typing_in_a_header_keeps_the_caret_on_its_page() {
+    let pages: String = (0..12).map(|i| format!(r#"<w:p><w:r><w:t>Page {i}</w:t></w:r><w:r><w:br w:type="page"/></w:r></w:p>"#)).collect();
+    let mut e = package(&format!("{pages}<w:sectPr>{HEADER_REF}{SEC}</w:sectPr>"), Some(Some(&p("Head"))));
+    let eight = para_of(&e, "Page 8");
+    caret(&mut e, StoryId::Body, eight, 0);
+    assert_eq!(e.caret_view().expect("a caret").page, 8);
+    e.execute(Command::EditHeader, fonts());
+    assert_eq!(e.caret_view().expect("the header's caret").page, 8);
+    e.execute(Command::InsertText("er".into()), fonts());
+    assert_eq!(e.caret_view().expect("the header's caret").page, 8, "the header on the caret's page, not the first");
+    e.complete(fonts());
+    assert_eq!(e.caret_view().expect("the header's caret").page, 8);
+}
+
+#[test]
+fn typing_in_a_header_lays_out_to_the_carets_page_reusing_the_bodies() {
+    use crate::layout::incremental::FULL_JOBS;
+    let pages: String = (0..12).map(|i| format!(r#"<w:p><w:r><w:t>Page {i}</w:t></w:r><w:r><w:br w:type="page"/></w:r></w:p>"#)).collect();
+    let mut e = package(&format!("{pages}<w:sectPr>{HEADER_REF}{SEC}</w:sectPr>"), Some(Some(&p("Head"))));
+    assert!(e.snapshot().pages().len() >= 12);
+    e.execute(Command::EditHeader, fonts());
+    e.complete(fonts());
+    let full = FULL_JOBS.get();
+    e.execute(Command::InsertText("er".into()), fonts());
+    assert!(
+        matches!(e.snapshot().status(), crate::layout::LayoutStatus::Pending { stale_from } if *stale_from <= 3),
+        "laid out to the caret's page: {:?}",
+        e.snapshot().status()
+    );
+    e.complete(fonts());
+    assert_eq!(FULL_JOBS.get(), full, "no full layout");
+    let header: Vec<String> = e
+        .document()
+        .stories
+        .values()
+        .flatten()
+        .filter_map(|b| if let Block::Para(p) = b { Some(crate::docx::fields::text(p)) } else { None })
+        .collect();
+    assert!(header.iter().any(|t| t.contains("er")), "{header:?}");
 }

@@ -2783,3 +2783,22 @@ fn a_heavy_tab_leader_is_kept() {
     let p = e.index().para(e.document(), p).expect("the paragraph");
     assert!(p.style.tabs.iter().any(|t| t.pos == 200.0 && t.leader == crate::docx::props::Leader::Heavy), "{:?}", p.style.tabs);
 }
+
+#[test]
+fn typing_before_a_combining_mark_puts_the_caret_after_the_cluster() {
+    use super::super::position::Position;
+    let body = "<w:p><w:r><w:t>e\u{301}x</w:t></w:r></w:p>";
+    let mut e = super::super::Editor::open(&crate::layout::tests::shapes::bytes(body).expect("a package"), fonts()).expect("opens");
+    let para = super::para_id(&e, 0);
+    let at = |e: &mut super::super::Editor, u: u32| e.set_caret_for_benchmark(Selection::Caret(Position::text(StoryId::Body, para, Unit(u))));
+    let caret = |e: &super::super::Editor| e.selection().focus().and_then(|p| p.para_offset()).map(|p| p.1.0);
+    at(&mut e, 1);
+    e.execute(Command::InsertText("a".into()), fonts());
+    assert_eq!(caret(&e), Some(3), "a joins the accent's cluster");
+    at(&mut e, 0);
+    e.execute(Command::InsertText("b".into()), fonts());
+    assert_eq!(caret(&e), Some(1), "before a plain letter");
+    at(&mut e, 5);
+    e.execute(Command::InsertText("c".into()), fonts());
+    assert_eq!(caret(&e), Some(6), "at the end");
+}

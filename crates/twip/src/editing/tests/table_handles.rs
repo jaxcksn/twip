@@ -583,3 +583,217 @@ fn a_nested_table_grows_its_cell_in_a_grid_shorter_than_its_cells() {
     assert!(now > was + 30.0, "the nested table grew: {was} → {now}");
     assert_eq!(first_table(&e).grid.len(), 3, "the outer grid has a column for each cell");
 }
+
+/// The first table's widths on page 0 as laid out now, column by column.
+fn laid_widths(e: &mut Editor) -> Vec<f64> {
+    e.complete(fonts());
+    Drawn::of(e).edges.windows(2).map(|w| w[1] - w[0]).collect()
+}
+
+#[test]
+fn a_column_border_drag_lays_the_table_out_live_and_commits_once() {
+    let mut e = page();
+    let d = Drawn::of(&mut e);
+    let (was, depth) = (grid(&e, d.table), e.history.undo_depth());
+    let widths = laid_widths(&mut e);
+    let from = (d.edges[1], (d.rows[1][1] + d.rows[1][3]) / 2.0);
+    drag(&mut e, from, (36.0, 0.0), NONE, false);
+    let live = laid_widths(&mut e);
+    assert!((live[0] - widths[0] - 36.0).abs() < 0.1 && (live[1] - widths[1] + 36.0).abs() < 0.1, "{live:?} from {widths:?}");
+    assert_eq!((grid(&e, d.table), e.history.undo_depth()), (was.clone(), depth), "the model waits for the release");
+    at(&mut e, PointerKind::Up, from.0 + 36.0, from.1, NONE);
+    assert_eq!(e.history.undo_depth(), depth + 1, "one transaction");
+    assert_eq!(laid_widths(&mut e), live, "the release lays out what the drag showed");
+    let mut off = page();
+    off.live_layout = false;
+    drag(&mut off, from, (36.0, 0.0), NONE, false);
+    assert_eq!(laid_widths(&mut off), widths, "without live layout only the guide moves");
+    at(&mut off, PointerKind::Up, from.0 + 36.0, from.1, NONE);
+    assert_eq!(first_table(&off).grid, grid(&e, d.table), "live or not, the same resize");
+    e.execute(Command::Undo, fonts());
+    assert_eq!((grid(&e, d.table), laid_widths(&mut e)), (was, widths), "undone in one step");
+}
+
+#[test]
+fn a_cancelled_live_drag_lays_the_table_out_as_it_was() {
+    let mut e = page();
+    let d = Drawn::of(&mut e);
+    let widths = laid_widths(&mut e);
+    drag(&mut e, (d.edges[2], (d.rows[1][1] + d.rows[1][3]) / 2.0), (-30.0, 0.0), NONE, false);
+    assert_ne!(laid_widths(&mut e), widths);
+    at(&mut e, PointerKind::Cancel, d.edges[2] - 30.0, d.rows[1][1], NONE);
+    assert_eq!(laid_widths(&mut e), widths);
+    assert_eq!(e.history.undo_depth(), 0);
+}
+
+#[test]
+fn a_row_border_drag_grows_the_row_live() {
+    let mut e = page();
+    let d = Drawn::of(&mut e);
+    let height = |e: &mut Editor| {
+        e.complete(fonts());
+        let r = Drawn::of(e).rows[1];
+        r[3] - r[1]
+    };
+    let h = height(&mut e);
+    drag(&mut e, (d.rows[1][0] + 20.0, d.rows[1][3] + 0.5 * PX), (0.0, 24.0), NONE, false);
+    assert!((height(&mut e) - h - 24.0).abs() < 0.5, "{} from {h}", height(&mut e));
+    assert!(first_table(&e).rows[1].height.is_none(), "the model waits for the release");
+    at(&mut e, PointerKind::Up, d.rows[1][0] + 20.0, d.rows[1][3] + 0.5 * PX + 24.0, NONE);
+    assert!((height(&mut e) - h - 24.0).abs() < 0.5);
+    assert!(first_table(&e).rows[1].height.is_some());
+}
+
+#[test]
+fn an_edit_during_a_live_drag_lays_out_the_model() {
+    let mut e = page();
+    let d = Drawn::of(&mut e);
+    click(&mut e, d.rows[2][0] + 10.0, (d.rows[2][1] + d.rows[2][3]) / 2.0);
+    let from = (d.edges[1], (d.rows[1][1] + d.rows[1][3]) / 2.0);
+    drag(&mut e, from, (36.0, 0.0), NONE, false);
+    e.execute(Command::InsertText("typed".into()), fonts());
+    e.complete(fonts());
+    let geo = e.page_geometries().into_iter().find(|(p, _)| *p == 0).map(|(_, g)| g).expect("page 0");
+    assert!(geo.rows.iter().all(|r| r.table == d.table), "laid out");
+    assert!(
+        first_table(&e).rows[2].cells[0]
+            .blocks
+            .iter()
+            .any(|b| matches!(b, crate::docx::Block::Para(p) if crate::docx::fields::text(p).contains("typed")))
+    );
+    at(&mut e, PointerKind::Move, from.0 + 30.0, from.1, NONE);
+    at(&mut e, PointerKind::Up, from.0 + 30.0, from.1, NONE);
+    let t = first_table(&e);
+    assert!(
+        t.rows[2].cells[0].blocks.iter().any(|b| matches!(b, crate::docx::Block::Para(p) if crate::docx::fields::text(p).contains("typed"))),
+        "the release keeps the edit"
+    );
+}
+
+#[test]
+fn a_nested_tables_live_drag_widens_the_cell_holding_it() {
+    let cell = |inner: &str| format!(r#"<w:tc><w:tcPr><w:tcW w:w="1500" w:type="dxa"/></w:tcPr>{inner}<w:p><w:r><w:t>x</w:t></w:r></w:p></w:tc>"#);
+    let nested = r#"<w:tbl><w:tblPr><w:tblW w:w="900" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="900"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="900" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>y</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#;
+    let doc = format!(
+        r#"<w:p><w:r><w:t>Before</w:t></w:r></w:p><w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr><w:tblGrid><w:gridCol w:w="1500"/><w:gridCol w:w="1500"/><w:gridCol w:w="1500"/></w:tblGrid><w:tr>{}{}{}</w:tr></w:tbl><w:p><w:r><w:t>After</w:t></w:r></w:p>"#,
+        cell(""),
+        cell(""),
+        cell(nested)
+    );
+    let rows = |e: &mut Editor| {
+        e.complete(fonts());
+        let geo = e.page_geometries().into_iter().find(|(p, _)| *p == 0).map(|(_, g)| g).expect("page 0");
+        let mut rows: Vec<[f64; 4]> = geo.rows.iter().filter(|r| !r.repeat).map(|r| r.rect).collect();
+        rows.sort_by(|a, b| (a[2] - a[0]).total_cmp(&(b[2] - b[0])));
+        rows
+    };
+    let mut e = opened(&doc);
+    let was = rows(&mut e);
+    let (inner, outer) = (was[0], was[1]);
+    let from = (inner[2], (inner[1] + inner[3]) / 2.0);
+    let model = first_table(&e).clone();
+    drag(&mut e, from, (60.0, 0.0), NONE, false);
+    let live = rows(&mut e);
+    assert!(live[0][2] - live[0][0] > inner[2] - inner[0] + 50.0, "the nested table: {live:?} from {was:?}");
+    assert!(live[1][2] - live[1][0] > outer[2] - outer[0] + 20.0, "the table holding it: {live:?} from {was:?}");
+    assert_eq!(first_table(&e), &model, "the model waits for the release");
+    at(&mut e, PointerKind::Up, from.0 + 60.0, from.1, NONE);
+    assert_eq!(rows(&mut e), live, "the release lays out what the drag showed");
+    e.execute(Command::Undo, fonts());
+    assert_eq!(first_table(&e).grid, model.grid);
+    assert_eq!(rows(&mut e), was);
+}
+
+#[test]
+fn a_tracked_nested_tables_drag_keeps_its_revisions() {
+    let cell = |inner: &str| format!(r#"<w:tc><w:tcPr><w:tcW w:w="1500" w:type="dxa"/></w:tcPr>{inner}<w:p><w:r><w:t>x</w:t></w:r></w:p></w:tc>"#);
+    let nested = r#"<w:tbl><w:tblPr><w:tblW w:w="900" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="900"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="900" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>y</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#;
+    let mut e = opened(&format!(
+        r#"<w:p><w:r><w:t>Before</w:t></w:r></w:p><w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr><w:tblGrid><w:gridCol w:w="1500"/><w:gridCol w:w="1500"/><w:gridCol w:w="1500"/></w:tblGrid><w:tr>{}{}{}</w:tr></w:tbl><w:p><w:r><w:t>After</w:t></w:r></w:p>"#,
+        cell(""),
+        cell(""),
+        cell(nested)
+    ));
+    let inner_of = |e: &Editor| -> crate::docx::Table {
+        first_table(e).rows[0].cells[2]
+            .blocks
+            .iter()
+            .find_map(|b| if let crate::docx::Block::Table(t) = b { Some(t.clone()) } else { None })
+            .expect("nested")
+    };
+    let geo = e.page_geometries().into_iter().find(|(p, _)| *p == 0).map(|(_, g)| g).expect("page 0");
+    let inner = geo.rows.iter().filter(|r| !r.repeat).min_by(|a, b| (a.rect[2] - a.rect[0]).total_cmp(&(b.rect[2] - b.rect[0]))).expect("a row").rect;
+    let model = first_table(&e).clone();
+    e.execute(Command::SetTrackChanges(true), fonts());
+    drag(&mut e, (inner[2], (inner[1] + inner[3]) / 2.0), (60.0, 0.0), NONE, true);
+    let t = inner_of(&e);
+    assert!(t.grid.iter().sum::<f64>() > 45.0 + 50.0, "the nested table grew: {:?}", t.grid);
+    let marked = t.change.is_some()
+        || t.grid_change.is_some()
+        || t.rows.iter().any(|r| r.rev.change.is_some() || r.cells.iter().any(|c| c.rev.change.is_some()));
+    assert!(marked, "the nested table's change is tracked: {t:?}");
+    e.execute(Command::Undo, fonts());
+    assert_eq!(first_table(&e), &model, "undo restores both tables");
+}
+
+#[test]
+fn a_column_inserted_during_a_border_drag_ends_it() {
+    use crate::api::command::{HorizontalSide, InsertColumns};
+    let mut e = page();
+    let d = Drawn::of(&mut e);
+    click(&mut e, d.rows[2][0] + 10.0, (d.rows[2][1] + d.rows[2][3]) / 2.0);
+    let from = (d.edges[1], (d.rows[1][1] + d.rows[1][3]) / 2.0);
+    drag(&mut e, from, (36.0, 0.0), NONE, false);
+    e.execute(Command::InsertColumns(InsertColumns { side: HorizontalSide::Left, count: None }), fonts());
+    let (inserted, depth) = (grid(&e, d.table), e.history.undo_depth());
+    assert_eq!(inserted.len(), 4);
+    at(&mut e, PointerKind::Move, from.0 + 30.0, from.1, NONE);
+    at(&mut e, PointerKind::Up, from.0 + 30.0, from.1, NONE);
+    assert_eq!((grid(&e, d.table), e.history.undo_depth()), (inserted, depth), "the drag ended with the insert");
+    e.execute(Command::Undo, fonts());
+    assert_eq!(grid(&e, d.table).len(), 3, "the insert undoes alone");
+}
+
+/// A live drag of the first column border of the table drawn first on page 0: the widths follow it, the release is
+/// one transaction and its undo puts the widths back.
+fn live_drags_one_transaction(e: &mut Editor) {
+    let d = Drawn::of(e);
+    let (was, depth) = (grid(e, d.table), e.history.undo_depth());
+    let widths = laid_widths(e);
+    let full = crate::layout::incremental::FULL_JOBS.get();
+    let from = (d.edges[1], (d.rows[0][1] + d.rows[0][3]) / 2.0);
+    drag(e, from, (20.0, 0.0), NONE, false);
+    let live = laid_widths(e);
+    assert!((live[0] - widths[0] - 20.0).abs() < 0.1 && (live[1] - widths[1] + 20.0).abs() < 0.1, "{live:?} from {widths:?}");
+    assert_eq!((grid(e, d.table), e.history.undo_depth()), (was.clone(), depth), "the model waits for the release");
+    at(e, PointerKind::Up, from.0 + 20.0, from.1, NONE);
+    assert_eq!((e.history.undo_depth(), e.history.next_undo()), (depth + 1, Some("Column Width")), "one transaction");
+    assert_eq!(laid_widths(e), live, "the release lays out what the drag showed");
+    assert_eq!(crate::layout::incremental::FULL_JOBS.get(), full, "no move or release lays the whole document out");
+    e.execute(Command::Undo, fonts());
+    assert_eq!((grid(e, d.table), laid_widths(e)), (was, widths), "undone in one step");
+}
+
+#[test]
+fn a_header_tables_border_drag_lays_it_out_live() {
+    let mut e = opened("<w:p><w:r><w:t>Body</w:t></w:r></w:p>");
+    e.execute(Command::EditHeader, fonts());
+    e.execute(Command::InsertTable(crate::api::command::TableSize { rows: 1, columns: 3 }), fonts());
+    e.complete(fonts());
+    live_drags_one_transaction(&mut e);
+}
+
+#[test]
+fn a_text_box_tables_border_drag_lays_it_out_live() {
+    use crate::layout::tests::shapes::{anchor, sp};
+    let cell = r#"<w:tc><w:tcPr><w:tcW w:w="1500" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>x</w:t></w:r></w:p></w:tc>"#;
+    let table = format!(
+        r#"<w:tbl><w:tblPr><w:tblW w:w="4500" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="1500"/><w:gridCol w:w="1500"/><w:gridCol w:w="1500"/></w:tblGrid><w:tr>{cell}{cell}{cell}</w:tr></w:tbl><w:p/>"#
+    );
+    let story = format!(r#"<wps:txbx><w:txbxContent>{table}</w:txbxContent></wps:txbx><wps:bodyPr/>"#);
+    let boxed = sp(0, 0, 300, 100, "rect", "", "FFFFFF").replace("<wps:bodyPr/>", &story);
+    let mut e = opened(&format!("<w:p><w:r><w:t>Anchor</w:t></w:r>{}</w:p>", anchor(72, 200, 300, 100, 1, false, 1, &boxed)));
+    let d = Drawn::of(&mut e);
+    click(&mut e, d.rows[0][0] + 10.0, (d.rows[0][1] + d.rows[0][3]) / 2.0);
+    live_drags_one_transaction(&mut e);
+}

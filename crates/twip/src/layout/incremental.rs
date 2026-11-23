@@ -35,7 +35,17 @@ pub struct Change {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Target {
     Page(usize),
-    Position { para: ParaId, unit: Unit },
+    Position {
+        para: ParaId,
+        unit: Unit,
+    },
+    /// [`Target::Position`] for a body paragraph where the caller knows it: block `block` of section `section`, or
+    /// in row `row` of the table there.
+    Block {
+        section: usize,
+        block: usize,
+        row: Option<usize>,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -76,6 +86,8 @@ struct Accumulated {
     span: Option<Span>,
     unknown: bool,
     full: bool,
+    /// Header and footer parts changed.
+    parts: bool,
 }
 
 type Shadow = Vec<Vec<Option<Block>>>;
@@ -97,6 +109,65 @@ fn props(s: &Section) -> Section {
     s.settings()
 }
 
+/// Whether section `b` has the settings `a` holds (its [`props`]), without making them.
+fn same_props(a: &Section, b: &Section) -> bool {
+    let Section {
+        break_kind,
+        page_w,
+        page_h,
+        top,
+        bottom,
+        left,
+        right,
+        header,
+        footer,
+        gutter,
+        columns,
+        title_pg,
+        headers,
+        footers,
+        pg_start,
+        pg_fmt,
+        chapter,
+        line_numbers,
+        v_align,
+        page_borders,
+        page_borders_xml,
+        line_grid,
+        notes,
+        no_endnote,
+        text_flow,
+        rtl_gutter,
+        footnote_columns,
+        form_protected,
+        blocks: _,
+        change,
+        read: _,
+    } = a;
+    *break_kind == b.break_kind
+        && [*page_w, *page_h, *top, *bottom, *left, *right, *header, *footer, *gutter]
+            == [b.page_w, b.page_h, b.top, b.bottom, b.left, b.right, b.header, b.footer, b.gutter]
+        && *columns == b.columns
+        && *title_pg == b.title_pg
+        && *headers == b.headers
+        && *footers == b.footers
+        && *pg_start == b.pg_start
+        && *pg_fmt == b.pg_fmt
+        && *chapter == b.chapter
+        && *line_numbers == b.line_numbers
+        && *v_align == b.v_align
+        && *page_borders == b.page_borders
+        && *page_borders_xml == b.page_borders_xml
+        && *line_grid == b.line_grid
+        && *notes == b.notes
+        && *no_endnote == b.no_endnote
+        && *text_flow == b.text_flow
+        && *rtl_gutter == b.rtl_gutter
+        && *footnote_columns == b.footnote_columns
+        && *form_protected == b.form_protected
+        && *change == b.change
+}
+
 impl Extras {
     fn new(doc: &Document, fonts: &Fonts, endnote_order: &[i64], env: &LayoutEnv) -> Extras {
         Extras {
@@ -113,16 +184,30 @@ impl Extras {
         }
     }
 
-    fn same(&self, doc: &Document, fonts: &Fonts, env: &LayoutEnv) -> bool {
-        self.fonts == fonts.revision()
+    /// The header and footer parts that changed, when nothing else did.
+    fn changed_parts(&self, doc: &Document, fonts: &Fonts, env: &LayoutEnv) -> Option<Vec<String>> {
+        let rest = self.fonts == fonts.revision()
             && self.endnotes_sect_end == doc.settings.endnotes_sect_end
             && self.sections.len() == doc.sections.len()
-            && self.sections.iter().zip(&doc.sections).all(|(a, b)| *a == props(b))
+            && self.sections.iter().zip(&doc.sections).all(|(a, b)| same_props(a, b))
             && self.env == *env
-            && self.stories == doc.stories
             && self.footnotes == doc.footnotes
             && self.endnotes == doc.endnotes
             && self.separators == doc.separators
+            && self.stories.len() == doc.stories.len();
+        if !rest {
+            return None;
+        }
+        let mut changed = Vec::new();
+        for ((name, was), (now_name, now)) in self.stories.iter().zip(&doc.stories) {
+            if name != now_name {
+                return None;
+            }
+            if was != now {
+                changed.push(name.clone());
+            }
+        }
+        Some(changed)
     }
 }
 
@@ -319,9 +404,22 @@ pub struct Reuse {
     base: Rc<Finished>,
     span: Option<Span>,
     restart: usize,
-    stories_same: bool,
+    /// The header and footer parts that changed: pages showing one compose them again.
+    parts: Vec<String>,
     keys: Vec<(usize, usize, u8, usize)>,
     renumbered: std::collections::HashSet<(NoteKind, i64)>,
+}
+
+/// Whether a page of `pages` goes on past row `row` of the table at block `block` of section `section`.
+fn past_row(pages: &[PageRecord], section: usize, block: usize, row: usize) -> bool {
+    pages.iter().any(|pg| {
+        pg.bodies.iter().any(|b| {
+            let (s, blk, kind, i) = start_key(&b.end);
+            b.section_end.is_some_and(|_| b.token.section == section)
+                || (s, blk) > (section, block)
+                || (s, blk) == (section, block) && kind >= 2 && i > row
+        })
+    })
 }
 
 fn table_row_of(doc: &Document, para: ParaId) -> Option<(usize, usize, usize)> {
@@ -433,7 +531,7 @@ impl Reuse {
             let page = run.pages.last_mut().expect("a page was started");
             page.body_area = pg.body_area;
             page.effects = pg.effects.clone();
-            page.bodies.push(body);
+            Rc::make_mut(&mut page.bodies).push(body);
             page.reused = Some(j);
             #[cfg(test)]
             REUSED_PAGES.set(REUSED_PAGES.get() + 1);
@@ -461,7 +559,7 @@ impl Reuse {
 
     pub fn reuse_composed(&mut self, run: &mut PassRun, cx: &PassCx, i: usize) -> bool {
         let Some(j) = run.pages[i].reused else { return false };
-        if !self.stories_same || run.clip {
+        if run.clip {
             return false;
         }
         let b = &self.base.records[j];
@@ -475,8 +573,7 @@ impl Reuse {
             let same = match (*part, h) {
                 (None, None) => true,
                 (Some(part), Some(h)) => {
-                    let blocks: Vec<&Block> = cx.doc.stories[part].iter().collect();
-                    *part == h.part && fields_used(&fields, &blocks) == h.fields
+                    *part == h.part && !self.parts.iter().any(|p| p == part) && fields_used(&fields, &cx.doc.stories[part]) == h.fields
                 }
                 _ => false,
             };
@@ -489,6 +586,7 @@ impl Reuse {
         pg.hf = hf;
         pg.hf_boxes = boxes;
         pg.hf_full = full;
+        pg.composed = true;
         true
     }
 }
@@ -517,6 +615,8 @@ pub struct DocumentLayout {
     expansions: Option<Rc<super::expansion::Expansions>>,
     /// The environment for the document since the last edit.
     env: Option<Rc<LayoutEnv>>,
+    /// The text box chains the last environment found.
+    chains: Option<Rc<[super::env::Chain]>>,
 }
 
 type Frame = (Rc<PageFragment>, PageMeta, [Option<HfRecord>; 2]);
@@ -543,6 +643,7 @@ impl DocumentLayout {
             preview: None,
             expansions: None,
             env: None,
+            chains: None,
         }
     }
 
@@ -552,7 +653,24 @@ impl DocumentLayout {
     }
 
     fn env(&mut self, doc: &Document) -> Rc<LayoutEnv> {
-        self.env.get_or_insert_with(|| Rc::new(LayoutEnv::new(doc))).clone()
+        if let Some(env) = &self.env {
+            return env.clone();
+        }
+        // A document without text box chains has none still when the edits since put none in.
+        let acc = &self.acc;
+        let kept = self.chains.take().filter(|c| {
+            c.is_empty()
+                && !acc.unknown
+                && !acc.full
+                && (!acc.parts || doc.stories.values().all(|b| !super::env::chained(b)))
+                && acc.span.is_none_or(|s| {
+                    doc.sections.get(s.section).and_then(|sec| sec.blocks.get(s.first..s.new_end)).is_some_and(|b| !super::env::chained(b))
+                })
+        });
+        let env = Rc::new(LayoutEnv::with_chains(doc, kept));
+        self.chains = Some(env.chains.clone());
+        self.env = Some(env.clone());
+        env
     }
 
     pub fn snapshot(&self) -> Rc<Snapshot> {
@@ -589,6 +707,15 @@ impl DocumentLayout {
             self.acc.full = true;
         }
         true
+    }
+
+    /// Header and footer text changed, and nothing else: pages showing a changed part lay out again from the first.
+    pub fn edit_parts(&mut self, revision: Revision) {
+        self.revision = revision;
+        self.job = None;
+        self.current = false;
+        self.env = None;
+        self.acc.parts = true;
     }
 
     pub fn edit(&mut self, revision: Revision, hint: Option<Change>) {
@@ -641,9 +768,9 @@ impl DocumentLayout {
         if self.acc.full {
             return full(new_job(), "full:asked");
         }
-        if !b.extras.same(doc, fonts, &env) {
+        let Some(parts) = b.extras.changed_parts(doc, fonts, &env) else {
             return full(new_job(), "full:extras");
-        }
+        };
         let span = if self.acc.unknown {
             match compare(doc, &b.shadow) {
                 Ok(s) => s,
@@ -714,6 +841,20 @@ impl DocumentLayout {
             }
             None => base.len() - 1,
         };
+        // The first page showing a changed header or footer
+        let shows = |pg: &PageRecord| pg.hf.iter().flatten().any(|h| parts.contains(&h.part));
+        let r = match base.iter().position(shows) {
+            Some(mut p) if p < r => {
+                while p > 0 && base[p].bodies.is_empty() {
+                    p -= 1;
+                }
+                p
+            }
+            _ => r,
+        };
+        if !parts.is_empty() {
+            self.frames.retain(|_, (_, _, hf)| !hf.iter().flatten().any(|h| parts.contains(&h.part)));
+        }
         let run = &mut job.run;
         run.pages = base[..r]
             .iter()
@@ -727,12 +868,13 @@ impl DocumentLayout {
         if let Some(first) = base.get(r).and_then(|pg| pg.bodies.first().map(|b| (pg, b))) {
             let (pg, body) = first;
             let mut page = pg.clone();
-            page.bodies.clear();
+            page.bodies = Rc::default();
             page.body_area = None;
             page.effects = Default::default();
             page.hf = [None, None];
             page.hf_boxes = [None, None];
             page.hf_full = [None, None];
+            page.composed = false;
             page.reused = None;
             run.page_number = pg.number;
             run.pages.push(page);
@@ -747,7 +889,7 @@ impl DocumentLayout {
             keys.push(last);
         }
         let renumbered = job.note_numbers().iter().filter(|(k, n)| b.note_numbers.get(*k) != Some(*n)).map(|(k, _)| *k).collect();
-        let reuse = Reuse { base: b.finished.clone(), span: closed, restart: r, stories_same: true, keys, renumbered };
+        let reuse = Reuse { base: b.finished.clone(), span: closed, restart: r, parts, keys, renumbered };
         Running { job, reuse: Some(reuse), span, incremental: true, relaid, seeded }
     }
 
@@ -817,14 +959,17 @@ impl DocumentLayout {
         let complete = pages.len().saturating_sub(1);
         match target {
             Target::Page(i) => complete > i,
-            Target::Position { para, .. } if let Some((section, block, row)) = table_row_of(doc, para) => pages[..complete].iter().any(|pg| {
+            Target::Block { section, block, row: Some(row) } => past_row(&pages[..complete], section, block, row),
+            Target::Block { section, block, row: None } => pages[..complete].iter().any(|pg| {
                 pg.bodies.iter().any(|b| {
-                    let (s, blk, kind, i) = start_key(&b.end);
-                    b.section_end.is_some_and(|_| b.token.section == section)
-                        || (s, blk) > (section, block)
-                        || (s, blk) == (section, block) && kind >= 2 && i > row
+                    let len = doc.sections.get(section).map_or(0, |s| s.blocks.len());
+                    let last = if b.section_end.is_some() { len } else { b.end.flow.block.min(len) };
+                    b.token.section == section && b.token.flow.block.min(last) <= block && block < last
                 })
             }),
+            Target::Position { para, .. } if let Some((section, block, row)) = table_row_of(doc, para) => {
+                past_row(&pages[..complete], section, block, row)
+            }
             Target::Position { para, .. } => pages[..complete].iter().any(|pg| {
                 pg.bodies.iter().any(|b| {
                     let Some(blocks) = doc.sections.get(b.token.section).map(|s| &s.blocks) else { return false };
@@ -851,7 +996,7 @@ impl DocumentLayout {
         let Some(key) = pg.bodies.first().and_then(|b| b.body.id) else { return finish_page(pg, section_page) };
         if let Some((frag, m, hf)) = self.frames.get(&key) {
             let bodies = frag.children.iter().filter_map(|c| if let super::fragment::PageChild::Body(b) = c { Some(b) } else { None });
-            let same_bodies = bodies.clone().count() == pg.bodies.len() && bodies.zip(&pg.bodies).all(|(a, b)| Rc::ptr_eq(a, &b.body));
+            let same_bodies = bodies.clone().count() == pg.bodies.len() && bodies.zip(pg.bodies.iter()).all(|(a, b)| Rc::ptr_eq(a, &b.body));
             if same_bodies && *m == meta && *hf == pg.hf {
                 return (frag.clone(), meta);
             }
@@ -906,6 +1051,7 @@ impl DocumentLayout {
         let endnotes = r.job.endnotes().to_vec();
         let note_numbers = r.job.note_numbers().clone();
         let notes = r.job.job_notes().clone();
+        let parts = r.reuse.map(|x| x.parts).unwrap_or_default();
         let Some(finished) = r.job.into_finished() else { return };
         let records: Vec<&PageRecord> = finished.records.iter().collect();
         let pages = self.fragments(&records);
@@ -927,6 +1073,12 @@ impl DocumentLayout {
                     // ponytail: stays set when the edit removed the last page-dependent field; a full job clears it.
                     b.extras.body_fields |= crate::docx::fields::blocks_page_dependent(blocks);
                     b.shadow[s.section].splice(s.first..s.old_end, blocks.iter().map(shadow_of));
+                }
+                // Changed parts only: the names and every other part match the document.
+                for name in parts {
+                    if let (Some(now), Some(was)) = (doc.stories.get(&name), b.extras.stories.get_mut(&name)) {
+                        was.clone_from(now);
+                    }
                 }
                 let kept = b.table.and_then(|mut t| match span {
                     Some(s) if s.section == t.0 && t.1 >= s.old_end => {

@@ -12,9 +12,9 @@ use super::env::TextEnv;
 pub struct ShapeSpace {
     pub fields: Vec<Option<String>>,
     pub notes: Vec<String>,
-    pub balance: Option<String>,
+    pub balance: Option<std::rc::Rc<str>>,
     /// The document's default East Asian font.
-    pub default_east_asia: Option<String>,
+    pub default_east_asia: Option<std::rc::Rc<str>>,
     pub compress: bool,
     /// Compat 15: with the spaces balanced, compressed punctuation keeps the breaks after hyphens and dashes.
     pub balanced_dashes: bool,

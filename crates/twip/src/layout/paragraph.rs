@@ -30,8 +30,8 @@ pub fn gap(env: &TextEnv, prev: &ParaStyle, prev_after: f64, next: &ParaStyle, b
     (if prev.contextual && same { 0.0 } else { prev_after }) + (if next.contextual && same { 0.0 } else { extra })
 }
 
-pub fn drops_at_edge(p: &ParaStyle, other: Option<&Option<String>>) -> bool {
-    p.contextual && other.is_some_and(|o| *o == p.style_id)
+pub fn drops_at_edge(p: &ParaStyle, other: Option<Option<&str>>) -> bool {
+    p.contextual && other.is_some_and(|o| o == p.style_id.as_deref())
 }
 
 pub fn contextual_in(env: &TextEnv, in_cell: bool) -> bool {

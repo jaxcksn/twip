@@ -135,7 +135,26 @@ pub(super) fn box_h(b: &Option<Border>) -> f64 {
     }
 }
 
-fn stripes(b: &Border) -> Vec<f64> {
+/// A border's stripes across its width, line and gap in turn: five at most.
+struct Stripes([f64; 5], usize);
+
+impl Stripes {
+    fn of(v: &[f64]) -> Stripes {
+        let mut s = [0.0; 5];
+        s[..v.len()].copy_from_slice(v);
+        Stripes(s, v.len())
+    }
+}
+
+impl std::ops::Deref for Stripes {
+    type Target = [f64];
+
+    fn deref(&self) -> &[f64] {
+        &self.0[..self.1]
+    }
+}
+
+fn stripes(b: &Border) -> Stripes {
     let (w, s) = (b.width, b.style.as_str());
     let (thin, gap, thick) = if s.ends_with("SmallGap") {
         (0.75, 0.75, w)
@@ -147,19 +166,19 @@ fn stripes(b: &Border) -> Vec<f64> {
         (w, w, w)
     };
     if let Some(a) = art(b) {
-        return vec![w, (a - w).max(0.0)];
+        return Stripes::of(&[w, (a - w).max(0.0)]);
     }
     match s {
         "threeDEmboss" | "threeDEngrave" => {
             let o = if w < 3.0 { 0.75 } else { 1.5 };
-            vec![o, w, o]
+            Stripes::of(&[o, w, o])
         }
-        "double" => vec![w, w, w],
-        "triple" => vec![w; 5],
-        _ if s.starts_with("thinThickThin") => vec![thin, gap, thick, gap, thin],
-        _ if s.starts_with("thinThick") => vec![thick, gap, thin],
-        _ if s.starts_with("thickThin") => vec![thin, gap, thick],
-        _ => vec![w],
+        "double" => Stripes::of(&[w, w, w]),
+        "triple" => Stripes::of(&[w; 5]),
+        _ if s.starts_with("thinThickThin") => Stripes::of(&[thin, gap, thick, gap, thin]),
+        _ if s.starts_with("thinThick") => Stripes::of(&[thick, gap, thin]),
+        _ if s.starts_with("thickThin") => Stripes::of(&[thin, gap, thick]),
+        _ => Stripes::of(&[w]),
     }
 }
 

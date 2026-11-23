@@ -64,7 +64,7 @@ impl Editor {
         if self.shape_insert.is_some() {
             return Some(Cursor::Crosshair);
         }
-        if let Some(d) = self.border_drag {
+        if let Some(d) = &self.border_drag {
             return Some(match d.border {
                 Border::Column(_) => Cursor::ResizeHorizontal,
                 Border::Row(_) => Cursor::ResizeVertical,

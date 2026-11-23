@@ -120,6 +120,7 @@ pub(crate) fn hf_parts<'d>(run: &PassRun, cx: &PassCx<'d>, i: usize) -> [Option<
 pub(super) fn compose_page(run: &mut PassRun, cx: &PassCx, i: usize, memos: &mut Memos) -> Result<(), Yield> {
     let pg = &run.pages[i];
     if pg.blank {
+        run.pages[i].composed = true;
         return Ok(());
     }
     let (si, num) = (pg.section, pg.number);
@@ -150,7 +151,7 @@ pub(super) fn compose_page(run: &mut PassRun, cx: &PassCx, i: usize, memos: &mut
         let Some(part) = parts[slot] else { continue };
         let blocks: Vec<&Block> = cx.doc.stories[part].iter().collect();
         let cap = if clip { reserved[slot].map_or(limit, |r| limit.min(r)) } else { limit };
-        let story_fields = crate::layout::page::fields_used(&fields, &blocks);
+        let story_fields = crate::layout::page::fields_used(&fields, blocks.iter().copied());
         if footer {
             let foot = s.page_h - s.footer;
             let (l, at, given) = crate::layout::story::footer_layout(&blocks, width, &frames, foot, limit, &env, memos)?;
@@ -195,6 +196,7 @@ pub(super) fn compose_page(run: &mut PassRun, cx: &PassCx, i: usize, memos: &mut
     pg.hf = records;
     pg.hf_boxes = boxes;
     pg.hf_full = full;
+    pg.composed = true;
     Ok(())
 }
 

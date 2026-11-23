@@ -283,6 +283,9 @@ pub(super) fn ruby_again(r: &Ruby, base: &RunProps, edit: Option<(&RubyEdit, boo
 
 impl Editor {
     pub(super) fn reresolve_stale(&mut self, tx: &mut Tx) {
+        if tx.stale_tables.is_empty() && tx.stale_paras.is_empty() {
+            return;
+        }
         let Some(res) = self.doc.resolver.clone() else { return };
         let cx = self.cx();
         for &table in &tx.stale_tables.clone() {
@@ -307,7 +310,6 @@ impl Editor {
         }
         paras.sort_unstable_by_key(|p| p.0);
         paras.dedup();
-        let cx = self.cx();
         for para in paras {
             let Some(again) = self.para_again(para, None, &res, &cx) else { continue };
             let Some(p) = self.index.para(&self.doc, para) else { continue };

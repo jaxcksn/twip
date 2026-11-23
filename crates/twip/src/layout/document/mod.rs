@@ -167,7 +167,7 @@ impl<'d> PassCx<'d> {
         let mut paras = HashMap::new();
         if !wanted.is_empty() {
             for n in &nodes {
-                for &b in &n.blocks.blocks {
+                for b in n.blocks.iter() {
                     if let Block::Para(p) = b {
                         paras.insert(ParaId(p.id), crate::docx::fields::style_hits(p));
                     }
@@ -308,13 +308,7 @@ pub fn step(run: &mut PassRun, cx: &PassCx, reuse: Option<&mut Reuse>, memos: &m
             let node = match split {
                 Some(e) => {
                     let n = &cx.nodes[si];
-                    body_only = SectionNode {
-                        index: n.index,
-                        section: n.section,
-                        blocks: Blocks { blocks: n.blocks.blocks[..e].to_vec(), stories: Vec::new() },
-                        breaks: n.breaks,
-                        next: n.next,
-                    };
+                    body_only = SectionNode { index: n.index, section: n.section, blocks: n.blocks.first(e), breaks: n.breaks, next: n.next };
                     &body_only
                 }
                 None => &cx.nodes[si],
@@ -479,12 +473,12 @@ impl LayoutJob {
             let nsec = doc.sections.len();
             run.info = Some(PassInfo {
                 num_pages: Some(n.max(pages).to_string()),
-                section_pages: (0..nsec).map(|si| run.pages.iter().filter(|pg| pg.section == si && !pg.blank).count().to_string()).collect(),
+                section_pages: section_pages(&run.pages, nsec),
                 page_refs: Rc::new(bookmark_pages(&run.pages)),
             });
             for i in 0..n {
                 let pg = &run.pages[i];
-                if (pg.bodies.is_empty() && !pg.blank) || pg.hf_boxes.iter().any(Option::is_some) {
+                if (pg.bodies.is_empty() && !pg.blank) || pg.composed {
                     continue;
                 }
                 let _ = compose_page(run, &cx, i, &mut memos);
@@ -593,11 +587,18 @@ pub(crate) fn excluded(records: &[PageRecord]) -> Vec<(usize, ParaId, std::ops::
 }
 
 fn pass_info(pages: &[PageRecord], nsec: usize) -> PassInfo {
-    PassInfo {
-        num_pages: Some(pages.len().to_string()),
-        section_pages: (0..nsec).map(|si| pages.iter().filter(|pg| pg.section == si && !pg.blank).count().to_string()).collect(),
-        page_refs: Rc::new(bookmark_pages(pages)),
+    PassInfo { num_pages: Some(pages.len().to_string()), section_pages: section_pages(pages, nsec), page_refs: Rc::new(bookmark_pages(pages)) }
+}
+
+/// Each of the `nsec` sections' pages, blank ones not counted, as `SECTIONPAGES` shows them.
+fn section_pages(pages: &[PageRecord], nsec: usize) -> Vec<String> {
+    let mut counts = vec![0usize; nsec];
+    for pg in pages.iter().filter(|pg| !pg.blank) {
+        if let Some(c) = counts.get_mut(pg.section) {
+            *c += 1;
+        }
     }
+    counts.iter().map(usize::to_string).collect()
 }
 
 fn bookmark_pages(pages: &[PageRecord]) -> HashMap<String, String> {
