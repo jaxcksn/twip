@@ -13,29 +13,51 @@ use crate::editing::Editor;
 use crate::editing::step::{PageSettings, Step};
 
 impl Editor {
-    pub(in crate::editing) fn set_page(&mut self, label: &'static str, edit: impl FnOnce(&mut SectionPage), fonts: &Fonts) -> Outcome {
-        let section = self.focus_section();
-        let Some(s) = self.doc.sections.get(section) else { return Outcome::Unchanged("no section") };
-        let mut page = s.page();
-        edit(&mut page);
-        if page == s.page() {
-            return Outcome::Unchanged("already so");
+    /// Edits the page setup of each of the selection's sections, in one transaction.
+    pub(in crate::editing) fn set_page(&mut self, label: &'static str, edit: impl Fn(&mut SectionPage), fonts: &Fonts) -> Outcome {
+        self.set_sections_page(label, self.selected_sections(), edit, fonts)
+    }
+
+    /// Edits the page setup of each of `sections`, in one transaction.
+    fn set_sections_page(
+        &mut self,
+        label: &'static str,
+        sections: impl Iterator<Item = usize>,
+        edit: impl Fn(&mut SectionPage),
+        fonts: &Fonts,
+    ) -> Outcome {
+        let mut tx = None;
+        for section in sections {
+            let Some(s) = self.doc.sections.get(section) else { continue };
+            let mut page = s.page();
+            edit(&mut page);
+            if page == s.page() {
+                continue;
+            }
+            let change = s.change.clone();
+            let t = tx.get_or_insert_with(|| self.begin(label));
+            if self.step(t, Step::SectionPage { section, page: Box::new(page), change }).is_err() {
+                if let Some(t) = tx.take() {
+                    self.abort(t);
+                }
+                return Outcome::Unchanged("no section");
+            }
         }
-        let change = s.change.clone();
-        let mut tx = self.begin(label);
-        if self.step(&mut tx, Step::SectionPage { section, page: Box::new(page), change }).is_err() {
-            self.abort(tx);
-            return Outcome::Unchanged("no section");
+        match tx {
+            Some(tx) => self.commit(tx, None, fonts),
+            None => Outcome::Unchanged("already so"),
         }
-        self.commit(tx, None, fonts)
     }
 
     pub(in crate::editing) fn set_margins(&mut self, m: Margins, fonts: &Fonts) -> Outcome {
-        let section = self.focus_section();
-        if let Some(s) = self.doc.sections.get(section) {
-            let left = m.left.map_or(s.left, |v| v.0) + m.right.map_or(s.right, |v| v.0) + m.gutter.map_or(s.gutter, |v| v.0);
-            if left >= s.page_w {
-                return Outcome::invalid("left + right + gutter must be less than the page width");
+        for section in self.selected_sections() {
+            let Some(s) = self.doc.sections.get(section) else { continue };
+            let (gw, gh) = self.gutter_axes(m.gutter.map_or(s.gutter, |v| v.0), s.page_w, s.page_h);
+            if m.left.map_or(s.left, |v| v.0) + m.right.map_or(s.right, |v| v.0) + gw >= s.page_w {
+                return Outcome::invalid("left + right and a side gutter must be less than the page width");
+            }
+            if m.top.map_or(s.top, |v| v.0).abs() + m.bottom.map_or(s.bottom, |v| v.0).abs() + gh >= s.page_h {
+                return Outcome::invalid("top + bottom and a top gutter must be less than the page height");
             }
         }
         self.set_page(
@@ -57,16 +79,70 @@ impl Editor {
     }
 
     pub(in crate::editing) fn set_columns(&mut self, c: Columns, fonts: &Fonts) -> Outcome {
+        let num = c.count.clamp(1, 45) as usize;
+        // Columns of their own widths, each with the space after it.
+        let cols: Vec<(f64, f64)> = c.widths.iter().flatten().map(|w| (w.width.0, w.spacing.0)).collect();
+        if !cols.is_empty() {
+            if cols.len() != num {
+                return Outcome::invalid("one width for each column");
+            }
+            if cols.iter().any(|&(w, s)| !(w.is_finite() && w > 0.0 && s.is_finite() && s >= 0.0)) {
+                return Outcome::invalid("a column's width is positive and its spacing not negative");
+            }
+            let total: f64 = cols.iter().map(|c| c.0).sum::<f64>() + cols[..num - 1].iter().map(|c| c.1).sum::<f64>();
+            let set = &self.doc.settings;
+            let facing = crate::layout::page::Facing { mirror: set.mirror_margins, gutter_at_top: set.gutter_at_top, book_fold: set.book_fold };
+            for section in self.selected_sections() {
+                let Some(s) = self.doc.sections.get(section) else { continue };
+                let (left, right, _) = crate::layout::page::margins_in(s, crate::docx::review::MarkupView::All, facing, 1);
+                if total > s.page_w - left - right + 0.5 {
+                    return Outcome::invalid("the columns are wider than the text");
+                }
+            }
+        }
         self.set_page(
             "Columns",
             |p| {
                 let space = c.spacing.map_or(if p.columns.space > 0.0 { p.columns.space } else { 36.0 }, |s| s.0);
                 let separator = c.separator.unwrap_or(p.columns.separator);
-                let num = c.count.clamp(1, 45) as usize;
-                // Columns of their own widths, each with the space after it.
-                let cols: Vec<(f64, f64)> = c.widths.iter().flatten().take(num).map(|w| (w.width.0, w.spacing.0)).collect();
                 let equal = cols.len() < 2;
-                p.columns = crate::docx::Columns { num, equal, cols: if equal { Vec::new() } else { cols }, space, separator };
+                p.columns = crate::docx::Columns { num, equal, cols: if equal { Vec::new() } else { cols.clone() }, space, separator };
+            },
+            fonts,
+        )
+    }
+
+    /// Moves the right edge of text column `column` of the caret's section to `to` (page points): the space after it
+    /// moves with it and the next column takes the change, each column keeping at least half an inch, as in Word.
+    pub(in crate::editing) fn move_column_boundary(&mut self, column: usize, to: f64, fonts: &Fonts) -> Outcome {
+        const MIN: f64 = 36.0;
+        let section = self.focus_section();
+        let Some(s) = self.doc.sections.get(section) else { return Outcome::Unchanged("no section") };
+        let c = &s.columns;
+        let n = c.num.clamp(1, crate::docx::Columns::MAX);
+        if column + 1 >= n {
+            return Outcome::invalid("no such column boundary");
+        }
+        let left = s.left + self.gutter_axes(s.gutter, s.page_w, s.page_h).0;
+        let width = s.page_w - s.right - left;
+        let mut cols: Vec<(f64, f64)> =
+            if c.equal || c.cols.len() < n { vec![((width - c.space * (n - 1) as f64) / n as f64, c.space); n] } else { c.cols[..n].to_vec() };
+        let start = left + cols[..column].iter().map(|(w, sp)| w + sp).sum::<f64>();
+        let (w, next) = (cols[column].0, cols[column + 1].0);
+        if w + next < 2.0 * MIN {
+            return Outcome::unavailable("the columns are too narrow");
+        }
+        let dx = (to - start - w).clamp(MIN - w, next - MIN);
+        if dx.abs() < 1e-9 {
+            return Outcome::Unchanged("already there");
+        }
+        (cols[column].0, cols[column + 1].0) = (w + dx, next - dx);
+        self.set_sections_page(
+            "Column Width",
+            std::iter::once(section),
+            |p| {
+                let space = p.columns.space;
+                p.columns = crate::docx::Columns { num: n, equal: false, cols: cols.clone(), space, separator: p.columns.separator };
             },
             fonts,
         )
@@ -142,7 +218,7 @@ impl Editor {
             }
             .into(),
         });
-        self.set_page("Line Numbers", |p| p.line_numbers = numbering, fonts)
+        self.set_page("Line Numbers", |p| p.line_numbers = numbering.clone(), fonts)
     }
 
     pub(in crate::editing) fn set_section_break_type(&mut self, k: SectionBreakKind, fonts: &Fonts) -> Outcome {

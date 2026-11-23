@@ -8,18 +8,33 @@ use crate::api::error::{Error, ErrorCode};
 use crate::api::record::Origin;
 use crate::api::services::Popover;
 use crate::api::state::CommandState;
-use crate::api::value::{CommentId, ElementId, LineSpacing, Points, TableWidth};
+use crate::api::value::{CommentId, ElementId, Points, TableWidth};
 
-/// The longest length most settings take, 22 in.
-const MAX: f64 = 1584.0;
+use crate::editing::commands::bounds::{MAX, length, within};
 
-/// `v` within `lo..=hi`, else an error naming `what`.
-fn within(what: &str, v: f64, lo: f64, hi: f64) -> Result<(), Error> {
-    if v.is_finite() && (lo..=hi).contains(&v) { Ok(()) } else { Err(Error::invalid(format!("{what} must be from {lo} to {hi}"))) }
+/// An object's or a table's place on each axis (aligned, and its offset): an offset within ±`MAX`, and not with an
+/// alignment.
+fn placed(axes: [Option<(bool, Option<Points>)>; 2]) -> Result<(), Error> {
+    for (aligned, offset) in axes.into_iter().flatten() {
+        if aligned && offset.is_some() {
+            return Err(Error::invalid("align and offset exclude each other"));
+        }
+        length("the offset", offset, -MAX, MAX)?;
+    }
+    Ok(())
 }
 
-fn length(what: &str, v: Option<Points>, lo: f64, hi: f64) -> Result<(), Error> {
-    v.map_or(Ok(()), |v| within(what, v.0, lo, hi))
+/// A separator's character: one, not a paragraph or line break, given with `other` only.
+fn separator(kind: crate::api::command::TextSeparator, character: Option<&str>) -> Result<(), Error> {
+    use crate::api::command::TextSeparator;
+    let mut chars = character.map(str::chars);
+    let one = chars.as_mut().and_then(|c| c.next().filter(|_| c.next().is_none()));
+    match (kind, character, one) {
+        (TextSeparator::Other, _, Some(c)) if !c.is_control() && !matches!(c, '\u{2028}' | '\u{2029}') => Ok(()),
+        (TextSeparator::Other, ..) => Err(Error::invalid("the separator must be one character")),
+        (_, Some(_), _) => Err(Error::invalid("a character goes with the other separator only")),
+        _ => Ok(()),
+    }
 }
 
 fn count(what: &str, v: Option<u32>, hi: u32) -> Result<(), Error> {
@@ -58,9 +73,16 @@ impl Session {
         self.state.commands.get(&id)
     }
 
-    /// The checks before any step runs, in order: what the engine doesn't do yet, read only, availability in the
-    /// current state, then the arguments.
+    /// The checks before any step runs, in order: what the engine doesn't do yet, read only, document protection, the
+    /// arguments, then availability in the current state.
     pub(super) fn check(&self, command: &Command) -> Result<(), Error> {
+        self.check_where(command, true)
+    }
+
+    /// [`Session::check`]; `here`: also what depends on where the command runs (document protection, availability),
+    /// for a command that runs at the selection as it is now. The editor checks the protection again as each command
+    /// runs.
+    pub(super) fn check_where(&self, command: &Command, here: bool) -> Result<(), Error> {
         let id = command.id();
         if crate::editing::commands::UNSUPPORTED.contains(&id) {
             return Err(Error::unsupported(&id_name(id)));
@@ -68,42 +90,30 @@ impl Session {
         if self.read_only && info(id).is_some_and(|i| i.mutates) {
             return Err(Error::new(ErrorCode::ReadOnly, "the session is read only"));
         }
-        // Formatting protection: only unlocked styles, and no direct formatting.
-        let doc = self.editor.document();
-        if doc.settings.protection.as_ref().is_some_and(|p| p.limits_formatting()) {
-            let locked = |s: &crate::api::value::StyleId| doc.resolver.as_ref().and_then(|r| r.styles.get(&s.0)).is_some_and(|st| st.meta.locked);
-            match command {
-                Command::SetParagraphStyle(s) if locked(s) => return Err(Error::new(ErrorCode::NotAllowed, "the style is restricted")),
-                c if crate::editing::formats_a_style(c) => return Err(Error::new(ErrorCode::NotAllowed, "formatting is restricted")),
-                _ => {}
-            }
-        }
-        // Restrict Editing: what the protection allows, and any change in a range the author may edit.
-        if let Some(p) = doc.settings.protection.as_ref()
-            && info(id).is_some_and(|i| i.mutates)
-            && !crate::editing::protection::allows(p, id)
+        if here
+            && command.mutates()
+            && let Some(e) = self.editor.protection_refusal(command)
         {
-            use crate::docx::review::ProtectionKind as K;
-            use crate::editing::protection::edits_selection;
-            let ranges =
-                matches!(p.edit, K::ReadOnly | K::Comments) && edits_selection(id, false) && self.editor.in_editable_range(&self.author.name);
-            let in_form = p.edit == K::Forms
-                && matches!(command, Command::InsertText(_) | Command::Delete(_) | Command::PasteText(_))
-                && self.editor.in_form_field();
-            let open_section = p.edit == K::Forms && edits_selection(id, true) && self.editor.in_unprotected_section();
-            if !ranges && !in_form && !open_section {
-                return Err(Error::new(ErrorCode::NotAllowed, "the document is protected"));
+            return Err(e);
+        }
+        self.validate(command)?;
+        if here {
+            // Paste: this editor's copy or another session's
+            let enabled = match command {
+                Command::Paste(_) => self.editor.clipboard().is_some() || self.shared.clipboard.borrow().is_some(),
+                _ => self.state.commands.get(&id).is_none_or(|s| s.enabled),
+            };
+            if !enabled {
+                return Err(Error::unavailable(format!("{} isn't available here", id_name(id))));
             }
         }
-        if self.state.commands.get(&id).is_some_and(|s| !s.enabled) {
-            return Err(Error::unavailable(format!("{} isn't available here", id_name(id))));
-        }
-        self.validate(command)
+        Ok(())
     }
 
     /// Bad ranges, counts, sizes, empty text and ids that don't exist.
     fn validate(&self, command: &Command) -> Result<(), Error> {
         use Command as C;
+        crate::editing::commands::bounds::bounds(command)?;
         match command {
             C::InsertText(t) => text("the text", t),
             // Until layout is complete the editor finds whether the page exists.
@@ -112,47 +122,12 @@ impl Session {
                 within("the page", f64::from(*p), 1.0, last)
             }
             C::SetFont(f) => text("the font", f),
-            C::SetTypography(t) => {
-                if let Some(s) = t.scale {
-                    within("the scale", s, 1.0, 600.0)?;
-                }
-                length("the kerning size", t.kerning, 0.0, 1638.0)?;
-                match t.stylistic_set {
-                    Some(n) if n > 20 => Err(Error::invalid("the stylistic set is 0…20")),
-                    _ => Ok(()),
-                }
-            }
             C::SetLanguage(l) => match &l.language {
                 Some(tag) if tag.is_empty() || tag.len() > 35 || !tag.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') => {
                     Err(Error::invalid("the language is a BCP 47 tag"))
                 }
                 _ => Ok(()),
             },
-            C::SetFontSize(s) => {
-                within("the size", s.0, 1.0, 1638.0)?;
-                if (s.0 * 2.0).fract() != 0.0 { Err(Error::invalid("the size goes in 0.5 pt steps")) } else { Ok(()) }
-            }
-            C::SetCharacterSpacing(s) | C::SetCharacterPosition(s) | C::SetTableIndent(s) => within("the length", s.0, -MAX, MAX),
-            C::SetLineSpacing(LineSpacing::Multiple { lines }) => within("the lines", *lines, 0.06, 132.0),
-            C::SetLineSpacing(LineSpacing::Exact { size } | LineSpacing::AtLeast { size }) => within("the size", size.0, 0.7, MAX),
-            C::SetParagraphSpacing(s) => {
-                for v in [&s.before, &s.after] {
-                    if let Some(crate::api::value::AutoOr::Value(p)) = v {
-                        within("the spacing", p.0, 0.0, MAX)?;
-                    }
-                }
-                Ok(())
-            }
-            C::SetIndents(i) => {
-                length("the left indent", i.left, -MAX, MAX)?;
-                length("the right indent", i.right, -MAX, MAX)?;
-                length("the first line indent", i.first_line, 0.0, MAX)?;
-                length("the hanging indent", i.hanging, 0.0, MAX)?;
-                if i.first_line.is_some() && i.hanging.is_some() {
-                    return Err(Error::invalid("firstLine and hanging exclude each other"));
-                }
-                Ok(())
-            }
             C::SetStyleMeta(m) => {
                 if self.editor.document().resolver.as_ref().is_some_and(|r| r.styles.by_id.contains_key(&m.id.0)) {
                     Ok(())
@@ -164,8 +139,19 @@ impl Session {
                 Some(st) if st.kind == crate::docx::styles::StyleKind::Table => Ok(()),
                 _ => Err(Error::invalid(format!("no table style {}", s.0))),
             },
-            C::SetParagraphStyle(s) | C::SetTableStyle(s) | C::UpdateStyleToSelection(s) | C::DeleteStyle(s) => {
-                if self.editor.document().resolver.as_ref().is_some_and(|r| r.styles.by_id.contains_key(&s.0)) {
+            C::SetParagraphStyle(s) | C::SetTableStyle(s) => {
+                use crate::docx::styles::StyleKind as K;
+                let want = if matches!(command, C::SetTableStyle(_)) { K::Table } else { K::Paragraph };
+                match self.editor.document().resolver.as_ref().and_then(|r| r.styles.by_id.get(&s.0)) {
+                    Some(st) if st.kind == want => Ok(()),
+                    Some(_) => Err(Error::invalid(format!("{} isn't a {} style", s.0, if want == K::Table { "table" } else { "paragraph" }))),
+                    None if self.editor.built_in_for(command) => Ok(()),
+                    None => Err(Error::invalid(format!("no style {}", s.0))),
+                }
+            }
+            C::UpdateStyleToSelection(s) | C::DeleteStyle(s) => {
+                let built_in = !matches!(command, C::DeleteStyle(_)) && self.editor.built_in_for(command);
+                if built_in || self.editor.document().resolver.as_ref().is_some_and(|r| r.styles.by_id.contains_key(&s.0)) {
                     Ok(())
                 } else {
                     Err(Error::invalid(format!("no style {}", s.0)))
@@ -178,7 +164,21 @@ impl Session {
                 Ok(())
             }
             C::SetPaperSize(s) => within("the width", s.width.0, 36.0, MAX).and(within("the height", s.height.0, 36.0, MAX)),
-            C::SetColumns(c) => count("the columns", Some(c.count), 45).and(length("the spacing", c.spacing, 0.0, MAX)),
+            C::SetColumns(c) => {
+                count("the columns", Some(c.count), 45)?;
+                length("the spacing", c.spacing, 0.0, MAX)?;
+                let Some(widths) = &c.widths else { return Ok(()) };
+                if widths.len() != c.count as usize {
+                    return Err(Error::invalid("there is a width for each column"));
+                }
+                for w in widths {
+                    if !(w.width.0.is_finite() && w.width.0 > 0.0) {
+                        return Err(Error::invalid("a column's width must be more than 0"));
+                    }
+                    within("the space after a column", w.spacing.0, 0.0, MAX)?;
+                }
+                Ok(())
+            }
             C::SetHeaderFooterDistance(d) => length("the header distance", d.header, 0.0, MAX).and(length("the footer distance", d.footer, 0.0, MAX)),
             C::InsertTable(t) => count("the rows", Some(t.rows), 32767).and(count("the columns", Some(t.columns), 63)),
             C::InsertPicture(p) => picture(&p.data.0),
@@ -207,9 +207,6 @@ impl Session {
                     if custom[..k].iter().any(|d| d.name.eq_ignore_ascii_case(&c.name)) {
                         return Err(Error::invalid(format!("two custom properties are named {}", c.name)));
                     }
-                    if c.kind == crate::api::command::CustomPropertyKind::Number && c.value.trim().parse::<f64>().is_err() {
-                        return Err(Error::invalid(format!("{} isn't a number", c.value)));
-                    }
                 }
                 Ok(())
             }
@@ -222,13 +219,16 @@ impl Session {
             C::InsertRows(r) => count("the rows", r.count, 32767),
             C::InsertColumns(c) => count("the columns", c.count, 63),
             C::SplitCells(s) => count("the columns", Some(s.columns), 63).and(count("the rows", s.rows, 32767)),
-            C::SetCellBorders(b) => b.border.as_ref().map_or(Ok(()), |b| within("the width", b.width.0, 0.25, 6.0)),
+            C::ConvertTextToTable(t) => separator(t.separator, t.character.as_deref()).and(count("the columns", t.columns, 63)),
+            C::ConvertTableToText(t) => separator(t.separator, t.character.as_deref()),
             C::SetCellMargins(m) => {
                 for v in [m.top, m.bottom, m.left, m.right] {
                     length("the margin", v, 0.0, MAX)?;
                 }
                 Ok(())
             }
+            C::MoveColumnBoundary(m) => within("the position", m.to.0, -MAX, MAX),
+            C::MoveTableColumnBoundary(b) | C::MoveTableRowBoundary(b) => within("the position", b.to.0, -MAX, MAX),
             C::SetRowHeight(crate::api::value::AutoOr::Value(h)) => within("the height", h.height.0, 0.0, MAX),
             C::SetColumnWidth(w) => within("the width", w.0, 1.0, MAX),
             C::SetTableWidth(TableWidth::Points { value }) => within("the width", value.0, 0.0, MAX),
@@ -243,7 +243,16 @@ impl Session {
             }
             C::SetTableCellSpacing(s) => length("the spacing", *s, 0.0, MAX),
             C::SetRowProperties(p) => length("the spacing", p.exceptions.as_ref().and_then(|x| x.cell_spacing), 0.0, MAX),
-            C::SetObjectSize(s) => length("the width", s.width, 1.0, MAX).and(length("the height", s.height, 1.0, MAX)),
+            C::SetObjectSize(s) => {
+                length("the width", s.width, 1.0, MAX)?;
+                length("the height", s.height, 1.0, MAX)?;
+                for r in [s.relative_width, s.relative_height] {
+                    if let Some(crate::api::value::NoneOr::Value(r)) = r {
+                        within("the relative size", r.percent, 1.0, 1000.0)?;
+                    }
+                }
+                Ok(())
+            }
             C::InsertShape(i) => length("the width", i.width, 0.0, MAX).and(length("the height", i.height, 0.0, MAX)),
             C::SetShapeFill(f) => f.to_model(&mut |data| crate::docx::image::image_info(data).map(|_| 0)).map(|_| ()).map_err(Error::invalid),
             C::SetShapeLine(l) => l.apply(None, &mut |_| Some(0)).map(|_| ()).map_err(Error::invalid),
@@ -263,12 +272,37 @@ impl Session {
                 if usize::from(a.index) < count { Ok(()) } else { Err(Error::invalid(format!("the shape has {count} adjust values"))) }
             }
             C::SetObjectPosition(p) => {
-                let axes = [p.horizontal.map(|h| (h.align.is_some(), h.offset)), p.vertical.map(|v| (v.align.is_some(), v.offset))];
-                for (aligned, offset) in axes.into_iter().flatten() {
-                    if aligned && offset.is_some() {
-                        return Err(Error::invalid("align and offset exclude each other"));
+                placed([p.horizontal.map(|h| (h.align.is_some(), h.offset)), p.vertical.map(|v| (v.align.is_some(), v.offset))])?;
+                for (aligned, percent) in
+                    [p.horizontal.map(|h| (h.align.is_some(), h.percent)), p.vertical.map(|v| (v.align.is_some(), v.percent))].into_iter().flatten()
+                {
+                    if aligned && percent.is_some() {
+                        return Err(Error::invalid("align and percent exclude each other"));
                     }
-                    length("the offset", offset, -MAX, MAX)?;
+                    percent.map_or(Ok(()), |v| within("the percent", v, -1000.0, 1000.0))?;
+                }
+                Ok(())
+            }
+            C::SetTablePosition(Some(p)) => {
+                placed([p.horizontal.map(|h| (h.align.is_some(), h.offset)), p.vertical.map(|v| (v.align.is_some(), v.offset))])?;
+                let d = p.wrap_distance.map(|d| [d.top, d.bottom, d.left, d.right]).unwrap_or_default();
+                d.into_iter().try_for_each(|v| within("the distance", v.0, 0.0, MAX))
+            }
+            C::SetFrame(f) => {
+                use crate::api::command::{FrameHeightRule, FrameWidthRule};
+                if f.width_rule == FrameWidthRule::Exactly {
+                    within("the width", f.width.0, 0.0, MAX)?;
+                }
+                if f.height_rule != FrameHeightRule::Auto {
+                    within("the height", f.height.0, 0.0, MAX)?;
+                }
+                within("the distance", f.horizontal_distance.0, 0.0, MAX)?;
+                within("the distance", f.vertical_distance.0, 0.0, MAX)?;
+                if f.horizontal_align.is_none() {
+                    within("the position", f.horizontal.0, -MAX, MAX)?;
+                }
+                if f.vertical_align.is_none() {
+                    within("the position", f.vertical.0, -MAX, MAX)?;
                 }
                 Ok(())
             }
@@ -413,10 +447,10 @@ impl Session {
                     self.cursor_overrides.clone_from(o);
                 }
                 if let Some(l) = v.live_layout {
-                    self.editor.live_layout = l;
+                    (self.live_layout, self.editor.live_layout) = (l, l);
                 }
                 if let Some(c) = v.control_labels {
-                    self.editor.control_labels = c;
+                    (self.control_labels, self.editor.control_labels) = (c, c);
                 }
                 let p = &mut self.presentation;
                 if let Some(t) = v.theme {

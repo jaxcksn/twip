@@ -2309,13 +2309,14 @@ pub struct WindowSegment {
 }
 
 /// A place in a caret window: a paragraph (its index in the window) and an offset in its text (characters, not
-/// counting a list item's label).
+/// counting a list item's label). A character is a Unicode scalar value: a host whose strings are UTF-16 counts a
+/// surrogate pair as one.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct WindowPoint {
     /// The paragraph's index in the window.
     pub paragraph: u32,
-    /// The offset in its text.
+    /// The offset in its text, in Unicode scalar values.
     pub offset: u32,
 }
 

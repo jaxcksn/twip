@@ -3,7 +3,7 @@
 pub mod rich;
 
 use std::cmp::Ordering;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use crate::docx::resolve::Resolver;
@@ -23,6 +23,9 @@ use super::text::UnitText;
 use super::view::CommentView;
 use super::{Editor, Tx};
 
+/// The most characters of the text a thread comments on that it shows.
+const SCOPE_LIMIT: usize = crate::api::review::ANCHOR_TEXT_LIMIT;
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum CommentCmd {
     Add(RichText),
@@ -36,7 +39,18 @@ pub enum CommentCmd {
 #[derive(Clone, Debug, Default)]
 pub(super) struct State {
     chosen: Option<(CommentId, Selection)>,
-    ranges: Option<(u64, Rc<Vec<ThreadRange>>)>,
+    known: Option<Known>,
+}
+
+/// The comment marks, the paragraphs they are in and the thread ranges they make, as of an edit mark and a count of
+/// comment edits.
+#[derive(Clone, Debug, Default)]
+struct Known {
+    mark: super::EditMark,
+    comments: u64,
+    marks: HashMap<CommentId, Marks>,
+    by_para: HashMap<ParaId, Vec<CommentId>>,
+    ranges: Rc<Vec<ThreadRange>>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -126,7 +140,7 @@ fn run_before(p: &Paragraph, u: Unit) -> Run {
     Rc::new(s)
 }
 
-fn without_markers(p: &Paragraph, gone: &[CommentId]) -> Vec<Inline> {
+fn without_markers(p: &Paragraph, gone: &HashSet<CommentId>) -> Vec<Inline> {
     let mut out: Vec<Inline> = Vec::with_capacity(p.inlines.len());
     for i in &p.inlines {
         if marker(i).is_some_and(|(id, _)| gone.contains(&id)) {
@@ -173,6 +187,26 @@ pub(super) fn deletion_cuts(p: &Paragraph, a: u32, b: u32) -> (Vec<u32>, Vec<Com
     }
     let cuts = marks.iter().filter(|m| a < m.0 && m.0 < b && !emptied.contains(&m.1)).map(|m| m.0).collect();
     (cuts, emptied)
+}
+
+/// The units before comment `id`'s `which` marker in `inlines`.
+fn units_to(inlines: &[Inline], id: CommentId, which: Which) -> Option<u32> {
+    let mut at = 0u32;
+    for i in inlines {
+        if marker(i) == Some((id, which)) {
+            return Some(at);
+        }
+        at += i.units() as u32;
+    }
+    None
+}
+
+/// The paragraph in `blocks` holding comment `id`'s `which` marker, and the units before it.
+fn in_blocks(blocks: &[Block], id: CommentId, which: Which) -> Option<(ParaId, u32)> {
+    blocks.iter().find_map(|b| match b {
+        Block::Para(p) => units_to(&p.inlines, id, which).map(|u| (ParaId(p.id), u)),
+        Block::Table(t) => t.rows.iter().flat_map(|r| &r.cells).find_map(|c| in_blocks(&c.blocks, id, which)),
+    })
 }
 
 fn ids_in(inlines: &[Inline], out: &mut Vec<CommentId>) {
@@ -226,6 +260,11 @@ impl Editor {
         Outcome::Unchanged(why)
     }
 
+    /// Whether a comment can go on the selection.
+    pub(in crate::editing) fn takes_comments_here(&self) -> bool {
+        self.selection.ordered(&self.index).is_some_and(|(a, _)| self.takes_comments(a.story))
+    }
+
     fn takes_comments(&self, story: StoryId) -> bool {
         match story {
             StoryId::Body => true,
@@ -266,22 +305,58 @@ impl Editor {
             return out;
         }
         for para in self.index.para_ids() {
-            let Some(p) = self.index.para(&self.doc, para) else { continue };
-            let mut at = 0u32;
-            for (k, i) in p.inlines.iter().enumerate() {
-                if let Some((id, kind)) = marker(i) {
-                    let m = Some(Mark { para, inline: k, unit: Unit(at) });
-                    let e = out.entry(id).or_default();
-                    match kind {
-                        Which::Start => e.start = m,
-                        Which::End => e.end = m,
-                        Which::Reference => e.reference = m,
-                    }
-                }
-                at += i.units() as u32;
-            }
+            self.para_marks(para, &mut out);
         }
         out
+    }
+
+    /// Adds the marks in `para` to `out`; whether it has any.
+    fn para_marks(&self, para: ParaId, out: &mut HashMap<CommentId, Marks>) -> bool {
+        let Some(p) = self.index.para(&self.doc, para) else { return false };
+        let mut at = 0u32;
+        let mut any = false;
+        for (k, i) in p.inlines.iter().enumerate() {
+            if let Some((id, kind)) = marker(i) {
+                let m = Some(Mark { para, inline: k, unit: Unit(at) });
+                let e = out.entry(id).or_default();
+                match kind {
+                    Which::Start => e.start = m,
+                    Which::End => e.end = m,
+                    Which::Reference => e.reference = m,
+                }
+                any = true;
+            }
+            at += i.units() as u32;
+        }
+        any
+    }
+
+    /// The comment marks known before, with those in the paragraphs touched since read again; `None` when the touched
+    /// paragraphs are no longer known. Whether any mark moved, came or went.
+    fn update_marks(&self, known: &mut Known) -> Option<bool> {
+        let touched = self.touched.since(known.mark)?;
+        let mut seen = std::collections::HashSet::new();
+        let mut moved = false;
+        for &p in touched.iter().filter(|p| seen.insert(**p)) {
+            for id in known.by_para.remove(&p).unwrap_or_default() {
+                let Some(m) = known.marks.get_mut(&id) else { continue };
+                for slot in [&mut m.start, &mut m.end, &mut m.reference] {
+                    if slot.is_some_and(|x| x.para == p) {
+                        *slot = None;
+                    }
+                }
+                if m.start.is_none() && m.end.is_none() && m.reference.is_none() {
+                    known.marks.remove(&id);
+                }
+                moved = true;
+            }
+            if self.para_marks(p, &mut known.marks) {
+                let ids = self.index.para(&self.doc, p).into_iter().flat_map(|q| q.inlines.iter().filter_map(marker)).map(|(id, _)| id);
+                known.by_para.insert(p, ids.collect());
+                moved = true;
+            }
+        }
+        Some(moved)
     }
 
     fn mark_position(&self, m: Mark) -> Option<Position> {
@@ -301,27 +376,43 @@ impl Editor {
         if a.story == b.story { self.index.cmp(a, b) } else { rank(a.story).cmp(&rank(b.story)) }
     }
 
+    /// The threads' ranges in story order: kept while edits touch no paragraph with comment marks and no comment.
     fn thread_ranges(&mut self) -> Rc<Vec<ThreadRange>> {
-        if let Some((rev, r)) = &self.comments.ranges
-            && *rev == self.generation
-        {
-            return r.clone();
+        if self.doc.comments.by_id.is_empty() {
+            self.comments.known = None;
+            return Rc::default();
         }
-        let marks = self.comment_marks();
-        let mut v: Vec<ThreadRange> = self
-            .doc
-            .comments
-            .threads()
-            .into_iter()
-            .filter_map(|(root, _)| {
-                let m = marks.get(&root)?;
-                Some(ThreadRange { root, start: self.mark_position(m.start?)?, end: self.mark_position(m.end?)? })
-            })
-            .collect();
-        v.sort_by(|a, b| self.story_order(&a.start, &b.start));
-        let v = Rc::new(v);
-        self.comments.ranges = Some((self.generation, v.clone()));
-        v
+        let mut known = self.comments.known.take().unwrap_or_default();
+        let moved = self.update_marks(&mut known).unwrap_or_else(|| {
+            known.marks = self.comment_marks();
+            known.by_para.clear();
+            for (&id, m) in &known.marks {
+                for at in [m.start, m.end, m.reference].into_iter().flatten() {
+                    known.by_para.entry(at.para).or_default().push(id);
+                }
+            }
+            true
+        });
+        if moved || known.comments != self.comment_edits {
+            known.ranges = crate::prof::time("comments:ranges", || {
+                let mut v: Vec<ThreadRange> = self
+                    .doc
+                    .comments
+                    .threads()
+                    .into_iter()
+                    .filter_map(|(root, _)| {
+                        let m = known.marks.get(&root)?;
+                        Some(ThreadRange { root, start: self.mark_position(m.start?)?, end: self.mark_position(m.end?)? })
+                    })
+                    .collect();
+                v.sort_by(|a, b| self.story_order(&a.start, &b.start));
+                Rc::new(v)
+            });
+        }
+        (known.mark, known.comments) = (self.touched.mark(), self.comment_edits);
+        let ranges = known.ranges.clone();
+        self.comments.known = Some(known);
+        ranges
     }
 
     pub(in crate::editing) fn comment_range(&mut self, id: CommentId) -> Option<(Position, Position)> {
@@ -353,14 +444,18 @@ impl Editor {
         let active = self.active_comment();
         let ranges = self.thread_ranges();
         let mut threads = self.doc.comments.threads();
-        let at = |id: CommentId| ranges.iter().position(|r| r.root == id).unwrap_or(usize::MAX);
-        threads.sort_by_key(|(root, _)| at(*root));
+        let mut at: HashMap<CommentId, usize> = HashMap::with_capacity(ranges.len());
+        for (k, r) in ranges.iter().enumerate() {
+            at.entry(r.root).or_insert(k);
+        }
+        threads.sort_by_key(|(root, _)| at.get(root).copied().unwrap_or(usize::MAX));
+        let mut texts = HashMap::new();
         threads
             .into_iter()
             .map(|(root, replies)| {
-                let scope = ranges.iter().find(|r| r.root == root).map(|r| {
+                let scope = at.get(&root).map(|&k| &ranges[k]).map(|r| {
                     let kept = std::mem::replace(&mut self.selection, Selection::range(r.start, r.end, Granularity::Char));
-                    let text = self.selected_text();
+                    let (text, _) = self.text_within(SCOPE_LIMIT, &mut texts);
                     self.selection = kept;
                     text
                 });
@@ -419,7 +514,7 @@ impl Editor {
 
     fn reference_run(&self, para: ParaId, at: Unit, res: &Resolver, cx: &Cx) -> Option<Run> {
         if res.styles.by_id.contains_key("CommentReference") {
-            let base = self.run_base(para, res, cx)?;
+            let base = self.run_base(para, at, res, cx)?;
             let mut p = Props::parse(None, "rPr", cx);
             let w = &cx.w;
             p.set("rStyle", format!("<{w}rStyle {w}val=\"CommentReference\"/>"));
@@ -549,15 +644,10 @@ impl Editor {
         if !self.doc.comments.by_id.contains_key(&id) {
             return self.comment_refused("no such comment");
         }
-        let root = self.doc.comments.root(id);
-        let thread: Vec<Comment> = self
-            .doc
-            .comments
-            .by_id
-            .values()
-            .filter(|c| c.done != done && self.doc.comments.root(c.id) == root)
-            .map(|c| Comment { done, ..c.clone() })
-            .collect();
+        let roots = self.doc.comments.roots();
+        let root = roots[&id];
+        let thread: Vec<Comment> =
+            self.doc.comments.by_id.values().filter(|c| c.done != done && roots[&c.id] == root).map(|c| Comment { done, ..c.clone() }).collect();
         let mut tx = self.begin(if done { "Resolve Comment" } else { "Reopen Comment" });
         for c in thread {
             if self.step(&mut tx, Step::Comment { id: c.id, after: Some(c) }).is_err() {
@@ -569,20 +659,22 @@ impl Editor {
     }
 
     pub(super) fn remove_comments(&mut self, tx: &mut Tx, ids: &[CommentId]) -> Result<(), StepError> {
-        let mut gone: Vec<CommentId> = ids.iter().copied().filter(|id| self.doc.comments.by_id.contains_key(id)).collect();
-        loop {
-            let more: Vec<CommentId> = self
-                .doc
-                .comments
-                .by_id
-                .values()
-                .filter(|c| !gone.contains(&c.id) && c.parent.is_some_and(|p| gone.contains(&p)))
-                .map(|c| c.id)
-                .collect();
-            if more.is_empty() {
-                break;
+        let mut replies: HashMap<CommentId, Vec<CommentId>> = HashMap::new();
+        for c in self.doc.comments.by_id.values() {
+            if let Some(p) = c.parent {
+                replies.entry(p).or_default().push(c.id);
             }
-            gone.extend(more);
+        }
+        let mut gone: Vec<CommentId> = ids.iter().copied().filter(|id| self.doc.comments.by_id.contains_key(id)).collect();
+        let mut seen: HashSet<CommentId> = gone.iter().copied().collect();
+        let mut k = 0;
+        while let Some(&id) = gone.get(k) {
+            k += 1;
+            for &r in replies.get(&id).into_iter().flatten() {
+                if seen.insert(r) {
+                    gone.push(r);
+                }
+            }
         }
         let marks = self.comment_marks();
         let mut paras: Vec<ParaId> =
@@ -591,7 +683,7 @@ impl Editor {
         paras.dedup();
         for para in paras {
             let p = self.index.para(&self.doc, para).ok_or(StepError::Missing)?;
-            let inlines = without_markers(p, &gone);
+            let inlines = without_markers(p, &seen);
             self.step(tx, Step::Restyle { para, inlines })?;
         }
         for id in gone {
@@ -623,10 +715,11 @@ impl Editor {
         if hit.is_empty() {
             return;
         }
+        let mut marks = self.comment_marks();
         let mut gone = Vec::new();
         for id in hit {
             for _ in 0..3 {
-                let m = self.comment_marks().get(&id).copied().unwrap_or_default();
+                let m = marks.get(&id).copied().unwrap_or_default();
                 let run = |e: &Editor, m: Mark| e.index.para(&e.doc, m.para).map(|p| run_before(p, m.unit));
                 let repair = match (m.start, m.end, m.reference) {
                     (None, None, None) => {
@@ -634,19 +727,97 @@ impl Editor {
                         None
                     }
                     (Some(_), Some(_), Some(_)) | (None, None, Some(_)) => None,
-                    (None, Some(e), _) => self.insert_before(e.para, e.inline, vec![range_mark(RangeKind::CommentStart, id)]),
-                    (Some(s), None, _) => self.insert_before(s.para, s.inline + 1, vec![range_mark(RangeKind::CommentEnd, id)]),
+                    (None, Some(e), _) => self
+                        .lost_marker(tx, id, Which::Start, e)
+                        .or_else(|| self.insert_before(e.para, e.inline, vec![range_mark(RangeKind::CommentStart, id)])),
+                    (Some(s), None, _) => self
+                        .lost_marker(tx, id, Which::End, s)
+                        .or_else(|| self.insert_before(s.para, s.inline + 1, vec![range_mark(RangeKind::CommentEnd, id)])),
                     (Some(_), Some(e), None) => {
                         run(self, e).and_then(|run| self.insert_before(e.para, e.inline + 1, vec![Inline::CommentRef { id, run }]))
                     }
                 };
-                if repair.is_none_or(|s| self.step(tx, s).is_err()) {
+                let Some(step) = repair else { break };
+                let Step::Text { para, .. } = step else { break };
+                if self.step(tx, step).is_err() {
                     break;
                 }
+                self.rescan_comment_marks(para, &mut marks);
             }
         }
         if !gone.is_empty() {
             let _ = self.remove_comments(tx, &gone);
         }
+    }
+
+    /// The step putting back comment `id`'s `which` marker where the transaction removed it, mapped through the
+    /// steps after; `None` when that place is gone or would put the marker on the wrong side of `other`.
+    fn lost_marker(&self, tx: &Tx, id: CommentId, which: Which, other: Mark) -> Option<Step> {
+        let (k, para, u) = tx.undo.iter().enumerate().rev().find_map(|(k, s)| {
+            let (para, u) = match s {
+                Step::Text { para, range, with, .. } => (*para, range.start.0 + units_to(with, id, which)?),
+                Step::Restyle { para, inlines } => (*para, units_to(inlines, id, which)?),
+                Step::Blocks { with, .. } => in_blocks(with, id, which)?,
+                Step::Rows { with, .. } => with.iter().flat_map(|r| &r.cells).find_map(|c| in_blocks(&c.blocks, id, which))?,
+                _ => return None,
+            };
+            Some((k, para, u))
+        })?;
+        let story = self.mark_position(other)?.story;
+        let at = tx.maps[k..].iter().fold(Position::text(story, para, Unit(u)), |p, m| m.apply(p));
+        let (para, unit) = at.para_offset()?;
+        let p = self.index.para(&self.doc, para)?;
+        let survivor = self.mark_position(other)?;
+        let order = self.index.cmp(&at, &survivor);
+        let edges = match which {
+            Which::Start if order != Ordering::Greater => Edges { under: markers_at(p, unit), ..Edges::default() },
+            Which::End if order != Ordering::Less => Edges::default(),
+            _ => return None,
+        };
+        let kind = if which == Which::Start { RangeKind::CommentStart } else { RangeKind::CommentEnd };
+        (unit <= super::step::para_len(p)).then(|| Step::Text { para, range: unit..unit, with: vec![range_mark(kind, id)], edges })
+    }
+
+    /// Paragraph `para`'s comment markers, put in `marks` again after a step changed it.
+    fn rescan_comment_marks(&self, para: ParaId, marks: &mut HashMap<CommentId, Marks>) {
+        let Some(p) = self.index.para(&self.doc, para) else { return };
+        let mut at = 0u32;
+        for (k, i) in p.inlines.iter().enumerate() {
+            if let Some((id, kind)) = marker(i) {
+                let m = Some(Mark { para, inline: k, unit: Unit(at) });
+                let e = marks.entry(id).or_default();
+                match kind {
+                    Which::Start => e.start = m,
+                    Which::End => e.end = m,
+                    Which::Reference => e.reference = m,
+                }
+            }
+            at += i.units() as u32;
+        }
+    }
+
+    /// Removes the comments whose whole range lies in `a..b` across paragraphs: deleting it leaves them no text.
+    pub(in crate::editing) fn remove_comments_within(&mut self, tx: &mut Tx, a: Position, b: Position) -> Result<(), StepError> {
+        if self.doc.comments.by_id.is_empty() || a.para_offset().map(|x| x.0) == b.para_offset().map(|x| x.0) {
+            return Ok(());
+        }
+        let marks = self.comment_marks();
+        let mut emptied: Vec<CommentId> = marks
+            .iter()
+            .filter_map(|(id, m)| {
+                let (s, e) = (self.mark_position(m.start?)?, self.mark_position(m.end?)?);
+                let inside = s.story == a.story
+                    && e.story == a.story
+                    && self.index.cmp(&a, &s) != Ordering::Greater
+                    && self.index.cmp(&e, &b) != Ordering::Greater
+                    && self.index.cmp(&s, &e) == Ordering::Less;
+                inside.then_some(*id)
+            })
+            .collect();
+        if emptied.is_empty() {
+            return Ok(());
+        }
+        emptied.sort();
+        self.remove_comments(tx, &emptied)
     }
 }

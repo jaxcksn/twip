@@ -33,18 +33,16 @@ pub fn check(doc: &Document, idx: &DocIndex, selection: &Selection) -> Vec<Viola
         for b in blocks {
             match b {
                 Block::Para(p) => {
-                    for i in &p.inlines {
-                        if let crate::docx::Inline::Float(f, _) = i {
-                            let id = crate::layout::FloatId(f.id);
-                            if idx.float_anchor(id) != Some(crate::layout::ParaId(p.id)) {
-                                out.push(Violation {
-                                    invariant: "5 float anchors",
-                                    detail: format!("float {} in paragraph {} is indexed at {:?}", f.id, p.id, idx.float_anchor(id)),
-                                });
-                            }
-                            if let Some(tb) = &f.text_box {
-                                anchors(&tb.blocks, idx, out);
-                            }
+                    for (f, tb) in p.inlines.iter().filter_map(super::index::story_of) {
+                        let id = crate::layout::FloatId(f);
+                        if idx.float_anchor(id) != Some(crate::layout::ParaId(p.id)) {
+                            out.push(Violation {
+                                invariant: "5 float anchors",
+                                detail: format!("float {f} in paragraph {} is indexed at {:?}", p.id, idx.float_anchor(id)),
+                            });
+                        }
+                        if let Some(tb) = tb {
+                            anchors(&tb.blocks, idx, out);
                         }
                     }
                 }
@@ -355,8 +353,7 @@ fn elements(doc: &Document, idx: &DocIndex, out: &mut Vec<Violation>) {
                     for s in crate::docx::fields::spans(&p.inlines) {
                         if let Inline::FieldBegin { kind, .. } = &p.inlines[s.begin]
                             && *kind != Some(crate::docx::FieldKind::SubTemplate)
-                            // A legacy form field's kind is from its form data, `w:pgNum`'s from its element.
-                            && !matches!(kind, Some(crate::docx::FieldKind::CheckBox { .. } | crate::docx::FieldKind::DropDown | crate::docx::FieldKind::PgNum))
+                            && !kind.as_ref().is_some_and(crate::docx::FieldKind::is_not_from_code)
                             // None: a locked field, or one of the application's types.
                             && kind.is_some()
                             && *kind != crate::docx::fields::kind_at(&p.inlines, s)
@@ -438,7 +435,15 @@ fn elements(doc: &Document, idx: &DocIndex, out: &mut Vec<Violation>) {
 
 fn blocks(blocks: &[Block], out: &mut Vec<Violation>, _body: bool) {
     for b in blocks {
-        let Block::Table(t) = b else { continue };
+        let t = match b {
+            Block::Table(t) => t,
+            Block::Para(p) => {
+                for (_, tb) in p.inlines.iter().filter_map(crate::docx::Inline::story) {
+                    self::blocks(&tb.blocks, out, false);
+                }
+                continue;
+            }
+        };
         let grid = Grid::of(t);
         for (r, row) in t.rows.iter().enumerate() {
             let width = row.grid_before + row.cells.iter().map(|c| c.span.max(1)).sum::<usize>() + row.grid_after;
@@ -500,14 +505,12 @@ pub fn duplicate_ids(doc: &Document) -> Vec<u64> {
                 dup.push(id);
             }
             if let Block::Para(p) = b {
-                for i in &p.inlines {
-                    if let crate::docx::Inline::Float(f, _) = i {
-                        if !seen.insert(f.id) {
-                            dup.push(f.id);
-                        }
-                        if let Some(tb) = &f.text_box {
-                            walk(&tb.blocks, seen, dup);
-                        }
+                for (f, tb) in p.inlines.iter().filter_map(super::index::story_of) {
+                    if !seen.insert(f) {
+                        dup.push(f);
+                    }
+                    if let Some(tb) = tb {
+                        walk(&tb.blocks, seen, dup);
                     }
                 }
             }

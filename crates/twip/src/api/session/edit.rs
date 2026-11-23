@@ -32,13 +32,22 @@ impl Session {
         if let Some(done) = self.run_view(&command) {
             return done;
         }
-        self.apply(command, Origin::Api)
+        if matches!(command, Command::Paste(_)) {
+            self.adopt_held();
+        }
+        let setup = super::setup_rank(&command).is_some().then(|| command.clone());
+        let done = self.apply(command, Origin::Api)?;
+        if let Some(c) = setup {
+            self.remember_setup(c);
+        }
+        Ok(done)
     }
 
     /// Runs `commands` as one transaction and one undo step, labelled `label` (else its first command's): all of
-    /// them, or none when one fails. Every command is checked before any runs.
+    /// them, or none when one fails. Every command's arguments are checked before any runs; what depends on where a
+    /// command runs (document protection, availability) is checked as it runs, after the commands before it.
     pub fn batch(&mut self, commands: Vec<Command>, label: Option<String>) -> Result<Commit, Error> {
-        for c in &commands {
+        for (k, c) in commands.iter().enumerate() {
             // A batch is edits: undo, redo and view settings aren't part of a transaction.
             if matches!(
                 c,
@@ -58,9 +67,13 @@ impl Session {
             ) {
                 return Err(Error::invalid(format!("a batch can't hold {}", id_name(c.id()))));
             }
-            self.check(c)?;
+            self.check_where(c, k == 0)?;
         }
-        self.apply_with(Origin::Api, |e, fonts| {
+        if commands.iter().any(|c| matches!(c, Command::Paste(_))) {
+            self.adopt_held();
+        }
+        let setup: Vec<Command> = commands.iter().filter(|c| super::setup_rank(c).is_some()).cloned().collect();
+        let done = self.apply_with(Origin::Api, |e, fonts| {
             e.begin_batch(label.map(Cow::Owned));
             for c in commands {
                 if let refused @ Outcome::Refused(_) = e.execute(c, fonts) {
@@ -69,7 +82,9 @@ impl Session {
                 }
             }
             e.end_batch(true, fonts)
-        })
+        })?;
+        setup.into_iter().for_each(|c| self.remember_setup(c));
+        Ok(done)
     }
 
     /// Runs a command, then rebuilds the state and reports the change. Input runs here with [`Origin::User`].
@@ -157,12 +172,14 @@ impl Session {
     }
 
     /// Runs an editor operation from `origin` (a command, or what the services drive: selecting a match, replacing
-    /// matches), then reports it: a record for each transaction it committed, the state rebuilt, the listener told.
+    /// matches), the composition showing taken out first, then reports it: a record for each transaction it committed, the state rebuilt, the listener told.
     pub(super) fn apply_with(
         &mut self,
         origin: Origin,
         op: impl FnOnce(&mut crate::editing::Editor, &crate::font::Fonts) -> Outcome,
     ) -> Result<Commit, Error> {
+        self.end_composition();
+        self.sync_viewport();
         let before = self.editor.selection();
         let out = {
             let fonts = self.fonts.fonts();
@@ -183,7 +200,6 @@ impl Session {
         let edited = !records.is_empty();
         let mut events: Vec<Event> = records.into_iter().map(Event::DocumentChanged).collect();
         if edited {
-            self.services.spelling.edited(&self.editor, &paras, &self.language);
             // An edit can name a family or face the document didn't have (a font applied, a paste).
             let (fonts, warning) = self.edited_fonts(paras, tables);
             events.extend(warning.map(Event::Warning).into_iter().chain(fonts));
@@ -204,6 +220,7 @@ impl Session {
     pub fn set_author(&mut self, author: Author) {
         self.editor.set_author(&author.name, author.identity.clone());
         self.author = author;
+        self.changed(Vec::new());
     }
 
     /// Read only on or off, with no reopen: a read-only session refuses every command that changes the document.

@@ -628,7 +628,7 @@ fn session_call(s: &mut Session, method: Method, json: &[u8]) -> Result<Value, E
         }
         Method::Structure => {
             let r: StructureRequest = request::<Option<StructureRequest>>(json)?.unwrap_or_default();
-            to_value(s.structure(r.root, r.depth))
+            to_value(s.structure(r.root, r.depth)?)
         }
         Method::SelectElement => {
             let r: SelectElementRequest = request(json)?;

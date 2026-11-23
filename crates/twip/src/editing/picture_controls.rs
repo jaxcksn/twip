@@ -15,14 +15,24 @@ impl Editor {
     /// paragraph's.
     pub(crate) fn picture_control_in(&self, para: ParaId, offset: crate::layout::Unit) -> Option<ControlId> {
         let p = self.index.para(&self.doc, para)?;
+        let mut at = 0;
+        let k = p
+            .inlines
+            .iter()
+            .position(|i| {
+                let n = i.units();
+                at += n;
+                n > 0 && (offset.0 as usize) < at
+            })
+            .unwrap_or(p.inlines.len());
+        self.picture_control_before(p, k)
+    }
+
+    /// The innermost picture control open before inline `k` of `p`: an inline one, else the paragraph's.
+    fn picture_control_before(&self, p: &crate::docx::Paragraph, k: usize) -> Option<ControlId> {
         let picture = |c: &ControlId| self.doc.controls.get(c).is_some_and(|k| k.props.kind == ControlKind::Picture);
         let mut open: Vec<ControlId> = Vec::new();
-        let mut at = 0;
-        for i in &p.inlines {
-            let n = i.units();
-            if n > 0 && (offset.0 as usize) < at + n {
-                break;
-            }
+        for i in &p.inlines[..k.min(p.inlines.len())] {
             match i {
                 Inline::ControlStart(c) => open.push(*c),
                 Inline::ControlEnd(c) => {
@@ -32,7 +42,6 @@ impl Editor {
                 }
                 _ => {}
             }
-            at += n;
         }
         open.iter().rev().copied().find(picture).or_else(|| p.controls.iter().rev().copied().find(picture))
     }
@@ -51,8 +60,7 @@ impl Editor {
                 let para = self.index.float_anchor(f)?;
                 let p = self.index.para(&self.doc, para)?;
                 let k = p.inlines.iter().position(|i| matches!(i, Inline::Float(x, _) if crate::layout::FloatId(x.id) == f))?;
-                let at: usize = p.inlines[..k].iter().map(|i| i.units()).sum();
-                self.picture_control_in(para, crate::layout::Unit(at as u32))
+                self.picture_control_before(p, k)
             }
         }
     }
@@ -156,35 +164,40 @@ impl Editor {
         if self.picture_control_in(to, at).is_some() || self.index.para(&self.doc, to).is_some_and(|q| !q.controls.is_empty() && to != para) {
             return Some(Outcome::Unchanged("can't drop inside a control"));
         }
+        // The drop point once the picture is lifted
+        let landed = if to == para && at.0 > offset.0 && inline { Unit(at.0 - 1) } else { at };
         let mut tx = self.begin("Move");
-        let place = |e: &mut Self, tx: &mut super::Tx| -> bool {
-            let with = vec![Inline::ControlStart(c), picture.clone(), Inline::ControlEnd(c)];
-            e.step(tx, Step::Text { para: to, range: at..at, with, edges: Default::default() }).is_ok()
-        };
-        let after = to == para && at.0 > offset.0;
-        #[allow(clippy::if_same_then_else, reason = "the order differs: each step moves what the other one sees")]
-        let ok = if after {
-            place(self, &mut tx) && self.lift_picture_control(&mut tx, para, offset, c, inline, None)
-        } else {
-            self.lift_picture_control(&mut tx, para, offset, c, inline, None) && place(self, &mut tx)
-        };
+        let with = vec![Inline::ControlStart(c), picture, Inline::ControlEnd(c)];
+        let ok = self.lift_picture_control(&mut tx, para, offset, c, inline, None)
+            && self.step(&mut tx, Step::Text { para: to, range: landed..landed, with, edges: Default::default() }).is_ok();
         if !ok {
             self.abort(tx);
             return Some(Outcome::Unchanged("can't move it there"));
         }
-        let landed = if after && inline { Unit(at.0 - 1) } else { at };
         self.selection = Selection::Object(ObjectRef::Inline { para: to, offset: landed });
         Some(self.commit(tx, None, fonts))
     }
 
-    /// The picture in control `c`, as an object selection.
+    /// The picture in control `c` (inline, or a floating one), as an object selection.
     pub(crate) fn picture_of_control(&self, c: ControlId) -> Option<ObjectRef> {
-        for para in self.index.para_ids().collect::<Vec<_>>() {
+        let picture = |c: &ControlId| self.doc.controls.get(c).is_some_and(|k| k.props.kind == ControlKind::Picture);
+        for para in self.index.para_ids() {
             let Some(p) = self.index.para(&self.doc, para) else { continue };
+            let block = p.controls.iter().rev().copied().find(picture);
+            let mut open: Vec<ControlId> = Vec::new();
             let mut at = 0u32;
             for i in &p.inlines {
-                if matches!(i, Inline::Picture(..)) && self.picture_control_in(para, crate::layout::Unit(at)) == Some(c) {
-                    return Some(ObjectRef::Inline { para, offset: crate::layout::Unit(at) });
+                let here = || open.iter().rev().copied().find(picture).or(block);
+                match i {
+                    Inline::ControlStart(x) => open.push(*x),
+                    Inline::ControlEnd(x) => {
+                        if let Some(k) = open.iter().rposition(|o| o == x) {
+                            open.truncate(k);
+                        }
+                    }
+                    Inline::Picture(..) if here() == Some(c) => return Some(ObjectRef::Inline { para, offset: Unit(at) }),
+                    Inline::Float(f, _) if f.image.is_some() && here() == Some(c) => return Some(ObjectRef::Floating(crate::layout::FloatId(f.id))),
+                    _ => {}
                 }
                 at += i.units() as u32;
             }
@@ -231,6 +244,55 @@ impl Editor {
         }
     }
 
+    /// Whether an inline outside inlines `range` of `para` shows image `image`.
+    pub(super) fn image_shown_elsewhere(&self, image: usize, para: ParaId, range: std::ops::Range<usize>) -> bool {
+        self.index
+            .para_ids()
+            .filter_map(|q| Some((q, self.index.para(&self.doc, q)?)))
+            .any(|(q, p)| p.inlines.iter().enumerate().any(|(k, i)| shows_image(i, image) && !(q == para && range.contains(&k))))
+    }
+
+    /// Fills control `c`'s pictures (inlines `range` of `para`) showing `image` with `data` as an image of their own,
+    /// fitted to their boxes: the pictures elsewhere sharing `image` keep it.
+    #[allow(clippy::too_many_arguments, reason = "a fill's control, place, image and data")]
+    pub(super) fn fill_control_copy(
+        &mut self,
+        c: ControlId,
+        para: ParaId,
+        range: std::ops::Range<usize>,
+        image: usize,
+        data: Vec<u8>,
+        size: (f64, f64),
+        label: &'static str,
+        fonts: &Fonts,
+    ) -> Outcome {
+        let Some(mut inlines) = self.index.para(&self.doc, para).map(|p| p.inlines.clone()) else { return Outcome::Unchanged("no paragraph") };
+        let k = self.pending_image(data);
+        for i in &mut inlines[range] {
+            if picture_image(i) == Some(image) {
+                fit(i, size);
+                let (pi, shape) = match i {
+                    Inline::Picture(p, _) => (&mut p.image, &mut p.shape),
+                    Inline::Float(f, _) => (&mut f.image, &mut f.shape),
+                    _ => continue,
+                };
+                *pi = Some(k);
+                if let Some(crate::drawing::ShapeKind::Pic(p)) = shape.as_deref_mut().map(|s| &mut s.kind)
+                    && p.blip.image == Some(image)
+                {
+                    p.blip.image = Some(k);
+                }
+            }
+        }
+        let mut tx = self.begin(label);
+        if self.step(&mut tx, Step::Restyle { para, inlines }).is_err() {
+            self.abort(tx);
+            return Outcome::Unchanged("fill failed");
+        }
+        self.placeholder_off(&mut tx, c);
+        self.commit(tx, None, fonts)
+    }
+
     /// Fills pictures with `data`, fitted to their boxes; `unwrap` takes away the picture controls around them that
     /// can be deleted, leaving plain pictures.
     pub(super) fn fill_images(
@@ -242,22 +304,16 @@ impl Editor {
         unwrap: bool,
         fonts: &Fonts,
     ) -> Outcome {
-        let (iw, ih) = size;
         let mut restyles: Vec<(ParaId, Vec<Inline>)> = Vec::new();
         for para in self.index.para_ids().collect::<Vec<_>>() {
             let Some(p) = self.index.para(&self.doc, para) else { continue };
-            if !p.inlines.iter().any(|i| matches!(i, Inline::Picture(pic, _) if pic.image.is_some_and(|k| images.contains(&k)))) {
+            if !p.inlines.iter().any(|i| picture_image(i).is_some_and(|k| images.contains(&k))) {
                 continue;
             }
             let mut inlines = p.inlines.clone();
             for i in inlines.iter_mut() {
-                if let Inline::Picture(pic, _) = i
-                    && pic.image.is_some_and(|k| images.contains(&k))
-                    && iw > 0.0
-                    && ih > 0.0
-                {
-                    let s = (pic.w / iw).min(pic.h / ih);
-                    (pic.w, pic.h) = (((iw * s) * 20.0).round() / 20.0, ((ih * s) * 20.0).round() / 20.0);
+                if picture_image(i).is_some_and(|k| images.contains(&k)) {
+                    fit(i, size);
                 }
             }
             if unwrap {
@@ -267,7 +323,7 @@ impl Editor {
                     match i {
                         Inline::ControlStart(c) => open.push(*c),
                         Inline::ControlEnd(c) => open.retain(|x| x != c),
-                        Inline::Picture(pic, _) if pic.image.is_some_and(|k| images.contains(&k)) => gone.extend(open.iter().filter(|c| {
+                        i if picture_image(i).is_some_and(|k| images.contains(&k)) => gone.extend(open.iter().filter(|c| {
                             self.doc.controls.get(c).is_some_and(|k| k.props.kind == crate::docx::ControlKind::Picture && k.props.lock.deletable())
                         })),
                         _ => {}
@@ -291,6 +347,52 @@ impl Editor {
             }
         }
         self.commit(tx, None, fonts)
+    }
+}
+
+/// The image an inline picture or a floating one shows.
+pub(super) fn picture_image(i: &Inline) -> Option<usize> {
+    match i {
+        Inline::Picture(p, _) => p.image,
+        Inline::Float(f, _) if f.text_box.is_none() => f.image,
+        _ => None,
+    }
+}
+
+/// Whether inline `i` shows image `image`: as a picture, a float's group part, or a picture or fill of its shape.
+fn shows_image(i: &Inline, image: usize) -> bool {
+    use crate::drawing::paint::Fill;
+    use crate::drawing::{Shape, ShapeKind};
+    let fill = |f: Option<&Fill>| matches!(f, Some(Fill::Blip(b)) if b.image == Some(image));
+    fn shape(s: &Shape, fill: &dyn Fn(Option<&Fill>) -> bool, image: usize) -> bool {
+        match &s.kind {
+            ShapeKind::Sp(sp) => fill(sp.fill.as_ref()) || fill(sp.line.as_ref().and_then(|l| l.fill.as_ref())),
+            ShapeKind::Pic(p) => p.blip.image == Some(image) || fill(p.line.as_ref().and_then(|l| l.fill.as_ref())),
+            ShapeKind::Group(g) => fill(g.fill.as_ref()) || g.children.iter().any(|c| shape(c, fill, image)),
+            ShapeKind::Raw(_) => false,
+        }
+    }
+    match i {
+        Inline::Picture(p, _) => p.image == Some(image) || p.shape.as_deref().is_some_and(|s| shape(s, &fill, image)),
+        Inline::Float(f, _) => {
+            f.image == Some(image) || f.parts.iter().any(|p| p.image == Some(image)) || f.shape.as_deref().is_some_and(|s| shape(s, &fill, image))
+        }
+        _ => false,
+    }
+}
+
+/// Fits a picture's box to an image of `size` (points), keeping the box's smaller scale; a quarter-turned float's box
+/// is the picture's own width and height swapped.
+fn fit(i: &mut Inline, (iw, ih): (f64, f64)) {
+    let (w, h) = match i {
+        Inline::Picture(p, _) => (&mut p.w, &mut p.h),
+        Inline::Float(f, _) if f.rot_swap => (&mut f.h, &mut f.w),
+        Inline::Float(f, _) => (&mut f.w, &mut f.h),
+        _ => return,
+    };
+    if iw > 0.0 && ih > 0.0 {
+        let s = (*w / iw).min(*h / ih);
+        (*w, *h) = (((iw * s) * 20.0).round() / 20.0, ((ih * s) * 20.0).round() / 20.0);
     }
 }
 

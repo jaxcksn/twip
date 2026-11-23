@@ -179,6 +179,7 @@ pub fn fixtures() -> Vec<Fixture> {
         "tab-leader": TabLeader,
         "tab-selector": TabSelector,
         "tabs-action": TabsAction,
+        "text-separator": TextSeparator,
         "tooltip-kind": TooltipKind,
         "undo-grouping": UndoGrouping,
         "underline-style": UnderlineStyle,
@@ -973,6 +974,8 @@ fn commands() -> Vec<Command> {
         Command::MergeCells,
         Command::SplitCells(SplitCells { columns: 2, rows: Some(1) }),
         Command::SplitTable,
+        Command::ConvertTextToTable(TextToTable { separator: TextSeparator::Other, character: Some(";".into()), columns: Some(3) }),
+        Command::ConvertTableToText(TableToText { separator: TextSeparator::Tabs, character: None }),
         Command::DistributeRows,
         Command::DistributeColumns,
         Command::MoveRows(VerticalDirection::Down),
@@ -1567,7 +1570,7 @@ fn state() -> State {
             (CommandId::SetBold, CommandState { enabled: true, checked: None, value: Some(CommandValue::Toggle(Tri::Mixed)) }),
             (CommandId::Undo, CommandState { enabled: true, checked: None, value: Some(CommandValue::Text(Tri::Uniform("Bold".into()))) }),
         ]),
-        dialogs: crate::services::dialogs::availability(&State::default()),
+        dialogs: crate::services::dialogs::availability(&State::default(), Default::default()),
         history: HistoryState { can_undo: true, can_redo: false, undo_label: Some("Bold".into()), redo_label: None },
         pages: PagesState { count: 4, current: 2, complete: false },
         view: ViewState::default(),
@@ -2369,6 +2372,7 @@ fn session_options() -> SessionOptions {
             category: "Merge sub-templates".into(),
             gallery: None,
         }],
+        mac: true,
     }
 }
 

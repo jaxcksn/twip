@@ -55,6 +55,11 @@ export interface SessionOptions {
   applicationFieldTypes?: string[];
   /** Which fields are sub-template references ({@link Commands.setSubTemplateRules}), in place from each open. */
   subTemplateRules?: ReferenceRule[];
+  /**
+   * The keys follow macOS: ⌘ with the arrows moves to the line's or the document's edge, ⌥ with them by word or
+   * paragraph, and ⌥ with Backspace or Delete deletes a word. Default false.
+   */
+  mac?: boolean;
 }
 
 /** Options for {@link Editor.mount}. */
@@ -219,10 +224,10 @@ export class Session {
 
   /** Creates a session on the page's engine: on this thread, or in the page's engine worker. */
   static async start(options: SessionOptions = {}, execution: 'main' | 'worker' = 'main'): Promise<Session> {
-    const { readOnly, mode, author, language, trackChanges, fieldLabels, applicationFieldTypes, subTemplateRules } = options;
+    const { readOnly, mode, author, language, trackChanges, fieldLabels, applicationFieldTypes, subTemplateRules, mac } = options;
     const transport = execution === 'worker' ? workerTransport() : await directTransport();
     useEngine(transport);
-    const id = await transport.createSession({ readOnly, mode, author, language, trackChanges, fieldLabels, applicationFieldTypes, subTemplateRules });
+    const id = await transport.createSession({ readOnly, mode, author, language, trackChanges, fieldLabels, applicationFieldTypes, subTemplateRules, mac });
     try {
       const state = (await transport.call(id, Method.State)) as EditorState;
       const catalog = (await transport.call(id, Method.Catalog).catch((e: unknown) => {

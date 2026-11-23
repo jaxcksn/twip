@@ -4,6 +4,7 @@ use std::rc::Rc;
 
 use super::Editor;
 use super::commands::Outcome;
+use super::position::StoryId;
 use super::step::{Edges, Step};
 use crate::api::command::{DropCap, DropCapPosition};
 use crate::api::value::Points;
@@ -31,16 +32,19 @@ impl Editor {
     /// The paragraph's drop cap: where its float is in the inlines, the float, and its settings.
     fn drop_cap_in(&self, para: ParaId) -> Option<(usize, FloatId, DropCap)> {
         let p = self.index.para(&self.doc, para)?;
-        let (k, f) = p.inlines.iter().enumerate().find_map(|(k, i)| match i {
-            Inline::Float(f, _) if f.is_frame() => Some((k, FloatId(f.id))),
-            _ => None,
+        let (k, f, fr, position) = p.inlines.iter().enumerate().find_map(|(k, i)| {
+            let f = match i {
+                Inline::Float(f, _) if f.is_frame() => FloatId(f.id),
+                _ => return None,
+            };
+            let fr = self.frame_pr(f)?;
+            let position = match fr.drop_cap.as_deref() {
+                Some("drop") => DropCapPosition::Dropped,
+                Some("margin") => DropCapPosition::InMargin,
+                _ => return None,
+            };
+            Some((k, f, fr, position))
         })?;
-        let fr = self.frame_pr(f)?;
-        let position = match fr.drop_cap.as_deref() {
-            Some("drop") => DropCapPosition::Dropped,
-            Some("margin") => DropCapPosition::InMargin,
-            _ => return None,
-        };
         let font = self.float_of(f)?.text_box.as_ref()?.blocks.iter().find_map(|b| match b {
             Block::Para(q) => q.inlines.iter().find_map(|i| if let Inline::Text(_, r) = i { Some(r.ascii.clone()) } else { None }),
             Block::Table(_) => None,
@@ -64,6 +68,9 @@ impl Editor {
         let Some(p) = self.index.para(&self.doc, para).cloned() else { return Outcome::unavailable("no paragraph") };
         if p.style.in_frame {
             return Outcome::unavailable("a drop cap goes in a paragraph, not a frame");
+        }
+        if self.index.para_slot(para).is_some_and(|s| matches!(self.index.story(s.container), StoryId::TextBox(_))) {
+            return Outcome::unavailable("text boxes don't nest");
         }
         let lines = d.lines.unwrap_or(3);
         if !(1..=MAX_LINES).contains(&lines) || d.distance.is_some_and(|x| !(0.0..=1584.0).contains(&x.0)) {

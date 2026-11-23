@@ -370,3 +370,211 @@ fn a_selected_picture_control_shows_its_label() {
     k.props.rest.push(("appearance".into(), r#"<w15:appearance w15:val="hidden"/>"#.into()));
     assert!(r.e.view(0..2).regions.iter().all(|g| g.title != title), "hidden by the control");
 }
+
+/// Dragging a picture control later in its own paragraph keeps the control around the picture, as one undo step.
+#[test]
+fn dragging_a_picture_control_later_in_its_paragraph_keeps_its_control() {
+    let tag = "Placeholder:Signature.X";
+    let mut r = design(FX, "control-drag-later");
+    let (para, offset, inline) = place(&r.e, tag);
+    assert!(inline);
+    let idx = super::texts_ids(&r.e).iter().position(|p| *p == para).expect("its paragraph");
+    let k = pick(&mut r, tag);
+    let depth = r.e.history().undo_depth();
+    r.step(&json!({ "drag": { "from": { "picture": k }, "to": { "para": idx, "offset": offset + 3 } } }));
+    assert_eq!(r.e.history().undo_depth(), depth + 1, "one step");
+    let (c, props) = control(&r.e, tag);
+    assert_eq!(props.alias.as_deref(), Some("Signature"), "the control keeps its properties");
+    let (p1, o1, inline) = place(&r.e, tag);
+    assert!(p1 == para && inline && o1 == offset + 2, "moved inside its control: {offset} -> {o1}");
+    let p = r.e.index().para(r.e.document(), para).unwrap();
+    let pic = p.inlines.iter().position(|i| matches!(i, crate::docx::Inline::Picture(..))).expect("the picture");
+    assert!(matches!(p.inlines[pic - 1], crate::docx::Inline::ControlStart(x) if x == c));
+    assert!(matches!(p.inlines[pic + 1], crate::docx::Inline::ControlEnd(x) if x == c));
+    r.e.execute(Command::Undo, fonts());
+    assert_eq!(place(&r.e, tag), (para, offset, true));
+}
+
+fn fill_image(e: &mut Editor, c: ControlId, data: Vec<u8>) -> crate::editing::commands::Outcome {
+    let id = crate::api::value::ElementId(crate::editing::elements::id_str(crate::docx::ElementId::Control(c)));
+    e.execute(
+        Command::FillControl(crate::api::command::FillControl {
+            id,
+            text: None,
+            image: Some(crate::api::value::Bytes(data)),
+            docx: None,
+            building_block: None,
+        }),
+        fonts(),
+    )
+}
+
+/// An image none of `not` is.
+fn another_image(not: &[Vec<u8>]) -> Vec<u8> {
+    let mut all = super::open("FX-OBJ.docx").document().images.clone();
+    all.extend(super::open(FX).document().images.iter().cloned());
+    all.into_iter().find(|i| !not.contains(i) && crate::docx::image::image_type(i).is_some()).expect("a different image")
+}
+
+fn image_of(e: &Editor, c: ControlId) -> Option<usize> {
+    e.document().picture_controls().into_iter().find(|(_, k)| *k == c).map(|(i, _)| i)
+}
+
+/// Filling one of two picture controls that share an image fills it alone: the other keeps its image and size, in
+/// the document and once saved.
+#[test]
+fn filling_a_picture_control_leaves_another_sharing_its_image() {
+    let mut r = Run::open(FX, "shared-fill");
+    let (a, b) = (control(&r.e, "Placeholder:Signature.X").0, control(&r.e, "Placeholder:Secure.Y").0);
+    let shared = image_of(&r.e, a);
+    assert!(shared.is_some() && shared == image_of(&r.e, b), "the two controls share an image: {shared:?}");
+    let before = r.e.document().images[shared.unwrap()].clone();
+    let (size_b, images) = (size_of(&r.e, b), r.e.document().images.len());
+    let new = another_image(std::slice::from_ref(&before));
+    let out = fill_image(&mut r.e, a, new.clone());
+    assert!(matches!(out, crate::editing::commands::Outcome::Changed(_)), "{out:?}");
+    assert_eq!(r.e.document().images.len(), images + 1, "an image of its own");
+    assert_eq!(r.e.document().images[image_of(&r.e, a).unwrap()], new);
+    assert_eq!(r.e.document().images[image_of(&r.e, b).unwrap()], before, "the other control's image is unchanged");
+    assert_eq!(size_of(&r.e, b), size_b, "and its size");
+    let saved = crate::docx::write::save(r.e.document()).expect("saves");
+    let again = Editor::open(&saved, fonts()).expect("reopens");
+    let tags = |e: &Editor, tag: &str| image_of(e, control(e, tag).0).map(|i| e.document().images[i].clone());
+    assert_eq!(tags(&again, "Placeholder:Signature.X"), Some(new), "saved with its new image");
+    assert_eq!(tags(&again, "Placeholder:Secure.Y"), Some(before), "the other saved with its own");
+}
+
+/// The fixture's package with `body` for its body.
+fn with_body(body: &str) -> Vec<u8> {
+    use std::io::{Read, Write};
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor").join(FX);
+    let mut z = zip::ZipArchive::new(std::io::Cursor::new(std::fs::read(path).unwrap())).unwrap();
+    let mut out = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    for i in 0..z.len() {
+        let mut f = z.by_index(i).unwrap();
+        let name = f.name().unwrap().to_string();
+        let mut data = Vec::new();
+        f.read_to_end(&mut data).unwrap();
+        if name == "word/document.xml" {
+            let x = String::from_utf8(data).unwrap();
+            let (head, _) = x.split_once("<w:body>").unwrap();
+            data = format!("{head}<w:body>{body}</w:body></w:document>").into_bytes();
+        }
+        out.start_file(name, zip::write::SimpleFileOptions::default()).unwrap();
+        out.write_all(&data).unwrap();
+    }
+    out.finish().unwrap().into_inner()
+}
+
+/// A picture of the fixture's `rId10`, `cx` by `cy` EMU, its transform's attributes `xfrm`.
+fn pic(id: u32, cx: u32, cy: u32, xfrm: &str) -> String {
+    format!(
+        r#"<pic:pic><pic:nvPicPr><pic:cNvPr id="{id}" name="image4.png"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rId10"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm{xfrm}><a:off x="0" y="0"/><a:ext cx="{cx}" cy="{cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic>"#
+    )
+}
+
+/// An anchored drawing `cx` by `cy` EMU of `graphic`, of the graphic data type `uri`.
+fn anchored(id: u32, cx: u32, cy: u32, uri: &str, graphic: &str) -> String {
+    format!(
+        r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="{id}" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV><wp:extent cx="{cx}" cy="{cy}"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapSquare wrapText="bothSides"/><wp:docPr id="{id}" name="Picture {id}"/><wp:cNvGraphicFramePr/><a:graphic><a:graphicData uri="{uri}">{graphic}</a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#
+    )
+}
+
+const PIC: &str = "http://schemas.openxmlformats.org/drawingml/2006/picture";
+
+/// A picture control tagged `tag` holding `content`.
+fn picture_control(tag: &str, id: u32, content: &str) -> String {
+    format!(
+        r#"<w:sdt><w:sdtPr><w:alias w:val="{tag}"/><w:tag w:val="{tag}"/><w:id w:val="{id}"/><w:picture /></w:sdtPr><w:sdtContent>{content}</w:sdtContent></w:sdt>"#
+    )
+}
+
+fn changed(out: &crate::editing::commands::Outcome) -> bool {
+    matches!(out, crate::editing::commands::Outcome::Changed(_))
+}
+
+/// A picture content control holding an anchored picture: the float is its picture, found and filled.
+#[test]
+fn an_anchored_picture_is_its_controls_picture() {
+    let body = format!("<w:p>{}</w:p>", picture_control("Anchored", 9700, &anchored(7, 914400, 457200, PIC, &pic(7, 914400, 457200, ""))));
+    let mut e = Editor::open(&with_body(&body), fonts()).expect("opens");
+    let (c, _) = control(&e, "Anchored");
+    let Some(crate::editing::selection::ObjectRef::Floating(f)) = e.picture_of_control(c) else { panic!("the control's float is found") };
+    assert_eq!(e.picture_control_at(crate::editing::selection::ObjectRef::Floating(f)), Some(c), "the float is the control's");
+    let was = e.document().images.clone();
+    let k = image_of(&e, c).expect("its image");
+    let out = fill_image(&mut e, c, another_image(&was));
+    assert!(changed(&out), "fill: {out:?}");
+    assert_ne!(e.document().images[image_of(&e, c).unwrap()], was[k], "its image is filled");
+}
+
+/// Filling an anchored picture control whose image another picture shows: its drawing shows the new image once
+/// saved, the other the old one.
+#[test]
+fn a_filled_anchored_picture_saves_its_own_image() {
+    let control = picture_control("Anchored", 9700, &anchored(7, 914400, 457200, PIC, &pic(7, 914400, 457200, "")));
+    let body = format!("<w:p>{control}</w:p><w:p>{}</w:p>", anchored(8, 914400, 457200, PIC, &pic(8, 914400, 457200, "")));
+    let mut e = Editor::open(&with_body(&body), fonts()).expect("opens");
+    let c = self::control(&e, "Anchored").0;
+    let was = e.document().images.clone();
+    let before = was[image_of(&e, c).expect("its image")].clone();
+    let new = another_image(&was);
+    assert!(changed(&fill_image(&mut e, c, new.clone())));
+    let blips: Vec<(Option<usize>, Option<usize>)> =
+        body_floats(&e).iter().map(|f| (f.image, f.shape.as_deref().and_then(|s| s.pic()).and_then(|p| p.blip.image))).collect();
+    assert!(blips[0].0 != blips[1].0 && blips.iter().all(|(a, b)| a == b), "each drawing's picture shows its own image: {blips:?}");
+    let again = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
+    let shown: Vec<Vec<u8>> = body_floats(&again).iter().filter_map(|f| f.image.map(|k| again.document().images[k].clone())).collect();
+    assert_eq!(shown, vec![new, before], "the control's picture, then the other");
+}
+
+/// Filling a picture control whose image a group's picture shows leaves the group's picture its image.
+#[test]
+fn filling_a_picture_control_leaves_a_grouped_picture_its_image() {
+    let group = format!(
+        r#"<wpg:wgp xmlns:wpg="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup"><wpg:cNvGrpSpPr/><wpg:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="914400" cy="457200"/><a:chOff x="0" y="0"/><a:chExt cx="914400" cy="457200"/></a:xfrm></wpg:grpSpPr>{}</wpg:wgp>"#,
+        pic(9, 914400, 457200, "")
+    );
+    let control = picture_control("Anchored", 9700, &anchored(7, 914400, 457200, PIC, &pic(7, 914400, 457200, "")));
+    let uri = "http://schemas.microsoft.com/office/word/2010/wordprocessingGroup";
+    let body = format!("<w:p>{control}</w:p><w:p>{}</w:p>", anchored(8, 914400, 457200, uri, &group));
+    let mut e = Editor::open(&with_body(&body), fonts()).expect("opens");
+    let c = self::control(&e, "Anchored").0;
+    let k = image_of(&e, c).expect("its image");
+    let grouped = |e: &Editor| body_floats(e).iter().flat_map(|f| f.parts.iter().filter_map(|p| p.image)).collect::<Vec<_>>();
+    assert_eq!(grouped(&e), vec![k], "the group's picture shares the control's image");
+    let was = e.document().images.clone();
+    assert!(changed(&fill_image(&mut e, c, another_image(&was))));
+    let g = grouped(&e);
+    assert_eq!(g.len(), 1);
+    assert_eq!(e.document().images[g[0]], was[k], "the grouped picture keeps its image");
+}
+
+/// A white 24-bit BMP of `w` × `h` pixels.
+fn bmp(w: u32, h: u32) -> Vec<u8> {
+    let size = 54 + (w * 3).next_multiple_of(4) * h;
+    let mut b = b"BM".to_vec();
+    for v in [size, 0, 54, 40, w, h] {
+        b.extend(v.to_le_bytes());
+    }
+    b.extend(1u16.to_le_bytes());
+    b.extend(24u16.to_le_bytes());
+    b.resize(size as usize, 0);
+    b[54..].fill(255);
+    b
+}
+
+/// A quarter-turned anchored picture fits a new image in its own, unturned width and height.
+#[test]
+fn a_quarter_turned_picture_control_fits_its_image_unturned() {
+    // A 120 × 60 pt picture turned a quarter: its frame on the page is 60 × 120.
+    let (w, h) = (120 * 12700, 60 * 12700);
+    let turned = anchored(7, w, h, PIC, &pic(7, w, h, r#" rot="5400000""#));
+    let body = format!("<w:p>{}</w:p>", picture_control("Turned", 9700, &turned));
+    let mut e = Editor::open(&with_body(&body), fonts()).expect("opens");
+    let c = control(&e, "Turned").0;
+    let frame = |e: &Editor| body_floats(e).first().map(|f| (f.w, f.h, f.rot_swap)).expect("the float");
+    assert_eq!(frame(&e), (60.0, 120.0, true));
+    assert!(changed(&fill_image(&mut e, c, bmp(40, 20))));
+    assert_eq!(frame(&e), (60.0, 120.0, true), "a 2:1 image fits as it is");
+}

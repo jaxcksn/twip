@@ -5,7 +5,7 @@ use super::props::esc;
 use super::{People, new_blocks_xml, set_attr};
 use crate::docx::model::Document;
 use crate::docx::package;
-use crate::docx::review::{Comment, Comments};
+use crate::docx::review::{Comment, Comments, Person};
 
 const W: &str = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const W14: &str = "http://schemas.microsoft.com/office/word/2010/wordml";
@@ -214,9 +214,36 @@ fn root_open(part: Part, xml: Option<&str>) -> (String, String) {
     (decl + &open, close)
 }
 
+/// The people the people part lists: those a comment or a revision names, and the others as read.
+fn listed(doc: &Document, read: &Document) -> People {
+    // A person as read: the one of its name with its identity, else the only one of its name.
+    let mut by_name: std::collections::HashMap<&str, Vec<&Person>> = std::collections::HashMap::new();
+    for r in &read.people.persons {
+        by_name.entry(&r.name).or_default().push(r);
+    }
+    let as_read = |p: &Person| -> Option<&Person> {
+        let same = by_name.get(&*p.name)?;
+        same.iter().copied().find(|r| r.identity == p.identity).or_else(|| (same.len() == 1).then(|| same[0]))
+    };
+    if doc.people.persons.iter().all(|p| as_read(p) == Some(p)) {
+        return doc.people.clone();
+    }
+    let named = People::named(doc);
+    let persons = doc
+        .people
+        .persons
+        .iter()
+        .enumerate()
+        .filter_map(|(i, p)| if named.contains(&crate::docx::review::AuthorId(i as u32)) { Some(p) } else { as_read(p) })
+        .cloned()
+        .collect();
+    People { persons }
+}
+
 /// The comment and people parts whose content changed since reading (`read`: the document as read), written from the
 /// model into `parts`; new parts are added to the package.
 pub(super) fn save(doc: &Document, read: &Document, package: &[u8], main: &str, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
+    let listed = listed(doc, read);
     for part in Part::ALL {
         let existing = package::related(package, parts, main, part.rel_type())?;
         let xml = match &existing {
@@ -225,7 +252,7 @@ pub(super) fn save(doc: &Document, read: &Document, package: &[u8], main: &str, 
         };
         let (open, close) = root_open(part, xml.as_deref());
         let shell = format!("{open}{close}");
-        let now = part.children(&doc.comments, &doc.people, &shell)?;
+        let now = part.children(&doc.comments, if part == Part::People { &listed } else { &doc.people }, &shell)?;
         if now == part.children(&read.comments, &read.people, &shell)? || (existing.is_none() && now.is_empty()) {
             continue;
         }
@@ -240,6 +267,7 @@ pub(super) fn save(doc: &Document, read: &Document, package: &[u8], main: &str, 
                     Some((dir, _)) => format!("{dir}/{}", part.file()),
                     None => part.file().to_string(),
                 };
+                let name = package::free_name(package, parts, &name)?;
                 package::add_part(package, parts, main, &name, &part.content_type(), part.rel_type())?;
                 name
             }
@@ -302,6 +330,22 @@ mod tests {
             ps,
             r#"<w15:person w15:author="Author A"><w15:presenceInfo w15:providerId="AD" w15:userId="a@example.com"/></w15:person><w15:person w15:author="Author &lt;B&gt;"></w15:person>"#
         );
+    }
+
+    #[test]
+    fn people_of_one_name_are_kept_by_their_identities() {
+        let blank = crate::docx::read(&crate::docx::blank::blank_docx()).expect("the blank document reads");
+        let mut read = blank.clone();
+        let (one, two) = (Identity { provider: "AD".into(), user_id: "1".into() }, Identity { provider: "AD".into(), user_id: "2".into() });
+        read.people.author("Sam", Some(&one));
+        read.people.author("Sam", Some(&two));
+        assert_eq!(read.people.persons.len(), 2);
+        let mut doc = read.clone();
+        let mut c = comment(0, 0x10, None, false);
+        c.author = doc.people.author("New", None);
+        doc.comments.by_id.insert(c.id, c);
+        let listed = listed(&doc, &read);
+        assert_eq!(listed.persons.iter().map(|p| p.identity.clone()).collect::<Vec<_>>(), [Some(one), Some(two), None]);
     }
 
     #[test]

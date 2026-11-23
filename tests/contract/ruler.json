@@ -58,6 +58,12 @@
     {"op": "export", "format": "docx"},
     {"op": "reopen"},
     {"op": "call", "method": "find.next", "args": [{"text": "Name"}], "result": {"found": true}},
-    {"op": "expectState", "match": {"ruler": {"horizontal": {"tabs": {"$exact": []}, "defaultTabStop": 54}}}}
+    {"op": "expectState", "match": {"ruler": {"horizontal": {"tabs": {"$exact": []}, "defaultTabStop": 54}}}},
+    {"op": "call", "method": "find.next", "args": [{"text": "Second cell"}], "result": {"found": true}},
+    {"op": "command", "command": {"type": "moveTableColumnBoundary", "index": 1, "to": 200}},
+    {"op": "expectState", "match": {"ruler": {"horizontal": {"tableColumns": {"$exact": [72, 200, 384, 540]}}}}},
+    {"op": "call", "method": "find.next", "args": [{"text": "Two columns."}], "result": {"found": true}},
+    {"op": "command", "command": {"type": "moveColumnBoundary", "column": 0, "to": 252}},
+    {"op": "expectState", "match": {"ruler": {"horizontal": {"columns": {"$exact": [{"start": 72, "end": 252}, {"start": 288, "end": 540}]}}}}}
   ]
 }

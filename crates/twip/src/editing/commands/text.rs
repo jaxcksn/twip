@@ -22,6 +22,9 @@ impl Editor {
         if self.style_target.is_some() {
             return Outcome::unavailable("not in a style");
         }
+        if self.refuse_expanded() || self.refuse_locked() {
+            return Outcome::Unchanged("locked");
+        }
         let mut tx = self.begin("Section Break");
         let caret = match self.delete_range(&mut tx) {
             Ok(Some(p)) => p,
@@ -48,6 +51,7 @@ impl Editor {
         };
         let new = s.without_blocks();
         let mut after = s.page();
+        after.pg_start = None;
         after.break_kind = match kind {
             SectionBreakKind::NextPage => B::NextPage,
             SectionBreakKind::Continuous => B::Continuous,
@@ -58,7 +62,7 @@ impl Editor {
         let change = s.change.clone();
         let next = crate::layout::ParaId(second.id);
         let back = Box::new(SectionBack { blocks: block + 1, section: new, sources: 0, edited: true });
-        let ok = self.step(&mut tx, Step::Split { para, at: offset, second }).is_ok()
+        let ok = self.step(&mut tx, Step::Split { para, at: offset, second, kept: Vec::new() }).is_ok()
             && self.step(&mut tx, Step::SectionBreak { section, back: Some(back) }).is_ok()
             && self.step(&mut tx, Step::SectionPage { section: section + 1, page: Box::new(after), change }).is_ok();
         if !ok {
@@ -70,14 +74,21 @@ impl Editor {
     }
 
     pub(in crate::editing) fn tab(&mut self, fonts: &Fonts) -> Outcome {
-        self.insert_inline(Inline::Tab, "Typing", fonts)
+        self.insert_inlines_typed(|run| vec![Inline::Tab(run)], "Typing", true, fonts)
     }
 
     pub(in crate::editing) fn symbol(&mut self, s: InsertSymbol, fonts: &Fonts) -> Outcome {
-        if let Some(font) = s.font.as_deref().filter(|f| !f.is_empty()) {
+        // The font is the symbol's alone: typing after it goes on as before.
+        let was = self.pending.clone();
+        let font = s.font.as_deref().filter(|f| !f.is_empty());
+        let before = font.and(self.selection.ordered(&self.index)).and_then(|(a, _)| self.run_at(&a));
+        if let Some(font) = font {
             self.pending_font(font);
         }
-        self.insert_text(&s.char.to_string(), fonts)
+        let out = self.insert_text(&s.char.to_string(), fonts);
+        self.history.break_typing();
+        self.pending = if matches!(out, Outcome::Changed(_)) { was.or(before) } else { was };
+        out
     }
 
     pub(in crate::editing) fn delete_by(&mut self, d: DeleteOptions, fonts: &Fonts) -> Outcome {

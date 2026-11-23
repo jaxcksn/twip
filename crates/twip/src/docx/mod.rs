@@ -29,6 +29,7 @@ pub use model::*;
 pub(crate) use reader::MAX_CELL_HEADERS;
 pub(crate) use reader::header_list;
 pub(crate) use reader::line_number_run;
+pub(crate) use reader::style_cell;
 pub use reader::{now_local, now_utc, read, read_at, read_editable};
 #[cfg(test)]
 mod merge_tests;

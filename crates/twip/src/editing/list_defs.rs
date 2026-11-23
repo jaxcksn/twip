@@ -9,6 +9,7 @@ use crate::api::command::{
 use crate::api::value::{Points, StyleId};
 use crate::docx::numbering::{Level, Numbering};
 use crate::docx::props::TabKind;
+use crate::docx::resolve::Resolver;
 use crate::docx::write::props::{Cx, Props, esc};
 use crate::font::Fonts;
 use crate::layout::ParaId;
@@ -145,24 +146,38 @@ fn level_xml(k: usize, old: Option<(&str, &ListLevel)>, new: &ListLevel, pic: Op
     p.xml().unwrap_or_default()
 }
 
-/// A `w:abstractNum` with its levels from `levels` (edited from `old`'s where it has them).
 /// A level's picture bullet change: `None` keeps it, `Some(None)` removes it, `Some(Some(id))` sets it.
 pub(super) type PicChange = Option<Option<i64>>;
 
-pub(super) fn abstract_xml(id: i64, old: Option<&str>, levels: &[ListLevel], name: Option<&str>, pics: &[PicChange], cx: &Cx) -> String {
+/// A level a `w:num` defines in its `w:lvlOverride`: its `w:lvl` and that level as the API shows it.
+pub(super) type Override = Option<(String, ListLevel)>;
+
+/// A `w:abstractNum` with its levels from `levels` (edited from `old`'s where it has them). A level `over` names is
+/// the `w:num`'s: a copy (a new id) takes it as edited, else it is left to [`num_xml`].
+pub(super) fn abstract_xml(
+    id: i64,
+    old: Option<&str>,
+    levels: &[ListLevel],
+    name: Option<&str>,
+    pics: &[PicChange],
+    over: &[Override],
+    cx: &Cx,
+) -> String {
     let w = &cx.w;
     let blank = format!("<{w}abstractNum {w}abstractNumId=\"{id}\"><{w}multiLevelType {w}val=\"hybridMultilevel\"/></{w}abstractNum>");
     let was_id = old.and_then(|o| attr_of(o, "abstractNumId"));
-    // A copy has the new id and is a new list: its nsid goes.
+    // A copy has the new id and is a new list: its nsid goes, and it isn't a list style's definition.
     let renamed = match (old, &was_id) {
         (Some(o), Some(was)) => o.replacen(&format!("abstractNumId=\"{was}\""), &format!("abstractNumId=\"{id}\""), 1),
         _ => blank,
     };
     let mut a = Props::parse(Some(&renamed), "abstractNum", cx);
     a.reorder(ABSTRACT);
-    if was_id.is_some_and(|was| was != id.to_string()) {
+    let copy = was_id.is_some_and(|was| was != id.to_string());
+    if copy {
         a.remove("nsid");
         a.remove("tmpl");
+        a.remove("styleLink");
     }
     match name {
         Some("") => a.remove("name"),
@@ -171,15 +186,50 @@ pub(super) fn abstract_xml(id: i64, old: Option<&str>, levels: &[ListLevel], nam
     }
     let parsed = old.and_then(|o| cx.parse(o, |text, el| crate::docx::numbering::parse_abstract(el, text, &Default::default()))).flatten();
     for (k, new) in levels.iter().enumerate().take(9) {
+        let over = over.get(k).and_then(Option::as_ref);
+        if over.is_some() && !copy {
+            continue;
+        }
         let raw = a.kids.iter().position(|(n, x)| n == "lvl" && attr_of(x, "ilvl").as_deref() == Some(&k.to_string()));
         let old_level = parsed.as_ref().and_then(|(_, abs)| abs.levels.get(k).cloned().flatten()).map(|l| list_level(&l));
-        let xml = level_xml(k, raw.map(|i| a.kids[i].1.as_str()).zip(old_level.as_ref()), new, pics.get(k).copied().flatten(), cx);
+        let base = match over {
+            Some((x, v)) => Some((x.as_str(), v)),
+            None => raw.map(|i| a.kids[i].1.as_str()).zip(old_level.as_ref()),
+        };
+        let xml = level_xml(k, base, new, pics.get(k).copied().flatten(), cx);
         match raw {
             Some(i) => a.kids[i].1 = xml,
             None => a.add("lvl", xml),
         }
     }
     a.xml().unwrap_or_default()
+}
+
+/// The levels a `w:num` defines in its `w:lvlOverride`s, by level.
+fn override_levels(raw: &str, cx: &Cx) -> [Option<String>; 9] {
+    let mut out: [Option<String>; 9] = Default::default();
+    for (n, x) in &Props::parse(Some(raw), "num", cx).kids {
+        let k = attr_of(x, "ilvl").and_then(|v| v.parse::<usize>().ok()).filter(|k| *k < 9);
+        if let (true, Some(k)) = (n == "lvlOverride", k) {
+            out[k] = Props::parse(Some(x), "lvlOverride", cx).get("lvl").map(str::to_string);
+        }
+    }
+    out
+}
+
+/// A `w:num` with the levels it overrides edited to `levels`; `None` when it overrides none of them.
+fn num_xml(raw: &str, levels: &[ListLevel], pics: &[PicChange], over: &[Override], cx: &Cx) -> Option<String> {
+    let mut m = Props::parse(Some(raw), "num", cx);
+    let mut changed = false;
+    for (_, x) in m.kids.iter_mut().filter(|(n, _)| n == "lvlOverride") {
+        let Some(k) = attr_of(x, "ilvl").and_then(|v| v.parse::<usize>().ok()) else { continue };
+        let (Some(Some((lvl, view))), Some(new)) = (over.get(k), levels.get(k)) else { continue };
+        let mut o = Props::parse(Some(x), "lvlOverride", cx);
+        o.set("lvl", level_xml(k, Some((lvl, view)), new, pics.get(k).copied().flatten(), cx));
+        *x = o.xml()?;
+        changed = true;
+    }
+    changed.then(|| m.xml()).flatten()
 }
 
 /// An attribute's value in a start tag or element, by its local name.
@@ -191,7 +241,7 @@ fn attr_of(xml: &str, local: &str) -> Option<String> {
 
 impl Editor {
     /// The selection's list: its first list paragraph, `numId` and level.
-    pub(super) fn selection_list(&mut self) -> Option<(ParaId, i64, i64)> {
+    pub(crate) fn selection_list(&mut self) -> Option<(ParaId, i64, i64)> {
         self.selected_paras().into_iter().find_map(|para| {
             let (num, ilvl) = self.index.para(&self.doc, para)?.style.num.filter(|(id, _)| *id != 0)?;
             Some((para, num, ilvl))
@@ -220,23 +270,14 @@ impl Editor {
         )
     }
 
-    /// The list paragraphs in document order: each paragraph's id and `(numId, ilvl)`.
+    /// The editable list paragraphs in the order lists number through them: each paragraph's id and `(numId, ilvl)`.
     pub(super) fn list_paras(&self) -> Vec<(ParaId, i64, i64)> {
-        fn walk(blocks: &[crate::docx::Block], out: &mut Vec<ParaId>) {
-            for b in blocks {
-                match b {
-                    crate::docx::Block::Para(p) => out.push(ParaId(p.id)),
-                    crate::docx::Block::Table(t) => t.rows.iter().flat_map(|r| r.cells.iter()).for_each(|c| walk(&c.blocks, out)),
-                }
-            }
-        }
-        let mut order = Vec::new();
-        self.doc.sections.iter().for_each(|s| walk(&s.blocks, &mut order));
-        order
+        super::lists::numbered_paras(&self.doc, &self.index)
             .into_iter()
-            .filter_map(|p| {
-                let (num, ilvl) = self.index.para(&self.doc, p)?.style.num.filter(|(id, _)| *id != 0)?;
-                Some((p, num, ilvl))
+            .filter_map(|(p, _)| {
+                let (num, ilvl) = p.style.num.filter(|(id, _)| *id != 0)?;
+                let para = ParaId(p.id);
+                self.index.para_slot(para).is_some().then_some((para, num, ilvl))
             })
             .collect()
     }
@@ -251,13 +292,25 @@ impl Editor {
         fresh: bool,
         fonts: &Fonts,
     ) -> Outcome {
+        self.edit_lists(label, |r, cx| edit(&mut r.numbering, cx, &r.styles.colours).map(|_| Vec::new()), assign, fresh, fonts)
+    }
+
+    /// [`Self::edit_numbering`] with the styles too: `edit` answers the styles it changed, whose paragraphs are
+    /// formatted again as well.
+    fn edit_lists(
+        &mut self,
+        label: &'static str,
+        edit: impl FnOnce(&mut Resolver, &Cx) -> Option<Vec<String>>,
+        assign: &[(ParaId, i64)],
+        fresh: bool,
+        fonts: &Fonts,
+    ) -> Outcome {
         let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
         let list_style = fresh && res.styles.by_id.contains_key("ListParagraph");
         let mut next = (*res).clone();
         let cx = next.numbering.cx();
-        if edit(&mut next.numbering, &cx, &res.styles.colours).is_none() {
-            return Outcome::Unchanged("the list didn't change");
-        }
+        let Some(styles) = edit(&mut next, &cx) else { return Outcome::Unchanged("the list didn't change") };
+        next.compute_style_links();
         let mut tx = self.begin(label);
         let added = self.doc.added_lists.clone();
         if self.step(&mut tx, Step::Resolver { resolver: Some(Rc::new(next)), added }).is_err() {
@@ -279,6 +332,10 @@ impl Editor {
         }
         let lists: Vec<ParaId> = self.list_paras().into_iter().map(|(p, _, _)| p).collect();
         tx.stale_paras.extend(lists);
+        if !styles.is_empty() {
+            let styled = self.styled_paras(&styles);
+            tx.stale_paras.extend(styled);
+        }
         tx.relabel = true;
         self.commit(tx, None, fonts)
     }
@@ -321,25 +378,51 @@ impl Editor {
         (changes, add)
     }
 
-    pub(super) fn set_list_definition(&mut self, d: ListDefinitionChange, fonts: &Fonts) -> Outcome {
+    pub(super) fn set_list_definition(&mut self, mut d: ListDefinitionChange, fonts: &Fonts) -> Outcome {
         let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
         let paras = self.selected_paras();
-        let current = self.selection_list().map(|(_, n, _)| n);
+        let here = self.selection_list();
+        let current = here.map(|(_, n, _)| n);
+        let now = current.and_then(|n| self.list_levels(n)).unwrap_or_default();
+        let whole = d.apply_to == ListApplyTo::WholeList;
+        // Linked styles
+        for (k, l) in d.levels.iter_mut().enumerate() {
+            let was = now.get(k).and_then(|x| x.linked_style.as_ref());
+            if l.linked_style.as_ref() == was {
+                if !whole {
+                    l.linked_style = None;
+                }
+                continue;
+            }
+            l.linked_style = l.linked_style.take().and_then(|s| linkable(&res.styles, &s.0)).map(StyleId);
+        }
+        let mut taken: Vec<StyleId> = Vec::new();
+        for l in &mut d.levels {
+            if l.linked_style.as_ref().is_some_and(|s| taken.contains(s)) {
+                l.linked_style = None;
+            } else if let Some(s) = &l.linked_style {
+                taken.push(s.clone());
+            }
+        }
         let (pics, new_pics) = self.picture_changes(&d.levels, current);
-        let Some((first, num, _)) = self.selection_list() else {
+        let Some((first, num, _)) = here else {
             // Outside a list: a new one, for the selected paragraphs.
             let (abstract_id, num_id) = res.numbering.free_ids();
             let assign: Vec<(ParaId, i64)> = paras.iter().map(|&p| (p, num_id)).collect();
             let levels = complete(&d.levels);
-            return self.edit_numbering(
+            let links = links(&levels, &[], num_id);
+            return self.edit_lists(
                 "Define List",
-                |n, cx, colours| {
-                    add_pictures(n, &new_pics, cx);
-                    let a = abstract_xml(abstract_id, None, &levels, d.name.as_deref(), &pics, cx);
-                    n.set_abstract_xml(a, colours)?;
+                |r, cx| {
+                    add_pictures(&mut r.numbering, &new_pics, cx);
+                    let a = abstract_xml(abstract_id, None, &levels, d.name.as_deref(), &pics, &[], cx);
+                    r.numbering.set_abstract_xml(a, &r.styles.colours)?;
                     let w = &cx.w;
-                    n.set_num_xml(format!("<{w}num {w}numId=\"{num_id}\"><{w}abstractNumId {w}val=\"{abstract_id}\"/></{w}num>"), colours)?;
-                    Some(())
+                    r.numbering.set_num_xml(
+                        format!("<{w}num {w}numId=\"{num_id}\"><{w}abstractNumId {w}val=\"{abstract_id}\"/></{w}num>"),
+                        &r.styles.colours,
+                    )?;
+                    link_styles(r, &links, abstract_id, cx)
                 },
                 &assign,
                 true,
@@ -348,44 +431,71 @@ impl Editor {
         };
         let Some(abstract_id) = res.numbering.abstract_of(num, &res.styles) else { return Outcome::Unchanged("no list") };
         let old = res.numbering.abstracts.get(&abstract_id).map(|a| a.raw.clone());
-        match d.apply_to {
-            ListApplyTo::WholeList => self.edit_numbering(
+        let cx = res.numbering.cx();
+        let num_raw = res.numbering.nums.get(&num).map(|m| m.raw.clone()).unwrap_or_default();
+        let over: Vec<Override> = override_levels(&num_raw, &cx)
+            .into_iter()
+            .enumerate()
+            .map(|(k, x)| Some((x?, list_level(res.numbering.nums.get(&num)?.level_overrides.get(&(k as i64))?))))
+            .collect();
+        if whole {
+            let links = links(&d.levels, &now, num);
+            return self.edit_lists(
                 "Define List",
-                |n, cx, colours| {
-                    add_pictures(n, &new_pics, cx);
-                    let a = abstract_xml(abstract_id, old.as_deref(), &d.levels, d.name.as_deref(), &pics, cx);
-                    n.set_abstract_xml(a, colours).map(|_| ())
+                |r, cx| {
+                    add_pictures(&mut r.numbering, &new_pics, cx);
+                    let a = abstract_xml(abstract_id, old.as_deref(), &d.levels, d.name.as_deref(), &pics, &over, cx);
+                    r.numbering.set_abstract_xml(a, &r.styles.colours)?;
+                    if let Some(m) = num_xml(&num_raw, &d.levels, &pics, &over, cx) {
+                        r.numbering.set_num_xml(m, &r.styles.colours)?;
+                    }
+                    link_styles(r, &links, abstract_id, cx)
                 },
                 &[],
                 false,
                 fonts,
-            ),
-            to => {
-                let (new_abstract, new_num) = res.numbering.free_ids();
-                let assign: Vec<(ParaId, i64)> = match to {
-                    ListApplyTo::ThisPointForward => self.list_from(first, num).into_iter().map(|p| (p, new_num)).collect(),
-                    _ => paras
-                        .iter()
-                        .filter(|&&p| self.index.para(&self.doc, p).is_some_and(|q| q.style.num.is_some_and(|(n, _)| n == num)))
-                        .map(|&p| (p, new_num))
-                        .collect(),
-                };
-                self.edit_numbering(
-                    "Define List",
-                    |n, cx, colours| {
-                        add_pictures(n, &new_pics, cx);
-                        let a = abstract_xml(new_abstract, old.as_deref(), &d.levels, d.name.as_deref(), &pics, cx);
-                        n.set_abstract_xml(a, colours)?;
-                        let w = &cx.w;
-                        n.set_num_xml(format!("<{w}num {w}numId=\"{new_num}\"><{w}abstractNumId {w}val=\"{new_abstract}\"/></{w}num>"), colours)?;
-                        Some(())
-                    },
-                    &assign,
-                    false,
-                    fonts,
-                )
-            }
+            );
         }
+        let (new_abstract, new_num) = res.numbering.free_ids();
+        let assign: Vec<(ParaId, i64)> = match d.apply_to {
+            ListApplyTo::ThisPointForward => self.list_from(first, num).into_iter().map(|p| (p, new_num)).collect(),
+            _ => paras
+                .iter()
+                .filter(|&&p| self.index.para(&self.doc, p).is_some_and(|q| q.style.num.is_some_and(|(n, _)| n == num)))
+                .map(|&p| (p, new_num))
+                .collect(),
+        };
+        let links = links(&d.levels, &[], new_num);
+        // The list's start values go with its first paragraph
+        let head = self.list_paras().into_iter().find(|(_, n, _)| *n == num).map(|(p, _, _)| p);
+        let mut starts: Vec<(i64, i64)> = match res.numbering.nums.get(&num) {
+            Some(m) if head.is_some_and(|h| assign.iter().any(|(p, _)| *p == h)) => {
+                m.start_overrides.iter().filter(|(k, _)| (0..9).contains(*k)).map(|(&k, &v)| (k, v)).collect()
+            }
+            _ => Vec::new(),
+        };
+        starts.sort_unstable();
+        self.edit_lists(
+            "Define List",
+            |r, cx| {
+                add_pictures(&mut r.numbering, &new_pics, cx);
+                let a = abstract_xml(new_abstract, old.as_deref(), &d.levels, d.name.as_deref(), &pics, &over, cx);
+                r.numbering.set_abstract_xml(a, &r.styles.colours)?;
+                let w = &cx.w;
+                let starts: String = starts
+                    .iter()
+                    .map(|(k, v)| format!("<{w}lvlOverride {w}ilvl=\"{k}\"><{w}startOverride {w}val=\"{v}\"/></{w}lvlOverride>"))
+                    .collect();
+                r.numbering.set_num_xml(
+                    format!("<{w}num {w}numId=\"{new_num}\"><{w}abstractNumId {w}val=\"{new_abstract}\"/>{starts}</{w}num>"),
+                    &r.styles.colours,
+                )?;
+                link_styles(r, &links, new_abstract, cx)
+            },
+            &assign,
+            false,
+            fonts,
+        )
     }
 
     pub(super) fn set_numbering_value(&mut self, v: NumberingValue, fonts: &Fonts) -> Outcome {
@@ -460,9 +570,6 @@ impl Editor {
         (levels[k].number_position, levels[k].text_indent, levels[k].follow, levels[k].tab) = (i.number_position, i.text_indent, i.follow, i.tab);
         // Only this level changes: the levels after it are left out.
         levels.truncate(k + 1);
-        for l in levels.iter_mut().take(k) {
-            l.picture = None;
-        }
         self.set_list_definition(ListDefinitionChange { levels, apply_to: ListApplyTo::WholeList, name: None }, fonts)
     }
 }
@@ -508,4 +615,124 @@ pub(super) fn complete(levels: &[ListLevel]) -> Vec<ListLevel> {
             })
         })
         .collect()
+}
+
+/// A paragraph style a level links to: the style, and the list and level it is numbered with (none: unlinked).
+type Link = (String, Option<(i64, usize)>);
+
+/// The style links `levels` make or end against `was` (the list's levels before), for the list `num`: the ends
+/// first.
+fn links(levels: &[ListLevel], was: &[ListLevel], num: i64) -> Vec<Link> {
+    let mut ends = Vec::new();
+    let mut made = Vec::new();
+    for (k, l) in levels.iter().enumerate().take(9) {
+        let before = was.get(k).and_then(|w| w.linked_style.as_ref());
+        if l.linked_style.as_ref() == before {
+            continue;
+        }
+        ends.extend(before.map(|s| (s.0.clone(), None)));
+        made.extend(l.linked_style.as_ref().map(|s| (s.0.clone(), Some((num, k)))));
+    }
+    ends.extend(made);
+    ends
+}
+
+/// The document's paragraph style for a level's link: `id`, or the built-in style it names under its name.
+fn linkable(styles: &crate::docx::styles::Styles, id: &str) -> Option<String> {
+    let paragraph = |s: &&crate::docx::styles::Style| s.kind == crate::docx::styles::StyleKind::Paragraph;
+    if let Some(s) = styles.get(id).filter(paragraph) {
+        return Some(s.id.clone());
+    }
+    let name = crate::services::styles::builtin::built_in(id)?.name;
+    styles.by_id.values().filter(paragraph).find(|s| s.name.eq_ignore_ascii_case(name)).map(|s| s.id.clone())
+}
+
+/// Makes and ends the style links of the list `abstract_id`: a linked style is numbered with its level, and no other
+/// level of any list links to it; an unlinked one numbered with the list no longer is. Answers the styles changed.
+fn link_styles(r: &mut Resolver, links: &[Link], abstract_id: i64, cx: &Cx) -> Option<Vec<String>> {
+    let scx = r.styles.cx();
+    let sw = scx.w.clone();
+    let mut changed = Vec::new();
+    for (id, to) in links {
+        let Some(style) = r.styles.get(id) else { continue };
+        if to.is_none() && style.base.ppr.num_id.and_then(|n| r.numbering.abstract_of(n, &r.styles)) != Some(abstract_id) {
+            continue;
+        }
+        let raw = super::styles::edit_child(&style.raw, "pPr", &scx, |p| match to {
+            Some((num, 0)) => p.set("numPr", format!("<{sw}numPr><{sw}numId {sw}val=\"{num}\"/></{sw}numPr>")),
+            Some((num, k)) => p.set("numPr", format!("<{sw}numPr><{sw}ilvl {sw}val=\"{k}\"/><{sw}numId {sw}val=\"{num}\"/></{sw}numPr>")),
+            None => p.remove("numPr"),
+        });
+        changed.extend(r.styles.set_xml(raw).ok()?);
+        let Some((num, k)) = to else { continue };
+        let others: Vec<(i64, String)> = r
+            .numbering
+            .abstracts
+            .iter()
+            .filter(|(a, abs)| {
+                abs.levels.iter().enumerate().any(|(j, l)| (**a, j) != (abstract_id, *k) && l.as_ref().and_then(|l| l.pstyle.as_ref()) == Some(id))
+            })
+            .map(|(a, abs)| (*a, abs.raw.clone()))
+            .collect();
+        for (a, raw) in others {
+            let keep = (a == abstract_id).then_some(*k);
+            r.numbering.set_abstract_xml(unlinked(&raw, id, keep, cx), &r.styles.colours)?;
+        }
+        // The instances' own levels
+        let nums: Vec<(i64, String)> = r
+            .numbering
+            .nums
+            .iter()
+            .filter(|(n, m)| m.level_overrides.iter().any(|(j, l)| (**n, *j) != (*num, *k as i64) && l.pstyle.as_deref() == Some(id)))
+            .map(|(n, m)| (*n, m.raw.clone()))
+            .collect();
+        for (n, raw) in nums {
+            let keep = (n == *num).then_some(*k);
+            r.numbering.set_num_xml(unlinked_num(&raw, id, keep, cx), &r.styles.colours)?;
+        }
+    }
+    changed.sort();
+    changed.dedup();
+    Some(changed)
+}
+
+/// A `w:abstractNum` whose levels (but `keep`) no longer link to the style `id`.
+fn unlinked(raw: &str, id: &str, keep: Option<usize>, cx: &Cx) -> String {
+    let mut a = Props::parse(Some(raw), "abstractNum", cx);
+    a.reorder(ABSTRACT);
+    for (_, x) in a.kids.iter_mut().filter(|(n, _)| n == "lvl") {
+        if keep.is_some_and(|k| attr_of(x, "ilvl").as_deref() == Some(&k.to_string())) {
+            continue;
+        }
+        if let Some(l) = unlinked_level(x, id, cx) {
+            *x = l;
+        }
+    }
+    a.xml().unwrap_or_else(|| raw.to_string())
+}
+
+/// A `w:num` whose overriding levels (but `keep`) no longer link to the style `id`.
+fn unlinked_num(raw: &str, id: &str, keep: Option<usize>, cx: &Cx) -> String {
+    let mut m = Props::parse(Some(raw), "num", cx);
+    for (_, x) in m.kids.iter_mut().filter(|(n, _)| n == "lvlOverride") {
+        if keep.is_some_and(|k| attr_of(x, "ilvl").as_deref() == Some(&k.to_string())) {
+            continue;
+        }
+        let mut o = Props::parse(Some(x), "lvlOverride", cx);
+        if let Some(l) = o.get("lvl").and_then(|l| unlinked_level(l, id, cx)) {
+            o.set("lvl", l);
+            *x = o.xml().unwrap_or_default();
+        }
+    }
+    m.xml().unwrap_or_else(|| raw.to_string())
+}
+
+/// A `w:lvl` without its `w:pStyle`; `None` when that isn't `id`.
+fn unlinked_level(x: &str, id: &str, cx: &Cx) -> Option<String> {
+    let mut l = Props::parse(Some(x), "lvl", cx);
+    l.reorder(LVL);
+    (l.get("pStyle").and_then(|p| attr_of(p, "val")).as_deref() == Some(id)).then(|| {
+        l.remove("pStyle");
+        l.xml().unwrap_or_default()
+    })
 }

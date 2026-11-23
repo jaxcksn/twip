@@ -66,6 +66,7 @@ public sealed class WireTests
         ["horizontalalignment"] = Ctx.TableAlignment,
         ["horizontalside"] = Ctx.ColumnPosition,
         ["verticalside"] = Ctx.RowPosition,
+        ["textseparator"] = Ctx.TextSeparator,
         ["applyto"] = Ctx.PageSetupScope,
         ["areakind"] = Ctx.GestureArea,
         ["autofit"] = Ctx.AutoFitBehavior,

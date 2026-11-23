@@ -52,7 +52,7 @@ fn steps(doc: &Document, idx: &DocIndex) -> Vec<Step> {
         }
         let par = idx.para(doc, p).expect("paragraph");
         let second = crate::docx::Paragraph { inlines: Vec::new(), src: None, id: crate::docx::next_para_id(), ..par.clone() };
-        out.push(Step::Split { para: p, at: mid, second });
+        out.push(Step::Split { para: p, at: mid, second, kept: Vec::new() });
     }
     for w in ps.windows(2).step_by((ps.len() / 4).max(1)) {
         let (a, b) = (idx.para_slot(w[0].0).expect("slot"), idx.para_slot(w[1].0).expect("slot"));

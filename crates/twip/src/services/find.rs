@@ -1,15 +1,15 @@
-//! Find and replace over the body's paragraphs (tables included) in document order, on the text the markup view
-//! shows: text it hides matches nothing. Matches are unit ranges of one paragraph.
+//! Find and replace over every story's paragraphs (the body's first, tables included) in document order, on the
+//! text the markup view shows: text it hides, and field codes, match nothing. Matches are unit ranges of one
+//! paragraph.
 
 use crate::api::services::{FindMatch, FindQuery};
 use crate::api::value::MatchId;
 use crate::editing::Editor;
-use crate::editing::commands::{Command, Dir, Outcome, deleting};
-use crate::editing::text::UnitText;
+use crate::editing::commands::Outcome;
 use crate::font::Fonts;
 use crate::layout::{ParaId, Unit};
 
-use super::spelling::paras_in_order;
+use super::spelling::searched_paras;
 
 /// A match: its paragraph and units `start..end`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -34,91 +34,79 @@ impl Hit {
 
     /// Selects the match (and reveals it).
     pub fn select(&self, e: &mut Editor, fonts: &Fonts) -> Outcome {
-        e.select_range(self.para, Unit(self.start), Unit(self.end), fonts)
+        e.select_match(self.para, Unit(self.start), Unit(self.end), fonts)
     }
-}
-
-/// Where `needle` occurs in `hay`, without overlaps; `case`: exact, else ignoring case; `whole`: only where no
-/// letter or digit touches either end.
-fn matches(hay: &[char], needle: &[char], case: bool, whole: bool) -> Vec<usize> {
-    if needle.is_empty() || hay.len() < needle.len() {
-        return Vec::new();
-    }
-    let eq = |a: char, b: char| if case { a == b } else { a == b || a.to_lowercase().eq(b.to_lowercase()) };
-    let word = |i: usize| hay.get(i).is_some_and(|c| c.is_alphanumeric());
-    let mut out = Vec::new();
-    let mut i = 0;
-    while i + needle.len() <= hay.len() {
-        let end = i + needle.len();
-        if hay[i..end].iter().zip(needle).all(|(a, b)| eq(*a, *b)) && (!whole || !(i > 0 && word(i - 1)) && !word(end)) {
-            out.push(i);
-            i = end;
-        } else {
-            i += 1;
-        }
-    }
-    out
-}
-
-fn chars_of(e: &Editor, para: ParaId) -> Vec<char> {
-    e.index().para(e.document(), para).map_or_else(Vec::new, |p| UnitText::of_view(p, e.document().review.view).text.chars().collect())
 }
 
 fn hits_in(e: &Editor, para: ParaId, q: &FindQuery) -> Vec<Hit> {
     let needle: Vec<char> = q.text.chars().collect();
-    let n = needle.len() as u32;
-    matches(&chars_of(e, para), &needle, q.match_case.unwrap_or(false), q.whole_words.unwrap_or(false))
+    crate::editing::find::hits(&e.find_text(para), &needle, q.match_case.unwrap_or(false), q.whole_words.unwrap_or(false))
         .into_iter()
-        .map(|h| Hit { para, start: h as u32, end: h as u32 + n })
+        .map(|(a, b)| Hit { para, start: a.0, end: b.0 })
         .collect()
 }
 
-/// Every match, in document order.
+/// Every match, in document order. A field showing its result is searched in its result only.
 pub fn all(e: &Editor, q: &FindQuery) -> Vec<Hit> {
-    paras_in_order(e).into_iter().flat_map(|p| hits_in(e, p, q)).collect()
+    searched_paras(e).into_iter().flat_map(|p| hits_in(e, p, q)).collect()
 }
 
 /// The next match after the selection (before it, `back`), wrapping round the document, and whether it wrapped.
 pub fn next(e: &Editor, q: &FindQuery, back: bool) -> Option<(Hit, bool)> {
-    let order = paras_in_order(e);
+    let order = searched_paras(e);
     if order.is_empty() || q.text.is_empty() {
         return None;
     }
-    let (a, b) = e
-        .selection()
-        .ordered(e.index())
-        .and_then(|(a, b)| Some((a.para_offset()?, b.para_offset()?)))
-        .unwrap_or(((order[0], Unit(0)), (order[0], Unit(0))));
+    let (a, b) = match e.selected_match() {
+        Some((para, a, b)) => ((para, a), (para, b)),
+        None => e
+            .selection()
+            .ordered(e.index())
+            .and_then(|(a, b)| Some((a.para_offset()?, b.para_offset()?)))
+            .unwrap_or(((order[0], Unit(0)), (order[0], Unit(0)))),
+    };
     let (from_para, from) = if back { a } else { b };
-    let start = order.iter().position(|p| *p == from_para).unwrap_or(0);
     let n = order.len();
+    // A selection outside the paragraphs searched (a header, a note, a text box): from the top, or the end going back.
+    let (start, inside) = match order.iter().position(|p| *p == from_para) {
+        Some(k) => (k, true),
+        None => (if back { n - 1 } else { 0 }, false),
+    };
     // One more than the paragraphs: the start paragraph again, for the matches on the other side of the selection.
     for k in 0..=n {
         let i = if back { (start + n * 2 - k) % n } else { (start + k) % n };
         let hits = hits_in(e, order[i], q);
-        let first = k == 0;
+        let first = k == 0 && inside;
         let hit =
             if back { hits.into_iter().rev().find(|h| !first || h.end <= from.0) } else { hits.into_iter().find(|h| !first || h.start >= from.0) };
         if let Some(h) = hit {
-            let wrapped = k == n || if back { i > start } else { i < start };
+            let wrapped = (k == n && inside) || if back { i > start } else { i < start };
             return Some((h, wrapped));
         }
     }
     None
 }
 
-/// The match the selection is exactly on.
+/// The match the selection is on: the find match selected last while it stays selected, else one exactly selected.
 pub fn at_selection(e: &Editor, q: &FindQuery) -> Option<Hit> {
+    if let Some((para, a, b)) = e.selected_match()
+        && let Some(h) = hits_in(e, para, q).into_iter().find(|h| (h.start, h.end) == (a.0, b.0))
+    {
+        return Some(h);
+    }
     let (a, b) = e.selection().ordered(e.index())?;
     let ((pa, ua), (pb, ub)) = (a.para_offset()?, b.para_offset()?);
-    (pa == pb).then(|| hits_in(e, pa, q).into_iter().find(|h| (h.start, h.end) == (ua.0, ub.0))).flatten()
+    let needle: Vec<char> = q.text.chars().collect();
+    let (case, whole) = (q.match_case.unwrap_or(false), q.whole_words.unwrap_or(false));
+    (pa == pb && crate::editing::find::hit_at(&e.find_text(pa), &needle, case, whole, ua, ub)).then_some(Hit { para: pa, start: ua.0, end: ub.0 })
 }
 
 /// A match for a results list: up to 30 characters of context on each side, from its paragraph.
 pub fn describe(e: &Editor, h: Hit, page: u32) -> FindMatch {
-    let chars = chars_of(e, h.para);
+    let seen = e.find_text(h.para);
+    let chars = &seen.chars;
     let clean = |s: &[char]| s.iter().map(|&c| if c.is_control() || c == crate::editing::text::OBJECT { ' ' } else { c }).collect::<String>();
-    let (s, t) = (h.start as usize, (h.end as usize).min(chars.len()));
+    let (s, t) = (seen.units.partition_point(|&u| u < h.start), seen.units.partition_point(|&u| u < h.end));
     FindMatch {
         id: h.id(),
         before: clean(&chars[s.saturating_sub(30)..s]),
@@ -128,19 +116,11 @@ pub fn describe(e: &Editor, h: Hit, page: u32) -> FindMatch {
     }
 }
 
-/// Replaces `hits` with `with`, last to first so earlier offsets hold, as one undo step.
-pub fn replace(e: &mut Editor, hits: &[Hit], with: &str, fonts: &Fonts) -> Outcome {
-    e.joined("Replace", fonts, |e| {
-        let mut out = Outcome::Unchanged("no match");
-        for h in hits.iter().rev() {
-            h.select(e, fonts);
-            let edit = if with.is_empty() { deleting(Dir::Forward, false) } else { Command::InsertText(with.to_string()) };
-            if let o @ Outcome::Changed(_) = e.execute(edit, fonts) {
-                out = o;
-            }
-        }
-        out
-    })
+/// Replaces `hits` with `with` as one undo step ([`Editor::replace_hits`]): how many. `all`: Replace All, which leaves
+/// the caret where it was; else the caret follows the replacement.
+pub fn replace(e: &mut Editor, hits: &[Hit], with: &str, all: bool, fonts: &Fonts) -> (usize, Outcome) {
+    let hits: Vec<(ParaId, Unit, Unit)> = hits.iter().map(|h| (h.para, Unit(h.start), Unit(h.end))).collect();
+    e.replace_hits(if all { "Replace All" } else { "Replace" }, &hits, with, all, fonts)
 }
 
 #[cfg(test)]
@@ -148,7 +128,7 @@ mod tests {
     use super::*;
 
     fn at(hay: &str, needle: &str, case: bool, whole: bool) -> Vec<usize> {
-        matches(&hay.chars().collect::<Vec<_>>(), &needle.chars().collect::<Vec<_>>(), case, whole)
+        crate::editing::find::matches(&hay.chars().collect::<Vec<_>>(), &needle.chars().collect::<Vec<_>>(), case, whole)
     }
 
     #[test]

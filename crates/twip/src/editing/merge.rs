@@ -78,13 +78,6 @@ fn lock_of(l: ControlLock) -> Lock {
     }
 }
 
-fn plain(b: &Body) -> String {
-    match b {
-        Body::Text(t) => t.clone(),
-        Body::Rich(r) => r.paragraphs.iter().map(|p| p.runs.iter().map(|r| r.text.as_str()).collect::<String>()).collect::<Vec<_>>().join("\n"),
-    }
-}
-
 fn binding_xml(b: &DataBinding, w: &str) -> String {
     let esc = crate::docx::write::props::esc;
     let mut x = format!("<{w}dataBinding");
@@ -199,6 +192,9 @@ impl Editor {
     }
 
     pub(super) fn editable(&self, p: &Position) -> bool {
+        if self.doc.controls.values().any(|k| matches!(k.props.kind, ControlKind::Group)) && self.in_group(p, p, false) {
+            return false;
+        }
         elements::context(&self.doc, &self.index, &Selection::Caret(*p)).iter().all(|(e, _)| {
             let ElementId::Control(c) = e else { return true };
             if self.doc.controls.get(c).is_none_or(|k| k.props.lock.editable()) {
@@ -365,21 +361,151 @@ impl Editor {
         let Some(Where::Inline { para, first, last, .. }) = self.locate(ElementId::Field(f)) else { return false };
         let Some(p) = self.index.para(&self.doc, para).cloned() else { return false };
         let Some(s) = crate::docx::fields::span_at(&p.inlines, first).filter(|s| s.end == last) else { return false };
-        let mut own = Vec::new();
+        // The code's own text, run by run (fields nested in it are theirs), in groups of runs next to each other: a
+        // match can span runs of different formatting.
+        let mut groups: Vec<Vec<usize>> = vec![Vec::new()];
         let mut depth = 0;
         for k in first + 1..s.code_end() {
             match &p.inlines[k] {
                 Inline::FieldBegin { .. } => depth += 1,
                 Inline::FieldEnd { .. } => depth -= 1,
-                Inline::Text(t, r) if depth == 0 && t.contains(find) => own.push((k, t.replace(find, replace), r.clone())),
+                Inline::Text(..) if depth == 0 => {
+                    groups.last_mut().expect("a group").push(k);
+                    continue;
+                }
+                i if i.units() == 0 && depth == 0 => continue,
                 _ => {}
+            }
+            if groups.last().is_some_and(|g| !g.is_empty()) {
+                groups.push(Vec::new());
+            }
+        }
+        let mut own: Vec<(usize, String)> = Vec::new();
+        for g in groups.iter().filter(|g| !g.is_empty()) {
+            let parts: Vec<&str> = g.iter().map(|&k| if let Inline::Text(t, _) = &p.inlines[k] { t.as_str() } else { "" }).collect();
+            let all: String = parts.concat();
+            let found: Vec<usize> = all.match_indices(find).map(|(at, _)| at).collect();
+            if found.is_empty() {
+                continue;
+            }
+            // Each run keeps its text outside the matches; a match's replacement goes in the run it starts in. The
+            // matches a run holds part of start at `first`: those before it end before the run does.
+            let mut at = 0;
+            let mut first = 0;
+            for (&k, part) in g.iter().zip(&parts) {
+                let (a, b) = (at, at + part.len());
+                at = b;
+                let mut text = String::new();
+                let mut c = a;
+                while found.get(first).is_some_and(|&m| m + find.len() <= a) {
+                    first += 1;
+                }
+                for &m in found[first..].iter().take_while(|&&m| m < b) {
+                    let e = m + find.len();
+                    if e <= a {
+                        continue;
+                    }
+                    if m > c {
+                        text.push_str(&all[c..m]);
+                    }
+                    if m >= a {
+                        text.push_str(replace);
+                    }
+                    c = e.min(b).max(c);
+                }
+                text.push_str(&all[c.min(b)..b]);
+                if text != *part {
+                    own.push((k, text));
+                }
+            }
+        }
+        // Runs next to each other change in one step, the paragraph as it was: the steps go last to first.
+        let mut spans: Vec<(std::ops::Range<u32>, Vec<Inline>)> = Vec::new();
+        let (mut at, mut from) = (0u32, 0usize);
+        let mut next = usize::MAX;
+        for (k, t) in own {
+            let Inline::Text(_, run) = &p.inlines[k] else { continue };
+            at += units_before(&p.inlines[from..], k - from);
+            from = k;
+            let end = at + p.inlines[k].units() as u32;
+            let with = (!t.is_empty()).then(|| Inline::Text(t, run.clone()));
+            let adjacent = k == next;
+            next = k + 1;
+            match spans.last_mut() {
+                Some((r, w)) if adjacent => {
+                    r.end = end;
+                    w.extend(with);
+                }
+                _ => spans.push((at..end, with.into_iter().collect())),
             }
         }
         let mut any = false;
-        for (k, t, run) in own.into_iter().rev() {
-            let at = units_before(&p.inlines, k);
-            let range = Unit(at)..Unit(at + p.inlines[k].units() as u32);
-            let with = if t.is_empty() { Vec::new() } else { vec![Inline::Text(t, run)] };
+        for (r, with) in spans.into_iter().rev() {
+            any |= self.step(tx, Step::Text { para, range: Unit(r.start)..Unit(r.end), with, edges: Default::default() }).is_ok();
+        }
+        if any {
+            self.refresh_field_kinds(tx, para);
+        }
+        any
+    }
+
+    /// Field `f`'s code with the argument `pick` names (from the code as parsed) set to `value`, written as an argument
+    /// is; the rest of the code as it was.
+    pub(super) fn set_code_arg(
+        &mut self,
+        tx: &mut super::Tx,
+        f: FieldId,
+        pick: impl Fn(&crate::docx::fields::FieldCode) -> Option<usize>,
+        value: &str,
+    ) -> bool {
+        let Some(Where::Inline { para, first, last, .. }) = self.locate(ElementId::Field(f)) else { return false };
+        let Some(p) = self.index.para(&self.doc, para).cloned() else { return false };
+        let Some(s) = crate::docx::fields::span_at(&p.inlines, first).filter(|s| s.end == last) else { return false };
+        // The code's own pieces: each inline and where its text starts
+        let mut code = String::new();
+        let mut pieces: Vec<(usize, usize)> = Vec::new();
+        let mut depth = 0;
+        for k in first + 1..s.code_end() {
+            match &p.inlines[k] {
+                Inline::FieldBegin { .. } => depth += 1,
+                Inline::FieldEnd { .. } => depth -= 1,
+                Inline::Text(t, _) if depth == 0 => {
+                    pieces.push((k, code.len()));
+                    code.push_str(t);
+                }
+                Inline::Tab(_) | Inline::PTab(..) if depth == 0 => {
+                    pieces.push((k, code.len()));
+                    code.push('\t');
+                }
+                _ => {}
+            }
+        }
+        let mut spans = Vec::new();
+        let parsed = crate::docx::fields::parse_spans(&code, Some(&mut spans));
+        let Some(span) = pick(&parsed).and_then(|i| spans.get(i).cloned()) else { return false };
+        let ends: Vec<usize> = pieces.iter().skip(1).map(|p| p.1).chain([code.len()]).collect();
+        let over: Vec<(usize, usize, usize)> =
+            pieces.iter().zip(ends).filter(|&(&(_, at), end)| at < span.end && end > span.start).map(|(&(k, at), end)| (k, at, end)).collect();
+        // A field nested in the argument would be left outside the value written over it.
+        if let (Some(a), Some(b)) = (over.first(), over.last())
+            && p.inlines[a.0..b.0].iter().any(|i| matches!(i, Inline::FieldBegin { .. }))
+        {
+            return false;
+        }
+        let mut any = false;
+        for (j, &(k, at, end)) in over.iter().enumerate().rev() {
+            let mut t = code[at..span.start.max(at)].to_string();
+            if j == 0 {
+                t.push_str(value);
+            }
+            t.push_str(&code[span.end.min(end)..end]);
+            let start = units_before(&p.inlines, k);
+            let range = Unit(start)..Unit(start + p.inlines[k].units() as u32);
+            let with = match (&p.inlines[k], t.is_empty()) {
+                (_, true) => Vec::new(),
+                (Inline::Text(_, run), false) => vec![Inline::Text(t, run.clone())],
+                (other, false) => vec![other.clone()],
+            };
             any |= self.step(tx, Step::Text { para, range, with, edges: Default::default() }).is_ok();
         }
         if any {
@@ -388,15 +514,17 @@ impl Editor {
         any
     }
 
+    /// Control `c` and, for a repeating section, its own items (those right inside it: a nested section's stay).
     fn with_items<'l>(&self, c: ControlId, lists: impl Iterator<Item = &'l Vec<ControlId>>) -> Vec<ControlId> {
         let mut gone = vec![c];
         if self.doc.controls.get(&c).is_some_and(|k| k.props.kind == ControlKind::RepeatingSection) {
             for list in lists {
-                let after = list.iter().skip_while(|x| **x != c).skip(1);
-                for x in after {
-                    if self.doc.controls.get(x).is_some_and(|k| k.props.kind == ControlKind::RepeatingItem) && !gone.contains(x) {
-                        gone.push(*x);
-                    }
+                let item = list.iter().position(|x| *x == c).and_then(|k| list.get(k + 1));
+                if let Some(x) = item
+                    && self.doc.controls.get(x).is_some_and(|k| k.props.kind == ControlKind::RepeatingItem)
+                    && !gone.contains(x)
+                {
+                    gone.push(*x);
                 }
             }
         }
@@ -414,26 +542,6 @@ impl Editor {
         let item = || Control::new(ControlProps { kind: ControlKind::RepeatingItem, ..Default::default() });
         let s = ControlId::next();
         let made = CommandResult::Element { id: api_id(ElementId::Control(s)) };
-        fn place(lists: &[&Vec<ControlId>], outside: &[&Vec<ControlId>]) -> Result<Vec<usize>, Refused> {
-            let mut out = Vec::with_capacity(lists.len());
-            let all = |x: &ControlId| lists.iter().all(|l| l.contains(x));
-            if lists.iter().flat_map(|l| l.iter()).any(|x| !all(x) && outside.iter().any(|l| l.contains(x))) {
-                return Err(shape("region boundary"));
-            }
-            for l in lists {
-                let mut k = 0;
-                for (i, x) in l.iter().enumerate() {
-                    if all(x) {
-                        if i != k {
-                            return Err(shape("region boundary"));
-                        }
-                        k += 1;
-                    }
-                }
-                out.push(k);
-            }
-            Ok(out)
-        }
         let rows = |e: &Editor| -> Result<Option<(crate::layout::TableId, usize, usize)>, Refused> {
             if let Selection::Cells { table, anchor, focus, .. } = e.selection {
                 let n = e.index.table(&e.doc, table).map_or(0, |t| t.rows.len());
@@ -456,7 +564,7 @@ impl Editor {
             let t = self.index.table(&self.doc, table).ok_or_else(no_element)?;
             let lists: Vec<&Vec<ControlId>> = t.rows[r0..=r1].iter().map(|r| &r.controls).collect();
             let outside: Vec<&Vec<ControlId>> = t.rows.iter().enumerate().filter(|(k, _)| *k < r0 || *k > r1).map(|(_, r)| &r.controls).collect();
-            let at = place(&lists, &outside)?;
+            let at = nest(&lists, &outside)?;
             let mut with: Vec<crate::docx::Row> = t.rows[r0..=r1].to_vec();
             self.pending_controls.push((s, Control::new(section)));
             for (r, k) in with.iter_mut().zip(at) {
@@ -515,14 +623,9 @@ impl Editor {
                 Block::Table(t) => &t.controls,
             })
             .collect();
-        fn list_of(b: &Block) -> &Vec<ControlId> {
-            match b {
-                Block::Para(p) => &p.controls,
-                Block::Table(t) => &t.controls,
-            }
-        }
-        let outside: Vec<&Vec<ControlId>> = blocks.iter().enumerate().filter(|(k, _)| *k < sa.block || *k > last).map(|(_, b)| list_of(b)).collect();
-        let at = place(&lists, &outside)?;
+        let outside: Vec<&Vec<ControlId>> =
+            blocks.iter().enumerate().filter(|(k, _)| *k < sa.block || *k > last).map(|(_, b)| block_controls(b)).collect();
+        let at = nest(&lists, &outside)?;
         let i = ControlId::next();
         let mut with: Vec<Block> = blocks[sa.block..=last].to_vec();
         for (b, k) in with.iter_mut().zip(at) {
@@ -720,11 +823,12 @@ impl Editor {
             let size = (pw * 72.0 / if dx > 1.0 { dx } else { 96.0 }, ph * 72.0 / if dy > 1.0 { dy } else { 96.0 });
             let Where::Inline { para, first, last, .. } = w else { return Err(bad("id")) };
             let p = self.index.para(&self.doc, para).ok_or_else(no_element)?;
-            let image = p.inlines[first..last]
-                .iter()
-                .find_map(|i| if let Inline::Picture(pic, _) = i { pic.image } else { None })
-                .ok_or_else(|| bad("id"))?;
-            self.fill_images(&[image], data, size, label, false, fonts)
+            let image = p.inlines[first..last].iter().find_map(super::picture_controls::picture_image).ok_or_else(|| bad("id"))?;
+            if self.image_shown_elsewhere(image, para, first..last) {
+                self.fill_control_copy(c, para, first..last, image, data, size, label, fonts)
+            } else {
+                self.fill_images(&[image], data, size, label, false, fonts)
+            }
         } else {
             let given = f.text.clone().unwrap_or_default();
             let gallery = control.props.gallery();
@@ -758,15 +862,16 @@ impl Editor {
                     if plain && text.contains('\n') && !matches!(control.props.kind, ControlKind::PlainText { multi_line: true }) {
                         return Err(bad("text"));
                     }
+                    let own = control.props.showing_placeholder.then(|| self.control_own_run(c, *para, *first)).flatten();
                     let p = self.index.para(&self.doc, *para).ok_or_else(no_element)?;
-                    let run = p.inlines[*first..].iter().find_map(|i| i.run().cloned()).ok_or_else(no_element)?;
+                    let run = own.or_else(|| p.inlines[*first..].iter().find_map(|i| i.run().cloned())).ok_or_else(no_element)?;
                     // Empty control
                     let next = p.inlines.iter().skip(*last).position(|i| i.units() > 0).map_or(p.inlines.len(), |k| last + k);
                     let under =
                         if start == end { p.inlines[*last..next].iter().filter(|i| !matches!(i, Inline::Text(..))).count() as u32 } else { 0 };
                     let edges = super::step::Edges { under, ..Default::default() };
                     let mut tx = self.begin(label);
-                    let with = if text.is_empty() { Vec::new() } else { vec![Inline::Text(text.replace('\n', "\u{b}"), run)] };
+                    let with = crate::docx::binding::text_inlines(&crate::docx::xml::legal(&text), &run);
                     if self.step(&mut tx, Step::Text { para: *para, range: *start..*end, with, edges }).is_err() {
                         self.abort(tx);
                         return Err(no_element());
@@ -776,19 +881,21 @@ impl Editor {
                 }
                 (Where::Blocks { container, range }, f) if !plain => {
                     let blocks = self.index.blocks(&self.doc, *container).ok_or_else(no_element)?;
+                    // The control and the ones around it
                     let lead = match &blocks[range.start] {
-                        Block::Para(p) => p.controls.clone(),
-                        Block::Table(t) => t.controls.clone(),
+                        Block::Para(p) => &p.controls,
+                        Block::Table(t) => &t.controls,
                     };
+                    let lead: Vec<ControlId> = lead[..lead.iter().position(|x| *x == c).map_or(lead.len(), |k| k + 1)].to_vec();
+                    let mut tx = self.begin(label);
                     let mut new: Vec<Block> = match f {
                         Some(f) => {
                             let mut b: Vec<Block> = f.blocks.iter().map(super::clipboard::fresh).collect();
-                            for (id, k) in super::clipboard::adopt(&mut b, &f.controls) {
-                                self.pending_controls.push((id, k));
-                            }
+                            self.take_in(&mut tx, &mut b, &f, &mut super::clipboard::Taken::default());
                             b
                         }
                         None => {
+                            let blocks = self.index.blocks(&self.doc, *container).ok_or_else(no_element)?;
                             let first = blocks[range.clone()].iter().find_map(super::first_para_of).ok_or_else(no_element)?;
                             let mut p = self.split_template(first).ok_or_else(no_element)?;
                             p.controls.clear();
@@ -803,7 +910,6 @@ impl Editor {
                             Block::Table(t) => t.controls.splice(0..0, lead.iter().copied()),
                         };
                     }
-                    let mut tx = self.begin(label);
                     if self.step(&mut tx, Step::Blocks { container: *container, range: range.clone(), with: new }).is_err() {
                         self.abort(tx);
                         return Err(no_element());
@@ -843,7 +949,7 @@ impl Editor {
             blocks.pop();
         }
         let controls = super::clipboard::controls_of(&blocks, &self.doc);
-        Ok(super::clipboard::Fragment { id: 0, blocks, open_end: true, cells: None, controls, refs: Default::default() })
+        Ok(super::clipboard::Fragment { id: 0, blocks, open_end: true, controls, ..Default::default() })
     }
 
     fn fragment_of(&self, bytes: &[u8]) -> Result<super::clipboard::Fragment, Refused> {
@@ -852,19 +958,32 @@ impl Editor {
         if blocks.len() > 1 && matches!(blocks.last(), Some(Block::Para(p)) if super::step::para_len(p) == Unit(0)) {
             blocks.pop();
         }
-        let controls = super::clipboard::controls_of(&blocks, &doc);
-        Ok(super::clipboard::Fragment { id: 0, blocks, open_end: true, cells: None, controls, refs: Default::default() })
+        let refs = super::clipboard::refs_of(&doc, &blocks);
+        let mut controls = super::clipboard::controls_of(&blocks, &doc);
+        for body in refs.notes.iter().map(|n| &n.2).chain(refs.comments.iter().map(|c| &c.body)) {
+            controls.extend(super::clipboard::controls_of(body, &doc));
+        }
+        let mut f = super::clipboard::Fragment { id: 0, blocks, open_end: true, controls, refs, ..Default::default() };
+        f.origin = Some(super::import::Origin::of_document(doc, &mut f));
+        Ok(f)
     }
 
     // Locks
     pub(super) fn locked_edit(&self, a: &Position, b: &Position) -> bool {
+        self.locks(a, b, true)
+    }
+
+    fn locks(&self, a: &Position, b: &Position, deletes: bool) -> bool {
+        if self.doc.controls.values().any(|k| matches!(k.props.kind, ControlKind::Group)) && self.in_group(a, b, deletes) {
+            return true;
+        }
         let ends = |p: ParaId| self.index.para(&self.doc, p).map_or(&[][..], |q| &q.controls[..]);
         let (pa, pb) = (a.para_offset().map(|(p, _)| p), b.para_offset().map(|(p, _)| p));
         // `whole`: a paragraph between the ends, deleted with its block controls unless one also holds an end.
         let check_with = |para: ParaId, x: u32, y: u32, whole: bool| -> bool {
             let Some(p) = self.index.para(&self.doc, para) else { return false };
             let held = |c: &ControlId| [pa, pb].into_iter().flatten().any(|e| ends(e).contains(c));
-            let refused = |c: &ControlId, lock: crate::docx::Lock| if whole && !held(c) { !lock.deletable() } else { !lock.editable() };
+            let refused = |c: &ControlId, lock: crate::docx::Lock| if deletes && whole && !held(c) { !lock.deletable() } else { !lock.editable() };
             if p.controls.iter().any(|c| self.doc.controls.get(c).is_some_and(|k| refused(c, k.props.lock))) {
                 return true;
             }
@@ -880,7 +999,7 @@ impl Editor {
                             if let Some(lock) = self.doc.controls.get(c).map(|k| k.props.lock) {
                                 let refused = if x == y {
                                     (start <= x && x < end || start == end && x == start) && !lock.editable()
-                                } else if x <= start && end <= y {
+                                } else if deletes && x <= start && end <= y {
                                     !lock.deletable()
                                 } else {
                                     x < end && y > start && !lock.editable()
@@ -913,9 +1032,55 @@ impl Editor {
             || self.index.para_ids().filter(|&p| inside(p)).any(|p| check_with(p, 0, len(p), true))
     }
 
+    /// Whether `a..b` edits a group control's own content, which only the controls nested in it let change: a group
+    /// around an end, unless both ends are in the same control nested in it, or the edit deletes (`deletes`) the
+    /// group whole.
+    pub(super) fn in_group(&self, a: &Position, b: &Position, deletes: bool) -> bool {
+        let collapsed = a == b;
+        let is_group = |c: &ControlId| self.doc.controls.get(c).is_some_and(|k| matches!(k.props.kind, ControlKind::Group));
+        // The controls around `p`, innermost first, past the inline ones a caret is at the end of
+        let around = |p: &Position| -> Vec<(ControlId, Option<(Position, Position)>)> {
+            elements::context(&self.doc, &self.index, &Selection::Caret(*p))
+                .into_iter()
+                .filter_map(|(e, _)| {
+                    let ElementId::Control(c) = e else { return None };
+                    let at = self.locate(e);
+                    let range = at.as_ref().and_then(|w| self.element_range(w));
+                    let after = collapsed && matches!(at, Some(Where::Inline { .. })) && range.is_some_and(|(_, end)| end == *p);
+                    (!after).then_some((c, range))
+                })
+                .collect()
+        };
+        let whole = |r: &Option<(Position, Position)>| {
+            deletes && !collapsed && r.is_some_and(|(s, e)| self.index.cmp(a, &s).is_le() && self.index.cmp(&e, b).is_le())
+        };
+        let at_a = around(a);
+        let at_b = if collapsed { Vec::new() } else { around(b) };
+        let inner_b = if collapsed { at_a.first() } else { at_b.first() };
+        let nested = matches!((at_a.first(), inner_b), (Some((x, _)), Some((y, _))) if x == y && !is_group(x));
+        !nested && at_a.iter().chain(&at_b).any(|(c, r)| is_group(c) && !whole(r))
+    }
+
     pub(super) fn refuse_locked(&mut self) -> bool {
-        let Some((a, b)) = self.selection.ordered(&self.index) else { return false };
-        if self.locked_edit(&a, &b) {
+        self.refuse_lock(true)
+    }
+
+    /// [`Editor::refuse_locked`] for an edit that changes content in place and deletes nothing (formatting, case):
+    /// only a lock on the content refuses it.
+    pub(super) fn refuse_locked_content(&mut self) -> bool {
+        self.refuse_lock(false)
+    }
+
+    fn refuse_lock(&mut self, deletes: bool) -> bool {
+        let locked = match self.selection.ordered(&self.index) {
+            Some((a, b)) => self.locks(&a, &b, deletes),
+            // Cells, blocks and objects: each paragraph piece they cover
+            None => self.selected_ranges().into_iter().any(|(para, x, y)| {
+                let story = self.index.para_slot(para).map_or(StoryId::Body, |s| self.index.story(s.container));
+                self.locks(&Position::text(story, para, x), &Position::text(story, para, y), deletes)
+            }),
+        };
+        if locked {
             self.refused = Some("locked");
             self.events.push(super::input::Notice::Refused { sub_template: None, element: None });
             return true;
@@ -931,11 +1096,13 @@ impl Editor {
             .data_parts
             .iter()
             .enumerate()
-            .filter(|(_, p)| p.namespace.as_deref() == Some(ns.as_str()) && item.as_ref().is_none_or(|i| *i == p.item_id))
+            .filter(|(_, p)| {
+                p.namespace.as_deref() == Some(ns.as_str()) && item.as_ref().is_none_or(|i| crate::docx::binding::same_item(i, &p.item_id))
+            })
             .map(|(k, _)| k)
             .collect();
-        if item.is_none() && at.len() > 1 {
-            return Err(shape("ambiguous namespace"));
+        if at.len() > 1 {
+            return Err(shape(if item.is_none() { "ambiguous namespace" } else { "ambiguous item id" }));
         }
         Ok((ns, item, at))
     }
@@ -966,7 +1133,13 @@ impl Editor {
                 p
             }
             None => {
-                let item_id = item.unwrap_or_else(|| new_item_id(&xml, self.doc.data_parts.len()));
+                let item_id = match item {
+                    Some(i) => crate::docx::binding::guid(&i).ok_or_else(|| Error::invalid("an item id is a GUID"))?,
+                    None => new_item_id(&xml, self.doc.data_parts.len()),
+                };
+                if self.doc.data_parts.iter().any(|p| crate::docx::binding::same_item(&p.item_id, &item_id)) {
+                    return Err(Error::invalid("another part has the item id"));
+                }
                 crate::docx::DataPart { namespace: Some(ns), item_id, xml, src: None, changed: true }
             }
         };
@@ -1058,6 +1231,7 @@ impl Editor {
                 }
             }
         }
+        self.touched.note(fields.iter().map(|f| f.1));
         if !hints.is_empty() {
             self.relayout(hints);
         }
@@ -1205,7 +1379,7 @@ impl Editor {
         } else {
             let mut tx = self.begin("Update Fields");
             for (f, v) in &own {
-                self.set_result(&mut tx, *f, v);
+                self.set_result(&mut tx, *f, &Body::Text(v.clone()));
             }
             match self.commit(tx, None, fonts) {
                 o @ Outcome::Changed(_) => o,
@@ -1237,7 +1411,7 @@ impl Editor {
                 self.abort(tx);
                 return Outcome::Refused(no_element());
             };
-            self.set_result(&mut tx, f, &plain(&result.display));
+            self.set_result(&mut tx, f, &result.display);
         }
         if tx.undo.is_empty() {
             self.abort(tx);
@@ -1247,7 +1421,7 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
-    pub(super) fn set_result(&mut self, tx: &mut super::Tx, f: FieldId, display: &str) -> bool {
+    pub(super) fn set_result(&mut self, tx: &mut super::Tx, f: FieldId, display: &Body) -> bool {
         let Some(Where::Inline { para, first, last, .. }) = self.locate(ElementId::Field(f)) else { return false };
         let Some(p) = self.index.para(&self.doc, para).cloned() else { return false };
         let Some(s) = crate::docx::fields::span_at(&p.inlines, first).filter(|s| s.end == last) else { return false };
@@ -1260,7 +1434,7 @@ impl Editor {
         else {
             return false;
         };
-        let text: Vec<Inline> = if display.is_empty() { Vec::new() } else { vec![Inline::Text(display.into(), run.clone())] };
+        let text = self.result_inlines(display, para, at(first), &run);
         let step = match s.sep {
             Some(sep) => Step::Text { para, range: Unit(at(sep).0 + 1)..at(s.end), with: text, edges: Default::default() },
             None => {
@@ -1320,13 +1494,9 @@ impl Editor {
             let Some(Where::Inline { first, last, start, end, .. }) = self.locate(ElementId::Field(f)) else { continue };
             let Some(p) = self.index.para(&self.doc, para).cloned() else { continue };
             let Some(s) = crate::docx::fields::span_at(&p.inlines, first).filter(|s| s.end == last) else { continue };
-            let text = crate::docx::fields::result_text(&p.inlines, s);
-            let run =
-                s.sep.and_then(|sep| p.inlines[sep + 1..s.end].iter().find_map(|i| i.run().cloned())).or_else(|| p.inlines[first].run().cloned());
-            let with = match run {
-                Some(r) if !text.is_empty() => vec![Inline::Text(text, r)],
-                _ => Vec::new(),
-            };
+            let spans = crate::docx::fields::spans(&p.inlines);
+            let mut with = Vec::new();
+            unlinked(&p.inlines, &spans, s, 0, &mut with);
             let _ = self.step(&mut tx, Step::Text { para, range: start..end, with, edges: Default::default() });
         }
         if tx.undo.is_empty() {
@@ -1432,6 +1602,7 @@ impl Editor {
                 self.expansions_stale = true;
             }
             hints.push(super::step::para_hint(&self.index, para, 0));
+            self.touched.note(std::iter::once(para));
         }
         if !hints.is_empty() {
             self.relayout(hints);
@@ -1469,15 +1640,62 @@ impl Editor {
     }
 
     pub(super) fn set_field(&mut self, f: SetField, fonts: &Fonts) -> Outcome {
-        let display = f.display.as_ref().map(plain);
-        outcome(self.field_set(&f.id, f.code.as_deref(), display.as_deref(), fonts))
+        outcome(self.field_set(&f.id, f.code.as_deref(), f.display.as_ref(), fonts))
+    }
+
+    /// A field result in `run`'s formatting, at unit `at` of `para`: lines and a rich display's paragraphs end in line
+    /// breaks, and its runs take their bold, italic, underline, strikethrough and links over `run`.
+    fn result_inlines(&self, display: &Body, para: ParaId, at: Unit, run: &crate::docx::Run) -> Vec<Inline> {
+        let rich = match display {
+            Body::Text(t) => return super::comments::rich::text_inlines(t, run),
+            Body::Rich(r) => r,
+        };
+        let res = self.doc.resolver.clone();
+        let cx = self.cx();
+        let base = res.as_ref().and_then(|res| self.run_base(para, at, res, &cx));
+        let w = &cx.w;
+        let mut out = Vec::new();
+        for (k, p) in rich.paragraphs.iter().enumerate() {
+            if k > 0 {
+                out.push(Inline::Break(crate::docx::BreakKind::Line, run.clone()));
+            }
+            for r in p.runs.iter().filter(|r| !r.text.is_empty()) {
+                let flags = [(r.bold, "b"), (r.italic, "i"), (r.underline, "u"), (r.strikethrough, "strike")];
+                let formatted = match (&res, &base) {
+                    (Some(res), Some(base)) if flags.iter().any(|(on, _)| on.is_some()) => {
+                        let mut rp = crate::docx::write::props::Props::parse(run.direct.0.as_deref(), "rPr", &cx);
+                        for (on, name) in flags {
+                            let Some(on) = on else { continue };
+                            let xml = match (name, on) {
+                                ("u", true) => format!("<{w}u {w}val=\"single\"/>"),
+                                ("u", false) => format!("<{w}u {w}val=\"none\"/>"),
+                                (_, true) => format!("<{w}{name}/>"),
+                                (_, false) => format!("<{w}{name} {w}val=\"0\"/>"),
+                            };
+                            rp.set(name, xml);
+                        }
+                        res.run_from_xml(base, rp.xml().as_deref(), &cx)
+                    }
+                    _ => run.clone(),
+                };
+                // A link to follow; any other address shows as text.
+                match r.link.as_deref().and_then(super::html::web_address) {
+                    Some(address) => {
+                        let code = crate::docx::fields::link_code(&address);
+                        out.extend(crate::docx::fields::field_inlines(&code, &r.text, &formatted));
+                    }
+                    None => out.extend(super::comments::rich::text_inlines(&r.text, &formatted)),
+                }
+            }
+        }
+        out
     }
 
     pub(super) fn field_set(
         &mut self,
         id: &crate::api::value::ElementId,
         code: Option<&str>,
-        display: Option<&str>,
+        display: Option<&Body>,
         fonts: &Fonts,
     ) -> Result<Outcome, Refused> {
         let (e, w) = self.element(id)?;
@@ -1494,7 +1712,7 @@ impl Editor {
         let mut tx = self.begin("Change Field");
         if let Some(d) = display {
             let run = s.sep.and_then(|sep| run_in(sep + 1, s.end)).unwrap_or_else(|| begin_run.clone());
-            let text: Vec<Inline> = if d.is_empty() { Vec::new() } else { vec![Inline::Text(d.into(), run)] };
+            let text = self.result_inlines(d, para, at(first), &run);
             let step = match s.sep {
                 Some(sep) => Step::Text { para, range: Unit(at(sep).0 + 1)..at(s.end), with: text, edges: Default::default() },
                 None => {
@@ -1550,6 +1768,7 @@ impl Editor {
             let want = if self.application_field(&code) { None } else { code.kind() };
             if let Inline::FieldBegin { kind, .. } = &mut inlines[s.begin]
                 && *kind != want
+                && !kind.as_ref().is_some_and(FieldKind::is_not_from_code)
             {
                 *kind = want;
                 changed = true;
@@ -1572,7 +1791,13 @@ impl Editor {
         {
             return Err(locked());
         }
+        // Placeholder text goes with its control
+        let keep = keep && !matches!(e, ElementId::Control(c) if self.doc.controls.get(&c).is_some_and(|k| k.props.showing_placeholder));
         let mut tx = self.begin(if matches!(e, ElementId::Field(_)) { "Remove Field" } else { "Remove Content Control" });
+        // Control removal keeping its contents: untracked
+        if keep && matches!(e, ElementId::Control(_)) {
+            tx.tracked = false;
+        }
         let ok = match (e, w) {
             (ElementId::Field(_), Where::Inline { para, start, end, .. }) => {
                 self.step(&mut tx, Step::Text { para, range: start..end, with: Vec::new(), edges: Default::default() }).is_ok()
@@ -1639,6 +1864,9 @@ impl Editor {
                     let last =
                         blocks.iter().rev().find_map(|b| if let Block::Para(p) = b { Some(ParaId(p.id)) } else { None }).ok_or_else(no_element)?;
                     let mut p = self.split_template(last).ok_or_else(no_element)?;
+                    if let Some(k) = p.controls.iter().position(|x| *x == c) {
+                        p.controls.truncate(k);
+                    }
                     p.controls.retain(|x| !gone.contains(x));
                     vec![Block::Para(p)]
                 } else {
@@ -1781,15 +2009,16 @@ impl Editor {
             ControlKind::Picture => {
                 props.showing_placeholder = true;
                 self.pending_controls.push((id, Control::new(props)));
-                let image = Some(self.pending_image(placeholder_image.unwrap_or_else(|| PICTURE_PLACEHOLDER.to_vec())));
+                let image = self.pending_image(placeholder_image.unwrap_or_else(|| PICTURE_PLACEHOLDER.to_vec()));
+                let emu = crate::drawing::units::Emu::from_pt;
                 let picture = crate::docx::Picture {
                     w: size.0,
                     h: size.1,
-                    image,
+                    image: Some(image),
                     alt: "".into(),
                     lock_aspect: true,
                     effect: [0.0; 4],
-                    shape: None,
+                    shape: Some(Box::new(crate::drawing::Shape::picture(image, emu(size.0), emu(size.1)))),
                     text: None,
                     src: Default::default(),
                 };
@@ -1826,13 +2055,46 @@ impl Editor {
     }
 
     fn control_wrap(&mut self, id: ControlId, props: ControlProps, fonts: &Fonts) -> Result<Outcome, Refused> {
+        // Selected cells: their rows, or the whole table
+        if let Selection::Cells { table, anchor, focus, .. } = self.selection {
+            let t = self.index.table(&self.doc, table).ok_or_else(no_element)?;
+            let last = t.rows.len().saturating_sub(1);
+            let (r0, r1) = (anchor.row.min(focus.row).min(last), anchor.row.max(focus.row).min(last));
+            let whole = r0 == 0 && r1 == last;
+            let at = if whole {
+                Vec::new()
+            } else {
+                let lists: Vec<&Vec<ControlId>> = t.rows[r0..=r1].iter().map(|r| &r.controls).collect();
+                let outside: Vec<&Vec<ControlId>> = t.rows[..r0].iter().chain(&t.rows[r1 + 1..]).map(|r| &r.controls).collect();
+                nest(&lists, &outside)?
+            };
+            let mut tx = self.begin("Insert Content Control");
+            self.pending_controls.push((id, Control::new(props)));
+            let ok = if whole {
+                let slot = self.index.table_slot(table).ok_or_else(no_element)?;
+                let mut with = t.clone();
+                with.controls.push(id);
+                self.step(&mut tx, Step::Blocks { container: slot.container, range: slot.block..slot.block + 1, with: vec![Block::Table(with)] })
+                    .is_ok()
+            } else {
+                let mut with = t.rows[r0..=r1].to_vec();
+                with.iter_mut().zip(at).for_each(|(r, k)| r.controls.insert(k, id));
+                tx.stale_tables.push(table);
+                self.step(&mut tx, Step::Rows { table, range: r0..r1 + 1, with, grid: None }).is_ok()
+            };
+            if !ok {
+                self.abort(tx);
+                return Err(bad("target"));
+            }
+            return Ok(self.commit(tx, None, fonts));
+        }
         let (a, b) = self.selection.ordered(&self.index).ok_or_else(|| bad("target"))?;
         if a.same_place(&b) {
             return Err(bad("target"));
         }
-        let ((pa, oa), (pb, ob)) =
-            (a.para_offset().ok_or_else(|| shape("partial paragraph"))?, b.para_offset().ok_or_else(|| shape("partial paragraph"))?);
-        if pa == pb {
+        if let (Some((pa, oa)), Some((pb, ob))) = (a.para_offset(), b.para_offset())
+            && pa == pb
+        {
             let p = self.index.para(&self.doc, pa).ok_or_else(no_element)?;
             let mut inlines = split_at(&p.inlines, &[oa.0, ob.0]);
             let index_at = |inlines: &[Inline], u: u32, after: bool| {
@@ -1846,7 +2108,7 @@ impl Editor {
                 }
                 inlines.len()
             };
-            let (i, j) = (index_at(&inlines, oa.0, true), index_at(&inlines, ob.0, false));
+            let (i, j) = around_controls(&inlines, index_at(&inlines, oa.0, true), index_at(&inlines, ob.0, false));
             let mut open: Vec<String> = Vec::new();
             for x in &inlines[i..j.max(i)] {
                 match x {
@@ -1875,20 +2137,41 @@ impl Editor {
             }
             return Ok(self.commit(tx, None, fonts));
         }
-        let (sa, sb) = (self.index.para_slot(pa).ok_or_else(no_element)?, self.index.para_slot(pb).ok_or_else(no_element)?);
-        let end_len = self.index.para(&self.doc, pb).map_or(Unit(0), super::step::para_len);
-        if oa != Unit(0) || sa.container != sb.container || (ob != Unit(0) && ob != end_len) {
+        // Each end's block in the container both are in: its paragraph, or the table it is in (wrapped whole).
+        let (ca, cb) = (self.index.chain_of(&a), self.index.chain_of(&b));
+        let k = ca.iter().zip(&cb).take_while(|(x, y)| x.table == y.table && x.row == y.row && x.cell == y.cell).count();
+        let top = |e: &Editor, p: &Position, chain: &[super::index::Level]| -> Option<(super::index::Slot, bool)> {
+            match chain.get(k) {
+                Some(l) => Some((e.index.table_slot(l.table)?, true)),
+                None => Some((e.index.para_slot(p.para_offset()?.0)?, false)),
+            }
+        };
+        let ((sa, a_table), (sb, b_table)) = (top(self, &a, &ca).ok_or_else(no_element)?, top(self, &b, &cb).ok_or_else(no_element)?);
+        let starts = a_table || a.para_offset().is_some_and(|(_, u)| u == Unit(0));
+        let ends = |e: &Editor| match b.para_offset() {
+            Some((pb, ob)) if !b_table => e.index.para(&e.doc, pb).is_some_and(|q| ob == Unit(0) || ob == super::step::para_len(q)),
+            _ => true,
+        };
+        if !starts || sa.container != sb.container || !ends(self) {
             return Err(shape("partial paragraph"));
         }
-        let last = if ob == Unit(0) { sb.block } else { sb.block + 1 };
+        let last = if !b_table && b.para_offset().is_some_and(|(_, u)| u == Unit(0)) { sb.block } else { sb.block + 1 };
+        if last <= sa.block {
+            return Err(bad("target"));
+        }
         let blocks = self.index.blocks(&self.doc, sa.container).ok_or_else(no_element)?;
+        let lists: Vec<&Vec<ControlId>> = blocks[sa.block..last].iter().map(block_controls).collect();
+        let outside: Vec<&Vec<ControlId>> =
+            blocks.iter().enumerate().filter(|(k, _)| *k < sa.block || *k >= last).map(|(_, b)| block_controls(b)).collect();
+        let at = nest(&lists, &outside)?;
         let with: Vec<Block> = blocks[sa.block..last]
             .iter()
-            .map(|b| {
+            .zip(at)
+            .map(|(b, k)| {
                 let mut b = b.clone();
                 match &mut b {
-                    Block::Para(p) => p.controls.push(id),
-                    Block::Table(t) => t.controls.push(id),
+                    Block::Para(p) => p.controls.insert(k, id),
+                    Block::Table(t) => t.controls.insert(k, id),
                 }
                 b
             })
@@ -1916,6 +2199,8 @@ impl Editor {
         let prefix = self.cx().w;
         let p = &mut control.props;
         let mut resize = None;
+        // A checkbox's face for its state in its new symbols.
+        let mut face: Option<(char, String)> = None;
         if set.tag.is_some() {
             p.tag = set.tag;
         }
@@ -1942,9 +2227,33 @@ impl Editor {
                     if o.locale.is_some() {
                         *lid = o.locale.clone();
                     }
+                    // Only the format and locale of the `w:date` read change.
+                    if let Some(x) = &mut p.kind_xml {
+                        if let Some(f) = &o.format {
+                            *x = with_child_val(x, "dateFormat", f, &prefix, None);
+                        }
+                        if let Some(l) = &o.locale {
+                            *x = with_child_val(x, "lid", l, &prefix, Some("dateFormat"));
+                        }
+                    }
+                }
+                (ControlKind::DropDown, ControlOptions::List(l)) => {
+                    let esc = crate::docx::write::props::esc;
+                    let items: String = l
+                        .items
+                        .iter()
+                        .map(|i| format!("<{prefix}listItem {prefix}displayText=\"{}\" {prefix}value=\"{}\"/>", esc(&i.text), esc(&i.value)))
+                        .collect();
+                    // The element as read (a drop-down list or a combo box, its last value) with the new entries.
+                    let was = p.kind_xml.clone().unwrap_or_else(|| format!("<{prefix}dropDownList/>"));
+                    let end = crate::docx::binding::tag_end(&was).ok_or_else(|| Error::invalid("a drop-down without its element"))?;
+                    let head = was[..end].trim_end_matches('/');
+                    let name = head.get(1..).and_then(|h| h.split(|c: char| c.is_whitespace() || c == '/').next()).unwrap_or_default();
+                    p.kind_xml = Some(format!("{head}>{items}</{name}>"));
                 }
                 (ControlKind::Checkbox { checked, unchecked }, ControlOptions::Checkbox(o)) => {
                     if o.checked_symbol.is_some() || o.unchecked_symbol.is_some() {
+                        let (was_checked, was_unchecked) = (*checked, *unchecked);
                         let font = |x: &str, name: &str| {
                             let at = x.find(&format!("{name} "))?;
                             let f = x[at..].find("font=\"")? + at + 6;
@@ -1970,7 +2279,18 @@ impl Editor {
                             .map(|s| s.font.clone())
                             .or_else(|| font(&was, "uncheckedState"))
                             .unwrap_or_else(|| "MS Gothic".into());
-                        let on = crate::docx::xml::checkbox_checked(&was).unwrap_or(false);
+                        // The box's state is its face: checked when it shows the checked symbol it had (its XML's
+                        // when both symbols were one).
+                        let on = match &w {
+                            Where::Sym { para, at, .. } if was_checked != was_unchecked => self
+                                .index
+                                .para(&self.doc, *para)
+                                .and_then(|q| super::stories::inline_at(q, *at))
+                                .and_then(|i| if let Inline::Sym { ch, .. } = i { Some(*ch == was_checked) } else { None }),
+                            _ => None,
+                        }
+                        .unwrap_or_else(|| crate::docx::xml::checkbox_checked(&was).unwrap_or(false));
+                        face = Some(if on { (*checked, f_on.clone()) } else { (*unchecked, f_off.clone()) });
                         let w14 = crate::docx::xml::W14;
                         let esc = crate::docx::write::props::esc;
                         p.kind_xml = Some(format!(
@@ -2001,7 +2321,14 @@ impl Editor {
                 (ControlKind::Picture, ControlOptions::Picture(o)) => resize = Some(o.clone()),
                 _ => return Err(Error::invalid("options for another kind of control")),
             }
-            if !matches!(p.kind, ControlKind::DropDown | ControlKind::Checkbox { .. } | ControlKind::Picture | ControlKind::RepeatingSection) {
+            if !matches!(
+                p.kind,
+                ControlKind::DropDown
+                    | ControlKind::Checkbox { .. }
+                    | ControlKind::Picture
+                    | ControlKind::RepeatingSection
+                    | ControlKind::Date { .. }
+            ) {
                 p.kind_xml = None;
             }
         }
@@ -2074,7 +2401,7 @@ impl Editor {
             }
             _ => return Err(Error::invalid("no picture in the control")),
         };
-        let mut tx = self.begin("Change Content Control");
+        let mut tx = self.begin(CHANGE_CONTROL);
         if self.step(&mut tx, Step::Control { id: c, control: Some(control) }).is_err() {
             self.abort(tx);
             return Err(no_element());
@@ -2084,6 +2411,17 @@ impl Editor {
         {
             self.abort(tx);
             return Err(no_element());
+        }
+        if let (Some((ch, font)), Where::Sym { para, at, .. }) = (face, &w)
+            && let Some(Inline::Sym { ch: was, font: was_font, run, control }) =
+                self.index.para(&self.doc, *para).and_then(|q| super::stories::inline_at(q, *at)).cloned()
+            && (was != ch || was_font != font)
+        {
+            let with = vec![Inline::Sym { ch, font, run, control }];
+            if self.step(&mut tx, Step::Text { para: *para, range: *at..Unit(at.0 + 1), with, edges: Default::default() }).is_err() {
+                self.abort(tx);
+                return Err(no_element());
+            }
         }
         if let (Some(t), true, Where::Inline { para, start, end, first, .. }) = (placeholder, showing, w) {
             let run = self.index.para(&self.doc, para).and_then(|p| p.inlines[first..].iter().find_map(|i| i.run().cloned()));
@@ -2114,6 +2452,173 @@ impl Editor {
     }
 }
 
+/// A wrap's inline range `i..j` widened over the zero-width control markers at its edges whose partners are in it (or
+/// at its other edge): a selection starting or ending at an inline control's edge, or of its whole content, holds
+/// that control.
+fn around_controls(inlines: &[Inline], mut i: usize, mut j: usize) -> (usize, usize) {
+    let partner = |k: usize| -> Option<usize> {
+        match inlines[k] {
+            Inline::ControlStart(c) => inlines[k..].iter().position(|x| matches!(x, Inline::ControlEnd(d) if *d == c)).map(|e| k + e),
+            Inline::ControlEnd(c) => inlines[..k].iter().rposition(|x| matches!(x, Inline::ControlStart(d) if *d == c)),
+            _ => None,
+        }
+    };
+    loop {
+        let back = i.checked_sub(1).filter(|&k| inlines[k].units() == 0 && partner(k).is_some_and(|e| e > k && e <= j.max(i)));
+        let ahead = (j < inlines.len() && inlines[j].units() == 0).then_some(j).filter(|&k| partner(k).is_some_and(|s| s < k && s >= i));
+        match (back, ahead) {
+            (Some(k), _) => i = k,
+            (None, Some(k)) => j = k + 1,
+            (None, None) => return (i, j),
+        }
+    }
+}
+
+/// Element `xml` with its child `local`'s `val` set to `val`: a child it doesn't have is added (after child `after`,
+/// else first), written with prefix `w`.
+fn with_child_val(xml: &str, local: &str, val: &str, w: &str, after: Option<&str>) -> String {
+    let esc = crate::docx::write::props::esc;
+    let find = |name: &str| {
+        let mut from = 0;
+        while let Some(k) = xml[from..].find('<').map(|k| from + k) {
+            let n = xml[k + 1..].split(|c: char| c.is_whitespace() || c == '/' || c == '>').next().unwrap_or_default();
+            if n.rsplit(':').next() == Some(name) && !n.starts_with('/') {
+                return Some((k, k + crate::docx::binding::tag_end(&xml[k..])? + 1));
+            }
+            from = k + 1;
+        }
+        None
+    };
+    let name_end = |tag: &str| tag.find(|c: char| c.is_whitespace() || c == '/' || c == '>').unwrap_or(tag.len());
+    if let Some((start, end)) = find(local) {
+        let tag = &xml[start..end];
+        let new = match attr_value(tag, "val") {
+            Some(v) => format!("{}{}{}", &tag[..v.start], esc(val), &tag[v.end..]),
+            None => {
+                let at = name_end(tag);
+                format!("{} {w}val=\"{}\"{}", &tag[..at], esc(val), &tag[at..])
+            }
+        };
+        return format!("{}{new}{}", &xml[..start], &xml[end..]);
+    }
+    let child = format!("<{w}{local} {w}val=\"{}\"/>", esc(val));
+    if let Some((_, at)) = after.and_then(find) {
+        return format!("{}{child}{}", &xml[..at], &xml[at..]);
+    }
+    let Some(at) = crate::docx::binding::tag_end(xml).map(|e| e + 1) else { return format!("{xml}{child}") };
+    // A root without children opens for the child
+    match xml[..at].strip_suffix("/>") {
+        Some(head) => {
+            let name = &xml[1..name_end(xml)];
+            format!("{}>{child}</{name}>{}", head.trim_end(), &xml[at..])
+        }
+        None => format!("{}{child}{}", &xml[..at], &xml[at..]),
+    }
+}
+
+/// Where the value of `tag`'s attribute of local name `local` is (`w:val = "x"` as well as `w:val="x"`).
+fn attr_value(tag: &str, local: &str) -> Option<std::ops::Range<usize>> {
+    let b = tag.as_bytes();
+    let space = |i: usize| b.get(i).is_some_and(u8::is_ascii_whitespace);
+    let mut i = tag.find(|c: char| c.is_whitespace() || c == '/' || c == '>')?;
+    loop {
+        while space(i) {
+            i += 1;
+        }
+        let start = i;
+        while i < b.len() && !b[i].is_ascii_whitespace() && !matches!(b[i], b'=' | b'/' | b'>') {
+            i += 1;
+        }
+        let name = &tag[start..i];
+        while space(i) {
+            i += 1;
+        }
+        if name.is_empty() || b.get(i) != Some(&b'=') {
+            return None;
+        }
+        i += 1;
+        while space(i) {
+            i += 1;
+        }
+        let q = *b.get(i).filter(|q| matches!(q, b'"' | b'\''))?;
+        let from = i + 1;
+        let to = from + tag[from..].find(char::from(q))?;
+        if name.rsplit(':').next() == Some(local) {
+            return Some(from..to);
+        }
+        i = to + 1;
+    }
+}
+
+/// A block's block controls, outermost first.
+fn block_controls(b: &Block) -> &Vec<ControlId> {
+    match b {
+        Block::Para(p) => &p.controls,
+        Block::Table(t) => &t.controls,
+    }
+}
+
+/// Where a control wrapping blocks (or rows) whose controls are `lists` goes in each list: inside the controls all of
+/// them are in, outside the others. Refused when a control holds only some of them and blocks outside them too: the
+/// new control would cross its boundary.
+fn nest(lists: &[&Vec<ControlId>], outside: &[&Vec<ControlId>]) -> Result<Vec<usize>, Refused> {
+    let mut out = Vec::with_capacity(lists.len());
+    let all = |x: &ControlId| lists.iter().all(|l| l.contains(x));
+    if lists.iter().flat_map(|l| l.iter()).any(|x| !all(x) && outside.iter().any(|l| l.contains(x))) {
+        return Err(shape("region boundary"));
+    }
+    for l in lists {
+        let mut k = 0;
+        for (i, x) in l.iter().enumerate() {
+            if all(x) {
+                if i != k {
+                    return Err(shape("region boundary"));
+                }
+                k += 1;
+            }
+        }
+        out.push(k);
+    }
+    Ok(out)
+}
+
+/// How many fields deep unlinking goes into results: below that, a field's result is its text. A document nests
+/// fields with flat begin and end marks, so the depth is the file's to choose.
+const MAX_UNLINK_DEPTH: usize = 32;
+
+/// A field's result as content of its own, as unlinking leaves it: its result's inlines (pictures, breaks and
+/// formatting kept), the fields in it unlinked too; an evaluated field that shows a value (a page number, a date) as
+/// that value.
+fn unlinked(inlines: &[Inline], spans: &[crate::docx::fields::FieldSpan], s: crate::docx::fields::FieldSpan, depth: usize, out: &mut Vec<Inline>) {
+    let Inline::FieldBegin { kind, value, run, .. } = &inlines[s.begin] else { return };
+    let result_run = || s.sep.and_then(|sep| inlines[sep + 1..s.end].iter().find_map(|i| i.run().cloned())).unwrap_or_else(|| run.clone());
+    if let (Some(_), Some(v)) = (kind, value) {
+        if !v.is_empty() {
+            out.push(Inline::Text(v.clone(), result_run()));
+        }
+        return;
+    }
+    let Some(sep) = s.sep else { return };
+    if depth >= MAX_UNLINK_DEPTH {
+        let text = crate::docx::fields::result_text(inlines, s);
+        if !text.is_empty() {
+            out.push(Inline::Text(text, result_run()));
+        }
+        return;
+    }
+    let mut k = sep + 1;
+    let from = spans.partition_point(|t| t.begin <= sep);
+    for t in spans[from..].iter().take_while(|t| t.begin < s.end) {
+        if t.begin < k || t.end > s.end {
+            continue;
+        }
+        out.extend_from_slice(&inlines[k..t.begin]);
+        unlinked(inlines, spans, *t, depth + 1, out);
+        k = t.end + 1;
+    }
+    out.extend_from_slice(&inlines[k..s.end]);
+}
+
 /// A placeholder picture's bytes, when they are the PNG, JPEG, GIF, BMP or SVG its MIME type says.
 fn placeholder_data(p: &crate::api::value::PlaceholderImage) -> Result<Vec<u8>, Refused> {
     let want = match p.mime.trim().to_ascii_lowercase().as_str() {
@@ -2140,9 +2645,15 @@ fn picture_size(o: &crate::api::value::PictureOptions, was: (f64, f64)) -> Resul
     Ok((side(o.width, was.0)?, side(o.height, was.1)?))
 }
 
+/// Changing a control's properties: its placeholder's text changes with them, which isn't an edit of its content.
+const CHANGE_CONTROL: &str = "Change Content Control";
+
 impl Editor {
     /// Temporary controls whose content the transaction edited go, leaving their content.
     pub(super) fn drop_temporary_controls(&mut self, tx: &mut super::Tx) {
+        if tx.label == CHANGE_CONTROL {
+            return;
+        }
         let temporary = |c: &ControlId| self.doc.controls.get(c).is_some_and(|k| k.props.temporary());
         let mut gone: Vec<ControlId> = Vec::new();
         for s in &tx.undo {
@@ -2230,4 +2741,32 @@ fn new_item_id(xml: &str, n: usize) -> String {
     (a, "second").hash(&mut h);
     let b = h.finish();
     format!("{{{:08X}-{:04X}-4{:03X}-{:04X}-{:012X}}}", a >> 32, (a >> 16) & 0xFFFF, a & 0xFFF, 0x8000 | (b >> 48) & 0x3FFF, b & 0xFFFF_FFFF_FFFF)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::with_child_val;
+
+    #[test]
+    fn a_child_value_is_set_where_its_attribute_is() {
+        let x = r#"<w:date w:fullDate="2026-01-01T00:00:00Z"><w:dateFormat w:val = "M/d/yyyy"/></w:date>"#;
+        assert_eq!(
+            with_child_val(x, "dateFormat", "d MMM", "w:", None),
+            r#"<w:date w:fullDate="2026-01-01T00:00:00Z"><w:dateFormat w:val = "d MMM"/></w:date>"#
+        );
+        let x = r#"<w:date><w:dateFormat w:x="1"/></w:date>"#;
+        assert_eq!(with_child_val(x, "dateFormat", "d", "w:", None), r#"<w:date><w:dateFormat w:val="d" w:x="1"/></w:date>"#);
+    }
+
+    #[test]
+    fn a_child_goes_inside_a_root_without_children() {
+        let x = r#"<w:date w:fullDate="2026-01-01T00:00:00Z"/>"#;
+        let with = with_child_val(x, "dateFormat", "d", "w:", None);
+        assert_eq!(with, r#"<w:date w:fullDate="2026-01-01T00:00:00Z"><w:dateFormat w:val="d"/></w:date>"#);
+        assert_eq!(
+            with_child_val(&with, "lid", "en-GB", "w:", Some("dateFormat")),
+            r#"<w:date w:fullDate="2026-01-01T00:00:00Z"><w:dateFormat w:val="d"/><w:lid w:val="en-GB"/></w:date>"#
+        );
+        assert_eq!(with_child_val("<w:date/>", "lid", "en-GB", "w:", Some("dateFormat")), r#"<w:date><w:lid w:val="en-GB"/></w:date>"#);
+    }
 }

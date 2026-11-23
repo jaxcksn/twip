@@ -1,0 +1,35 @@
+{
+  "name": "table-convert",
+  "steps": [
+    { "op": "command", "command": { "type": "insertText", "value": "a" } },
+    { "op": "command", "command": { "type": "insertTab" } },
+    { "op": "command", "command": { "type": "insertText", "value": "b" } },
+    { "op": "command", "command": { "type": "insertParagraph" } },
+    { "op": "command", "command": { "type": "insertText", "value": "c" } },
+    { "op": "command", "command": { "type": "selectAll" } },
+    { "op": "command", "command": { "type": "convertTextToTable", "separator": "other" } },
+    { "op": "expectError", "code": "invalid-argument" },
+    { "op": "expectState", "match": { "commands": { "convertTableToText": { "enabled": false } } } },
+    { "op": "command", "command": { "type": "convertTextToTable", "separator": "tabs" } },
+    { "op": "expectState", "match": {
+      "history": { "undoLabel": "Convert Text to Table" },
+      "selection": { "table": { "rows": 2, "columns": 2, "row": 0, "column": 0 } },
+      "commands": { "convertTableToText": { "enabled": true } }
+    } },
+    { "op": "call", "method": "find.next", "args": [{ "text": "a" }], "result": { "found": true } },
+    { "op": "expectState", "match": { "selection": { "table": { "row": 0, "column": 0 } } } },
+    { "op": "call", "method": "find.next", "args": [{ "text": "b" }], "result": { "found": true } },
+    { "op": "expectState", "match": { "selection": { "table": { "row": 0, "column": 1 } } } },
+    { "op": "export", "format": "docx" },
+    { "op": "reopen" },
+    { "op": "call", "method": "find.next", "args": [{ "text": "c" }], "result": { "found": true } },
+    { "op": "expectState", "match": { "selection": { "table": { "rows": 2, "columns": 2, "row": 1, "column": 0 } } } },
+    { "op": "command", "command": { "type": "convertTableToText", "separator": "other", "character": ";" } },
+    { "op": "expectState", "match": { "history": { "undoLabel": "Convert Table to Text" }, "selection": { "table": { "$exact": null } } } },
+    { "op": "call", "method": "find.next", "args": [{ "text": "a;b" }], "result": { "found": true } },
+    { "op": "call", "method": "find.next", "args": [{ "text": "c" }], "result": { "found": true } },
+    { "op": "expectState", "match": { "selection": { "table": { "$exact": null } } } },
+    { "op": "command", "command": { "type": "undo" } },
+    { "op": "expectState", "match": { "selection": { "table": { "rows": 2, "columns": 2 } } } }
+  ]
+}

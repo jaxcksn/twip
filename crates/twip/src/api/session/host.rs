@@ -479,6 +479,8 @@ impl Presentation {
         self.graphics.clear_images();
         self.graphics.retained.clear();
         self.sink.a11y = None;
+        self.leaders.clear();
+        self.ruler_hover = None;
         if self.sink.deliver.is_some() && !self.sink.a11y_armed {
             self.sink.a11y_armed = true;
             self.timers.push((A11Y_TIMER, A11Y_MS));
@@ -573,6 +575,9 @@ pub(super) fn fill_state(s: &Session, state: &mut crate::api::state::State) {
         state.commands.insert(C::SetRulerTabType, CommandState { enabled: true, checked: None, value: Some(CommandValue::TabType(p.tab_selector)) });
         state.commands.insert(C::ShowTabStop, CommandState { enabled: stops, checked: None, value: None });
         state.commands.insert(C::ClosePopover, CommandState { enabled: true, checked: None, value: None });
+        if let Some(paste) = state.commands.get_mut(&C::Paste) {
+            paste.enabled &= s.editor.clipboard().is_some() || s.shared.clipboard.borrow().is_some();
+        }
         let corrected = s.editor.correction().is_some();
         for id in [C::RevertAutoCorrect, C::NeverAutoCorrect, C::ShowAutoCorrectOptions] {
             state.commands.insert(id, CommandState { enabled: corrected, checked: None, value: None });
@@ -618,6 +623,18 @@ pub(super) fn fill_state(s: &Session, state: &mut crate::api::state::State) {
 }
 
 impl Session {
+    /// Hands the editor the part of the document the viewport shows, in document points, and the zoom.
+    pub(super) fn sync_viewport(&mut self) {
+        let p = &self.presentation;
+        let k = p.px_per_pt();
+        let mut v = crate::editing::input::Viewport { left: p.scroll.0 / k, top: p.scroll.1 / k, zoom: p.zoom, dpr: p.dpr, ..self.editor.viewport() };
+        // A host that hasn't sized the viewport keeps the editor's own size.
+        if p.width > 0.0 && p.height > 0.0 {
+            (v.width, v.height) = (p.width / k, p.height / k);
+        }
+        self.editor.set_viewport(v);
+    }
+
     /// Hands the editor the view options its drag feedback follows: the detail level, the object grid and the unit.
     pub(super) fn sync_view_settings(&mut self) {
         let p = &self.presentation;
@@ -815,9 +832,12 @@ impl Session {
     }
 
     /// Hands the attached host what changed for it: the editor's requests, the cursor, caret, tooltip and
-    /// accessibility tree. Without a host the editor's requests are dropped.
+    /// accessibility tree. Without a host the editor's requests are dropped (a copy still becomes the engine's clipboard).
     pub(super) fn deliver_requests(&mut self) {
         let requests = self.editor.take_requests();
+        // A copy is the engine's clipboard, host or not.
+        let held =
+            requests.iter().any(|r| matches!(r, Request::Clipboard { .. })).then(|| self.editor.clipboard().cloned()).flatten().map(|f| self.hold(f));
         if self.presentation.sink.deliver.is_none() {
             return;
         }
@@ -830,10 +850,7 @@ impl Session {
                 Request::ReleasePointer => out.push(HostRequest::Release),
                 // A keyboard copy: the engine's clipboard too, so a paste in any session keeps its formatting.
                 Request::Clipboard { text, html } => {
-                    let data = match self.editor.clipboard().cloned() {
-                        Some(f) => self.hold(f),
-                        None => ClipboardData { text, html, internal: None },
-                    };
+                    let data = held.clone().unwrap_or(ClipboardData { text, html, internal: None });
                     out.push(HostRequest::Clipboard { data });
                 }
                 Request::ScrollIntoView { page, rect: [x0, y0, x1, y1], at_top } => {
@@ -1518,17 +1535,22 @@ impl HostSurface<'_> {
         s.editor.set_drop(None, &s.fonts.fonts());
     }
 
-    /// Runs `command` at the drop point, as one transaction: the caret goes there first. Fails `unavailable` where
-    /// text can't go in.
+    /// Runs `command` at the drop point, as one transaction: the caret goes there first, and document protection is
+    /// checked there. Fails `unavailable` where text can't go in; a refused drop leaves the selection as it was.
     pub fn drop(&mut self, at: Point, command: Command) -> Result<Commit, Error> {
         let (x, y) = self.doc_point(at);
-        self.session.check(&command)?;
+        self.session.check_where(&command, false)?;
         self.session.apply_with(Origin::User, |e, fonts| {
             e.set_drop(None, fonts);
             let place = e.hit_test(x, y, fonts).filter(|h| h.2).and_then(|h| h.0.para_offset());
             let Some((para, offset)) = place else { return Outcome::Refused(Error::unavailable("nothing can be dropped here")) };
+            let before = e.selection();
             e.select_range(para, offset, offset, fonts);
-            e.execute(command, fonts)
+            let out = e.execute(command, fonts);
+            if matches!(out, Outcome::Refused(_)) {
+                e.restore_selection(before);
+            }
+            out
         })
     }
 

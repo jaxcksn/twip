@@ -1,6 +1,6 @@
 //! Text drag and drop
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use crate::docx::review::{MarkKind, RangeKind, RangeMark, RevisionId, RevisionMark, RunRevisions};
@@ -48,6 +48,22 @@ impl Editor {
     pub(super) fn text_drag_release(&mut self, fonts: &Fonts) -> Option<Outcome> {
         let d = self.text_drag.take()?;
         self.requests.push(Request::ReleasePointer);
+        // Drag source and drop place
+        if d.moved
+            && let Some(drop) = d.drop
+        {
+            let source = match self.selection {
+                Selection::Object(super::selection::ObjectRef::Inline { para, offset }) => {
+                    Some((Position::text(d.press.story, para, offset), Position::text(d.press.story, para, Unit(offset.0 + 1))))
+                }
+                s => s.ordered(&self.index),
+            };
+            use crate::api::command::CommandId as C;
+            let taken = !d.copy && source.is_none_or(|(a, b)| self.kept(C::Delete, &a, &b));
+            if taken || !self.editable(&drop) || self.kept(C::Paste, &drop, &drop) {
+                return Some(Outcome::Unchanged("kept"));
+            }
+        }
         // A picture that is all of a picture control moves with its control.
         if let (Selection::Object(super::selection::ObjectRef::Inline { para, offset }), true, false, Some(drop)) =
             (self.selection, d.moved, d.copy, d.drop)
@@ -79,6 +95,7 @@ impl Editor {
             return Some(Outcome::Unchanged("no drop place"));
         };
         let Some((a, b)) = self.selection.ordered(&self.index) else { return Some(Outcome::Unchanged("no selection")) };
+        // Where the story dropped in is hosted: a text box's float, a note's reference.
         let in_box = match drop.story {
             super::position::StoryId::TextBox(f) => self.index.float_anchor(f).and_then(|para| {
                 let p = self.index.para(&self.doc, para)?;
@@ -87,6 +104,8 @@ impl Editor {
                 let story = self.index.para_slot(para).map(|s| self.index.story(s.container))?;
                 Some(Position::text(story, para, crate::layout::Unit(u)))
             }),
+            super::position::StoryId::Footnote(id) => self.note_reference(crate::docx::NoteKind::Foot, id).map(|(at, _)| at),
+            super::position::StoryId::Endnote(id) => self.note_reference(crate::docx::NoteKind::End, id).map(|(at, _)| at),
             _ => None,
         };
         let inside = |p: &Position| self.index.cmp(&a, p) != std::cmp::Ordering::Greater && self.index.cmp(p, &b) != std::cmp::Ordering::Greater;
@@ -94,19 +113,28 @@ impl Editor {
             restore(self);
             return Some(Outcome::Unchanged("dropped on the selection"));
         }
-        let mut frag = self.copy_fragment()?;
-        // Whole controls dragged go with their properties, as copied ones do.
-        frag.controls = super::clipboard::controls_of(&frag.blocks, &self.doc);
+        // What a drop pastes is what Copy takes.
+        let mut frag = self.clip()?;
+        frag.moved = !d.copy;
         let sel = self.selection;
         let moving = !d.copy && self.tracking() && self.moves_whole();
-        let mut marks = (None, None);
+        let mut marks = (Vec::new(), Vec::new());
         let mut placed: Option<(Position, Position)> = None;
         let paste = |e: &mut Self, placed: &mut Option<(Position, Position)>| {
             e.set_selection(Selection::Caret(drop));
-            let start = drop;
+            let start = e.selection.focus().unwrap_or(drop);
+            // The spaces a smart paste adds around the text aren't the text moved.
+            let spaces = match frag.blocks.as_slice() {
+                [Block::Para(p)] if frag.open_end => e.smart_spaces(&UnitText::of(p).text),
+                _ => (false, false),
+            };
+            let nudge = |p: Position, by: i32| match p.para_offset() {
+                Some((para, u)) => Position::text(p.story, para, Unit(u.0.saturating_add_signed(by))),
+                None => p,
+            };
             let ok = matches!(e.paste_fragment(&frag, fonts), Outcome::Changed(_));
             if ok && let Some(end) = e.selection.focus() {
-                *placed = Some((start, end));
+                *placed = Some((nudge(start, i32::from(spaces.0)), nudge(end, -i32::from(spaces.1))));
             }
             ok
         };
@@ -139,28 +167,29 @@ impl Editor {
             ok
         };
         self.begin_batch(Some(if d.copy { "Copy" } else { "Move" }.into()));
+        // Paste and delete, together or not at all
         #[allow(clippy::if_same_then_else, reason = "the order differs: each call moves what the other one sees")]
-        let steps = if d.copy {
-            paste(self, &mut placed) as usize
+        let done = if d.copy {
+            paste(self, &mut placed)
         } else if after {
-            paste(self, &mut placed) as usize + delete(self, &mut placed) as usize
+            paste(self, &mut placed) && delete(self, &mut placed)
         } else {
-            delete(self, &mut placed) as usize + paste(self, &mut placed) as usize
+            delete(self, &mut placed) && paste(self, &mut placed)
         };
-        if steps == 0 {
+        if !done {
             self.end_batch(false, fonts);
             restore(self);
             return Some(Outcome::Unchanged("nothing dropped"));
         }
-        if moving && let (Some(to), Some(from)) = &marks {
-            self.record_move(to, from, fonts);
+        if moving && !marks.0.is_empty() && !marks.1.is_empty() {
+            self.record_move(&marks.0, &marks.1, fonts);
         }
         if object.is_some()
             && let Some((para, offset)) = placed.and_then(|(s, _)| s.para_offset())
         {
             self.selection = Selection::Object(super::selection::ObjectRef::Inline { para, offset });
         } else if let Some((s, t)) = placed {
-            self.selection = Selection::range(s, t, super::selection::Granularity::Char);
+            self.selection = self.normalize(Selection::range(s, t, super::selection::Granularity::Char));
         }
         Some(self.end_batch(true, fonts))
     }
@@ -170,7 +199,10 @@ impl Editor {
         if id != f.id || !matches!(out, Outcome::Changed(_)) {
             return;
         }
-        let Some(to) = self.recorded.0.clone() else { return };
+        let to = self.recorded.0.clone();
+        if to.is_empty() {
+            return;
+        }
         let sel = self.selection;
         self.record_move(&to, &from, fonts);
         self.selection = sel;
@@ -189,17 +221,20 @@ impl Editor {
         whole && self.selected_ranges().into_iter().all(|(para, s, e)| self.index.para(&self.doc, para).is_some_and(|p| !has_revisions(p, s, e)))
     }
 
-    pub(super) fn record_move(&mut self, to: &Rc<RevisionMark>, from: &Rc<RevisionMark>, fonts: &Fonts) -> bool {
+    pub(super) fn record_move(&mut self, to: &[Rc<RevisionMark>], from: &[Rc<RevisionMark>], fonts: &Fonts) -> bool {
+        let (Some(to_first), Some(from_first)) = (to.first(), from.first()) else { return false };
         let id = self.doc.review_ids.next_revision_id();
         let name: Rc<str> = format!("move{id}").into();
         let mark = |m: &RevisionMark, kind: MarkKind, id: i64| {
             Rc::new(RevisionMark { id: RevisionId(id), kind, move_name: Some(name.clone()), ..m.clone() })
         };
-        let to_mark = mark(to, MarkKind::MoveTo, id);
-        let from_mark = mark(from, MarkKind::MoveFrom, self.doc.review_ids.next_revision_id());
+        let to_mark = mark(to_first, MarkKind::MoveTo, id);
+        let from_mark = mark(from_first, MarkKind::MoveFrom, self.doc.review_ids.next_revision_id());
+        let set = |of: &[Rc<RevisionMark>]| of.iter().map(Rc::as_ptr).collect::<HashSet<_>>();
+        let (to, from) = (set(to), set(from));
         let remap = |r: &Run| -> Option<Run> {
-            let ins = r.rev.ins.as_ref().filter(|m| Rc::ptr_eq(m, to)).map(|_| to_mark.clone());
-            let del = r.rev.del.as_ref().filter(|m| Rc::ptr_eq(m, from)).map(|_| from_mark.clone());
+            let ins = r.rev.ins.as_ref().filter(|m| to.contains(&Rc::as_ptr(m))).map(|_| to_mark.clone());
+            let del = r.rev.del.as_ref().filter(|m| from.contains(&Rc::as_ptr(m))).map(|_| from_mark.clone());
             if ins.is_none() && del.is_none() {
                 return None;
             }

@@ -421,6 +421,14 @@ pub enum FieldKind {
     Formula,
 }
 
+impl FieldKind {
+    /// Whether the kind is not its code's: a legacy form field's comes from its form data, `w:pgNum`'s from its
+    /// element.
+    pub fn is_not_from_code(&self) -> bool {
+        matches!(self, FieldKind::CheckBox { .. } | FieldKind::DropDown | FieldKind::PgNum)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Picture {
     pub w: f64,
@@ -442,7 +450,98 @@ pub struct Picture {
     pub src: Raw,
 }
 
+impl Picture {
+    /// Equal but for the text story's blocks.
+    pub fn same_but_story(&self, o: &Picture) -> bool {
+        let Picture { w, h, image, alt, lock_aspect, effect, shape, text, src } = self;
+        let text = match (text, &o.text) {
+            (Some(a), Some(b)) => a.id == b.id && a.text_box.same_box(&b.text_box),
+            (a, b) => a.is_none() && b.is_none(),
+        };
+        text && *w == o.w
+            && *h == o.h
+            && *image == o.image
+            && *alt == o.alt
+            && *lock_aspect == o.lock_aspect
+            && *effect == o.effect
+            && *shape == o.shape
+            && *src == o.src
+    }
+}
+
 impl Float {
+    /// Equal but for the text box story's blocks.
+    pub fn same_but_story(&self, o: &Float) -> bool {
+        let Float {
+            id,
+            w,
+            auto_w,
+            h,
+            image,
+            alt,
+            lock_aspect,
+            text_box,
+            h_relative,
+            h_align,
+            h_offset,
+            v_relative,
+            v_align,
+            v_offset,
+            wrap,
+            wrap_text,
+            dist,
+            effect,
+            poly,
+            behind,
+            allow_overlap,
+            layout_in_cell,
+            order,
+            z,
+            rot_swap,
+            vml,
+            relative,
+            src,
+            locked,
+            frame_src,
+            in_note,
+            parts,
+            shape,
+        } = self;
+        same_box(text_box.as_ref(), o.text_box.as_ref())
+            && *id == o.id
+            && *w == o.w
+            && *auto_w == o.auto_w
+            && *h == o.h
+            && *image == o.image
+            && *alt == o.alt
+            && *lock_aspect == o.lock_aspect
+            && *h_relative == o.h_relative
+            && *h_align == o.h_align
+            && *h_offset == o.h_offset
+            && *v_relative == o.v_relative
+            && *v_align == o.v_align
+            && *v_offset == o.v_offset
+            && *wrap == o.wrap
+            && *wrap_text == o.wrap_text
+            && *dist == o.dist
+            && *effect == o.effect
+            && *poly == o.poly
+            && *behind == o.behind
+            && *allow_overlap == o.allow_overlap
+            && *layout_in_cell == o.layout_in_cell
+            && *order == o.order
+            && *z == o.z
+            && *rot_swap == o.rot_swap
+            && *vml == o.vml
+            && *relative == o.relative
+            && *src == o.src
+            && *locked == o.locked
+            && *frame_src == o.frame_src
+            && *in_note == o.in_note
+            && *parts == o.parts
+            && *shape == o.shape
+    }
+
     /// A frame (`w:framePr` paragraphs made a float): read from one, or made since.
     pub fn is_frame(&self) -> bool {
         self.frame_src.is_some() || self.text_box.as_ref().is_some_and(|tb| tb.blocks.iter().any(|b| matches!(b, Block::Para(p) if p.style.in_frame)))
@@ -597,6 +696,21 @@ pub struct TextBox {
     pub v_anchor: u8,
     /// A frame's text-flow code (`text_flow`).
     pub flow: u8,
+}
+
+impl TextBox {
+    /// Equal but for the story's blocks.
+    pub fn same_box(&self, o: &TextBox) -> bool {
+        let TextBox { blocks: _, insets, outline, auto_fit, v_anchor, flow } = self;
+        *insets == o.insets && *outline == o.outline && *auto_fit == o.auto_fit && *v_anchor == o.v_anchor && *flow == o.flow
+    }
+}
+
+fn same_box(a: Option<&TextBox>, b: Option<&TextBox>) -> bool {
+    match (a, b) {
+        (Some(a), Some(b)) => a.same_box(b),
+        (a, b) => a.is_none() && b.is_none(),
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -781,7 +895,7 @@ pub fn next_para_id() -> u64 {
 }
 
 /// A body paragraph's place in the main part's XML ([`Source::xml`] byte offsets), for lossless saving.
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ParaSrc {
     pub ranges: Vec<std::ops::Range<usize>>,
     /// The elements that produced its units, in order, with how many units each did: `w:t`, `w:tab`, a drawing, a
@@ -791,6 +905,22 @@ pub struct ParaSrc {
     pub simple: Vec<(usize, Vec<(std::ops::Range<usize>, usize)>)>,
     /// Content that can't be mapped back (a field whose runs don't share a parent): edits rewrite it from the model.
     pub lossy: bool,
+    /// Made by the reader to close a story that ends without a paragraph: no element, `ranges[0]` is where its XML
+    /// goes, an empty range before the story's end tag or the story's whole element when it is written empty.
+    pub closing: bool,
+    /// The paragraphs a vanished mark joined onto this one's start, in order (the last of [`Self::ranges`] is its own).
+    pub joined: Vec<JoinedPart>,
+}
+
+/// A paragraph joined onto the next one's start through its vanished mark, as read.
+#[derive(Clone, Debug, PartialEq)]
+pub struct JoinedPart {
+    /// The unit its content ends at in the joined paragraph.
+    pub end: u32,
+    /// Its `w:pPr` as written.
+    pub ppr: Raw,
+    /// Its mark is a style separator (`w:specVanish`).
+    pub spec_vanish: bool,
 }
 
 /// The package an editable document was read from ([`super::read_editable`]).
@@ -967,6 +1097,13 @@ impl ControlProps {
             Some(rest[v..v + rest[v..].find('"')?].to_string())
         });
         Some(cat.filter(|c| !c.is_empty()))
+    }
+
+    /// Whether a drop-down's kind element is `w:comboBox` (`w:dropDownList` otherwise).
+    pub fn combo_box(&self) -> bool {
+        let Some(x) = self.kind_xml.as_deref().and_then(|x| x.trim_start().strip_prefix('<')) else { return false };
+        let name = &x[..x.find(|c: char| c.is_whitespace() || c == '>' || c == '/').unwrap_or(x.len())];
+        name.rsplit(':').next() == Some("comboBox")
     }
 
     /// `w:temporary`: the control goes when its content is edited, leaving the content.
@@ -1376,6 +1513,11 @@ pub struct Columns {
     pub separator: bool,
 }
 
+impl Columns {
+    /// The most text columns a section has, as in Word.
+    pub const MAX: usize = 45;
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct LineNumbering {
     pub count_by: i64,
@@ -1762,7 +1904,7 @@ impl Leader {
             Leader::None => None,
             Leader::Dot => Some('.'),
             Leader::Hyphen => Some('-'),
-            Leader::Underscore => Some('_'),
+            Leader::Underscore | Leader::Heavy => Some('_'),
             Leader::MiddleDot => Some('·'),
         }
     }

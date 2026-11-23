@@ -2,6 +2,9 @@
 
 use std::collections::VecDeque;
 
+use crate::docx::numbering::{AbstractNum, Level as NumLevel, Num};
+use crate::docx::resolve::Resolver;
+use crate::docx::styles::Style;
 use crate::docx::{Block, Inline};
 use crate::layout::{ParaId, Unit};
 
@@ -46,13 +49,15 @@ pub struct History {
     budget: usize,
     bytes: usize,
     ids: u64,
+    /// The position of the last step dropped, by eviction or [`History::fence`].
+    evicted: u64,
 }
 
 pub const MIN_STEPS: usize = 100;
 
 impl Default for History {
     fn default() -> History {
-        History { undo: VecDeque::new(), redo: Vec::new(), typing: None, budget: 32 << 20, bytes: 0, ids: 0 }
+        History { undo: VecDeque::new(), redo: Vec::new(), typing: None, budget: 32 << 20, bytes: 0, ids: 0, evicted: 0 }
     }
 }
 
@@ -61,7 +66,7 @@ impl History {
         self.redo.clear();
         self.ids += 1;
         let joins = match (typing, self.typing) {
-            (Some(t), Some(last)) => t.kind == Typing::Insert && t.para == last.para && t.kind == last.kind && self.undo.back().is_some(),
+            (Some(t), Some(last)) => t.para == last.para && t.kind == last.kind && self.undo.back().is_some(),
             _ => false,
         };
         if joins && let Some(last) = self.undo.back_mut() {
@@ -79,6 +84,7 @@ impl History {
         while self.bytes > self.budget && self.undo.len() > MIN_STEPS {
             if let Some(old) = self.undo.pop_front() {
                 self.bytes -= old.bytes;
+                self.evicted = old.id;
             }
         }
     }
@@ -107,6 +113,14 @@ impl History {
         self.redo.push(tx);
     }
 
+    pub fn take_redo(&mut self) -> Vec<Transaction> {
+        std::mem::take(&mut self.redo)
+    }
+
+    pub fn put_redo(&mut self, redo: Vec<Transaction>) {
+        self.redo = redo;
+    }
+
     pub fn push_undo_keep_redo(&mut self, tx: Transaction) {
         self.bytes += tx.bytes;
         self.undo.push_back(tx);
@@ -133,13 +147,29 @@ impl History {
     }
 
     pub fn position(&self) -> u64 {
-        self.undo.back().map_or(0, |t| t.id)
+        self.undo.back().map_or(self.evicted, |t| t.id)
+    }
+
+    /// Drops every undo and redo step: nothing done so far can be undone. The position stays.
+    pub fn fence(&mut self) {
+        self.evicted = self.position();
+        self.undo.clear();
+        self.redo.clear();
+        self.typing = None;
+        self.bytes = 0;
     }
 }
 
 pub fn step_bytes(s: &Step) -> usize {
     fn inlines(v: &[Inline]) -> usize {
-        v.iter().map(|i| 48 + if let Inline::Text(t, _) = i { t.len() } else { 0 }).sum()
+        v.iter()
+            .map(|i| {
+                48 + match i {
+                    Inline::Text(t, _) => t.len(),
+                    _ => i.story().map_or(0, |(_, tb)| blocks(&tb.blocks)),
+                }
+            })
+            .sum()
     }
     fn blocks(v: &[Block]) -> usize {
         v.iter()
@@ -154,11 +184,8 @@ pub fn step_bytes(s: &Step) -> usize {
         Step::Split { second, .. } => 96 + inlines(&second.inlines),
         Step::Join { .. }
         | Step::Para { .. }
-        | Step::TableWidth { .. }
         | Step::TableProps { .. }
         | Step::SectionPage { .. }
-        | Step::Resolver { .. }
-        | Step::Fonts { .. }
         | Step::DefaultTab(_)
         | Step::Hyphenation(_)
         | Step::PageSettings(_)
@@ -166,6 +193,11 @@ pub fn step_bytes(s: &Step) -> usize {
         | Step::Info(_)
         | Step::Protection(_)
         | Step::SectionBreak { .. } => 32,
+        Step::Resolver { resolver, added } => {
+            32 + resolver.as_deref().map_or(0, resolver_bytes)
+                + added.iter().map(|a| std::mem::size_of::<crate::docx::AddedList>() + a.abstract_xml.len()).sum::<usize>()
+        }
+        Step::Fonts { resolver, .. } => 32 + resolver.as_deref().map_or(0, resolver_bytes),
         Step::PageBackground(_) => 64,
         Step::ImageData { data, .. } => 32 + data.len(),
         Step::AddImage { data, .. } => 32 + data.as_ref().map_or(0, Vec::len),
@@ -179,4 +211,22 @@ pub fn step_bytes(s: &Step) -> usize {
         Step::DataPart { part, .. } => 32 + part.as_ref().map_or(0, |p| p.xml.len()),
         Step::Comment { after, .. } => 128 + after.as_ref().map_or(0, |c| blocks(&c.body)),
     }
+}
+
+/// What a retained style, numbering and theme table holds: its entries and the XML each keeps as read.
+fn resolver_bytes(r: &Resolver) -> usize {
+    use std::mem::size_of;
+    let styles = r.styles.by_id.values().map(|s| size_of::<Style>() + s.raw.len()).sum::<usize>();
+    let n = &r.numbering;
+    let abstracts =
+        n.abstracts.values().map(|a| size_of::<AbstractNum>() + a.raw.len() + a.levels.len() * size_of::<Option<NumLevel>>()).sum::<usize>();
+    let nums = n.nums.values().map(|m| size_of::<Num>() + m.raw.len() + m.level_overrides.len() * size_of::<NumLevel>()).sum::<usize>();
+    let bullets = n.pic_bullets.values().map(|b| 64 + b.raw.len()).sum::<usize>();
+    size_of::<Resolver>() + styles + abstracts + nums + bullets + n.root.len() + r.style_links.len() * 48
+}
+
+#[test]
+fn added_lists_count_towards_the_budget() {
+    let list = crate::docx::AddedList { abstract_id: 1, num_id: 1, abstract_xml: "x".repeat(10_000) };
+    assert!(step_bytes(&Step::Resolver { resolver: None, added: vec![list] }) > 10_000);
 }

@@ -821,6 +821,16 @@
     "type": "splitTable"
   },
   {
+    "character": ";",
+    "columns": 3,
+    "separator": "other",
+    "type": "convertTextToTable"
+  },
+  {
+    "separator": "tabs",
+    "type": "convertTableToText"
+  },
+  {
     "type": "distributeRows"
   },
   {

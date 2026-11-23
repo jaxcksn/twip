@@ -178,10 +178,13 @@ pub(super) fn differs(was: &Float, now: &Float) -> bool {
     }
 }
 
-pub(super) fn apply(src: &str, mut edits: Vec<Edit>) -> String {
-    edits.sort_by_key(|(r, _)| std::cmp::Reverse(r.start));
+/// `src` with the edits made, from the end: of those at one place, a replacement before the insertions there, and
+/// insertions in the order given.
+pub(super) fn apply(src: &str, edits: Vec<Edit>) -> String {
+    let mut edits: Vec<(usize, Edit)> = edits.into_iter().enumerate().collect();
+    edits.sort_by_key(|(k, (r, _))| std::cmp::Reverse((r.start, r.end, *k)));
     let mut s = src.to_string();
-    for (r, with) in edits {
+    for (_, (r, with)) in edits {
         if r.end <= s.len() && r.start <= r.end {
             s.replace_range(r, &with);
         }
@@ -201,7 +204,7 @@ fn shape_edits(a: &Shape, b: &Shape, base: usize, text: &str, out: &mut Vec<Edit
         && let Some(x) = &sp.xfrm
     {
         let r = rel(x);
-        if let Some(end) = text.get(r.start..).and_then(|t| t.find('>')).map(|i| r.start + i + 1) {
+        if let Some(end) = text.get(r.start..).and_then(crate::docx::binding::tag_end).map(|i| r.start + i + 1) {
             let closed = text[..end].ends_with("/>");
             out.push((r.start..end, xfrm_tag(b, closed)));
         }
@@ -213,7 +216,7 @@ fn shape_edits(a: &Shape, b: &Shape, base: usize, text: &str, out: &mut Vec<Edit
             {
                 out.push((rel(g), geometry_xml(&y.geom)));
             }
-            props_edits(sp, (&x.fill, &y.fill), (&x.line, &y.line), (&x.effects, &y.effects), &rel, out);
+            props_edits(sp, (&x.fill, &y.fill), (&x.line, &y.line), (&x.effects, &y.effects), &rel, text, out);
             if x.body != y.body
                 && let Some(r) = &sp.body
             {
@@ -227,12 +230,12 @@ fn shape_edits(a: &Shape, b: &Shape, base: usize, text: &str, out: &mut Vec<Edit
                 out.push((rel(g), geometry_xml(&y.geom)));
             }
             if (&x.blip.src, &x.blip.adjust) != (&y.blip.src, &y.blip.adjust)
-                && let Some(f) = &sp.fill
+                && let Some(f) = &sp.blip
                 && let Some(t) = text.get(rel(f))
             {
                 out.push((rel(f), blip_patch(t, &y.blip)));
             }
-            props_edits(sp, (&None, &None), (&x.line, &y.line), (&x.effects, &y.effects), &rel, out);
+            props_edits(sp, (&None, &None), (&x.line, &y.line), (&x.effects, &y.effects), &rel, text, out);
         }
         (ShapeKind::Group(x), ShapeKind::Group(y)) if x.children.len() == y.children.len() => {
             for (ca, cb) in x.children.iter().zip(&y.children) {
@@ -249,43 +252,41 @@ fn props_edits(
     (la, lb): (&Option<Line>, &Option<Line>),
     (ea, eb): (&Option<EffectList>, &Option<EffectList>),
     rel: &dyn Fn(&Range<usize>) -> Range<usize>,
+    text: &str,
     out: &mut Vec<Edit>,
 ) {
     let at = |r: &Option<Range<usize>>| r.as_ref().map(|r| rel(r).end);
-    let start_of_props = sp.sp_pr.as_ref().map(|r| rel(r).start);
-    let after = |rs: &[&Option<Range<usize>>]| rs.iter().find_map(|r| at(r)).or(sp.xfrm.as_ref().map(|r| rel(r).end));
+    // The properties' start tag: its range and whether it closes itself.
+    let open = sp.sp_pr.as_ref().map(rel).and_then(|r| {
+        let end = r.start + crate::docx::binding::tag_end(text.get(r.clone())?)? + 1;
+        Some((r.start..end, text[..end].ends_with("/>")))
+    });
+    let first = open.as_ref().filter(|(_, closed)| !closed).map(|(t, _)| t.end);
+    let after = |rs: &[&Option<Range<usize>>]| rs.iter().find_map(|r| at(r)).or(sp.xfrm.as_ref().map(|r| rel(r).end)).or(first);
+    // Children an empty `spPr` gains, in schema order: it is written open around them.
+    let mut kids = String::new();
+    let mut put = |el: &Option<Range<usize>>, before: &[&Option<Range<usize>>], xml: String, out: &mut Vec<Edit>| match el {
+        Some(r) => out.push((rel(r), xml)),
+        None => match after(before) {
+            Some(p) => out.push((p..p, xml)),
+            None => kids.push_str(&xml),
+        },
+    };
     if fa != fb {
-        let xml = fb.as_ref().map_or(String::new(), fill_xml);
-        match &sp.fill {
-            Some(r) => out.push((rel(r), xml)),
-            None => {
-                if let Some(p) = after(&[&sp.geom]).or(start_of_props) {
-                    out.push((p..p, xml));
-                }
-            }
-        }
+        put(&sp.fill, &[&sp.geom], fb.as_ref().map_or(String::new(), fill_xml), out);
     }
     if la != lb {
-        let xml = lb.as_ref().map_or(String::new(), line_xml);
-        match &sp.line {
-            Some(r) => out.push((rel(r), xml)),
-            None => {
-                if let Some(p) = after(&[&sp.fill, &sp.geom]) {
-                    out.push((p..p, xml));
-                }
-            }
-        }
+        put(&sp.line, &[&sp.fill, &sp.geom], lb.as_ref().map_or(String::new(), line_xml), out);
     }
     if ea != eb {
-        let xml = eb.as_ref().map_or(String::new(), effects_xml);
-        match &sp.effects {
-            Some(r) => out.push((rel(r), xml)),
-            None => {
-                if let Some(p) = after(&[&sp.line, &sp.fill, &sp.geom]) {
-                    out.push((p..p, xml));
-                }
-            }
-        }
+        put(&sp.effects, &[&sp.line, &sp.fill, &sp.geom], eb.as_ref().map_or(String::new(), effects_xml), out);
+    }
+    if !kids.is_empty()
+        && let Some((tag, true)) = open
+    {
+        let start = &text[tag.start..tag.end - 2];
+        let name = start[1..].split(|c: char| c.is_ascii_whitespace()).next().unwrap_or_default();
+        out.push((tag, format!("{}>{kids}</{name}>", start.trim_end())));
     }
 }
 
@@ -906,12 +907,15 @@ mod round_trip {
     const DRAWING: &str = r#"<w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="1" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="page"><wp:posOffset>914400</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:posOffset>914400</wp:posOffset></wp:positionV><wp:extent cx="1143000" cy="762000"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/><wp:docPr id="1" name="Star"/><a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:wsp><wps:cNvSpPr/><wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="1143000" cy="762000"/></a:xfrm><a:prstGeom prst="star5"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill><a:effectLst><a:reflection blurRad="6350" stA="50000" endA="300" endPos="55000" dir="5400000" sy="-100000" algn="bl" rotWithShape="0"/></a:effectLst><a:scene3d><a:camera prst="orthographicFront"/><a:lightRig rig="threePt" dir="t"/></a:scene3d></wps:spPr><wps:bodyPr/></wps:wsp></a:graphicData></a:graphic></wp:anchor></w:drawing>"#;
 
     fn doc(alternate: bool) -> crate::docx::Document {
-        let shape = match alternate {
-            false => format!("<w:r>{DRAWING}</w:r>"),
-            true => format!(
+        match alternate {
+            false => doc_of(&format!("<w:r>{DRAWING}</w:r>")),
+            true => doc_of(&format!(
                 r#"<w:r><mc:AlternateContent><mc:Choice Requires="wps">{DRAWING}</mc:Choice><mc:Fallback><w:pict><v:rect/></w:pict></mc:Fallback></mc:AlternateContent></w:r>"#
-            ),
-        };
+            )),
+        }
+    }
+
+    fn doc_of(shape: &str) -> crate::docx::Document {
         let ct = r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#;
         let rels = r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#;
         let document = format!(
@@ -948,6 +952,42 @@ mod round_trip {
         let saved = refilled(true);
         let bare = document_xml(&crate::docx::write::save(&doc(false)).expect("saves"));
         assert_eq!(saved, bare.replace(r#"<a:srgbClr val="FF0000"/>"#, r#"<a:srgbClr val="00FF00"/>"#));
+    }
+
+    fn first_float(d: &mut crate::docx::Document) -> &mut crate::docx::model::Float {
+        let Block::Para(p) = &mut d.sections[0].blocks[0] else { panic!() };
+        p.inlines.iter_mut().find_map(|i| if let Inline::Float(f, _) = i { Some(&mut **f) } else { None }).expect("a float")
+    }
+
+    fn anchored(graphic: &str) -> String {
+        DRAWING.replace(&DRAWING[DRAWING.find("<a:graphic>").expect("a graphic")..DRAWING.find("</wp:anchor>").expect("an anchor")], graphic)
+    }
+
+    #[test]
+    fn a_pictures_new_outline_goes_in_its_properties() {
+        let pic = r#"<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><pic:nvPicPr><pic:cNvPr id="1" name="p"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rId9"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="1143000" cy="762000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic>"#;
+        let mut d = doc_of(&format!("<w:r>{}</w:r>", anchored(pic)));
+        let line = crate::drawing::paint::Line { fill: Some(Fill::Solid(Colour::srgb(0xFF0000))), ..Default::default() };
+        let Some(crate::drawing::ShapeKind::Pic(p)) = first_float(&mut d).shape.as_deref_mut().map(|s| &mut s.kind) else { panic!("a picture") };
+        p.line = Some(line.clone());
+        let bytes = crate::docx::write::save(&d).expect("saves");
+        let xml = document_xml(&bytes);
+        assert!(xml.contains(r#"<a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:ln>"#), "{xml}");
+        let mut again = crate::docx::reader::read_editable(&bytes).expect("reads");
+        assert_eq!(first_float(&mut again).shape.as_deref().and_then(|s| s.pic()).and_then(|p| p.line.clone()), Some(line));
+    }
+
+    #[test]
+    fn a_fill_goes_in_properties_whose_attribute_holds_a_greater_than() {
+        let sp = r#"<a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:wsp><wps:cNvSpPr/><wps:spPr xmlns:x="urn:x" x:label="a>b"/><wps:bodyPr/></wps:wsp></a:graphicData></a:graphic>"#;
+        let mut d = doc_of(&format!("<w:r>{}</w:r>", anchored(sp)));
+        first_float(&mut d).shape.as_deref_mut().and_then(|s| s.sp_mut()).expect("a shape").fill = Some(Fill::Solid(Colour::srgb(0x00FF00)));
+        let bytes = crate::docx::write::save(&d).expect("saves");
+        let xml = document_xml(&bytes);
+        assert!(xml.contains(r#"<wps:spPr xmlns:x="urn:x" x:label="a>b"><a:solidFill>"#), "{xml}");
+        let mut again = crate::docx::reader::read_editable(&bytes).expect("reads");
+        let fill = first_float(&mut again).shape.as_deref().and_then(|s| s.sp()).and_then(|s| s.fill.clone());
+        assert_eq!(fill, Some(Fill::Solid(Colour::srgb(0x00FF00))));
     }
 
     #[test]

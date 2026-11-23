@@ -6,7 +6,7 @@ use std::ops::Range;
 
 use roxmltree::Node;
 
-use super::model::{Control, ControlId, ControlKind, ControlProps, DataPart, Inline, Paragraph, Run};
+use super::model::{BreakKind, Control, ControlId, ControlKind, ControlProps, DataPart, Inline, Paragraph, Run};
 use super::write::props::esc;
 
 /// Steps an XPath may have; longer ones aren't evaluated.
@@ -35,8 +35,22 @@ pub struct Binding {
     pub store: Option<String>,
 }
 
+/// Whether two data part item ids are the same GUID: compared without case or braces.
+pub fn same_item(a: &str, b: &str) -> bool {
+    a.trim().trim_matches(['{', '}']).eq_ignore_ascii_case(b.trim().trim_matches(['{', '}']))
+}
+
+/// An item id as a GUID is written (`{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`, braces optional): braced, upper case.
+pub fn guid(id: &str) -> Option<String> {
+    let bare = id.trim();
+    let bare = bare.strip_prefix('{').and_then(|b| b.strip_suffix('}')).unwrap_or(bare);
+    let groups: Vec<&str> = bare.split('-').collect();
+    let shape = groups.len() == 5 && groups.iter().zip([8, 4, 4, 4, 12]).all(|(g, n)| g.len() == n && g.bytes().all(|c| c.is_ascii_hexdigit()));
+    shape.then(|| format!("{{{}}}", bare.to_ascii_uppercase()))
+}
+
 /// An attribute value's text: the predefined and numeric character references resolved.
-fn unescape(s: &str) -> String {
+pub(crate) fn unescape(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut rest = s;
     while let Some(k) = rest.find('&') {
@@ -118,7 +132,7 @@ impl Binding {
     /// with its node.
     pub fn part(&self, parts: &Parts) -> Option<usize> {
         match &self.store {
-            Some(id) => parts.parts.iter().position(|p| p.item_id.trim_matches(['{', '}']).eq_ignore_ascii_case(id.trim_matches(['{', '}']))),
+            Some(id) => parts.parts.iter().position(|p| same_item(&p.item_id, id)),
             None => (0..parts.parts.len()).find(|&k| parts.doc(k).is_some_and(|d| self.path.element(d).is_some())),
         }
     }
@@ -235,9 +249,15 @@ pub fn write(xml: &str, path: &Path, value: &str) -> Option<String> {
             }
             let r = el.range();
             let tag = &xml[r.clone()];
-            let open_end = tag.find('>')? + 1;
             let qname = &tag[1..tag.find(|c: char| c.is_whitespace() || c == '>' || c == '/')?];
-            let open = if tag[..open_end].ends_with("/>") { format!("{}>", &tag[..open_end - 2]) } else { tag[..open_end].to_string() };
+            // Start tag's end (`tag_end`)
+            let open = match el.first_child() {
+                Some(c) => xml[r.start..c.range().start].to_string(),
+                None => match tag.strip_suffix("/>") {
+                    Some(head) => format!("{head}>"),
+                    None => tag[..tag.rfind("</")?].to_string(),
+                },
+            };
             out.replace_range(r, &format!("{open}{}</{qname}>", esc(value)));
         }
     }
@@ -270,19 +290,148 @@ pub fn shown(props: &ControlProps, value: &str) -> String {
     }
 }
 
-/// What a control showing `text` stores: a drop-down's item's value, a date's full date.
+/// What a control showing `text` stores: a drop-down's item's value, a date's date (as `w:storeMappedDataAs` says:
+/// a date and time, a date, or the text).
 pub fn stored(props: &ControlProps, text: &str) -> String {
     match &props.kind {
         ControlKind::DropDown => items(props).into_iter().find(|(t, _)| t == text).map_or_else(|| text.to_string(), |(_, v)| v),
-        ControlKind::Date { .. } => props
-            .kind_xml
-            .as_deref()
-            .and_then(|x| attr_of(x, "fullDate"))
-            .map(unescape)
-            .filter(|_| !text.is_empty())
-            .unwrap_or_else(|| text.to_string()),
+        ControlKind::Date { .. } => {
+            let mapped = props.kind_xml.as_deref().and_then(|x| attr_of(&x[x.find("storeMappedDataAs")?..], "val")).unwrap_or("dateTime");
+            match (mapped, full_date(props, text)) {
+                ("text", _) | (_, None) => text.to_string(),
+                ("date", Some(full)) => full.get(..10).unwrap_or(&full).to_string(),
+                (_, Some(full)) => full,
+            }
+        }
         _ => text.to_string(),
     }
+}
+
+/// A control's text as inlines: its lines (`\n` or `\r\n` apart) with line breaks between them.
+pub fn text_inlines(text: &str, run: &Run) -> Vec<Inline> {
+    let mut out = Vec::new();
+    for (k, line) in text.split('\n').map(|l| l.strip_suffix('\r').unwrap_or(l)).enumerate() {
+        if k > 0 {
+            out.push(Inline::Break(BreakKind::Line, run.clone()));
+        }
+        if !line.is_empty() {
+            out.push(Inline::Text(line.to_string(), run.clone()));
+        }
+    }
+    out
+}
+
+/// The full date (`w:fullDate`, `YYYY-MM-DDTHH:MM:SSZ`) of a date control showing `text`: its own when it shows it,
+/// else the date `text` is in the control's format; `None` for none.
+pub fn full_date(props: &ControlProps, text: &str) -> Option<String> {
+    let ControlKind::Date { format, .. } = &props.kind else { return None };
+    if text.is_empty() {
+        return None;
+    }
+    let own = props.kind_xml.as_deref().and_then(|x| own_attr(x, "fullDate"));
+    if let Some(own) = own.filter(|f| shown(props, f) == text) {
+        return Some(own);
+    }
+    let secs = super::fields::parse_date_text(if format.is_empty() { "M/d/yyyy" } else { format }, text)?;
+    Some(super::review::Timestamp::from_utc(secs).raw.to_string())
+}
+
+/// A date control's `w:date` with the full date `text` shows ([`full_date`]), or without one; `w` its prefix (for
+/// one not read). `None` when it already is so.
+pub fn with_full_date(props: &ControlProps, text: &str, w: &str) -> Option<String> {
+    let ControlKind::Date { format, lid } = &props.kind else { return None };
+    let want = full_date(props, text);
+    let xml = props.kind_xml.clone().unwrap_or_else(|| {
+        format!(
+            "<{w}date><{w}dateFormat {w}val=\"{}\"/>{}<{w}storeMappedDataAs {w}val=\"dateTime\"/><{w}calendar {w}val=\"gregorian\"/></{w}date>",
+            esc(format),
+            lid.as_ref().map_or(String::new(), |l| format!("<{w}lid {w}val=\"{}\"/>", esc(l)))
+        )
+    });
+    let have = own_attr(&xml, "fullDate");
+    if have == want {
+        return None;
+    }
+    let end = tag_end(&xml)?;
+    let mut head = xml[..end].to_string();
+    if let Some(r) = attr_range(&head, "fullDate") {
+        head.replace_range(head[..r.start].trim_end().len()..r.end, "");
+    }
+    let name_end = head.find(|c: char| c.is_whitespace() || c == '/').unwrap_or(head.len());
+    let prefix = head.get(1..name_end).and_then(|n| n.split_once(':')).map_or(String::new(), |(p, _)| format!("{p}:"));
+    if let Some(f) = want {
+        head.insert_str(name_end, &format!(" {prefix}fullDate=\"{}\"", esc(&f)));
+    }
+    Some(head + &xml[end..])
+}
+
+/// Where element `x`'s start tag ends (its `>`): quoted attribute values may hold one.
+pub fn tag_end(x: &str) -> Option<usize> {
+    let mut quote = None;
+    for (k, c) in x.char_indices() {
+        match (quote, c) {
+            (None, '"' | '\'') => quote = Some(c),
+            (Some(q), c) if c == q => quote = None,
+            (None, '>') => return Some(k),
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Each attribute of start tag `head` (up to its `>`), in order: its qualified name, its value as written (between its
+/// quotes, still escaped) and its range, `name = "value"` whitespace and either quote included.
+pub(crate) fn tag_attrs(head: &str) -> impl Iterator<Item = (&str, &str, Range<usize>)> {
+    let b = head.as_bytes();
+    let skip = |k: &mut usize| {
+        while b.get(*k).is_some_and(u8::is_ascii_whitespace) {
+            *k += 1;
+        }
+    };
+    let mut k = head.find(|c: char| c.is_whitespace() || c == '/').unwrap_or(head.len());
+    std::iter::from_fn(move || {
+        skip(&mut k);
+        let start = k;
+        while b.get(k).is_some_and(|c| !c.is_ascii_whitespace() && *c != b'=' && *c != b'/') {
+            k += 1;
+        }
+        let name = &head[start..k];
+        skip(&mut k);
+        if name.is_empty() || b.get(k) != Some(&b'=') {
+            return None;
+        }
+        k += 1;
+        skip(&mut k);
+        let q = *b.get(k).filter(|q| **q == b'"' || **q == b'\'')?;
+        let v0 = k + 1;
+        let v1 = v0 + head[v0..].find(q as char)?;
+        k = v1 + 1;
+        Some((name, &head[v0..v1], start..k))
+    })
+}
+
+/// Where attribute `local` (any prefix, either quote) is in start tag `head` (up to its `>`).
+fn attr_range(head: &str, local: &str) -> Option<Range<usize>> {
+    tag_attrs(head).find(|(name, ..)| name.rsplit(':').next() == Some(local)).map(|(.., r)| r)
+}
+
+/// Attribute `local`'s value (any prefix, either quote) on element `xml`'s start tag, unescaped.
+fn own_attr(xml: &str, local: &str) -> Option<String> {
+    let head = &xml[..tag_end(xml)?];
+    tag_attrs(head).find(|(name, ..)| name.rsplit(':').next() == Some(local)).map(|(_, v, _)| unescape(v))
+}
+
+/// The run a control's content takes once it stops showing its placeholder (whose run is the placeholder's style):
+/// its own (`w:sdtPr/w:rPr`, which `resolve` resolves in its paragraph), else that of the text before its start
+/// marker (inline `start`), else its paragraph mark's.
+pub fn own_run(props: &ControlProps, inlines: &[Inline], start: usize, mark: &Run, resolve: impl FnOnce(&str) -> Option<Run>) -> Run {
+    props
+        .rest
+        .iter()
+        .find(|(n, _)| n == "rPr")
+        .and_then(|(_, x)| resolve(x))
+        .or_else(|| inlines[..start.min(inlines.len())].iter().rev().find_map(|i| i.run().cloned()))
+        .unwrap_or_else(|| mark.clone())
 }
 
 /// A bound control inline in a paragraph: the inlines between its markers, its text and its binding.
@@ -316,9 +465,24 @@ pub fn spans(inlines: &[Inline], controls: &HashMap<ControlId, Control>) -> Vec<
                 let text = if ctl.props.showing_placeholder {
                     String::new()
                 } else {
-                    content.iter().filter_map(|i| if let Inline::Text(t, _) = i { Some(t.as_str()) } else { None }).collect()
+                    content
+                        .iter()
+                        .filter_map(|i| match i {
+                            Inline::Text(t, r) if r.rev.del.is_none() => Some(t.as_str()),
+                            Inline::Break(BreakKind::Line, r) if r.rev.del.is_none() => Some("\n"),
+                            _ => None,
+                        })
+                        .collect()
                 };
-                let run = content.iter().find_map(|i| if let Inline::Text(_, r) = i { Some(r.clone()) } else { None });
+                let run = content.iter().find_map(|i| {
+                    if let Inline::Text(_, r) = i
+                        && r.rev.del.is_none()
+                    {
+                        Some(r.clone())
+                    } else {
+                        None
+                    }
+                });
                 out.push(Span { control: c, inner, text, run, binding });
             }
             _ => {}
@@ -334,11 +498,11 @@ pub fn spans(inlines: &[Inline], controls: &HashMap<ControlId, Control>) -> Vec<
 }
 
 /// Shows each bound control in the paragraph with its node's value from the data parts (one with no value, or one
-/// already showing it, is left); whether one changed. Read time: Word shows the data a document opens with.
-pub fn refresh(p: &mut Paragraph, controls: &mut HashMap<ControlId, Control>, parts: &Parts) -> bool {
-    let inlines = &mut p.inlines;
+/// already showing it, is left); whether one changed. Read time: Word shows the data a document opens with. `resolve`
+/// gives a control's own run, its `w:rPr` resolved where it was read ([`own_run`]).
+pub fn refresh(p: &mut Paragraph, controls: &mut HashMap<ControlId, Control>, parts: &Parts, resolve: &dyn Fn(ControlId) -> Option<Run>) -> bool {
     let mut changed = false;
-    let mut found = spans(inlines, controls);
+    let mut found = spans(&p.inlines, controls);
     // From the end, so earlier ranges stay put; nested controls aren't bound in Word.
     found.sort_by_key(|s| std::cmp::Reverse(s.inner.start));
     for s in found {
@@ -348,8 +512,14 @@ pub fn refresh(p: &mut Paragraph, controls: &mut HashMap<ControlId, Control>, pa
         if want == s.text && !ctl.props.showing_placeholder {
             continue;
         }
-        let run = s.run.or_else(|| inlines[..s.inner.start].iter().rev().find_map(|i| i.run().cloned())).unwrap_or_else(|| p.mark.clone());
-        inlines.splice(s.inner, [Inline::Text(want, run)]);
+        let run = match s.run.filter(|_| !ctl.props.showing_placeholder) {
+            Some(r) => r,
+            None => {
+                let para = &*p;
+                own_run(&ctl.props, &para.inlines, s.inner.start - 1, &para.mark, |_| resolve(s.control))
+            }
+        };
+        p.inlines.splice(s.inner, text_inlines(&want, &run));
         ctl.props.showing_placeholder = false;
         changed = true;
     }
@@ -359,6 +529,55 @@ pub fn refresh(p: &mut Paragraph, controls: &mut HashMap<ControlId, Control>, pa
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn writing_a_node_keeps_attributes_holding_a_greater_than() {
+        let path = Path::parse("/r/a", &[]).expect("a path");
+        for (xml, want) in [
+            (r#"<r><a n="x>y">1</a></r>"#, r#"<r><a n="x>y">2</a></r>"#),
+            (r#"<r><a n="x>y"/></r>"#, r#"<r><a n="x>y">2</a></r>"#),
+            (r#"<r><a n="x>y"></a ></r>"#, r#"<r><a n="x>y">2</a></r>"#),
+        ] {
+            let out = write(xml, &path, "2").expect("writes");
+            assert!(roxmltree::Document::parse(&out).is_ok(), "well formed: {out}");
+            assert_eq!(out, want);
+            assert_eq!(read(&out, &path).as_deref(), Some("2"));
+        }
+    }
+
+    #[test]
+    fn a_dates_full_date_is_replaced_whatever_its_quotes() {
+        let props = |x: &str| ControlProps {
+            kind: ControlKind::Date { format: "M/d/yyyy".into(), lid: None },
+            kind_xml: Some(x.into()),
+            ..ControlProps::default()
+        };
+        for x in [
+            r#"<w:date w:fullDate='2026-01-01T00:00:00Z'><w:dateFormat w:val="M/d/yyyy"/></w:date>"#,
+            r#"<w:date w:x="a>b" w:fullDate="2026-01-01T00:00:00Z"><w:dateFormat w:val="M/d/yyyy"/></w:date>"#,
+        ] {
+            let out = with_full_date(&props(x), "2/3/2027", "w:").expect("a new date");
+            let xml = out.replacen("<w:date", "<w:date xmlns:w=\"urn:w\"", 1);
+            let doc = roxmltree::Document::parse(&xml).unwrap_or_else(|e| panic!("well formed: {out}: {e}"));
+            let dates: Vec<_> = doc.root_element().attributes().filter(|a| a.name() == "fullDate").map(|a| a.value()).collect();
+            assert_eq!(dates, ["2027-02-03T00:00:00Z"], "{out}");
+        }
+        // Spaces around `=`: a text that isn't a date drops it; one showing it keeps it.
+        let spaced = r#"<w:date w:fullDate = "2026-01-01T00:00:00Z"><w:dateFormat w:val="M/d/yyyy"/></w:date>"#;
+        let out = with_full_date(&props(spaced), "soon", "w:").expect("the date goes");
+        assert!(!out.contains("fullDate"), "{out}");
+        assert_eq!(with_full_date(&props(spaced), "1/1/2026", "w:"), None);
+    }
+
+    #[test]
+    fn item_ids_are_guids_compared_without_case_or_braces() {
+        assert!(same_item("{8A2D6C3E-1F4B-4C5D-9E6F-0A1B2C3D4E5F}", "8a2d6c3e-1f4b-4c5d-9e6f-0a1b2c3d4e5f"));
+        assert!(!same_item("{8A2D6C3E-1F4B-4C5D-9E6F-0A1B2C3D4E5F}", "{8A2D6C3E-1F4B-4C5D-9E6F-0A1B2C3D4E50}"));
+        assert_eq!(guid("8a2d6c3e-1f4b-4c5d-9e6f-0a1b2c3d4e5f").as_deref(), Some("{8A2D6C3E-1F4B-4C5D-9E6F-0A1B2C3D4E5F}"));
+        for bad in ["", "orders", "{1234}", "a\"b", "8a2d6c3e-1f4b-4c5d-9e6f-0a1b2c3d4e5", "8a2d6c3e-1f4b-4c5d-9e6f-0a1b2c3d4e5g"] {
+            assert_eq!(guid(bad), None, "{bad}");
+        }
+    }
 
     #[test]
     fn bindings_read_and_write_their_node() {

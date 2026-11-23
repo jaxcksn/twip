@@ -297,6 +297,7 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
         simple: Vec::new(),
         lossy: false,
         controls: HashMap::new(),
+        bound_runs: HashMap::new(),
         people: People::default(),
         identities: HashMap::new(),
         ids,
@@ -393,17 +394,21 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
             let id = int(attr(n, "id")).unwrap_or(0);
             r.note_id = id;
             r.in_endnotes = tag == "endnote";
-            let mut blocks = r.read_blocks(n, &mut pkg, None);
+            let separator = attr(n, "type").filter(|t| matches!(*t, "separator" | "continuationSeparator" | "continuationNotice"));
+            let mut blocks = match separator {
+                Some(_) => r.read_blocks(n, &mut pkg, None),
+                None => r.read_story_blocks(n, &mut pkg),
+            };
             r.close_ranges(&mut blocks);
             note_floats(&mut blocks);
-            match attr(n, "type") {
+            match separator {
                 // A separator story counts only when the settings list it: else the built-in one is used.
-                Some(t @ ("separator" | "continuationSeparator" | "continuationNotice")) => {
+                Some(t) => {
                     if r.settings.listed_notes.contains(&format!("{tag}:{id}")) {
                         doc.separators.insert(format!("{tag}:{t}"), blocks);
                     }
                 }
-                _ => {
+                None => {
                     map.insert(id, blocks);
                 }
             }
@@ -487,8 +492,10 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
     // Bound controls show their data.
     if !doc.data_parts.is_empty() {
         let (controls, parts) = (&mut doc.controls, super::binding::Parts::new(&doc.data_parts));
+        let runs = &r.bound_runs;
+        let resolve = |id: ControlId| runs.get(&id).cloned();
         let mut show = |p: &mut Paragraph| {
-            super::binding::refresh(p, controls, &parts);
+            super::binding::refresh(p, controls, &parts, &resolve);
         };
         for s in &mut doc.sections {
             super::fields::paras(&mut s.blocks, &mut show);
@@ -680,6 +687,16 @@ fn shift_connector_text(sections: &mut [Section]) {
             None => {}
         })
     });
+}
+
+/// Where a paragraph closing story element `n` goes: before its end tag, or the whole element when it has none.
+fn story_end(n: Node) -> std::ops::Range<usize> {
+    let r = n.range();
+    // An attribute value holds no `<`, so the last `</` is the element's own end tag.
+    match n.document().input_text()[r.clone()].rfind("</") {
+        Some(k) => r.start + k..r.start + k,
+        None => r,
+    }
 }
 
 /// Marks a note's drawings: a note has no floats, its anchors are laid out inline.
@@ -964,6 +981,9 @@ struct Reader {
     lossy: bool,
     /// [`Document::controls`].
     controls: HashMap<ControlId, Control>,
+    /// Each bound inline control's own run (its `w:sdtPr/w:rPr` over its paragraph's base, in its part): what its
+    /// data replaces its placeholder in.
+    bound_runs: HashMap<ControlId, Run>,
     /// Who made the revisions and comments, and the people part's identities by author name.
     people: People,
     identities: HashMap<String, Identity>,
@@ -1029,7 +1049,7 @@ impl Reader {
         let saved = (self.part.clone(), self.rels.clone());
         self.enter_part(path, pkg);
         let root = pick(dom.root_element())?;
-        let mut blocks = self.read_blocks(root, pkg, None);
+        let mut blocks = self.read_story_blocks(root, pkg);
         self.close_ranges(&mut blocks);
         (self.part, self.rels) = saved;
         Some(blocks)
@@ -1048,7 +1068,7 @@ impl Reader {
             {
                 p.initials = initials.clone();
             }
-            let mut body = self.read_blocks(c, pkg, None);
+            let mut body = self.read_story_blocks(c, pkg);
             self.close_ranges(&mut body);
             let last = c.descendants().rfind(|d| is_w(*d, "p"));
             let para_id = last.and_then(|p| super::comments::hex(p.attribute((W14, "paraId")))).unwrap_or_else(|| self.ids.next_para_id());
@@ -1331,22 +1351,8 @@ impl Reader {
         if let Some(p) = self.pending_hidden.take() {
             blocks.push(Block::Para(p));
         }
-        // A body that ends with a table ends with an empty paragraph after it.
-        if matches!(blocks.last(), Some(Block::Table(_))) {
-            let r = self.res.paragraph(&ParaProps::default(), None);
-            let mark = self.run_style(&self.run_props(&r.base, None));
-            let id = next_para_id();
-            blocks.push(Block::Para(Paragraph {
-                style: Rc::new(r.style),
-                mark,
-                list: None,
-                inlines: Vec::new(),
-                src: None,
-                id,
-                div: None,
-                controls: Vec::new(),
-            }));
-        }
+        let at = last.map_or_else(|| story_end(body), |s| s.range().start..s.range().start);
+        self.close_story(&mut blocks, at);
         sec.blocks = blocks;
         sections.push(sec);
         // Ranges pair across the body's sections.
@@ -1355,6 +1361,36 @@ impl Reader {
             strip_ranges(&mut s.blocks, &open);
         }
         sections
+    }
+
+    /// A story that doesn't end with a paragraph (empty, or ending with a table) ends with an empty one, its source
+    /// `at` ([`ParaSrc::closing`]).
+    fn close_story(&mut self, blocks: &mut Vec<Block>, at: std::ops::Range<usize>) {
+        if matches!(blocks.last(), Some(Block::Para(_))) {
+            return;
+        }
+        let r = self.res.paragraph(&ParaProps::default(), None);
+        let mark = self.run_style(&self.run_props(&r.base, None));
+        let src = self
+            .record
+            .then(|| Rc::new(ParaSrc { ranges: vec![at], segs: Vec::new(), simple: Vec::new(), lossy: false, closing: true, joined: Vec::new() }));
+        blocks.push(Block::Para(Paragraph {
+            style: Rc::new(r.style),
+            mark,
+            list: None,
+            inlines: Vec::new(),
+            src,
+            id: next_para_id(),
+            div: None,
+            controls: Vec::new(),
+        }));
+    }
+
+    /// [`Reader::read_blocks`] of a story's element, closed by [`Reader::close_story`].
+    fn read_story_blocks(&mut self, container: Node, pkg: &mut Package) -> Vec<Block> {
+        let mut blocks = self.read_blocks(container, pkg, None);
+        self.close_story(&mut blocks, story_end(container));
+        blocks
     }
 
     fn read_blocks(&mut self, container: Node, pkg: &mut Package, table: Option<&TableCtx>) -> Vec<Block> {
@@ -1396,7 +1432,11 @@ impl Reader {
                     run.push(m);
                     i += 1;
                 }
-                out.push((Some(Block::Table(self.read_table(&run, pkg))), None));
+                let t = self.read_table(&run, pkg);
+                // A table without rows holds nothing.
+                if !t.rows.is_empty() {
+                    out.push((Some(Block::Table(t)), None));
+                }
             } else if is_w(n, "sdt") || is_w(n, "customXml") {
                 let content = if is_w(n, "sdt") { child(n, "sdtContent") } else { Some(n) };
                 if let Some(c) = content {
@@ -1500,11 +1540,13 @@ impl Reader {
             sec.gutter = g("gutter", 0.0);
         }
         if let Some(c) = child(s, "cols") {
-            let num = int(attr(c, "num")).unwrap_or(1).max(1) as usize;
+            let num = int(attr(c, "num")).unwrap_or(1).clamp(1, Columns::MAX as i64) as usize;
             let space = attr_twips(c, "space").unwrap_or(36.0);
             let equal = attr(c, "equalWidth").map(|v| on_off_str(Some(v))).unwrap_or(true);
-            let explicit: Vec<(f64, f64)> =
-                children(c, "col").map(|col| (attr_twips(col, "w").unwrap_or(0.0), attr_twips(col, "space").unwrap_or(0.0))).collect();
+            let explicit: Vec<(f64, f64)> = children(c, "col")
+                .take(Columns::MAX)
+                .map(|col| (attr_twips(col, "w").unwrap_or(0.0), attr_twips(col, "space").unwrap_or(0.0)))
+                .collect();
             sec.columns = Columns {
                 num: if !equal && !explicit.is_empty() { explicit.len() } else { num },
                 cols: if equal { Vec::new() } else { explicit },
@@ -1683,7 +1725,7 @@ impl Reader {
         self.para_no = outer_para;
         let (segs, lossy, simple) =
             (std::mem::replace(&mut self.segs, outer.0), std::mem::replace(&mut self.lossy, outer.1), std::mem::replace(&mut self.simple, outer.2));
-        let src = self.record.then(|| Rc::new(ParaSrc { ranges: vec![n.range()], segs, simple, lossy }));
+        let src = self.record.then(|| Rc::new(ParaSrc { ranges: vec![n.range()], segs, simple, lossy, closing: false, joined: Vec::new() }));
         let para = Paragraph { style: para_style, mark: mark.clone(), list, inlines, src, id: next_para_id(), div: None, controls: Vec::new() };
 
         let spec = self.pending_spec.take();
@@ -1695,29 +1737,7 @@ impl Reader {
             // character (a line starting at a vanished mark is the mark's).
             Some(mut prev) => {
                 let at = prev.inlines.iter().map(Inline::units).sum::<usize>() as u32;
-                let mut style = (*para.style).clone();
-                let first = &prev.style;
-                // An empty paragraph before the mark gives nothing, except in compat 15 with `w:specVanish`: its
-                // alignment and indents (the first of a chain of them).
-                if let (0, Some(s)) = (at, &spec) {
-                    (style.ind_left, style.ind_right, style.ind_first, style.jc) = (s.ind_left, s.ind_right, s.ind_first, s.jc);
-                }
-                if at > 0 {
-                    (style.ind_left, style.ind_right, style.ind_first, style.jc) = (first.ind_left, first.ind_right, first.ind_first, first.jc);
-                    (style.space_before, style.before_auto) = (first.space_before, first.before_auto);
-                    style.tabs = first.tabs.clone();
-                    if self.res.styles.compat == Compat::Legacy {
-                        style.joined = first.joined.iter().cloned().chain([(at, para.style.clone())]).collect();
-                    }
-                    (style.border_top, style.border_bottom, style.border_left, style.border_right, style.border_between) = (
-                        first.border_top.clone(),
-                        first.border_bottom.clone(),
-                        first.border_left.clone(),
-                        first.border_right.clone(),
-                        first.border_between.clone(),
-                    );
-                    (style.shading, style.shd) = (first.shading, first.shd.clone());
-                }
+                let style = super::resolve::joined_style(&prev.style, &para.style, at, spec.as_deref(), self.res.styles.compat == Compat::Legacy);
                 prev.inlines.extend(para.inlines);
                 let src = match (prev.src, para.src) {
                     (Some(a), Some(b)) => Some(Rc::new(ParaSrc {
@@ -1725,6 +1745,8 @@ impl Reader {
                         segs: [a.segs.clone(), b.segs.clone()].concat(),
                         simple: [a.simple.clone(), b.simple.clone()].concat(),
                         lossy: a.lossy || b.lossy,
+                        closing: false,
+                        joined: [a.joined.clone(), b.joined.clone()].concat(),
                     })),
                     (a, b) => a.or(b),
                 };
@@ -1746,6 +1768,10 @@ impl Reader {
             let empty = para.inlines.iter().map(Inline::units).sum::<usize>() == 0;
             if spec_vanish && empty && self.res.styles.compat == Compat::Generic {
                 self.pending_spec = Some(spec.unwrap_or_else(|| para.style.clone()));
+            }
+            let end = para.inlines.iter().map(Inline::units).sum::<usize>() as u32;
+            if let Some(src) = para.src.as_mut().and_then(Rc::get_mut) {
+                src.joined.push(JoinedPart { end, ppr: para.style.direct.clone(), spec_vanish });
             }
             para.mark = mark;
             self.pending_hidden = Some(para);
@@ -1825,6 +1851,12 @@ impl Reader {
                         let (mark, segs) = (units_mark(out), self.segs.len());
                         // An inline control's content between its markers.
                         let id = self.control(e);
+                        if self.controls.get(&id).is_some_and(|k| k.props.binding.is_some())
+                            && let Some(rpr) = pr.and_then(|p| child(p, "rPr"))
+                        {
+                            let run = self.with_direct(self.run_style(&self.run_props(base, Some(rpr))), Some(rpr));
+                            self.bound_runs.insert(id, run);
+                        }
                         out.push(Inline::ControlStart(id));
                         self.read_inlines(c, base, pkg, out);
                         out.push(Inline::ControlEnd(id));
@@ -2291,18 +2323,18 @@ impl Reader {
     fn hyperlink_code(&self, e: Node) -> Option<String> {
         let address = e.attribute((R, "id")).and_then(|id| self.rels.get(id)).filter(|(kind, _)| kind == "hyperlink").map(|(_, t)| t.as_str());
         let anchor = attr(e, "anchor");
+        let quote = super::fields::quote;
         let mut code = String::from("HYPERLINK");
         if let Some(a) = address {
-            code += &format!(" \"{a}\"");
+            code += &format!(" {}", quote(a));
         }
         if let Some(a) = anchor {
-            code += &format!(" \\l \"{a}\"");
+            code += &format!(" \\l {}", quote(a));
         }
         // The ScreenTip and target frame, as the field's switches: a link rewritten as its field keeps them.
-        let quoted = |v: &str| v.replace('\\', "\\\\").replace('"', "\\\"");
         for (switch, name) in [("o", "tooltip"), ("t", "tgtFrame")] {
             if let Some(v) = attr(e, name) {
-                code += &format!(" \\{switch} \"{}\"", quoted(v));
+                code += &format!(" \\{switch} {}", quote(v));
             }
         }
         (address.is_some() || anchor.is_some()).then_some(code)
@@ -2448,7 +2480,7 @@ impl Reader {
         let alt: Rc<str> = v.alt.as_str().into();
         let text_box = v.textbox.map(|(t, insets, v_anchor, auto_fit)| {
             let saved = (std::mem::take(&mut self.fields), std::mem::take(&mut self.wrap));
-            let blocks = self.read_blocks(t, pkg, None);
+            let blocks = self.read_story_blocks(t, pkg);
             (self.fields, self.wrap) = saved;
             let outline = shape
                 .sp()
@@ -2774,7 +2806,7 @@ impl Reader {
         let auto_fit = body.is_some_and(|b| b.children().any(|c| is(c, A, "spAutoFit")));
         // A text box is its own content: the anchor's fields and revision wrappers don't reach into it.
         let saved = (std::mem::take(&mut self.fields), std::mem::take(&mut self.wrap));
-        let blocks = self.read_blocks(t, pkg, None);
+        let blocks = self.read_story_blocks(t, pkg);
         (self.fields, self.wrap) = saved;
         let v_anchor = match body.and_then(|b| b.attribute("anchor")) {
             Some("ctr") => 1,
@@ -3028,8 +3060,7 @@ impl Reader {
         let tc_pr = child(cn, "tcPr");
         let mut tcp = base.clone();
         tcp.merge(&TcProps::parse(tc_pr, &self.res.styles.colours));
-        let bv = |b: &Option<Border>| b.clone();
-        Cell {
+        let mut c = Cell {
             width: tcp.width,
             span: tcp.grid_span.unwrap_or(1).max(1) as usize,
             v_merge: match tcp.v_merge {
@@ -3037,26 +3068,27 @@ impl Reader {
                 Some(false) => VMerge::Continue,
                 None => VMerge::None,
             },
-            top: bv(&tcp.borders.top),
-            left: bv(&tcp.borders.left),
-            bottom: bv(&tcp.borders.bottom),
-            right: bv(&tcp.borders.right),
-            shading: tcp.shading.flatten(),
-            hatch: tcp.shd.as_ref().and_then(Shd::hatch),
-            margins: cell_margins(&tcp, tm, unset),
-            v_align: tcp.v_align.clone().unwrap_or_else(|| "top".into()),
-            text_direction: tcp.text_direction.clone().unwrap_or_else(|| "lrTb".into()),
-            no_wrap: tcp.no_wrap.unwrap_or(false),
-            fit_text: tcp.fit_text.unwrap_or(false),
+            top: None,
+            left: None,
+            bottom: None,
+            right: None,
+            shading: None,
+            hatch: None,
+            margins: [0.0; 4],
+            v_align: String::new(),
+            text_direction: String::new(),
+            no_wrap: false,
+            fit_text: false,
             hide_mark: tc_pr.and_then(|p| child(p, "hideMark")).is_some_and(|n| !matches!(attr(n, "val"), Some("0" | "false" | "off"))),
-            diagonals: (tcp.borders.tl2br.is_some() || tcp.borders.tr2bl.is_some())
-                .then(|| Rc::new([tcp.borders.tl2br.clone(), tcp.borders.tr2bl.clone()])),
+            diagonals: None,
             direct: Raw(tc_pr.map(|n| Rc::from(&n.document().input_text()[n.range()]))),
             blocks,
             controls,
             rev,
             ids: cell_ids(cn, tc_pr),
-        }
+        };
+        style_cell(&mut c, &tcp, tm, unset);
+        c
     }
 
     /// A table row: its properties `trp` and exceptions `ex` over the table's `tbl` (`row_tbl` with the exceptions),
@@ -3252,6 +3284,21 @@ fn merged_grid(grids: &[Vec<f64>], rows: &mut [Row], row_table: &[usize], moves:
         r.grid_after = at(k, c + r.grid_after) - end;
     }
     all.windows(2).map(|w| (w[1] - w[0]) as f64 / 20.0).collect()
+}
+
+/// A cell's properties a table style can give, from `tcp` (its own over its region's) and the cell margins `tm` its
+/// row has (`unset` for a side neither sets).
+pub(crate) fn style_cell(c: &mut Cell, tcp: &TcProps, tm: &Margins, unset: f64) {
+    let b = &tcp.borders;
+    (c.top, c.left, c.bottom, c.right) = (b.top.clone(), b.left.clone(), b.bottom.clone(), b.right.clone());
+    c.shading = tcp.shading.flatten();
+    c.hatch = tcp.shd.as_ref().and_then(Shd::hatch);
+    c.margins = cell_margins(tcp, tm, unset);
+    c.v_align = tcp.v_align.clone().unwrap_or_else(|| "top".into());
+    c.text_direction = tcp.text_direction.clone().unwrap_or_else(|| "lrTb".into());
+    c.no_wrap = tcp.no_wrap.unwrap_or(false);
+    c.fit_text = tcp.fit_text.unwrap_or(false);
+    c.diagonals = (b.tl2br.is_some() || b.tr2bl.is_some()).then(|| Rc::new([b.tl2br.clone(), b.tr2bl.clone()]));
 }
 
 fn cell_margins(tcp: &TcProps, tm: &Margins, unset: f64) -> [f64; 4] {
@@ -3507,6 +3554,58 @@ fn cell_ids(tc: Node, tc_pr: Option<Node>) -> Option<Rc<crate::docx::CellIds>> {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn a_bound_control_shows_its_data_in_its_own_run_over_its_paragraphs() {
+        let rel = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+        let w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+        // Bold over the paragraph's Big style, in the body and in a header with a prefix of its own.
+        let control = |p: &str| {
+            format!(
+                r#"<{p}p><{p}pPr><{p}pStyle {p}val="Big"/></{p}pPr><{p}sdt><{p}sdtPr><{p}rPr><{p}b/></{p}rPr><{p}showingPlcHdr/><{p}dataBinding {p}prefixMappings="xmlns:d='urn:d'" {p}xpath="/d:data[1]/d:name[1]"/><{p}text/></{p}sdtPr><{p}sdtContent><{p}r><{p}t>Click</{p}t></{p}r></{p}sdtContent></{p}sdt></{p}p>"#
+            )
+        };
+        let files = [
+            (
+                "[Content_Types].xml".to_string(),
+                r#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#.to_string(),
+            ),
+            (
+                "_rels/.rels".to_string(),
+                format!(r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="{rel}/officeDocument" Target="word/document.xml"/></Relationships>"#),
+            ),
+            (
+                "word/_rels/document.xml.rels".to_string(),
+                format!(
+                    r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="{rel}/styles" Target="styles.xml"/><Relationship Id="rId2" Type="{rel}/customXml" Target="../customXml/item1.xml"/><Relationship Id="rId3" Type="{rel}/header" Target="header1.xml"/></Relationships>"#
+                ),
+            ),
+            (
+                "word/styles.xml".to_string(),
+                format!(r#"<w:styles xmlns:w="{w}"><w:style w:type="paragraph" w:styleId="Big"><w:name w:val="Big"/><w:rPr><w:sz w:val="40"/></w:rPr></w:style></w:styles>"#),
+            ),
+            ("customXml/item1.xml".to_string(), r#"<data xmlns="urn:d"><name>Ada</name></data>"#.to_string()),
+            ("word/header1.xml".to_string(), format!(r#"<h:hdr xmlns:h="{w}">{}</h:hdr>"#, control("h:"))),
+            (
+                "word/document.xml".to_string(),
+                format!(
+                    r#"<w:document xmlns:w="{w}" xmlns:r="{rel}"><w:body>{}<w:sectPr><w:headerReference w:type="default" r:id="rId3"/></w:sectPr></w:body></w:document>"#,
+                    control("w:")
+                ),
+            ),
+        ];
+        let files: Vec<(&str, &str)> = files.iter().map(|(n, x)| (n.as_str(), x.as_str())).collect();
+        let bytes = crate::layout::tests::package_bytes(&files).expect("a package");
+        for doc in [crate::docx::read(&bytes).expect("reads"), crate::docx::read_editable(&bytes).expect("reads for editing")] {
+            let header = doc.stories.values().next().expect("the header");
+            for (part, blocks) in [("body", &doc.sections[0].blocks), ("header", header)] {
+                let Some(crate::docx::Block::Para(p)) = blocks.first() else { panic!("a paragraph") };
+                let run = p.inlines.iter().find_map(|i| if let crate::docx::Inline::Text(t, r) = i { (t == "Ada").then_some(r) } else { None });
+                let run = run.unwrap_or_else(|| panic!("{part}: the data shows: {:?}", p.inlines));
+                assert!(run.bold && (run.size - 20.0).abs() < 1e-9, "{part}: bold at the style's size: {} {}", run.bold, run.size);
+            }
+        }
+    }
+
+    #[test]
     fn ids_are_seeded_from_whole_attribute_names() {
         let mut ids = super::IdCounter::default();
         let xml = r#"<w:ins w:id = '41' w:rsid="99"><w:p w14:paraId="0000001F" w16cid:durableId="7FFFFFFE x"/><w:c id="7"/></w:ins>"#;
@@ -3525,5 +3624,34 @@ mod tests {
         assert_eq!(tw(super::vml_effect(Some(60.0), Some([2000.0, 0.0, 3440.0, 795.0])))[3], 30.0);
         assert_eq!(tw(super::vml_effect(None, Some([2002.0, 0.0, 3442.0, 800.0]))), [7.0, 0.0, 0.0, 0.0]);
         assert_eq!(super::vml_effect(Some(15.0), None), [0.0; 4]);
+    }
+
+    #[test]
+    fn a_hyperlinks_target_and_anchor_keep_their_backslashes() {
+        let rel = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+        let w = format!(r#"xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="{rel}""#);
+        let target = r"file:///\\server\share\a\";
+        let link = |id: &str| format!(r#"<w:p><w:hyperlink r:id="{id}" w:anchor="b\&quot;"><w:r><w:t>x</w:t></w:r></w:hyperlink></w:p>"#);
+        let doc = crate::layout::tests::package(&[
+            (
+                "[Content_Types].xml",
+                r#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+            ),
+            (
+                "_rels/.rels",
+                &format!(r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="{rel}/officeDocument" Target="word/document.xml"/></Relationships>"#),
+            ),
+            (
+                "word/_rels/document.xml.rels",
+                &format!(r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId9" Type="{rel}/hyperlink" Target="{target}" TargetMode="External"/></Relationships>"#),
+            ),
+            ("word/document.xml", &format!("<w:document {w}><w:body>{}</w:body></w:document>", link("rId9"))),
+        ])
+        .expect("reads");
+        let Some(crate::docx::Block::Para(p)) = doc.sections[0].blocks.first() else { panic!("a paragraph") };
+        let span = *crate::docx::fields::spans(&p.inlines).first().expect("the link's field");
+        let code = crate::docx::fields::parse(&crate::docx::fields::code_text(&p.inlines, span));
+        assert_eq!(code.args, [target]);
+        assert_eq!(code.switches.iter().find(|s| s.flag == 'l').and_then(|s| s.arg.as_deref()), Some("b\\\""));
     }
 }

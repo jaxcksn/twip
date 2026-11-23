@@ -25,9 +25,111 @@ pub enum TableFormat {
     TableStyle(String),
     TableLook(Look),
     CellProps(crate::api::command::CellProperties),
-    RowProps { hidden: Option<bool>, exceptions: Option<RowEx> },
+    RowProps {
+        hidden: Option<bool>,
+        exceptions: Option<RowEx>,
+    },
     CellSpacing(f64),
     Alt(crate::api::command::TableAltText),
+    /// AutoFit to the window or to fixed widths: the layout, the table's width and its columns' widths.
+    Fit {
+        fixed: bool,
+        width: Width,
+        grid: Vec<f64>,
+    },
+}
+
+/// Sets `row`'s height (`None`: auto) on the model and in its `w:trPr`.
+pub(super) fn set_height(row: &mut crate::docx::Row, h: Option<(f64, String)>, cx: &crate::docx::write::props::Cx) {
+    use crate::docx::write::props::Props;
+    let w = &cx.w;
+    let mut p = Props::parse(row.direct.0.as_deref(), "trPr", cx);
+    p.reorder(crate::docx::write::props::TRPR);
+    match &h {
+        Some((v, rule)) => p.set(
+            "trHeight",
+            format!("<{w}trHeight {w}val=\"{}\" {w}hRule=\"{}\"/>", (v * 20.0).round() as i64, crate::docx::write::props::esc(rule)),
+        ),
+        None => p.remove("trHeight"),
+    }
+    row.direct = crate::docx::Raw(p.xml().map(|x| std::rc::Rc::from(x.as_str())));
+    row.height = h;
+}
+
+/// `v` as a table width element `name`.
+fn width_xml(w: &str, name: &str, v: &Width) -> String {
+    let (n, kind) = match v {
+        Width::Auto => (0, "auto"),
+        Width::Nil => (0, "nil"),
+        Width::Dxa(pt) => ((pt * 20.0).round() as i64, "dxa"),
+        Width::Pct(f) => ((f * 5000.0).round() as i64, "pct"),
+    };
+    format!("<{w}{name} {w}w=\"{n}\" {w}type=\"{kind}\"/>")
+}
+
+/// `xml` as the table's own `name` in its `w:tblPr` (empty: none).
+fn set_own(props: &mut TableProps, name: &str, xml: String, cx: &crate::docx::write::props::Cx) {
+    use crate::docx::write::props::{Props, TBLPR};
+    let mut p = Props::parse(props.direct.0.as_deref(), "tblPr", cx);
+    p.reorder(TBLPR);
+    match xml.is_empty() {
+        true => p.remove(name),
+        false => p.set(name, xml),
+    }
+    let xml = p.xml().unwrap_or_else(|| format!("<{}tblPr/>", cx.w));
+    props.direct = crate::docx::Raw(Some(std::rc::Rc::from(xml.as_str())));
+}
+
+/// `width` as the table's on the model and in its `w:tblPr`.
+pub(super) fn set_width(props: &mut TableProps, width: Width, cx: &crate::docx::write::props::Cx) {
+    props.width = width;
+    set_own(props, "tblW", width_xml(&cx.w, "tblW", &width), cx);
+}
+
+/// What table formatting `f` set on the model, written into the table's `w:tblPr` (`props`) and the `w:trPr` of its
+/// `rows` it changed (from `was`) as their own.
+fn own_xml(f: &TableFormat, props: &mut TableProps, rows: &mut [crate::docx::Row], was: &[crate::docx::Row], cx: &crate::docx::write::props::Cx) {
+    use crate::docx::write::props::Props;
+    let w = &cx.w;
+    let raw = |x: Option<String>| crate::docx::Raw(x.map(|x| std::rc::Rc::from(x.as_str())));
+    let table = match f {
+        TableFormat::TableAlign(_) => {
+            let v = match props.jc {
+                Jc::Center => "center",
+                Jc::Right => "right",
+                _ => "left",
+            };
+            Some(("jc", format!("<{w}jc {w}val=\"{v}\"/>")))
+        }
+        TableFormat::TableIndent(_) => Some(("tblInd", width_xml(w, "tblInd", &Width::Dxa(props.ind)))),
+        TableFormat::TableWidth(_) | TableFormat::ColumnWidth(_) => Some(("tblW", width_xml(w, "tblW", &props.width))),
+        // Written when zero too: without its own, the table takes its style's.
+        TableFormat::CellSpacing(_) => Some(("tblCellSpacing", width_xml(w, "tblCellSpacing", &Width::Dxa(props.cell_spacing)))),
+        _ => None,
+    };
+    if let Some((name, xml)) = table {
+        set_own(props, name, xml, cx);
+    }
+    let row = |r: &crate::docx::Row| -> Option<(&'static str, String)> {
+        match f {
+            TableFormat::RowCantSplit(_) => Some(("cantSplit", format!("<{w}cantSplit {w}val=\"{}\"/>", if r.cant_split { 1 } else { 0 }))),
+            TableFormat::HeaderRow(_) => Some(("tblHeader", format!("<{w}tblHeader {w}val=\"{}\"/>", if r.header { 1 } else { 0 }))),
+            _ => None,
+        }
+    };
+    for (r, old) in rows.iter_mut().zip(was) {
+        if (&r.height, r.cant_split, r.header) == (&old.height, old.cant_split, old.header) {
+            continue;
+        }
+        let Some((name, xml)) = row(r) else { continue };
+        let mut p = Props::parse(r.direct.0.as_deref(), "trPr", cx);
+        p.reorder(crate::docx::write::props::TRPR);
+        match xml.is_empty() {
+            true => p.remove(name),
+            false => p.set(name, xml),
+        }
+        r.direct = raw(p.xml());
+    }
 }
 
 /// A `w:shd` to set: its pattern (`None`: the one written there, else the one its style gives, else clear), pattern
@@ -110,19 +212,34 @@ fn border_xml(w: &str, name: &str, b: &Border) -> String {
     )
 }
 
-/// A cell's `w:tcBorders` from its model borders.
-fn tc_borders(w: &str, cell: &crate::docx::Cell) -> String {
-    let side = |name: &str, b: &Option<Border>| b.as_ref().map_or(String::new(), |b| border_xml(w, name, b));
+/// A cell's `w:tcBorders` as written, with the sides in `sides` (bits: top, left, bottom, right, then the two
+/// diagonals) set from its model borders: the others stay as they were, a style's staying its style's.
+fn tc_borders(cx: &crate::docx::write::props::Cx, cell: &crate::docx::Cell, sides: u8) -> String {
+    use crate::docx::write::props::{Props, TC_BORDERS};
+    let w = &cx.w;
+    let tcpr = Props::parse(cell.direct.0.as_deref(), "tcPr", cx);
+    let mut p = Props::parse(tcpr.get("tcBorders"), "tcBorders", cx);
+    p.reorder(TC_BORDERS);
     let [tl2br, tr2bl] = cell.diagonals.as_deref().cloned().unwrap_or_default();
-    format!(
-        "<{w}tcBorders>{}{}{}{}{}{}</{w}tcBorders>",
-        side("top", &cell.top),
-        side("left", &cell.left),
-        side("bottom", &cell.bottom),
-        side("right", &cell.right),
-        side("tl2br", &tl2br),
-        side("tr2bl", &tr2bl)
-    )
+    let all = [
+        ("top", None, &cell.top),
+        ("left", Some("start"), &cell.left),
+        ("bottom", None, &cell.bottom),
+        ("right", Some("end"), &cell.right),
+        ("tl2br", None, &tl2br),
+        ("tr2bl", None, &tr2bl),
+    ];
+    for (bit, (name, bidi, b)) in all.into_iter().enumerate() {
+        if sides & (1 << bit) == 0 {
+            continue;
+        }
+        let name = bidi.filter(|n| p.get(n).is_some()).unwrap_or(name);
+        match b {
+            Some(b) => p.set(name, border_xml(w, name, b)),
+            None => p.remove(name),
+        }
+    }
+    p.xml().unwrap_or_default()
 }
 
 /// Every character of the row is hidden: with its end mark, the row hides.
@@ -262,7 +379,8 @@ impl Editor {
                         let mut d = cell.diagonals.as_deref().cloned().unwrap_or_default();
                         d[k] = Some(b.clone());
                         cell.diagonals = Some(std::rc::Rc::new(d));
-                        set_direct(cell, "tcBorders", tc_borders(&w, cell));
+                        let xml = tc_borders(&cx, cell, 16 << k);
+                        set_direct(cell, "tcBorders", xml);
                     }
                 }
             }
@@ -279,7 +397,7 @@ impl Editor {
                 };
                 let value = if *edges == Edges::None { nil() } else { b.clone() };
                 let mut shared: Vec<(usize, usize, usize)> = Vec::new();
-                let mut touched: Vec<(usize, usize)> = Vec::new();
+                let mut touched: Vec<(usize, usize, u8)> = Vec::new();
                 for r in r0..=r1 {
                     for (k, &(c, s, _)) in g.rows[r].iter().enumerate() {
                         if !in_block(r, c, s) {
@@ -293,10 +411,12 @@ impl Editor {
                             (last >= c1, false, Edges::Right),
                         ];
                         let cell = &mut rows[r].cells[k];
+                        let mut bits: u8 = if *edges == Edges::None { 48 } else { 0 };
                         for (i, (outside, horizontal, side)) in sides.into_iter().enumerate() {
                             if !want(outside, horizontal, side) {
                                 continue;
                             }
+                            bits |= 1 << i;
                             *[&mut cell.top, &mut cell.left, &mut cell.bottom, &mut cell.right][i] = Some(value.clone());
                             if outside {
                                 let overlaps = |row: usize| {
@@ -317,23 +437,30 @@ impl Editor {
                                 }
                             }
                         }
-                        touched.push((r, k));
+                        touched.push((r, k, bits));
                     }
                 }
                 for (r, k, side) in shared {
                     let cell = &mut rows[r].cells[k];
                     *[&mut cell.top, &mut cell.left, &mut cell.bottom, &mut cell.right][side] = Some(value.clone());
-                    touched.push((r, k));
+                    touched.push((r, k, 1 << side));
                 }
                 touched.sort_unstable();
-                touched.dedup();
-                for (r, k) in touched {
+                touched.dedup_by(|b, a| {
+                    let same = (a.0, a.1) == (b.0, b.1);
+                    if same {
+                        a.2 |= b.2;
+                    }
+                    same
+                });
+                for (r, k, bits) in touched {
                     let cell = &mut rows[r].cells[k];
                     // No Border clears the selected cells' diagonals too.
                     if *edges == Edges::None && in_block(r, g.rows[r][k].0, g.rows[r][k].1) {
                         cell.diagonals = None;
                     }
-                    set_direct(cell, "tcBorders", tc_borders(&w, cell));
+                    let xml = tc_borders(&cx, cell, bits);
+                    set_direct(cell, "tcBorders", xml);
                 }
             }
             TableFormat::CellProps(p) => {
@@ -398,7 +525,12 @@ impl Editor {
                 // The whole table takes it, rows read from tables joined to it too.
                 rows.iter_mut().for_each(|r| r.table_shading = None);
             }
-            &TableFormat::CellSpacing(v) => props.cell_spacing = ((v.max(0.0)) * 20.0).round() / 20.0,
+            &TableFormat::CellSpacing(v) => {
+                props.cell_spacing = ((v.max(0.0)) * 20.0).round() / 20.0;
+                if props.cell_spacing == t.cell_spacing {
+                    return Outcome::Unchanged("already so");
+                }
+            }
             TableFormat::Alt(a) => {
                 let mut alt = t.alt.as_deref().cloned().unwrap_or_default();
                 if let Some(v) = &a.title {
@@ -417,7 +549,7 @@ impl Editor {
             }
             TableFormat::RowHeight(h) => {
                 let h = h.as_ref().map(|(v, rule)| ((v * 20.0).round() / 20.0, rule.clone()));
-                rows[r0..=r1].iter_mut().for_each(|r| r.height = h.clone());
+                rows[r0..=r1].iter_mut().for_each(|r| set_height(r, h.clone(), &cx));
             }
             &TableFormat::RowCantSplit(on) => {
                 rows[r0..=r1].iter_mut().for_each(|r| r.cant_split = on);
@@ -440,16 +572,37 @@ impl Editor {
                 }
                 grid = Some(gr);
             }
+            TableFormat::Fit { fixed, width, grid: widths } => {
+                let gr: Vec<f64> = widths.iter().map(|v| (v.max(0.0) * 20.0).round() / 20.0).collect();
+                for (r, row) in rows.iter_mut().enumerate() {
+                    for (k, cell) in row.cells.iter_mut().enumerate() {
+                        if let Some(&(c, s, _)) = g.rows[r].get(k) {
+                            cell.width = Some(Width::Dxa((c..c + s.max(1)).filter_map(|i| gr.get(i)).sum()));
+                        }
+                    }
+                }
+                // As its own too: a style's layout or width doesn't come back when it is resolved again.
+                props.fixed = *fixed;
+                set_width(&mut props, *width, &cx);
+                let layout = if *fixed { "fixed" } else { "autofit" };
+                set_own(&mut props, "tblLayout", format!("<{w}tblLayout {w}type=\"{layout}\"/>"), &cx);
+                grid = Some(gr);
+            }
             TableFormat::TableWidth(v) => props.width = *v,
             TableFormat::TableAlign(j) => props.jc = *j,
-            TableFormat::TableIndent(v) => (props.ind, props.ind_pct) = ((v * 20.0).round() / 20.0, None),
+            TableFormat::TableIndent(v) => (props.ind, props.ind_pct, props.ind_set) = ((v * 20.0).round() / 20.0, None, true),
             TableFormat::TableStyle(_) | TableFormat::TableLook(_) => {
                 let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
                 if let TableFormat::TableStyle(id) = f {
-                    if !res.styles.by_id.contains_key(id) {
-                        return Outcome::Unchanged("no such style");
+                    if !res.styles.by_id.get(id).is_some_and(|s| s.kind == crate::docx::styles::StyleKind::Table) {
+                        return Outcome::Unchanged("no such table style");
                     }
                     props.style_id = Some(id.clone());
+                    // Named in its properties too: re-resolving takes the style from them.
+                    let mut p = crate::docx::write::props::Props::parse(t.direct.0.as_deref(), "tblPr", &cx);
+                    p.reorder(crate::docx::write::props::TBLPR);
+                    p.set("tblStyle", format!("<{w}tblStyle {w}val=\"{}\"/>", crate::docx::write::props::esc(id)));
+                    props.direct = crate::docx::Raw(p.xml().map(|x| std::rc::Rc::from(x.as_str())));
                     let mut tbl = res.styles.table_region(Some(id), &[]).tbl.clone();
                     let direct = t
                         .direct
@@ -469,14 +622,11 @@ impl Editor {
                 if let TableFormat::TableLook(l) = f {
                     props.look = Some(*l);
                 }
-                for c in rows.iter_mut().flat_map(|r| r.cells.iter_mut()) {
-                    if c.direct.0.is_none() {
-                        c.direct = crate::docx::Raw(Some(std::rc::Rc::from(format!("<{w}tcPr/>").as_str())));
-                    }
-                }
                 restyle = true;
             }
         }
+        // The table's and rows' own properties as written too: re-resolving after a style edit takes them from there.
+        own_xml(f, &mut props, &mut rows, &t.rows, &cx);
         // `Raw` compares equal whatever it holds: the properties as written count too.
         let same_raw = rows.iter().zip(&t.rows).all(|(a, b)| {
             a.direct.0 == b.direct.0 && a.exceptions.0 == b.exceptions.0 && a.cells.iter().zip(&b.cells).all(|(c, d)| c.direct.0 == d.direct.0)

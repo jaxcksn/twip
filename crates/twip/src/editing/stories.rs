@@ -155,22 +155,32 @@ impl Editor {
         })
     }
 
-    /// A part name for a new header or footer.
+    /// A part name for a new header or footer, beside the main part: one no story has, had when read, a section
+    /// refers to (a part that didn't load), or the package holds (a removed part's name names that part's
+    /// relationship).
     pub(super) fn new_story_name(&self, footer: bool) -> String {
         let kind = if footer { "footer" } else { "header" };
-        let n = (1..)
-            .find(|n| {
-                !self.doc.stories.contains_key(&format!("word/header{n}.xml")) && !self.doc.stories.contains_key(&format!("word/footer{n}.xml"))
-            })
-            .unwrap_or(1);
-        format!("word/{kind}{n}.xml")
+        let src = self.doc.source.as_ref();
+        let dir = src.and_then(|s| s.main.rsplit_once('/')).map_or(String::new(), |(d, _)| format!("{d}/"));
+        let package = src.and_then(|s| zip::ZipArchive::new(std::io::Cursor::new(&s.package[..])).ok());
+        let referred: std::collections::HashSet<&str> =
+            self.doc.sections.iter().flat_map(|s| s.headers.iter().chain(s.footers.iter())).flatten().map(String::as_str).collect();
+        let taken = |name: &str| {
+            self.doc.stories.contains_key(name)
+                || src.is_some_and(|s| s.stories.contains_key(name))
+                || referred.contains(name)
+                || package.as_ref().is_some_and(|z| z.index_for_name(name).is_some())
+        };
+        let n = (1..).find(|n| !taken(&format!("{dir}header{n}.xml")) && !taken(&format!("{dir}footer{n}.xml"))).unwrap_or(1);
+        format!("{dir}{kind}{n}.xml")
     }
 
     /// The step that takes section `section`'s own header or footer `name` away: the part goes with it, unless another
-    /// section or slot shows it too (generated documents share one part), when only this reference goes.
+    /// section or slot shows it too (generated documents share one part), or the part never loaded, when only this
+    /// reference goes.
     fn drop_story_ref(&self, name: String, section: usize, footer: bool, slot: usize) -> Option<super::step::Step> {
         let refs = self.doc.sections.iter().flat_map(|s| s.headers.iter().chain(s.footers.iter())).flatten().filter(|n| **n == name).count();
-        if refs <= 1 {
+        if refs <= 1 && self.doc.stories.contains_key(&name) {
             return Some(super::step::Step::HeaderPart { name, section, footer, slot, blocks: None });
         }
         let s = self.doc.sections.get(section)?;
@@ -192,6 +202,7 @@ impl Editor {
         }
         let refs = |e: &Self, k: usize| e.doc.sections.get(k).map(|s| if footer { s.footers.clone() } else { s.headers.clone() });
         let Some(own) = refs(self, section).map(|r| r[slot].clone()) else { return Outcome::Unchanged("no section") };
+        let here = self.in_shown_part(section, footer, slot);
         let mut tx = self.begin("Link to Previous");
         let step = match (l.linked, own) {
             (true, Some(name)) => match self.drop_story_ref(name, section, footer, slot) {
@@ -222,6 +233,9 @@ impl Editor {
             self.abort(tx);
             return Outcome::Unchanged("the header can't change");
         }
+        if here {
+            self.enter_shown_part(section, footer, slot);
+        }
         self.commit(tx, None, fonts)
     }
 
@@ -231,6 +245,7 @@ impl Editor {
         let Some(s) = self.doc.sections.get(section) else { return Outcome::Unchanged("no section") };
         let own = if footer { s.footers[slot].clone() } else { s.headers[slot].clone() };
         let Some(para) = self.empty_story_para(footer) else { return Outcome::Unchanged("no styles") };
+        let here = self.in_shown_part(section, footer, slot);
         let mut tx = self.begin(if footer { "Remove Footer" } else { "Remove Header" });
         let name = match own {
             Some(name) => {
@@ -250,6 +265,9 @@ impl Editor {
             self.abort(tx);
             return Outcome::Unchanged("the header can't change");
         }
+        if here {
+            self.enter_shown_part(section, footer, slot);
+        }
         self.commit(tx, None, fonts)
     }
 
@@ -260,7 +278,7 @@ impl Editor {
         let (slot, part) =
             crate::layout::page::story_ref(&self.doc.sections, self.doc.settings.even_and_odd, info.section, info.section_page, info.number, footer);
         let part = part.filter(|p| self.doc.stories.contains_key(*p)).cloned();
-        if matches!(self.selection.focus().map(|p| p.story), Some(StoryId::Body)) {
+        if !matches!(self.editing(), StoryId::HeaderFooter(_)) {
             self.body_return = Some(self.selection);
         }
         let mut tx = None;
@@ -270,19 +288,18 @@ impl Editor {
                 let Some(para) = self.empty_story_para(footer) else { return Outcome::Unchanged("no styles") };
                 let name = self.new_story_name(footer);
                 let mut t = self.begin(if footer { "Footer" } else { "Header" });
-                if self
-                    .step(
-                        &mut t,
-                        super::step::Step::HeaderPart {
-                            name: name.clone(),
-                            section: 0,
-                            footer,
-                            slot,
-                            blocks: Some(vec![crate::docx::Block::Para(para)]),
-                        },
-                    )
-                    .is_err()
-                {
+                // A reference to a part that never loaded
+                let dangling = (0..=info.section).rev().find_map(|k| {
+                    let s = self.doc.sections.get(k)?;
+                    Some((k, (if footer { &s.footers } else { &s.headers })[slot].clone()?))
+                });
+                let section = dangling.as_ref().map_or(0, |(k, _)| *k);
+                let cleared = match dangling {
+                    Some((k, d)) => self.drop_story_ref(d, k, footer, slot).is_some_and(|step| self.step(&mut t, step).is_ok()),
+                    None => true,
+                };
+                let blocks = Some(vec![crate::docx::Block::Para(para)]);
+                if !cleared || self.step(&mut t, super::step::Step::HeaderPart { name: name.clone(), section, footer, slot, blocks }).is_err() {
                     self.abort(t);
                     return Outcome::Unchanged("header failed");
                 }
@@ -304,7 +321,7 @@ impl Editor {
         self.set_selection(Selection::Caret(Position::text(story, ParaId(first), Unit(0))));
         let Some(t) = tx else { return Outcome::Moved };
         let out = self.commit(t, None, fonts);
-        if matches!(out, Outcome::Changed(_)) {
+        if matches!(out, Outcome::Changed(_)) && self.batch.is_none() {
             self.provisional = Some(Provisional { story, tx: self.history.position() });
         }
         out
@@ -319,10 +336,10 @@ impl Editor {
     fn end_provisional(&mut self, fonts: &Fonts) {
         let Some(p) = self.provisional.filter(|_| self.batch.is_none()) else { return };
         self.provisional = None;
-        let kept = self.selection;
+        let kept = (self.editing() != p.story).then_some(self.selection);
         if self.history.position() == p.tx && matches!(self.undo(true, fonts), Outcome::Changed(_)) {
             self.history.pop_redo();
-            if kept.focus().is_some_and(|f| f.story != p.story) {
+            if let Some(kept) = kept {
                 self.set_selection(kept);
             }
         }
@@ -332,14 +349,49 @@ impl Editor {
         if !matches!(self.editing(), StoryId::HeaderFooter(_)) {
             return Outcome::Unchanged("not in a header or footer");
         }
-        let back =
-            self.body_return.take().filter(|s| s.focus().and_then(|p| p.para_offset()).is_some_and(|(p, _)| self.index.para(&self.doc, p).is_some()));
-        let s = match back {
-            Some(s) => s,
-            None => Selection::Caret(self.nav().story_edge(StoryId::Body, false).unwrap_or(Position::text(StoryId::Body, ParaId(0), Unit(0)))),
-        };
+        let s = self.body_selection();
         self.set_selection(s);
         Outcome::Moved
+    }
+
+    /// What closing a header or footer selects: the selection from before it opened while that still resolves, else
+    /// the body's start.
+    fn body_selection(&mut self) -> Selection {
+        let resolves = |e: &Self, s: &Selection| match *s {
+            Selection::Cells { table, .. } => e.index.table(&e.doc, table).is_some(),
+            Selection::Object(ObjectRef::Inline { para, .. }) => e.index.para(&e.doc, para).is_some(),
+            Selection::Object(ObjectRef::Floating(f)) => e.index.float_anchor(f).is_some(),
+            _ => s.focus().and_then(|p| p.para_offset()).is_some_and(|(p, _)| e.index.para(&e.doc, p).is_some()),
+        };
+        match self.body_return.take().filter(|s| resolves(self, s)) {
+            Some(s) => s,
+            None => Selection::Caret(self.nav().story_edge(StoryId::Body, false).unwrap_or(Position::text(StoryId::Body, ParaId(0), Unit(0)))),
+        }
+    }
+
+    /// The header or footer part section `section` shows in `slot`: its own, or the nearest section before's.
+    fn shown_part(&self, section: usize, footer: bool, slot: usize) -> Option<&String> {
+        self.doc.sections.get(..=section)?.iter().rev().find_map(|s| (if footer { &s.footers } else { &s.headers }).get(slot)?.as_ref())
+    }
+
+    /// Whether the selection is in the part section `section` shows in `slot`.
+    fn in_shown_part(&self, section: usize, footer: bool, slot: usize) -> bool {
+        let StoryId::HeaderFooter(k) = self.editing() else { return false };
+        self.index.part_name(k).is_some_and(|n| self.shown_part(section, footer, slot).is_some_and(|s| s == n))
+    }
+
+    /// A caret at the start of the part section `section` now shows in `slot`, or back in the body when it shows none.
+    fn enter_shown_part(&mut self, section: usize, footer: bool, slot: usize) {
+        let at = self.shown_part(section, footer, slot).and_then(|n| self.index.header_footer(n)).and_then(|story| {
+            let blocks = self.index.blocks(&self.doc, super::index::Container::Story(story))?;
+            let first = blocks.iter().find_map(|b| if let Block::Para(p) = b { Some(p.id) } else { None })?;
+            Some(Position::text(story, ParaId(first), Unit(0)))
+        });
+        let s = match at {
+            Some(at) => Selection::Caret(at),
+            None => self.body_selection(),
+        };
+        self.set_selection(s);
     }
 
     pub(super) fn note_jump(&mut self, p: Position) -> bool {
@@ -351,15 +403,16 @@ impl Editor {
             Some(Inline::NoteMark(kind, id, _)) if is_note(p.story) => Some((false, *kind, *id)),
             _ => None,
         });
-        let Some((to_note, kind, id)) = found else { return false };
-        let target = if to_note {
-            let story = match kind {
-                NoteKind::Foot => StoryId::Footnote(id),
-                NoteKind::End => StoryId::Endnote(id),
-            };
-            self.nav().story_edge(story, false)
-        } else {
-            self.note_reference(kind, id)
+        let target = match found {
+            Some((true, kind, id)) => {
+                let story = match kind {
+                    NoteKind::Foot => StoryId::Footnote(id),
+                    NoteKind::End => StoryId::Endnote(id),
+                };
+                self.nav().story_edge(story, false)
+            }
+            Some((false, kind, id)) => self.note_reference(kind, id).map(|(at, _)| at),
+            None => self.custom_mark_reference(p.story, q, near),
         };
         let Some(t) = target else { return false };
         self.drag = None;
@@ -367,17 +420,35 @@ impl Editor {
         true
     }
 
-    fn note_reference(&self, kind: NoteKind, id: i64) -> Option<Position> {
+    /// The reference of the note whose custom mark (the text leading its first paragraph `q`) is at one of `near`.
+    fn custom_mark_reference(&self, story: StoryId, q: &Paragraph, near: [Option<Unit>; 2]) -> Option<Position> {
+        let (kind, id, blocks) = match story {
+            StoryId::Footnote(id) => (NoteKind::Foot, id, self.doc.footnotes.get(&id)?),
+            StoryId::Endnote(id) => (NoteKind::End, id, self.doc.endnotes.get(&id)?),
+            _ => return None,
+        };
+        if !matches!(blocks.first(), Some(Block::Para(first)) if first.id == q.id) {
+            return None;
+        }
+        let mark = q.inlines.iter().find(|i| i.units() > 0).filter(|i| matches!(i, Inline::Text(..)))?;
+        if !near.into_iter().flatten().any(|v| inline_at(q, v).is_some_and(|i| std::ptr::eq(i, mark))) {
+            return None;
+        }
+        self.note_reference(kind, id).filter(|(_, custom)| *custom).map(|(at, _)| at)
+    }
+
+    /// Where the note's reference is, and whether it has a custom mark.
+    pub(super) fn note_reference(&self, kind: NoteKind, id: i64) -> Option<(Position, bool)> {
         self.index.para_ids().find_map(|pid| {
             let p = self.index.para(&self.doc, pid)?;
             let mut at = 0u32;
             for i in &p.inlines {
-                if let Inline::NoteRef { kind: k, id: n, .. } = i
+                if let Inline::NoteRef { kind: k, id: n, custom, .. } = i
                     && *k == kind
                     && *n == id
                 {
                     let story = self.index.para_slot(pid).map_or(StoryId::Body, |s| self.index.story(s.container));
-                    return Some(Position::text(story, pid, Unit(at)));
+                    return Some((Position::text(story, pid, Unit(at)), *custom));
                 }
                 at += i.units() as u32;
             }
@@ -385,6 +456,7 @@ impl Editor {
         })
     }
 
+    /// The notes of a kind in their references' order, then those the body doesn't refer to in id order.
     fn notes(&self, kind: NoteKind) -> Vec<StoryId> {
         let map = match kind {
             NoteKind::Foot => &self.doc.footnotes,
@@ -392,8 +464,19 @@ impl Editor {
         };
         let separator =
             |b: &[Block]| b.iter().any(|b| matches!(b, Block::Para(p) if p.inlines.iter().any(|i| matches!(i, Inline::Separator { .. }))));
-        let mut ids: Vec<i64> = map.iter().filter(|(_, b)| !separator(b)).map(|(id, _)| *id).collect();
-        ids.sort_unstable();
+        let mut refs = Vec::new();
+        for s in &self.doc.sections {
+            super::notes::refs_in(&s.blocks, &mut refs);
+        }
+        let mut seen = std::collections::HashSet::with_capacity(map.len());
+        let mut ids: Vec<i64> = refs
+            .into_iter()
+            .filter(|&(k, id)| k == kind && map.get(&id).is_some_and(|b| !separator(b)) && seen.insert(id))
+            .map(|(_, id)| id)
+            .collect();
+        let mut rest: Vec<i64> = map.iter().filter(|(id, b)| !seen.contains(*id) && !separator(b)).map(|(id, _)| *id).collect();
+        rest.sort_unstable();
+        ids.append(&mut rest);
         ids.into_iter()
             .map(|id| match kind {
                 NoteKind::Foot => StoryId::Footnote(id),

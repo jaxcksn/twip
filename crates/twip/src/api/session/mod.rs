@@ -42,8 +42,15 @@ pub struct Session {
     mode: Mode,
     language: String,
     track_changes: bool,
-    /// The field settings from the options, run on each document before its first layout is seen.
+    /// The keys follow macOS.
+    mac: bool,
+    /// The editor's settings for every document: the field settings from the options and the ones commands set since
+    /// (each command's last, in [`setup_rank`] order), run on each document before its first layout is seen.
     field_setup: Vec<super::command::Command>,
+    /// The layout follows each edit at once (`setViewOptions`'s `liveLayout`).
+    live_layout: bool,
+    /// Controls and shown sub-templates are labelled (`setViewOptions`'s `controlLabels`).
+    control_labels: bool,
     /// The last transaction record's id.
     records: u64,
     /// Table gridlines show where cells have no borders.
@@ -87,7 +94,37 @@ fn field_setup(options: &SessionOptions) -> Vec<super::command::Command> {
     out
 }
 
+/// Where a command that sets the editor's settings for every document goes in the session's setup: rules and types
+/// before labels, as labels depend on them. `None` for every other command.
+pub(super) fn setup_rank(c: &super::command::Command) -> Option<u8> {
+    use super::command::Command;
+    match c {
+        Command::SetSubTemplateRules(_) => Some(0),
+        Command::SetApplicationFieldTypes(_) => Some(1),
+        Command::SetFieldLabels(_) => Some(2),
+        Command::SetProtectedPictureControls(_) => Some(3),
+        _ => None,
+    }
+}
+
 impl Session {
+    /// Keeps `c`, a setting [`setup_rank`] ranks, for the documents opened after: it replaces the one before, and
+    /// labels that merge go into the labels kept.
+    pub(super) fn remember_setup(&mut self, c: super::command::Command) {
+        use super::command::Command;
+        let Some(rank) = setup_rank(&c) else { return };
+        let at = self.field_setup.iter().position(|k| setup_rank(k) >= Some(rank));
+        let kept = at.filter(|&k| setup_rank(&self.field_setup[k]) == Some(rank));
+        match (kept, c) {
+            (Some(k), Command::SetFieldLabels(l)) if l.merge == Some(true) => {
+                if let Command::SetFieldLabels(was) = &mut self.field_setup[k] {
+                    was.labels.extend(l.labels);
+                }
+            }
+            (Some(k), c) => self.field_setup[k] = c,
+            (None, c) => self.field_setup.insert(at.unwrap_or(self.field_setup.len()), c),
+        }
+    }
     pub(crate) fn new(id: SessionId, options: SessionOptions, fonts: FontLibrary, shared: Rc<Shared>) -> Session {
         let editor = documents::blank(&fonts);
         let field_setup = field_setup(&options);
@@ -102,7 +139,10 @@ impl Session {
             mode: options.mode,
             language: options.language,
             track_changes: options.track_changes,
+            mac: options.mac,
             field_setup,
+            live_layout: true,
+            control_labels: true,
             records: 0,
             gridlines: false,
             formatting_marks: false,
@@ -154,11 +194,13 @@ impl Session {
         let mode = self.editor_mode();
         self.editor.set_mode(mode);
         self.editor.set_hyphenation(self.services.hyphenation.clone());
+        (self.editor.live_layout, self.editor.control_labels) = (self.live_layout, self.control_labels);
+        self.editor.set_mac(self.mac);
         let fonts = self.fonts.fonts();
         for c in &self.field_setup {
             self.editor.execute(c.clone(), &fonts);
         }
-        self.services.document_replaced(self.editor.document());
+        self.services.document_replaced();
         self.editor.set_author(&self.author.name, self.author.identity.clone());
         if self.track_changes {
             self.editor.set_tracking(true);
@@ -185,7 +227,7 @@ impl Session {
         self.emit(Event::StateChanged(self.state.clone()));
         for e in events {
             let review = match &e {
-                Event::DocumentChanged(record) => self.review_events(record, revisions),
+                Event::DocumentChanged(record) => crate::prof::time("session:review", || self.review_events(record, revisions)),
                 _ => Vec::new(),
             };
             self.emit(e);
@@ -254,5 +296,15 @@ impl Session {
     }
 }
 
+#[cfg(test)]
+mod argument_tests;
+#[cfg(test)]
+mod input_tests;
+#[cfg(test)]
+mod paste_and_replace;
+#[cfg(test)]
+mod protection_tests;
+#[cfg(test)]
+mod replace_tests;
 #[cfg(test)]
 mod tests;

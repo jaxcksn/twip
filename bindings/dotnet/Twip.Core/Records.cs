@@ -14,11 +14,12 @@ namespace Twip;
 /// <param name="FieldLabels">What design mode shows for each field code, as SetFieldLabelsAsync sets them, from each open's first layout.</param>
 /// <param name="ApplicationFieldTypes">The application's own field types, as SetApplicationFieldTypesAsync sets them, from each open.</param>
 /// <param name="SubTemplateRules">Which fields are sub-template references, as SetSubTemplateRulesAsync sets them, from each open.</param>
+/// <param name="Mac">The keys follow macOS: Command with the arrows moves to the line's or the document's edge, Option with them by word or paragraph, and Option with Backspace or Delete deletes a word.</param>
 public sealed record EditorSessionOptions(
     Author? Author = null, bool ReadOnly = false, EditorMode Mode = EditorMode.Editing, FontLibrary? Fonts = null,
     string Language = "en-US", IReadOnlyList<Dictionary>? Dictionaries = null, bool TrackChanges = false,
     IReadOnlyDictionary<string, string>? FieldLabels = null, IReadOnlyList<string>? ApplicationFieldTypes = null,
-    IReadOnlyList<ReferenceRule>? SubTemplateRules = null);
+    IReadOnlyList<ReferenceRule>? SubTemplateRules = null, bool Mac = false);
 
 /// <summary>The person making edits.</summary>
 /// <param name="Name">The display name.</param>
@@ -301,7 +302,7 @@ public sealed record RichParagraph(IReadOnlyList<RichRun> Runs);
 /// <param name="Italic">Italic.</param>
 /// <param name="Underline">Underlined.</param>
 /// <param name="Strikethrough">Struck through.</param>
-/// <param name="Link">A hyperlink address.</param>
+/// <param name="Link">A hyperlink address: a web, mail, FTP or phone one, or a relative one. The run of any other is plain text.</param>
 public sealed record RichRun(
     string Text,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Bold = null,

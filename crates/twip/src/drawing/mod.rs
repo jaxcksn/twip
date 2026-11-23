@@ -44,6 +44,8 @@ pub struct Spans {
     pub xfrm: Option<Range<usize>>,
     pub geom: Option<Range<usize>>,
     pub fill: Option<Range<usize>>,
+    /// A picture's `pic:blipFill`, beside its properties.
+    pub blip: Option<Range<usize>>,
     pub line: Option<Range<usize>>,
     pub effects: Option<Range<usize>>,
     pub body: Option<Range<usize>>,
@@ -201,6 +203,59 @@ impl Shape {
         }
     }
 
+    /// A new picture of image `image`, `w` by `h`, stretched over its box.
+    pub fn picture(image: usize, w: Emu, h: Emu) -> Shape {
+        let blip = paint::BlipFill {
+            image: Some(image),
+            src: [units::Pct(0); 4],
+            mode: paint::BlipMode::Stretch([units::Pct(0); 4]),
+            adjust: Vec::new(),
+            rot_with_shape: true,
+        };
+        Shape {
+            nv: NonVisual { name: "Picture".into(), lock_aspect: true, ..NonVisual::default() },
+            xfrm: Xfrm { ext: [w, h], ..Xfrm::default() },
+            kind: ShapeKind::Pic(Box::new(PicShape {
+                geom: Geometry::Preset { preset: geom::Preset::Rect, adj: Vec::new() },
+                blip,
+                line: None,
+                effects: None,
+                kept_3d: false,
+            })),
+            spans: Spans::default(),
+        }
+    }
+
+    /// Moves every image index in the shape tree (blips, blip fills, line fills) up by `base`.
+    pub fn rebase_images(&mut self, base: usize) {
+        fn blip(b: &mut BlipFill, base: usize) {
+            b.image = b.image.map(|k| k + base);
+        }
+        fn fill(f: Option<&mut Fill>, base: usize) {
+            if let Some(Fill::Blip(b)) = f {
+                blip(b, base);
+            }
+        }
+        fn line(l: Option<&mut Line>, base: usize) {
+            fill(l.and_then(|l| l.fill.as_mut()), base);
+        }
+        match &mut self.kind {
+            ShapeKind::Sp(s) => {
+                fill(s.fill.as_mut(), base);
+                line(s.line.as_mut(), base);
+            }
+            ShapeKind::Pic(p) => {
+                blip(&mut p.blip, base);
+                line(p.line.as_mut(), base);
+            }
+            ShapeKind::Group(g) => {
+                fill(g.fill.as_mut(), base);
+                g.children.iter_mut().for_each(|c| c.rebase_images(base));
+            }
+            ShapeKind::Raw(_) => {}
+        }
+    }
+
     pub fn sp(&self) -> Option<&SpShape> {
         match &self.kind {
             ShapeKind::Sp(s) => Some(s),
@@ -346,7 +401,10 @@ impl GroupShape {
         ([px - w / 2.0, py - h / 2.0, px + w / 2.0, py + h / 2.0], r, c.xfrm.flip_h != flip_h, c.xfrm.flip_v != flip_v)
     }
 
-    pub fn fit_children(&mut self, xfrm: &mut Xfrm) -> [i64; 4] {
+    /// Grows the child box to take in every child, or with `tight` fits it to them, and `xfrm` with it: how far each
+    /// edge of the frame moved out (left, top, right, bottom). A flipped axis shows the child box mirrored, so the frame
+    /// moves the other way along it and the children stay where they show.
+    pub fn fit_children(&mut self, xfrm: &mut Xfrm, tight: bool) -> [i64; 4] {
         let (mut lo, mut hi) = ([i64::MAX; 2], [i64::MIN; 2]);
         for c in &self.children {
             for a in 0..2 {
@@ -360,12 +418,15 @@ impl GroupShape {
         }
         for a in 0..2 {
             let (o, e) = (self.child_off[a].0, self.child_ext[a].0);
-            let (no, ne) = (lo[a].min(o), hi[a].max(o + e));
+            let (no, ne) = if tight { (lo[a], hi[a]) } else { (lo[a].min(o), hi[a].max(o + e)) };
             if (no, ne) == (o, o + e) {
                 continue;
             }
             let k = if e > 0 { xfrm.ext[a].0 as f64 / e as f64 } else { 1.0 };
-            let (before, after) = (((o - no) as f64 * k).round() as i64, ((ne - o - e) as f64 * k).round() as i64);
+            let (mut before, mut after) = (((o - no) as f64 * k).round() as i64, ((ne - o - e) as f64 * k).round() as i64);
+            if [xfrm.flip_h, xfrm.flip_v][a] {
+                std::mem::swap(&mut before, &mut after);
+            }
             xfrm.off[a].0 -= before;
             xfrm.ext[a].0 += before + after;
             self.child_off[a].0 = no;
@@ -410,6 +471,28 @@ mod tests {
         assert_eq!(leaves[0].path, vec![0]);
         assert_eq!(leaves[1].rect, [172.0, 130.0, 192.0, 160.0]);
         assert_eq!(leaves[1].path, vec![1, 0]);
+    }
+
+    #[test]
+    fn a_tight_fit_keeps_a_flipped_groups_children_where_they_show() {
+        for (flip_h, flip_v) in [(false, false), (true, false), (false, true), (true, true)] {
+            let mut g = group(
+                [0, 0],
+                [100 * PT, 100 * PT],
+                [0, 0],
+                [100 * PT, 100 * PT],
+                vec![rect_shape([10 * PT, 20 * PT], [20 * PT, 30 * PT]), rect_shape([0, 0], [100 * PT, 100 * PT])],
+            );
+            (g.xfrm.flip_h, g.xfrm.flip_v) = (flip_h, flip_v);
+            let before = g.leaves([0.0, 0.0, 100.0, 100.0])[0].rect;
+            let Shape { xfrm, kind: ShapeKind::Group(gs), .. } = &mut g else { panic!("a group") };
+            gs.children.pop();
+            let grow = gs.fit_children(xfrm, true);
+            let pt = |e: i64| e as f64 / PT as f64;
+            let rect = [-pt(grow[0]), -pt(grow[1]), 100.0 + pt(grow[2]), 100.0 + pt(grow[3])];
+            let after = g.leaves(rect)[0].rect;
+            assert!(before.iter().zip(after).all(|(a, b)| (a - b).abs() < 1e-9), "{flip_h} {flip_v}: {before:?} {after:?}");
+        }
     }
 
     #[test]

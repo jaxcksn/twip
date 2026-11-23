@@ -1,6 +1,6 @@
 {
   "id": "E2E-TS-12",
-  "title": "Merged regions: deleting a vertical merge's first row deletes its content and the next row starts the merge empty; a column inserted through a spanning cell adds a cell before it (a row whose gridBefore gap covers the insertion point widens the gap: not observed)",
+  "title": "Merged regions: deleting a vertical merge's first row deletes its content and the next row starts the merge empty; a column inserted through a spanning cell widens it, and a row whose gridBefore gap covers the insertion point widens the gap",
   "fixture": "FX-TBL-MERGED.docx",
   "methods": [
     "C",
@@ -61,15 +61,15 @@
             "rows": 10,
             "cells": [
               7,
-              5,
+              4,
               5,
               6,
               5,
               4,
               3,
               4,
-              3,
-              2
+              2,
+              1
             ]
           }
         ]

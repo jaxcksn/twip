@@ -1,6 +1,6 @@
 {
   "id": "E2E-TS-06-BOX",
-  "title": "Insert Table at a paragraph's end puts a new table after it; Delete Table removes it (in a text box)",
+  "title": "Insert Table at the end of a paragraph before a table puts a new table after it, with a paragraph between the tables; Delete Table removes it (in a text box)",
   "fixture": "FX-TBL-BASIC-BOX.docx",
   "methods": [
     "C",
@@ -37,7 +37,8 @@
         "text": {
           "15": "Paragraph between the first and second tables.",
           "16": "",
-          "22": "T2 R1 C1"
+          "22": "",
+          "23": "T2 R1 C1"
         },
         "tables": [
           {},
@@ -68,7 +69,8 @@
     {
       "expect": {
         "text": {
-          "16": "T2 R1 C1"
+          "16": "",
+          "17": "T2 R1 C1"
         },
         "tables": [
           {},

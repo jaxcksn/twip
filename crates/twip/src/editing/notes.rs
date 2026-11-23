@@ -2,8 +2,10 @@
 
 use std::rc::Rc;
 
-use crate::docx::write::props::Props;
-use crate::docx::{Block, Inline, NoteKind, Paragraph};
+use crate::docx::props::RunProps;
+use crate::docx::resolve::Resolver;
+use crate::docx::write::props::{Cx, Props};
+use crate::docx::{Block, Inline, NoteKind, Paragraph, Run};
 use crate::font::Fonts;
 use crate::layout::{ParaId, Unit};
 
@@ -29,29 +31,121 @@ pub(super) fn refs_in(blocks: &[Block], out: &mut Vec<(NoteKind, i64)>) {
     }
 }
 
+/// A kind's reference and text styles.
+fn note_styles(kind: NoteKind) -> (&'static str, &'static str) {
+    match kind {
+        NoteKind::Foot => ("FootnoteReference", "FootnoteText"),
+        NoteKind::End => ("EndnoteReference", "EndnoteText"),
+    }
+}
+
+/// `run` in `to`'s reference style (superscript where the document has none), when it is in `from`'s.
+fn restyled_ref(res: &Resolver, cx: &Cx, base: &RunProps, run: &Run, from: NoteKind, to: NoteKind) -> Option<Run> {
+    let (old, new) = (note_styles(from).0, note_styles(to).0);
+    let mut p = Props::parse(run.direct.0.as_deref(), "rPr", cx);
+    if p.get("rStyle").and_then(|s| crate::docx::write::props::attr_of(s, "val")).as_deref() != Some(old) {
+        return None;
+    }
+    let w = &cx.w;
+    if res.styles.by_id.contains_key(new) {
+        p.set("rStyle", format!("<{w}rStyle {w}val=\"{new}\"/>"));
+    } else {
+        p.remove("rStyle");
+        p.set("vertAlign", format!("<{w}vertAlign {w}val=\"superscript\"/>"));
+    }
+    Some(res.run_from_xml(base, p.xml().as_deref(), cx))
+}
+
+/// A converted note's paragraph in `to`'s text style when it is in `from`'s, and its marks in `to`'s reference
+/// style; whether it changed.
+fn restyle_note_para(res: &Resolver, cx: &Cx, p: &mut Paragraph, from: NoteKind, to: NoteKind) -> bool {
+    let (old, new) = (note_styles(from).1, note_styles(to).1);
+    let mut changed = false;
+    if p.style.style_id.as_deref() == Some(old) {
+        let mut pp = Props::parse(p.style.direct.0.as_deref(), "pPr", cx);
+        if res.styles.by_id.contains_key(new) {
+            pp.set("pStyle", format!("<{w}pStyle {w}val=\"{new}\"/>", w = cx.w));
+        } else {
+            pp.remove("pStyle");
+        }
+        p.style = Rc::new(res.para_from_xml(pp.xml().as_deref(), None, cx).style);
+        changed = true;
+    }
+    let base = res.para_from_xml(p.style.direct.0.as_deref(), None, cx).base;
+    for i in &mut p.inlines {
+        if let Some(run) = i.run().and_then(|r| restyled_ref(res, cx, &base, r, from, to)) {
+            *i = super::format::with_run(i, &run);
+            changed = true;
+        }
+    }
+    changed
+}
+
+/// A note id `taken` doesn't hold: the one after `max`, or, when that is past the `w:id` range Word reads, the lowest
+/// free one from `lo`.
+pub(super) fn free_note_id(max: i64, lo: i64, taken: impl Fn(i64) -> bool) -> i64 {
+    match max.max(0).checked_add(1).filter(|&n| n <= i64::from(i32::MAX)) {
+        Some(n) => n,
+        None => (lo.max(1)..).find(|&n| !taken(n)).unwrap_or(1),
+    }
+}
+
+/// Each paragraph of `blocks`, its tables' cells' included.
+fn each_para(blocks: &mut [Block], f: &mut dyn FnMut(&mut Paragraph)) {
+    for b in blocks {
+        match b {
+            Block::Para(p) => f(p),
+            Block::Table(t) => t.rows.iter_mut().flat_map(|r| r.cells.iter_mut()).for_each(|c| each_para(&mut c.blocks, f)),
+        }
+    }
+}
+
 fn refs_inline(inlines: &[Inline], out: &mut Vec<(NoteKind, i64)>) {
     for i in inlines {
-        if let Inline::NoteRef { kind, id, .. } = i {
-            out.push((*kind, *id));
+        match i {
+            Inline::NoteRef { kind, id, .. } => out.push((*kind, *id)),
+            i => {
+                if let Some((_, tb)) = i.story() {
+                    refs_in(&tb.blocks, out);
+                }
+            }
         }
     }
 }
 
 impl Editor {
+    /// The numbers the references to notes of `kind` give, so a new note answers no reference read without its note.
+    fn note_refs(&self, kind: NoteKind) -> std::collections::HashSet<i64> {
+        let mut out = std::collections::HashSet::new();
+        for pid in self.index.para_ids() {
+            let Some(p) = self.index.para(&self.doc, pid) else { continue };
+            for i in &p.inlines {
+                if let Inline::NoteRef { kind: k, id, .. } = i
+                    && *k == kind
+                {
+                    out.insert(*id);
+                }
+            }
+        }
+        out
+    }
+
+    /// Whether a note's reference can go at the selection: only in the body.
+    pub(super) fn takes_notes(&self) -> bool {
+        self.selection.focus().map(|p| p.story) == Some(StoryId::Body)
+    }
+
     pub(super) fn insert_note(&mut self, kind: NoteKind, custom: Option<&str>, fonts: &Fonts) -> Outcome {
         if custom.is_some_and(|m| m.is_empty() || m.chars().count() > 10) {
             return Outcome::invalid("a custom mark is 1…10 characters");
         }
-        if self.selection.focus().map(|p| p.story) != Some(StoryId::Body) {
-            return Outcome::Unchanged("notes are inserted in the body");
+        if !self.takes_notes() {
+            return Outcome::unavailable("notes are inserted in the body");
         }
         let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
         let cx = self.cx();
         let w = cx.w.clone();
-        let (ref_style, text_style) = match kind {
-            NoteKind::Foot => ("FootnoteReference", "FootnoteText"),
-            NoteKind::End => ("EndnoteReference", "EndnoteText"),
-        };
+        let (ref_style, text_style) = note_styles(kind);
         let has = |s: &str| res.styles.by_id.contains_key(s);
         let mark_prop = |p: &mut Props| {
             if has(ref_style) {
@@ -60,11 +154,13 @@ impl Editor {
                 p.set("vertAlign", format!("<{w}vertAlign {w}val=\"superscript\"/>"));
             }
         };
+        let refs = self.note_refs(kind);
         let notes = match kind {
             NoteKind::Foot => &self.doc.footnotes,
             NoteKind::End => &self.doc.endnotes,
         };
-        let id = notes.keys().copied().max().unwrap_or(0).max(0) + 1;
+        let max = notes.keys().chain(&refs).copied().max().unwrap_or(0);
+        let id = free_note_id(max, 1, |n| notes.contains_key(&n) || refs.contains(&n));
         let mut tx = self.begin(if kind == NoteKind::Foot { "Insert Footnote" } else { "Insert Endnote" });
         let caret = match self.delete_range(&mut tx) {
             Ok(Some(p)) => self.past_row_end(p),
@@ -77,7 +173,7 @@ impl Editor {
             self.abort(tx);
             return Outcome::Unchanged("caret at a row end");
         };
-        let (Some(run), Some(base)) = (self.run_at(&caret), self.run_base(para, &res, &cx)) else {
+        let (Some(run), Some(base)) = (self.run_at(&caret), self.run_base(para, offset, &res, &cx)) else {
             self.abort(tx);
             return Outcome::Unchanged("no paragraph");
         };
@@ -214,17 +310,27 @@ impl Editor {
             C::Swap => &[NoteKind::Foot, NoteKind::End],
         };
         let other = |k: NoteKind| if k == NoteKind::Foot { NoteKind::End } else { NoteKind::Foot };
-        let notes = |e: &Self, k: NoteKind| if k == NoteKind::Foot { e.doc.footnotes.clone() } else { e.doc.endnotes.clone() };
-        // New numbers above every note of the kind they become (the separators' are below 1).
+        let doc = &self.doc;
+        let notes = |k: NoteKind| if k == NoteKind::Foot { &doc.footnotes } else { &doc.endnotes };
+        // New numbers above every note of the kind they become and every reference to one (the separators' are below 1).
         let mut map: std::collections::HashMap<(NoteKind, i64), i64> = std::collections::HashMap::new();
         let mut moves = Vec::new();
         for &from in kinds {
             let to = other(from);
-            let first = notes(self, to).keys().copied().max().unwrap_or(0).max(0) + 1;
+            let (dest, refs) = (notes(to), self.note_refs(to));
+            let (mut max, mut lo) = (dest.keys().chain(&refs).copied().max().unwrap_or(0), 1);
+            let mut given = std::collections::HashSet::new();
             // In their order, so the numbers keep it.
-            let mut from_notes: Vec<(i64, Vec<Block>)> = notes(self, from).into_iter().filter(|(id, _)| *id > 0).collect();
+            let mut from_notes: Vec<(i64, Vec<Block>)> = notes(from).iter().filter(|(id, _)| **id > 0).map(|(id, b)| (*id, b.clone())).collect();
             from_notes.sort_by_key(|(id, _)| *id);
-            for (next, (id, body)) in (first..).zip(from_notes) {
+            for (id, body) in from_notes {
+                let next = free_note_id(max, lo, |n| dest.contains_key(&n) || refs.contains(&n) || given.contains(&n));
+                if next > max {
+                    max = next;
+                } else {
+                    lo = next + 1;
+                }
+                given.insert(next);
                 map.insert((from, id), next);
                 moves.push((from, id, next, body));
             }
@@ -242,6 +348,8 @@ impl Editor {
             let (para, offset) = f.para_offset()?;
             Some((story(other(kind), *map.get(&(kind, id))?), para, offset))
         });
+        let res = self.doc.resolver.clone();
+        let cx = self.cx();
         let mut tx = self.begin("Convert Notes");
         for (from, id, _, _) in &moves {
             if self.step(&mut tx, Step::Note { kind: *from, id: *id, blocks: None }).is_err() {
@@ -251,15 +359,17 @@ impl Editor {
         }
         for (from, _, to_id, mut body) in moves {
             let to = other(from);
-            for b in &mut body {
-                if let Block::Para(p) = b {
-                    for i in &mut p.inlines {
-                        if let Inline::NoteMark(k, n, _) = i {
-                            (*k, *n) = (to, to_id);
-                        }
+            each_para(&mut body, &mut |p| {
+                for i in &mut p.inlines {
+                    if let Inline::NoteMark(k, n, _) = i {
+                        (*k, *n) = (to, to_id);
                     }
                 }
-            }
+                // Its other runs: re-resolved on settle
+                if res.as_ref().is_some_and(|res| restyle_note_para(res, &cx, p, from, to)) {
+                    tx.stale_paras.push(ParaId(p.id));
+                }
+            });
             if self.step(&mut tx, Step::Note { kind: to, id: to_id, blocks: Some(body) }).is_err() {
                 self.abort(tx);
                 return Outcome::Unchanged("a note can't move");
@@ -271,14 +381,31 @@ impl Editor {
             if !p.inlines.iter().any(|i| matches!(i, Inline::NoteRef { kind, id, .. } if map.contains_key(&(*kind, *id)))) {
                 continue;
             }
+            let again = res.as_ref().and_then(|res| self.para_again(para, None, res, &cx));
+            let restyled = |run: &Run, from: NoteKind, at: u32| {
+                res.as_ref()
+                    .zip(again.as_ref())
+                    .and_then(|(res, again)| restyled_ref(res, &cx, again.base(at), run, from, other(from)))
+                    .unwrap_or_else(|| run.clone())
+            };
+            // Custom marks: the text after their reference
+            let mut custom_of = None;
+            let mut at = 0u32;
             let inlines: Vec<Inline> = p
                 .inlines
                 .iter()
-                .map(|i| match i {
-                    Inline::NoteRef { kind, id, custom, run } if map.contains_key(&(*kind, *id)) => {
-                        Inline::NoteRef { kind: other(*kind), id: map[&(*kind, *id)], custom: *custom, run: run.clone() }
+                .map(|i| {
+                    let here = at;
+                    at += i.units() as u32;
+                    match (i, std::mem::take(&mut custom_of)) {
+                        (Inline::NoteRef { kind, id, custom, run }, _) if map.contains_key(&(*kind, *id)) => {
+                            custom_of = custom.then_some(*kind);
+                            let run = restyled(run, *kind, here);
+                            Inline::NoteRef { kind: other(*kind), id: map[&(*kind, *id)], custom: *custom, run }
+                        }
+                        (Inline::Text(t, run), Some(from)) => Inline::Text(t.clone(), restyled(run, from, here)),
+                        (i, _) => i.clone(),
                     }
-                    i => i.clone(),
                 })
                 .collect();
             if self.step(&mut tx, Step::Restyle { para, inlines }).is_err() {
@@ -294,11 +421,24 @@ impl Editor {
 
     pub(super) fn drop_orphan_notes(&mut self, tx: &mut Tx) {
         let mut gone = Vec::new();
+        let mut at = None;
+        let note = self.selection.focus().and_then(|p| match p.story {
+            StoryId::Footnote(id) => Some((NoteKind::Foot, id)),
+            StoryId::Endnote(id) => Some((NoteKind::End, id)),
+            _ => None,
+        });
         for s in &tx.undo {
             match s {
-                Step::Text { with, .. } => refs_inline(with, &mut gone),
+                Step::Text { para, range, with, .. } => {
+                    let n = gone.len();
+                    refs_inline(with, &mut gone);
+                    if note.is_some_and(|k| gone[n..].contains(&k)) {
+                        at = Some((*para, range.start));
+                    }
+                }
                 Step::Blocks { with, .. } => refs_in(with, &mut gone),
                 Step::Rows { with, .. } => with.iter().flat_map(|r| r.cells.iter()).for_each(|c| refs_in(&c.blocks, &mut gone)),
+                Step::Restyle { inlines, .. } => refs_inline(inlines, &mut gone),
                 _ => {}
             }
         }
@@ -310,7 +450,7 @@ impl Editor {
         let mut left = Vec::new();
         for pid in self.index.para_ids() {
             if let Some(p) = self.index.para(&self.doc, pid) {
-                refs_inline(&p.inlines, &mut left);
+                left.extend(p.inlines.iter().filter_map(|i| if let Inline::NoteRef { kind, id, .. } = i { Some((*kind, *id)) } else { None }));
             }
         }
         for (kind, id) in gone {
@@ -318,8 +458,11 @@ impl Editor {
                 NoteKind::Foot => self.doc.footnotes.contains_key(&id),
                 NoteKind::End => self.doc.endnotes.contains_key(&id),
             };
-            if exists && !left.contains(&(kind, id)) {
-                let _ = self.step(tx, Step::Note { kind, id, blocks: None });
+            if exists && !left.contains(&(kind, id)) && self.step(tx, Step::Note { kind, id, blocks: None }).is_ok() && note == Some((kind, id)) {
+                let story = at.and_then(|(p, _)| self.index.para_slot(p)).map(|s| self.index.story(s.container));
+                if let (Some(story), Some((para, u))) = (story, at) {
+                    self.selection = Selection::Caret(Position::text(story, para, u));
+                }
             }
         }
     }
@@ -366,6 +509,10 @@ impl Editor {
             match s {
                 Step::Text { with, .. } | Step::Restyle { inlines: with, .. } => inlines(with, &mut gone),
                 Step::Blocks { with, .. } => blocks(with, &mut gone),
+                Step::Split { second, .. } => {
+                    gone.extend(second.controls.iter().copied());
+                    inlines(&second.inlines, &mut gone);
+                }
                 Step::Rows { with, .. } => {
                     for r in with {
                         gone.extend(r.controls.iter().copied());

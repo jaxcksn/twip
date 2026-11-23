@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
-use crate::docx::fields::{code_text, result_text, spans};
+use crate::docx::fields::{code_text, result_text, span_in, spans};
 use crate::docx::{Block, ControlKind, ControlProps, Document, ElementId, Inline, Paragraph};
 use crate::layout::{FloatId, ParaId};
 
@@ -186,14 +186,9 @@ impl<'d> Walk<'d> {
                         row_chain.extend(rows.iter().map(|c| ElementId::Control(*c)));
                         for c in &r.cells {
                             let mut cell_chain = row_chain.clone();
+                            let text = if c.controls.is_empty() { String::new() } else { cell_text(&c.blocks) };
                             for &k in &c.controls {
-                                let text: String = c
-                                    .blocks
-                                    .iter()
-                                    .filter_map(|b| if let Block::Para(p) = b { Some(crate::docx::fields::text(p)) } else { None })
-                                    .collect::<Vec<_>>()
-                                    .join(" ");
-                                self.control(k, story, cell_chain.last().copied(), clip(text), None);
+                                self.control(k, story, cell_chain.last().copied(), text.clone(), None);
                                 cell_chain.push(ElementId::Control(k));
                             }
                             self.blocks(&c.blocks, story, &cell_chain);
@@ -211,7 +206,7 @@ impl<'d> Walk<'d> {
         for (k, i) in p.inlines.iter().enumerate() {
             match i {
                 Inline::FieldBegin { id, lock, .. } => {
-                    let s = all.iter().find(|s| s.begin == k).copied();
+                    let s = span_in(&all, k);
                     let (code, display) = s.map_or((String::new(), String::new()), |s| (code_text(&p.inlines, s), result_text(&p.inlines, s)));
                     self.out.push(Element {
                         id: ElementId::Field(*id),
@@ -228,9 +223,10 @@ impl<'d> Walk<'d> {
                 Inline::FieldEnd { id, .. } if stack.last() == Some(&ElementId::Field(*id)) => {
                     stack.pop();
                 }
+                // Linear: inline controls nest at most `xml::MAX_DEPTH` deep
                 Inline::ControlStart(c) => {
                     let end = p.inlines[k..].iter().position(|x| *x == Inline::ControlEnd(*c)).map_or(p.inlines.len(), |e| k + e);
-                    let text = crate::docx::fields::text(&Paragraph { inlines: p.inlines[k + 1..end].to_vec(), ..p.clone() });
+                    let text = crate::docx::fields::visible(&p.inlines[k + 1..end]);
                     self.control(*c, story, stack.last().copied(), clip(text), here);
                     stack.push(ElementId::Control(*c));
                 }
@@ -253,19 +249,38 @@ fn clip(s: String) -> String {
     if s.chars().count() <= DISPLAY { s } else { s.chars().take(DISPLAY).collect() }
 }
 
-fn member_text(blocks: &[Block], c: crate::docx::ControlId) -> String {
-    let mut out = Vec::new();
-    for b in blocks {
-        match b {
-            Block::Para(p) if p.controls.contains(&c) => out.push(crate::docx::fields::text(p)),
-            Block::Table(t) if t.controls.contains(&c) => {}
-            _ => break,
+/// The paragraphs' text joined by `sep`, its first `DISPLAY` characters.
+fn joined<'a>(paras: impl Iterator<Item = &'a crate::docx::Paragraph>, sep: char) -> String {
+    let mut out = String::new();
+    let mut left = DISPLAY;
+    for (k, p) in paras.enumerate() {
+        if k > 0 {
+            out.push(sep);
+            left -= 1;
         }
-        if out.iter().map(String::len).sum::<usize>() > DISPLAY {
+        let text = crate::docx::fields::text(p);
+        let n = text.chars().count();
+        if n >= left {
+            out.extend(text.chars().take(left));
             break;
         }
+        out.push_str(&text);
+        left -= n;
     }
-    clip(out.join("\n"))
+    out
+}
+
+fn cell_text(blocks: &[Block]) -> String {
+    joined(blocks.iter().filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None }), ' ')
+}
+
+fn member_text(blocks: &[Block], c: crate::docx::ControlId) -> String {
+    let members = blocks.iter().map_while(|b| match b {
+        Block::Para(p) if p.controls.contains(&c) => Some(Some(p)),
+        Block::Table(t) if t.controls.contains(&c) => Some(None),
+        _ => None,
+    });
+    joined(members.flatten(), '\n')
 }
 
 pub fn enumerate(doc: &Document, idx: &DocIndex, filter: &Filter) -> Vec<Element> {
@@ -273,17 +288,20 @@ pub fn enumerate(doc: &Document, idx: &DocIndex, filter: &Filter) -> Vec<Element
     for (story, blocks) in stories(doc, idx) {
         w.blocks(blocks, story, &[]);
     }
+    let boxes = |w: &mut Walk, k: &mut usize| {
+        while let Some(&(f, blocks)) = w.boxes.get(*k) {
+            w.blocks(blocks, StoryId::TextBox(f), &[]);
+            *k += 1;
+        }
+    };
     let mut k = 0;
-    while k < w.boxes.len() {
-        let (f, blocks) = w.boxes[k];
-        w.blocks(blocks, StoryId::TextBox(f), &[]);
-        k += 1;
-    }
-    for (k, part) in doc.glossary.iter().flat_map(|g| g.parts.iter().enumerate()) {
+    boxes(&mut w, &mut k);
+    for (i, part) in doc.glossary.iter().flat_map(|g| g.parts.iter().enumerate()) {
         if part.state != crate::docx::PartState::Removed {
-            w.blocks(&part.body, StoryId::BuildingBlock(k as u32), &[]);
+            w.blocks(&part.body, StoryId::BuildingBlock(i as u32), &[]);
         }
     }
+    boxes(&mut w, &mut k);
     w.out.into_iter().filter(|e| filter.keeps(e, idx)).collect()
 }
 

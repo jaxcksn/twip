@@ -210,14 +210,22 @@ impl Cx {
     /// As [`Cx::of`] for any part's XML (a header's).
     pub fn of_xml(x: &str) -> Cx {
         let start = x.char_indices().find(|&(i, c)| c == '<' && x[i + 1..].starts_with(|c: char| c.is_alphabetic())).map_or(0, |(i, _)| i);
-        let tag = &x[start..start + x[start..].find('>').unwrap_or(0)];
-        let ns: Vec<&str> = tag.split_whitespace().skip(1).filter(|a| a.starts_with("xmlns")).map(|a| a.trim_end_matches('/')).collect();
-        let w = ns
-            .iter()
-            .find(|a| a.ends_with(&format!("\"{W_NS}\"")))
-            .and_then(|a| a.strip_prefix("xmlns:").map(|p| format!("{}:", &p[..p.find('=').unwrap_or(0)])).or(Some(String::new())))
-            .unwrap_or_else(|| "w:".into());
-        Cx { w, ns: ns.join(" ") }
+        let tag = &x[start..start + crate::docx::binding::tag_end(&x[start..]).unwrap_or(0)];
+        // Each declaration as `xmlns:p="uri"`, whatever the spacing and quotes written.
+        let mut w = None;
+        let mut ns = String::new();
+        for (name, value, _) in crate::docx::binding::tag_attrs(tag.trim_end_matches('/')) {
+            let Some(prefix) = name.strip_prefix("xmlns").filter(|p| p.is_empty() || p.starts_with(':')) else { continue };
+            if crate::docx::binding::unescape(value) == W_NS && w.is_none() {
+                w = Some(prefix.strip_prefix(':').map_or(String::new(), |p| format!("{p}:")));
+            }
+            let q = if value.contains('"') { '\'' } else { '"' };
+            if !ns.is_empty() {
+                ns.push(' ');
+            }
+            ns.push_str(&format!("{name}={q}{value}{q}"));
+        }
+        Cx { w: w.unwrap_or_else(|| "w:".into()), ns }
     }
 
     /// The prefix the part's root gives `uri`, with its colon.
@@ -345,18 +353,48 @@ impl Props {
             .and_then(|x| cx.parse(x, |text, el| attr_list(&text[el.range().start..el.first_child().map_or(el.range().end, |c| c.range().start)])))
             .unwrap_or_default();
         for (name, value) in set {
+            // Its value in characters or lines, which Word takes over it
+            let units = match (local, *name) {
+                ("ind", "left" | "start" | "right" | "end" | "firstLine" | "hanging") => Some("Chars"),
+                ("spacing", "before" | "after") => Some("Lines"),
+                _ => None,
+            };
+            if let Some(units) = units {
+                attrs.retain(|(q, _)| q.rsplit(':').next().and_then(|l| l.strip_prefix(*name)) != Some(units));
+            }
             let at = attrs.iter().position(|(q, _)| q.rsplit(':').next() == Some(name));
             match (at, value) {
-                (Some(i), Some(v)) => attrs[i].1 = esc(v),
+                (Some(i), Some(v)) => attrs[i].1 = format!("\"{}\"", esc(v)),
                 (Some(i), None) => {
                     attrs.remove(i);
                 }
-                (None, Some(v)) => attrs.push((format!("{w}{name}"), esc(v))),
+                (None, Some(v)) => attrs.push((format!("{w}{name}"), format!("\"{}\"", esc(v)))),
                 (None, None) => {}
             }
         }
-        let a: String = attrs.iter().map(|(q, v)| format!(" {q}=\"{v}\"")).collect();
+        let a: String = attrs.iter().map(|(q, v)| format!(" {q}={v}")).collect();
         self.set(local, format!("<{w}{local}{a}/>"));
+    }
+
+    /// Sets WordprocessingML attribute `local` of the element itself (in whatever prefix the part gives it), its other
+    /// attributes kept as written.
+    pub fn set_own(&mut self, local: &str, value: &str, cx: &Cx) {
+        let name: String = self.open.trim_start_matches('<').chars().take_while(|c| !c.is_whitespace() && *c != '>' && *c != '/').collect();
+        let found = cx.parse(&format!("{}</{name}>", self.open), |_, el| {
+            let at = el.range().start;
+            el.attributes().find(|a| a.namespace() == Some(W_NS) && a.name() == local).map(|a| {
+                let r = a.range_value();
+                r.start - 1 - at..r.end + 1 - at
+            })
+        });
+        let quoted = format!("\"{}\"", esc(value));
+        match found.flatten() {
+            Some(r) => self.open.replace_range(r, &quoted),
+            None => {
+                let end = self.open.len() - 1;
+                self.open.insert_str(end, &format!(" {}{local}={quoted}", cx.w));
+            }
+        }
     }
 
     /// The element, or nothing when it has no properties left.
@@ -380,24 +418,41 @@ pub fn attr_of(xml: &str, name: &str) -> Option<String> {
     crate::docx::xml::attr(doc.root_element().first_element_child()?, name).map(str::to_string)
 }
 
-/// `name="value"` pairs of a start tag as written (values still escaped).
+/// `name="value"` pairs of a start tag as written: each value with its quotes, still escaped.
 fn attr_list(tag: &str) -> Vec<(String, String)> {
-    let mut out = Vec::new();
-    let mut rest = tag.trim_start_matches('<');
-    rest = rest.trim_start_matches(|c: char| !c.is_whitespace());
-    while let Some(eq) = rest.find('=') {
-        let name = rest[..eq].trim().to_string();
-        let after = rest[eq + 1..].trim_start();
-        let Some(q) = after.chars().next() else { break };
-        let Some(end) = after[1..].find(q) else { break };
-        out.push((name, after[1..end + 1].to_string()));
-        rest = &after[end + 2..];
-    }
-    out
+    let head = &tag[..crate::docx::binding::tag_end(tag).unwrap_or(tag.len())];
+    crate::docx::binding::tag_attrs(head.trim_end_matches('/'))
+        .map(|(name, _, r)| {
+            let written = &head[r];
+            let value = written[written.find('=').map_or(0, |e| e + 1)..].trim_start();
+            (name.to_string(), value.to_string())
+        })
+        .collect()
 }
 
+/// `s` as an attribute value (or text): `& < > "` escaped, characters XML can't hold left out.
 pub fn esc(s: &str) -> String {
-    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+    escape(s, true)
+}
+
+/// `s` as element text: `& < >` escaped, characters XML can't hold left out.
+pub fn esc_text(s: &str) -> String {
+    escape(s, false)
+}
+
+fn escape(s: &str, quote: bool) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' if quote => out.push_str("&quot;"),
+            c if crate::docx::xml::is_char(c) => out.push(c),
+            _ => {}
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -409,5 +464,29 @@ mod tests {
         assert_eq!(super::attr_of(r#"<q:shd xmlns:x="urn:x" x:val="no" q:val="diagStripe"/>"#, "val").as_deref(), Some("diagStripe"));
         assert_eq!(super::attr_of(r#"<w:shd w:val="a&amp;b"/>"#, "val").as_deref(), Some("a&b"));
         assert_eq!(super::attr_of(r#"<w:shd w:fill="FF0000"/>"#, "val"), None);
+    }
+
+    #[test]
+    fn a_root_declares_its_namespaces_whatever_its_spacing() {
+        let cx = super::Cx::of_xml(&format!("<?xml version=\"1.0\"?><q:styles xmlns:q = \"{}\" xmlns:x='urn:x'>", super::W_NS));
+        assert_eq!(cx.w, "q:");
+        assert_eq!(cx.prefix_of("urn:x").as_deref(), Some("x:"));
+        assert_eq!(cx.parse("<q:b x:v='1'/>", |_, el| el.tag_name().namespace().map(str::to_string)).flatten().as_deref(), Some(super::W_NS));
+    }
+
+    #[test]
+    fn an_own_attribute_is_set_by_namespace_and_others_keep_their_quotes() {
+        let cx = super::Cx::of_xml(&format!("<w:numbering xmlns:w=\"{}\" xmlns:x=\"urn:x\">", super::W_NS));
+        let raw = r#"<w:num x:numId="9" x:label='a"b' w:numId="3"><w:abstractNumId w:val="1"/></w:num>"#;
+        let mut p = super::Props::parse(Some(raw), "num", &cx);
+        p.set_own("numId", "4", &cx);
+        let xml = p.xml().expect("a num");
+        assert_eq!(xml, r#"<w:num x:numId="9" x:label='a"b' w:numId="4"><w:abstractNumId w:val="1"/></w:num>"#);
+        let mut p = super::Props::parse(Some(r#"<w:num x:numId="9"><w:abstractNumId w:val="1"/></w:num>"#), "num", &cx);
+        p.set_own("numId", "5", &cx);
+        assert_eq!(p.xml().expect("a num"), r#"<w:num x:numId="9" w:numId="5"><w:abstractNumId w:val="1"/></w:num>"#);
+        let mut p = super::Props::parse(Some(r#"<w:pPr><w:ind x:label='a"b' w:left="1"/></w:pPr>"#), "pPr", &cx);
+        p.attrs("ind", &[("left", Some("2".into()))], &cx);
+        assert_eq!(p.get("ind"), Some(r#"<w:ind x:label='a"b' w:left="2"/>"#));
     }
 }

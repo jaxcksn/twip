@@ -94,9 +94,9 @@ pub fn command(code: &str, m: Mods, cx: KeyContext) -> Option<Bound> {
         "PageUp" | "PageDown" if alt && !ctrl && cx.in_table => moving(MoveUnit::ColumnEdge, code == "PageDown", shift),
         "PageUp" | "PageDown" if ctrl && alt => None,
         "PageUp" | "PageDown" => moving(if ctrl { MoveUnit::Page } else { MoveUnit::Screen }, code == "PageDown", shift),
-        "Backspace" => deleting(false, ctrl),
-        "Delete" => deleting(true, ctrl),
-        "Enter" | "NumpadEnter" => run(match (ctrl, shift) {
+        "Backspace" if !alt => deleting(false, ctrl),
+        "Delete" if !alt => deleting(true, ctrl),
+        "Enter" | "NumpadEnter" if !alt => run(match (ctrl, shift) {
             (true, true) if cx.in_table => Command::SplitTable,
             (true, true) => Command::InsertColumnBreak,
             (true, false) => Command::InsertPageBreak,
@@ -253,4 +253,14 @@ pub fn toggle_id(t: Toggle) -> crate::api::command::CommandId {
         Toggle::TrackChanges => C::SetTrackChanges,
         Toggle::FieldCodes { .. } => C::ShowFieldCodes,
     }
+}
+
+#[test]
+fn alt_chords_do_not_edit_text() {
+    let alt = Mods { alt: true, ..Mods::default() };
+    for k in ["Enter", "Backspace", "Delete"] {
+        assert!(command(k, alt, KeyContext::default()).is_none(), "Alt+{k} is bound");
+    }
+    let ctrl_alt = Mods { ctrl: true, alt: true, ..Mods::default() };
+    assert!(command("Enter", ctrl_alt, KeyContext::default()).is_none(), "Ctrl+Alt+Enter is bound");
 }

@@ -30,6 +30,11 @@ fn page() -> Editor {
         row(false),
         row(false)
     );
+    open(&table)
+}
+
+/// `table` between two paragraphs, laid out.
+fn open(table: &str) -> Editor {
     let body = format!("<w:p><w:r><w:t>Before</w:t></w:r></w:p>{table}<w:p><w:r><w:t>After the table.</w:t></w:r></w:p>");
     let bytes = crate::layout::tests::shapes::bytes(&body).expect("a package");
     let mut e = Editor::open(&bytes, fonts()).expect("opens");
@@ -232,6 +237,63 @@ fn a_table_resize_previews_its_box_and_size() {
     assert_eq!(status, Some((label, want[3] + 10.0 * PX)));
 }
 
+/// A fixed table whose `w:tblGrid` has one column under rows of three cells.
+fn short_grid() -> Editor {
+    let cell = r#"<w:tc><w:tcPr><w:tcW w:w="1440" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>x</w:t></w:r></w:p></w:tc>"#.repeat(3);
+    open(&format!(
+        r#"<w:tbl><w:tblPr><w:tblW w:w="4320" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="1440"/></w:tblGrid><w:tr>{cell}</w:tr><w:tr>{cell}</w:tr></w:tbl>"#
+    ))
+}
+
+#[test]
+fn border_drags_on_a_short_grid_do_not_panic() {
+    let mut e = short_grid();
+    let d = Drawn::of(&mut e);
+    let last = d.rows[1];
+    drag(&mut e, (last[2] + 3.0 * PX, last[3] + 3.0 * PX), (72.0, 18.0), NONE, true);
+    assert_eq!(grid(&e, d.table).len(), 3, "the resize fills in the grid");
+    for k in 1..d.edges.len() {
+        let mut e = short_grid();
+        let d = Drawn::of(&mut e);
+        drag(&mut e, (d.edges[k], d.rows[0][1] + 6.0), (-9.0, 0.0), NONE, true);
+        assert_eq!(e.history.next_undo(), Some("Column Width"), "border {k}");
+        let mut e = short_grid();
+        e.set_selection(Selection::Cells {
+            table: d.table,
+            anchor: CellRef { row: 0, col: 0 },
+            focus: CellRef { row: 1, col: 2 },
+            shape: CellShape::Rect,
+        });
+        drag(&mut e, (d.edges[k], d.rows[0][1] + 6.0), (-9.0, 0.0), NONE, true);
+        assert_eq!(e.history.next_undo(), Some("Column Width"), "border {k} of a selection");
+    }
+    // A table growing out of a cell of a table with no grid
+    let inner = r#"<w:tbl><w:tblPr><w:tblW w:w="1440" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="1440"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="1440" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>in</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#;
+    let mut e = open(&format!(
+        r#"<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr><w:tblGrid/><w:tr><w:tc><w:tcPr><w:tcW w:w="2880" w:type="dxa"/></w:tcPr>{inner}<w:p><w:r><w:t>after</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#
+    ));
+    let geo = e.page_geometries().into_iter().find(|(p, _)| *p == 0).map(|(_, g)| g).expect("page 0");
+    let r = geo.rows.iter().find(|r| !r.outer.is_empty()).expect("the inner row").rect;
+    click(&mut e, r[0] + 4.0, r[1] + 4.0);
+    drag(&mut e, (r[2] + 3.0 * PX, r[3] + 3.0 * PX), (144.0, 0.0), NONE, true);
+    assert_eq!(e.history.next_undo(), Some("Resize Table"));
+}
+
+#[test]
+fn a_resized_table_keeps_its_width_through_inserting_rows() {
+    let mut e = page();
+    let d = Drawn::of(&mut e);
+    let last = d.rows[3];
+    drag(&mut e, (last[2] + 3.0 * PX, last[3] + 3.0 * PX), (72.0, 0.0), NONE, true);
+    let width = |e: &Editor| e.index().table(e.document(), d.table).map(|t| (t.width, t.rows.len()));
+    let (resized, n) = width(&e).expect("the table");
+    assert_ne!(resized, crate::docx::props::Width::Dxa(270.0), "resized");
+    click(&mut e, (d.edges[0] + d.edges[1]) / 2.0, (d.rows[1][1] + d.rows[1][3]) / 2.0);
+    let below = crate::api::command::InsertRows { side: crate::api::command::VerticalSide::Below, count: Some(1) };
+    e.execute(Command::InsertRows(below), fonts());
+    assert_eq!(width(&e), Some((resized, n + 1)));
+}
+
 #[test]
 fn a_selection_shows_its_status_line_at_the_full_level() {
     let mut e = page();
@@ -357,4 +419,167 @@ fn alt_moves_the_table_freely() {
     drag(&mut e, handle, (dx, 100.0), ALT, true);
     let now = Drawn::of(&mut e);
     assert!((now.left() - (d.left() + dx)).abs() < 0.06 && (now.top() - (d.top() + 100.0)).abs() < 0.06, "{:?} → {:?}", d.rows[0], now.rows[0]);
+}
+
+fn opened(body: &str) -> Editor {
+    let mut e = Editor::open(&crate::layout::tests::shapes::bytes(body).expect("a package"), fonts()).expect("opens");
+    e.complete(fonts());
+    e
+}
+
+/// A fixed table whose grid (`tblGrid`, possibly empty) lists fewer columns than its row of three cells reaches.
+fn short_grid_of(grid: &str) -> Editor {
+    let cell = r#"<w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>x</w:t></w:r></w:p></w:tc>"#;
+    opened(&format!(
+        r#"<w:p><w:r><w:t>Before</w:t></w:r></w:p><w:tbl><w:tblPr><w:tblW w:w="6000" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr>{grid}<w:tr>{cell}{cell}{cell}</w:tr></w:tbl><w:p><w:r><w:t>After</w:t></w:r></w:p>"#
+    ))
+}
+
+fn first_table(e: &Editor) -> &crate::docx::Table {
+    e.document().sections[0].blocks.iter().find_map(|b| if let crate::docx::Block::Table(t) = b { Some(t) } else { None }).expect("a table")
+}
+
+fn cell_widths(e: &Editor) -> Vec<f64> {
+    first_table(e)
+        .rows
+        .iter()
+        .flat_map(|r| r.cells.iter())
+        .map(|c| if let Some(crate::docx::props::Width::Dxa(v)) = c.width { v } else { 0.0 })
+        .collect()
+}
+
+#[test]
+fn a_column_border_drag_widens_a_grid_shorter_than_its_cells() {
+    let mut e = short_grid_of(r#"<w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid>"#);
+    let geo = e.page_geometries().into_iter().find(|(p, _)| *p == 0).map(|(_, g)| g).expect("page 0");
+    let row = geo.rows.iter().find(|r| !r.repeat).expect("a row");
+    let (x, _) = *row.edges.iter().find(|(_, k)| *k == 1).expect("edge 1");
+    let mut edges = row.edges.clone();
+    edges.sort_by_key(|e| e.1);
+    let was: Vec<f64> = edges.windows(2).map(|w| w[1].0 - w[0].0).collect();
+    drag(&mut e, (x, (row.rect[1] + row.rect[3]) / 2.0), (20.0, 0.0), ALT, true);
+    let widths = cell_widths(&e);
+    assert_eq!(widths.len(), 3);
+    assert!(widths.iter().all(|w| *w > 0.0), "{widths:?}");
+    let moved = [was[0] + 20.0, was[1] - 20.0, was[2]];
+    assert!(widths.iter().zip(moved).all(|(w, m)| (w - m).abs() < 0.1), "{widths:?} from {was:?}: the columns at edge 1 share the move");
+    assert_eq!(first_table(&e).grid.len(), 3, "the grid has a column for each cell");
+}
+
+/// The caret in the first table's first cell.
+fn caret_in_table(e: &mut Editor) {
+    let d = Drawn::of(e);
+    click(e, d.rows[0][0] + 10.0, (d.rows[0][1] + d.rows[0][3]) / 2.0);
+    assert!(e.table_edges().is_some(), "the caret is in the table");
+}
+
+/// A table 100% wide whose grid lists 50pt columns: its columns draw far wider than its grid says.
+fn percent_wide() -> Editor {
+    let cell = r#"<w:tc><w:tcPr><w:tcW w:w="1000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>x</w:t></w:r></w:p></w:tc>"#;
+    opened(&format!(
+        r#"<w:p><w:r><w:t>Before</w:t></w:r></w:p><w:tbl><w:tblPr><w:tblW w:w="5000" w:type="pct"/><w:tblInd w:w="0" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="1000"/><w:gridCol w:w="1000"/></w:tblGrid><w:tr>{cell}{cell}</w:tr><w:tr>{cell}{cell}</w:tr></w:tbl><w:p><w:r><w:t>After</w:t></w:r></w:p>"#
+    ))
+}
+
+#[test]
+fn a_row_border_move_keeps_the_tables_width_and_grid() {
+    let mut e = percent_wide();
+    caret_in_table(&mut e);
+    let (width, grid) = (first_table(&e).width, first_table(&e).grid.clone());
+    let edges = e.table_edges().expect("edges");
+    let (at, _) = edges.rows[1];
+    let out = e.execute(Command::MoveTableRowBoundary(crate::api::command::BoundaryMove { index: 1, to: Points(at + 20.0) }), fonts());
+    assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
+    let t = first_table(&e);
+    assert!(t.rows[0].height.is_some(), "the row takes the height");
+    assert_eq!((t.width, &t.grid), (width, &grid), "the width and columns stay as they were");
+}
+
+#[test]
+fn an_indent_set_on_a_table_read_without_one_moves_it_at_once() {
+    let mut e = page();
+    caret_in_table(&mut e);
+    let before = Drawn::of(&mut e).left();
+    let out = e.execute(Command::SetTableIndent(Points(36.0)), fonts());
+    assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
+    e.complete(fonts());
+    assert!((Drawn::of(&mut e).left() - before - 36.0).abs() <= 1.0, "the table moves by the indent");
+    e.execute(Command::Undo, fonts());
+    e.complete(fonts());
+    assert!((Drawn::of(&mut e).left() - before).abs() < 0.5, "and back on undo");
+}
+
+#[test]
+fn moving_the_left_edge_moves_the_indent_by_as_much() {
+    let mut e = percent_wide();
+    caret_in_table(&mut e);
+    let indent = first_table(&e).ind;
+    let at = e.table_edges().expect("edges").columns[0];
+    let out = e.execute(Command::MoveTableColumnBoundary(crate::api::command::BoundaryMove { index: 0, to: Points(at + 10.0) }), fonts());
+    assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
+    assert!((first_table(&e).ind - indent - 10.0).abs() < 0.1, "indent {indent} → {}", first_table(&e).ind);
+    e.complete(fonts());
+    let now = e.table_edges().expect("edges").columns[0];
+    assert!((now - at - 10.0).abs() < 0.1, "the left edge {at} → {now}");
+}
+
+#[test]
+fn a_boundary_move_where_a_short_grid_ends_keeps_the_tables_width() {
+    let mut e = short_grid_of(r#"<w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid>"#);
+    caret_in_table(&mut e);
+    let was = e.table_edges().expect("edges").columns;
+    assert_eq!(was.len(), 4, "{was:?}");
+    let out = e.execute(Command::MoveTableColumnBoundary(crate::api::command::BoundaryMove { index: 1, to: Points(was[1] + 20.0) }), fonts());
+    assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
+    let now = e.table_edges().expect("edges").columns;
+    assert!((now[1] - was[1] - 20.0).abs() < 0.1, "{was:?} → {now:?}");
+    assert!((now[2] - was[2]).abs() < 0.1 && (now[3] - was[3]).abs() < 0.1, "the boundaries right of it stay: {was:?} → {now:?}");
+}
+
+#[test]
+fn the_resize_handle_stops_a_row_at_the_longest_height() {
+    let cell = r#"<w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>x</w:t></w:r></w:p></w:tc>"#;
+    let mut e = opened(&format!(
+        r#"<w:p><w:r><w:t>Before</w:t></w:r></w:p><w:tbl><w:tblPr><w:tblW w:w="2000" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:trPr><w:trHeight w:val="6000" w:hRule="exact"/></w:trPr>{cell}</w:tr></w:tbl><w:p><w:r><w:t>After</w:t></w:r></w:p>"#
+    ));
+    let d = Drawn::of(&mut e);
+    let r = d.rows[0];
+    drag(&mut e, (r[2] + 2.25, r[3] + 2.25), (0.0, 2000.0), NONE, true);
+    let (h, rule) = first_table(&e).rows[0].height.clone().expect("a height");
+    assert_eq!(rule, "exact");
+    assert!(h > 300.0 && h <= 1584.0, "{h}");
+}
+
+#[test]
+fn the_resize_handle_scales_a_table_without_a_grid() {
+    let mut e = short_grid_of("");
+    let geo = e.page_geometries().into_iter().find(|(p, _)| *p == 0).map(|(_, g)| g).expect("page 0");
+    let row = geo.rows.iter().find(|r| !r.repeat).expect("a row");
+    let before = row.rect[2] - row.rect[0];
+    drag(&mut e, (row.rect[2] + 2.25, row.rect[3] + 2.25), (30.0, 10.0), NONE, true);
+    let widths = cell_widths(&e);
+    assert!(widths.iter().all(|w| *w > 0.0), "{widths:?}");
+    assert!((widths.iter().sum::<f64>() - before - 30.0).abs() < 1.0, "{widths:?} from {before}");
+}
+
+#[test]
+fn a_nested_table_grows_its_cell_in_a_grid_shorter_than_its_cells() {
+    let cell = |inner: &str| format!(r#"<w:tc><w:tcPr><w:tcW w:w="1500" w:type="dxa"/></w:tcPr>{inner}<w:p><w:r><w:t>x</w:t></w:r></w:p></w:tc>"#);
+    let nested = r#"<w:tbl><w:tblPr><w:tblW w:w="900" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="900"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="900" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>y</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#;
+    let mut e = opened(&format!(
+        r#"<w:p><w:r><w:t>Before</w:t></w:r></w:p><w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr><w:tblGrid><w:gridCol w:w="1500"/></w:tblGrid><w:tr>{}{}{}</w:tr></w:tbl><w:p><w:r><w:t>After</w:t></w:r></w:p>"#,
+        cell(""),
+        cell(""),
+        cell(nested)
+    ));
+    let geo = e.page_geometries().into_iter().find(|(p, _)| *p == 0).map(|(_, g)| g).expect("page 0");
+    let inner = geo.rows.iter().filter(|r| !r.repeat).min_by(|a, b| (a.rect[2] - a.rect[0]).total_cmp(&(b.rect[2] - b.rect[0]))).expect("a row");
+    let (table, from) = (inner.table, (inner.rect[2] + 2.25, inner.rect[3] + 2.25));
+    // The caret in the nested table shows its handle.
+    click(&mut e, (inner.rect[0] + inner.rect[2]) / 2.0, (inner.rect[1] + inner.rect[3]) / 2.0);
+    let was: f64 = grid(&e, table).iter().sum();
+    drag(&mut e, from, (60.0, 0.0), NONE, true);
+    let now: f64 = grid(&e, table).iter().sum();
+    assert!(now > was + 30.0, "the nested table grew: {was} → {now}");
+    assert_eq!(first_table(&e).grid.len(), 3, "the outer grid has a column for each cell");
 }

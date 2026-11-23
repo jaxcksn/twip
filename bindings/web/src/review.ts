@@ -71,7 +71,7 @@ export interface CommentThread {
   id: CommentId;
   /** Resolved. */
   done: boolean;
-  /** The commented text. */
+  /** The commented text, cut to its first 1,000 characters. */
   anchorText: string;
   /** The page it starts on. */
   page: number;
@@ -123,7 +123,7 @@ export interface RichRun {
   underline?: boolean;
   /** Struck through. */
   strikethrough?: boolean;
-  /** A link address. */
+  /** A link address: a web, mail, FTP or phone one, or a relative one. The run of any other is plain text. */
   link?: string;
 }
 

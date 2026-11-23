@@ -766,6 +766,19 @@ public abstract partial record EditorOperation
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation SplitTable() => Op(CommandId.SplitTable);
 
+    /// <summary>Converts the selected paragraphs to a table: a row for each paragraph, split into cells at the separator.</summary>
+    /// <param name="separator">Where the text splits into cells.</param>
+    /// <param name="character">The one character to split at, with <see cref="TextSeparator.Other"/>.</param>
+    /// <param name="columns">The number of columns, 1 to 63 (by default the most pieces a paragraph has).</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation ConvertTextToTable(TextSeparator separator, string? character = null, int? columns = null) => Op(CommandId.ConvertTextToTable, new Arg("separator", Node(separator)), new Arg("character", character is { } c ? Node(c) : null, Optional: true), new Arg("columns", columns is { } n ? Node(n) : null, Optional: true));
+
+    /// <summary>Converts the selected rows, or the whole table, to text: a paragraph for each row, its cells joined by the separator.</summary>
+    /// <param name="separator">What separates the cells' text.</param>
+    /// <param name="character">The one character between cells, with <see cref="TextSeparator.Other"/>.</param>
+    /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
+    public static EditorOperation ConvertTableToText(TextSeparator separator, string? character = null) => Op(CommandId.ConvertTableToText, new Arg("separator", Node(separator)), new Arg("character", character is { } c ? Node(c) : null, Optional: true));
+
     /// <summary>Gives the selected rows equal heights.</summary>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation DistributeRows() => Op(CommandId.DistributeRows);
@@ -1198,7 +1211,7 @@ public abstract partial record EditorOperation
     /// <summary>Writes a custom XML data part.</summary>
     /// <param name="namespace">The part's namespace.</param>
     /// <param name="xml">The XML (well-formed).</param>
-    /// <param name="itemId">The part's item id, when several share the namespace.</param>
+    /// <param name="itemId">The part's item id, when several share the namespace: a GUID, matched without case or braces.</param>
     /// <returns>The operation, for <see cref="EditorSession.BatchAsync"/>.</returns>
     public static EditorOperation WriteDataPart(string @namespace, string xml, string? itemId = null) => Op(CommandId.WriteDataPart, new Arg("namespace", Node(@namespace)), new Arg("xml", Node(xml)), new Arg("itemId", itemId is { } itemId_ ? Node(itemId_) : null, Optional: true));
 

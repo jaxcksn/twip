@@ -122,8 +122,14 @@ fn list_start(before: &[char], ac: &AutoCorrect) -> Option<bool> {
 }
 
 pub fn may_trigger(c: char) -> bool {
-    c.is_whitespace() || ends_word(c) || matches!(c, '"' | '\'' | ')' | '>' | '|')
+    c.is_whitespace() || ends_word(c) || matches!(c, '"' | '\'' | ')' | '>' | '|' | '(' | '=')
 }
+
+/// The longest replacement key looked for, in characters.
+const MAX_KEY: usize = 64;
+
+/// The most words a replacement key spans.
+const KEY_WORDS: usize = 4;
 
 fn ends_word(c: char) -> bool {
     matches!(c, ',' | '.' | ';' | ':' | '!' | '?')
@@ -144,13 +150,21 @@ pub fn correction(before: &[char], trigger: Trigger, cell_start: bool, ac: &Auto
             let opens = prev.is_none_or(|p| p.is_whitespace() || matches!(p, '(' | '[' | '{' | '\u{2013}' | '\u{2014}' | '\u{c}' | '\u{2028}'));
             return Some(Fix { range: n - 1..n, with: (if opens { open } else { close }).to_string(), superscript: None, from: last.to_string() });
         }
-        // Symbols
+        // Symbols, after a replacement list entry for the whole word
         if ac.replace_text {
             let tail: String = before[n.saturating_sub(4)..].iter().collect::<String>().to_lowercase();
-            if let Some((from, to)) = SYMBOLS.iter().filter(|(f, _)| tail.ends_with(f)).max_by_key(|(f, _)| f.len())
+            let symbol = SYMBOLS.iter().filter(|(f, _)| tail.ends_with(f) && f.ends_with(may_trigger)).max_by_key(|(f, _)| f.len());
+            if let Some((from, to)) = symbol
                 && !ac.never.iter().any(|v| v == from)
             {
                 let k = from.chars().count();
+                let word = before.iter().rposition(|c| c.is_whitespace() || *c == super::text::OBJECT).map_or(0, |i| i + 1);
+                if n - word > k && n - word <= MAX_KEY {
+                    let key: String = before[word..].iter().collect();
+                    if let Some(to) = replacement(&key, ac).filter(|t| *t != key && !ac.never.contains(&key)) {
+                        return Some(Fix { range: word..n, with: to, superscript: None, from: key });
+                    }
+                }
                 return Some(Fix { range: n - k..n, with: (*to).to_string(), superscript: None, from: before[n - k..].iter().collect() });
             }
         }
@@ -173,32 +187,35 @@ pub fn correction(before: &[char], trigger: Trigger, cell_start: bool, ac: &Auto
     let core: String = before[cs..ce].iter().collect();
     let mut with = core.clone();
     let mut range = cs..ce;
+    let mut start = start;
     let mut superscript = None;
     let mut prefix = String::new();
     let mut changed = false;
     if !core.is_empty() && !ac.never.contains(&core) {
-        // Replacement list
+        // Replacement list, longest key first: the last few words, with their closing punctuation or without
         if ac.replace_text {
-            let lookup = |w: &str| match &ac.entries {
-                Some(m) => m.get(w).cloned(),
-                None => lists.entries.get(w).map(|s| s.to_string()),
-            };
-            let lower = core.to_lowercase();
-            let found = lookup(&core).or_else(|| {
-                let to = lookup(&lower)?;
-                let mut c = core.chars();
-                let first_upper = c.next().is_some_and(char::is_uppercase);
-                let all_upper = core.chars().filter(|c| c.is_alphabetic()).all(char::is_uppercase) && core.chars().count() > 1;
-                Some(if all_upper {
-                    to.to_uppercase()
-                } else if first_upper {
-                    capitalised(&to)
-                } else {
-                    to
+            let mut starts = vec![cs];
+            let mut s = start;
+            while starts.len() < KEY_WORDS && s >= 2 && before[s - 1] == ' ' {
+                let p = before[..s - 1].iter().rposition(|c| c.is_whitespace() || *c == super::text::OBJECT).map_or(0, |i| i + 1);
+                if p + 1 >= s || ce - p > MAX_KEY {
+                    break;
+                }
+                starts.push(p);
+                s = p;
+            }
+            let typed_end = if trigger == Trigger::Typed && ends_word(last) { n } else { end };
+            let found = starts.iter().rev().find_map(|&s| {
+                [typed_end, end, ce].into_iter().filter(|&e| e > s && e - s <= MAX_KEY).find_map(|e| {
+                    let key: String = before[s..e].iter().collect();
+                    let to = replacement(&key, ac).filter(|t| *t != key && !ac.never.contains(&key))?;
+                    Some((s, e, to))
                 })
             });
-            if let Some(to) = found.filter(|t| *t != core) {
+            if let Some((s, e, to)) = found {
                 with = to;
+                range = s..e;
+                start = start.min(s);
                 changed = true;
             }
         }
@@ -290,6 +307,26 @@ pub fn correction(before: &[char], trigger: Trigger, cell_start: bool, ac: &Auto
     (with != from || superscript.is_some()).then_some(Fix { range, with, superscript, from })
 }
 
+/// What the replacement list puts for `key`: its entry, else its lower case entry in the key's capitals.
+fn replacement(key: &str, ac: &AutoCorrect) -> Option<String> {
+    let lookup = |w: &str| match &ac.entries {
+        Some(m) => m.get(w).cloned(),
+        None => lists().entries.get(w).map(|s| s.to_string()),
+    };
+    lookup(key).or_else(|| {
+        let to = lookup(&key.to_lowercase())?;
+        let first_upper = key.chars().next().is_some_and(char::is_uppercase);
+        let all_upper = key.chars().filter(|c| c.is_alphabetic()).all(char::is_uppercase) && key.chars().count() > 1;
+        Some(if all_upper {
+            to.to_uppercase()
+        } else if first_upper {
+            capitalised(&to)
+        } else {
+            to
+        })
+    })
+}
+
 fn capitalised(w: &str) -> String {
     let mut c = w.chars();
     c.next().map(|f| f.to_uppercase().chain(c).collect()).unwrap_or_default()
@@ -342,6 +379,10 @@ impl Editor {
         {
             let label = if bullet { "Automatic Bullets" } else { "Automatic Numbering" };
             let n = Unit(before.len() as u32);
+            let (pa, pb) = (Position::text(caret.story, para, Unit(0)), Position::text(caret.story, para, n));
+            if self.kept(crate::api::command::CommandId::InsertText, &pa, &pb) || self.kept(crate::api::command::CommandId::SetList, &pa, &pb) {
+                return Outcome::Unchanged("the marker is kept");
+            }
             return self.joined(label, fonts, |e| {
                 let mut tx = e.begin(label);
                 if e.step(&mut tx, Step::Text { para, range: Unit(0)..n, with: Vec::new(), edges: Default::default() }).is_err() {
@@ -356,47 +397,76 @@ impl Editor {
         let cell_start = self.index.para_slot(para).is_some_and(|s| matches!(s.container, super::index::Container::Cell { .. }) && s.block == 0);
         let Some(fix) = correction(&before, trigger, cell_start, ac) else { return Outcome::Unchanged("nothing to correct") };
         let (a, b) = (Unit(fix.range.start as u32), Unit(fix.range.end as u32));
-        let Some(run) = self.run_at(&Position::text(caret.story, para, Unit(a.0 + 1))) else { return Outcome::Unchanged("no run") };
+        if self.kept(crate::api::command::CommandId::InsertText, &Position::text(caret.story, para, a), &Position::text(caret.story, para, b)) {
+            return Outcome::Unchanged("the text is kept");
+        }
+        let olds = unit_runs(p, a.0..b.0);
+        let Some(run) = olds.first().cloned() else { return Outcome::Unchanged("no run") };
         if fix.with == fix.from
             && let Some(s) = &fix.superscript
-            && self
-                .run_at(&Position::text(caret.story, para, Unit(a.0 + s.end as u32)))
-                .is_some_and(|r| r.vert_align == crate::docx::props::VertAlign::Superscript)
+            && olds.get(s.end - 1).is_some_and(|r| r.vert_align == crate::docx::props::VertAlign::Superscript)
         {
             return Outcome::Unchanged("already corrected");
         }
-        let raised = match &fix.superscript {
-            Some(_) => match self.raised(para, &run) {
-                Some(r) => Some(r),
-                None => return Outcome::Unchanged("no styles"),
-            },
-            None => None,
-        };
         let chars: Vec<char> = fix.with.chars().collect();
-        let inlines = match (&fix.superscript, raised) {
-            (Some(s), Some(up)) => [(0..s.start, run.clone()), (s.clone(), up), (s.end..chars.len(), run.clone())]
-                .into_iter()
-                .filter(|(r, _)| !r.is_empty())
-                .map(|(r, run)| crate::docx::Inline::Text(chars[r].iter().collect(), run))
-                .collect(),
-            _ => vec![crate::docx::Inline::Text(fix.with.clone(), run)],
+        let tracked = self.tracking();
+        let (range, inlines) = match &fix.superscript {
+            Some(s) => {
+                let Some(up) = self.raised(para, a, &run) else { return Outcome::Unchanged("no styles") };
+                let inlines = [(0..s.start, run.clone()), (s.clone(), up), (s.end..chars.len(), run.clone())]
+                    .into_iter()
+                    .filter(|(r, _)| !r.is_empty())
+                    .map(|(r, run)| crate::docx::Inline::Text(chars[r].iter().collect(), run))
+                    .collect();
+                (a..b, inlines)
+            }
+            // The changed characters (the whole word, tracked), each in its old character's run
+            None => {
+                let from: Vec<char> = fix.from.chars().collect();
+                let pre = from.iter().zip(&chars).take_while(|(x, y)| x == y).count();
+                let suf = from[pre..].iter().rev().zip(chars[pre..].iter().rev()).take_while(|(x, y)| x == y).count();
+                let (old_end, new_end) = (from.len() - suf, chars.len() - suf);
+                let source = |j: usize| match j {
+                    j if j < pre => j,
+                    j if j >= new_end => j - new_end + old_end,
+                    j if old_end > pre => j.min(old_end - 1),
+                    _ => pre.saturating_sub(1),
+                };
+                let (lo, hi) = if tracked { (0, chars.len()) } else { (pre, new_end) };
+                let mut inlines: Vec<crate::docx::Inline> = Vec::new();
+                for j in lo..hi {
+                    let r = olds.get(source(j)).unwrap_or(&run);
+                    match inlines.last_mut() {
+                        Some(crate::docx::Inline::Text(t, last)) if last == r => t.push(chars[j]),
+                        _ => inlines.push(crate::docx::Inline::Text(chars[j].to_string(), r.clone())),
+                    }
+                }
+                let range = if tracked { a..b } else { Unit(a.0 + pre as u32)..Unit(a.0 + old_end as u32) };
+                (range, inlines)
+            }
         };
         let mut tx = self.begin("AutoCorrect");
-        if self.step(&mut tx, Step::Text { para, range: a..b, with: inlines, edges: Default::default() }).is_err() {
+        let from = tx.maps.len();
+        if self.step(&mut tx, Step::Text { para, range, with: inlines, edges: Default::default() }).is_err() {
             self.abort(tx);
             return Outcome::Unchanged("correction failed");
         }
+        let map = |u: Unit| match tx.maps[from..].iter().fold(Position::text(caret.story, para, u), |p, m| m.apply(p)).place {
+            Place::Text { offset, .. } => offset,
+            Place::RowEnd { .. } => u,
+        };
+        let end = map(b);
         if trigger == Trigger::Typed {
-            let shift = chars.len() as i64 - (b.0 - a.0) as i64;
-            let at = Unit((offset.0 as i64 + shift).max(0) as u32);
-            self.selection = Selection::Caret(Position::text(caret.story, para, at));
+            self.selection = Selection::Caret(Position::text(caret.story, para, map(offset)));
         }
-        self.correction = Some(super::Correction { para, range: a..Unit(a.0 + chars.len() as u32), from: fix.from.clone(), typed: 0 });
+        let range = Unit(end.0.saturating_sub(chars.len() as u32))..end;
+        let to = chars.iter().collect();
+        self.correction = Some(super::Correction { para, range, from: fix.from.clone(), to, typed: 0 });
         self.commit(tx, None, fonts)
     }
 
     pub fn correction_view(&mut self, pages: std::ops::Range<usize>) -> Option<super::view::CorrectionView> {
-        let c = self.correction.clone()?;
+        let c = self.correction()?.clone();
         let story = self.caret().map(|p| p.story)?;
         let rects = self.range_rects(Position::text(story, c.para, c.range.start), Position::text(story, c.para, c.range.end), pages);
         let near = self.caret().and_then(|p| p.para_offset()).is_some_and(|(p, at)| p == c.para && at >= c.range.start && at.0 <= c.range.end.0 + 1);
@@ -412,7 +482,7 @@ impl Editor {
         Some(super::view::CorrectionView { rects, button })
     }
 
-    pub fn follow_correction(&mut self, typed: usize, edited: bool) {
+    pub(super) fn follow_correction(&mut self, typed: usize, edited: bool) {
         let caret = self.caret().and_then(|p| p.para_offset());
         let Some(c) = &mut self.correction else { return };
         let from = if edited { c.range.end } else { c.range.start };
@@ -423,19 +493,27 @@ impl Editor {
         }
     }
 
+    /// The correction mark, while its range still holds the corrected text.
     pub fn correction(&self) -> Option<&super::Correction> {
-        self.correction.as_ref()
+        self.correction.as_ref().filter(|c| self.text_in(c).is_some_and(|t| t == c.to))
     }
 
-    pub fn correction_text(&self) -> Option<String> {
-        let c = self.correction.as_ref()?;
+    fn text_in(&self, c: &super::Correction) -> Option<String> {
         let p = self.index.para(&self.doc, c.para)?;
         let t = super::text::UnitText::of(p);
         Some(t.text.chars().skip(c.range.start.0 as usize).take((c.range.end.0 - c.range.start.0) as usize).collect())
     }
 
+    pub fn correction_text(&self) -> Option<String> {
+        self.correction().map(|c| c.to.clone())
+    }
+
     pub fn revert_correction(&mut self, fonts: &Fonts) -> Outcome {
-        let Some(c) = self.correction.take() else { return Outcome::Unchanged("no correction") };
+        if self.correction().is_none() {
+            self.correction = None;
+            return Outcome::unavailable("no correction");
+        }
+        let Some(c) = self.correction.take() else { return Outcome::unavailable("no correction") };
         if self.history.next_undo() == Some("AutoCorrect") && c.typed == 0 {
             return self.execute(super::commands::Command::Undo, fonts);
         }
@@ -450,15 +528,33 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
-    fn raised(&self, para: crate::layout::ParaId, run: &crate::docx::Run) -> Option<crate::docx::Run> {
+    fn raised(&self, para: crate::layout::ParaId, at: Unit, run: &crate::docx::Run) -> Option<crate::docx::Run> {
         let res = self.doc.resolver.clone()?;
         let cx = self.cx();
-        let base = self.run_base(para, &res, &cx)?;
+        let base = self.run_base(para, at, &res, &cx)?;
         let mut p = crate::docx::write::props::Props::parse(run.direct.0.as_deref(), "rPr", &cx);
         let w = cx.w.clone();
         p.set("vertAlign", format!("<{w}vertAlign {w}val=\"superscript\"/>"));
-        Some(res.run_from_xml(&base, p.xml().as_deref(), &cx))
+        Some(res.rerun_xml(&base, run, p.xml().as_deref(), &cx))
     }
+}
+
+/// The run of each unit of `range` in `p`, the one before for a unit without one.
+fn unit_runs(p: &crate::docx::Paragraph, range: Range<u32>) -> Vec<crate::docx::Run> {
+    let mut out = Vec::with_capacity(range.len());
+    let mut at = 0u32;
+    let mut last = &p.mark;
+    for i in &p.inlines {
+        if at >= range.end {
+            break;
+        }
+        let n = i.units() as u32;
+        let run = super::step::run_of(i).unwrap_or(last);
+        out.extend((at.max(range.start)..(at + n).min(range.end)).map(|_| run.clone()));
+        last = run;
+        at += n;
+    }
+    out
 }
 
 #[cfg(test)]
@@ -547,5 +643,25 @@ mod tests {
         assert_eq!(f.with, "word\u{2014}");
         let cell = AutoCorrect { sentence_capitals: false, ..AutoCorrect::default() };
         assert_eq!(correction(&"hello ".chars().collect::<Vec<_>>(), Trigger::Typed, true, &cell).map(|f| f.with), Some("Hello".into()));
+    }
+
+    #[test]
+    fn shortcodes_multi_word_and_punctuated_entries_replace() {
+        let typed = |t: &str| type_out(t, &AutoCorrect::default()).0;
+        assert_eq!(typed("Word :alpha: "), "Word \u{3B1} ");
+        assert_eq!(typed("Word :Latin cross: "), format!("Word {} ", lists().entries[":Latin cross:"]));
+        assert_eq!(typed("Word int he "), "Word in the ");
+        assert_eq!(typed("Word their are "), "Word there are ");
+        assert_eq!(typed("their are "), "There are ");
+        assert_eq!(typed("Word I.e. "), format!("Word {} ", lists().entries["I.e."]));
+    }
+
+    #[test]
+    fn a_left_right_arrow_is_not_half_converted() {
+        let typed = |t: &str| type_out(t, &AutoCorrect::default()).0;
+        assert_eq!(typed("<--> "), "\u{2194} ");
+        assert_eq!(typed("<-- "), "\u{2190} ");
+        assert_eq!(typed("--> "), "\u{2192} ");
+        assert_eq!(typed(":-( :( <=="), "\u{2639} \u{2639} \u{21D0}");
     }
 }

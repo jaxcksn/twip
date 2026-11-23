@@ -28,6 +28,10 @@ pub struct Context {
     pub bookmarks: Vec<String>,
     /// The selection is in a table: Borders and Shading applies to its cells or the table too.
     pub in_table: bool,
+    /// The selection's first cell's margins: top, left, bottom, right.
+    pub cell_margins: Option<[f64; 4]>,
+    /// The selected picture's own size, which its scales are of.
+    pub original_size: Option<(f64, f64)>,
 }
 
 /// The error for a dialog whose object the selection doesn't have.
@@ -63,18 +67,31 @@ const KINDS: [DialogKind; 24] = [
     DialogKind::FillEffects,
 ];
 
-/// Whether [`open`] opens `kind` on this state: the table and object dialogs need their table or object.
-pub fn available(kind: DialogKind, state: &State) -> bool {
+/// What the selection is in that the state doesn't say: a list, a frame.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Reach {
+    /// The selection is in a list.
+    pub list: bool,
+    /// The selection is in a frame.
+    pub frame: bool,
+}
+
+/// Whether `dialog_open` opens `kind` now: the table, object, frame and list dialogs need their table, object, frame
+/// or list, and the dialogs of a style open on that style.
+pub fn available(kind: DialogKind, state: &State, reach: Reach) -> bool {
     match kind {
         DialogKind::TableProperties => state.selection.table.is_some(),
         DialogKind::PictureSize | DialogKind::AltText => state.selection.object.is_some(),
+        DialogKind::Frame => reach.frame,
+        DialogKind::SetNumberingValue | DialogKind::AdjustListIndents => reach.list,
+        DialogKind::Style | DialogKind::Banding | DialogKind::BulletsNumbering => false,
         _ => true,
     }
 }
 
 /// Each dialog's availability, for the state.
-pub fn availability(state: &State) -> BTreeMap<DialogKind, bool> {
-    KINDS.iter().map(|&k| (k, available(k, state))).collect()
+pub fn availability(state: &State, reach: Reach) -> BTreeMap<DialogKind, bool> {
+    KINDS.iter().map(|&k| (k, available(k, state, reach))).collect()
 }
 
 /// The selection's values for `kind`.
@@ -195,9 +212,10 @@ pub fn values(kind: DialogKind, state: &State, cx: &Context) -> Result<DialogVal
                 column_width: t.column_width,
                 cell_width: t.cell_width,
                 cell_alignment: t.cell_alignment,
-                // shortcut: the state has no cell margins; the dialog starts from the default (5.4 pt left and right),
-                // and sets them only when changed.
-                cell_margins: CellMarginValues { left: Points(5.4), right: Points(5.4), ..CellMarginValues::default() },
+                cell_margins: {
+                    let [top, left, bottom, right] = cx.cell_margins.unwrap_or([0.0, 5.4, 0.0, 5.4]);
+                    CellMarginValues { top: Points(top), left: Points(left), bottom: Points(bottom), right: Points(right) }
+                },
                 allow_spacing: t.cell_spacing.is_some(),
                 cell_spacing: t.cell_spacing.unwrap_or_default(),
                 wrap_text: t.wrap_text,
@@ -211,9 +229,8 @@ pub fn values(kind: DialogKind, state: &State, cx: &Context) -> Result<DialogVal
             DialogValues::PictureSize(PictureSizeDialog {
                 width: o.width,
                 height: o.height,
-                // shortcut: the original size isn't in the state; scales start at 100% of the size now.
-                scale_width: 100.0,
-                scale_height: 100.0,
+                scale_width: cx.original_size.filter(|s| s.0 > 0.0).map_or(100.0, |s| (o.width.0 / s.0 * 1000.0).round() / 10.0),
+                scale_height: cx.original_size.filter(|s| s.1 > 0.0).map_or(100.0, |s| (o.height.0 / s.1 * 1000.0).round() / 10.0),
                 lock_aspect: true,
                 reset: false,
                 relative_width: o.relative_width,
@@ -1061,7 +1078,10 @@ pub fn update(model: &DialogModel, values: DialogValues, cx: &Context) -> Result
             }
             DialogValues::PageSetup(v)
         }
-        (DialogValues::PictureSize(was), DialogValues::PictureSize(mut v)) => {
+        (DialogValues::PictureSize(was), DialogValues::PictureSize(mut v))
+            if (v.width, v.height, v.scale_width, v.scale_height, v.lock_aspect)
+                != (was.width, was.height, was.scale_width, was.scale_height, was.lock_aspect) =>
+        {
             let ratio = |a: f64, b: f64| if b > 0.0 { a / b } else { 1.0 };
             // Scales change the sides, and the sides the scales; locked, one side changes the other.
             if v.scale_width != was.scale_width {
@@ -1577,28 +1597,41 @@ pub fn label(kind: DialogKind) -> &'static str {
     }
 }
 
-/// Check Accessibility: pictures without alt text (placeholders aside), tables without a header row. Ids name what
-/// the issue is on (`picture:<paragraph>:<unit>`, `table:<first paragraph>`).
+/// Check Accessibility: pictures without alt text (placeholders and decorative pictures aside), in the body and its
+/// text boxes, and tables without a header row. Ids name what the issue is on (`picture:<paragraph>:<unit>`,
+/// `float:<float>`, `table:<first paragraph>`).
 pub fn issues(doc: &crate::docx::Document) -> Vec<AccessibilityIssue> {
     use crate::docx::{Block, Inline};
+    use crate::services::a11y::roles::{Alt, alt};
+    const TEXT: &str = "Picture without alt text: add a description.";
+    // Nesting is bounded by the reader's XML depth.
     fn walk(doc: &crate::docx::Document, blocks: &[Block], out: &mut Vec<AccessibilityIssue>) {
+        let placeholder = |image: Option<usize>| {
+            image
+                .and_then(|k| doc.controlled.get(&k))
+                .is_some_and(|cs| cs.iter().any(|c| doc.controls.get(c).is_some_and(|k| k.props.showing_placeholder)))
+        };
         for b in blocks {
             match b {
                 Block::Para(p) => {
                     let mut at = 0u32;
                     for i in &p.inlines {
-                        if let Inline::Picture(pic, _) = i
-                            && pic.alt.is_empty()
-                            && !pic
-                                .image
-                                .and_then(|k| doc.controlled.get(&k))
-                                .is_some_and(|cs| cs.iter().any(|c| doc.controls.get(c).is_some_and(|k| k.props.showing_placeholder)))
-                        {
-                            out.push(AccessibilityIssue {
-                                id: format!("picture:{}:{at}", p.id),
-                                text: "Picture without alt text: add a description.".into(),
-                                tip: false,
-                            });
+                        match i {
+                            Inline::Picture(pic, _) if alt(&pic.alt, pic.shape.as_deref()) == Alt::Missing && !placeholder(pic.image) => {
+                                out.push(AccessibilityIssue { id: format!("picture:{}:{at}", p.id), text: TEXT.into(), tip: false });
+                            }
+                            Inline::Float(f, _) => {
+                                if f.image.is_some() && alt(&f.alt, f.shape.as_deref()) == Alt::Missing && !placeholder(f.image) {
+                                    out.push(AccessibilityIssue { id: format!("float:{}", f.id), text: TEXT.into(), tip: false });
+                                }
+                                for tb in f.parts.iter().filter_map(|g| g.text_box.as_ref()) {
+                                    walk(doc, &tb.blocks, out);
+                                }
+                            }
+                            _ => {}
+                        }
+                        if let Some((_, tb)) = i.story() {
+                            walk(doc, &tb.blocks, out);
                         }
                         at += i.units() as u32;
                     }
@@ -1655,7 +1688,7 @@ mod tests {
                 matches!(k, DialogKind::Style | DialogKind::ManageStyles | DialogKind::BordersShading | DialogKind::Frame | DialogKind::Banding)
                     || k.is_list()
             };
-            for (kind, on) in availability(&state).into_iter().filter(|(k, _)| !session(*k)) {
+            for (kind, on) in availability(&state, Reach::default()).into_iter().filter(|(k, _)| !session(*k)) {
                 assert_eq!(on, open(kind, &state, &Context::default()).is_ok(), "{kind:?}");
             }
         }
@@ -1751,6 +1784,34 @@ mod tests {
         assert_eq!(crop(&v).expect("valid"), [Command::SetPictureCrop(PictureCrop { left: Some(0.25), ..PictureCrop::default() })]);
         v.crop = Some(PictureCrop { right: Some(1.5), ..PictureCrop::default() });
         assert!(crop(&v).is_err(), "more than the image");
+    }
+
+    #[test]
+    fn a_crop_alone_leaves_the_picture_size_unrounded() {
+        use crate::api::command::PictureCrop;
+        let mut state = State::default();
+        state.selection.object = Some(ObjectSelection { width: Points(107.72), height: Points(80.79), ..ObjectSelection::default() });
+        let cx = Context::default();
+        let m = open(DialogKind::PictureSize, &state, &cx).expect("opens");
+        let DialogValues::PictureSize(mut v) = m.values.clone() else { panic!() };
+        v.crop = Some(PictureCrop { left: Some(0.25), ..PictureCrop::default() });
+        let m = update(&m, DialogValues::PictureSize(v), &cx).expect("updates");
+        let DialogValues::PictureSize(v) = &m.values else { panic!() };
+        assert_eq!((v.width, v.height), (Points(107.72), Points(80.79)));
+        assert_eq!(
+            commands(&m.values, &state, &cx).expect("valid"),
+            [Command::SetPictureCrop(PictureCrop { left: Some(0.25), ..PictureCrop::default() })]
+        );
+    }
+
+    #[test]
+    fn picture_scales_are_of_the_original_size() {
+        let mut state = State::default();
+        state.selection.object = Some(ObjectSelection { width: Points(36.0), height: Points(54.0), ..ObjectSelection::default() });
+        let cx = Context { original_size: Some((72.0, 54.0)), ..Context::default() };
+        let m = open(DialogKind::PictureSize, &state, &cx).expect("opens");
+        let DialogValues::PictureSize(v) = &m.values else { panic!() };
+        assert_eq!((v.scale_width, v.scale_height), (50.0, 100.0));
     }
 
     #[test]

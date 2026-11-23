@@ -3,7 +3,7 @@
 //! paragraphs, sections, tables, rows and cells, each with the properties before the change. Comment and move ranges
 //! are zero-unit inline markers; comments and their threads live in [`Comments`].
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::rc::Rc;
 
 use super::model::{Block, Cell, ParaStyle, Paragraph, Raw, Row, Run, RunStyle, Section, SectionPage, Table, VMerge};
@@ -62,6 +62,55 @@ impl People {
 
     pub fn get(&self, id: AuthorId) -> Option<&Person> {
         self.persons.get(id.0 as usize)
+    }
+
+    /// The authors a comment or a revision in `doc` names.
+    pub fn named(doc: &super::model::Document) -> std::collections::HashSet<AuthorId> {
+        fn run(r: &RunStyle, out: &mut std::collections::HashSet<AuthorId>) {
+            out.extend([&r.rev.ins, &r.rev.del].into_iter().flatten().map(|m| m.author));
+            out.extend(r.rev.fmt.as_ref().map(|f| f.mark.author));
+        }
+        fn blocks(bs: &[Block], out: &mut std::collections::HashSet<AuthorId>) {
+            for b in bs {
+                match b {
+                    Block::Para(p) => {
+                        run(&p.mark, out);
+                        out.extend(p.style.change.as_ref().map(|c| c.mark.author));
+                        for i in &p.inlines {
+                            if let Some(r) = i.run() {
+                                run(r, out);
+                            }
+                            if let Some((_, tb)) = i.story() {
+                                blocks(&tb.blocks, out);
+                            }
+                        }
+                    }
+                    Block::Table(t) => {
+                        out.extend(t.change.as_ref().map(|c| c.mark.author));
+                        out.extend(t.grid_change.as_ref().map(|c| c.mark.author));
+                        for r in &t.rows {
+                            out.extend([&r.rev.ins, &r.rev.del].into_iter().flatten().map(|m| m.author));
+                            out.extend([&r.rev.change, &r.rev.ex_change].into_iter().flatten().map(|c| c.mark.author));
+                            for c in &r.cells {
+                                out.extend(c.rev.structural.as_ref().map(|(m, _)| m.author));
+                                out.extend(c.rev.change.as_ref().map(|ch| ch.mark.author));
+                                blocks(&c.blocks, out);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        let mut out: std::collections::HashSet<AuthorId> = doc.comments.by_id.values().map(|c| c.author).collect();
+        for s in &doc.sections {
+            out.extend(s.change.as_ref().map(|c| c.mark.author));
+            blocks(&s.blocks, &mut out);
+        }
+        let others = doc.stories.values().chain(doc.footnotes.values()).chain(doc.endnotes.values()).chain(doc.glossary_bodies());
+        for b in others.chain(doc.comments.by_id.values().map(|c| &c.body)) {
+            blocks(b, &mut out);
+        }
+        out
     }
 }
 
@@ -196,6 +245,13 @@ pub struct ParaChange {
     pub previous_raw: Raw,
     /// `w:numberingChange` in the paragraph's `w:numPr`, as written.
     pub numbering_change: Raw,
+}
+
+impl ParaChange {
+    /// Whether it is a list's numbering change alone, without a `w:pPrChange`.
+    pub fn numbering_only(&self) -> bool {
+        self.previous_raw.0.is_none() && self.numbering_change.0.is_some()
+    }
 }
 
 /// `w:sectPrChange`: the section's page before the change.
@@ -374,14 +430,16 @@ pub struct Comments {
 impl Comments {
     /// Each thread's first comment, then its replies, by date then id.
     pub fn threads(&self) -> Vec<(CommentId, Vec<CommentId>)> {
+        let roots = self.roots();
         let mut replies: HashMap<CommentId, Vec<&Comment>> = HashMap::new();
         for c in self.by_id.values() {
-            if let Some(p) = c.parent.filter(|p| self.by_id.contains_key(p)) {
-                replies.entry(self.root(p)).or_default().push(c);
+            if roots[&c.id] != c.id {
+                replies.entry(roots[&c.id]).or_default().push(c);
             }
         }
-        let roots = self.by_id.values().filter(|c| c.parent.is_none_or(|p| !self.by_id.contains_key(&p)));
-        roots
+        self.by_id
+            .values()
+            .filter(|c| roots[&c.id] == c.id)
             .map(|r| {
                 let mut rs = replies.remove(&r.id).unwrap_or_default();
                 rs.sort_by(|a, b| a.date.as_ref().and_then(|d| d.utc).cmp(&b.date.as_ref().and_then(|d| d.utc)).then(a.id.cmp(&b.id)));
@@ -390,22 +448,56 @@ impl Comments {
             .collect()
     }
 
-    /// The first comment of the thread holding `id` (cycles stop at the first repeat).
     /// How many threads there are, as [`Self::threads`] has them, without building them.
     pub fn thread_count(&self) -> usize {
-        self.by_id.values().filter(|c| c.parent.is_none_or(|p| !self.by_id.contains_key(&p))).count()
+        self.roots().iter().filter(|(c, r)| c == r).count()
     }
 
+    /// The first comment of the thread holding `id`.
     pub fn root(&self, id: CommentId) -> CommentId {
-        let (mut at, mut seen) = (id, Vec::new());
-        while let Some(p) = self.by_id.get(&at).and_then(|c| c.parent).filter(|p| self.by_id.contains_key(p)) {
-            if seen.contains(&p) {
-                break;
+        self.walk_up(id, &HashMap::new(), &mut Vec::new(), &mut HashSet::new())
+    }
+
+    /// Each comment's thread's first comment, in one pass over the reply links: a cycle's first comment is its
+    /// lowest id.
+    pub fn roots(&self) -> HashMap<CommentId, CommentId> {
+        let mut roots = HashMap::with_capacity(self.by_id.len());
+        let (mut path, mut on_path) = (Vec::new(), HashSet::new());
+        for &id in self.by_id.keys() {
+            if roots.contains_key(&id) {
+                continue;
             }
-            seen.push(at);
-            at = p;
+            let root = self.walk_up(id, &roots, &mut path, &mut on_path);
+            roots.extend(path.drain(..).map(|c| (c, root)));
+            on_path.clear();
         }
-        at
+        roots
+    }
+
+    /// Follows reply links from `id` to a comment without a parent, one in `known`, or around a cycle; `path` holds
+    /// the comments passed.
+    fn walk_up(
+        &self,
+        id: CommentId,
+        known: &HashMap<CommentId, CommentId>,
+        path: &mut Vec<CommentId>,
+        on_path: &mut HashSet<CommentId>,
+    ) -> CommentId {
+        let mut at = id;
+        loop {
+            if let Some(&r) = known.get(&at) {
+                return r;
+            }
+            if !on_path.insert(at) {
+                let from = path.iter().position(|c| *c == at).unwrap_or(0);
+                return path[from..].iter().copied().min().unwrap_or(at);
+            }
+            path.push(at);
+            match self.by_id.get(&at).and_then(|c| c.parent).filter(|p| self.by_id.contains_key(p)) {
+                Some(p) => at = p,
+                None => return at,
+            }
+        }
     }
 }
 

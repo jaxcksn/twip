@@ -1,5 +1,6 @@
 //! Command layer
 
+pub(crate) mod bounds;
 mod character;
 mod history;
 mod insert;
@@ -18,13 +19,7 @@ pub(crate) use character::underline_value;
 
 use crate::api::command::CommandId;
 
-pub(crate) const UNSUPPORTED: &[CommandId] = &[
-    CommandId::CopyFormatting,
-    CommandId::PasteFormatting,
-    CommandId::MoveColumnBoundary,
-    CommandId::MoveTableColumnBoundary,
-    CommandId::MoveTableRowBoundary,
-];
+pub(crate) const UNSUPPORTED: &[CommandId] = &[];
 
 pub use crate::api::command::Command;
 use crate::api::command::CommandResult;
@@ -104,6 +99,13 @@ impl Outcome {
     }
 }
 
+/// Whether Repeat runs `c` again: an edit of the document, undo, redo and protection (its password) aside.
+fn repeats(c: &Command) -> bool {
+    use crate::api::catalog::{CommandGroup, UndoGrouping, info};
+    !matches!(c, Command::SetDocumentProtection(_))
+        && info(c.id()).is_some_and(|i| i.mutates && i.undo != UndoGrouping::View && i.group != CommandGroup::History)
+}
+
 impl Editor {
     pub fn execute(&mut self, cmd: Command, fonts: &Fonts) -> Outcome {
         self.made = None;
@@ -111,18 +113,57 @@ impl Editor {
         if self.mode == super::Mode::ReadOnly && cmd.mutates() {
             return self.refuse_read_only();
         }
+        if cmd.mutates()
+            && let Some(e) = self.protection_refusal(&cmd)
+        {
+            return Outcome::Refused(e);
+        }
+        if let Err(e) = bounds::bounds(&cmd) {
+            return Outcome::Refused(e);
+        }
+        let typed = match &cmd {
+            Command::InsertText(t) => t.chars().count(),
+            _ => 0,
+        };
+        let revision = self.revision();
         let out = self.execute_editable(cmd, fonts);
         self.pending_images.clear();
         self.settle_provisional(fonts);
+        // The correction mark stays through typing after it and caret moves onto it; anything else drops it.
+        self.follow_correction(typed, self.revision() != revision);
         out
     }
 
     fn execute_editable(&mut self, cmd: Command, fonts: &Fonts) -> Outcome {
-        let continues = matches!(cmd, Command::InsertText(_))
-            && self.selection.is_collapsed()
-            && self.caret().and_then(|p| p.para_offset()).is_some_and(|(p, u)| self.history.continues(p, u, Typing::Insert));
+        // A built-in style the document doesn't define yet joins it first, in the same undo step.
+        if let Some(b) = self.built_in_named(&cmd) {
+            if matches!(cmd, Command::SetTableStyle(_)) && self.table_target().is_none() {
+                return Outcome::Unchanged("not in a table");
+            }
+            let label = crate::api::catalog::info(cmd.id()).map_or("Style", |i| i.label.as_str());
+            let pending = self.pending.clone();
+            self.begin_batch(Some(label.into()));
+            let out = match self.add_built_in(b, fonts) {
+                o @ Outcome::Refused(_) => o,
+                _ if self.built_in_named(&cmd).is_some() => Outcome::Unchanged("the style couldn't be added"),
+                _ => self.execute_editable(cmd, fonts),
+            };
+            let applied = matches!(out, Outcome::Changed(_) | Outcome::Moved) || self.pending != pending;
+            let end = self.end_batch(applied, fonts);
+            return if matches!(end, Outcome::Changed(_)) { end } else { out };
+        }
+        let typing = match &cmd {
+            Command::InsertText(_) | Command::InsertTab => Some(Typing::Insert),
+            Command::Delete(d) if d.unit != Some(crate::api::command::DeleteUnit::Word) => {
+                Some(if d.direction == crate::api::value::Direction::Backward { Typing::Backspace } else { Typing::Delete })
+            }
+            _ => None,
+        };
+        let continues = typing.is_some_and(|kind| {
+            self.selection.is_collapsed() && self.caret().and_then(|p| p.para_offset()).is_some_and(|(p, u)| self.history.continues(p, u, kind))
+        });
         // Typing anywhere but where the last typing left the caret starts an undo step, however the caret got there.
-        if matches!(cmd, Command::InsertText(_)) && !continues {
+        if typing.is_some() && !continues {
             self.history.break_typing();
         }
         let repeatable = match &cmd {
@@ -130,9 +171,7 @@ impl Editor {
                 (Some(Command::InsertText(prev)), true) => Some(Command::InsertText(format!("{prev}{t}"))),
                 _ => Some(cmd.clone()),
             },
-            Command::InsertParagraph | Command::InsertLineBreak | Command::InsertPageBreak | Command::InsertColumnBreak | Command::InsertTab => {
-                Some(cmd.clone())
-            }
+            c if repeats(c) => Some(c.clone()),
             _ => None,
         };
         if self.modes.extend > 0
@@ -187,7 +226,7 @@ impl Editor {
             self.goal_x = None;
         }
         let typing = match &cmd {
-            Command::InsertText(_) => true,
+            Command::InsertText(_) | Command::InsertTab => true,
             Command::Delete(d) => d.unit != Some(DeleteUnit::Word),
             _ => false,
         };
@@ -325,7 +364,7 @@ impl Editor {
             Command::SetPageColor(v) => self.set_page_color(v, fonts),
             Command::SetWatermark(w) => self.set_watermark(w, fonts),
             Command::RemoveWatermark => self.remove_watermark(fonts),
-            Command::MoveColumnBoundary(_) => Outcome::unsupported("moving a text column boundary"),
+            Command::MoveColumnBoundary(m) => self.move_column_boundary(m.column as usize, m.to.0, fonts),
             Command::EditHeader => self.edit_header_footer(None, false, fonts),
             Command::EditFooter => self.edit_header_footer(None, true, fonts),
             Command::CloseHeaderFooter => self.close_header_footer(),
@@ -368,6 +407,8 @@ impl Editor {
             Command::MergeCells => self.merge_cells(fonts),
             Command::SplitCells(s) => self.split_cells(s, fonts),
             Command::SplitTable => self.split_table(fonts),
+            Command::ConvertTextToTable(t) => self.convert_text_to_table(&t, fonts),
+            Command::ConvertTableToText(t) => self.convert_table_to_text(&t, fonts),
             Command::DistributeRows => self.distribute_rows(fonts),
             Command::DistributeColumns => self.distribute_columns(fonts),
             Command::MoveRows(d) => self.move_rows(d == crate::api::command::VerticalDirection::Up, fonts),
@@ -386,7 +427,8 @@ impl Editor {
             Command::SetRowHeight(h) => self.set_row_height(h, fonts),
             Command::SetRowCanBreak(on) => self.set_row_can_break(on, fonts),
             Command::SetColumnWidth(w) => self.table_format(&super::table_format::TableFormat::ColumnWidth(w.0), fonts),
-            Command::MoveTableColumnBoundary(_) | Command::MoveTableRowBoundary(_) => Outcome::unsupported("moving a table boundary by command"),
+            Command::MoveTableColumnBoundary(b) => self.move_table_column_boundary(b.index as usize, b.to.0, fonts),
+            Command::MoveTableRowBoundary(b) => self.move_table_row_boundary(b.index as usize, b.to.0, fonts),
             Command::SetTableWidth(w) => self.set_table_width(w, fonts),
             Command::SetTableAlignment(a) => self.set_table_alignment(a, fonts),
             Command::SetTableIndent(i) => self.table_format(&super::table_format::TableFormat::TableIndent(i.0), fonts),

@@ -48,6 +48,47 @@ fn bold_undo_redo_report_state_then_events() {
 }
 
 #[test]
+fn table_positions_are_validated_like_object_positions() {
+    use crate::api::command::TablePosition;
+    use crate::api::value::{HorizontalPosition, HorizontalReference, ObjectHorizontalAlignment, VerticalPosition, VerticalReference};
+    let (mut engine, _) = engine();
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    let at = |offset: f64, align: Option<ObjectHorizontalAlignment>| {
+        Command::SetTablePosition(Some(TablePosition {
+            horizontal: Some(HorizontalPosition { relative_to: HorizontalReference::Margin, align, offset: Some(Points(0.0)), percent: None }),
+            vertical: Some(VerticalPosition { relative_to: VerticalReference::Paragraph, align: None, offset: Some(Points(offset)), percent: None }),
+            wrap_distance: None,
+        }))
+    };
+    s.run(Command::InsertTable(crate::api::command::TableSize { rows: 1, columns: 1 })).expect("a table");
+    for bad in [at(1e300, None), at(f64::NAN, None), at(0.0, Some(ObjectHorizontalAlignment::Center))] {
+        assert_eq!(s.run(bad).map_err(|e| e.code).err(), Some(ErrorCode::InvalidArgument));
+    }
+    assert_ne!(s.run(at(36.0, None)).map_err(|e| e.code).err(), Some(ErrorCode::InvalidArgument));
+}
+
+#[test]
+fn table_conversion_separators_are_validated() {
+    let (mut engine, _) = engine();
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    s.run(Command::InsertTable(crate::api::command::TableSize { rows: 1, columns: 1 })).expect("a table");
+    let mut run = |j: serde_json::Value| s.run(serde_json::from_value(j).expect("a command")).map_err(|e| e.code).err();
+    for bad in [
+        serde_json::json!({"type":"convertTextToTable","separator":"other"}),
+        serde_json::json!({"type":"convertTextToTable","separator":"other","character":"ab"}),
+        serde_json::json!({"type":"convertTextToTable","separator":"other","character":"\n"}),
+        serde_json::json!({"type":"convertTextToTable","separator":"tabs","character":";"}),
+        serde_json::json!({"type":"convertTextToTable","separator":"tabs","columns":64}),
+        serde_json::json!({"type":"convertTableToText","separator":"other"}),
+    ] {
+        assert_eq!(run(bad.clone()), Some(ErrorCode::InvalidArgument), "{bad}");
+    }
+    assert_ne!(run(serde_json::json!({"type":"convertTextToTable","separator":"other","character":";"})), Some(ErrorCode::InvalidArgument));
+}
+
+#[test]
 fn refusals_have_their_codes() {
     let (mut engine, _) = engine();
     let id = engine.create_session(SessionOptions { read_only: true, ..SessionOptions::default() });
@@ -56,12 +97,33 @@ fn refusals_have_their_codes() {
     s.set_read_only(false);
     assert_eq!(s.run(Command::Undo).map_err(|e| e.code).err(), Some(ErrorCode::Unavailable));
     assert_eq!(s.run(Command::InsertText(String::new())).map_err(|e| e.code).err(), Some(ErrorCode::InvalidArgument));
-    assert_eq!(s.run(Command::CopyFormatting).map_err(|e| e.code).err(), Some(ErrorCode::Unsupported));
+    assert_eq!(s.run(Command::PasteFormatting).map_err(|e| e.code).err(), Some(ErrorCode::Unavailable));
     assert_eq!(s.run(Command::SetFontSize(Points(-3.0))).map_err(|e| e.code).err(), Some(ErrorCode::InvalidArgument));
     assert_eq!(s.run(Command::MergeCells).map_err(|e| e.code).err(), Some(ErrorCode::Unavailable));
     assert_eq!(s.open(b"not a docx").map_err(|e| e.code).err(), Some(ErrorCode::ImportFailed));
     engine.close_session(id);
     assert!(engine.session(id).is_none());
+}
+
+#[test]
+fn frame_lengths_are_checked() {
+    use crate::api::command::{FrameHeightRule, FrameProperties, FrameWidthRule};
+    let (mut engine, _) = engine();
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    let exact = |width: f64| FrameProperties { width_rule: FrameWidthRule::Exactly, width: Points(width), ..FrameProperties::default() };
+    for bad in [
+        exact(f64::INFINITY),
+        exact(f64::NAN),
+        exact(1e12),
+        FrameProperties { height_rule: FrameHeightRule::AtLeast, height: Points(-5.0), ..FrameProperties::default() },
+        FrameProperties { horizontal_distance: Points(-1.0), ..FrameProperties::default() },
+        FrameProperties { vertical: Points(f64::NEG_INFINITY), ..FrameProperties::default() },
+    ] {
+        assert_eq!(s.run(Command::SetFrame(bad.clone())).map_err(|e| e.code).err(), Some(ErrorCode::InvalidArgument), "{bad:?}");
+    }
+    // Not in a frame: the lengths pass and the command is unavailable.
+    assert_eq!(s.run(Command::SetFrame(exact(144.0))).map_err(|e| e.code).err(), Some(ErrorCode::Unavailable));
 }
 
 #[test]
@@ -392,7 +454,7 @@ fn copies_paste_formatted_in_any_session_and_as_text() {
     s.run(Command::SelectAll).expect("selects");
     assert_eq!(s.state().formatting.bold, Tri::Uniform(false), "as text");
     // Another engine's copy with the same token but other text is text.
-    s.paste(&crate::api::input::ClipboardData { text: "Other".into(), ..data.clone() }, false);
+    s.paste(&crate::api::input::ClipboardData { text: "Other".into(), html: None, ..data.clone() }, false);
     s.run(Command::SelectAll).expect("selects");
     assert_eq!(s.copy(false).map(|d| d.text), Some("Other".into()));
 }
@@ -2813,6 +2875,7 @@ fn the_frame_dialog_moves_a_frame_saves_it_and_removes_it() {
             .expect("a frame");
         let at = Position::text(StoryId::TextBox(crate::layout::FloatId(f)), crate::layout::ParaId(p), crate::layout::Unit(0));
         s.editor.set_caret_for_benchmark(crate::editing::selection::Selection::Caret(at));
+        s.changed(Vec::new());
     }
     into_frame(s);
     let values = |m: &crate::api::services::DialogModel| match &m.values {
@@ -3588,4 +3651,183 @@ fn the_page_fill_effects_dialog_makes_word_s_gradients_and_patterns() {
     assert!(matches!(fill(s, texture), FillValue::Picture { tile: Some(true), .. }));
     let stretched = FillEffectsPatch { tab: Some(FillEffectsTab::Picture), ..Default::default() };
     assert!(matches!(fill(s, stretched), FillValue::Picture { tile: Some(false), .. }), "the page's picture, kept");
+}
+
+#[test]
+fn a_custom_number_property_is_a_finite_number() {
+    use crate::api::command::{CustomProperty, CustomPropertyKind, DocumentPropertiesChange};
+    let (mut engine, _) = engine();
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    for value in ["inf", "-infinity", "NaN", "1e999"] {
+        let custom = vec![CustomProperty { name: "n".into(), kind: CustomPropertyKind::Number, value: value.into() }];
+        let r = s.run(Command::SetDocumentProperties(DocumentPropertiesChange { custom: Some(custom), ..Default::default() }));
+        assert_eq!(r.map_err(|e| e.code).err(), Some(ErrorCode::InvalidArgument), "{value}");
+    }
+}
+
+#[test]
+fn document_defaults_take_the_font_sizes_word_does() {
+    use crate::api::command::DocumentDefaults;
+    let (mut engine, _) = engine();
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    let r = s.run(Command::SetDocumentDefaults(DocumentDefaults { size: Some(Points(1e30)), ..DocumentDefaults::default() }));
+    assert_eq!(r.map_err(|e| e.code).err(), Some(ErrorCode::InvalidArgument));
+}
+
+/// A session showing one selected floating square, its viewport sized.
+fn selected_float(engine: &mut Engine) -> &mut crate::api::session::Session {
+    use crate::api::input::{Modifiers, Point, PointerButton, PointerKind};
+    use crate::layout::tests::shapes::{anchor, bytes, sp};
+    let shape = sp(0, 0, 100, 100, "rect", "", "0000FF");
+    let body = format!("<w:p><w:r><w:t>Text</w:t></w:r>{}</w:p>", anchor(200, 300, 100, 100, 1, false, 1, &shape));
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    s.open(&bytes(&body).expect("a package")).expect("opens");
+    s.host().attach(|_| {});
+    s.host().set_size(2000.0, 4000.0, 1.0);
+    let k = s.presentation.zoom() * 96.0 / 72.0;
+    let floats = crate::editing::inspect::inspect(&mut s.editor, "geometry", true)["geometry"]["floats"].as_array().cloned().unwrap_or_default();
+    let r: Vec<f64> = floats[0]["rect"].as_array().expect("a rect").iter().filter_map(serde_json::Value::as_f64).collect();
+    let at = Point { x: (r[0] + r[2]) / 2.0 * k, y: (r[1] + r[3]) / 2.0 * k };
+    s.pointer(PointerKind::Down, at, PointerButton::Primary, 1, Modifiers::default());
+    s.pointer(PointerKind::Up, at, PointerButton::Primary, 0, Modifiers::default());
+    s
+}
+
+#[test]
+fn a_position_percent_is_range_checked() {
+    use crate::api::command::ObjectPosition;
+    use crate::api::value::{HorizontalPosition, HorizontalReference, ObjectHorizontalAlignment};
+    let mut engine = Engine::new(FontLibrary::system());
+    let s = selected_float(&mut engine);
+    let position = |percent: f64, align: Option<ObjectHorizontalAlignment>| {
+        Command::SetObjectPosition(ObjectPosition {
+            horizontal: Some(HorizontalPosition { relative_to: HorizontalReference::Margin, align, offset: None, percent: Some(percent) }),
+            ..ObjectPosition::default()
+        })
+    };
+    for (c, why) in [
+        (position(1e300, None), "huge"),
+        (position(f64::NAN, None), "NaN"),
+        (position(2000.0, None), "past 1000"),
+        (position(10.0, Some(ObjectHorizontalAlignment::Center)), "align and percent"),
+    ] {
+        assert_eq!(s.run(c).err().map(|e| e.code), Some(ErrorCode::InvalidArgument), "{why}");
+    }
+    assert!(s.run(position(-50.0, None)).is_ok(), "in range");
+}
+
+#[test]
+fn a_relative_size_percent_is_range_checked() {
+    use crate::api::command::{ObjectSize, RelativeSize, RelativeSizeReference};
+    use crate::api::value::NoneOr;
+    let mut engine = Engine::new(FontLibrary::system());
+    let s = selected_float(&mut engine);
+    let size = |percent: f64| {
+        Command::SetObjectSize(ObjectSize {
+            relative_width: Some(NoneOr::Value(RelativeSize { percent, relative_to: RelativeSizeReference::default() })),
+            ..Default::default()
+        })
+    };
+    for (p, why) in [(1e300, "huge"), (0.0, "zero"), (f64::NAN, "NaN"), (2000.0, "past 1000")] {
+        assert_eq!(s.run(size(p)).err().map(|e| e.code), Some(ErrorCode::InvalidArgument), "{why}");
+    }
+    assert!(s.run(size(40.0)).is_ok(), "in range");
+}
+
+#[test]
+fn page_down_moves_one_screen_of_the_viewport() {
+    use crate::api::input::{Key, Modifiers};
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-LONG-50.docx");
+    let mut engine = Engine::new(FontLibrary::system());
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    s.open(&std::fs::read(path).expect("the fixture")).expect("opens");
+    s.host().attach(|_| {});
+    s.host().set_size(800.0, 600.0, 1.0);
+    s.run(Command::SetZoom(crate::api::command::Zoom::Percent(200.0))).expect("zooms");
+    let caret_y = |s: &mut crate::api::session::Session| {
+        let c = s.editor.caret_view().expect("a caret");
+        s.editor.stack().to_doc(c.page, c.x, c.top).expect("on the stack").1
+    };
+    let before = caret_y(s);
+    s.key(Key::PageDown, Modifiers::default());
+    let moved = caret_y(s) - before;
+    // 600 CSS px at 200% is 225 pt.
+    assert!((200.0..250.0).contains(&moved), "PageDown moved {moved} pt");
+}
+
+fn first_para(s: &crate::api::session::Session) -> crate::docx::Paragraph {
+    s.editor.document().sections[0]
+        .blocks
+        .iter()
+        .find_map(|b| if let crate::docx::Block::Para(p) = b { Some(p.clone()) } else { None })
+        .expect("a paragraph")
+}
+
+fn bold_flags(p: &crate::docx::Paragraph) -> Vec<(char, bool)> {
+    p.inlines
+        .iter()
+        .filter_map(|i| if let crate::docx::Inline::Text(t, r) = i { Some((t, r.bold)) } else { None })
+        .flat_map(|(t, b)| t.chars().map(move |c| (c, b)))
+        .collect()
+}
+
+/// A session on `body`, its caret at `caret` in the first paragraph.
+fn session_on(engine: &mut Engine, body: &str, caret: u32) -> crate::api::engine::SessionId {
+    use crate::editing::position::{Position, StoryId};
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    s.open(&crate::editing::tests::blank_body(body)).expect("opens");
+    let para = crate::editing::tests::texts_ids(&s.editor)[0];
+    s.editor.set_caret_for_benchmark(crate::editing::selection::Selection::Caret(Position::text(StoryId::Body, para, crate::layout::Unit(caret))));
+    id
+}
+
+#[test]
+fn a_tracked_correction_leaves_the_caret_after_what_was_typed() {
+    let mut engine = Engine::new(FontLibrary::system_recommended());
+    let id = session_on(&mut engine, "<w:p><w:r><w:t>teh</w:t></w:r></w:p>", 3);
+    let s = engine.session(id).expect("a session");
+    s.run(Command::SetTrackChanges(true)).expect("tracks");
+    typed(s, " ");
+    let c = s.editor.correction().expect("a correction").clone();
+    assert_eq!((c.range.start.0, c.range.end.0), (3, 6), "the correction covers the inserted word");
+    typed(s, "x");
+    let text = crate::editing::text::UnitText::of_view(&first_para(s), crate::docx::review::MarkupView::NoMarkup).text;
+    assert_eq!(text.replace(' ', "").len(), 4, "{text:?}");
+    assert!(text.ends_with("The x"), "the next character goes after the space: {text:?}");
+}
+
+#[test]
+fn a_correction_keeps_the_formatting_of_what_it_leaves() {
+    let mut engine = Engine::new(FontLibrary::system_recommended());
+    let id = session_on(&mut engine, r#"<w:p><w:r><w:t>he</w:t></w:r><w:r><w:rPr><w:b/></w:rPr><w:t>llo</w:t></w:r></w:p>"#, 5);
+    let s = engine.session(id).expect("a session");
+    typed(s, " ");
+    let flags = bold_flags(&first_para(s));
+    assert_eq!(flags[..5].iter().map(|f| f.0).collect::<String>(), "Hello");
+    assert_eq!(flags[..5].iter().map(|f| f.1).collect::<Vec<_>>(), [false, false, true, true, true], "{flags:?}");
+    // Formatting about to be typed isn't the corrected word's.
+    let id = session_on(&mut engine, "<w:p/>", 0);
+    let s = engine.session(id).expect("a session");
+    typed(s, "teh");
+    s.run(Command::SetBold(true)).expect("bold");
+    typed(s, " ");
+    let flags = bold_flags(&first_para(s));
+    assert_eq!(flags[..3].iter().map(|f| f.0).collect::<String>(), "The");
+    assert!(flags[..3].iter().all(|f| !f.1), "the corrected word stays plain: {flags:?}");
+}
+
+#[test]
+fn symbols_ending_in_a_bracket_or_equals_replace_as_typed() {
+    let mut engine = Engine::new(FontLibrary::system_recommended());
+    for (text, want) in [(":(", "\u{2639}"), (":-(", "\u{2639}"), ("<==", "\u{21d0}"), ("<--> ", "\u{2194} ")] {
+        let id = engine.create_session(SessionOptions::default());
+        let s = engine.session(id).expect("a session");
+        typed(s, text);
+        assert_eq!(paragraphs(s)[0], want, "typing {text}");
+    }
 }

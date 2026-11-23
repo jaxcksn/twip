@@ -72,13 +72,15 @@ impl RichText {
                             rp.set(name, xml);
                         }
                     }
-                    if r.link.is_some() && res.styles.by_id.contains_key("Hyperlink") {
+                    // A link to follow; any other address shows as text.
+                    let link = r.link.as_deref().and_then(crate::editing::html::web_address);
+                    if link.is_some() && res.styles.by_id.contains_key("Hyperlink") {
                         rp.set("rStyle", format!("<{w}rStyle {w}val=\"Hyperlink\"/>"));
                     }
                     let run = res.run_from_xml(&para.base, rp.xml().as_deref(), cx);
-                    match &r.link {
+                    match link {
                         Some(address) => {
-                            let code = format!(" HYPERLINK \"{}\" ", address.replace('"', ""));
+                            let code = crate::docx::fields::link_code(&address);
                             inlines.extend(crate::docx::fields::field_inlines(&code, &r.text, &run));
                         }
                         None => inlines.extend(text_inlines(&r.text, &run)),
@@ -116,9 +118,10 @@ impl RichText {
     }
 }
 
-fn text_inlines(text: &str, run: &Run) -> Vec<Inline> {
+/// Text in `run`: its line ends as line breaks, its tabs as tabs.
+pub(in crate::editing) fn text_inlines(text: &str, run: &Run) -> Vec<Inline> {
     let mut out = Vec::new();
-    for (k, line) in text.split('\n').enumerate() {
+    for (k, line) in text.split('\n').map(|l| l.strip_suffix('\r').unwrap_or(l)).enumerate() {
         if k > 0 {
             out.push(Inline::Break(BreakKind::Line, run.clone()));
         }

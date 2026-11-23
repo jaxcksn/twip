@@ -38,6 +38,7 @@ pub(in crate::editing) fn info(t: &Tab, inherited: bool) -> TabStopInfo {
         Leader::Dot => TabLeader::Dots,
         Leader::Hyphen => TabLeader::Dashes,
         Leader::Underscore => TabLeader::Underline,
+        Leader::Heavy => TabLeader::Heavy,
         Leader::MiddleDot => TabLeader::MiddleDot,
     };
     TabStopInfo { position: Points(t.pos), alignment, leader, inherited }
@@ -55,7 +56,8 @@ fn tab(a: &AddTabStop) -> Tab {
         TabLeader::None => Leader::None,
         TabLeader::Dots => Leader::Dot,
         TabLeader::Dashes => Leader::Hyphen,
-        TabLeader::Underline | TabLeader::Heavy => Leader::Underscore,
+        TabLeader::Underline => Leader::Underscore,
+        TabLeader::Heavy => Leader::Heavy,
         TabLeader::MiddleDot => Leader::MiddleDot,
     };
     Tab { pos: twips(a.position.0), kind, leader }
@@ -79,6 +81,7 @@ fn own_xml(own: &[Tab], w: &str) -> String {
                 Leader::Dot => "dot",
                 Leader::Hyphen => "hyphen",
                 Leader::Underscore => "underscore",
+                Leader::Heavy => "heavy",
                 Leader::MiddleDot => "middleDot",
             };
             let leader = if leader.is_empty() { String::new() } else { format!(" {w}leader=\"{leader}\"") };
@@ -112,6 +115,15 @@ impl Editor {
         let snapshot = self.layout.snapshot();
         self.pages.sync(&snapshot);
         self.pages.page(i, &self.index)
+    }
+
+    /// Whether `paras` (or the style edited) have tab stops of their own.
+    pub(in crate::editing) fn tab_stops_in(&mut self, paras: &[ParaId]) -> bool {
+        let own = |tabs: &[Tab]| tabs.iter().any(|t| t.kind != TabKind::Clear);
+        match self.style_tabs() {
+            Some((tabs, _)) => own(&tabs),
+            None => paras.iter().any(|&p| self.index.para(&self.doc, p).is_some_and(|p| own(&p.style.tabs))),
+        }
     }
 
     fn edit_tabs(&mut self, label: &'static str, none: &str, edit: &dyn Fn(&mut Vec<Tab>) -> bool, fonts: &Fonts) -> Outcome {

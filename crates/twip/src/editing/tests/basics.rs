@@ -2695,3 +2695,91 @@ fn insert_and_save_take_a_wmf() {
     assert!(types.contains("Extension=\"wmf\"") && types.contains("image/x-wmf"), "{types}");
     assert!(crate::docx::read(&saved).expect("reopens").images.iter().any(|i| i == &data));
 }
+
+#[test]
+fn dropped_text_is_selected_from_the_insertion_point() {
+    use super::super::input::PointerKind;
+    let body = "<w:p><w:r><w:t>word </w:t></w:r></w:p><w:p><w:r><w:t>e\u{301}x</w:t></w:r></w:p>";
+    let mut e = super::super::Editor::open(&super::blank_body(body), fonts()).expect("opens");
+    e.complete(fonts());
+    let at = |e: &mut super::super::Editor, para: usize, u: u32, dx: f64| {
+        let id = super::para_id(e, para);
+        let g = e.page_geometries().into_iter().find(|(p, _)| *p == 0).map(|(_, g)| g).expect("page 0");
+        let l = g.lines.iter().find(|l| l.shows(id)).expect("a line");
+        let x = l.stops.iter().find(|s| s.para == id && s.unit == Unit(u)).expect("a stop").x;
+        e.stack().to_doc(0, x + dx, (l.top + l.bottom) / 2.0).expect("on the stack")
+    };
+    let first = super::para_id(&e, 0);
+    e.select_range(first, Unit(0), Unit(4), fonts());
+    // Onto the accent: between the base letter and its combining mark.
+    let (from, to) = (at(&mut e, 0, 2, 1.0), at(&mut e, 1, 1, 0.0));
+    let m = super::super::keymap::Mods::default();
+    e.pointer_input(PointerKind::Down, from.0, from.1, 1, m, fonts());
+    e.pointer_input(PointerKind::Move, to.0, to.1, 0, m, fonts());
+    e.pointer_input(PointerKind::Up, to.0, to.1, 0, m, fonts());
+    assert_eq!(texts(&e), ["", "word e\u{301}x"]);
+    let (a, b) = e.selection().ordered(e.index()).expect("a range");
+    assert_eq!((a.para_offset().map(|p| p.1), b.para_offset().map(|p| p.1)), (Some(Unit(0)), Some(Unit(4))), "{:?}", e.selection());
+}
+
+#[test]
+fn change_case_leaves_field_code_alone() {
+    use crate::api::command::{CaseChange, Hyperlink};
+    use crate::docx::fields;
+    let mut e = super::super::Editor::open(&blank_with("hello "), fonts()).expect("opens");
+    e.execute(Command::InsertHyperlink(Hyperlink { address: "https://example.com/Path".into(), text: Some("click".into()) }), fonts());
+    e.execute(Command::SelectAll, fonts());
+    e.execute(Command::ChangeCase(CaseChange::Upper), fonts());
+    let id = super::texts_ids(&e)[0];
+    let p = e.index().para(e.document(), id).expect("the paragraph");
+    let s = fields::spans(&p.inlines)[0];
+    let code = fields::code_text(&p.inlines, s);
+    assert!(code.contains("https://example.com/Path"), "the code is recased: {code}");
+    assert_eq!(fields::result_text(&p.inlines, s), "CLICK");
+    assert!(texts(&e)[0].ends_with("HELLO "), "{:?}", texts(&e));
+}
+
+#[test]
+fn repeat_reapplies_formatting() {
+    use crate::api::value::{AutoOr, Color};
+    use crate::docx::Inline;
+    let mut e = super::super::Editor::open(&blank_with("ab\ncd"), fonts()).expect("opens");
+    let select = |e: &mut super::super::Editor, n| {
+        let p = super::para_id(e, n);
+        e.set_caret_for_benchmark(Selection::Text {
+            anchor: super::super::position::Position::text(StoryId::Body, p, Unit(0)),
+            focus: super::super::position::Position::text(StoryId::Body, p, Unit(2)),
+            unit: super::super::selection::Granularity::Char,
+        });
+    };
+    let color = |e: &super::super::Editor, n| {
+        let p = e.index().para(e.document(), super::para_id(e, n)).expect("the paragraph");
+        p.inlines.iter().find_map(|i| if let Inline::Text(_, r) = i { Some(r.color) } else { None }).expect("a run")
+    };
+    select(&mut e, 0);
+    assert!(matches!(e.execute(Command::SetFontColor(AutoOr::Value(Color(0xC00000))), fonts()), super::super::commands::Outcome::Changed(_)));
+    select(&mut e, 1);
+    let o = e.execute(Command::Repeat, fonts());
+    assert_eq!(texts(&e), ["ab", "cd"], "nothing typed again: {o:?}");
+    assert_eq!(color(&e, 1), Some(0xC00000), "{o:?}");
+}
+
+#[test]
+fn a_heavy_tab_leader_is_kept() {
+    use crate::api::command::AddTabStop;
+    use crate::api::value::{Points, TabLeader};
+    let xml = r#"<w:p><w:pPr><w:tabs><w:tab w:val="right" w:leader="heavy" w:pos="9360"/></w:tabs></w:pPr><w:r><w:t>text</w:t></w:r></w:p>"#;
+    let mut e = super::super::Editor::open(&super::blank_body(xml), fonts()).expect("opens");
+    let p = super::para_id(&e, 0);
+    e.set_caret_for_benchmark(Selection::Caret(super::super::position::Position::text(StoryId::Body, p, Unit(0))));
+    let saved = |e: &super::super::Editor| {
+        let bytes = crate::docx::write::save(e.document()).expect("saves");
+        crate::docx::package::read(&bytes, &[], "word/document.xml").expect("reads").expect("the part")
+    };
+    e.execute(Command::AddTabStop(AddTabStop { position: Points(100.0), alignment: None, leader: None }), fonts());
+    assert!(saved(&e).contains("w:leader=\"heavy\""), "{}", saved(&e));
+    e.execute(Command::AddTabStop(AddTabStop { position: Points(200.0), alignment: None, leader: Some(TabLeader::Heavy) }), fonts());
+    assert_eq!(saved(&e).matches("w:leader=\"heavy\"").count(), 2, "{}", saved(&e));
+    let p = e.index().para(e.document(), p).expect("the paragraph");
+    assert!(p.style.tabs.iter().any(|t| t.pos == 200.0 && t.leader == crate::docx::props::Leader::Heavy), "{:?}", p.style.tabs);
+}

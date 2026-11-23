@@ -670,3 +670,293 @@ fn a_selected_shown_body_is_labelled_with_its_sub_template() {
     let (_, r) = g.rects[0];
     assert!(r[1] >= line_top - 0.5 && r[3] <= line_bottom + 0.5 && r[3] - r[1] > 60.0, "around the shown body: {r:?}");
 }
+
+#[test]
+fn renaming_a_sub_template_rewrites_only_its_references_name_quoted() {
+    use super::super::commands::Outcome;
+    use super::super::sub_templates::Resolution as R;
+    let (mut e, _) = expanded();
+    let before = e.references().by_field.values().filter(|r| r.name == "Violation" && r.resolution == R::Resolved).count();
+    assert!(before >= 2, "the fixture's references");
+    let rename = |to: &str| {
+        Command::RenameSubTemplate(crate::api::command::RenameSubTemplate {
+            name: "Violation".into(),
+            to: to.into(),
+            category: None,
+            update_references: Some(true),
+        })
+    };
+    assert!(matches!(e.execute(rename("Violation notice"), fonts()), Outcome::Changed(_)));
+    assert!(codes(&e).iter().any(|c| c.contains("SUBTEMPLATE \"Violation notice\"")), "{:?}", codes(&e));
+    let after = e.references().by_field.values().filter(|r| r.name == "Violation notice" && r.resolution == R::Resolved).count();
+    assert_eq!(after, before);
+    e.execute(Command::Undo, fonts());
+    // A backslash before the closing quote is escaped.
+    assert!(matches!(e.execute(rename("ends in \\"), fonts()), Outcome::Changed(_)));
+    assert!(codes(&e).iter().any(|c| c.contains("SUBTEMPLATE \"ends in \\\\\"")), "{:?}", codes(&e));
+    let ended = e.references().by_field.values().filter(|r| r.name == "ends in \\" && r.resolution == R::Resolved).count();
+    assert_eq!(ended, before);
+}
+
+#[test]
+fn expanding_references_is_linear_in_the_references() {
+    use std::io::Read;
+    const W: &str = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+    let src = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-SUBTEMPLATES.docx")).expect("fixture");
+    let reference = |name: &str| {
+        format!(
+            r#"<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> SUBTEMPLATE {name} </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>"#
+        )
+    };
+    let part = |name: &str, body: &str| {
+        format!(
+            r#"<w:docPart><w:docPartPr><w:name w:val="{name}"/><w:category><w:name w:val="Sub-templates"/><w:gallery w:val="custom1"/></w:category><w:behaviors><w:behavior w:val="content"/></w:behaviors></w:docPartPr><w:docPartBody>{body}</w:docPartBody></w:docPart>"#
+        )
+    };
+    // The body's references to a one-line part, and a part no reference shows holding `idle` references of its own.
+    let time = |idle: usize| {
+        let mut main = String::new();
+        zip::ZipArchive::new(std::io::Cursor::new(&src)).unwrap().by_name("word/document.xml").unwrap().read_to_string(&mut main).unwrap();
+        let sect = &main[main.rfind("<w:sectPr").expect("a section")..main.find("</w:body>").expect("a body")];
+        let body: String = (0..400).map(|_| reference("Leaf")).collect();
+        let doc = format!(
+            r#"<w:document xmlns:w="{W}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body>{body}{sect}</w:body></w:document>"#
+        );
+        let unused: String = (0..idle).map(|_| reference("Nothing")).collect();
+        let glossary = format!(
+            r#"<w:glossaryDocument xmlns:w="{W}"><w:docParts>{}{}</w:docParts></w:glossaryDocument>"#,
+            part("Leaf", "<w:p><w:r><w:t>leaf</w:t></w:r></w:p>"),
+            part("Unused", &format!("<w:p/>{unused}"))
+        );
+        let parts = vec![("word/document.xml".to_string(), doc.into_bytes()), ("word/glossary/document.xml".to_string(), glossary.into_bytes())];
+        let bytes = crate::docx::write::repackage(&src, &parts, zip::CompressionMethod::Deflated).expect("repackages");
+        let mut e = Editor::open(&bytes, fonts()).expect("opens");
+        e.complete(fonts());
+        let t = std::time::Instant::now();
+        e.execute(super::super::sub_templates::rules("SUBTEMPLATE", "Sub-templates"), fonts());
+        e.complete(fonts());
+        let took = t.elapsed().as_secs_f64();
+        assert!(e.references().by_field.len() > idle, "the references");
+        let shown: Vec<ParaId> = e
+            .references()
+            .by_field
+            .values()
+            .filter(|r| {
+                r.resolution == super::super::sub_templates::Resolution::Resolved
+                    && e.index().para_slot(r.at).is_some_and(|s| e.index().story(s.container) == StoryId::Body)
+            })
+            .map(|r| r.at)
+            .collect();
+        assert_eq!(shown.len(), 400, "the body's references resolve");
+        let expansions = &e.expansions.as_ref().expect("expansions").paras;
+        assert!(shown.iter().all(|p| expansions.contains_key(p)), "each shows its body");
+        took
+    };
+    let (few, many) = (time(0), time(20_000));
+    assert!(many < few * 3.0 + 0.5, "{few}s with no idle references, {many}s with 20000");
+}
+
+fn fixture_bytes(name: &str) -> Vec<u8> {
+    std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor").join(name)).expect("fixture")
+}
+
+/// Each body paragraph's list format and level text, and each note reference's note text.
+fn lists_and_notes(doc: &crate::docx::Document) -> (Vec<(String, String)>, Vec<String>) {
+    let res = doc.resolver.as_ref().expect("styles");
+    let mut lists = Vec::new();
+    let mut notes = Vec::new();
+    for b in doc.sections.iter().flat_map(|s| &s.blocks) {
+        let Block::Para(p) = b else { continue };
+        if let Some((id, ilvl)) = p.style.num.filter(|n| n.0 != 0)
+            && let Some(l) = res.numbering.level(id, ilvl, &res.styles)
+        {
+            lists.push((l.fmt.clone(), l.text.clone()));
+        }
+        for i in &p.inlines {
+            if let Inline::NoteRef { kind: crate::docx::NoteKind::Foot, id, .. } = i {
+                let body = doc.footnotes.get(id).map(|b| {
+                    b.iter()
+                        .filter_map(|b| if let Block::Para(p) = b { Some(super::super::text::UnitText::of(p).text) } else { None })
+                        .collect::<String>()
+                });
+                notes.push(body.unwrap_or_default());
+            }
+        }
+    }
+    (lists, notes)
+}
+
+#[test]
+fn a_body_from_another_docx_brings_its_notes_comments_and_lists() {
+    use super::super::commands::Outcome;
+    let source = fixture_bytes("FX-A11Y-STRUCTURE.docx");
+    let mut e = open("FX-STORIES.docx");
+    e.complete(fonts());
+    let out = e.execute(Command::ReplaceBody(crate::api::command::ReplaceBody { from: crate::api::value::Bytes(source.clone()) }), fonts());
+    assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
+    let want = lists_and_notes(&crate::docx::read_editable(&source).expect("reads"));
+    assert!(!want.0.is_empty() && !want.1.is_empty(), "the source's lists and notes");
+    assert_eq!(lists_and_notes(e.document()), want);
+    let source_doc = crate::docx::read_editable(&source).expect("reads");
+    let comments = comments_and_anchors(&source_doc);
+    assert!(comments.iter().any(|c| !c.1.is_empty()), "the source's anchored comment: {comments:?}");
+    assert_eq!(comments_and_anchors(e.document()), comments, "its comments come along on the same text");
+    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let again = crate::docx::read_editable(&saved).expect("reads again");
+    assert_eq!(lists_and_notes(&again), want, "as saved");
+    assert_eq!(comments_and_anchors(&again), comments, "comments as saved");
+}
+
+/// Each comment's text and the body text it is anchored on, sorted.
+fn comments_and_anchors(doc: &crate::docx::Document) -> Vec<(String, String)> {
+    use crate::docx::review::RangeKind;
+    let text = |blocks: &[Block]| -> String {
+        blocks
+            .iter()
+            .filter_map(|b| if let Block::Para(p) = b { Some(super::super::text::UnitText::of(p).text) } else { None })
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let mut anchored: std::collections::HashMap<i64, String> = std::collections::HashMap::new();
+    let mut open: Vec<i64> = Vec::new();
+    for b in doc.sections.iter().flat_map(|s| &s.blocks) {
+        let Block::Para(p) = b else { continue };
+        for i in &p.inlines {
+            match i {
+                Inline::Range(r) if r.kind == RangeKind::CommentStart => open.push(r.id),
+                Inline::Range(r) if r.kind == RangeKind::CommentEnd => open.retain(|x| *x != r.id),
+                Inline::Text(t, _) => open.iter().for_each(|id| anchored.entry(*id).or_default().push_str(t)),
+                _ => {}
+            }
+        }
+    }
+    let mut out: Vec<(String, String)> =
+        doc.comments.by_id.values().map(|c| (text(&c.body), anchored.get(&c.id.0).cloned().unwrap_or_default())).collect();
+    out.sort();
+    out
+}
+
+#[test]
+fn a_sub_template_from_another_docx_takes_lists_of_its_own_and_no_notes() {
+    use super::super::commands::Outcome;
+    let (mut e, _) = expanded();
+    let nums: Vec<i64> = e.document().resolver.as_ref().expect("styles").numbering.nums.keys().copied().collect();
+    assert!(matches!(create(&mut e, "Lists", Some(fixture_bytes("FX-CUSTOM-LISTS.docx"))), Outcome::Changed(_)));
+    let res = e.document().resolver.as_ref().expect("styles");
+    let part = e.document().glossary.as_ref().expect("a glossary").parts.iter().find(|b| b.name == "Lists").expect("made");
+    let used: Vec<i64> =
+        part.body.iter().filter_map(|b| if let Block::Para(p) = b { p.style.num.map(|n| n.0) } else { None }).filter(|n| *n != 0).collect();
+    assert!(!used.is_empty());
+    assert!(used.iter().all(|n| !nums.contains(n) && res.numbering.nums.contains_key(n)), "{used:?} past {nums:?}");
+    assert!(matches!(create(&mut e, "Notes", Some(fixture_bytes("FX-A11Y-STRUCTURE.docx"))), Outcome::Refused(_)));
+}
+
+fn picture_bytes(doc: &crate::docx::Document) -> Vec<Vec<u8>> {
+    let blip = |s: &Option<Box<crate::drawing::Shape>>| s.as_ref().and_then(|s| s.pic()).map(|p| p.blip.image);
+    let mut out = Vec::new();
+    for p in doc.sections.iter().flat_map(|s| &s.blocks).filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None }) {
+        for i in &p.inlines {
+            let (image, drawn) = match i {
+                Inline::Picture(pic, _) => (pic.image, blip(&pic.shape)),
+                Inline::Float(f, _) => (f.image, blip(&f.shape)),
+                _ => continue,
+            };
+            if let Some(drawn) = drawn {
+                assert_eq!(drawn, image, "the shape draws the picture's own image");
+            }
+            out.extend(image.map(|k| doc.images[k].clone()));
+        }
+    }
+    out
+}
+
+#[test]
+fn a_replaced_body_keeps_its_pictures_images() {
+    let path = |n: &str| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor").join(n);
+    let mut e = open("FX-EXACT-ROW.docx");
+    assert!(!e.document().images.is_empty(), "the template has an image of its own");
+    let docx = std::fs::read(path("FX-OBJ.docx")).unwrap();
+    let want = picture_bytes(&crate::docx::read_editable(&docx).unwrap());
+    assert!(!want.is_empty());
+    e.execute(Command::ReplaceBody(crate::api::command::ReplaceBody { from: crate::api::value::Bytes(docx) }), fonts());
+    assert_eq!(picture_bytes(e.document()), want, "live");
+    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let again = Editor::open(&saved, fonts()).expect("reopens");
+    assert_eq!(picture_bytes(again.document()), want);
+}
+
+#[test]
+fn a_replaced_body_keeps_the_bookmarks_it_shares_with_the_old_one() {
+    let mark =
+        |text: &str| format!(r#"<w:p><w:bookmarkStart w:id="0" w:name="Chapter"/><w:r><w:t>{text}</w:t></w:r><w:bookmarkEnd w:id="0"/></w:p>"#);
+    let mut e = Editor::open(&super::blank_body(&mark("Old")), fonts()).expect("opens");
+    e.complete(fonts());
+    assert!(e.bookmark("Chapter").is_some(), "setup: the template's bookmark");
+    let from = crate::api::value::Bytes(super::blank_body(&mark("New")));
+    e.execute(Command::ReplaceBody(crate::api::command::ReplaceBody { from }), fonts());
+    let found = e.bookmark("Chapter").expect("the new body's bookmark");
+    assert_eq!(text_of(&e, found.start.para), "New");
+    let again = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
+    assert!(again.bookmark("Chapter").is_some(), "as saved");
+}
+
+/// A package of `body` with one list, `numId` 1, of format `fmt`.
+fn numbered_package(body: &str, fmt: &str) -> Vec<u8> {
+    use crate::layout::tests::package_bytes;
+    const W: &str = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+    const NS: &str = concat!(
+        r#"xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" "#,
+        r#"xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" "#,
+        r#"xmlns:wpg="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup""#
+    );
+    let ct = r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/></Types>"#;
+    let rels = r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#;
+    let doc_rels = r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId9" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/></Relationships>"#;
+    let document = format!(
+        r#"<?xml version="1.0"?><w:document {NS}><w:body>{body}<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:body></w:document>"#
+    );
+    let numbering = format!(
+        r#"<?xml version="1.0"?><w:numbering xmlns:w="{W}"><w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="{fmt}"/><w:lvlText w:val="%1."/><w:lvlJc w:val="left"/></w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num></w:numbering>"#
+    );
+    package_bytes(&[
+        ("[Content_Types].xml", ct),
+        ("_rels/.rels", rels),
+        ("word/_rels/document.xml.rels", doc_rels),
+        ("word/document.xml", &document),
+        ("word/numbering.xml", &numbering),
+    ])
+    .expect("a package")
+}
+
+#[test]
+fn a_replaced_body_brings_the_lists_of_its_group_shapes_text() {
+    use crate::layout::tests::shapes::{PT, anchor, sp};
+    let item = r#"<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr><w:r><w:t>item</w:t></w:r></w:p>"#;
+    let boxed = sp(0, 0, 80, 80, "rect", "", "FFFFFF")
+        .replace("<wps:bodyPr/>", &format!("<wps:txbx><w:txbxContent>{item}</w:txbxContent></wps:txbx><wps:bodyPr/>"));
+    let group = format!(
+        r#"<wpg:wgp><wpg:cNvGrpSpPr/><wpg:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{w}" cy="{w}"/><a:chOff x="0" y="0"/><a:chExt cx="{w}" cy="{w}"/></a:xfrm></wpg:grpSpPr>{boxed}</wpg:wgp>"#,
+        w = 100 * PT,
+    );
+    let source = numbered_package(&format!("<w:p>{}</w:p>", anchor(72, 300, 100, 100, 1, false, 1, &group)), "upperRoman");
+    let mut e = Editor::open(&numbered_package(item, "decimal"), fonts()).expect("opens");
+    e.complete(fonts());
+    let formats = |doc: &crate::docx::Document| -> Vec<String> {
+        let res = doc.resolver.as_ref().expect("styles");
+        let mut out = Vec::new();
+        for p in doc.sections.iter().flat_map(|s| &s.blocks).filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None }) {
+            for i in &p.inlines {
+                let Inline::Float(f, _) = i else { continue };
+                for q in f.parts.iter().filter_map(|g| g.text_box.as_ref()).flat_map(|t| &t.blocks) {
+                    let Block::Para(q) = q else { continue };
+                    out.extend(q.style.num.and_then(|(n, l)| res.numbering.level(n, l, &res.styles)).map(|l| l.fmt.clone()));
+                }
+            }
+        }
+        out
+    };
+    assert_eq!(formats(&crate::docx::read_editable(&source).expect("reads")), ["upperRoman"], "setup: the source's list");
+    e.execute(Command::ReplaceBody(crate::api::command::ReplaceBody { from: crate::api::value::Bytes(source) }), fonts());
+    let saved = crate::docx::write::save(e.document()).expect("saves");
+    assert_eq!(formats(&crate::docx::read_editable(&saved).expect("reads again")), ["upperRoman"], "its own list, as saved");
+}

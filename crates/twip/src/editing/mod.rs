@@ -10,6 +10,7 @@ pub mod clipboard;
 mod clipped;
 pub mod commands;
 pub mod comments;
+mod composition;
 mod drop_caps;
 mod element_feedback;
 pub mod elements;
@@ -24,6 +25,8 @@ pub mod geometry;
 pub(crate) mod gestures;
 mod goback;
 pub mod history;
+mod html;
+pub mod import;
 pub mod index;
 pub mod input;
 #[cfg(any(test, feature = "inspect", not(target_family = "wasm")))]
@@ -63,10 +66,12 @@ pub use styles::formats_a_style;
 pub mod sub_templates;
 pub use crate::docx::grid as table;
 mod table_cells;
+mod table_convert;
 pub mod table_format;
 mod table_handles;
 pub mod tables;
 pub mod text;
+mod touched;
 pub mod view;
 
 #[cfg(test)]
@@ -94,6 +99,7 @@ use position::{Affinity, Place, Position, StoryId};
 use selection::{Granularity, Selection};
 use step::{Map, Step, StepError, para_len, run_of};
 use text::UnitText;
+pub use touched::EditMark;
 use view::{CaretView, PageStack, SelectionView, View};
 
 pub const IDLE_BUDGET: Duration = Duration::from_millis(4);
@@ -112,6 +118,8 @@ pub struct Correction {
     pub para: ParaId,
     pub range: std::ops::Range<Unit>,
     pub from: String,
+    /// The text the correction put in `range`.
+    pub to: String,
     pub typed: usize,
 }
 
@@ -123,6 +131,8 @@ pub struct Editor {
     selection: Selection,
     goal_x: Option<f64>,
     pending: Option<Run>,
+    /// The format painter's formatting: a run's `w:rPr`, and a paragraph's `w:pPr` when it took the paragraph's too.
+    painter: Option<(Option<String>, Option<Option<String>>)>,
     correction: Option<Correction>,
     drag: Option<Drag>,
     pages: Pages,
@@ -140,6 +150,7 @@ pub struct Editor {
     shape_insert: Option<shapes::ShapeInsert>,
     toggled_checkbox: Option<objects::ToggledCheckbox>,
     provisional: Option<stories::Provisional>,
+    composition: Option<composition::Composition>,
     border_drag: Option<resize::BorderDrag>,
     table_drag: Option<table_handles::TableDrag>,
     /// A pointer press, move or release is running: its edits are where the pointer is, so they don't scroll to the
@@ -162,6 +173,10 @@ pub struct Editor {
     last_maps: Vec<step::Map>,
     text_drag: Option<interaction::TextDrag>,
     clipboard: Option<clipboard::Fragment>,
+    /// The document's identity among those open: what tells a fragment copied from it from one copied elsewhere.
+    key: u64,
+    /// The find match selected last, with the selection that selected it.
+    found: Option<(Selection, ParaId, Unit, Unit)>,
     tab_stop: Option<(Selection, TableId, (usize, usize))>,
     mode: Mode,
     pub live_layout: bool,
@@ -173,11 +188,19 @@ pub struct Editor {
     made: Option<crate::api::command::CommandResult>,
     pending_controls: Vec<(crate::docx::ControlId, crate::docx::Control)>,
     pending_images: Vec<Vec<u8>>,
-    /// The editable ranges as of a revision ([`Editor::editable_ranges`]).
-    editable_cache: std::cell::RefCell<Option<(u64, Rc<Vec<(Option<String>, Position, Position)>>)>>,
+    /// The editable ranges as of a [`Editor::perm_generation`] ([`Editor::editable_ranges`]).
+    editable_cache: std::cell::RefCell<Option<(u64, Rc<protection::EditableRanges>)>>,
+    /// Counts the steps that can have changed the editable ranges.
+    perm_generation: u64,
     drop: Option<Position>,
     field_labels: HashMap<String, String>,
     sub_template_rules: Vec<sub_templates::Rule>,
+    touched: touched::Touched,
+    /// Counts the transactions that touched revision marks, tables, sections or sub-templates, and those that
+    /// touched paragraphs that hold marks, are in cells or went.
+    revision_marks: (u64, u64),
+    /// Counts the transactions that touched comments or their marks.
+    comment_edits: u64,
     /// The application's field types, upper case.
     application_field_types: Vec<String>,
     /// Tag prefixes whose picture controls keep their pictures.
@@ -213,8 +236,8 @@ pub struct Editor {
     author: (Rc<str>, Option<crate::docx::review::Identity>),
     author_id: Option<crate::docx::review::AuthorId>,
     move_name: Option<Rc<str>>,
-    recorded: (Option<Rc<crate::docx::review::RevisionMark>>, Option<Rc<crate::docx::review::RevisionMark>>),
-    cut_move: Option<(u64, Rc<crate::docx::review::RevisionMark>)>,
+    recorded: (Vec<Rc<crate::docx::review::RevisionMark>>, Vec<Rc<crate::docx::review::RevisionMark>>),
+    cut_move: Option<(u64, Vec<Rc<crate::docx::review::RevisionMark>>)>,
     #[cfg(test)]
     pub(crate) track_work: usize,
 }
@@ -261,8 +284,12 @@ struct Tx {
     replayed: Option<Transaction>,
     targets: step::Targets,
     pictures: bool,
+    /// A text step put in an inline holding a story (a text box, an inline shape's text).
+    boxes: bool,
     /// List definitions changed: every label is made again, not only those whose text changed.
     relabel: bool,
+    /// The control whose placeholder the selection replaces: its paragraph and unit, where what is put in goes inside it.
+    placeholder: Option<(ParaId, Unit, crate::docx::ControlId)>,
 }
 
 struct Batch {
@@ -295,6 +322,7 @@ impl Editor {
             selection: Selection::Caret(Position::text(StoryId::Body, ParaId(0), Unit(0))),
             goal_x: None,
             pending: None,
+            painter: None,
             correction: None,
             drag: None,
             pages: Pages::default(),
@@ -312,6 +340,7 @@ impl Editor {
             shape_insert: None,
             toggled_checkbox: None,
             provisional: None,
+            composition: None,
             border_drag: None,
             table_drag: None,
             pointing: false,
@@ -343,6 +372,10 @@ impl Editor {
             pending_controls: Vec::new(),
             pending_images: Vec::new(),
             editable_cache: Default::default(),
+            perm_generation: 0,
+            touched: touched::Touched::new(),
+            revision_marks: (0, 0),
+            comment_edits: 0,
             drop: None,
             field_labels: HashMap::new(),
             sub_template_rules: Vec::new(),
@@ -371,11 +404,13 @@ impl Editor {
             author: ("Author".into(), None),
             author_id: None,
             move_name: None,
-            recorded: (None, None),
+            recorded: (Vec::new(), Vec::new()),
             cut_move: None,
             #[cfg(test)]
             track_work: 0,
             clipboard: None,
+            key: import::next_key(),
+            found: None,
         };
         e.saved.1 = e.doc.settings.track_revisions;
         e.elems = elements::by_id(&e.doc, &e.index);
@@ -400,6 +435,24 @@ impl Editor {
 
     pub fn revision(&self) -> u64 {
         self.revision
+    }
+
+    /// Where the log of touched paragraphs is now.
+    pub fn edit_mark(&self) -> EditMark {
+        self.touched.mark()
+    }
+
+    /// The paragraphs edited, or whose text was otherwise changed, since `mark` (repeats included); `None` when the
+    /// log no longer reaches back to it.
+    pub fn touched_since(&self, mark: EditMark) -> Option<&[ParaId]> {
+        self.touched.since(mark)
+    }
+
+    /// Two counts: the first changes whenever a transaction touches revision marks, tables, sections or
+    /// sub-templates (until then, a document without revisions has none); the second whenever one touches what can
+    /// join or part revisions, paragraphs that hold marks, are in cells or went (until then, the revisions are as many).
+    pub fn revision_marks(&self) -> (u64, u64) {
+        self.revision_marks
     }
 
     pub fn seq_applied(&self) -> u64 {
@@ -437,6 +490,12 @@ impl Editor {
         Outcome::Moved
     }
 
+    /// The document changed outside steps, anywhere: what was worked out from the edits so far starts again.
+    fn changed_everywhere(&mut self) {
+        self.touched.everything();
+        self.revision_marks.0 += 1;
+    }
+
     fn relayout_review(&mut self) {
         self.relayout([None]);
     }
@@ -471,14 +530,14 @@ impl Editor {
     }
 
     pub fn fonts_changed(&mut self) {
-        self.relayout([None]);
+        self.relayout_environment();
     }
 
     /// The hyphenation patterns automatic hyphenation uses.
     pub fn set_hyphenation(&mut self, h: Option<crate::layout::hyphenate::Hyphenation>) {
         if self.doc.hyphenation != h {
             self.doc.hyphenation = h;
-            self.relayout([None]);
+            self.relayout_environment();
         }
     }
 
@@ -498,6 +557,11 @@ impl Editor {
 
     pub fn stack(&self) -> PageStack {
         PageStack::of(&self.layout.snapshot())
+    }
+
+    /// Puts back a selection [`Editor::selection`] gave, as it was before an edit that was refused.
+    pub fn restore_selection(&mut self, s: Selection) {
+        self.set_selection(s);
     }
 
     pub fn set_caret_for_benchmark(&mut self, s: Selection) {
@@ -603,6 +667,21 @@ impl Editor {
             self.scroll_to_caret(fonts);
         }
         Outcome::Moved
+    }
+
+    /// Selects a floating object.
+    pub fn select_float(&mut self, f: crate::layout::FloatId) -> Outcome {
+        if self.float_of(f).is_none() {
+            return Outcome::Unchanged("no such object");
+        }
+        self.history.break_typing();
+        self.set_selection(Selection::Object(selection::ObjectRef::Floating(f)));
+        Outcome::Moved
+    }
+
+    /// The keys follow macOS (see [`super::keymap::command`]).
+    pub fn set_mac(&mut self, mac: bool) {
+        self.mac = mac;
     }
 
     pub fn set_mode(&mut self, m: Mode) -> Outcome {
@@ -810,7 +889,9 @@ impl Editor {
             replayed: None,
             targets: step::Targets::default(),
             pictures: false,
+            boxes: false,
             relabel: false,
+            placeholder: None,
         }
     }
 
@@ -824,6 +905,8 @@ impl Editor {
         {
             return Err(StepError::OutOfRange);
         }
+        let s = self.inside_editable_end(s);
+        let s = self.inside_placeholder(tx, s);
         if !tx.tracked {
             return self.apply_step(tx, s);
         }
@@ -844,13 +927,20 @@ impl Editor {
     }
 
     fn apply_step(&mut self, tx: &mut Tx, s: Step) -> Result<Map, StepError> {
-        if self.mode == Mode::ReadOnly {
+        if self.mode == Mode::ReadOnly && !matches!(tx.origin, Origin::Undo | Origin::Redo) {
             return Err(StepError::ReadOnly);
         }
         let added = if self.doc.undeletable.is_empty() { 0 } else { s.pictures_of(&self.doc.undeletable) };
         tx.targets.add(&s);
         tx.pictures |= moves_picture_controls(&s);
+        tx.boxes |= matches!(&s, Step::Text { with, .. } if with.iter().any(|i| i.story().is_some()));
+        // Editable ranges, once found
+        let cached = self.editable_cache.get_mut().is_some();
+        let perms = cached && self.moves_perms(&s);
         let a = s.apply(&mut self.doc, &mut self.index)?;
+        if perms || (cached && self.moves_perms(&a.inverse)) {
+            self.perm_generation += 1;
+        }
         if !self.doc.undeletable.is_empty() {
             tx.kept += added - a.inverse.pictures_of(&self.doc.undeletable);
         }
@@ -863,8 +953,10 @@ impl Editor {
     }
 
     fn abort(&mut self, tx: Tx) {
+        self.selection = tx.before.selection;
         self.pending_controls.clear();
         self.pending_images.clear();
+        self.perm_generation += 1;
         for s in tx.undo.into_iter().rev() {
             let _ = s.apply(&mut self.doc, &mut self.index);
         }
@@ -874,13 +966,13 @@ impl Editor {
         if tx.replayed.is_none()
             && let Err(why) = crate::prof::time("edit:settle", || self.settle(&mut tx))
         {
-            self.selection = tx.before.selection;
             self.abort(tx);
             return Outcome::Unchanged(why);
         }
         if tx.undo.is_empty() {
             return Outcome::Unchanged("no change");
         }
+        self.repair_selection();
         crate::prof::time("edit:effects", || self.effects(&mut tx));
         if tx.replayed.is_none()
             && let Some(b) = &mut self.batch
@@ -895,6 +987,24 @@ impl Editor {
         crate::prof::time("edit:finish", || self.finish(tx, label, typing, fonts))
     }
 
+    /// Puts a selection whose paragraph the transaction removed at the start of its story, or of the body when the
+    /// story went too.
+    fn repair_selection(&mut self) {
+        let valid = |p: &Position| p.para_offset().is_none_or(|(para, u)| self.index.para(&self.doc, para).is_some_and(|q| u <= para_len(q)));
+        let s = self.selection;
+        let ok = match s {
+            Selection::Cells { table, .. } => self.index.table(&self.doc, table).is_some(),
+            Selection::Object(_) => true,
+            _ => s.focus().is_some_and(|p| valid(&p)) && s.anchor().is_none_or(|p| valid(&p)),
+        };
+        if ok {
+            return;
+        }
+        let story = s.focus().map_or(StoryId::Body, |p| p.story);
+        let edge = self.nav().story_edge(story, false).or_else(|| self.nav().story_edge(StoryId::Body, false));
+        self.selection = Selection::Caret(edge.unwrap_or(Position::text(StoryId::Body, ParaId(0), Unit(0))));
+    }
+
     fn settle(&mut self, tx: &mut Tx) -> Result<(), &'static str> {
         let tracked = std::mem::replace(&mut tx.tracked, false);
         self.recorded = tx.rec.as_ref().map(revisions::Recording::marks).unwrap_or_default();
@@ -905,7 +1015,9 @@ impl Editor {
             let index = self.doc.images.len();
             let _ = self.apply_step(tx, Step::AddImage { index, data: Some(data) });
         }
-        let edited: Vec<ParaId> = tx.undo.iter().filter_map(|s| if let Step::Text { para, .. } = s { Some(*para) } else { None }).collect();
+        let mut edited: Vec<ParaId> = tx.undo.iter().filter_map(|s| if let Step::Text { para, .. } = s { Some(*para) } else { None }).collect();
+        let mut seen = std::collections::HashSet::with_capacity(edited.len());
+        edited.retain(|p| seen.insert(*p));
         for para in edited {
             if self.index.para(&self.doc, para).is_some_and(|p| p.inlines.iter().any(|i| matches!(i, Inline::FieldBegin { .. }))) {
                 self.refresh_field_kinds(tx, para);
@@ -913,13 +1025,22 @@ impl Editor {
         }
         self.drop_orphan_notes(tx);
         if tx.replayed.is_none() {
+            if let Some((para, _, c)) = tx.placeholder.take() {
+                if self.left_empty(tx, para, c) {
+                    return Err("a placeholder");
+                }
+                self.placeholder_off(tx, c);
+            }
             self.drop_temporary_controls(tx);
+            self.sync_dates(tx);
             self.sync_bindings(tx);
         }
         self.drop_orphan_controls(tx);
         self.drop_orphan_comments(tx);
-        tx.tracked = tracked;
+        // Formatting a style or a list level gives isn't a tracked change of the paragraphs in it.
+        tx.tracked = false;
         crate::prof::time("edit:reresolve", || self.reresolve_stale(tx));
+        tx.tracked = tracked;
         if tx.kept < 0 {
             return Err("a content control that can't be deleted");
         }
@@ -935,8 +1056,8 @@ impl Editor {
         Ok(())
     }
 
-    /// Whether the blocks or rows the transaction put in nest tables deeper than [`MAX_TABLE_DEPTH`], counting the
-    /// cells they went into.
+    /// Whether the blocks, rows or text boxes the transaction put in nest deeper than [`MAX_TABLE_DEPTH`], counting
+    /// the cells and text boxes they went into.
     fn nests_too_deep(&self, tx: &Tx) -> bool {
         let cells = |rows: &[crate::docx::Row]| rows.iter().flat_map(|r| &r.cells).map(|c| table_depth(&c.blocks)).max().unwrap_or(0);
         tx.undo.iter().any(|s| match s {
@@ -945,19 +1066,64 @@ impl Editor {
                 .index
                 .blocks(&self.doc, *container)
                 .and_then(|b| b.get(range.clone()))
-                .is_some_and(|b| self.index.chain(*container).len() + table_depth(b) > MAX_TABLE_DEPTH),
+                .is_some_and(|b| self.nesting(*container) + table_depth(b) > MAX_TABLE_DEPTH),
             Step::Rows { table, range, .. } => self.index.table_slot(*table).is_some_and(|slot| {
                 let Some(Block::Table(t)) = self.index.blocks(&self.doc, slot.container).and_then(|b| b.get(slot.block)) else { return false };
                 let rows = t.rows.get(range.clone()).unwrap_or_default();
-                self.index.chain(slot.container).len() + 1 + cells(rows) > MAX_TABLE_DEPTH
+                self.nesting(slot.container) + 1 + cells(rows) > MAX_TABLE_DEPTH
+            }),
+            Step::Text { para, .. } if tx.boxes => self.index.para_slot(*para).is_some_and(|slot| {
+                let Some(Block::Para(p)) = self.index.blocks(&self.doc, slot.container).and_then(|b| b.get(slot.block)) else { return false };
+                self.nesting(slot.container) + para_depth(p) > MAX_TABLE_DEPTH
             }),
             _ => false,
         })
     }
 
+    /// How many levels hold the blocks of `container`: a table level for each cell, [`TEXT_BOX_LEVELS`] for each text
+    /// box.
+    fn nesting(&self, mut c: index::Container) -> usize {
+        let mut n = 0;
+        while n <= MAX_TABLE_DEPTH {
+            let up = match c {
+                index::Container::Cell { table, .. } => {
+                    n += 1;
+                    self.index.table_slot(table)
+                }
+                index::Container::Story(StoryId::TextBox(f)) => {
+                    n += TEXT_BOX_LEVELS;
+                    self.index.float_anchor(f).and_then(|p| self.index.para_slot(p))
+                }
+                _ => None,
+            };
+            let Some(slot) = up else { break };
+            c = slot.container;
+        }
+        n
+    }
+
     fn effects(&mut self, tx: &mut Tx) {
         let hints: Vec<Option<Change>> = tx.hints.iter().zip(&tx.undo).filter(|(_, s)| s.lays_out()).map(|(h, _)| *h).collect();
         crate::prof::time("edit:relayout", || self.relayout(hints));
+        self.touched.note(tx.targets.paras.iter().copied());
+        // Table, row and cell marks, and a section's or sub-template's, aren't in the targets.
+        if !tx.targets.revisions.is_empty()
+            || !tx.targets.tables.is_empty()
+            || tx.undo.iter().any(|s| matches!(s, Step::SectionBreak { .. } | Step::BuildingBlock { .. }))
+        {
+            self.revision_marks.0 += 1;
+        }
+        // A paragraph outside cells without marks parts the marks around it, edited or not.
+        let regroups = tx.targets.paras.iter().any(|&p| match self.index.para_slot(p) {
+            Some(s) => matches!(s.container, Container::Cell { .. }) || self.index.para(&self.doc, p).is_some_and(revisions::index::holds_marks),
+            None => true,
+        });
+        if regroups {
+            self.revision_marks.1 += 1;
+        }
+        if !tx.targets.comments.is_empty() {
+            self.comment_edits += 1;
+        }
         let maps = std::mem::take(&mut tx.maps);
         self.map_marks(&maps);
         if !matches!(tx.origin, Origin::Undo | Origin::Redo) {
@@ -978,6 +1144,9 @@ impl Editor {
         self.revision += 1;
         let undo = std::mem::take(&mut tx.undo);
         let bytes = undo.iter().map(history::step_bytes).sum();
+        // Starting or stopping enforced protection fences the history
+        let enforced = self.enforced_protection().is_some();
+        let enforces = undo.iter().any(|s| matches!(s, Step::Protection(was) if was.as_ref().is_some_and(|p| p.enforced) != enforced));
         match tx.replayed.take() {
             Some(done) if tx.origin == Origin::Undo => self.history.push_redo(Transaction { undo, bytes, ..done }),
             Some(done) => self.history.push_undo_keep_redo(Transaction { undo, bytes, ..done }),
@@ -985,6 +1154,9 @@ impl Editor {
                 let after = self.record();
                 self.history.record(Transaction { undo, before: tx.before, after, label: label.clone(), bytes, id: 0 }, typing);
             }
+        }
+        if enforces {
+            self.history.fence();
         }
         self.commits.push(Committed { revision: self.revision, origin: tx.origin, label, targets: tx.targets });
         self.after_edit(before, fonts);
@@ -1003,7 +1175,7 @@ impl Editor {
             let text =
                 self.selection.focus().and_then(|p| p.para_offset()).and_then(|(p, _)| self.index.para(&self.doc, p)).map(|p| UnitText::of(p).text);
             assert!(v.is_empty(), "integrity: {v:?} ({:?} in {text:?})", self.selection);
-            let labels = self.labels_changed(false);
+            let labels = self.labels_changed(|_| true);
             assert!(labels.is_empty(), "integrity: 9 list labels: {} differ from a fresh numbering, first {:?}", labels.len(), labels.first());
         }
         if let Some(p) = self.caret() {
@@ -1017,6 +1189,23 @@ impl Editor {
     }
 
     fn undo(&mut self, undo: bool, fonts: &Fonts) -> Outcome {
+        if self.mode == Mode::ReadOnly {
+            return Outcome::Unchanged("read only");
+        }
+        self.step_history(undo, fonts)
+    }
+
+    /// Takes back transaction `tx`, the last one, unrecorded: an edit that was only ever provisional, whatever the
+    /// mode is now. Whether it did.
+    fn retract(&mut self, tx: u64, fonts: &Fonts) -> bool {
+        let done = self.history.position() == tx && matches!(self.step_history(true, fonts), Outcome::Changed(_));
+        if done {
+            self.history.pop_redo();
+        }
+        done
+    }
+
+    fn step_history(&mut self, undo: bool, fonts: &Fonts) -> Outcome {
         if self.batch.is_some() {
             return Outcome::Unchanged("in a batch");
         }
@@ -1112,6 +1301,7 @@ impl Editor {
     }
 
     fn delete_range_joining(&mut self, tx: &mut Tx, join: bool) -> Result<Option<Position>, StepError> {
+        self.take_placeholder(tx)?;
         let end = self.selection.ordered(&self.index).map(|(_, b)| b).filter(|_| tx.tracked && matches!(self.selection, Selection::Text { .. }));
         let from = tx.maps.len();
         let at = self.delete_range_untracked(tx, join)?;
@@ -1132,6 +1322,7 @@ impl Editor {
         for (footer, refs) in [(false, &s.headers), (true, &s.footers)] {
             for (slot, name) in refs.iter().enumerate() {
                 if let Some(name) = name
+                    && self.doc.stories.contains_key(name)
                     && !elsewhere(name)
                     && !own.iter().any(|(n, ..)| n == name)
                 {
@@ -1167,6 +1358,7 @@ impl Editor {
         if a.same_place(&b) {
             return Ok(Some(a));
         }
+        self.remove_comments_within(tx, a, b)?;
         let section_of = |e: &Editor, p: &Position| {
             let s = match p.place {
                 Place::Text { para, .. } => e.index.para_slot(para)?,
@@ -1308,20 +1500,32 @@ impl Editor {
                 let len = para_len(self.index.para(&self.doc, pa).ok_or(StepError::Missing)?);
                 self.delete_text(tx, pa, oa..len)?;
                 if let Some(target) = moved_into {
-                    let inlines: Vec<Inline> =
-                        self.index.para(&self.doc, pa).map(|p| p.inlines.iter().filter(|i| i.units() > 0).cloned().collect()).unwrap_or_default();
-                    let n: u32 = inlines.iter().map(|i| i.units() as u32).sum();
-                    if !inlines.is_empty() {
-                        self.step(tx, Step::Text { para: target, range: Unit(0)..Unit(0), with: inlines, edges: Default::default() })?;
-                    }
-                    let slot = self.index.para_slot(pa).ok_or(StepError::Missing)?;
-                    self.step(tx, Step::Blocks { container: slot.container, range: slot.block..slot.block + 1, with: Vec::new() })?;
-                    tx.stale_paras.push(target);
+                    let n = self.move_para_into(tx, pa, target)?;
                     return Ok(Some(Position::text(story, target, Unit(n))));
                 }
                 Ok(Some(Position::text(story, pa, oa)))
             }
         }
+    }
+
+    /// Moves `para`'s content to the start of `target` and removes it; returns the units moved. Untracked, every
+    /// inline moves (anchored objects, bookmarks, comment and control edges); tracked, the deleted paragraph keeps
+    /// its markers and only its text is inserted.
+    fn move_para_into(&mut self, tx: &mut Tx, para: ParaId, target: ParaId) -> Result<u32, StepError> {
+        let p = self.index.para(&self.doc, para).ok_or(StepError::Missing)?;
+        let inlines: Vec<Inline> = if tx.tracked {
+            p.inlines.iter().filter(|i| i.units() > 0).cloned().collect()
+        } else {
+            p.inlines.iter().filter(|i| !matches!(i, Inline::Text(t, _) if t.is_empty())).cloned().collect()
+        };
+        let n: u32 = inlines.iter().map(|i| i.units() as u32).sum();
+        let slot = self.index.para_slot(para).ok_or(StepError::Missing)?;
+        self.step(tx, Step::Blocks { container: slot.container, range: slot.block..slot.block + 1, with: Vec::new() })?;
+        if !inlines.is_empty() {
+            self.step(tx, Step::Text { para: target, range: Unit(0)..Unit(0), with: inlines, edges: Default::default() })?;
+        }
+        tx.stale_paras.push(target);
+        Ok(n)
     }
 
     fn delete_text(&mut self, tx: &mut Tx, para: ParaId, range: std::ops::Range<Unit>) -> Result<(), StepError> {
@@ -1353,6 +1557,7 @@ impl Editor {
         }
         let (comment_cuts, emptied) = comments::deletion_cuts(p, a, b);
         cuts.extend(comment_cuts);
+        cuts.extend(clipboard::severed_markers(p, range.start, range.end));
         cuts.sort();
         cuts.dedup();
         if !emptied.is_empty() {
@@ -1429,6 +1634,7 @@ impl Editor {
     }
 
     fn insert_text(&mut self, text: &str, fonts: &Fonts) -> Outcome {
+        let text = &*crate::docx::xml::legal(text);
         if text.is_empty() {
             return Outcome::Unchanged("empty text");
         }
@@ -1446,32 +1652,42 @@ impl Editor {
             return Outcome::Unchanged("locked");
         }
         let mut tx = self.begin("Typing");
-        let caret = match self.delete_range(&mut tx) {
-            Ok(Some(p)) => p,
-            Ok(None) => return Outcome::Unchanged("no caret"),
-            Err(_) => {
-                self.abort(tx);
-                return Outcome::Unchanged("stale selection");
+        match self.type_into(&mut tx, text) {
+            Ok((caret, single)) => {
+                self.selection = Selection::Caret(caret);
+                let typing = caret.para_offset().filter(|_| single).map(|(para, at)| TypingRun { para, at, kind: Typing::Insert });
+                self.commit(tx, typing, fonts)
             }
+            Err(why) => {
+                if why != "no caret" {
+                    self.abort(tx);
+                }
+                Outcome::Unchanged(why)
+            }
+        }
+    }
+
+    /// Types `text` over the selection in `tx`: the selection goes, then the text, a paragraph for each line and a tab
+    /// for each tab character. Where the caret ends, and whether the text was one line; on an error, `tx` is to be
+    /// aborted (except "no caret", where nothing changed).
+    fn type_into(&mut self, tx: &mut Tx, text: &str) -> Result<(Position, bool), &'static str> {
+        let caret = match self.delete_range(tx) {
+            Ok(Some(p)) => p,
+            Ok(None) => return Err("no caret"),
+            Err(_) => return Err("stale selection"),
         };
         let caret = self.past_row_end(caret);
-        let Place::Text { para, offset, .. } = caret.place else {
-            self.abort(tx);
-            return Outcome::Unchanged("caret at a row end");
-        };
-        let Some(run) = self.run_at(&caret) else {
-            self.abort(tx);
-            return Outcome::Unchanged("no paragraph");
-        };
+        let Place::Text { para, offset, .. } = caret.place else { return Err("caret at a row end") };
+        let Some(run) = self.run_at(&caret) else { return Err("no paragraph") };
         let (mut para, mut at) = (para, offset);
-        let lines: Vec<&str> = text.split('\n').map(|l| l.strip_suffix('\r').unwrap_or(l)).collect();
-        for (k, line) in lines.iter().enumerate() {
+        let mut single = true;
+        for (k, line) in text.split('\n').map(|l| l.strip_suffix('\r').unwrap_or(l)).enumerate() {
             if k > 0 {
+                single = false;
                 let Some(second) = self.split_template(para) else { break };
                 let id = ParaId(second.id);
-                if self.step(&mut tx, Step::Split { para, at, second }).is_err() {
-                    self.abort(tx);
-                    return Outcome::Unchanged("split failed");
+                if self.step(tx, Step::Split { para, at, second, kept: Vec::new() }).is_err() {
+                    return Err("split failed");
                 }
                 para = id;
                 at = Unit(0);
@@ -1486,17 +1702,13 @@ impl Editor {
                 }
             }
             let n: u32 = inlines.iter().map(|i| i.units() as u32).sum();
-            if n > 0 && self.step(&mut tx, Step::Text { para, range: at..at, with: inlines, edges: Default::default() }).is_err() {
-                self.abort(tx);
-                return Outcome::Unchanged("insert failed");
+            if n > 0 && self.step(tx, Step::Text { para, range: at..at, with: inlines, edges: Default::default() }).is_err() {
+                return Err("insert failed");
             }
             at = Unit(at.0 + n);
         }
         let at = self.index.para(&self.doc, para).map(UnitText::of).map_or(at, |t| if t.is_boundary(at) { at } else { t.next_grapheme(at) });
-        self.selection = Selection::Caret(Position::text(caret.story, para, at));
-        let single = lines.len() == 1;
-        let typing = single.then_some(TypingRun { para, at, kind: Typing::Insert });
-        self.commit(tx, typing, fonts)
+        Ok((Position::text(caret.story, para, at), single))
     }
 
     fn past_row_end(&mut self, mut p: Position) -> Position {
@@ -1514,6 +1726,9 @@ impl Editor {
     }
 
     fn column_break(&mut self, fonts: &Fonts) -> Outcome {
+        if self.refuse_expanded() || self.refuse_locked() {
+            return Outcome::Unchanged("locked");
+        }
         let at_start = self.selection.is_collapsed()
             && self.caret().and_then(|c| c.para_offset()).is_some_and(|(p, off)| {
                 off == Unit(0) || self.index.para(&self.doc, p).is_some_and(|q| UnitText::of(q).text.chars().nth(off.0 as usize - 1) == Some('\u{c}'))
@@ -1538,7 +1753,7 @@ impl Editor {
             return Outcome::Unchanged("no paragraph");
         };
         let id = ParaId(second.id);
-        if self.step(&mut tx, Step::Split { para, at, second }).is_err()
+        if self.step(&mut tx, Step::Split { para, at, second, kept: Vec::new() }).is_err()
             || self
                 .step(
                     &mut tx,
@@ -1578,7 +1793,7 @@ impl Editor {
         let id = ParaId(second.id);
         let with = vec![Inline::Break(BreakKind::Page, run)];
         if self.step(&mut tx, Step::Text { para, range: at..at, with, edges: Default::default() }).is_err()
-            || self.step(&mut tx, Step::Split { para, at: Unit(at.0 + 1), second }).is_err()
+            || self.step(&mut tx, Step::Split { para, at: Unit(at.0 + 1), second, kept: Vec::new() }).is_err()
         {
             self.abort(tx);
             return Outcome::Unchanged("break failed");
@@ -1607,6 +1822,9 @@ impl Editor {
         }
         if self.mode != Mode::Design && self.activate_picture_control() {
             return Outcome::Unchanged("picture control activated");
+        }
+        if self.refuse_expanded() || self.refuse_locked() {
+            return Outcome::Unchanged("locked");
         }
         if let Some(o) = self.list_enter(fonts) {
             return o;
@@ -1667,7 +1885,7 @@ impl Editor {
             tx.stale_paras.push(ParaId(second.id));
         }
         let id = ParaId(second.id);
-        if self.step(&mut tx, Step::Split { para, at, second }).is_err() {
+        if self.step(&mut tx, Step::Split { para, at, second, kept: Vec::new() }).is_err() {
             self.abort(tx);
             return Outcome::Unchanged("split failed");
         }
@@ -1686,6 +1904,11 @@ impl Editor {
     }
 
     fn insert_inlines(&mut self, make: impl Fn(Run) -> Vec<Inline>, label: &'static str, fonts: &Fonts) -> Outcome {
+        self.insert_inlines_typed(make, label, false, fonts)
+    }
+
+    /// `typing`: the insert joins the typing around it in one undo step.
+    fn insert_inlines_typed(&mut self, make: impl Fn(Run) -> Vec<Inline>, label: &'static str, typing: bool, fonts: &Fonts) -> Outcome {
         if self.refuse_expanded() || self.refuse_locked() {
             return Outcome::Unchanged("locked");
         }
@@ -1708,13 +1931,21 @@ impl Editor {
             self.abort(tx);
             return Outcome::Unchanged("insert failed");
         }
-        self.selection = Selection::Caret(Position::text(caret.story, para, Unit(at.0 + n)));
-        self.commit(tx, None, fonts)
+        let at = Unit(at.0 + n);
+        self.selection = Selection::Caret(Position::text(caret.story, para, at));
+        self.commit(tx, typing.then_some(TypingRun { para, at, kind: Typing::Insert }), fonts)
     }
 
     fn delete(&mut self, dir: Dir, word: bool, fonts: &Fonts) -> Outcome {
         if let Some(o) = self.delete_object(fonts) {
             return o;
+        }
+        // A placeholder deleted shows again
+        // Backspace at its start
+        if let Some((_, at, _, s, _)) = self.placeholder_here()
+            && !(dir == Dir::Back && self.selection.is_collapsed() && at.para_offset().is_some_and(|(_, u)| u.0 == s))
+        {
+            return Outcome::Unchanged("a placeholder");
         }
         if let Some(o) = self.delete_cells(dir == Dir::Forward, fonts) {
             return o;
@@ -1754,7 +1985,7 @@ impl Editor {
         } else if self.refuse_locked() {
             return Outcome::Unchanged("locked");
         }
-        let mut tx = self.begin(if dir == Dir::Back { "Backspace" } else { revisions::record::DELETE });
+        let mut tx = self.begin(if dir == Dir::Back { "Backspace" } else { "Delete" });
         if !self.selection.is_collapsed() {
             let caret = match self.delete_range_joining(&mut tx, false) {
                 Ok(Some(p)) => p,
@@ -1775,7 +2006,9 @@ impl Editor {
             }
             return Outcome::Unchanged("row end");
         };
-        let Some(t) = self.index.para(&self.doc, para).map(UnitText::of) else { return Outcome::Unchanged("no paragraph") };
+        let Some(t) = self.index.para(&self.doc, para).map(|q| UnitText::in_view(q, self.doc.review.view)) else {
+            return Outcome::Unchanged("no paragraph");
+        };
         let typing = |at| TypingRun { para, at, kind: if dir == Dir::Back { Typing::Backspace } else { Typing::Delete } };
         if dir == Dir::Back && off > Unit(0) {
             let from = if word { t.prev_word(off) } else { t.prev_grapheme(off) };
@@ -1869,24 +2102,13 @@ impl Editor {
                     else {
                         return Outcome::Unchanged("no first cell");
                     };
-                    let Some(inlines) =
-                        self.index.para(&self.doc, para).map(|p| p.inlines.iter().filter(|i| i.units() > 0).cloned().collect::<Vec<_>>())
-                    else {
-                        return Outcome::Unchanged("no paragraph");
+                    let n = match self.move_para_into(&mut tx, para, target) {
+                        Ok(n) => n,
+                        Err(_) => {
+                            self.abort(tx);
+                            return Outcome::Unchanged("move failed");
+                        }
                     };
-                    let n: u32 = inlines.iter().map(|i| i.units() as u32).sum();
-                    if (!inlines.is_empty()
-                        && self
-                            .step(&mut tx, Step::Text { para: target, range: Unit(0)..Unit(0), with: inlines, edges: Default::default() })
-                            .is_err())
-                        || self
-                            .step(&mut tx, Step::Blocks { container: slot.container, range: slot.block..slot.block + 1, with: Vec::new() })
-                            .is_err()
-                    {
-                        self.abort(tx);
-                        return Outcome::Unchanged("move failed");
-                    }
-                    tx.stale_paras.push(target);
                     self.selection = Selection::Caret(Position::text(caret.story, target, Unit(n)));
                     self.commit(tx, None, fonts)
                 }
@@ -1923,7 +2145,12 @@ impl Editor {
         match next {
             Some(&(r, c)) => self.select_cell(table, r, c),
             None if back => Outcome::Unchanged("first cell"),
+            // Past the last cell: a new row
+            None if self.mode == Mode::ReadOnly => self.refuse_read_only(),
             None => {
+                if let Some(e) = self.protection_refuses(crate::api::command::CommandId::InsertRows) {
+                    return Outcome::Refused(e);
+                }
                 let last = t.rows.len() - 1;
                 self.add_row(table, last, story, fonts)
             }
@@ -2003,6 +2230,7 @@ impl Editor {
 
     fn move_caret(&mut self, by: MoveBy, dir: Dir, extend: bool, fonts: &Fonts) -> Outcome {
         let forward = dir == Dir::Forward;
+        let was = self.selection;
         if extend
             && let Selection::Cells { table, anchor, focus, shape: selection::CellShape::Rect } = self.selection
             && matches!(by, MoveBy::Line | MoveBy::Char)
@@ -2020,12 +2248,17 @@ impl Editor {
             return Outcome::Moved;
         }
         if !extend
-            && matches!(by, MoveBy::Char)
             && !self.selection.is_collapsed()
-            && let Some((a, b)) = self.selection.ordered(&self.index)
+            && let Some((a, b)) = self.selection.ordered(&self.index).or_else(|| self.selection_edges())
         {
-            self.set_selection(Selection::Caret(if forward { b } else { a }));
-            return Outcome::Moved;
+            let edge = Selection::Caret(if forward { b } else { a });
+            if matches!(by, MoveBy::Char) {
+                self.set_selection(edge);
+                return Outcome::Moved;
+            }
+            if self.selection.focus().is_none() {
+                self.selection = edge;
+            }
         }
         let Some(focus) = self.selection.focus() else { return Outcome::Unchanged("no caret") };
         if matches!(by, MoveBy::Line | MoveBy::LineEdge | MoveBy::Screen | MoveBy::Page | MoveBy::ScreenEdge) {
@@ -2068,7 +2301,10 @@ impl Editor {
             MoveBy::Screen | MoveBy::Page if matches!(focus.story, StoryId::HeaderFooter(_)) => self.page_header_footer(focus, forward, fonts),
             MoveBy::Screen | MoveBy::Page | MoveBy::ScreenEdge => self.page_move(by, forward, focus, fonts),
         };
-        let Some(target) = target else { return Outcome::Unchanged("no place to move to") };
+        let Some(target) = target else {
+            self.selection = was;
+            return Outcome::Unchanged("no place to move to");
+        };
         let goal = self.goal_x;
         let s = if extend {
             let anchor = self.selection.anchor().unwrap_or(focus);
@@ -2092,6 +2328,28 @@ impl Editor {
             _ => self.scroll_to_caret(fonts),
         }
         Outcome::Moved
+    }
+
+    /// The first and last text places of a cell range or an inline object.
+    fn selection_edges(&self) -> Option<(Position, Position)> {
+        match self.selection {
+            Selection::Object(selection::ObjectRef::Inline { para, offset }) => {
+                let story = self.index.para_slot(para).map_or(StoryId::Body, |s| self.index.story(s.container));
+                Some((Position::text(story, para, offset), Position::text(story, para, Unit(offset.0 + 1))))
+            }
+            Selection::Cells { table, anchor, focus, .. } => {
+                let t = self.index.table(&self.doc, table)?;
+                let g = table::Grid::of(t);
+                let at = |r: usize, c: usize| {
+                    let cell = g.cell_at(r, c)?;
+                    self.cell_content(table, r, cell)?.ordered(&self.index)
+                };
+                let (a, _) = at(anchor.row.min(focus.row), anchor.col.min(focus.col))?;
+                let (_, b) = at(anchor.row.max(focus.row), anchor.col.max(focus.col))?;
+                Some((a, b))
+            }
+            _ => None,
+        }
     }
 
     fn page_move(&mut self, by: MoveBy, forward: bool, focus: Position, fonts: &Fonts) -> Option<Position> {
@@ -2274,7 +2532,9 @@ impl Editor {
                 {
                     self.border_drag = None;
                     self.history.break_typing();
-                    self.auto_fit_column(table, k - 1, fonts);
+                    if !self.table_gesture_kept(table, crate::api::command::CommandId::AutoFitColumns) {
+                        self.auto_fit_column(table, k - 1, fonts);
+                    }
                     return;
                 }
                 if clicks < 2 && self.border_press(x, y, mods.shift, mods.ctrl, fonts) {
@@ -2294,19 +2554,19 @@ impl Editor {
                                 shape: selection::CellShape::Table,
                             });
                             self.drag = None;
-                            if self.mode != Mode::ReadOnly {
+                            if !self.table_gesture_kept(t, crate::api::command::CommandId::SetTablePosition) {
                                 self.table_press(t, x, y);
                             }
                             return;
                         }
                         geometry::Zone::InsertColumn(t, k) => {
-                            if self.mode != Mode::ReadOnly {
+                            if !self.table_gesture_kept(t, crate::api::command::CommandId::InsertColumns) {
                                 self.insert_column_at(t, k, fonts);
                             }
                             return;
                         }
                         geometry::Zone::InsertRow(t, k) => {
-                            if self.mode != Mode::ReadOnly {
+                            if !self.table_gesture_kept(t, crate::api::command::CommandId::InsertRows) {
                                 self.insert_row_at(t, k, fonts);
                             }
                             return;
@@ -2627,14 +2887,14 @@ impl Editor {
 
     fn word_span(&self, p: Position) -> (Position, Position) {
         let Some((para, off)) = p.para_offset() else { return (p, p) };
-        let Some(t) = self.index.para(&self.doc, para).map(UnitText::of) else { return (p, p) };
+        let Some(t) = self.index.para(&self.doc, para).map(|q| UnitText::in_view(q, self.doc.review.view)) else { return (p, p) };
         let (a, b) = t.word_at(off);
         (Position::text(p.story, para, a), Position::text(p.story, para, b))
     }
 
     fn sentence_span(&self, p: Position) -> (Position, Position) {
         let Some((para, off)) = p.para_offset() else { return (p, p) };
-        let Some(t) = self.index.para(&self.doc, para).map(UnitText::of) else { return (p, p) };
+        let Some(t) = self.index.para(&self.doc, para).map(|q| UnitText::in_view(q, self.doc.review.view)) else { return (p, p) };
         let (a, b) = t.sentence_at(off);
         (Position::text(p.story, para, a), Position::text(p.story, para, b))
     }
@@ -2646,6 +2906,17 @@ impl Editor {
     }
 
     // Geometry for the view
+
+    /// The part of the document the host shows, in document points, and its zoom.
+    pub fn viewport(&self) -> Viewport {
+        self.viewport
+    }
+
+    /// Sets the part of the document the host shows: what a screen move pages by, and what pointer tolerances scale
+    /// with.
+    pub fn set_viewport(&mut self, v: Viewport) {
+        self.viewport = v;
+    }
 
     pub fn caret_view(&mut self) -> Option<CaretView> {
         let focus = self.selection.focus()?;
@@ -2842,6 +3113,7 @@ impl Editor {
             table,
             table_preview,
             correction: self.correction_view(visible_pages.clone()),
+            composition: self.composition_rects(visible_pages.clone()),
             marks,
             tooltip,
             regions: self.region_views(visible_pages.clone()),
@@ -3026,10 +3298,7 @@ impl Editor {
     }
 
     pub fn copy(&mut self) -> Option<clipboard::Fragment> {
-        let mut f = self.copy_fragment()?.accepted();
-        clipboard::drop_unpaired(&mut f.blocks);
-        clipboard::drop_partial(&mut f.blocks, &self.index);
-        f.controls = clipboard::controls_of(&f.blocks, &self.doc);
+        let f = self.clip()?;
         self.requests.push(Request::Clipboard { text: f.text(), html: Some(f.html()) });
         self.clipboard = Some(f.clone());
         Some(f)
@@ -3039,11 +3308,26 @@ impl Editor {
         self.selected_text_within(usize::MAX).unwrap_or_default()
     }
 
+    /// Units `a..b` of a paragraph as they read: what the markup view shows without hidden text, fields as their
+    /// results; breaks as line ends and objects as spaces.
+    #[cfg(test)]
+    pub(crate) fn read_text(&self, para: ParaId, a: Unit, b: Unit) -> String {
+        let Some(p) = self.index.para(&self.doc, para) else { return String::new() };
+        seen_text(p, self.doc.review.view).text_in(a, b).map(plain_char).collect()
+    }
+
     pub fn selected_text_within(&mut self, limit: usize) -> Option<String> {
+        let (text, whole) = self.text_within(limit, &mut HashMap::new());
+        whole.then_some(text)
+    }
+
+    /// The selection's text cut to its first `limit` characters, and whether that is all of it. `texts` holds the
+    /// paragraphs' texts found so far, for selections in turn.
+    pub(super) fn text_within(&mut self, limit: usize, texts: &mut HashMap<ParaId, text::Seen>) -> (String, bool) {
         if let Selection::Block { .. } = self.selection {
-            return Some(self.block_text()).filter(|t| t.chars().count() <= limit);
+            return self.block_text(limit);
         }
-        let Some((a, b)) = self.selection.ordered(&self.index) else { return Some(String::new()) };
+        let Some((a, b)) = self.selection.ordered(&self.index) else { return (String::new(), true) };
         let mut out = String::new();
         let mut chars = 0usize;
         let mut p = a;
@@ -3052,28 +3336,37 @@ impl Editor {
             guard += 1;
             match p.para_offset() {
                 Some((para, off)) => {
-                    let Some(t) = self.index.para(&self.doc, para).map(UnitText::of) else { break };
+                    let Some(len) = self.index.para(&self.doc, para).map(step::para_len) else { break };
+                    let seen = match texts.entry(para) {
+                        std::collections::hash_map::Entry::Occupied(o) => o.into_mut(),
+                        std::collections::hash_map::Entry::Vacant(v) => {
+                            let Some(p) = self.index.para(&self.doc, para) else { break };
+                            v.insert(seen_text(p, self.doc.review.view))
+                        }
+                    };
                     let end = match b.para_offset() {
                         Some((pb, ob)) if pb == para => ob,
-                        _ => t.len(),
+                        _ => len,
                     };
-                    let take = end.0.saturating_sub(off.0) as usize;
-                    chars += take + 1;
-                    if chars > limit.saturating_add(1) {
-                        return None;
+                    let mut text = seen.text_in(off, end);
+                    let mut take = 0;
+                    out.extend(text.by_ref().take(limit - chars).inspect(|_| take += 1).map(plain_char));
+                    if text.next().is_some() {
+                        return (out, false);
                     }
-                    out.extend(t.text.chars().skip(off.0 as usize).take(take).map(|c| match c {
-                        '\u{2028}' => '\n',
-                        '\u{c}' | '\u{FFFC}' => ' ',
-                        c => c,
-                    }));
-                    let at_end = Position::text(p.story, para, t.len());
+                    chars += take;
+                    let at_end = Position::text(p.story, para, len);
                     let next = self.nav().right(at_end, false);
                     if next == at_end || self.index.cmp(&next, &b) == std::cmp::Ordering::Greater {
-                        break;
+                        let reached = b.para_offset().is_some_and(|(pb, _)| pb == para);
+                        return (out, reached || next != at_end);
                     }
                     if next.para_offset().is_some() {
+                        if chars == limit {
+                            return (out, false);
+                        }
                         out.push('\n');
+                        chars += 1;
                     }
                     p = next;
                 }
@@ -3086,19 +3379,60 @@ impl Editor {
                 }
             }
         }
-        Some(out).filter(|t| t.chars().count() <= limit)
+        (out, self.index.cmp(&p, &b) != std::cmp::Ordering::Less)
     }
 }
 
-/// The deepest table nesting an edit may make. The reader refuses parts nested deeper than
+/// A character of text as plain text: breaks as line ends, objects as spaces.
+pub(crate) fn plain_char(c: char) -> char {
+    match c {
+        '\u{2028}' => '\n',
+        '\u{c}' | text::OBJECT => ' ',
+        c => c,
+    }
+}
+
+/// A paragraph's text as it reads: what markup view `view` shows without hidden text, fields as their results.
+fn seen_text(p: &Paragraph, view: crate::docx::review::MarkupView) -> text::Seen {
+    text::Seen::of(p, |r| !r.hidden && !view.hides(&r.rev), true)
+}
+
+/// The deepest nesting an edit may make, in table levels. The reader refuses parts nested deeper than
 /// [`crate::docx::xml::MAX_DEPTH`] elements, three a table level, so a document nested deeper would save but not open.
-// ponytail: counts table levels only; a text box in a cell costs more element levels than a table and isn't counted.
 const MAX_TABLE_DEPTH: usize = 30;
 
-/// How many tables deep blocks go: 0 for paragraphs, 1 for a table of paragraphs.
+/// The element levels a text box adds (`w:p`, `w:r`, `mc:AlternateContent`, `mc:Choice`, `w:drawing`, `wp:anchor`,
+/// `a:graphic`, `a:graphicData`, `wps:wsp`, `wps:txbx`, `w:txbxContent`), in table levels, rounded up.
+const TEXT_BOX_LEVELS: usize = 4;
+
+/// How many levels deep blocks go: 0 for paragraphs, 1 for a table of paragraphs, [`TEXT_BOX_LEVELS`] more for a text
+/// box.
 fn table_depth(blocks: &[Block]) -> usize {
     let cells = |t: &crate::docx::Table| t.rows.iter().flat_map(|r| &r.cells).map(|c| table_depth(&c.blocks)).max().unwrap_or(0);
-    blocks.iter().map(|b| if let Block::Table(t) = b { 1 + cells(t) } else { 0 }).max().unwrap_or(0)
+    blocks
+        .iter()
+        .map(|b| match b {
+            Block::Table(t) => 1 + cells(t),
+            Block::Para(p) => para_depth(p),
+        })
+        .max()
+        .unwrap_or(0)
+}
+
+/// How many levels deep a paragraph's text boxes go, a group's parts' included.
+fn para_depth(p: &Paragraph) -> usize {
+    fn parts(i: &Inline) -> &[crate::docx::GroupPart] {
+        match i {
+            Inline::Float(f, _) => &f.parts,
+            _ => &[],
+        }
+    }
+    p.inlines
+        .iter()
+        .flat_map(|i| i.story().map(|(_, tb)| tb).into_iter().chain(parts(i).iter().filter_map(|g| g.text_box.as_ref())))
+        .map(|tb| TEXT_BOX_LEVELS + table_depth(&tb.blocks))
+        .max()
+        .unwrap_or(0)
 }
 
 fn first_para_of(b: &Block) -> Option<ParaId> {

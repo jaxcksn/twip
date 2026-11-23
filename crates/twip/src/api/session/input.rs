@@ -195,15 +195,7 @@ impl Session {
             Command::InsertParagraph => Some(Trigger::ParagraphEnd),
             _ => None,
         };
-        let typed = match &command {
-            Command::InsertText(t) => t.chars().count(),
-            _ => 0,
-        };
-        let revision = self.editor.revision();
         let done = self.apply(command, Origin::User)?;
-        // The correction mark stays through typing after it and caret moves onto it; anything else drops it.
-        let edited = self.editor.revision() != revision;
-        self.editor.follow_correction(typed, edited);
         if let Some(trigger) = trigger {
             let ac = std::mem::take(&mut self.autocorrect);
             let corrected = self.apply_with(Origin::User, |e, fonts| e.auto_correct(&ac, trigger, fonts));
@@ -244,15 +236,43 @@ impl Session {
             .collect()
     }
 
-    /// An IME composition step: `text` is the composition so far, with the cursor at `cursor` characters. The end
-    /// commits its text (none: cancelled), as typed text.
-    // shortcut: the interim text doesn't show until the end; showing it needs the composition drawn at the caret
-    // without editing the document (or an edit kept out of the history and the records).
+    /// An IME composition step: `text` is the composition so far, with the cursor at `cursor` characters. It shows
+    /// at the caret, underlined, in place of the selection, and enters neither the history nor the records; the end
+    /// takes it out and commits its text (none: cancelled), as typed text.
     pub fn composition(&mut self, phase: CompositionPhase, text: &str, cursor: u32) {
-        let _ = cursor;
         if phase == CompositionPhase::End {
-            self.text(text);
+            self.end_composition();
+            if text.is_empty() {
+                self.changed(Vec::new());
+            } else {
+                self.text(text);
+            }
+            return;
         }
+        if self.check(&Command::InsertText(text.to_string())).is_err() && !text.is_empty() {
+            return;
+        }
+        let fonts = self.fonts.fonts();
+        self.editor.compose(text, cursor, &fonts);
+        drop(fonts);
+        self.discard_commits();
+        self.changed(Vec::new());
+        self.deliver_requests();
+    }
+
+    /// Takes out the composition showing, if there is one, unrecorded.
+    pub(super) fn end_composition(&mut self) {
+        if self.editor.composing() {
+            let fonts = self.fonts.fonts();
+            self.editor.end_composition(&fonts);
+            drop(fonts);
+            self.discard_commits();
+        }
+    }
+
+    /// Forgets the editor's commits since the last: edits the host never hears of.
+    fn discard_commits(&mut self) {
+        let _ = (self.editor.take_commits(), self.editor.take_made());
     }
 
     /// Pointer input at a point in the viewport, with the button pressed or released and the click count. The
@@ -265,6 +285,7 @@ impl Session {
         }
         if kind == PointerKind::Down {
             self.close_popover();
+            self.end_composition();
         }
         let (x, y) = self.presentation.to_document(at);
         // The correction mark's options button opens its popover.
@@ -480,8 +501,6 @@ impl Session {
     }
 
     /// Pointer input to the editor's own gestures, recorded as the user's.
-    // shortcut: the editor's hit tolerances and auto-scroll assume 100% zoom; hand it the presentation's viewport
-    // when hits at other zooms need to be exact to the pixel.
     fn drive(&mut self, kind: PointerKind, x: f64, y: f64, clicks: u8, mods: Mods) {
         use crate::editing::input::PointerKind as K;
         let kind = match kind {
@@ -565,6 +584,23 @@ impl Session {
         data
     }
 
+    /// Makes the engine's clipboard the editor's, for a paste of it.
+    pub(super) fn adopt_held(&mut self) {
+        // An undelivered copy here is the newest.
+        if self.editor.clipboard_requested()
+            && let Some(f) = self.editor.clipboard().cloned()
+        {
+            self.hold(f);
+            return;
+        }
+        let held = self.shared.clipboard.borrow().clone();
+        if let Some((from, f)) = held
+            && (from != self.id || self.editor.clipboard_id() != Some(f.id))
+        {
+            self.editor.adopt_clipboard(f);
+        }
+    }
+
     /// Pastes clipboard data as one transaction: the engine's own copy (`internal`, from any of its sessions) with
     /// its formatting, else the text; `as_text` pastes the text.
     pub fn paste(&mut self, data: &ClipboardData, as_text: bool) {
@@ -579,16 +615,26 @@ impl Session {
         if self.check(&text).is_err() {
             return;
         }
+        // Text-only fallback
+        let formatted = Command::Paste(PasteOptions::default());
+        let as_text = as_text || self.editor.protection_refusal(&formatted).is_some();
+        let held = held.filter(|_| !as_text);
         let command = match held {
-            Some((from, f)) => {
-                if from != self.id || self.editor.clipboard_id() != Some(f.id) {
-                    self.editor.adopt_clipboard(f);
-                }
-                Command::Paste(PasteOptions::default())
+            Some(_) => {
+                self.adopt_held();
+                formatted
             }
-            // shortcut: there is no HTML import, so HTML from elsewhere pastes as its text in the insertion point's
-            // formatting; a converter from HTML to a fragment would paste it formatted.
-            None => text,
+            None => match data.html.as_deref().filter(|_| !as_text) {
+                Some(html) => {
+                    let pasted = self.apply_with(Origin::User, |e, fonts| e.paste_html(html, fonts));
+                    if pasted.is_ok_and(|c| c.record.is_some()) {
+                        self.deliver_requests();
+                        return;
+                    }
+                    text
+                }
+                None => text,
+            },
         };
         let _ = self.apply(command, Origin::User);
         self.deliver_requests();
@@ -613,13 +659,10 @@ impl Session {
             return Some(KeyBinding::Host { command });
         }
         let (key, ctrl, shift, alt) = chord;
-        let mods = Mods { ctrl, shift, alt, meta: false };
-        let contexts = [
-            KeyContext::default(),
-            KeyContext { in_table: true, ..KeyContext::default() },
-            KeyContext { list_start: true, ..KeyContext::default() },
-            KeyContext { float: true, ..KeyContext::default() },
-        ];
+        // Mac chords: Ctrl as Cmd
+        let mods = if self.mac { Mods { ctrl: false, shift, alt, meta: ctrl } } else { Mods { ctrl, shift, alt, meta: false } };
+        let base = KeyContext { mac: self.mac, ..KeyContext::default() };
+        let contexts = [base, KeyContext { in_table: true, ..base }, KeyContext { list_start: true, ..base }, KeyContext { float: true, ..base }];
         let bound = contexts.into_iter().find_map(|cx| keymap::command(key.code(), mods, cx))?;
         let id = match bound {
             Bound::Run(c) => c.id(),

@@ -23,6 +23,45 @@ pub(super) fn fill_state(s: &mut Session, state: &mut State) {
     state.spelling.misspellings = sp.count(&s.editor, &s.language);
 }
 
+/// `now`, where it differs from `was`.
+fn changed<T: PartialEq + Clone>(now: &Option<T>, was: &Option<T>) -> Option<T> {
+    if now != was { now.clone() } else { None }
+}
+
+/// The fields of Set Defaults that changed.
+fn defaults_changed(
+    now: &crate::api::command::DocumentDefaults,
+    was: &crate::api::command::DocumentDefaults,
+) -> crate::api::command::DocumentDefaults {
+    use crate::api::command::{DocumentDefaults, Indents, ParagraphSpacing};
+    let spacing = now.spacing.as_ref().map(|s| {
+        let w = was.spacing.clone().unwrap_or_default();
+        ParagraphSpacing {
+            before: changed(&s.before, &w.before),
+            after: changed(&s.after, &w.after),
+            contextual: changed(&s.contextual, &w.contextual),
+        }
+    });
+    let indents = now.indents.as_ref().map(|i| {
+        let w = was.indents.clone().unwrap_or_default();
+        Indents {
+            left: changed(&i.left, &w.left),
+            right: changed(&i.right, &w.right),
+            first_line: changed(&i.first_line, &w.first_line),
+            hanging: changed(&i.hanging, &w.hanging),
+            mirror: changed(&i.mirror, &w.mirror),
+        }
+    });
+    DocumentDefaults {
+        font: changed(&now.font, &was.font),
+        size: changed(&now.size, &was.size),
+        color: changed(&now.color, &was.color),
+        spacing: spacing.filter(|s| *s != ParagraphSpacing::default()),
+        line_spacing: changed(&now.line_spacing, &was.line_spacing),
+        indents: indents.filter(|i| *i != Indents::default()),
+    }
+}
+
 impl Session {
     /// The context menu for the selection, as the context-menu key would open it.
     pub fn context_menu(&mut self) -> ContextMenu {
@@ -47,9 +86,12 @@ impl Session {
                     .ok_or_else(|| Error::unavailable("no misspelling is selected"))?;
                 self.refuse_read_only()?;
                 // A doubled word goes with the space before it.
-                let text = crate::services::spelling::check_text(&self.editor, f.para);
                 let start =
-                    if with.is_empty() && f.error.start > 0 && text.get(f.error.start - 1) == Some(&' ') { f.error.start - 1 } else { f.error.start };
+                    if with.is_empty() && f.error.repeated && f.error.start > 0 && self.editor.space_at(f.para, Unit(f.error.start as u32 - 1)) {
+                        f.error.start - 1
+                    } else {
+                        f.error.start
+                    };
                 let edit = if with.is_empty() { deleting(Dir::Forward, false) } else { Command::InsertText(with) };
                 self.apply_with(Origin::Api, |e, fonts| {
                     e.joined("Spelling", fonts, |e| {
@@ -74,6 +116,13 @@ impl Session {
         if self.read_only { Err(Error::new(ErrorCode::ReadOnly, "the session is read only")) } else { Ok(()) }
     }
 
+    /// An edit that isn't a command's but would be command `id`'s: refused as `id` would be in a read-only session or
+    /// a protected document.
+    fn refuse_edit(&self, id: crate::api::command::CommandId) -> Result<(), Error> {
+        self.refuse_read_only()?;
+        self.editor.protection_refuses(id).map_or(Ok(()), Err)
+    }
+
     /// What dialogs read besides the state.
     fn dialog_context(&mut self, kind: DialogKind) -> dialogs::Context {
         let mut cx = dialogs::Context::default();
@@ -85,6 +134,8 @@ impl Session {
             DialogKind::Accessibility => cx.issues = dialogs::issues(self.editor.document()),
             DialogKind::Font => cx.fonts = self.fonts.families(),
             DialogKind::BordersShading => cx.in_table = self.editor.in_table(),
+            DialogKind::TableProperties => cx.cell_margins = self.editor.cell_margins_here(),
+            DialogKind::PictureSize => cx.original_size = self.editor.original_object_size(),
             _ => {}
         }
         cx
@@ -413,7 +464,7 @@ impl Session {
                     match continues {
                         Some(n) => Some(n),
                         None => {
-                            self.refuse_read_only()?;
+                            self.refuse_edit(crate::api::command::CommandId::SetListDefinition)?;
                             let mut made = 0;
                             self.apply_with(crate::api::record::Origin::Api, |e, fonts| {
                                 let (out, n) = e.add_list(&levels, fonts);
@@ -496,8 +547,9 @@ impl Session {
                         .then_some(crate::api::command::Command::SetStyleMeta(change))
                 })
                 .collect();
-            if v.defaults != self.document_defaults() {
-                commands.push(crate::api::command::Command::SetDocumentDefaults(v.defaults.clone()));
+            let defaults = defaults_changed(&v.defaults, &self.document_defaults());
+            if defaults != crate::api::command::DocumentDefaults::default() {
+                commands.push(crate::api::command::Command::SetDocumentDefaults(defaults));
             }
             return match commands.len() {
                 0 => Ok(Commit { record: None, value: None }),
@@ -522,7 +574,8 @@ impl Session {
             };
         }
         if let crate::api::services::DialogValues::Style(v) = model.values {
-            self.refuse_read_only()?;
+            // Style dialog
+            self.refuse_edit(crate::api::command::CommandId::UpdateStyleToSelection)?;
             return self.apply_with(crate::api::record::Origin::Api, |e, fonts| e.style_dialog_apply(v, fonts));
         }
         let cx = self.dialog_context(model.kind);
@@ -540,6 +593,14 @@ impl Session {
         let mut parts = id.split(':');
         let num = |p: Option<&str>| p.and_then(|p| p.parse::<u64>().ok());
         let (para, a, b) = match (parts.next(), num(parts.next()), num(parts.next())) {
+            (Some("float"), Some(f), None) => {
+                let f = crate::layout::FloatId(f);
+                let selected = crate::editing::selection::Selection::Object(crate::editing::selection::ObjectRef::Floating(f));
+                return match self.apply_with(Origin::Api, |e, _| e.select_float(f)) {
+                    Ok(_) if self.editor.selection() == selected => Ok(()),
+                    _ => Err(Error::unavailable("the issue is gone")),
+                };
+            }
             (Some("picture"), Some(p), Some(u)) => (p, u, u + 1),
             (Some("table"), Some(p), None) => (p, 0, 0),
             _ => return Err(Error::invalid("not an accessibility issue id")),
@@ -580,26 +641,26 @@ impl Session {
     pub fn replace(&mut self, query: &FindQuery, with: &str) -> Result<FindResult, Error> {
         if let Some(hit) = find::at_selection(&self.editor, query) {
             self.refuse_read_only()?;
-            self.apply_with(Origin::Api, |e, fonts| find::replace(e, &[hit], with, fonts))?;
+            self.apply_with(Origin::Api, |e, fonts| find::replace(e, &[hit], with, false, fonts).1)?;
         }
         Ok(self.find(query, Order::Next))
     }
 
-    /// Replaces every match as one transaction; how many.
+    /// Replaces every match as one transaction; how many. A match that document protection, a locked control or a
+    /// sub-template's body keeps isn't replaced; when protection keeps every one, the replace is refused.
     pub fn replace_all(&mut self, query: &FindQuery, with: &str) -> Result<u32, Error> {
         let hits = find::all(&self.editor, query);
         if hits.is_empty() {
             return Ok(0);
         }
         self.refuse_read_only()?;
-        let (whole, case) = (query.whole_words.unwrap_or(false), query.match_case.unwrap_or(false));
-        self.apply_with(
-            Origin::Api,
-            |e, fonts| {
-                if whole { find::replace(e, &hits, with, fonts) } else { e.replace_all(&query.text, with, case, fonts).1 }
-            },
-        )?;
-        Ok(hits.len() as u32)
+        let mut count = 0;
+        self.apply_with(Origin::Api, |e, fonts| {
+            let (n, out) = find::replace(e, &hits, with, true, fonts);
+            count = n;
+            out
+        })?;
+        Ok(u32::try_from(count).unwrap_or(u32::MAX))
     }
 
     /// Spell checking: dictionaries, ignored and added words, suggestions.
@@ -935,6 +996,16 @@ mod tests {
         assert_eq!(h1.based_on.as_ref().map(|b| b.0.as_str()), Some("Normal"));
         assert!(styles.iter().all(|s| s.kind == StyleType::Paragraph));
         assert!(s.styles(None).len() > styles.len());
+    }
+
+    #[test]
+    fn a_gone_floats_issue_is_unavailable() {
+        let (mut engine, id, _) = open("editor/FX-OBJ.docx");
+        let s = engine.session(id).expect("a session");
+        let issues = s.with_editor(|e| crate::services::dialogs::issues(e.document()));
+        let float = issues.iter().find(|i| i.id.starts_with("float:")).expect("a floating picture without alt text");
+        s.select_accessibility_issue(&float.id).expect("selects it");
+        assert!(s.select_accessibility_issue(&format!("float:{}", u64::MAX)).is_err(), "another float stays selected");
     }
 
     #[test]

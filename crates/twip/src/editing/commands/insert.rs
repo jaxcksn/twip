@@ -34,7 +34,7 @@ impl Editor {
             p.set("color", format!("<{w}color {w}val=\"0563C1\"/>"));
             p.set("u", format!("<{w}u {w}val=\"single\"/>"));
         });
-        let code = link_code(&h.address);
+        let code = crate::docx::fields::link_code(&h.address);
         let out = self.insert_inlines(|run| crate::docx::fields::field_inlines(&code, &text, &run), "Insert Hyperlink", fonts);
         self.pending = None;
         out
@@ -80,9 +80,9 @@ impl Editor {
 
     pub(in crate::editing) fn edit_hyperlink(&mut self, h: HyperlinkEdit, fonts: &Fonts) -> Outcome {
         let Some(link) = self.link_here() else { return Outcome::unavailable("no link at the selection") };
-        let code = h.address.as_deref().map(link_code);
+        let code = h.address.as_deref().map(crate::docx::fields::link_code);
         let id = crate::editing::merge::api_id(crate::docx::ElementId::Field(link.field));
-        match self.field_set(&id, code.as_deref(), h.text.as_deref(), fonts) {
+        match self.field_set(&id, code.as_deref(), h.text.clone().map(crate::api::review::Body::Text).as_ref(), fonts) {
             Ok(o) => o,
             Err(e) => Outcome::Refused(e),
         }
@@ -93,8 +93,4 @@ impl Editor {
         let id = crate::editing::merge::api_id(crate::docx::ElementId::Field(link.field));
         self.unlink_fields(Some(&[id]), fonts)
     }
-}
-
-fn link_code(address: &str) -> String {
-    format!(" HYPERLINK \"{}\" ", address.replace('"', ""))
 }

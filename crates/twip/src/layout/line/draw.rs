@@ -82,7 +82,7 @@ fn revision_colour(r: &RunStyle, review: &ReviewView) -> Option<u32> {
 fn line_changed(o: &LineOrigin, line: &Line, src: &Paragraph) -> bool {
     let view = o.review.view;
     let last = line.end >= o.pieces().len();
-    if src.style.change.as_ref().is_some_and(|c| c.previous_raw.0.is_some()) || (last && !src.mark.rev.is_empty()) {
+    if src.style.change.as_ref().is_some_and(|c| !c.numbering_only()) || (last && !src.mark.rev.is_empty()) {
         return true;
     }
     if !src.inlines.iter().any(|i| i.run().is_some_and(|r| !r.rev.is_empty())) {
@@ -473,8 +473,25 @@ fn draw_leader(o: &LineOrigin, line: &Line, k: usize, x0: f64, base: f64, behind
         let sp = o.shaped;
         let p = &o.pieces()[line.start + k];
         let st = &sp.styles[p.style as usize];
-        let Some(leader) = line.leaders.iter().find(|(j, _)| *j == k).and_then(|(_, l)| l.glyph()) else { return };
+        let Some(&(_, kind)) = line.leaders.iter().find(|(j, _)| *j == k) else { return };
         let Some(face) = &st.face else { return };
+        // Heavy leader
+        if kind == crate::docx::props::Leader::Heavy {
+            let em = face.scale(st.size);
+            let (pos, thick) =
+                if face.underline_thick > 0.0 { (face.underline_pos, face.underline_thick) } else { (0.1 * face.upem, 0.05 * face.upem) };
+            let (y, t) = (base - st.raise + pos * em, (thick * em).max(0.5));
+            let from = x0 + line.xs[k];
+            out.push(Item::Rect {
+                rect: [from, y - t / 2.0, from + line.widths[k], y + 1.5 * t],
+                colour: ink(&st.run, o.review, behind).unwrap_or(0),
+                snap: false,
+                dash: crate::layout::fragment::Dash::Solid,
+                phase: 0.0,
+            });
+            return;
+        }
+        let Some(leader) = kind.glyph() else { return };
         let Some(g) = face.glyph(leader) else { return };
         let w = (face.advance(g) * face.scale(st.size) * 600.0 / 72.0).round() * 72.0 / 600.0;
         if w <= 0.0 {

@@ -302,14 +302,16 @@ public sealed class WinFormsTests
     });
 
     [Fact]
-    public void CopyNeedsASelectionAndPasteAnEditableEditor() => Ui.Run(async () =>
+    public void CopyNeedsASelectionAndPasteSomethingCopiedInAnEditableEditor() => Ui.Run(async () =>
     {
         using var editor = new DocumentEditor { Width = 800, Height = 600 };
         _ = editor.Handle;
         await editor.Commands.InsertTextAsync("a");
-        await Ui.Until(() => !editor.State.CanCopy && editor.State.CanPaste, "a caret: no copy, paste");
+        await Ui.Until(() => !editor.State.CanCopy, "a caret: no copy");
         await editor.Commands.SelectAllAsync();
         await Ui.Until(() => editor.State.CanCopy, "copy with a selection");
+        await editor.Commands.CopyAsync();
+        await Ui.Until(() => editor.State.CanPaste, "paste once something is copied");
         editor.ReadOnly = true;
         await Ui.Until(() => editor.State.CanCopy && !editor.State.CanPaste, "read only: copy, no paste");
     });

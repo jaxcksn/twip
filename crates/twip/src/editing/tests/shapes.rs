@@ -743,3 +743,56 @@ fn a_quarter_turned_shape_resizes_along_its_own_length() {
     assert!(((x1 - x0) - 230.0).abs() < 0.1 && ((y1 - y0) - 20.0).abs() < 0.1, "{o:?}");
     assert!(((y0 + y1) / 2.0 - (x1 - x0) / 2.0 - (cy - 100.0)).abs() < 0.2, "the top stays: {o:?}");
 }
+
+#[test]
+fn a_relative_size_from_the_other_axis_is_refused() {
+    use super::super::commands::{Command, Outcome};
+    use super::super::position::{Position, StoryId};
+    use crate::api::command::{ObjectSize, RelativeSize, RelativeSizeReference};
+    use crate::api::value::{NoneOr, ObjectWrap};
+    let data = super::open("FX-OBJ.docx").document().images.last().cloned().expect("an image");
+    let mut e = Editor::open(&super::blank_body(r#"<w:p><w:r><w:t>text</w:t></w:r></w:p>"#), fonts()).expect("opens");
+    let p = super::para_id(&e, 0);
+    e.set_caret_for_benchmark(Selection::Caret(Position::text(StoryId::Body, p, crate::layout::Unit(0))));
+    e.execute(Command::InsertPicture(crate::api::command::Picture { data: crate::api::value::Bytes(data), alt_text: None }), fonts());
+    e.execute(Command::SetObjectWrap(ObjectWrap::Square), fonts());
+    assert!(matches!(e.selection(), Selection::Object(ObjectRef::Floating(_))), "{:?}", e.selection());
+    let rel = |to| Some(NoneOr::Value(RelativeSize { percent: 50.0, relative_to: to }));
+    let refused = |o: &Outcome| matches!(o, Outcome::Unchanged(_) | Outcome::Refused(_));
+    let mut size = |s: ObjectSize| e.execute(Command::SetObjectSize(s), fonts());
+    let a = size(ObjectSize { relative_width: rel(RelativeSizeReference::TopMargin), ..Default::default() });
+    assert!(refused(&a), "a width relative to the top margin: {a:?}");
+    let b = size(ObjectSize { relative_height: rel(RelativeSizeReference::LeftMargin), ..Default::default() });
+    assert!(refused(&b), "a height relative to the left margin: {b:?}");
+    let c = size(ObjectSize {
+        relative_width: rel(RelativeSizeReference::LeftMargin),
+        relative_height: rel(RelativeSizeReference::TopMargin),
+        ..Default::default()
+    });
+    assert!(matches!(c, Outcome::Changed(_)), "{c:?}");
+}
+
+#[test]
+fn typing_in_a_text_box_keeps_its_anchor_paragraphs_shaping() {
+    use super::super::commands::Command;
+    let rect = sp(0, 0, 150, 60, "rect", "", "FFFFFF");
+    let story = r#"<wps:txbx id="1"><w:txbxContent><w:p><w:r><w:t>Inside</w:t></w:r></w:p></w:txbxContent></wps:txbx><wps:bodyPr/>"#;
+    let boxed = rect.replace("<wps:bodyPr/>", story);
+    let words = "anchor words ".repeat(200);
+    let mut e = editor(&format!("<w:p><w:r><w:t>{words}</w:t></w:r>{}</w:p>", anchor(72, 300, 150, 60, 1, false, 1, &boxed)));
+    let inside = e.document().sections[0].blocks.iter().find_map(|b| match b {
+        crate::docx::Block::Para(p) => p.inlines.iter().find_map(|i| i.story().and_then(|(_, tb)| tb.blocks.first())),
+        _ => None,
+    });
+    let Some(crate::docx::Block::Para(inside)) = inside else { panic!("a text box paragraph") };
+    let inside = crate::layout::ParaId(inside.id);
+    e.select_range(inside, crate::layout::Unit(6), crate::layout::Unit(6), fonts());
+    let (shaped, entries) = (e.layout.cache().shaped.counts().1, e.layout.cache().shaped.len());
+    for _ in 0..20 {
+        e.execute(Command::InsertText("x".into()), fonts());
+    }
+    let (shaped, entries) = (e.layout.cache().shaped.counts().1 - shaped, e.layout.cache().shaped.len() - entries);
+    assert_eq!(box_text(&e).as_deref(), Some("Insidexxxxxxxxxxxxxxxxxxxx"));
+    assert!(shaped <= 20 && entries <= 20, "{shaped} paragraphs shaped and {entries} entries kept for 20 keystrokes in the box");
+    same_as_full(&mut e);
+}

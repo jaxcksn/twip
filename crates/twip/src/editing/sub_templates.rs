@@ -15,7 +15,7 @@ use super::commands::Outcome;
 use super::elements;
 use super::geometry::Pages;
 use super::index::{Container, DocIndex};
-use super::position::StoryId;
+use super::position::{Position, StoryId};
 use super::selection::Selection;
 use super::step::Step;
 
@@ -72,6 +72,8 @@ pub struct References {
 
 pub struct Surface {
     pub part: u32,
+    /// The section the sub-template was entered from: its page is the surface's.
+    pub section: usize,
     doc: Document,
     template: DocumentLayout,
     template_pages: Pages,
@@ -80,16 +82,38 @@ pub struct Surface {
     template_touched: bool,
 }
 
-/// Blocks from another part or package, written afresh: their source XML dropped, their pictures' image indices
-/// moved up by `base`.
+/// Blocks from another part or package, written afresh: their source XML dropped, their pictures', floats' and
+/// shapes' image indices moved up by `base`, text boxes included.
 fn detach(blocks: &mut [Block], base: usize) {
+    let up = |k: &mut Option<usize>| *k = k.map(|k| k + base);
     for b in blocks {
         match b {
             Block::Para(p) => {
                 p.src = None;
                 for i in &mut p.inlines {
-                    if let Inline::Picture(pic, _) = i {
-                        pic.image = pic.image.map(|k| k + base);
+                    match i {
+                        Inline::Picture(pic, _) => {
+                            up(&mut pic.image);
+                            if let Some(s) = &mut pic.shape {
+                                s.rebase_images(base);
+                            }
+                        }
+                        Inline::Float(f, _) => {
+                            up(&mut f.image);
+                            if let Some(s) = &mut f.shape {
+                                s.rebase_images(base);
+                            }
+                            for part in &mut f.parts {
+                                up(&mut part.image);
+                                if let Some(tb) = &mut part.text_box {
+                                    detach(&mut tb.blocks, base);
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                    if let Some(tb) = i.story_mut() {
+                        detach(&mut tb.blocks, base);
                     }
                 }
             }
@@ -97,6 +121,37 @@ fn detach(blocks: &mut [Block], base: usize) {
                 t.src = None;
                 t.rows.iter_mut().flat_map(|r| r.cells.iter_mut()).for_each(|c| detach(&mut c.blocks, base));
             }
+        }
+    }
+}
+
+/// A body read from another package, and what it refers to there.
+#[derive(Default)]
+struct Imported {
+    blocks: Vec<Block>,
+    controls: Vec<(crate::docx::ControlId, crate::docx::Control)>,
+    refs: super::clipboard::Refs,
+    numbering: crate::docx::numbering::Numbering,
+}
+
+/// Each paragraph of `blocks`: in tables and text boxes too.
+fn each_para(blocks: &mut [Block], f: &mut dyn FnMut(&mut Paragraph)) {
+    for b in blocks {
+        match b {
+            Block::Para(p) => {
+                f(p);
+                for i in &mut p.inlines {
+                    if let Inline::Float(fl, _) = i {
+                        for tb in fl.parts.iter_mut().filter_map(|part| part.text_box.as_mut()) {
+                            each_para(&mut tb.blocks, f);
+                        }
+                    }
+                    if let Some(tb) = i.story_mut() {
+                        each_para(&mut tb.blocks, f);
+                    }
+                }
+            }
+            Block::Table(t) => t.rows.iter_mut().flat_map(|r| r.cells.iter_mut()).for_each(|c| each_para(&mut c.blocks, f)),
         }
     }
 }
@@ -118,6 +173,9 @@ fn empty_para(doc: &Document, cx: &crate::docx::write::props::Cx) -> Option<Para
 }
 
 pub const MAX_DEPTH: usize = 16;
+
+/// Each building block part's references that can expand.
+type Inside<'a> = HashMap<u32, Vec<(FieldId, &'a Reference)>>;
 
 /// The expansions one sync lays out: each part's references expand again at every level, so `k` references a level
 /// would be `k^16` layouts at [`MAX_DEPTH`].
@@ -329,18 +387,34 @@ impl Editor {
         (base - indents).max(1.0)
     }
 
-    fn expand(&self, f: FieldId, r: &Reference, width: f64, path: &mut Vec<u32>, budget: &mut usize, fonts: &Fonts) -> Option<Rc<Expansion>> {
+    /// `r`, reference `f`, laid out at `width` with what it holds (`inside`, each part's references that can expand),
+    /// each attempt one of `budget`.
+    fn expand(
+        &self,
+        f: FieldId,
+        r: &Reference,
+        width: f64,
+        inside: &Inside,
+        path: &mut Vec<u32>,
+        budget: &mut usize,
+        fonts: &Fonts,
+    ) -> Option<Rc<Expansion>> {
         let part = r.part?;
-        if r.resolution != Resolution::Resolved || self.collapsed.contains(&f) || path.len() >= MAX_DEPTH || path.contains(&part) || *budget == 0 {
+        if *budget == 0 {
             return None;
         }
         *budget -= 1;
+        if r.resolution != Resolution::Resolved || self.collapsed.contains(&f) || path.len() >= MAX_DEPTH || path.contains(&part) {
+            return None;
+        }
         let body = &self.doc.glossary.as_ref()?.parts.get(part as usize)?.body;
         path.push(part);
         let mut nested = Expansions::default();
-        for (g, q) in &self.references.by_field {
-            let inside = self.index.para_slot(q.at).is_some_and(|s| self.index.story(s.container) == StoryId::BuildingBlock(part));
-            if inside && let Some(e) = self.expand(*g, q, self.reference_width(q.at, width), path, budget, fonts) {
+        for (g, q) in inside.get(&part).into_iter().flatten() {
+            if *budget == 0 {
+                break;
+            }
+            if let Some(e) = self.expand(*g, q, self.reference_width(q.at, width), inside, path, budget, fonts) {
                 nested.paras.insert(q.at, e);
             }
         }
@@ -361,11 +435,19 @@ impl Editor {
             let mut path: Vec<u32> = self.editing_sub_template().into_iter().collect();
             let outer = self.surface.as_ref().map_or(0.0, |s| column_width(&s.doc.sections[0]));
             let mut budget = MAX_EXPANSIONS;
+            let mut top = Vec::new();
+            let mut inside = Inside::new();
             for (f, r) in &self.references.by_field {
-                let top = self.index.para_slot(r.at).is_some_and(|s| self.index.story(s.container) == flow);
-                if !top || r.resolution != Resolution::Resolved || self.collapsed.contains(f) {
+                if r.resolution != Resolution::Resolved || self.collapsed.contains(f) {
                     continue;
                 }
+                match self.index.para_slot(r.at).map(|s| self.index.story(s.container)) {
+                    Some(story) if story == flow => top.push((f, r)),
+                    Some(StoryId::BuildingBlock(k)) => inside.entry(k).or_default().push((*f, r)),
+                    _ => {}
+                }
+            }
+            for (f, r) in top {
                 if let Some(row) = r.row
                     && let Some(Block::Table(t)) = r.part.and_then(|k| self.doc.glossary.as_ref()?.parts.get(k as usize)?.body.first())
                     && let Some(body) = t.rows.first()
@@ -374,7 +456,7 @@ impl Editor {
                     out.paras.remove(&r.at);
                     continue;
                 }
-                if let Some(e) = self.expand(*f, r, self.reference_width(r.at, outer), &mut path, &mut budget, fonts) {
+                if let Some(e) = self.expand(*f, r, self.reference_width(r.at, outer), &inside, &mut path, &mut budget, fonts) {
                     out.paras.insert(r.at, e);
                 }
             }
@@ -396,6 +478,16 @@ impl Editor {
         parts.iter().any(|b| b.state != crate::docx::PartState::Removed && self.sub_template_rules.iter().any(|r| r.category == b.category))
     }
 
+    /// Lays out everything again after a change outside the model (fonts, hyphenation patterns): the shown layout, the
+    /// expansions, and the main document's layout parked behind a sub-template.
+    pub(super) fn relayout_environment(&mut self) {
+        self.relayout([None]);
+        self.expansions_stale = true;
+        if let Some(s) = &mut self.surface {
+            s.template_touched = true;
+        }
+    }
+
     pub fn editing_sub_template(&self) -> Option<u32> {
         self.surface.as_ref().map(|s| s.part)
     }
@@ -408,9 +500,22 @@ impl Editor {
         std::mem::swap(&mut s.doc.sections[0].blocks, &mut part.body);
         std::mem::swap(&mut s.doc.images, &mut self.doc.images);
         std::mem::swap(&mut s.doc.controls, &mut self.doc.controls);
+        std::mem::swap(&mut s.doc.settings, &mut self.doc.settings);
+        std::mem::swap(&mut s.doc.hyphenation, &mut self.doc.hyphenation);
+        std::mem::swap(&mut s.doc.line_number_run, &mut self.doc.line_number_run);
         s.doc.resolver = self.doc.resolver.clone();
         s.doc.review = self.doc.review.clone();
+        s.doc.theme = self.doc.theme.clone();
+        s.doc.colour_map = self.doc.colour_map;
+        if let Some(entry) = self.doc.sections.get(s.section)
+            && entry.page() != s.doc.sections[0].page()
+        {
+            s.doc.sections[0].set_page(entry.page());
+        }
         let out = f(&mut self.layout, &s.doc);
+        std::mem::swap(&mut s.doc.line_number_run, &mut self.doc.line_number_run);
+        std::mem::swap(&mut s.doc.hyphenation, &mut self.doc.hyphenation);
+        std::mem::swap(&mut s.doc.settings, &mut self.doc.settings);
         std::mem::swap(&mut s.doc.controls, &mut self.doc.controls);
         std::mem::swap(&mut s.doc.images, &mut self.doc.images);
         if let Some(part) = self.doc.glossary.as_mut().and_then(|g| g.parts.get_mut(s.part as usize)) {
@@ -464,7 +569,8 @@ impl Editor {
         self.index.flow = Some(part);
         self.expansions = None;
         self.expansions_stale = true;
-        self.surface = Some(Surface { part, doc, template, template_pages, template_expansions, template_return, template_touched: false });
+        self.surface =
+            Some(Surface { part, section: si, doc, template, template_pages, template_expansions, template_return, template_touched: false });
         self.generation += 1;
         self.layout.edit(Revision(self.generation), None);
         self.history.break_typing();
@@ -530,32 +636,187 @@ impl Editor {
             },
             _ => None,
         };
-        let (body, controls) = match copied.as_deref().or(c.from.as_ref().map(|b| b.0.as_slice())) {
-            None => (empty_para(&self.doc, &self.cx()).map(Block::Para).into_iter().collect(), Vec::new()),
+        let mut im = match copied.as_deref().or(c.from.as_ref().map(|b| b.0.as_slice())) {
+            None => Imported { blocks: empty_para(&self.doc, &self.cx()).map(Block::Para).into_iter().collect(), ..Imported::default() },
             Some(bytes) => match self.imported_body(bytes) {
                 Some(b) => b,
                 None => return invalid("not a DOCX"),
             },
         };
         let gallery = self.sub_template_rules.iter().find(|r| r.category == category).and_then(|r| r.gallery.clone()).unwrap_or(Gallery::Custom(1));
+        let k = self.doc.glossary.as_ref().map_or(0, |g| g.parts.len()) as u32;
+        let mut tx = self.begin("New Sub-template");
+        let adopted = match self.adopt_imported(&mut tx, &mut im, true) {
+            Ok(a) => a,
+            Err(e) => {
+                self.abort(tx);
+                return invalid(e);
+            }
+        };
+        let body = std::mem::take(&mut im.blocks);
         let part =
             crate::docx::BuildingBlock { name: c.name, category, gallery, guid: None, body, state: crate::docx::PartState::Added, editable: true };
-        let k = self.doc.glossary.as_ref().map_or(0, |g| g.parts.len()) as u32;
-        let mut steps: Vec<Step> = controls.into_iter().map(|(id, c)| Step::Control { id, control: Some(c) }).collect();
+        let mut steps: Vec<Step> = std::mem::take(&mut im.controls).into_iter().map(|(id, c)| Step::Control { id, control: Some(c) }).collect();
         steps.push(Step::BuildingBlock { k, part: Some(Box::new(part)) });
-        self.part_step("New Sub-template", steps, fonts)
+        for s in steps {
+            if self.step(&mut tx, s).is_err() {
+                self.abort(tx);
+                return invalid("the sub-template changed meanwhile");
+            }
+        }
+        self.restyle_imported(&mut tx, adopted);
+        self.commit(tx, None, fonts)
     }
 
-    fn imported_body(&mut self, bytes: &[u8]) -> Option<(Vec<Block>, Vec<(crate::docx::ControlId, crate::docx::Control)>)> {
-        let read = crate::docx::read_editable(bytes).ok()?;
-        let mut blocks: Vec<Block> = read.sections.into_iter().flat_map(|s| s.blocks).collect();
+    /// `bytes`' body, read from the DOCX: its pictures added, its blocks written afresh, a last paragraph after a
+    /// last table; with the notes, comments and lists it refers to there.
+    fn imported_body(&mut self, bytes: &[u8]) -> Option<Imported> {
+        let mut read = crate::docx::read_editable(bytes).ok()?;
+        let mut blocks: Vec<Block> = std::mem::take(&mut read.sections).into_iter().flat_map(|s| s.blocks).collect();
         let base = self.doc.images.len() + self.pending_images.len();
-        self.pending_images.extend(read.images);
+        self.pending_images.append(&mut read.images);
         detach(&mut blocks, base);
         if !matches!(blocks.last(), Some(Block::Para(_))) {
             blocks.extend(empty_para(&self.doc, &self.cx()).map(Block::Para));
         }
-        Some((blocks, read.controls.into_iter().collect()))
+        let refs = super::clipboard::refs_of(&read, &blocks);
+        let numbering = read.resolver.as_ref().map(|r| r.numbering.clone()).unwrap_or_default();
+        Some(Imported { blocks, controls: std::mem::take(&mut read.controls).into_iter().collect(), refs, numbering })
+    }
+
+    /// Makes `im`'s references the document's, in `tx`: its lists join the document's under ids of their own, its
+    /// bookmarks named as the document's go (as the body it replaces names them, they stay), and its notes and comments
+    /// come too (a glossary part can hold neither: its comments go, and a note refuses it). Returns the stories and
+    /// paragraphs to format again once it is in.
+    fn adopt_imported(&mut self, tx: &mut super::Tx, im: &mut Imported, glossary: bool) -> Result<(HashSet<StoryId>, HashSet<ParaId>), &'static str> {
+        use crate::docx::review::RangeKind;
+        if glossary && !im.refs.notes.is_empty() {
+            return Err("a sub-template can't hold footnotes or endnotes");
+        }
+        let replaced =
+            |p: &ParaId| !glossary && self.index.para_slot(*p).is_some_and(|s| self.index.host(self.index.story(s.container)) == StoryId::Body);
+        let taken: HashSet<String> = self
+            .index
+            .para_ids()
+            .filter(|p| !replaced(p))
+            .filter_map(|p| self.index.para(&self.doc, p))
+            .flat_map(|p| p.inlines.iter())
+            .filter_map(|i| match i {
+                Inline::Bookmark(n) if !n.starts_with('/') => Some(n.to_lowercase()),
+                _ => None,
+            })
+            .collect();
+        let mut paras = HashSet::new();
+        each_para(&mut im.blocks, &mut |p| {
+            paras.insert(ParaId(p.id));
+            p.inlines.retain(|i| match i {
+                Inline::Bookmark(n) => !taken.contains(&n.trim_start_matches('/').to_lowercase()),
+                Inline::Range(r) if glossary => !matches!(r.kind, RangeKind::CommentStart | RangeKind::CommentEnd),
+                Inline::CommentRef { .. } => !glossary,
+                _ => true,
+            });
+        });
+        if glossary {
+            im.refs.comments.clear();
+        }
+        self.import_lists(tx, im)?;
+        let stories = if glossary { Vec::new() } else { self.paste_refs(tx, &mut im.blocks, &im.refs, None) };
+        tx.relabel = true;
+        Ok((stories.into_iter().collect(), paras))
+    }
+
+    /// The lists `im`'s paragraphs (its notes' and comments' too) name, added to the document's numbering under new
+    /// ids, the paragraphs' `w:numId`s moved to them.
+    fn import_lists(&mut self, tx: &mut super::Tx, im: &mut Imported) -> Result<(), &'static str> {
+        use crate::docx::write::props::Props;
+        let Some(res) = self.doc.resolver.clone() else { return Ok(()) };
+        let cx = self.cx();
+        let w = cx.w.clone();
+        let num_of = |p: &Paragraph| -> Option<i64> {
+            let pr = Props::parse(p.style.direct.0.as_deref(), "pPr", &cx);
+            let num = Props::parse(pr.get("numPr"), "numPr", &cx);
+            crate::docx::write::props::attr_of(num.get("numId")?, "val")?.trim().parse().ok().filter(|n| *n != 0)
+        };
+        let mut used: Vec<i64> = Vec::new();
+        let mut note = |blocks: &mut [Block]| each_para(blocks, &mut |p| used.extend(num_of(p)));
+        note(&mut im.blocks);
+        im.refs.notes.iter_mut().for_each(|n| note(&mut n.2));
+        im.refs.comments.iter_mut().for_each(|c| note(&mut c.body));
+        used.sort_unstable();
+        used.dedup();
+        used.retain(|n| im.numbering.nums.contains_key(n));
+        if used.is_empty() {
+            return Ok(());
+        }
+        let mut next = res.clone();
+        let numbering = &mut Rc::make_mut(&mut next).numbering;
+        let mut next_num = numbering.nums.keys().copied().chain(self.doc.added_lists.iter().map(|l| l.num_id)).max().unwrap_or(0).max(0) + 1;
+        let mut next_abstract =
+            numbering.abstracts.keys().copied().chain(self.doc.added_lists.iter().map(|l| l.abstract_id)).max().unwrap_or(-1).max(-1) + 1;
+        let (mut nums, mut abstracts): (HashMap<i64, i64>, HashMap<i64, i64>) = (HashMap::new(), HashMap::new());
+        for n in used {
+            let Some(num) = im.numbering.nums.get(&n) else { continue };
+            let Some(a) = im.numbering.abstracts.get(&num.abstract_id) else { continue };
+            // The document's own list, as a copy of its content names it
+            let own =
+                numbering.nums.get(&n).is_some_and(|h| h.raw == num.raw && numbering.abstracts.get(&h.abstract_id).is_some_and(|ha| ha.raw == a.raw));
+            if own {
+                continue;
+            }
+            let to_abstract = *abstracts.entry(num.abstract_id).or_insert_with(|| {
+                let id = next_abstract;
+                next_abstract += 1;
+                let mut el = Props::parse(Some(&a.raw), "abstractNum", &cx);
+                el.set_own("abstractNumId", &id.to_string(), &cx);
+                let raw = el.xml().unwrap_or_else(|| a.raw.clone());
+                numbering
+                    .abstracts
+                    .insert(id, crate::docx::numbering::AbstractNum { raw, origin: crate::docx::styles::StyleOrigin::Document, ..a.clone() });
+                id
+            });
+            let to = next_num;
+            next_num += 1;
+            let mut el = Props::parse(Some(&num.raw), "num", &cx);
+            el.set_own("numId", &to.to_string(), &cx);
+            el.set("abstractNumId", format!("<{w}abstractNumId {w}val=\"{to_abstract}\"/>"));
+            let raw = el.xml().unwrap_or_else(|| num.raw.clone());
+            numbering.nums.insert(
+                to,
+                crate::docx::numbering::Num { abstract_id: to_abstract, origin: crate::docx::styles::StyleOrigin::Document, raw, ..num.clone() },
+            );
+            nums.insert(n, to);
+        }
+        if nums.is_empty() {
+            return Ok(());
+        }
+        let renumber = |blocks: &mut [Block]| {
+            each_para(blocks, &mut |p| {
+                let Some(to) = num_of(p).and_then(|n| nums.get(&n)) else { return };
+                let mut pr = Props::parse(p.style.direct.0.as_deref(), "pPr", &cx);
+                let mut num = Props::parse(pr.get("numPr"), "numPr", &cx);
+                num.set("numId", format!("<{w}numId {w}val=\"{to}\"/>"));
+                if let Some(x) = num.xml() {
+                    pr.set("numPr", x);
+                }
+                let direct = crate::docx::Raw(pr.xml().map(|x| Rc::from(x.as_str())));
+                p.style = Rc::new(crate::docx::ParaStyle { direct, ..(*p.style).clone() });
+            })
+        };
+        renumber(&mut im.blocks);
+        im.refs.notes.iter_mut().for_each(|n| renumber(&mut n.2));
+        im.refs.comments.iter_mut().for_each(|c| renumber(&mut c.body));
+        let added = self.doc.added_lists.clone();
+        self.step(tx, Step::Resolver { resolver: Some(next), added }).map(|_| ()).map_err(|_| "the lists changed meanwhile")
+    }
+
+    /// The paragraphs of `stories` and `paras` formatted again in `tx`, as the document's styles and lists have them.
+    fn restyle_imported(&mut self, tx: &mut super::Tx, (stories, paras): (HashSet<StoryId>, HashSet<ParaId>)) {
+        let stale: Vec<ParaId> = self
+            .index
+            .para_ids()
+            .filter(|p| paras.contains(p) || self.index.para_slot(*p).is_some_and(|s| stories.contains(&self.index.story(s.container))))
+            .collect();
+        tx.stale_paras.extend(stale);
     }
 
     /// The template's body becomes `bytes`' body: its sections merge into the last (whose page, headers and footers
@@ -567,19 +828,21 @@ impl Editor {
         if self.surface.is_some() {
             self.close_sub_template_to(None);
         }
-        let Some((body, controls)) = self.imported_body(bytes) else { return Outcome::Refused(crate::api::error::Error::invalid("not a DOCX")) };
+        let Some(mut im) = self.imported_body(bytes) else { return Outcome::Refused(crate::api::error::Error::invalid("not a DOCX")) };
         let mut tx = self.begin("Replace Body");
-        let ok = controls.into_iter().all(|(id, c)| self.step(&mut tx, Step::Control { id, control: Some(c) }).is_ok())
+        let ok = std::mem::take(&mut im.controls).into_iter().all(|(id, c)| self.step(&mut tx, Step::Control { id, control: Some(c) }).is_ok())
             && (1..self.doc.sections.len()).all(|_| self.merge_section(&mut tx, 0).is_ok());
-        if !ok {
+        let adopted = if ok { self.adopt_imported(&mut tx, &mut im, false).ok() } else { None };
+        let Some(adopted) = adopted else {
             self.abort(tx);
             return Outcome::Refused(crate::api::error::Error::invalid("the body changed meanwhile"));
-        }
+        };
         let range = 0..self.doc.sections[0].blocks.len();
-        if self.step(&mut tx, Step::Blocks { container: Container::Section(0), range, with: body }).is_err() {
+        if self.step(&mut tx, Step::Blocks { container: Container::Section(0), range, with: std::mem::take(&mut im.blocks) }).is_err() {
             self.abort(tx);
             return Outcome::Refused(crate::api::error::Error::invalid("the body changed meanwhile"));
         }
+        self.restyle_imported(&mut tx, adopted);
         if let Some(p) = self.nav().story_edge(StoryId::Body, false) {
             self.selection = Selection::Caret(p);
         }
@@ -631,6 +894,12 @@ impl Editor {
         if r.to.trim().is_empty() || self.doc.glossary.as_ref().is_some_and(|g| g.find(&r.to, &old.category, None).is_some()) {
             return invalid(format!("a sub-template is named {}", r.to));
         }
+        let update = r.update_references.unwrap_or(false);
+        let to = match crate::docx::fields::quote_arg(&r.to) {
+            Some(to) => to,
+            None if update => return invalid(format!("a reference can't name {}", r.to)),
+            None => String::new(),
+        };
         let mut renamed = old.clone();
         renamed.name = r.to.clone();
         let mut tx = self.begin("Rename Sub-template");
@@ -638,10 +907,11 @@ impl Editor {
             self.abort(tx);
             return invalid("the sub-template changed meanwhile".into());
         }
-        if r.update_references.unwrap_or(false) {
+        if update {
+            let rules = self.sub_template_rules.clone();
             let fields: Vec<FieldId> = self.references.by_field.iter().filter(|(_, x)| x.part == Some(k)).map(|(f, _)| *f).collect();
             for f in fields {
-                self.replace_in_code(&mut tx, f, &r.name, &r.to);
+                self.set_code_arg(&mut tx, f, |code| rule_for(&rules, code).map(|(rule, _)| rule.argument), &to);
             }
         }
         self.commit(tx, None, fonts)
@@ -705,12 +975,13 @@ impl Editor {
 
     pub(super) fn note_template_edits(&mut self, inverses: &[Step]) {
         let Some(part) = self.editing_sub_template() else { return };
-        let template = match elements::touched(inverses) {
-            elements::Touched::All => true,
-            elements::Touched::Paras(paras, _) => {
-                paras.iter().any(|&p| self.index.para_slot(p).is_none_or(|s| self.index.story(s.container) != StoryId::BuildingBlock(part)))
-            }
-        };
+        let template = changes_environment(inverses)
+            || match elements::touched(inverses) {
+                elements::Touched::All => true,
+                elements::Touched::Paras(paras, _) => {
+                    paras.iter().any(|&p| self.index.para_slot(p).is_none_or(|s| self.index.story(s.container) != StoryId::BuildingBlock(part)))
+                }
+            };
         if template && let Some(s) = &mut self.surface {
             s.template_touched = true;
         }
@@ -767,26 +1038,27 @@ impl Editor {
 
     pub(super) fn refuse_expanded(&mut self) -> bool {
         let Some((a, b)) = self.selection.ordered(&self.index) else { return false };
-        let (Some((pa, ua)), Some((pb, ub))) = (a.para_offset(), b.para_offset()) else { return false };
-        if pa != pb || ua == ub {
-            return false;
-        }
-        let shown = self.references.by_field.iter().find(|(f, r)| r.at == pa && r.resolution == Resolution::Resolved && !self.collapsed.contains(f));
-        let Some((&field, r)) = shown else { return false };
-        let Some(p) = self.index.para(&self.doc, pa) else { return false };
-        let starts: Vec<u32> = p.inlines.iter().scan(0u32, |at, i| Some(std::mem::replace(at, *at + i.units() as u32))).collect();
-        let Some(s) = fields::spans(&p.inlines).into_iter().find(|s| matches!(p.inlines[s.begin], Inline::FieldBegin { id, .. } if id == field))
-        else {
-            return false;
-        };
-        let (lo, hi) = (starts[s.begin], starts[s.end] + 1);
-        if ub.0 <= lo || ua.0 >= hi {
-            return false;
-        }
-        let name = r.part.and_then(|k| self.doc.glossary.as_ref()?.parts.get(k as usize)).map(|b| b.name.clone());
+        let Some(field) = self.expanded_in(&a, &b) else { return false };
+        let part = self.references.by_field.get(&field).and_then(|r| r.part);
+        let name = part.and_then(|k| self.doc.glossary.as_ref()?.parts.get(k as usize)).map(|b| b.name.clone());
         self.refused = Some("sub-template");
         self.events.push(super::input::Notice::Refused { sub_template: name, element: Some(ElementId::Field(field)) });
         true
+    }
+
+    /// The shown, resolved sub-template reference `a..b` edits, whose body is read only.
+    pub(super) fn expanded_in(&self, a: &Position, b: &Position) -> Option<FieldId> {
+        let (Some((pa, ua)), Some((pb, ub))) = (a.para_offset(), b.para_offset()) else { return None };
+        if pa != pb || ua == ub {
+            return None;
+        }
+        let shown = self.references.by_field.iter().find(|(f, r)| r.at == pa && r.resolution == Resolution::Resolved && !self.collapsed.contains(f));
+        let (&field, _) = shown?;
+        let p = self.index.para(&self.doc, pa)?;
+        let starts: Vec<u32> = p.inlines.iter().scan(0u32, |at, i| Some(std::mem::replace(at, *at + i.units() as u32))).collect();
+        let s = fields::spans(&p.inlines).into_iter().find(|s| matches!(p.inlines[s.begin], Inline::FieldBegin { id, .. } if id == field))?;
+        let (lo, hi) = (starts[s.begin], starts[s.end] + 1);
+        (ub.0 > lo && ua.0 < hi).then_some(field)
     }
 
     fn rebuild_references(&mut self) {
@@ -794,6 +1066,9 @@ impl Editor {
         let (changed, back) = fields::rekind(&mut self.doc, &|code: &FieldCode| field_kind(rules, types, code));
         if back {
             fields::evaluate(&mut self.doc, crate::docx::now_local());
+        }
+        if changed || back {
+            self.changed_everywhere();
         }
         if changed {
             self.relayout(vec![None]);
@@ -832,6 +1107,9 @@ impl Editor {
         if self.sub_template_rules.is_empty() {
             return;
         }
+        if changes_environment(inverses) {
+            self.expansions_stale = true;
+        }
         let at: HashSet<ParaId> = self.references.by_field.values().map(|r| r.at).collect();
         let needed = match elements::touched(inverses) {
             elements::Touched::All => true,
@@ -850,6 +1128,12 @@ impl Editor {
             self.rebuild_references();
         }
     }
+}
+
+/// Whether the steps change what every paragraph lays out with (the default tab stop, hyphenation, page settings)
+/// without touching one.
+fn changes_environment(steps: &[Step]) -> bool {
+    steps.iter().any(|s| matches!(s, Step::DefaultTab(_) | Step::Hyphenation(_) | Step::PageSettings(_)))
 }
 
 /// The kind a field with `code` has under the editor's settings: a sub-template reference; none, as a MERGEFIELD, for

@@ -59,7 +59,8 @@ fn link_of(i: &Inline) -> Option<(u64, (u32, bool))> {
     }
 }
 
-fn story_of(i: &Inline) -> Option<(u64, Option<&TextBox>)> {
+/// The float or inline shape an inline is, by id, and its text when it has some.
+pub(super) fn story_of(i: &Inline) -> Option<(u64, Option<&TextBox>)> {
     match i {
         Inline::Float(f, _) => Some((f.id, f.text_box.as_ref())),
         Inline::Picture(p, _) => p.text.as_ref().map(|t| (t.id, Some(&t.text_box))),
@@ -162,11 +163,14 @@ impl DocIndex {
         }
     }
 
-    fn remove_row_elements(&mut self, id: TableId) {
-        self.elements.retain(|_, s| {
-            s.retain(|l| !matches!(l, Loc::Row(t, _) | Loc::Cell(t, _, _) if *t == id));
-            !s.is_empty()
-        });
+    /// Drops the row and cell locations `rows` (the table's rows as they were indexed) added.
+    fn remove_row_elements<'r>(&mut self, id: TableId, rows: impl Iterator<Item = &'r crate::docx::Row>) {
+        for (ri, r) in rows.enumerate() {
+            r.controls.iter().for_each(|&c| self.remove_loc(ElementId::Control(c), Loc::Row(id, ri)));
+            for (ci, c) in r.cells.iter().enumerate() {
+                c.controls.iter().for_each(|&k| self.remove_loc(ElementId::Control(k), Loc::Cell(id, ri, ci)));
+            }
+        }
     }
 
     pub fn element(&self, e: ElementId) -> Option<&HashSet<Loc>> {
@@ -201,7 +205,7 @@ impl DocIndex {
             Block::Table(t) => {
                 self.tables.remove(&TableId(t.id));
                 t.controls.iter().for_each(|&c| self.remove_loc(ElementId::Control(c), Loc::Table(TableId(t.id))));
-                self.remove_row_elements(TableId(t.id));
+                self.remove_row_elements(TableId(t.id), t.rows.iter());
                 for c in t.rows.iter().flat_map(|r| r.cells.iter()) {
                     c.blocks.iter().for_each(|b| self.remove_block(b));
                 }
@@ -253,12 +257,14 @@ impl DocIndex {
         }
     }
 
-    pub fn replaced_rows(&mut self, doc: &Document, table: TableId, removed: &[crate::docx::Row]) {
+    /// After `removed` gave way to `added` rows at `at`.
+    pub fn replaced_rows(&mut self, doc: &Document, table: TableId, at: usize, added: usize, removed: &[crate::docx::Row]) {
         for c in removed.iter().flat_map(|r| r.cells.iter()) {
             c.blocks.iter().for_each(|b| self.remove_block(b));
         }
-        self.remove_row_elements(table);
         let Some(t) = self.table(doc, table) else { return };
+        let (before, after) = (t.rows.get(..at).unwrap_or_default(), t.rows.get(at + added..).unwrap_or_default());
+        self.remove_row_elements(table, before.iter().chain(removed).chain(after));
         self.add_row_elements(t);
         for (row, r) in t.rows.iter().enumerate() {
             for (cell, c) in r.cells.iter().enumerate() {
@@ -292,14 +298,27 @@ impl DocIndex {
         &self.parts
     }
 
-    pub fn replaced_inlines(&mut self, doc: &Document, para: ParaId, removed: &[Inline]) {
+    /// After `removed` left `para`; `added`: whether the inlines put in it hold floats, links or elements
+    /// ([`indexes`]). The paragraph is read again only when either side holds one: a removed one can be in it twice.
+    pub fn replaced_inlines(&mut self, doc: &Document, para: ParaId, removed: &[Inline], added: bool) {
         self.remove_floats(removed);
         inline_elements(removed).for_each(|e| self.remove_loc(e, Loc::Para(para)));
-        if let Some(p) = self.para(doc, para) {
-            let p = p.clone();
-            self.add_floats(&p);
-            inline_elements(&p.inlines).for_each(|e| self.add_loc(e, Loc::Para(para)));
+        if !added && !indexes(removed) {
+            return;
         }
+        let Some(p) = self.para(doc, para) else { return };
+        for i in &p.inlines {
+            if let Some((id, l)) = link_of(i) {
+                self.links.insert(FloatId(id), l);
+            }
+            if let Some((id, tb)) = story_of(i)
+                && self.floats.insert(FloatId(id), para) != Some(para)
+                && let Some(tb) = tb
+            {
+                self.add_blocks(Container::Story(StoryId::TextBox(FloatId(id))), &tb.blocks);
+            }
+        }
+        inline_elements(&p.inlines).for_each(|e| self.add_loc(e, Loc::Para(para)));
     }
 
     // Lookups
@@ -384,7 +403,7 @@ impl DocIndex {
         }
     }
 
-    fn order_key(&self, pos: &Position) -> Vec<usize> {
+    pub(super) fn order_key(&self, pos: &Position) -> Vec<usize> {
         match pos.place {
             Place::Text { para, offset, .. } => match self.para_slot(para) {
                 Some(s) => {
@@ -536,6 +555,11 @@ impl DocIndex {
     pub fn table_ids(&self) -> impl Iterator<Item = TableId> + '_ {
         self.tables.keys().copied()
     }
+}
+
+/// Whether any of `inlines` is a float, a text box, a link or an element the index keeps.
+pub fn indexes(inlines: &[Inline]) -> bool {
+    inlines.iter().any(|i| link_of(i).is_some() || story_of(i).is_some()) || inline_elements(inlines).next().is_some()
 }
 
 fn inline_elements(inlines: &[Inline]) -> impl Iterator<Item = ElementId> + '_ {

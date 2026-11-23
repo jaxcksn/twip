@@ -1,15 +1,18 @@
 //! Lists
 
+use std::collections::HashSet;
 use std::rc::Rc;
 
 use crate::docx::numbering::Counters;
-use crate::docx::props::RunProps;
-use crate::docx::write::props::Props;
-use crate::docx::{Block, ListLabel};
+use crate::docx::props::{ParaProps, RunProps};
+use crate::docx::resolve::Resolver;
+use crate::docx::write::props::{Cx, Props};
+use crate::docx::{Block, Document, Inline, ListLabel, Paragraph};
 use crate::font::Fonts;
 use crate::layout::{ParaId, Unit};
 
 use super::commands::Outcome;
+use super::index::DocIndex;
 use super::selection::Selection;
 use super::step::{Step, para_len};
 use super::{Editor, Tx};
@@ -29,8 +32,8 @@ impl Editor {
         let Some(p) = self.index.para(&self.doc, para) else { return false };
         let mut pr = Props::parse(p.style.direct.0.as_deref(), "pPr", &cx);
         edit(&mut pr, &cx.w);
-        let region = self.region_of_para(para, &res);
-        let r = res.para_from_xml(pr.xml().as_deref(), region.as_ref(), &cx);
+        let Some(r) = self.para_again(para, Some(pr.xml().as_deref()), &res, &cx) else { return false };
+        let Some(p) = self.index.para(&self.doc, para) else { return false };
         let (mark, list) = (p.mark.clone(), p.list.clone());
         tx.stale_paras.push(para);
         self.step(tx, Step::Para { para, style: Rc::new(r.style), mark, list }).is_ok()
@@ -70,7 +73,7 @@ impl Editor {
                 p.set("ind", format!("<{w}ind {w}left=\"{l}\" {w}firstLine=\"0\"/>"));
             })
         } else {
-            let direct_ind = p.style.direct.0.as_deref().is_some_and(|x| x.contains("ind "));
+            let direct_ind = Props::parse(p.style.direct.0.as_deref(), "pPr", &self.cx()).get("ind").is_some();
             if !(left > 0.0 && p.style.ind_first == 0.0 && direct_ind) {
                 self.abort(tx);
                 return None;
@@ -147,16 +150,17 @@ impl Editor {
                 let Some((_, (id, ilvl))) = kind(self, para) else { continue };
                 let lvl = res.numbering.level(id, ilvl, &res.styles);
                 let left = lvl.and_then(|l| l.ppr.ind_left).unwrap_or(36.0) + lvl.and_then(|l| l.ppr.ind_first).unwrap_or(-18.0).min(0.0);
-                let direct = self.index.para(&self.doc, para).and_then(|p| p.style.direct.0.clone());
-                let has_direct_num = direct.as_deref().is_some_and(|d| d.contains("numPr"));
+                let style_id = self.index.para(&self.doc, para).and_then(|p| p.style.style_id.clone());
                 let ok = self.repara(&mut tx, para, &|p, w| {
-                    if has_direct_num {
+                    if p.get("pStyle").is_some_and(|s| s.contains("\"ListParagraph\"")) {
+                        p.remove("pStyle");
+                    }
+                    let style = res.styles.paragraph_style(if p.get("pStyle").is_some() { style_id.as_deref() } else { None });
+                    let numbered = res.styles.chain_ppr(style).num_id.is_some_and(|n| n != 0);
+                    if p.get("numPr").is_some() && !numbered {
                         p.remove("numPr");
                     } else {
                         p.set("numPr", format!("<{w}numPr><{w}ilvl {w}val=\"0\"/><{w}numId {w}val=\"0\"/></{w}numPr>"));
-                    }
-                    if p.get("pStyle").is_some_and(|s| s.contains("\"ListParagraph\"")) {
-                        p.remove("pStyle");
                     }
                     p.set("ind", format!("<{w}ind {w}left=\"{}\"/>", (left * 20.0).round() as i64));
                 });
@@ -181,6 +185,9 @@ impl Editor {
         };
         let list_style = res.styles.by_id.contains_key("ListParagraph");
         for &para in &paras {
+            // A paragraph in a list keeps its level, where the list has it.
+            let defined = |l: i64| self.doc.resolver.as_ref().is_some_and(|r| r.numbering.level(num, l, &r.styles).is_some());
+            let ilvl = kind(self, para).map(|(_, (_, own))| own.clamp(0, 8)).filter(|&own| defined(own)).unwrap_or(ilvl);
             let ok = self.repara(&mut tx, para, &|p, w| {
                 p.set("numPr", format!("<{w}numPr><{w}ilvl {w}val=\"{ilvl}\"/><{w}numId {w}val=\"{num}\"/></{w}numPr>"));
                 p.remove("ind");
@@ -196,7 +203,7 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
-    fn new_list(&mut self, tx: &mut Tx, bullet: bool) -> i64 {
+    pub(super) fn new_list(&mut self, tx: &mut Tx, bullet: bool) -> i64 {
         let Some(res) = self.doc.resolver.clone() else { return 0 };
         let abstract_id = res.numbering.abstracts.keys().copied().chain(self.doc.added_lists.iter().map(|l| l.abstract_id)).max().unwrap_or(-1) + 1;
         let num_id = res.numbering.nums.keys().copied().chain(self.doc.added_lists.iter().map(|l| l.num_id)).max().unwrap_or(0) + 1;
@@ -240,15 +247,40 @@ impl Editor {
     }
 
     pub(super) fn renumber(&mut self, tx: &mut Tx) {
-        for (para, list) in self.labels_changed(tx.relabel) {
+        let touched = self.touched_paras(tx);
+        let all = tx.relabel;
+        for (para, list) in self.labels_changed(|p| all || touched.contains(&p)) {
             let Some(p) = self.index.para(&self.doc, para) else { continue };
             let (style, mark) = (p.style.clone(), p.mark.clone());
             let _ = self.step(tx, Step::Para { para, style, mark, list });
         }
     }
 
-    /// The labels that change: those whose text changed, or every one when `all` (a list's definition changed).
-    pub(super) fn labels_changed(&self, all: bool) -> Vec<(ParaId, Option<ListLabel>)> {
+    /// The paragraphs a transaction formatted or put in: their labels are made again in full.
+    fn touched_paras(&self, tx: &Tx) -> HashSet<ParaId> {
+        let mut out = HashSet::new();
+        for s in &tx.undo {
+            match s {
+                Step::Para { para, .. } => {
+                    out.insert(*para);
+                }
+                Step::Join { second, .. } => {
+                    out.insert(*second);
+                }
+                Step::Blocks { container, range, .. } => {
+                    let blocks = self.index.blocks(&self.doc, *container).and_then(|b| b.get(range.clone())).unwrap_or_default();
+                    let mut paras = Vec::new();
+                    walk(blocks, &mut paras);
+                    out.extend(paras.into_iter().map(|(p, _)| ParaId(p.id)));
+                }
+                _ => {}
+            }
+        }
+        out
+    }
+
+    /// The labels that change: those whose text changed, or, for the paragraphs `full` names, any part of them.
+    pub(super) fn labels_changed(&self, full: impl Fn(ParaId) -> bool) -> Vec<(ParaId, Option<ListLabel>)> {
         let Some(res) = self.doc.resolver.clone() else { return Vec::new() };
         if res.numbering.nums.is_empty() {
             return Vec::new();
@@ -256,32 +288,13 @@ impl Editor {
         let cx = self.cx();
         let mut counters = Counters::default();
         let mut changes: Vec<(ParaId, Option<ListLabel>)> = Vec::new();
-        let mut order: Vec<ParaId> = Vec::new();
-        fn walk(blocks: &[Block], out: &mut Vec<ParaId>) {
-            for b in blocks {
-                match b {
-                    Block::Para(p) => out.push(ParaId(p.id)),
-                    Block::Table(t) => t.rows.iter().flat_map(|r| r.cells.iter()).for_each(|c| walk(&c.blocks, out)),
-                }
-            }
-        }
-        super::elements::stories(&self.doc, &self.index).into_iter().for_each(|(_, blocks)| walk(blocks, &mut order));
-        for para in order {
-            let Some(p) = self.index.para(&self.doc, para) else { continue };
-            let label = match p.style.num {
-                Some((id, ilvl)) if id != 0 => {
-                    let from_style = !p.style.direct.0.as_deref().is_some_and(|x| x.contains("numId"));
-                    if res.label_shows(id, ilvl, from_style, p.style.style_id.as_deref()) {
-                        counters.next(&res.numbering, &res.styles, id, ilvl).map(|text| (id, ilvl, text))
-                    } else {
-                        None
-                    }
-                }
-                _ => None,
-            };
+        for (p, uncounted) in numbered_paras(&self.doc, &self.index) {
+            let para = ParaId(p.id);
+            let label = counted(&res, p, uncounted, &cx)
+                .and_then(|(id, ilvl)| counters.next(&res.numbering, &res.styles, id, ilvl).map(|text| (id, ilvl, text)));
             let want = match (&label, &p.list) {
                 (None, None) => continue,
-                (Some((_, _, text)), Some(have)) if *text == have.text && !all => continue,
+                (Some((_, _, text)), Some(have)) if *text == have.text && !full(para) => continue,
                 (None, Some(_)) => None,
                 (Some((id, ilvl, text)), _) => {
                     let Some(level) = res.numbering.level(*id, *ilvl, &res.styles).cloned() else { continue };
@@ -311,8 +324,89 @@ impl Editor {
                     Some(label)
                 }
             };
-            changes.push((para, want));
+            if self.index.para_slot(para).is_some() {
+                changes.push((para, want));
+            }
         }
         changes
     }
+}
+
+/// The list and level a paragraph's label counts in, when it shows one.
+pub(super) fn counted(res: &Resolver, p: &Paragraph, uncounted: bool, cx: &Cx) -> Option<(i64, i64)> {
+    let (id, ilvl) = p.style.num.filter(|(id, _)| *id != 0 && !uncounted)?;
+    let from_style = !direct_num(p.style.direct.0.as_deref(), cx);
+    res.label_shows(id, ilvl, from_style, p.style.style_id.as_deref()).then_some((id, ilvl))
+}
+
+/// Whether a paragraph's direct `w:pPr` sets a `w:numId` itself (one in its tracked earlier properties doesn't).
+pub(super) fn direct_num(ppr: Option<&str>, cx: &Cx) -> bool {
+    let Some(x) = ppr else { return false };
+    let b = x.as_bytes();
+    // A `numId` start tag
+    let tag = x.match_indices("numId").any(|(i, _)| {
+        matches!(i.checked_sub(1).map(|k| b[k]), Some(b':' | b'<'))
+            && b.get(i + 5).is_some_and(|c| matches!(c, b'/' | b'>') || c.is_ascii_whitespace())
+    });
+    tag && (!(x.contains("pPrChange") || x.contains("<!--"))
+        || cx.parse(x, |_, el| ParaProps::parse(Some(el), &Default::default()).num_id.is_some()).unwrap_or(false))
+}
+
+/// Each paragraph in `blocks` and the text boxes anchored in them, as the reader reaches them.
+fn walk<'d>(blocks: &'d [Block], out: &mut Vec<(&'d Paragraph, bool)>) {
+    for b in blocks {
+        match b {
+            Block::Para(p) => {
+                out.push((p, false));
+                for i in &p.inlines {
+                    match i {
+                        Inline::Float(f, _) => {
+                            f.text_box.iter().chain(f.parts.iter().filter_map(|g| g.text_box.as_ref())).for_each(|t| walk(&t.blocks, out))
+                        }
+                        _ => i.story().into_iter().for_each(|(_, t)| walk(&t.blocks, out)),
+                    }
+                }
+            }
+            Block::Table(t) => t.rows.iter().flat_map(|r| r.cells.iter()).for_each(|c| walk(&c.blocks, out)),
+        }
+    }
+}
+
+/// Whether a paragraph holds anything but marks: an empty one that ends a section is left out of its list.
+fn has_content(p: &Paragraph) -> bool {
+    p.inlines.iter().any(|i| match i {
+        Inline::Text(s, _) => !s.is_empty(),
+        Inline::Tab(_)
+        | Inline::PTab(..)
+        | Inline::Break(..)
+        | Inline::Sym { .. }
+        | Inline::Picture(..)
+        | Inline::Float(..)
+        | Inline::NoteRef { .. }
+        | Inline::FieldBegin { .. }
+        | Inline::Ruby(..) => true,
+        _ => false,
+    })
+}
+
+/// Every paragraph in the order lists number through them as the document is read: the body (a text box's story
+/// after its anchor's paragraph), the headers and footers, the notes, the comments, the building blocks. Each with
+/// whether the reader leaves it uncounted: an empty paragraph that ends a section after another paragraph.
+pub(super) fn numbered_paras<'d>(doc: &'d Document, idx: &DocIndex) -> Vec<(&'d Paragraph, bool)> {
+    let mut out = Vec::new();
+    let ended = doc.sections.len().saturating_sub(1);
+    for (k, (_, blocks)) in super::elements::stories(doc, idx).into_iter().enumerate() {
+        walk(blocks, &mut out);
+        if k < ended
+            && matches!(blocks, [.., Block::Para(_), Block::Para(p)] if !has_content(p))
+            && let Some(last) = out.last_mut()
+        {
+            last.1 = true;
+        }
+    }
+    doc.comments.by_id.values().for_each(|c| walk(&c.body, &mut out));
+    for part in doc.glossary.iter().flat_map(|g| g.parts.iter()).filter(|p| p.state != crate::docx::PartState::Removed) {
+        walk(&part.body, &mut out);
+    }
+    out
 }

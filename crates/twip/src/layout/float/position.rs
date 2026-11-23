@@ -110,26 +110,48 @@ fn grown(f: &Float, fr: &Frames) -> [bool; 2] {
     }
 }
 
-pub fn h_pos(f: &Float, fr: &Frames) -> f64 {
-    let href = h_ref(f, fr);
-    if let Some(p) = f.relative.pos[0] {
-        let body = fr.page_w - fr.margin[0] - fr.margin[1];
-        let (s, base) = match href {
-            "page" => (0.0, fr.page_w),
-            "margin" => (fr.margin[0], body),
-            "leftMargin" => (0.0, fr.margin[0]),
-            "rightMargin" => (fr.page_w - fr.margin[1], fr.margin[1]),
-            _ => (fr.column.0, body),
-        };
-        return s + if f.poly.is_none() { f.effect[0] } else { 0.0 } + share(base, p);
-    }
-    let (x0, w) = match href {
+/// The left edge of horizontal reference `href`'s box and its width.
+fn h_box(href: &str, fr: &Frames) -> (f64, f64) {
+    match href {
         "page" => (0.0, fr.page_w),
         "margin" => (fr.margin[0], fr.page_w - fr.margin[0] - fr.margin[1]),
         "leftMargin" => (0.0, fr.margin[0]),
         "rightMargin" => (fr.page_w - fr.margin[1], fr.margin[1]),
         _ => fr.column,
-    };
+    }
+}
+
+/// The top of vertical reference `vref`'s box and its height (none for the paragraph and the line).
+fn v_box(vref: &str, fr: &Frames, para_top: f64, line_top: f64) -> (f64, f64) {
+    match vref {
+        "page" => (0.0, fr.page_h),
+        "margin" => (fr.margin[2], fr.page_h - fr.margin[2] - fr.margin[3]),
+        "topMargin" => (0.0, fr.margin[2]),
+        "bottomMargin" => (fr.page_h - fr.margin[3], fr.margin[3]),
+        "line" => (line_top, 0.0),
+        _ => (para_top, 0.0),
+    }
+}
+
+/// The horizontal offset that puts `f`, placed by its offset, at `x`.
+pub fn h_offset_at(f: &Float, fr: &Frames, x: f64) -> f64 {
+    let l = if f.poly.is_none() && grown(f, fr)[0] { f.effect[0] } else { 0.0 };
+    x - h_box(h_ref(f, fr), fr).0 - l
+}
+
+/// The vertical offset that puts `f`, placed by its offset, at `y`.
+pub fn v_offset_at(f: &Float, fr: &Frames, y: f64, para_top: f64, line_top: f64) -> f64 {
+    let t = if f.poly.is_none() && grown(f, fr)[1] { f.effect[1] } else { 0.0 };
+    y - v_box(v_ref(f, fr), fr, para_top, line_top).0 - t
+}
+
+pub fn h_pos(f: &Float, fr: &Frames) -> f64 {
+    let href = h_ref(f, fr);
+    let (x0, w) = h_box(href, fr);
+    if let Some(p) = f.relative.pos[0] {
+        let base = if matches!(href, "page" | "margin" | "leftMargin" | "rightMargin") { w } else { fr.page_w - fr.margin[0] - fr.margin[1] };
+        return x0 + if f.poly.is_none() { f.effect[0] } else { 0.0 } + share(base, p);
+    }
     if fr.compat == Compat::Legacy && f.h_relative == "page" {
         match f.h_align.as_deref() {
             Some("left") if fr.margin[0] >= f.w => return fr.margin[0] - f.w,
@@ -160,27 +182,16 @@ pub fn v_pos(f: &Float, h: f64, fr: &Frames, para_top: f64, line_top: f64) -> f6
             _ => fr.margin[2],
         };
     }
+    let (y0, ht) = v_box(vref, fr, para_top, line_top);
     if let Some(p) = f.relative.pos[1].filter(|_| !fr.cell) {
-        let body = fr.page_h - fr.margin[2] - fr.margin[3];
-        let (s, base) = match vref {
-            "page" => (0.0, fr.page_h),
-            "margin" => (fr.margin[2], body),
-            "topMargin" => (0.0, fr.margin[2]),
-            "bottomMargin" => (fr.page_h - fr.margin[3], fr.margin[3]),
-            "line" => (line_top, body),
-            _ => (para_top, body),
-        };
-        return s + if f.poly.is_none() { f.effect[1] } else { 0.0 } + share(base, p);
+        let base = if matches!(vref, "page" | "margin" | "topMargin" | "bottomMargin") { ht } else { fr.page_h - fr.margin[2] - fr.margin[3] };
+        return y0 + if f.poly.is_none() { f.effect[1] } else { 0.0 } + share(base, p);
     }
-    let (y0, ht) = match vref {
-        "page" => (0.0, fr.page_h),
-        "margin" => (fr.margin[2], fr.page_h - fr.margin[2] - fr.margin[3]),
-        "topMargin" => (0.0, fr.margin[2]),
-        "bottomMargin" => (fr.page_h - fr.margin[3], fr.margin[3]),
-        "line" => (line_top, 0.0),
+    match vref {
+        "page" | "margin" | "topMargin" | "bottomMargin" | "line" => {}
         _ if f.v_align.is_some() => return para_top,
         _ => return para_top + f.v_offset + if grown(f, fr)[1] && f.poly.is_none() { f.effect[1] } else { 0.0 },
-    };
+    }
     let [_, t, _, b] = if f.poly.is_none() { f.effect } else { [0.0; 4] };
     y0 + snap(
         fr,

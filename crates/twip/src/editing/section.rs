@@ -4,8 +4,11 @@ use crate::font::Fonts;
 
 use super::Editor;
 use super::commands::Outcome;
+use super::index::Slot;
 use super::position::StoryId;
+use super::selection::{ObjectRef, Selection};
 use super::step::Step;
+use crate::docx::NoteKind;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum SectionCmd {
@@ -15,17 +18,58 @@ pub enum SectionCmd {
 
 impl Editor {
     pub(super) fn focus_section(&self) -> usize {
-        let Some(focus) = self.selection.focus() else { return 0 };
-        match focus.story {
-            StoryId::HeaderFooter(k) => {
-                let name = self.index.part_name(k);
-                self.doc
-                    .sections
-                    .iter()
-                    .position(|s| s.headers.iter().chain(s.footers.iter()).flatten().any(|n| Some(n.as_str()) == name))
-                    .unwrap_or(0)
+        let slot = match self.selection {
+            Selection::Cells { table, .. } => self.index.table_slot(table),
+            Selection::Object(ObjectRef::Inline { para, .. }) => self.index.para_slot(para),
+            Selection::Object(ObjectRef::Floating(f)) => self.index.float_anchor(f).and_then(|p| self.index.para_slot(p)),
+            _ => self.selection.focus().and_then(|p| p.para_offset()).and_then(|(p, _)| self.index.para_slot(p)),
+        };
+        slot.and_then(|s| self.slot_section(s)).unwrap_or(0)
+    }
+
+    /// The section a block is in: a note's is its reference's, a header's or footer's the shown page's, and in a
+    /// sub-template being edited, the section it was entered from.
+    fn slot_section(&self, s: Slot) -> Option<usize> {
+        if let Some((sec, ..)) = self.index.top_block(s.container, s.block) {
+            return Some(match &self.surface {
+                Some(shown) if self.index.story(s.container) != StoryId::Body => shown.section,
+                _ => sec,
+            });
+        }
+        let (kind, id) = match self.index.host(self.index.story(s.container)) {
+            StoryId::HeaderFooter(k) => return self.part_section(k),
+            StoryId::Footnote(id) => (NoteKind::Foot, id),
+            StoryId::Endnote(id) => (NoteKind::End, id),
+            _ => return None,
+        };
+        let (at, _) = self.note_reference(kind, id)?;
+        let s = self.index.para_slot(at.para_offset()?.0)?;
+        self.index.top_block(s.container, s.block).map(|(sec, ..)| sec)
+    }
+
+    /// The section header or footer part `k` is edited for: the shown page's when that page shows it, else the first
+    /// that refers to it.
+    fn part_section(&self, k: u32) -> Option<usize> {
+        let name = self.index.part_name(k)?;
+        let sections = &self.doc.sections;
+        if let Some(i) = self.snapshot().info().get(self.near).filter(|i| i.section < sections.len()) {
+            let shown =
+                |footer| crate::layout::page::story_ref(sections, self.doc.settings.even_and_odd, i.section, i.section_page, i.number, footer).1;
+            if [false, true].into_iter().any(|footer| shown(footer).is_some_and(|n| n == name)) {
+                return Some(i.section);
             }
-            _ => self.section_at(&focus).unwrap_or(0),
+        }
+        sections.iter().position(|s| s.headers.iter().chain(s.footers.iter()).flatten().any(|n| n == name))
+    }
+
+    /// A section's `gutter` on a `pw` × `ph` page, where layout puts it: its share of the width and of the height.
+    pub(super) fn gutter_axes(&self, gutter: f64, pw: f64, ph: f64) -> (f64, f64) {
+        let set = &self.doc.settings;
+        match set.book_fold {
+            // Portrait book fold pages drop it
+            Some(_) => (if pw > ph { gutter } else { 0.0 }, 0.0),
+            None if set.gutter_at_top => (0.0, gutter),
+            None => (gutter, 0.0),
         }
     }
 
@@ -34,7 +78,17 @@ impl Editor {
         if matches!(at.story, StoryId::HeaderFooter(_)) {
             return None;
         }
-        at.para_offset().and_then(|(p, _)| self.index.para_slot(p)).and_then(|s| self.index.top_block(s.container, s.block)).map(|(sec, _, _)| sec)
+        self.para_section(at.para_offset()?.0)
+    }
+
+    /// The section a paragraph lays out in: in a sub-template being edited, the section it was entered from.
+    pub(super) fn para_section(&self, para: crate::layout::ParaId) -> Option<usize> {
+        let slot = self.index.para_slot(para)?;
+        let (section, _, _) = self.index.top_block(slot.container, slot.block)?;
+        match &self.surface {
+            Some(s) if self.index.story(slot.container) != StoryId::Body => Some(s.section),
+            _ => Some(section),
+        }
     }
 
     /// The selection's section's index.
@@ -42,25 +96,49 @@ impl Editor {
         self.focus_section()
     }
 
+    /// The sections the selection covers, the focus's alone outside the body's text.
+    pub(super) fn selected_sections(&self) -> std::ops::RangeInclusive<usize> {
+        let one = self.focus_section();
+        let Some((a, b)) = self.selection.ordered(&self.index) else { return one..=one };
+        match (self.section_at(&a), self.section_at(&b)) {
+            (Some(x), Some(y)) => x.min(y)..=x.max(y),
+            _ => one..=one,
+        }
+    }
+
     /// Sets the page borders of the selection's section, or of every section.
     pub(super) fn set_page_borders(&mut self, c: crate::api::command::PageBordersChange, fonts: &Fonts) -> Outcome {
         use crate::api::command::{PageBorderDisplay, PageBorderOffset, PageBorderScope};
-        let sections: Vec<usize> = match c.apply_to {
-            PageBorderScope::WholeDocument => (0..self.doc.sections.len()).collect(),
-            PageBorderScope::ThisSection => vec![self.focus_section()],
-        };
+        let focus = self.focus_section();
+        let in_scope = |section: usize| c.apply_to == PageBorderScope::WholeDocument || section == focus;
         let cx = self.cx();
         let w = cx.w.clone();
         let mut tx = self.begin("Page Borders");
         let mut changed = false;
-        for section in sections {
-            let Some(s) = self.doc.sections.get(section) else { continue };
+        for section in 0..self.doc.sections.len() {
+            let s = &self.doc.sections[section];
             let mut page = s.page();
+            // Around the header and footer: a document setting, every section's borders following it.
+            if !in_scope(section) {
+                let Some(b) = page.page_borders.as_mut() else { continue };
+                b.surround_header = c.surround_header.unwrap_or(b.surround_header);
+                b.surround_footer = c.surround_footer.unwrap_or(b.surround_footer);
+                if page == s.page() {
+                    continue;
+                }
+                let change = s.change.clone();
+                if self.step(&mut tx, Step::SectionPage { section, page: Box::new(page), change }).is_err() {
+                    self.abort(tx);
+                    return Outcome::Unchanged("no section");
+                }
+                changed = true;
+                continue;
+            }
             let mut b = page.page_borders.clone().unwrap_or(crate::docx::PageBorders {
                 display: "allPages".into(),
                 offset_from_page: true,
-                surround_header: true,
-                surround_footer: true,
+                surround_header: !self.doc.settings.borders_do_not_surround_header,
+                surround_footer: !self.doc.settings.borders_do_not_surround_footer,
                 ..Default::default()
             });
             if let Some(o) = c.offset_from {
@@ -74,7 +152,6 @@ impl Editor {
                 }
                 .into();
             }
-            // Around the header and footer: a document setting, every section's borders following it.
             if let Some(on) = c.surround_header {
                 b.surround_header = on;
             }
@@ -167,32 +244,32 @@ impl Editor {
     }
 
     pub(super) fn section_cmd(&mut self, c: SectionCmd, fonts: &Fonts) -> Outcome {
-        let section = self.focus_section();
-        let Some(s) = self.doc.sections.get(section) else { return Outcome::Unchanged("no section") };
-        let mut page = s.page();
-        let label = match c {
-            SectionCmd::Orientation(landscape) => {
-                if (page.page_w > page.page_h) != landscape {
-                    (page.page_w, page.page_h) = (page.page_h, page.page_w);
-                    (page.top, page.right, page.bottom, page.left) = (page.left, page.top, page.right, page.bottom);
-                }
-                "Orientation"
-            }
+        match c {
+            // The margins turn with the page, and back
+            SectionCmd::Orientation(landscape) => self.set_page(
+                "Orientation",
+                |p| {
+                    if p.page_w == p.page_h || (p.page_w > p.page_h) == landscape {
+                        return;
+                    }
+                    (p.page_w, p.page_h) = (p.page_h, p.page_w);
+                    (p.top, p.right, p.bottom, p.left) =
+                        if landscape { (p.left, p.top, p.right, p.bottom) } else { (p.right, p.bottom, p.left, p.top) };
+                },
+                fonts,
+            ),
             SectionCmd::Size(w, h) => {
-                let landscape = page.page_w > page.page_h;
-                (page.page_w, page.page_h) = if landscape { (w.max(h), w.min(h)) } else { (w.min(h), w.max(h)) };
-                "Size"
+                let size = |pw: f64, ph: f64| if pw > ph { (w.max(h), w.min(h)) } else { (w.min(h), w.max(h)) };
+                for section in self.selected_sections() {
+                    let Some(s) = self.doc.sections.get(section) else { continue };
+                    let (pw, ph) = size(s.page_w, s.page_h);
+                    let (gw, gh) = self.gutter_axes(s.gutter, pw, ph);
+                    if s.left + s.right + gw >= pw || s.top.abs() + s.bottom.abs() + gh >= ph {
+                        return Outcome::invalid("the margins must fit the page");
+                    }
+                }
+                self.set_page("Size", |p| (p.page_w, p.page_h) = size(p.page_w, p.page_h), fonts)
             }
-        };
-        if page == s.page() {
-            return Outcome::Unchanged("already so");
         }
-        let change = s.change.clone();
-        let mut tx = self.begin(label);
-        if self.step(&mut tx, Step::SectionPage { section, page: Box::new(page), change }).is_err() {
-            self.abort(tx);
-            return Outcome::Unchanged("no section");
-        }
-        self.commit(tx, None, fonts)
     }
 }

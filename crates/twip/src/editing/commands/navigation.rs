@@ -6,9 +6,9 @@ use crate::font::Fonts;
 use crate::layout::Unit;
 
 use super::{Dir, MoveBy, Outcome};
+use crate::editing::Editor;
 use crate::editing::position::{Place, Position, StoryId};
 use crate::editing::selection::{CellShape, Granularity, ObjectRef, Selection};
-use crate::editing::{Editor, extend};
 
 impl Editor {
     pub(in crate::editing) fn select_all(&mut self) -> Outcome {
@@ -85,7 +85,7 @@ impl Editor {
             SelectionMode::Extend => self.extend_mode(),
             SelectionMode::Block => self.block_mode(),
             SelectionMode::Normal => {
-                self.modes = extend::Modes::default();
+                self.end_modes();
                 Outcome::Moved
             }
         }

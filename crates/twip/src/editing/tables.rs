@@ -1,8 +1,11 @@
 //! Table structure commands
 
+use std::rc::Rc;
+
 use crate::api::command::TablePosition;
-use crate::docx::props::{Jc, TableAnchor, TablePos};
-use crate::docx::{Block, Cell, Inline, Paragraph, Row, Table, VMerge};
+use crate::docx::props::{Jc, TableAnchor, TablePos, Width};
+use crate::docx::review::RunRevisions;
+use crate::docx::{Block, Cell, Inline, ParaStyle, Paragraph, Row, Run, RunStyle, Table, VMerge};
 use crate::font::Fonts;
 use crate::layout::{ParaId, TableId, Unit};
 
@@ -21,23 +24,212 @@ pub(super) struct Target {
     pub cols: (usize, usize),
 }
 
+/// Most columns a split may grow a table's grid to (Word's limit).
+pub(super) const MAX_COLUMNS: usize = 63;
+
+/// Most rows a split may grow a table to (the most rows one command inserts).
+pub(super) const MAX_ROWS: usize = 32767;
+
+/// `r` without revision marks.
+fn unmarked(r: &Run) -> Run {
+    if r.rev == RunRevisions::default() { r.clone() } else { Rc::new(RunStyle { rev: RunRevisions::default(), ..(**r).clone() }) }
+}
+
+/// A new empty paragraph formatted like `p`, without its revision marks.
+pub(super) fn blank_para(p: &Paragraph) -> Paragraph {
+    let mark = unmarked(&p.mark);
+    let style = if p.style.change.is_some() { Rc::new(ParaStyle { change: None, ..(*p.style).clone() }) } else { p.style.clone() };
+    Paragraph {
+        style,
+        inlines: vec![Inline::Text(String::new(), mark.clone())],
+        mark,
+        list: None,
+        src: None,
+        id: crate::docx::next_para_id(),
+        div: None,
+        controls: Vec::new(),
+    }
+}
+
 pub(super) fn empty_cell(like: &Cell) -> Cell {
     let mut c = like.clone();
     c.v_merge = VMerge::None;
     c.controls = Vec::new();
     c.ids = None;
+    c.rev = Default::default();
     let Some(p) = like.blocks.iter().rev().find_map(|b| if let Block::Para(p) = b { Some(p) } else { None }) else { return c };
-    c.blocks = vec![Block::Para(Paragraph {
-        style: p.style.clone(),
-        mark: p.mark.clone(),
-        list: None,
-        inlines: vec![Inline::Text(String::new(), p.mark.clone())],
-        src: None,
-        id: crate::docx::next_para_id(),
-        div: None,
-        controls: Vec::new(),
-    })];
+    c.blocks = vec![Block::Para(blank_para(p))];
     c
+}
+
+/// The table's grid with a width for every column its rows reach: columns `w:tblGrid` leaves out are 0 wide, as
+/// layout reads them.
+pub(super) fn full_grid(t: &Table, cols: usize) -> Vec<f64> {
+    let mut g = Vec::with_capacity(cols.max(t.grid.len()) + 1);
+    g.extend_from_slice(&t.grid);
+    if g.len() < cols {
+        g.resize(cols, 0.0);
+    }
+    g
+}
+
+/// Vertical merges made whole: a continuation under no merged cell over the same columns, and a merge start that
+/// nothing continues, stop being merged.
+pub(super) fn tidy_merges(rows: &mut [Row]) {
+    let state = |line: &[(usize, usize, VMerge)], col: usize, span: usize| {
+        line.binary_search_by_key(&col, |a| a.0).ok().filter(|&i| line[i].1 == span).map_or(VMerge::None, |i| line[i].2)
+    };
+    let mut next: Vec<(usize, usize, VMerge)> = Vec::new();
+    let mut line: Vec<(usize, usize, VMerge)> = Vec::new();
+    for row in rows.iter_mut() {
+        let mut col = row.grid_before;
+        for c in &mut row.cells {
+            let span = c.span.max(1);
+            if c.v_merge == VMerge::Continue && state(&line, col, span) == VMerge::None {
+                c.v_merge = VMerge::None;
+            }
+            next.push((col, span, c.v_merge));
+            col += span;
+        }
+        std::mem::swap(&mut line, &mut next);
+        next.clear();
+    }
+    line.clear();
+    for row in rows.iter_mut().rev() {
+        let mut col = row.grid_before;
+        for c in &mut row.cells {
+            let span = c.span.max(1);
+            if c.v_merge == VMerge::Restart && state(&line, col, span) != VMerge::Continue {
+                c.v_merge = VMerge::None;
+            }
+            next.push((col, span, c.v_merge));
+            col += span;
+        }
+        std::mem::swap(&mut line, &mut next);
+        next.clear();
+    }
+}
+
+/// Removes the cells `gone` names (by row, then cell, in order), as accepting their deletion or rejecting their
+/// insertion does. A grid column only removed cells needed goes too, narrowing the cells over it; elsewhere the cell
+/// before the gap (else after it) widens over it, as Word does. Rows left without cells go. Whether the grid changed.
+pub(super) fn remove_cells(rows: &mut Vec<Row>, gone: &[(usize, usize)], grid: &mut Vec<f64>) -> bool {
+    let g = Grid::of_rows(rows, grid.len());
+    if grid.len() < g.cols {
+        grid.resize(g.cols, 0.0);
+    }
+    let is_gone = |r: usize, k: usize| gone.binary_search(&(r, k)).is_ok();
+    let mut drop = vec![false; g.cols];
+    for &(r, k) in gone {
+        let (c, s, _) = g.rows[r][k];
+        drop[c..c + s].fill(true);
+    }
+    // Columns a kept cell lies wholly in stay
+    let mut keep = vec![false; g.cols];
+    for (r, cells) in g.rows.iter().enumerate() {
+        for (k, &(c, s, _)) in cells.iter().enumerate() {
+            if !is_gone(r, k) && drop[c..c + s].iter().all(|&d| d) {
+                keep[c..c + s].fill(true);
+            }
+        }
+    }
+    drop.iter_mut().zip(&keep).for_each(|(d, &k)| *d &= !k);
+    let dropped = |a: usize, b: usize| drop[a.min(b)..b].iter().filter(|&&d| d).count();
+    let kept_width = |a: usize, b: usize| (a..b).filter(|&x| !drop[x]).map(|x| grid[x]).sum::<f64>();
+    let widen = |cell: &mut Cell, span: usize, w: Option<f64>| {
+        cell.span = cell.span.max(1) + span;
+        if let (Some(Width::Dxa(a)), Some(b)) = (&mut cell.width, w) {
+            *a += b;
+        }
+    };
+    let mut emptied = vec![false; rows.len()];
+    for (r, row) in rows.iter_mut().enumerate() {
+        let cells = &g.rows[r];
+        let end = cells.last().map_or(row.grid_before, |&(c, s, _)| c + s);
+        row.grid_after -= dropped(end, (end + row.grid_after).min(g.cols));
+        row.grid_before -= dropped(0, row.grid_before.min(g.cols));
+        if gone.get(gone.partition_point(|x| x.0 < r)).is_none_or(|x| x.0 != r) && dropped(row.grid_before, end) == 0 {
+            continue;
+        }
+        let had = !row.cells.is_empty();
+        let mut gap: (usize, Option<f64>) = (0, None);
+        let mut out: Vec<Cell> = Vec::with_capacity(row.cells.len());
+        for (k, mut cell) in std::mem::take(&mut row.cells).into_iter().enumerate() {
+            let (c, s, _) = cells[k];
+            let d = dropped(c, c + s);
+            if is_gone(r, k) {
+                if s > d {
+                    let w =
+                        if d == 0 { cell.width.and_then(|w| if let Width::Dxa(w) = w { Some(w) } else { None }) } else { Some(kept_width(c, c + s)) };
+                    match out.last_mut() {
+                        Some(n) => widen(n, s - d, w),
+                        None => gap = (gap.0 + s - d, Some(gap.1.unwrap_or(0.0) + w.unwrap_or(0.0))),
+                    }
+                }
+                continue;
+            }
+            if d > 0 {
+                let (was, now) = (grid[c..c + s].iter().sum::<f64>(), kept_width(c, c + s));
+                cell.span = s - d;
+                cell.width = match cell.width {
+                    Some(Width::Dxa(_)) => Some(Width::Dxa(now)),
+                    Some(Width::Pct(p)) if was > 0.0 => Some(Width::Pct(p * now / was)),
+                    w => w,
+                };
+            }
+            if gap.0 > 0 {
+                widen(&mut cell, gap.0, gap.1);
+                gap = (0, None);
+            }
+            out.push(cell);
+        }
+        emptied[r] = had && out.is_empty();
+        row.cells = out;
+    }
+    let mut r = 0;
+    rows.retain(|_| {
+        r += 1;
+        !emptied[r - 1]
+    });
+    let any = drop.contains(&true);
+    if any {
+        let mut x = 0;
+        grid.retain(|_| {
+            x += 1;
+            !drop[x - 1]
+        });
+    }
+    any
+}
+
+/// `grid` with the widths its columns are drawn at on `geo`.
+pub(super) fn drawn_grid(geo: &super::geometry::PageGeometry, table: TableId, grid: &mut [f64]) {
+    let mut xs: Vec<Option<f64>> = vec![None; grid.len() + 1];
+    for r in geo.rows.iter().filter(|r| r.table == table && !r.repeat) {
+        for &(x, k) in &r.edges {
+            if let Some(slot) = xs.get_mut(k)
+                && slot.is_none()
+            {
+                *slot = Some(x);
+            }
+        }
+    }
+    for (k, w) in grid.iter_mut().enumerate() {
+        if let (Some(a), Some(b)) = (xs[k], xs[k + 1]) {
+            *w = ((b - a).max(0.0) * 20.0).round() / 20.0;
+        }
+    }
+}
+
+/// The cells of the vertical merge starting at `(r, k)`: it and the continuations under it.
+fn merge_chain(g: &Grid, r: usize, k: usize) -> Vec<(usize, usize)> {
+    let c = g.rows[r][k].0;
+    std::iter::once((r, k))
+        .chain((r + 1..g.rows.len()).map_while(|rr| {
+            let kk = g.cell_at(rr, c)?;
+            (g.rows[rr][kk].0 == c && g.continues(rr, kk)).then_some((rr, kk))
+        }))
+        .collect()
 }
 
 fn first_para(blocks: &[Block]) -> Option<ParaId> {
@@ -51,10 +243,9 @@ impl Editor {
     pub(super) fn table_target(&self) -> Option<Target> {
         if let Selection::Cells { table, anchor, focus, .. } = self.selection {
             let t = self.index.table(&self.doc, table)?;
-            let g = Grid::of(t);
-            let (r0, r1) = (anchor.row.min(focus.row), anchor.row.max(focus.row));
-            let (c0, c1) = (anchor.col.min(focus.col), anchor.col.max(focus.col));
-            let _ = g;
+            let (nr, nc) = (t.rows.len().checked_sub(1)?, Grid::of(t).cols.checked_sub(1)?);
+            let (r0, r1) = (anchor.row.min(focus.row).min(nr), anchor.row.max(focus.row).min(nr));
+            let (c0, c1) = (anchor.col.min(focus.col).min(nc), anchor.col.max(focus.col).min(nc));
             return Some(Target { table, rows: (r0, r1), cols: (c0, c1) });
         }
         let focus = self.selection.focus()?;
@@ -85,21 +276,47 @@ impl Editor {
         caret: (usize, usize),
         fonts: &Fonts,
     ) -> Outcome {
-        let Some(t) = self.index.table(&self.doc, table) else { return Outcome::Unchanged("no table") };
+        let tx = self.begin(label);
+        self.rebuild_in(tx, table, rows, grid, caret, fonts)
+    }
+
+    /// [`Editor::rebuild`] in `tx`, begun with the steps the rows need first.
+    pub(super) fn rebuild_in(
+        &mut self,
+        mut tx: super::Tx,
+        table: TableId,
+        rows: Vec<Row>,
+        grid: Vec<f64>,
+        caret: (usize, usize),
+        fonts: &Fonts,
+    ) -> Outcome {
+        let Some(t) = self.index.table(&self.doc, table) else {
+            self.abort(tx);
+            return Outcome::Unchanged("no table");
+        };
         let n = t.rows.len();
+        let mut rows = rows;
+        tidy_merges(&mut rows);
         let story = self.index.table_slot(table).map_or(self.editing(), |s| self.index.story(s.container));
         let target = {
-            let g = Grid::of(&Table { rows: rows.clone(), grid: grid.clone(), ..t.clone() });
+            let g = Grid::of_rows(&rows, grid.len());
             let r = caret.0.min(rows.len().saturating_sub(1));
             g.cell_at(r, caret.1).or_else(|| rows.get(r).map(|x| x.cells.len().saturating_sub(1))).map(|c| g.merge_start(r, c))
         };
         let caret_para = target.and_then(|(r, c)| rows.get(r)?.cells.get(c).and_then(|c| first_para(&c.blocks)));
-        let mut tx = self.begin(label);
         if self.step(&mut tx, Step::Rows { table, range: 0..n, with: rows, grid: Some(grid) }).is_err() {
             self.abort(tx);
             return Outcome::Unchanged("table edit failed");
         }
         tx.stale_tables.push(table);
+        // Tracked: the same cell among the rows that stay
+        let caret_para = caret_para.filter(|p| self.index.para(&self.doc, *p).is_some()).or_else(|| {
+            let (r, c) = target?;
+            let deleted: Vec<_> = tx.rec.as_ref().map(|rec| rec.marks().1.iter().map(|m| m.id).collect()).unwrap_or_default();
+            let t = self.index.table(&self.doc, table)?;
+            let mut kept = t.rows.iter().filter(|row| !row.rev.del.as_ref().is_some_and(|m| deleted.contains(&m.id)));
+            kept.nth(r)?.cells.get(c).and_then(|c| first_para(&c.blocks))
+        });
         if let Some(p) = caret_para {
             self.selection = Selection::Caret(Position::text(story, p, Unit(0)));
         }
@@ -123,6 +340,13 @@ impl Editor {
             with.rotate_left(1);
         } else {
             with.rotate_right(1);
+        }
+        // Row-level controls stay over contiguous rows.
+        let order = t.rows[..a].iter().chain(&with).chain(&t.rows[b + 1..]);
+        let moved: std::collections::HashSet<crate::docx::ControlId> = with.iter().flat_map(|r| r.controls.iter().copied()).collect();
+        let split = control_rows(order).iter().any(|(c, &(first, last, n))| moved.contains(c) && last - first + 1 != n);
+        if split {
+            return self.region_boundary();
         }
         let table = tg.table;
         let mut tx = self.begin("Move Rows");
@@ -164,7 +388,7 @@ impl Editor {
         }
         let (old_w, total, nrows) = (t.grid.get(col).copied(), t.grid.iter().sum::<f64>(), t.rows.len());
         let mut lines: std::collections::HashMap<crate::layout::ParaId, f64> = std::collections::HashMap::new();
-        for (_, geo) in self.page_geometries() {
+        for geo in self.measured_pages(table) {
             for l in geo.lines.iter().filter(|l| !l.repeat) {
                 for &p in l.paras.iter() {
                     let (x0, x1) = l.span_of(p).unwrap_or_default();
@@ -186,6 +410,16 @@ impl Editor {
         }
         let target = Target { table, rows: (0, nrows.saturating_sub(1)), cols: (col, col) };
         self.table_format_on(target, &super::table_format::TableFormat::ColumnWidth(w), fonts)
+    }
+
+    /// The pages to measure a table's layout on: one in a header or footer shows on every page, so its first.
+    pub(super) fn measured_pages(&mut self, table: TableId) -> Vec<Rc<super::geometry::PageGeometry>> {
+        let repeats = self
+            .index
+            .table_slot(table)
+            .is_some_and(|s| matches!(self.index.host(self.index.story(s.container)), super::position::StoryId::HeaderFooter(_)));
+        let pages = self.page_geometries().into_iter().map(|(_, g)| g);
+        if repeats { pages.filter(|g| g.rows.iter().any(|r| r.table == table)).take(1).collect() } else { pages.collect() }
     }
 
     pub(super) fn fresh_items(&mut self, rows: &mut [Row], inside: &[crate::docx::ControlId]) {
@@ -219,6 +453,7 @@ impl Editor {
         let g = Grid::of(t);
         let mut row = template.clone();
         row.src = None;
+        row.rev = Default::default();
         for (k, cell) in row.cells.iter_mut().enumerate() {
             let col = g.rows[at][k].0;
             let inside = if below {
@@ -252,43 +487,56 @@ impl Editor {
         let Some(tg) = self.table_target() else { return Outcome::Unchanged("not in a table") };
         let Some(t) = self.index.table(&self.doc, tg.table) else { return Outcome::Unchanged("no table") };
         let g = Grid::of(t);
-        let widths: Vec<f64> = g.rows[tg.rows.0]
+        let mut grid = full_grid(t, g.cols);
+        let mut widths: Vec<f64> = g.rows[tg.rows.0]
             .iter()
             .filter(|&&(c, s, _)| c + s > tg.cols.0 && c <= tg.cols.1)
-            .map(|&(c, s, _)| (c..c + s).filter_map(|k| t.grid.get(k)).sum::<f64>())
+            .map(|&(c, s, _)| grid[c..c + s].iter().sum::<f64>())
             .collect();
-        let count = widths.len().max(1);
-        let at = if right { tg.cols.1 + 1 } else { tg.cols.0 };
-        let width = widths.first().copied().unwrap_or(72.0);
-        let mut grid = t.grid.clone();
-        for (k, w) in widths.iter().enumerate() {
-            grid.insert((at + k).min(grid.len()), *w);
+        if widths.is_empty() {
+            widths.push(72.0);
         }
+        let (count, added) = (widths.len(), widths.iter().sum::<f64>());
+        let at = if right { tg.cols.1 + 1 } else { tg.cols.0 }.min(grid.len());
+        grid.splice(at..at, widths.iter().copied());
         let mut rows = t.rows.clone();
         for (r, row) in rows.iter_mut().enumerate() {
             row.src = None;
+            if row.cells.is_empty() {
+                continue;
+            }
             if row.grid_before > 0 && at <= row.grid_before {
                 row.grid_before += count;
                 continue;
             }
             let cells = &g.rows[r];
-            {
-                {
-                    let k = cells.iter().position(|&(c, s, _)| c >= at || (at > c && at < c + s)).unwrap_or(cells.len());
-                    let like = &row.cells[if k == 0 { 0 } else { k - 1 }.min(row.cells.len().saturating_sub(1))];
-                    let mut new = empty_cell(like);
-                    new.span = 1;
-                    new.width = Some(crate::docx::props::Width::Dxa(width));
-                    for _ in 0..count {
-                        row.cells.insert(k, new.clone());
-                    }
-                    for c in row.cells.iter_mut().skip(k).take(count) {
-                        *c = Cell { blocks: empty_cell(c).blocks, ..c.clone() };
-                    }
+            // Inside a merged cell: it takes the new columns.
+            if let Some(k) = cells.iter().position(|&(c, s, _)| c < at && at < c + s) {
+                let cell = &mut row.cells[k];
+                cell.span = cell.span.max(1) + count;
+                if let Some(Width::Dxa(w)) = &mut cell.width {
+                    *w += added;
                 }
+                continue;
             }
+            if cells.last().is_some_and(|&(c, s, _)| at > c + s) {
+                row.grid_after += count;
+                continue;
+            }
+            let k = cells.iter().position(|&(c, _, _)| c >= at).unwrap_or(cells.len());
+            let like = &row.cells[k.saturating_sub(1)];
+            let new: Vec<Cell> = widths
+                .iter()
+                .map(|&w| {
+                    let mut c = empty_cell(like);
+                    c.span = 1;
+                    c.width = Some(Width::Dxa(w));
+                    c
+                })
+                .collect();
+            row.cells.splice(k..k, new);
         }
-        self.rebuild("Insert Columns", tg.table, rows, grid, (tg.rows.0, at), fonts)
+        self.rebuild(super::revisions::record::INSERT_COLUMNS, tg.table, rows, grid, (tg.rows.0, at), fonts)
     }
 
     pub(super) fn delete_rows(&mut self, fonts: &Fonts) -> Outcome {
@@ -330,6 +578,7 @@ impl Editor {
             return self.delete_table(fonts);
         }
         let (c0, c1) = tg.cols;
+        let mut grid = full_grid(t, g.cols);
         let mut rows: Vec<Row> = Vec::new();
         for (r, row) in t.rows.iter().enumerate() {
             let mut row = row.clone();
@@ -346,6 +595,15 @@ impl Editor {
                 }
                 let mut cell = cell.clone();
                 cell.span = s - lost;
+                if lost > 0 {
+                    let kept: f64 = (c..c + s).filter(|k| !(c0..=c1).contains(k)).map(|k| grid[k]).sum();
+                    let was: f64 = grid[c..c + s].iter().sum();
+                    cell.width = match cell.width {
+                        Some(Width::Dxa(_)) => Some(Width::Dxa(kept)),
+                        Some(Width::Pct(p)) if was > 0.0 => Some(Width::Pct(p * kept / was)),
+                        w => w,
+                    };
+                }
                 cells.push(cell);
             }
             if cells.is_empty() {
@@ -357,9 +615,8 @@ impl Editor {
         if rows.is_empty() {
             return self.delete_table(fonts);
         }
-        let mut grid = t.grid.clone();
-        grid.drain(c0..=c1.min(grid.len().saturating_sub(1)));
-        self.rebuild("Delete Columns", tg.table, rows, grid, (tg.rows.0, c0.saturating_sub(1)), fonts)
+        grid.drain(c0..=c1);
+        self.rebuild(super::revisions::record::DELETE_COLUMNS, tg.table, rows, grid, (tg.rows.0, c0.saturating_sub(1)), fonts)
     }
 
     pub(super) fn delete_table(&mut self, fonts: &Fonts) -> Outcome {
@@ -393,129 +650,250 @@ impl Editor {
         }
         let g = Grid::of(t);
         let (c0, c1) = tg.cols;
+        // Each row's cells in the columns: rows with none there at the selection's ends stay out of it.
+        let mut picked: Vec<(usize, std::ops::Range<usize>)> = Vec::with_capacity(tg.rows.1 - tg.rows.0 + 1);
         for r in tg.rows.0..=tg.rows.1 {
-            for &(c, s, _) in &g.rows[r] {
-                let inside = c >= c0 && c + s - 1 <= c1;
-                let outside = c + s - 1 < c0 || c > c1;
-                if !inside && !outside {
+            let (mut ks, mut cover) = (0..0, 0);
+            for (k, &(c, s, _)) in g.rows[r].iter().enumerate() {
+                let e = c + s - 1;
+                if e < c0 || c > c1 {
+                    continue;
+                }
+                if c < c0 || e > c1 {
                     return Outcome::Unchanged("the selection cuts a merged cell");
                 }
+                ks = if ks.is_empty() { k..k + 1 } else { ks.start..k + 1 };
+                cover += s;
+            }
+            if cover > 0 && cover != c1 - c0 + 1 {
+                return Outcome::Unchanged("rows without cells there");
+            }
+            if cover > 0 || !picked.is_empty() {
+                picked.push((r, ks));
             }
         }
+        while picked.last().is_some_and(|(_, ks)| ks.is_empty()) {
+            picked.pop();
+        }
+        if picked.iter().any(|(_, ks)| ks.is_empty()) {
+            return Outcome::Unchanged("rows without cells there");
+        }
+        let (Some(&(top, ref first_ks)), Some(&(bottom, _))) = (picked.first(), picked.last()) else {
+            return Outcome::Unchanged("no cells there");
+        };
+        if top == bottom && first_ks.len() < 2 {
+            return Outcome::Unchanged("one cell");
+        }
+        // A vertical merge the selection cuts
+        let below = |k: usize| {
+            let c = g.rows[bottom][k].0;
+            g.cell_at(bottom + 1, c).is_some_and(|kk| g.rows[bottom + 1][kk].0 == c && g.continues(bottom + 1, kk))
+        };
+        if first_ks.clone().any(|k| g.continues(top, k)) || picked.last().is_some_and(|(_, ks)| ks.clone().any(below)) {
+            return Outcome::Unchanged("the selection cuts a merged cell");
+        }
+        // Each cell-level content control keeps its cell's boundary.
+        let lead = first_ks.start;
+        let controls = &t.rows[top].cells[lead].controls;
+        if picked.iter().any(|(r, ks)| t.rows[*r].cells[ks.clone()].iter().any(|c| c.controls != *controls)) {
+            return self.region_boundary();
+        }
+        let width: f64 = (c0..=c1).filter_map(|c| t.grid.get(c)).sum();
         let mut content: Vec<Block> = Vec::new();
         let mut rows = t.rows.clone();
-        for r in tg.rows.0..=tg.rows.1 {
+        for (r, ks) in &picked {
+            let (r, ks) = (*r, ks.clone());
             let row = &mut rows[r];
             row.src = None;
-            let ks: Vec<usize> = (0..row.cells.len()).filter(|&k| g.rows[r][k].0 >= c0 && g.rows[r][k].0 <= c1).collect();
-            let Some(&first) = ks.first() else { continue };
-            for &k in &ks {
+            for k in ks.clone() {
                 let cell = &t.rows[r].cells[k];
                 let empty = cell.blocks.len() == 1 && matches!(&cell.blocks[0], Block::Para(p) if para_len(p) == Unit(0));
                 if !(empty || g.continues(r, k)) {
                     content.extend(cell.blocks.iter().cloned());
                 }
             }
-            let width: f64 = (c0..=c1).filter_map(|c| t.grid.get(c)).sum();
-            let mut merged = row.cells[first].clone();
-            merged.controls = ks.iter().map(|&k| &t.rows[r].cells[k].controls).find(|c| !c.is_empty()).cloned().unwrap_or_default();
+            let mut merged = row.cells[ks.start].clone();
             merged.span = c1 - c0 + 1;
-            merged.width = Some(crate::docx::props::Width::Dxa(width));
-            merged.v_merge = if tg.rows.0 == tg.rows.1 {
+            merged.width = Some(Width::Dxa(width));
+            merged.v_merge = if top == bottom {
                 VMerge::None
-            } else if r == tg.rows.0 {
+            } else if r == top {
                 VMerge::Restart
             } else {
                 VMerge::Continue
             };
             merged.blocks = empty_cell(&merged).blocks;
-            row.cells.splice(first..first + ks.len(), std::iter::once(merged));
+            row.cells.splice(ks, std::iter::once(merged));
         }
         if content.is_empty() {
-            content = empty_cell(&t.rows[tg.rows.0].cells[0]).blocks;
+            content = empty_cell(&t.rows[top].cells[lead]).blocks;
         }
         if matches!(content.last(), Some(Block::Table(_))) {
-            content.extend(empty_cell(&t.rows[tg.rows.0].cells[0]).blocks);
+            content.extend(empty_cell(&t.rows[top].cells[lead]).blocks);
         }
-        let k =
-            (0..rows[tg.rows.0].cells.len()).find(|&k| Grid::of(&Table { rows: rows.clone(), ..t.clone() }).rows[tg.rows.0][k].0 == c0).unwrap_or(0);
-        rows[tg.rows.0].cells[k].blocks = content;
+        rows[top].cells[lead].blocks = content;
         let grid = t.grid.clone();
-        self.rebuild(super::revisions::record::MERGE_CELLS, tg.table, rows, grid, (tg.rows.0, c0), fonts)
+        self.rebuild(super::revisions::record::MERGE_CELLS, tg.table, rows, grid, (top, c0), fonts)
     }
 
-    pub(super) fn split_cell(&mut self, cols: usize, fonts: &Fonts) -> Outcome {
+    /// Splits every selected cell into `cols` columns and `nrows` rows. A vertically merged cell splits into rows
+    /// by unmerging, so `nrows` must divide its rows (as in Word).
+    pub(super) fn split_cells_into(&mut self, cols: usize, nrows: usize, fonts: &Fonts) -> Outcome {
         let Some(tg) = self.table_target() else { return Outcome::Unchanged("not in a table") };
-        if cols < 2 {
+        let (cols, nrows) = (cols.max(1), nrows.max(1));
+        if cols < 2 && nrows < 2 {
             return Outcome::Unchanged("nothing to split");
         }
         let Some(t) = self.index.table(&self.doc, tg.table) else { return Outcome::Unchanged("no table") };
         let g = Grid::of(t);
-        let r = tg.rows.0;
-        let Some(k) = g.cell_at(r, tg.cols.0) else { return Outcome::Unchanged("no cell") };
-        let (c, s, _) = g.rows[r][k];
-        let mut grid = t.grid.clone();
+        // The merged cells the selection covers, by their start
+        let mut targets: Vec<(usize, usize)> = Vec::new();
+        for r in tg.rows.0..=tg.rows.1 {
+            for (k, &(c, s, _)) in g.rows[r].iter().enumerate() {
+                if c + s > tg.cols.0 && c <= tg.cols.1 {
+                    targets.push(g.merge_start(r, k));
+                }
+            }
+        }
+        targets.sort_unstable();
+        targets.dedup();
+        if targets.is_empty() {
+            return Outcome::Unchanged("no cell");
+        }
         let mut rows = t.rows.clone();
-        let added = cols.saturating_sub(s);
-        if added > 0 {
-            let last = c + s - 1;
-            let w = grid.get(last).copied().unwrap_or(72.0) / (added + 1) as f64;
-            grid[last] = w;
-            for _ in 0..added {
-                grid.insert(last + 1, w);
-            }
-            for (ri, row) in rows.iter_mut().enumerate() {
-                if ri == r {
-                    continue;
-                }
-                if let Some(kk) = g.cell_at(ri, last) {
-                    row.cells[kk].span += added;
-                } else if last < row.grid_before {
-                    row.grid_before += added;
-                } else {
-                    row.grid_after += added;
-                }
-            }
-        }
-        let total = s + added;
-        let row = &mut rows[r];
-        let first = row.cells[k].clone();
-        let mut new: Vec<Cell> = Vec::new();
-        for i in 0..cols {
-            let span = total / cols + usize::from(i < total % cols);
-            let mut cell = if i == 0 { first.clone() } else { empty_cell(&first) };
-            cell.span = span;
-            cell.width = None;
-            new.push(cell);
-        }
-        row.cells.splice(k..k + 1, new);
         rows.iter_mut().for_each(|r| r.src = None);
+        let mut grid = full_grid(t, g.cols);
+        if nrows > 1 {
+            let chains: Vec<Vec<(usize, usize)>> = targets.iter().map(|&(r, k)| merge_chain(&g, r, k)).collect();
+            if chains.iter().all(|ch| ch.len() == 1) {
+                // New rows under each row with a target, the row's other cells merged down over them
+                let mut target_rows: Vec<usize> = targets.iter().map(|t| t.0).collect();
+                target_rows.dedup();
+                let grown = rows.len() + target_rows.len() * (nrows - 1);
+                if grown > MAX_ROWS.max(rows.len()) {
+                    return Outcome::Unchanged("too many rows");
+                }
+                let cx = self.cx();
+                let mut out: Vec<Row> = Vec::with_capacity(grown);
+                let mut at = vec![0; rows.len()];
+                for (r, mut first) in rows.into_iter().enumerate() {
+                    at[r] = out.len();
+                    if target_rows.binary_search(&r).is_err() {
+                        out.push(first);
+                        continue;
+                    }
+                    let split = |k: usize| targets.binary_search(&(r, k)).is_ok();
+                    super::table_format::set_height(&mut first, None, &cx);
+                    let mut template = first.clone();
+                    template.rev = Default::default();
+                    for (k, c) in first.cells.iter_mut().enumerate() {
+                        if !split(k) && c.v_merge == VMerge::None {
+                            c.v_merge = VMerge::Restart;
+                        }
+                    }
+                    out.push(first);
+                    for _ in 1..nrows {
+                        let mut row = template.clone();
+                        for (k, cell) in row.cells.iter_mut().enumerate() {
+                            *cell = empty_cell(cell);
+                            if !split(k) {
+                                cell.v_merge = VMerge::Continue;
+                            }
+                        }
+                        out.push(row);
+                    }
+                }
+                rows = out;
+                targets = targets.iter().flat_map(|&(r, k)| (at[r]..at[r] + nrows).map(move |rr| (rr, k))).collect();
+            } else if chains.iter().all(|ch| ch.len() > 1 && ch.len() % nrows == 0) {
+                // Merged cells unmerged into groups of rows
+                let mut starts = Vec::with_capacity(targets.len() * nrows);
+                for ch in &chains {
+                    let step = ch.len() / nrows;
+                    for (i, &(r, k)) in ch.iter().enumerate() {
+                        if i % step == 0 {
+                            rows[r].cells[k].v_merge = if step == 1 { VMerge::None } else { VMerge::Restart };
+                            starts.push((r, k));
+                        }
+                    }
+                }
+                starts.sort_unstable();
+                targets = starts;
+            } else {
+                return Outcome::Unchanged("the rows must divide the merged cells' rows");
+            }
+        }
+        if cols > 1 {
+            let g = Grid::of_rows(&rows, grid.len());
+            // Right to left: a split moves only the columns after it
+            let mut work: Vec<(usize, Vec<(usize, usize)>)> = targets.iter().map(|&(r, k)| (g.rows[r][k].0, merge_chain(&g, r, k))).collect();
+            work.sort_unstable_by(|a, b| b.cmp(a));
+            let limit = MAX_COLUMNS.max(grid.len());
+            for (c, ch) in work {
+                let (r, k) = ch[0];
+                let s = rows[r].cells[k].span.max(1);
+                let added = cols.saturating_sub(s);
+                if added > 0 {
+                    // The grid grows to `limit` columns at most, so this walk over the rows runs that often at most.
+                    if grid.len() + added > limit {
+                        return Outcome::Unchanged("too many columns");
+                    }
+                    let last = c + s - 1;
+                    let w = grid[last] / (added + 1) as f64;
+                    grid[last] = w;
+                    grid.splice(last + 1..last + 1, std::iter::repeat_n(w, added));
+                    for (ri, row) in rows.iter_mut().enumerate() {
+                        if ch.binary_search_by_key(&ri, |x| x.0).is_ok() {
+                            continue;
+                        }
+                        if last < row.grid_before {
+                            row.grid_before += added;
+                            continue;
+                        }
+                        let mut col = row.grid_before;
+                        let over = row.cells.iter_mut().find(|cell| {
+                            col += cell.span.max(1);
+                            last < col
+                        });
+                        match over {
+                            Some(cell) => cell.span = cell.span.max(1) + added,
+                            None => row.grid_after += added,
+                        }
+                    }
+                }
+                let total = s + added;
+                let span = |i: usize| total / cols + usize::from(i < total % cols);
+                for &(rr, kk) in &ch {
+                    let first = &mut rows[rr].cells[kk];
+                    first.span = span(0);
+                    first.width = None;
+                    let v = first.v_merge;
+                    let first = &rows[rr].cells[kk];
+                    let pieces: Vec<Cell> = (1..cols)
+                        .map(|i| {
+                            let mut cell = empty_cell(first);
+                            (cell.span, cell.v_merge) = (span(i), v);
+                            cell
+                        })
+                        .collect();
+                    rows[rr].cells.splice(kk + 1..kk + 1, pieces);
+                }
+            }
+        }
+        let (r, k) = targets[0];
+        let c = Grid::of_rows(&rows, grid.len()).col_of(r, k).unwrap_or(0);
         self.rebuild(super::revisions::record::SPLIT_CELLS, tg.table, rows, grid, (r, c), fonts)
     }
 
-    pub(super) fn insert_table(&mut self, nrows: usize, ncols: usize, fonts: &Fonts) -> Outcome {
-        let Some(caret) = self.caret() else { return Outcome::Unchanged("no caret") };
-        let Some((para, at)) = caret.para_offset() else { return Outcome::Unchanged("caret at a row end") };
-        let (nrows, ncols) = (nrows.clamp(1, 63), ncols.clamp(1, 63));
-        let Some(slot) = self.index.para_slot(para) else { return Outcome::Unchanged("no paragraph") };
-        let Some(p) = self.index.para(&self.doc, para).cloned() else { return Outcome::Unchanged("no paragraph") };
-        let width = self.text_width(slot.container);
-        let cell_para = || Paragraph {
-            style: p.style.clone(),
-            mark: p.mark.clone(),
-            list: None,
-            inlines: vec![Inline::Text(String::new(), p.mark.clone())],
-            src: None,
-            id: crate::docx::next_para_id(),
-            div: None,
-            controls: Vec::new(),
-        };
+    /// A new table `width` wide of `content`, each row's cells' blocks (a row with fewer than `ncols` cells filled
+    /// with empty ones formatted like `like`), in the document's default table style, else Table Grid.
+    pub(super) fn new_table(&self, content: Vec<Vec<Vec<Block>>>, ncols: usize, width: f64, like: &Paragraph) -> Table {
         let border = Some(crate::docx::props::Border { style: "single".into(), width: 0.5, space: 0.0, shadow: false, color: None });
         // The document's default table style, else Table Grid.
         let has = |id: &str| self.doc.resolver.as_ref().is_some_and(|r| r.styles.by_id.contains_key(id));
         let style = self.doc.settings.default_table_style.clone().filter(|s| has(s)).or_else(|| has("TableGrid").then(|| "TableGrid".to_string()));
         let grid_style = style.is_some();
-        let cell = |w: f64| Cell {
+        let cell = |w: f64, blocks: Vec<Block>| Cell {
             width: Some(crate::docx::props::Width::Dxa(w)),
             span: 1,
             v_merge: VMerge::None,
@@ -533,13 +911,27 @@ impl Editor {
             hide_mark: false,
             diagonals: None,
             direct: Default::default(),
-            blocks: vec![Block::Para(cell_para())],
+            blocks,
             controls: Vec::new(),
             rev: Default::default(),
             ids: None,
         };
-        let w = (width / ncols as f64 * 20.0).floor() / 20.0;
-        let table = Table {
+        let w = ((width / ncols as f64 * 20.0).floor() / 20.0).max(1.0);
+        // Its style, or without one its grid lines and cell margins, as re-resolving and reading find them.
+        let direct = {
+            let w = self.cx().w;
+            let own = match &style {
+                Some(id) => format!("<{w}tblStyle {w}val=\"{}\"/>", crate::docx::write::props::esc(id)),
+                None => {
+                    let line = |side: &str| format!("<{w}{side} {w}val=\"single\" {w}sz=\"4\" {w}space=\"0\" {w}color=\"auto\"/>");
+                    let sides: String = ["top", "left", "bottom", "right", "insideH", "insideV"].into_iter().map(line).collect();
+                    let mar = |side: &str| format!("<{w}{side} {w}w=\"108\" {w}type=\"dxa\"/>");
+                    format!("<{w}tblBorders>{sides}</{w}tblBorders><{w}tblCellMar>{}{}</{w}tblCellMar>", mar("left"), mar("right"))
+                }
+            };
+            crate::docx::Raw(Some(std::rc::Rc::from(format!("<{w}tblPr>{own}</{w}tblPr>").as_str())))
+        };
+        Table {
             style_id: style,
             width: crate::docx::props::Width::Auto,
             jc: crate::docx::props::Jc::Left,
@@ -561,8 +953,9 @@ impl Editor {
             floating: None,
             bidi_visual: false,
             grid: vec![w; ncols],
-            rows: (0..nrows)
-                .map(|_| Row {
+            rows: content
+                .into_iter()
+                .map(|cells| Row {
                     height: None,
                     cant_split: false,
                     header: false,
@@ -582,7 +975,11 @@ impl Editor {
                     cell_spacing: None,
                     run: None,
                     nudge: None,
-                    cells: (0..ncols).map(|_| cell(w)).collect(),
+                    cells: {
+                        let n = cells.len();
+                        let pad = (n..ncols).map(|_| vec![Block::Para(blank_para(like))]);
+                        cells.into_iter().chain(pad).map(|b| cell(w, b)).collect()
+                    },
                     src: None,
                     direct: Default::default(),
                     exceptions: Default::default(),
@@ -592,29 +989,54 @@ impl Editor {
                 .collect(),
             src: None,
             id: crate::docx::next_para_id(),
-            direct: Default::default(),
-            controls: p.controls.clone(),
+            direct,
+            controls: Vec::new(),
             change: None,
             grid_change: None,
-        };
+        }
+    }
+
+    pub(super) fn insert_table(&mut self, nrows: usize, ncols: usize, fonts: &Fonts) -> Outcome {
+        let Some(caret) = self.caret() else { return Outcome::Unchanged("no caret") };
+        let Some((para, at)) = caret.para_offset() else { return Outcome::Unchanged("caret at a row end") };
+        let (nrows, ncols) = (nrows.clamp(1, MAX_ROWS), ncols.clamp(1, MAX_COLUMNS));
+        let Some(slot) = self.index.para_slot(para) else { return Outcome::Unchanged("no paragraph") };
+        let Some(p) = self.index.para(&self.doc, para).cloned() else { return Outcome::Unchanged("no paragraph") };
+        let width = self.text_width(slot.container);
+        let content = (0..nrows).map(|_| (0..ncols).map(|_| vec![Block::Para(blank_para(&p))]).collect()).collect();
+        let mut table = self.new_table(content, ncols, width, &p);
+        table.controls = p.controls.clone();
         let first = first_para(&table.rows[0].cells[0].blocks);
         let tid = TableId(table.id);
         let mut tx = self.begin("Insert Table");
         let len = para_len(&p);
-        let followed = self.index.blocks(&self.doc, slot.container).is_some_and(|b| slot.block + 1 < b.len());
+        let blocks = self.index.blocks(&self.doc, slot.container);
+        let followed = blocks.is_some_and(|b| slot.block + 1 < b.len());
+        let table_at = |k: Option<usize>| k.and_then(|k| blocks?.get(k)).is_some_and(|b| matches!(b, Block::Table(_)));
+        // Tables side by side join into one: a paragraph keeps them apart.
+        let before = at == Unit(0) && table_at(slot.block.checked_sub(1));
+        let after = at != Unit(0) && at == len && followed && table_at(Some(slot.block + 1));
         let place = if at == Unit(0) {
             slot.block
         } else if at == len && followed {
             slot.block + 1
         } else {
             let Some(second) = self.split_template(para) else { return Outcome::Unchanged("no paragraph") };
-            if self.step(&mut tx, Step::Split { para, at, second }).is_err() {
+            if self.step(&mut tx, Step::Split { para, at, second, kept: Vec::new() }).is_err() {
                 self.abort(tx);
                 return Outcome::Unchanged("split failed");
             }
             slot.block + 1
         };
-        if self.step(&mut tx, Step::Blocks { container: slot.container, range: place..place, with: vec![Block::Table(table)] }).is_err() {
+        let mut with = Vec::with_capacity(3);
+        if before {
+            with.push(Block::Para(blank_para(&p)));
+        }
+        with.push(Block::Table(table));
+        if after {
+            with.push(Block::Para(blank_para(&p)));
+        }
+        if self.step(&mut tx, Step::Blocks { container: slot.container, range: place..place, with }).is_err() {
             self.abort(tx);
             return Outcome::Unchanged("insert failed");
         }
@@ -625,20 +1047,51 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
+    /// The width text has at `container`: a cell's content, a text box's inside, a column of the section the
+    /// container is in. Never less than a point.
     pub(super) fn text_width(&self, container: Container) -> f64 {
-        match container {
-            Container::Cell { table, row, cell } => self
-                .index
-                .table(&self.doc, table)
-                .and_then(|t| {
-                    let g = Grid::of(t);
-                    let (c, s, _) = *g.rows.get(row)?.get(cell)?;
-                    let m = t.rows[row].cells[cell].margins;
-                    Some((c..c + s).filter_map(|k| t.grid.get(k)).sum::<f64>() - m[1] - m[3])
+        use super::position::StoryId;
+        use super::sub_templates::column_width;
+        let page = |s: &crate::docx::Section| s.page_w - s.left - s.right - s.gutter;
+        let section = |k: usize| self.doc.sections.get(k).or(self.doc.sections.first());
+        let w = match container {
+            Container::Cell { table, row, cell } => self.index.table(&self.doc, table).and_then(|t| {
+                let g = Grid::of(t);
+                let (c, s, _) = *g.rows.get(row)?.get(cell)?;
+                let m = t.rows[row].cells[cell].margins;
+                Some((c..c + s).filter_map(|k| t.grid.get(k)).sum::<f64>() - m[1] - m[3])
+            }),
+            Container::Section(k) => section(k).map(column_width),
+            Container::Story(StoryId::TextBox(f)) => self.index.float_anchor(f).and_then(|p| self.index.para(&self.doc, p)).and_then(|p| {
+                p.inlines.iter().find_map(|i| match i {
+                    Inline::Float(fl, _) if fl.id == f.0 => fl.text_box.as_ref().map(|tb| fl.w - tb.insets[0] - tb.insets[2]),
+                    Inline::Picture(pic, _) => pic.text.as_ref().filter(|t| t.id == f.0).map(|t| pic.w - t.text_box.insets[0] - t.text_box.insets[2]),
+                    _ => None,
                 })
-                .unwrap_or(144.0),
-            _ => self.doc.sections.first().map_or(468.0, |s| s.page_w - s.left - s.right),
+            }),
+            Container::Story(StoryId::HeaderFooter(_)) => section(self.story_section(container)).map(page),
+            Container::Story(StoryId::Footnote(_) | StoryId::Endnote(_)) => section(self.story_section(container)).map(column_width),
+            Container::Story(StoryId::BuildingBlock(part)) => {
+                section(self.surface.as_ref().filter(|s| s.part == part).map_or(0, |s| s.section)).map(column_width)
+            }
+            Container::Story(StoryId::Body) => section(0).map(column_width),
+        };
+        w.unwrap_or(468.0).max(1.0)
+    }
+
+    /// The section a story's text is laid out in: a header's or footer's first, a note's reference's.
+    fn story_section(&self, container: Container) -> usize {
+        use super::position::StoryId;
+        match container {
+            Container::Story(StoryId::HeaderFooter(k)) => {
+                let name = self.index.part_name(k);
+                self.doc.sections.iter().position(|s| s.headers.iter().chain(s.footers.iter()).flatten().any(|n| Some(n.as_str()) == name))
+            }
+            Container::Story(StoryId::Footnote(id)) => self.note_reference(crate::docx::NoteKind::Foot, id).and_then(|(p, _)| self.section_at(&p)),
+            Container::Story(StoryId::Endnote(id)) => self.note_reference(crate::docx::NoteKind::End, id).and_then(|(p, _)| self.section_at(&p)),
+            _ => None,
         }
+        .unwrap_or(0)
     }
 
     pub(super) fn select_cells(&mut self, shape: super::selection::CellShape) -> Outcome {
@@ -779,16 +1232,25 @@ impl Editor {
 }
 
 pub(super) fn cuts_region(t: &Table, r0: usize, r1: usize, within: bool) -> bool {
-    let mut ids: Vec<crate::docx::ControlId> = t.rows.iter().flat_map(|r| r.controls.iter().copied()).collect();
-    ids.sort_unstable();
-    ids.dedup();
-    ids.into_iter().any(|c| {
-        let rows: Vec<usize> = t.rows.iter().enumerate().filter(|(_, r)| r.controls.contains(&c)).map(|(k, _)| k).collect();
-        let inside = rows.iter().any(|&k| r0 <= k && k <= r1);
-        let all_in = rows.iter().all(|&k| r0 <= k && k <= r1);
-        let covers = (r0..=r1).all(|k| rows.contains(&k));
-        inside && !covers && (within || !all_in)
+    let all = control_rows(&t.rows);
+    let picked = control_rows(t.rows.iter().take(r1.saturating_add(1)).skip(r0));
+    picked.iter().any(|(c, &(_, _, n))| {
+        let all_in = all.get(c).is_some_and(|&(first, last, _)| r0 <= first && last <= r1);
+        let covers = r1.checked_sub(r0).is_some_and(|d| n == d + 1);
+        !covers && (within || !all_in)
     })
+}
+
+/// Each row-level control over `rows`: the first and last row it is on, and how many rows it is on.
+pub(super) fn control_rows<'a>(rows: impl IntoIterator<Item = &'a Row>) -> std::collections::HashMap<crate::docx::ControlId, (usize, usize, usize)> {
+    let mut out = std::collections::HashMap::new();
+    for (k, r) in rows.into_iter().enumerate() {
+        for &c in &r.controls {
+            let e = out.entry(c).or_insert((k, k, 0));
+            (e.1, e.2) = (k, e.2 + 1);
+        }
+    }
+    out
 }
 
 pub(super) const NEW_POSITION: TablePos = TablePos {

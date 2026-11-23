@@ -403,6 +403,19 @@ public enum RowPosition
     Below,
 }
 
+/// <summary>What separates a table's cells in text.</summary>
+public enum TextSeparator
+{
+    /// <summary>Paragraph marks: a cell for each paragraph.</summary>
+    Paragraphs,
+    /// <summary>Tab characters.</summary>
+    Tabs,
+    /// <summary>Commas.</summary>
+    Commas,
+    /// <summary>Another character, given with the command.</summary>
+    Other,
+}
+
 /// <summary>Where new columns go.</summary>
 public enum ColumnPosition
 {

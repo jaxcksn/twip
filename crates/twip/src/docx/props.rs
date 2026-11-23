@@ -643,6 +643,8 @@ pub enum Leader {
     Dot,
     Hyphen,
     Underscore,
+    /// A heavy line (tab stops only; an alignment tab has none).
+    Heavy,
     MiddleDot,
 }
 
@@ -808,7 +810,8 @@ impl ParaProps {
                             leader: match attr(t, "leader") {
                                 Some("dot") => Leader::Dot,
                                 Some("hyphen") => Leader::Hyphen,
-                                Some("underscore" | "heavy") => Leader::Underscore,
+                                Some("underscore") => Leader::Underscore,
+                                Some("heavy") => Leader::Heavy,
                                 Some("middleDot") => Leader::MiddleDot,
                                 _ => Leader::None,
                             },

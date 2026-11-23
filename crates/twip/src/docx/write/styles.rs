@@ -36,6 +36,7 @@ pub(super) fn styles(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Resu
             Some((dir, _)) => format!("{dir}/styles.xml"),
             None => "styles.xml".to_string(),
         };
+        let part = package::free_name(&src.package, parts, &part)?;
         package::add_part(&src.package, parts, &src.main, &part, STYLES_TYPE, STYLES_REL)?;
         package::set(parts, &part, xml.into_bytes());
         return Ok(());
@@ -43,16 +44,21 @@ pub(super) fn styles(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Resu
     let dom = roxmltree::Document::parse(&xml).map_err(|e| e.to_string())?;
     let root = dom.root_element();
     let mut splices: Vec<Splice> = Vec::new();
-    let mut seen: HashMap<&str, ()> = HashMap::new();
+    // A repeated id: the table holds the last one read, so that one is written and the earlier ones are kept as they
+    // are (a deleted style's go with it).
+    let mut last: HashMap<&str, usize> = HashMap::new();
+    for n in root.children().filter(|n| is_w(*n, "style")) {
+        if let Some(id) = attr(n, "styleId") {
+            last.insert(id, n.range().start);
+        }
+    }
     for n in root.children().filter(|n| n.is_element()) {
         let was = &xml[n.range()];
         if is_w(n, "style") {
             let Some(id) = attr(n, "styleId") else { continue };
-            // A repeated id: the table holds the last one read, so the earlier ones are kept as they are.
-            if seen.insert(id, ()).is_some() {
-                continue;
-            }
-            match styles.by_id.get(id).filter(|s| s.origin == StyleOrigin::Document) {
+            let own = styles.by_id.get(id).filter(|s| s.origin == StyleOrigin::Document);
+            match own {
+                Some(_) if last.get(id) != Some(&n.range().start) => {}
                 Some(s) if s.raw == was => {}
                 Some(s) => splices.push((n.range(), s.raw.clone())),
                 None => splices.push((n.range(), String::new())),
@@ -67,7 +73,7 @@ pub(super) fn styles(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Resu
             splices.push((n.range(), now.to_string()));
         }
     }
-    let mut added: Vec<_> = ours.iter().filter(|s| !seen.contains_key(s.id.as_str())).collect();
+    let mut added: Vec<_> = ours.iter().filter(|s| !last.contains_key(s.id.as_str())).collect();
     added.sort_by(|a, b| a.id.cmp(&b.id));
     if !added.is_empty() {
         let at = xml.rfind("</").ok_or("a styles part without its end tag")?;

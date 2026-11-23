@@ -19,11 +19,13 @@ fn formatting(e: &Editor) -> Vec<String> {
         .zip(ids)
         .map(|(t, id)| {
             let p = e.index().para(e.document(), id).expect("a paragraph");
-            let runs: Vec<String> = p
+            let mut runs: Vec<String> = p
                 .inlines
                 .iter()
                 .filter_map(|i| if let Inline::Text(_, r) = i { Some(format!("{}/{:?}/{}/{}", r.size, r.color, r.bold, r.italic)) } else { None })
                 .collect();
+            // Runs formatted alike save as one.
+            runs.dedup();
             format!("{t:.20} {:?} {:?} {:?} {}", p.style.style_id, p.style.space_before, p.style.jc, runs.join(" "))
         })
         .collect()
@@ -113,4 +115,19 @@ fn a_character_style_takes_character_formatting() {
     let raw = e.document().resolver.as_ref().expect("styles").styles.get("Emph").expect("Emph").raw.clone();
     let xml = e.format_style(&raw, vec![C::SetBold(true), C::SetItalic(false)], fonts()).expect("formats it");
     assert!(xml.contains("<w:b/>") && xml.contains("<w:i w:val=\"0\"/>"), "{xml}");
+}
+
+#[test]
+fn a_style_of_another_kind_is_refused() {
+    use crate::api::command::TableSize;
+    use crate::api::value::StyleId;
+    let mut e = fixture();
+    let o = e.execute(Command::SetParagraphStyle(StyleId("GridAccent".into())), fonts());
+    let p = e.index().para(e.document(), texts_ids(&e)[0]).expect("a paragraph");
+    assert!(matches!(o, super::super::commands::Outcome::Refused(_)), "{o:?}");
+    assert_ne!(p.style.style_id.as_deref(), Some("GridAccent"));
+    e.execute(Command::InsertTable(TableSize { rows: 2, columns: 2 }), fonts());
+    let o = e.execute(Command::SetTableStyle(StyleId("Heading1".into())), fonts());
+    assert!(matches!(o, super::super::commands::Outcome::Refused(_)), "{o:?}");
+    assert!(matches!(e.execute(Command::SetTableStyle(StyleId("GridAccent".into())), fonts()), super::super::commands::Outcome::Changed(_)));
 }

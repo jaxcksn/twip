@@ -65,6 +65,9 @@ pub struct RevisionInfo {
     pub pair: Option<RevisionId>,
 }
 
+/// The most characters of commented text a [`CommentThread`] carries.
+pub const ANCHOR_TEXT_LIMIT: usize = 1_000;
+
 /// A comment thread: the first comment and its replies.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -73,7 +76,7 @@ pub struct CommentThread {
     pub id: CommentId,
     /// Whether the thread is resolved.
     pub done: bool,
-    /// The commented text.
+    /// The commented text, cut to its first [`ANCHOR_TEXT_LIMIT`] characters.
     pub anchor_text: String,
     /// The page it starts on.
     pub page: u32,
@@ -147,7 +150,7 @@ pub struct RichRun {
     /// Struck through.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub strikethrough: Option<bool>,
-    /// A link's address.
+    /// A link's address: a web, mail, FTP or phone one, or a relative one. The run of any other is plain text.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub link: Option<String>,
 }

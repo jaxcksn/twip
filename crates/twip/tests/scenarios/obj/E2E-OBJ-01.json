@@ -1,6 +1,6 @@
 {
   "id": "E2E-OBJ-01",
-  "title": "A click on an inline picture selects it; arrows leave it selected; Esc puts the caret before it",
+  "title": "A click on an inline picture selects it; Esc puts the caret before it; an arrow puts it after",
   "fixture": "FX-OBJ.docx",
   "methods": [
     "M",
@@ -26,20 +26,6 @@
       }
     },
     {
-      "key": "ArrowRight"
-    },
-    {
-      "expect": {
-        "selection": {
-          "kind": "object",
-          "inline": {
-            "para": 1,
-            "offset": 0
-          }
-        }
-      }
-    },
-    {
       "key": "Escape"
     },
     {
@@ -47,6 +33,23 @@
         "caret": {
           "para": 1,
           "offset": 0
+        }
+      }
+    },
+    {
+      "click": {
+        "para": 1,
+        "offset": 0
+      }
+    },
+    {
+      "key": "ArrowRight"
+    },
+    {
+      "expect": {
+        "caret": {
+          "para": 1,
+          "offset": 1
         }
       }
     }

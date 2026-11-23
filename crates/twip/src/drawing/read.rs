@@ -164,11 +164,12 @@ fn pic(n: Node, ctx: &mut Ctx) -> Shape {
     spans.sp_pr = sp_pr.map(|p| p.range());
     let x = sp_pr.and_then(|p| a(p, "xfrm"));
     spans.xfrm = x.map(|e| e.range());
+    spans.geom = sp_pr.and_then(|p| a(p, "prstGeom").or_else(|| a(p, "custGeom"))).map(|e| e.range());
     let (xfrm, ..) = xfrm_of(x);
     let geom = geometry(sp_pr, ctx);
     let Props { line, effects, kept_3d, .. } = props(sp_pr, ctx, &mut spans);
     let blip_fill = named(n, "blipFill");
-    spans.fill = blip_fill.map(|b| b.range());
+    spans.blip = blip_fill.map(|b| b.range());
     let blip = blip_fill.map_or_else(|| BlipFill::parse(n, &mut |_| None), |b| BlipFill::parse(b, &mut |r| ctx.source.image(r)));
     let nv = named(n, "nvPicPr");
     let mut nonvisual = nv_of(nv.and_then(|v| named(v, "cNvPr")));

@@ -14,7 +14,8 @@ internal sealed record SessionOptionsWire(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<Dictionary>? Dictionaries = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyDictionary<string, string>? FieldLabels = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? ApplicationFieldTypes = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<ReferenceRule>? SubTemplateRules = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<ReferenceRule>? SubTemplateRules = null,
+    bool Mac = false);
 
 internal sealed record EngineOptionsWire(string Fonts);
 

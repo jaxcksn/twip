@@ -85,7 +85,7 @@ impl Editor {
             ListGallerySection { kind: ListGallerySectionKind::RecentlyUsed, entries: recent },
         ];
         let Some(res) = self.doc.resolver.as_ref() else { return out };
-        let mut nums: Vec<i64> = self.list_numbers();
+        let mut nums: Vec<i64> = self.list_paras().into_iter().map(|(_, n, _)| n).collect();
         nums.dedup();
         let mut seen = std::collections::HashSet::new();
         let document = nums
@@ -115,21 +115,6 @@ impl Editor {
                 .collect();
             out.push(ListGallerySection { kind: ListGallerySectionKind::ListStyles, entries });
         }
-        out
-    }
-
-    /// The `numId`s of the document's list paragraphs, in document order.
-    fn list_numbers(&self) -> Vec<i64> {
-        fn walk(blocks: &[Block], out: &mut Vec<i64>) {
-            for b in blocks {
-                match b {
-                    Block::Para(p) => out.extend(p.style.num.filter(|(id, _)| *id != 0).map(|(id, _)| id)),
-                    Block::Table(t) => t.rows.iter().flat_map(|r| r.cells.iter()).for_each(|c| walk(&c.blocks, out)),
-                }
-            }
-        }
-        let mut out = Vec::new();
-        self.doc.sections.iter().for_each(|s| walk(&s.blocks, &mut out));
         out
     }
 
@@ -188,7 +173,16 @@ impl Editor {
                 now.truncate(k_ + 1);
                 ListDefinitionChange { levels: now, apply_to: ListApplyTo::WholeList, name: None }
             }
-            _ => ListDefinitionChange { levels: levels.clone(), apply_to: ListApplyTo::WholeList, name: None },
+            // The list's style links where the entry has none
+            (_, now) => {
+                let mut levels = levels.clone();
+                for (l, was) in levels.iter_mut().zip(now.iter().flat_map(|(_, n)| n)) {
+                    if l.linked_style.is_none() {
+                        l.linked_style.clone_from(&was.linked_style);
+                    }
+                }
+                ListDefinitionChange { levels, apply_to: ListApplyTo::WholeList, name: None }
+            }
         };
         let out = self.set_list_definition(change, fonts);
         if !matches!(out, Outcome::Unchanged(_) | Outcome::Refused(_)) {
@@ -211,8 +205,10 @@ impl Editor {
         let cx = next.numbering.cx();
         let w = cx.w.clone();
         let colours = next.styles.colours;
-        next.numbering
-            .set_abstract_xml(super::list_defs::abstract_xml(abstract_id, None, &super::list_defs::complete(levels), None, &[], &cx), &colours)?;
+        next.numbering.set_abstract_xml(
+            super::list_defs::abstract_xml(abstract_id, None, &super::list_defs::complete(levels), None, &[], &[], &cx),
+            &colours,
+        )?;
         next.numbering.set_num_xml(format!("<{w}num {w}numId=\"{num_id}\"><{w}abstractNumId {w}val=\"{abstract_id}\"/></{w}num>"), &colours)?;
         let scx = next.styles.cx();
         let mut counters = crate::docx::numbering::Counters::default();

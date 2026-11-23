@@ -43,6 +43,37 @@ fn with_start(raw: &str, start: &str) -> String {
     raw.find('>').map_or_else(|| raw.to_string(), |e| format!("{start}{}", &raw[e + 1..]))
 }
 
+/// Built-in style `id`'s definition, when the document doesn't define it.
+fn built_in_definition(styles: &Styles, id: &str) -> Option<String> {
+    if styles.by_id.contains_key(id) {
+        return None;
+    }
+    let b = crate::services::styles::builtin::BUILT_IN.iter().find(|b| b.id == id)?;
+    Some(crate::services::styles::builtin::definition(b, &styles.cx().w))
+}
+
+/// The kind of style a dialog type makes.
+fn kind_of(kind: StyleDialogType) -> StyleKind {
+    match kind {
+        StyleDialogType::Character => StyleKind::Character,
+        StyleDialogType::Table => StyleKind::Table,
+        StyleDialogType::List => StyleKind::Numbering,
+        _ => StyleKind::Paragraph,
+    }
+}
+
+/// The style a new style of `kind` is based on when its base is of another kind: the default paragraph, character
+/// or table style; none for a list style.
+fn default_base(styles: &Styles, kind: StyleKind) -> Option<String> {
+    let id = match kind {
+        StyleKind::Paragraph => styles.default_paragraph.clone(),
+        StyleKind::Character => Some("DefaultParagraphFont".to_string()),
+        StyleKind::Table => styles.default_table.clone(),
+        StyleKind::Numbering => None,
+    }?;
+    styles.get(&id).is_some_and(|s| s.kind == kind).then_some(id)
+}
+
 /// The `w:type` a style of a dialog type is.
 fn xml_type(kind: StyleDialogType) -> &'static str {
     match kind {
@@ -141,7 +172,10 @@ impl Editor {
         let cx = styles.cx();
         let w = &cx.w;
         let pending = match &open {
-            StyleOpen::Modify(id) => styles.get(&id.0).ok_or_else(|| Error::unavailable("no such style"))?.raw.clone(),
+            StyleOpen::Modify(id) => match styles.get(&id.0) {
+                Some(s) => s.raw.clone(),
+                None => built_in_definition(styles, &id.0).ok_or_else(|| Error::unavailable("no such style"))?,
+            },
             StyleOpen::Create => {
                 let name = next_new_name(styles);
                 let para = self.selection.focus().and_then(|p| p.para_offset()).and_then(|(p, _)| self.index.para(&self.doc, p));
@@ -271,6 +305,9 @@ impl Editor {
         let res = self.doc.resolver.clone().ok_or_else(|| Error::unavailable("no styles"))?;
         let cx = res.styles.cx();
         let w = cx.w.clone();
+        if now.border != was.border {
+            super::commands::bounds::border(now.border.as_ref())?;
+        }
         let para = matches!(now.kind, StyleDialogType::Paragraph | StyleDialogType::Linked);
         let table = now.kind == StyleDialogType::Table;
         let mut commands = Vec::new();
@@ -349,6 +386,11 @@ impl Editor {
             if now.kind == StyleDialogType::Character {
                 pending = set_child(&pending, &cx, "pPr", None);
             }
+            let kind = kind_of(now.kind);
+            if parsed(&res.styles, &pending).and_then(|s| s.based_on).is_some_and(|b| res.styles.get(&b).is_none_or(|b| b.kind != kind)) {
+                let base = default_base(&res.styles, kind).map(|b| format!("<{w}basedOn {w}val=\"{}\"/>", esc(&b)));
+                pending = set_child(&pending, &cx, "basedOn", base);
+            }
         }
         let part = if now.kind == StyleDialogType::Table { now.table_part } else { TableStylePart::WholeTable };
         let mut v = self.style_values(&pending, now.open.clone(), &res.styles, part)?;
@@ -364,7 +406,12 @@ impl Editor {
     /// Applies the style dialog: the style added or changed (a new paragraph or linked style applied to the selected
     /// paragraphs, a character style to the selected text), as one undo step.
     pub fn style_dialog_apply(&mut self, v: StyleDialog, fonts: &Fonts) -> Outcome {
-        let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
+        let Some(mut res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
+        if let StyleOpen::Modify(id) = &v.open
+            && let Some(def) = built_in_definition(&res.styles, &id.0)
+        {
+            let _ = std::rc::Rc::make_mut(&mut res).styles.set_xml(def);
+        }
         let styles = &res.styles;
         let Some(style) = parsed(styles, &v.pending) else { return Outcome::invalid("not a style") };
         let except = match &v.open {
@@ -380,9 +427,24 @@ impl Editor {
                 Err(NameRefusal::Reserved) => return Outcome::invalid("that style name is reserved for a built-in style"),
             }
         }
+        // The style the dialog opened on, as it was
+        if let StyleOpen::Modify(id) = &v.open
+            && styles.get(&id.0).is_none_or(|s| s.id != style.id || s.kind != style.kind || s.kind != kind_of(v.kind))
+        {
+            return Outcome::invalid("the style's id and type are the ones the dialog opened on");
+        }
+        // A base the dialog set: an existing style of the same type
+        let open = except.and_then(|e| styles.get(e));
+        let kind = open.map_or(kind_of(v.kind), |o| o.kind);
+        if let Some(b) = &style.based_on
+            && open.is_none_or(|o| o.based_on.as_ref() != Some(b))
+            && styles.get(b).is_none_or(|b| b.kind != kind)
+        {
+            return Outcome::invalid("the base style doesn't exist or is of another type");
+        }
         if let Some(n) = &style.next
-            && !styles.by_id.contains_key(n)
             && *n != style.id
+            && styles.get(n).is_none_or(|n| n.kind != StyleKind::Paragraph)
         {
             return Outcome::invalid("the following style doesn't exist");
         }
@@ -415,7 +477,10 @@ impl Editor {
         let kind = v.kind;
         let levels = v.list_levels.clone();
         let label = if creating { "New Style" } else { "Modify Style" };
-        let char_id = format!("{id}Char");
+        let char_id = (0..)
+            .map(|n| if n == 0 { format!("{id}Char") } else { format!("{id}Char{n}") })
+            .find(|c| !styles.by_id.contains_key(c))
+            .unwrap_or_default();
         if linked {
             raw = set_child(&raw, &cx, "link", Some(format!("<{w}link {w}val=\"{}\"/>", esc(&char_id))));
         }
@@ -427,6 +492,14 @@ impl Editor {
                 n = esc(&first),
                 i = esc(&id)
             )
+        });
+        // A linked style's character half takes its character formatting.
+        let char_xml = char_xml.or_else(|| {
+            let half =
+                style.link.as_deref().and_then(|l| styles.get(l)).filter(|c| c.kind == StyleKind::Character && c.link.as_deref() == Some(&id))?;
+            let rpr = Props::parse(Some(&raw), "style", &cx).get("rPr").map(str::to_string);
+            let was = styles.get(&id).and_then(|s| Props::parse(Some(&s.raw), "style", &cx).get("rPr").map(str::to_string));
+            (!creating && style.kind == StyleKind::Paragraph && rpr != was).then(|| set_child(&half.raw, &cx, "rPr", rpr))
         });
         self.joined(label, fonts, |e| {
             let out = e.edit_styles(
@@ -595,6 +668,12 @@ impl Editor {
                     (x.top.clone(), x.left.clone(), x.bottom.clone(), x.right.clone(), x.between.clone(), x.inside_vertical.clone())
                 };
                 let edged = edges(a) != edges(b);
+                // The lines written: every edge when one changed, a diagonal when it did
+                let written = [&b.top, &b.bottom, &b.left, &b.right, &b.between, &b.inside_vertical].map(|e| (e, edged));
+                let crossed = [(&b.diagonal_down, a.diagonal_down != b.diagonal_down), (&b.diagonal_up, a.diagonal_up != b.diagonal_up)];
+                for (e, _) in written.into_iter().chain(crossed).filter(|x| x.1) {
+                    super::commands::bounds::border(e.as_ref())?;
+                }
                 // A diagonal as set when it changed (nil once turned off), else as the style has it.
                 let cross = |side: &str, was: &Option<crate::api::command::Border>, now: &Option<crate::api::command::Border>| {
                     (was != now).then(|| line(side, now))
@@ -666,6 +745,11 @@ impl Editor {
                     };
                     let tw = |p: crate::api::value::Points| (p.0 * 20.0).round() as i64;
                     let m = &b.cell_margins;
+                    use super::commands::bounds::{MAX, within};
+                    within("the indent", b.indent.0, -MAX, MAX)?;
+                    for v in [m.top, m.left, m.bottom, m.right] {
+                        within("the cell margin", v.0, 0.0, MAX)?;
+                    }
                     raw = root(&raw, "tblPr", TBLPR, &|p| {
                         p.set("jc", format!("<{w}jc {w}val=\"{jc}\"/>"));
                         p.set("tblInd", format!("<{w}tblInd {w}w=\"{}\" {w}type=\"dxa\"/>", tw(b.indent)));

@@ -13,7 +13,7 @@ use crate::editing::table_format::{Edges, TableFormat};
 impl Editor {
     pub(in crate::editing) fn insert_columns_by(&mut self, c: InsertColumns, fonts: &Fonts) -> Outcome {
         let right = c.side == HorizontalSide::Right;
-        self.joined("Insert Columns", fonts, |e| {
+        self.joined(crate::editing::revisions::record::INSERT_COLUMNS, fonts, |e| {
             let mut out = Outcome::Unchanged("no table");
             for _ in 0..c.count.unwrap_or(1) {
                 match e.insert_columns(right, fonts) {
@@ -26,31 +26,30 @@ impl Editor {
     }
 
     pub(in crate::editing) fn split_cells(&mut self, s: SplitCells, fonts: &Fonts) -> Outcome {
-        let (columns, rows) = (s.columns as usize, s.rows.unwrap_or(1) as usize);
-        self.joined(crate::editing::revisions::record::SPLIT_CELLS, fonts, |e| {
-            let mut out = Outcome::Unchanged("nothing to split");
-            if columns > 1 {
-                out = e.split_cell(columns, fonts);
-                if !matches!(out, Outcome::Changed(_)) {
-                    return out;
-                }
-            }
-            if rows > 1 {
-                match e.split_cell_rows(rows, fonts) {
-                    o @ Outcome::Changed(_) => out = o,
-                    o if columns <= 1 => out = o,
-                    _ => {}
-                }
-            }
-            out
-        })
+        self.split_cells_into(s.columns as usize, s.rows.unwrap_or(1) as usize, fonts)
     }
 
     pub(in crate::editing) fn auto_fit_columns(&mut self, to: AutoFit, fonts: &Fonts) -> Outcome {
-        if to != AutoFit::Contents {
-            return Outcome::unsupported("fitting columns to the window or fixed widths");
-        }
         let Some(tg) = self.table_target() else { return Outcome::unavailable("not in a table") };
+        if to != AutoFit::Contents {
+            let Some(t) = self.index.table(&self.doc, tg.table) else { return Outcome::unavailable("not in a table") };
+            let mut grid = crate::editing::tables::full_grid(t, Grid::of(t).cols);
+            if let Some(geo) = self.measured_pages(tg.table).first() {
+                crate::editing::tables::drawn_grid(geo, tg.table, &mut grid);
+            }
+            let fit = if to == AutoFit::Fixed {
+                TableFormat::Fit { fixed: true, width: Width::Auto, grid }
+            } else {
+                // The columns keep their proportions across the text width.
+                let avail = self.index.table_slot(tg.table).map_or(468.0, |s| self.text_width(s.container));
+                let total: f64 = grid.iter().sum();
+                let scale = if total > 0.0 { avail / total } else { 0.0 };
+                let n = grid.len().max(1) as f64;
+                let grid = grid.iter().map(|w| if scale > 0.0 { w * scale } else { avail / n }).collect();
+                TableFormat::Fit { fixed: false, width: Width::Pct(1.0), grid }
+            };
+            return self.table_format_on(tg, &fit, fonts);
+        }
         self.joined("AutoFit", fonts, |e| {
             let mut out = Outcome::Unchanged("nothing to fit");
             for col in tg.cols.0..=tg.cols.1 {
@@ -137,17 +136,19 @@ fn cell_borders(b: CellBorders) -> (Edges, Border) {
 }
 
 impl Editor {
+    /// The selection's first cell's margins: top, left, bottom, right.
+    pub fn cell_margins_here(&self) -> Option<[f64; 4]> {
+        let tg = self.table_target()?;
+        let t = self.index.table(&self.doc, tg.table)?;
+        let k = Grid::of(t).cell_at(tg.rows.0, tg.cols.0)?;
+        Some(t.rows.get(tg.rows.0)?.cells.get(k)?.margins)
+    }
+
     pub(in crate::editing) fn set_cell_margins(&mut self, m: CellMargins, fonts: &Fonts) -> Outcome {
-        let Some(tg) = self.table_target() else { return Outcome::unavailable("not in a table") };
-        let now = self
-            .index
-            .table(&self.doc, tg.table)
-            .and_then(|t| {
-                let g = Grid::of(t);
-                let k = g.cell_at(tg.rows.0, tg.cols.0)?;
-                Some(t.rows.get(tg.rows.0)?.cells.get(k)?.margins)
-            })
-            .unwrap_or([0.0, 5.4, 0.0, 5.4]);
+        if self.table_target().is_none() {
+            return Outcome::unavailable("not in a table");
+        }
+        let now = self.cell_margins_here().unwrap_or([0.0, 5.4, 0.0, 5.4]);
         let pick = |v: Option<crate::api::value::Points>, d: f64| v.map_or(d, |v| v.0);
         let margins = [pick(m.top, now[0]), pick(m.left, now[1]), pick(m.bottom, now[2]), pick(m.right, now[3])];
         self.table_format(&TableFormat::CellMargins(margins), fonts)
@@ -188,8 +189,10 @@ impl Editor {
     }
 
     pub(in crate::editing) fn set_table_style(&mut self, id: StyleId, fonts: &Fonts) -> Outcome {
-        if !self.doc.resolver.as_ref().is_some_and(|r| r.styles.by_id.contains_key(&id.0)) {
-            return Outcome::invalid("no such style");
+        match self.doc.resolver.as_ref().and_then(|r| r.styles.by_id.get(&id.0)) {
+            None => return Outcome::invalid("no such style"),
+            Some(s) if s.kind != crate::docx::styles::StyleKind::Table => return Outcome::invalid("not a table style"),
+            Some(_) => {}
         }
         self.table_format(&TableFormat::TableStyle(id.0), fonts)
     }

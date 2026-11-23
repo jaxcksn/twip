@@ -65,6 +65,49 @@ fn shown(begin: &mut Inline) {
     }
 }
 
+/// Where form field `f`'s span is in `inlines`.
+fn form_span(inlines: &[Inline], f: FieldId) -> Option<crate::docx::fields::FieldSpan> {
+    crate::docx::fields::spans(inlines).into_iter().find(|s| matches!(&inlines[s.begin], Inline::FieldBegin { id, .. } if *id == f))
+}
+
+/// The positions of form field `f`'s bookmark `name` in its paragraph's `inlines`: a start and the end after it, the
+/// pair overlapping the field.
+fn owned_bookmark(inlines: &[Inline], f: FieldId, name: &str) -> Option<(usize, usize)> {
+    if name.is_empty() {
+        return None;
+    }
+    let s = form_span(inlines, f)?;
+    let named = |i: &Inline, end: bool| {
+        let Inline::Bookmark(n) = i else { return false };
+        n.strip_prefix('/').map_or(!end && n.eq_ignore_ascii_case(name), |n| end && n.eq_ignore_ascii_case(name))
+    };
+    let start = inlines[..s.end].iter().rposition(|i| named(i, false))?;
+    let end = start + 1 + inlines[start + 1..].iter().position(|i| named(i, true))?;
+    (end > s.begin).then_some((start, end))
+}
+
+/// Renames form field `f`'s bookmark (`owned`, its positions in `inlines`) to `new`: a field without one gets one
+/// around it, and an empty name removes it.
+fn rename_form_bookmark(f: FieldId, inlines: &mut Vec<Inline>, owned: Option<(usize, usize)>, new: &str) {
+    match owned {
+        Some((start, end)) if new.is_empty() => {
+            inlines.remove(end);
+            inlines.remove(start);
+        }
+        Some((start, end)) => {
+            inlines[start] = Inline::Bookmark(new.to_string());
+            inlines[end] = Inline::Bookmark(format!("/{new}"));
+        }
+        None if new.is_empty() => {}
+        None => {
+            if let Some(s) = form_span(inlines, f) {
+                inlines.insert(s.end + 1, Inline::Bookmark(format!("/{new}")));
+                inlines.insert(s.begin, Inline::Bookmark(new.to_string()));
+            }
+        }
+    }
+}
+
 impl Editor {
     /// The form field `id` names, else the one at the selection: its id and paragraph.
     fn form_field(&self, id: Option<&crate::api::value::ElementId>) -> Option<(FieldId, ParaId)> {
@@ -94,8 +137,16 @@ impl Editor {
         if !edit(&mut data) || data == form.data {
             return Outcome::Unchanged("already so");
         }
+        let (old, new) = (form.data.name.clone(), data.name.clone());
         Rc::make_mut(form).data = data;
         shown(begin);
+        if old != new {
+            let owned = owned_bookmark(&inlines, f, &old);
+            if let Err(why) = self.form_name_free(f, owned.map(|_| old.as_str()), &new) {
+                return Outcome::invalid(why);
+            }
+            rename_form_bookmark(f, &mut inlines, owned, &new);
+        }
         let mut tx = self.begin(label);
         if self.step(&mut tx, Step::Restyle { para, inlines }).is_err() {
             self.abort(tx);
@@ -104,29 +155,49 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
+    /// Whether `new` can name form field `f`: no other form field has it, nor a bookmark but its own (`own`).
+    fn form_name_free(&self, f: FieldId, own: Option<&str>, new: &str) -> Result<(), &'static str> {
+        for p in self.index.para_ids().filter_map(|para| self.index.para(&self.doc, para)) {
+            for i in &p.inlines {
+                match i {
+                    Inline::FieldBegin { id, form: Some(form), .. } if *id != f && form.data.name.eq_ignore_ascii_case(new) => {
+                        return Err("another form field has the name");
+                    }
+                    Inline::Bookmark(n) if n.eq_ignore_ascii_case(new) && !own.is_some_and(|o| n.eq_ignore_ascii_case(o)) => {
+                        return Err("a bookmark has the name");
+                    }
+                    _ => {}
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub(in crate::editing) fn insert_form_field(&mut self, t: FormFieldType, fonts: &Fonts) -> Outcome {
         let (code, stem, display) = match t {
             FormFieldType::Text => ("FORMTEXT", "Text", "\u{2002}".repeat(5)),
             FormFieldType::CheckBox => ("FORMCHECKBOX", "Check", String::new()),
             FormFieldType::DropDown => ("FORMDROPDOWN", "Dropdown", String::new()),
         };
-        // Word's names: the kind and the first number no form field of the document has.
-        let mut names = Vec::new();
+        // Word's names: the kind and the first number no form field or bookmark of the document has.
+        let mut names = std::collections::HashSet::new();
         for para in self.index.para_ids() {
             if let Some(p) = self.index.para(&self.doc, para) {
                 names.extend(p.inlines.iter().filter_map(|i| match i {
                     Inline::FieldBegin { form: Some(f), .. } => Some(f.data.name.to_ascii_lowercase()),
+                    Inline::Bookmark(n) if !n.starts_with('/') => Some(n.to_ascii_lowercase()),
                     _ => None,
                 }));
             }
         }
         let n = (1..).find(|n| !names.contains(&format!("{stem}{n}").to_ascii_lowercase())).unwrap_or(1);
+        let name = format!("{stem}{n}");
         let kind = match t {
             FormFieldType::Text => FormKind::default(),
             FormFieldType::CheckBox => FormKind::CheckBox { size: None, default: false, checked: None },
             FormFieldType::DropDown => FormKind::DropDown { entries: Vec::new(), default: 0, result: None },
         };
-        let data = FormData { name: format!("{stem}{n}"), enabled: true, kind, ..FormData::default() };
+        let data = FormData { name: name.clone(), enabled: true, kind, ..FormData::default() };
         let id = FieldId::next();
         let out = self.insert_inlines(
             |run| {
@@ -137,6 +208,8 @@ impl Editor {
                 if let Some(b) = v.first_mut() {
                     shown(b);
                 }
+                v.insert(0, Inline::Bookmark(name.clone()));
+                v.push(Inline::Bookmark(format!("/{name}")));
                 v
             },
             "Insert Form Field",
@@ -178,7 +251,7 @@ impl Editor {
                 }
                 match &mut d.kind {
                     FormKind::Text { input, default, max_length, format } => {
-                        let Some(t) = c.text else { return c.check_box.is_none() && c.drop_down.is_none() };
+                        let Some(t) = c.text else { return true };
                         if let Some(v) = t.input_type {
                             *input = input_name(v).into();
                         }
@@ -193,7 +266,7 @@ impl Editor {
                         }
                     }
                     FormKind::CheckBox { size, default, .. } => {
-                        let Some(b) = c.check_box else { return c.text.is_none() && c.drop_down.is_none() };
+                        let Some(b) = c.check_box else { return true };
                         if let Some(v) = b.size {
                             *size = match v {
                                 crate::api::value::AutoOr::Auto => None,
@@ -205,14 +278,12 @@ impl Editor {
                         }
                     }
                     FormKind::DropDown { entries, default, result } => {
-                        let Some(dd) = c.drop_down else { return c.text.is_none() && c.check_box.is_none() };
+                        let Some(dd) = c.drop_down else { return true };
                         if let Some(v) = dd.entries {
                             *entries = v;
                             *result = None;
                         }
-                        if let Some(v) = dd.default {
-                            *default = v.min(entries.len().saturating_sub(1) as u32);
-                        }
+                        *default = dd.default.unwrap_or(*default).min(entries.len().saturating_sub(1) as u32);
                     }
                 }
                 true
@@ -223,6 +294,13 @@ impl Editor {
 
     pub(in crate::editing) fn fill_form_field(&mut self, c: FormFieldFill, fonts: &Fonts) -> Outcome {
         let Some((f, para)) = self.form_field(c.id.as_ref()) else { return Outcome::unavailable("no form field") };
+        let enabled = self
+            .index
+            .para(&self.doc, para)
+            .is_some_and(|p| p.inlines.iter().any(|i| matches!(i, Inline::FieldBegin { id, form: Some(form), .. } if *id == f && form.data.enabled)));
+        if !enabled {
+            return Outcome::unavailable("the field is not enabled");
+        }
         if let Some(text) = c.text {
             let max = self.index.para(&self.doc, para).and_then(|p| {
                 p.inlines.iter().find_map(|i| match i {
@@ -236,7 +314,7 @@ impl Editor {
             let Some(max) = max else { return Outcome::unavailable("not a text form field") };
             let text: String = if max > 0 { text.chars().take(max as usize).collect() } else { text };
             let mut tx = self.begin("Fill In");
-            if !self.set_result(&mut tx, f, &text) {
+            if !self.set_result(&mut tx, f, &crate::api::review::Body::Text(text)) {
                 self.abort(tx);
                 return Outcome::Unchanged("stale field");
             }

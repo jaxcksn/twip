@@ -31,7 +31,7 @@ pub const SELECTOR: ClientRect = ClientRect { left: INSET, top: INSET, width: BA
 /// A section's text columns between `left` and `right` (page points).
 fn columns(s: &Section, left: f64, right: f64) -> Vec<Span> {
     let c = &s.columns;
-    let n = c.num.max(1);
+    let n = c.num.clamp(1, crate::docx::Columns::MAX);
     let widths: Vec<(f64, f64)> = if c.equal || c.cols.len() < n {
         let w = ((right - left) - c.space * (n - 1) as f64) / n as f64;
         vec![(w, c.space); n]
@@ -59,10 +59,14 @@ pub fn model(e: &mut Editor, section: usize) -> RulerModel {
     let columns = columns(s, left, right);
     let (page_w, page_h, top, bottom) = (s.page_w, s.page_h, s.top, s.page_h - s.bottom);
     let paras = e.ruler_paras();
-    let styles: Vec<_> = paras.iter().take(2000).filter_map(|&p| e.index().para(e.document(), p)).map(|p| p.style.clone()).collect();
-    let key = |s: &crate::docx::ParaStyle| (s.ind_left, s.ind_right, s.ind_first, s.tabs.clone());
-    let mixed = styles.first().is_some_and(|f| styles.iter().any(|s| key(s) != key(f)));
-    let indents = styles.first().map_or(RulerIndents::default(), |s| RulerIndents {
+    let (doc, index) = (e.document(), e.index());
+    let mut styles = paras.iter().filter_map(|&p| index.para(doc, p)).map(|p| &p.style);
+    let first = styles.next().cloned();
+    let same = |a: &crate::docx::ParaStyle, b: &crate::docx::ParaStyle| {
+        (a.ind_left, a.ind_right, a.ind_first) == (b.ind_left, b.ind_right, b.ind_first) && a.tabs == b.tabs
+    };
+    let mixed = first.as_ref().is_some_and(|f| styles.any(|s| !std::rc::Rc::ptr_eq(s, f) && !same(s, f)));
+    let indents = first.as_ref().map_or(RulerIndents::default(), |s| RulerIndents {
         left: Points(s.ind_left),
         right: Points(s.ind_right),
         first_line: Points(s.ind_first),
@@ -76,24 +80,13 @@ pub fn model(e: &mut Editor, section: usize) -> RulerModel {
     let caret = e.caret_view();
     let level = focus.and_then(|f| e.index().chain_of(&f).last().copied());
     match (caret, level) {
-        (Some(c), Some(l)) => {
-            if let Some(geo) = e.page_geometry(c.page) {
-                let margins = e.index().table(e.document(), l.table).and_then(|t| t.rows.get(l.row)?.cells.get(l.cell)).map(|c| c.margins);
-                if let (Some(cell), Some(m)) = (geo.cells.iter().find(|g| g.chain.last() == Some(&(l.table, l.row, l.cell))), margins) {
-                    text = Span { start: Points(cell.rect[0] + m[1]), end: Points(cell.rect[2] - m[3]) };
+        (Some(_), Some(_)) => {
+            if let Some(t) = e.table_edges() {
+                if let Some([a, b]) = t.text {
+                    text = Span { start: Points(a), end: Points(b) };
                 }
-                let mut cells: Vec<[f64; 4]> =
-                    geo.cells.iter().filter(|g| g.chain.last().is_some_and(|k| (k.0, k.1) == (l.table, l.row))).map(|g| g.rect).collect();
-                cells.sort_by(|a, b| a[0].total_cmp(&b[0]));
-                // Cells are laid out from the left border's middle; the boundaries are the grid's, from its outer edge.
-                let table = e.index().table(e.document(), l.table);
-                let border = table.and_then(|t| t.rows.get(l.row)?.cells.first()?.left.as_ref().or(t.borders[1].as_ref()));
-                let shift = -border.filter(|b| b.visible()).map_or(0.0, |b| b.width / 2.0);
-                table_columns = cells.iter().map(|r| r[0]).chain(cells.last().map(|r| r[2])).map(|x| Points(x + shift)).collect();
-                let mut ys: Vec<f64> = geo.rows.iter().filter(|r| r.table == l.table).flat_map(|r| [r.rect[1], r.rect[3]]).collect();
-                ys.sort_by(f64::total_cmp);
-                ys.dedup_by(|a, b| (*a - *b).abs() < 0.01);
-                table_rows = ys.into_iter().map(Points).collect();
+                table_columns = t.columns.into_iter().map(Points).collect();
+                table_rows = t.rows.into_iter().map(|(y, _)| Points(y)).collect();
             }
         }
         (Some(c), None) if focus.is_some_and(|f| f.story == StoryId::Body) => {
@@ -466,8 +459,8 @@ pub fn hit(view: &RulerView, bands: Bands, x: f64, y: f64) -> Option<Hit> {
     if on_v {
         let near = |px: f64, pt: f64| (px - (v.origin + pt * v.scale)).abs() <= 3.0;
         let r = &m.vertical;
-        if let Some(k) = r.table_rows.iter().position(|b| near(y, b.0)) {
-            return Some(Hit::Marker(Marker::TableRow(k as u32)));
+        if let Some(k) = r.table_rows.iter().skip(1).position(|b| near(y, b.0)) {
+            return Some(Hit::Marker(Marker::TableRow(k as u32 + 1)));
         }
         if r.table_rows.is_empty() {
             if near(y, r.text.start.0) {

@@ -44,17 +44,26 @@ impl Editor {
         let anchor = self.selection.anchor().unwrap_or(focus);
         let mut p = focus;
         for _ in 0..100_000 {
+            if let Some((para, mut u)) = p.para_offset()
+                && let Some(q) = self.index.para(&self.doc, para)
+            {
+                let t = super::text::UnitText::in_view(q, self.doc.review.view);
+                while u < t.len() {
+                    let v = t.next_grapheme(u);
+                    if v <= u {
+                        break;
+                    }
+                    if t.shows(u..v, ch) {
+                        self.selection = Selection::range(anchor, Position::text(p.story, para, v), Granularity::Char);
+                        return Outcome::Moved;
+                    }
+                    u = v;
+                }
+                p = Position::text(p.story, para, t.len());
+            }
             let next = self.nav().right(p, false);
             if next.same_place(&p) {
                 return Outcome::Unchanged("not found");
-            }
-            if let (Some((para, u)), Some((pn, un))) = (p.para_offset(), next.para_offset())
-                && para == pn
-                && let Some(q) = self.index.para(&self.doc, para)
-                && super::text::UnitText::of(q).text.chars().skip(u.0 as usize).take((un.0 - u.0) as usize).any(|c| c == ch)
-            {
-                self.selection = Selection::range(anchor, next, Granularity::Char);
-                return Outcome::Moved;
             }
             p = next;
         }
@@ -94,7 +103,9 @@ impl Editor {
         let mut out = Vec::new();
         let mut inside = false;
         let n = self.nav().pages.len();
-        'pages: for page in 0..n {
+        // From the page before the earlier end's: a position at a line's end also starts the next line.
+        let first = [anchor, focus].into_iter().filter_map(|p| self.nav().line_of(p).map(|l| l.page)).min().unwrap_or(0);
+        'pages: for page in first.saturating_sub(1)..n {
             let Some(geo) = self.pages.page(page, &self.index) else { continue };
             let parts = geo
                 .lines
@@ -129,15 +140,35 @@ impl Editor {
         out
     }
 
-    pub(super) fn block_text(&mut self) -> String {
+    /// The block's text, a line a piece, cut to its first `limit` characters, and whether that is all of it. Each
+    /// paragraph is read once.
+    pub(super) fn block_text(&mut self, limit: usize) -> (String, bool) {
         let pieces = self.block_pieces();
-        pieces
-            .iter()
-            .filter_map(|(_, _, para, a, b)| {
-                let p = self.index.para(&self.doc, *para)?;
-                Some(super::text::UnitText::of(p).text.chars().skip(a.0 as usize).take((b.0 - a.0) as usize).collect::<String>())
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
+        let view = self.doc.review.view;
+        let (mut out, mut chars, mut first) = (String::new(), 0usize, true);
+        let mut cur: Option<(crate::layout::ParaId, super::text::Seen)> = None;
+        for &(_, _, para, a, b) in &pieces {
+            if !matches!(&cur, Some((p, _)) if *p == para) {
+                let Some(p) = self.index.para(&self.doc, para) else { continue };
+                cur = Some((para, crate::prof::time("block:paragraph", || super::seen_text(p, view))));
+            }
+            let Some((_, seen)) = &cur else { continue };
+            let (lo, hi) = (seen.units.partition_point(|&u| u < a.0), seen.units.partition_point(|&u| u < b.0));
+            if !first {
+                if chars == limit {
+                    return (out, false);
+                }
+                out.push('\n');
+                chars += 1;
+            }
+            first = false;
+            let take = (hi - lo).min(limit - chars);
+            out.extend(seen.chars[lo..lo + take].iter().copied().map(super::plain_char));
+            chars += take;
+            if take < hi - lo {
+                return (out, false);
+            }
+        }
+        (out, true)
     }
 }

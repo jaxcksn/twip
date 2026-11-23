@@ -10,11 +10,14 @@ use crate::layout::{Change, ParaId, TableId, Unit};
 use super::index::{Container, DocIndex};
 use super::position::{Place, Position};
 
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Edges {
     pub lead: u32,
     pub trail: u32,
     pub under: u32,
+    /// The ends of the paragraphs a vanished mark joined onto the paragraph's start ([`crate::docx::JoinedPart`])
+    /// once applied, when they aren't where the splice moves them: an undone splice's.
+    pub parts: Option<Rc<[u32]>>,
 }
 
 #[derive(Clone, Debug)]
@@ -29,6 +32,8 @@ pub enum Step {
         para: ParaId,
         at: Unit,
         second: Paragraph,
+        /// What `para` gets back once its tail is gone: the empty runs a join took from it.
+        kept: Vec<Inline>,
     },
     Join {
         first: ParaId,
@@ -54,10 +59,6 @@ pub enum Step {
     Restyle {
         para: ParaId,
         inlines: Vec<Inline>,
-    },
-    TableWidth {
-        table: TableId,
-        width: crate::docx::props::Width,
     },
     ImageData {
         index: usize,
@@ -211,7 +212,11 @@ pub struct TableProps {
     pub jc: crate::docx::props::Jc,
     pub ind: f64,
     pub ind_pct: Option<f64>,
+    /// Whether its indent is a twips one (`w:tblInd` dxa).
+    pub ind_set: bool,
     pub borders: [Option<crate::docx::props::Border>; 6],
+    /// Fixed column widths (`w:tblLayout` fixed), not fitted to the content.
+    pub fixed: bool,
     pub bands: (i64, i64),
     pub floating: Option<crate::docx::props::TablePos>,
     pub cell_spacing: f64,
@@ -299,7 +304,7 @@ impl Targets {
                 self.run(mark);
                 self.revisions.extend(style.change.as_ref().map(|c| c.mark.id));
             }
-            Step::TableWidth { table, .. } | Step::TableProps { table, .. } => {
+            Step::TableProps { table, .. } => {
                 self.tables.insert(*table);
             }
             Step::HeaderPart { blocks: Some(b), .. } | Step::Note { blocks: Some(b), .. } => self.blocks(b),
@@ -394,7 +399,9 @@ impl TableProps {
             jc: t.jc,
             ind: t.ind,
             ind_pct: t.ind_pct,
+            ind_set: t.ind_set,
             borders: t.borders.clone(),
+            fixed: t.fixed,
             bands: t.bands,
             floating: t.floating,
             cell_spacing: t.cell_spacing,
@@ -470,6 +477,24 @@ impl Map {
 
 // Inlines by units
 
+/// The markers at unit `u` of `p` from the first one `first` takes on: what an insertion there goes before (`Edges`'s
+/// `under`; empty text isn't counted).
+pub fn markers_from(p: &Paragraph, u: Unit, first: impl Fn(&Inline) -> bool) -> u32 {
+    let (mut at, mut n, mut seen) = (0u32, 0, false);
+    for i in &p.inlines {
+        let w = i.units() as u32;
+        if at > u.0 || (at == u.0 && w > 0) {
+            break;
+        }
+        if at == u.0 && !matches!(i, Inline::Text(..)) {
+            seen |= first(i);
+            n += u32::from(seen);
+        }
+        at += w;
+    }
+    n
+}
+
 pub fn para_len(p: &Paragraph) -> Unit {
     Unit(p.inlines.iter().map(Inline::units).sum::<usize>() as u32)
 }
@@ -519,7 +544,28 @@ fn cut(inlines: &mut Vec<Inline>, u: Unit, after_markers: bool) -> usize {
     inlines.len()
 }
 
-fn splice(p: &mut Paragraph, range: Range<Unit>, edges: Edges, with: Vec<Inline>) -> (Vec<Inline>, u32) {
+/// Moves the ends of the paragraphs a vanished mark joined onto `p`'s start past a splice of `range` with `added`
+/// units, or to `exact`: their ends before, when that moved them.
+fn shift_parts(p: &mut Paragraph, range: &Range<Unit>, added: u32, exact: Option<&[u32]>) -> Option<Rc<[u32]>> {
+    let src = p.src.as_mut().filter(|s| !s.joined.is_empty())?;
+    let (start, end) = (range.start.0, range.end.0);
+    let exact = exact.filter(|e| e.len() == src.joined.len());
+    let moved = |k: usize, at: u32| match exact {
+        Some(e) => e[k],
+        None if at > start => at.max(end) - end + start + added,
+        None => at,
+    };
+    if src.joined.iter().enumerate().all(|(k, j)| moved(k, j.end) == j.end) {
+        return None;
+    }
+    let before = src.joined.iter().map(|j| j.end).collect();
+    for (k, j) in Rc::make_mut(src).joined.iter_mut().enumerate() {
+        j.end = moved(k, j.end);
+    }
+    Some(before)
+}
+
+fn splice(p: &mut Paragraph, range: Range<Unit>, edges: &Edges, with: Vec<Inline>) -> (Vec<Inline>, u32) {
     let back = |inlines: &[Inline], mut k: usize, mut n: u32| {
         while n > 0 && k > 0 {
             k -= 1;
@@ -542,6 +588,14 @@ fn splice(p: &mut Paragraph, range: Range<Unit>, edges: Edges, with: Vec<Inline>
         b += 1;
     }
     let b = b.max(a);
+    let empty = |i: &Inline| matches!(i, Inline::Text(t, _) if t.is_empty());
+    // Empty runs beside the edit, when the edit leaves units; otherwise the sole carrier stays
+    let units = |s: &[Inline]| s.iter().any(|i| i.units() > 0);
+    let (a, b) = if units(&with) || units(&p.inlines[..a]) || units(&p.inlines[b..]) {
+        (a - p.inlines[..a].iter().rev().take_while(|i| empty(i)).count(), b + p.inlines[b..].iter().take_while(|i| empty(i)).count())
+    } else {
+        (a, b)
+    };
     let removed: Vec<Inline> = p.inlines.splice(a..b, std::iter::empty()).collect();
     let mut at = a;
     let n = with.len();
@@ -600,15 +654,34 @@ fn units_of(inlines: &[Inline]) -> u32 {
     inlines.iter().map(Inline::units).sum::<usize>() as u32
 }
 
+/// The line numbers' run, from the styles now in place.
+fn refresh_line_number_run(doc: &mut Document) {
+    if let Some(res) = &doc.resolver {
+        doc.line_number_run = Some(crate::docx::line_number_run(res));
+    }
+}
+
 // Hints
 
+/// Whether the container's blocks are a section's as layout sees them: a section's, or the sub-template being edited.
+fn lays_out_as_section(idx: &DocIndex, container: Container) -> bool {
+    match container {
+        Container::Section(_) => true,
+        Container::Story(super::position::StoryId::BuildingBlock(k)) => idx.flow == Some(k),
+        _ => false,
+    }
+}
+
 fn hint_in(idx: &DocIndex, container: Container, block: usize, added: isize) -> Option<Change> {
-    let (section, b, row) = idx.top_block(container, block)?;
-    let flow = matches!(container, Container::Section(_))
-        || matches!(container, Container::Story(s) if idx.flow.is_some() && s == super::position::StoryId::BuildingBlock(idx.flow.unwrap_or_default()));
-    match (container, row) {
-        (_, None) if flow => Some(Change { section, first: b, old_end: b + 1, new_end: (b as isize + 1 + added) as usize, row: None }),
-        (_, row) => Some(Change { section, first: b, old_end: b + 1, new_end: b + 1, row }),
+    span_hint(idx, container, block, 1, (1 + added).max(0) as usize)
+}
+
+/// `old_len` blocks from `first` became `new_len`; outside a section, the top block holding them changed.
+fn span_hint(idx: &DocIndex, container: Container, first: usize, old_len: usize, new_len: usize) -> Option<Change> {
+    let (section, b, row) = idx.top_block(container, first)?;
+    match row {
+        None if lays_out_as_section(idx, container) => Some(Change { section, first: b, old_end: b + old_len, new_end: b + new_len, row: None }),
+        row => Some(Change { section, first: b, old_end: b + 1, new_end: b + 1, row }),
     }
 }
 
@@ -628,25 +701,27 @@ impl Step {
                     return Err(StepError::OutOfRange);
                 }
                 let added = units_of(&with);
+                let indexed = super::index::indexes(&with);
                 let marker = |i: &&Inline| i.units() == 0 && !matches!(i, Inline::Text(..));
                 let lead = with.iter().take_while(marker).count();
                 let trail = if lead == with.len() { 0 } else { with.iter().rev().take_while(marker).count() };
-                let (removed, after) = splice(p, range.clone(), edges, with);
+                let (removed, after) = splice(p, range.clone(), &edges, with);
+                let parts = shift_parts(p, &range, added, edges.parts.as_deref());
                 let under = if added == 0 { after } else { 0 };
                 let new_end = Unit(range.start.0 + added);
-                idx.replaced_inlines(doc, para, &removed);
+                idx.replaced_inlines(doc, para, &removed, indexed);
                 Ok(Applied {
                     inverse: Step::Text {
                         para,
                         range: range.start..new_end,
                         with: removed,
-                        edges: Edges { lead: lead as u32, trail: trail as u32, under },
+                        edges: Edges { lead: lead as u32, trail: trail as u32, under, parts },
                     },
                     map: Map::Text { para, start: range.start, old_end: range.end, new_end },
                     hint: para_hint(idx, para, 0),
                 })
             }
-            Step::Split { para, at, mut second } => {
+            Step::Split { para, at, mut second, kept } => {
                 let slot = idx.para_slot(para).ok_or(StepError::Missing)?;
                 let p = idx.para_mut(doc, para).ok_or(StepError::Missing)?;
                 let len = para_len(p);
@@ -674,6 +749,7 @@ impl Step {
                 } else {
                     second.inlines = tail;
                 }
+                p.inlines.extend(kept);
                 let second_id = ParaId(second.id);
                 let blocks = idx.blocks_mut(doc, slot.container).ok_or(StepError::Missing)?;
                 blocks.insert(slot.block + 1, Block::Para(second));
@@ -691,27 +767,20 @@ impl Step {
                     return Err(StepError::OutOfRange);
                 }
                 let blocks = idx.blocks_mut(doc, a.container).ok_or(StepError::Missing)?;
-                let Block::Para(tail) = blocks.remove(b.block) else { return Err(StepError::Missing) };
-                let inlines = tail.inlines.clone();
+                let tail = blocks.remove(b.block);
+                let Block::Para(t) = &tail else { return Err(StepError::Missing) };
+                let (inlines, indexed) = (t.inlines.clone(), super::index::indexes(&t.inlines));
                 let p = match blocks.get_mut(a.block) {
                     Some(Block::Para(p)) => p,
                     _ => return Err(StepError::Missing),
                 };
                 let at = para_len(p);
-                splice(p, at..at, Edges::default(), inlines);
-                idx.replaced_blocks(doc, a.container, &[Block::Para(tail.clone())]);
-                idx.replaced_inlines(doc, first, &[]);
-                let hint = match a.container {
-                    Container::Section(_) => idx.top_block(a.container, a.block).map(|(section, f, _)| Change {
-                        section,
-                        first: f,
-                        old_end: f + 2,
-                        new_end: f + 1,
-                        row: None,
-                    }),
-                    _ => hint_in(idx, a.container, a.block, 0),
-                };
-                Ok(Applied { inverse: Step::Split { para: first, at, second: tail }, map: Map::Join { first, second, offset: at }, hint })
+                let (kept, _) = splice(p, at..at, &Edges::default(), inlines);
+                idx.replaced_blocks(doc, a.container, std::slice::from_ref(&tail));
+                idx.replaced_inlines(doc, first, &[], indexed);
+                let Block::Para(tail) = tail else { return Err(StepError::Missing) };
+                let hint = span_hint(idx, a.container, a.block, 2, 1);
+                Ok(Applied { inverse: Step::Split { para: first, at, second: tail, kept }, map: Map::Join { first, second, offset: at }, hint })
             }
             Step::Blocks { container, range, with } => {
                 let blocks = idx.blocks_mut(doc, container).ok_or(StepError::Missing)?;
@@ -725,16 +794,8 @@ impl Step {
                 removed.iter().filter(|b| !kept.contains(&block_id(b))).for_each(|b| ids(b, &mut paras, &mut tables));
                 idx.replaced_blocks(doc, container, &removed);
                 let fallback = first_position(doc, idx, container, range.start);
-                let hint = match container {
-                    Container::Section(_) => idx.top_block(container, range.start).map(|(section, f, _)| Change {
-                        section,
-                        first: f,
-                        old_end: f + range.len(),
-                        new_end: f + added,
-                        row: None,
-                    }),
-                    _ => hint_in(idx, container, 0, 0),
-                };
+                let first = if lays_out_as_section(idx, container) { range.start } else { 0 };
+                let hint = span_hint(idx, container, first, range.len(), added);
                 Ok(Applied {
                     inverse: Step::Blocks { container, range: range.start..range.start + added, with: removed },
                     map: Map::Removed { paras, tables, rows: None, fallback },
@@ -746,8 +807,9 @@ impl Step {
                 if units_of(&inlines) != units_of(&p.inlines) {
                     return Err(StepError::OutOfRange);
                 }
+                let indexed = super::index::indexes(&inlines);
                 let old = std::mem::replace(&mut p.inlines, inlines);
-                idx.replaced_inlines(doc, para, &old);
+                idx.replaced_inlines(doc, para, &old, indexed);
                 Ok(Applied { inverse: Step::Restyle { para, inlines: old }, map: Map::Same, hint: para_hint(idx, para, 0) })
             }
             Step::Para { para, style, mark, list } => {
@@ -789,19 +851,6 @@ impl Step {
                     hint: None,
                 })
             }
-            Step::TableWidth { table, width } => {
-                let t = idx.table_mut(doc, table).ok_or(StepError::Missing)?;
-                let old = std::mem::replace(&mut t.width, width);
-                let slot = idx.table_slot(table).ok_or(StepError::Missing)?;
-                let hint = idx.top_block(slot.container, slot.block).map(|(section, b, row)| Change {
-                    section,
-                    first: b,
-                    old_end: b + 1,
-                    new_end: b + 1,
-                    row,
-                });
-                Ok(Applied { inverse: Step::TableWidth { table, width: old }, map: Map::Same, hint })
-            }
             Step::ImageData { index, data, filled } => {
                 let slot = doc.images.get_mut(index).ok_or(StepError::Missing)?;
                 let old = std::mem::replace(slot, data);
@@ -832,24 +881,23 @@ impl Step {
             }
             Step::HeaderPart { name, section, footer, slot, blocks } => {
                 let sec = doc.sections.get_mut(section).ok_or(StepError::Missing)?;
-                // Its `w:sectPr` loses the reference of a header it no longer has.
-                doc.edited_sections.insert(section);
                 let refs = if footer { &mut sec.footers } else { &mut sec.headers };
                 let r = refs.get_mut(slot).ok_or(StepError::OutOfRange)?;
                 match blocks {
+                    Some(_) if r.is_some() || doc.stories.contains_key(&name) => return Err(StepError::OutOfRange),
+                    None if r.as_deref() != Some(name.as_str()) || !doc.stories.contains_key(&name) => return Err(StepError::Missing),
+                    _ => {}
+                }
+                // Its `w:sectPr` loses the reference of a header it no longer has.
+                doc.edited_sections.insert(section);
+                match blocks {
                     Some(b) => {
-                        if r.is_some() || doc.stories.contains_key(&name) {
-                            return Err(StepError::OutOfRange);
-                        }
                         *r = Some(name.clone());
                         doc.stories.insert(name.clone(), b);
                         idx.added_part(doc, &name);
                         Ok(Applied { inverse: Step::HeaderPart { name, section, footer, slot, blocks: None }, map: Map::Same, hint: None })
                     }
                     None => {
-                        if r.as_deref() != Some(name.as_str()) {
-                            return Err(StepError::Missing);
-                        }
                         *r = None;
                         let b = doc.stories.remove(&name).ok_or(StepError::Missing)?;
                         idx.removed_part(&b);
@@ -922,14 +970,13 @@ impl Step {
             Step::Resolver { resolver, added } => {
                 let resolver = std::mem::replace(&mut doc.resolver, resolver);
                 let added = std::mem::replace(&mut doc.added_lists, added);
+                refresh_line_number_run(doc);
                 Ok(Applied { inverse: Step::Resolver { resolver, added }, map: Map::Same, hint: None })
             }
             Step::Fonts { resolver, renames } => {
                 let resolver = std::mem::replace(&mut doc.resolver, resolver);
                 let renames = std::mem::replace(&mut doc.font_renames, renames);
-                if let Some(res) = &doc.resolver {
-                    doc.line_number_run = Some(crate::docx::line_number_run(res));
-                }
+                refresh_line_number_run(doc);
                 Ok(Applied { inverse: Step::Fonts { resolver, renames }, map: Map::Same, hint: None })
             }
             Step::DefaultTab(v) => {
@@ -1029,14 +1076,32 @@ impl Step {
             Step::TableProps { table, props } => {
                 let t = idx.table_mut(doc, table).ok_or(StepError::Missing)?;
                 let old = TableProps::of(t);
-                (t.style_id, t.look, t.width, t.jc, t.ind, t.ind_pct, t.borders, t.bands, t.floating, t.cell_spacing, t.shd, t.alt, t.direct) = (
+                (
+                    t.style_id,
+                    t.look,
+                    t.width,
+                    t.jc,
+                    t.ind,
+                    t.ind_pct,
+                    t.ind_set,
+                    t.borders,
+                    t.fixed,
+                    t.bands,
+                    t.floating,
+                    t.cell_spacing,
+                    t.shd,
+                    t.alt,
+                    t.direct,
+                ) = (
                     props.style_id,
                     props.look,
                     props.width,
                     props.jc,
                     props.ind,
                     props.ind_pct,
+                    props.ind_set,
                     props.borders,
+                    props.fixed,
                     props.bands,
                     props.floating,
                     props.cell_spacing,
@@ -1085,7 +1150,7 @@ impl Step {
                     r.cells.iter().flat_map(|c| c.blocks.iter()).for_each(|b| ids(b, &mut paras, &mut tables));
                 }
                 paras.retain(|p| !kept.contains(p));
-                idx.replaced_rows(doc, table, &removed);
+                idx.replaced_rows(doc, table, range.start, added, &removed);
                 let slot = idx.table_slot(table).ok_or(StepError::Missing)?;
                 let fallback = first_position(doc, idx, slot.container, slot.block);
                 let hint = idx.top_block(slot.container, slot.block).map(|(section, b, row)| Change {
