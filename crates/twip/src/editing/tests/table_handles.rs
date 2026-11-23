@@ -496,6 +496,20 @@ fn a_row_border_move_keeps_the_tables_width_and_grid() {
 }
 
 #[test]
+fn an_indent_set_on_a_table_read_without_one_moves_it_at_once() {
+    let mut e = page();
+    caret_in_table(&mut e);
+    let before = Drawn::of(&mut e).left();
+    let out = e.execute(Command::SetTableIndent(Points(36.0)), fonts());
+    assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
+    e.complete(fonts());
+    assert!((Drawn::of(&mut e).left() - before - 36.0).abs() <= 1.0, "the table moves by the indent");
+    e.execute(Command::Undo, fonts());
+    e.complete(fonts());
+    assert!((Drawn::of(&mut e).left() - before).abs() < 0.5, "and back on undo");
+}
+
+#[test]
 fn moving_the_left_edge_moves_the_indent_by_as_much() {
     let mut e = percent_wide();
     caret_in_table(&mut e);

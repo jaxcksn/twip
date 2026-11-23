@@ -212,6 +212,8 @@ pub struct TableProps {
     pub jc: crate::docx::props::Jc,
     pub ind: f64,
     pub ind_pct: Option<f64>,
+    /// Whether its indent is a twips one (`w:tblInd` dxa).
+    pub ind_set: bool,
     pub borders: [Option<crate::docx::props::Border>; 6],
     /// Fixed column widths (`w:tblLayout` fixed), not fitted to the content.
     pub fixed: bool,
@@ -397,6 +399,7 @@ impl TableProps {
             jc: t.jc,
             ind: t.ind,
             ind_pct: t.ind_pct,
+            ind_set: t.ind_set,
             borders: t.borders.clone(),
             fixed: t.fixed,
             bands: t.bands,
@@ -1080,6 +1083,7 @@ impl Step {
                     t.jc,
                     t.ind,
                     t.ind_pct,
+                    t.ind_set,
                     t.borders,
                     t.fixed,
                     t.bands,
@@ -1095,6 +1099,7 @@ impl Step {
                     props.jc,
                     props.ind,
                     props.ind_pct,
+                    props.ind_set,
                     props.borders,
                     props.fixed,
                     props.bands,

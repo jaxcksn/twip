@@ -590,7 +590,7 @@ impl Editor {
             }
             TableFormat::TableWidth(v) => props.width = *v,
             TableFormat::TableAlign(j) => props.jc = *j,
-            TableFormat::TableIndent(v) => (props.ind, props.ind_pct) = ((v * 20.0).round() / 20.0, None),
+            TableFormat::TableIndent(v) => (props.ind, props.ind_pct, props.ind_set) = ((v * 20.0).round() / 20.0, None, true),
             TableFormat::TableStyle(_) | TableFormat::TableLook(_) => {
                 let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
                 if let TableFormat::TableStyle(id) = f {
