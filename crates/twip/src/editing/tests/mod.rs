@@ -38,6 +38,7 @@ mod picture_controls;
 mod protection;
 mod protection_ranges;
 mod provisional;
+mod readback;
 pub(crate) mod recorder;
 mod round_trips;
 mod saving;

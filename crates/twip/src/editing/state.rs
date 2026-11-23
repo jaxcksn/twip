@@ -62,7 +62,7 @@ pub struct FormatState {
     pub section: usize,
 }
 
-fn fold<T: PartialEq>(values: impl IntoIterator<Item = T>) -> Tri<T> {
+pub(super) fn fold<T: PartialEq>(values: impl IntoIterator<Item = T>) -> Tri<T> {
     let mut out = Tri::Unavailable;
     for v in values {
         out = match out {
@@ -272,13 +272,25 @@ pub(super) fn paragraph(paras: &[(&ParaStyle, Option<bool>)]) -> ParagraphFormat
     }
 }
 
+/// What the selection's formatting is read from.
+pub(super) struct SelectionSources {
+    /// The focus's paragraph.
+    pub para: ParaId,
+    /// The selected runs, at least one.
+    pub runs: Vec<Run>,
+    /// The selected paragraphs, at least one.
+    pub paras: Vec<ParaId>,
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct StateFlags {
     pub read_only: bool,
 }
 
 impl Editor {
-    pub fn format_state(&mut self) -> Option<FormatState> {
+    /// The selection's formatting sources: the focus's paragraph, the selected runs (none: the caret's run, else the
+    /// paragraph mark's, alone) and the selected paragraphs.
+    pub(super) fn selection_sources(&mut self) -> Option<SelectionSources> {
         let focus = self.selection.focus();
         let ranges: Vec<(ParaId, crate::layout::Unit, crate::layout::Unit)> =
             if self.selection.is_collapsed() { Vec::new() } else { self.selected_ranges() };
@@ -287,20 +299,34 @@ impl Editor {
             Selection::Object(ObjectRef::Floating(f)) => self.index.float_anchor(f),
             Selection::Cells { .. } => ranges.first().map(|r| r.0),
             _ => None,
-        });
-        let para = self.index.para(&self.doc, para_id?)?;
-        let (mark, style) = (para.mark.clone(), para.style.clone());
-        let list = self.para_list(para_id?);
-        let caret_run = focus.and_then(|c| self.run_at(&c));
+        })?;
+        let mark = self.index.para(&self.doc, para_id)?.mark.clone();
         let mut runs: Vec<Run> = ranges.iter().filter(|r| r.1 < r.2).flat_map(|&r| self.runs_in(r)).collect();
         runs.dedup_by(|a, b| Rc::ptr_eq(a, b));
-        let run = runs.first().cloned().or(caret_run).unwrap_or(mark);
-        let character = if runs.is_empty() { self::character(&[&run]) } else { self::character(&runs.iter().map(|r| &**r).collect::<Vec<_>>()) };
+        if runs.is_empty() {
+            runs.push(focus.and_then(|c| self.run_at(&c)).unwrap_or(mark));
+        }
         let mut paras: Vec<ParaId> = ranges.iter().map(|r| r.0).collect();
         paras.dedup();
         if paras.is_empty() {
-            paras.push(para_id?);
+            paras.push(para_id);
         }
+        Some(SelectionSources { para: para_id, runs, paras })
+    }
+
+    pub fn format_state(&mut self) -> Option<FormatState> {
+        let sources = self.selection_sources()?;
+        self.format_state_of(&sources)
+    }
+
+    pub(super) fn format_state_of(&mut self, sources: &SelectionSources) -> Option<FormatState> {
+        let focus = self.selection.focus();
+        let SelectionSources { para: para_id, runs, paras } = sources;
+        let para_id = *para_id;
+        let style = self.index.para(&self.doc, para_id)?.style.clone();
+        let list = self.para_list(para_id);
+        let run = runs[0].clone();
+        let character = self::character(&runs.iter().map(|r| &**r).collect::<Vec<_>>());
         let mut styles: Vec<(Rc<ParaStyle>, Option<bool>)> =
             paras.iter().filter_map(|&p| Some((self.index.para(&self.doc, p)?.style.clone(), self.para_list(p)))).collect();
         styles.dedup_by(|a, b| Rc::ptr_eq(&a.0, &b.0) && a.1 == b.1);

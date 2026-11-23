@@ -11,6 +11,7 @@ use crate::font::Fonts;
 use super::Outcome;
 use crate::editing::Editor;
 use crate::editing::step::{PageSettings, Step};
+use crate::layout::Unit;
 
 impl Editor {
     /// Edits the page setup of each of the selection's sections, in one transaction.
@@ -319,49 +320,183 @@ impl Editor {
     }
 
     pub(in crate::editing) fn insert_page_number(&mut self, p: PageNumber, fonts: &Fonts) -> Outcome {
+        let place = match p.place {
+            Some(PageNumberPlace::Header) => PageNumberSpot::Header,
+            Some(PageNumberPlace::Footer) => PageNumberSpot::Footer,
+            _ => PageNumberSpot::Caret,
+        };
+        let align = p.alignment.map(|a| match a {
+            HorizontalAlignment::Left => PageNumberAlign::Left,
+            HorizontalAlignment::Center => PageNumberAlign::Center,
+            HorizontalAlignment::Right => PageNumberAlign::Right,
+        });
+        self.insert_page_number_at(p.format, place, align, fonts)
+    }
+
+    /// Inserts a page number field showing `format` at `place`: at the caret, in the section's header or footer, or
+    /// in a page margin. In the header or footer `align` aligns its paragraph, or (inside, outside) puts the number in
+    /// a frame on the page's inside or outside edge of the margins, as facing pages want it.
+    pub fn insert_page_number_at(
+        &mut self,
+        format: PageNumberFormat,
+        place: PageNumberSpot,
+        align: Option<PageNumberAlign>,
+        fonts: &Fonts,
+    ) -> Outcome {
         self.joined("Page Number", fonts, |e| {
-            match p.place {
-                Some(PageNumberPlace::Header) => {
+            match place {
+                PageNumberSpot::Header | PageNumberSpot::Margin(_) => {
                     e.edit_header_footer(None, false, fonts);
                 }
-                Some(PageNumberPlace::Footer) => {
+                PageNumberSpot::Footer => {
                     e.edit_header_footer(None, true, fonts);
                 }
-                _ => {}
+                PageNumberSpot::Caret => {}
             }
-            let out = e.insert_inlines(
-                |run| {
-                    let field = |code: &str| crate::docx::fields::field_inlines(code, "1", &run);
-                    let text = |t: &str| Inline::Text(t.into(), run.clone());
-                    match p.format {
-                        PageNumberFormat::Page => field(" PAGE "),
-                        PageNumberFormat::Total => field(" NUMPAGES "),
-                        PageNumberFormat::PageOfTotal => {
-                            let mut v = vec![text("Page ")];
-                            v.extend(field(" PAGE "));
-                            v.push(text(" of "));
-                            v.extend(field(" NUMPAGES "));
-                            v
-                        }
-                    }
-                },
-                "Page Number",
-                fonts,
-            );
-            match p.alignment {
-                Some(a) if matches!(out, Outcome::Changed(_)) => {
-                    let a = match a {
-                        HorizontalAlignment::Left => Alignment::Left,
-                        HorizontalAlignment::Center => Alignment::Center,
-                        HorizontalAlignment::Right => Alignment::Right,
-                    };
-                    match e.set_alignment(a, fonts) {
-                        o @ Outcome::Changed(_) => o,
-                        _ => out,
-                    }
+            let field = move |run: &crate::docx::Run| page_number_inlines(format, run);
+            let owned = move |run: crate::docx::Run| page_number_inlines(format, &run);
+            let framed = match (place, align) {
+                (PageNumberSpot::Margin(side), _) => Some(e.margin_frame(side)),
+                (PageNumberSpot::Header | PageNumberSpot::Footer, Some(a @ (PageNumberAlign::Inside | PageNumberAlign::Outside))) => {
+                    let side = if a == PageNumberAlign::Inside { "inside" } else { "outside" };
+                    Some(format!("wrap=\"around\" vAnchor=\"text\" hAnchor=\"margin\" xAlign=\"{side}\" y=\"1\""))
                 }
+                _ => None,
+            };
+            if let Some(frame) = framed {
+                return e.insert_framed(&frame, &field, fonts);
+            }
+            let out = e.insert_inlines(owned, "Page Number", fonts);
+            let a = match align {
+                Some(PageNumberAlign::Left) => Alignment::Left,
+                Some(PageNumberAlign::Center) => Alignment::Center,
+                Some(PageNumberAlign::Right) => Alignment::Right,
+                _ => return out,
+            };
+            if !matches!(out, Outcome::Changed(_)) {
+                return out;
+            }
+            match e.set_alignment(a, fonts) {
+                o @ Outcome::Changed(_) => o,
                 _ => out,
             }
         })
     }
+
+    /// The `w:framePr` attributes (unprefixed) of a frame filling the margin on `side` of the caret's section's
+    /// pages, centred down the page.
+    fn margin_frame(&self, side: MarginSide) -> String {
+        let s = &self.doc.sections[self.focus_section().min(self.doc.sections.len().saturating_sub(1))];
+        let gutter = if self.doc.settings.gutter_at_top { 0.0 } else { s.gutter };
+        let (width, align) = match side {
+            MarginSide::Left => (s.left + gutter, "left"),
+            MarginSide::Right => (s.right, "right"),
+            MarginSide::Inside => (s.left + gutter, "inside"),
+            MarginSide::Outside => (s.right, "outside"),
+        };
+        let tw = |v: f64| (v * 20.0).round().max(0.0) as i64;
+        format!("w=\"{}\" wrap=\"around\" hAnchor=\"page\" xAlign=\"{align}\" vAnchor=\"page\" yAlign=\"center\"", tw(width))
+    }
+
+    /// A frame of the attributes `frame` holding one centred paragraph of `inlines`, anchored to the caret's
+    /// paragraph.
+    fn insert_framed(&mut self, frame: &str, inlines: &dyn Fn(&crate::docx::Run) -> Vec<Inline>, fonts: &Fonts) -> Outcome {
+        if self.refuse_replacing() {
+            return Outcome::Unchanged("locked");
+        }
+        let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
+        let cx = self.cx();
+        let w = &cx.w;
+        let Some(caret) = self.selection.focus() else { return Outcome::Unchanged("no caret") };
+        let Some((para, _)) = caret.para_offset() else { return Outcome::Unchanged("caret at a row end") };
+        if matches!(caret.story, crate::editing::position::StoryId::TextBox(_)) {
+            return Outcome::Unchanged("frames don't go in text boxes");
+        }
+        let Some(p) = self.index.para(&self.doc, para) else { return Outcome::Unchanged("no paragraph") };
+        let Some(run) = self.run_at(&caret) else { return Outcome::Unchanged("no run") };
+        let attrs: String = frame.split(' ').map(|a| format!(" {w}{a}")).collect();
+        let style = p.style.style_id.as_deref().map_or(String::new(), |id| format!("<{w}pStyle {w}val=\"{}\"/>", crate::docx::write::props::esc(id)));
+        let ppr = format!("<{w}pPr>{style}<{w}framePr{attrs}/><{w}jc {w}val=\"center\"/></{w}pPr>");
+        let region = self.region_of_para(para, &res);
+        let r = res.para_from_xml(Some(&ppr), region.as_ref(), &cx);
+        let inner = crate::docx::Paragraph {
+            style: std::rc::Rc::new(r.style),
+            mark: run.clone(),
+            list: None,
+            inlines: inlines(&run),
+            src: None,
+            id: crate::docx::next_para_id(),
+            div: None,
+            controls: Vec::new(),
+        };
+        let mut float = crate::docx::frames::float(vec![inner], self.doc.settings.compat() == crate::docx::Compat::Legacy);
+        float.z = self.front_z();
+        let with = vec![Inline::Float(Box::new(float), run)];
+        let mut tx = self.begin("Page Number");
+        if self.step(&mut tx, Step::Text { para, range: Unit(0)..Unit(0), with, edges: Default::default() }).is_err() {
+            self.abort(tx);
+            return Outcome::Unchanged("stale caret");
+        }
+        self.commit(tx, None, fonts)
+    }
+}
+
+/// A page number's inlines in `run`: the `PAGE` field, the `NUMPAGES` field, or "Page N of M".
+fn page_number_inlines(format: PageNumberFormat, run: &crate::docx::Run) -> Vec<Inline> {
+    let field = |code: &str| crate::docx::fields::field_inlines(code, "1", run);
+    let text = |t: &str| Inline::Text(t.into(), run.clone());
+    match format {
+        PageNumberFormat::Page => field(" PAGE "),
+        PageNumberFormat::Total => field(" NUMPAGES "),
+        PageNumberFormat::PageOfTotal => {
+            let mut v = vec![text("Page ")];
+            v.extend(field(" PAGE "));
+            v.push(text(" of "));
+            v.extend(field(" NUMPAGES "));
+            v
+        }
+    }
+}
+
+/// Where a page number goes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PageNumberSpot {
+    /// At the caret.
+    Caret,
+    /// In the section's header.
+    Header,
+    /// In the section's footer.
+    Footer,
+    /// In a page margin (Word's Page Margins), in a frame anchored in the header.
+    Margin(MarginSide),
+}
+
+/// A page margin, or a facing page's inside or outside one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MarginSide {
+    /// The left side of every page, as wide as the section's left margin (and gutter). With mirrored margins that
+    /// is the inside margin on odd pages and the outside one on even pages; [`MarginSide::Inside`] and
+    /// [`MarginSide::Outside`] follow the facing page.
+    Left,
+    /// The right side of every page, as wide as the section's right margin (see [`MarginSide::Left`]).
+    Right,
+    /// The margin by the binding: the left on odd pages, the right on even ones.
+    Inside,
+    /// The margin away from the binding.
+    Outside,
+}
+
+/// How a page number in the header or footer is aligned.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PageNumberAlign {
+    /// On the left.
+    Left,
+    /// Centred.
+    Center,
+    /// On the right.
+    Right,
+    /// On the inside edge: the left on odd pages, the right on even ones.
+    Inside,
+    /// On the outside edge.
+    Outside,
 }

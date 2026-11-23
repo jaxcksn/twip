@@ -112,8 +112,15 @@ mod tests {
     fn pages(n: usize) -> Vec<(Rc<PageFragment>, PageMeta)> {
         (0..n)
             .map(|i| {
-                let page =
-                    PageFragment { id: FragmentId::next(), w: 612.0, h: 792.0, body_area: None, children: Box::new([]), borders: Box::new([]) };
+                let page = PageFragment {
+                    id: FragmentId::next(),
+                    w: 612.0,
+                    h: 792.0,
+                    body_area: None,
+                    children: Box::new([]),
+                    borders: Box::new([]),
+                    borders_behind: false,
+                };
                 (Rc::new(page), PageMeta { section: 0, number: i as i64 + 1, section_page: i, blank: false })
             })
             .collect()

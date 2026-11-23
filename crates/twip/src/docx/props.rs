@@ -72,8 +72,12 @@ pub struct RunProps {
     pub underline: Option<String>,
     /// `w:u`'s colour; `Some(None)` = the text's.
     pub underline_color: Option<Option<u32>>,
+    /// The theme colour `underline_color` is, set with it.
+    pub underline_color_theme: Option<super::model::ThemeColourRef>,
     /// `Some(None)` = auto.
     pub color: Option<Option<u32>>,
+    /// The theme colour `color` is, set with it.
+    pub color_theme: Option<super::model::ThemeColourRef>,
     pub highlight: Option<Option<u32>>,
     pub shading: Option<Option<u32>>,
     /// The `w:shd` as written: its pattern, pattern color and fill.
@@ -198,8 +202,12 @@ impl RunProps {
                 "u" => {
                     p.underline = Some(val(e).unwrap_or("single").to_string());
                     p.underline_color = Some(tc.colour(e, "color", "themeColor", "themeTint", "themeShade"));
+                    p.underline_color_theme = theme_ref(e, "themeColor", "themeTint", "themeShade");
                 }
-                "color" => p.color = Some(tc.colour(e, "val", "themeColor", "themeTint", "themeShade")),
+                "color" => {
+                    p.color = Some(tc.colour(e, "val", "themeColor", "themeTint", "themeShade"));
+                    p.color_theme = theme_ref(e, "themeColor", "themeTint", "themeShade");
+                }
                 "highlight" => {
                     p.highlight = Some(match val(e) {
                         Some("none") | None => None,
@@ -293,6 +301,12 @@ impl RunProps {
             em,
             fit_text
         );
+        if o.color.is_some() {
+            self.color_theme = o.color_theme;
+        }
+        if o.underline_color.is_some() {
+            self.underline_color_theme = o.underline_color_theme;
+        }
         match (&mut self.effects, &o.effects) {
             (_, None) => {}
             (None, Some(e)) => self.effects = Some(e.clone()),
@@ -486,6 +500,9 @@ pub struct Shd {
     pub pattern: String,
     pub color: Option<u32>,
     pub fill: Option<u32>,
+    /// The theme colours the pattern colour and the fill are (`w:themeColor`, `w:themeFill`).
+    pub color_theme: Option<super::model::ThemeColourRef>,
+    pub fill_theme: Option<super::model::ThemeColourRef>,
 }
 
 impl Shd {
@@ -494,6 +511,8 @@ impl Shd {
             pattern: val(e).unwrap_or("clear").to_string(),
             color: tc.colour(e, "color", "themeColor", "themeTint", "themeShade"),
             fill: tc.colour(e, "fill", "themeFill", "themeFillTint", "themeFillShade"),
+            color_theme: theme_ref(e, "themeColor", "themeTint", "themeShade"),
+            fill_theme: theme_ref(e, "themeFill", "themeFillTint", "themeFillShade"),
         }
     }
 
@@ -601,6 +620,8 @@ pub struct Border {
     pub space: f64,
     pub shadow: bool,
     pub color: Option<u32>,
+    /// The theme colour `color` is.
+    pub color_theme: Option<super::model::ThemeColourRef>,
 }
 
 impl Border {
@@ -617,6 +638,7 @@ impl Border {
             space: num(attr(e, "space")).unwrap_or(0.0),
             shadow: matches!(attr(e, "shadow"), Some("1" | "true" | "on")),
             color: tc.colour(e, "color", "themeColor", "themeTint", "themeShade"),
+            color_theme: theme_ref(e, "themeColor", "themeTint", "themeShade"),
             style,
         }
     }
@@ -1376,7 +1398,7 @@ mod tests {
 
     #[test]
     fn shading_shows_its_fill_a_blend_or_nothing_and_stripes_their_hatch() {
-        let shd = |v: &str| super::Shd { pattern: v.into(), color: Some(0xFF0000), fill: Some(0x0000FF) };
+        let shd = |v: &str| super::Shd { pattern: v.into(), color: Some(0xFF0000), fill: Some(0x0000FF), color_theme: None, fill_theme: None };
         assert_eq!(shd("nil").flat(), None, "nil draws nothing, whatever its fill");
         assert_eq!(shd("clear").flat(), Some(0x0000FF));
         assert_eq!(shd("solid").flat(), Some(0xFF0000));

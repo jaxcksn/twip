@@ -1630,6 +1630,7 @@ impl Reader {
                 display: attr(b, "display").unwrap_or("allPages").to_string(),
                 surround_header: !self.settings.borders_do_not_surround_header,
                 surround_footer: !self.settings.borders_do_not_surround_footer,
+                behind_text: attr(b, "zOrder") == Some("back"),
             });
         }
         if let Some(c) = child(s, "sectPrChange") {

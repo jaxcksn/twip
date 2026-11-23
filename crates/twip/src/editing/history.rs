@@ -142,6 +142,16 @@ impl History {
         self.redo.last().map(|t| t.label.as_ref())
     }
 
+    /// What undo would take back, most recent first.
+    pub fn undo_labels(&self) -> impl Iterator<Item = &str> {
+        self.undo.iter().rev().map(|t| t.label.as_ref())
+    }
+
+    /// What redo would do again, the next first.
+    pub fn redo_labels(&self) -> impl Iterator<Item = &str> {
+        self.redo.iter().rev().map(|t| t.label.as_ref())
+    }
+
     pub fn bytes(&self) -> usize {
         self.bytes
     }

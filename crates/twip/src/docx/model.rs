@@ -34,6 +34,8 @@ pub struct RunStyle {
     pub underline: Option<String>,
     /// The underline's own colour (`w:u/@w:color`); `None`: the text's.
     pub underline_color: Option<u32>,
+    /// The theme colour `underline_color` is.
+    pub underline_color_theme: Option<ThemeColourRef>,
     /// Emboss, engrave (`w:imprint`), outline and shadow.
     pub emboss: bool,
     pub imprint: bool,
@@ -45,6 +47,10 @@ pub struct RunStyle {
     /// Word 2010's text effects through the style chain; `None` without any.
     pub effects: Option<Rc<TextEffects>>,
     pub color: Option<u32>,
+    /// The theme colour `color` is.
+    pub color_theme: Option<ThemeColourRef>,
+    /// The theme font the Latin text's family is (`w:asciiTheme`), when it is one.
+    pub font_theme: Option<ThemeFont>,
     pub highlight: Option<u32>,
     pub shading: Option<u32>,
     /// The shading's pattern, pattern color and fill, as written.
@@ -91,6 +97,28 @@ impl RunStyle {
 }
 
 pub type Run = Rc<RunStyle>;
+
+/// One of a theme's two font sets: its headings' or its body text's.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ThemeFont {
+    /// The heading font (`major`).
+    Major,
+    /// The body font (`minor`).
+    Minor,
+}
+
+impl ThemeFont {
+    /// The theme font a `w:asciiTheme`-style value names.
+    pub fn of(v: &str) -> Option<ThemeFont> {
+        if v.starts_with("major") {
+            Some(ThemeFont::Major)
+        } else if v.starts_with("minor") {
+            Some(ThemeFont::Minor)
+        } else {
+            None
+        }
+    }
+}
 
 /// A run's OpenType settings as written (`w14:ligatures`, `w14:cntxtAlts`, `w14:numForm`, `w14:numSpacing`,
 /// `w14:stylisticSets`).
@@ -1563,6 +1591,8 @@ pub struct PageBorders {
     pub display: String,
     pub surround_header: bool,
     pub surround_footer: bool,
+    /// Behind the text and objects they meet (`w:zOrder="back"`); else in front of them.
+    pub behind_text: bool,
 }
 
 /// Header/footer references per variant: default, first, even.

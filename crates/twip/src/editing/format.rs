@@ -420,7 +420,7 @@ impl Editor {
         Some(Again { style: res.para_again(&p.style, style, region.as_ref(), cx), bases })
     }
 
-    pub(super) fn selected_ranges(&mut self) -> Vec<(ParaId, Unit, Unit)> {
+    pub(crate) fn selected_ranges(&mut self) -> Vec<(ParaId, Unit, Unit)> {
         use super::selection::{ObjectRef, Selection};
         if self.is_discontiguous() {
             return self.multi_pieces();
@@ -774,8 +774,12 @@ impl Editor {
                 )
             }
             Format::FontColor(c) => {
-                let v = c.map_or("auto".to_string(), |c| format!("{c:06X}"));
-                self.format_runs("Font Color", &|p, w, _| p.set("color", format!("<{w}color {w}val=\"{v}\"/>")), fonts)
+                let c = *c;
+                self.format_runs(
+                    "Font Color",
+                    &|p, w, _| p.set("color", super::commands::colour_attrs(&format!("<{w}color/>"), w, "val", super::commands::THEME_COLOR, c)),
+                    fonts,
+                )
             }
             Format::Highlight(name) => {
                 let name = name.clone();
@@ -1059,7 +1063,8 @@ pub enum Format {
     Set(Toggle, bool),
     FontSize(f64),
     GrowFont(bool),
-    FontColor(Option<u32>),
+    /// A colour, or automatic.
+    FontColor(Option<super::theme::WordColour>),
     Highlight(Option<String>),
     FontFamily(String),
     ClearFormatting,

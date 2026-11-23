@@ -725,7 +725,11 @@ impl Editor {
                         AutoOr::Auto => None,
                     };
                     let clear = fill.is_none() && b.pattern == crate::api::command::ShadingPattern::Clear;
-                    let sh = super::table_format::Shading { pattern: b.pattern.val(), color: color.map(|c| c.0), fill: fill.map(|c| c.0) };
+                    let sh = super::table_format::Shading {
+                        pattern: b.pattern.val(),
+                        color: color.map(|c| super::theme::WordColour::rgb(c.0)),
+                        fill: fill.map(|c| super::theme::WordColour::rgb(c.0)),
+                    };
                     raw = cell(&raw, &|p| {
                         if clear {
                             p.remove("shd");

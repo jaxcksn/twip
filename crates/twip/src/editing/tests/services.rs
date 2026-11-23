@@ -432,3 +432,35 @@ fn check_accessibility_reaches_an_inline_shapes_text() {
     assert!(before > 0, "setup: the fixture's floating picture has no alt text");
     assert_eq!(floats(&doc), before + 1, "the copy in the inline shape's text is listed too");
 }
+
+#[test]
+fn a_selection_counts_its_own_text_and_text_boxes_count_when_asked() {
+    use crate::editing::position::{Position, StoryId};
+    use crate::editing::selection::{Granularity, Selection};
+    use crate::services::{WordCountScope, word_count_in};
+    let body = format!("{}{}", p("one two"), p("three more words"));
+    let mut e = Editor::open(&package(&body, "", ""), fonts()).expect("opens");
+    e.complete(fonts());
+    e.execute(Command::InsertTextBox, fonts());
+    e.execute(Command::InsertText("boxed in".into()), fonts());
+    let all = WordCountScope::default();
+    assert_eq!(word_count_in(&mut e, all).words, 7);
+    assert_eq!(word_count_in(&mut e, WordCountScope { boxes_and_notes: false, ..all }).words, 5);
+    let first = crate::services::spelling::paras_in_order(&e)[0];
+    let at = |u: u32| Position::text(StoryId::Body, first, Unit(u));
+    e.selection = Selection::range(at(0), at(3), Granularity::Char);
+    let n = word_count_in(&mut e, WordCountScope { selection: true, ..all });
+    assert_eq!((n.words, n.characters, n.paragraphs, n.lines), (1, 3, 1, 1));
+    assert_eq!(word_count_in(&mut e, all).words, 7, "the document's, the selection or not");
+}
+
+#[test]
+fn a_selection_over_many_paragraphs_counts_each_line_once() {
+    use crate::services::{WordCountScope, word_count_in};
+    let body: String = (0..3000).map(|_| p("word")).collect();
+    let mut e = Editor::open(&package(&body, "", ""), fonts()).expect("opens");
+    e.complete(fonts());
+    e.execute(Command::SelectAll, fonts());
+    let n = word_count_in(&mut e, WordCountScope { selection: true, ..WordCountScope::default() });
+    assert_eq!((n.words, n.paragraphs, n.lines), (3000, 3000, 3000));
+}

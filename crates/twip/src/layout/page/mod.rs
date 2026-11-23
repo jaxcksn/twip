@@ -47,6 +47,16 @@ pub struct Facing {
     pub book_fold: Option<bool>,
 }
 
+/// Whether page `page_number` of section `s` shows the section's left margin on its right: a mirrored even page, or
+/// a landscape book fold's page on the other side.
+pub fn swaps_margins(s: &crate::docx::SectionPage, facing: Facing, page_number: i64) -> bool {
+    let odd = page_number % 2 == 1;
+    match facing.book_fold {
+        Some(rev) => s.page_w > s.page_h && odd != rev,
+        None => !facing.gutter_at_top && facing.mirror && !odd,
+    }
+}
+
 /// Page `page_number`'s left, right and top margins in section `s` as `view` shows it, its gutter added.
 pub fn margins_in(s: &Section, view: MarkupView, facing: Facing, page_number: i64) -> (f64, f64, f64) {
     // A vertical section's gutter is on the right (the left on a mirrored even page), and so is a horizontal one's

@@ -20,38 +20,6 @@ page 1 612 792
   text thinThickThinLargeGap
   text wave
   op 1 0 0 -1 0 792 cm
-  op /Artifact << /Type /Layout >> BDC
-  op q
-  op 0.12 0.31 0.47 rg
-  op 24 24 564 1.5 re
-  op f
-  op Q
-  op q
-  op 0.12 0.31 0.47 rg
-  op 24 766.5 564 1.5 re
-  op f
-  op Q
-  op q
-  op 0 0 0 rg
-  op 25.5 768 564 1.5 re
-  op f
-  op Q
-  op q
-  op 0.12 0.31 0.47 rg
-  op 24 24 1.5 744 re
-  op f
-  op Q
-  op q
-  op 0.12 0.31 0.47 rg
-  op 586.5 24 1.5 744 re
-  op f
-  op Q
-  op q
-  op 0 0 0 rg
-  op 588 25.5 1.5 742.5 re
-  op f
-  op Q
-  op EMC
   op /P << /MCID 0 >> BDC
   op q
   op 0 0 0 rg
@@ -8476,6 +8444,38 @@ page 1 612 792
   op ET
   op Q
   op EMC
+  op /Artifact << /Type /Layout >> BDC
+  op q
+  op 0.12 0.31 0.47 rg
+  op 24 24 564 1.5 re
+  op f
+  op Q
+  op q
+  op 0.12 0.31 0.47 rg
+  op 24 766.5 564 1.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 25.5 768 564 1.5 re
+  op f
+  op Q
+  op q
+  op 0.12 0.31 0.47 rg
+  op 24 24 1.5 744 re
+  op f
+  op Q
+  op q
+  op 0.12 0.31 0.47 rg
+  op 586.5 24 1.5 744 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 588 25.5 1.5 742.5 re
+  op f
+  op Q
+  op EMC
 page 2 612 792
   text doubleWave
   text dashSmallGap
@@ -8525,36 +8525,6 @@ page 2 612 792
   text threefour
   op 1 0 0 -1 0 792 cm
   op /Artifact << /Type /Layout >> BDC
-  op q
-  op 0.12 0.31 0.47 rg
-  op 24 24 564 1.5 re
-  op f
-  op Q
-  op q
-  op 0.12 0.31 0.47 rg
-  op 24 766.5 564 1.5 re
-  op f
-  op Q
-  op q
-  op 0 0 0 rg
-  op 25.5 768 564 1.5 re
-  op f
-  op Q
-  op q
-  op 0.12 0.31 0.47 rg
-  op 24 24 1.5 744 re
-  op f
-  op Q
-  op q
-  op 0.12 0.31 0.47 rg
-  op 586.5 24 1.5 744 re
-  op f
-  op Q
-  op q
-  op 0 0 0 rg
-  op 588 25.5 1.5 742.5 re
-  op f
-  op Q
   op q
   op 1 0 0 1 79.25 72 cm
   op q
@@ -61372,6 +61342,36 @@ page 2 612 792
   op h
   op f
   op Q
+  op Q
+  op q
+  op 0.12 0.31 0.47 rg
+  op 24 24 564 1.5 re
+  op f
+  op Q
+  op q
+  op 0.12 0.31 0.47 rg
+  op 24 766.5 564 1.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 25.5 768 564 1.5 re
+  op f
+  op Q
+  op q
+  op 0.12 0.31 0.47 rg
+  op 24 24 1.5 744 re
+  op f
+  op Q
+  op q
+  op 0.12 0.31 0.47 rg
+  op 586.5 24 1.5 744 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 588 25.5 1.5 742.5 re
+  op f
   op Q
   op EMC
 page 3 612 792
