@@ -236,6 +236,18 @@ fn a_tracked_replacement_in_a_date_reads_only_its_current_text() {
 }
 
 #[test]
+fn a_tracked_replacement_in_a_bound_control_writes_only_its_current_text() {
+    let mut e = with_controls(&sdt("A", 5, "<w:text/>", "<w:r><w:t>x</w:t></w:r>"));
+    bind_to(&mut e, &["A"], "name", "<case xmlns=\"urn:case\"><name>Ada</name></case>");
+    e.execute(Command::SetTrackChanges(true), fonts());
+    let para = super::para_id(&e, 0);
+    let at = |u| super::super::position::Position::text(super::super::position::StoryId::Body, para, crate::layout::Unit(u));
+    e.selection = super::super::selection::Selection::range(at(7), at(8), super::super::selection::Granularity::Char);
+    run(&mut e, Command::InsertText("Z".into()));
+    assert!(case_xml(&e).contains("<name>Zda</name>"), "the deleted A isn't written: {}", case_xml(&e));
+}
+
+#[test]
 fn typing_beside_a_date_keeps_its_date() {
     let date = r#"<w:date w:fullDate="2025-03-05T00:00:00Z"><w:dateFormat w:val="d MMMM yyyy"/><w:lid w:val="fr-FR"/><w:storeMappedDataAs w:val="dateTime"/><w:calendar w:val="gregorian"/></w:date>"#;
     let mut e = with_controls(&sdt("C", 5, date, "<w:r><w:t>5 mars 2025</w:t></w:r>"));

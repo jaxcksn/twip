@@ -468,13 +468,21 @@ pub fn spans(inlines: &[Inline], controls: &HashMap<ControlId, Control>) -> Vec<
                     content
                         .iter()
                         .filter_map(|i| match i {
-                            Inline::Text(t, _) => Some(t.as_str()),
-                            Inline::Break(BreakKind::Line, _) => Some("\n"),
+                            Inline::Text(t, r) if r.rev.del.is_none() => Some(t.as_str()),
+                            Inline::Break(BreakKind::Line, r) if r.rev.del.is_none() => Some("\n"),
                             _ => None,
                         })
                         .collect()
                 };
-                let run = content.iter().find_map(|i| if let Inline::Text(_, r) = i { Some(r.clone()) } else { None });
+                let run = content.iter().find_map(|i| {
+                    if let Inline::Text(_, r) = i
+                        && r.rev.del.is_none()
+                    {
+                        Some(r.clone())
+                    } else {
+                        None
+                    }
+                });
                 out.push(Span { control: c, inner, text, run, binding });
             }
             _ => {}
