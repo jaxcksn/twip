@@ -23,137 +23,6 @@ const LVL: &[&str] = &["start", "numFmt", "lvlRestart", "pStyle", "isLgl", "suff
 /// CT_AbstractNum's children in schema order.
 const ABSTRACT: &[&str] = &["nsid", "multiLevelType", "tmpl", "name", "styleLink", "numStyleLink", "lvl"];
 
-/// A list level's number style: every style Twip numbers with, and any other as the document names it.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
-pub enum NumberStyle {
-    /// 1, 2, 3.
-    #[default]
-    Decimal,
-    /// I, II, III.
-    UpperRoman,
-    /// i, ii, iii.
-    LowerRoman,
-    /// A, B, C.
-    UpperLetter,
-    /// a, b, c.
-    LowerLetter,
-    /// 1st, 2nd, 3rd.
-    Ordinal,
-    /// One, Two, Three.
-    CardinalText,
-    /// First, Second, Third.
-    OrdinalText,
-    /// 01, 02, 03.
-    DecimalZero,
-    /// A bullet: the level's text in its font, or its picture.
-    Bullet,
-    /// No number.
-    None,
-    /// - 1 -, - 2 -, - 3 -.
-    NumberInDash,
-    /// 1, …, 9, A, B: hexadecimal.
-    Hex,
-    /// *, †, ‡, §, then doubled.
-    Chicago,
-    /// а, б, в.
-    RussianLower,
-    /// А, Б, В.
-    RussianUpper,
-    /// क, ख, ग.
-    HindiVowels,
-    /// अ, आ, इ.
-    HindiConsonants,
-    /// १, २, ३.
-    HindiNumbers,
-    /// ก, ข, ค.
-    ThaiLetters,
-    /// ๑, ๒, ๓.
-    ThaiNumbers,
-    /// A style Twip numbers in decimal, by the name the document gives it.
-    Other(String),
-}
-
-impl NumberStyle {
-    /// Every style but [`NumberStyle::Other`].
-    pub const NAMED: [NumberStyle; 21] = [
-        NumberStyle::Decimal,
-        NumberStyle::UpperRoman,
-        NumberStyle::LowerRoman,
-        NumberStyle::UpperLetter,
-        NumberStyle::LowerLetter,
-        NumberStyle::Ordinal,
-        NumberStyle::CardinalText,
-        NumberStyle::OrdinalText,
-        NumberStyle::DecimalZero,
-        NumberStyle::Bullet,
-        NumberStyle::None,
-        NumberStyle::NumberInDash,
-        NumberStyle::Hex,
-        NumberStyle::Chicago,
-        NumberStyle::RussianLower,
-        NumberStyle::RussianUpper,
-        NumberStyle::HindiVowels,
-        NumberStyle::HindiConsonants,
-        NumberStyle::HindiNumbers,
-        NumberStyle::ThaiLetters,
-        NumberStyle::ThaiNumbers,
-    ];
-
-    /// The `w:numFmt` it is written as.
-    pub fn val(&self) -> &str {
-        match self {
-            NumberStyle::Decimal => "decimal",
-            NumberStyle::UpperRoman => "upperRoman",
-            NumberStyle::LowerRoman => "lowerRoman",
-            NumberStyle::UpperLetter => "upperLetter",
-            NumberStyle::LowerLetter => "lowerLetter",
-            NumberStyle::Ordinal => "ordinal",
-            NumberStyle::CardinalText => "cardinalText",
-            NumberStyle::OrdinalText => "ordinalText",
-            NumberStyle::DecimalZero => "decimalZero",
-            NumberStyle::Bullet => "bullet",
-            NumberStyle::None => "none",
-            NumberStyle::NumberInDash => "numberInDash",
-            NumberStyle::Hex => "hex",
-            NumberStyle::Chicago => "chicago",
-            NumberStyle::RussianLower => "russianLower",
-            NumberStyle::RussianUpper => "russianUpper",
-            NumberStyle::HindiVowels => "hindiVowels",
-            NumberStyle::HindiConsonants => "hindiConsonants",
-            NumberStyle::HindiNumbers => "hindiNumbers",
-            NumberStyle::ThaiLetters => "thaiLetters",
-            NumberStyle::ThaiNumbers => "thaiNumbers",
-            NumberStyle::Other(v) => v,
-        }
-    }
-
-    /// The style a `w:numFmt` names: decimal when it names none.
-    pub fn of_val(v: &str) -> NumberStyle {
-        if v.is_empty() {
-            return NumberStyle::Decimal;
-        }
-        NumberStyle::NAMED.into_iter().find(|f| f.val() == v).unwrap_or_else(|| NumberStyle::Other(v.to_string()))
-    }
-
-    /// The style a [`NumberFormat`] is.
-    pub fn of_format(f: NumberFormat) -> NumberStyle {
-        NumberStyle::of_val(f.val())
-    }
-
-    /// The [`NumberFormat`] it is, as [`NumberFormat::of_val`] reads it.
-    pub fn format(&self) -> NumberFormat {
-        NumberFormat::of_val(self.val())
-    }
-
-    /// Whether it can be written: an [`NumberStyle::Other`] name is 1 to 64 ASCII letters and digits.
-    pub fn writable(&self) -> bool {
-        match self {
-            NumberStyle::Other(v) => (1..=64).contains(&v.len()) && v.bytes().all(|b| b.is_ascii_alphanumeric()),
-            _ => true,
-        }
-    }
-}
-
 /// A list level's number or bullet formatting of its own (`None`: not set, so the paragraph's applies). The font is
 /// the level's [`ListLevel::font`].
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -239,24 +108,26 @@ impl LabelFormat {
 /// and its number's own formatting.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct LevelDefinition {
-    /// The level. Its `format` is the one `format` here gives ([`NumberStyle::format`]); setting a level, `format`
-    /// here is the one written.
+    /// The level. Setting a level, `format` here is the one written.
     pub level: ListLevel,
     /// The number style.
-    pub format: NumberStyle,
+    pub format: NumberFormat,
     /// The number's own formatting.
     pub label: LabelFormat,
 }
 
 impl LevelDefinition {
-    /// `level` with the style and number formatting `was` has where `level` keeps them: its style when `level.format`
-    /// is the one `was` shows, its number's formatting always.
-    pub fn kept(level: &ListLevel, was: Option<&LevelDefinition>) -> LevelDefinition {
-        let format = match was {
-            Some(w) if w.format.format() == level.format => w.format.clone(),
-            _ => NumberStyle::of_format(level.format),
+    /// An API level in full: its number style, and its number's own formatting (absent: not set).
+    pub fn of_level(level: &ListLevel) -> LevelDefinition {
+        let label = LabelFormat {
+            bold: level.bold,
+            italic: level.italic,
+            underline: level.underline,
+            size: level.size,
+            color: level.color,
+            highlight: level.highlight,
         };
-        LevelDefinition { level: level.clone(), format, label: was.map(|w| w.label.clone()).unwrap_or_default() }
+        LevelDefinition { level: level.clone(), format: level.format.clone(), label }
     }
 
     /// Refused: an unwritable number style, a size out of 1 to 1638 pt.
@@ -285,9 +156,10 @@ pub fn list_level(l: &Level) -> ListLevel {
 pub fn level_definition(l: &Level) -> LevelDefinition {
     let left = l.ppr.ind_left.unwrap_or(0.0);
     let first = l.ppr.ind_first.unwrap_or(0.0);
-    let format = NumberStyle::of_val(&l.fmt);
+    let format = NumberFormat::of_val(&l.fmt);
+    let label = LabelFormat::of(&l.rpr);
     let level = ListLevel {
-        format: format.format(),
+        format: format.clone(),
         text: l.text.clone(),
         start: l.start.max(0) as u32,
         alignment: match l.jc.as_str() {
@@ -311,8 +183,14 @@ pub fn level_definition(l: &Level) -> LevelDefinition {
             _ => None,
         },
         picture: None,
+        bold: label.bold,
+        italic: label.italic,
+        underline: label.underline,
+        size: label.size,
+        color: label.color,
+        highlight: label.highlight,
     };
-    LevelDefinition { level, format, label: LabelFormat::of(&l.rpr) }
+    LevelDefinition { level, format, label }
 }
 
 /// A `w:lvl` for level `k` set to `def`: `old` (its XML and its view) edited where they differ, so what the view
@@ -446,7 +324,7 @@ pub(super) type Override = Option<(String, LevelDefinition)>;
 /// The levels an edit sets.
 #[derive(Clone, Copy)]
 pub(super) enum Levels<'a> {
-    /// As the API shows them: each keeps the number style and number formatting it has ([`LevelDefinition::kept`]).
+    /// As the API gives them ([`LevelDefinition::of_level`]).
     Shown(&'a [ListLevel]),
     /// In full.
     Full(&'a [LevelDefinition]),
@@ -461,9 +339,9 @@ impl Levels<'_> {
     }
 
     /// Level `k` as it is to be, over `was`.
-    fn at(self, k: usize, was: Option<&LevelDefinition>) -> Option<LevelDefinition> {
+    fn at(self, k: usize) -> Option<LevelDefinition> {
         match self {
-            Levels::Shown(l) => l.get(k).map(|l| LevelDefinition::kept(l, was)),
+            Levels::Shown(l) => l.get(k).map(LevelDefinition::of_level),
             Levels::Full(l) => l.get(k).cloned(),
         }
     }
@@ -517,7 +395,7 @@ pub(super) fn abstract_xml(
             Some((x, v)) => Some((x.as_str(), v)),
             None => raw.map(|i| a.kids[i].1.as_str()).zip(old_level.as_ref()),
         };
-        let xml = match (levels.at(k, base.map(|b| b.1)), over) {
+        let xml = match (levels.at(k), over) {
             (Some(new), _) => level_xml(k, base, &new, pics.get(k).copied().flatten(), cx),
             (None, Some((x, _))) => x.clone(),
             (None, None) => continue,
@@ -549,7 +427,7 @@ fn num_xml(raw: &str, levels: Levels, pics: &[PicChange], over: &[Override], cx:
     for (_, x) in m.kids.iter_mut().filter(|(n, _)| n == "lvlOverride") {
         let Some(k) = attr_of(x, "ilvl").and_then(|v| v.parse::<usize>().ok()) else { continue };
         let Some(Some((lvl, view))) = over.get(k) else { continue };
-        let Some(new) = levels.at(k, Some(view)) else { continue };
+        let Some(new) = levels.at(k) else { continue };
         let mut o = Props::parse(Some(x), "lvlOverride", cx);
         o.set("lvl", level_xml(k, Some((lvl, view)), &new, pics.get(k).copied().flatten(), cx));
         *x = o.xml()?;
@@ -614,13 +492,13 @@ impl Editor {
         let res = self.doc.resolver.as_ref()?;
         let abs = res.numbering.abstracts.get(&res.numbering.abstract_of(num, &res.styles)?)?;
         let own = res.numbering.abstracts.get(&res.numbering.nums.get(&num)?.abstract_id);
-        let levels = self.list_level_definitions(num)?;
+        let levels = self.list_levels(num)?;
         let level = ilvl.clamp(0, 8) as u8;
         Some(ListDefinition {
             id: num,
             name: abs.name.clone().filter(|n| !n.is_empty()),
             style: own.and_then(|a| a.num_style_link.clone()).or_else(|| abs.style_link.clone()).map(StyleId),
-            bullet: levels.get(level as usize).is_some_and(|l| l.format == NumberStyle::Bullet),
+            bullet: levels.get(level as usize).is_some_and(|l| l.format == NumberFormat::Bullet),
             level,
             levels,
         })
@@ -735,8 +613,7 @@ impl Editor {
     }
 
     pub(super) fn set_list_definition(&mut self, d: ListDefinitionChange, fonts: &Fonts) -> Outcome {
-        let now = self.selection_list().and_then(|(_, n, _)| self.list_level_definitions(n)).unwrap_or_default();
-        let levels = d.levels.iter().enumerate().map(|(k, l)| LevelDefinition::kept(l, now.get(k))).collect();
+        let levels = d.levels.iter().map(LevelDefinition::of_level).collect();
         self.set_list_levels(ListLevelsChange { levels, apply_to: d.apply_to, name: d.name }, fonts)
     }
 
@@ -984,26 +861,10 @@ fn add_pictures(n: &mut Numbering, pics: &[(i64, usize)], cx: &Cx) {
 /// Nine levels in full: `levels`, then the default ones after them.
 fn complete_definitions(levels: &[LevelDefinition]) -> Vec<LevelDefinition> {
     let shown: Vec<ListLevel> = levels.iter().map(|l| l.level.clone()).collect();
-    complete(&shown).into_iter().enumerate().map(|(k, l)| levels.get(k).cloned().unwrap_or_else(|| LevelDefinition::kept(&l, None))).collect()
+    complete(&shown).into_iter().enumerate().map(|(k, l)| levels.get(k).cloned().unwrap_or_else(|| LevelDefinition::of_level(&l))).collect()
 }
 
-/// A list as [`Editor::list_definition`] reads it.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct ListDefinition {
-    /// The list instance (`numId`). Paragraphs number together when their lists share a definition
-    /// (`w:abstractNum`), whatever their ids.
-    pub id: i64,
-    /// Its name, which ListNum fields name it by.
-    pub name: Option<String>,
-    /// The list style it is defined by.
-    pub style: Option<StyleId>,
-    /// Whether the current level is a bullet.
-    pub bullet: bool,
-    /// The current level, 0 to 8.
-    pub level: u8,
-    /// Its nine levels.
-    pub levels: Vec<LevelDefinition>,
-}
+pub use crate::api::styles::ListDefinition;
 
 /// [`Editor::set_list_levels`]' options: [`ListDefinitionChange`] with its levels in full.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -1021,7 +882,7 @@ pub fn complete(levels: &[ListLevel]) -> Vec<ListLevel> {
     (0..9)
         .map(|k| {
             levels.get(k).cloned().unwrap_or_else(|| ListLevel {
-                format: [NumberFormat::Decimal, NumberFormat::LowerLetter, NumberFormat::LowerRoman][k % 3],
+                format: [NumberFormat::Decimal, NumberFormat::LowerLetter, NumberFormat::LowerRoman][k % 3].clone(),
                 text: format!("%{}.", k + 1),
                 start: 1,
                 alignment: if k % 3 == 2 { LevelAlignment::Right } else { LevelAlignment::Left },

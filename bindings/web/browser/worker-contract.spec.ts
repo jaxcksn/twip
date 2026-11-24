@@ -1,7 +1,7 @@
 // The shared contract scripts (tests/contract/*.json, format in its README) against a mounted editor, runner
 // `web-worker`: the engine in the page's worker. Each script also runs with the engine on the main thread, and the two
 // runs must record the same events and states. Unlike the headless runner, a mounted editor takes input, so the
-// scripts with `key`, `text` and `click` steps run here too (through the browser's real input).
+// scripts with input steps (`key`, `text`, `click`, `hover`, `drag`, `release`) run here too (through the browser's real input).
 // Scripts listed in tests/contract/pending.txt are skipped while they fail, and fail the run once they pass.
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { expect, test, type Browser } from '@playwright/test';
@@ -24,7 +24,12 @@ interface Run {
 }
 
 /** An input step, sent by Playwright as real browser input. `at` is the client point of a click. */
-type InputStep = { op: 'key'; key: string; mods?: string[] } | { op: 'text'; text: string } | { op: 'click'; at: { x: number; y: number }; mods?: string[] };
+type InputStep =
+  | { op: 'key'; key: string; mods?: string[] }
+  | { op: 'text'; text: string }
+  | { op: 'click'; at: { x: number; y: number }; mods?: string[]; clicks?: number; button?: 'primary' | 'secondary' }
+  | { op: 'hover'; at: { x: number; y: number } }
+  | { op: 'down' | 'move' | 'up'; at: { x: number; y: number }; mods?: string[]; button?: 'primary' | 'secondary' };
 
 const modifier: Record<string, string> = { ctrl: 'Control', shift: 'Shift', alt: 'Alt', meta: 'Meta' };
 
@@ -40,11 +45,26 @@ async function runIn(browser: Browser, name: string, script: Script, execution: 
       return existsSync(file) ? route.fulfill({ body: readFileSync(file) }) : route.fulfill({ status: 404 });
     });
     await page.exposeFunction('twipInput', async (step: InputStep) => {
-      const mods = (step.op === 'text' ? [] : (step.mods ?? [])).map((m) => modifier[m]!);
+      const mods = (step.op === 'text' || step.op === 'hover' ? [] : (step.mods ?? [])).map((m) => modifier[m]!);
       if (step.op === 'text') return page.keyboard.insertText(step.text);
       if (step.op === 'key') return page.keyboard.press([...mods, step.key].join('+'));
+      if (step.op === 'hover') return page.mouse.move(step.at.x, step.at.y);
+      const button = step.button === 'secondary' ? 'right' : 'left';
+      // A drag's press, moves and release, the modifiers held from the press to the release.
+      if (step.op === 'down') {
+        for (const m of mods) await page.keyboard.down(m);
+        await page.mouse.move(step.at.x, step.at.y);
+        return page.mouse.down({ button });
+      }
+      if (step.op === 'move') return page.mouse.move(step.at.x, step.at.y);
+      if (step.op === 'up') {
+        await page.mouse.move(step.at.x, step.at.y);
+        await page.mouse.up({ button });
+        for (const m of mods.reverse()) await page.keyboard.up(m);
+        return;
+      }
       for (const m of mods) await page.keyboard.down(m);
-      await page.mouse.click(step.at.x, step.at.y);
+      await page.mouse.click(step.at.x, step.at.y, { button, clickCount: step.clicks ?? 1 });
       for (const m of mods.reverse()) await page.keyboard.up(m);
     });
     await page.goto('/blank.html');
@@ -88,7 +108,7 @@ async function runScript({ name, script, execution, runner }: { name: string; sc
     'documentChanged', 'selectionChanged', 'editingTargetChanged', 'linkActivated', 'pictureControlActivated', 'editRefused',
     'contextMenu', 'dialogRequested',
     'hostCommand', 'shortcut', 'gesture', 'wordAdded', 'fontsChanged', 'elementActivated', 'elementsChanged',
-    'fieldsUpdateRequested', 'revisionsChanged', 'commentsChanged', 'commentAnchors', 'balloonsLaidOut', 'rulerChanged',
+    'fieldsUpdateRequested', 'tableOfContentsUpdateRequested', 'revisionsChanged', 'commentsChanged', 'commentAnchors', 'balloonsLaidOut', 'rulerChanged',
     'tooltip', 'announcement', 'popoverRequested', 'popoverClosed', 'warning', 'error',
   ];
   for (const type of eventTypes) editor.on(type, (event: unknown) => events.push(encodeEvent(type, event)));
@@ -139,6 +159,7 @@ async function runScript({ name, script, execution, runner }: { name: string; sc
     if (isObject(expected) && Object.keys(expected).length === 1) {
       if ('$exact' in expected) return equal(actual, expected.$exact) ? null : `${path}: expected exactly ${show(expected.$exact)}, got ${show(actual)}`;
       if ('$type' in expected) return typeName(actual) === expected.$type ? null : `${path}: expected a ${String(expected.$type)}, got ${show(actual)}`;
+      if ('$contains' in expected) return typeof actual === 'string' && actual.includes(String(expected.$contains)) ? null : `${path}: expected a string holding ${show(expected.$contains)}, got ${show(actual)}`;
       if ('$has' in expected) {
         const all = items(actual);
         const has = expected.$has as unknown[];
@@ -175,8 +196,8 @@ async function runScript({ name, script, execution, runner }: { name: string; sc
   };
 
   const command = (op: unknown) => {
-    const [id, arg] = fromOp(op);
-    return editor.commands[id](arg);
+    const [id, ...args] = fromOp(op);
+    return editor.commands[id](...args);
   };
   const resolve = async (v: unknown, at: string): Promise<unknown> => {
     if (Array.isArray(v)) return Promise.all(v.map((x) => resolve(x, at)));
@@ -231,16 +252,96 @@ async function runScript({ name, script, execution, runner }: { name: string; sc
     await send(step, at);
     await editor.wordCount();
   };
-  const send = async (step: Step, at: string) => {
-    editor.focus();
-    if (step.op !== 'click') return (window as any).twipInput(step);
-    // shortcut: the text's last character, not its middle: find selects the text, and the input element sits at the
-    // caret, the selection's end. The middle needs the selection's rectangle, which no state or request carries.
-    const found = await editor.find.next({ text: step.text });
-    if (!found.found) fail(at, `no ${String(step.text)} to click`);
+  /** Where the caret is after finding `text` (the input element sits at it): the text's end. */
+  const caretAfter = async (text: unknown, at: string) => {
+    const found = await editor.find.next({ text });
+    if (!found.found) fail(at, `no ${String(text)} to point at`);
     await frames(3);
     const end = container.querySelector('[data-twip="input"]')!.getBoundingClientRect();
-    return (window as any).twipInput({ op: 'click', mods: step.mods, at: { x: end.left - 3, y: end.top + end.height / 2 } });
+    return { x: end.left, y: end.top + end.height / 2 };
+  };
+  /** The middle of the first occurrence of `text` (of its first line, when it wraps), as the Rust runner finds it; the text is left selected. */
+  const middleOf = async (text: unknown, at: string) => {
+    const found = await editor.find.next({ text });
+    if (!found.found) fail(at, `no ${String(text)} to point at`);
+    const line = (await editor.selectionBounds()).rects[0];
+    if (!line) fail(at, `${String(text)} is not in view`);
+    const canvas = container.querySelector('[data-twip="canvas"]')!.getBoundingClientRect();
+    return { x: canvas.left + line!.left + line!.width / 2, y: canvas.top + line!.top + line!.height / 2 };
+  };
+  /**
+   * The selection of text and cells as `setSelection` puts it back, as the Rust runner keeps it: finding where a text
+   * is moves the selection, and a Ctrl or Shift gesture goes on from the one before. None for a caret, one block of
+   * cells or an object.
+   */
+  const kept = () => {
+    const s = editor.getState().selection;
+    const activeCells = s.kind === 'cells' && s.cellBlocks.length > 0 ? s.cellBlocks.length - 1 : undefined;
+    return !s.rangesTruncated && (s.ranges.length > 0 || activeCells !== undefined) ? { ranges: s.ranges, cells: s.cellBlocks, activeCells } : undefined;
+  };
+  const restore = async (k: ReturnType<typeof kept>) => {
+    if (k) await editor.batch([{ type: 'setSelection', ...k }]);
+  };
+  let held: { at: { x: number; y: number }; button?: string; mods?: string[] } | undefined;
+  const send = async (step: Step, at: string) => {
+    editor.focus();
+    const input = (s: object) => (window as any).twipInput(s);
+    switch (step.op) {
+      case 'click':
+      case 'hover': {
+        const k = kept();
+        const p = await middleOf(step.text, at);
+        await restore(k);
+        return input({ op: step.op, mods: step.mods, clicks: step.clicks, button: step.button, at: p });
+      }
+      case 'drag': {
+        if (held) fail(at, '`drag` while a drag is held');
+        const from = step.from as { text?: string; select?: boolean; tableColumn?: { text: string; border: number } };
+        const k = kept();
+        let start: { x: number; y: number };
+        if (from.tableColumn) {
+          await input({ op: 'click', at: await middleOf(from.tableColumn.text, at) });
+          await editor.wordCount();
+          await frames(3);
+          const view = editor.ruler.view();
+          const edge = view.model.horizontal.tableColumns[from.tableColumn.border];
+          if (edge === undefined) fail(at, `no column border ${from.tableColumn.border}`);
+          const canvas = container.querySelector('[data-twip="canvas"]')!.getBoundingClientRect();
+          const caret = container.querySelector('[data-twip="input"]')!.getBoundingClientRect();
+          start = { x: canvas.left + view.horizontal.origin + edge! * view.horizontal.scale, y: caret.top + caret.height / 2 };
+        } else {
+          start = await middleOf(from.text, at);
+        }
+        let end: { x: number; y: number };
+        const to = step.to as { text: string } | undefined;
+        if (to) {
+          end = await caretAfter(to.text, at);
+        } else {
+          const by = (step.by ?? {}) as { dx?: number; dy?: number };
+          const scale = editor.ruler.view().horizontal.scale;
+          end = { x: start.x + (by.dx ?? 0) * scale, y: start.y + (by.dy ?? 0) * scale };
+        }
+        await restore(k);
+        if (from.select) await caretAfter(from.text, at);
+        const button = step.button as string | undefined;
+        const mods = step.mods as string[] | undefined;
+        await input({ op: 'down', at: start, button, mods });
+        for (let k = 1; k <= 8; k++) {
+          await input({ op: 'move', at: { x: start.x + ((end.x - start.x) * k) / 8, y: start.y + ((end.y - start.y) * k) / 8 } });
+        }
+        if (step.release === false) held = { at: end, button, mods };
+        else await input({ op: 'up', at: end, button, mods });
+        return;
+      }
+      case 'release': {
+        if (!held) fail(at, '`release` with no drag held');
+        const h = held!;
+        held = undefined;
+        return input({ op: 'up', ...h });
+      }
+      default:
+        return input(step);
+    }
   };
 
   const start = (step: Step, at: string): Promise<unknown> => {
@@ -288,6 +389,9 @@ async function runScript({ name, script, execution, runner }: { name: string; sc
       case 'key':
       case 'text':
       case 'click':
+      case 'hover':
+      case 'drag':
+      case 'release':
         return input(step, at);
       case 'concurrent':
         return Promise.all((step.steps as Step[]).map((s, i) => start(s, `${at}.${i}`)));
@@ -361,7 +465,11 @@ async function runScript({ name, script, execution, runner }: { name: string; sc
     if (failed) fail(failed.at, `failed: ${String(failed.error)}`);
     await idle();
     // Times differ between the runs.
-    return { failure: null, records: JSON.parse(JSON.stringify(records, (k, v) => (k === 'time' ? typeof v : v))) };
+    // Times differ between the two runs: a time, and a tooltip's text that shows one, compare by type.
+    const timeless = function (this: Record<string, unknown>, k: string, v: unknown) {
+      return k === 'time' || (k === 'text' && typeof this.time === 'string') ? typeof v : v;
+    };
+    return { failure: null, records: JSON.parse(JSON.stringify(records, timeless)) };
   } catch (e) {
     return { failure: e instanceof Error ? e.message : String(e), records: [] };
   } finally {

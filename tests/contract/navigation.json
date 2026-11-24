@@ -17,13 +17,13 @@
     { "op": "call", "method": "navigation.select", "args": [{ "$saved": "headings", "path": [{ "text": "Earlier work" }, "id"] }] },
     { "op": "expectState", "match": { "selection": { "page": 1 }, "paragraph": { "style": "Heading3" } } },
 
-    { "op": "call", "method": "find.all", "args": [{ "text": "survey" }], "save": "matches", "result": [
+    { "op": "call", "method": "find.all", "args": [{ "text": "survey" }], "save": "matches", "result": { "matches": [
       { "id": { "$type": "string" }, "text": "survey", "before": { "$type": "string" }, "after": { "$type": "string" }, "page": 1 },
       { "id": { "$type": "string" }, "text": "survey", "before": { "$type": "string" }, "after": { "$type": "string" }, "page": 2 }
-    ] },
-    { "op": "call", "method": "find.select", "args": [{ "$saved": "matches", "path": [1, "id"] }] },
+    ] } },
+    { "op": "call", "method": "find.select", "args": [{ "$saved": "matches", "path": ["matches", 1, "id"] }] },
     { "op": "expectState", "match": { "selection": { "kind": "text", "empty": false, "page": 2 }, "paragraph": { "style": "Normal" } } },
-    { "op": "call", "method": "find.select", "args": [{ "$saved": "matches", "path": [0, "id"] }] },
+    { "op": "call", "method": "find.select", "args": [{ "$saved": "matches", "path": ["matches", 0, "id"] }] },
     { "op": "expectState", "match": { "selection": { "empty": false, "page": 1 } } },
 
     { "op": "call", "method": "styles.list", "args": [{ "type": "paragraph" }], "result": { "$has": [

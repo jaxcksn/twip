@@ -1,0 +1,27 @@
+[
+  {
+    "bullet": false,
+    "id": 3,
+    "level": 1,
+    "levels": [
+      {
+        "alignment": "left",
+        "bold": true,
+        "color": "#C00000",
+        "follow": "tab",
+        "format": "chicago",
+        "highlight": "none",
+        "italic": false,
+        "legal": false,
+        "numberPosition": 0.0,
+        "size": 10.5,
+        "start": 1,
+        "text": "%1",
+        "textIndent": 0.0,
+        "underline": "single"
+      }
+    ],
+    "name": "Legal",
+    "style": "LegalList"
+  }
+]

@@ -1,0 +1,21 @@
+{
+  "name": "drop-cap-dialog",
+  "fixture": "editor/FX-SECTIONS.docx",
+  "steps": [
+    { "op": "open" },
+    { "op": "expectState", "match": { "dialogs": { "dropCap": true } } },
+    { "op": "call", "method": "dialogs.open", "args": ["dropCap"], "save": "dc", "result": { "kind": "dropCap", "values": { "position": "none" } } },
+    { "op": "call", "method": "@dc.update", "args": [{ "position": "dropped", "lines": 3, "distance": 4 }], "save": "dc",
+      "result": { "values": { "position": "dropped", "lines": 3, "distance": 4 } } },
+    { "op": "call", "method": "@dc.apply" },
+    { "op": "expectState", "match": { "paragraph": { "dropCap": { "position": "dropped", "lines": 3, "distance": 4 } } } },
+    { "op": "call", "method": "dialogs.open", "args": ["dropCap"], "save": "dc", "result": { "values": { "position": "dropped", "lines": 3, "distance": 4 } } },
+    { "op": "call", "method": "@dc.update", "args": [{ "position": "inMargin", "lines": 2 }], "save": "dc" },
+    { "op": "call", "method": "@dc.apply" },
+    { "op": "expectState", "match": { "paragraph": { "dropCap": { "position": "inMargin", "lines": 2 } } } },
+    { "op": "call", "method": "dialogs.open", "args": ["dropCap"], "save": "dc" },
+    { "op": "call", "method": "@dc.update", "args": [{ "position": "none" }], "save": "dc" },
+    { "op": "call", "method": "@dc.apply" },
+    { "op": "expectState", "match": { "paragraph": { "dropCap": null } } }
+  ]
+}

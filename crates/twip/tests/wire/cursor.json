@@ -13,5 +13,17 @@
   "cellSelect",
   "columnSelect",
   "rowSelect",
-  "rotate"
+  "rotate",
+  "clickAndTypeLeft",
+  "clickAndTypeLeftIndent",
+  "clickAndTypeCenter",
+  "clickAndTypeRight",
+  "hideWhiteSpace",
+  "showWhiteSpace",
+  "highlighter",
+  "verticalText",
+  "linkReady",
+  "linking",
+  "pencil",
+  "eraser"
 ]

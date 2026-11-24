@@ -312,8 +312,11 @@ impl Editor {
         if !foot && p.restart == Some(R::EachPage) {
             return Outcome::invalid("endnotes don't restart on each page");
         }
-        if p.format.is_some_and(|f| matches!(f, NumberFormat::Bullet | NumberFormat::None)) {
+        if p.format.as_ref().is_some_and(|f| matches!(f, NumberFormat::Bullet | NumberFormat::None)) {
             return Outcome::invalid("a note number format is a number style");
+        }
+        if p.format.as_ref().is_some_and(|f| !f.writable()) {
+            return Outcome::invalid("a number style is 1 to 64 ASCII letters and digits");
         }
         if p.start.is_some_and(|s| !(1..=16383).contains(&s)) {
             return Outcome::invalid("the first number is 1…16383");
@@ -333,7 +336,7 @@ impl Editor {
             let Some(s) = self.doc.sections.get(section) else { continue };
             let mut page = s.page();
             let n = &mut page.notes[k];
-            if let Some(f) = p.format {
+            if let Some(f) = &p.format {
                 n.fmt = Some(f.val().to_string());
             }
             if let Some(start) = p.start {

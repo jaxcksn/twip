@@ -87,7 +87,7 @@ fn a_picture_on_the_clipboard_pastes_in_line_over_the_selection_as_one_step() {
     assert_eq!(pictures(&e), [(72.0, 36.0, Some(0))], "its own size, 96 px a 72 pt inch");
     assert_eq!(texts(&e)[0].chars().filter(|c| *c != crate::editing::text::OBJECT).collect::<String>(), "abc ", "the selection is replaced");
     assert_eq!(e.history().next_undo(), Some("Paste"));
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(texts(&e), ["abc def"], "one undo takes it back");
     assert!(pictures(&e).is_empty());
 }
@@ -154,7 +154,7 @@ fn html_that_pastes_nothing_gives_way_to_the_picture_or_the_text() {
     assert_eq!(texts(&e)[0], "x plain");
     assert_eq!(e.last_paste().map(|l| l.choice), Some(PasteChoice::Unformatted), "the choice taken");
     assert_eq!(e.history().next_undo(), Some("Paste"));
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(texts(&e), ["x"], "one undo step");
     // A remote picture alone, no alternative text, a picture and text on the clipboard: the picture
     let clip = Clip { html: Some(r#"<p><img src="https://x.test/p.png"></p><p>words</p>"#.into()), image: Some(png(8, 8)), ..Clip::default() };
@@ -163,7 +163,7 @@ fn html_that_pastes_nothing_gives_way_to_the_picture_or_the_text() {
     assert!(changed(&e.paste_clip(clip.clone(), None, fonts())));
     assert_eq!((pictures(&e).len(), e.last_paste().map(|l| l.choice)), (1, Some(PasteChoice::Picture)));
     // Told to paste the HTML, it pastes that or nothing
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert!(matches!(e.paste_clip(clip, Some(PasteChoice::KeepSource), fonts()), Outcome::Unchanged(_)));
 }
 
@@ -276,7 +276,7 @@ fn the_paste_options_paste_again_another_way_as_one_undo_step() {
     assert!(!bold(&e), "as text");
     assert_eq!(texts(&e)[1], "dst bold");
     assert_eq!(e.paste_options_view(0..1).map(|v| v.current), Some(PasteChoice::TextOnly), "the button stays");
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(texts(&e), ["src", "dst"], "one undo takes the paste back");
     assert!(e.paste_options_view(0..1).is_none(), "nothing pasted now");
 }
@@ -550,7 +550,7 @@ fn keep_text_only_after_a_tracked_cut_and_paste_leaves_one_copy() {
     let pasted = ones(&e);
     assert!(changed(&e.repaste(PasteChoice::TextOnly, fonts())));
     assert_eq!(ones(&e), pasted, "one copy where it was pasted: {:?}", texts(&e));
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(ones(&e), pasted - 1, "one undo takes it back: {:?}", texts(&e));
 }
 
@@ -604,7 +604,7 @@ fn text_from_file_inserts_another_document_s_body_with_its_styles() {
     assert_eq!(texts(&e), ["afirst", "secondb"]);
     assert!(e.document().resolver.as_ref().is_some_and(|r| r.styles.get("Quote").is_some()), "its style comes");
     assert_eq!(e.history().next_undo(), Some("Insert File"));
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(texts(&e), ["ab"]);
     assert!(matches!(e.insert_file(b"PK\x03\x04not a document", fonts()), Outcome::Refused(_)));
 }
@@ -701,7 +701,7 @@ fn text_from_file_brings_its_section_breaks_and_their_page_setup() {
     let again = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
     assert_eq!(section_texts(&again), section_texts(&e), "saved with its section break");
     assert!(again.document().sections[0].headers.iter().flatten().next().is_some(), "and its header");
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(section_texts(&e), [vec!["ab".to_string()]], "one undo step");
     assert!(e.document().stories.is_empty());
     // In a cell, no section breaks: its sections' text alone
@@ -738,10 +738,10 @@ fn many_file_sections_sharing_a_header_bring_it_in_once() {
     assert!(d.sections[..n].iter().all(|s| s.headers[1].as_ref() == Some(name) && s.headers[2].as_ref() == Some(name)));
     let v = crate::editing::integrity::check(e.document(), e.index(), &e.selection());
     assert!(v.is_empty(), "{:?}", v.iter().take(3).map(|v| v.detail.clone()).collect::<Vec<_>>());
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(section_texts(&e), [vec!["ab".to_string()]]);
     assert!(e.document().stories.is_empty());
-    e.execute(Command::Redo, fonts());
+    e.execute(Command::Redo(Default::default()), fonts());
     assert_eq!((e.document().sections.len(), e.document().stories.len()), (n + 1, 1));
 }
 

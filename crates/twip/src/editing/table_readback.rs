@@ -162,6 +162,76 @@ fn rows_spanned(g: &Grid, r: usize, k: usize) -> usize {
     end - r + 1
 }
 
+fn edges(e: &TableEdgeLines) -> crate::api::state::TableBorderLines {
+    let b = |l: &Option<BorderLine>| l.clone().map(Into::into);
+    crate::api::state::TableBorderLines {
+        top: b(&e.top),
+        left: b(&e.left),
+        bottom: b(&e.bottom),
+        right: b(&e.right),
+        inside_horizontal: b(&e.inside_horizontal),
+        inside_vertical: b(&e.inside_vertical),
+    }
+}
+
+fn none_or<T>(v: Option<T>) -> NoneOr<T> {
+    v.map_or(NoneOr::None, NoneOr::Value)
+}
+
+impl TableReadback {
+    /// The table state's fields this read-back fills (the rest default).
+    pub fn into_state(self) -> crate::api::state::TableSelection {
+        use crate::api::state::{CellBorderLines, CellMarginsState, RowExceptionsState, TableCellMarginsState, TableSelection};
+        let c = |t: Tri<NoneOr<BorderLine>>| {
+            t.map(|v| match v {
+                NoneOr::Value(l) => NoneOr::Value(l.into()),
+                NoneOr::None => NoneOr::None,
+            })
+        };
+        let x = self.row_exceptions;
+        let m = self.default_cell_margins;
+        TableSelection {
+            cell_borders: CellBorderLines {
+                top: c(self.cell_borders.top),
+                left: c(self.cell_borders.left),
+                bottom: c(self.cell_borders.bottom),
+                right: c(self.cell_borders.right),
+                inside_horizontal: c(self.cell_borders.inside_horizontal),
+                inside_vertical: c(self.cell_borders.inside_vertical),
+                diagonal_down: c(self.cell_borders.diagonal_down),
+                diagonal_up: c(self.cell_borders.diagonal_up),
+            },
+            table_borders: edges(&self.table_borders),
+            cell_shading_value: self.cell_shading,
+            table_shading: self.table_shading,
+            cell_margins: CellMarginsState {
+                top: self.cell_margins.top,
+                left: self.cell_margins.left,
+                bottom: self.cell_margins.bottom,
+                right: self.cell_margins.right,
+            },
+            default_cell_margins: TableCellMarginsState { top: m.top, left: m.left, bottom: m.bottom, right: m.right },
+            hide_mark: self.hide_mark,
+            row_exceptions: RowExceptionsState {
+                any: x.any,
+                alignment: x.alignment.map(none_or),
+                indent: x.indent.map(none_or),
+                cell_spacing: x.cell_spacing.map(none_or),
+                shading: x.shading,
+                borders: x.borders.map(|b| none_or(b.as_ref().map(edges))),
+            },
+            fit: match self.fit {
+                TableFit::Fixed => crate::api::state::TableFit::Fixed,
+                TableFit::Contents => crate::api::state::TableFit::Contents,
+                TableFit::Window => crate::api::state::TableFit::Window,
+            },
+            column_span: self.column_span,
+            row_span: self.row_span,
+            ..TableSelection::default()
+        }
+    }
+}
+
 impl Editor {
     /// The selection's table beyond the table state ([`TableReadback`]); none outside a table.
     pub fn table_readback(&self) -> Option<TableReadback> {

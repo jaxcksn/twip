@@ -1,0 +1,23 @@
+{
+  "name": "mark-entry",
+  "fixture": "editor/FX-outline.docx",
+  "steps": [
+    { "op": "open" },
+    { "op": "call", "method": "find.next", "args": [{ "text": "survey" }], "result": { "found": true } },
+    { "op": "call", "method": "commands.markTableOfContentsEntry", "args": [{ "text": "Survey", "level": 2, "identifier": "F" }], "result": { "id": { "$type": "string" } }, "save": "mark" },
+    { "op": "expectState", "match": { "history": { "undoLabel": "Mark Table of Contents Entry" } } },
+    { "op": "call", "method": "elements.get", "args": [{ "$saved": "mark", "path": ["id"] }], "result": { "kind": "field", "code": { "$contains": "TC \"Survey\"" } } },
+    { "op": "call", "method": "find.next", "args": [{ "text": "trends" }], "result": { "found": true } },
+    { "op": "call", "method": "commands.markTableOfContentsEntry", "args": [{ "text": "Trends", "level": 1, "pageNumber": false }], "result": { "id": { "$type": "string" } } },
+    { "op": "command", "command": { "type": "markTableOfContentsEntry", "text": "", "level": 1 } },
+    { "op": "expectError", "code": "invalid-argument" },
+    { "op": "command", "command": { "type": "markTableOfContentsEntry", "text": "Ten", "level": 10 } },
+    { "op": "expectError", "code": "invalid-argument" },
+    { "op": "call", "method": "references.tocEntries", "args": [{ "entryFields": { "identifier": "F" } }], "result": { "$exact": [{ "level": 2, "text": "Survey", "pageNumber": true }] } },
+    { "op": "call", "method": "references.tocEntries", "args": [{ "entryFields": {} }], "result": { "$exact": [{ "level": 1, "text": "Trends", "pageNumber": false }] } },
+    { "op": "command", "command": { "type": "moveSelection", "by": "document", "direction": "backward" } },
+    { "op": "command", "command": { "type": "insertTableOfContents", "options": { "entryFields": { "identifier": "F" } } } },
+    { "op": "call", "method": "references.tablesOfContents", "result": { "tables": [{ "options": { "$exact": { "entryFields": { "identifier": "F" } } } }] } },
+    { "op": "call", "method": "find.all", "args": [{ "text": "Survey" }], "result": { "matches": [{ "page": 1 }] } }
+  ]
+}

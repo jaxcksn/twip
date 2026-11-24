@@ -1,0 +1,17 @@
+{
+  "name": "frame-overlap",
+  "fixture": "layout/suppress-overlap-c15.docx",
+  "steps": [
+    { "op": "open" },
+    { "op": "call", "method": "find.next", "args": [{ "text": "The first frame" }], "result": { "found": true } },
+    { "op": "command", "command": { "type": "escape" } },
+    { "op": "expectState", "match": { "selection": { "object": { "kind": "frame", "id": { "$exact": null }, "frame": { "allowOverlap": true, "properties": { "width": 144, "widthRule": "exactly", "horizontalRelative": "margin" } } } } } },
+    { "op": "command", "command": { "type": "setFrame", "wrap": "around", "widthRule": "exactly", "width": 144, "heightRule": "exactly", "height": 36, "horizontalAlign": null, "horizontal": 72, "horizontalRelative": "margin", "horizontalDistance": 9, "verticalAlign": null, "vertical": 0, "verticalRelative": "paragraph", "verticalDistance": 0, "lockAnchor": false, "allowOverlap": false } },
+    { "op": "expectState", "match": { "history": { "undoLabel": "Frame" }, "selection": { "object": { "kind": "frame", "frame": { "allowOverlap": false } } } } },
+    { "op": "export", "format": "docx" },
+    { "op": "reopen" },
+    { "op": "call", "method": "find.next", "args": [{ "text": "The first frame" }], "result": { "found": true } },
+    { "op": "command", "command": { "type": "escape" } },
+    { "op": "expectState", "match": { "selection": { "object": { "kind": "frame", "frame": { "allowOverlap": false } } } } }
+  ]
+}

@@ -17,12 +17,18 @@
           }
         ],
         "defaultTabStop": 36.5,
+        "endMargin": "outside",
+        "gutter": {
+          "end": 72.5,
+          "start": 54.5
+        },
         "indents": {
           "firstLine": -18.5,
           "left": 36.5,
           "right": 0.5
         },
         "pageWidth": 612.5,
+        "startMargin": "inside",
         "tableColumns": [
           72.5,
           200.5
@@ -40,12 +46,20 @@
           "start": 72.5
         }
       },
+      "lines": "horizontal",
       "mixed": true,
       "vertical": {
+        "defaultTabStop": 0.0,
+        "indents": {
+          "firstLine": 0.0,
+          "left": 0.0,
+          "right": 0.0
+        },
         "pageHeight": 792.5,
         "tableRows": [
           100.5
         ],
+        "tabs": [],
         "text": {
           "end": 720.5,
           "start": 72.5

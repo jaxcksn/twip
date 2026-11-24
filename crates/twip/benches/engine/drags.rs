@@ -36,7 +36,7 @@ fn session(name: &str, border: Border, pixels: &mut [u8]) -> (Engine, SessionId,
     s.host().set_focus(true);
     while s.host().idle() {}
     s.host().frame_rgba(pixels, W, H).expect("a frame");
-    assert!(s.find(&FindQuery { text: "1.3 value".into(), ..FindQuery::default() }, Order::Next).found, "the cell text");
+    assert!(s.find(&FindQuery { text: "1.3 value".into(), ..FindQuery::default() }, Order::Next).expect("finds").found, "the cell text");
     let back = MoveSelection { by: MoveUnit::Character, direction: Direction::Backward, extend: None };
     s.run(Command::MoveSelection(back)).expect("the caret moves");
     let c = s.host().frame_info();
@@ -76,7 +76,7 @@ fn moving(bencher: Bencher, name: &str, border: Border, fresh: bool) {
             if fresh && moved > FRESH_LIMIT {
                 let mut s = s.borrow_mut();
                 s.pointer(PointerKind::Up, along(at, border, moved), PointerButton::Primary, 1, NONE);
-                s.run(Command::Undo).expect("the drag is undone");
+                s.run(Command::Undo(Default::default())).expect("the drag is undone");
                 s.pointer(PointerKind::Down, at, PointerButton::Primary, 1, NONE);
                 moved = 10.25;
             }
@@ -173,13 +173,13 @@ fn release(bencher: Bencher, name: &str) {
     s.pointer(PointerKind::Move, to, PointerButton::Primary, 0, NONE);
     s.pointer(PointerKind::Up, to, PointerButton::Primary, 1, NONE);
     assert!(s.state().revision > revision, "the release committed the resize");
-    s.run(Command::Undo).expect("undoes");
+    s.run(Command::Undo(Default::default())).expect("undoes");
     let (s, pixels, mut dragged, prof) = (RefCell::new(s), RefCell::new(pixels), false, RefCell::new(super::Prof::default()));
     bencher
         .with_inputs(|| {
             let mut s = s.borrow_mut();
             if std::mem::replace(&mut dragged, true) {
-                s.run(Command::Undo).expect("undoes");
+                s.run(Command::Undo(Default::default())).expect("undoes");
             }
             while s.host().idle() {}
             s.pointer(PointerKind::Down, at, PointerButton::Primary, 1, NONE);

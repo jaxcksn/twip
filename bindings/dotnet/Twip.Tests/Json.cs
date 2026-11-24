@@ -109,6 +109,12 @@ internal static class JsonCompare
                 why = $"{path}: expected a {type}, got {shown}";
                 return false;
             }
+            if (special.TryGetPropertyValue("$contains", out var part))
+            {
+                if (got is JsonValue v && v.TryGetValue<string>(out var s) && s.Contains(part!.GetValue<string>(), StringComparison.Ordinal)) return true;
+                why = $"{path}: expected a string holding {part?.ToJsonString()}, got {shown}";
+                return false;
+            }
             if (special.TryGetPropertyValue("$has", out var has))
             {
                 var all = Items(got).ToList();

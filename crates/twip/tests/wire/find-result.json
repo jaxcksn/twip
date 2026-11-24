@@ -2,5 +2,10 @@
   {
     "found": true,
     "wrapped": true
+  },
+  {
+    "found": false,
+    "truncated": true,
+    "wrapped": false
   }
 ]

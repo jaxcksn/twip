@@ -39,10 +39,30 @@ public enum DeleteUnit
 /// <summary>How to paste.</summary>
 public enum PasteMode
 {
-    /// <summary>With formatting.</summary>
+    /// <summary>As the paste options say for where it came from.</summary>
     Formatted,
-    /// <summary>As plain text.</summary>
+    /// <summary>The clipboard's plain text as it is.</summary>
     Text,
+    /// <summary>Keep Source Formatting.</summary>
+    KeepSource,
+    /// <summary>Merge Formatting: the look of the text it lands in, keeping emphasis applied to part of it.</summary>
+    Merge,
+    /// <summary>Use Destination Styles.</summary>
+    DestinationStyles,
+    /// <summary>Keep Text Only: list numbers and bullets as text when the options keep bullets.</summary>
+    TextOnly,
+    /// <summary>The clipboard's HTML.</summary>
+    Html,
+    /// <summary>The clipboard's picture, in line.</summary>
+    Picture,
+    /// <summary>Copied cells as a table nested in the cell.</summary>
+    NestTable,
+    /// <summary>Copied cells as rows above the caret's row, made like this table's.</summary>
+    MergeTable,
+    /// <summary>Copied cells as rows above the caret's row, as they were copied.</summary>
+    InsertRows,
+    /// <summary>Copied cells over the cells from the caret's, adding rows the table lacks.</summary>
+    OverwriteCells,
 }
 
 /// <summary>A unit to extend the selection to.</summary>
@@ -87,6 +107,8 @@ public enum MoveUnit
     RowEdge,
     /// <summary>To the first or last cell of the column.</summary>
     ColumnEdge,
+    /// <summary>To the top or bottom line of the window (Ctrl+Alt+Page Up, Page Down).</summary>
+    WindowEdge,
 }
 
 /// <summary>Next or previous.</summary>
@@ -195,6 +217,8 @@ public enum HighlightColor
 /// <param name="NumberForm">The digits' forms.</param>
 /// <param name="StylisticSet">The font's stylistic set (1 to 20), or its default (0).</param>
 /// <param name="ContextualAlternates">The font's contextual alternates.</param>
+/// <param name="LigatureFlags">Each kind of ligature on or off, over <paramref name="Ligatures"/>.</param>
+/// <param name="StylisticSets">The stylistic sets on (each 1 to 20; empty: none), over <paramref name="StylisticSet"/>.</param>
 public sealed record TypographyOptions(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? Scale = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Kerning = null,
@@ -202,7 +226,64 @@ public sealed record TypographyOptions(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NumberSpacing? NumberSpacing = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NumberForm? NumberForm = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? StylisticSet = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? ContextualAlternates = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? ContextualAlternates = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] LigatureFlags? LigatureFlags = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<int>? StylisticSets = null);
+
+/// <summary>OpenType ligatures, each kind on or off.</summary>
+/// <param name="Standard">Standard ligatures (<c>liga</c>).</param>
+/// <param name="Contextual">Contextual ligatures (<c>clig</c>).</param>
+/// <param name="Historical">Historical ligatures (<c>hlig</c>).</param>
+/// <param name="Discretionary">Discretionary ligatures (<c>dlig</c>).</param>
+public sealed record LigatureFlags(bool Standard = false, bool Contextual = false, bool Historical = false, bool Discretionary = false);
+
+/// <summary>Which floating objects a text wrapping break moves the text below.</summary>
+public enum BreakClear
+{
+    /// <summary>Those on the left.</summary>
+    Left,
+    /// <summary>Those on the right.</summary>
+    Right,
+    /// <summary>Those on either side (Layout &gt; Breaks &gt; Text Wrapping).</summary>
+    Both,
+}
+
+/// <summary>One of the theme's two fonts.</summary>
+public enum ThemeFont
+{
+    /// <summary>The heading font (<c>+Headings</c>).</summary>
+    Headings,
+    /// <summary>The body font (<c>+Body</c>).</summary>
+    Body,
+}
+
+/// <summary>A font: a family by name, or the theme's heading or body font, which follows the theme.</summary>
+[JsonConverter(typeof(FontChoiceConverter))]
+public sealed record FontChoice
+{
+    private FontChoice(string? name, ThemeFont? theme) => (Name, Theme) = (name, theme);
+
+    /// <summary>The family, for a font by name.</summary>
+    public string? Name { get; }
+
+    /// <summary>The theme's font, for a theme font.</summary>
+    public ThemeFont? Theme { get; }
+
+    /// <summary>A family by name.</summary>
+    /// <param name="name">The family (non-empty).</param>
+    public static FontChoice Family(string name) => new(name ?? throw new ArgumentNullException(nameof(name)), null);
+
+    /// <summary>The theme's heading or body font.</summary>
+    /// <param name="theme">Which.</param>
+    public static FontChoice FromTheme(ThemeFont theme) => new(null, theme);
+
+    /// <summary>A family by name.</summary>
+    /// <param name="name">The family.</param>
+    public static implicit operator FontChoice(string name) => Family(name);
+
+    /// <inheritdoc/>
+    public override string ToString() => Name ?? $"+{Theme}";
+}
 
 /// <summary>The ligatures text may use (Word's choices).</summary>
 public enum Ligatures
@@ -372,15 +453,53 @@ public enum PageNumberFormat
     Total,
 }
 
-/// <summary>Where a page number goes.</summary>
-public enum PageNumberPlacement
+/// <summary>Where a page number goes: at the caret, in the header or footer, or in a page margin.</summary>
+[JsonConverter(typeof(PageNumberPlacementConverter))]
+public sealed record PageNumberPlacement
 {
+    private PageNumberPlacement(string place, MarginSide? side) => (Place, Side) = (place, side);
+
+    internal string Place { get; }
+
+    /// <summary>The margin, for <see cref="Margin"/>; null otherwise.</summary>
+    public MarginSide? Side { get; }
+
     /// <summary>At the caret.</summary>
-    Caret,
+    public static PageNumberPlacement Caret { get; } = new("caret", null);
+
     /// <summary>In the header.</summary>
-    Header,
+    public static PageNumberPlacement Header { get; } = new("header", null);
+
     /// <summary>In the footer.</summary>
-    Footer,
+    public static PageNumberPlacement Footer { get; } = new("footer", null);
+
+    /// <summary>In a page margin (Page Margins): in a frame anchored in the header, as wide as the margin.</summary>
+    /// <param name="side">Which margin.</param>
+    public static PageNumberPlacement Margin(MarginSide side) => new("margin", side);
+
+    internal static PageNumberPlacement? Of(string place) => place switch
+    {
+        "caret" => Caret,
+        "header" => Header,
+        "footer" => Footer,
+        _ => null,
+    };
+
+    /// <inheritdoc/>
+    public override string ToString() => Side is { } s ? $"margin {s}" : Place;
+}
+
+/// <summary>A page margin, or a facing page's inside or outside one.</summary>
+public enum MarginSide
+{
+    /// <summary>The left side of every page.</summary>
+    Left,
+    /// <summary>The right side of every page.</summary>
+    Right,
+    /// <summary>By the binding: the left on odd pages, the right on even ones.</summary>
+    Inside,
+    /// <summary>Away from the binding.</summary>
+    Outside,
 }
 
 /// <summary>A page number's alignment in a header or footer.</summary>
@@ -392,6 +511,10 @@ public enum PageNumberAlignment
     Center,
     /// <summary>Right.</summary>
     Right,
+    /// <summary>On the inside edge: the left on odd pages, the right on even ones (in a frame).</summary>
+    Inside,
+    /// <summary>On the outside edge (in a frame).</summary>
+    Outside,
 }
 
 /// <summary>Where new rows go.</summary>
@@ -549,8 +672,8 @@ public enum LineStyle
     Inset,
 }
 
-/// <summary>A list level's number style.</summary>
-public enum NumberFormat
+/// <summary>A list level's number style's kind: the named ones, and <see cref="Other"/>.</summary>
+public enum NumberFormatKind
 {
     /// <summary>1, 2, 3.</summary>
     Decimal,
@@ -574,6 +697,151 @@ public enum NumberFormat
     Bullet,
     /// <summary>No number.</summary>
     None,
+    /// <summary>- 1 -, - 2 -, - 3 -.</summary>
+    NumberInDash,
+    /// <summary>1, ..., 9, A, B: hexadecimal.</summary>
+    Hex,
+    /// <summary>*, †, ‡, §, then doubled.</summary>
+    Chicago,
+    /// <summary>а, б, в.</summary>
+    RussianLower,
+    /// <summary>А, Б, В.</summary>
+    RussianUpper,
+    /// <summary>क, ख, ग.</summary>
+    HindiVowels,
+    /// <summary>अ, आ, इ.</summary>
+    HindiConsonants,
+    /// <summary>१, २, ३.</summary>
+    HindiNumbers,
+    /// <summary>ก, ข, ค.</summary>
+    ThaiLetters,
+    /// <summary>๑, ๒, ๓.</summary>
+    ThaiNumbers,
+    /// <summary>Another style, by its WordprocessingML name (<see cref="NumberFormat.Other"/>), numbered in decimal.</summary>
+    Other,
+}
+
+/// <summary>
+/// A list level's number style: a named one (<see cref="Decimal"/>, <see cref="Chicago"/>), or any other by its
+/// WordprocessingML name (<see cref="Named"/>, 1 to 64 ASCII letters and digits).
+/// </summary>
+[JsonConverter(typeof(NumberFormatConverter))]
+public sealed record NumberFormat
+{
+    private NumberFormat(NumberFormatKind kind, string? other) => (Kind, Other) = (kind, other);
+
+    /// <summary>Which style.</summary>
+    public NumberFormatKind Kind { get; }
+
+    /// <summary>The style's name, for <see cref="NumberFormatKind.Other"/>; null for the named ones.</summary>
+    public string? Other { get; }
+
+    /// <summary>1, 2, 3.</summary>
+    public static NumberFormat Decimal { get; } = new(NumberFormatKind.Decimal, null);
+
+    /// <summary>I, II, III.</summary>
+    public static NumberFormat UpperRoman { get; } = new(NumberFormatKind.UpperRoman, null);
+
+    /// <summary>i, ii, iii.</summary>
+    public static NumberFormat LowerRoman { get; } = new(NumberFormatKind.LowerRoman, null);
+
+    /// <summary>A, B, C.</summary>
+    public static NumberFormat UpperLetter { get; } = new(NumberFormatKind.UpperLetter, null);
+
+    /// <summary>a, b, c.</summary>
+    public static NumberFormat LowerLetter { get; } = new(NumberFormatKind.LowerLetter, null);
+
+    /// <summary>1st, 2nd, 3rd.</summary>
+    public static NumberFormat Ordinal { get; } = new(NumberFormatKind.Ordinal, null);
+
+    /// <summary>One, Two, Three.</summary>
+    public static NumberFormat CardinalText { get; } = new(NumberFormatKind.CardinalText, null);
+
+    /// <summary>First, Second, Third.</summary>
+    public static NumberFormat OrdinalText { get; } = new(NumberFormatKind.OrdinalText, null);
+
+    /// <summary>01, 02, 03.</summary>
+    public static NumberFormat DecimalZero { get; } = new(NumberFormatKind.DecimalZero, null);
+
+    /// <summary>A bullet.</summary>
+    public static NumberFormat Bullet { get; } = new(NumberFormatKind.Bullet, null);
+
+    /// <summary>No number.</summary>
+    public static NumberFormat None { get; } = new(NumberFormatKind.None, null);
+
+    /// <summary>- 1 -, - 2 -, - 3 -.</summary>
+    public static NumberFormat NumberInDash { get; } = new(NumberFormatKind.NumberInDash, null);
+
+    /// <summary>1, ..., 9, A, B: hexadecimal.</summary>
+    public static NumberFormat Hex { get; } = new(NumberFormatKind.Hex, null);
+
+    /// <summary>*, †, ‡, §, then doubled.</summary>
+    public static NumberFormat Chicago { get; } = new(NumberFormatKind.Chicago, null);
+
+    /// <summary>а, б, в.</summary>
+    public static NumberFormat RussianLower { get; } = new(NumberFormatKind.RussianLower, null);
+
+    /// <summary>А, Б, В.</summary>
+    public static NumberFormat RussianUpper { get; } = new(NumberFormatKind.RussianUpper, null);
+
+    /// <summary>क, ख, ग.</summary>
+    public static NumberFormat HindiVowels { get; } = new(NumberFormatKind.HindiVowels, null);
+
+    /// <summary>अ, आ, इ.</summary>
+    public static NumberFormat HindiConsonants { get; } = new(NumberFormatKind.HindiConsonants, null);
+
+    /// <summary>१, २, ३.</summary>
+    public static NumberFormat HindiNumbers { get; } = new(NumberFormatKind.HindiNumbers, null);
+
+    /// <summary>ก, ข, ค.</summary>
+    public static NumberFormat ThaiLetters { get; } = new(NumberFormatKind.ThaiLetters, null);
+
+    /// <summary>๑, ๒, ๓.</summary>
+    public static NumberFormat ThaiNumbers { get; } = new(NumberFormatKind.ThaiNumbers, null);
+
+    /// <summary>A style by its WordprocessingML name: a named one when it names one, else <see cref="NumberFormatKind.Other"/>.</summary>
+    /// <param name="name">The name, such as <c>aiueoFullWidth</c>.</param>
+    public static NumberFormat Named(string name) =>
+        Of(name) ?? new NumberFormat(NumberFormatKind.Other, name ?? throw new ArgumentNullException(nameof(name)));
+
+    /// <summary>The named style of a kind; <see cref="NumberFormatKind.Other"/> needs <see cref="Named"/>.</summary>
+    /// <param name="kind">The kind.</param>
+    public static NumberFormat FromKind(NumberFormatKind kind) =>
+        kind == NumberFormatKind.Other ? throw new ArgumentException("an other style needs its name", nameof(kind)) : All[(int)kind];
+
+    private static readonly NumberFormat[] All =
+    [
+        Decimal,
+        UpperRoman,
+        LowerRoman,
+        UpperLetter,
+        LowerLetter,
+        Ordinal,
+        CardinalText,
+        OrdinalText,
+        DecimalZero,
+        Bullet,
+        None,
+        NumberInDash,
+        Hex,
+        Chicago,
+        RussianLower,
+        RussianUpper,
+        HindiVowels,
+        HindiConsonants,
+        HindiNumbers,
+        ThaiLetters,
+        ThaiNumbers,
+    ];
+
+    /// <summary>The named style a camelCase name is, or null.</summary>
+    internal static NumberFormat? Of(string name) => Array.Find(All, f => f.Name == name);
+
+    /// <summary>A named style's camelCase name, or the other style's name.</summary>
+    internal string Name => Other ?? char.ToLowerInvariant(Kind.ToString()[0]) + Kind.ToString().Substring(1);
+
+    /// <inheritdoc/>
+    public override string ToString() => Name;
 }
 
 /// <summary>How a list level's number aligns.</summary>
@@ -632,6 +900,12 @@ public enum NumberingMode
 /// <param name="LinkedStyle">The paragraph style linked to the level.</param>
 /// <param name="Font">The number's or bullet's font.</param>
 /// <param name="Picture">A picture bullet's image (PNG, JPEG or GIF).</param>
+/// <param name="Bold">The number's own bold; null: the paragraph's. Setting a level, a null one is cleared, as the others below.</param>
+/// <param name="Italic">The number's own italic.</param>
+/// <param name="Underline">The number's own underline.</param>
+/// <param name="Size">The number's own size, 1 to 1638 pt.</param>
+/// <param name="Color">The number's own colour, or <see cref="ColorValue.Auto"/>.</param>
+/// <param name="Highlight">The number's own highlight, or <see cref="HighlightColor.None"/>.</param>
 public sealed record ListLevel(
     NumberFormat Format,
     string Text,
@@ -645,7 +919,13 @@ public sealed record ListLevel(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? RestartAfter = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] StyleId? LinkedStyle = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Font = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] byte[]? Picture = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] byte[]? Picture = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Bold = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Italic = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] UnderlineStyle? Underline = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Size = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ColorValue? Color = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] HighlightColor? Highlight = null);
 
 /// <summary>A list definition for <see cref="EditorCommands.SetListDefinitionAsync"/>: level k of Levels is level k; the levels after them are kept.</summary>
 /// <param name="Levels">The levels, from the first.</param>
@@ -771,7 +1051,7 @@ public enum ShadingPattern
 
 /// <summary>The text's border for <see cref="EditorCommands.SetTextBorderAsync"/>.</summary>
 /// <param name="Border">The box's line; null removes it.</param>
-/// <param name="Shadow">A shadow.</param>
+/// <param name="Shadow">A shadow, when the line gives none of its own.</param>
 public sealed record TextBorderOptions(CellBorder? Border, bool Shadow = false);
 
 /// <summary>What page borders are measured from.</summary>
@@ -814,6 +1094,7 @@ public enum PageBorderScope
 /// <param name="ApplyTo">The sections they apply to.</param>
 /// <param name="SurroundHeader">The borders go around the header (every section's); null keeps it.</param>
 /// <param name="SurroundFooter">The borders go around the footer (every section's); null keeps it.</param>
+/// <param name="BehindText">The borders are behind the text and objects they meet (Word's Always display in front, off); null keeps it.</param>
 public sealed record PageBordersOptions(
     CellBorder? Top = null,
     CellBorder? Bottom = null,
@@ -824,7 +1105,8 @@ public sealed record PageBordersOptions(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PageBorderDisplay? Display = null,
     PageBorderScope ApplyTo = PageBorderScope.ThisSection,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? SurroundHeader = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? SurroundFooter = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? SurroundFooter = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? BehindText = null);
 
 /// <summary>A column's width and the space after it.</summary>
 /// <param name="Width">The width.</param>
@@ -837,9 +1119,11 @@ public sealed record ColumnWidth(Length Width, Length Spacing);
 /// <param name="ContinueFromPrevious">Continue from the section before (ignored when <paramref name="Start"/> is set).</param>
 /// <param name="Chapter">Chapter numbers before the page number.</param>
 /// <param name="NoChapterNumbers">Remove the chapter numbers (ignored when <paramref name="Chapter"/> is set).</param>
+/// <param name="ApplyTo">The sections it applies to; null: the selection's.</param>
 [JsonConverter(typeof(PageNumberingOptionsConverter))]
 public sealed record PageNumberingOptions(
-    NumberFormat? Format = null, int? Start = null, bool ContinueFromPrevious = false, ChapterNumbers? Chapter = null, bool NoChapterNumbers = false);
+    NumberFormat? Format = null, int? Start = null, bool ContinueFromPrevious = false, ChapterNumbers? Chapter = null, bool NoChapterNumbers = false,
+    PageSetupScope? ApplyTo = null);
 
 /// <summary>Chapter numbers in page numbers: the number of the last heading of a level, then a separator.</summary>
 /// <param name="Level">The heading level whose number leads (1 to 9).</param>
@@ -1012,7 +1296,7 @@ public sealed record MultiplePagesOptions(
 /// <param name="Left">The left edge.</param>
 /// <param name="Right">The right edge.</param>
 /// <param name="Between">The line between paragraphs with the same borders.</param>
-/// <param name="Shadow">A shadow on the bottom and right edges.</param>
+/// <param name="Shadow">A shadow on the bottom and right edges whose line gives none of its own.</param>
 public sealed record ParagraphBorderLines(
     CellBorder? Top = null,
     CellBorder? Bottom = null,
@@ -1150,6 +1434,7 @@ public enum FrameVerticalRelative
 /// <param name="VerticalRelative">What the vertical position is relative to.</param>
 /// <param name="VerticalDistance">The distance from text, above and below.</param>
 /// <param name="LockAnchor">The anchor stays with its paragraph.</param>
+/// <param name="AllowOverlap">Other frames and floating objects may overlap it (false: kept apart); null keeps it. Set Frame only.</param>
 public sealed record FrameProperties(
     FrameWrap Wrap,
     FrameWidthRule WidthRule,
@@ -1164,7 +1449,8 @@ public sealed record FrameProperties(
     Length Vertical,
     FrameVerticalRelative VerticalRelative,
     Length VerticalDistance,
-    bool LockAnchor);
+    bool LockAnchor,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? AllowOverlap = null);
 
 /// <summary>A table's alignment on the page.</summary>
 public enum TableAlignment
@@ -1404,12 +1690,20 @@ public enum ProtectionKind
 /// <param name="Enforce">Starts (true) or stops enforcing it.</param>
 /// <param name="Password">Starting: the password stopping will need (none when null or empty). Stopping: the password.</param>
 /// <param name="UnprotectedSections">Filling in forms: the sections (by index) anyone may edit. Not while enforced.</param>
+/// <param name="ConfirmPassword">Starting with a password: the password again; it must match.</param>
+/// <param name="AutoFormatOverride">AutoFormat as you type may override the formatting restriction. Not while enforced.</param>
+/// <param name="BlockThemeSwitching">The formatting restriction keeps the theme from changing. Not while enforced.</param>
+/// <param name="BlockStyleSetSwitching">The formatting restriction keeps the style set from changing. Not while enforced.</param>
 public sealed record DocumentProtection(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ProtectionKind? Kind = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Formatting = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Enforce = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Password = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<uint>? UnprotectedSections = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<uint>? UnprotectedSections = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ConfirmPassword = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? AutoFormatOverride = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? BlockThemeSwitching = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? BlockStyleSetSwitching = null);
 
 /// <summary>A legacy form field's kind.</summary>
 public enum FormFieldType
@@ -1451,6 +1745,8 @@ public enum TextInputType
 /// <param name="Text">A text form field's options.</param>
 /// <param name="CheckBox">A check box's options.</param>
 /// <param name="DropDown">A drop-down's options.</param>
+/// <param name="HelpIsAutoText"><paramref name="HelpText"/> names an AutoText entry whose text is the help.</param>
+/// <param name="StatusIsAutoText"><paramref name="StatusText"/> names an AutoText entry whose text is the help.</param>
 public sealed record FormFieldChange(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ElementId? Id = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Name = null,
@@ -1462,7 +1758,9 @@ public sealed record FormFieldChange(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? StatusText = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TextFormOptions? Text = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CheckBoxFormOptions? CheckBox = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] DropDownFormOptions? DropDown = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] DropDownFormOptions? DropDown = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? HelpIsAutoText = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? StatusIsAutoText = null);
 
 /// <summary>A text form field's options.</summary>
 /// <param name="InputType">What it takes.</param>
@@ -1655,12 +1953,14 @@ public readonly record struct EffectChange<T>
 /// <param name="Glow">A glow around the shape.</param>
 /// <param name="SoftEdge">Edges faded over this distance.</param>
 /// <param name="Blur">The whole shape blurred by this radius.</param>
+/// <param name="Reflection">A reflection.</param>
 public sealed record EffectsChange(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] EffectChange<Shadow> OuterShadow = default,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] EffectChange<Shadow> InnerShadow = default,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] EffectChange<Glow> Glow = default,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] EffectChange<Length> SoftEdge = default,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] EffectChange<Length> Blur = default);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] EffectChange<Length> Blur = default,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] EffectChange<Reflection> Reflection = default);
 
 /// <summary>A text effects change: each effect is kept, removed (over a style's too; a fill is only removed) or set.</summary>
 /// <param name="Fill">The letters' fill: none (hollow), solid or gradient of two to ten stops.</param>
@@ -1682,13 +1982,15 @@ public sealed record TextEffectsChange(
 /// <param name="WrapText">Lines wrap at the shape's width.</param>
 /// <param name="Direction">Which way it runs.</param>
 /// <param name="Columns">Its columns.</param>
+/// <param name="Upright">The text stays upright when the shape turns ("Do not rotate text within shape").</param>
 public sealed record ShapeTextChange(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<Length>? Insets = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TextAnchor? Anchor = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TextAutofit? Autofit = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? WrapText = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TextDirection? Direction = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TextColumns? Columns = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TextColumns? Columns = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Upright = null);
 
 /// <summary>A picture adjustment change; unset values are kept.</summary>
 /// <param name="Transparency">How see-through the picture is, 0 (opaque) to 1 (invisible).</param>
@@ -1724,6 +2026,128 @@ public enum ControlKind
     Group,
     /// <summary>A repeating section.</summary>
     RepeatingSection,
+    /// <summary>A building block gallery.</summary>
+    BuildingBlockGallery,
+    /// <summary>A building block inserted from a gallery; read only.</summary>
+    BuildingBlock,
+    /// <summary>A citation; read only.</summary>
+    Citation,
+    /// <summary>A bibliography; read only.</summary>
+    Bibliography,
+    /// <summary>An equation; read only.</summary>
+    Equation,
+}
+
+/// <summary>A date control's calendar.</summary>
+public enum CalendarType
+{
+    /// <summary>Gregorian (localized).</summary>
+    Gregorian,
+    /// <summary>Hijri.</summary>
+    Hijri,
+    /// <summary>Hebrew lunar.</summary>
+    Hebrew,
+    /// <summary>Taiwan.</summary>
+    Taiwan,
+    /// <summary>Japanese emperor era.</summary>
+    Japan,
+    /// <summary>Thai.</summary>
+    Thai,
+    /// <summary>Korean Tangun era.</summary>
+    Korea,
+    /// <summary>Saka era.</summary>
+    Saka,
+    /// <summary>Gregorian, transliterated English.</summary>
+    GregorianXlitEnglish,
+    /// <summary>Gregorian, transliterated French.</summary>
+    GregorianXlitFrench,
+    /// <summary>Gregorian, US English.</summary>
+    GregorianUs,
+    /// <summary>Gregorian, Middle East French.</summary>
+    GregorianMeFrench,
+    /// <summary>Gregorian, Arabic.</summary>
+    GregorianArabic,
+}
+
+/// <summary>What a bound date control stores in its data.</summary>
+public enum DateStorage
+{
+    /// <summary>The text it shows.</summary>
+    Text,
+    /// <summary>The date.</summary>
+    Date,
+    /// <summary>The date and time.</summary>
+    DateTime,
+}
+
+/// <summary>Where <see cref="EditorCommands.SetColumnsAsync"/> applies.</summary>
+public enum ColumnsApplyTo
+{
+    /// <summary>The selection's sections.</summary>
+    Section,
+    /// <summary>Every section.</summary>
+    WholeDocument,
+    /// <summary>From the selection on: a continuous section break goes there.</summary>
+    ThisPointForward,
+    /// <summary>The selected text alone: continuous section breaks around it.</summary>
+    SelectedText,
+}
+
+/// <summary>One of Word's column presets.</summary>
+public enum ColumnPreset
+{
+    /// <summary>One column.</summary>
+    One,
+    /// <summary>Two equal columns.</summary>
+    Two,
+    /// <summary>Three equal columns.</summary>
+    Three,
+    /// <summary>Two, the narrow one on the left.</summary>
+    Left,
+    /// <summary>Two, the narrow one on the right.</summary>
+    Right,
+}
+
+/// <summary>Which side of a heading another goes.</summary>
+public enum HeadingSide
+{
+    /// <summary>Just before the heading.</summary>
+    Before,
+    /// <summary>After the heading's whole content.</summary>
+    After,
+}
+
+/// <summary>One of the separators between the text and the notes.</summary>
+public enum NoteSeparatorPart
+{
+    /// <summary>Above the notes on the page they start.</summary>
+    Separator,
+    /// <summary>Above the notes continued from the page before.</summary>
+    ContinuationSeparator,
+    /// <summary>Below notes that continue on the next page.</summary>
+    ContinuationNotice,
+}
+
+/// <summary>A group or a person an editable range lets edit: exactly one of <see cref="Group"/> and <see cref="User"/>.</summary>
+public sealed record RangeEditorRef
+{
+    /// <summary>A group: <c>everyone</c>, <c>administrators</c>, <c>contributors</c>, <c>editors</c>, <c>owners</c>, <c>current</c>.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Group { get; init; }
+
+    /// <summary>One person: a name or email address.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? User { get; init; }
+
+    /// <summary>A group.</summary>
+    /// <param name="name">The group's name.</param>
+    /// <returns>The reference.</returns>
+    public static RangeEditorRef ForGroup(string name) => new() { Group = name };
+
+    /// <summary>One person.</summary>
+    /// <param name="name">A name or email address.</param>
+    /// <returns>The reference.</returns>
+    public static RangeEditorRef ForUser(string name) => new() { User = name };
 }
 
 /// <summary>What a content control's lock prevents.</summary>
@@ -1799,6 +2223,9 @@ public enum MarkupView
 /// <param name="FirstLetterExceptions">Abbreviations after which a sentence doesn't start (<c>e.g.</c>), in place of the shipped ones.</param>
 /// <param name="InitialCapsExceptions">Words whose two initial capitals stay (<c>IDs</c>), in place of the shipped ones.</param>
 /// <param name="Never">The texts never corrected.</param>
+/// <param name="BorderLines">AutoFormat border lines: three or more <c>-</c>, <c>_</c>, <c>=</c>, <c>*</c>, <c>~</c> or <c>#</c> then Enter.</param>
+/// <param name="InternetPaths">AutoFormat: Internet and network paths to hyperlinks.</param>
+/// <param name="TabIndents">AutoFormat: indents set with Tab and Backspace at a paragraph's start.</param>
 public sealed record AutoCorrectChange(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? TwoInitialCapitals = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? SentenceCapitals = null,
@@ -1814,7 +2241,10 @@ public sealed record AutoCorrectChange(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<AutoCorrectEntry>? Entries = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? FirstLetterExceptions = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? InitialCapsExceptions = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? Never = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? Never = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? BorderLines = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? InternetPaths = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? TabIndents = null);
 
 /// <summary>One AutoCorrect replacement.</summary>
 /// <param name="From">What is typed.</param>
@@ -1842,14 +2272,14 @@ public sealed record ParagraphSpacingOptions(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] SpacingValue? After = null);
 
 /// <summary>The document's default formatting: what text has before any style's. What is null is kept.</summary>
-/// <param name="Font">The font.</param>
+/// <param name="Font">The font: a family, or the theme's heading or body font.</param>
 /// <param name="Size">The size.</param>
-/// <param name="Color">The font color.</param>
+/// <param name="Color">The font colour: RGB, a theme colour with at most one tint or shade, or automatic.</param>
 /// <param name="Spacing">The space before and after paragraphs.</param>
 /// <param name="LineSpacing">The line spacing.</param>
 /// <param name="Indents">The left and right indents.</param>
 public sealed record DocumentDefaults(
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Font = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] FontChoice? Font = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Size = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ColorValue? Color = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ParagraphSpacingOptions? Spacing = null,
@@ -1919,12 +2349,14 @@ public enum TextFlow
 /// <param name="Left">The left margin.</param>
 /// <param name="Right">The right margin.</param>
 /// <param name="Gutter">The gutter.</param>
+/// <param name="ApplyTo">The sections they apply to; null: the selection's.</param>
 public sealed record MarginOptions(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Top = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Bottom = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Left = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Right = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Gutter = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Gutter = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PageSetupScope? ApplyTo = null);
 
 /// <summary>Cell margins to change, 0 to 1584 pt; unset values are kept.</summary>
 /// <param name="Top">The top margin.</param>
@@ -1954,14 +2386,47 @@ public sealed record CellPropertiesOptions(
 /// <param name="Reset">Removes the rows' exceptions first.</param>
 /// <param name="Alignment">The rows' alignment.</param>
 /// <param name="CellSpacing">The space between the rows' cells, 0 to 1584.</param>
-/// <param name="Shading">The rows' shading.</param>
+/// <param name="Indent">The rows' indent from the table's left edge, -1584 to 1584; not in a fixed-width table.</param>
+/// <param name="Shading">The rows' shading: a fill, and a pattern in the pattern colour over it.</param>
 /// <param name="Borders">The table borders on the rows' edges.</param>
 public sealed record RowExceptions(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Reset = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TableAlignment? Alignment = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? CellSpacing = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ColorValue? Shading = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Indent = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ShadingValue? Shading = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] RowBorders? Borders = null);
+
+/// <summary>A table's default cell margins (Table Options), 0 to 1584 pt; unset sides are kept (in the state, every side is set).</summary>
+/// <param name="Top">The top margin.</param>
+/// <param name="Left">The left margin.</param>
+/// <param name="Bottom">The bottom margin.</param>
+/// <param name="Right">The right margin.</param>
+public sealed record TableCellMargins(
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Top = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Left = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Bottom = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Right = null);
+
+/// <summary>Where Insert Cells shifts the selected cells.</summary>
+public enum InsertCellShift
+{
+    /// <summary>Right: the rows grow by the inserted cells.</summary>
+    Right,
+    /// <summary>Down: the selected columns' cells move down, rows added at the table's end.</summary>
+    Down,
+}
+
+/// <summary>The pointer's table tool.</summary>
+public enum TableTool
+{
+    /// <summary>No tool: the pointer selects.</summary>
+    None,
+    /// <summary>Draw Table: a drag draws a line, a diagonal or a new table.</summary>
+    Pen,
+    /// <summary>Eraser: a press, or a drag, over a border merges the cells either side.</summary>
+    Eraser,
+}
 
 /// <summary>Borders on some edges of rows.</summary>
 /// <param name="Edges">Which edges.</param>
@@ -1983,11 +2448,34 @@ public sealed record TableStyleOptionsUpdate(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? BandedRows = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? BandedColumns = null);
 
-/// <summary>A cell border line.</summary>
+/// <summary>A border line: of text, paragraphs, cells, tables and pages.</summary>
 /// <param name="Style">The line style.</param>
 /// <param name="Width">The width, 0.25 to 6 pt.</param>
-/// <param name="Color">The colour, or <see cref="ColorValue.Auto"/>.</param>
-public sealed record CellBorder(LineStyle Style, Length Width, ColorValue Color);
+/// <param name="Color">The colour (RGB or a theme colour with at most one tint or shade), or <see cref="ColorValue.Auto"/>.</param>
+/// <param name="Space">
+/// The distance from what it borders, 0 to 31 pt (a page border measured from the page, from the page's edge). Null:
+/// 0 for text and cells, 1 for paragraphs, and for a page border 24 from the page's edge, 1 (top and bottom) or 4
+/// (left and right) from the text; a kept page border edge keeps its own.
+/// </param>
+/// <param name="Shadow">A shadow; null: none.</param>
+public sealed record CellBorder(
+    LineStyle Style,
+    Length Width,
+    ColorValue Color,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Space = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Shadow = null);
+
+/// <summary>
+/// The rows and columns in each of a table's bands for <see cref="EditorCommands.SetTableBandSizesAsync"/>, 1 to
+/// 32767: each given is set; <c>RowsFromStyle</c> and <c>ColumnsFromStyle</c> leave one to the table's style; the rest
+/// are kept.
+/// </summary>
+/// <param name="Rows">Rows in each band.</param>
+/// <param name="Columns">Columns in each band.</param>
+/// <param name="RowsFromStyle">The rows in each band are the style's (ignored when <paramref name="Rows"/> is set).</param>
+/// <param name="ColumnsFromStyle">The columns in each band are the style's (ignored when <paramref name="Columns"/> is set).</param>
+[JsonConverter(typeof(TableBandSizesConverter))]
+public sealed record TableBandSizes(int? Rows = null, int? Columns = null, bool RowsFromStyle = false, bool ColumnsFromStyle = false);
 
 /// <summary>A field to insert.</summary>
 /// <param name="Code">The field code, such as <c>MERGEFIELD Name</c>.</param>
@@ -2029,6 +2517,10 @@ public sealed record ControlListItem(string Text, string Value);
 /// <param name="UncheckedSymbol">A checkbox's unchecked symbol.</param>
 /// <param name="SectionTitle">What a repeating section's items are called.</param>
 /// <param name="AllowInsertDelete">A repeating section's items can be added and removed.</param>
+/// <param name="Calendar">A date's calendar.</param>
+/// <param name="StoreAs">What a bound date control stores in its data.</param>
+/// <param name="Gallery">A building block gallery's gallery (Word's name for it, <c>Quick Parts</c>); empty clears it to any.</param>
+/// <param name="Category">A building block gallery's category; empty clears it to any.</param>
 public sealed record ControlOptions(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Checked = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Format = null,
@@ -2040,7 +2532,11 @@ public sealed record ControlOptions(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CheckboxSymbol? CheckedSymbol = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CheckboxSymbol? UncheckedSymbol = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? SectionTitle = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? AllowInsertDelete = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? AllowInsertDelete = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CalendarType? Calendar = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] DateStorage? StoreAs = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Gallery = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Category = null);
 
 /// <summary>A checkbox control's checked or unchecked symbol.</summary>
 /// <param name="Font">Its font.</param>
@@ -2146,6 +2642,14 @@ public sealed record ControlContent
     /// <summary>The building block's name.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? BuildingBlock { get; private init; }
+
+    /// <summary>A date control's date.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Date { get; private init; }
+
+    /// <summary>A date control's date: its text that date in its format, its stored date that date.</summary>
+    /// <param name="date">ISO 8601: <c>YYYY-MM-DD</c>, with a time and zone or without.</param>
+    public static ControlContent FromDate(string date) => new() { Date = date };
 
     /// <summary>Plain text.</summary>
     /// <param name="text">The text.</param>

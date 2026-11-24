@@ -20,24 +20,24 @@
     { "op": "call", "method": "find.replace", "args": [{ "text": "apple" }, "pear"], "result": { "found": true } },
     { "op": "expectEvents", "match": [{ "type": "documentChanged", "revision": 2 }] },
     { "op": "expectState", "match": { "revision": 2 } },
-    { "op": "call", "method": "find.all", "args": [{ "text": "pear" }], "result": [{ "id": { "$type": "string" }, "before": { "$type": "string" }, "text": "pear", "after": { "$type": "string" }, "page": 1 }] },
-    { "op": "call", "method": "find.all", "args": [{ "text": "APPLE", "matchCase": true }], "result": { "$exact": [] } },
+    { "op": "call", "method": "find.all", "args": [{ "text": "pear" }], "result": { "matches": [{ "id": { "$type": "string" }, "before": { "$type": "string" }, "text": "pear", "after": { "$type": "string" }, "page": 1 }] } },
+    { "op": "call", "method": "find.all", "args": [{ "text": "APPLE", "matchCase": true }], "result": { "matches": { "$exact": [] } } },
 
     { "op": "call", "method": "find.replaceAll", "args": [{ "text": "apple" }, "plum"], "result": { "count": 2 } },
     { "op": "expectEvents", "match": [{ "type": "documentChanged", "revision": 3 }] },
     { "op": "expectState", "match": { "revision": 3, "history": { "canUndo": true } } },
-    { "op": "call", "method": "find.all", "args": [{ "text": "apple" }], "result": { "$exact": [] } },
+    { "op": "call", "method": "find.all", "args": [{ "text": "apple" }], "result": { "matches": { "$exact": [] } } },
     { "op": "command", "command": { "type": "undo" } },
     { "op": "expectState", "match": { "revision": 4 } },
-    { "op": "call", "method": "find.all", "args": [{ "text": "apple" }], "result": [{ "text": "Apple" }, { "text": "apple" }] },
-    { "op": "call", "method": "find.all", "args": [{ "text": "plum" }], "result": { "$exact": [] } },
+    { "op": "call", "method": "find.all", "args": [{ "text": "apple" }], "result": { "matches": [{ "text": "Apple" }, { "text": "apple" }] } },
+    { "op": "call", "method": "find.all", "args": [{ "text": "plum" }], "result": { "matches": { "$exact": [] } } },
 
     { "op": "command", "command": { "type": "setMarkupView", "value": "all" } },
     { "op": "call", "method": "find.next", "args": [{ "text": "obsolete" }], "result": { "found": true } },
     { "op": "command", "command": { "type": "setMarkupView", "value": "noMarkup" } },
     { "op": "expectState", "match": { "review": { "markupView": "noMarkup" } } },
     { "op": "call", "method": "find.next", "args": [{ "text": "obsolete" }], "result": { "found": false } },
-    { "op": "call", "method": "find.all", "args": [{ "text": "obsolete" }], "result": { "$exact": [] } },
+    { "op": "call", "method": "find.all", "args": [{ "text": "obsolete" }], "result": { "matches": { "$exact": [] } } },
     { "op": "expectState", "match": { "revision": 4 } }
   ]
 }

@@ -1,0 +1,81 @@
+{
+  "name": "review-markup",
+  "fixture": "editor/review/FX-REVIEW-RUNS.docx",
+  "steps": [
+    { "op": "open" },
+    { "op": "expectState", "match": { "review": {
+      "showMarkup": { "insertionsDeletions": true, "formatting": true, "comments": true, "hiddenReviewers": { "$exact": [] } },
+      "balloonMode": "commentsAndFormatting",
+      "trackMoves": true, "trackFormatting": true,
+      "revisions": 24,
+      "counts": { "all": { "insertions": 12, "deletions": 6, "formatting": 6, "moves": 0, "comments": 0 },
+                  "shown": { "insertions": 12, "deletions": 6, "formatting": 6 } },
+      "markupStyle": { "insertions": { "mark": "underline", "color": "byAuthor" }, "changeBars": "outside", "changeBarColor": "auto" }
+    } } },
+
+    { "op": "command", "command": { "type": "setShowMarkup", "formatting": false } },
+    { "op": "expectState", "match": { "review": { "showMarkup": { "formatting": false, "insertionsDeletions": true },
+      "counts": { "all": { "formatting": 6 }, "shown": { "formatting": 0, "insertions": 12 } } } } },
+    { "op": "call", "method": "review.revisions", "result": { "$has": [ { "kind": "formatting", "shown": false }, { "kind": "insertion", "shown": true } ] } },
+    { "op": "command", "command": { "type": "setShowMarkup", "formatting": false } },
+    { "op": "expectState", "match": { "review": { "showMarkup": { "formatting": false } } } },
+    { "op": "command", "command": { "type": "setShowMarkup", "formatting": true } },
+
+    { "op": "command", "command": { "type": "setHiddenReviewers", "hidden": ["Author A"] } },
+    { "op": "call", "method": "review.people", "result": [ { "name": "Author A", "visible": false }, { "name": "Author B", "visible": true } ] },
+    { "op": "expectState", "match": { "review": { "showMarkup": { "hiddenReviewers": ["Author A"] } } } },
+    { "op": "command", "command": { "type": "setHiddenReviewers", "hidden": ["Nobody"] } },
+    { "op": "expectError", "code": "invalid-argument" },
+    { "op": "command", "command": { "type": "setHiddenReviewers", "hidden": [] } },
+    { "op": "call", "method": "review.people", "result": [ { "name": "Author A", "visible": true } ] },
+
+    { "op": "command", "command": { "type": "setBalloonMode", "value": "balloons" } },
+    { "op": "expectState", "match": { "review": { "balloonMode": "balloons" } } },
+    { "op": "command", "command": { "type": "setBalloonMode", "value": "commentsAndFormatting" } },
+
+    { "op": "command", "command": { "type": "setMarkupStyle", "insertions": { "mark": "bold" }, "changeBars": "right" } },
+    { "op": "expectState", "match": { "review": { "markupStyle": { "insertions": { "mark": "bold", "color": "byAuthor" }, "changeBars": "right",
+      "deletions": { "mark": "strikethrough" } } } } },
+    { "op": "command", "command": { "type": "setMarkupStyle", "insertions": { "mark": "caret" } } },
+    { "op": "expectError", "code": "invalid-argument" },
+    { "op": "command", "command": { "type": "setMarkupStyle", "deletions": { "mark": "caret", "color": { "fixed": "#C00000" } }, "changeBarColor": "#00FF00" } },
+    { "op": "expectState", "match": { "review": { "markupStyle": { "deletions": { "mark": "caret", "color": { "fixed": "#C00000" } }, "changeBarColor": "#00FF00" } } } },
+
+    { "op": "command", "command": { "type": "setTrackOptions", "formatting": false } },
+    { "op": "expectState", "match": { "review": { "trackFormatting": false, "trackMoves": true } } },
+    { "op": "command", "command": { "type": "setTrackOptions", "formatting": true } },
+
+    { "op": "command", "command": { "type": "setShowMarkup", "formatting": false } },
+    { "op": "command", "command": { "type": "acceptAllRevisions", "shown": true } },
+    { "op": "expectState", "match": { "review": { "revisions": 6, "counts": { "all": { "formatting": 6, "insertions": 0, "deletions": 0 } } } } },
+    { "op": "command", "command": { "type": "undo" } },
+    { "op": "expectState", "match": { "review": { "revisions": 24 } } },
+    { "op": "command", "command": { "type": "acceptAllRevisions", "shown": true, "author": "Author A" } },
+    { "op": "expectError", "code": "invalid-argument" },
+    { "op": "command", "command": { "type": "setShowMarkup", "formatting": true } },
+
+    { "op": "command", "command": { "type": "setTrackChanges", "value": true } },
+    { "op": "command", "command": { "type": "acceptAllAndStopTracking" } },
+    { "op": "expectState", "match": { "review": { "revisions": 0, "tracking": false } } },
+    { "op": "command", "command": { "type": "undo" } },
+    { "op": "expectState", "match": { "review": { "revisions": 24, "tracking": false } } },
+
+    { "op": "command", "command": { "type": "selectAll" } },
+    { "op": "call", "method": "setAuthor", "args": [{ "name": "Ann" }] },
+    { "op": "command", "command": { "type": "addComment", "value": "one" } },
+    { "op": "call", "method": "setAuthor", "args": [{ "name": "Bob" }] },
+    { "op": "command", "command": { "type": "addComment", "value": "two" } },
+    { "op": "expectState", "match": { "review": { "comments": 2, "counts": { "all": { "comments": 2 } } } } },
+    { "op": "command", "command": { "type": "setHiddenReviewers", "hidden": ["Bob"] } },
+    { "op": "call", "method": "review.comments", "result": { "$has": [ { "shown": false, "comments": [ { "plainText": "two", "shown": false } ] },
+      { "shown": true, "comments": [ { "plainText": "one", "shown": true } ] } ] } },
+    { "op": "command", "command": { "type": "deleteAllComments", "shownOnly": true } },
+    { "op": "expectState", "match": { "review": { "comments": 1 } } },
+    { "op": "command", "command": { "type": "undo" } },
+    { "op": "command", "command": { "type": "setHiddenReviewers", "hidden": [] } },
+    { "op": "command", "command": { "type": "deleteAllComments" } },
+    { "op": "expectState", "match": { "review": { "comments": 0 } } },
+    { "op": "command", "command": { "type": "undo" } },
+    { "op": "expectState", "match": { "review": { "comments": 2 } } }
+  ]
+}

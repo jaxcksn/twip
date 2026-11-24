@@ -1,0 +1,16 @@
+{
+  "name": "wrap-points",
+  "fixture": "editor/FX-OBJ.docx",
+  "steps": [
+    { "op": "open" },
+    { "op": "command", "command": { "type": "selectNextObject", "value": "next" } },
+    { "op": "expectState", "match": { "commands": { "editWrapPoints": { "enabled": true } }, "view": { "editingWrapPoints": false } } },
+    { "op": "command", "command": { "type": "editWrapPoints" } },
+    { "op": "expectState", "match": { "view": { "editingWrapPoints": true } } },
+    { "op": "call", "method": "menus.contextMenu", "result": { "target": { "kind": "picture" }, "items": { "$has": [{ "label": "Wrap Text", "items": { "$has": [{ "label": "Edit Wrap Points" }, { "kind": "action", "label": "Set as Default Layout" }] } }] } } },
+    { "op": "command", "command": { "type": "escape" } },
+    { "op": "expectState", "match": { "view": { "editingWrapPoints": false } } },
+    { "op": "command", "command": { "type": "regroupObjects" } },
+    { "op": "expectError", "code": "unavailable" }
+  ]
+}

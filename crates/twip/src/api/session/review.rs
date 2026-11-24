@@ -11,19 +11,20 @@ use crate::api::services::ContentPoint;
 use crate::api::state::State;
 use crate::api::value::{Color, Story};
 use crate::docx::review::AuthorId;
-use crate::docx::{Block, Document, Inline, RunStyle};
+use crate::docx::{Block, Document, Inline};
 use crate::editing::comments::rich;
 use crate::editing::position::StoryId;
 use crate::editing::revisions::index::{self, RevisionKind as Kind};
 
 /// A person of the document, with the colour they show in.
-fn person(doc: &Document, id: AuthorId) -> Person {
+pub(super) fn person(doc: &Document, id: AuthorId) -> Person {
     let p = doc.people.get(id);
     Person {
         name: p.map_or_else(String::new, |p| p.name.to_string()),
         initials: p.and_then(|p| p.initials.as_deref().map(str::to_string)),
         identity: p.and_then(|p| p.identity.clone()),
         color: Color(doc.review.palette.color(id)),
+        visible: doc.review.markup.show.shows_reviewer(id),
     }
 }
 
@@ -40,6 +41,25 @@ pub(super) fn story(e: &crate::editing::Editor, s: StoryId) -> Story {
     }
 }
 
+/// A revision's public kind.
+pub(super) fn revision_kind(k: Kind) -> RevisionKind {
+    match k {
+        Kind::Insert => RevisionKind::Insertion,
+        Kind::Delete => RevisionKind::Deletion,
+        Kind::MovedTo => RevisionKind::MoveTo,
+        Kind::MovedFrom => RevisionKind::MoveFrom,
+        Kind::RowInsert => RevisionKind::RowInsertion,
+        Kind::RowDelete => RevisionKind::RowDeletion,
+        Kind::Property => RevisionKind::Formatting,
+        Kind::ParagraphProperty => RevisionKind::ParagraphProperties,
+        Kind::TableProperty => RevisionKind::TableProperties,
+        Kind::SectionProperty => RevisionKind::SectionProperties,
+        Kind::CellInsertion => RevisionKind::CellInsertion,
+        Kind::CellDeletion => RevisionKind::CellDeletion,
+        Kind::CellMerge => RevisionKind::CellMerge,
+    }
+}
+
 fn time(t: &Option<crate::docx::review::Timestamp>) -> Option<Timestamp> {
     t.as_ref().and_then(|t| t.utc).map(Timestamp)
 }
@@ -52,27 +72,6 @@ struct Marks {
     deleted: HashMap<i64, String>,
     formatted: HashMap<i64, Vec<&'static str>>,
     moves: HashMap<i64, std::rc::Rc<str>>,
-}
-
-/// The formatting `before` and `after` differ in, by name.
-fn format_names(before: &RunStyle, after: &RunStyle) -> Vec<&'static str> {
-    let mut out = Vec::new();
-    let diffs: [(bool, &str); 12] = [
-        (before.bold != after.bold, if after.bold { "Bold" } else { "Not Bold" }),
-        (before.italic != after.italic, if after.italic { "Italic" } else { "Not Italic" }),
-        (before.underline != after.underline, "Underline"),
-        (before.strike != after.strike, "Strikethrough"),
-        (before.dstrike != after.dstrike, "Double strikethrough"),
-        (before.ascii != after.ascii, "Font"),
-        (before.size != after.size, "Font size"),
-        (before.color != after.color, "Font color"),
-        (before.highlight != after.highlight, "Highlight"),
-        (before.vert_align != after.vert_align, "Position"),
-        (before.caps != after.caps || before.small_caps != after.small_caps, "Caps"),
-        (before.hidden != after.hidden, "Hidden"),
-    ];
-    out.extend(diffs.iter().filter(|d| d.0).map(|d| d.1));
-    out
 }
 
 /// Every story's blocks: the body, headers and footers, notes, the sub-template being edited (`flow`), then the text
@@ -123,7 +122,7 @@ impl Marks {
                         }
                         if let Some(f) = &r.rev.fmt {
                             let names = self.formatted.entry(f.mark.id.0).or_default();
-                            for n in format_names(&f.previous, r) {
+                            for n in crate::editing::hover::format_names(&f.previous, r) {
                                 if !names.contains(&n) {
                                     names.push(n);
                                 }
@@ -252,6 +251,7 @@ impl Session {
                     page,
                     story: story(e, r.story),
                     pair: pair.filter(|_| matches!(r.kind, Kind::MovedFrom | Kind::MovedTo)),
+                    shown: r.shown(&doc.review.markup.show),
                 }
             })
             .collect()
@@ -273,6 +273,7 @@ impl Session {
                 time: time(&c.date_utc).or_else(|| time(&c.date)),
                 plain_text: body.to_plain(),
                 body: rich_text(&body),
+                shown: self.editor.comment_shown(id),
             })
         };
         threads
@@ -283,6 +284,7 @@ impl Session {
                 anchor_text: t.scope.unwrap_or_default(),
                 page: starts.get(&t.root.0).and_then(|p| pages.get(p).copied()).unwrap_or(1),
                 comments: std::iter::once(t.root).chain(t.replies).filter_map(comment).collect(),
+                shown: self.editor.comment_shown(t.root),
             })
             .collect()
     }
@@ -332,12 +334,35 @@ impl Session {
                     start,
                     end: to(last_page, last[2], last[3])?,
                     page_edge: stack.pages.get(page).map_or(0.0, |r| (r[0] + r[2]) * px_per_pt),
+                    page_left: stack.pages.get(page).map_or(0.0, |r| r[0] * px_per_pt),
                 })
             })
             .collect();
         if anchors != self.services.anchors {
             self.services.anchors = anchors.clone();
             self.emit(Event::CommentAnchors(anchors));
+        }
+        let balloons: Vec<crate::api::review::RevisionAnchor> = view
+            .revision_balloons
+            .iter()
+            .filter_map(|b| {
+                let (top, start) = (to(b.page, b.at[0], b.at[1])?, to(b.page, b.at[0], b.at[2])?);
+                Some(crate::api::review::RevisionAnchor {
+                    revision: revision_id(b.revision),
+                    kind: revision_kind(b.kind),
+                    author: doc.people.get(b.author).map_or_else(String::new, |p| p.name.to_string()),
+                    page: b.page as u32 + 1,
+                    line_top: top.y,
+                    line_bottom: start.y,
+                    start,
+                    page_edge: stack.pages.get(b.page).map_or(0.0, |r| (r[0] + r[2]) * px_per_pt),
+                    page_left: stack.pages.get(b.page).map_or(0.0, |r| r[0] * px_per_pt),
+                })
+            })
+            .collect();
+        if balloons != self.services.balloons {
+            self.services.balloons = balloons.clone();
+            self.emit(Event::RevisionBalloons(balloons));
         }
     }
 }
@@ -351,17 +376,36 @@ pub(super) fn fill_state(s: &mut Session, state: &mut State) {
     let author = s.author.name.clone();
     r.protection = e.protection_state(&author);
     r.markup_view = e.document().review.view;
-    let (marks, sub_template) = (e.revision_marks(), e.index().flow);
-    // With no revisions, only an edit of marks makes one.
-    r.revisions = match s.services.revision_count {
-        Some(c) if c.sub_template == sub_template && c.marks.0 == marks.0 && (c.n == 0 || c.marks.1 == marks.1) => c.n,
-        _ => {
-            let n = crate::prof::time("review:revisions", || index::revisions(e.document(), e.index()).len() as u32);
-            s.services.revision_count = Some(crate::services::RevisionCount { marks, sub_template, n });
-            n
-        }
+    let (all, shown) = e.review_counts();
+    let counts = |c: index::Counts| crate::api::review::MarkupCounts {
+        insertions: c.insertions,
+        deletions: c.deletions,
+        moves: c.moves,
+        formatting: c.formatting,
+        comments: c.comments,
     };
-    r.comments = e.document().comments.thread_count() as u32;
+    r.counts = crate::api::review::ReviewCounts { all: counts(all), shown: counts(shown) };
+    r.revisions = all.revisions();
+    (r.track_moves, r.track_formatting) = e.track_options();
+    let doc = e.document();
+    let m = &doc.review.markup;
+    let mut hidden: Vec<String> = Vec::new();
+    for id in &m.show.hidden_reviewers {
+        if let Some(p) = doc.people.get(*id)
+            && !hidden.iter().any(|h| *h == *p.name)
+        {
+            hidden.push(p.name.to_string());
+        }
+    }
+    r.show_markup = crate::api::review::ShowMarkup {
+        insertions_deletions: m.show.insertions_deletions,
+        formatting: m.show.formatting,
+        comments: m.show.comments,
+        hidden_reviewers: hidden,
+    };
+    r.balloon_mode = crate::api::review::BalloonMode::of(m.balloons);
+    r.markup_style = crate::api::review::MarkupStyle::of(&m.style);
+    r.comments = doc.comments.thread_count() as u32;
     r.active_comment = e.active_comment().map(comment_id);
 }
 
@@ -403,7 +447,7 @@ mod tests {
         s.run(Command::SetTrackChanges(true)).expect("tracks");
         assert!(s.state().review.tracking);
         let q = |t: &str| FindQuery { text: t.into(), ..FindQuery::default() };
-        assert!(s.find(&q("bold words"), Order::Next).found);
+        assert!(s.find(&q("bold words"), Order::Next).expect("finds").found);
         s.run(Command::InsertText("new".into())).expect("types");
         assert!(heard(&events, |e| matches!(e, Event::RevisionsChanged {})));
         let list = s.revisions();
@@ -415,12 +459,12 @@ mod tests {
         let insertion = list.iter().find(|r| r.kind == RevisionKind::Insertion).map(|r| r.id.clone()).expect("one");
         s.run(Command::AcceptRevision(insertion)).expect("accepts");
         assert_eq!(s.state().review.revisions, 1);
-        s.run(Command::RejectAllRevisions(AuthorFilter { author: Some("Ada".into()) })).expect("rejects");
+        s.run(Command::RejectAllRevisions(AuthorFilter { author: Some("Ada".into()), shown: None })).expect("rejects");
         assert_eq!(s.state().review.revisions, 0);
         assert_eq!(s.people().iter().map(|p| p.name.as_str()).collect::<Vec<_>>(), ["Ada"]);
 
         s.run(Command::SetTrackChanges(false)).expect("stops");
-        assert!(s.find(&q("Arial words"), Order::Next).found);
+        assert!(s.find(&q("Arial words"), Order::Next).expect("finds").found);
         events.borrow_mut().clear();
         let made = s.run(Command::AddComment(Body::Text("Check this.".into()))).expect("comments");
         let Some(CommandResult::Comment { id: root }) = made.value else { panic!("{made:?}") };
@@ -454,7 +498,7 @@ mod tests {
         let (mut engine, id) = tracked(&crate::editing::tests::blank_with("Alpha beta gamma beta."));
         let s = engine.session(id).expect("a session");
         let q = FindQuery { text: "beta".into(), ..FindQuery::default() };
-        assert_eq!(s.replace_all(&q, "BETA").expect("replaces"), 2);
+        assert_eq!(s.replace_all(&q, "BETA", None).map(|c| c.count).expect("replaces"), 2);
         let list = s.revisions();
         let kinds: Vec<_> = list.iter().map(|r| (r.kind, r.text.as_str())).collect();
         let (ins, del) = (RevisionKind::Insertion, RevisionKind::Deletion);

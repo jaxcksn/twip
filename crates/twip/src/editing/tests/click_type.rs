@@ -44,7 +44,7 @@ fn a_double_click_below_the_end_adds_paragraphs_down_to_it_centered_as_one_step(
     assert!(caret.top <= y + 1.0 && caret.bottom + 20.0 >= y, "{caret:?} {y}");
     let last = e.document().sections[0].blocks.iter().rev().find_map(|b| if let crate::docx::Block::Para(p) = b { Some(p.style.jc) } else { None });
     assert_eq!(last, Some(crate::docx::props::Jc::Center));
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(texts(&e), ["Hello."], "one undo step");
 }
 
@@ -58,7 +58,7 @@ fn a_double_click_beside_a_line_tabs_out_to_it_and_it_can_be_turned_off() {
         e.document().sections[0].blocks.iter().find_map(|b| if let crate::docx::Block::Para(p) = b { Some(p.style.tabs.clone()) } else { None });
     let left = e.document().sections[0].left;
     assert_eq!(tabs.map(|t| t.iter().map(|t| t.pos).collect::<Vec<_>>()), Some(vec![200.0 - left]), "at the click, from the left margin");
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     e.set_click_and_type(false);
     double_click(&mut e, l + 200.0, line);
     assert_eq!(texts(&e), ["Hello."], "a plain double-click");
@@ -214,7 +214,7 @@ fn below_a_centered_end_the_left_zone_adds_left_aligned_paragraphs_in_the_click_
         assert_eq!((p.ind_left, p.tabs.len()), (0.0, 0), "none of the last paragraph's indents or tabs");
         assert_eq!(p.style_id.as_deref(), Some("Typed"), "every new paragraph has the Click and Type style");
     }
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(texts(&e), ["Hello."], "one undo step");
     assert_eq!(e.document().sections[0].blocks.len(), 1);
 }

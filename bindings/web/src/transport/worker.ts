@@ -165,6 +165,10 @@ export class WorkerTransport implements Transport {
     return this.#request('frame', [session, width, height]);
   }
 
+  pageThumbnail(session: number, page: number, width: number, height: number): Promise<{ bytes: Uint8Array; width: number; height: number }> {
+    return this.#request('pageThumbnail', [session, page, width, height]);
+  }
+
   listen(session: number, listener: (message: Message) => void): () => void {
     let set = this.#listeners.get(session);
     if (!set) this.#listeners.set(session, (set = new Set()));

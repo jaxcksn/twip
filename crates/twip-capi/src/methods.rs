@@ -61,7 +61,7 @@ methods! {
     SetMode = 7,
     /// `Author` → `null`.
     SetAuthor = 8,
-    /// → `ContextMenu`.
+    /// `{ synonyms? } | null` → `ContextMenu`: `synonyms` (the host thesaurus's words) adds the Synonyms submenu.
     ContextMenu = 9,
     /// `MenuAction` → `Commit`.
     Invoke = 10,
@@ -73,13 +73,13 @@ methods! {
     DialogApply = 13,
     /// `{ query, direction }` → `FindResult`.
     Find = 14,
-    /// `FindQuery` → `FindMatch[]`.
+    /// `FindQuery` → `FindMatches`.
     FindAll = 15,
     /// `MatchId` → `null`.
     SelectMatch = 16,
-    /// `{ query, with }` → `FindResult`.
+    /// `{ query, with, replaceFormat? }` → `FindResult`.
     Replace = 17,
-    /// `{ query, with }` → `{ count }`.
+    /// `{ query, with, replaceFormat? }` → `FindCount`.
     ReplaceAll = 18,
     /// `Dictionary` → `null`.
     SpellingAddDictionary = 19,
@@ -133,11 +133,11 @@ methods! {
     GesturesSet = 43,
     /// `GestureId | null` → `null`.
     GesturesReset = 44,
-    /// → `WordCount`.
+    /// `WordCountOptions | null` → `WordCount`: the document's counts, or the selection's.
     WordCount = 45,
     /// `{ cut }` → `ClipboardData | null`.
     Copy = 46,
-    /// `{ data, asText }` → `null`.
+    /// `{ data, asText?, as? }` → `null`: `as` pastes that way (Paste Special), else as the paste options say.
     Paste = 47,
     /// → `string[]`: the families the library draws (any session).
     FontFamilies = 48,
@@ -242,6 +242,121 @@ methods! {
     Bookmarks = 97,
     /// → `DocumentProperties`.
     DocumentProperties = 98,
+    /// → `WordAt | null`: the word at the selection, for a thesaurus.
+    WordAtSelection = 99,
+    /// → `SelectionBounds`: the selection on screen.
+    SelectionBounds = 100,
+    /// → `DragSource | null`: starts a drag of the selection out of the view.
+    DragOut = 101,
+    /// `DropEffect` → `null`: the drag out ended.
+    DragEnd = 102,
+    /// `{ at, copy }` → `Commit`: the drag out came back and dropped at `at`.
+    DropDragged = 103,
+    /// `ObjectWrap` → `null`: the wrap inserted pictures take.
+    SetDefaultPictureWrap = 104,
+    /// → `ObjectWrap`.
+    DefaultPictureWrap = 105,
+    /// `StyleId | null` → `null`: the style Click and Type's paragraphs take.
+    SetClickAndTypeStyle = 106,
+    /// `{ limit? } | null` → `HistoryLabels`: the undo and redo lists.
+    HistoryLabels = 107,
+    /// `StyleId` → `StyleDefinition | null`.
+    StyleDefinition = 108,
+    /// → `BuiltInStyle[]`.
+    BuiltInStyles = 109,
+    /// → `DefaultsDefinition | null`: the document's default formatting.
+    DocumentDefaults = 110,
+    /// → `ListDefinition | null`: the list at the selection.
+    ListDefinition = 111,
+    /// → `ThemeColumn[]`: the theme colour grid.
+    ThemeColourGrid = 112,
+    /// `u32` (a page, from 0) → `ObjectListEntry[]`: the Selection Pane's objects on the page.
+    ObjectList = 113,
+    /// → `Bytes | null`: the selected picture's image.
+    ObjectImage = 114,
+    /// → `Bytes | null`: the selected shape's picture fill's image.
+    ShapeFillImage = 115,
+    /// `u32` (a section, from 0) → `Bytes | null`: its picture watermark's image.
+    WatermarkImage = 116,
+    /// → `Bytes | null`: the page colour's picture.
+    PageFillImage = 117,
+    /// `TextToTable` → `TableSize | null`: the table Convert Text to Table would make.
+    TextToTableSize = 118,
+    /// → `NoteInfo[]`: the footnotes, then the endnotes.
+    Notes = 119,
+    /// `NoteType` → `NoteSeparators`.
+    NoteSeparators = 120,
+    /// `ColumnPreset` → `Columns`: the columns a preset gives the selection's section.
+    ColumnPreset = 121,
+    /// `{ format, chapterSeparator? }` → `string`: Format Page Numbers' example.
+    PageNumberSample = 122,
+    /// → `StyleId[]`: Formatting Restrictions' Recommended Minimum.
+    RecommendedMinimumStyles = 123,
+    /// → `EditableRangeInfo[]`.
+    EditableRanges = 124,
+    /// `FieldCategory | null` → `FieldDescription[]`: Insert Field's fields.
+    FieldCatalogue = 125,
+    /// → `FieldFormats`.
+    FieldFormats = 126,
+    /// `FieldChoice` → `ComposedField`.
+    ComposeField = 127,
+    /// `string` (a field code) → `FieldChoice`.
+    ParseField = 128,
+    /// → `FieldHere | null`: the field at the selection, with its choices.
+    FieldHere = 129,
+    /// `string` (a locale) → `string[]`: a date control's display formats.
+    DateFormats = 130,
+    /// → `u64[]`: each laid-out page's version.
+    PageVersions = 131,
+    /// → `HeadingId | null`: the heading the selection is under.
+    CurrentHeading = 132,
+    /// `FindQuery` → `FindCount`: Highlight All.
+    FindHighlightAll = 133,
+    /// → `null`: Highlight All's highlights go.
+    FindClearHighlights = 134,
+    /// `ClipboardData` → `PasteChoices`: Paste Special's list.
+    PasteChoices = 135,
+    /// `string` (a copy's token) → `string`: its HTML, objects drawn.
+    ClipboardHtml = 136,
+    /// `CrossReferenceKind` → `CrossReferenceTarget[]`.
+    CrossReferenceTargets = 137,
+    /// `string[]` (the host's labels) → `string[]`: the caption labels.
+    CaptionLabels = 138,
+    /// → `TablesOfContents`.
+    TablesOfContents = 139,
+    /// `TableOfContentsOptions` → `TocEntryPreview[]`.
+    TocEntries = 140,
+    /// `{ data, as? }` → `null`: pastes clipboard data the application read, failing where it can't paste.
+    PasteContent = 141,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct PageNumberSampleRequest {
+    format: engine::api::command::NumberFormat,
+    #[serde(default)]
+    chapter_separator: Option<engine::api::command::ChapterSeparator>,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct HistoryLabelsRequest {
+    #[serde(default)]
+    limit: Option<u32>,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ContextMenuRequest {
+    #[serde(default)]
+    synonyms: Option<Vec<String>>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct DropDraggedRequest {
+    at: Point,
+    copy: bool,
 }
 
 /// A resolver's answer to a font request.
@@ -322,6 +437,8 @@ struct FindRequest {
 struct ReplaceRequest {
     query: FindQuery,
     with: String,
+    #[serde(default)]
+    replace_format: Option<engine::api::services::FindFormat>,
 }
 
 #[derive(Deserialize)]
@@ -388,6 +505,8 @@ struct PasteRequest {
     data: ClipboardData,
     #[serde(default)]
     as_text: bool,
+    #[serde(default, rename = "as")]
+    as_: Option<engine::api::command::PasteAs>,
 }
 
 #[derive(Deserialize)]
@@ -536,7 +655,59 @@ fn session_call(s: &mut Session, method: Method, json: &[u8]) -> Result<Value, E
             s.set_author(request::<Author>(json)?);
             Ok(none)
         }
-        Method::ContextMenu => to_value(s.context_menu()),
+        Method::ContextMenu => {
+            let r = request::<Option<ContextMenuRequest>>(json)?.unwrap_or_default();
+            to_value(s.context_menu_with(r.synonyms))
+        }
+        Method::WordAtSelection => to_value(s.word_at_selection()),
+        Method::SelectionBounds => to_value(s.selection_bounds()),
+        Method::DragOut => to_value(s.drag_out()),
+        Method::DragEnd => {
+            s.drag_end(request(json)?);
+            Ok(none)
+        }
+        Method::DropDragged => {
+            let r: DropDraggedRequest = request(json)?;
+            to_value(s.drop_dragged(r.at, r.copy)?)
+        }
+        Method::SetDefaultPictureWrap => {
+            s.set_default_picture_wrap(request(json)?);
+            Ok(none)
+        }
+        Method::DefaultPictureWrap => to_value(s.default_picture_wrap()),
+        Method::SetClickAndTypeStyle => {
+            s.set_click_and_type_style(request(json)?);
+            Ok(none)
+        }
+        Method::HistoryLabels => to_value(s.history_labels(request::<Option<HistoryLabelsRequest>>(json)?.unwrap_or_default().limit)),
+        Method::StyleDefinition => to_value(s.style_definition(&request(json)?)),
+        Method::BuiltInStyles => to_value(s.built_in_styles()),
+        Method::DocumentDefaults => to_value(s.document_defaults()),
+        Method::ListDefinition => to_value(s.list_definition()),
+        Method::ThemeColourGrid => to_value(s.theme_colour_grid()),
+        Method::ObjectList => to_value(s.object_list(request(json)?)),
+        Method::ObjectImage => to_value(s.object_image()),
+        Method::ShapeFillImage => to_value(s.shape_fill_image()),
+        Method::WatermarkImage => to_value(s.watermark_image(request(json)?)),
+        Method::PageFillImage => to_value(s.page_fill_image()),
+        Method::TextToTableSize => to_value(s.text_to_table_size(&request(json)?)),
+        Method::Notes => to_value(s.notes()),
+        Method::NoteSeparators => to_value(s.note_separators(request(json)?)),
+        Method::ColumnPreset => to_value(s.column_preset(request(json)?)),
+        Method::PageNumberSample => {
+            let r: PageNumberSampleRequest = request(json)?;
+            to_value(s.page_number_sample(r.format, r.chapter_separator))
+        }
+        Method::RecommendedMinimumStyles => to_value(s.recommended_minimum_styles()),
+        Method::EditableRanges => to_value(s.editable_ranges()),
+        Method::FieldCatalogue => to_value(s.field_catalogue(request(json)?)),
+        Method::FieldFormats => to_value(s.field_formats()),
+        Method::ComposeField => to_value(s.compose_field(&request(json)?)),
+        Method::ParseField => to_value(s.parse_field(&request::<String>(json)?)),
+        Method::FieldHere => to_value(s.field_here()),
+        Method::DateFormats => to_value(s.date_formats(&request::<String>(json)?)),
+        Method::PageVersions => to_value(s.page_versions()),
+        Method::CurrentHeading => to_value(s.current_heading()),
         Method::Invoke => to_value(s.invoke(request::<MenuAction>(json)?)?),
         Method::DialogOpen => to_value(s.dialog_open(request::<DialogKind>(json)?)?),
         Method::DialogUpdate => {
@@ -571,17 +742,22 @@ fn session_call(s: &mut Session, method: Method, json: &[u8]) -> Result<Value, E
         Method::DialogSelectIssue => to_value(s.select_accessibility_issue(&request::<String>(json)?)?),
         Method::Find => {
             let r: FindRequest = request(json)?;
-            to_value(s.find(&r.query, r.direction))
+            to_value(s.find(&r.query, r.direction)?)
         }
-        Method::FindAll => to_value(s.find_all(&request(json)?)),
+        Method::FindAll => to_value(s.find_all(&request(json)?)?),
+        Method::FindHighlightAll => to_value(s.highlight_all(&request(json)?)?),
+        Method::FindClearHighlights => {
+            s.clear_find_highlights();
+            Ok(none)
+        }
         Method::SelectMatch => to_value(s.select_match(request::<MatchId>(json)?)?),
         Method::Replace => {
             let r: ReplaceRequest = request(json)?;
-            to_value(s.replace(&r.query, &r.with)?)
+            to_value(s.replace(&r.query, &r.with, r.replace_format.as_ref())?)
         }
         Method::ReplaceAll => {
             let r: ReplaceRequest = request(json)?;
-            to_value(serde_json::json!({ "count": s.replace_all(&r.query, &r.with)? }))
+            to_value(s.replace_all(&r.query, &r.with, r.replace_format.as_ref())?)
         }
         Method::SpellingAddDictionary => to_value(s.spelling().add_dictionary(request::<Dictionary>(json)?)?),
         Method::SpellingSetEnabled => {
@@ -659,13 +835,27 @@ fn session_call(s: &mut Session, method: Method, json: &[u8]) -> Result<Value, E
             s.gestures().reset(request(json)?);
             Ok(none)
         }
-        Method::WordCount => to_value(s.word_count()),
+        Method::WordCount => to_value(s.word_count(request::<Option<_>>(json)?.unwrap_or_default())),
         Method::Copy => to_value(s.copy(request::<CopyRequest>(json)?.cut)),
         Method::Paste => {
             let r: PasteRequest = request(json)?;
-            s.paste(&r.data, r.as_text);
+            match r.as_ {
+                Some(choice) => s.paste_with(&r.data, Some(choice))?,
+                None => s.paste(&r.data, r.as_text),
+            }
             Ok(none)
         }
+        Method::PasteContent => {
+            let r: PasteRequest = request(json)?;
+            s.paste_with(&r.data, r.as_.or(r.as_text.then_some(engine::api::command::PasteAs::Text)))?;
+            Ok(none)
+        }
+        Method::PasteChoices => to_value(s.paste_choices(&request(json)?)),
+        Method::ClipboardHtml => to_value(s.clipboard_html(&request::<String>(json)?)?),
+        Method::CrossReferenceTargets => to_value(s.cross_reference_targets(&request(json)?)),
+        Method::CaptionLabels => to_value(s.caption_labels(&request::<Option<Vec<String>>>(json)?.unwrap_or_default())),
+        Method::TablesOfContents => to_value(s.tables_of_contents()),
+        Method::TocEntries => to_value(s.toc_entries(&request(json)?)?),
         Method::HostSetBackground => {
             match request::<Option<Color>>(json)? {
                 Some(c) => s.host().set_background(c),

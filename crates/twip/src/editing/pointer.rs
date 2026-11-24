@@ -25,9 +25,17 @@ impl Editor {
     }
 
     fn shape_at(&mut self, x: f64, y: f64, mods: Mods, fonts: &Fonts) -> Cursor {
-        // Create Link: the pointer over a box the text can go on in, the arrow elsewhere.
+        // Create Link: the pouring pitcher over a box the text can go on in, the upright one elsewhere.
         if self.linking() {
-            return if self.link_target_at(x, y, fonts).is_some() { Cursor::Pointer } else { Cursor::Default };
+            return if self.link_target_at(x, y, fonts).is_some() { Cursor::LinkReady } else { Cursor::Linking };
+        }
+        match self.table_tool() {
+            crate::api::command::TableTool::Pen => return Cursor::Pencil,
+            crate::api::command::TableTool::Eraser => return Cursor::Eraser,
+            crate::api::command::TableTool::None => {}
+        }
+        if let Some(hide) = self.white_space_toggle_at(y) {
+            return if hide { Cursor::HideWhiteSpace } else { Cursor::ShowWhiteSpace };
         }
         if !mods.shift
             && let Some((.., hit, _)) = self.wrap_point_at(x, y)
@@ -84,7 +92,22 @@ impl Editor {
         if !mods.shift && self.text_drags() && self.hit(x, y, fonts).is_some_and(|p| self.inside_selection(&p)) {
             return Cursor::Default;
         }
-        Cursor::Text
+        if self.highlighter().is_some() {
+            return Cursor::Highlighter;
+        }
+        if let Some(t) = self.click_and_type_at(x, y, fonts) {
+            use super::click_type::ClickAlign;
+            return match t.align {
+                ClickAlign::Left => Cursor::ClickAndTypeLeft,
+                ClickAlign::LeftIndent => Cursor::ClickAndTypeLeftIndent,
+                ClickAlign::Center => Cursor::ClickAndTypeCenter,
+                ClickAlign::Right => Cursor::ClickAndTypeRight,
+            };
+        }
+        match self.text_dir_at(x, y, fonts) {
+            Some(super::geometry::LineDir::Down | super::geometry::LineDir::Up) => Cursor::VerticalText,
+            _ => Cursor::Text,
+        }
     }
 
     /// The way the text under the pointer runs: an I-beam over a vertical line lies across it.

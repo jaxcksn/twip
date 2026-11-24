@@ -302,7 +302,10 @@ const EDITS: &[(&str, fn(&mut Editor, &Spot) -> Outcome)] = &[
             return Outcome::Unchanged("no control");
         };
         let id = ElementId(crate::editing::elements::id_str(crate::docx::ElementId::Control(*c)));
-        e.execute(Command::FillControl(FillControl { id, text: Some("Filled".into()), image: None, docx: None, building_block: None }), fonts())
+        e.execute(
+            Command::FillControl(FillControl { id, text: Some("Filled".into()), image: None, docx: None, building_block: None, date: None }),
+            fonts(),
+        )
     }),
     ("delete-comment", |e, _| e.execute(Command::DeleteComment(crate::api::value::CommentId("c90".into())), fonts())),
     ("comment", |e, s| {
@@ -634,7 +637,7 @@ fn page_setup_writes_only_what_changed() {
     let doc = String::from_utf8(entries(&bytes).into_iter().find(|(n, _)| n == "word/document.xml").unwrap().1).unwrap();
     let bytes = with_main(&bytes, &doc.replacen(r#"<w:cols w:space="720"/>"#, cols, 1));
     let mut e = Editor::open(&bytes, fonts()).expect("opens");
-    let margins = crate::api::command::Margins { top: Some(Points(36.0)), bottom: None, left: None, right: None, gutter: None };
+    let margins = crate::api::command::Margins { top: Some(Points(36.0)), bottom: None, left: None, right: None, gutter: None, apply_to: None };
     let out = e.execute(Command::SetMargins(margins), fonts());
     assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
     let saved = crate::docx::write::save(e.document()).expect("saves");

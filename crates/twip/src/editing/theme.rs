@@ -1,6 +1,7 @@
 //! Theme colours and fonts
 
 use crate::api::drawing::{ColourTransform, ColourValue, ThemeColour, TransformKind};
+use crate::api::state::{ThemeColumn, ThemeFonts, ThemeSwatch};
 use crate::api::value::Color;
 use crate::docx::ThemeColourRef;
 use crate::docx::props::ThemeColours;
@@ -89,26 +90,6 @@ pub fn theme_colour_name(t: ThemeColour) -> &'static str {
     }
 }
 
-/// One cell of the theme colour grid.
-#[derive(Clone, Debug, PartialEq)]
-pub struct ThemeSwatch {
-    /// The colour as commands take it: the theme colour with its tint or shade.
-    pub colour: ColourValue,
-    /// What it shows.
-    pub rgb: Color,
-    /// Its name: "Accent 1", "Accent 1, Lighter 40%".
-    pub label: String,
-}
-
-/// A column of the theme colour grid: the theme colour, then its five lighter and darker variants.
-#[derive(Clone, Debug, PartialEq)]
-pub struct ThemeColumn {
-    /// The theme colour.
-    pub theme: ThemeColour,
-    /// The theme colour itself, then its variants, top to bottom.
-    pub swatches: Vec<ThemeSwatch>,
-}
-
 /// The variants Word's grid offers under a colour of HSL luminance `l` (0 to 1): lighter by a percentage (a tint) or
 /// darker (a shade).
 fn variants(l: f64) -> [(bool, u8); 5] {
@@ -154,15 +135,6 @@ pub fn theme_grid(colours: &ThemeColours) -> Vec<ThemeColumn> {
         .collect()
 }
 
-/// The theme's font families: its headings' and its body text's.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ThemeFontNames {
-    /// The heading font (`+Headings`).
-    pub heading: String,
-    /// The body font (`+Body`).
-    pub body: String,
-}
-
 impl Editor {
     /// The theme colours as they resolve through the document's colour mapping, for text and table colours.
     pub fn theme_palette(&self) -> ThemeColours {
@@ -190,10 +162,10 @@ impl Editor {
     }
 
     /// The theme's heading and body font families.
-    pub fn theme_fonts(&self) -> ThemeFontNames {
+    pub fn theme_fonts(&self) -> ThemeFonts {
         match &self.doc.resolver {
-            Some(r) => ThemeFontNames { heading: r.theme.major.clone(), body: r.theme.minor.clone() },
-            None => ThemeFontNames { heading: String::new(), body: String::new() },
+            Some(r) => ThemeFonts { heading: r.theme.major.clone(), body: r.theme.minor.clone() },
+            None => ThemeFonts::default(),
         }
     }
 }

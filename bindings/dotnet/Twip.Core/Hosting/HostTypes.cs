@@ -29,6 +29,10 @@ namespace Twip
         Comment,
         /// <summary>A ruler marker, the tab type box, or where a click on the ruler adds a stop.</summary>
         Ruler,
+        /// <summary>A footnote or endnote reference: the note's text.</summary>
+        Note,
+        /// <summary>Between pages: a double-click hides or shows the white space.</summary>
+        WhiteSpace,
     }
 
     /// <summary>A tooltip to show.</summary>
@@ -36,7 +40,20 @@ namespace Twip
     /// <param name="Text">Its text.</param>
     /// <param name="Location">Where to show it, in control client pixels.</param>
     /// <param name="Bounds">The hovered thing's bounds, in control client pixels.</param>
-    public sealed record TooltipInfo(TooltipKind Kind, string Text, PointF Location, RectangleF Bounds);
+    public sealed record TooltipInfo(TooltipKind Kind, string Text, PointF Location, RectangleF Bounds)
+    {
+        /// <summary>Who made the change or the comment (revision and comment tips).</summary>
+        public Person? Author { get; init; }
+
+        /// <summary>When, when the document gives it (revision and comment tips).</summary>
+        public DateTimeOffset? Time { get; init; }
+
+        /// <summary>The change's kind (revision tips).</summary>
+        public RevisionKind? Change { get; init; }
+
+        /// <summary>What follows the byline: the change's English description or the comment's text, for a localized tip.</summary>
+        public string? Body { get; init; }
+    }
 
     /// <summary>What is under a point.</summary>
     /// <param name="Element">The element, if any.</param>
@@ -153,21 +170,48 @@ namespace Twip.Hosting
         RowSelect,
         /// <summary>Turning a shape by its rotate handle: a circular arrow.</summary>
         Rotate,
+        /// <summary>Click and Type: text typed here lines up on the left.</summary>
+        ClickAndTypeLeft,
+        /// <summary>Click and Type: the first line indented to here.</summary>
+        ClickAndTypeLeftIndent,
+        /// <summary>Click and Type: text typed here is centred.</summary>
+        ClickAndTypeCenter,
+        /// <summary>Click and Type: text typed here lines up on the right.</summary>
+        ClickAndTypeRight,
+        /// <summary>Between pages: a double-click hides the white space.</summary>
+        HideWhiteSpace,
+        /// <summary>On the hidden pages' meeting line: a double-click shows the white space.</summary>
+        ShowWhiteSpace,
+        /// <summary>The highlighter is on over text.</summary>
+        Highlighter,
+        /// <summary>Over text whose lines run down or up the page: the I-beam lies across them.</summary>
+        VerticalText,
+        /// <summary>Create Link over an empty text box: the pouring pitcher.</summary>
+        LinkReady,
+        /// <summary>Create Link elsewhere: the upright pitcher.</summary>
+        Linking,
+        /// <summary>The Draw Table pen.</summary>
+        Pencil,
+        /// <summary>The table eraser.</summary>
+        Eraser,
     }
 
     /// <summary>The caret, for the IME window and the system caret.</summary>
-    /// <param name="Bounds">Its bounds, in control client pixels.</param>
+    /// <param name="Bounds">Its bounds, in control client pixels: one device pixel wide across a horizontal line, one high across a vertical one.</param>
     /// <param name="Visible">Whether it shows.</param>
-    public sealed record CaretInfo(RectangleF Bounds, bool Visible);
+    /// <param name="Line">The way the caret's line runs: an IME places its text along it.</param>
+    public sealed record CaretInfo(RectangleF Bounds, bool Visible, LineDirection Line = LineDirection.Horizontal);
 
     /// <summary>Clipboard content in the formats the engine reads and writes.</summary>
     /// <param name="Text">Plain text.</param>
     /// <param name="Html">HTML.</param>
     /// <param name="Native">A token naming the engine's own copy, for pastes between editors that keep everything.</param>
+    /// <param name="Image">A picture: a copy of an object's (PNG), or what the clipboard holds for a paste.</param>
     public sealed record ClipboardContent(
         string? Text = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Html = null,
-        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), JsonPropertyName("internal")] string? Native = null);
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), JsonPropertyName("internal")] string? Native = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ClipboardImage? Image = null);
 
     /// <summary>Modifier keys.</summary>
     [Flags]

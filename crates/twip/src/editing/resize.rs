@@ -259,6 +259,17 @@ impl Editor {
         Some(TableEdges { page: caret.page, table: level.table, row: level.row, text, columns, rows })
     }
 
+    /// The caret's cell's text area on the caret's page, page points (left, top, right, bottom): its box as drawn
+    /// inside its margins.
+    pub(crate) fn caret_cell_text(&mut self) -> Option<[f64; 4]> {
+        let caret = self.caret_view()?;
+        let level = *self.index.chain_of(&self.selection.focus()?).last()?;
+        let m = self.index.table(&self.doc, level.table)?.rows.get(level.row)?.cells.get(level.cell)?.margins;
+        let geo = self.page_geometry(caret.page)?;
+        let [l, t, r, b] = geo.cells.iter().find(|g| g.chain.last() == Some(&(level.table, level.row, level.cell)))?.page_rect();
+        Some([l + m[1], t + m[0], r - m[3], b - m[2]])
+    }
+
     /// Moves boundary `index` of the caret's row (as [`TableEdges::columns`] counts them) to `to`: the columns either
     /// side of it share the change, the outer edges widen or narrow the table, the left one moving its indent.
     pub(super) fn move_table_column_boundary(&mut self, index: usize, to: f64, fonts: &Fonts) -> Outcome {

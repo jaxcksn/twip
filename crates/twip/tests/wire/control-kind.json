@@ -7,5 +7,10 @@
   "dropDown",
   "comboBox",
   "group",
-  "repeatingSection"
+  "repeatingSection",
+  "buildingBlockGallery",
+  "buildingBlock",
+  "citation",
+  "bibliography",
+  "equation"
 ]

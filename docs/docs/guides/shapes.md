@@ -38,17 +38,70 @@ document's 12 theme colours, in `ThemeColour` order.
 |---|---|
 | `setShapePreset(preset)` | the geometry; text, fill, outline and effects stay, adjust values reset |
 | `setShapeAdjust({ index, value })` | one adjust value |
-| `setShapeFill(fill)` | `none`, `solid`, `gradient`, `pattern`, `picture`, or `fromStyle` to remove the explicit fill |
+| `setShapeFill(fill)` | `none`, `solid`, `gradient`, `pattern`, `picture`, or `fromStyle` to remove the explicit fill; a picture is stretched (`stretch`: insets, fractions of the shape) or tiled (`tile`: offset, scale, alignment, mirroring), and turns with the shape or not (`rotateWithShape`) |
 | `setShapeLine(change)` | width, fill, dash, compound, cap, join, arrowheads; what isn't given is kept |
-| `setShapeEffects(change)` | outer and inner shadow, glow, soft edge, blur; `null` removes one |
-| `setShapeText(change)` | insets, anchor, autofit, wrapping, direction of the text inside |
+| `setShapeEffects(change)` | outer and inner shadow (with its scale, skew, alignment), glow, soft edge, blur, reflection; `null` removes one |
+| `setShapeText(change)` | insets, anchor, autofit, wrapping, direction of the text inside; `upright` keeps the text level when the shape turns |
 | `setPictureAdjust(change)` | a picture's transparency, greyscale, brightness, contrast, transparent colour |
+| `setPictureRecolor(recolor)` | `none`, `grayscale`, `blackAndWhite` with its threshold (0 to 1), or `duotone` with a dark and a light colour |
+| `resetPicture({ size })` | Reset Picture: the picture's adjustments, effects and outline removed, its crop kept; with `size` (Reset Picture & Size) the crop goes too and the picture takes its image's own size |
+| `setLockAspectRatio(lock)` | whether resizing keeps the object's proportions |
 | `setObjectRotation(degrees)`, `flipObject(axis)` | rotation and flips |
 | `arrangeObject(how)` | forward, backward, to front, to back, in front of or behind the text |
 | `groupObjects()`, `ungroupObjects()` | groups two or more selected floats, or ungroups the selected group |
 
 Each is one undo step; `selectGroupChild('next')` moves the selection through a group's children without one. With
 several objects selected (Shift or Ctrl and a click), a command applies to each of them.
+
+## Names, hiding and stacking
+
+Word's Selection Pane is an application's own panel built on these. `objectList(page)` (.NET `GetObjectListAsync`)
+lists the floating objects on a page (from 0) that the story being edited reaches, front first, hidden ones too, each
+group's objects inside it: `{ object, name, kind, hidden, children }`. `object` is an `ObjectId`, `{ float, path }`:
+the float and, for a group's object, its place in the group. Ids last while the document is open, not across opens.
+
+- `setObjectName(name)` renames the selected object (blank fails `unavailable`; 255 characters are kept), and
+  `setObjectTitle(title)` sets its alternative text's title.
+- `setObjectHidden({ object, hidden })` hides or shows one; a hidden object isn't drawn, and hiding the selected one puts
+  the caret at its anchor.
+- `restackObject({ object, inFrontOf })` puts one just in front of another, or behind every other without `inFrontOf`.
+- `selectObject({ object, extend })` selects one, or adds it to the selection.
+
+`state.selection.object` reads them back: `id`, `name`, `title`, `hidden`, `lockAspect`, `stackIndex` (0 is the front
+of its page), a picture's `originalSize` and `pictureAdjust` (brightness, contrast, transparency and recolour).
+
+## Wrap points
+
+A floating object with tight or through wrapping wraps text around a polygon. `state.selection.object.wrapPolygon`
+gives its points, as fractions of the object's box, and whether they were `edited`. `setWrapPoints(points)` sets
+3 to 1024 of them (and makes a square or other wrap tight); `resetWrapPoints()` puts back the object's outline.
+`editWrapPoints()` lets the user drag them on the canvas.
+
+## Linked text boxes
+
+Text that doesn't fit in a text box can go on in another: `linkTextBox(object)` (Word's Create Link) links the selected
+box to an empty one in no chain, and `unlinkTextBox()` (Break Link) ends the chain after the selected box.
+`beginTextBoxLink()` starts Word's pitcher pointer instead: the next click on an empty box links it, a click elsewhere
+or Esc cancels, and `state.view.linkingTextBox` is true meanwhile. `state.selection.object.textBoxLink` gives the
+box's `index` in its chain, the chain's `count`, and the boxes before and after it (`previous`, `next`).
+
+## Selecting objects
+
+`setSelectObjects(true)` is Word's Select Objects: a drag from outside every object draws a rectangle
+(`state.view.objectMarquee`, page points) and selects the floating objects wholly inside it, and a click on the text
+places no caret. Esc or `setSelectObjects(false)` ends it; `state.view.selectingObjects` says whether it is on.
+
+## Frames
+
+A frame (a paragraph placed like a floating object) selected by its border reads `kind: frame`, with `frame` giving
+its placement (`properties`) and `allowOverlap`. `setFrame({ …, allowOverlap })` changes them; with `allowOverlap`
+false the frame moves clear of other frames and floating objects.
+
+## Images
+
+`objectImage()` gives the selected picture's image bytes as the document holds them, `shapeFillImage()` the selected
+shape's picture fill, `watermarkImage(section)` a section's picture watermark, and `pageFillImage()` the page colour's
+picture or texture; each is `null` without one (.NET `byte[]?`). The state carries no image bytes.
 
 ## In the view
 

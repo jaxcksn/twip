@@ -6,6 +6,7 @@
 // `twip_focus`, and a blur never changes the selection. F6 (Shift+F6), or Escape then Tab, leaves the editor.
 import type { Session } from '../editor.js';
 import { Kind, Method, type CaretWindow, type HostRequest, type Message, type WindowPoint, type WindowSegment } from '../transport/protocol.js';
+import type { LineDirection } from '../types.js';
 import type { Dom, Ledger } from './dom.js';
 import { codeOf, keyNumber, modsOf } from './keys.js';
 
@@ -318,12 +319,10 @@ export function startInput(
   const onMessage = (m: Message) => {
     if (m.kind !== Kind.HostRequest) return;
     const r = m.payload as HostRequest;
-    // The caret request: the element follows the caret, so the IME's window opens beside it.
+    // The caret request: the element follows the caret, so the IME's window opens beside it, its text running the way
+    // the caret's line does.
     if (r.type === 'caret') {
-      input.style.left = `${r.x}px`;
-      input.style.top = `${r.y}px`;
-      input.style.height = `${Math.max(1, r.height)}px`;
-      input.style.fontSize = `${Math.max(1, r.height * 0.8)}px`;
+      placeInput(input, r);
     } else if (r.type === 'caret_text') {
       latest = r.window;
       if (!composing) render(r.window);
@@ -333,4 +332,27 @@ export function startInput(
   s.disposers.push(() => s.hostListeners.delete(onMessage));
 
   return { element: input, focus: () => input.focus({ preventScroll: true }) };
+}
+
+/** Puts the input element over the caret bar `r`: as tall as a horizontal line, or as wide as a vertical one, with
+ * the IME's text running down (vertical-rl) or up (vertical-lr turned over) along a vertical line. */
+export function placeInput(input: HTMLElement, r: { x: number; y: number; width: number; height: number; line: LineDirection }): void {
+  const st = input.style;
+  st.left = `${r.x}px`;
+  st.top = `${r.y}px`;
+  if (r.line === 'horizontal') {
+    st.writingMode = 'horizontal-tb';
+    st.width = '';
+    st.height = `${Math.max(1, r.height)}px`;
+    st.fontSize = `${Math.max(1, r.height * 0.8)}px`;
+    st.transform = '';
+    st.transformOrigin = '';
+  } else {
+    st.writingMode = r.line === 'down' ? 'vertical-rl' : 'vertical-lr';
+    st.height = '';
+    st.width = `${Math.max(1, r.width)}px`;
+    st.fontSize = `${Math.max(1, r.width * 0.8)}px`;
+    st.transform = r.line === 'up' ? 'rotate(180deg)' : '';
+    st.transformOrigin = r.line === 'up' ? 'center' : '';
+  }
 }

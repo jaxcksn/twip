@@ -60,6 +60,44 @@ pub enum PasteChoice {
 }
 
 impl PasteChoice {
+    /// The choice an API [`PasteAs`](crate::api::command::PasteAs) names; `None` for `formatted` (the defaults
+    /// decide).
+    pub fn of_api(a: crate::api::command::PasteAs) -> Option<PasteChoice> {
+        use crate::api::command::PasteAs as A;
+        Some(match a {
+            A::Formatted => return None,
+            A::KeepSource => PasteChoice::KeepSource,
+            A::Merge => PasteChoice::Merge,
+            A::DestinationStyles => PasteChoice::DestinationStyles,
+            A::TextOnly => PasteChoice::TextOnly,
+            A::Html => PasteChoice::Html,
+            A::Text => PasteChoice::Unformatted,
+            A::Picture => PasteChoice::Picture,
+            A::NestTable => PasteChoice::NestTable,
+            A::MergeTable => PasteChoice::MergeTable,
+            A::InsertRows => PasteChoice::InsertRows,
+            A::OverwriteCells => PasteChoice::OverwriteCells,
+        })
+    }
+
+    /// The API's name for it.
+    pub fn to_api(self) -> crate::api::command::PasteAs {
+        use crate::api::command::PasteAs as A;
+        match self {
+            PasteChoice::KeepSource => A::KeepSource,
+            PasteChoice::Merge => A::Merge,
+            PasteChoice::DestinationStyles => A::DestinationStyles,
+            PasteChoice::TextOnly => A::TextOnly,
+            PasteChoice::Html => A::Html,
+            PasteChoice::Unformatted => A::Text,
+            PasteChoice::Picture => A::Picture,
+            PasteChoice::NestTable => A::NestTable,
+            PasteChoice::MergeTable => A::MergeTable,
+            PasteChoice::InsertRows => A::InsertRows,
+            PasteChoice::OverwriteCells => A::OverwriteCells,
+        }
+    }
+
     /// Whether it is one of the table choices.
     pub fn is_table(self) -> bool {
         matches!(self, PasteChoice::NestTable | PasteChoice::MergeTable | PasteChoice::InsertRows | PasteChoice::OverwriteCells)
@@ -529,6 +567,7 @@ impl Editor {
         if !last.choices.contains(&choice) {
             return Outcome::unavailable("the clipboard holds nothing to paste that way");
         }
+        let first_commit = self.commits.len();
         if !matches!(self.undo_many(true, 1, fonts), Outcome::Changed(_)) {
             return Outcome::unavailable("the paste can't be undone");
         }
@@ -539,7 +578,58 @@ impl Editor {
             let _ = self.undo_many(false, 1, fonts);
             self.last_paste = Some(last);
         }
+        // One change: the paste made again
+        self.join_commits(first_commit);
         out
+    }
+
+    /// [`Editor::repaste`] as an API choice names it; `formatted`: as the paste options say.
+    pub fn repaste_as(&mut self, choice: crate::api::command::PasteAs, fonts: &Fonts) -> Outcome {
+        let choice = match PasteChoice::of_api(choice) {
+            Some(c) => Some(c),
+            None => self.last_paste().map(|l| l.clip.clone()).and_then(|clip| self.default_paste(&clip)),
+        };
+        match choice {
+            Some(c) => self.repaste(c, fonts),
+            None => Outcome::unavailable("no paste to change"),
+        }
+    }
+
+    /// `setPasteOptions`: the changed options applied to the cut, copy and paste options.
+    pub fn set_paste_options(&mut self, c: &crate::api::command::PasteOptionsChange) -> Outcome {
+        let mut d = self.paste_defaults;
+        let pick = |to: &mut PasteChoice, from: Option<crate::api::command::PasteAs>| -> bool {
+            match from.map(PasteChoice::of_api) {
+                None => true,
+                Some(Some(c)) => {
+                    *to = c;
+                    true
+                }
+                Some(None) => false,
+            }
+        };
+        let set = |to: &mut bool, from: Option<bool>| {
+            if let Some(v) = from {
+                *to = v;
+            }
+        };
+        let ok = pick(&mut d.within, c.within) & pick(&mut d.between, c.between) & pick(&mut d.conflict, c.conflict) & pick(&mut d.other, c.other);
+        set(&mut d.keep_bullets, c.keep_bullets);
+        set(&mut d.show_button, c.show_button);
+        set(&mut d.smart, c.smart_cut_paste);
+        if let Some(m) = &c.smart {
+            set(&mut d.smart_spacing, m.word_spacing);
+            set(&mut d.smart_paragraphs, m.paragraph_spacing);
+            set(&mut d.smart_tables, m.tables);
+            set(&mut d.smart_styles, m.styles);
+            set(&mut d.merge_lists, m.merge_lists);
+            set(&mut d.from_powerpoint, m.from_power_point);
+            set(&mut d.from_excel, m.from_excel);
+        }
+        if !ok || !self.set_paste_defaults(d) {
+            return Outcome::invalid("within, between and other take keepSource, merge or textOnly; conflict also destinationStyles");
+        }
+        Outcome::Moved
     }
 
     /// A picture from the clipboard pasted in line in place of the selection (a selected picture included), as one
@@ -560,7 +650,7 @@ impl Editor {
         let bytes = crate::api::value::Bytes(data.to_vec());
         if let Some(c) = self.selected_picture_control() {
             let id = super::merge::api_id(crate::docx::ElementId::Control(c));
-            let fill = crate::api::command::FillControl { id, text: None, image: Some(bytes), docx: None, building_block: None };
+            let fill = crate::api::command::FillControl { id, text: None, image: Some(bytes), docx: None, building_block: None, date: None };
             return self.joined("Paste", fonts, |e| e.fill_control(fill, fonts));
         }
         let p = crate::api::command::Picture { data: bytes, alt_text: None };

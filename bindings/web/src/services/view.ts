@@ -1,4 +1,4 @@
-import type { Op } from '../commands.js';
+import type { Op, PasteAs } from '../commands.js';
 import type { Session } from '../editor.js';
 import type { PressAction } from '../events.js';
 import type { ElementContext } from '../state.js';
@@ -84,6 +84,26 @@ export interface ViewOptions {
   bookmarks?: boolean;
   /** Pointer shapes over elements instead of the editor's own, replacing those set before; the first match wins. */
   cursorOverrides?: CursorOverride[];
+  /** Shows tab characters as arrows, whatever `formattingMarks` says. */
+  tabCharacters?: boolean;
+  /** Shows spaces as dots and non-breaking spaces as degree signs. */
+  spaces?: boolean;
+  /** Shows paragraph marks, breaks, and end-of-cell and end-of-row marks. */
+  paragraphMarks?: boolean;
+  /** Shows hidden text, laid out and dotted underneath (the document lays out again; exports leave it out). */
+  hiddenText?: boolean;
+  /** Shows optional hyphens, laid out as not signs. */
+  optionalHyphens?: boolean;
+  /** Shows the selected floating object's anchor. Default: on. */
+  objectAnchors?: boolean;
+  /** Click and Type: a double-click in blank space puts the caret there, adding what it needs. Default: on. */
+  clickAndType?: boolean;
+  /** Selected text can be dragged and dropped, with either button and out of the view. Default: on. */
+  textDragAndDrop?: boolean;
+  /** Hides the white space between pages: each page shows only its body. A double-click between pages toggles it. */
+  hideWhiteSpace?: boolean;
+  /** Under enforced protection, highlights the regions the author may edit and brackets their ends. Default: on. */
+  showEditableRegions?: boolean;
 }
 
 /** The pointer shape to show over some elements instead of the editor's own. */
@@ -204,6 +224,37 @@ export type Popover =
       from: string;
       /** What it became. */
       to: string;
+    }
+  | {
+      /**
+       * The options of the AutoFormat change just made: `revertAutoCorrect` undoes it (Undo Hyperlink, Undo Border Line,
+       * Undo Automatic Indent), `neverAutoCorrect` undoes it and turns its option off (Stop Automatically Creating
+       * Hyperlinks or Border Lines, Stop Setting Indent on Tabs and Backspaces); your AutoCorrect dialog is Control
+       * AutoFormat Options.
+       */
+      kind: 'autoFormat';
+      /** The change's options button, or what it made. */
+      anchor: ClientRect;
+      /** What it made. */
+      change: 'hyperlink' | 'borderLine' | 'indent';
+      /** What was typed: the address, or the characters a border line replaced; empty for an indent. */
+      text: string;
+    }
+  | {
+      /**
+       * The Paste Options button of the paste just made, shown while nothing has changed since (typing, another edit,
+       * undo or Esc closes it): `commands.repaste` pastes it again another way, `commands.dismissPasteOptions` hides
+       * it. A lone Ctrl press opens its menu in Word.
+       */
+      kind: 'pasteOptions';
+      /** The button: below the end of the paste, at its right. */
+      anchor: ClientRect;
+      /** The end of the paste's caret box. */
+      end: ClientRect;
+      /** The ways it can paste again, in Word's order; `current` among them. */
+      choices: PasteAs[];
+      /** The way it was pasted. */
+      current: PasteAs;
     };
 
 /** One entry of the tab type picker. */
@@ -248,7 +299,20 @@ export type GestureId =
   | 'rulerDrag'
   | 'rulerDragOff'
   | 'rulerDoubleClick'
-  | 'contextClick';
+  | 'contextClick'
+  | 'objectDoubleClick'
+  | 'objectResizeDrag'
+  | 'shapeHandleDrag'
+  | 'tableMoveDrag'
+  | 'tableZoneClick'
+  | 'tableInsertClick'
+  | 'noteDoubleClick'
+  | 'clickAndType'
+  | 'pageGapDoubleClick'
+  /** A click on an enabled drop-down form field where forms are filled in: the host opens its list. */
+  | 'formFieldClick'
+  /** A double-click on a legacy form field outside forms protection: the host opens its options. */
+  | 'formFieldDoubleClick';
 
 /** What a gesture does: its default, an event, nothing, or an op. */
 export type GestureAction = 'default' | 'emit' | 'none' | { op: Op };
@@ -272,7 +336,7 @@ export interface GestureEvent {
   /** The page. */
   page: number;
   /** What is under the point. */
-  target: MenuTarget | { kind: 'headerArea' | 'footerArea' | 'margin' | 'ruler' | 'tableBorder' };
+  target: MenuTarget | { kind: 'headerArea' | 'footerArea' | 'margin' | 'ruler' | 'tableBorder' | 'pageGap' };
 }
 
 /** The gestures over a session; `bindings` starts as `initial` and is read again after each change. */

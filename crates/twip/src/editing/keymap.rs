@@ -79,6 +79,7 @@ pub enum Toggle {
     CaseCycle,
     DoubleUnderline,
     WordUnderline,
+    FormattingMarks,
 }
 
 #[allow(clippy::large_enum_variant, reason = "made once per key press and consumed at once")]
@@ -102,7 +103,13 @@ fn run(c: Command) -> Option<Bound> {
     Some(Bound::Run(c))
 }
 
-fn mac(code: &str, m: Mods) -> Option<Bound> {
+/// Promote, or Demote: the selected paragraphs a level up or down.
+fn outline(demote: bool) -> Option<Bound> {
+    let o = crate::api::command::OutlineOptions::default();
+    run(if demote { Command::DemoteOutline(o) } else { Command::PromoteOutline(o) })
+}
+
+fn mac(code: &str, m: Mods, cx: KeyContext) -> Option<Bound> {
     let cmd = m.meta && !m.alt && !m.ctrl;
     let opt = m.alt && !m.meta && !m.ctrl;
     match code {
@@ -119,6 +126,13 @@ fn mac(code: &str, m: Mods) -> Option<Bound> {
             };
             Some(Bound::Run(Command::InsertField(InsertField { code: code.into(), display: None, show_code: None })))
         }
+        // Control, not Command, with Shift: Word for Mac's paragraph and row moves (Option with Shift extends).
+        "ArrowUp" | "ArrowDown" if m.ctrl && m.shift && !m.meta && !m.alt => {
+            let d = if code == "ArrowUp" { VerticalDirection::Up } else { VerticalDirection::Down };
+            run(if cx.in_table { Command::MoveRows(d) } else { Command::MoveParagraphs(d) })
+        }
+        // Control, not Command, with Shift: Word for Mac's Promote and Demote (Command with Shift selects words).
+        "ArrowLeft" | "ArrowRight" if m.ctrl && m.shift && !m.meta && !m.alt => outline(code == "ArrowRight"),
         "Backspace" if opt => deleting(false, true),
         "Delete" if opt => deleting(true, true),
         _ => None,
@@ -132,7 +146,7 @@ pub fn command(code: &str, m: Mods, cx: KeyContext) -> Option<Bound> {
         _ => code,
     };
     if cx.mac
-        && let Some(c) = mac(code, m)
+        && let Some(c) = mac(code, m, cx)
     {
         return Some(c);
     }
@@ -152,28 +166,39 @@ pub fn command(code: &str, m: Mods, cx: KeyContext) -> Option<Bound> {
         "End" if !alt => moving(if ctrl { MoveUnit::Document } else { MoveUnit::LineEdge }, true, shift),
         "Home" | "End" if alt && !ctrl && cx.in_table => moving(MoveUnit::RowEdge, code == "End", shift),
         "PageUp" | "PageDown" if alt && !ctrl && cx.in_table => moving(MoveUnit::ColumnEdge, code == "PageDown", shift),
-        "PageUp" | "PageDown" if ctrl && alt => None,
+        "PageUp" | "PageDown" if ctrl && alt => moving(MoveUnit::WindowEdge, code == "PageDown", shift),
         "PageUp" | "PageDown" => moving(if ctrl { MoveUnit::Page } else { MoveUnit::Screen }, code == "PageDown", shift),
         "Backspace" if !alt => deleting(false, ctrl),
         "Delete" if !alt => deleting(true, ctrl),
+        "Enter" | "NumpadEnter" if ctrl && alt && !shift => run(Command::InsertStyleSeparator),
         "Enter" | "NumpadEnter" if !alt => run(match (ctrl, shift) {
             (true, true) if cx.in_table => Command::SplitTable,
             (true, true) => Command::InsertColumnBreak,
             (true, false) => Command::InsertPageBreak,
-            (false, true) => Command::InsertLineBreak,
+            (false, true) => Command::InsertLineBreak(Default::default()),
             (false, false) => Command::InsertParagraph,
         }),
         "Tab" if cx.float && !ctrl && !alt => run(Command::SelectNextObject(if shift { Order::Previous } else { Order::Next })),
         "Digit5" | "Numpad5" if ctrl && alt && !shift => run(Command::SelectNextObject(Order::Next)),
-        "ArrowUp" | "ArrowDown" if alt && shift && !ctrl && cx.in_table => {
-            run(Command::MoveRows(if code == "ArrowUp" { VerticalDirection::Up } else { VerticalDirection::Down }))
+        "ArrowUp" | "ArrowDown" if alt && shift && !ctrl => {
+            let d = if code == "ArrowUp" { VerticalDirection::Up } else { VerticalDirection::Down };
+            run(if cx.in_table { Command::MoveRows(d) } else { Command::MoveParagraphs(d) })
         }
+        "ArrowLeft" | "ArrowRight" if alt && shift && !ctrl => outline(code == "ArrowRight"),
         // In a list, as Increase and Decrease Indent: a level, or the whole list from its first item.
         "Tab" if cx.list_start && !ctrl && !alt => run(if shift { Command::DecreaseIndent } else { Command::IncreaseIndent }),
         "Tab" if cx.in_table && ctrl && !alt && !shift => run(Command::InsertTab),
         "Tab" if cx.in_table && !ctrl && !alt => run(Command::MoveToCell(if shift { Order::Previous } else { Order::Next })),
         "Tab" if !alt && !ctrl => run(Command::InsertTab),
         "Escape" if plain => run(Command::Escape),
+        "F2" if !ctrl && !alt => run(if shift { Command::CopyText } else { Command::MoveText }),
+        "F11" if !ctrl && !alt => run(Command::SelectField(if shift { Order::Previous } else { Order::Next })),
+        "Digit8" if ctrl && !alt && (shift || cx.mac) => toggle(Toggle::FormattingMarks),
+        "KeyX" if alt && !ctrl && !shift && !cx.mac => run(Command::ToggleCharacterCode),
+        "BracketRight" if ctrl && !alt && !shift => run(Command::GrowFontOnePoint),
+        "BracketLeft" if ctrl && !alt && !shift => run(Command::ShrinkFontOnePoint),
+        "KeyT" if ctrl && !alt => run(if shift { Command::DecreaseHangingIndent } else { Command::IncreaseHangingIndent }),
+        "KeyQ" if ctrl && !shift && (alt == cx.mac) => run(Command::ClearParagraphFormatting),
         "F1" if shift && !ctrl && !alt => run(Command::DescribeFormatting),
         "KeyF" if ctrl && alt && !shift => run(Command::InsertFootnote),
         "KeyD" if ctrl && alt && !shift => run(Command::InsertEndnote),
@@ -203,9 +228,9 @@ pub fn command(code: &str, m: Mods, cx: KeyContext) -> Option<Bound> {
         "KeyE" if ctrl && !alt && !shift => toggle(Toggle::Align(crate::api::value::Alignment::Center)),
         "KeyR" if ctrl && !alt && !shift => toggle(Toggle::Align(crate::api::value::Alignment::Right)),
         "KeyJ" if ctrl && !alt && !shift => toggle(Toggle::Align(crate::api::value::Alignment::Justify)),
-        "KeyZ" if ctrl && !alt && !shift => run(Command::Undo),
-        "KeyZ" if ctrl && !alt && shift => run(Command::Redo),
-        "KeyY" if ctrl && !alt && !shift => run(Command::Redo),
+        "KeyZ" if ctrl && !alt && !shift => run(Command::Undo(Default::default())),
+        "KeyZ" if ctrl && !alt && shift => run(Command::Redo(Default::default())),
+        "KeyY" if ctrl && !alt && !shift => run(Command::Repeat),
         "F4" if plain => run(Command::Repeat),
         "F3" if shift && !ctrl && !alt => toggle(Toggle::CaseCycle),
         "KeyC" if ctrl && shift && !alt => run(Command::CopyFormatting),
@@ -225,6 +250,7 @@ pub fn command(code: &str, m: Mods, cx: KeyContext) -> Option<Bound> {
         "Period" if ctrl && alt && !shift => text("\u{2026}"),
         "F8" if plain => run(Command::SetSelectionMode(SelectionMode::Extend)),
         "F8" if ctrl && shift && !alt => run(Command::SetSelectionMode(SelectionMode::Block)),
+        "F8" if shift && !ctrl && !alt => run(Command::ShrinkSelection),
         "F5" if shift && !ctrl && !alt => run(Command::GoBack),
         // Field keys
         "F9" if alt && !ctrl && !shift => toggle(Toggle::FieldCodes { all: true }),
@@ -268,6 +294,15 @@ pub fn chord(s: &str) -> Option<(String, Mods)> {
         k if k.len() == 1 && k.chars().all(|c| c.is_ascii_uppercase()) => format!("Key{k}"),
         k if k.len() == 1 && k.chars().all(|c| c.is_ascii_digit()) => format!("Digit{k}"),
         "=" => "Equal".into(),
+        "]" => "BracketRight".into(),
+        "[" => "BracketLeft".into(),
+        "-" => "Minus".into(),
+        "." => "Period".into(),
+        "Num-" => "NumpadSubtract".into(),
+        "Up" => "ArrowUp".into(),
+        "Down" => "ArrowDown".into(),
+        "Left" => "ArrowLeft".into(),
+        "Right" => "ArrowRight".into(),
         ">" => "Period".into(),
         "<" => "Comma".into(),
         "Space" => "Space".into(),
@@ -343,6 +378,7 @@ pub fn toggle_id(t: Toggle) -> crate::api::command::CommandId {
         Toggle::FieldCodes { .. } => C::ShowFieldCodes,
         Toggle::CaseCycle => C::ChangeCase,
         Toggle::DoubleUnderline | Toggle::WordUnderline => C::SetUnderline,
+        Toggle::FormattingMarks => C::SetViewOptions,
     }
 }
 
@@ -353,5 +389,5 @@ fn alt_chords_do_not_edit_text() {
         assert!(command(k, alt, KeyContext::default()).is_none(), "Alt+{k} is bound");
     }
     let ctrl_alt = Mods { ctrl: true, alt: true, ..Mods::default() };
-    assert!(command("Enter", ctrl_alt, KeyContext::default()).is_none(), "Ctrl+Alt+Enter is bound");
+    assert_eq!(command("Enter", ctrl_alt, KeyContext::default()), run(Command::InsertStyleSeparator), "Ctrl+Alt+Enter");
 }

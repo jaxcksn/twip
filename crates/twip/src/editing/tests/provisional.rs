@@ -91,9 +91,9 @@ fn provisional_header_typed_stays() {
     e.execute(Command::Escape, fonts());
     assert_eq!(headers_and_footers(&e), 1, "the header stays");
     assert!(e.is_dirty());
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(headers_and_footers(&e), 1, "the first undo takes the typing");
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(headers_and_footers(&e), 0, "the second the header");
 }
 
@@ -122,7 +122,7 @@ fn provisional_undo_in_the_new_header_removes_it_once() {
     let mut e = fixture();
     let before = state(&e);
     e.execute(Command::EditHeader, fonts());
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert!(!editing_header_footer(&e));
     assert_eq!(headers_and_footers(&e), 0);
     let (p, dirty, undo, _) = state(&e);

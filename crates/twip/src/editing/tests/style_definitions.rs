@@ -81,7 +81,7 @@ fn a_new_paragraph_style_is_made_applied_and_read_back() {
         assert!(d.description.contains("Bold"), "{}", d.description);
     }
     // One undo step takes it away.
-    let u = e.execute(Command::Undo, fonts());
+    let u = e.execute(Command::Undo(Default::default()), fonts());
     assert!(e.style_definition(&id("Callout")).is_none(), "{u:?} {:?}", e.style_definition(&id("Callout")).map(|d| d.defined));
     assert_ne!(paras(&e)[0].style.style_id.as_deref(), Some("Callout"));
 }
@@ -138,9 +138,9 @@ fn a_style_is_renamed_rebased_and_relinked() {
     let relinked = [None, Some(id("Emph")), Some(id("Heading1"))];
     assert_eq!(links(&e), relinked, "the old partner lets go");
     // One undo step: all three sides back, then again.
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(links(&e), [Some(id("Emph")), None, Some(id("Body"))], "undone");
-    e.execute(Command::Redo, fonts());
+    e.execute(Command::Redo(Default::default()), fonts());
     assert_eq!(links(&e), relinked, "redone");
     e.modify_style(&id("Heading1"), StyleChange { link: Some(None), ..Default::default() }, fonts());
     assert_eq!(e.style_definition(&id("Emph")).expect("Emph").link, None);
@@ -165,16 +165,19 @@ fn a_linked_style_makes_its_character_half_and_shares_its_character_formatting()
     assert_eq!((c.category, c.name.as_str(), c.own_character.italic), (StyleCategory::Character, "Note Char", Tri::Uniform(true)));
     e.modify_style(
         &id("Note"),
-        StyleChange { formatting: vec![Command::SetFontColor(AutoOr::Value(Color(0xFF0000)))], ..Default::default() },
+        StyleChange {
+            formatting: vec![Command::SetFontColor(AutoOr::Value(crate::api::drawing::ColourValue::rgb(Color(0xFF0000))))],
+            ..Default::default()
+        },
         fonts(),
     );
     let colors = |e: &Editor| [id("Note"), half.clone()].map(|s| e.style_definition(&s).expect("defined").own_character.color);
     let red = Tri::Uniform(AutoOr::Value(Color(0xFF0000)));
     assert_eq!(colors(&e), [red, red]);
     // Both halves in one undo step.
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(colors(&e), [Tri::Unavailable, Tri::Unavailable], "undone");
-    e.execute(Command::Redo, fonts());
+    e.execute(Command::Redo(Default::default()), fonts());
     assert_eq!(colors(&e), [red, red], "redone");
     // Linked to nothing: refused, nothing written.
     let (depth, styles) = (e.history().undo_depth(), e.document().resolver.as_ref().expect("styles").styles.by_id.len());
@@ -230,7 +233,7 @@ fn a_new_base_reformats_the_styles_numbers() {
 fn a_table_style_takes_its_parts_formatting_and_bands() {
     let mut e = plain();
     let red = Color(0xFF0000);
-    let line = Border { style: BorderStyle::Single, width: Points(1.0), color: AutoOr::Auto };
+    let line = Border { style: BorderStyle::Single, width: Points(1.0), color: AutoOr::Auto, space: None, shadow: None };
     let change = StyleChange {
         name: Some("Grid Red".into()),
         formatting: vec![
@@ -243,7 +246,7 @@ fn a_table_style_takes_its_parts_formatting_and_bands() {
             clear: false,
             formatting: vec![
                 Command::SetBold(true),
-                Command::SetCellShading(Some(red)),
+                Command::SetCellShading(Some(crate::api::drawing::ColourValue::rgb(red))),
                 Command::SetCellAlignment(crate::api::value::CellAlignment::Center),
             ],
         }],
@@ -296,7 +299,7 @@ fn a_list_style_is_made_with_its_levels() {
     assert!(!refused(&out), "{out:?}");
     let d = e.style_definition(made.as_ref().expect("made")).expect("defined");
     assert_eq!((d.category, d.list_levels.len()), (StyleCategory::List, 9));
-    assert_eq!(d.list_levels[0].format, crate::editing::list_defs::NumberStyle::UpperRoman);
+    assert_eq!(d.list_levels[0].format, crate::api::command::NumberFormat::UpperRoman);
     assert!(refused(&e.modify_style(
         made.as_ref().expect("made"),
         StyleChange { formatting: vec![Command::SetBold(true)], ..Default::default() },
@@ -339,7 +342,7 @@ fn built_in_styles_list_with_their_latent_flags_and_take_an_exception() {
         let h6 = all.iter().find(|b| b.id.0 == "Heading6").expect("heading 6");
         assert_eq!((h6.visibility, h6.priority), (StyleVisibility::HideUntilUsed, 9), "the others keep Word's");
     }
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(e.built_in_styles().iter().find(|b| b.id.0 == "Heading5").expect("heading 5").visibility, StyleVisibility::HideUntilUsed);
 }
 
@@ -409,11 +412,11 @@ fn every_default_sets_and_reads_back_without_a_dialog() {
     }
     assert!(refused(&e.set_default_formatting(vec![Command::RemoveFrame], fonts())));
     // One undo step takes them all away, and redo puts them back.
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     let d = e.document_defaults().expect("defaults");
     assert_eq!((d.own_character.bold, d.paragraph.flow.widow_control, d.tabs.len()), (Tri::Unavailable, Tri::Uniform(true), 0), "undone");
     assert!(!paras(&e)[0].mark.bold);
-    e.execute(Command::Redo, fonts());
+    e.execute(Command::Redo(Default::default()), fonts());
     let d = e.document_defaults().expect("defaults");
     assert_eq!((d.own_character.bold, d.paragraph.flow.widow_control, d.tabs.len()), (Tri::Uniform(true), Tri::Uniform(false), 1), "redone");
     assert!(paras(&e)[0].mark.bold);
@@ -447,9 +450,9 @@ fn a_table_overrides_its_styles_band_sizes() {
         s
     };
     assert!(doc.contains("w:tblStyleRowBandSize w:val=\"2\"") && doc.contains("w:tblStyleColBandSize w:val=\"3\""), "{doc}");
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(e.table_band_sizes().map(|b| (b.own_rows, b.own_columns)), Some((None, None)), "undone");
-    e.execute(Command::Redo, fonts());
+    e.execute(Command::Redo(Default::default()), fonts());
     assert_eq!(e.table_band_sizes().map(|b| (b.own_rows, b.own_columns)), Some((Some(2), Some(3))), "redone");
     e.set_table_band_sizes(Some(None), None, fonts());
     let b = e.table_band_sizes().expect("in a table");
@@ -503,7 +506,12 @@ fn a_table_style_takes_shading_margins_and_row_breaking() {
     use crate::api::value::NoneOr;
     let mut e = plain();
     let shade = |target, c: u32| {
-        Command::SetShading(ShadingChange { target, fill: NoneOr::Value(Color(c)), pattern: Default::default(), color: AutoOr::Auto })
+        Command::SetShading(ShadingChange {
+            target,
+            fill: NoneOr::Value(crate::api::drawing::ColourValue::rgb(Color(c))),
+            pattern: Default::default(),
+            color: AutoOr::Auto,
+        })
     };
     let margins = CellMargins { top: Some(Points(2.0)), bottom: Some(Points(3.0)), left: Some(Points(4.0)), right: Some(Points(5.0)) };
     let change = StyleChange {

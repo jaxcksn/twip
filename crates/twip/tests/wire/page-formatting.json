@@ -4,6 +4,7 @@
     "chapterNumbers": null,
     "columns": {
       "count": 1,
+      "equal": true,
       "separator": false,
       "spacing": 36.5,
       "widths": []
@@ -51,6 +52,28 @@
     },
     "multiplePages": "normal",
     "orientation": "portrait",
+    "pageBorders": {
+      "behindText": false,
+      "display": "allPages",
+      "offsetFrom": "page",
+      "surroundFooter": true,
+      "surroundHeader": true,
+      "top": {
+        "color": {
+          "theme": "text2",
+          "transforms": [
+            {
+              "kind": "shade",
+              "value": 0.75
+            }
+          ]
+        },
+        "shadow": false,
+        "space": 24.0,
+        "style": "single",
+        "width": 0.5
+      }
+    },
     "pageNumberFormat": "decimal",
     "pageNumberStart": 1,
     "size": {
@@ -77,6 +100,7 @@
     "chapterNumbers": null,
     "columns": {
       "count": 1,
+      "equal": true,
       "separator": false,
       "spacing": 36.5,
       "widths": []
@@ -124,6 +148,28 @@
     },
     "multiplePages": "normal",
     "orientation": "portrait",
+    "pageBorders": {
+      "behindText": false,
+      "display": "allPages",
+      "offsetFrom": "page",
+      "surroundFooter": true,
+      "surroundHeader": true,
+      "top": {
+        "color": {
+          "theme": "text2",
+          "transforms": [
+            {
+              "kind": "shade",
+              "value": 0.75
+            }
+          ]
+        },
+        "shadow": false,
+        "space": 24.0,
+        "style": "single",
+        "width": 0.5
+      }
+    },
     "pageNumberFormat": "decimal",
     "pageNumberStart": 1,
     "size": {

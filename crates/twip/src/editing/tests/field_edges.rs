@@ -263,10 +263,10 @@ fn undoing_a_join_before_a_shown_code_keeps_it_shown() {
     };
     assert_eq!(starts(&e), Some(0), "the join took the start to the first paragraph");
     show_codes(&mut e, true);
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(starts(&e), Some(1));
     assert_eq!(views(&e), [FieldView::Code], "the split off paragraph's field still shows its code");
-    e.execute(Command::Redo, fonts());
+    e.execute(Command::Redo(Default::default()), fonts());
     assert_eq!(starts(&e), Some(0));
     assert_eq!(views(&e), [FieldView::Code]);
 }

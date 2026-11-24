@@ -1,0 +1,51 @@
+{
+  "name": "paste-image",
+  "fixture": "editor/FX-EMPTY.docx",
+  "steps": [
+    { "op": "open" },
+    { "op": "command", "command": { "type": "insertText", "value": "Before " } },
+    { "op": "expectEvents", "match": [] },
+    { "op": "call", "method": "pasteContent", "args": [{ "text": "", "image": { "mime": "image/png", "data": { "$file": "images/square-96.png" } } }] },
+    { "op": "expectEvents", "match": [
+      { "type": "documentChanged" },
+      { "type": "popoverRequested", "kind": "pasteOptions", "choices": { "$exact": ["picture"] }, "current": "picture" }
+    ] },
+    { "op": "expectState", "match": { "history": { "undoLabel": "Paste" }, "selection": { "kind": "caret" } } },
+    { "op": "call", "method": "find.all", "args": [{ "text": "^g" }], "result": { "matches": [{ "before": "Before " }] } },
+    { "op": "command", "command": { "type": "undo" } },
+    { "op": "expectEvents", "match": [{ "type": "popoverClosed" }] },
+    { "op": "call", "method": "find.all", "args": [{ "text": "^g" }], "result": { "matches": { "$exact": [] } } },
+
+    { "op": "call", "method": "pasteContent", "args": [{ "text": "", "image": { "mime": "image/png", "data": { "$file": "images/square-96.png" } } }] },
+    { "op": "call", "method": "pasteContent", "args": [{ "text": "", "image": { "mime": "image/png", "data": { "$file": "images/square-96.png" } } }] },
+    { "op": "command", "command": { "type": "insertText", "value": "After" } },
+    { "op": "call", "method": "find.all", "args": [{ "text": "^g^gAfter" }], "result": { "matches": [{ "before": "Before " }] } },
+
+    { "op": "call", "method": "find.next", "args": [{ "text": "After" }] },
+    { "op": "call", "method": "pasteContent", "args": [{ "text": "", "image": { "mime": "image/png", "data": { "$file": "images/square-96.png" } } }] },
+    { "op": "call", "method": "find.all", "args": [{ "text": "After" }], "result": { "matches": { "$exact": [] } } },
+    { "op": "call", "method": "find.all", "args": [{ "text": "^g" }], "result": { "matches": [{}, {}, {}] } },
+
+    { "op": "call", "method": "pasteContent", "args": [{ "text": "plain", "image": { "mime": "image/png", "data": { "$file": "images/square-96.png" } } }, { "as": "text" }] },
+    { "op": "call", "method": "find.all", "args": [{ "text": "^gplain" }], "result": { "matches": [{}] } },
+    { "op": "call", "method": "find.all", "args": [{ "text": "^g" }], "result": { "matches": [{}, {}, {}] } },
+
+    { "op": "expectEvents", "match": [] },
+    { "op": "call", "method": "pasteContent", "args": [{ "text": "", "image": { "mime": "image/png", "data": { "$file": "dictionaries/en_US.aff" } } }] },
+    { "op": "expectError", "code": "invalid-argument" },
+    { "op": "call", "method": "pasteContent", "args": [{ "text": "", "image": { "mime": "image/png", "data": { "$file": "images/corrupt.png" } } }] },
+    { "op": "expectError", "code": "unavailable" },
+    { "op": "expectEvents", "match": [{ "type": "warning", "code": "image-undecodable" }] },
+
+    { "op": "call", "method": "pasteContent", "args": [{ "text": "", "html": "<img src=\"https://example.com/a.png\">", "image": { "mime": "image/png", "data": { "$file": "images/square-96.png" } } }] },
+    { "op": "call", "method": "find.all", "args": [{ "text": "^g" }], "result": { "matches": [{}, {}, {}, {}] } },
+    { "op": "expectEvents", "match": [] },
+    { "op": "call", "method": "pasteContent", "args": [{ "text": "fallback", "html": "<p></p>" }] },
+    { "op": "expectEvents", "match": [{ "type": "popoverRequested", "kind": "pasteOptions", "current": "text" }] },
+    { "op": "call", "method": "find.all", "args": [{ "text": "fallback" }], "result": { "matches": [{}] } },
+
+    { "op": "export", "format": "docx" },
+    { "op": "reopen" },
+    { "op": "call", "method": "find.all", "args": [{ "text": "^g" }], "result": { "matches": [{}, {}, {}, {}] } }
+  ]
+}

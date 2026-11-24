@@ -10,6 +10,10 @@
     "type": "insertLineBreak"
   },
   {
+    "clear": "both",
+    "type": "insertLineBreak"
+  },
+  {
     "type": "insertPageBreak"
   },
   {
@@ -20,12 +24,18 @@
     "value": "nextPage"
   },
   {
+    "type": "insertStyleSeparator"
+  },
+  {
     "type": "insertTab"
   },
   {
     "char": "§",
     "font": "Symbol",
     "type": "insertSymbol"
+  },
+  {
+    "type": "toggleCharacterCode"
   },
   {
     "direction": "backward",
@@ -43,13 +53,48 @@
     "type": "paste"
   },
   {
+    "as": "overwriteCells",
+    "type": "paste"
+  },
+  {
     "type": "pasteText",
     "value": "pasted"
+  },
+  {
+    "type": "repaste",
+    "value": "textOnly"
+  },
+  {
+    "type": "dismissPasteOptions"
+  },
+  {
+    "other": "textOnly",
+    "showButton": false,
+    "smart": {
+      "mergeLists": false,
+      "tables": false
+    },
+    "type": "setPasteOptions"
+  },
+  {
+    "from": "UEs=",
+    "type": "insertFile"
+  },
+  {
+    "type": "moveText"
+  },
+  {
+    "type": "copyText"
   },
   {
     "type": "undo"
   },
   {
+    "count": 3,
+    "type": "undo"
+  },
+  {
+    "count": 2,
     "type": "redo"
   },
   {
@@ -87,12 +132,94 @@
     "value": "previous"
   },
   {
+    "type": "selectField",
+    "value": "previous"
+  },
+  {
+    "ranges": [
+      {
+        "end": {
+          "offset": 2,
+          "paragraph": "18"
+        },
+        "start": {
+          "offset": 4,
+          "paragraph": "17"
+        }
+      }
+    ],
+    "type": "setSelection"
+  },
+  {
+    "activeCells": 0,
+    "cells": [
+      {
+        "firstColumn": 0,
+        "firstRow": 1,
+        "lastColumn": 1,
+        "lastRow": 2,
+        "start": {
+          "offset": 0,
+          "paragraph": "31"
+        }
+      }
+    ],
+    "ranges": [
+      {
+        "end": {
+          "offset": 2,
+          "paragraph": "18"
+        },
+        "start": {
+          "offset": 4,
+          "paragraph": "17"
+        }
+      }
+    ],
+    "type": "setSelection"
+  },
+  {
+    "type": "shrinkSelection"
+  },
+  {
+    "type": "selectSimilarFormatting"
+  },
+  {
+    "type": "selectStyleInstances",
+    "value": "Heading1"
+  },
+  {
     "type": "goToPage",
     "value": 3
   },
   {
     "type": "goToBookmark",
     "value": "Summary"
+  },
+  {
+    "target": {
+      "absolute": 2
+    },
+    "type": "goTo",
+    "what": "page"
+  },
+  {
+    "target": {
+      "relative": -3
+    },
+    "type": "goTo",
+    "what": "line"
+  },
+  {
+    "name": "Ann",
+    "target": "next",
+    "type": "goTo",
+    "what": "comment"
+  },
+  {
+    "target": "previous",
+    "type": "goTo",
+    "what": "heading"
   },
   {
     "type": "setBold",
@@ -139,6 +266,12 @@
     "value": "Carlito"
   },
   {
+    "type": "setFont",
+    "value": {
+      "theme": "headings"
+    }
+  },
+  {
     "type": "setFontSize",
     "value": 10.5
   },
@@ -149,8 +282,28 @@
     "type": "shrinkFont"
   },
   {
+    "type": "growFontOnePoint"
+  },
+  {
+    "type": "shrinkFontOnePoint"
+  },
+  {
     "type": "setFontColor",
-    "value": "#C00000"
+    "value": {
+      "rgb": "#C00000"
+    }
+  },
+  {
+    "type": "setFontColor",
+    "value": {
+      "theme": "accent1",
+      "transforms": [
+        {
+          "kind": "tint",
+          "value": 0.4
+        }
+      ]
+    }
   },
   {
     "type": "setHighlight",
@@ -171,12 +324,26 @@
   {
     "contextualAlternates": true,
     "kerning": 12.0,
+    "ligatureFlags": {
+      "contextual": false,
+      "discretionary": false,
+      "historical": true,
+      "standard": true
+    },
     "ligatures": "standardContextual",
     "numberForm": "oldStyle",
     "numberSpacing": "tabular",
     "scale": 90.0,
     "stylisticSet": 2,
+    "stylisticSets": [
+      2,
+      7
+    ],
     "type": "setTypography"
+  },
+  {
+    "type": "setFitText",
+    "value": 72.5
   },
   {
     "language": "en-GB",
@@ -240,10 +407,15 @@
   },
   {
     "type": "setUnderlineColor",
-    "value": "#C00000"
+    "value": {
+      "rgb": "#C00000"
+    }
   },
   {
     "type": "clearFormatting"
+  },
+  {
+    "type": "clearAllFormatting"
   },
   {
     "type": "changeCase",
@@ -284,6 +456,19 @@
     "type": "decreaseIndent"
   },
   {
+    "type": "increaseHangingIndent"
+  },
+  {
+    "type": "decreaseHangingIndent"
+  },
+  {
+    "type": "clearParagraphFormatting"
+  },
+  {
+    "type": "moveParagraphs",
+    "value": "up"
+  },
+  {
     "type": "setParagraphStyle",
     "value": "Heading1"
   },
@@ -318,6 +503,112 @@
     "type": "setDocumentDefaults"
   },
   {
+    "color": {
+      "theme": "text2",
+      "transforms": [
+        {
+          "kind": "shade",
+          "value": 0.75
+        }
+      ]
+    },
+    "font": {
+      "theme": "body"
+    },
+    "type": "setDocumentDefaults"
+  },
+  {
+    "type": "setDefaultFormatting",
+    "value": [
+      {
+        "type": "setBold",
+        "value": true
+      },
+      {
+        "type": "setParagraphFlow",
+        "widowControl": false
+      }
+    ]
+  },
+  {
+    "apply": true,
+    "category": "table",
+    "change": {
+      "autoUpdate": false,
+      "basedOn": "TableGrid",
+      "clear": true,
+      "columnBand": 1,
+      "formatting": [
+        {
+          "type": "setBold",
+          "value": true
+        },
+        {
+          "type": "setCellShading",
+          "value": {
+            "theme": "text2",
+            "transforms": [
+              {
+                "kind": "shade",
+                "value": 0.75
+              }
+            ]
+          }
+        }
+      ],
+      "list": {
+        "level": 1,
+        "list": 3
+      },
+      "listLevels": [
+        {
+          "alignment": "left",
+          "bold": true,
+          "color": "#C00000",
+          "follow": "tab",
+          "format": "chicago",
+          "highlight": "none",
+          "italic": false,
+          "legal": false,
+          "numberPosition": 0.0,
+          "size": 10.5,
+          "start": 1,
+          "text": "%1",
+          "textIndent": 0.0,
+          "underline": "single"
+        }
+      ],
+      "name": "Ledger",
+      "parts": [
+        {
+          "clear": false,
+          "formatting": [
+            {
+              "type": "setItalic",
+              "value": true
+            }
+          ],
+          "part": "headerRow"
+        }
+      ],
+      "quick": true,
+      "rowBand": 2
+    },
+    "fromSelection": false,
+    "type": "createStyle"
+  },
+  {
+    "change": {
+      "basedOn": null,
+      "clear": false,
+      "formatting": [],
+      "name": "Big",
+      "parts": []
+    },
+    "id": "Heading1",
+    "type": "modifyStyle"
+  },
+  {
     "type": "setList",
     "value": "numbered"
   },
@@ -330,18 +621,24 @@
     "levels": [
       {
         "alignment": "right",
+        "bold": true,
+        "color": "#C00000",
         "follow": "space",
         "font": "Wingdings",
         "format": "upperRoman",
+        "highlight": "none",
+        "italic": false,
         "legal": true,
         "linkedStyle": "Heading1",
         "numberPosition": 0.5,
         "picture": "iVBORw==",
         "restartAfter": 0,
+        "size": 10.5,
         "start": 1,
         "tab": 36.5,
         "text": "Article %1.",
-        "textIndent": 18.5
+        "textIndent": 18.5,
+        "underline": "single"
       }
     ],
     "name": "Legal",
@@ -385,6 +682,56 @@
     "type": "setOutline"
   },
   {
+    "subtopics": true,
+    "type": "promoteOutline"
+  },
+  {
+    "type": "demoteOutline"
+  },
+  {
+    "subtopics": false,
+    "type": "promoteToHeading1"
+  },
+  {
+    "type": "demoteToBodyText"
+  },
+  {
+    "heading": "12",
+    "type": "promoteHeading"
+  },
+  {
+    "heading": "12",
+    "subtopics": false,
+    "type": "demoteHeading"
+  },
+  {
+    "heading": "12",
+    "level": 2,
+    "side": "after",
+    "target": "3",
+    "type": "moveHeading"
+  },
+  {
+    "type": "deleteHeading",
+    "value": "12"
+  },
+  {
+    "type": "insertHeadingBefore",
+    "value": "12"
+  },
+  {
+    "type": "insertHeadingAfter",
+    "value": "12"
+  },
+  {
+    "type": "insertSubheading",
+    "value": "12"
+  },
+  {
+    "type": "selectHeadingContent",
+    "value": "12"
+  },
+  {
     "type": "setParagraphTextDirection",
     "value": "tbRl"
   },
@@ -394,7 +741,9 @@
   },
   {
     "type": "setParagraphShading",
-    "value": "#D9E2F3"
+    "value": {
+      "rgb": "#D9E2F3"
+    }
   },
   {
     "between": null,
@@ -403,29 +752,53 @@
     "right": null,
     "shadow": false,
     "top": {
-      "color": "#1F3864",
+      "color": {
+        "theme": "text2",
+        "transforms": [
+          {
+            "kind": "shade",
+            "value": 0.75
+          }
+        ]
+      },
+      "shadow": true,
+      "space": 4.0,
       "style": "thinThickSmallGap",
       "width": 1.5
     },
     "type": "setParagraphBorderLines"
   },
   {
-    "color": "#2E75B6",
-    "fill": "#FFF2CC",
+    "color": {
+      "rgb": "#2E75B6"
+    },
+    "fill": {
+      "rgb": "#FFF2CC"
+    },
     "pattern": "thinDiagCross",
     "target": "table",
     "type": "setShading"
   },
   {
     "color": "auto",
-    "fill": "#FFF2CC",
+    "fill": {
+      "theme": "text2",
+      "transforms": [
+        {
+          "kind": "shade",
+          "value": 0.75
+        }
+      ]
+    },
     "pattern": "pct20",
     "target": "text",
     "type": "setShading"
   },
   {
     "border": {
-      "color": "#C00000",
+      "color": {
+        "rgb": "#C00000"
+      },
       "style": "double",
       "width": 0.75
     },
@@ -434,6 +807,7 @@
   },
   {
     "applyTo": "wholeDocument",
+    "behindText": true,
     "bottom": null,
     "display": "notFirstPage",
     "left": null,
@@ -443,13 +817,17 @@
     "surroundFooter": true,
     "surroundHeader": false,
     "top": {
-      "color": "#7030A0",
+      "color": {
+        "rgb": "#7030A0"
+      },
+      "space": 24.0,
       "style": "wave",
       "width": 0.75
     },
     "type": "setPageBorders"
   },
   {
+    "allowOverlap": false,
     "height": 36.5,
     "heightRule": "atLeast",
     "horizontal": 0.5,
@@ -515,6 +893,7 @@
     "value": false
   },
   {
+    "applyTo": "wholeDocument",
     "bottom": 72.5,
     "gutter": 0.5,
     "left": 90.5,
@@ -527,11 +906,17 @@
     "value": "landscape"
   },
   {
+    "applyTo": "thisPointForward",
+    "type": "setOrientation",
+    "value": "portrait"
+  },
+  {
     "height": 841.5,
     "type": "setPaperSize",
     "width": 595.5
   },
   {
+    "applyTo": "section",
     "count": 2,
     "separator": true,
     "spacing": 36.5,
@@ -548,6 +933,12 @@
     ]
   },
   {
+    "applyTo": "thisPointForward",
+    "count": 2,
+    "startNewColumn": true,
+    "type": "setColumns"
+  },
+  {
     "footer": 30.5,
     "header": 36.5,
     "type": "setHeaderFooterDistance"
@@ -561,6 +952,7 @@
     "value": false
   },
   {
+    "applyTo": "wholeDocument",
     "chapter": {
       "level": 1,
       "separator": "enDash"
@@ -574,6 +966,7 @@
     "value": "center"
   },
   {
+    "applyTo": "wholeDocument",
     "type": "setLineNumbering",
     "value": {
       "countBy": 5,
@@ -611,8 +1004,19 @@
   {
     "alignment": "center",
     "format": "pageOfTotal",
+    "showOnFirstPage": false,
     "type": "insertPageNumber",
     "where": "footer"
+  },
+  {
+    "alignment": "outside",
+    "format": "page",
+    "type": "insertPageNumber",
+    "where": {
+      "margin": {
+        "side": "outside"
+      }
+    }
   },
   {
     "kind": "footer",
@@ -701,12 +1105,27 @@
     "value": "swap"
   },
   {
+    "kind": "footnote",
+    "part": "continuationNotice",
+    "text": "Continued",
+    "type": "setNoteSeparator"
+  },
+  {
+    "kind": "endnote",
+    "part": "separator",
+    "type": "setNoteSeparator"
+  },
+  {
     "address": "https://example.com",
+    "bookmark": "Prices",
+    "frame": "_blank",
+    "screenTip": "Go",
     "text": "Example",
     "type": "insertHyperlink"
   },
   {
     "address": "https://example.org",
+    "screenTip": "",
     "type": "editHyperlink"
   },
   {
@@ -721,6 +1140,10 @@
     "value": "Summary"
   },
   {
+    "autoFormatOverride": true,
+    "blockStyleSetSwitching": false,
+    "blockThemeSwitching": true,
+    "confirmPassword": "secret",
     "enforce": true,
     "formatting": false,
     "kind": "readOnly",
@@ -731,10 +1154,39 @@
     ]
   },
   {
+    "group": "editors",
     "type": "addEditableRange"
   },
   {
     "type": "removeEditableRanges"
+  },
+  {
+    "allowed": true,
+    "editor": {
+      "group": "editors"
+    },
+    "type": "setEditableRangeEditor"
+  },
+  {
+    "allowed": false,
+    "editor": {
+      "user": "ada@example.com"
+    },
+    "type": "setEditableRangeEditor"
+  },
+  {
+    "type": "selectNextEditableRange",
+    "value": "next"
+  },
+  {
+    "type": "selectEditableRanges"
+  },
+  {
+    "type": "setEditingGroups",
+    "value": [
+      "editors",
+      "owners"
+    ]
   },
   {
     "type": "insertFormField",
@@ -753,6 +1205,10 @@
   {
     "checked": true,
     "type": "fillFormField"
+  },
+  {
+    "type": "selectNextFormField",
+    "value": "previous"
   },
   {
     "type": "setFormFieldShading",
@@ -821,12 +1277,15 @@
     "type": "splitTable"
   },
   {
+    "autofit": "fixed",
     "character": ";",
+    "columnWidth": 72.5,
     "columns": 3,
     "separator": "other",
     "type": "convertTextToTable"
   },
   {
+    "convertNested": true,
     "separator": "tabs",
     "type": "convertTableToText"
   },
@@ -851,6 +1310,18 @@
   {
     "type": "setCellShading",
     "value": null
+  },
+  {
+    "type": "setCellShading",
+    "value": {
+      "theme": "text2",
+      "transforms": [
+        {
+          "kind": "shade",
+          "value": 0.75
+        }
+      ]
+    }
   },
   {
     "border": {
@@ -886,11 +1357,25 @@
         "edges": "outside"
       },
       "cellSpacing": 1.5,
+      "indent": -5.5,
       "reset": true,
-      "shading": "#D9E2F3"
+      "shading": {
+        "color": {
+          "rgb": "#000000"
+        },
+        "fill": {
+          "rgb": "#D9E2F3"
+        },
+        "pattern": "pct10"
+      }
     },
     "hidden": true,
     "type": "setRowProperties"
+  },
+  {
+    "columns": null,
+    "rows": 2,
+    "type": "setTableBandSizes"
   },
   {
     "type": "setTableCellSpacing",
@@ -963,6 +1448,7 @@
   {
     "type": "setTablePosition",
     "value": {
+      "allowOverlap": false,
       "horizontal": {
         "offset": 72.5,
         "relativeTo": "margin"
@@ -978,6 +1464,61 @@
         "top": 0.0
       }
     }
+  },
+  {
+    "left": 5.4,
+    "top": 1.5,
+    "type": "setTableCellMargins"
+  },
+  {
+    "type": "insertCells",
+    "value": "right"
+  },
+  {
+    "type": "insertCells",
+    "value": "down"
+  },
+  {
+    "type": "setTableTool",
+    "value": "pen"
+  },
+  {
+    "type": "setTableTool",
+    "value": "eraser"
+  },
+  {
+    "type": "setTableTool",
+    "value": "none"
+  },
+  {
+    "type": "setTablePen",
+    "value": {
+      "color": "auto",
+      "shadow": false,
+      "space": 0.0,
+      "style": "single",
+      "width": 0.5
+    }
+  },
+  {
+    "from": [
+      72.5,
+      100.0
+    ],
+    "page": 0,
+    "to": [
+      300.5,
+      102.5
+    ],
+    "type": "drawTableStroke"
+  },
+  {
+    "at": [
+      144.5,
+      200.0
+    ],
+    "page": 1,
+    "type": "eraseTableBorder"
   },
   {
     "height": 72.5,
@@ -1069,12 +1610,32 @@
   {
     "glow": null,
     "outerShadow": {
+      "align": "bottomLeft",
       "blur": 4.5,
       "colour": {
         "rgb": "#000000"
       },
       "direction": 45.5,
-      "distance": 3.5
+      "distance": 3.5,
+      "rotateWithShape": false,
+      "scaleX": 1.0,
+      "scaleY": 0.5,
+      "skewX": -20.5,
+      "skewY": 0.0
+    },
+    "reflection": {
+      "align": "bottomLeft",
+      "blur": 0.5,
+      "direction": 90.0,
+      "distance": 2.5,
+      "fadeDirection": 90.0,
+      "rotateWithShape": false,
+      "scaleX": 1.0,
+      "scaleY": -1.0,
+      "size": 0.5,
+      "skewX": 0.0,
+      "skewY": 0.0,
+      "transparency": 0.5
     },
     "type": "setShapeEffects"
   },
@@ -1086,6 +1647,7 @@
       "spacing": 18.5
     },
     "type": "setShapeText",
+    "upright": true,
     "wrapText": false
   },
   {
@@ -1129,8 +1691,136 @@
     "type": "ungroupObjects"
   },
   {
+    "type": "regroupObjects"
+  },
+  {
+    "type": "editWrapPoints"
+  },
+  {
     "type": "selectGroupChild",
     "value": "next"
+  },
+  {
+    "type": "setObjectName",
+    "value": "Gold star"
+  },
+  {
+    "type": "setObjectTitle",
+    "value": "Logo"
+  },
+  {
+    "hidden": true,
+    "object": {
+      "float": "7"
+    },
+    "type": "setObjectHidden"
+  },
+  {
+    "extend": true,
+    "object": {
+      "float": "7",
+      "path": [
+        0,
+        2
+      ]
+    },
+    "type": "selectObject"
+  },
+  {
+    "inFrontOf": {
+      "float": "9"
+    },
+    "object": {
+      "float": "7"
+    },
+    "type": "restackObject"
+  },
+  {
+    "object": {
+      "float": "7"
+    },
+    "type": "restackObject"
+  },
+  {
+    "type": "setLockAspectRatio",
+    "value": false
+  },
+  {
+    "type": "setPictureRecolor",
+    "value": {
+      "kind": "grayscale"
+    }
+  },
+  {
+    "type": "setPictureRecolor",
+    "value": {
+      "kind": "blackAndWhite",
+      "threshold": 0.5
+    }
+  },
+  {
+    "type": "setPictureRecolor",
+    "value": {
+      "dark": {
+        "rgb": "#000000"
+      },
+      "kind": "duotone",
+      "light": {
+        "theme": "accent1",
+        "transforms": [
+          {
+            "kind": "lumMod",
+            "value": 0.75
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "setPictureRecolor",
+    "value": {
+      "kind": "none"
+    }
+  },
+  {
+    "size": true,
+    "type": "resetPicture"
+  },
+  {
+    "type": "setWrapPoints",
+    "value": [
+      {
+        "x": 0.0,
+        "y": 0.0
+      },
+      {
+        "x": 1.0,
+        "y": 0.0
+      },
+      {
+        "x": 1.0,
+        "y": 1.0
+      },
+      {
+        "x": -0.25,
+        "y": 1.0
+      }
+    ]
+  },
+  {
+    "type": "resetWrapPoints"
+  },
+  {
+    "type": "linkTextBox",
+    "value": {
+      "float": "7"
+    }
+  },
+  {
+    "type": "beginTextBoxLink"
+  },
+  {
+    "type": "unlinkTextBox"
   },
   {
     "code": "MERGEFIELD Total",
@@ -1249,6 +1939,131 @@
     "type": "replaceBody"
   },
   {
+    "type": "insertTableOfContents"
+  },
+  {
+    "frame": {
+      "buildingBlock": true,
+      "title": "Contents"
+    },
+    "layout": {
+      "rightAlignPageNumbers": true,
+      "tabLeader": "dots"
+    },
+    "options": {
+      "bookmark": "Part1",
+      "chapterNumbers": {
+        "separator": "-",
+        "sequence": "Chapter"
+      },
+      "entryFields": {
+        "identifier": "F",
+        "levels": {
+          "from": 1,
+          "to": 2
+        }
+      },
+      "headingLevels": {
+        "from": 1,
+        "to": 3
+      },
+      "hideInWebView": true,
+      "hyperlinks": true,
+      "outlineLevels": true,
+      "pageNumbers": {
+        "omitLevels": {
+          "from": 3,
+          "to": 3
+        }
+      },
+      "separator": " ",
+      "styleLevels": [
+        {
+          "level": 1,
+          "style": "Title"
+        }
+      ]
+    },
+    "type": "insertTableOfContents"
+  },
+  {
+    "includeLabelAndNumber": false,
+    "label": "Figure",
+    "type": "insertTableOfFigures"
+  },
+  {
+    "type": "insertManualTableOfContents"
+  },
+  {
+    "mode": "pageNumbers",
+    "type": "updateTableOfContents"
+  },
+  {
+    "index": 1,
+    "mode": "entireTable",
+    "type": "updateTableOfContents"
+  },
+  {
+    "type": "updateAllTablesOfContents",
+    "value": "pageNumbers"
+  },
+  {
+    "type": "removeTableOfContents"
+  },
+  {
+    "index": 0,
+    "type": "removeTableOfContents"
+  },
+  {
+    "identifier": "F",
+    "level": 2,
+    "pageNumber": false,
+    "text": "Results",
+    "type": "markTableOfContentsEntry"
+  },
+  {
+    "chapter": {
+      "level": 1,
+      "separator": "enDash"
+    },
+    "excludeLabel": false,
+    "format": "upperRoman",
+    "label": "Table",
+    "position": "above",
+    "text": ": Totals",
+    "type": "insertCaption"
+  },
+  {
+    "type": "setAutoCaption",
+    "value": {
+      "label": "Table"
+    }
+  },
+  {
+    "type": "setAutoCaption",
+    "value": null
+  },
+  {
+    "aboveBelow": true,
+    "content": "labelAndNumber",
+    "hyperlink": true,
+    "target": {
+      "index": 0,
+      "kind": {
+        "caption": "Figure"
+      }
+    },
+    "type": "insertCrossReference"
+  },
+  {
+    "content": "pageNumber",
+    "target": {
+      "index": 2,
+      "kind": "heading"
+    },
+    "type": "insertCrossReference"
+  },
+  {
     "binding": {
       "prefixMappings": "xmlns:i='urn:invoice'",
       "storeItemId": "{6A9C}",
@@ -1313,6 +2128,12 @@
     "type": "wrapInRepeatingSection"
   },
   {
+    "before": true,
+    "id": "control-2",
+    "item": "control-5",
+    "type": "addRepeatingItem"
+  },
+  {
     "type": "removeElement",
     "value": "field-2"
   },
@@ -1374,6 +2195,40 @@
     "value": "simple"
   },
   {
+    "comments": true,
+    "formatting": false,
+    "type": "setShowMarkup"
+  },
+  {
+    "hidden": [
+      "Ada Lovelace"
+    ],
+    "type": "setHiddenReviewers"
+  },
+  {
+    "type": "setBalloonMode",
+    "value": "balloons"
+  },
+  {
+    "changeBarColor": "auto",
+    "changeBars": "right",
+    "deletions": {
+      "color": {
+        "fixed": "#C00000"
+      },
+      "mark": "caret"
+    },
+    "insertions": {
+      "mark": "bold"
+    },
+    "mergedCells": "byAuthor",
+    "type": "setMarkupStyle"
+  },
+  {
+    "moves": false,
+    "type": "setTrackOptions"
+  },
+  {
     "type": "acceptRevision",
     "value": "r7"
   },
@@ -1392,7 +2247,11 @@
     "type": "acceptAllRevisions"
   },
   {
+    "shown": true,
     "type": "rejectAllRevisions"
+  },
+  {
+    "type": "acceptAllAndStopTracking"
   },
   {
     "type": "selectRevision",
@@ -1435,6 +2294,10 @@
     "value": "c5"
   },
   {
+    "shownOnly": true,
+    "type": "deleteAllComments"
+  },
+  {
     "done": true,
     "id": "c4",
     "type": "resolveComment"
@@ -1460,6 +2323,7 @@
     "accent": "#0A74E4",
     "appearance": "darkWithLightPage",
     "bookmarks": true,
+    "clickAndType": false,
     "controlLabels": false,
     "cursorOverrides": [
       {
@@ -1479,9 +2343,18 @@
     "fieldShading": "always",
     "formattingMarks": true,
     "gridlines": false,
+    "hiddenText": true,
+    "hideWhiteSpace": true,
     "liveLayout": false,
+    "objectAnchors": true,
     "objectGrid": "always",
+    "optionalHyphens": false,
+    "paragraphMarks": true,
+    "showEditableRegions": false,
+    "spaces": false,
+    "tabCharacters": true,
     "textBoundaries": true,
+    "textDragAndDrop": true,
     "theme": "dark",
     "themeColors": {
       "dark": {
@@ -1495,6 +2368,10 @@
   {
     "type": "setMode",
     "value": "design"
+  },
+  {
+    "type": "setSelectObjects",
+    "value": true
   },
   {
     "type": "setRulerTabType",

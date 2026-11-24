@@ -1,6 +1,6 @@
 import type { Session } from '../editor.js';
 import { Method } from '../transport/protocol.js';
-import type { Points } from '../types.js';
+import type { LineDirection, Points } from '../types.js';
 
 /** The ruler model, on every editor. */
 export interface RulerModelSource {
@@ -29,10 +29,31 @@ export type TabAlignment = 'left' | 'center' | 'right' | 'decimal' | 'bar';
 /** A tab stop's leader. */
 export type TabLeader = 'none' | 'dots' | 'dashes' | 'underline' | 'heavy' | 'middleDot';
 
+/** A tab stop: its position from the text area's start, alignment and leader, and whether it is inherited. */
+export interface TabStopInfo {
+  /** The position. */
+  position: Points;
+  /** The alignment. */
+  alignment: TabAlignment;
+  /** The leader. */
+  leader: TabLeader;
+  /** Inherited from the paragraph's style. */
+  inherited: boolean;
+}
+
+/** A page margin, or a facing page's inside or outside one. */
+export type MarginSide = 'left' | 'right' | 'inside' | 'outside';
+
 /** The ruler model for the selection, in points. */
 export interface RulerModel {
   /** The selected paragraphs differ: the first one's values are shown. */
   mixed: boolean;
+  /**
+   * The way the caret's lines run. Across the page (`'horizontal'`), the horizontal ruler shows the indents and tab
+   * stops; down or up the page (vertical text), the vertical ruler shows them, `vertical.text` is where the lines run,
+   * and the horizontal ruler shows the text columns across the page in the order the lines stack.
+   */
+  lines: LineDirection;
   /** The horizontal ruler. */
   horizontal: {
     pageWidth: Points;
@@ -40,12 +61,18 @@ export interface RulerModel {
     text: { start: Points; end: Points };
     /** `firstLine` is relative to `left`; negative is hanging. */
     indents: { left: Points; right: Points; firstLine: Points };
-    tabs: { position: Points; alignment: TabAlignment; leader: TabLeader; inherited: boolean }[];
+    tabs: TabStopInfo[];
     defaultTabStop: Points;
     /** The section's text columns. */
     columns: { start: Points; end: Points }[];
     /** The cell boundaries of the caret's row. */
     tableColumns: Points[];
+    /** The gutter across the page, beside the margin it widens; absent without one. */
+    gutter?: { start: Points; end: Points };
+    /** The margin the page's text starts after: left, or with mirrored margins inside or outside. */
+    startMargin: MarginSide;
+    /** The margin the page's text ends before. */
+    endMargin: MarginSide;
   };
   /** The vertical ruler. */
   vertical: {
@@ -54,6 +81,17 @@ export interface RulerModel {
     text: { start: Points; end: Points };
     /** The row boundaries of the caret's table on this page. */
     tableRows: Points[];
+    /** The gutter down the page (at the top); absent without one. */
+    gutter?: { start: Points; end: Points };
+    /**
+     * The paragraph's indents when its lines run down or up the page, measured along them from `text.start` (down) or
+     * `text.end` (up); zero otherwise.
+     */
+    indents: { left: Points; right: Points; firstLine: Points };
+    /** The paragraph's tab stops when its lines run down or up the page, along them as `indents` are. */
+    tabs: TabStopInfo[];
+    /** The document's default tab interval when the lines run down or up the page. */
+    defaultTabStop: Points;
   };
 }
 

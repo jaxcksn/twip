@@ -16,7 +16,7 @@ use twip::api::event::Event;
 use twip::api::fonts::FontLibrary;
 use twip::api::input::{Key, Modifiers, Point, PointerButton, PointerKind};
 use twip::api::review::{CommentAnchor, stack_balloons};
-use twip::api::services::{FindDirection, FindQuery};
+use twip::api::services::{FindDirection, FindFormat, FindQuery};
 use twip::api::session::{ExportOptions, Session};
 use twip::api::value::{Bytes, Direction};
 
@@ -67,6 +67,8 @@ struct Runner {
     saved: HashMap<String, Value>,
     /// The bytes of the last `docx` export, for `reopen`.
     exported: Option<Vec<u8>>,
+    /// A `drag` held with `release: false`: where the pointer is, its button and modifiers.
+    held: Option<(Point, PointerButton, Modifiers)>,
 }
 
 type Step = Result<(), String>;
@@ -154,6 +156,7 @@ impl Runner {
             failed: None,
             saved: HashMap::new(),
             exported: None,
+            held: None,
         }
     }
 
@@ -287,10 +290,51 @@ impl Runner {
             "click" => {
                 let text = step["text"].as_str().ok_or_else(|| Err("`click` needs text".to_string()))?;
                 let mods = mods_of(step).map_err(Err)?;
+                let button = button_of(step).map_err(Err)?;
                 let s = self.session().map_err(Ok)?;
+                let kept = selection_of(s);
                 let at = middle_of(s, text).ok_or_else(|| Err(format!("no `{text}` to click")))?;
-                s.pointer(PointerKind::Down, at, PointerButton::Primary, 1, mods);
-                s.pointer(PointerKind::Up, at, PointerButton::Primary, 1, mods);
+                restore(s, kept);
+                // A double or triple click is that many presses, each counting the ones before.
+                for n in 1..=step["clicks"].as_u64().unwrap_or(1).clamp(1, 3) as u8 {
+                    s.pointer(PointerKind::Down, at, button, n, mods);
+                    s.pointer(PointerKind::Up, at, button, n, mods);
+                }
+                Ok(())
+            }
+            "hover" => {
+                let text = step["text"].as_str().ok_or_else(|| Err("`hover` needs text".to_string()))?;
+                let s = self.session().map_err(Ok)?;
+                let kept = selection_of(s);
+                let at = middle_of(s, text).ok_or_else(|| Err(format!("no `{text}` to hover")))?;
+                restore(s, kept);
+                s.pointer(PointerKind::Move, at, PointerButton::Primary, 0, Modifiers::default());
+                Ok(())
+            }
+            "drag" => {
+                if self.held.is_some() {
+                    return Err(Err("`drag` while a drag is held".into()));
+                }
+                let mods = mods_of(step).map_err(Err)?;
+                let button = button_of(step).map_err(Err)?;
+                let s = self.session().map_err(Ok)?;
+                let (from, to) = drag_points(s, step).map_err(Err)?;
+                s.pointer(PointerKind::Down, from, button, 1, mods);
+                for k in 1..=8 {
+                    let t = f64::from(k) / 8.0;
+                    let at = Point { x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t };
+                    s.pointer(PointerKind::Move, at, button, 1, mods);
+                }
+                if step["release"].as_bool().unwrap_or(true) {
+                    s.pointer(PointerKind::Up, to, button, 1, mods);
+                } else {
+                    self.held = Some((to, button, mods));
+                }
+                Ok(())
+            }
+            "release" => {
+                let (at, button, mods) = self.held.take().ok_or_else(|| Err("`release` with no drag held".to_string()))?;
+                self.session().map_err(Ok)?.pointer(PointerKind::Up, at, button, 1, mods);
                 Ok(())
             }
             "font" => {
@@ -373,15 +417,26 @@ impl Runner {
                 s.set_author(arg_of(arg(0))?);
                 none
             }
-            "find.next" => to_json(s.find(&arg_of(arg(0))?, FindDirection::Next)),
-            "find.previous" => to_json(s.find(&arg_of(arg(0))?, FindDirection::Previous)),
-            "find.all" => to_json(s.find_all(&arg_of(arg(0))?)),
+            "find.next" => to_json(s.find(&arg_of(arg(0))?, FindDirection::Next).map_err(Ok)?),
+            "find.previous" => to_json(s.find(&arg_of(arg(0))?, FindDirection::Previous).map_err(Ok)?),
+            "find.all" => to_json(s.find_all(&arg_of(arg(0))?).map_err(Ok)?),
             "find.select" => to_json(s.select_match(arg_of(arg(0))?).map_err(Ok)?),
-            "find.replace" => to_json(s.replace(&arg_of(arg(0))?, &arg_of::<String>(arg(1))?).map_err(Ok)?),
-            "find.replaceAll" => json!({ "count": s.replace_all(&arg_of(arg(0))?, &arg_of::<String>(arg(1))?).map_err(Ok)? }),
+            "find.replace" => {
+                let format: Option<FindFormat> = arg_of(arg(2))?;
+                to_json(s.replace(&arg_of(arg(0))?, &arg_of::<String>(arg(1))?, format.as_ref()).map_err(Ok)?)
+            }
+            "find.replaceAll" => {
+                let format: Option<FindFormat> = arg_of(arg(2))?;
+                to_json(s.replace_all(&arg_of(arg(0))?, &arg_of::<String>(arg(1))?, format.as_ref()).map_err(Ok)?)
+            }
+            "find.highlightAll" => to_json(s.highlight_all(&arg_of(arg(0))?).map_err(Ok)?),
+            "find.clearHighlights" => {
+                s.clear_find_highlights();
+                none
+            }
             "dialogs.open" => to_json(s.dialog_open(arg_of(arg(0))?).map_err(Ok)?),
             "dialogs.openStyle" => to_json(s.dialog_open_style(arg_of(arg(0))?).map_err(Ok)?),
-            "menus.contextMenu" => to_json(s.context_menu()),
+            "menus.contextMenu" => to_json(s.context_menu_with(arg(0).get("synonyms").map(|w| arg_of(w.clone())).transpose()?)),
             "menus.invoke" => {
                 s.invoke(arg_of(arg(0))?).map_err(Ok)?;
                 none
@@ -418,11 +473,56 @@ impl Runner {
             "documentProperties" => to_json(s.document_properties()),
             "navigation.select" => to_json(s.select_heading(arg_of(arg(0))?).map_err(Ok)?),
             "styles.list" => to_json(s.styles(arg_of(arg(0).get("type").cloned().unwrap_or(Value::Null))?)),
+            "styles.definition" => to_json(s.style_definition(&arg_of(arg(0))?)),
+            "styles.builtIn" => to_json(s.built_in_styles()),
+            "styles.documentDefaults" => to_json(s.document_defaults()),
+            "lists.definition" => to_json(s.list_definition()),
+            "wordCount" => to_json(s.word_count(if arg(0).is_null() { Default::default() } else { arg_of(arg(0))? })),
+            "historyLabels" => to_json(s.history_labels(arg(0).get("limit").map(|l| arg_of(l.clone())).transpose()?)),
+            "themeColourGrid" => to_json(s.theme_colour_grid()),
+            "objectList" => to_json(s.object_list(arg_of(arg(0))?)),
+            "objectImage" => to_json(s.object_image()),
+            "shapeFillImage" => to_json(s.shape_fill_image()),
+            "watermarkImage" => to_json(s.watermark_image(arg_of(arg(0))?)),
+            "pageFillImage" => to_json(s.page_fill_image()),
+            "textToTableSize" => to_json(s.text_to_table_size(&arg_of(arg(0))?)),
             "lists.galleries" => to_json(s.list_galleries(arg_of(arg(0))?)),
             "elements.list" => to_json(s.elements(&arg_of(match arg(0) {
                 Value::Null => json!({}),
                 v => v,
             })?)),
+            "elements.structure" => {
+                let root = arg(0).get("root").map(|r| arg_of(r.clone())).transpose()?;
+                to_json(s.structure(root, arg(0).get("depth").and_then(Value::as_u64).map(|d| d as u32)).map_err(Ok)?)
+            }
+            "menus.wordAtSelection" => to_json(s.word_at_selection()),
+            "selectionBounds" => to_json(s.selection_bounds()),
+            "getState" => to_json(s.state()),
+            "setDefaultPictureWrap" => {
+                s.set_default_picture_wrap(arg_of(arg(0))?);
+                Value::Null
+            }
+            "defaultPictureWrap" => to_json(s.default_picture_wrap()),
+            "dragOut" => to_json(s.drag_out()),
+            "copyContent" => to_json(s.copy(arg(0).get("cut").and_then(Value::as_bool).unwrap_or(false))),
+            "clipboardHtml" => to_json(s.clipboard_html(&arg_of::<String>(arg(0))?).map_err(Ok)?),
+            "pasteContent" => {
+                let choice = arg(1).get("as").map(|a| arg_of(a.clone())).transpose()?;
+                s.paste_with(&arg_of(arg(0))?, choice).map_err(Ok)?;
+                none
+            }
+            "pasteChoices" => to_json(s.paste_choices(&arg_of(arg(0))?)),
+            "references.crossReferenceTargets" => to_json(s.cross_reference_targets(&arg_of(arg(0))?)),
+            "references.captionLabels" => {
+                let custom: Option<Vec<String>> = arg_of(arg(0))?;
+                to_json(s.caption_labels(&custom.unwrap_or_default()))
+            }
+            "references.tablesOfContents" => to_json(s.tables_of_contents()),
+            "references.tocEntries" => to_json(s.toc_entries(&arg_of(arg(0))?).map_err(Ok)?),
+            "dragEnd" => {
+                s.drag_end(arg_of(arg(0))?);
+                Value::Null
+            }
             "elements.boxes" => to_json(s.element_boxes(&arg_of(arg(0))?).map_err(Ok)?),
             "elements.select" => {
                 s.select_element(arg_of(arg(0))?, arg(1).get("reveal").and_then(Value::as_bool).unwrap_or(true)).map_err(Ok)?;
@@ -434,6 +534,27 @@ impl Runner {
             }
             "subTemplates.remove" => to_json(s.run(command_of("removeSubTemplate", &[json!({ "name": arg(0) })]).map_err(Err)?).map_err(Ok)?.value),
             "subTemplates.close" => to_json(s.run(command_of("closeSubTemplate", &[]).map_err(Err)?).map_err(Ok)?.value),
+            "review.people" => to_json(s.people()),
+            "elements.get" => to_json(s.element(arg_of(arg(0))?).map_err(Ok)?),
+            "elements.fieldCatalogue" => to_json(s.field_catalogue(arg_of(arg(0))?)),
+            "elements.fieldFormats" => to_json(s.field_formats()),
+            "elements.composeField" => to_json(s.compose_field(&arg_of(arg(0))?)),
+            "elements.parseField" => to_json(s.parse_field(&arg_of::<String>(arg(0))?)),
+            "elements.fieldHere" => to_json(s.field_here()),
+            "elements.dateFormats" => to_json(s.date_formats(&arg_of::<String>(arg(0))?)),
+            "navigation.currentHeading" => to_json(s.current_heading()),
+            "notes" => to_json(s.notes()),
+            "noteSeparators" => to_json(s.note_separators(arg_of(arg(0))?)),
+            "columnPreset" => to_json(s.column_preset(arg_of(arg(0))?)),
+            "pageNumberSample" => to_json(s.page_number_sample(arg_of(arg(0))?, arg_of(arg(1))?)),
+            "recommendedMinimumStyles" => to_json(s.recommended_minimum_styles()),
+            "editableRanges" => to_json(s.editable_ranges()),
+            "pageVersions" => to_json(s.page_versions()),
+            "pageThumbnail" => {
+                let (w, h): (u32, u32) = (arg_of(arg(1))?, arg_of(arg(2))?);
+                let mut pixels = vec![0u8; (w as usize).saturating_mul(h as usize).saturating_mul(4).min(1 << 26)];
+                to_json(s.host().page_thumbnail(arg_of(arg(0))?, &mut pixels, w, h).map_err(Ok)?)
+            }
             "review.revisions" => to_json(s.revisions()),
             "review.comments" => to_json(s.comments()),
             m => match m.strip_prefix("commands.") {
@@ -555,7 +676,7 @@ impl Runner {
 /// The middle of the first occurrence of `text` (of its first line, when it wraps), viewport px. The caret is left
 /// at its start.
 fn middle_of(s: &mut Session, text: &str) -> Option<Point> {
-    if !s.find(&FindQuery { text: text.into(), ..FindQuery::default() }, FindDirection::Next).found {
+    if !s.find(&FindQuery { text: text.into(), ..FindQuery::default() }, FindDirection::Next).expect("finds").found {
         return None;
     }
     let end = s.host().frame_info();
@@ -564,6 +685,77 @@ fn middle_of(s: &mut Session, text: &str) -> Option<Point> {
     let start = s.host().frame_info();
     let x = if start.caret_y == end.caret_y { (start.caret_x + end.caret_x) / 2.0 } else { start.caret_x + 2.0 };
     Some(Point { x, y: start.caret_y + start.caret_height / 2.0 })
+}
+
+/// A step's `button`: `primary` (the default) or `secondary`.
+fn button_of(step: &Value) -> Result<PointerButton, String> {
+    match step["button"].as_str() {
+        None | Some("primary") => Ok(PointerButton::Primary),
+        Some("secondary") => Ok(PointerButton::Secondary),
+        Some(b) => Err(format!("unknown button {b}")),
+    }
+}
+
+/// Where a `drag` starts and ends. `from` is `{ text, select? }` (the text's middle; `select` selects the text after
+/// the points are found) or `{ tableColumn: { text, border } }` (a click on the text, then that column border of the
+/// caret's row on the ruler, at the caret's height); the end is `to: { text }` (where the text ends) or
+/// `by: { dx?, dy? }` in points.
+fn drag_points(s: &mut Session, step: &Value) -> Result<(Point, Point), String> {
+    let kept = selection_of(s);
+    let from = &step["from"];
+    let start = if let Some(col) = from.get("tableColumn") {
+        let text = col["text"].as_str().ok_or("`tableColumn` needs text")?;
+        let at = middle_of(s, text).ok_or_else(|| format!("no `{text}` to drag from"))?;
+        s.pointer(PointerKind::Down, at, PointerButton::Primary, 1, Modifiers::default());
+        s.pointer(PointerKind::Up, at, PointerButton::Primary, 1, Modifiers::default());
+        let view = s.host().ruler_view();
+        let border = col["border"].as_u64().ok_or("`tableColumn` needs a border")? as usize;
+        let edge = view.model.horizontal.table_columns.get(border).ok_or_else(|| format!("no column border {border}"))?;
+        let info = s.host().frame_info();
+        Point { x: view.horizontal.origin + edge.0 * view.horizontal.scale, y: info.caret_y + info.caret_height / 2.0 }
+    } else {
+        let text = from["text"].as_str().ok_or("`from` needs text or tableColumn")?;
+        middle_of(s, text).ok_or_else(|| format!("no `{text}` to drag from"))?
+    };
+    let end = match (step.get("to"), step.get("by")) {
+        // The end of the text: a place between characters, the same in every runner.
+        (Some(to), _) => {
+            let text = to["text"].as_str().ok_or("`to` needs text")?;
+            if !s.find(&FindQuery { text: text.into(), ..FindQuery::default() }, FindDirection::Next).expect("finds").found {
+                return Err(format!("no `{text}` to drag to"));
+            }
+            let info = s.host().frame_info();
+            Point { x: info.caret_x, y: info.caret_y + info.caret_height / 2.0 }
+        }
+        (None, Some(by)) => {
+            let scale = s.host().ruler_view().horizontal.scale;
+            let d = |k: &str| by[k].as_f64().unwrap_or(0.0) * scale;
+            Point { x: start.x + d("dx"), y: start.y + d("dy") }
+        }
+        (None, None) => return Err("`drag` needs `to` or `by`".into()),
+    };
+    restore(s, kept);
+    if from["select"].as_bool() == Some(true) {
+        let text = from["text"].as_str().unwrap_or_default();
+        s.find(&FindQuery { text: text.into(), ..FindQuery::default() }, FindDirection::Next).expect("finds");
+    }
+    Ok((start, end))
+}
+
+/// The selection of text and cells as `setSelection` puts it back: finding where a text is moves the selection, and
+/// a runner puts it back so a Ctrl or Shift gesture goes on from it. None for a caret, one block of cells or an object.
+fn selection_of(s: &mut Session) -> Option<Command> {
+    let sel = &s.state().selection;
+    let active_cells = (sel.kind == twip::api::state::SelectionKind::Cells && !sel.cell_blocks.is_empty()).then(|| sel.cell_blocks.len() as u32 - 1);
+    (!sel.ranges_truncated && (!sel.ranges.is_empty() || active_cells.is_some()))
+        .then(|| Command::SetSelection(twip::api::command::SetSelection { ranges: sel.ranges.clone(), cells: sel.cell_blocks.clone(), active_cells }))
+}
+
+/// Puts back a selection [`selection_of`] kept.
+fn restore(s: &mut Session, kept: Option<Command>) {
+    if let Some(c) = kept {
+        let _ = s.run(c);
+    }
 }
 
 /// A step's `mods`.
@@ -652,7 +844,7 @@ fn assign(wants: &[Value], got: &[&Value], used: &mut Vec<bool>) -> bool {
 }
 
 /// A partial deep match (README "Matching"): objects compare the keys `want` names (a missing key is null), arrays
-/// element by element (`want` may be shorter), numbers by value; `$exact`, `$has` and `$type` test differently.
+/// element by element (`want` may be shorter), numbers by value; `$exact`, `$has`, `$type` and `$contains` test differently.
 fn matches(want: &Value, got: &Value, path: &str) -> Result<(), String> {
     if let Value::Object(w) = want
         && w.len() == 1
@@ -662,6 +854,12 @@ fn matches(want: &Value, got: &Value, path: &str) -> Result<(), String> {
         }
         if let Some(Value::String(t)) = w.get("$type") {
             return if type_name(got) == t { Ok(()) } else { Err(format!("{path} is {got}, a {t} expected")) };
+        }
+        if let Some(Value::String(part)) = w.get("$contains") {
+            return match got {
+                Value::String(s) if s.contains(part.as_str()) => Ok(()),
+                _ => Err(format!("{path} is {got}, a string holding {part:?} expected")),
+            };
         }
         if let Some(Value::Array(has)) = w.get("$has") {
             let all = items(got);

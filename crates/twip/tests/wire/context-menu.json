@@ -24,6 +24,7 @@
         "label": "the"
       },
       {
+        "inline": true,
         "items": [
           {
             "action": {
@@ -36,6 +37,15 @@
         ],
         "kind": "submenu",
         "label": "Paste Options"
+      },
+      {
+        "action": {
+          "address": "https://example.com",
+          "type": "openLink"
+        },
+        "enabled": true,
+        "kind": "action",
+        "label": "Open Hyperlink"
       },
       {
         "kind": "separator"

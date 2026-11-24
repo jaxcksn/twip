@@ -12,8 +12,8 @@ use super::event::HostCommand;
 use super::state::{ElementKind, Tri};
 use super::value::{
     Alignment, AutoOr, Bytes, CellAlignment, Color, CommentId, ControlLock, ControlOptions, DataBinding, ElementId, HeadingId, HorizontalAlignment,
-    LineSpacing, MatchId, NoneOr, Order, Orientation, OutlineLevel, Points, RevisionId, RowHeight, Story, StyleId, TabAlignment, TabLeader,
-    TableWidth, UnderlineStyle,
+    LineDirection, LineSpacing, MatchId, NoneOr, Order, Orientation, OutlineLevel, Points, RevisionId, RowHeight, Story, StyleId, TabAlignment,
+    TabLeader, TableWidth, UnderlineStyle,
 };
 
 /// A point relative to the browser viewport (or the control), CSS px: where to place a fixed-position menu.
@@ -103,6 +103,8 @@ pub enum MenuTarget {
     },
     /// A header or footer.
     HeaderFooter,
+    /// Where a right-button drag of text dropped it: Move Here, Copy Here, Link Here, Create Hyperlink Here, Cancel.
+    Drop,
 }
 
 /// A menu entry.
@@ -140,9 +142,41 @@ pub enum MenuItem {
         label: String,
         /// Its entries.
         items: Vec<MenuItem>,
+        /// Shown as a row of icons in the menu itself rather than as a submenu (Paste Options).
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        inline: bool,
+    },
+    /// An action that is not one command: opening or copying a link, a choice of the drop menu, several commands at
+    /// once, a setting.
+    Action {
+        /// The English label.
+        label: String,
+        /// Whether it can run now.
+        enabled: bool,
+        /// Whether it is the current choice, for a choice among several.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        checked: Option<bool>,
+        /// What choosing it does.
+        action: MenuAction,
     },
     /// A separator line.
     Separator,
+}
+
+/// A choice of the menu a right-button drag of text opens where it dropped.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DropChoice {
+    /// Move Here: the text moves there (tracked, a move). One undo step.
+    Move,
+    /// Copy Here. One undo step.
+    Copy,
+    /// Link Here: a `LINK` field there to the text, which is bookmarked; needs the document's file name. One undo step.
+    Link,
+    /// Create Hyperlink Here: a link there to a hidden bookmark on the text, showing the text. One undo step.
+    Hyperlink,
+    /// Cancel: nothing changes.
+    Cancel,
 }
 
 /// What a menu item does, passed back to `invoke` (opaque to applications).
@@ -171,6 +205,92 @@ pub enum MenuAction {
         /// Its language tag.
         language: String,
     },
+    /// Opens a link (emits `linkActivated` with `via: menu`); an address starting `#` goes to that bookmark.
+    OpenLink {
+        /// The link's address.
+        address: String,
+    },
+    /// Puts a link's address on the clipboard (the `clipboard` host request).
+    CopyLink {
+        /// The link's address.
+        address: String,
+    },
+    /// Runs several commands as one transaction, one undo step under `label`.
+    Commands {
+        /// The commands, in order.
+        commands: Vec<Command>,
+        /// The undo step's label.
+        label: String,
+    },
+    /// Set as Default Layout: pictures inserted later take this wrap. A session setting; nothing changes.
+    SetDefaultPictureWrap {
+        /// The wrap.
+        wrap: crate::api::value::ObjectWrap,
+    },
+    /// A choice of the drop menu a right-button drag opened.
+    Drop {
+        /// The choice.
+        what: DropChoice,
+    },
+}
+
+/// The word the selection is in or selects, for a host's thesaurus (the Synonyms submenu).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WordAt {
+    /// The word.
+    pub word: String,
+    /// Its language tag (`en-US`).
+    pub language: String,
+}
+
+/// Where the selection is on screen, for placing UI beside it (a floating toolbar): client px over the pages in
+/// view.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SelectionBounds {
+    /// Each selected line's or cell's box; empty for a caret.
+    pub rects: Vec<ClientRect>,
+    /// Each selected object's frame.
+    pub frames: Vec<ObjectFrame>,
+    /// The box around every rect and frame, or `None` when nothing selected is in view.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bounds: Option<ClientRect>,
+}
+
+/// A selected object's frame as drawn.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ObjectFrame {
+    /// Its box before rotation.
+    pub rect: ClientRect,
+    /// Its rotation, degrees clockwise about the box's centre.
+    pub rotation: crate::api::drawing::Degrees,
+    /// The upright box around it as turned.
+    pub bounds: ClientRect,
+}
+
+/// What a drag of the selection out of the editor carries: the host starts its platform's drag with it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DragSource {
+    /// The content, as a copy puts it on the clipboard (`internal` names it for a drop in any session).
+    pub data: crate::api::input::ClipboardData,
+    /// The drag may move the text: the selection can be deleted when the drop takes it.
+    pub can_move: bool,
+}
+
+/// How a drag out of the editor ended, as the drop target reported it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DropEffect {
+    /// Not dropped, or refused.
+    #[default]
+    None,
+    /// Copied: the text stays.
+    Copy,
+    /// Moved: the text is deleted, as one undo step.
+    Move,
 }
 
 /// How a context menu was opened.
@@ -346,7 +466,7 @@ pub enum DialogValues {
     /// Manage Styles'.
     ManageStyles(ManageStylesDialog),
     /// Borders and Shading's.
-    BordersShading(BordersShadingDialog),
+    BordersShading(Box<BordersShadingDialog>),
     /// The Frame dialog's.
     Frame(FrameDialog),
     /// The Drop Cap dialog's.
@@ -400,7 +520,7 @@ pub enum DialogPatch {
     /// Manage Styles'.
     ManageStyles(ManageStylesPatch),
     /// Borders and Shading's.
-    BordersShading(BordersShadingPatch),
+    BordersShading(Box<BordersShadingPatch>),
     /// The Frame dialog's.
     Frame(FramePatch),
     /// The Drop Cap dialog's.
@@ -554,59 +674,7 @@ dialog! {
     }
 }
 
-/// The parts of a table a table style formats.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum TableStylePart {
-    /// The whole table.
-    #[default]
-    WholeTable,
-    /// The header row.
-    HeaderRow,
-    /// The total row.
-    TotalRow,
-    /// The first column.
-    FirstColumn,
-    /// The last column.
-    LastColumn,
-    /// Odd banded rows.
-    OddBandedRows,
-    /// Even banded rows.
-    EvenBandedRows,
-    /// Odd banded columns.
-    OddBandedColumns,
-    /// Even banded columns.
-    EvenBandedColumns,
-    /// The top left cell.
-    TopLeftCell,
-    /// The top right cell.
-    TopRightCell,
-    /// The bottom left cell.
-    BottomLeftCell,
-    /// The bottom right cell.
-    BottomRightCell,
-}
-
-impl TableStylePart {
-    /// The `w:tblStylePr/@w:type` it is, or none for the whole table.
-    pub fn region(self) -> Option<&'static str> {
-        Some(match self {
-            TableStylePart::WholeTable => return None,
-            TableStylePart::HeaderRow => "firstRow",
-            TableStylePart::TotalRow => "lastRow",
-            TableStylePart::FirstColumn => "firstCol",
-            TableStylePart::LastColumn => "lastCol",
-            TableStylePart::OddBandedRows => "band1Horz",
-            TableStylePart::EvenBandedRows => "band2Horz",
-            TableStylePart::OddBandedColumns => "band1Vert",
-            TableStylePart::EvenBandedColumns => "band2Vert",
-            TableStylePart::TopLeftCell => "nwCell",
-            TableStylePart::TopRightCell => "neCell",
-            TableStylePart::BottomLeftCell => "swCell",
-            TableStylePart::BottomRightCell => "seCell",
-        })
-    }
-}
+pub use super::styles::TableStylePart;
 
 /// Manage Styles' tabs.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -853,6 +921,7 @@ impl FrameDialog {
             vertical_relative: self.vertical_relative,
             vertical_distance: self.vertical_distance,
             lock_anchor: self.lock_anchor,
+            allow_overlap: None,
         }
     }
 }
@@ -1643,10 +1712,11 @@ dialog! {
 // ---------------- find, spelling, navigation, styles ----------------
 
 /// What to find.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FindQuery {
-    /// The text.
+    /// The text, with Word's `^` codes (`^p` a paragraph mark, `^t` a tab, `^?` any character, `^#` any digit, `^^`
+    /// a caret), or a regular expression with `regex`. At most 255 characters.
     pub text: String,
     /// Match case (off when unset).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1654,6 +1724,193 @@ pub struct FindQuery {
     /// Whole words only (off when unset).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub whole_words: Option<bool>,
+    /// `text` is a regular expression, searched paragraph by paragraph (off when unset). Whole words, prefix, suffix
+    /// and the ignore options don't apply to it; match case does.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub regex: Option<bool>,
+    /// A match starts at a word's start (off when unset).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub match_prefix: Option<bool>,
+    /// A match ends at a word's end (off when unset).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub match_suffix: Option<bool>,
+    /// Punctuation is passed over in the text and ignored in `text` (off when unset).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ignore_punctuation: Option<bool>,
+    /// White space is passed over in the text and ignored in `text` (off when unset).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ignore_white_space: Option<bool>,
+    /// `find` wraps round past the document's end (on when unset); off, it stops there with `found` false.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wrap: Option<bool>,
+    /// Only within the selection (its ranges), with no wrapping (off when unset).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub in_selection: Option<bool>,
+    /// The formatting a match must have; with an empty `text`, each stretch that has it matches.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub format: Option<FindFormat>,
+}
+
+macro_rules! find_fields {
+    ($(#[$m:meta])* pub struct $name:ident => $dialog:ident { $($(#[$fm:meta])* pub $f:ident: $t:ty,)* }) => {
+        $(#[$m])*
+        #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+        #[serde(rename_all = "camelCase", deny_unknown_fields)]
+        pub struct $name {
+            $($(#[$fm])* #[serde(default, skip_serializing_if = "Option::is_none")] pub $f: Option<$t>,)*
+        }
+
+        impl $name {
+            /// The values given, as the engine's tri-state values: each given one uniform, the rest unavailable (any).
+            pub(crate) fn to_tri(&self) -> $dialog {
+                $dialog { $($f: self.$f.clone().map_or(Tri::Unavailable, Tri::Uniform),)* }
+            }
+        }
+    };
+}
+
+find_fields! {
+    /// The character formatting a match must have, or a replacement applies; each value left out is any.
+    pub struct FindFont => FontDialog {
+        /// The font name (matched ignoring ASCII case).
+        pub font: String,
+        /// Regular, italic, bold or both: exactly that combination.
+        pub style: FontStyle,
+        /// The size.
+        pub size: Points,
+        /// The text colour.
+        pub color: AutoOr<Color>,
+        /// The underline.
+        pub underline: UnderlineStyle,
+        /// The underline's colour.
+        pub underline_color: AutoOr<Color>,
+        /// Strikethrough.
+        pub strikethrough: bool,
+        /// Double strikethrough.
+        pub double_strikethrough: bool,
+        /// Superscript.
+        pub superscript: bool,
+        /// Subscript.
+        pub subscript: bool,
+        /// Small caps.
+        pub small_caps: bool,
+        /// All caps.
+        pub all_caps: bool,
+        /// Hidden text.
+        pub hidden: bool,
+        /// Extra space between characters; negative condenses.
+        pub character_spacing: Points,
+        /// The baseline offset; positive raises.
+        pub position: Points,
+        /// Emboss.
+        pub emboss: bool,
+        /// Engrave.
+        pub engrave: bool,
+        /// Outline.
+        pub outline: bool,
+        /// Shadow.
+        pub shadow: bool,
+        /// The character width scale, percent.
+        pub scale: f64,
+        /// Kerning from this size up; 0 for none.
+        pub kerning: Points,
+        /// The OpenType ligatures.
+        pub ligatures: crate::api::command::Ligatures,
+        /// The number spacing.
+        pub number_spacing: crate::api::command::NumberSpacing,
+        /// The number forms.
+        pub number_form: crate::api::command::NumberForm,
+        /// The stylistic set, 1 to 20; 0 for the default.
+        pub stylistic_set: u8,
+        /// Contextual alternates.
+        pub contextual_alternates: bool,
+        /// The text fill, or none of the text's own.
+        pub text_fill: NoneOr<Box<crate::api::drawing::FillValue>>,
+        /// The text outline, or none of the text's own.
+        pub text_outline: NoneOr<Box<crate::api::drawing::TextOutline>>,
+        /// The text shadow, or none of the text's own.
+        pub text_shadow: NoneOr<Box<crate::api::drawing::TextShadow>>,
+        /// The reflection, or none of the text's own.
+        pub text_reflection: NoneOr<Box<crate::api::drawing::TextReflection>>,
+        /// The glow, or none of the text's own.
+        pub text_glow: NoneOr<Box<crate::api::drawing::Glow>>,
+    }
+}
+
+find_fields! {
+    /// The paragraph formatting a match's paragraphs must have, or a replacement applies; each value left out is any.
+    pub struct FindParagraph => ParagraphDialog {
+        /// The alignment.
+        pub alignment: Alignment,
+        /// The outline level.
+        pub outline_level: OutlineLevel,
+        /// The left indent.
+        pub left: Points,
+        /// The right indent.
+        pub right: Points,
+        /// The special indent.
+        pub special: SpecialIndent,
+        /// The special indent's size.
+        pub by: Points,
+        /// The space before.
+        pub before: AutoOr<Points>,
+        /// The space after.
+        pub after: AutoOr<Points>,
+        /// The line spacing.
+        pub line_spacing: LineSpacing,
+        /// Keep with next.
+        pub keep_with_next: bool,
+        /// Keep lines together.
+        pub keep_lines_together: bool,
+        /// Page break before.
+        pub page_break_before: bool,
+        /// Widow and orphan control.
+        pub widow_control: bool,
+        /// Collapsed by default.
+        pub collapsed: bool,
+        /// Mirror indents.
+        pub mirror_indents: bool,
+        /// Don't add space between paragraphs of the same style.
+        pub contextual_spacing: bool,
+        /// Suppress line numbers.
+        pub suppress_line_numbers: bool,
+        /// Don't hyphenate.
+        pub dont_hyphenate: bool,
+    }
+}
+
+/// Formatting a search looks for (each value given must be the text's) and a replacement applies; each value left
+/// out is any.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct FindFormat {
+    /// Character formatting.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub font: Option<FindFont>,
+    /// Paragraph formatting.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub paragraph: Option<FindParagraph>,
+    /// A paragraph style the paragraphs have, or a character style the text has (by the style's kind).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub style: Option<StyleId>,
+    /// Highlighted in any colour, or not.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub highlight: Option<bool>,
+    /// The colour a replacement highlights in (yellow when unset).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub highlight_color: Option<crate::api::value::HighlightColor>,
+    /// The language, a BCP 47 tag, matched ignoring case.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    /// Spelling and grammar not checked.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub no_proof: Option<bool>,
+    /// Tab stops the paragraphs have (each of these, among others); a replacement adds them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tabs: Vec<crate::api::command::AddTabStop>,
+    /// The frame the paragraphs are in; a replacement frames them so.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frame: Option<crate::api::command::FrameProperties>,
 }
 
 /// Which way `find` searches.
@@ -1667,6 +1924,31 @@ pub struct FindResult {
     pub found: bool,
     /// The search wrapped around the document's end.
     pub wrapped: bool,
+    /// The search stopped early: matches past its budget of work were given up.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub truncated: bool,
+}
+
+/// Every match, for a results list.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct FindMatches {
+    /// The matches, in document order.
+    pub matches: Vec<FindMatch>,
+    /// The search stopped early: matches past its budget of work were given up.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub truncated: bool,
+}
+
+/// How many matches Replace All replaced or Highlight All highlighted.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct FindCount {
+    /// How many.
+    pub count: u32,
+    /// The search stopped early: matches past its budget of work were given up.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub truncated: bool,
 }
 
 /// One match with its context, for a results list.
@@ -1683,6 +1965,10 @@ pub struct FindMatch {
     pub after: String,
     /// Its page.
     pub page: u32,
+    /// The heading it is under (the nearest listed one at or before it in the body); absent before the first heading
+    /// or outside the body.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub heading: Option<HeadingId>,
 }
 
 /// A misspelled word and what to replace it with.
@@ -1858,6 +2144,10 @@ pub struct StyleInfo {
     pub visibility: StyleVisibility,
     /// Restricted: unavailable while the document's formatting is protected.
     pub locked: bool,
+    /// How many times the main document uses it: paragraphs for a paragraph style, stretches of runs for a character
+    /// style, 0 for table and list styles (Select All Instances' count).
+    #[serde(default)]
+    pub uses: u32,
 }
 
 // ---------------- elements and data parts ----------------
@@ -1919,6 +2209,15 @@ pub struct ElementInfo {
     pub parent: Option<ElementId>,
     /// Locked against editing.
     pub locked: bool,
+    /// A field shows its code rather than its result.
+    #[serde(default)]
+    pub showing_code: bool,
+    /// A field's result is out of date: the next field update refreshes it.
+    #[serde(default)]
+    pub dirty: bool,
+    /// A date control's date (`YYYY-MM-DDTHH:MM:SSZ`); absent while it shows its placeholder or no date.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub date: Option<String>,
     /// A sub-template reference field's sub-template.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reference: Option<SubTemplateReference>,
@@ -2010,6 +2309,15 @@ pub struct ElementDetail {
     pub parent: Option<ElementId>,
     /// Locked against editing.
     pub locked: bool,
+    /// A field shows its code rather than its result.
+    #[serde(default)]
+    pub showing_code: bool,
+    /// A field's result is out of date: the next field update refreshes it.
+    #[serde(default)]
+    pub dirty: bool,
+    /// A date control's date (`YYYY-MM-DDTHH:MM:SSZ`); absent while it shows its placeholder or no date.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub date: Option<String>,
     /// A control's lock.
     pub lock: ControlLock,
     /// A control's placeholder text.
@@ -2049,12 +2357,26 @@ pub enum Block {
         text_length: u32,
         /// The elements in it.
         elements: Vec<ElementId>,
+        /// Its hidden paragraph marks: where each paragraph joined into it by one ends, and its own mark when that is
+        /// hidden (it runs into the next paragraph).
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        hidden_marks: Vec<HiddenMark>,
     },
     /// A table.
     Table {
         /// Its rows.
         rows: Vec<BlockRow>,
     },
+}
+
+/// A hidden paragraph mark in a paragraph: a style separator runs a heading into the paragraph after it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct HiddenMark {
+    /// Where it is, in characters from the paragraph's start (the paragraph's length for its own mark).
+    pub at: u32,
+    /// It is a style separator (Ctrl+Alt+Enter), not text formatted hidden.
+    pub style_separator: bool,
 }
 
 /// A table row of [`Block::Table`].
@@ -2454,7 +2776,7 @@ pub enum GestureId {
     TextDoubleClick,
     /// A triple-click on text: selects a paragraph.
     TextTripleClick,
-    /// A Ctrl+click on text.
+    /// A Ctrl+click on text: selects the sentence, or, with text selected, adds the sentence to the selection, or takes it out when it is selected.
     TextCtrlClick,
     /// A Ctrl+click on a hyperlink.
     LinkActivate,
@@ -2486,6 +2808,30 @@ pub enum GestureId {
     RulerDoubleClick,
     /// A right-click: the context menu.
     ContextClick,
+    /// A double-click on a picture, shape or text box.
+    ObjectDoubleClick,
+    /// Dragging an object's sizing handle: resizes it.
+    ObjectResizeDrag,
+    /// Dragging a shape's adjustment or rotation handle.
+    ShapeHandleDrag,
+    /// Dragging a table's move handle: moves the table.
+    TableMoveDrag,
+    /// A click in a cell's, row's or column's selection zone: selects it.
+    TableZoneClick,
+    /// A click on a table's insert mark: inserts a row or column there.
+    TableInsertClick,
+    /// A double-click on a note reference or a note's number: jumps between them.
+    NoteDoubleClick,
+    /// A double-click in blank space with Click and Type on: the caret there.
+    ClickAndType,
+    /// A double-click between pages, or on their meeting line: hides or shows the white space.
+    PageGapDoubleClick,
+    /// A click on an enabled drop-down form field where forms are filled in: selects it, and by default emits the
+    /// gesture so the host opens its list (`fillFormField` picks an entry).
+    FormFieldClick,
+    /// A double-click on a legacy form field in editing mode outside forms protection: selects it, and by default
+    /// emits the gesture so the host opens its options (`setFormField` changes them).
+    FormFieldDoubleClick,
 }
 
 /// What a gesture does: its default action, an event for the application, nothing, or another command.
@@ -2564,6 +2910,8 @@ pub enum AreaKind {
     Ruler,
     /// A table border.
     TableBorder,
+    /// Between pages (or their meeting line while white space is hidden).
+    PageGap,
 }
 
 /// What a gesture is over.
@@ -2621,6 +2969,14 @@ pub struct AutoCorrectOptions {
     pub numbered_lists: bool,
     /// `*` or `-` then a space or tab at a paragraph's start makes it a bulleted list.
     pub bulleted_lists: bool,
+    /// AutoFormat: three or more `-`, `_`, `=`, `*`, `~` or `#` then Enter make the paragraph a bottom border line.
+    pub border_lines: bool,
+    /// AutoFormat: an Internet or network path (`www.example.com`, `\\server\share`, `name@example.com`) then a space
+    /// or Enter becomes a hyperlink.
+    pub internet_paths: bool,
+    /// AutoFormat: Tab and Backspace at a paragraph's start set its first-line and left indents (and Tab at a list's
+    /// first item moves the whole list).
+    pub tab_indents: bool,
     /// Texts Never correct added: never corrected again.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub never: Vec<String>,
@@ -2640,6 +2996,9 @@ impl Default for AutoCorrectOptions {
             dashes: true,
             numbered_lists: true,
             bulleted_lists: true,
+            border_lines: true,
+            internet_paths: true,
+            tab_indents: true,
             never: Vec::new(),
         }
     }
@@ -2682,6 +3041,15 @@ pub struct AutoCorrectChange {
     /// Automatic bulleted lists.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bulleted_lists: Option<bool>,
+    /// Automatic border lines.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub border_lines: Option<bool>,
+    /// Internet and network paths to hyperlinks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub internet_paths: Option<bool>,
+    /// Indents set with Tab and Backspace.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tab_indents: Option<bool>,
     /// The replacement list, in place of the shipped one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub entries: Option<Vec<AutoCorrectEntry>>,
@@ -2897,6 +3265,116 @@ pub enum Popover {
         /// What it became.
         to: String,
     },
+    /// The options of the AutoFormat change just made: `revertAutoCorrect` undoes it (Undo Hyperlink, Undo Border
+    /// Line, Undo Automatic Indent), `neverAutoCorrect` undoes it and turns its option off (Stop Automatically Creating
+    /// Hyperlinks or Border Lines, Stop Setting Indent on Tabs and Backspaces); the host's AutoCorrect dialog is
+    /// Control AutoFormat Options.
+    AutoFormat {
+        /// The change's options button, or what it made.
+        anchor: ClientRect,
+        /// What it made.
+        change: AutoFormatKind,
+        /// What was typed: the address, or the characters a border line replaced; empty for an indent.
+        text: String,
+    },
+    /// The Paste Options button of the paste just made, shown while nothing has changed since (typing, another edit,
+    /// undo or Esc closes it): `repaste` pastes it again another way, `dismissPasteOptions` hides it.
+    PasteOptions {
+        /// The button: below the end of the paste, at its right.
+        anchor: ClientRect,
+        /// The end of the paste's caret box.
+        end: ClientRect,
+        /// The ways it can paste again, in Word's order; `current` among them.
+        choices: Vec<crate::api::command::PasteAs>,
+        /// The way it was pasted.
+        current: crate::api::command::PasteAs,
+    },
+}
+
+/// An item a cross-reference can point to, as Word's Cross-reference dialog lists it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CrossReferenceTarget {
+    /// What the list shows: a numbered item's number and text, a heading's text, a bookmark's name, a note's text, a
+    /// whole caption.
+    pub text: String,
+    /// Its number: a list number, a heading's, a note's as laid out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub number: Option<String>,
+    /// A heading's level.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub level: Option<u8>,
+    /// A bookmark's name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bookmark: Option<String>,
+    /// A note's id, as `notes` lists it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<i64>,
+}
+
+/// A table of contents or of figures in the document.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TableOfContentsInfo {
+    /// Its place among them, in document order: what `index` names in the commands.
+    pub index: u32,
+    /// It collects captions: a table of figures.
+    pub figures: bool,
+    /// What it collects and how its entries read, from its code.
+    pub options: crate::api::command::TableOfContentsOptions,
+    /// Updating and removing it are refused: its field is locked, or a control around it locks its content.
+    pub locked: bool,
+    /// The paragraph its field starts in.
+    pub first_paragraph: crate::api::value::ParagraphId,
+    /// The paragraph its field ends in.
+    pub last_paragraph: crate::api::value::ParagraphId,
+}
+
+/// The document's tables of contents and of figures (`tablesOfContents`).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TablesOfContents {
+    /// Each one, in document order.
+    pub tables: Vec<TableOfContentsInfo>,
+    /// The one the selection is in, by `index`; absent when it is in none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub here: Option<u32>,
+}
+
+/// An entry a table of contents would collect (`tocEntries`), for a preview.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TocEntryPreview {
+    /// Its level, 1 to 9.
+    pub level: u8,
+    /// Its text.
+    pub text: String,
+    /// It shows a page number.
+    pub page_number: bool,
+}
+
+/// What the clipboard can paste as at the selection (`pasteChoices`): Paste Special's list.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PasteChoices {
+    /// The ways it can paste, in Word's order: the table choices or Keep Source Formatting, Use Destination Styles and
+    /// Merge Formatting, then Keep Text Only, HTML, text and picture. Empty where nothing can be pasted.
+    pub choices: Vec<crate::api::command::PasteAs>,
+    /// The one Ctrl+V takes (among `choices`); absent when the clipboard holds nothing to paste.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default: Option<crate::api::command::PasteAs>,
+}
+
+/// What an AutoFormat change as you type made.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AutoFormatKind {
+    /// A hyperlink from an Internet or network path.
+    Hyperlink,
+    /// A border line from a row of characters.
+    BorderLine,
+    /// An indent from Tab at a paragraph's start.
+    Indent,
 }
 
 /// One entry of the tab type picker.
@@ -2965,6 +3443,16 @@ pub struct HorizontalRuler {
     pub columns: Vec<Span>,
     /// The cell boundaries of the caret's row.
     pub table_columns: Vec<Points>,
+    /// The gutter across the page, beside the margin it widens, when it has width.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gutter: Option<Span>,
+    /// The margin the page's text starts after: left, or with mirrored margins inside or outside (facing pages swap
+    /// them).
+    #[serde(default)]
+    pub start_margin: super::command::MarginSide,
+    /// The margin the page's text ends before.
+    #[serde(default)]
+    pub end_margin: super::command::MarginSide,
 }
 
 /// The vertical ruler's model.
@@ -2977,6 +3465,19 @@ pub struct VerticalRuler {
     pub text: Span,
     /// The row boundaries of the caret's table on this page.
     pub table_rows: Vec<Points>,
+    /// The gutter down the page (at the top), when it has height.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gutter: Option<Span>,
+    /// The paragraph's indents, when its lines run down or up the page (`lines`): measured along the lines from
+    /// `text.start` (down) or `text.end` (up).
+    #[serde(default)]
+    pub indents: RulerIndents,
+    /// The paragraph's tab stops, when its lines run down or up the page, along the lines as `indents` are.
+    #[serde(default)]
+    pub tabs: Vec<TabStopInfo>,
+    /// The document's default tab interval, when the lines run down or up the page.
+    #[serde(default)]
+    pub default_tab_stop: Points,
 }
 
 /// The ruler model for the selection, in points, with no viewport mapping.
@@ -2985,6 +3486,11 @@ pub struct VerticalRuler {
 pub struct RulerModel {
     /// The selected paragraphs differ: the first one's values are shown.
     pub mixed: bool,
+    /// The way the caret's lines run. Across the page (`horizontal`), the horizontal ruler shows the indents and tab
+    /// stops; down or up the page (vertical text), the vertical ruler shows them, `vertical.text` is where the lines
+    /// run, and the horizontal ruler shows the text columns across the page in the order the lines stack.
+    #[serde(default)]
+    pub lines: LineDirection,
     /// The horizontal ruler.
     pub horizontal: HorizontalRuler,
     /// The vertical ruler.
@@ -3052,6 +3558,10 @@ pub enum TooltipKind {
     Comment,
     /// A ruler marker, the tab type box, or where a click on the ruler adds a stop.
     Ruler,
+    /// A footnote or endnote reference: the note's text.
+    Note,
+    /// Between pages, or on their meeting line while white space is hidden: a double-click hides (shows) it.
+    WhiteSpace,
 }
 
 /// A tooltip to show over the document or its rulers.
@@ -3066,6 +3576,19 @@ pub struct Tooltip {
     pub at: ClientPoint,
     /// The hovered thing's box.
     pub rect: ClientRect,
+    /// Who made the change or the comment (`revision` and `comment` tips).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub author: Option<crate::api::review::Person>,
+    /// When, as the document gives it; absent when it doesn't (`revision` and `comment` tips).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub time: Option<crate::api::record::Timestamp>,
+    /// The change's kind (`revision` tips).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub change: Option<crate::api::review::RevisionKind>,
+    /// What follows the byline: the change's English description (`Formatted: Bold`) or the comment's text, so a host
+    /// can build a localized tip from `author`, `time` and this.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body: Option<String>,
 }
 
 /// What a press on an element does.
@@ -3155,4 +3678,360 @@ pub struct WordCount {
     pub lines: u32,
     /// Pages.
     pub pages: u32,
+}
+
+/// What `wordCount` counts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WordCountOptions {
+    /// The selection's text, when there is a selection (the document's otherwise): its lines are the body lines it
+    /// covers part of, and the pages are the document's. The status bar's "N of M words" asks with this on and off.
+    #[serde(default)]
+    pub selection: bool,
+    /// Text boxes, footnotes and endnotes count as well as the body (Word's Include textboxes, footnotes and
+    /// endnotes). Default: on.
+    #[serde(default = "on")]
+    pub include_textboxes_and_notes: bool,
+}
+
+fn on() -> bool {
+    true
+}
+
+impl Default for WordCountOptions {
+    fn default() -> WordCountOptions {
+        WordCountOptions { selection: false, include_textboxes_and_notes: true }
+    }
+}
+
+/// The undo and redo lists (Word's Undo and Redo drop-downs).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct HistoryLabels {
+    /// The steps undo would undo, most recent first.
+    pub undo: Vec<String>,
+    /// The steps redo would redo, next first.
+    pub redo: Vec<String>,
+    /// There are more undo steps than listed.
+    pub more_undo: bool,
+    /// There are more redo steps than listed.
+    pub more_redo: bool,
+}
+
+/// A footnote or endnote, as a notes list shows it.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct NoteInfo {
+    /// Footnote or endnote.
+    pub kind: super::command::NoteType,
+    /// Its id as the document numbers it: stable while the document is open.
+    pub id: i64,
+    /// Its reference mark: its custom mark, else its number as laid out (empty before layout reaches it).
+    pub mark: String,
+    /// Its mark is a custom one.
+    pub custom_mark: bool,
+    /// Its text, plain (fields as their results), at most [`NOTE_TEXT_LIMIT`] characters and then `…`.
+    pub text: String,
+    /// The page showing its reference (from 1); absent while nothing refers to it or layout hasn't reached it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page: Option<u32>,
+}
+
+/// The most characters of a note's text a [`NoteInfo`] carries.
+pub const NOTE_TEXT_LIMIT: usize = 1024;
+
+/// One note separator's text.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct NoteSeparatorState {
+    /// Its plain text, paragraphs `\n` apart (empty for the built-in line).
+    pub text: String,
+    /// It is the built-in one: a line.
+    pub builtin: bool,
+}
+
+/// The separators of footnotes or endnotes.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct NoteSeparators {
+    /// Above the notes on the page they start.
+    pub separator: NoteSeparatorState,
+    /// Above the notes continued from the page before.
+    pub continuation_separator: NoteSeparatorState,
+    /// Below notes that continue on the next page; absent when there is none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub continuation_notice: Option<NoteSeparatorState>,
+}
+
+/// An editable range, as Restrict Editing lists it: the permissions over one stretch of the document.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct EditableRangeInfo {
+    /// Its permissions' ids, one per editor.
+    pub ids: Vec<String>,
+    /// Who may edit it.
+    pub editors: Vec<super::value::RangeEditorRef>,
+    /// The page it starts on (from 1); absent before layout reaches it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page: Option<u32>,
+}
+
+/// Insert Field's categories.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum FieldCategory {
+    /// Date and Time.
+    DateAndTime,
+    /// Document Automation.
+    DocumentAutomation,
+    /// Document Information.
+    DocumentInformation,
+    /// Equations and Formulas.
+    EquationsAndFormulas,
+    /// Index and Tables.
+    IndexAndTables,
+    /// Links and References.
+    LinksAndReferences,
+    /// Mail Merge.
+    MailMerge,
+    /// Numbering.
+    Numbering,
+    /// User Information.
+    UserInformation,
+}
+
+/// What a field argument names.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum FieldArgKind {
+    /// Any text.
+    Text,
+    /// A bookmark of the document.
+    Bookmark,
+    /// A style's name.
+    Style,
+    /// A document property's name.
+    Property,
+    /// A document variable's name.
+    Variable,
+    /// A file name or address.
+    File,
+    /// A sequence or list name, an entry or a merge field's name.
+    Name,
+    /// An expression or a comparison.
+    Expression,
+    /// A whole number.
+    Number,
+}
+
+/// What a field switch takes after it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SwitchArgKind {
+    /// Nothing: it is on or off.
+    None,
+    /// Text.
+    Text,
+    /// A whole number.
+    Number,
+    /// A bookmark.
+    Bookmark,
+    /// A style's name.
+    Style,
+    /// A sequence or caption label's name.
+    Name,
+    /// Heading or outline levels (`1-3`).
+    Levels,
+}
+
+/// An argument a field takes, in order.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct FieldArgInfo {
+    /// Its name.
+    pub name: String,
+    /// What it names.
+    pub kind: FieldArgKind,
+    /// The field needs it.
+    pub required: bool,
+}
+
+/// A switch of a field's own.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct FieldSwitchInfo {
+    /// The letter (or `!`) after the backslash.
+    pub flag: String,
+    /// What it takes after it.
+    pub arg: SwitchArgKind,
+    /// What it does.
+    pub description: String,
+}
+
+/// The general switches a field takes.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct FieldGeneralSwitches {
+    /// `\*`: text and number formats.
+    pub text: bool,
+    /// `\#`: a numeric picture.
+    pub numeric: bool,
+    /// `\@`: a date-time picture.
+    pub date: bool,
+}
+
+/// A field as Insert Field describes it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct FieldDescription {
+    /// Its name as a code writes it (`PAGE`, `=`).
+    pub name: String,
+    /// The categories it is listed under.
+    pub categories: Vec<FieldCategory>,
+    /// What it does.
+    pub description: String,
+    /// Its syntax, as Insert Field shows it under Field codes.
+    pub syntax: String,
+    /// Its arguments, in order.
+    pub args: Vec<FieldArgInfo>,
+    /// Its own switches.
+    pub switches: Vec<FieldSwitchInfo>,
+    /// The general switches it takes.
+    pub formats: FieldGeneralSwitches,
+    /// The engine computes its result (the others keep theirs, or the host's `setFieldResults` gives it).
+    pub evaluated: bool,
+}
+
+/// A format a `\*` switch takes, and its name.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct FieldFormatOption {
+    /// As the code writes it (`Upper`).
+    pub value: String,
+    /// Its name in Insert Field (`Uppercase`).
+    pub label: String,
+}
+
+/// The formats Insert Field offers.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct FieldFormats {
+    /// `\*` text formats.
+    pub text_formats: Vec<FieldFormatOption>,
+    /// `\*` number formats.
+    pub number_formats: Vec<FieldFormatOption>,
+    /// `\#` numeric pictures.
+    pub numeric_pictures: Vec<String>,
+    /// `\@` date-time pictures.
+    pub date_pictures: Vec<String>,
+}
+
+/// A field switch chosen, with what follows it.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct FieldSwitchChoice {
+    /// The letter (or `!`) after the backslash.
+    pub flag: String,
+    /// What follows it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
+}
+
+/// What a field code is made of: Insert Field's choices.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct FieldChoice {
+    /// The field's name.
+    pub name: String,
+    /// Its arguments, in order.
+    #[serde(default)]
+    pub args: Vec<String>,
+    /// Its own switches.
+    #[serde(default)]
+    pub switches: Vec<FieldSwitchChoice>,
+    /// `\*` formats other than MERGEFORMAT: a text or number format.
+    #[serde(default)]
+    pub formats: Vec<String>,
+    /// `\#`: a numeric picture.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub numeric_picture: Option<String>,
+    /// `\@`: a date-time picture.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub date_picture: Option<String>,
+    /// `\* MERGEFORMAT`: the result keeps its formatting through updates.
+    #[serde(default)]
+    pub preserve_formatting: bool,
+}
+
+/// What is wrong with a field code, as Insert Field flags it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase", deny_unknown_fields)]
+pub enum FieldProblem {
+    /// No field name.
+    Empty,
+    /// A field Word has no such name for (kept as written, its result too).
+    UnknownField {
+        /// The name.
+        name: String,
+    },
+    /// A required argument left out.
+    MissingArgument {
+        /// The argument's name.
+        name: String,
+    },
+    /// A switch the field doesn't take.
+    UnknownSwitch {
+        /// The switch's flag.
+        flag: String,
+    },
+    /// A switch the field needs left out.
+    MissingSwitch {
+        /// The switch's flag.
+        flag: String,
+    },
+    /// A switch that takes a value given none.
+    MissingSwitchValue {
+        /// The switch's flag.
+        flag: String,
+    },
+    /// A switch that takes a whole number given something else.
+    NotANumber {
+        /// The switch's flag.
+        flag: String,
+    },
+    /// A general switch the field doesn't take (`*`, `#` or `@`).
+    FormatNotTaken {
+        /// The switch's flag.
+        flag: String,
+    },
+}
+
+/// A field code made from choices, and its problems.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ComposedField {
+    /// The code, with Word's spaces around it.
+    pub code: String,
+    /// What is wrong with it; empty when Insert Field takes it as it is.
+    pub problems: Vec<FieldProblem>,
+}
+
+/// The field the selection is in, and its code's choices: Insert Field opened on it edits it (`setField`).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct FieldHere {
+    /// The field.
+    pub id: ElementId,
+    /// Its code's choices.
+    pub choice: FieldChoice,
+}
+
+/// A page thumbnail's drawn size, in pixels, centred in the buffer.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ThumbnailSize {
+    /// The page's width.
+    pub width: u32,
+    /// The page's height.
+    pub height: u32,
 }

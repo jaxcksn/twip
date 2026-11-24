@@ -1,9 +1,13 @@
 //! Style definitions
 
-use crate::api::command::{Border, CellMargins, Command, ListLevel};
+use crate::api::command::{CellMargins, Command};
 use crate::api::error::Error;
-use crate::api::services::{StyleVisibility, TabStopInfo, TableStylePart};
+use crate::api::services::{StyleVisibility, TableStylePart};
 use crate::api::state::{CharacterFormatting, ParagraphFormatting, Tri};
+pub use crate::api::styles::{
+    BuiltInStyle, DefaultsDefinition, NewStyle, StyleCategory, StyleChange, StyleDefinition, StyleList, TableBorders, TablePartDefinition,
+    TablePartFormatting, TableStyleDefinition,
+};
 use crate::api::value::{CellAlignment, Color, HorizontalAlignment, Points, StyleId};
 use crate::docx::props::{ParaProps, RunProps, toggle};
 use crate::docx::styles::{Style, StyleKind, Styles};
@@ -13,23 +17,6 @@ use crate::services::styles::{NameRefusal, builtin, check_name, describe};
 
 use super::Editor;
 use super::commands::Outcome;
-use super::list_defs::LevelDefinition;
-
-/// A style's type as Word's style lists show it: a paragraph style linked to a character style is one linked style.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub enum StyleCategory {
-    /// A paragraph style.
-    #[default]
-    Paragraph,
-    /// A paragraph style with a character style linked to it: applied to a whole paragraph or to text.
-    Linked,
-    /// A character style.
-    Character,
-    /// A table style.
-    Table,
-    /// A list style.
-    List,
-}
 
 impl StyleCategory {
     fn kind(self) -> StyleKind {
@@ -50,227 +37,6 @@ impl StyleCategory {
             StyleKind::Numbering => StyleCategory::List,
         }
     }
-}
-
-/// The list a paragraph style numbers its paragraphs with.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub struct StyleList {
-    /// The list (`numId`).
-    pub list: i64,
-    /// The level, 0 to 8.
-    pub level: u8,
-}
-
-/// Formatting for a part of a table style.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct TablePartFormatting {
-    /// The part.
-    pub part: TableStylePart,
-    /// The part's own formatting goes first, so the commands give all of it.
-    pub clear: bool,
-    /// Character and paragraph formatting commands, and table ones: `setCellShading`, `setShading` (cells or the
-    /// table), `setCellBorders`, `setCellAlignment`, `setCellMargins`, `setRowCanBreak`, and for the whole table
-    /// `setTableAlignment` and `setTableIndent`.
-    pub formatting: Vec<Command>,
-}
-
-/// A style change: what isn't given is kept.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct StyleChange {
-    /// The name. A built-in style keeps its own: the new one becomes an alias.
-    pub name: Option<String>,
-    /// The style it is based on (of its own type), or none.
-    pub based_on: Option<Option<StyleId>>,
-    /// The paragraph style Enter starts after a paragraph in it; none for itself. Paragraph styles only.
-    pub next: Option<Option<StyleId>>,
-    /// The style of the other type it is linked to (a character style for a paragraph style, and the other way), or
-    /// none. The other style links back; what either was linked to before no longer is.
-    pub link: Option<Option<StyleId>>,
-    /// Formatting a paragraph in it directly changes the style instead. Paragraph styles only.
-    pub auto_update: Option<bool>,
-    /// Shown in the Styles gallery.
-    pub quick: Option<bool>,
-    /// The list its paragraphs are numbered with, or none. Paragraph styles only.
-    pub list: Option<Option<StyleList>>,
-    /// A list style's levels, from the first (the rest defaulted). List styles only.
-    pub list_levels: Option<Vec<ListLevel>>,
-    /// Its own character and paragraph formatting goes first (a table style's table, row and cell properties too), so
-    /// `formatting` gives all of it.
-    pub clear: bool,
-    /// Character and paragraph formatting commands, run on the style as on text (a character style takes character
-    /// formatting only; a list style none). A table style's whole table takes table commands too, as
-    /// [`TablePartFormatting::formatting`].
-    pub formatting: Vec<Command>,
-    /// A table style's parts' formatting.
-    pub parts: Vec<TablePartFormatting>,
-    /// A table style's rows in each band, 1 or more.
-    pub row_band: Option<u32>,
-    /// A table style's columns in each band, 1 or more.
-    pub column_band: Option<u32>,
-}
-
-/// A new style.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct NewStyle {
-    /// Its type.
-    pub category: StyleCategory,
-    /// It starts from the selection's formatting (its paragraph's and its first run's direct formatting), based on its
-    /// paragraph's style, as Word's New Style from Formatting does.
-    pub from_selection: bool,
-    /// It is applied once made: a paragraph or linked style to the selected paragraphs, a character style to the
-    /// selected text, a table style to the selection's table, a list style to the selected paragraphs.
-    pub apply: bool,
-    /// Its name (none: the first free `StyleN`), base, following style and formatting.
-    pub change: StyleChange,
-}
-
-/// A table style's borders.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct TableBorders {
-    /// The top edge.
-    pub top: Option<Border>,
-    /// The left edge.
-    pub left: Option<Border>,
-    /// The bottom edge.
-    pub bottom: Option<Border>,
-    /// The right edge.
-    pub right: Option<Border>,
-    /// Between rows.
-    pub inside_horizontal: Option<Border>,
-    /// Between columns.
-    pub inside_vertical: Option<Border>,
-    /// Each cell's top left to bottom right diagonal.
-    pub diagonal_down: Option<Border>,
-    /// Each cell's top right to bottom left diagonal.
-    pub diagonal_up: Option<Border>,
-}
-
-/// A table style's part as its cells show it: the whole table's formatting with the part's over it.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct TablePartDefinition {
-    /// The part.
-    pub part: TableStylePart,
-    /// The style or a style it is based on defines the part.
-    pub defined: bool,
-    /// Text's character formatting.
-    pub character: CharacterFormatting,
-    /// Text's paragraph formatting.
-    pub paragraph: ParagraphFormatting,
-    /// The cells' fill.
-    pub fill: Option<Color>,
-    /// The cells' vertical alignment.
-    pub cell_alignment: CellAlignment,
-    /// The borders: the table's for the whole table, the cells' for a part.
-    pub borders: TableBorders,
-    /// The cell margins: the table's default ones for the whole table.
-    pub cell_margins: CellMargins,
-    /// Rows may break across pages.
-    pub row_can_break: bool,
-}
-
-/// What a table style holds besides its text's formatting.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct TableStyleDefinition {
-    /// The table's alignment.
-    pub alignment: HorizontalAlignment,
-    /// The table's indent.
-    pub indent: Points,
-    /// The table's own fill, behind its cells.
-    pub fill: Option<Color>,
-    /// Rows in each band.
-    pub row_band: u32,
-    /// Columns in each band.
-    pub column_band: u32,
-    /// Every part, the whole table first.
-    pub parts: Vec<TablePartDefinition>,
-}
-
-/// A style as [`Editor::style_definition`] reads it.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct StyleDefinition {
-    /// Its id.
-    pub id: StyleId,
-    /// Its name as style lists show it.
-    pub name: String,
-    /// Its other names.
-    pub aliases: Vec<String>,
-    /// Its type.
-    pub category: StyleCategory,
-    /// Built into Word (not one the document made).
-    pub built_in: bool,
-    /// The document defines it; a built-in style it doesn't is added when first used.
-    pub defined: bool,
-    /// The style it is based on.
-    pub based_on: Option<StyleId>,
-    /// The style of the paragraph after one in it (none: itself).
-    pub next: Option<StyleId>,
-    /// The style it is linked to.
-    pub link: Option<StyleId>,
-    /// Formatting its paragraphs directly changes it.
-    pub auto_update: bool,
-    /// Shown in the Styles gallery.
-    pub quick: bool,
-    /// Whether style lists show it.
-    pub visibility: StyleVisibility,
-    /// Its sort priority.
-    pub priority: u32,
-    /// Restricted while formatting is protected.
-    pub locked: bool,
-    /// The list its paragraphs are numbered with.
-    pub list: Option<StyleList>,
-    /// Text in it, resolved through its base and the document defaults: a paragraph in it (for a character style, a
-    /// run in it in a default paragraph); a table style's whole table.
-    pub character: CharacterFormatting,
-    /// Text in it's paragraph formatting.
-    pub paragraph: ParagraphFormatting,
-    /// Text in it's tab stops.
-    pub tabs: Vec<TabStopInfo>,
-    /// What it sets itself: `character` where it does, unavailable (`null`) where it inherits.
-    pub own_character: CharacterFormatting,
-    /// What it sets itself: `paragraph` where it does, unavailable where it inherits.
-    pub own_paragraph: ParagraphFormatting,
-    /// Word's description of it: its formatting over its base's.
-    pub description: String,
-    /// A table style's table formatting and parts.
-    pub table: Option<TableStyleDefinition>,
-    /// A list style's levels.
-    pub list_levels: Vec<LevelDefinition>,
-}
-
-/// The document's default formatting as [`Editor::document_defaults`] reads it.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct DefaultsDefinition {
-    /// Text's character formatting before any style's.
-    pub character: CharacterFormatting,
-    /// Text's paragraph formatting before any style's.
-    pub paragraph: ParagraphFormatting,
-    /// The default tab stops of every paragraph.
-    pub tabs: Vec<TabStopInfo>,
-    /// What the defaults set: `character` where they do, unavailable where the application's apply.
-    pub own_character: CharacterFormatting,
-    /// What the defaults set: `paragraph` where they do, unavailable where the application's apply.
-    pub own_paragraph: ParagraphFormatting,
-}
-
-/// A built-in style, defined by the document or not, with the flags style lists use.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct BuiltInStyle {
-    /// Its id.
-    pub id: StyleId,
-    /// Its name as style lists show it.
-    pub name: String,
-    /// Its type.
-    pub category: StyleCategory,
-    /// The document defines it.
-    pub defined: bool,
-    /// Its sort priority.
-    pub priority: u32,
-    /// Whether style lists show it.
-    pub visibility: StyleVisibility,
-    /// Shown in the Styles gallery.
-    pub quick: bool,
-    /// Restricted while formatting is protected.
-    pub locked: bool,
 }
 
 const fn not_set<T>() -> Tri<T> {
@@ -316,6 +82,14 @@ pub(super) fn own_character(r: &RunProps, all: &CharacterFormatting) -> Characte
         shadow: keep(bit(toggle::SHADOW), &all.shadow),
         underline_color: keep(r.underline_color.is_some(), &all.underline_color),
         text_effects: keep(r.effects.is_some(), &all.text_effects),
+        font_theme: keep(r.ascii.is_some() || r.h_ansi.is_some(), &all.font_theme),
+        color_value: keep(r.color.is_some(), &all.color_value),
+        underline_color_value: keep(r.underline_color.is_some(), &all.underline_color_value),
+        text_border: keep(r.border.is_some(), &all.text_border),
+        text_shading: keep(r.shd.is_some() || r.shading.is_some(), &all.text_shading),
+        fit_text: keep(r.fit_text.is_some(), &all.fit_text),
+        ligature_flags: keep(r.ligatures.is_some(), &all.ligature_flags),
+        stylistic_sets: keep(r.style_sets.is_some(), &all.stylistic_sets),
     }
 }
 
@@ -356,6 +130,13 @@ pub(super) fn own_paragraph(p: &ParaProps, all: &ParagraphFormatting) -> Paragra
         collapsed: keep(p.collapsed.is_some(), &all.collapsed),
         text_direction: keep(p.text_flow.is_some(), &all.text_direction),
         drop_cap: if p.frame.is_some() { all.drop_cap.clone() } else { None },
+        border_top: keep(p.border_top.is_some(), &all.border_top),
+        border_left: keep(p.border_left.is_some(), &all.border_left),
+        border_bottom: keep(p.border_bottom.is_some(), &all.border_bottom),
+        border_right: keep(p.border_right.is_some(), &all.border_right),
+        border_between: keep(p.border_between.is_some(), &all.border_between),
+        shading_value: keep(p.shading.is_some() || p.shd.is_some(), &all.shading_value),
+        tabs: keep(!p.tabs.is_empty(), &all.tabs),
     }
 }
 
@@ -410,7 +191,7 @@ pub(super) fn id_for(name: &str, styles: &Styles) -> String {
 }
 
 /// A table style edit by a table command, for the part `region` (none: the whole table).
-fn table_style_edit(raw: &str, region: Option<&'static str>, c: &Command, cx: &Cx) -> Result<String, Error> {
+fn table_style_edit(e: &Editor, raw: &str, region: Option<&'static str>, c: &Command, cx: &Cx) -> Result<String, Error> {
     use super::table_format::{Edges, border_xml};
     let w = cx.w.clone();
     let root = |raw: &str, child: &str, order: &'static [&'static str], edit: &dyn Fn(&mut Props)| {
@@ -429,10 +210,16 @@ fn table_style_edit(raw: &str, region: Option<&'static str>, c: &Command, cx: &C
     let tw = |p: Points| (p.0 * 20.0).round() as i64;
     let whole_only = |what: &str| if region.is_some() { Err(Error::invalid(format!("{what} is the whole table's"))) } else { Ok(()) };
     Ok(match c {
-        Command::SetCellShading(fill) => cell(raw, &|p| match fill {
-            Some(c) => p.set("shd", format!("<{w}shd {w}val=\"clear\" {w}color=\"auto\" {w}fill=\"{:06X}\"/>", c.0 & 0xFF_FFFF)),
-            None => p.remove("shd"),
-        }),
+        Command::SetCellShading(fill) => {
+            let fill = fill.as_ref().map(|c| e.word_colour(c)).transpose().map_err(Error::invalid)?;
+            cell(raw, &|p| match fill {
+                Some(c) => {
+                    let tag = format!("<{w}shd {w}val=\"clear\" {w}color=\"auto\"/>");
+                    p.set("shd", super::commands::colour_attrs(&tag, &w, "fill", super::commands::THEME_FILL, Some(c)))
+                }
+                None => p.remove("shd"),
+            })
+        }
         Command::SetCellAlignment(a) => {
             let v = match a {
                 CellAlignment::Top => "top",
@@ -486,7 +273,8 @@ fn table_style_edit(raw: &str, region: Option<&'static str>, c: &Command, cx: &C
             root(raw, "tblPr", TBLPR, &|p| p.set("tblInd", format!("<{w}tblInd {w}w=\"{}\" {w}type=\"dxa\"/>", tw(*i))))
         }
         Command::SetCellBorders(b) => {
-            let (edges, line) = super::commands::cell_borders(b.clone());
+            let line = b.border.as_ref().map(|l| super::readback::BorderLine::of_api(l, 0.0, false));
+            let (edges, line) = e.border_lines(b.edges, line.as_ref()).map_err(Error::invalid)?;
             let nil = Edges::None == edges;
             let sides: &[&str] = match edges {
                 Edges::All | Edges::None => &["top", "left", "bottom", "right", "insideH", "insideV"],
@@ -555,12 +343,14 @@ impl Editor {
     /// The formatting state of text in a style's XML: what a style definition reads.
     pub fn style_formatting_state(&self, raw: &str) -> Option<(CharacterFormatting, ParagraphFormatting, Vec<crate::api::services::TabStopInfo>)> {
         let (para, run, _) = self.style_formatting(raw)?;
-        let tabs =
+        let tabs: Vec<_> =
             para.style.tabs.iter().filter(|t| t.kind != crate::docx::props::TabKind::Clear).map(|t| super::commands::tabs::info(t, false)).collect();
         // Its list, its own or a base style's: bulleted or numbered
         let res = self.doc.resolver.as_ref()?;
         let list = para.style.num.filter(|(n, _)| *n != 0).and_then(|(n, l)| res.numbering.level(n, l, &res.styles)).map(|l| l.fmt == "bullet");
-        Some((super::state::character(&[&run]), super::state::paragraph(&[(&para.style, list)]), tabs))
+        let mut paragraph = super::state::paragraph(&[(&para.style, list)]);
+        paragraph.tabs = Tri::Uniform(tabs.clone());
+        Some((super::state::character(&[&run]), paragraph, tabs))
     }
 
     /// Why the command gates refuse `cmd`, for an entry point that backs it: read-only mode, then document protection.
@@ -633,7 +423,7 @@ impl Editor {
         let mut k = 0;
         while k < commands.len() {
             if table_command(&commands[k]) {
-                raw = table_style_edit(&raw, region, &commands[k], &cx)?;
+                raw = table_style_edit(self, &raw, region, &commands[k], &cx)?;
                 k += 1;
                 continue;
             }
@@ -1026,7 +816,7 @@ impl Editor {
             .map(|list| StyleList { list, level: style.base.ppr.ilvl.unwrap_or(0).clamp(0, 8) as u8 });
         let list_levels = match style.kind {
             StyleKind::Numbering => {
-                styles.chain_ppr(Some(&style.id)).num_id.filter(|n| *n != 0).and_then(|n| self.list_level_definitions(n)).unwrap_or_default()
+                styles.chain_ppr(Some(&style.id)).num_id.filter(|n| *n != 0).and_then(|n| self.list_levels(n)).unwrap_or_default()
             }
             _ => Vec::new(),
         };

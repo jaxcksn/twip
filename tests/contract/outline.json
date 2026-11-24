@@ -1,0 +1,88 @@
+{
+  "name": "outline",
+  "fixture": "editor/FX-outline.docx",
+  "steps": [
+    { "op": "open" },
+    { "op": "call", "method": "navigation.headings", "save": "h" },
+    { "op": "call", "method": "find.all", "args": [{ "text": "survey" }], "result": { "matches": [
+      { "text": "survey", "heading": { "$type": "string" } },
+      { "text": "survey", "heading": { "$type": "string" } }
+    ] } },
+    { "op": "call", "method": "navigation.currentHeading", "result": { "$saved": "h", "path": [{ "text": "Overview" }, "id"] } },
+
+    { "op": "call", "method": "navigation.select", "args": [{ "$saved": "h", "path": [{ "text": "Data" }, "id"] }] },
+    { "op": "call", "method": "navigation.currentHeading", "result": { "$saved": "h", "path": [{ "text": "Data" }, "id"] } },
+    { "op": "command", "command": { "type": "promoteOutline" } },
+    { "op": "expectState", "match": { "paragraph": { "style": "Heading1", "outlineLevel": 1 }, "history": { "undoLabel": "Promote" } } },
+    { "op": "command", "command": { "type": "demoteOutline" } },
+    { "op": "expectState", "match": { "paragraph": { "style": "Heading2" } } },
+    { "op": "command", "command": { "type": "undo" } },
+    { "op": "expectState", "match": { "paragraph": { "style": "Heading1" } } },
+    { "op": "command", "command": { "type": "undo" } },
+    { "op": "expectState", "match": { "paragraph": { "style": "Heading2" } } },
+
+    { "op": "command", "command": { "type": "promoteHeading", "heading": { "$saved": "h", "path": [{ "text": "Background" }, "id"] } } },
+    { "op": "call", "method": "navigation.headings", "result": [
+      { "text": "Overview", "level": 1 }, { "text": "Background", "level": 1 }, { "text": "Earlier work", "level": 2 }
+    ] },
+    { "op": "command", "command": { "type": "undo" } },
+    { "op": "call", "method": "navigation.headings", "result": [
+      { "text": "Overview", "level": 1 }, { "text": "Background", "level": 2 }, { "text": "Earlier work", "level": 3 }
+    ] },
+
+    { "op": "command", "command": { "type": "moveHeading", "heading": { "$saved": "h", "path": [{ "text": "Method" }, "id"] },
+      "target": { "$saved": "h", "path": [{ "text": "Overview" }, "id"] }, "side": "before" } },
+    { "op": "call", "method": "navigation.headings", "result": [
+      { "text": "Method" }, { "text": "Data" }, { "text": "Sources" }, { "text": "Overview" }, { "text": "Background" }, { "text": "Earlier work" }
+    ] },
+    { "op": "command", "command": { "type": "undo" } },
+    { "op": "call", "method": "navigation.headings", "result": [
+      { "text": "Overview" }, { "text": "Background" }, { "text": "Earlier work" }, { "text": "Method" }, { "text": "Data" }, { "text": "Sources" }
+    ] },
+    { "op": "command", "command": { "type": "moveHeading", "heading": { "$saved": "h", "path": [{ "text": "Data" }, "id"] },
+      "target": { "$saved": "h", "path": [{ "text": "Overview" }, "id"] }, "side": "before", "level": 1 } },
+    { "op": "call", "method": "navigation.headings", "result": [ { "text": "Data", "level": 1 }, { "text": "Sources", "level": 2 } ] },
+    { "op": "command", "command": { "type": "undo" } },
+    { "op": "command", "command": { "type": "moveHeading", "heading": { "$saved": "h", "path": [{ "text": "Data" }, "id"] },
+      "target": { "$saved": "h", "path": [{ "text": "Data" }, "id"] }, "side": "after", "level": 10 } },
+    { "op": "expectError", "code": "invalid-argument" },
+
+    { "op": "command", "command": { "type": "deleteHeading", "value": { "$saved": "h", "path": [{ "text": "Background" }, "id"] } } },
+    { "op": "call", "method": "navigation.headings", "result": [ { "text": "Overview" }, { "text": "Method" }, { "text": "Data" }, { "text": "Sources" } ] },
+    { "op": "command", "command": { "type": "undo" } },
+    { "op": "command", "command": { "type": "deleteHeading", "value": "nope" } },
+    { "op": "expectError", "code": "invalid-argument" },
+
+    { "op": "command", "command": { "type": "insertSubheading", "value": { "$saved": "h", "path": [{ "text": "Data" }, "id"] } } },
+    { "op": "command", "command": { "type": "insertText", "value": "New" } },
+    { "op": "call", "method": "navigation.headings", "result": [
+      { "text": "Overview" }, { "text": "Background" }, { "text": "Earlier work" }, { "text": "Method" }, { "text": "Data" }, { "text": "Sources" },
+      { "text": "New", "level": 3 }
+    ] },
+    { "op": "command", "command": { "type": "undo" } },
+    { "op": "command", "command": { "type": "undo" } },
+    { "op": "command", "command": { "type": "insertHeadingBefore", "value": { "$saved": "h", "path": [{ "text": "Overview" }, "id"] } } },
+    { "op": "command", "command": { "type": "insertText", "value": "Intro" } },
+    { "op": "call", "method": "navigation.headings", "result": [ { "text": "Intro", "level": 1 }, { "text": "Overview" } ] },
+    { "op": "command", "command": { "type": "undo" } },
+    { "op": "command", "command": { "type": "undo" } },
+
+    { "op": "command", "command": { "type": "selectHeadingContent", "value": { "$saved": "h", "path": [{ "text": "Background" }, "id"] } } },
+    { "op": "expectState", "match": { "selection": { "empty": false, "page": 1 } } },
+
+    { "op": "call", "method": "navigation.select", "args": [{ "$saved": "h", "path": [{ "text": "Sources" }, "id"] }] },
+    { "op": "command", "command": { "type": "demoteToBodyText" } },
+    { "op": "expectState", "match": { "paragraph": { "style": "Normal" } } },
+    { "op": "command", "command": { "type": "undo" } },
+    { "op": "command", "command": { "type": "promoteToHeading1" } },
+    { "op": "expectState", "match": { "paragraph": { "style": "Heading1" } } },
+    { "op": "command", "command": { "type": "undo" } },
+
+    { "op": "call", "method": "pageVersions", "save": "v", "result": [{ "$type": "number" }, { "$type": "number" }] },
+    { "op": "call", "method": "pageThumbnail", "args": [0, 100, 130], "result": { "width": { "$type": "number" }, "height": { "$type": "number" } } },
+    { "op": "call", "method": "pageThumbnail", "args": [0, 0, 10] },
+    { "op": "expectError", "code": "invalid-argument" },
+    { "op": "call", "method": "pageThumbnail", "args": [9, 10, 10] },
+    { "op": "expectError", "code": "invalid-argument" }
+  ]
+}

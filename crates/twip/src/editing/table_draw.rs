@@ -30,6 +30,25 @@ pub struct Stroke {
     pub to: [f64; 2],
 }
 
+/// What a Draw Table pen stroke would draw, for the host to show while the stroke is dragged.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StrokeKind {
+    /// A line across or down a table, snapped to the stroke's main direction.
+    Line,
+    /// A cell's diagonal, corner to corner.
+    Diagonal,
+    /// A new table's outline: the stroke's rectangle.
+    Outline,
+}
+
+/// A table tool dragged on a page: where it was pressed and where it is now, in the page's points.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct ToolDrag {
+    page: usize,
+    from: [f64; 2],
+    now: [f64; 2],
+}
+
 /// How near a border a tool has to touch, in points.
 const REACH: f64 = 3.0;
 
@@ -69,6 +88,56 @@ fn over_other_story(geo: &PageGeometry, ctx: StoryId, p: [f64; 2]) -> bool {
         })
         .min_by(|a, b| area(&a.rect).total_cmp(&area(&b.rect)))
         .is_some_and(|s| !reachable(ctx, s.host))
+}
+
+/// The cell of `table` at depth `depth` whose opposite corners the stroke from `a` to `b` (in the cell's own
+/// coordinates) joins: a corner to corner stroke draws its diagonal.
+fn diagonal_cell(geo: &PageGeometry, table: TableId, depth: usize, a: [f64; 2], b: [f64; 2]) -> Option<&GCell> {
+    let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+    geo.cells.iter().filter(|c| c.chain.len() == depth && c.chain.last().is_some_and(|k| k.0 == table)).find(|c| {
+        let r = c.rect;
+        let (tx, ty) = (REACH.max(0.25 * (r[2] - r[0])), REACH.max(0.25 * (r[3] - r[1])));
+        let near = |p: [f64; 2], x: f64, y: f64| (p[0] - x).abs() <= tx && (p[1] - y).abs() <= ty;
+        let opposite = |p: [f64; 2], q: [f64; 2]| (near(p, r[0], r[1]) && near(q, r[2], r[3])) || (near(p, r[2], r[1]) && near(q, r[0], r[3]));
+        // Across and down the cell both, not along a short row or a narrow column
+        let slanted = dx.abs() >= 0.5 * (r[2] - r[0]) && dy.abs() >= 0.5 * (r[3] - r[1]);
+        slanted && (opposite(a, b) || opposite(b, a))
+    })
+}
+
+/// The two cells either side of the border at page point `at`, the first left of or above the second, innermost first:
+/// their places, whether the border runs down (between columns), and its ends on the page.
+type ErasePair = ((TableId, usize, usize), (usize, usize), bool, [[f64; 2]; 2]);
+
+fn erase_pair(geo: &PageGeometry, ctx: StoryId, at: [f64; 2]) -> Option<ErasePair> {
+    let near = |v: f64, w: f64| (v - w).abs() <= REACH;
+    let within = |v: f64, lo: f64, hi: f64| v > lo + REACH && v < hi - REACH;
+    // The cells the point is in or on the edge of: a handful, however big the page's tables
+    let touched = || geo.cells.iter().filter(|c| touches(geo, ctx, c, at));
+    touched()
+        .filter_map(|a| {
+            let p = a.turn.back(at);
+            let key = *a.chain.last()?;
+            let b = touched().find(|b| {
+                let Some(other) = b.chain.last() else { return false };
+                other.0 == key.0
+                    && *other != key
+                    && b.chain.len() == a.chain.len()
+                    && ((near(a.rect[2], p[0]) && near(b.rect[0], p[0]) && within(p[1], a.rect[1].max(b.rect[1]), a.rect[3].min(b.rect[3])))
+                        || (near(a.rect[3], p[1]) && near(b.rect[1], p[1]) && within(p[0], a.rect[0].max(b.rect[0]), a.rect[2].min(b.rect[2]))))
+            })?;
+            let across = near(a.rect[2], p[0]) && near(b.rect[0], p[0]);
+            let ends = match across {
+                true => [[a.rect[2], a.rect[1].max(b.rect[1])], [a.rect[2], a.rect[3].min(b.rect[3])]],
+                false => [[a.rect[0].max(b.rect[0]), a.rect[3]], [a.rect[2].min(b.rect[2]), a.rect[3]]],
+            };
+            let off = if across { (a.rect[2] - p[0]).abs() } else { (a.rect[3] - p[1]).abs() };
+            let &(_, rb, kb) = b.chain.last()?;
+            Some((a.chain.len(), off, key, (rb, kb), across, ends.map(|e| a.turn.at(e))))
+        })
+        // The deepest, then the nearest edge
+        .max_by(|x, y| x.0.cmp(&y.0).then(y.1.total_cmp(&x.1)))
+        .map(|(_, _, key, other, across, ends)| (key, other, across, ends))
 }
 
 /// A table as drawn on a page: its rows there (model row, top, bottom, where its grid starts: a row with an indent of
@@ -172,6 +241,25 @@ impl Editor {
         self.table_pen = line;
     }
 
+    /// Sets the pen's line from the API's border (0.25 to 6 pt, a colour value or automatic).
+    pub fn set_table_pen_line(&mut self, b: &crate::api::command::Border) -> Outcome {
+        let l = super::readback::BorderLine::of_api(b, 0.0, false);
+        match super::readback::checked(self, &l) {
+            Ok(c) => {
+                self.table_pen = Border {
+                    style: l.style.val().into(),
+                    width: l.width.0,
+                    space: l.space.0,
+                    shadow: l.shadow,
+                    color: c.map(|c| c.rgb),
+                    color_theme: c.and_then(|c| c.theme),
+                };
+                Outcome::Moved
+            }
+            Err(e) => Outcome::invalid(&e),
+        }
+    }
+
     /// The Draw Table pen. A line across or down a table splits every cell it crosses there, a cell's corner to
     /// corner stroke draws its diagonal, and a line along a border redraws it: each in the pen's line. A stroke
     /// outside every table draws a new one.
@@ -191,22 +279,14 @@ impl Editor {
             return self.draw_new_table(s, fonts);
         };
         let Some(&(table, ..)) = cell.chain.last() else { return Outcome::unavailable("draw in a table's cell") };
-        if let Some(e) = self.table_edit_refusal(table, CommandId::SplitCells) {
+        if let Some(e) = self.table_edit_refusal(table, CommandId::DrawTableStroke) {
             return Outcome::Refused(e);
         }
         let (depth, turn) = (cell.chain.len(), cell.turn);
         let (a, b) = (turn.back(s.from), turn.back(s.to));
         let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
         // Corner to corner in one cell: its diagonal
-        let diagonal = geo.cells.iter().filter(|c| c.chain.len() == depth && c.chain.last().is_some_and(|k| k.0 == table)).find(|c| {
-            let r = c.rect;
-            let (tx, ty) = (REACH.max(0.25 * (r[2] - r[0])), REACH.max(0.25 * (r[3] - r[1])));
-            let near = |p: [f64; 2], x: f64, y: f64| (p[0] - x).abs() <= tx && (p[1] - y).abs() <= ty;
-            let opposite = |p: [f64; 2], q: [f64; 2]| (near(p, r[0], r[1]) && near(q, r[2], r[3])) || (near(p, r[2], r[1]) && near(q, r[0], r[3]));
-            // Across and down the cell both, not along a short row or a narrow column
-            let slanted = dx.abs() >= 0.5 * (r[2] - r[0]) && dy.abs() >= 0.5 * (r[3] - r[1]);
-            slanted && (opposite(a, b) || opposite(b, a))
-        });
+        let diagonal = diagonal_cell(&geo, table, depth, a, b);
         if let Some(&(_, row, k)) = diagonal.and_then(|c| c.chain.last()) {
             return self.draw_diagonal(table, (row, k), (dx > 0.0) == (dy > 0.0), fonts);
         }
@@ -469,7 +549,7 @@ impl Editor {
         let Some(at) = self.hit(x, y, fonts) else { return Outcome::unavailable("no text there") };
         let Some((para, _)) = at.para_offset() else { return Outcome::unavailable("no text there") };
         let start = Position::text(at.story, para, Unit(0));
-        if let Some(e) = self.edit_refusal_at(CommandId::InsertTable, &start) {
+        if let Some(e) = self.edit_refusal_at(CommandId::DrawTableStroke, &start) {
             return Outcome::Refused(e);
         }
         self.selection = Selection::Caret(start);
@@ -499,32 +579,10 @@ impl Editor {
     /// The Eraser: touching the border between two cells merges them.
     pub fn erase_table_border(&mut self, page: usize, at: [f64; 2], fonts: &Fonts) -> Outcome {
         let Some(geo) = self.laid_page(page, fonts) else { return Outcome::unavailable("no such page") };
-        let ctx = self.editing();
-        let near = |v: f64, w: f64| (v - w).abs() <= REACH;
-        let within = |v: f64, lo: f64, hi: f64| v > lo + REACH && v < hi - REACH;
-        // The cells the point is in or on the edge of: a handful, however big the page's tables
-        let touched = || geo.cells.iter().filter(|c| touches(&geo, ctx, c, at));
-        // The two cells either side of the touched border, the first left of or above the second, innermost first
-        let pair = touched()
-            .filter_map(|a| {
-                let p = a.turn.back(at);
-                let key = *a.chain.last()?;
-                let b = touched().find(|b| {
-                    let Some(other) = b.chain.last() else { return false };
-                    other.0 == key.0
-                        && *other != key
-                        && b.chain.len() == a.chain.len()
-                        && ((near(a.rect[2], p[0]) && near(b.rect[0], p[0]) && within(p[1], a.rect[1].max(b.rect[1]), a.rect[3].min(b.rect[3])))
-                            || (near(a.rect[3], p[1]) && near(b.rect[1], p[1]) && within(p[0], a.rect[0].max(b.rect[0]), a.rect[2].min(b.rect[2]))))
-                })?;
-                let across = near(a.rect[2], p[0]) && near(b.rect[0], p[0]);
-                let off = if across { (a.rect[2] - p[0]).abs() } else { (a.rect[3] - p[1]).abs() };
-                Some((a.chain.len(), off, key, *b.chain.last()?, across))
-            })
-            // The deepest, then the nearest edge
-            .max_by(|x, y| x.0.cmp(&y.0).then(y.1.total_cmp(&x.1)));
-        let Some((_, _, (table, ra, ka), (_, rb, kb), across)) = pair else { return Outcome::unavailable("no border between two cells there") };
-        if let Some(e) = self.table_edit_refusal(table, CommandId::MergeCells) {
+        let Some(((table, ra, ka), (rb, kb), across, _)) = erase_pair(&geo, self.editing(), at) else {
+            return Outcome::unavailable("no border between two cells there");
+        };
+        if let Some(e) = self.table_edit_refusal(table, CommandId::EraseTableBorder) {
             return Outcome::Refused(e);
         }
         let Some(t) = self.index.table(&self.doc, table) else { return Outcome::unavailable("not in a table") };
@@ -553,5 +611,125 @@ impl Editor {
         }
         self.set_selection(cells);
         self.merge_cells(fonts)
+    }
+}
+
+impl Editor {
+    /// What the pen stroke `s` would draw, and where on its page (points): a line snapped to the stroke's main
+    /// direction, a cell's diagonal, or a new table's outline; `None` for a stroke too short to draw or off the pages.
+    pub fn table_stroke_preview(&mut self, s: Stroke, fonts: &Fonts) -> Option<(StrokeKind, [f64; 2], [f64; 2])> {
+        if (s.to[0] - s.from[0]).hypot(s.to[1] - s.from[1]) < MIN_STROKE {
+            return None;
+        }
+        let mid = [(s.from[0] + s.to[0]) / 2.0, (s.from[1] + s.to[1]) / 2.0];
+        let geo = self.laid_page(s.page, fonts)?;
+        let Some(cell) = cell_near(&geo, self.editing(), mid) else {
+            let (a, b) = (s.from, s.to);
+            return Some((StrokeKind::Outline, [a[0].min(b[0]), a[1].min(b[1])], [a[0].max(b[0]), a[1].max(b[1])]));
+        };
+        let &(table, ..) = cell.chain.last()?;
+        let (a, b) = (cell.turn.back(s.from), cell.turn.back(s.to));
+        if diagonal_cell(&geo, table, cell.chain.len(), a, b).is_some() {
+            return Some((StrokeKind::Diagonal, s.from, s.to));
+        }
+        let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+        let (a, b) = match dx.abs() >= dy.abs() {
+            true => {
+                let y = (a[1] + b[1]) / 2.0;
+                ([a[0], y], [b[0], y])
+            }
+            false => {
+                let x = (a[0] + b[0]) / 2.0;
+                ([x, a[1]], [x, b[1]])
+            }
+        };
+        Some((StrokeKind::Line, cell.turn.at(a), cell.turn.at(b)))
+    }
+
+    /// The border the eraser at page point `at` would remove: its ends on the page (points); `None` where
+    /// [`Editor::erase_table_border`] finds no border between two cells.
+    pub fn eraser_target(&mut self, page: usize, at: [f64; 2], fonts: &Fonts) -> Option<([f64; 2], [f64; 2])> {
+        let geo = self.laid_page(page, fonts)?;
+        let (_, _, _, [a, b]) = erase_pair(&geo, self.editing(), at)?;
+        Some((a, b))
+    }
+
+    /// The pointer's table tool.
+    pub fn table_tool(&self) -> crate::api::command::TableTool {
+        self.table_tool
+    }
+
+    /// Turns a table tool on or off: while one is on, a press and drag on a page draws or erases instead of
+    /// selecting.
+    pub fn set_table_tool(&mut self, tool: crate::api::command::TableTool) {
+        self.table_tool = tool;
+        if self.tool_drag.take().is_some() {
+            self.requests.push(super::input::Request::ReleasePointer);
+        }
+    }
+
+    /// The pen stroke being dragged: what it would draw and where (see [`Editor::table_stroke_preview`]).
+    pub fn table_tool_stroke(&mut self, fonts: &Fonts) -> Option<(usize, StrokeKind, [f64; 2], [f64; 2])> {
+        let d = self.tool_drag.filter(|_| self.table_tool == crate::api::command::TableTool::Pen)?;
+        let (kind, a, b) = self.table_stroke_preview(Stroke { page: d.page, from: d.from, to: d.now }, fonts)?;
+        Some((d.page, kind, a, b))
+    }
+
+    /// The border under the pointer the eraser would remove: its page and ends (see [`Editor::eraser_target`]).
+    pub fn table_eraser_hover(&mut self, fonts: &Fonts) -> Option<(usize, [f64; 2], [f64; 2])> {
+        if self.table_tool != crate::api::command::TableTool::Eraser {
+            return None;
+        }
+        let (x, y) = self.hover?;
+        let (page, px, py) = self.stack().page_at(x, y)?;
+        let (a, b) = self.eraser_target(page, [px, py], fonts)?;
+        Some((page, a, b))
+    }
+
+    /// A press while a table tool is on: the pen starts a stroke, the eraser erases the border there (true: the
+    /// press is taken).
+    pub(super) fn table_tool_press(&mut self, x: f64, y: f64, fonts: &Fonts) -> bool {
+        use crate::api::command::TableTool;
+        if self.table_tool == TableTool::None {
+            return false;
+        }
+        let Some((page, px, py)) = self.stack().page_at(x, y) else { return true };
+        self.tool_drag = Some(ToolDrag { page, from: [px, py], now: [px, py] });
+        self.requests.push(super::input::Request::CapturePointer);
+        if self.table_tool == TableTool::Eraser {
+            let _ = self.erase_table_border(page, [px, py], fonts);
+        }
+        true
+    }
+
+    /// The pointer moved while a tool is pressed: the pen's stroke follows it, the eraser erases what it touches.
+    pub(super) fn table_tool_move(&mut self, x: f64, y: f64, fonts: &Fonts) -> bool {
+        let Some(d) = self.tool_drag else { return false };
+        let (ox, oy) = self.stack().to_doc(d.page, 0.0, 0.0).unwrap_or((0.0, 0.0));
+        let now = [x - ox, y - oy];
+        self.tool_drag = Some(ToolDrag { now, ..d });
+        if self.table_tool == crate::api::command::TableTool::Eraser {
+            let _ = self.erase_table_border(d.page, now, fonts);
+        }
+        true
+    }
+
+    /// The tool let go: the pen draws its stroke.
+    pub(super) fn table_tool_release(&mut self, fonts: &Fonts) -> bool {
+        let Some(d) = self.tool_drag.take() else { return false };
+        self.requests.push(super::input::Request::ReleasePointer);
+        if self.table_tool == crate::api::command::TableTool::Pen {
+            let _ = self.draw_table_stroke(Stroke { page: d.page, from: d.from, to: d.now }, fonts);
+        }
+        true
+    }
+
+    /// The tool's drag cancelled: nothing drawn.
+    pub(super) fn table_tool_cancel(&mut self) -> bool {
+        let dragging = self.tool_drag.take().is_some();
+        if dragging {
+            self.requests.push(super::input::Request::ReleasePointer);
+        }
+        dragging
     }
 }

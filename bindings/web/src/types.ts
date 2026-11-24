@@ -38,6 +38,68 @@ export type HeadingId = string & { readonly [brand]: 'heading' };
 export type MatchId = string & { readonly [brand]: 'match' };
 /** A style. */
 export type StyleId = string & { readonly [brand]: 'style' };
+/**
+ * A paragraph: a decimal string, stable while the document is open and the paragraph exists (a split keeps it on the
+ * first half, a join keeps the first paragraph's), not saved in the file.
+ */
+export type ParagraphId = string & { readonly [brand]: 'paragraph' };
+/**
+ * A floating object: a decimal string, stable while the document is open and the object exists (undo restores it),
+ * not saved in the file.
+ */
+export type FloatId = string & { readonly [brand]: 'float' };
+
+/** A floating object, or one of the objects in a floating group. */
+export interface ObjectId {
+  /** The floating object. */
+  float: FloatId;
+  /** A group child's place: its index in the group, then in each group within it; absent for the floating object. */
+  path?: number[];
+}
+
+/** A point in an object's box, as fractions of its width and height from its top left corner (beyond 0 to 1 outside). */
+export interface BoxPoint {
+  /** Across, from its left edge. */
+  x: number;
+  /** Down, from its top edge. */
+  y: number;
+}
+
+/** A place in a paragraph's text. */
+export interface TextPoint {
+  /** The paragraph. */
+  paragraph: ParagraphId;
+  /**
+   * The offset in the paragraph's text, in Unicode scalar values (not UTF-16 units): a field counts as its result, an
+   * object or a note reference as one U+FFFC, and hidden and deleted text count. Past the end reads as the end.
+   */
+  offset: number;
+}
+
+/** A range of text. State gives the earlier end first; `setSelection` takes the ends either way round. */
+export interface TextRange {
+  /** Where it starts. */
+  start: TextPoint;
+  /** Where it ends. */
+  end: TextPoint;
+}
+
+/** A rectangular block of a table's cells. */
+export interface CellBlock {
+  /** The start of the block's first cell's text: names the table. */
+  start: TextPoint;
+  /** The first row, from 0. */
+  firstRow: number;
+  /** The first grid column, from 0. */
+  firstColumn: number;
+  /** The last row. */
+  lastRow: number;
+  /** The last grid column. */
+  lastColumn: number;
+}
+
+/** The way a line of text runs on the page: across it, or down or up it (vertical text). */
+export type LineDirection = 'horizontal' | 'down' | 'up';
 
 /** A point relative to the browser viewport, in CSS pixels, like `MouseEvent.clientX`. */
 export interface ClientPoint {
@@ -187,6 +249,123 @@ export interface DocumentProperties {
   custom: CustomProperty[];
   /** The document variables. */
   variables: { name: string; value?: string }[];
+}
+
+/** Where the selection is on screen, client px over the pages in view. */
+export interface SelectionBounds {
+  /** Each selected line's or cell's box; empty for a caret. */
+  rects: ClientRect[];
+  /** Each selected object's frame: its box before rotation, the rotation (degrees clockwise), the upright box around it. */
+  frames: { rect: ClientRect; rotation: Degrees; bounds: ClientRect }[];
+  /** The box around every rect and frame; absent when nothing selected is in view. */
+  bounds?: ClientRect;
+}
+
+/** What a drag of the selection out of the editor carries. */
+export interface DragSource {
+  /** The content as a copy puts it on the clipboard: `text/plain`, `text/html` (objects drawn), a dragged object's picture. */
+  data: ClipboardContent;
+  /** The drop may move the text: the selection can be deleted. */
+  canMove: boolean;
+}
+
+/** Clipboard content in the formats the engine reads and writes. */
+export interface ClipboardContent {
+  /** `text/plain`. */
+  text: string;
+  /** `text/html`. */
+  html?: string;
+  /** A token naming the engine's own copy: a paste in any editor of the page keeps everything. */
+  internal?: string;
+  /** A picture: a copy of an object's (`image/png`), or what the clipboard holds (PNG, JPEG, GIF, BMP, TIFF, SVG, EMF, WMF). */
+  image?: { mime: string; data: Uint8Array };
+}
+
+/** A footnote or endnote, as a notes list shows it. */
+export interface NoteInfo {
+  /** Footnote or endnote. */
+  kind: 'footnote' | 'endnote';
+  /** Its id as the document numbers it: stable while the document is open. */
+  id: number;
+  /** Its reference mark: its custom mark, else its number as laid out (empty before layout reaches it). */
+  mark: string;
+  /** Its mark is a custom one. */
+  customMark: boolean;
+  /** Its text, plain (fields as their results), at most 1,024 characters and then `…`. */
+  text: string;
+  /** The page showing its reference; absent while nothing refers to it or layout hasn't reached it. */
+  page?: number;
+}
+
+/** One note separator's text: its plain text (paragraphs `\n` apart), and whether it is the built-in line. */
+export interface NoteSeparatorState {
+  /** Its plain text. */
+  text: string;
+  /** It is the built-in line. */
+  builtin: boolean;
+}
+
+/** The separators of footnotes or endnotes. */
+export interface NoteSeparators {
+  /** Above the notes on the page they start. */
+  separator: NoteSeparatorState;
+  /** Above the notes continued from the page before. */
+  continuationSeparator: NoteSeparatorState;
+  /** Below notes that continue on the next page; absent when there is none. */
+  continuationNotice?: NoteSeparatorState;
+}
+
+/** An editable range, as Restrict Editing lists it: the permissions over one stretch of the document. */
+export interface EditableRangeInfo {
+  /** Its permissions' ids, one per editor. */
+  ids: string[];
+  /** Who may edit it. */
+  editors: ({ group: string } | { user: string })[];
+  /** The page it starts on; absent before layout reaches it. */
+  page?: number;
+}
+
+/**
+ * A page thumbnail: the pixels (RGBA, premultiplied, rows packed, the size asked for: `new ImageData(pixels, w, h)`
+ * draws them), and the size the page is drawn at, centred in them.
+ */
+export interface PageThumbnail {
+  /** The pixels. */
+  pixels: Uint8ClampedArray;
+  /** The page's drawn width. */
+  width: number;
+  /** The page's drawn height. */
+  height: number;
+}
+
+/** The undo and redo lists. */
+export interface HistoryLabels {
+  /** The steps undo would undo, most recent first. */
+  undo: string[];
+  /** The steps redo would redo, next first. */
+  redo: string[];
+  /** There are more undo steps than listed. */
+  moreUndo: boolean;
+  /** There are more redo steps than listed. */
+  moreRedo: boolean;
+}
+
+/** One cell of the theme colour grid. */
+export interface ThemeSwatch {
+  /** The colour as commands take it: the theme colour with its tint or shade. */
+  colour: ColourValue;
+  /** What it shows. */
+  rgb: Color;
+  /** Its name: `'Accent 1'`, `'Accent 1, Lighter 40%'`. */
+  label: string;
+}
+
+/** A column of the theme colour grid: the theme colour, then its five lighter and darker variants. */
+export interface ThemeColumn {
+  /** The theme colour. */
+  theme: ThemeColour;
+  /** The theme colour itself, then its variants, top to bottom. */
+  swatches: ThemeSwatch[];
 }
 
 /** Word, character, paragraph, line and page counts, computed on request. */
@@ -463,8 +642,70 @@ export type FillValue =
   | { type: 'solid'; colour: ColourValue }
   | { type: 'gradient'; kind: GradientShape; angle?: Degrees; stops: GradientStop[]; focus?: [number, number, number, number] }
   | { type: 'pattern'; preset: string; foreground: ColourValue; background: ColourValue }
-  | { type: 'picture'; image: Uint8Array; tile?: boolean }
+  | {
+      type: 'picture';
+      image: Uint8Array;
+      /** Stretched over the box inset by these fractions from each edge (negative: beyond it); ignored when tiled. */
+      stretch?: Insets;
+      /** Tiled instead of stretched (`{}`: at its own size). */
+      tile?: Tile;
+      /** Turns with the shape; default true. */
+      rotateWithShape?: boolean;
+    }
   | { type: 'fromStyle' };
+
+/** Fractions of a box from each edge. */
+export interface Insets {
+  /** From the left edge. */
+  left: number;
+  /** From the top edge. */
+  top: number;
+  /** From the right edge. */
+  right: number;
+  /** From the bottom edge. */
+  bottom: number;
+}
+
+/** A place in a rectangle: a corner, an edge's middle or its centre. */
+export type RectAlign = 'topLeft' | 'top' | 'topRight' | 'left' | 'center' | 'right' | 'bottomLeft' | 'bottom' | 'bottomRight';
+
+/** How tiles mirror their neighbours. */
+export type TileMirror = 'none' | 'horizontal' | 'vertical' | 'both';
+
+/** A picture fill's tiling; what isn't given is the default. */
+export interface Tile {
+  /** The tiles' offset across, −1584 to 1584; default 0. */
+  offsetX?: Points;
+  /** The tiles' offset down; default 0. */
+  offsetY?: Points;
+  /** The tile's width as a share of the image's own, 0.01 to 100; default 1. */
+  scaleX?: number;
+  /** The tile's height as a share of the image's own; default 1. */
+  scaleY?: number;
+  /** Where the first tile is placed; default `'topLeft'`. */
+  align?: RectAlign;
+  /** How tiles mirror their neighbours; default `'none'`. */
+  mirror?: TileMirror;
+}
+
+/** A picture's recolouring (Picture Color, Recolor). */
+export type Recolor =
+  | { kind: 'none' }
+  | { kind: 'grayscale' }
+  | { kind: 'blackAndWhite'; threshold: number }
+  | { kind: 'duotone'; dark: ColourValue; light: ColourValue };
+
+/** A picture's adjustments as they read. */
+export interface PictureAdjustState {
+  /** Lighter (positive, to 1) or darker (to −1). */
+  brightness: number;
+  /** More (positive, to 1) or less contrast (to −1). */
+  contrast: number;
+  /** How see-through it is: 0 opaque to 1 invisible. */
+  transparency: number;
+  /** Its recolouring. */
+  recolor: Recolor;
+}
 
 /** How a line is drawn along its length: one line, two equal ones, thick then thin, thin then thick, or three. */
 export type Compound = 'single' | 'double' | 'thickThin' | 'thinThick' | 'triple';
@@ -545,6 +786,46 @@ export interface Shadow {
   distance: Points;
   /** Which way, clockwise from the right. */
   direction: Degrees;
+  /** An outer shadow's width as a share of the shape's (negative flips it); default 1. An inner shadow ignores it. */
+  scaleX?: number;
+  /** An outer shadow's height as a share of the shape's; default 1. */
+  scaleY?: number;
+  /** An outer shadow's slant across, −90 to 90; default 0. */
+  skewX?: Degrees;
+  /** An outer shadow's slant down; default 0. */
+  skewY?: Degrees;
+  /** The point its scale and skew are about; default `'bottom'`. */
+  align?: RectAlign;
+  /** An outer shadow turns with the shape; default false. */
+  rotateWithShape?: boolean;
+}
+
+/** A reflection: the shape mirrored beside itself, fading away from it. */
+export interface Reflection {
+  /** How much of the shape shows before it has faded away, 0 to 1. */
+  size: number;
+  /** How see-through it is where it starts, 0 to 1. */
+  transparency: number;
+  /** How far it blurs, 0 to 100; default 0. */
+  blur?: Points;
+  /** How far from the shape, 0 to 1584; default 0. */
+  distance?: Points;
+  /** Which way it is offset, clockwise from the right; default 90 (below). */
+  direction?: Degrees;
+  /** Which way it fades; default 90. */
+  fadeDirection?: Degrees;
+  /** Its width as a share of the shape's (negative flips it); default 1. */
+  scaleX?: number;
+  /** Its height as a share of the shape's; default −1 (flipped top to bottom). */
+  scaleY?: number;
+  /** Its slant across; default 0. */
+  skewX?: Degrees;
+  /** Its slant down; default 0. */
+  skewY?: Degrees;
+  /** The point its scale and skew are about; default `'bottomLeft'`. */
+  align?: RectAlign;
+  /** It turns with the shape; default false. */
+  rotateWithShape?: boolean;
 }
 
 /** A glow. */
@@ -567,6 +848,8 @@ export interface EffectsValue {
   softEdge?: Points;
   /** The whole shape blurred by this radius. */
   blur?: Points;
+  /** A reflection. */
+  reflection?: Reflection;
 }
 
 /** `setShapeEffects`'s change: each effect given replaces that effect, `null` removes it, what isn't given is kept. */
@@ -581,6 +864,8 @@ export interface EffectsChange {
   softEdge?: Points | null;
   /** The whole shape blurred by this radius. */
   blur?: Points | null;
+  /** A reflection. */
+  reflection?: Reflection | null;
 }
 
 /** A text outline: an outline without arrowheads. */
@@ -731,6 +1016,8 @@ export interface ShapeTextState {
   direction: TextDirection;
   /** Its columns. */
   columns: TextColumns;
+  /** The text stays upright when the shape turns ("Do not rotate text within shape"). */
+  upright: boolean;
 }
 
 /** A text box's text columns: 1 to 16, 0 to 1584 apart. */
@@ -755,6 +1042,8 @@ export interface ShapeTextChange {
   direction?: TextDirection;
   /** Its columns. */
   columns?: TextColumns;
+  /** The text stays upright when the shape turns. */
+  upright?: boolean;
 }
 
 /** `setPictureAdjust`'s change; what isn't given is kept. */

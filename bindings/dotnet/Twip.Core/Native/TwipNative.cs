@@ -23,6 +23,8 @@ internal struct TwipFrameInfo
     public double CaretHeight;
     public uint CaretVisible;
     public uint Pages;
+    public double CaretWidth;
+    public uint CaretLine;
 }
 
 /// <summary>Callback kinds, engine to SDK.</summary>
@@ -137,6 +139,49 @@ internal enum Method : uint
     CharacterPicture = 96,
     Bookmarks = 97,
     DocumentProperties = 98,
+    WordAtSelection = 99,
+    SelectionBounds = 100,
+    DragOut = 101,
+    DragEnd = 102,
+    DropDragged = 103,
+    SetDefaultPictureWrap = 104,
+    DefaultPictureWrap = 105,
+    SetClickAndTypeStyle = 106,
+    HistoryLabels = 107,
+    StyleDefinition = 108,
+    BuiltInStyles = 109,
+    DocumentDefaults = 110,
+    ListDefinition = 111,
+    ThemeColourGrid = 112,
+    ObjectList = 113,
+    ObjectImage = 114,
+    ShapeFillImage = 115,
+    WatermarkImage = 116,
+    PageFillImage = 117,
+    TextToTableSize = 118,
+    Notes = 119,
+    NoteSeparators = 120,
+    ColumnPreset = 121,
+    PageNumberSample = 122,
+    RecommendedMinimumStyles = 123,
+    EditableRanges = 124,
+    FieldCatalogue = 125,
+    FieldFormats = 126,
+    ComposeField = 127,
+    ParseField = 128,
+    FieldHere = 129,
+    DateFormats = 130,
+    PageVersions = 131,
+    CurrentHeading = 132,
+    FindHighlightAll = 133,
+    FindClearHighlights = 134,
+    PasteChoices = 135,
+    ClipboardHtml = 136,
+    CrossReferenceTargets = 137,
+    CaptionLabels = 138,
+    TablesOfContents = 139,
+    TocEntries = 140,
+    PasteContent = 141,
 }
 
 /// <summary>Status codes the C functions return.</summary>
@@ -247,6 +292,9 @@ internal static unsafe partial class TwipNative
 
     [DllImport(Library, EntryPoint = "twip_frame_rgba")]
     public static extern int FrameRgba(nint engine, uint session, byte* pixels, uint width, uint height, TwipFrameInfo* info);
+
+    [DllImport(Library, EntryPoint = "twip_page_thumbnail")]
+    public static extern int PageThumbnail(nint engine, uint session, uint page, byte* pixels, nuint len, uint width, uint height, uint* outWidth, uint* outHeight);
 
     [DllImport(Library, EntryPoint = "twip_attach_window")]
     public static extern int AttachWindow(nint engine, uint session, nint hwnd);

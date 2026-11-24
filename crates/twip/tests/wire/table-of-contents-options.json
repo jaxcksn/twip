@@ -1,0 +1,37 @@
+[
+  {
+    "bookmark": "Part1",
+    "chapterNumbers": {
+      "separator": "-",
+      "sequence": "Chapter"
+    },
+    "entryFields": {
+      "identifier": "F",
+      "levels": {
+        "from": 1,
+        "to": 2
+      }
+    },
+    "headingLevels": {
+      "from": 1,
+      "to": 3
+    },
+    "hideInWebView": true,
+    "hyperlinks": true,
+    "outlineLevels": true,
+    "pageNumbers": {
+      "omitLevels": {
+        "from": 3,
+        "to": 3
+      }
+    },
+    "separator": " ",
+    "styleLevels": [
+      {
+        "level": 1,
+        "style": "Title"
+      }
+    ]
+  },
+  {}
+]

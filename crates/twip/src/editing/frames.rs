@@ -24,6 +24,7 @@ use crate::layout::{FloatId, ParaId, Unit};
 pub fn properties(fr: &FramePr) -> FrameProperties {
     let pt = |v: Option<f64>| Points(v.unwrap_or(0.0));
     FrameProperties {
+        allow_overlap: None,
         wrap: if matches!(fr.wrap.as_deref(), Some("notBeside" | "none")) { FrameWrap::None } else { FrameWrap::Around },
         width_rule: if fr.w.is_some_and(|w| w > 0.0) { FrameWidthRule::Exactly } else { FrameWidthRule::Auto },
         width: pt(fr.w),
@@ -215,18 +216,13 @@ impl Editor {
         Some((blocks, first.flatten()))
     }
 
-    /// Sets the frame's properties on each of its paragraphs, and places it by them.
-    pub(super) fn set_frame(&mut self, props: FrameProperties, fonts: &Fonts) -> Outcome {
-        self.set_frame_as(props, None, "Frame", fonts)
-    }
-
     /// Sets the frame's properties and, given `allow_overlap`, whether it may overlap other frames and floating
     /// objects (`w:suppressOverlap` off on each of its paragraphs), in one undo step ("Frame").
     pub fn set_frame_with_overlap(&mut self, props: FrameProperties, allow_overlap: Option<bool>, fonts: &Fonts) -> Outcome {
         self.set_frame_as(props, allow_overlap, "Frame", fonts)
     }
 
-    /// [`Editor::set_frame`], as one undo step named `label`.
+    /// [`Editor::set_frame_with_overlap`], as one undo step named `label`.
     fn set_frame_as(&mut self, props: FrameProperties, allow_overlap: Option<bool>, label: &'static str, fonts: &Fonts) -> Outcome {
         let overlap = |p: &mut Props, w: &str| match allow_overlap {
             // Off over a style's on.

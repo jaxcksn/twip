@@ -9,6 +9,7 @@ use crate::api::record::Origin;
 use crate::api::services::Popover;
 use crate::api::state::CommandState;
 use crate::api::value::{CommentId, ElementId, Points, TableWidth};
+use crate::editing::commands::Outcome;
 
 use crate::editing::commands::bounds::{MAX, length, within};
 
@@ -101,6 +102,8 @@ impl Session {
             // Paste: this editor's copy or another session's
             let enabled = match command {
                 Command::Paste(_) => self.editor.clipboard().is_some() || self.shared.clipboard.borrow().is_some(),
+                // Space or X on a selected legacy check box fills it in where typing isn't allowed
+                Command::InsertText(t) if matches!(t.as_str(), " " | "x" | "X") && self.editor.selected_form_check_box().is_some() => true,
                 _ => self.state.commands.get(&id).is_none_or(|s| s.enabled),
             };
             if !enabled {
@@ -121,7 +124,7 @@ impl Session {
                 let last = if self.state.pages.complete { f64::from(self.state.pages.count.max(1)) } else { f64::MAX };
                 within("the page", f64::from(*p), 1.0, last)
             }
-            C::SetFont(f) => text("the font", f),
+            C::SetFont(crate::api::command::FontChoice::Name(f)) => text("the font", f),
             C::SetLanguage(l) => match &l.language {
                 Some(tag) if tag.is_empty() || tag.len() > 35 || !tag.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') => {
                     Err(Error::invalid("the language is a BCP 47 tag"))
@@ -129,7 +132,8 @@ impl Session {
                 _ => Ok(()),
             },
             C::SetStyleMeta(m) => {
-                if self.editor.document().resolver.as_ref().is_some_and(|r| r.styles.by_id.contains_key(&m.id.0)) {
+                let built_in = crate::services::styles::builtin::BUILT_IN.iter().any(|b| b.id == m.id.0);
+                if built_in || self.editor.document().resolver.as_ref().is_some_and(|r| r.styles.by_id.contains_key(&m.id.0)) {
                     Ok(())
                 } else {
                     Err(Error::invalid(format!("no style {}", m.id.0)))
@@ -214,6 +218,19 @@ impl Session {
                 Err(Error::invalid("a bookmark name starts with a letter and holds letters, digits and underscores, 40 at most"))
             }
             C::GoToBookmark(n) if !n.eq_ignore_ascii_case("_top") && self.editor.bookmark(n).is_none() => Err(Error::invalid("no such bookmark")),
+            C::GoTo(g) => {
+                use crate::api::command::{GoToTarget as T, GoToWhat as W};
+                match (g.what, g.target, g.name.as_deref().map(str::trim)) {
+                    (_, T::Absolute(0), _) => Err(Error::invalid("numbers count from 1")),
+                    (_, T::Relative(0), _) => Err(Error::invalid("no move")),
+                    (W::Bookmark, T::Absolute(_), Some(n))
+                        if !n.is_empty() && !n.eq_ignore_ascii_case("_top") && self.editor.bookmark(n).is_none() =>
+                    {
+                        Err(Error::invalid("no such bookmark"))
+                    }
+                    _ => Ok(()),
+                }
+            }
             C::DeleteBookmark(n) if self.editor.bookmark(n).is_none() => Err(Error::invalid("no such bookmark")),
             C::EditHyperlink(h) => h.address.as_deref().map_or(Ok(()), |a| text("the address", a)),
             C::InsertRows(r) => count("the rows", r.count, 32767),
@@ -322,8 +339,9 @@ impl Session {
             C::SetCheckbox(c) => self.known_element(&c.id),
             C::FillControl(f) => {
                 self.known_element(&f.id)?;
-                if [f.text.is_some(), f.image.is_some(), f.docx.is_some()].iter().filter(|x| **x).count() != 1 {
-                    return Err(Error::invalid("give exactly one of text, image and docx"));
+                let given = [f.text.is_some(), f.image.is_some(), f.docx.is_some(), f.building_block.is_some(), f.date.is_some()];
+                if given.iter().filter(|x| **x).count() != 1 {
+                    return Err(Error::invalid("give exactly one of text, image, docx, buildingBlock and date"));
                 }
                 f.image.as_ref().map_or(Ok(()), |i| picture(&i.0))
             }
@@ -394,6 +412,11 @@ impl Session {
         set(&mut a.dashes, c.dashes);
         set(&mut a.numbered_lists, c.numbered_lists);
         set(&mut a.bulleted_lists, c.bulleted_lists);
+        set(&mut a.border_lines, c.border_lines);
+        set(&mut a.internet_paths, c.internet_paths);
+        if let Some(on) = c.tab_indents {
+            (self.tab_indents, self.editor.indent_keys) = (on, on);
+        }
         if let Some(e) = &c.entries {
             a.entries = Some(e.iter().map(|e| (e.from.clone(), e.to.clone())).collect());
         }
@@ -431,8 +454,39 @@ impl Session {
                 if let Some(g) = v.gridlines {
                     self.gridlines = g;
                 }
-                if let Some(m) = v.formatting_marks {
-                    self.formatting_marks = m;
+                let m = &mut self.marks;
+                for (to, from) in [
+                    (&mut m.all, v.formatting_marks),
+                    (&mut m.tabs, v.tab_characters),
+                    (&mut m.spaces, v.spaces),
+                    (&mut m.paragraphs, v.paragraph_marks),
+                    (&mut m.hidden, v.hidden_text),
+                    (&mut m.optional_hyphens, v.optional_hyphens),
+                    (&mut m.anchors, v.object_anchors),
+                ] {
+                    if let Some(on) = from {
+                        *to = on;
+                    }
+                }
+                let fonts = self.fonts.fonts();
+                if matches!(self.editor.set_mark_options(self.marks), Outcome::Moved) {
+                    // Hidden text and optional hyphens lay the document out again.
+                    self.editor.ensure_current(&fonts);
+                    self.presentation.want_frame();
+                }
+                drop(fonts);
+                if let Some(c) = v.click_and_type {
+                    self.click_and_type = c;
+                    self.editor.set_click_and_type(c);
+                }
+                if let Some(d) = v.text_drag_and_drop {
+                    self.text_drags = d;
+                    self.editor.set_text_drag_and_drop(d);
+                }
+                if let Some(h) = v.hide_white_space
+                    && matches!(self.editor.set_white_space_hidden(h), Outcome::Moved)
+                {
+                    self.presentation.want_frame();
                 }
                 if let Some(b) = v.text_boundaries {
                     self.text_boundaries = b;
@@ -442,6 +496,10 @@ impl Session {
                 }
                 if let Some(b) = v.bookmarks {
                     self.show_bookmarks = b;
+                }
+                if let Some(r) = v.show_editable_regions {
+                    self.show_editable_regions = r;
+                    self.presentation.want_frame();
                 }
                 if let Some(o) = &v.cursor_overrides {
                     self.cursor_overrides.clone_from(o);
@@ -494,18 +552,50 @@ impl Session {
                 return Some(Ok(Commit { record: None, value: None }));
             }
             Command::ShowTabStop => {
-                let x = self.host().caret_client_point().client_x;
-                if let Some(p) = self.nearest_tab_stop(x).and_then(|at| self.tab_stop_popover(at)) {
+                let caret = self.host().caret_client_point();
+                if let Some(p) = self.nearest_tab_stop(caret).and_then(|at| self.tab_stop_popover(at)) {
                     self.show_popover(p);
                 }
                 return Some(Ok(Commit { record: None, value: None }));
             }
             Command::SetAutoCorrect(c) => self.set_auto_correct(c),
+            Command::SetPasteOptions(c) => {
+                if let Outcome::Refused(e) = self.editor.set_paste_options(c) {
+                    return Some(Err(e));
+                }
+                self.paste_defaults = self.editor.paste_defaults();
+            }
+            Command::SetAutoCaption(c) => {
+                if let Outcome::Refused(e) = self.editor.set_auto_caption_api(c.as_ref()) {
+                    return Some(Err(e));
+                }
+                self.auto_caption = self.editor.auto_caption().cloned();
+            }
+            Command::DismissPasteOptions => {
+                self.editor.dismiss_paste_options();
+                self.close_popover();
+            }
             Command::ShowAutoCorrectOptions => {
                 if let Some(p) = self.auto_correct_popover() {
                     self.show_popover(p);
                 }
                 return Some(Ok(Commit { record: None, value: None }));
+            }
+            Command::NeverAutoCorrect if self.editor.auto_format_change().is_some() => {
+                use crate::editing::CorrectionKind as K;
+                let said = match self.editor.auto_format_change().map(|c| &c.kind) {
+                    Some(K::Hyperlink) => "Won\u{2019}t create hyperlinks automatically",
+                    Some(K::BorderLine { .. }) => "Won\u{2019}t create border lines automatically",
+                    _ => "Won\u{2019}t set indents with tabs and backspaces",
+                };
+                self.close_popover();
+                let mut ac = std::mem::take(&mut self.autocorrect);
+                let done = self.apply_with(Origin::Api, |e, fonts| e.stop_auto_format(&mut ac, fonts));
+                self.autocorrect = ac;
+                self.tab_indents = self.editor.indent_keys;
+                self.services.said.push((crate::api::services::AnnouncementKind::Command, said.into()));
+                self.changed(Vec::new());
+                return Some(done);
             }
             Command::RevertAutoCorrect | Command::NeverAutoCorrect => {
                 let never = matches!(command, Command::NeverAutoCorrect);

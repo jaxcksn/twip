@@ -16,6 +16,7 @@ use crate::api::services::{
 };
 use crate::api::state::{CharacterFormatting, ParagraphFormatting, State, Tri};
 use crate::api::value::{NoneOr, Orientation, Points};
+use crate::editing::commands::rgb_value;
 
 /// What a dialog shows besides the state: the selected text, the document's accessibility issues and the font
 /// families.
@@ -734,7 +735,7 @@ pub fn manage_styles_model(v: crate::api::services::ManageStylesDialog) -> Dialo
 /// Borders and Shading's model for its values.
 /// Borders and Shading's model; `in_table`: the selection is in a table (a style's never is).
 pub fn borders_shading_model(v: BordersShadingDialog, in_table: bool) -> DialogModel {
-    let values = DialogValues::BordersShading(v);
+    let values = DialogValues::BordersShading(Box::new(v));
     DialogModel { kind: DialogKind::BordersShading, fields: fields(&values, &Context { in_table, ..Context::default() }), values, on_style: None }
 }
 
@@ -995,7 +996,7 @@ pub fn borders_shading_commands(start: &BordersShadingDialog, now: &BordersShadi
     let mut out = Vec::new();
     let edges = |v: &BordersShadingDialog| (v.top.clone(), v.bottom.clone(), v.left.clone(), v.right.clone(), v.between.clone());
     let shadow = |v: &BordersShadingDialog| v.setting == BorderSetting::Shadow;
-    let pen = crate::api::command::Border { style: now.style, width: now.width, color: now.color };
+    let pen = crate::api::command::Border { style: now.style, width: now.width, color: rgb_value(now.color), space: None, shadow: None };
     if now.apply_to == ShadingTarget::Text && (edges(start) != edges(now) || shadow(start) != shadow(now)) {
         let border = (now.setting != BorderSetting::None).then_some(now.top.clone().unwrap_or(pen));
         out.push(Command::SetTextBorder(crate::api::command::TextBorderChange { border, shadow: shadow(now) }));
@@ -1034,11 +1035,16 @@ pub fn borders_shading_commands(start: &BordersShadingDialog, now: &BordersShadi
             apply_to: now.page_apply_to,
             surround_header: None,
             surround_footer: None,
+            behind_text: None,
         }));
     }
     let shading = |v: &BordersShadingDialog| (v.apply_to, v.fill, v.pattern, v.pattern_color);
     if shading(start) != shading(now) {
-        out.push(Command::SetShading(ShadingChange { target: now.apply_to, fill: now.fill, pattern: now.pattern, color: now.pattern_color }));
+        let fill = match now.fill {
+            crate::api::value::NoneOr::Value(c) => crate::api::value::NoneOr::Value(crate::api::drawing::ColourValue::rgb(c)),
+            crate::api::value::NoneOr::None => crate::api::value::NoneOr::None,
+        };
+        out.push(Command::SetShading(ShadingChange { target: now.apply_to, fill, pattern: now.pattern, color: rgb_value(now.pattern_color) }));
     }
     out
 }
@@ -1128,7 +1134,7 @@ pub fn update(model: &DialogModel, values: DialogValues, cx: &Context) -> Result
         }
         (DialogValues::BordersShading(was), DialogValues::BordersShading(mut v)) => {
             // A setting sets the edges with the line; an edge set one by one makes the setting.
-            let pen = crate::api::command::Border { style: v.style, width: v.width, color: v.color };
+            let pen = crate::api::command::Border { style: v.style, width: v.width, color: rgb_value(v.color), space: None, shadow: None };
             if v.setting != was.setting {
                 let boxed = matches!(v.setting, BorderSetting::Box | BorderSetting::Shadow).then_some(pen.clone());
                 if v.setting != BorderSetting::Custom {
@@ -1153,7 +1159,8 @@ pub fn update(model: &DialogModel, values: DialogValues, cx: &Context) -> Result
             }
             // Text has a box only: a custom setting is a box, the pen's.
             if v.apply_to == ShadingTarget::Text && v.setting == BorderSetting::Custom {
-                let boxed = Some(crate::api::command::Border { style: v.style, width: v.width, color: v.color });
+                let boxed =
+                    Some(crate::api::command::Border { style: v.style, width: v.width, color: rgb_value(v.color), space: None, shadow: None });
                 (v.setting, v.top, v.bottom, v.left, v.right, v.between) =
                     (BorderSetting::Box, boxed.clone(), boxed.clone(), boxed.clone(), boxed, None);
             }
@@ -1273,7 +1280,7 @@ fn check(ok: bool, what: &str) -> Result<(), Error> {
 pub fn font_commands(v: &FontDialog, n: &FontDialog, out: &mut Vec<Command>) -> Result<(), Error> {
     if let Some(f) = set(&v.font, &n.font) {
         check(!f.trim().is_empty(), "font needs a name")?;
-        out.push(Command::SetFont(f.trim().to_string()));
+        out.push(Command::SetFont(crate::api::command::FontChoice::Name(f.trim().to_string())));
     }
     if let Some(s) = set(&v.size, &n.size) {
         check((1.0..=1638.0).contains(&s.0), "size is 1 to 1638 points")?;
@@ -1283,7 +1290,7 @@ pub fn font_commands(v: &FontDialog, n: &FontDialog, out: &mut Vec<Command>) -> 
         let (b, i) = (matches!(style, FontStyle::Bold | FontStyle::BoldItalic), matches!(style, FontStyle::Italic | FontStyle::BoldItalic));
         out.extend([Command::SetBold(b), Command::SetItalic(i)]);
     }
-    out.extend(set(&v.color, &n.color).map(Command::SetFontColor));
+    out.extend(set(&v.color, &n.color).map(|c| Command::SetFontColor(rgb_value(c))));
     out.extend(set(&v.underline, &n.underline).map(Command::SetUnderline));
     out.extend(set(&v.strikethrough, &n.strikethrough).map(Command::SetStrikethrough));
     out.extend(set(&v.double_strikethrough, &n.double_strikethrough).map(Command::SetDoubleStrikethrough));
@@ -1294,7 +1301,7 @@ pub fn font_commands(v: &FontDialog, n: &FontDialog, out: &mut Vec<Command>) -> 
     out.extend(set(&v.hidden, &n.hidden).map(Command::SetHidden));
     out.extend(set(&v.character_spacing, &n.character_spacing).map(Command::SetCharacterSpacing));
     out.extend(set(&v.position, &n.position).map(Command::SetCharacterPosition));
-    out.extend(set(&v.underline_color, &n.underline_color).map(Command::SetUnderlineColor));
+    out.extend(set(&v.underline_color, &n.underline_color).map(|c| Command::SetUnderlineColor(rgb_value(c))));
     let effects = crate::api::command::CharacterEffects {
         emboss: set(&v.emboss, &n.emboss),
         engrave: set(&v.engrave, &n.engrave),
@@ -1312,6 +1319,8 @@ pub fn font_commands(v: &FontDialog, n: &FontDialog, out: &mut Vec<Command>) -> 
         number_form: set(&v.number_form, &n.number_form),
         stylistic_set: set(&v.stylistic_set, &n.stylistic_set),
         contextual_alternates: set(&v.contextual_alternates, &n.contextual_alternates),
+        ligature_flags: None,
+        stylistic_sets: None,
     };
     if let Some(s) = typography.scale {
         check((1.0..=600.0).contains(&s), "scale is 1 to 600 percent")?;
@@ -1401,19 +1410,18 @@ pub fn commands(values: &DialogValues, state: &State, cx: &Context) -> Result<Ve
             }
             check(v.left.0 + v.right.0 + v.gutter.0 < v.width.0, "the margins leave no room on the page")?;
             check(v.width.0 >= 72.0 && v.height.0 >= 72.0, "the paper is at least 72 points each way")?;
-            // shortcut: the whole document isn't offered; page setup applies to the selection's sections, and every
-            // section would need its own commands.
-            check(v.apply_to != crate::api::services::ApplyTo::WholeDocument, "page setup applies to this section or from this point")?;
+            // From this point on: one new-page section break, then the commands for the section it starts.
+            let apply_to = (v.apply_to == crate::api::services::ApplyTo::WholeDocument).then_some(v.apply_to);
             if v.apply_to == crate::api::services::ApplyTo::ThisPointForward {
                 out.push(Command::InsertSectionBreak(crate::api::command::SectionBreakKind::NextPage));
             }
             if v.orientation != n.orientation {
-                out.push(Command::SetOrientation(v.orientation));
+                out.push(Command::SetOrientation(crate::api::command::SectionValue { value: v.orientation, apply_to }));
             }
             // The orientation swapped the sides already.
             let (w, h) = if v.orientation != n.orientation { (n.height, n.width) } else { (n.width, n.height) };
             if (v.width, v.height) != (w, h) {
-                out.push(Command::SetPaperSize(PaperSize { width: v.width, height: v.height }));
+                out.push(Command::SetPaperSize(PaperSize { width: v.width, height: v.height, apply_to }));
             }
             let m = Margins {
                 top: changed(v.top, n.top),
@@ -1421,13 +1429,17 @@ pub fn commands(values: &DialogValues, state: &State, cx: &Context) -> Result<Ve
                 left: changed(v.left, n.left),
                 right: changed(v.right, n.right),
                 gutter: changed(v.gutter, n.gutter),
+                apply_to,
             };
-            if m != Margins::default() {
+            if m != (Margins { apply_to, ..Margins::default() }) {
                 out.push(Command::SetMargins(m));
             }
-            let d =
-                HeaderFooterDistance { header: changed(v.header_distance, n.header_distance), footer: changed(v.footer_distance, n.footer_distance) };
-            if d != HeaderFooterDistance::default() {
+            let d = HeaderFooterDistance {
+                header: changed(v.header_distance, n.header_distance),
+                footer: changed(v.footer_distance, n.footer_distance),
+                apply_to,
+            };
+            if d != (HeaderFooterDistance { apply_to, ..HeaderFooterDistance::default() }) {
                 out.push(Command::SetHeaderFooterDistance(d));
             }
             if v.different_first_page != n.different_first_page {
@@ -1443,13 +1455,13 @@ pub fn commands(values: &DialogValues, state: &State, cx: &Context) -> Result<Ve
                 }));
             }
             if v.section_start != n.section_start {
-                out.push(Command::SetSectionBreakType(v.section_start));
+                out.push(Command::SetSectionBreakType(crate::api::command::SectionValue { value: v.section_start, apply_to }));
             }
             if v.vertical_alignment != n.vertical_alignment {
-                out.push(Command::SetPageVerticalAlignment(v.vertical_alignment));
+                out.push(Command::SetPageVerticalAlignment(crate::api::command::SectionValue { value: v.vertical_alignment, apply_to }));
             }
             if v.line_numbers != n.line_numbers {
-                out.push(Command::SetLineNumbering(v.line_numbers.clone()));
+                out.push(Command::SetLineNumbering(crate::api::command::SectionValue { value: v.line_numbers.clone(), apply_to }));
             }
         }
         (DialogValues::InsertTable(v), _) => {
@@ -1552,10 +1564,10 @@ pub fn commands(values: &DialogValues, state: &State, cx: &Context) -> Result<Ve
             let text = Some(v.text.trim().to_string()).filter(|t| !t.is_empty());
             if state.selection.link.is_some() {
                 if v != n {
-                    out.push(Command::EditHyperlink(HyperlinkEdit { address: Some(address), text }));
+                    out.push(Command::EditHyperlink(HyperlinkEdit { address: Some(address), text, ..Default::default() }));
                 }
             } else {
-                out.push(Command::InsertHyperlink(Hyperlink { address, text }));
+                out.push(Command::InsertHyperlink(Hyperlink { address, text, ..Default::default() }));
             }
         }
         (DialogValues::Tabs(v), DialogValues::Tabs(n)) => {
@@ -1767,7 +1779,10 @@ mod tests {
         let m = update(&m, DialogValues::PageSetup(v), &cx).expect("updates");
         let DialogValues::PageSetup(v) = &m.values else { panic!() };
         assert_eq!((v.width, v.height), (Points(792.0), Points(612.0)));
-        assert_eq!(commands(&m.values, &state, &cx).expect("valid"), [Command::SetOrientation(Orientation::Landscape)]);
+        assert_eq!(
+            commands(&m.values, &state, &cx).expect("valid"),
+            [Command::SetOrientation(crate::api::command::SectionValue::here(Orientation::Landscape))]
+        );
     }
 
     #[test]

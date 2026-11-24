@@ -1,6 +1,6 @@
 import type { EditorError } from './errors.js';
 import type { FontsState } from './fonts/library.js';
-import type { BalloonPlacement, CommentAnchor } from './review.js';
+import type { BalloonPlacement, CommentAnchor, Person, RevisionAnchor, RevisionInfo } from './review.js';
 import type { AnnouncementKind } from './services/accessibility.js';
 import type { DialogKind } from './services/dialogs.js';
 import type { ElementInfo } from './services/elements.js';
@@ -19,7 +19,7 @@ export interface TwipEvents {
   /** The editor switched between the template and a sub-template, or between sub-templates: where it is now. */
   editingTargetChanged: EditingTarget;
   /** A link was activated: a click when read only, Ctrl+click otherwise. */
-  linkActivated: { address: string; via: 'ctrlClick' | 'click' };
+  linkActivated: { address: string; via: 'ctrlClick' | 'click' | 'menu' };
   /**
    * A picture control was activated: clicked while unfilled, double-clicked or given Enter in editing and read-only
    * modes, or named by `activatePictureControl`.
@@ -60,12 +60,19 @@ export interface TwipEvents {
   elementsChanged: { added: ElementInfo[]; removed: ElementId[]; changed: ElementInfo[] };
   /** Fields the application computes need results: answer with `setFieldResults`. */
   fieldsUpdateRequested: { token: number; fields: { id: ElementId; code: string }[] };
+  /**
+   * F9 (`updateFields` of the selection) with the selection in a table of contents: ask whether to update its page
+   * numbers only or the entire table, then send `updateTableOfContents` with this index. Nothing was updated.
+   */
+  tableOfContentsUpdateRequested: { index: number };
   /** The tracked revisions changed. */
   revisionsChanged: {};
   /** The comments changed. */
   commentsChanged: {};
   /** Mounted only: the visible comments, after layout, zoom or scroll. */
   commentAnchors: CommentAnchor[];
+  /** Mounted only: where the revision balloons go (All Markup with balloons), the shown revisions beside the visible pages. */
+  revisionBalloons: RevisionAnchor[];
   /** Mounted only: the SDK placed the attached balloons. */
   balloonsLaidOut: BalloonPlacement[];
   /** Mounted only: the rulers changed; coalesced per frame. */
@@ -124,7 +131,32 @@ export type HostCommand =
   | 'nextMisspelling'
   | 'focusFont'
   | 'focusFontSize'
-  | 'help';
+  | 'help'
+  /** Ctrl+Shift+S: the Apply Styles box. */
+  | 'applyStyles'
+  /** Ctrl+Alt+Shift+S: the Styles pane. */
+  | 'stylesPane'
+  /** Ctrl+Shift+G: Word Count. */
+  | 'wordCount'
+  /** Ctrl+Shift+F5: the Bookmark dialog. */
+  | 'bookmark'
+  /** Ctrl+Alt+V: Paste Special. */
+  | 'pasteSpecial'
+  /** Shift+F7: the thesaurus, for `menus.wordAtSelection()`. */
+  | 'thesaurus'
+  /** F7: the spelling and grammar pane (Alt+F7 is `nextMisspelling`). */
+  | 'spelling'
+  /** Ctrl+W: close the document. */
+  | 'close'
+  /** Ctrl+F2: print preview. */
+  | 'printPreview'
+  /**
+   * F4 or Alt+Down on a drop-down form field where forms are filled in: open its list (the field is the selection's
+   * element context); `fillFormField` picks an entry.
+   */
+  | 'openFormFieldList'
+  /** Alt+Shift+O: the Mark Table of Contents Entry dialog, for the selection's text; `markTableOfContentsEntry` marks it. */
+  | 'markTableOfContentsEntry';
 
 /** What a press on an element does: `followLink` with Ctrl or Cmd held, or in a read-only editor. */
 export type PressAction = 'toggle' | 'followLink' | 'placeCaret' | 'none';
@@ -162,11 +194,19 @@ export interface ElementSelection {
 /** A hover tooltip to show, over the document or its rulers. */
 export interface Tooltip {
   /** What is hovered. */
-  kind: 'link' | 'mark' | 'revision' | 'comment' | 'ruler';
+  kind: 'link' | 'mark' | 'revision' | 'comment' | 'ruler' | 'note' | 'whiteSpace';
   /** The text to show. */
   text: string;
   /** The pointer. */
   at: ClientPoint;
   /** The hovered thing's box. */
   rect: ClientRect;
+  /** Who made the change or the comment (`revision` and `comment` tips). */
+  author?: Person;
+  /** When, ISO 8601 UTC, when the document gives it (`revision` and `comment` tips). */
+  time?: string;
+  /** The change's kind (`revision` tips). */
+  change?: RevisionInfo['kind'];
+  /** What follows the byline: the change's English description or the comment's text, for a localized tip. */
+  body?: string;
 }

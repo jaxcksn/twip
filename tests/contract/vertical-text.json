@@ -1,0 +1,183 @@
+{
+  "name": "vertical-text",
+  "fonts": "kit",
+  "steps": [
+    {
+      "op": "command",
+      "command": {
+        "type": "setSectionTextDirection",
+        "value": "tbRl"
+      }
+    },
+    {
+      "op": "text",
+      "text": "Alpha beta gamma delta"
+    },
+    {
+      "op": "key",
+      "key": "Enter"
+    },
+    {
+      "op": "text",
+      "text": "Second"
+    },
+    {
+      "op": "key",
+      "key": "Home",
+      "mods": [
+        "ctrl"
+      ]
+    },
+    {
+      "op": "expectState",
+      "match": {
+        "selection": {
+          "page": 1,
+          "empty": true
+        }
+      }
+    },
+    {
+      "op": "key",
+      "key": "ArrowDown"
+    },
+    {
+      "op": "key",
+      "key": "ArrowDown"
+    },
+    {
+      "op": "key",
+      "key": "ArrowUp"
+    },
+    {
+      "op": "key",
+      "key": "End",
+      "mods": [
+        "shift"
+      ]
+    },
+    {
+      "op": "expectState",
+      "match": {
+        "selection": {
+          "kind": "text",
+          "empty": false,
+          "text": "lpha beta gamma delta"
+        }
+      }
+    },
+    {
+      "op": "key",
+      "key": "Home"
+    },
+    {
+      "op": "key",
+      "key": "ArrowDown",
+      "mods": [
+        "shift"
+      ]
+    },
+    {
+      "op": "expectState",
+      "match": {
+        "selection": {
+          "kind": "text",
+          "text": "A"
+        }
+      }
+    },
+    {
+      "op": "key",
+      "key": "Home"
+    },
+    {
+      "op": "key",
+      "key": "ArrowDown"
+    },
+    {
+      "op": "key",
+      "key": "ArrowDown"
+    },
+    {
+      "op": "key",
+      "key": "ArrowLeft"
+    },
+    {
+      "op": "key",
+      "key": "End",
+      "mods": [
+        "shift"
+      ]
+    },
+    {
+      "op": "expectState",
+      "match": {
+        "selection": {
+          "text": "cond"
+        }
+      }
+    },
+    {
+      "op": "key",
+      "key": "ArrowRight"
+    },
+    {
+      "op": "key",
+      "key": "End",
+      "mods": [
+        "shift"
+      ]
+    },
+    {
+      "op": "expectState",
+      "match": {
+        "selection": {
+          "text": "eta gamma delta"
+        }
+      }
+    },
+    {
+      "op": "key",
+      "key": "Home"
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "moveSelection",
+        "by": "line",
+        "direction": "forward"
+      }
+    },
+    {
+      "op": "key",
+      "key": "End",
+      "mods": [
+        "shift"
+      ]
+    },
+    {
+      "op": "expectState",
+      "match": {
+        "selection": {
+          "text": "Second"
+        }
+      }
+    },
+    {
+      "op": "click",
+      "text": "gamma"
+    },
+    {
+      "op": "expectState",
+      "match": {
+        "selection": {
+          "empty": true,
+          "page": 1
+        },
+        "ruler": {
+          "lines": "down"
+        }
+      }
+    }
+  ]
+}

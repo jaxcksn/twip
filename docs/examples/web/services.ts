@@ -26,7 +26,9 @@ export async function findAndReplace(editor: Editor) {
   const query = { text: 'colour', matchCase: false, wholeWords: true };
   const { found, wrapped } = await editor.find.next(query); // selects and reveals the match
   console.log(found, wrapped);
-  for (const match of await editor.find.all(query)) console.log(match.page, `${match.before}[${match.text}]${match.after}`);
+  const { matches, truncated } = await editor.find.all(query);
+  for (const match of matches) console.log(match.page, `${match.before}[${match.text}]${match.after}`);
+  if (truncated) console.log('more matches than the search had time for');
   const { count } = await editor.find.replaceAll(query, 'color'); // one transaction
   console.log(`${count} replaced`);
 }

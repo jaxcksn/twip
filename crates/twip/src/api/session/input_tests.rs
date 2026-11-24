@@ -45,7 +45,7 @@ fn a_composition_shows_at_the_caret_unrecorded_and_commits_as_typing() {
     s.composition(CompositionPhase::End, "\u{4F60}", 1);
     assert_eq!(text(s), "ab\u{4F60}", "the end commits its text");
     assert!(events.borrow().iter().any(|e| matches!(e, Event::DocumentChanged(_))), "as typing");
-    s.run(Command::Undo).expect("undoes");
+    s.run(Command::Undo(Default::default())).expect("undoes");
     assert_eq!(text(s), "ab", "one undo takes the committed text");
 }
 
@@ -82,13 +82,13 @@ fn a_cancelled_composition_keeps_what_can_be_redone() {
     let id = engine.create_session(SessionOptions::default());
     let s = engine.session(id).expect("a session");
     s.run(Command::InsertText("ab".into())).expect("types");
-    s.run(Command::Undo).expect("undoes");
+    s.run(Command::Undo(Default::default())).expect("undoes");
     s.composition(CompositionPhase::Update, "n", 1);
     s.composition(CompositionPhase::Update, "ni", 2);
     s.composition(CompositionPhase::End, "", 0);
     assert_eq!(text(s), "");
     assert!(s.state().history.can_redo, "the typing can be redone");
-    s.run(Command::Redo).expect("redoes");
+    s.run(Command::Redo(Default::default())).expect("redoes");
     assert_eq!(text(s), "ab");
 }
 
@@ -121,7 +121,10 @@ fn html_from_another_application_pastes_formatted() {
     let id = engine.create_session(SessionOptions::default());
     let s = engine.session(id).expect("a session");
     let html = "<p><b>bold</b> plain</p><ul><li>one</li><li>two</li></ul><table><tr><td>a</td><td>b</td></tr></table>";
-    s.paste(&crate::api::input::ClipboardData { text: "bold plain\none\ntwo\na\tb".into(), html: Some(html.into()), internal: None }, false);
+    s.paste(
+        &crate::api::input::ClipboardData { text: "bold plain\none\ntwo\na\tb".into(), html: Some(html.into()), internal: None, image: None },
+        false,
+    );
     let (bold, lists, tables) = s.with_editor(|e| {
         let blocks = &e.document().sections[0].blocks;
         let bold = blocks.iter().any(|b| {
@@ -134,7 +137,7 @@ fn html_from_another_application_pastes_formatted() {
     assert!(bold, "the bold run stays bold");
     assert_eq!(lists, 2, "the items are a list");
     assert_eq!(tables, 1, "the table is a table");
-    s.run(Command::Undo).expect("undoes");
+    s.run(Command::Undo(Default::default())).expect("undoes");
     assert_eq!(text(s), "", "as one step");
 }
 
@@ -145,9 +148,9 @@ fn a_paste_takes_this_sessions_newest_copy() {
     let s = engine.session(id).expect("a session");
     s.run(Command::InsertText("alpha beta".into())).expect("types");
     let find = |text: &str| crate::api::services::FindQuery { text: text.into(), ..Default::default() };
-    s.find(&find("alpha"), crate::api::value::Order::Next);
+    s.find(&find("alpha"), crate::api::value::Order::Next).expect("finds");
     assert_eq!(s.copy(false).map(|c| c.text).as_deref(), Some("alpha"), "the engine's clipboard");
-    s.find(&find("beta"), crate::api::value::Order::Next);
+    s.find(&find("beta"), crate::api::value::Order::Next).expect("finds");
     s.run(Command::Copy).expect("copies");
     s.run(Command::Paste(Default::default())).expect("pastes");
     assert_eq!(text(s), "alpha beta", "the newer copy pasted over itself");
@@ -161,7 +164,7 @@ fn a_pasted_heading_or_list_item_keeps_its_paragraph() {
         let s = engine.session(id).expect("a session");
         let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/editor/FX-EMPTY.docx");
         s.open(&std::fs::read(path).expect("the fixture")).expect("opens");
-        s.paste(&crate::api::input::ClipboardData { text: text.into(), html: Some(html.into()), internal: None }, false);
+        s.paste(&crate::api::input::ClipboardData { text: text.into(), html: Some(html.into()), internal: None, image: None }, false);
         let (style, listed) = s.with_editor(|e| {
             let p = e.document().sections[0]
                 .blocks
@@ -179,4 +182,71 @@ fn a_pasted_heading_or_list_item_keeps_its_paragraph() {
             assert!(listed, "{html}: in a list");
         }
     }
+}
+
+#[test]
+fn a_picture_pasted_over_a_picture_controls_picture_fills_it_under_forms_protection() {
+    use crate::api::input::{ClipboardData, ClipboardImage};
+    use crate::editing::selection::{ObjectRef, Selection};
+    let fixture = |p: &str| std::fs::read(format!("{}/tests/fixtures/{p}", env!("CARGO_MANIFEST_DIR"))).expect("a fixture");
+    let mut engine = Engine::new(FontLibrary::system_recommended());
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    s.open(&fixture("editor/FX-PICTURE-CONTROLS.docx")).expect("opens");
+    let forms =
+        crate::api::command::DocumentProtection { kind: Some(crate::api::command::ProtectionKind::Forms), enforce: Some(true), ..Default::default() };
+    s.run(Command::SetDocumentProtection(forms)).expect("protects");
+    let pictures = |s: &mut Session| text(s).matches(crate::editing::text::OBJECT).count();
+    let count = pictures(s);
+    // The first control's picture
+    s.with_editor(|e| {
+        let (para, offset) = e
+            .document()
+            .sections
+            .iter()
+            .flat_map(|s| &s.blocks)
+            .find_map(|b| {
+                let crate::docx::Block::Para(p) = b else { return None };
+                let mut at = 0u32;
+                p.inlines.iter().find_map(|i| {
+                    let here = at;
+                    at += i.units() as u32;
+                    matches!(i, crate::docx::Inline::Picture(..)).then_some((crate::layout::ParaId(p.id), crate::layout::Unit(here)))
+                })
+            })
+            .expect("a picture");
+        e.set_caret_for_benchmark(Selection::Object(ObjectRef::Inline { para, offset }));
+    });
+    let png = ClipboardImage { mime: "image/png".into(), data: crate::api::value::Bytes(fixture("images/square-96.png")) };
+    let data = ClipboardData { image: Some(png), ..Default::default() };
+    s.paste_with(&data, None).expect("fills the control where forms are filled in");
+    assert_eq!(s.state().history.undo_label.as_deref(), Some("Paste"));
+    assert_eq!(pictures(s), count, "the control's one picture");
+    // Outside a control, a picture is refused there
+    s.with_editor(|e| {
+        e.set_caret_for_benchmark(Selection::Caret(crate::editing::position::Position::text(
+            crate::editing::position::StoryId::Body,
+            crate::layout::ParaId(
+                e.document().sections[0]
+                    .blocks
+                    .iter()
+                    .find_map(|b| if let crate::docx::Block::Para(p) = b { Some(p.id) } else { None })
+                    .expect("a paragraph"),
+            ),
+            crate::layout::Unit(0),
+        )))
+    });
+    let refused = s.paste_with(&data, None).expect_err("refused outside the controls");
+    assert_eq!(refused.code, crate::api::error::ErrorCode::NotAllowed);
+}
+
+#[test]
+fn alt_shift_o_and_ctrl_alt_v_ask_the_host_for_its_dialogs() {
+    use crate::api::event::{HostCommand, KeyOutcome};
+    let mut engine = Engine::new(FontLibrary::system_recommended());
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    let mods = |ctrl, shift, alt| Modifiers { ctrl, shift, alt, meta: false };
+    assert_eq!(s.key(Key::KeyO, mods(false, true, true)), KeyOutcome::HostCommand(HostCommand::MarkTableOfContentsEntry));
+    assert_eq!(s.key(Key::KeyV, mods(true, false, true)), KeyOutcome::HostCommand(HostCommand::PasteSpecial));
 }

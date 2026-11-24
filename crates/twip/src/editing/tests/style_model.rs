@@ -287,9 +287,9 @@ fn deleting_a_style_takes_it_out_of_the_paragraphs_and_runs_naming_it() {
     let note = r#"<w:style w:type="paragraph" w:customStyle="1" w:styleId="Note"><w:name w:val="Note"/><w:rPr><w:sz w:val="60"/></w:rPr></w:style>"#;
     e.edit_styles("New Style", |s| s.set_xml(note.into()), fonts());
     assert_eq!(first_para(&e).style.style_id.as_deref(), Some("Normal"));
-    e.execute(Command::Undo, fonts());
-    e.execute(Command::Undo, fonts());
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(first_para(&e).style.style_id.as_deref(), Some("Note"), "one undo step each");
 }
 
@@ -400,7 +400,7 @@ fn a_table_style_edit_formats_its_tables_as_a_fresh_read_does() {
     let live = table_look(&e);
     assert_ne!(live, before, "the style changed the table");
     assert_eq!(live, table_look(&reopened(&e)));
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(table_look(&e), before);
 }
 
@@ -454,7 +454,7 @@ fn a_built_in_style_the_document_lacks_is_listed_applied_and_added_in_one_step()
     assert_eq!(listed.len(), crate::services::styles::list(e.document(), None, false).len(), "listed once, defined now");
     let again = reopened(&e);
     assert_eq!(first_para(&again).style.style_id.as_deref(), Some("Heading1"));
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert!(styles(&e).get("Heading1").is_none(), "undone with it");
     e.execute(Command::Select(crate::api::command::SelectUnit::Paragraph), fonts());
     e.execute(Command::ApplyCharacterStyle(Some(StyleId("Strong".into()))), fonts());
@@ -563,11 +563,11 @@ fn a_paragraph_joined_by_a_hidden_mark_keeps_its_parts_through_an_undone_delete_
     e.select_range(para, crate::layout::Unit(3), crate::layout::Unit(7), fonts());
     delete(&mut e);
     assert_eq!(ends(&e), Some(vec![3]), "\"Hea\" and \"dy\"");
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(ends(&e), read);
-    e.execute(Command::Redo, fonts());
+    e.execute(Command::Redo(Default::default()), fonts());
     assert_eq!(ends(&e), Some(vec![3]));
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     bigger_normal(&mut e);
     assert_eq!(joined_runs(&e), joined_runs(&reopened(&e)));
 }
@@ -642,11 +642,12 @@ fn a_table_style_dialog_change_takes_an_unchanged_border_past_the_range() {
     start.top = was.border.clone();
     let mut fill = start.clone();
     fill.fill = crate::api::value::NoneOr::Value(crate::api::value::Color(0xFFFF00));
-    e.style_dialog_table_format(&v, &DialogValues::BordersShading(start.clone()), &DialogValues::BordersShading(fill)).expect("a shading change");
+    e.style_dialog_table_format(&v, &DialogValues::BordersShading(Box::new(start.clone())), &DialogValues::BordersShading(Box::new(fill)))
+        .expect("a shading change");
     let mut wide = start.clone();
     wide.bottom = was.border.clone();
     assert!(
-        e.style_dialog_table_format(&v, &DialogValues::BordersShading(start), &DialogValues::BordersShading(wide)).is_err(),
+        e.style_dialog_table_format(&v, &DialogValues::BordersShading(Box::new(start)), &DialogValues::BordersShading(Box::new(wide))).is_err(),
         "a new line past 6 pt"
     );
 }

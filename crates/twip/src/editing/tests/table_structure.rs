@@ -553,7 +553,7 @@ fn autofit_fixed_pins_the_drawn_column_widths() {
     assert!(t.rows[0].cells.iter().zip(&t.grid).all(|(c, w)| c.width == Some(crate::docx::props::Width::Dxa(*w))));
     let back = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
     assert!(table(&back).fixed, "saved as tblLayout fixed");
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert!(!table(&e).fixed, "undo restores the layout");
 }
 
@@ -647,7 +647,7 @@ fn text_converts_to_a_table_a_row_a_paragraph() {
     let got: Vec<String> = (0..3).flat_map(|r| (0..2).map(move |c| (r, c))).map(|(r, c)| cell_text(t, r, c)).collect();
     assert_eq!(got, ["a", "b", "c", "d", "e", ""]);
     assert_eq!(violations(&e), Vec::<String>::new());
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(texts(&e), before, "one undo step restores the paragraphs");
 }
 
@@ -706,7 +706,7 @@ fn a_table_converts_to_text_a_paragraph_a_row() {
     let out = e.execute(cmd(serde_json::json!({"type":"convertTableToText","separator":"tabs"})), fonts());
     assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
     assert_eq!(body_shape(&e), ["a\tb\tc", "d\te\tf", "end"]);
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(body_shape(&e), ["table 2x3", "end"]);
 }
 
@@ -988,7 +988,7 @@ fn deleting_columns_with_ones_own_inserted_column_removes_it_outright() {
     assert_eq!(violations(&e), Vec::<String>::new());
     e.resolve_revisions(false, &Scope::All, fonts());
     assert_eq!((spans(&e), cell_marks(table(&e))), (vec![vec![1, 1]], vec![vec![None, None]]), "rejecting gives the table as it was");
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     e.resolve_revisions(true, &Scope::All, fonts());
     assert_eq!(spans(&e), vec![vec![1]], "accepting deletes both");
 }
@@ -1014,16 +1014,16 @@ fn text_to_table_sizes_its_columns_as_its_autofit_says() {
         crate::docx::read(&saved).expect("reads").sections[0].blocks.iter().any(|b| matches!(b, crate::docx::Block::Table(t) if t.fixed)),
         "saved fixed"
     );
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     select_paras(&mut e, 0, 0);
     assert!(matches!(e.convert_text_to_table_fit(&text_to_table("tabs"), ConvertFit::Window, fonts()), Outcome::Changed(_)));
     assert_eq!(table(&e).width, Width::Pct(1.0));
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     select_paras(&mut e, 0, 0);
     assert!(matches!(e.convert_text_to_table_fit(&text_to_table("tabs"), ConvertFit::Contents, fonts()), Outcome::Changed(_)));
     let g = table(&e).grid.clone();
     assert!(g[0] < g[1], "fitted to contents: {g:?}");
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert!(!body_shape(&e)[0].starts_with("table"), "one undo step");
     select_paras(&mut e, 0, 0);
     assert!(matches!(e.convert_text_to_table_fit(&text_to_table("tabs"), ConvertFit::Fixed(Some(0.0)), fonts()), Outcome::Refused(_)));
@@ -1051,7 +1051,7 @@ fn table_to_text_converts_nested_tables_when_asked() {
     e.set_selection(Selection::Caret(crate::editing::position::Position::text(crate::editing::position::StoryId::Body, first, Unit(0))));
     assert!(matches!(e.convert_table_to_text_nested(&o, false, fonts()), Outcome::Changed(_)));
     assert!(body_shape(&e).iter().any(|s| s.starts_with("table")), "kept: {:?}", body_shape(&e));
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     e.set_selection(Selection::Caret(crate::editing::position::Position::text(crate::editing::position::StoryId::Body, first, Unit(0))));
     assert!(matches!(e.convert_table_to_text_nested(&o, true, fonts()), Outcome::Changed(_)));
     assert!(!body_shape(&e).iter().any(|s| s.starts_with("table")), "flattened: {:?}", body_shape(&e));
@@ -1069,7 +1069,7 @@ fn track_formatting_off_leaves_row_and_cell_changes_untracked() {
         e.set_track_options(true, formatting);
         caret(&mut e, 0);
         e.execute(Command::SetRowHeight(AutoOr::Value(RowHeight { height: Points(30.0), rule: HeightRule::Exact })), fonts());
-        e.execute(Command::SetCellShading(Some(Color(0xff0000))), fonts());
+        e.execute(Command::SetCellShading(Some(crate::api::drawing::ColourValue::rgb(Color(0xff0000)))), fonts());
         // A tracked edit that merges cells vertically (Merge Cells itself is untracked, as in Word).
         let mut rows = table(&e).rows.clone();
         (rows[0].cells[2].v_merge, rows[1].cells[2].v_merge) = (VMerge::Restart, VMerge::Continue);

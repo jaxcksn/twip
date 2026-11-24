@@ -14,7 +14,7 @@
     { "op": "expectState", "match": { "selection": { "empty": false }, "commands": { "copy": { "enabled": true } } } },
     { "op": "command", "command": { "type": "copy" } },
     { "op": "call", "method": "find.next", "args": [{ "text": "Apple" }], "result": { "found": true } },
-    { "op": "call", "method": "find.all", "args": [{ "text": "apple" }], "result": [{ "text": "Apple" }, { "text": "apple" }, { "text": "APPLE" }] },
+    { "op": "call", "method": "find.all", "args": [{ "text": "apple" }], "result": { "matches": [{ "text": "Apple" }, { "text": "apple" }, { "text": "APPLE" }] } },
     { "op": "call", "method": "navigation.headings", "result": [{ "level": 1, "text": "Services", "page": 1 }], "save": "headings" },
     { "op": "call", "method": "navigation.select", "args": [{ "$saved": "headings", "path": [0, "id"] }] },
     { "op": "expectState", "match": { "paragraph": { "style": "Heading1" } } },

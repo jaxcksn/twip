@@ -27,13 +27,14 @@ interface Script {
 const eventTypes: Record<keyof TwipEvents, true> = {
   documentChanged: true, selectionChanged: true, editingTargetChanged: true, linkActivated: true, pictureControlActivated: true, editRefused: true, contextMenu: true,
   dialogRequested: true, hostCommand: true, shortcut: true, gesture: true, wordAdded: true, fontsChanged: true,
-  elementActivated: true, elementsChanged: true, fieldsUpdateRequested: true, revisionsChanged: true,
-  commentsChanged: true, commentAnchors: true, balloonsLaidOut: true, rulerChanged: true, tooltip: true, elementHover: true, elementClick: true, elementSelect: true,
+  elementActivated: true, elementsChanged: true, fieldsUpdateRequested: true,
+  tableOfContentsUpdateRequested: true, revisionsChanged: true,
+  commentsChanged: true, commentAnchors: true, revisionBalloons: true, balloonsLaidOut: true, rulerChanged: true, tooltip: true, elementHover: true, elementClick: true, elementSelect: true,
   announcement: true, popoverRequested: true, popoverClosed: true, warning: true, error: true,
 };
 
 /** A step that sends input: a headless editor takes none, so scripts with one don't run here. */
-const inputSteps = new Set(['key', 'text', 'click']);
+const inputSteps = new Set(['key', 'text', 'click', 'hover', 'drag', 'release']);
 
 /** Whether a step sends input, itself or in the steps it runs. */
 const sendsInput = (s: Step): boolean =>
@@ -87,6 +88,7 @@ function mismatch(actual: unknown, expected: unknown, path: string): string | nu
   if (isObject(expected) && Object.keys(expected).length === 1) {
     if ('$exact' in expected) return equal(actual, expected.$exact) ? null : `${path}: expected exactly ${show(expected.$exact)}, got ${show(actual)}`;
     if ('$type' in expected) return typeName(actual) === expected.$type ? null : `${path}: expected a ${String(expected.$type)}, got ${show(actual)}`;
+    if ('$contains' in expected) return typeof actual === 'string' && actual.includes(String(expected.$contains)) ? null : `${path}: expected a string holding ${show(expected.$contains)}, got ${show(actual)}`;
     if ('$has' in expected) {
       const all = items(actual);
       const has = expected.$has as unknown[];
@@ -150,8 +152,8 @@ async function run(file: string, script: Script): Promise<void> {
     if (inconsistent) fail(at, inconsistent);
   };
   const command = (op: Op) => {
-    const [id, arg] = fromOp(op);
-    return (editor.commands[id] as (arg?: unknown) => Promise<unknown>)(arg);
+    const [id, ...args] = fromOp(op);
+    return (editor.commands[id] as (...args: unknown[]) => Promise<unknown>)(...args);
   };
   const fixture = (name: string) => new Uint8Array(readFileSync(new URL(name, fixtures)));
 

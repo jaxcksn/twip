@@ -1,0 +1,10 @@
+[
+  "numberedItem",
+  "heading",
+  "bookmark",
+  "footnote",
+  "endnote",
+  {
+    "caption": "Figure"
+  }
+]

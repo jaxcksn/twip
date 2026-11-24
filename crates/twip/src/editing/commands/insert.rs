@@ -101,7 +101,13 @@ impl Editor {
     }
 
     pub(in crate::editing) fn insert_hyperlink(&mut self, h: Hyperlink, fonts: &Fonts) -> Outcome {
-        self.insert_link(LinkParts::of_address(&h.address), h.text, fonts)
+        let mut parts = LinkParts::of_address(&h.address);
+        if let Some(b) = h.bookmark.filter(|b| !b.is_empty()) {
+            parts.bookmark = Some(b);
+        }
+        parts.tip = h.screen_tip.filter(|t| !t.is_empty());
+        parts.frame = h.frame.filter(|f| !f.is_empty());
+        self.insert_link(parts, h.text, fonts)
     }
 
     /// Inserts a link to `parts` showing `text`: the selected text when `None` (replaced by the link), else the
@@ -188,15 +194,22 @@ impl Editor {
     }
 
     pub(in crate::editing) fn edit_hyperlink(&mut self, h: HyperlinkEdit, fonts: &Fonts) -> Outcome {
-        let address = h.address;
-        let change = address.as_deref().map(|a| {
-            let to = LinkParts::of_address(a);
-            move |p: &mut LinkParts| {
+        let HyperlinkEdit { address, text, screen_tip, frame } = h;
+        let changes = address.is_some() || screen_tip.is_some() || frame.is_some();
+        let change = changes.then_some(move |p: &mut LinkParts| {
+            if let Some(a) = address.as_deref() {
+                let to = LinkParts::of_address(a);
                 p.target = to.target;
                 p.bookmark = to.bookmark;
             }
+            if let Some(t) = screen_tip {
+                p.tip = Some(t).filter(|t| !t.is_empty());
+            }
+            if let Some(f) = frame {
+                p.frame = Some(f).filter(|f| !f.is_empty());
+            }
         });
-        self.edit_link(change, h.text, fonts)
+        self.edit_link(change, text, fonts)
     }
 
     /// Changes the link at the selection: its parts by `change` (a ScreenTip and frame kept unless it changes

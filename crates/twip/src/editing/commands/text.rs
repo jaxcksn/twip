@@ -1,6 +1,6 @@
 //! Text commands
 
-use crate::api::command::{DeleteOptions, DeleteUnit, InsertSymbol, SectionBreakKind};
+use crate::api::command::{BreakClear, DeleteOptions, DeleteUnit, InsertSymbol, SectionBreakKind};
 use crate::api::value::Direction;
 use crate::docx::{BreakKind, Inline};
 use crate::font::Fonts;
@@ -8,22 +8,7 @@ use crate::font::Fonts;
 use super::{Dir, Outcome};
 use crate::editing::Editor;
 
-/// Which floating objects a text wrapping break moves the text below.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum BreakClear {
-    /// Those on the left.
-    Left,
-    /// Those on the right.
-    Right,
-    /// Those on either side.
-    Both,
-}
-
 impl Editor {
-    pub(in crate::editing) fn line_break(&mut self, fonts: &Fonts) -> Outcome {
-        self.line_break_clearing(None, fonts)
-    }
-
     /// A line break at the selection; `clear` makes it a text wrapping break, the text after it going below the
     /// floating objects on that side (Layout > Breaks > Text Wrapping clears both).
     pub fn line_break_clearing(&mut self, clear: Option<BreakClear>, fonts: &Fonts) -> Outcome {

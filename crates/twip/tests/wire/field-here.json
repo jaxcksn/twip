@@ -1,0 +1,26 @@
+[
+  {
+    "choice": {
+      "args": [
+        "Intro"
+      ],
+      "datePicture": "d MMMM yyyy",
+      "formats": [
+        "Upper"
+      ],
+      "name": "REF",
+      "numericPicture": "0.00",
+      "preserveFormatting": true,
+      "switches": [
+        {
+          "flag": "h"
+        },
+        {
+          "flag": "d",
+          "value": "-"
+        }
+      ]
+    },
+    "id": "field-1"
+  }
+]

@@ -74,7 +74,7 @@ fn a_range_formats_the_marks_it_holds_and_empty_paragraphs() {
     let ids = texts_ids(&e);
     let mark = |e: &Editor, i: usize| e.index().para(e.document(), ids[i]).expect("para").mark.size;
     assert_eq!((mark(&e, 0), mark(&e, 1), mark(&e, 2)), (24.0, 24.0, 24.0));
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(mark(&e, 1), 11.0, "one undo step");
 }
 
@@ -151,8 +151,8 @@ fn selected_cells_take_character_and_paragraph_formatting() {
         .map(|c| if let Block::Para(p) = &c.blocks[0] { p.style.jc } else { unreachable!() })
         .collect();
     assert_eq!(jc, vec![crate::docx::props::Jc::Left, crate::docx::props::Jc::Center]);
-    e.execute(Command::Undo, fonts());
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert!(cell_runs(&e).iter().all(|r| !r.1), "one undo step each");
 }
 
@@ -173,7 +173,7 @@ fn replacing_a_font_in_the_document_keeps_one_of_each_anchored_object() {
     };
     e.execute(C::ReplaceFont(r), fonts());
     assert_eq!((floats(&e), font(&e).as_deref()), (1, Some("Calibri")));
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!((floats(&e), font(&e).as_deref()), (1, Some("Arial")), "one undo step");
 }
 
@@ -251,8 +251,13 @@ fn a_font_size_past_words_limit_is_refused_wherever_it_comes_from() {
     assert!(matches!(e.execute(C::SetDocumentDefaults(d), fonts()), super::super::commands::Outcome::Refused(_)));
     let normal = e.document().resolver.as_ref().expect("styles").styles.get("Normal").expect("Normal").raw.clone();
     assert!(e.format_style(&normal, vec![C::SetFontSize(Points(1e12))], fonts()).is_err());
-    let line =
-        crate::api::command::Border { style: crate::api::command::BorderStyle::Single, width: Points(1e6), color: crate::api::value::AutoOr::Auto };
+    let line = crate::api::command::Border {
+        style: crate::api::command::BorderStyle::Single,
+        width: Points(1e6),
+        color: crate::api::value::AutoOr::Auto,
+        space: None,
+        shadow: None,
+    };
     let b = crate::api::command::TextBorderChange { border: Some(line), shadow: false };
     e.execute(Command::SelectAll, fonts());
     assert!(matches!(e.execute(C::SetTextBorder(b), fonts()), super::super::commands::Outcome::Refused(_)));
@@ -301,7 +306,7 @@ fn the_format_painter_gives_text_another_runs_formatting_in_place_of_its_own() {
     assert_eq!(text_runs(&e, 1), vec![("plain".into(), true, false, Some(0xC00000))], "bold and red, no longer italic");
     assert_eq!(e.history().undo_depth(), undo + 1);
     assert_eq!(first_para(&e).style.jc, crate::docx::props::Jc::Left, "part of a paragraph holds no paragraph formatting");
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(text_runs(&e, 1), vec![("plain".into(), false, true, None)]);
 }
 

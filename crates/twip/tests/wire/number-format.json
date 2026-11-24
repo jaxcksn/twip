@@ -1,0 +1,26 @@
+[
+  "decimal",
+  "upperRoman",
+  "lowerRoman",
+  "upperLetter",
+  "lowerLetter",
+  "ordinal",
+  "cardinalText",
+  "ordinalText",
+  "decimalZero",
+  "bullet",
+  "none",
+  "numberInDash",
+  "hex",
+  "chicago",
+  "russianLower",
+  "russianUpper",
+  "hindiVowels",
+  "hindiConsonants",
+  "hindiNumbers",
+  "thaiLetters",
+  "thaiNumbers",
+  {
+    "other": "aiueoFullWidth"
+  }
+]

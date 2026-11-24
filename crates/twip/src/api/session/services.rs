@@ -7,14 +7,17 @@ use crate::api::error::{Error, ErrorCode};
 use crate::api::event::Event;
 use crate::api::record::Origin;
 use crate::api::services::{
-    AccessibleNode, ContextMenu, DialogKind, DialogModel, DialogPatch, FindDirection, FindMatch, FindQuery, FindResult, Heading, MenuAction,
-    Misspelling, StyleInfo, StyleType, WordCount,
+    AccessibleNode, ContextMenu, DialogKind, DialogModel, DialogPatch, FindCount, FindDirection, FindFormat, FindMatch, FindMatches, FindQuery,
+    FindResult, Heading, MenuAction, Misspelling, StyleInfo, StyleType, WordCount,
 };
 use crate::api::state::State;
 use crate::api::value::{HeadingId, MatchId, Order};
-use crate::editing::commands::{Dir, deleting};
+use crate::editing::commands::{Dir, Outcome, deleting};
 use crate::layout::Unit;
 use crate::services::{dialogs, find, menu};
+
+/// The most labels the undo and redo lists give: Word's list length.
+const HISTORY_LIST: u32 = 100;
 
 /// The spelling and review values of the state, which the services keep.
 pub(super) fn fill_state(s: &mut Session, state: &mut State) {
@@ -65,13 +68,74 @@ fn defaults_changed(
 impl Session {
     /// The context menu for the selection, as the context-menu key would open it.
     pub fn context_menu(&mut self) -> ContextMenu {
+        self.context_menu_with(None)
+    }
+
+    /// The context menu for the selection, with a Synonyms submenu of `synonyms` (the host's thesaurus's words for
+    /// [`Session::word_at_selection`], at most 8 shown; an empty list is an empty submenu); `None` shows none.
+    pub fn context_menu_with(&mut self, synonyms: Option<Vec<String>>) -> ContextMenu {
+        let mut facts = menu::MenuFacts::of(&self.editor);
+        facts.synonyms = synonyms.map(|mut w| {
+            w.truncate(8);
+            w
+        });
         let misspelled = self.services.spelling.at_selection(&self.editor, &self.language).map(|f| menu::Misspelled {
             suggestions: if f.error.repeated { Vec::new() } else { self.services.spelling.suggestions(&f.word, &f.language) },
             repeated: f.error.repeated,
             word: f.word,
             language: f.language,
         });
-        menu::build(&self.state, misspelled.as_ref())
+        menu::build_with(&self.state, misspelled.as_ref(), &facts)
+    }
+
+    /// The word the selection is in or selects, for the host's thesaurus: `None` unless the selection is in one
+    /// paragraph and within one word of at most 64 characters.
+    pub fn word_at_selection(&self) -> Option<crate::api::services::WordAt> {
+        let w = crate::services::spelling::word_at_selection(&self.editor, &self.language)?;
+        Some(crate::api::services::WordAt { word: w.word, language: w.language })
+    }
+
+    /// The floating objects on page `page` (from 0) the selection's story reaches, front first, hidden ones too,
+    /// each group's objects within it, as Word's Selection Pane lists them. Empty past the last page.
+    pub fn object_list(&mut self, page: u32) -> Vec<crate::api::state::ObjectListEntry> {
+        fn entry(e: crate::editing::object_props::ObjectEntry) -> crate::api::state::ObjectListEntry {
+            crate::api::state::ObjectListEntry {
+                object: crate::api::value::ObjectId { path: e.path, ..crate::api::value::ObjectId::of(e.id) },
+                name: e.name,
+                kind: e.kind,
+                hidden: e.hidden,
+                children: e.children.into_iter().map(entry).collect(),
+            }
+        }
+        let fonts = self.fonts.fonts();
+        self.editor.object_list(page as usize, &fonts).into_iter().map(entry).collect()
+    }
+
+    /// The selected picture's image (a group child's when one is selected), as the document holds it; `None` without
+    /// one.
+    pub fn object_image(&self) -> Option<crate::api::value::Bytes> {
+        self.editor.object_image().map(|b| crate::api::value::Bytes(b.to_vec()))
+    }
+
+    /// The selected shape's picture fill's image; `None` without one.
+    pub fn shape_fill_image(&self) -> Option<crate::api::value::Bytes> {
+        self.editor.shape_fill_image().map(|b| crate::api::value::Bytes(b.to_vec()))
+    }
+
+    /// Section `section`'s (from 0) picture watermark's image; `None` without one.
+    pub fn watermark_image(&self, section: u32) -> Option<crate::api::value::Bytes> {
+        self.editor.watermark_image(section as usize).map(|b| crate::api::value::Bytes(b.to_vec()))
+    }
+
+    /// The page colour's picture or texture image; `None` without one.
+    pub fn page_fill_image(&self) -> Option<crate::api::value::Bytes> {
+        self.editor.page_fill_image().map(|b| crate::api::value::Bytes(b.to_vec()))
+    }
+
+    /// The rows and columns `convertTextToTable` with `options` would make of the selection (Convert Text to Table's
+    /// Number of rows and columns); `None` when it can't convert it (it crosses a table, holds a content control).
+    pub fn text_to_table_size(&self, options: &crate::api::command::TextToTable) -> Option<crate::api::command::TableSize> {
+        self.editor.text_to_table_size(options).map(|(rows, columns)| crate::api::command::TableSize { rows, columns })
     }
 
     /// Runs a menu item as one transaction.
@@ -79,11 +143,19 @@ impl Session {
         match action {
             MenuAction::Command { command } => self.run(*command),
             MenuAction::ReplaceWord { with } => {
-                let f = self
-                    .services
-                    .spelling
-                    .at_selection(&self.editor, &self.language)
-                    .ok_or_else(|| Error::unavailable("no misspelling is selected"))?;
+                let Some(f) = self.services.spelling.at_selection(&self.editor, &self.language) else {
+                    // A synonym: the word at the selection.
+                    let w = crate::services::spelling::word_at_selection(&self.editor, &self.language)
+                        .filter(|_| !with.is_empty())
+                        .ok_or_else(|| Error::unavailable("no misspelling or word is selected"))?;
+                    self.refuse_edit(crate::api::command::CommandId::InsertText)?;
+                    return self.apply_with(Origin::Api, |e, fonts| {
+                        e.joined("Replace", fonts, |e| {
+                            e.select_range(w.para, w.start, w.end, fonts);
+                            e.execute(Command::InsertText(with), fonts)
+                        })
+                    });
+                };
                 self.refuse_read_only()?;
                 // A doubled word goes with the space before it.
                 let start =
@@ -108,6 +180,42 @@ impl Session {
                 self.services.spelling.add(&word, &language);
                 self.changed(vec![Event::WordAdded { word, language }]);
                 Ok(Commit { record: None, value: None })
+            }
+            MenuAction::OpenLink { address } => match address.strip_prefix('#') {
+                Some(bookmark) => self.run(Command::GoToBookmark(bookmark.to_string())),
+                None => {
+                    self.emit(Event::LinkActivated { address, via: crate::api::event::LinkVia::Menu });
+                    Ok(Commit { record: None, value: None })
+                }
+            },
+            MenuAction::CopyLink { address } => {
+                let data = crate::api::input::ClipboardData { text: address, html: None, internal: None, image: None };
+                self.request(super::HostRequest::Clipboard { data });
+                self.deliver_requests();
+                Ok(Commit { record: None, value: None })
+            }
+            MenuAction::Commands { commands, label } => self.batch(commands, Some(label)),
+            MenuAction::SetDefaultPictureWrap { wrap } => {
+                self.set_default_picture_wrap(wrap);
+                Ok(Commit { record: None, value: None })
+            }
+            MenuAction::Drop { what } => {
+                use crate::api::services::DropChoice as A;
+                use crate::editing::move_to::DropChoice as D;
+                if self.editor.drop_menu().is_none() {
+                    return Err(Error::unavailable("no drop menu is open"));
+                }
+                let what = match what {
+                    A::Move => D::Move,
+                    A::Copy => D::Copy,
+                    A::Link => D::Link,
+                    A::Hyperlink => D::Hyperlink,
+                    A::Cancel => D::Cancel,
+                };
+                if what != D::Cancel {
+                    self.refuse_edit(crate::api::command::CommandId::Paste)?;
+                }
+                self.apply_with(Origin::User, |e, fonts| e.choose_drop(what, fonts))
             }
         }
     }
@@ -185,7 +293,7 @@ impl Session {
     }
 
     /// The document defaults as Set Defaults shows them.
-    fn document_defaults(&self) -> crate::api::command::DocumentDefaults {
+    fn defaults_dialog_values(&self) -> crate::api::command::DocumentDefaults {
         use crate::api::command::{DocumentDefaults, Indents, ParagraphSpacing};
         use crate::api::value::{AutoOr, Color, LineSpacing, Points};
         let Some(r) = self.editor.document().resolver.as_ref() else { return DocumentDefaults::default() };
@@ -195,9 +303,9 @@ impl Session {
             crate::docx::props::FontRef::Theme(t) => r.theme.resolve(t),
         });
         DocumentDefaults {
-            font,
+            font: font.map(crate::api::command::FontChoice::Name),
             size: rpr.size.map(Points),
-            color: Some(rpr.color.flatten().map_or(AutoOr::Auto, |c| AutoOr::Value(Color(c)))),
+            color: Some(rpr.color.flatten().map_or(AutoOr::Auto, |c| AutoOr::Value(crate::api::drawing::ColourValue::rgb(Color(c))))),
             spacing: Some(ParagraphSpacing {
                 before: Some(AutoOr::Value(Points(ppr.space_before.unwrap_or(0.0)))),
                 after: Some(AutoOr::Value(Points(ppr.space_after.unwrap_or(0.0)))),
@@ -274,7 +382,7 @@ impl Session {
         }
         if kind == DialogKind::ManageStyles {
             let first = self.styles(None).into_iter().next().map(|s| s.id);
-            let v = crate::api::services::ManageStylesDialog { selected: first, defaults: self.document_defaults(), ..Default::default() };
+            let v = crate::api::services::ManageStylesDialog { selected: first, defaults: self.defaults_dialog_values(), ..Default::default() };
             return Ok(dialogs::manage_styles_model(self.manage_styles(v)));
         }
         let cx = self.dialog_context(kind);
@@ -439,7 +547,7 @@ impl Session {
         let not = || Error::invalid("not a table style");
         Ok(match kind {
             DialogKind::BordersShading => {
-                DialogValues::BordersShading(self.editor.table_part_borders(&style.pending, style.table_part.region()).ok_or_else(not)?)
+                DialogValues::BordersShading(Box::new(self.editor.table_part_borders(&style.pending, style.table_part.region()).ok_or_else(not)?))
             }
             DialogKind::TableProperties => DialogValues::TableProperties(self.editor.style_table_properties(&style.pending).ok_or_else(not)?),
             _ => DialogValues::Banding(self.editor.style_banding(&style.pending).ok_or_else(not)?),
@@ -547,7 +655,7 @@ impl Session {
                         .then_some(crate::api::command::Command::SetStyleMeta(change))
                 })
                 .collect();
-            let defaults = defaults_changed(&v.defaults, &self.document_defaults());
+            let defaults = defaults_changed(&v.defaults, &self.defaults_dialog_values());
             if defaults != crate::api::command::DocumentDefaults::default() {
                 commands.push(crate::api::command::Command::SetDocumentDefaults(defaults));
             }
@@ -613,54 +721,183 @@ impl Session {
         self.apply_with(Origin::Api, |e, fonts| e.select_range(para, unit(a), unit(b), fonts)).map(|_| ())
     }
 
-    /// Finds and selects the next or previous match.
-    pub fn find(&mut self, query: &FindQuery, dir: FindDirection) -> FindResult {
-        let Some((hit, wrapped)) = find::next(&self.editor, query, dir == Order::Previous) else { return FindResult::default() };
-        let _ = self.apply_with(Origin::Api, |e, fonts| hit.select(e, fonts));
-        FindResult { found: true, wrapped }
+    /// `query` compiled, over the selection's ranges with `inSelection`: invalid when its text doesn't parse.
+    fn search(&mut self, query: &FindQuery) -> Result<find::Search, Error> {
+        let mut spec = find::FindSpec::of_query(query);
+        if query.in_selection == Some(true) {
+            // On from the match a find within the selection selected, in the selection it began with
+            let kept = self.services.find_within.as_ref().filter(|w| self.editor.selected_match() == Some(w.hit)).map(|w| w.ranges.clone());
+            // With nothing selected, the whole document (as Word searches it).
+            let ranges = kept.unwrap_or_else(|| self.editor.selected_ranges());
+            spec.within = ranges.iter().any(|r| r.1 < r.2).then_some(ranges);
+        }
+        find::Search::new(spec).map_err(|why| Error::invalid(why.to_string()))
     }
 
-    /// Every match, for a results list.
-    pub fn find_all(&mut self, query: &FindQuery) -> Vec<FindMatch> {
-        let hits = find::all(&self.editor, query);
+    /// Finds and selects the next or previous match: invalid when the query doesn't parse.
+    pub fn find(&mut self, query: &FindQuery, dir: FindDirection) -> Result<FindResult, Error> {
+        let search = self.search(query)?;
+        Ok(self.find_next(&search, dir == Order::Previous))
+    }
+
+    fn find_next(&mut self, search: &find::Search, back: bool) -> FindResult {
+        let Some((hit, wrapped)) = search.next(&self.editor, back) else {
+            return FindResult { truncated: search.truncated(), ..FindResult::default() };
+        };
+        let _ = self.apply_with(Origin::Api, |e, fonts| hit.select(e, fonts));
+        self.services.find_within =
+            search.spec().within.clone().and_then(|ranges| Some(crate::services::FindWithin { hit: self.editor.selected_match()?, ranges }));
+        FindResult { found: true, wrapped, truncated: search.truncated() }
+    }
+
+    /// Every match, for a results list: invalid when the query doesn't parse.
+    pub fn find_all(&mut self, query: &FindQuery) -> Result<FindMatches, Error> {
+        let search = self.search(query)?;
+        let hits = search.all(&self.editor);
         self.complete_layout();
         let pages = crate::services::para_pages(&mut self.editor);
-        hits.into_iter().map(|h| find::describe(&self.editor, h, pages.get(&h.para).copied().unwrap_or(1))).collect()
+        let paras: Vec<crate::layout::ParaId> = hits.iter().map(|h| h.para).collect();
+        let headings = crate::services::headings_over(&self.editor, &paras);
+        let matches = hits
+            .into_iter()
+            .zip(headings)
+            .map(|(h, heading)| FindMatch { heading, ..find::describe(&self.editor, h, pages.get(&h.para).copied().unwrap_or(1)) })
+            .collect();
+        Ok(FindMatches { matches, truncated: search.truncated() })
     }
 
     /// Selects and reveals a match.
     pub fn select_match(&mut self, id: MatchId) -> Result<(), Error> {
         let hit = find::Hit::parse(&id).ok_or_else(|| Error::invalid("not a match id"))?;
-        if self.editor.index().para(self.editor.document(), hit.para).is_none() {
+        let doc = self.editor.document();
+        if [hit.para, hit.last].iter().any(|&p| self.editor.index().para(doc, p).is_none()) {
             return Err(Error::unavailable("the match is gone"));
         }
+        // A crafted id across stories or ending before it starts is refused by the engine as invalid.
         self.apply_with(Origin::Api, |e, fonts| hit.select(e, fonts)).map(|_| ())
     }
 
-    /// Replaces the current match, then finds the next.
-    pub fn replace(&mut self, query: &FindQuery, with: &str) -> Result<FindResult, Error> {
-        if let Some(hit) = find::at_selection(&self.editor, query) {
+    /// Replaces the current match (with `^` codes, or a regular expression's groups) and gives it `format`'s
+    /// formatting, then finds the next.
+    pub fn replace(&mut self, query: &FindQuery, with: &str, format: Option<&FindFormat>) -> Result<FindResult, Error> {
+        let search = self.search(query)?;
+        if let Some(hit) = search.at_selection(&self.editor) {
             self.refuse_read_only()?;
-            self.apply_with(Origin::Api, |e, fonts| find::replace(e, &[hit], with, false, fonts).1)?;
+            let format = format.map(find::FindFormat::of_api);
+            self.apply_with(Origin::Api, |e, fonts| {
+                find::replace_with(e, &search, &[hit], with, format.as_ref(), false, fonts).map_or_else(Outcome::Refused, |r| r.1)
+            })?;
         }
-        Ok(self.find(query, Order::Next))
+        Ok(self.find_next(&search, false))
     }
 
-    /// Replaces every match as one transaction; how many. A match that document protection, a locked control or a
-    /// sub-template's body keeps isn't replaced; when protection keeps every one, the replace is refused.
-    pub fn replace_all(&mut self, query: &FindQuery, with: &str) -> Result<u32, Error> {
-        let hits = find::all(&self.editor, query);
+    /// Replaces every match as one transaction (with `^` codes, or a regular expression's groups), giving each
+    /// `format`'s formatting; how many. A match that document protection, a locked control or a sub-template's body
+    /// keeps isn't replaced; when protection keeps every one, the replace is refused.
+    pub fn replace_all(&mut self, query: &FindQuery, with: &str, format: Option<&FindFormat>) -> Result<FindCount, Error> {
+        let search = self.search(query)?;
+        let hits = search.all(&self.editor);
+        let truncated = search.truncated();
         if hits.is_empty() {
-            return Ok(0);
+            return Ok(FindCount { count: 0, truncated });
         }
         self.refuse_read_only()?;
+        let format = format.map(find::FindFormat::of_api);
         let mut count = 0;
-        self.apply_with(Origin::Api, |e, fonts| {
-            let (n, out) = find::replace(e, &hits, with, true, fonts);
-            count = n;
-            out
+        self.apply_with(Origin::Api, |e, fonts| match find::replace_with(e, &search, &hits, with, format.as_ref(), true, fonts) {
+            Ok((n, out)) => {
+                count = n;
+                out
+            }
+            Err(why) => Outcome::Refused(why),
         })?;
-        Ok(u32::try_from(count).unwrap_or(u32::MAX))
+        Ok(FindCount { count: u32::try_from(count).unwrap_or(u32::MAX), truncated: truncated || search.truncated() })
+    }
+
+    /// Highlights every match on the pages (Highlight All) until the document changes or
+    /// [`Session::clear_find_highlights`]: how many; none clears them. `state.view.findHighlights` says whether they
+    /// show.
+    pub fn highlight_all(&mut self, query: &FindQuery) -> Result<FindCount, Error> {
+        let search = self.search(query)?;
+        let mut count = 0;
+        self.apply_with(Origin::Api, |e, _| {
+            count = find::highlight_all(e, &search);
+            Outcome::Moved
+        })?;
+        Ok(FindCount { count: u32::try_from(count).unwrap_or(u32::MAX), truncated: search.truncated() })
+    }
+
+    /// Takes Highlight All's highlights away.
+    pub fn clear_find_highlights(&mut self) {
+        if self.editor.find_highlights().is_some() {
+            let _ = self.apply_with(Origin::Api, |e, _| {
+                e.clear_find_highlights();
+                Outcome::Moved
+            });
+        }
+    }
+
+    /// The items a cross-reference of `kind` can point to, as Word's Cross-reference dialog lists them (bookmarks by
+    /// name, the rest in document order): `insertCrossReference` names one by its place here.
+    pub fn cross_reference_targets(&self, kind: &crate::api::command::CrossReferenceKind) -> Vec<crate::api::services::CrossReferenceTarget> {
+        use crate::editing::commands::references::{ref_kind, ref_target};
+        self.editor.cross_reference_targets(&ref_kind(kind)).iter().map(ref_target).collect()
+    }
+
+    /// The labels a caption can take: Equation, Figure and Table, then the host's `custom` labels, then those the
+    /// document's captions use, each once.
+    pub fn caption_labels(&self, custom: &[String]) -> Vec<String> {
+        self.editor.caption_labels(custom).into_iter().map(|l| l.replace('_', " ")).collect()
+    }
+
+    /// The document's tables of contents and of figures, and the one the selection is in.
+    pub fn tables_of_contents(&self) -> crate::api::services::TablesOfContents {
+        let e = &self.editor;
+        let sep = e.list_separator();
+        let names = std::cell::OnceCell::new();
+        let para = |t: &crate::editing::toc::TocField, k: usize| {
+            e.index().blocks(e.document(), t.container).and_then(|b| match b.get(k) {
+                Some(crate::docx::Block::Para(p)) => Some(crate::api::value::ParagraphId(p.id.to_string())),
+                _ => None,
+            })
+        };
+        let tables = e
+            .tables_of_contents()
+            .iter()
+            .enumerate()
+            .map(|(k, t)| {
+                let options = t.options(sep);
+                crate::api::services::TableOfContentsInfo {
+                    index: u32::try_from(k).unwrap_or(u32::MAX),
+                    figures: options.captions.is_some(),
+                    options: e.toc_options_api(&options, &names),
+                    locked: e.toc_locked(t),
+                    first_paragraph: para(t, t.first).unwrap_or_default(),
+                    last_paragraph: para(t, t.last).unwrap_or_default(),
+                }
+            })
+            .collect();
+        let here = e.toc_at_selection().map(|(k, _)| u32::try_from(k).unwrap_or(u32::MAX));
+        crate::api::services::TablesOfContents { tables, here }
+    }
+
+    /// The entries a table of contents with `options` would collect now (`{}`: Word's default table), for a
+    /// preview: invalid levels or styles refused.
+    pub fn toc_entries(&self, options: &crate::api::command::TableOfContentsOptions) -> Result<Vec<crate::api::services::TocEntryPreview>, Error> {
+        let o = if *options == crate::api::command::TableOfContentsOptions::default() {
+            crate::editing::toc::TocOptions::word_default()
+        } else {
+            self.editor.toc_options(options).map_err(|out| match out {
+                Outcome::Refused(e) => e,
+                _ => Error::invalid("not a table of contents"),
+            })?
+        };
+        Ok(self
+            .editor
+            .toc_entries(&o)
+            .into_iter()
+            .map(|x| crate::api::services::TocEntryPreview { level: x.level, text: x.text, page_number: x.page })
+            .collect())
     }
 
     /// Spell checking: dictionaries, ignored and added words, suggestions.
@@ -674,6 +911,12 @@ impl Session {
         let fonts = self.fonts.fonts();
         self.editor.complete(&fonts);
         crate::services::headings(&mut self.editor)
+    }
+
+    /// The heading the selection's focus is under, as a navigation pane highlights it (the nearest listed heading at
+    /// or before it); `None` before the first heading or outside the body. Hosts ask on `selectionChanged`.
+    pub fn current_heading(&self) -> Option<HeadingId> {
+        crate::services::current_heading(&self.editor)
     }
 
     /// The document's properties (core, extended and custom) and variables.
@@ -701,7 +944,14 @@ impl Session {
 
     /// The document's styles, of one type or all.
     pub fn styles(&self, kind: Option<StyleType>) -> Vec<StyleInfo> {
-        crate::services::styles::list(self.editor.document(), kind, self.editor.editing_sub_template().is_some())
+        let mut out = crate::services::styles::list(self.editor.document(), kind, self.editor.editing_sub_template().is_some());
+        let uses = self.editor.style_use_counts();
+        for s in &mut out {
+            if matches!(s.kind, StyleType::Paragraph | StyleType::Character) {
+                s.uses = uses.get(&s.id.0).map_or(0, |&n| u32::try_from(n).unwrap_or(u32::MAX));
+            }
+        }
+        out
     }
 
     /// The document's accessibility tree.
@@ -725,12 +975,56 @@ impl Session {
         self.apply_with(Origin::Api, |e, fonts| e.select_range(para, Unit(0), Unit(0), fonts)).map(|_| ())
     }
 
-    /// The document's counts, computed now.
-    pub fn word_count(&mut self) -> WordCount {
+    /// The document's counts, or the selection's, computed now: a count walks the whole document, so it is a
+    /// query and never part of the state.
+    pub fn word_count(&mut self, options: crate::api::services::WordCountOptions) -> WordCount {
         // Lines and pages count the whole layout.
         let fonts = self.fonts.fonts();
         self.editor.complete(&fonts);
-        crate::services::word_count(&mut self.editor)
+        let scope = crate::services::WordCountScope { selection: options.selection, boxes_and_notes: options.include_textboxes_and_notes };
+        crate::services::word_count_in(&mut self.editor, scope)
+    }
+
+    /// The undo and redo lists, at most `limit` labels each (default and most: 100, Word's list length).
+    pub fn history_labels(&self, limit: Option<u32>) -> crate::api::services::HistoryLabels {
+        let n = limit.unwrap_or(HISTORY_LIST).min(HISTORY_LIST) as usize;
+        let h = self.editor.history();
+        let list = |mut labels: Box<dyn Iterator<Item = &str> + '_>| {
+            let shown: Vec<String> = labels.by_ref().take(n).map(str::to_string).collect();
+            let more = labels.next().is_some();
+            (shown, more)
+        };
+        let (undo, more_undo) = list(Box::new(h.undo_labels()));
+        let (redo, more_redo) = list(Box::new(h.redo_labels()));
+        crate::api::services::HistoryLabels { undo, redo, more_undo, more_redo }
+    }
+
+    /// A style as it is defined: the document's, or a built-in one it doesn't define (`defined: false`); none for
+    /// an id that is neither.
+    pub fn style_definition(&self, id: &crate::api::value::StyleId) -> Option<crate::api::styles::StyleDefinition> {
+        self.editor.style_definition(id)
+    }
+
+    /// Every built-in style, defined by the document or not, with its list flags.
+    pub fn built_in_styles(&self) -> Vec<crate::api::styles::BuiltInStyle> {
+        self.editor.built_in_styles()
+    }
+
+    /// The document's default formatting; none without a styles part.
+    pub fn document_defaults(&self) -> Option<crate::api::styles::DefaultsDefinition> {
+        self.editor.document_defaults()
+    }
+
+    /// The theme colour grid Word's colour pickers show: a column for each of Background 1, Text 1, Background 2,
+    /// Text 2 and Accent 1 to 6, each the colour then its five lighter and darker variants, named. A query, not state:
+    /// the state's `themeColours` changes when the theme does.
+    pub fn theme_colour_grid(&self) -> Vec<crate::api::state::ThemeColumn> {
+        self.editor.theme_colour_grid()
+    }
+
+    /// The list of the paragraph the selection's focus is in, in full; none outside a list.
+    pub fn list_definition(&self) -> Option<crate::api::styles::ListDefinition> {
+        self.editor.list_definition()
     }
 }
 
@@ -805,6 +1099,231 @@ impl Spelling<'_> {
     }
 }
 
+/// The API's category for the catalogue's.
+fn field_category(c: crate::services::fields::FieldCategory) -> crate::api::services::FieldCategory {
+    use crate::api::services::FieldCategory as A;
+    use crate::services::fields::FieldCategory as F;
+    match c {
+        F::DateAndTime => A::DateAndTime,
+        F::DocumentAutomation => A::DocumentAutomation,
+        F::DocumentInformation => A::DocumentInformation,
+        F::EquationsAndFormulas => A::EquationsAndFormulas,
+        F::IndexAndTables => A::IndexAndTables,
+        F::LinksAndReferences => A::LinksAndReferences,
+        F::MailMerge => A::MailMerge,
+        F::Numbering => A::Numbering,
+        F::UserInformation => A::UserInformation,
+    }
+}
+
+/// A field from the catalogue as the API describes it.
+fn field_info(f: &crate::services::fields::FieldSpec) -> crate::api::services::FieldDescription {
+    use crate::api::services::{FieldArgInfo, FieldArgKind as K, FieldGeneralSwitches, FieldSwitchInfo, SwitchArgKind as S};
+    use crate::services::fields::{ArgKind, SwitchArg};
+    let arg = |k: ArgKind| match k {
+        ArgKind::Text => K::Text,
+        ArgKind::Bookmark => K::Bookmark,
+        ArgKind::Style => K::Style,
+        ArgKind::Property => K::Property,
+        ArgKind::Variable => K::Variable,
+        ArgKind::File => K::File,
+        ArgKind::Name => K::Name,
+        ArgKind::Expression => K::Expression,
+        ArgKind::Number => K::Number,
+    };
+    let switch = |a: SwitchArg| match a {
+        SwitchArg::None => S::None,
+        SwitchArg::Text => S::Text,
+        SwitchArg::Number => S::Number,
+        SwitchArg::Bookmark => S::Bookmark,
+        SwitchArg::Style => S::Style,
+        SwitchArg::Name => S::Name,
+        SwitchArg::Levels => S::Levels,
+    };
+    crate::api::services::FieldDescription {
+        name: f.name.into(),
+        categories: f.categories.iter().map(|&c| field_category(c)).collect(),
+        description: f.description.into(),
+        syntax: f.syntax.into(),
+        args: f.args.iter().map(|a| FieldArgInfo { name: a.name.into(), kind: arg(a.kind), required: a.required }).collect(),
+        switches: f.switches.iter().map(|s| FieldSwitchInfo { flag: s.flag.into(), arg: switch(s.arg), description: s.description.into() }).collect(),
+        formats: FieldGeneralSwitches { text: f.formats.text, numeric: f.formats.numeric, date: f.formats.date },
+        evaluated: f.evaluated(),
+    }
+}
+
+/// The engine's choices for the API's.
+fn engine_choice(c: &crate::api::services::FieldChoice) -> crate::services::fields::FieldChoice {
+    crate::services::fields::FieldChoice {
+        name: c.name.clone(),
+        args: c.args.clone(),
+        switches: c.switches.iter().map(|s| (s.flag.clone(), s.value.clone())).collect(),
+        formats: c.formats.clone(),
+        numeric: c.numeric_picture.clone(),
+        date: c.date_picture.clone(),
+        preserve_formatting: c.preserve_formatting,
+    }
+}
+
+/// The API's choices for the engine's.
+fn api_choice(c: crate::services::fields::FieldChoice) -> crate::api::services::FieldChoice {
+    crate::api::services::FieldChoice {
+        name: c.name,
+        args: c.args,
+        switches: c.switches.into_iter().map(|(flag, value)| crate::api::services::FieldSwitchChoice { flag, value }).collect(),
+        formats: c.formats,
+        numeric_picture: c.numeric,
+        date_picture: c.date,
+        preserve_formatting: c.preserve_formatting,
+    }
+}
+
+/// Insert Field's problems as the API names them.
+fn field_problem(p: crate::services::fields::FieldProblem) -> crate::api::services::FieldProblem {
+    use crate::api::services::FieldProblem as A;
+    use crate::services::fields::FieldProblem as F;
+    match p {
+        F::Empty => A::Empty,
+        F::UnknownField(name) => A::UnknownField { name },
+        F::MissingArgument(name) => A::MissingArgument { name: name.into() },
+        F::UnknownSwitch(flag) => A::UnknownSwitch { flag },
+        F::MissingSwitch(flag) => A::MissingSwitch { flag: flag.into() },
+        F::MissingSwitchValue(flag) => A::MissingSwitchValue { flag },
+        F::NotANumber(flag) => A::NotANumber { flag },
+        F::FormatNotTaken(flag) => A::FormatNotTaken { flag: flag.to_string() },
+    }
+}
+
+impl Session {
+    /// The footnotes, then the endnotes, each in their references' order (those nothing refers to after, by id), for a
+    /// notes list. Separator notes are left out.
+    pub fn notes(&mut self) -> Vec<crate::api::services::NoteInfo> {
+        use crate::api::services::NOTE_TEXT_LIMIT;
+        self.editor
+            .notes()
+            .into_iter()
+            .map(|n| {
+                let mut text = n.text;
+                if let Some((cut, _)) = text.char_indices().nth(NOTE_TEXT_LIMIT) {
+                    text.truncate(cut);
+                    text.push('…');
+                }
+                crate::api::services::NoteInfo {
+                    kind: if n.kind == crate::docx::NoteKind::Foot {
+                        crate::api::command::NoteType::Footnote
+                    } else {
+                        crate::api::command::NoteType::Endnote
+                    },
+                    id: n.id,
+                    mark: n.mark,
+                    custom_mark: n.custom,
+                    text,
+                    page: n.page.map(|p| p as u32 + 1),
+                }
+            })
+            .collect()
+    }
+
+    /// The separators of footnotes or endnotes: each one's text, and whether it is the built-in line.
+    pub fn note_separators(&self, kind: crate::api::command::NoteType) -> crate::api::services::NoteSeparators {
+        use crate::api::services::NoteSeparatorState;
+        use crate::docx::NoteSeparator as S;
+        let kind = if kind == crate::api::command::NoteType::Footnote { crate::docx::NoteKind::Foot } else { crate::docx::NoteKind::End };
+        let state = |i: crate::editing::NoteSeparatorInfo| NoteSeparatorState { text: i.text, builtin: i.builtin };
+        // A separator the document doesn't define is Word's built-in line.
+        let line = || NoteSeparatorState { text: String::new(), builtin: true };
+        crate::api::services::NoteSeparators {
+            separator: self.editor.note_separator(kind, S::Separator).map_or_else(line, state),
+            continuation_separator: self.editor.note_separator(kind, S::Continuation).map_or_else(line, state),
+            continuation_notice: self.editor.note_separator(kind, S::Notice).map(state),
+        }
+    }
+
+    /// The columns one of Word's column presets gives the selection's section, for `setColumns`.
+    pub fn column_preset(&self, preset: crate::api::value::ColumnPreset) -> crate::api::command::Columns {
+        use crate::api::value::ColumnPreset as A;
+        use crate::editing::section::ColumnPreset as P;
+        self.editor.column_preset(match preset {
+            A::One => P::One,
+            A::Two => P::Two,
+            A::Three => P::Three,
+            A::Left => P::Left,
+            A::Right => P::Right,
+        })
+    }
+
+    /// The example Format Page Numbers shows for `format`, with chapter numbers when `chapter` gives their separator.
+    pub fn page_number_sample(&self, format: crate::api::command::NumberFormat, chapter: Option<crate::api::command::ChapterSeparator>) -> String {
+        crate::editing::commands::page_number_sample(format, chapter)
+    }
+
+    /// The styles Formatting Restrictions' Recommended Minimum leaves allowed.
+    pub fn recommended_minimum_styles(&self) -> Vec<crate::api::value::StyleId> {
+        self.editor.recommended_minimum_styles().into_iter().map(crate::api::value::StyleId).collect()
+    }
+
+    /// The editable ranges, in document order: each stretch's permissions, editors and page.
+    pub fn editable_ranges(&mut self) -> Vec<crate::api::services::EditableRangeInfo> {
+        let list = self.editor.editable_range_list();
+        list.into_iter()
+            .map(|r| crate::api::services::EditableRangeInfo {
+                ids: r.ids,
+                editors: r.editors.into_iter().map(crate::editing::protection::RangeEditor::to_api).collect(),
+                page: self.editor.page_showing(r.start).map(|p| p as u32 + 1),
+            })
+            .collect()
+    }
+
+    /// Insert Field's fields, of one category or all, in its order.
+    pub fn field_catalogue(&self, category: Option<crate::api::services::FieldCategory>) -> Vec<crate::api::services::FieldDescription> {
+        let category = category.and_then(|c| crate::services::fields::FieldCategory::ALL.into_iter().find(|&f| field_category(f) == c));
+        crate::services::fields::fields_in(category).map(field_info).collect()
+    }
+
+    /// The formats and pictures Insert Field offers.
+    pub fn field_formats(&self) -> crate::api::services::FieldFormats {
+        use crate::api::services::FieldFormatOption;
+        use crate::services::fields::{DATE_PICTURES, NUMBER_FORMATS, NUMERIC_PICTURES, TEXT_FORMATS};
+        let options = |list: &[(&str, &str)]| list.iter().map(|&(v, l)| FieldFormatOption { value: v.into(), label: l.into() }).collect();
+        crate::api::services::FieldFormats {
+            text_formats: options(TEXT_FORMATS),
+            number_formats: options(NUMBER_FORMATS),
+            numeric_pictures: NUMERIC_PICTURES.iter().map(|p| p.to_string()).collect(),
+            date_pictures: DATE_PICTURES.iter().map(|p| p.to_string()).collect(),
+        }
+    }
+
+    /// The field code Insert Field's choices make, and its problems. Pure: no document change.
+    pub fn compose_field(&self, choice: &crate::api::services::FieldChoice) -> crate::api::services::ComposedField {
+        let code = engine_choice(choice).code();
+        let problems = crate::services::fields::check(&code).into_iter().map(field_problem).collect();
+        crate::api::services::ComposedField { code, problems }
+    }
+
+    /// The choices a field code is made of, as Insert Field opens on it.
+    pub fn parse_field(&self, code: &str) -> crate::api::services::FieldChoice {
+        api_choice(crate::services::fields::FieldChoice::of_code(code))
+    }
+
+    /// The field the selection is in, with its code's choices.
+    pub fn field_here(&self) -> Option<crate::api::services::FieldHere> {
+        let (id, choice) = crate::services::fields::choice_here(&self.editor)?;
+        Some(crate::api::services::FieldHere { id: crate::api::value::ElementId(crate::editing::elements::id_str(id)), choice: api_choice(choice) })
+    }
+
+    /// The display formats a date control offers for `locale` (BCP 47).
+    pub fn date_formats(&self, locale: &str) -> Vec<String> {
+        crate::editing::date_formats(locale).iter().map(|f| f.to_string()).collect()
+    }
+
+    /// One version per laid-out page, from page 0: a page keeps its version while layout keeps it, and takes a new
+    /// one (never 0, never reused) when laid out again. Hosts key cached thumbnails by it.
+    pub fn page_versions(&mut self) -> Vec<u64> {
+        let snapshot = self.editor.snapshot();
+        self.services.page_versions.update(snapshot.pages()).to_vec()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::cell::RefCell;
@@ -843,24 +1362,24 @@ mod tests {
         let (mut engine, id, _) = open("editor/FX-services.docx");
         let s = engine.session(id).expect("a session");
         for _ in 0..3 {
-            assert!(s.find(&query("apple"), Order::Next).found);
+            assert!(s.find(&query("apple"), Order::Next).expect("finds").found);
         }
-        let again = s.find(&query("apple"), Order::Next);
+        let again = s.find(&query("apple"), Order::Next).expect("finds");
         assert!(again.found && again.wrapped, "past the last, it wraps");
         let case = FindQuery { match_case: Some(true), ..query("aPPLE") };
-        assert!(!s.find(&case, Order::Next).found);
-        let all = s.find_all(&query("apple"));
+        assert!(!s.find(&case, Order::Next).expect("finds").found);
+        let all = s.find_all(&query("apple")).expect("finds").matches;
         assert_eq!(all.iter().map(|m| m.text.as_str()).collect::<Vec<_>>(), ["Apple", "apple", "APPLE"]);
         assert_eq!((all[1].before.as_str(), all[1].page), ("Apple, ", 1));
         s.select_match(all[2].id.clone()).expect("selects");
         let revision = s.state().revision;
-        s.replace(&query("apple"), "pear").expect("replaces");
+        s.replace(&query("apple"), "pear", None).expect("replaces");
         assert_eq!(s.state().revision, revision + 1);
-        assert_eq!(s.replace_all(&query("apple"), "plum").expect("replaces"), 2);
+        assert_eq!(s.replace_all(&query("apple"), "plum", None).map(|c| c.count).expect("replaces"), 2);
         assert_eq!(s.state().revision, revision + 2, "one transaction");
-        assert!(s.find_all(&query("apple")).is_empty());
+        assert!(s.find_all(&query("apple")).expect("finds").matches.is_empty());
         let whole = FindQuery { whole_words: Some(true), ..query("plum") };
-        assert_eq!(s.find_all(&whole).len(), 2);
+        assert_eq!(s.find_all(&whole).expect("finds").matches.len(), 2);
     }
 
     #[test]
@@ -930,10 +1449,10 @@ mod tests {
             Command::InsertText("zorblyx ".into()),
             Command::InsertParagraph,
             Command::InsertText("quuxle the the".into()),
-            Command::Undo,
+            Command::Undo(Default::default()),
             Command::SelectAll,
             Command::InsertText("fine words".into()),
-            Command::Undo,
+            Command::Undo(Default::default()),
         ];
         for c in steps {
             s.run(c.clone()).expect("runs");
@@ -974,7 +1493,7 @@ mod tests {
         // A paragraph's text is in its text nodes.
         let text: Vec<String> = tree.children.iter().map(|n| n.children.iter().filter_map(|t| t.text.as_deref()).collect()).collect();
         assert!(text.iter().any(|t| t.starts_with("Teh quick brown fox")), "{text:?}");
-        let count = s.word_count();
+        let count = s.word_count(Default::default());
         assert!(count.words > 30 && count.pages >= 1 && count.lines >= count.paragraphs, "{count:?}");
         assert!(count.characters_with_spaces > count.characters);
     }
@@ -1016,7 +1535,7 @@ mod tests {
         let DialogValues::Accessibility(a) = &check.values else { panic!("{check:?}") };
         assert!(!a.issues.is_empty(), "the picture has no alt text");
         s.select_accessibility_issue(&a.issues[0].id).expect("selects it");
-        assert!(s.find(&query("the example site"), Order::Next).found);
+        assert!(s.find(&query("the example site"), Order::Next).expect("finds").found);
         let link = s.dialog_open(DialogKind::Hyperlink).expect("opens");
         let DialogValues::Hyperlink(h) = &link.values else { panic!() };
         assert_eq!(h.text, "the example site");

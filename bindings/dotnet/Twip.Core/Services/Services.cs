@@ -29,9 +29,9 @@ public sealed class EditorFind
     /// <summary>Every match, for a results list.</summary>
     /// <param name="query">What to find.</param>
     /// <param name="ct">Cancels the search.</param>
-    /// <returns>The matches in document order.</returns>
-    public Task<IReadOnlyList<FindMatch>> FindAllAsync(FindQuery query, CancellationToken ct = default) =>
-        _session.CallAsync<IReadOnlyList<FindMatch>>(Method.FindAll, WireJson.ToUtf8(query), ct);
+    /// <returns>The matches in document order, and whether the search stopped early.</returns>
+    public Task<FindMatches> FindAllAsync(FindQuery query, CancellationToken ct = default) =>
+        _session.CallAsync<FindMatches>(Method.FindAll, WireJson.ToUtf8(query), ct);
 
     /// <summary>Selects and reveals a match from <see cref="FindAllAsync"/>.</summary>
     /// <param name="match">The match.</param>
@@ -39,33 +39,249 @@ public sealed class EditorFind
     /// <returns>Completes when it is selected.</returns>
     public Task SelectAsync(MatchId match, CancellationToken ct = default) => _session.CallAsync(Method.SelectMatch, WireJson.ToUtf8(match), ct);
 
-    /// <summary>Replaces the current match, then finds the next.</summary>
+    /// <summary>
+    /// Replaces the current match, then finds the next. The replacement takes Word's <c>^</c> codes (<c>^&amp;</c> the
+    /// text found, <c>^c</c> the editor's last copy), or a regular expression's <c>$1</c> and <c>${name}</c> groups.
+    /// </summary>
     /// <param name="query">What to find.</param>
-    /// <param name="replacement">The replacement text.</param>
+    /// <param name="replacement">The replacement; empty with <paramref name="replaceFormat"/> formats the match only.</param>
+    /// <param name="replaceFormat">The formatting the replacement gets.</param>
     /// <param name="ct">Cancels before replacing.</param>
     /// <returns>The result of finding the next match.</returns>
-    public Task<FindResult> ReplaceAsync(FindQuery query, string replacement, CancellationToken ct = default) =>
-        _session.CallAsync<FindResult>(Method.Replace, WireJson.ToUtf8(new ReplaceRequest(query, replacement)), ct);
+    public Task<FindResult> ReplaceAsync(FindQuery query, string replacement, FindFormat? replaceFormat = null, CancellationToken ct = default) =>
+        _session.CallAsync<FindResult>(Method.Replace, WireJson.ToUtf8(new ReplaceRequest(query, replacement, replaceFormat)), ct);
 
-    /// <summary>Replaces every match in one transaction.</summary>
+    /// <summary>Replaces every match in one transaction, as <see cref="ReplaceAsync"/> does.</summary>
     /// <param name="query">What to find.</param>
-    /// <param name="replacement">The replacement text.</param>
+    /// <param name="replacement">The replacement.</param>
+    /// <param name="replaceFormat">The formatting the replacements get.</param>
     /// <param name="ct">Cancels before replacing.</param>
-    /// <returns>The number of replacements.</returns>
-    public async Task<int> ReplaceAllAsync(FindQuery query, string replacement, CancellationToken ct = default) =>
-        (await _session.CallAsync<ReplaceAllResult>(Method.ReplaceAll, WireJson.ToUtf8(new ReplaceRequest(query, replacement)), ct).ConfigureAwait(false)).Count;
+    /// <returns>How many were replaced, and whether the search stopped early.</returns>
+    public Task<FindCount> ReplaceAllAsync(FindQuery query, string replacement, FindFormat? replaceFormat = null, CancellationToken ct = default) =>
+        _session.CallAsync<FindCount>(Method.ReplaceAll, WireJson.ToUtf8(new ReplaceRequest(query, replacement, replaceFormat)), ct);
+
+    /// <summary>Highlight All: every match highlighted on the pages until the document changes or <see cref="ClearHighlightsAsync"/>; none clears them.</summary>
+    /// <param name="query">What to find.</param>
+    /// <param name="ct">Cancels the search.</param>
+    /// <returns>How many it highlighted.</returns>
+    public Task<FindCount> HighlightAllAsync(FindQuery query, CancellationToken ct = default) =>
+        _session.CallAsync<FindCount>(Method.FindHighlightAll, WireJson.ToUtf8(query), ct);
+
+    /// <summary>Takes Highlight All's highlights away.</summary>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>Completes when they are gone.</returns>
+    public Task ClearHighlightsAsync(CancellationToken ct = default) => _session.CallAsync(Method.FindClearHighlights, [], ct);
 }
 
-/// <summary>What to find.</summary>
-/// <param name="Text">The text.</param>
+/// <summary>What to find. A query whose text doesn't parse fails with an invalid argument error.</summary>
+/// <param name="Text">
+/// The text, with Word's <c>^</c> codes (<c>^p</c> a paragraph mark, <c>^t</c> a tab, <c>^?</c> any character,
+/// <c>^#</c> any digit, <c>^^</c> a caret), or a regular expression with <see cref="Regex"/>. At most 255 characters.
+/// </param>
 /// <param name="MatchCase">Match case.</param>
 /// <param name="WholeWords">Match whole words only.</param>
-public sealed record FindQuery(string Text, bool MatchCase = false, bool WholeWords = false);
+public sealed record FindQuery(string Text, bool MatchCase = false, bool WholeWords = false)
+{
+    /// <summary>The text is a regular expression, searched paragraph by paragraph.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? Regex { get; init; }
+
+    /// <summary>A match starts at a word's start.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? MatchPrefix { get; init; }
+
+    /// <summary>A match ends at a word's end.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? MatchSuffix { get; init; }
+
+    /// <summary>Punctuation is passed over.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? IgnorePunctuation { get; init; }
+
+    /// <summary>White space is passed over.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? IgnoreWhiteSpace { get; init; }
+
+    /// <summary>Finding wraps round the document's end (null: on); off, it stops there, not found.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? Wrap { get; init; }
+
+    /// <summary>Only within the selection, with no wrapping.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? InSelection { get; init; }
+
+    /// <summary>The formatting a match must have; with empty text, each stretch that has it matches.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public FindFormat? Format { get; init; }
+}
+
+/// <summary>Character formatting a search looks for, or a replacement applies; each one left null is any.</summary>
+public sealed record FindFont
+{
+    /// <summary>The font name, matched ignoring case.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? Font { get; init; }
+    /// <summary>Exactly this combination of bold and italic.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public FontStyleChoice? Style { get; init; }
+    /// <summary>The size.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public Length? Size { get; init; }
+    /// <summary>The text colour.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public ColorValue? Color { get; init; }
+    /// <summary>The underline.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public UnderlineStyle? Underline { get; init; }
+    /// <summary>The underline's colour.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public ColorValue? UnderlineColor { get; init; }
+    /// <summary>Strikethrough.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public bool? Strikethrough { get; init; }
+    /// <summary>Double strikethrough.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public bool? DoubleStrikethrough { get; init; }
+    /// <summary>Superscript.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public bool? Superscript { get; init; }
+    /// <summary>Subscript.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public bool? Subscript { get; init; }
+    /// <summary>Small capitals.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public bool? SmallCaps { get; init; }
+    /// <summary>All capitals.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public bool? AllCaps { get; init; }
+    /// <summary>Hidden.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public bool? Hidden { get; init; }
+    /// <summary>Character spacing; negative condenses.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public Length? CharacterSpacing { get; init; }
+    /// <summary>The baseline offset; positive raises.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public Length? Position { get; init; }
+    /// <summary>Emboss.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public bool? Emboss { get; init; }
+    /// <summary>Engrave.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public bool? Engrave { get; init; }
+    /// <summary>Outline.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public bool? Outline { get; init; }
+    /// <summary>Shadow.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public bool? Shadow { get; init; }
+    /// <summary>The character width scale, percent.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public double? Scale { get; init; }
+    /// <summary>Kerning from this size up; 0 for none.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public Length? Kerning { get; init; }
+    /// <summary>The OpenType ligatures.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public Ligatures? Ligatures { get; init; }
+    /// <summary>The number spacing.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public NumberSpacing? NumberSpacing { get; init; }
+    /// <summary>The number forms.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public NumberForm? NumberForm { get; init; }
+    /// <summary>The stylistic set, 1 to 20; 0 for the default.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public int? StylisticSet { get; init; }
+    /// <summary>Contextual alternates.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public bool? ContextualAlternates { get; init; }
+    /// <summary>The text fill, or none of the text's own.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public NoneOr<FillValue>? TextFill { get; init; }
+    /// <summary>The text outline, or none.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public NoneOr<TextOutline>? TextOutline { get; init; }
+    /// <summary>The shadow, or none.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public NoneOr<TextShadow>? TextShadow { get; init; }
+    /// <summary>The reflection, or none.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public NoneOr<TextReflection>? TextReflection { get; init; }
+    /// <summary>The glow, or none.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public NoneOr<Glow>? TextGlow { get; init; }
+}
+
+/// <summary>Paragraph formatting a match's paragraphs must have, or a replacement applies; each one left null is any.</summary>
+public sealed record FindParagraph
+{
+    /// <summary>The alignment.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public ParagraphAlignment? Alignment { get; init; }
+    /// <summary>The outline level.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public OutlineLevel? OutlineLevel { get; init; }
+    /// <summary>The left indent.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public Length? Left { get; init; }
+    /// <summary>The right indent.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public Length? Right { get; init; }
+    /// <summary>The special indent.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public SpecialIndent? Special { get; init; }
+    /// <summary>The special indent's size.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public Length? By { get; init; }
+    /// <summary>The space before, or automatic.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public SpacingValue? Before { get; init; }
+    /// <summary>The space after, or automatic.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public SpacingValue? After { get; init; }
+    /// <summary>The line spacing.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public LineSpacing? LineSpacing { get; init; }
+    /// <summary>Keep with next.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public bool? KeepWithNext { get; init; }
+    /// <summary>Keep lines together.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public bool? KeepLinesTogether { get; init; }
+    /// <summary>Page break before.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public bool? PageBreakBefore { get; init; }
+    /// <summary>Widow and orphan control.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public bool? WidowControl { get; init; }
+    /// <summary>Collapsed by default.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public bool? Collapsed { get; init; }
+    /// <summary>Mirror indents.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public bool? MirrorIndents { get; init; }
+    /// <summary>Don't add space between paragraphs of the same style.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public bool? ContextualSpacing { get; init; }
+    /// <summary>Suppress line numbers.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public bool? SuppressLineNumbers { get; init; }
+    /// <summary>Don't hyphenate.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public bool? DontHyphenate { get; init; }
+}
+
+/// <summary>Formatting a search looks for (each value given must be the text's), or a replacement applies.</summary>
+public sealed record FindFormat
+{
+    /// <summary>Character formatting.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public FindFont? Font { get; init; }
+    /// <summary>Paragraph formatting.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public FindParagraph? Paragraph { get; init; }
+    /// <summary>A paragraph style the paragraphs have, or a character style the text has.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public StyleId? Style { get; init; }
+    /// <summary>Highlighted in any colour, or not.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public bool? Highlight { get; init; }
+    /// <summary>The colour a replacement highlights in (yellow when null).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public HighlightColor? HighlightColor { get; init; }
+    /// <summary>The language, a BCP 47 tag, matched ignoring case.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? Language { get; init; }
+    /// <summary>Spelling and grammar not checked.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public bool? NoProof { get; init; }
+    /// <summary>Tab stops the paragraphs have (each of these, among others); a replacement adds them.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public IReadOnlyList<TabStopSpec>? Tabs { get; init; }
+    /// <summary>The frame the paragraphs are in; a replacement frames them so.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public FrameProperties? Frame { get; init; }
+}
+
+/// <summary>A tab stop as find formatting names it.</summary>
+/// <param name="Position">Its position.</param>
+/// <param name="Alignment">Its alignment; null for left.</param>
+/// <param name="Leader">Its leader; null for none.</param>
+public sealed record TabStopSpec(
+    Length Position,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TabAlignment? Alignment = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TabLeader? Leader = null);
 
 /// <summary>The result of a find.</summary>
 /// <param name="Found">Whether a match was found.</param>
 /// <param name="Wrapped">Whether the search wrapped around the document.</param>
-public sealed record FindResult(bool Found, bool Wrapped);
+public sealed record FindResult(bool Found, bool Wrapped)
+{
+    /// <summary>The search stopped early: matches past its budget of work were given up.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Truncated { get; init; }
+}
+
+/// <summary>Every match, for a results list.</summary>
+/// <param name="Matches">The matches, in document order.</param>
+public sealed record FindMatches(IReadOnlyList<FindMatch> Matches)
+{
+    /// <summary>The search stopped early: matches past its budget of work were given up.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Truncated { get; init; }
+}
+
+/// <summary>How many matches Replace All replaced or Highlight All highlighted.</summary>
+/// <param name="Count">How many.</param>
+public sealed record FindCount(int Count)
+{
+    /// <summary>The search stopped early: matches past its budget of work were given up.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Truncated { get; init; }
+}
 
 /// <summary>A find match, with context for a results list.</summary>
 /// <param name="Id">The match.</param>
@@ -73,7 +289,12 @@ public sealed record FindResult(bool Found, bool Wrapped);
 /// <param name="Text">The matched text.</param>
 /// <param name="After">Text after the match.</param>
 /// <param name="Page">The page.</param>
-public sealed record FindMatch(MatchId Id, string Before, string Text, string After, int Page);
+public sealed record FindMatch(MatchId Id, string Before, string Text, string After, int Page)
+{
+    /// <summary>The heading it is under, for grouping results by heading; null before the first heading or outside the body.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public HeadingId? Heading { get; init; }
+}
 
 /// <summary>Spell checking.</summary>
 public sealed class EditorSpelling
@@ -155,6 +376,11 @@ public sealed class EditorNavigation
     /// <param name="ct">Cancels the request.</param>
     /// <returns>Completes when it is selected.</returns>
     public Task SelectAsync(HeadingId heading, CancellationToken ct = default) => _session.CallAsync(Method.SelectHeading, WireJson.ToUtf8(heading), ct);
+
+    /// <summary>The heading the selection is under, as a navigation pane highlights it; null before the first heading or outside the body. Ask on selection changes.</summary>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>The heading.</returns>
+    public Task<HeadingId?> GetCurrentHeadingAsync(CancellationToken ct = default) => _session.CallAsync<HeadingId?>(Method.CurrentHeading, [], ct);
 }
 
 /// <summary>A heading.</summary>
@@ -191,6 +417,25 @@ public sealed class EditorStyles
     /// <returns>The tile as PNG.</returns>
     public Task<PreviewPicture> TileAsync(StyleId id, PreviewSize size, CancellationToken ct = default) =>
         _session.CallAsync<PreviewPicture>(Method.StyleTile, WireJson.ToUtf8(new StyleTileRequest(id, size)), ct);
+
+    /// <summary>A style as it is defined, without a dialog: the document's, or a built-in one it doesn't define yet.</summary>
+    /// <param name="id">The style.</param>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>The definition; null for an id that is neither.</returns>
+    public Task<StyleDefinition?> GetDefinitionAsync(StyleId id, CancellationToken ct = default) =>
+        _session.CallAsync<StyleDefinition?>(Method.StyleDefinition, WireJson.ToUtf8(id), ct);
+
+    /// <summary>Every built-in style, defined by the document or not, with its list flags (<see cref="EditorCommands.SetStyleMetaAsync"/> sets them).</summary>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>The built-in styles.</returns>
+    public Task<IReadOnlyList<BuiltInStyle>> GetBuiltInAsync(CancellationToken ct = default) =>
+        _session.CallAsync<IReadOnlyList<BuiltInStyle>>(Method.BuiltInStyles, [], ct);
+
+    /// <summary>The document's default formatting (<see cref="EditorCommands.SetDefaultFormattingAsync"/> sets it).</summary>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>The defaults; null without a styles part.</returns>
+    public Task<DefaultsDefinition?> GetDocumentDefaultsAsync(CancellationToken ct = default) =>
+        _session.CallAsync<DefaultsDefinition?>(Method.DocumentDefaults, [], ct);
 }
 
 /// <summary>A preview picture's size: device-independent pixels, and device pixels per one.</summary>
@@ -267,6 +512,12 @@ public sealed class EditorLists
     public Task<PreviewPicture> PreviewAsync(string id, PreviewSize size, CancellationToken ct = default) =>
         _session.CallAsync<PreviewPicture>(Method.ListEntryPreview, WireJson.ToUtf8(new ListEntryPreviewRequest(id, size)), ct);
 
+    /// <summary>The list of the paragraph the selection's focus is in, its nine levels in full (<see cref="EditorCommands.SetListDefinitionAsync"/> sets them).</summary>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>The list; null outside a list.</returns>
+    public Task<ListDefinitionInfo?> GetDefinitionAsync(CancellationToken ct = default) =>
+        _session.CallAsync<ListDefinitionInfo?>(Method.ListDefinition, [], ct);
+
     /// <summary>The characters a font has, as runs of code points in its Basic Multilingual Plane.</summary>
     /// <param name="family">The font family.</param>
     /// <param name="ct">Cancels the request.</param>
@@ -318,9 +569,10 @@ public sealed record StylePreview(string Font, Length Size, bool Bold, bool Ital
 /// <param name="Link">The linked character or paragraph style.</param>
 /// <param name="Visibility">Whether it shows in style lists.</param>
 /// <param name="Locked">Restricted: unavailable while the document's formatting is protected.</param>
+/// <param name="Uses">How many times the main document uses it: paragraphs for a paragraph style, stretches of runs for a character style, 0 for table and list styles (<see cref="EditorCommands.SelectStyleInstancesAsync"/> selects them).</param>
 public sealed record StyleInfo(
     StyleId Id, string Name, StyleType Type, bool BuiltIn, bool Quick, int Priority, bool Hidden, StyleId? BasedOn, StylePreview Preview,
-    StyleId? Link = null, StyleVisibility Visibility = StyleVisibility.Show, bool Locked = false)
+    StyleId? Link = null, StyleVisibility Visibility = StyleVisibility.Show, bool Locked = false, int Uses = 0)
 {
     /// <summary>Its other names; none when null.</summary>
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
@@ -357,6 +609,43 @@ public sealed class EditorElements
     /// <param name="ct">Cancels the request.</param>
     /// <returns>The element.</returns>
     public Task<ElementDetail> GetAsync(ElementId id, CancellationToken ct = default) => _session.CallAsync<ElementDetail>(Method.Element, WireJson.ToUtf8(id), ct);
+
+    /// <summary>Insert Field's fields, of one category or all, in its order.</summary>
+    /// <param name="category">Only this category's; null for all.</param>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>The fields.</returns>
+    public Task<IReadOnlyList<FieldDescription>> GetFieldCatalogueAsync(FieldCategory? category = null, CancellationToken ct = default) =>
+        _session.CallAsync<IReadOnlyList<FieldDescription>>(Method.FieldCatalogue, category is { } c ? WireJson.ToUtf8(c) : [], ct);
+
+    /// <summary>The formats and pictures Insert Field offers.</summary>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>The formats.</returns>
+    public Task<FieldFormats> GetFieldFormatsAsync(CancellationToken ct = default) => _session.CallAsync<FieldFormats>(Method.FieldFormats, [], ct);
+
+    /// <summary>The field code Insert Field's choices make, and its problems (none when it takes it as it is).</summary>
+    /// <param name="choice">The choices.</param>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>The code and its problems.</returns>
+    public Task<ComposedField> ComposeFieldAsync(FieldChoice choice, CancellationToken ct = default) =>
+        _session.CallAsync<ComposedField>(Method.ComposeField, WireJson.ToUtf8(choice), ct);
+
+    /// <summary>The choices a field code is made of, as Insert Field opens on it.</summary>
+    /// <param name="code">The field code.</param>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>The choices.</returns>
+    public Task<FieldChoice> ParseFieldAsync(string code, CancellationToken ct = default) => _session.CallAsync<FieldChoice>(Method.ParseField, WireJson.ToUtf8(code), ct);
+
+    /// <summary>The field the selection is in, with its code's choices; null outside a field.</summary>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>The field and its choices.</returns>
+    public Task<FieldHere?> GetFieldHereAsync(CancellationToken ct = default) => _session.CallAsync<FieldHere?>(Method.FieldHere, [], ct);
+
+    /// <summary>The display formats a date control offers for a locale.</summary>
+    /// <param name="locale">The locale (BCP 47).</param>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>The formats.</returns>
+    public Task<IReadOnlyList<string>> GetDateFormatsAsync(string locale, CancellationToken ct = default) =>
+        _session.CallAsync<IReadOnlyList<string>>(Method.DateFormats, WireJson.ToUtf8(locale), ct);
 
     /// <summary>
     /// An element's boxes on screen in client coordinates, one per line it spans, for anchoring your own chrome to it:
@@ -501,6 +790,16 @@ public record ElementInfo(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Title,
     string Display, Story Story, ElementId? Parent, bool Locked)
 {
+    /// <summary>A field shows its code rather than its result.</summary>
+    public bool ShowingCode { get; init; }
+
+    /// <summary>A field's result is out of date: the next field update refreshes it.</summary>
+    public bool Dirty { get; init; }
+
+    /// <summary>A date control's date (<c>YYYY-MM-DDTHH:MM:SSZ</c>); null while it shows its placeholder or no date.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Date { get; init; }
+
     /// <summary>The sub-template whose body it is in, when <see cref="Story"/> is <see cref="Story.SubTemplate"/>.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? SubTemplate { get; init; }
@@ -615,7 +914,13 @@ public abstract record Block
     /// <summary>A paragraph.</summary>
     /// <param name="TextLength">Its text length.</param>
     /// <param name="Elements">The elements in it.</param>
-    public sealed record Paragraph(int TextLength, IReadOnlyList<ElementId> Elements) : Block;
+    /// <param name="HiddenMarks">Its hidden paragraph marks: where each paragraph joined into it by one ends, and its own mark when that is hidden; empty when none.</param>
+    public sealed record Paragraph(int TextLength, IReadOnlyList<ElementId> Elements, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] IReadOnlyList<HiddenMark>? HiddenMarks = null) : Block;
+
+    /// <summary>A hidden paragraph mark: a style separator runs a heading into the paragraph after it.</summary>
+    /// <param name="At">Where it is, in characters from the paragraph's start.</param>
+    /// <param name="StyleSeparator">It is a style separator (Ctrl+Alt+Enter), not text formatted hidden.</param>
+    public sealed record HiddenMark(int At, bool StyleSeparator);
 
     /// <summary>A table.</summary>
     /// <param name="Rows">Its rows.</param>
@@ -850,7 +1155,7 @@ public enum GestureId
     TextDoubleClick,
     /// <summary>A triple-click on text.</summary>
     TextTripleClick,
-    /// <summary>A Ctrl+click on text.</summary>
+    /// <summary>A Ctrl+click on text: selects the sentence, or, with text selected, adds the sentence to the selection, or takes it out when it is selected.</summary>
     TextCtrlClick,
     /// <summary>A Ctrl+click on a link, or a click when read only.</summary>
     LinkActivate,
@@ -882,6 +1187,28 @@ public enum GestureId
     RulerDoubleClick,
     /// <summary>A right-click, or the context-menu key.</summary>
     ContextClick,
+    /// <summary>A double-click on a picture, shape or text box.</summary>
+    ObjectDoubleClick,
+    /// <summary>Dragging an object's sizing handle.</summary>
+    ObjectResizeDrag,
+    /// <summary>Dragging a shape's adjustment or rotation handle.</summary>
+    ShapeHandleDrag,
+    /// <summary>Dragging a table's move handle.</summary>
+    TableMoveDrag,
+    /// <summary>A click in a cell's, row's or column's selection zone.</summary>
+    TableZoneClick,
+    /// <summary>A click on a table's insert mark.</summary>
+    TableInsertClick,
+    /// <summary>A double-click on a note reference or a note's number.</summary>
+    NoteDoubleClick,
+    /// <summary>A double-click in blank space with Click and Type on.</summary>
+    ClickAndType,
+    /// <summary>A double-click between pages, or on their meeting line.</summary>
+    PageGapDoubleClick,
+    /// <summary>A click on an enabled drop-down form field where forms are filled in: the host opens its list.</summary>
+    FormFieldClick,
+    /// <summary>A double-click on a legacy form field outside forms protection: the host opens its options.</summary>
+    FormFieldDoubleClick,
 }
 
 /// <summary>What a gesture does: its default, an event, nothing, or an operation.</summary>
@@ -931,6 +1258,8 @@ public enum GestureArea
     Ruler,
     /// <summary>A table border.</summary>
     TableBorder,
+    /// <summary>Between pages, or their meeting line while white space is hidden.</summary>
+    PageGap,
 }
 
 /// <summary>What is under a gesture: content (as a menu target) or an area.</summary>
@@ -1019,3 +1348,247 @@ public sealed class EditorShortcuts
         }
     }
 }
+
+/// <summary>A footnote or endnote, as a notes list shows it.</summary>
+/// <param name="Kind">Footnote or endnote.</param>
+/// <param name="Id">Its id as the document numbers it: stable while the document is open.</param>
+/// <param name="Mark">Its reference mark: its custom mark, else its number as laid out (empty before layout reaches it).</param>
+/// <param name="CustomMark">Its mark is a custom one.</param>
+/// <param name="Text">Its text, plain, at most 1,024 characters and then an ellipsis.</param>
+/// <param name="Page">The page showing its reference; null while nothing refers to it or layout hasn't reached it.</param>
+public sealed record NoteInfo(NoteType Kind, long Id, string Mark, bool CustomMark, string Text, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Page = null);
+
+/// <summary>One note separator's text.</summary>
+/// <param name="Text">Its plain text, paragraphs <c>\n</c> apart (empty for the built-in line).</param>
+/// <param name="Builtin">It is the built-in one: a line.</param>
+public sealed record NoteSeparatorState(string Text, bool Builtin);
+
+/// <summary>The separators of footnotes or endnotes.</summary>
+/// <param name="Separator">Above the notes on the page they start.</param>
+/// <param name="ContinuationSeparator">Above the notes continued from the page before.</param>
+/// <param name="ContinuationNotice">Below notes that continue on the next page; null when there is none.</param>
+public sealed record NoteSeparators(NoteSeparatorState Separator, NoteSeparatorState ContinuationSeparator, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] NoteSeparatorState? ContinuationNotice = null);
+
+/// <summary>An editable range, as Restrict Editing lists it: the permissions over one stretch of the document.</summary>
+/// <param name="Ids">Its permissions' ids, one per editor.</param>
+/// <param name="Editors">Who may edit it.</param>
+/// <param name="Page">The page it starts on; null before layout reaches it.</param>
+public sealed record EditableRangeInfo(IReadOnlyList<string> Ids, IReadOnlyList<RangeEditorRef> Editors, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Page = null);
+
+/// <summary>The columns a column preset gives a section, for <see cref="EditorCommands.SetColumnsAsync"/>.</summary>
+/// <param name="Count">The number of columns.</param>
+/// <param name="Spacing">The space between columns.</param>
+/// <param name="Separator">A line is drawn between columns.</param>
+/// <param name="Widths">Columns of their own widths; null for equal ones.</param>
+/// <param name="ApplyTo">Where they apply.</param>
+/// <param name="StartNewColumn">The text from the selection on starts a new column.</param>
+public sealed record ColumnSettings(
+    int Count,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Spacing = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Separator = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<ColumnWidth>? Widths = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ColumnsApplyTo? ApplyTo = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? StartNewColumn = null);
+
+/// <summary>Insert Field's categories.</summary>
+public enum FieldCategory
+{
+    /// <summary>Date and Time.</summary>
+    DateAndTime,
+    /// <summary>Document Automation.</summary>
+    DocumentAutomation,
+    /// <summary>Document Information.</summary>
+    DocumentInformation,
+    /// <summary>Equations and Formulas.</summary>
+    EquationsAndFormulas,
+    /// <summary>Index and Tables.</summary>
+    IndexAndTables,
+    /// <summary>Links and References.</summary>
+    LinksAndReferences,
+    /// <summary>Mail Merge.</summary>
+    MailMerge,
+    /// <summary>Numbering.</summary>
+    Numbering,
+    /// <summary>User Information.</summary>
+    UserInformation,
+}
+
+/// <summary>What a field argument names.</summary>
+public enum FieldArgKind
+{
+    /// <summary>Any text.</summary>
+    Text,
+    /// <summary>A bookmark of the document.</summary>
+    Bookmark,
+    /// <summary>A style's name.</summary>
+    Style,
+    /// <summary>A document property's name.</summary>
+    Property,
+    /// <summary>A document variable's name.</summary>
+    Variable,
+    /// <summary>A file name or address.</summary>
+    File,
+    /// <summary>A sequence or list name, an entry or a merge field's name.</summary>
+    Name,
+    /// <summary>An expression or a comparison.</summary>
+    Expression,
+    /// <summary>A whole number.</summary>
+    Number,
+}
+
+/// <summary>What a field switch takes after it.</summary>
+public enum SwitchArgKind
+{
+    /// <summary>Nothing: it is on or off.</summary>
+    None,
+    /// <summary>Text.</summary>
+    Text,
+    /// <summary>A whole number.</summary>
+    Number,
+    /// <summary>A bookmark.</summary>
+    Bookmark,
+    /// <summary>A style's name.</summary>
+    Style,
+    /// <summary>A sequence or caption label's name.</summary>
+    Name,
+    /// <summary>Heading or outline levels.</summary>
+    Levels,
+}
+
+/// <summary>An argument a field takes.</summary>
+/// <param name="Name">Its name.</param>
+/// <param name="Kind">What it names.</param>
+/// <param name="Required">The field needs it.</param>
+public sealed record FieldArgInfo(string Name, FieldArgKind Kind, bool Required);
+
+/// <summary>A switch of a field's own.</summary>
+/// <param name="Flag">The letter (or <c>!</c>) after the backslash.</param>
+/// <param name="Arg">What it takes after it.</param>
+/// <param name="Description">What it does.</param>
+public sealed record FieldSwitchInfo(string Flag, SwitchArgKind Arg, string Description);
+
+/// <summary>The general switches a field takes.</summary>
+/// <param name="Text"><c>\*</c>: text and number formats.</param>
+/// <param name="Numeric"><c>\#</c>: a numeric picture.</param>
+/// <param name="Date"><c>\@</c>: a date-time picture.</param>
+public sealed record FieldGeneralSwitches(bool Text, bool Numeric, bool Date);
+
+/// <summary>A field as Insert Field describes it.</summary>
+/// <param name="Name">Its name as a code writes it.</param>
+/// <param name="Categories">The categories it is listed under.</param>
+/// <param name="Description">What it does.</param>
+/// <param name="Syntax">Its syntax, as Insert Field shows it under Field codes.</param>
+/// <param name="Args">Its arguments, in order.</param>
+/// <param name="Switches">Its own switches.</param>
+/// <param name="Formats">The general switches it takes.</param>
+/// <param name="Evaluated">The engine computes its result.</param>
+public sealed record FieldDescription(
+    string Name, IReadOnlyList<FieldCategory> Categories, string Description, string Syntax,
+    IReadOnlyList<FieldArgInfo> Args, IReadOnlyList<FieldSwitchInfo> Switches, FieldGeneralSwitches Formats, bool Evaluated);
+
+/// <summary>A format a <c>\*</c> switch takes, and its name.</summary>
+/// <param name="Value">As the code writes it.</param>
+/// <param name="Label">Its name in Insert Field.</param>
+public sealed record FieldFormatOption(string Value, string Label);
+
+/// <summary>The formats Insert Field offers.</summary>
+/// <param name="TextFormats"><c>\*</c> text formats.</param>
+/// <param name="NumberFormats"><c>\*</c> number formats.</param>
+/// <param name="NumericPictures"><c>\#</c> numeric pictures.</param>
+/// <param name="DatePictures"><c>\@</c> date-time pictures.</param>
+public sealed record FieldFormats(
+    IReadOnlyList<FieldFormatOption> TextFormats, IReadOnlyList<FieldFormatOption> NumberFormats, IReadOnlyList<string> NumericPictures, IReadOnlyList<string> DatePictures);
+
+/// <summary>A field switch chosen, with what follows it.</summary>
+/// <param name="Flag">The letter (or <c>!</c>) after the backslash.</param>
+/// <param name="Value">What follows it.</param>
+public sealed record FieldSwitchChoice(string Flag, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Value = null);
+
+/// <summary>What a field code is made of: Insert Field's choices.</summary>
+/// <param name="Name">The field's name.</param>
+public sealed record FieldChoice(string Name)
+{
+    /// <summary>Its arguments, in order.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<string> Args { get; init; } = [];
+
+    /// <summary>Its own switches.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<FieldSwitchChoice> Switches { get; init; } = [];
+
+    /// <summary><c>\*</c> formats other than MERGEFORMAT.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<string> Formats { get; init; } = [];
+
+    /// <summary><c>\#</c>: a numeric picture.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? NumericPicture { get; init; }
+
+    /// <summary><c>\@</c>: a date-time picture.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? DatePicture { get; init; }
+
+    /// <summary><c>\* MERGEFORMAT</c>: the result keeps its formatting through updates.</summary>
+    public bool PreserveFormatting { get; init; }
+}
+
+/// <summary>What is wrong with a field code, as Insert Field flags it.</summary>
+[JsonPolymorphic(TypeDiscriminatorPropertyName = "kind")]
+[JsonDerivedType(typeof(Empty), "empty")]
+[JsonDerivedType(typeof(UnknownField), "unknownField")]
+[JsonDerivedType(typeof(MissingArgument), "missingArgument")]
+[JsonDerivedType(typeof(UnknownSwitch), "unknownSwitch")]
+[JsonDerivedType(typeof(MissingSwitch), "missingSwitch")]
+[JsonDerivedType(typeof(MissingSwitchValue), "missingSwitchValue")]
+[JsonDerivedType(typeof(NotANumber), "notANumber")]
+[JsonDerivedType(typeof(FormatNotTaken), "formatNotTaken")]
+public abstract record FieldProblem
+{
+    private protected FieldProblem() { }
+
+    /// <summary>No field name.</summary>
+    public sealed record Empty : FieldProblem;
+
+    /// <summary>A field Word has no such name for.</summary>
+    /// <param name="Name">The name.</param>
+    public sealed record UnknownField(string Name) : FieldProblem;
+
+    /// <summary>A required argument left out.</summary>
+    /// <param name="Name">The argument's name.</param>
+    public sealed record MissingArgument(string Name) : FieldProblem;
+
+    /// <summary>A switch the field doesn't take.</summary>
+    /// <param name="Flag">The switch's flag.</param>
+    public sealed record UnknownSwitch(string Flag) : FieldProblem;
+
+    /// <summary>A switch the field needs left out.</summary>
+    /// <param name="Flag">The switch's flag.</param>
+    public sealed record MissingSwitch(string Flag) : FieldProblem;
+
+    /// <summary>A switch that takes a value given none.</summary>
+    /// <param name="Flag">The switch's flag.</param>
+    public sealed record MissingSwitchValue(string Flag) : FieldProblem;
+
+    /// <summary>A switch that takes a whole number given something else.</summary>
+    /// <param name="Flag">The switch's flag.</param>
+    public sealed record NotANumber(string Flag) : FieldProblem;
+
+    /// <summary>A general switch the field doesn't take.</summary>
+    /// <param name="Flag">The switch's flag: <c>*</c>, <c>#</c> or <c>@</c>.</param>
+    public sealed record FormatNotTaken(string Flag) : FieldProblem;
+}
+
+/// <summary>A field code made from choices, and its problems.</summary>
+/// <param name="Code">The code, with Word's spaces around it.</param>
+/// <param name="Problems">What is wrong with it; empty when Insert Field takes it as it is.</param>
+public sealed record ComposedField(string Code, IReadOnlyList<FieldProblem> Problems);
+
+/// <summary>The field the selection is in, and its code's choices.</summary>
+/// <param name="Id">The field.</param>
+/// <param name="Choice">Its code's choices.</param>
+public sealed record FieldHere(ElementId Id, FieldChoice Choice);
+
+/// <summary>A page thumbnail's drawn size, in pixels, centred in the buffer.</summary>
+/// <param name="Width">The page's width.</param>
+/// <param name="Height">The page's height.</param>
+public sealed record ThumbnailSize(int Width, int Height);

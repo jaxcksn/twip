@@ -35,14 +35,14 @@ fn undo_cannot_lift_enforced_protection_or_its_edits() {
         s.run(Command::SetDocumentProtection(on)).expect("protects");
         assert!(enforced(s));
         assert!(s.run(Command::InsertText("x".into())).is_err(), "protected");
-        let _ = s.run(Command::Undo);
-        let _ = s.run(Command::Undo);
+        let _ = s.run(Command::Undo(Default::default()));
+        let _ = s.run(Command::Undo(Default::default()));
         assert!(enforced(s), "protection survives Undo");
         assert_eq!(s.with_editor(|e| texts(e)), vec!["hello".to_string()], "text survives Undo");
         let off = DocumentProtection { enforce: Some(false), password: Some("pw".into()), ..Default::default() };
         s.run(Command::SetDocumentProtection(off)).expect("stops with the password");
-        let _ = s.run(Command::Undo);
-        let _ = s.run(Command::Redo);
+        let _ = s.run(Command::Undo(Default::default()));
+        let _ = s.run(Command::Redo(Default::default()));
         assert!(!enforced(s), "undo can't put protection back to lift again");
         assert!(s.with_editor(|e| e.is_dirty()), "still modified");
     });

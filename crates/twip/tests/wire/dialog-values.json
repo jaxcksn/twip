@@ -105,7 +105,9 @@
     "style": "double",
     "tab": "shading",
     "top": {
-      "color": "#2F5496",
+      "color": {
+        "rgb": "#2F5496"
+      },
       "style": "double",
       "width": 0.75
     },
@@ -141,7 +143,9 @@
     "style": "double",
     "tab": "shading",
     "top": {
-      "color": "#2F5496",
+      "color": {
+        "rgb": "#2F5496"
+      },
       "style": "double",
       "width": 0.75
     },
@@ -169,18 +173,24 @@
     "levels": [
       {
         "alignment": "right",
+        "bold": true,
+        "color": "#C00000",
         "follow": "space",
         "font": "Wingdings",
         "format": "upperRoman",
+        "highlight": "none",
+        "italic": false,
         "legal": true,
         "linkedStyle": "Heading1",
         "numberPosition": 0.5,
         "picture": "iVBORw==",
         "restartAfter": 0,
+        "size": 10.5,
         "start": 1,
         "tab": 36.5,
         "text": "Article %1.",
-        "textIndent": 18.5
+        "textIndent": 18.5,
+        "underline": "single"
       }
     ],
     "listName": "Legal"

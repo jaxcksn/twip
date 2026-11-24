@@ -123,11 +123,11 @@ fn a_watermark_goes_in_every_header_of_every_section_and_undoes_whole() {
         .expect("a watermark float");
     assert!(f.behind && f.h_align.as_deref() == Some("center") && f.v_relative == "margin", "{f:?}");
 
-    run(&mut e, Command::Undo);
+    run(&mut e, Command::Undo(Default::default()));
     assert!(e.document().sections[0].headers.iter().all(Option::is_none), "the made headers go");
     assert_eq!(marks(&e), vec![("word/header1.xml".to_string(), 0)]);
     assert_eq!(e.page_formatting(1).watermark, None);
-    run(&mut e, Command::Redo);
+    run(&mut e, Command::Redo(Default::default()));
     assert_eq!(marks(&e).len(), 4);
 }
 
@@ -222,7 +222,10 @@ fn watermark_arguments_are_checked_and_its_text_escaped() {
     // VML shows no SVG: a picture watermark or page picture of one is refused.
     let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10"/></svg>"#.to_vec();
     refused(&mut e, Command::SetWatermark(Watermark::Picture(PictureWatermark { image: Bytes(svg.clone()), ..Default::default() })));
-    refused(&mut e, Command::SetPageColor(FillValue::Picture { image: Bytes(svg), tile: Some(true) }));
+    refused(
+        &mut e,
+        Command::SetPageColor(FillValue::Picture { image: Bytes(svg), stretch: None, tile: Some(Default::default()), rotate_with_shape: None }),
+    );
 }
 
 #[test]
@@ -310,9 +313,9 @@ fn a_page_colour_keeps_its_theme_colour_and_undoes() {
     assert!((colour.transforms[0].value - 0.6).abs() < 0.01, "{colour:?}");
     assert_eq!(again.document().page_colour, e.document().page_colour);
 
-    run(&mut e, Command::Undo);
+    run(&mut e, Command::Undo(Default::default()));
     assert_eq!((e.document().page_colour, e.page_formatting(0).background), (None, None));
-    run(&mut e, Command::Redo);
+    run(&mut e, Command::Redo(Default::default()));
     run(&mut e, Command::SetPageColor(FillValue::None));
     assert_eq!(e.page_formatting(0).background, None);
     let saved = crate::docx::write::save(e.document()).expect("saves");
@@ -368,10 +371,13 @@ fn a_page_gradient_and_picture_are_written_as_word_writes_them() {
         &std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/render/watermark-picture.docx")).unwrap(),
         "word/media/image1.png",
     );
-    run(&mut e, Command::SetPageColor(FillValue::Picture { image: Bytes(png), tile: Some(true) }));
+    run(
+        &mut e,
+        Command::SetPageColor(FillValue::Picture { image: Bytes(png), stretch: None, tile: Some(Default::default()), rotate_with_shape: None }),
+    );
     let saved = crate::docx::write::save(e.document()).expect("saves");
     assert!(part(&saved, "word/document.xml").contains(r#"type="tile""#));
-    refused(&mut e, Command::SetPageColor(FillValue::Picture { image: Bytes(b"nope".to_vec()), tile: None }));
+    refused(&mut e, Command::SetPageColor(FillValue::Picture { image: Bytes(b"nope".to_vec()), stretch: None, tile: None, rotate_with_shape: None }));
     let many = (0..65).map(|k| GradientStop { position: f64::from(k) / 64.0, colour: ColourValue::rgb(Color(0)) }).collect();
     refused(&mut e, Command::SetPageColor(FillValue::Gradient { kind: GradientShape::Linear, angle: None, stops: many, focus: None }));
 }
@@ -611,7 +617,7 @@ fn typing_over_everything_keeps_the_last_sections_watermark_through_a_save() {
         assert_eq!(again.page_formatting(0).watermark, e.page_formatting(0).watermark, "{fx}");
         assert!(e.page_formatting(0).watermark.is_some(), "{fx}");
 
-        run(&mut e, Command::Undo);
+        run(&mut e, Command::Undo(Default::default()));
         let mut back = marks(&e);
         back.sort();
         let mut want = before.clone();
@@ -672,7 +678,7 @@ fn in_its_header_a_watermark_is_selected_resized_and_deleted() {
     assert_eq!(names(&after), names(&before), "every header stays");
     assert!(after.iter().all(|(n, k)| *k == usize::from(*n != default)), "only the default header lost its watermark: {after:?}");
     assert_eq!(e.page_formatting(0).watermark, None);
-    run(&mut e, Command::Undo);
+    run(&mut e, Command::Undo(Default::default()));
     assert_eq!(sorted(&e), before, "undo puts it back");
     assert!(e.page_formatting(0).watermark.is_some());
 }
@@ -685,7 +691,7 @@ fn a_picture_watermark_and_page_picture_read_back_their_bytes() {
     let mut e = Editor::open(&crate::docx::blank::blank_docx(), fonts()).expect("opens");
     run(&mut e, Command::SetWatermark(Watermark::Picture(PictureWatermark { image: Bytes(data.clone()), scale: None, washout: Some(true) })));
     assert_eq!(e.watermark_image(0), Some(&data[..]));
-    run(&mut e, Command::SetPageColor(FillValue::Picture { image: Bytes(fill.clone()), tile: None }));
+    run(&mut e, Command::SetPageColor(FillValue::Picture { image: Bytes(fill.clone()), stretch: None, tile: None, rotate_with_shape: None }));
     assert_eq!(e.page_fill_image(), Some(&fill[..]));
     assert_eq!(e.watermark_image(0), Some(&data[..]), "each its own");
 }

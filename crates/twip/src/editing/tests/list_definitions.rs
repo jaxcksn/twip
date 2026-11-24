@@ -426,8 +426,8 @@ fn a_picture_bullet_definition_adds_its_image_once() {
     assert!(e.pending_images.is_empty(), "nothing queued after {out:?}");
     e.execute(Command::SetAlignment(Alignment::Center), fonts());
     assert_eq!(e.document().images.len(), images + 1, "the picture, once");
-    e.execute(Command::Undo, fonts());
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert!(e.document().resolver.as_ref().unwrap().numbering.pic_bullets.is_empty(), "undone");
 }
 
@@ -566,17 +566,15 @@ fn list_of(fmt: &str, extra: &str) -> Editor {
 
 #[test]
 fn every_number_style_twip_numbers_with_reads_back_as_itself() {
-    use crate::editing::list_defs::NumberStyle;
-    for style in NumberStyle::NAMED {
+    for style in NumberFormat::NAMED {
         let mut e = list_of(style.val(), "");
         caret_in(&mut e, 0);
         let d = e.list_definition().expect("a list");
         assert_eq!(d.levels[0].format, style, "{}", style.val());
-        assert_eq!(d.levels[0].level.format, style.format());
     }
     let mut e = list_of("aiueoFullWidth", "");
     caret_in(&mut e, 0);
-    assert_eq!(e.list_definition().expect("a list").levels[0].format, NumberStyle::Other("aiueoFullWidth".into()), "unlisted: as named");
+    assert_eq!(e.list_definition().expect("a list").levels[0].format, NumberFormat::Other("aiueoFullWidth".into()), "unlisted: as named");
 }
 
 #[test]
@@ -585,7 +583,7 @@ fn the_caret_list_reads_without_a_dialog() {
     caret_in(&mut e, 1);
     let d = e.list_definition().expect("a list");
     assert_eq!((d.id, d.level, d.bullet, d.levels.len()), (1, 0, false, 9));
-    assert_eq!(d.levels[0].level.text, "%1.");
+    assert_eq!(d.levels[0].text, "%1.");
     caret_in(&mut e, 2);
     assert!(e.list_definition().is_none(), "outside a list");
 }
@@ -593,28 +591,25 @@ fn the_caret_list_reads_without_a_dialog() {
 #[test]
 fn a_level_in_full_sets_its_style_and_its_numbers_formatting() {
     use crate::api::value::{AutoOr, Color, HighlightColor, NoneOr, UnderlineStyle};
-    use crate::editing::list_defs::{LabelFormat, ListLevelsChange, NumberStyle};
     let mut e = list_of("decimal", "");
     caret_in(&mut e, 0);
     let mut levels = e.list_definition().expect("a list").levels;
-    levels[0].format = NumberStyle::Chicago;
-    levels[0].level.text = "%1".into();
-    levels[0].label = LabelFormat {
-        bold: Some(true),
-        italic: Some(false),
-        underline: Some(UnderlineStyle::Double),
-        size: Some(Points(14.0)),
-        color: Some(AutoOr::Value(Color(0xFF0000))),
-        highlight: Some(NoneOr::Value(HighlightColor::Yellow)),
+    levels[0].format = NumberFormat::Chicago;
+    levels[0].text = "%1".into();
+    (levels[0].bold, levels[0].italic, levels[0].underline) = (Some(true), Some(false), Some(UnderlineStyle::Double));
+    (levels[0].size, levels[0].color, levels[0].highlight) =
+        (Some(Points(14.0)), Some(AutoOr::Value(Color(0xFF0000))), Some(NoneOr::Value(HighlightColor::Yellow)));
+    let define = |levels: &[crate::api::command::ListLevel]| {
+        Command::SetListDefinition(ListDefinitionChange { levels: levels[..1].to_vec(), ..Default::default() })
     };
-    let out = e.set_list_levels(ListLevelsChange { levels: levels[..1].to_vec(), ..Default::default() }, fonts());
+    let out = e.execute(define(&levels), fonts());
     assert!(matches!(out, crate::editing::commands::Outcome::Changed(_)), "{out:?}");
     assert_eq!((label(&e, 0), label(&e, 1)), ("*".to_string(), "†".to_string()), "drawn in the new style");
     let run = &para(&e, 1).list.as_ref().expect("a label").run;
     assert!(run.bold && !run.italic && run.size == 14.0 && run.color == Some(0xFF0000), "the label takes it");
     assert!(!para(&e, 1).mark.bold, "the paragraph doesn't");
     let read = e.list_definition().expect("a list").levels[0].clone();
-    assert_eq!((read.format, read.label), (NumberStyle::Chicago, levels[0].label.clone()));
+    assert_eq!(read, levels[0], "read back as set");
     let xml = part(&saved(&e), "word/numbering.xml");
     for x in [
         "w:val=\"chicago\"",
@@ -628,53 +623,46 @@ fn a_level_in_full_sets_its_style_and_its_numbers_formatting() {
     ] {
         assert!(xml.contains(x), "{x} in {xml}");
     }
-    // Cleared: the paragraph's formatting applies again.
-    levels[0].label = LabelFormat::default();
-    e.set_list_levels(ListLevelsChange { levels: levels[..1].to_vec(), ..Default::default() }, fonts());
-    assert_eq!(e.list_definition().expect("a list").levels[0].label, LabelFormat::default());
+    // Cleared (absent): the paragraph's formatting applies again.
+    (levels[0].bold, levels[0].italic, levels[0].underline, levels[0].size, levels[0].color, levels[0].highlight) =
+        (None, None, None, None, None, None);
+    e.execute(define(&levels), fonts());
+    let read = e.list_definition().expect("a list").levels[0].clone();
+    assert_eq!((read.bold, read.size, read.color), (None, None, None));
     assert!(!part(&saved(&e), "word/numbering.xml").contains("<w:b/>"));
     // Refused: a style name that can't be written, a size out of bounds.
-    levels[0].format = NumberStyle::Other("a\"b".into());
-    assert!(matches!(
-        e.set_list_levels(ListLevelsChange { levels: levels[..1].to_vec(), ..Default::default() }, fonts()),
-        crate::editing::commands::Outcome::Refused(_)
-    ));
-    levels[0].format = NumberStyle::Decimal;
-    levels[0].label.size = Some(Points(0.0));
-    assert!(matches!(
-        e.set_list_levels(ListLevelsChange { levels: levels[..1].to_vec(), ..Default::default() }, fonts()),
-        crate::editing::commands::Outcome::Refused(_)
-    ));
+    levels[0].format = NumberFormat::Other("a\"b".into());
+    assert!(matches!(e.execute(define(&levels), fonts()), crate::editing::commands::Outcome::Refused(_)));
+    levels[0].format = NumberFormat::Decimal;
+    levels[0].size = Some(Points(0.0));
+    assert!(matches!(e.execute(define(&levels), fonts()), crate::editing::commands::Outcome::Refused(_)));
 }
 
 #[test]
 fn a_size_changes_beside_a_style_read_that_cant_be_written() {
-    use crate::editing::list_defs::{ListLevelsChange, NumberStyle};
     let mut e = list_of("odd-style", "");
     caret_in(&mut e, 0);
     let mut levels = e.list_definition().expect("a list").levels;
-    assert_eq!(levels[0].format, NumberStyle::Other("odd-style".into()));
-    levels[0].label.size = Some(Points(14.0));
-    let out = e.set_list_levels(ListLevelsChange { levels: levels[..1].to_vec(), ..Default::default() }, fonts());
+    assert_eq!(levels[0].format, NumberFormat::Other("odd-style".into()));
+    levels[0].size = Some(Points(14.0));
+    let out = e.execute(Command::SetListDefinition(ListDefinitionChange { levels: levels[..1].to_vec(), ..Default::default() }), fonts());
     assert!(matches!(out, crate::editing::commands::Outcome::Changed(_)), "{out:?}");
-    assert_eq!(e.list_definition().expect("a list").levels[0].label.size, Some(Points(14.0)));
+    assert_eq!(e.list_definition().expect("a list").levels[0].size, Some(Points(14.0)));
 }
 
 #[test]
-fn the_api_level_keeps_a_style_and_number_formatting_it_cant_show() {
-    use crate::editing::list_defs::NumberStyle;
+fn the_api_level_round_trips_its_style_and_number_formatting() {
     let mut e = list_of("hex", "<w:rPr><w:b/></w:rPr>");
     caret_in(&mut e, 0);
     let mut shown = levels_of(&mut e, 0);
-    assert_eq!(shown[0].format, NumberFormat::Decimal, "the API's enum has no hex");
+    assert_eq!((&shown[0].format, shown[0].bold), (&NumberFormat::Hex, Some(true)), "the API names every style");
     shown[0].text_indent = Points(54.0);
     e.execute(Command::SetListDefinition(ListDefinitionChange { levels: shown[..1].to_vec(), ..Default::default() }), fonts());
     let d = e.list_definition().expect("a list").levels[0].clone();
-    assert_eq!((d.format, d.label.bold, d.level.text_indent), (NumberStyle::Hex, Some(true), Points(54.0)));
-    // Choosing a style the API names replaces it.
+    assert_eq!((d.format, d.bold, d.text_indent), (NumberFormat::Hex, Some(true), Points(54.0)));
     shown[0].format = NumberFormat::UpperRoman;
     e.execute(Command::SetListDefinition(ListDefinitionChange { levels: shown[..1].to_vec(), ..Default::default() }), fonts());
-    assert_eq!(e.list_definition().expect("a list").levels[0].format, NumberStyle::UpperRoman);
+    assert_eq!(e.list_definition().expect("a list").levels[0].format, NumberFormat::UpperRoman);
 }
 
 #[test]
@@ -694,17 +682,20 @@ fn a_click_on_a_number_formats_the_levels_numbers() {
     let view = e.view(0..1);
     assert_eq!(view.list_labels.len(), 2, "both numbers shaded");
     e.execute(Command::SetBold(true), fonts());
-    e.execute(Command::SetFontColor(crate::api::value::AutoOr::Value(crate::api::value::Color(0x0000FF))), fonts());
+    e.execute(
+        Command::SetFontColor(crate::api::value::AutoOr::Value(crate::api::drawing::ColourValue::rgb(crate::api::value::Color(0x0000FF)))),
+        fonts(),
+    );
     for n in [0, 1] {
         let run = &para(&e, n).list.as_ref().expect("a label").run;
         assert!(run.bold && run.color == Some(0x0000FF), "number {n} formatted");
         assert!(!para(&e, n).mark.bold, "text {n} isn't");
     }
-    assert!(e.list_definition().expect("a list").levels[0].label.bold == Some(true));
+    assert!(e.list_definition().expect("a list").levels[0].bold == Some(true));
     let label = |e: &Editor| para(e, 0).list.as_ref().map(|l| (l.run.bold, l.run.color)).expect("a label");
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert!(matches!(label(&e), (true, c) if c != Some(0x0000FF)), "the colour undone, the bold kept: {:?}", label(&e));
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert!(!label(&e).0, "then the bold");
     let select = |e: &mut Editor| {
         e.pointer_input(PointerKind::Down, x, y, 1, Mods::default(), fonts());
@@ -909,7 +900,7 @@ fn a_copied_list_keeps_the_levels_its_num_overrides_past_the_ones_supplied() {
     let (_, num, _) = again.selection_list().unwrap();
     assert_ne!(num, 5, "a new list");
     let read = levels_of(&mut again, 0);
-    assert_eq!((read[0].text.as_str(), read[1].format), ("%1}", NumberFormat::UpperRoman), "read back: the edit and the kept level");
+    assert_eq!((read[0].text.as_str(), read[1].format.clone()), ("%1}", NumberFormat::UpperRoman), "read back: the edit and the kept level");
 }
 
 #[test]

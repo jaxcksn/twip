@@ -228,13 +228,13 @@ fn step_command(name: &str) -> Command {
         "table.delete.cells-left" => Command::DeleteCells(CellShift::Left),
         "table.select.row" => Command::Select(SelectUnit::Row),
         "table.merge" => Command::MergeCells,
-        "home.undo" => Command::Undo,
-        "home.redo" => Command::Redo,
+        "home.undo" => Command::Undo(Default::default()),
+        "home.redo" => Command::Redo(Default::default()),
         "table.split" => Command::SplitCells(SplitCells { columns: 2, rows: None }),
         "table.split-rows" => Command::SplitCells(SplitCells { columns: 1, rows: Some(2) }),
         "table.distribute" => Command::DistributeColumns,
         "table.borders.all" => Command::SetCellBorders(CellBorders { edges: crate::api::command::BorderEdges::All, border: None }),
-        "table.shading" => Command::SetCellShading(Some(Color(0xDDEBF7))),
+        "table.shading" => Command::SetCellShading(Some(crate::api::drawing::ColourValue::rgb(Color(0xDDEBF7)))),
         "table.row-height" => Command::SetRowHeight(AutoOr::Value(RowHeight { height: Points(30.0), rule: HeightRule::Exact })),
         "table.cell-align.center" => Command::SetCellAlignment(CellAlignment::Center),
         "table.header-row" => Command::SetHeaderRow(true),
@@ -363,7 +363,7 @@ fn ltb_23_undo_after_a_cancelled_table_properties_dialog_saves() {
     assert_eq!(en.with_editor(|e| texts(e))[13], "T2 R1 C1 typed");
     table_properties(en);
     // Cancel: the host sends nothing.
-    en.run(Command::Undo).expect("undoes");
+    en.run(Command::Undo(Default::default())).expect("undoes");
     assert_eq!(en.with_editor(|e| texts(e)), texts(&original), "undo gives the cell back");
     let bytes = en.export(&Default::default()).expect("saves after the undo").bytes.0;
     let mut again = Editor::open(&bytes, fonts()).expect("reopens");
@@ -522,8 +522,8 @@ fn ltb_36_a_table_steps_undo_memory_follows_the_table_and_ids_survive() {
     let ids1 = all(&big);
     let missing = |now: &[u64]| ids0.iter().filter(|id| !now.contains(id)).count();
     assert_eq!(missing(&ids1), 0, "untouched ids survive the step");
-    big.execute(Command::Undo, fonts());
+    big.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(all(&big), ids0, "undo gives every id back");
-    big.execute(Command::Redo, fonts());
+    big.execute(Command::Redo(Default::default()), fonts());
     assert_eq!(missing(&all(&big)), 0, "untouched ids survive redo");
 }

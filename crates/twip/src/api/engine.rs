@@ -177,7 +177,9 @@ mod tests {
         let id = engine.create_session(SessionOptions::default());
         let s = engine.session(id).expect("a session");
         let mut last = 0;
-        for c in [Command::InsertText("a".into()), Command::InsertText("b".into()), Command::Undo, Command::Redo] {
+        for c in
+            [Command::InsertText("a".into()), Command::InsertText("b".into()), Command::Undo(Default::default()), Command::Redo(Default::default())]
+        {
             heard.borrow_mut().clear();
             s.run(c).expect("runs");
             // Heard before `run` returned: the state rebuilt for this commit, then the commit itself.

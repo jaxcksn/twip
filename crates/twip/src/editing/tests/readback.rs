@@ -319,8 +319,12 @@ fn row_exceptions_take_theme_colours() {
 fn document_defaults_take_a_theme_font_and_colour() {
     let mut e = edit(TWO);
     let c = accent(ThemeColour::Accent1, TransformKind::Tint, 0.4);
-    let d = crate::api::command::DocumentDefaults::default();
-    assert!(matches!(e.set_document_defaults_with(d, Some(ThemeFont::Minor), Some(AutoOr::Value(c)), fonts()), Outcome::Changed(_)));
+    let d = crate::api::command::DocumentDefaults {
+        font: Some(crate::api::command::FontChoice::Theme { theme: crate::api::value::ThemeFont::Body }),
+        color: Some(AutoOr::Value(c)),
+        ..Default::default()
+    };
+    assert!(matches!(e.execute(Command::SetDocumentDefaults(d), fonts()), Outcome::Changed(_)));
     let raw = e.document().resolver.as_ref().and_then(|r| r.styles.defaults_raw.clone()).expect("defaults");
     assert!(
         raw.contains(r#"w:asciiTheme="minorHAnsi""#) && raw.contains(r#"w:themeColor="accent1""#) && raw.contains(r#"w:themeTint="66""#),
@@ -422,7 +426,7 @@ fn an_outside_page_number_is_a_frame_on_the_margins_outside_edge() {
     };
     assert!(framed(&reopened(&e)), "it reopens as a frame");
     assert_eq!(e.history().undo_labels().next(), Some("Page Number"), "one action");
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert!(!headers_xml(&e).contains(" PAGE "));
 }
 
@@ -448,13 +452,18 @@ fn page_setup_applies_from_this_point_forward_or_to_the_whole_document() {
     let mut e = edit(TWO);
     let ids = super::texts_ids(&e);
     e.selection = Selection::Caret(Position::text(StoryId::Body, ids[1], Unit(0)));
-    let out = e.in_section_scope(ApplyTo::ThisPointForward, "Page Setup", |e| e.execute(C::SetOrientation(Orientation::Landscape), fonts()), fonts());
+    let out = e.in_section_scope(
+        ApplyTo::ThisPointForward,
+        "Page Setup",
+        |e| e.execute(C::SetOrientation(crate::api::command::SectionValue::here(Orientation::Landscape)), fonts()),
+        fonts(),
+    );
     assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
     let wide = |e: &Editor| e.document().sections.iter().map(|s| s.page_w > s.page_h).collect::<Vec<_>>();
     assert_eq!(wide(&e), [false, true], "a new section from the caret on");
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(wide(&e), [false], "one action");
-    e.execute(Command::Redo, fonts());
+    e.execute(Command::Redo(Default::default()), fonts());
     assert_eq!(wide(&e), [false, true], "redone");
     first(&mut e);
     let m = Margins { left: Some(Points(90.0)), ..Margins::default() };
@@ -504,7 +513,12 @@ fn this_point_forward_over_selected_text_keeps_the_text() {
     let a = Position::text(StoryId::Body, ids[1], Unit(1));
     let b = Position::text(StoryId::Body, ids[1], Unit(3));
     e.selection = Selection::range(a, b, crate::editing::selection::Granularity::Char);
-    let out = e.in_section_scope(ApplyTo::ThisPointForward, "Page Setup", |e| e.execute(C::SetOrientation(Orientation::Landscape), fonts()), fonts());
+    let out = e.in_section_scope(
+        ApplyTo::ThisPointForward,
+        "Page Setup",
+        |e| e.execute(C::SetOrientation(crate::api::command::SectionValue::here(Orientation::Landscape)), fonts()),
+        fonts(),
+    );
     assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
     let wide = |e: &Editor| e.document().sections.iter().map(|s| s.page_w > s.page_h).collect::<Vec<_>>();
     assert_eq!(wide(&e), [false, true], "from the selection's start on");
@@ -520,7 +534,7 @@ fn this_point_forward_over_selected_text_keeps_the_text() {
     };
     assert_eq!((text(0), text(1)), ("onet".to_string(), "wo".to_string()), "the break falls in \"two\", at the selection's start");
     assert_eq!(e.history().undo_labels().next(), Some("Page Setup"));
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!((wide(&e), super::texts(&e).concat()), (vec![false], "onetwo".to_string()), "one action");
 }
 
@@ -541,7 +555,7 @@ fn a_page_number_left_off_the_first_page_takes_a_different_first_page() {
     };
     assert!(holds(0) && !holds(1), "in the default footer, not the first page's");
     assert_eq!(e.history().undo_labels().next(), Some("Page Number"), "one action");
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert!(!e.document().sections[0].title_pg);
     assert_eq!(page_number_sample(NumberFormat::Decimal, Some(ChapterSeparator::Hyphen)), "1-1");
     assert_eq!(page_number_sample(NumberFormat::UpperLetter, Some(ChapterSeparator::Hyphen)), "1-A");
@@ -625,7 +639,7 @@ fn selected_list_numbers_read_back_as_the_formatting_state_does() {
     e.pointer_input(PointerKind::Down, x, y, 1, Mods::default(), fonts());
     e.pointer_input(PointerKind::Up, x, y, 1, Mods::default(), fonts());
     assert!(e.list_label_selection().is_some(), "the numbers are selected");
-    e.execute(C::SetFontColor(AutoOr::Value(Color(0x0000FF))), fonts());
+    e.execute(C::SetFontColor(AutoOr::Value(ColourValue::rgb(Color(0x0000FF)))), fonts());
     let blue = Tri::Uniform(AutoOr::Value(ColourValue::rgb(Color(0x0000FF))));
     assert_eq!(e.character_readback().expect("a readback").color, blue, "the numbers' colour, not the text's");
     let (_, character, _) = e.format_readback().expect("read backs");

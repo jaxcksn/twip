@@ -44,7 +44,7 @@ fn leaving_a_provisional_header_in_read_only_keeps_its_transaction() {
     e.execute(Command::CloseHeaderFooter, fonts());
     assert_eq!(e.history().undo_depth(), n);
     e.set_mode(Mode::Editing);
-    assert!(matches!(e.execute(Command::Undo, fonts()), Outcome::Changed(_)), "the header can still be undone");
+    assert!(matches!(e.execute(Command::Undo(Default::default()), fonts()), Outcome::Changed(_)), "the header can still be undone");
 }
 
 #[test]
@@ -109,7 +109,7 @@ fn consecutive_backspaces_are_one_step() {
         e.execute(del(Dir::Back, false), fonts());
     }
     assert_eq!(e.history().undo_depth(), d + 1);
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(texts(&e).concat(), "abcde");
 }
 
@@ -120,7 +120,7 @@ fn consecutive_forward_deletes_are_one_step() {
         e.execute(del(Dir::Forward, false), fonts());
     }
     assert_eq!(e.history().undo_depth(), 1);
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(texts(&e).concat(), "abcde");
 }
 
@@ -139,7 +139,7 @@ fn a_symbol_is_its_own_step() {
     e.execute(Command::InsertSymbol(InsertSymbol { char: '\u{a9}', font: None }), fonts());
     type_text(&mut e, "xy");
     assert!(texts(&e).concat().contains('\u{a9}'), "{:?}", texts(&e));
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(texts(&e).concat(), "\u{a9}");
 }
 

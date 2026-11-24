@@ -19,5 +19,16 @@
   "rulerDrag",
   "rulerDragOff",
   "rulerDoubleClick",
-  "contextClick"
+  "contextClick",
+  "objectDoubleClick",
+  "objectResizeDrag",
+  "shapeHandleDrag",
+  "tableMoveDrag",
+  "tableZoneClick",
+  "tableInsertClick",
+  "noteDoubleClick",
+  "clickAndType",
+  "pageGapDoubleClick",
+  "formFieldClick",
+  "formFieldDoubleClick"
 ]

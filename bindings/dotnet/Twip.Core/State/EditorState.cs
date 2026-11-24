@@ -80,7 +80,22 @@ public sealed record EditorState
 
     /// <summary>What typing corrects; change it with <see cref="EditorCommands.SetAutoCorrectAsync"/>.</summary>
     public AutoCorrectOptions AutoCorrect { get; init; } = new();
+
+    /// <summary>The cut, copy and paste options; change them with <see cref="EditorCommands.SetPasteOptionsAsync"/>.</summary>
+    public PasteSettings PasteOptions { get; init; } = new(PasteMode.KeepSource, PasteMode.KeepSource, PasteMode.DestinationStyles, PasteMode.KeepSource, true, true, true, new(true, true, true, true, true, true, true));
+
+    /// <summary>The caption inserted tables get (<see cref="EditorCommands.SetAutoCaptionAsync"/>); null when off.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public AutoCaption? AutoCaption { get; init; }
+
+    /// <summary>The theme's heading and body font families.</summary>
+    public ThemeFonts ThemeFonts { get; init; } = new("", "");
 }
+
+/// <summary>The theme's font families.</summary>
+/// <param name="Heading">The heading font (<c>+Headings</c>).</param>
+/// <param name="Body">The body font (<c>+Body</c>).</param>
+public sealed record ThemeFonts(string Heading, string Body);
 
 /// <summary>What typing corrects (AutoCorrect): each rule on or off (all on by default), and the texts never corrected again.</summary>
 public sealed record AutoCorrectOptions
@@ -117,6 +132,15 @@ public sealed record AutoCorrectOptions
 
     /// <summary><c>*</c> or <c>-</c> then a space or tab at a paragraph's start makes it a bulleted list.</summary>
     public bool BulletedLists { get; init; } = true;
+
+    /// <summary>AutoFormat: three or more <c>-</c>, <c>_</c>, <c>=</c>, <c>*</c>, <c>~</c> or <c>#</c> then Enter make the paragraph a bottom border line.</summary>
+    public bool BorderLines { get; init; } = true;
+
+    /// <summary>AutoFormat: an Internet or network path then a space or Enter becomes a hyperlink.</summary>
+    public bool InternetPaths { get; init; } = true;
+
+    /// <summary>AutoFormat: Tab and Backspace at a paragraph's start set its indents.</summary>
+    public bool TabIndents { get; init; } = true;
 
     /// <summary>The texts Never correct added: never corrected again.</summary>
     [JsonIgnore]
@@ -238,6 +262,15 @@ public sealed record SelectionSummary
     /// </summary>
     public string? Text { get; init; } = "";
 
+    /// <summary>Every selected range of text in document order: one for a text selection, one per line for a column block, several for a discontiguous selection; empty for a caret, cells or an object. At most 1,000.</summary>
+    public IReadOnlyList<TextRange> Ranges { get; init; } = [];
+
+    /// <summary>The selection has more ranges than <see cref="Ranges"/> lists.</summary>
+    public bool RangesTruncated { get; init; }
+
+    /// <summary>The selected blocks of cells of a discontiguous selection, in the order they were added; the selection's own block is the last when <see cref="Kind"/> is cells. Empty when at most one block is selected (<see cref="Table"/> describes it).</summary>
+    public IReadOnlyList<CellBlock> CellBlocks { get; init; } = [];
+
     /// <summary>The table, when the selection is in one.</summary>
     public TableSelection? Table { get; init; }
 
@@ -258,12 +291,46 @@ public sealed record SelectionSummary
 
     /// <summary>The header or footer being edited.</summary>
     public HeaderFooterInfo? HeaderFooter { get; init; }
+
+    /// <summary>Set while F2 (<see cref="EditorCommands.MoveTextAsync"/>) or Shift+F2 waits for its place: a click or the arrow keys choose it, Enter moves the text there, Esc gives up.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PendingMove? PendingMove { get; init; }
+
+    /// <summary>Set while a list's numbers are selected (a click on a number): character formatting then formats that list level's numbers; any selection move ends it.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ListNumbers? ListNumbers { get; init; }
 }
+
+/// <summary>A list level whose numbers are selected.</summary>
+/// <param name="List">The list: a <see cref="ListDefinitionInfo.Id"/>.</param>
+/// <param name="Level">The level, 0 to 8.</param>
+public sealed record ListNumbers(long List, int Level);
+
+/// <summary>An F2 or Shift+F2 move waiting for its place.</summary>
+/// <param name="Copy">Copies (Shift+F2) rather than moves.</param>
+/// <param name="Placed">A place is chosen: Enter moves the text there.</param>
+public sealed record PendingMove(bool Copy, bool Placed);
 
 /// <summary>A hyperlink.</summary>
 /// <param name="Address">The address.</param>
 /// <param name="Text">The link text.</param>
-public sealed record LinkInfo(string Address, string Text);
+public sealed record LinkInfo(string Address, string Text)
+{
+    /// <summary>The target without its bookmark: empty for a place in this document.</summary>
+    public string Target { get; init; } = "";
+
+    /// <summary>The place in the target it goes to (a bookmark name).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Bookmark { get; init; }
+
+    /// <summary>The ScreenTip shown when it is hovered.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ScreenTip { get; init; }
+
+    /// <summary>The window or frame it opens in.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Frame { get; init; }
+}
 
 /// <summary>A header or a footer.</summary>
 public enum HeaderFooterKind
@@ -367,7 +434,160 @@ public sealed record TableSelection
 
     /// <summary>The table's alternative text description.</summary>
     public string Description { get; init; } = "";
+
+    /// <summary>The rows and columns in each band, as it lays out, and the table's own (null: its style's).</summary>
+    public TableBands Bands { get; init; } = new(1, 1);
+
+    /// <summary>The selected cells' borders, edge by edge: each cell's own line, else its row's or table's for that edge.</summary>
+    public CellBorderLines CellBorders { get; init; } = new();
+
+    /// <summary>The table's own borders.</summary>
+    public TableBorderLines TableBorders { get; init; } = new();
+
+    /// <summary>The selected cells' shading with its pattern (<see cref="CellShading"/> is its fill alone).</summary>
+    public FormatValue<NoneOr<ShadingValue>> CellShadingValue { get; init; }
+
+    /// <summary>The table's shading (behind spaced cells); null for none.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ShadingValue? TableShading { get; init; }
+
+    /// <summary>The selected cells' margins on each side.</summary>
+    public CellMarginsState CellMargins { get; init; } = new();
+
+    /// <summary>The table's default cell margins (Table Options).</summary>
+    public TableCellMargins DefaultCellMargins { get; init; } = new();
+
+    /// <summary>The selected cells' end marks take no height.</summary>
+    public FormatValue<bool> HideMark { get; init; }
+
+    /// <summary>The selected rows' exceptions to the table's properties.</summary>
+    public RowExceptionsState RowExceptions { get; init; } = new();
+
+    /// <summary>How the table's columns are sized.</summary>
+    public TableFit Fit { get; init; }
+
+    /// <summary>The columns the current cell spans.</summary>
+    public int ColumnSpan { get; init; }
+
+    /// <summary>The rows the current cell spans (more than one: merged down).</summary>
+    public int RowSpan { get; init; }
 }
+
+/// <summary>How a table's columns are sized.</summary>
+public enum TableFit
+{
+    /// <summary>Fixed column widths.</summary>
+    Fixed,
+    /// <summary>Columns fitted to their contents (AutoFit Contents).</summary>
+    Contents,
+    /// <summary>The table fills the width it is in (AutoFit Window).</summary>
+    Window,
+}
+
+/// <summary>The selected cells' edges, each the same line over them, mixed, or none.</summary>
+public sealed record CellBorderLines
+{
+    /// <summary>The selection's top edge.</summary>
+    public FormatValue<NoneOr<CellBorder>> Top { get; init; }
+
+    /// <summary>Its left edge.</summary>
+    public FormatValue<NoneOr<CellBorder>> Left { get; init; }
+
+    /// <summary>Its bottom edge.</summary>
+    public FormatValue<NoneOr<CellBorder>> Bottom { get; init; }
+
+    /// <summary>Its right edge.</summary>
+    public FormatValue<NoneOr<CellBorder>> Right { get; init; }
+
+    /// <summary>The lines between the selected rows (unavailable with one row).</summary>
+    public FormatValue<NoneOr<CellBorder>> InsideHorizontal { get; init; }
+
+    /// <summary>The lines between the selected columns (unavailable with one column).</summary>
+    public FormatValue<NoneOr<CellBorder>> InsideVertical { get; init; }
+
+    /// <summary>The diagonal from top left to bottom right.</summary>
+    public FormatValue<NoneOr<CellBorder>> DiagonalDown { get; init; }
+
+    /// <summary>The diagonal from bottom left to top right.</summary>
+    public FormatValue<NoneOr<CellBorder>> DiagonalUp { get; init; }
+}
+
+/// <summary>A table's own borders; null for none.</summary>
+public sealed record TableBorderLines
+{
+    /// <summary>The top edge.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CellBorder? Top { get; init; }
+
+    /// <summary>The left edge.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CellBorder? Left { get; init; }
+
+    /// <summary>The bottom edge.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CellBorder? Bottom { get; init; }
+
+    /// <summary>The right edge.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CellBorder? Right { get; init; }
+
+    /// <summary>The lines between rows.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CellBorder? InsideHorizontal { get; init; }
+
+    /// <summary>The lines between columns.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CellBorder? InsideVertical { get; init; }
+}
+
+/// <summary>The selected cells' margins, each the same over them or mixed.</summary>
+public sealed record CellMarginsState
+{
+    /// <summary>The top margin.</summary>
+    public FormatValue<Length> Top { get; init; }
+
+    /// <summary>The left margin.</summary>
+    public FormatValue<Length> Left { get; init; }
+
+    /// <summary>The bottom margin.</summary>
+    public FormatValue<Length> Bottom { get; init; }
+
+    /// <summary>The right margin.</summary>
+    public FormatValue<Length> Right { get; init; }
+}
+
+/// <summary>The selected rows' exceptions to their table's properties; none where a row takes the table's.</summary>
+public sealed record RowExceptionsState
+{
+    /// <summary>The rows carry exceptions at all.</summary>
+    public FormatValue<bool> Any { get; init; }
+
+    /// <summary>The rows' own alignment.</summary>
+    public FormatValue<NoneOr<TableAlignment>> Alignment { get; init; }
+
+    /// <summary>The rows' own indent from the table's left edge.</summary>
+    public FormatValue<NoneOr<Length>> Indent { get; init; }
+
+    /// <summary>The rows' own space between cells.</summary>
+    public FormatValue<NoneOr<Length>> CellSpacing { get; init; }
+
+    /// <summary>The rows' own shading.</summary>
+    public FormatValue<NoneOr<ShadingValue>> Shading { get; init; }
+
+    /// <summary>The rows' own borders.</summary>
+    public FormatValue<NoneOr<TableBorderLines>> Borders { get; init; }
+}
+
+/// <summary>The rows and columns in each of a table's bands.</summary>
+/// <param name="Rows">Rows in each band, as it lays out.</param>
+/// <param name="Columns">Columns in each band, as it lays out.</param>
+/// <param name="OwnRows">The table's own rows in each band; null: its style's.</param>
+/// <param name="OwnColumns">The table's own columns in each band; null: its style's.</param>
+public sealed record TableBands(
+    int Rows,
+    int Columns,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? OwnRows = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? OwnColumns = null);
 
 /// <summary>Which parts of a table style apply.</summary>
 public sealed record TableStyleOptions
@@ -404,6 +624,8 @@ public enum ObjectKind
     Line,
     /// <summary>A group of objects.</summary>
     Group,
+    /// <summary>A frame: paragraphs placed on the page (a drop cap is one).</summary>
+    Frame,
 }
 
 /// <summary>The selected object.</summary>
@@ -466,7 +688,78 @@ public sealed record ObjectSelection
     /// <summary>Its height as a share of a box on the page; null for an absolute height.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public RelativeSize? RelativeHeight { get; init; }
+
+    /// <summary>A floating object's id (a group child's when one is selected); null for inline objects and frames.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ObjectId? Id { get; init; }
+
+    /// <summary>Its name, as the Selection Pane lists it.</summary>
+    public string Name { get; init; } = "";
+
+    /// <summary>Its alternative text's title.</summary>
+    public string Title { get; init; } = "";
+
+    /// <summary>Hidden: not drawn, and text doesn't wrap around it.</summary>
+    public bool Hidden { get; init; }
+
+    /// <summary>Resizing it keeps its aspect ratio (Lock aspect ratio).</summary>
+    public bool LockAspect { get; init; }
+
+    /// <summary>A picture's image at its own size; null for other objects.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PictureSize? OriginalSize { get; init; }
+
+    /// <summary>Its place in the stack of its page's floating objects, 0 at the front; null for inline objects and frames.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? StackIndex { get; init; }
+
+    /// <summary>A picture's adjustments; null for other objects.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PictureAdjustState? PictureAdjust { get; init; }
+
+    /// <summary>A text box's place in a chain of linked text boxes; null when it is in none.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public TextBoxLinkState? TextBoxLink { get; init; }
+
+    /// <summary>A floating object's wrap polygon; null when it has none and its wrapping is neither tight nor through.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public WrapPolygonState? WrapPolygon { get; init; }
+
+    /// <summary>A frame's placement and whether other frames and objects may overlap it; null for other objects.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public FrameState? Frame { get; init; }
 }
+
+/// <summary>A text box's place in a chain of linked text boxes.</summary>
+/// <param name="Index">Its place in the chain, from 0.</param>
+/// <param name="Count">How many boxes are in the chain.</param>
+/// <param name="Previous">The box before it; null for the first.</param>
+/// <param name="Next">The box after it; null for the last.</param>
+public sealed record TextBoxLinkState(
+    int Index,
+    int Count,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ObjectId? Previous = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ObjectId? Next = null);
+
+/// <summary>A floating object's wrap polygon.</summary>
+/// <param name="Points">Its vertices, unclosed.</param>
+/// <param name="Edited">Edited by hand: kept when the object changes.</param>
+public sealed record WrapPolygonState(IReadOnlyList<BoxPoint> Points, bool Edited);
+
+/// <summary>A frame's placement.</summary>
+/// <param name="Properties">Its wrapping, size, position and distance from text.</param>
+/// <param name="AllowOverlap">Other floating objects may overlap it.</param>
+public sealed record FrameState(FrameProperties Properties, bool AllowOverlap);
+
+/// <summary>A floating object as the Selection Pane lists it.</summary>
+/// <param name="Object">The object.</param>
+/// <param name="Name">Its name.</param>
+/// <param name="Kind">What it is.</param>
+/// <param name="Hidden">Hidden.</param>
+/// <param name="Children">A group's objects, front first.</param>
+public sealed record ObjectListEntry(
+    ObjectId Object, string Name, ObjectKind Kind, bool Hidden,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<ObjectListEntry>? Children = null);
 
 /// <summary>The selected shape's properties, as written.</summary>
 public sealed record ShapeState
@@ -534,6 +827,9 @@ public sealed record ShapeTextState
 
     /// <summary>Its columns.</summary>
     public TextColumns Columns { get; init; } = new(1, default);
+
+    /// <summary>The text stays upright when the shape turns ("Do not rotate text within shape").</summary>
+    public bool Upright { get; init; }
 }
 
 /// <summary>A floating object's place and its wrapping options.</summary>
@@ -599,6 +895,16 @@ public enum ElementKind
     RepeatingSection,
     /// <summary>One item of a repeating section.</summary>
     RepeatingItem,
+    /// <summary>A building block gallery control.</summary>
+    BuildingBlockGallery,
+    /// <summary>A building block inserted from a gallery.</summary>
+    BuildingBlock,
+    /// <summary>A citation control.</summary>
+    Citation,
+    /// <summary>A bibliography control.</summary>
+    Bibliography,
+    /// <summary>An equation control.</summary>
+    Equation,
 }
 
 /// <summary>An element around the selection.</summary>
@@ -614,6 +920,15 @@ public sealed record ElementContext(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Tag = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Title = null)
 {
+    /// <summary>Locked against editing: a locked field, or a control whose content can't be edited.</summary>
+    public bool Locked { get; init; }
+
+    /// <summary>A field shows its code rather than its result.</summary>
+    public bool ShowingCode { get; init; }
+
+    /// <summary>A field's result is out of date: the next field update refreshes it.</summary>
+    public bool Dirty { get; init; }
+
     /// <summary>A picture control's picture size (inline or floating).</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public PictureSize? Size { get; init; }
@@ -654,6 +969,21 @@ public sealed record ControlInfo
     public bool? AllowInsertDelete { get; init; }
     /// <summary>A building block gallery's entries: the package's building blocks in its category, by name.</summary>
     public IReadOnlyList<string> BuildingBlocks { get; init; } = [];
+    /// <summary>A building block gallery's (or building block's) gallery; null for any.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Gallery { get; init; }
+    /// <summary>A building block gallery's (or building block's) category; null for any.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Category { get; init; }
+    /// <summary>A date control's date (<c>YYYY-MM-DDTHH:MM:SSZ</c>); null while it shows its placeholder or no date.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Date { get; init; }
+    /// <summary>A date control's calendar.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CalendarType? Calendar { get; init; }
+    /// <summary>What a date control stores in its data.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DateStorage? StoreAs { get; init; }
 }
 
 /// <summary>A legacy form field's options and value; what doesn't apply to its kind is null.</summary>
@@ -691,6 +1021,28 @@ public sealed record FormFieldInfo
     /// <summary>The entry a drop-down shows.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? Entry { get; init; }
+    /// <summary>The help text names an AutoText entry whose text is the help.</summary>
+    public bool HelpIsAutoText { get; init; }
+    /// <summary>The status text names an AutoText entry whose text is the help.</summary>
+    public bool StatusIsAutoText { get; init; }
+    /// <summary>The macro run on entry.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? EntryMacro { get; init; }
+    /// <summary>The macro run on exit.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ExitMacro { get; init; }
+    /// <summary>A text field's text format.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Format { get; init; }
+    /// <summary>A check box's size, or its text's (<see cref="SpacingValue.Auto"/>).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public SpacingValue? Size { get; init; }
+    /// <summary>A check box is checked by default.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? CheckedByDefault { get; init; }
+    /// <summary>The entry a drop-down shows by default, from 0.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? DefaultEntry { get; init; }
 }
 
 /// <summary>The selection's character formatting.</summary>
@@ -791,7 +1143,39 @@ public sealed record CharacterFormatting
 
     /// <summary>The text effects (fill, outline, shadow, glow and reflection), through the character style.</summary>
     public FormatValue<TextEffects> TextEffects { get; init; }
+
+    /// <summary>The theme font the font is, or none (a family by name).</summary>
+    public FormatValue<NoneOr<ThemeFont>> FontTheme { get; init; }
+
+    /// <summary>The colour as written: RGB, or a theme colour with its tint or shade (<see cref="ColorValue.Value"/>); <see cref="Color"/> is what it shows.</summary>
+    [JsonPropertyName("colorValue")]
+    public FormatValue<ColorValue> ColorAsWritten { get; init; }
+
+    /// <summary>The underline's colour as written, or the text's (<see cref="ColorValue.Auto"/>).</summary>
+    [JsonPropertyName("underlineColorValue")]
+    public FormatValue<ColorValue> UnderlineColorAsWritten { get; init; }
+
+    /// <summary>The text's border, with its distance and shadow, or none.</summary>
+    public FormatValue<NoneOr<CellBorder>> TextBorder { get; init; }
+
+    /// <summary>The text's shading, or none.</summary>
+    public FormatValue<NoneOr<ShadingValue>> TextShading { get; init; }
+
+    /// <summary>The width the text is fitted to (Fit Text), or none.</summary>
+    public FormatValue<NoneOr<Length>> FitText { get; init; }
+
+    /// <summary>Each kind of OpenType ligature on or off.</summary>
+    public FormatValue<LigatureFlags> LigatureFlags { get; init; }
+
+    /// <summary>The OpenType stylistic sets on (1 to 20), in order.</summary>
+    public FormatValue<IReadOnlyList<int>> StylisticSets { get; init; }
 }
+
+/// <summary>Shading as the editor reads it back: a fill, and a pattern in the pattern colour over it.</summary>
+/// <param name="Fill">The fill, or <see cref="ColorValue.None"/>.</param>
+/// <param name="Pattern">The pattern.</param>
+/// <param name="Color">The pattern's colour, or <see cref="ColorValue.Auto"/>.</param>
+public sealed record ShadingValue(ColorValue Fill, ShadingPattern Pattern, ColorValue Color);
 
 /// <summary>The selected paragraphs' formatting.</summary>
 public sealed record ParagraphFormatting
@@ -844,6 +1228,28 @@ public sealed record ParagraphFormatting
     /// <summary>The selection's paragraph's drop cap, when it has one.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public DropCap? DropCap { get; init; }
+
+    /// <summary>The top border, with its colour as written, distance and shadow, or none.</summary>
+    public FormatValue<NoneOr<CellBorder>> BorderTop { get; init; }
+
+    /// <summary>The left border.</summary>
+    public FormatValue<NoneOr<CellBorder>> BorderLeft { get; init; }
+
+    /// <summary>The bottom border.</summary>
+    public FormatValue<NoneOr<CellBorder>> BorderBottom { get; init; }
+
+    /// <summary>The right border.</summary>
+    public FormatValue<NoneOr<CellBorder>> BorderRight { get; init; }
+
+    /// <summary>The line between paragraphs with the same borders.</summary>
+    public FormatValue<NoneOr<CellBorder>> BorderBetween { get; init; }
+
+    /// <summary>The shading in full (<see cref="Shading"/> is its fill as shown), or none.</summary>
+    [JsonPropertyName("shadingValue")]
+    public FormatValue<NoneOr<ShadingValue>> ShadingAsWritten { get; init; }
+
+    /// <summary>The tab stops, own and inherited, in position order: the same for every selected paragraph, or mixed.</summary>
+    public FormatValue<IReadOnlyList<TabStop>> Tabs { get; init; }
 }
 
 /// <summary>Paragraph indents.</summary>
@@ -918,7 +1324,7 @@ public sealed record PageFormatting
     public bool DifferentOddEven { get; init; }
 
     /// <summary>The page number format.</summary>
-    public NumberFormat PageNumberFormat { get; init; }
+    public NumberFormat PageNumberFormat { get; init; } = NumberFormat.Decimal;
 
     /// <summary>The section's first page number, or null when it continues from the section before.</summary>
     public int? PageNumberStart { get; init; }
@@ -966,6 +1372,44 @@ public sealed record PageFormatting
     /// <summary>The watermark the pages show (a picture's image empty), or null.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public Watermark? Watermark { get; init; }
+
+    /// <summary>The section's page borders.</summary>
+    public PageBorders PageBorders { get; init; } = new();
+}
+
+/// <summary>A section's page borders.</summary>
+public sealed record PageBorders
+{
+    /// <summary>The top edge, if any; its distance is from the page's edge or the text, as <see cref="OffsetFrom"/> says.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CellBorder? Top { get; init; }
+
+    /// <summary>The left edge.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CellBorder? Left { get; init; }
+
+    /// <summary>The bottom edge.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CellBorder? Bottom { get; init; }
+
+    /// <summary>The right edge.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CellBorder? Right { get; init; }
+
+    /// <summary>What the distances are measured from.</summary>
+    public PageBorderOffset OffsetFrom { get; init; }
+
+    /// <summary>The pages they show on.</summary>
+    public PageBorderDisplay Display { get; init; }
+
+    /// <summary>They go around the header.</summary>
+    public bool SurroundHeader { get; init; }
+
+    /// <summary>They go around the footer.</summary>
+    public bool SurroundFooter { get; init; }
+
+    /// <summary>They are behind the text.</summary>
+    public bool BehindText { get; init; }
 }
 
 /// <summary>A section's footnote or endnote settings.</summary>
@@ -999,7 +1443,11 @@ public sealed record PageMargins(Length Top, Length Bottom, Length Left, Length 
 /// <param name="Spacing">The space between them.</param>
 /// <param name="Separator">Whether a line separates them.</param>
 /// <param name="Widths">Each column's width and the space after it, when they differ.</param>
-public sealed record PageColumns(int Count, Length Spacing, bool Separator, IReadOnlyList<ColumnWidth>? Widths = null);
+public sealed record PageColumns(int Count, Length Spacing, bool Separator, IReadOnlyList<ColumnWidth>? Widths = null)
+{
+    /// <summary>The columns are of equal width (<see cref="Widths"/> is then empty).</summary>
+    public bool Equal { get; init; }
+}
 
 /// <summary>Undo and redo availability.</summary>
 public sealed record HistoryState
@@ -1142,13 +1590,106 @@ public sealed record ViewState
     /// <summary>Bookmarks are shown.</summary>
     public bool Bookmarks { get; init; }
 
+    /// <summary>Tab characters are shown (or every mark is).</summary>
+    public bool TabCharacters { get; init; }
+
+    /// <summary>Spaces are shown.</summary>
+    public bool Spaces { get; init; }
+
+    /// <summary>Paragraph marks and breaks are shown.</summary>
+    public bool ParagraphMarks { get; init; }
+
+    /// <summary>Hidden text is shown.</summary>
+    public bool HiddenText { get; init; }
+
+    /// <summary>Optional hyphens are shown.</summary>
+    public bool OptionalHyphens { get; init; }
+
+    /// <summary>The selected floating object's anchor is shown.</summary>
+    public bool ObjectAnchors { get; init; } = true;
+
+    /// <summary>Click and Type is on.</summary>
+    public bool ClickAndType { get; init; } = true;
+
+    /// <summary>Selected text can be dragged and dropped.</summary>
+    public bool TextDragAndDrop { get; init; } = true;
+
+    /// <summary>The white space between pages is hidden. It opens as the document was saved.</summary>
+    public bool HideWhiteSpace { get; init; }
+
+    /// <summary>Under enforced protection, the regions the author may edit are highlighted.</summary>
+    public bool ShowEditableRegions { get; init; } = true;
+
+    /// <summary>The selected floating object's wrap points are being edited.</summary>
+    public bool EditingWrapPoints { get; init; }
+
+    /// <summary>Highlight All's highlights show (<see cref="EditorFind.HighlightAllAsync"/>); they go when the document changes.</summary>
+    public bool FindHighlights { get; init; }
+
+    /// <summary>The highlighter's colour while Highlight with nothing selected made the pointer one; null when off.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public HighlightColor? Highlighter { get; init; }
+
     /// <summary>The pointer shapes shown over elements instead of the editor's own; none when null.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<CursorOverride>? CursorOverrides { get; init; }
     /// <summary>Which fields are sub-template references (<see cref="EditorCommands.SetSubTemplateRulesAsync"/>); none when null.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<ReferenceRule>? SubTemplateRules { get; init; }
+
+    /// <summary>Create Link's pointer is on: the next click on an empty text box links the selected one to it.</summary>
+    public bool LinkingTextBox { get; init; }
+
+    /// <summary>Select Objects is on.</summary>
+    public bool SelectingObjects { get; init; }
+
+    /// <summary>The Select Objects rectangle being dragged; null when none is.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PageBox? ObjectMarquee { get; init; }
+
+    /// <summary>The pointer's table tool.</summary>
+    public TableTool TableTool { get; init; }
+
+    /// <summary>The line the Draw Table pen draws.</summary>
+    public CellBorder TablePen { get; init; } = new(LineStyle.Single, Length.FromPoints(0.5), ColorValue.Auto, Length.FromPoints(0), false);
+
+    /// <summary>What the Draw Table pen's stroke being dragged would draw, for the host to show dashed in the pen's colour; null when none is dragged.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public TableToolFeedback? TableToolFeedback { get; init; }
+
+    /// <summary>The border under the pointer the eraser would remove, for the host to highlight; null when there is none.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PageSegment? TableEraserTarget { get; init; }
 }
+
+/// <summary>A box on a page, in points from its top left corner.</summary>
+/// <param name="Page">The page, from 0.</param>
+/// <param name="Rect">Left, top, right and bottom.</param>
+public sealed record PageBox(int Page, IReadOnlyList<Length> Rect);
+
+/// <summary>A line on a page, in points from its top left corner.</summary>
+/// <param name="Page">The page, from 0.</param>
+/// <param name="From">One end.</param>
+/// <param name="To">The other end.</param>
+public sealed record PageSegment(int Page, PagePoint From, PagePoint To);
+
+/// <summary>What a Draw Table pen stroke would draw.</summary>
+public enum TableStrokeKind
+{
+    /// <summary>A line across or down a table.</summary>
+    Line,
+    /// <summary>A cell's diagonal.</summary>
+    Diagonal,
+    /// <summary>A new table's outline: the rectangle from its top left to its bottom right corner.</summary>
+    Outline,
+}
+
+/// <summary>The Draw Table pen's stroke being dragged: what it would draw, and where.</summary>
+/// <param name="Page">The page, from 0.</param>
+/// <param name="Kind">What it would draw.</param>
+/// <param name="From">A line's or diagonal's start, an outline's top left corner.</param>
+/// <param name="To">A line's or diagonal's end, an outline's bottom right corner.</param>
+public sealed record TableToolFeedback(int Page, TableStrokeKind Kind, PagePoint From, PagePoint To);
 
 /// <summary>Change tracking, revisions and comments.</summary>
 public sealed record ReviewState
@@ -1174,6 +1715,24 @@ public sealed record ReviewState
 
     /// <summary>The highlighted thread.</summary>
     public CommentId? ActiveComment { get; init; }
+
+    /// <summary>Which kinds of markup show, and whose. It opens as the document was saved.</summary>
+    public ShowMarkup ShowMarkup { get; init; } = new(true, true, true, []);
+
+    /// <summary>Where revisions show in All Markup.</summary>
+    public BalloonMode BalloonMode { get; init; } = BalloonMode.CommentsAndFormatting;
+
+    /// <summary>How revisions draw.</summary>
+    public MarkupStyle? MarkupStyle { get; init; }
+
+    /// <summary>Tracking records moves as moves.</summary>
+    public bool TrackMoves { get; init; }
+
+    /// <summary>Tracking records formatting changes.</summary>
+    public bool TrackFormatting { get; init; }
+
+    /// <summary>The revisions and threads by kind: all, and those Show Markup shows.</summary>
+    public ReviewCounts Counts { get; init; } = new(new(0, 0, 0, 0, 0), new(0, 0, 0, 0, 0));
 }
 
 /// <summary>Spell checking.</summary>
@@ -1213,6 +1772,9 @@ public sealed record RulerModel
 {
     /// <summary>Whether the selected paragraphs differ (the first one's values are shown).</summary>
     public bool Mixed { get; init; }
+
+    /// <summary>The way the caret's lines run. Across the page, the horizontal ruler shows the indents and tab stops; down or up the page (vertical text), the vertical ruler shows them, <see cref="VerticalRulerModel.Text"/> is where the lines run, and the horizontal ruler shows the text columns across the page in the order the lines stack.</summary>
+    public LineDirection Lines { get; init; }
 
     /// <summary>The horizontal ruler.</summary>
     public HorizontalRulerModel Horizontal { get; init; } = new();
@@ -1262,6 +1824,16 @@ public sealed record HorizontalRulerModel
 
     /// <summary>The cell boundaries of the caret's row.</summary>
     public IReadOnlyList<Length> TableColumns { get; init; } = [];
+
+    /// <summary>The gutter across the page, beside the margin it widens; null without one.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public RulerSpan? Gutter { get; init; }
+
+    /// <summary>The margin the page's text starts after: left, or with mirrored margins inside or outside.</summary>
+    public MarginSide StartMargin { get; init; }
+
+    /// <summary>The margin the page's text ends before.</summary>
+    public MarginSide EndMargin { get; init; }
 }
 
 /// <summary>The vertical ruler model.</summary>
@@ -1275,6 +1847,19 @@ public sealed record VerticalRulerModel
 
     /// <summary>The row boundaries of the caret's table on this page.</summary>
     public IReadOnlyList<Length> TableRows { get; init; } = [];
+
+    /// <summary>The gutter down the page (at the top); null without one.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public RulerSpan? Gutter { get; init; }
+
+    /// <summary>The paragraph's indents when its lines run down or up the page, measured along them from the text's start (down) or end (up); zero otherwise.</summary>
+    public RulerIndents Indents { get; init; } = new(Length.Zero, Length.Zero, Length.Zero);
+
+    /// <summary>The paragraph's tab stops when its lines run down or up the page, along them as <see cref="Indents"/> are.</summary>
+    public IReadOnlyList<TabStop> Tabs { get; init; } = [];
+
+    /// <summary>The default tab spacing when the lines run down or up the page.</summary>
+    public Length DefaultTabStop { get; init; }
 }
 
 /// <summary>A document's protection (Restrict Editing).</summary>
@@ -1290,4 +1875,26 @@ public sealed record ProtectionState(
     bool Formatting,
     bool Password,
     bool InEditableRange,
-    IReadOnlyList<uint> UnprotectedSections);
+    IReadOnlyList<uint> UnprotectedSections)
+{
+    /// <summary>The editing restriction takes exceptions: editable ranges and who may edit them (read only, comments).</summary>
+    public bool ExceptionsAllowed { get; init; }
+
+    /// <summary>The editing restriction leaves chosen sections open (filling in forms).</summary>
+    public bool SectionsAllowed { get; init; }
+
+    /// <summary>AutoFormat as you type may override the formatting restriction.</summary>
+    public bool AutoFormatOverride { get; init; }
+
+    /// <summary>The formatting restriction keeps the theme from changing.</summary>
+    public bool BlockThemeSwitching { get; init; }
+
+    /// <summary>The formatting restriction keeps the style set from changing.</summary>
+    public bool BlockStyleSetSwitching { get; init; }
+
+    /// <summary>Who may edit the editable ranges holding the selection.</summary>
+    public IReadOnlyList<RangeEditorRef> EditorsHere { get; init; } = [];
+
+    /// <summary>The number of editable ranges.</summary>
+    public int RangeCount { get; init; }
+}

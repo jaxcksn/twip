@@ -1,0 +1,27 @@
+{
+  "name": "insert-file",
+  "fixture": "editor/FX-EMPTY.docx",
+  "steps": [
+    { "op": "open" },
+    { "op": "command", "command": { "type": "insertText", "value": "Start " } },
+    { "op": "command", "command": { "type": "insertFile", "from": { "$file": "editor/FX-outline.docx" } } },
+    { "op": "expectState", "match": { "history": { "undoLabel": "Insert File" } } },
+    { "op": "call", "method": "find.all", "args": [{ "text": "Overview" }], "result": { "matches": [{ "before": "Start " }] } },
+    { "op": "call", "method": "navigation.headings", "result": [{ "text": "Start Overview", "level": 1 }, { "text": "Background", "level": 2 }] },
+    { "op": "command", "command": { "type": "undo" } },
+    { "op": "call", "method": "find.all", "args": [{ "text": "Overview" }], "result": { "matches": { "$exact": [] } } },
+    { "op": "command", "command": { "type": "insertFile", "from": { "$file": "editor/FX-SECTIONS.docx" } } },
+    { "op": "command", "command": { "type": "goTo", "what": "section", "target": { "absolute": 4 } } },
+    { "op": "command", "command": { "type": "select", "value": "word" } },
+    { "op": "expectState", "match": { "selection": { "text": "S4 " } } },
+    { "op": "command", "command": { "type": "undo" } },
+    { "op": "command", "command": { "type": "goTo", "what": "section", "target": { "absolute": 2 } } },
+    { "op": "expectState", "match": { "history": { "canUndo": true } } },
+    { "op": "call", "method": "find.all", "args": [{ "text": "S4 P1" }], "result": { "matches": { "$exact": [] } } },
+    { "op": "command", "command": { "type": "insertFile", "from": { "$file": "dictionaries/en_US.aff" } } },
+    { "op": "expectError", "code": "invalid-argument" },
+    { "op": "call", "method": "setReadOnly", "args": [true] },
+    { "op": "command", "command": { "type": "insertFile", "from": { "$file": "editor/FX-outline.docx" } } },
+    { "op": "expectError", "code": "read-only" }
+  ]
+}

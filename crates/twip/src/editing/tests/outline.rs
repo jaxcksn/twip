@@ -82,7 +82,7 @@ fn promote_and_demote_change_the_heading_style() {
     assert!(changed(&e.change_outline(OutlineChange::Demote, false, fonts())));
     assert!(changed(&e.change_outline(OutlineChange::Demote, false, fonts())));
     assert_eq!(style(&e, "B").as_deref(), Some("Heading3"));
-    e.execute(C::Undo, fonts());
+    e.execute(C::Undo(Default::default()), fonts());
     assert_eq!(style(&e, "B").as_deref(), Some("Heading2"), "each one undo step");
     caret(&mut e, "A");
     assert!(!changed(&e.change_outline(OutlineChange::Promote, false, fonts())), "Heading 1 is the top");
@@ -97,7 +97,7 @@ fn heading_9_stays_and_missing_heading_styles_join_the_document() {
     assert!(changed(&e.change_outline(OutlineChange::Demote, false, fonts())));
     assert_eq!(style(&e, "C").as_deref(), Some("Heading4"), "the built-in style is added");
     assert!(e.document().resolver.as_ref().is_some_and(|r| r.styles.by_id.contains_key("Heading4")));
-    e.execute(C::Undo, fonts());
+    e.execute(C::Undo(Default::default()), fonts());
     assert_eq!(style(&e, "C").as_deref(), Some("Heading3"));
     assert!(!e.document().resolver.as_ref().is_some_and(|r| r.styles.by_id.contains_key("Heading4")), "the style with it, one step");
     for _ in 0..10 {
@@ -125,7 +125,7 @@ fn subtopics_move_with_their_heading() {
     assert!(changed(&e.change_outline(OutlineChange::Promote, true, fonts())));
     assert_eq!((level(&e, "B"), level(&e, "C"), level(&e, "D")), (Some(1), Some(2), Some(2)), "up to the next heading of its level");
     assert_eq!(level(&e, "b1"), None, "body text stays body text");
-    e.execute(C::Undo, fonts());
+    e.execute(C::Undo(Default::default()), fonts());
     assert_eq!((level(&e, "B"), level(&e, "C")), (Some(2), Some(3)), "one undo step");
     caret(&mut e, "A");
     e.change_outline(OutlineChange::Demote, true, fonts());
@@ -142,7 +142,7 @@ fn a_selection_of_paragraphs_changes_together() {
     e.selection = Selection::range(Position::text(StoryId::Body, b, Unit(0)), Position::text(StoryId::Body, c, Unit(1)), Default::default());
     assert!(changed(&e.change_outline(OutlineChange::Demote, false, fonts())));
     assert_eq!((level(&e, "B"), level(&e, "b1"), level(&e, "C")), (Some(3), None, Some(4)));
-    e.execute(C::Undo, fonts());
+    e.execute(C::Undo(Default::default()), fonts());
     assert_eq!((level(&e, "B"), level(&e, "C")), (Some(2), Some(3)), "one undo step");
 }
 
@@ -225,11 +225,11 @@ fn headings_move_with_their_content() {
     was.sort();
     assert_eq!(moved, was, "the paragraphs themselves move");
     assert_eq!(e.selection(), Selection::Caret(Position::text(StoryId::Body, b, Unit(0))), "the caret at the heading");
-    e.execute(C::Undo, fonts());
+    e.execute(C::Undo(Default::default()), fonts());
     assert_eq!(texts(&e), ["A", "a1", "B", "b1", "C", "D", "E", "e1"], "one undo step");
     assert!(changed(&e.move_heading(ee, a, Beside::Before, None, fonts())));
     assert_eq!(texts(&e), ["E", "e1", "A", "a1", "B", "b1", "C", "D"], "as Move Paragraphs moves the story's last");
-    e.execute(C::Undo, fonts());
+    e.execute(C::Undo(Default::default()), fonts());
     assert!(changed(&e.move_heading(a, ee, Beside::After, None, fonts())));
     assert_eq!(texts(&e), ["E", "e1", "A", "a1", "B", "b1", "C", "D"]);
 }
@@ -241,7 +241,7 @@ fn a_moved_heading_can_take_a_level() {
     assert!(changed(&e.move_heading(b, ee, Beside::After, Some(1), fonts())));
     assert_eq!(texts(&e), ["A", "a1", "D", "E", "e1", "B", "b1", "C"]);
     assert_eq!((level(&e, "B"), level(&e, "C")), (Some(1), Some(2)), "its subtopics by as many");
-    e.execute(C::Undo, fonts());
+    e.execute(C::Undo(Default::default()), fonts());
     assert_eq!((texts(&e)[2].as_str(), level(&e, "B"), level(&e, "C")), ("B", Some(2), Some(3)), "move and levels one undo step");
     assert!(changed(&e.move_heading(b, b, Beside::Before, Some(3), fonts())), "in place, a level change alone");
     assert_eq!(level(&e, "B"), Some(3));
@@ -261,7 +261,7 @@ fn deleting_a_heading_deletes_its_content() {
     let mut e = outline();
     assert!(changed(&e.delete_heading(id(&e, "B"), fonts())));
     assert_eq!(texts(&e), ["A", "a1", "D", "E", "e1"]);
-    e.execute(C::Undo, fonts());
+    e.execute(C::Undo(Default::default()), fonts());
     assert_eq!(texts(&e), ["A", "a1", "B", "b1", "C", "D", "E", "e1"]);
     assert!(changed(&e.delete_heading(id(&e, "A"), fonts())));
     assert_eq!(texts(&e), ["E", "e1"]);
@@ -281,10 +281,10 @@ fn new_headings_go_beside_a_heading() {
     assert_eq!(texts(&e), ["A", "a1", "B", "b1", "C", "", "D", "E", "e1"]);
     let new = texts_ids(&e)[5];
     assert_eq!((e.outline_level(new), e.selection()), (Some(2), Selection::Caret(Position::text(StoryId::Body, new, Unit(0)))));
-    e.execute(C::Undo, fonts());
+    e.execute(C::Undo(Default::default()), fonts());
     assert!(changed(&e.insert_heading(b, NewHeading::Subheading, fonts())));
     assert_eq!(e.outline_level(texts_ids(&e)[5]), Some(3));
-    e.execute(C::Undo, fonts());
+    e.execute(C::Undo(Default::default()), fonts());
     assert_eq!(texts(&e).len(), 8, "one undo step");
     assert!(changed(&e.insert_heading(b, NewHeading::Before, fonts())));
     assert_eq!(e.outline_level(texts_ids(&e)[2]), Some(2));
@@ -303,10 +303,10 @@ fn a_tracked_heading_move_is_a_move() {
     use crate::docx::review::MarkKind;
     let m = marks(&e);
     assert!(m.contains(&MarkKind::MoveFrom) && m.contains(&MarkKind::MoveTo), "{m:?}");
-    e.execute(C::Undo, fonts());
+    e.execute(C::Undo(Default::default()), fonts());
     assert_eq!(texts(&e), ["A", "a1", "B", "b1", "C", "D", "E", "e1"], "one undo step");
     assert!(marks(&e).is_empty(), "{:?}", marks(&e));
-    e.execute(C::Redo, fonts());
+    e.execute(C::Redo(Default::default()), fonts());
     let m = marks(&e);
     assert!(m.contains(&MarkKind::MoveFrom) && m.contains(&MarkKind::MoveTo), "redone: {m:?}");
     let mut accepted = reopened(&e);
@@ -322,10 +322,10 @@ fn a_tracked_move_of_the_story_s_end_keeps_its_last_mark() {
     e.execute(C::SetTrackChanges(true), fonts());
     let (a, ee) = (id(&e, "A"), id(&e, "E"));
     assert!(changed(&e.move_heading(ee, a, Beside::Before, None, fonts())));
-    e.execute(C::Undo, fonts());
+    e.execute(C::Undo(Default::default()), fonts());
     assert_eq!(texts(&e), ["A", "a1", "B", "b1", "C", "D", "E", "e1"], "one undo step");
     assert!(marks(&e).is_empty(), "{:?}", marks(&e));
-    e.execute(C::Redo, fonts());
+    e.execute(C::Redo(Default::default()), fonts());
     assert!(!marks(&e).is_empty(), "redone");
     e.execute(C::AcceptAllRevisions(AuthorFilter::default()), fonts());
     assert_eq!(texts(&e), ["E", "e1", "A", "a1", "B", "b1", "C", "D"], "the paragraph passed ends in the story's last mark");
@@ -343,9 +343,9 @@ fn a_tracked_heading_delete_keeps_its_text_marked() {
     e.execute(C::SetTrackChanges(true), fonts());
     assert!(changed(&e.delete_heading(id(&e, "B"), fonts())));
     assert_eq!(texts(&e).len(), 8, "still there, marked deleted");
-    e.execute(C::Undo, fonts());
+    e.execute(C::Undo(Default::default()), fonts());
     assert!(marks(&e).is_empty(), "undone: {:?}", marks(&e));
-    e.execute(C::Redo, fonts());
+    e.execute(C::Redo(Default::default()), fonts());
     assert!(!marks(&e).is_empty(), "redone");
     e.execute(C::AcceptAllRevisions(AuthorFilter::default()), fonts());
     assert_eq!(texts(&e), ["A", "a1", "D", "E", "e1"]);
@@ -394,21 +394,21 @@ fn section_breaks_move_with_the_content_that_ends_in_them() {
     assert_eq!(layout_of(&e), strs(&[(&["B", "b1"], 500.0), (&["A", "a1"], 792.0), (&["C", "c1"], 612.0)]));
     let saved = reopened(&e);
     assert_eq!(layout_of(&saved), layout_of(&e), "saved as moved");
-    e.execute(C::Undo, fonts());
+    e.execute(C::Undo(Default::default()), fonts());
     assert_eq!(layout_of(&e), strs(&[(&["A", "a1"], 792.0), (&["B", "b1"], 500.0), (&["C", "c1"], 612.0)]));
-    e.execute(C::Redo, fonts());
+    e.execute(C::Redo(Default::default()), fonts());
     assert_eq!(layout_of(&e), strs(&[(&["B", "b1"], 500.0), (&["A", "a1"], 792.0), (&["C", "c1"], 612.0)]), "redone");
     assert_eq!(layout_of(&reopened(&e)), layout_of(&e), "saved as redone");
-    e.execute(C::Undo, fonts());
+    e.execute(C::Undo(Default::default()), fonts());
     assert!(changed(&e.move_heading(a, c, Beside::After, None, fonts())));
     assert_eq!(layout_of(&e), strs(&[(&["B", "b1"], 500.0), (&["C", "c1", "A", "a1"], 792.0), (&["",], 612.0)]));
     assert_eq!(layout_of(&reopened(&e)), layout_of(&e), "saved as moved");
-    e.execute(C::Undo, fonts());
+    e.execute(C::Undo(Default::default()), fonts());
     assert!(changed(&e.move_heading(c, a, Beside::Before, None, fonts())));
     let moved = layout_of(&e);
     assert_eq!(moved, strs(&[(&["C", "c1", "A", "a1"], 792.0), (&["B", "b1"], 500.0), (&[""], 612.0)]), "the body's last paragraph stays");
-    e.execute(C::Undo, fonts());
-    e.execute(C::Redo, fonts());
+    e.execute(C::Undo(Default::default()), fonts());
+    e.execute(C::Redo(Default::default()), fonts());
     assert_eq!(layout_of(&e), moved, "redone");
     assert_eq!(layout_of(&reopened(&e)), moved, "saved as redone");
 }
@@ -419,16 +419,16 @@ fn deleting_a_heading_takes_the_breaks_in_its_content() {
     assert!(changed(&e.delete_heading(id(&e, "A"), fonts())));
     assert_eq!(layout_of(&e), strs(&[(&["B", "b1"], 500.0), (&["C", "c1"], 612.0)]));
     assert_eq!(layout_of(&reopened(&e)), layout_of(&e));
-    e.execute(C::Undo, fonts());
+    e.execute(C::Undo(Default::default()), fonts());
     assert_eq!(layout_of(&e), strs(&[(&["A", "a1"], 792.0), (&["B", "b1"], 500.0), (&["C", "c1"], 612.0)]));
-    e.execute(C::Redo, fonts());
+    e.execute(C::Redo(Default::default()), fonts());
     assert_eq!(layout_of(&e), strs(&[(&["B", "b1"], 500.0), (&["C", "c1"], 612.0)]), "redone");
     assert_eq!(layout_of(&reopened(&e)), layout_of(&e), "saved as redone");
-    e.execute(C::Undo, fonts());
+    e.execute(C::Undo(Default::default()), fonts());
     assert!(changed(&e.delete_heading(id(&e, "C"), fonts())));
     assert_eq!(layout_of(&e), strs(&[(&["A", "a1"], 792.0), (&["B", "b1"], 500.0), (&[""], 612.0)]));
-    e.execute(C::Undo, fonts());
-    e.execute(C::Redo, fonts());
+    e.execute(C::Undo(Default::default()), fonts());
+    e.execute(C::Redo(Default::default()), fonts());
     assert_eq!(layout_of(&e), strs(&[(&["A", "a1"], 792.0), (&["B", "b1"], 500.0), (&[""], 612.0)]), "redone");
     assert_eq!(layout_of(&reopened(&e)), layout_of(&e), "saved as redone");
 }
@@ -609,19 +609,19 @@ fn headings_in_a_text_box_move_delete_and_change_level_in_their_story() {
     assert_eq!(texts_in(&e), ["B", "b1", "A", "a1"]);
     assert_eq!(texts_in(&reopened(&e)), ["B", "b1", "A", "a1"], "saved as moved");
     assert_eq!(texts(&e), ["Text"], "the body stays");
-    e.execute(C::Undo, fonts());
+    e.execute(C::Undo(Default::default()), fonts());
     assert_eq!(texts_in(&e), ["A", "a1", "B", "b1"]);
     assert!(changed(&e.change_heading_outline(b, OutlineChange::Demote, true, fonts())));
     assert_eq!(e.outline_level(b), Some(2));
     assert!(changed(&e.delete_heading(a, fonts())));
     assert_eq!(texts_in(&e), [""], "B under A goes with it; the story's last mark stays");
-    e.execute(C::Undo, fonts());
-    e.execute(C::Undo, fonts());
+    e.execute(C::Undo(Default::default()), fonts());
+    e.execute(C::Undo(Default::default()), fonts());
     assert_eq!(e.outline_level(b), Some(1));
     assert!(changed(&e.delete_heading(a, fonts())));
     assert_eq!(texts_in(&e), ["B", "b1"]);
     assert_eq!(texts_in(&reopened(&e)), ["B", "b1"], "saved as deleted");
-    e.execute(C::Undo, fonts());
+    e.execute(C::Undo(Default::default()), fonts());
     assert_eq!(texts_in(&e), ["A", "a1", "B", "b1"]);
     assert_eq!(e.move_heading(b, id(&e, "Text"), Beside::Before, None, fonts()), Outcome::unavailable("the headings aren't in one story"));
 }

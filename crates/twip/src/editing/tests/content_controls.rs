@@ -85,7 +85,7 @@ fn typing_in_a_placeholder_replaces_it() {
     let k = p.inlines.iter().position(|i| matches!(i, crate::docx::Inline::ControlStart(x) if *x == c)).expect("its start");
     assert!(matches!(&p.inlines[k + 1], crate::docx::Inline::Text(t, _) if t == "John"), "the text is in the control");
     assert!(matches!(p.inlines.get(k + 2), Some(crate::docx::Inline::ControlEnd(x)) if *x == c));
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert!(e.document().controls[&c].props.showing_placeholder, "one undo step brings the placeholder back");
     assert!(texts(&e)[0].starts_with("Hi Click"), "{:?}", texts(&e));
 }

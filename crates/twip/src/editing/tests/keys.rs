@@ -128,7 +128,7 @@ fn change_case_at_a_caret_changes_its_word() {
     e.execute(C::ChangeCase(CaseChange::Title), fonts());
     assert_eq!(texts(&e)[0], "One TWO three", "the word the caret ends");
     caret(&mut e, 0, 13);
-    e.execute(C::Undo, fonts());
+    e.execute(C::Undo(Default::default()), fonts());
     assert_eq!(texts(&e)[0], "one TWO three", "one undo step");
 }
 
@@ -202,7 +202,7 @@ fn increase_indent_changes_a_list_items_level_or_moves_the_whole_list() {
     e.execute(C::IncreaseIndent, fonts());
     assert_eq!((level(&e, 0), level(&e, 1)), (Some(0), Some(0)), "the first item moves the list");
     assert_eq!((left(&e, 0), left(&e, 1)), (a + 36.0, b + 36.0));
-    e.execute(C::Undo, fonts());
+    e.execute(C::Undo(Default::default()), fonts());
     assert_eq!(left(&e, 0), a, "one undo step");
 }
 
@@ -226,7 +226,7 @@ fn increase_indent_on_list_items_and_plain_paragraphs_together() {
     assert_eq!(level(&e, 1), Some(1), "the item goes a level down");
     assert!(para(&e, 1).style.direct.0.as_deref().is_none_or(|x| !x.contains("w:ind ")), "no direct indent on the item");
     assert_eq!(para(&e, 2).style.ind_left, 36.0, "the plain paragraph steps to the next tab stop");
-    e.execute(C::Undo, fonts());
+    e.execute(C::Undo(Default::default()), fonts());
     assert_eq!((level(&e, 1), para(&e, 1).style.ind_left, para(&e, 2).style.ind_left), (Some(0), item_left, 0.0), "one undo step");
 }
 
@@ -270,7 +270,7 @@ fn clear_all_formatting_leaves_plain_text_and_its_highlight() {
     assert_eq!(p.style.jc, crate::docx::props::Jc::Left);
     let run = p.inlines.iter().find_map(|i| i.run()).expect("a run");
     assert!(!run.bold && run.size == 11.0 && run.highlight.is_some(), "{run:?}");
-    e.execute(C::Undo, fonts());
+    e.execute(C::Undo(Default::default()), fonts());
     assert_eq!(para(&e, 0).style.style_id.as_deref(), Some("Title"), "one undo step");
 }
 
@@ -284,7 +284,7 @@ fn list_bullet_comes_with_its_bullet() {
     assert!(p.style.num.is_some_and(|(id, _)| id != 0), "{:?}", p.style.num);
     assert_eq!(p.list.as_ref().map(|l| l.text.as_str()), Some("\u{F0B7}"));
     assert_eq!(p.style.ind_left, 18.0);
-    e.execute(C::Undo, fonts());
+    e.execute(C::Undo(Default::default()), fonts());
     assert!(!e.document().resolver.as_ref().expect("styles").styles.by_id.contains_key("ListBullet"), "one undo step");
 }
 
@@ -294,7 +294,7 @@ fn alt_x_toggles_the_code_before_the_caret() {
     caret(&mut e, 0, 7);
     e.toggle_character_code(fonts());
     assert_eq!(texts(&e)[0], "ca\u{F00E9} x", "the longest code there is: af00e9 is past U+10FFFF");
-    e.execute(C::Undo, fonts());
+    e.execute(C::Undo(Default::default()), fonts());
     let mut e = edit("<w:p><w:r><w:t>a U+00e9.</w:t></w:r></w:p>");
     caret(&mut e, 0, 8);
     e.toggle_character_code(fonts());
@@ -302,7 +302,7 @@ fn alt_x_toggles_the_code_before_the_caret() {
     assert_eq!(e.selection, Selection::Caret(Position::text(StoryId::Body, texts_ids(&e)[0], Unit(3))));
     e.toggle_character_code(fonts());
     assert_eq!(texts(&e)[0], "a 00E9.", "and back");
-    e.execute(C::Undo, fonts());
+    e.execute(C::Undo(Default::default()), fonts());
     assert_eq!(texts(&e)[0], "a é.", "each its own undo step");
 }
 
@@ -312,7 +312,7 @@ fn alt_x_undo_restores_the_original_caret() {
     caret(&mut e, 0, 6);
     let before = e.selection;
     e.toggle_character_code(fonts());
-    e.execute(C::Undo, fonts());
+    e.execute(C::Undo(Default::default()), fonts());
     assert_eq!(texts(&e)[0], "a 00e9");
     assert_eq!(e.selection, before, "the caret, not the code selected");
 }
@@ -395,7 +395,7 @@ fn paragraphs_move_up_and_down_whole() {
     e.move_paragraphs(false, fonts());
     e.move_paragraphs(false, fonts());
     assert_eq!(texts(&e), ["one", "three", "two"], "the story's last paragraph too");
-    e.execute(C::Undo, fonts());
+    e.execute(C::Undo(Default::default()), fonts());
     assert_eq!(texts(&e), ["one", "two", "three"], "each move its own undo step");
 }
 
@@ -425,7 +425,7 @@ fn a_tracked_paragraph_move_is_a_move() {
     assert!(moved, "moved text is marked as moved");
     let visible: Vec<String> = texts(&e);
     assert!(visible.iter().position(|t| t == "two") < visible.iter().position(|t| t == "one"), "{visible:?}");
-    e.execute(C::Undo, fonts());
+    e.execute(C::Undo(Default::default()), fonts());
     assert_eq!(texts(&e), ["one", "two", "three"]);
 }
 
@@ -481,7 +481,7 @@ fn a_tracked_move_of_the_last_paragraph_up_keeps_the_story_s_mark() {
     let mut e = tracked_three();
     caret(&mut e, 2, 0);
     e.move_paragraphs(true, fonts());
-    e.execute(C::Undo, fonts());
+    e.execute(C::Undo(Default::default()), fonts());
     assert_eq!(texts(&e), ["one", "two", "three"], "one undo step");
     assert_eq!(has_moves(&e), (false, false));
 }
@@ -570,7 +570,7 @@ fn bookmarks_and_comments_into_the_paragraph_passed_keep_their_text_there() {
     };
     assert!(kinds(&e, 0).is_empty(), "nothing stays in the moved paragraph: {:?}", kinds(&e, 0));
     assert_eq!(kinds(&e, 1), ["mark", "CommentStart", "CommentEnd", "/mark"], "the ends close where the paragraph was");
-    e.execute(C::Undo, fonts());
+    e.execute(C::Undo(Default::default()), fonts());
     assert_eq!(texts(&e), ["onetwo", "three"]);
     // Down: the starts stay where the paragraph was, before the one passed.
     caret(&mut e, 0, 0);
@@ -631,7 +631,7 @@ fn typed_addresses_become_links() {
     let mut e = edit("<w:p/>");
     caret(&mut e, 0, 0);
     type_in(&mut e, "Www.example.com ");
-    e.execute(C::Undo, fonts());
+    e.execute(C::Undo(Default::default()), fonts());
     assert!(link_codes(&e, 0).is_empty(), "Ctrl+Z right after takes the link out");
     assert_eq!(texts(&e)[0], "Www.example.com ");
     let mut e = edit("<w:p/>");
@@ -660,7 +660,7 @@ fn border_lines_typed_then_enter_become_a_bottom_border() {
         assert!(xml.contains(&format!(r#"w:val="{line}" w:sz="{size}""#)), "{typed}: {xml}");
         let _ = b;
         assert!(para(&e, 2).style.border_bottom.is_none(), "the new paragraph has none");
-        e.execute(C::Undo, fonts());
+        e.execute(C::Undo(Default::default()), fonts());
         assert_eq!(texts(&e), ["above", typed, ""], "{typed}: Ctrl+Z gives the characters back");
     }
     let mut e = edit("<w:p/>");
@@ -683,7 +683,7 @@ fn tab_at_a_paragraphs_start_indents_it() {
     e.execute(C::Delete(crate::api::command::DeleteOptions { direction: crate::api::value::Direction::Backward, unit: None }), fonts());
     assert_eq!(ind(&e), (0.0, 0.0));
     type_in(&mut e, "\t");
-    e.execute(C::Undo, fonts());
+    e.execute(C::Undo(Default::default()), fonts());
     assert_eq!((texts(&e)[0].as_str(), ind(&e)), ("\ttext", (0.0, 0.0)), "Ctrl+Z right after gives the tab back");
     let mut e = edit("<w:p/>");
     caret(&mut e, 0, 0);
@@ -714,10 +714,10 @@ fn hyperlink_autoformat_undoes_to_the_typing_caret() {
     caret(&mut e, 0, 0);
     type_in(&mut e, "See www.example.com ");
     let typed = e.selection;
-    e.execute(C::Undo, fonts());
+    e.execute(C::Undo(Default::default()), fonts());
     assert!(link_codes(&e, 0).is_empty());
     assert_eq!(e.selection, Selection::Caret(Position::text(StoryId::Body, texts_ids(&e)[0], Unit(20))), "after the space, not the address selected");
-    e.execute(C::Redo, fonts());
+    e.execute(C::Redo(Default::default()), fonts());
     assert_eq!(e.selection, typed, "redo returns to the caret after the link and space");
 }
 
@@ -882,7 +882,7 @@ fn create_hyperlink_here_links_to_a_hidden_bookmark_on_the_text() {
     let name = e.bookmarks().into_iter().map(|b| b.name).find(|n| n.starts_with("_Hlk")).expect("a hidden bookmark on the source");
     let codes = link_codes(&e, 1);
     assert!(codes.len() == 1 && codes[0].starts_with("HYPERLINK") && codes[0].contains(&format!(r#"\l "{name}""#)), "{codes:?}");
-    e.execute(C::Undo, fonts());
+    e.execute(C::Undo(Default::default()), fonts());
     assert_eq!(texts(&e), ["one two", "three"], "one undo step");
     assert!(e.bookmarks().is_empty());
 }
@@ -905,7 +905,7 @@ fn the_drop_menu_closes_when_the_document_changes_or_drags_are_off() {
     assert!(e.drop_menu().is_none(), "the document changed");
     assert!(matches!(e.choose_drop(DropChoice::Move, fonts()), super::super::commands::Outcome::Unchanged(_)));
     assert_eq!(texts(&e), ["1 two", "three"]);
-    e.execute(C::Undo, fonts());
+    e.execute(C::Undo(Default::default()), fonts());
     e.selection = sel;
     drag(&mut e);
     e.set_text_drag_and_drop(false);
@@ -934,7 +934,7 @@ fn link_here_bookmarks_the_text_and_links_to_it() {
     e.choose_drop(super::super::move_to::DropChoice::Link, fonts());
     assert_eq!(link_codes(&e, 1), [r#"LINK Word.Document.12 "Report.docx" "OLE_LINK1" \a \r"#]);
     assert!(para(&e, 0).inlines.iter().any(|i| matches!(i, Inline::Bookmark(n) if n == "OLE_LINK1")));
-    e.execute(C::Undo, fonts());
+    e.execute(C::Undo(Default::default()), fonts());
     assert!(link_codes(&e, 1).is_empty() && !para(&e, 0).inlines.iter().any(|i| matches!(i, Inline::Bookmark(_))), "one undo step");
 }
 
@@ -1157,7 +1157,7 @@ fn ctrl_alt_enter_inserts_a_style_separator() {
     again.complete(fonts());
     assert_eq!(texts(&again), ["Head body", "next"]);
     assert_eq!(again.hidden_marks(texts_ids(&again)[0]), [(Unit(4), true)]);
-    e.execute(C::Undo, fonts());
+    e.execute(C::Undo(Default::default()), fonts());
     assert_eq!(texts(&e), ["Head body", "next"], "one undo step");
     assert!(!para(&e, 0).mark.hidden);
     // At a paragraph's end the mark itself becomes one, joining the next paragraph.
@@ -1170,9 +1170,9 @@ fn ctrl_alt_enter_inserts_a_style_separator() {
     assert_eq!(e.selection, after, "the caret after it, in the next paragraph");
     e.complete(fonts());
     assert!(one_line(&mut e, ids[0], ids[1]));
-    e.execute(C::Undo, fonts());
+    e.execute(C::Undo(Default::default()), fonts());
     assert_eq!(e.selection, Selection::Caret(Position::text(StoryId::Body, ids[0], Unit(9))), "undo puts the caret back");
-    e.execute(C::Redo, fonts());
+    e.execute(C::Redo(Default::default()), fonts());
     assert_eq!(e.selection, after, "redo puts it after the separator again");
 }
 
@@ -1189,7 +1189,7 @@ fn a_style_separator_in_a_lists_empty_last_item_splits_it() {
     assert!(e.hidden_marks(ids[0]).is_empty(), "the item before keeps its mark");
     assert_eq!(e.hidden_marks(ids[1]), [(Unit(0), true)], "the first part's mark is the separator");
     assert!(para(&e, 1).style.num.is_some_and(|(id, _)| id != 0), "the item stays in its list");
-    e.execute(C::Undo, fonts());
+    e.execute(C::Undo(Default::default()), fonts());
     assert_eq!(texts(&e), ["one", ""], "one undo step");
     assert!(!para(&e, 1).mark.hidden && para(&e, 1).style.num.is_some_and(|(id, _)| id != 0));
 }
@@ -1524,8 +1524,8 @@ fn followed_revision_marks_match_the_document() {
                 e.selection = Selection::range(at(a.min(b)), at(a.max(b)), Default::default());
                 C::SetBold(below(2) == 0)
             }
-            7 => C::Undo,
-            _ => C::Redo,
+            7 => C::Undo(Default::default()),
+            _ => C::Redo(Default::default()),
         };
         e.execute(c.clone(), fonts());
         e.check_review_marks().unwrap_or_else(|why| panic!("step {step} ({c:?} at {a}..{b}): {why}"));
@@ -1603,8 +1603,8 @@ fn edits_ending_cell_and_section_changes_follow_the_marks() {
                     e.selection = Selection::range(at(a.min(b)), at(a.max(b)), Default::default());
                     C::SetBold(below(2) == 0)
                 }
-                3 | 4 => C::Undo,
-                _ => C::Redo,
+                3 | 4 => C::Undo(Default::default()),
+                _ => C::Redo(Default::default()),
             };
             e.execute(c.clone(), fonts());
             let _ = e.review_counts();

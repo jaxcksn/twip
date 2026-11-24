@@ -1,0 +1,12 @@
+[
+  {
+    "category": "linked",
+    "defined": false,
+    "id": "Heading5",
+    "locked": false,
+    "name": "Heading 5",
+    "priority": 9,
+    "quick": true,
+    "visibility": "hideUntilUsed"
+  }
+]

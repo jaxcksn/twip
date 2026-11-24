@@ -216,11 +216,11 @@ impl Editor {
                 None
             }
             Input::Undo => {
-                self.execute(Command::Undo, fonts);
+                self.execute(Command::Undo(Default::default()), fonts);
                 None
             }
             Input::Redo => {
-                self.execute(Command::Redo, fonts);
+                self.execute(Command::Redo(Default::default()), fonts);
                 None
             }
             Input::Query { q, args } => Some(self.query(&q, &args, fonts)),

@@ -3,6 +3,9 @@
 import { expect, test, type Page } from '@playwright/test';
 import { docxXml, fixture, hello, mount, open, text } from './helpers.ts';
 
+// Copy, cut and paste are the browser's own (the editor leaves their keys to it): Cmd on a Mac, where Ctrl+C does
+// nothing, and Ctrl elsewhere, so the tests press `ControlOrMeta`.
+
 /** The system clipboard's text, once the editor's write landed (it is asynchronous). */
 const clipboard = (page: Page) => expect.poll(() => page.evaluate(() => navigator.clipboard.readText()));
 const state = (page: Page, name = 'editor') => page.evaluate((name) => (window as any)[name].getState(), name);
@@ -74,19 +77,55 @@ test('copy, cut and paste', async ({ page }) => {
   await mount(page);
   await typed(page, 'One two');
   await page.keyboard.press('Control+Shift+ArrowLeft');
-  await page.keyboard.press('Control+C');
+  await page.keyboard.press('ControlOrMeta+C');
   await clipboard(page).toBe('two');
   await page.keyboard.press('End');
-  await page.keyboard.press('Control+V');
+  await page.keyboard.press('ControlOrMeta+V');
   await expect.poll(() => text(page)).toMatch(/^One two ?two$/);
   await page.evaluate(() => navigator.clipboard.writeText(''));
   await page.keyboard.press('Control+Shift+ArrowLeft');
-  await page.keyboard.press('Control+X');
+  await page.keyboard.press('ControlOrMeta+X');
   await expect.poll(() => text(page)).toMatch(/^One two ?$/);
   await clipboard(page).toBe('two');
   await page.keyboard.press('Home');
-  await page.keyboard.press('Control+V');
+  await page.keyboard.press('ControlOrMeta+V');
   await expect.poll(() => text(page)).toMatch(/^two ?One two ?$/);
+});
+
+/** Ctrl+Shift+V as the browser delivers it: the key, then a paste event carrying `data` by type. */
+const pasteAsText = (page: Page, data: Record<string, string>) =>
+  page.evaluate((data) => {
+    const input = document.querySelector('#editor [data-twip="input"]')!;
+    input.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyV', key: 'V', ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true }));
+    const t = new DataTransfer();
+    for (const [type, value] of Object.entries(data)) t.setData(type, value);
+    input.dispatchEvent(new ClipboardEvent('paste', { clipboardData: t, bubbles: true, cancelable: true }));
+  }, data);
+
+test('Ctrl+Shift+V pastes HTML as plain text', async ({ page }) => {
+  await mount(page);
+  await typed(page, 'x');
+  await pasteAsText(page, { 'text/plain': 'bold', 'text/html': '<b>bold</b>' });
+  await expect.poll(() => text(page)).toMatch(/^x ?bold$/);
+  await page.keyboard.press('Shift+ArrowLeft');
+  await expect.poll(async () => (await state(page)).formatting.bold).toBe(false);
+});
+
+test('Ctrl+Shift+C then Ctrl+Shift+V pastes the formatting', async ({ page }) => {
+  await mount(page);
+  await typed(page, 'One two');
+  await page.keyboard.press('Home');
+  await page.keyboard.press('Control+Shift+ArrowRight');
+  await page.keyboard.press('Control+B');
+  await expect.poll(async () => (await state(page)).formatting.bold).toBe(true);
+  await page.keyboard.press('Control+Shift+C');
+  await page.keyboard.press('End');
+  await page.keyboard.press('Control+Shift+ArrowLeft');
+  await expect.poll(async () => (await state(page)).selection.text).toBe('two');
+  await expect.poll(async () => (await state(page)).formatting.bold).toBe(false);
+  await pasteAsText(page, { 'text/plain': 'elsewhere' });
+  await expect.poll(async () => (await state(page)).formatting.bold).toBe(true);
+  await expect.poll(() => text(page)).toBe('One two');
 });
 
 test("without ClipboardItem, a copy is the selection's text from the state", async ({ page }) => {
@@ -96,7 +135,7 @@ test("without ClipboardItem, a copy is the selection's text from the state", asy
   await page.evaluate(() => navigator.clipboard.writeText(''));
   await page.keyboard.press('Control+Shift+ArrowLeft');
   await expect.poll(async () => (await state(page)).selection.text).toBe('two');
-  await page.keyboard.press('Control+C');
+  await page.keyboard.press('ControlOrMeta+C');
   await clipboard(page).toBe('two');
 });
 
@@ -114,7 +153,9 @@ test("the context menu's Paste reads the system clipboard", async ({ page }) => 
   await page.evaluate(async () => {
     const editor = (window as any).editor;
     const menu = await editor.menus.contextMenu();
-    const paste = menu.items.find((i: { command?: string }) => i.command === 'paste');
+    // Keep Source Formatting, in the Paste Options submenu.
+    const options = menu.items.find((i: { label?: string }) => i.label === 'Paste Options');
+    const paste = options?.items.find((i: { command?: string }) => i.command === 'paste');
     if (!paste?.enabled) throw new Error('Paste is disabled');
     await editor.menus.invoke(paste.action);
   });
@@ -184,10 +225,10 @@ test('two editors on one page: a copy in one pastes into the other', async ({ pa
   await mount(page, { name: 'b', height: 240 });
   await typed(page, 'shared', 'a');
   await page.keyboard.press('Control+A');
-  await page.keyboard.press('Control+C');
+  await page.keyboard.press('ControlOrMeta+C');
   await clipboard(page).toBe('shared');
   await page.locator('#b canvas').click({ position: { x: 300, y: 120 } });
-  await page.keyboard.press('Control+V');
+  await page.keyboard.press('ControlOrMeta+V');
   await expect.poll(() => text(page, 'b')).toBe('shared');
 });
 
@@ -197,10 +238,10 @@ test('two editors on one page: bold text copied from one stays bold in the other
   await typed(page, 'bold', 'a');
   await page.keyboard.press('Control+A');
   await page.keyboard.press('Control+B');
-  await page.keyboard.press('Control+C');
+  await page.keyboard.press('ControlOrMeta+C');
   await clipboard(page).toBe('bold');
   await page.locator('#b canvas').click({ position: { x: 300, y: 120 } });
-  await page.keyboard.press('Control+V');
+  await page.keyboard.press('ControlOrMeta+V');
   await page.keyboard.press('Control+A');
   await expect.poll(async () => (await state(page, 'b')).formatting.bold).toBe(true);
 });

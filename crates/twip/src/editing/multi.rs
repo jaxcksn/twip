@@ -86,6 +86,10 @@ pub fn single_only(id: crate::api::command::CommandId) -> bool {
             | C::SetTableCellSpacing
             | C::SetTableAltText
             | C::SetTablePosition
+            | C::SetTableCellMargins
+            | C::InsertCells
+            | C::DrawTableStroke
+            | C::EraseTableBorder
     )
 }
 
@@ -155,7 +159,7 @@ impl Editor {
     }
 
     /// Where a block of cells starts: its first cell's first paragraph.
-    pub(super) fn cells_start(&self, s: &Selection) -> Option<Position> {
+    pub fn cells_start(&self, s: &Selection) -> Option<Position> {
         let Selection::Cells { table, anchor, focus, .. } = *s else { return None };
         let t = self.index.table(&self.doc, table)?;
         let (r0, _, c0, _) = bounds(anchor, focus);
@@ -497,6 +501,56 @@ impl Editor {
         self.set_selection(selection);
         self.multi = Multi { primary: Some(self.selection), others: joined, cells };
         Outcome::Moved
+    }
+
+    /// The block of cells from row `r0`, grid column `c0` to row `r1`, column `c1` (from 0) of the innermost table
+    /// holding `start`; none when `start` isn't in a table or the block isn't in the table.
+    pub fn cell_block(&self, start: &Position, (r0, c0): (usize, usize), (r1, c1): (usize, usize)) -> Option<Selection> {
+        let l = *self.index.chain_of(start).last()?;
+        let t = self.index.table(&self.doc, l.table)?;
+        let inside = r0 <= r1 && c0 <= c1 && r1 < t.rows.len() && c1 < Grid::of(t).cols;
+        inside.then_some(Selection::Cells {
+            table: l.table,
+            anchor: CellRef { row: r0, col: c0 },
+            focus: CellRef { row: r1, col: c1 },
+            shape: CellShape::Rect,
+        })
+    }
+
+    /// `setSelection`: its ranges and blocks of cells as positions, selected by [`Editor::select_pieces`].
+    pub(super) fn set_selection_pieces(&mut self, s: &crate::api::command::SetSelection) -> Outcome {
+        let at = |e: &Self, p: &crate::api::value::TextPoint| -> Result<Position, Outcome> {
+            let para = p.paragraph.0.parse::<u64>().map_err(|_| Outcome::invalid("not a paragraph id"))?;
+            e.text_position(ParaId(para), p.offset).ok_or_else(|| Outcome::invalid("no such paragraph"))
+        };
+        let mut ranges = Vec::with_capacity(s.ranges.len());
+        for r in &s.ranges {
+            match (at(self, &r.start), at(self, &r.end)) {
+                (Ok(a), Ok(b)) => ranges.push((a, b)),
+                (Err(o), _) | (_, Err(o)) => return o,
+            }
+        }
+        let mut cells = Vec::with_capacity(s.cells.len());
+        for c in &s.cells {
+            let start = match at(self, &c.start) {
+                Ok(p) => p,
+                Err(o) => return o,
+            };
+            let rows = (c.first_row as usize, c.first_column as usize);
+            let Some(block) = self.cell_block(&start, rows, (c.last_row as usize, c.last_column as usize)) else {
+                return Outcome::invalid("no such block of cells");
+            };
+            cells.push(block);
+        }
+        let active = match s.active_cells {
+            Some(k) if (k as usize) < cells.len() => Some(cells.remove(k as usize)),
+            Some(_) => return Outcome::invalid("activeCells is past the cells"),
+            None => None,
+        };
+        if ranges.is_empty() && cells.is_empty() && active.is_none() {
+            return Outcome::Unchanged("no ranges");
+        }
+        self.select_pieces(&ranges, cells, active)
     }
 
     /// Adds the range `a..b` to the selection, as Ctrl and a click or drag do, to go on as the selection.

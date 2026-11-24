@@ -103,18 +103,28 @@ impl Editor {
     /// isn't tight or through tight. A press anywhere else, Escape or another selection ends it. Refused without one
     /// selected floating object, for a group's child, a fixed or protected object, or read-only.
     pub fn edit_wrap_points(&mut self) -> Outcome {
-        let Selection::Object(ObjectRef::Floating(f)) = self.selection else { return Outcome::unavailable("no floating object selected") };
+        match self.wrap_points_target() {
+            Ok(f) => {
+                self.wrap_edit = Some(WrapEdit { f, drag: None });
+                Outcome::Moved
+            }
+            Err(why) => Outcome::unavailable(why),
+        }
+    }
+
+    /// The floating object Edit Wrap Points would edit, or why there is none.
+    pub fn wrap_points_target(&self) -> Result<FloatId, &'static str> {
+        let Selection::Object(ObjectRef::Floating(f)) = self.selection else { return Err("no floating object selected") };
         if self.selected_floats().len() != 1 || self.selected_child().is_some() {
-            return Outcome::unavailable("select one floating object");
+            return Err("select one floating object");
         }
         if self.wrap_kept(f) {
-            return Outcome::unavailable("the object can't be changed");
+            return Err("the object can't be changed");
         }
         if self.float_of(f).is_none_or(|fl| fl.in_note) {
-            return Outcome::unavailable("no floating object selected");
+            return Err("no floating object selected");
         }
-        self.wrap_edit = Some(WrapEdit { f, drag: None });
-        Outcome::Moved
+        Ok(f)
     }
 
     /// Whether the selected object's wrap points are being edited.

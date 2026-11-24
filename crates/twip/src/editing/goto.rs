@@ -58,6 +58,39 @@ pub enum GoToTarget {
     Previous,
 }
 
+impl From<crate::api::command::GoToWhat> for GoToWhat {
+    fn from(w: crate::api::command::GoToWhat) -> GoToWhat {
+        use crate::api::command::GoToWhat as W;
+        match w {
+            W::Page => GoToWhat::Page,
+            W::Section => GoToWhat::Section,
+            W::Line => GoToWhat::Line,
+            W::Bookmark => GoToWhat::Bookmark,
+            W::Comment => GoToWhat::Comment,
+            W::Footnote => GoToWhat::Footnote,
+            W::Endnote => GoToWhat::Endnote,
+            W::Field => GoToWhat::Field,
+            W::Table => GoToWhat::Table,
+            W::Graphic => GoToWhat::Graphic,
+            W::Equation => GoToWhat::Equation,
+            W::Object => GoToWhat::Object,
+            W::Heading => GoToWhat::Heading,
+        }
+    }
+}
+
+impl From<crate::api::command::GoToTarget> for GoToTarget {
+    fn from(t: crate::api::command::GoToTarget) -> GoToTarget {
+        use crate::api::command::GoToTarget as T;
+        match t {
+            T::Absolute(n) => GoToTarget::Absolute(n),
+            T::Relative(n) => GoToTarget::Relative(n),
+            T::Next => GoToTarget::Next,
+            T::Previous => GoToTarget::Previous,
+        }
+    }
+}
+
 /// What Go To does on arriving.
 #[derive(Clone, Copy, Debug)]
 enum Land {

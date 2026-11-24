@@ -66,6 +66,13 @@ internal sealed class StyleIdConverter : IdConverter<StyleId>
     protected override string Value(StyleId id) => id.Value;
 }
 
+internal sealed class ParagraphIdConverter : IdConverter<ParagraphId>
+{
+    protected override ParagraphId Create(string value) => new(value);
+
+    protected override string Value(ParagraphId id) => id.Value;
+}
+
 internal sealed class ShapePresetConverter : IdConverter<ShapePreset>
 {
     protected override ShapePreset Create(string value) => new(value);
@@ -119,12 +126,70 @@ internal sealed class LengthConverter : JsonConverter<Length>
     public override void Write(Utf8JsonWriter writer, Length value, JsonSerializerOptions options) => WireJson.WriteNumber(writer, value.Points);
 }
 
+internal sealed class PagePointConverter : JsonConverter<PagePoint>
+{
+    public override PagePoint Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType != JsonTokenType.StartArray || !reader.Read()) throw new JsonException("a page point is [x, y]");
+        var x = reader.GetDouble();
+        if (!reader.Read()) throw new JsonException("a page point is [x, y]");
+        var y = reader.GetDouble();
+        if (!reader.Read() || reader.TokenType != JsonTokenType.EndArray) throw new JsonException("a page point is [x, y]");
+        return new PagePoint(Length.FromPoints(x), Length.FromPoints(y));
+    }
+
+    public override void Write(Utf8JsonWriter writer, PagePoint value, JsonSerializerOptions options)
+    {
+        writer.WriteStartArray();
+        WireJson.WriteNumber(writer, value.X.Points);
+        WireJson.WriteNumber(writer, value.Y.Points);
+        writer.WriteEndArray();
+    }
+}
+
 internal sealed class ColorValueConverter : JsonConverter<ColorValue>
 {
-    public override ColorValue Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
-        ColorValue.Parse(reader.GetString() ?? throw new JsonException("a colour can't be null"));
+    public override ColorValue Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.StartObject)
+        {
+            return ColorValue.FromValue(JsonSerializer.Deserialize(ref reader, TwipJsonContext.Default.ShapeColor) ?? throw new JsonException("a colour can't be null"));
+        }
+        return ColorValue.Parse(reader.GetString() ?? throw new JsonException("a colour can't be null"));
+    }
 
-    public override void Write(Utf8JsonWriter writer, ColorValue value, JsonSerializerOptions options) => writer.WriteStringValue(value.ToString());
+    public override void Write(Utf8JsonWriter writer, ColorValue value, JsonSerializerOptions options)
+    {
+        if (value.Value is { } v) JsonSerializer.Serialize(writer, v, TwipJsonContext.Default.ShapeColor);
+        else writer.WriteStringValue(value.ToString());
+    }
+}
+
+/// <summary>A named number style's camelCase name, or <c>{ other }</c>.</summary>
+internal sealed class NumberFormatConverter : JsonConverter<NumberFormat>
+{
+    public override NumberFormat Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.String)
+        {
+            var name = reader.GetString() ?? "";
+            return NumberFormat.Of(name) ?? throw new JsonException($"unknown number format {name}");
+        }
+        var o = JsonElement.ParseValue(ref reader);
+        return NumberFormat.Named(o.GetProperty("other").GetString() ?? throw new JsonException("an other number format needs its name"));
+    }
+
+    public override void Write(Utf8JsonWriter writer, NumberFormat value, JsonSerializerOptions options)
+    {
+        if (value.Kind != NumberFormatKind.Other)
+        {
+            writer.WriteStringValue(value.Name);
+            return;
+        }
+        writer.WriteStartObject();
+        writer.WriteString("other", value.Other);
+        writer.WriteEndObject();
+    }
 }
 
 /// <summary><c>'light' | 'dark' | { highContrast: HighContrastColors }</c>.</summary>
@@ -416,7 +481,8 @@ internal sealed class PageNumberingOptionsConverter : JsonConverter<PageNumberin
             start.ValueKind == JsonValueKind.Number ? start.GetInt32() : null,
             start.ValueKind == JsonValueKind.Null,
             chapter.ValueKind == JsonValueKind.Object ? chapter.Deserialize(TwipJsonContext.Default.ChapterNumbers) : null,
-            chapter.ValueKind == JsonValueKind.Null);
+            chapter.ValueKind == JsonValueKind.Null,
+            o.TryGetProperty("applyTo", out var a) ? a.Deserialize(TwipJsonContext.Default.PageSetupScope) : null);
     }
 
     public override void Write(Utf8JsonWriter writer, PageNumberingOptions value, JsonSerializerOptions options)
@@ -427,6 +493,146 @@ internal sealed class PageNumberingOptionsConverter : JsonConverter<PageNumberin
         else if (value.ContinueFromPrevious) writer.WriteNull("start");
         if (value.Chapter is not null) { writer.WritePropertyName("chapter"); JsonSerializer.Serialize(writer, value.Chapter, TwipJsonContext.Default.ChapterNumbers); }
         else if (value.NoChapterNumbers) writer.WriteNull("chapter");
+        if (value.ApplyTo is { } scope) { writer.WritePropertyName("applyTo"); JsonSerializer.Serialize(writer, scope, TwipJsonContext.Default.PageSetupScope); }
+        writer.WriteEndObject();
+    }
+}
+
+/// <summary>A family's name, or <c>{ theme }</c>.</summary>
+internal sealed class FontChoiceConverter : JsonConverter<FontChoice>
+{
+    public override FontChoice Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.String) return FontChoice.Family(reader.GetString() ?? "");
+        var o = JsonElement.ParseValue(ref reader);
+        return FontChoice.FromTheme(o.GetProperty("theme").Deserialize(TwipJsonContext.Default.ThemeFont));
+    }
+
+    public override void Write(Utf8JsonWriter writer, FontChoice value, JsonSerializerOptions options)
+    {
+        if (value.Theme is not { } theme)
+        {
+            writer.WriteStringValue(value.Name);
+            return;
+        }
+        writer.WriteStartObject();
+        writer.WritePropertyName("theme");
+        JsonSerializer.Serialize(writer, theme, TwipJsonContext.Default.ThemeFont);
+        writer.WriteEndObject();
+    }
+}
+
+/// <summary><c>'caret' | 'header' | 'footer' | { margin: { side } }</c>.</summary>
+internal sealed class PageNumberPlacementConverter : JsonConverter<PageNumberPlacement>
+{
+    public override PageNumberPlacement Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.String)
+        {
+            var place = reader.GetString() ?? "";
+            return PageNumberPlacement.Of(place) ?? throw new JsonException($"unknown page number place {place}");
+        }
+        var o = JsonElement.ParseValue(ref reader);
+        return PageNumberPlacement.Margin(o.GetProperty("margin").GetProperty("side").Deserialize(TwipJsonContext.Default.MarginSide));
+    }
+
+    public override void Write(Utf8JsonWriter writer, PageNumberPlacement value, JsonSerializerOptions options)
+    {
+        if (value.Side is not { } side)
+        {
+            writer.WriteStringValue(value.Place);
+            return;
+        }
+        writer.WriteStartObject();
+        writer.WriteStartObject("margin");
+        writer.WritePropertyName("side");
+        JsonSerializer.Serialize(writer, side, TwipJsonContext.Default.MarginSide);
+        writer.WriteEndObject();
+        writer.WriteEndObject();
+    }
+}
+
+/// <summary><c>{ rows?, columns? }</c>, each a number or <c>null</c> (the style's).</summary>
+internal sealed class TableBandSizesConverter : JsonConverter<TableBandSizes>
+{
+    public override TableBandSizes Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        var o = JsonElement.ParseValue(ref reader);
+        var rows = o.TryGetProperty("rows", out var r) ? r : default;
+        var columns = o.TryGetProperty("columns", out var c) ? c : default;
+        return new TableBandSizes(
+            rows.ValueKind == JsonValueKind.Number ? rows.GetInt32() : null,
+            columns.ValueKind == JsonValueKind.Number ? columns.GetInt32() : null,
+            rows.ValueKind == JsonValueKind.Null,
+            columns.ValueKind == JsonValueKind.Null);
+    }
+
+    public override void Write(Utf8JsonWriter writer, TableBandSizes value, JsonSerializerOptions options)
+    {
+        writer.WriteStartObject();
+        if (value.Rows is { } r) writer.WriteNumber("rows", r);
+        else if (value.RowsFromStyle) writer.WriteNull("rows");
+        if (value.Columns is { } c) writer.WriteNumber("columns", c);
+        else if (value.ColumnsFromStyle) writer.WriteNull("columns");
+        writer.WriteEndObject();
+    }
+}
+
+/// <summary>A style change: absent keeps, <c>null</c> removes a base, following style, link or list.</summary>
+internal sealed class StyleChangeConverter : JsonConverter<StyleChange>
+{
+    public override StyleChange Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        var o = JsonElement.ParseValue(ref reader);
+        var ctx = TwipJsonContext.Default;
+        JsonElement? Field(string name) => o.TryGetProperty(name, out var v) ? v : null;
+        StyleId? Id(JsonElement? v) => v is { ValueKind: JsonValueKind.String } s ? new StyleId(s.GetString()!) : null;
+        bool Removed(JsonElement? v) => v is { ValueKind: JsonValueKind.Null };
+        return new StyleChange(
+            Field("name")?.GetString(),
+            Id(Field("basedOn")),
+            Removed(Field("basedOn")),
+            Id(Field("next")),
+            Removed(Field("next")),
+            Id(Field("link")),
+            Removed(Field("link")),
+            Field("autoUpdate")?.GetBoolean(),
+            Field("quick")?.GetBoolean(),
+            Field("list") is { ValueKind: JsonValueKind.Object } l ? l.Deserialize(ctx.StyleList) : null,
+            Removed(Field("list")),
+            Field("listLevels")?.Deserialize(ctx.IReadOnlyListListLevel),
+            Field("clear")?.GetBoolean() ?? false,
+            Field("formatting")?.Deserialize(ctx.IReadOnlyListEditorOperation),
+            Field("parts")?.Deserialize(ctx.IReadOnlyListTablePartFormatting),
+            Field("rowBand")?.GetInt32(),
+            Field("columnBand")?.GetInt32());
+    }
+
+    public override void Write(Utf8JsonWriter writer, StyleChange value, JsonSerializerOptions options)
+    {
+        var ctx = TwipJsonContext.Default;
+        void Id(string name, StyleId? id, bool removed)
+        {
+            if (id is { } s) writer.WriteString(name, s.Value);
+            else if (removed) writer.WriteNull(name);
+        }
+        writer.WriteStartObject();
+        if (value.Name is { } name) writer.WriteString("name", name);
+        Id("basedOn", value.BasedOn, value.NoBase);
+        Id("next", value.Next, value.NextIsItself);
+        Id("link", value.Link, value.Unlink);
+        if (value.AutoUpdate is { } a) writer.WriteBoolean("autoUpdate", a);
+        if (value.Quick is { } q) writer.WriteBoolean("quick", q);
+        if (value.List is { } list) { writer.WritePropertyName("list"); JsonSerializer.Serialize(writer, list, ctx.StyleList); }
+        else if (value.NoList) writer.WriteNull("list");
+        if (value.ListLevels is { } levels) { writer.WritePropertyName("listLevels"); JsonSerializer.Serialize(writer, levels, ctx.IReadOnlyListListLevel); }
+        writer.WriteBoolean("clear", value.Clear);
+        writer.WritePropertyName("formatting");
+        JsonSerializer.Serialize(writer, value.Formatting ?? [], ctx.IReadOnlyListEditorOperation);
+        writer.WritePropertyName("parts");
+        JsonSerializer.Serialize(writer, value.Parts ?? [], ctx.IReadOnlyListTablePartFormatting);
+        if (value.RowBand is { } r) writer.WriteNumber("rowBand", r);
+        if (value.ColumnBand is { } c) writer.WriteNumber("columnBand", c);
         writer.WriteEndObject();
     }
 }
@@ -726,6 +932,137 @@ internal sealed class ShortcutBindingConverter : JsonConverter<ShortcutBinding>
             case ShortcutKind.Shortcut: writer.WriteString("id", value.Id); break;
             default: writer.WritePropertyName("command"); JsonSerializer.Serialize(writer, value.Host.GetValueOrDefault(), ctx.HostCommand); break;
         }
+        writer.WriteEndObject();
+    }
+}
+
+/// <summary><c>'byAuthor' | 'auto' | { fixed: Color }</c>.</summary>
+internal sealed class MarkColorConverter : JsonConverter<MarkColor>
+{
+    public override MarkColor Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.String)
+        {
+            return reader.GetString() switch
+            {
+                "byAuthor" => MarkColor.ByAuthor,
+                "auto" => MarkColor.Auto,
+                var other => throw new JsonException($"unknown mark colour {other}"),
+            };
+        }
+        var o = JsonElement.ParseValue(ref reader);
+        return MarkColor.Of(o.GetProperty("fixed").Deserialize(TwipJsonContext.Default.ColorValue));
+    }
+
+    public override void Write(Utf8JsonWriter writer, MarkColor value, JsonSerializerOptions options)
+    {
+        switch (value.Kind)
+        {
+            case MarkColorKind.ByAuthor:
+                writer.WriteStringValue("byAuthor");
+                break;
+            case MarkColorKind.Auto:
+                writer.WriteStringValue("auto");
+                break;
+            default:
+                writer.WriteStartObject();
+                writer.WritePropertyName("fixed");
+                JsonSerializer.Serialize(writer, value.Fixed ?? ColorValue.Auto, TwipJsonContext.Default.ColorValue);
+                writer.WriteEndObject();
+                break;
+        }
+    }
+}
+
+/// <summary><c>{ absolute: n } | { relative: n } | 'next' | 'previous'</c>.</summary>
+internal sealed class GoToTargetConverter : JsonConverter<GoToTarget>
+{
+    public override GoToTarget Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.String)
+        {
+            return reader.GetString() switch
+            {
+                "next" => GoToTarget.Next,
+                "previous" => GoToTarget.Previous,
+                var s => throw new JsonException($"unknown Go To target {s}"),
+            };
+        }
+        var o = JsonElement.ParseValue(ref reader);
+        if (o.TryGetProperty("absolute", out var a)) return GoToTarget.Nth(a.GetInt32());
+        if (o.TryGetProperty("relative", out var r)) return GoToTarget.By(r.GetInt32());
+        throw new JsonException("a Go To target is absolute, relative, next or previous");
+    }
+
+    public override void Write(Utf8JsonWriter writer, GoToTarget value, JsonSerializerOptions options)
+    {
+        if (value.Step is { } step)
+        {
+            writer.WriteStringValue(step == NavigationDirection.Next ? "next" : "previous");
+            return;
+        }
+        writer.WriteStartObject();
+        if (value.Absolute is { } n) writer.WriteNumber("absolute", n);
+        else writer.WriteNumber("relative", value.Relative ?? 0);
+        writer.WriteEndObject();
+    }
+}
+
+/// <summary><c>'all' | 'none' | { omitLevels: { from, to } }</c>.</summary>
+internal sealed class TocPageNumbersConverter : JsonConverter<TocPageNumbers>
+{
+    public override TocPageNumbers Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.String)
+        {
+            return reader.GetString() switch
+            {
+                "all" => TocPageNumbers.All,
+                "none" => TocPageNumbers.None,
+                var s => throw new JsonException($"unknown page numbers {s}"),
+            };
+        }
+        var o = JsonElement.ParseValue(ref reader);
+        return TocPageNumbers.Omit(o.GetProperty("omitLevels").Deserialize(TwipJsonContext.Default.TocLevels)!);
+    }
+
+    public override void Write(Utf8JsonWriter writer, TocPageNumbers value, JsonSerializerOptions options)
+    {
+        if (value.OmitLevels is not { } levels)
+        {
+            writer.WriteStringValue(value.IsNone ? "none" : "all");
+            return;
+        }
+        writer.WriteStartObject();
+        writer.WritePropertyName("omitLevels");
+        JsonSerializer.Serialize(writer, levels, TwipJsonContext.Default.TocLevels);
+        writer.WriteEndObject();
+    }
+}
+
+/// <summary><c>'numberedItem' | 'heading' | 'bookmark' | 'footnote' | 'endnote' | { caption: label }</c>.</summary>
+internal sealed class CrossReferenceKindConverter : JsonConverter<CrossReferenceKind>
+{
+    public override CrossReferenceKind Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.String)
+        {
+            var name = reader.GetString() ?? "";
+            return CrossReferenceKind.Of(name) ?? throw new JsonException($"unknown cross-reference kind {name}");
+        }
+        var o = JsonElement.ParseValue(ref reader);
+        return CrossReferenceKind.Caption(o.GetProperty("caption").GetString() ?? "");
+    }
+
+    public override void Write(Utf8JsonWriter writer, CrossReferenceKind value, JsonSerializerOptions options)
+    {
+        if (value.CaptionLabel is not { } label)
+        {
+            writer.WriteStringValue(value.Name);
+            return;
+        }
+        writer.WriteStartObject();
+        writer.WriteString("caption", label);
         writer.WriteEndObject();
     }
 }

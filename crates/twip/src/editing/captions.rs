@@ -144,7 +144,7 @@ impl CaptionOptions {
 
 /// What a caption's label may be: Word's rule for labels (a letter first, then letters, digits, spaces and
 /// underscores, 40 at most, no space last).
-fn valid_label(label: &str) -> bool {
+pub(crate) fn valid_label(label: &str) -> bool {
     let mut c = label.chars();
     c.next().is_some_and(char::is_alphabetic)
         && c.all(|c| c.is_alphanumeric() || c == '_' || c == ' ')

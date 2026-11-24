@@ -1,0 +1,42 @@
+[
+  {
+    "changeBarColor": "auto",
+    "changeBars": "outside",
+    "deletedCells": {
+      "fixed": "#FF99CC"
+    },
+    "deletions": {
+      "color": "byAuthor",
+      "mark": "strikethrough"
+    },
+    "formatting": {
+      "color": "byAuthor",
+      "mark": "none"
+    },
+    "insertedCells": {
+      "fixed": "#99CCFF"
+    },
+    "insertions": {
+      "color": "byAuthor",
+      "mark": "underline"
+    },
+    "mergedCells": {
+      "fixed": "#FFFF99"
+    },
+    "movedFrom": {
+      "color": {
+        "fixed": "#00A050"
+      },
+      "mark": "doubleStrikethrough"
+    },
+    "movedTo": {
+      "color": {
+        "fixed": "#00A050"
+      },
+      "mark": "doubleUnderline"
+    },
+    "splitCells": {
+      "fixed": "#FFCC99"
+    }
+  }
+]

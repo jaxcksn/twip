@@ -70,12 +70,12 @@ fn every_change_is_a_recorded_transaction(files: Vec<std::path::PathBuf>) {
 fn undo_and_redo_commit_with_their_origins() {
     let mut e = open("FX-EMPTY.docx");
     e.with_origin(Origin::Api, |e| e.execute(Command::InsertText("Hi".into()), fonts()));
-    e.execute(Command::Undo, fonts());
-    e.execute(Command::Redo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
+    e.execute(Command::Redo(Default::default()), fonts());
     let got: Vec<(u64, Origin)> = e.take_commits().iter().map(|c| (c.revision, c.origin)).collect();
     assert_eq!(got, [(2, Origin::Api), (3, Origin::Undo), (4, Origin::Redo)]);
     assert_eq!(texts(&e), ["Hi"]);
-    assert_eq!(e.execute(Command::Redo, fonts()), Outcome::Unchanged("nothing to redo"));
+    assert_eq!(e.execute(Command::Redo(Default::default()), fonts()), Outcome::Unchanged("nothing to redo"));
     assert!(e.take_commits().is_empty() && e.revision() == 4, "nothing done commits nothing");
 }
 
@@ -92,7 +92,7 @@ fn a_batch_commits_once_or_not_at_all() {
     assert_eq!(commits.iter().map(|c| c.label.as_ref()).collect::<Vec<_>>(), ["Block"]);
     assert_eq!(commits[0].targets.paras.len(), 2);
     assert_eq!((e.history().undo_depth(), e.history().next_undo()), (1, Some("Block")));
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(texts(&e), [""], "one undo takes the whole batch");
     e.take_commits();
     e.begin_batch(None);
@@ -114,16 +114,16 @@ fn the_saved_position_follows_undo_and_redo() {
     e.execute(Command::InsertParagraph, fonts());
     e.mark_saved();
     assert!(!e.is_dirty());
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert!(e.is_dirty());
-    e.execute(Command::Redo, fonts());
+    e.execute(Command::Redo(Default::default()), fonts());
     assert!(!e.is_dirty(), "back at the saved position");
     e.execute(Command::InsertText("b".into()), fonts());
     e.mark_saved();
     e.execute(Command::InsertText("c".into()), fonts());
     assert_eq!(e.history().undo_depth(), 4, "the save ended the typing run");
     assert!(e.is_dirty());
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert!(!e.is_dirty());
 }
 
@@ -135,7 +135,7 @@ fn read_only_refuses_edits_before_they_run() {
     e.take_commits();
     let refused = |o: Outcome| matches!(o, Outcome::Refused(e) if e.code == crate::api::error::ErrorCode::ReadOnly);
     assert!(refused(e.execute(Command::InsertText("x".into()), fonts())));
-    assert!(refused(e.execute(Command::Undo, fonts())));
+    assert!(refused(e.execute(Command::Undo(Default::default()), fonts())));
     assert_eq!((texts(&e), e.revision()), (vec!["Kept".to_string()], 2));
     assert!(e.take_commits().is_empty());
 }
@@ -175,7 +175,7 @@ fn a_batch_records_revisions() {
     e.execute(Command::InsertText("more".into()), fonts());
     e.end_batch(true, fonts());
     assert!(tracked(&e) >= 2, "the paragraph mark and the text are insertions");
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(tracked(&e), 0);
 }
 
@@ -189,7 +189,7 @@ fn find_and_replace_records_revisions() {
 #[test]
 fn a_dialog_apply_records_revisions() {
     let mut e = tracking();
-    let link = crate::api::command::Hyperlink { address: "https://example.com".into(), text: Some("site".into()) };
+    let link = crate::api::command::Hyperlink { address: "https://example.com".into(), text: Some("site".into()), ..Default::default() };
     e.execute(Command::InsertHyperlink(link), fonts());
     assert!(tracked(&e) > 0);
 }

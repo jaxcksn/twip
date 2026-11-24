@@ -84,6 +84,8 @@ public sealed class WireTests
         ["order"] = Ctx.NavigationDirection,
         ["orientation"] = Ctx.PageOrientation,
         ["pagenumberplace"] = Ctx.PageNumberPlacement,
+        ["pagenumberalign"] = Ctx.PageNumberAlignment,
+        ["listdefinition"] = Ctx.ListDefinitionInfo,
         ["pasteas"] = Ctx.PasteMode,
         ["selectunit"] = Ctx.SelectionUnit,
         ["selectionmode"] = Ctx.TextSelectionMode,
@@ -97,6 +99,8 @@ public sealed class WireTests
         ["popovertabtype"] = Ctx.Popover,
         ["popovertabstop"] = Ctx.Popover,
         ["popoverautocorrect"] = Ctx.Popover,
+        ["popoverautoformat"] = Ctx.Popover,
+        ["popoverpasteoptions"] = Ctx.Popover,
     };
 
     /// <summary>Each engine event's payload type: the event is <c>{ "type": ..., ...payload }</c>.</summary>
@@ -119,9 +123,11 @@ public sealed class WireTests
         ["elementActivated"] = Ctx.ElementActivatedPayload,
         ["elementsChanged"] = Ctx.ElementsChangedPayload,
         ["fieldsUpdateRequested"] = Ctx.FieldsUpdateRequestedPayload,
+        ["tableOfContentsUpdateRequested"] = Ctx.TableOfContentsUpdateRequestedPayload,
         ["revisionsChanged"] = Ctx.EmptyPayload,
         ["commentsChanged"] = Ctx.EmptyPayload,
         ["commentAnchors"] = Ctx.CommentAnchorsPayload,
+        ["revisionBalloons"] = Ctx.RevisionBalloonsPayload,
         ["balloonsLaidOut"] = Ctx.BalloonsLaidOutPayload,
         ["rulerChanged"] = Ctx.RulerView,
         ["tooltip"] = Ctx.TooltipPayload,

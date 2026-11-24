@@ -245,7 +245,7 @@ fn inserting_a_table_lists_headings_with_links_and_page_numbers() {
     assert_eq!(t.len(), 1);
     assert_eq!(t[0].options(','), TocOptions::word_default());
     // One undo step.
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert!(e.tables_of_contents().is_empty());
     assert!(!body_paras(&e).iter().any(|p| p.inlines.iter().any(|i| matches!(i, Inline::Bookmark(_)))));
 }
@@ -315,7 +315,7 @@ fn an_entire_update_collects_new_headings_and_drops_unused_marks() {
     assert_eq!(names, ["Intro", "Deeper", "End", ""]);
     assert_eq!(e.bookmarks().len(), n_before - 1, "the unused mark goes");
     // One undo step back.
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(e.bookmarks().len(), n_before);
 }
 
@@ -339,7 +339,7 @@ fn an_update_clears_dirty_and_saves_one_start() {
         assert!(!xml.contains("w:dirty"), "{mode:?}: {xml}");
         assert_eq!(balance(&xml).0, balance(&xml).2, "{mode:?}: {xml}");
         assert_eq!(xml.matches("TOC \\o").count(), 1, "{mode:?}: {xml}");
-        e.execute(Command::Undo, fonts());
+        e.execute(Command::Undo(Default::default()), fonts());
         assert!(saved(&e).contains("w:dirty"), "{mode:?}");
     }
 }
@@ -582,7 +582,7 @@ fn inserting_in_a_table_replaces_it() {
         assert_eq!(balance(&saved(&e)), (9, 9, 9));
     }
     // One undo step back to the first table.
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(e.tables_of_contents().len(), 1);
     assert_eq!(body_paras(&e).len(), n);
 }
@@ -600,7 +600,7 @@ fn removing_a_table_takes_its_title_and_control() {
     assert_eq!(texts(&e), before);
     assert!(body_paras(&e).iter().all(|p| p.controls.is_empty()));
     assert_eq!(balance(&saved(&e)), (0, 0, 0));
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(e.tables_of_contents().len(), 1);
     // A read one, its end in a paragraph of its own: that paragraph's mark stays.
     let mut e = Editor::open(&doc_with(READ_TOC, HEADINGS), fonts()).unwrap();
@@ -763,7 +763,7 @@ fn a_caption_goes_below_its_paragraph_and_numbers_its_label() {
     assert_eq!(shown_all, ["One", "Figure 1: First", "Figure 2: A cat", "Two"]);
     assert_eq!(style_of(body_paras(&e)[1]), "Caption");
     // One undo step.
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(body_paras(&e).iter().map(|p| shown(p)).collect::<Vec<_>>(), ["One", "Figure 1: A cat", "Two"]);
 }
 
@@ -834,7 +834,7 @@ fn auto_caption_captions_inserted_tables() {
     assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
     let caps: Vec<String> = body_paras(&e).iter().filter(|p| style_of(p) == "Caption").map(|p| shown(p)).collect();
     assert_eq!(caps, ["Table 1"]);
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(body_paras(&e).len(), 1, "one undo step");
 }
 
@@ -896,7 +896,7 @@ fn inserting_cross_references_marks_their_targets() {
     let hidden = e.bookmarks().into_iter().filter(|b| b.name.starts_with("_Ref")).count();
     assert_eq!(hidden, 4, "the heading's, and the caption's three ranges");
     // One undo step each.
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(codes(e.index().para(e.document(), last).unwrap()).len(), 5);
 }
 
@@ -936,7 +936,7 @@ fn the_manual_table_is_typed_entries_in_a_control() {
     assert_eq!(t[7], "Body");
     assert!(e.tables_of_contents().is_empty(), "no field");
     assert_eq!(body_paras(&e)[3].style.style_id.as_deref(), Some("TOC3"));
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(texts(&e), ["Body"]);
 }
 
@@ -1097,19 +1097,19 @@ fn undo_and_redo_insert_and_update_one_step_each() {
     at_start(&mut e);
     insert(&mut e, &TocOptions::word_default());
     let xml = saved(&e);
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert!(e.tables_of_contents().is_empty());
-    e.execute(Command::Redo, fonts());
+    e.execute(Command::Redo(Default::default()), fonts());
     assert_eq!(saved(&e), xml);
     e.update_table_of_contents(TocUpdate::Entire, fonts());
-    e.execute(Command::Undo, fonts());
-    e.execute(Command::Redo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
+    e.execute(Command::Redo(Default::default()), fonts());
     assert_eq!(e.tables_of_contents().len(), 1);
     assert_eq!(balance(&saved(&e)), (9, 9, 9));
     let t = e.tables_of_contents().remove(0);
     e.remove_table_of_contents(&t, fonts());
-    e.execute(Command::Undo, fonts());
-    e.execute(Command::Redo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
+    e.execute(Command::Redo(Default::default()), fonts());
     assert!(e.tables_of_contents().is_empty());
     assert_eq!(balance(&saved(&e)), (0, 0, 0));
 }
@@ -1153,7 +1153,7 @@ fn every_table_updates_in_one_step_the_locked_ones_left() {
     assert_eq!(t.iter().map(|t| e.toc_locked(t)).collect::<Vec<_>>(), [false, false, true]);
     assert_eq!(e.update_all_tables(TocUpdate::Entire, fonts()), 2);
     assert_eq!(e.tables_of_contents().len(), 3);
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(texts(&e).iter().filter(|t| *t == "Two").count(), 3, "one undo step back");
     // At the selection.
     let p = texts_ids(&e)[1];
@@ -1191,7 +1191,7 @@ fn a_reference_with_notes_brings_them_again_as_its_own() {
     assert_eq!(xml.matches("<w:footnoteReference").count(), 2, "{xml}");
     let again = Editor::open(&crate::docx::write::save(e.document()).unwrap(), fonts()).unwrap();
     assert_eq!(again.document().footnotes.len(), before + 1);
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(count(&e), before + 1);
 }
 
@@ -1583,7 +1583,7 @@ fn shift_f9_in_a_table_toggles_it_and_undo_leaves_the_view() {
     assert!(!back.show);
     assert_eq!(e.history().undo_depth(), 0, "a view, not an edit");
     assert!(!e.is_dirty());
-    assert!(!matches!(e.execute(Command::Undo, fonts()), Outcome::Changed(_)), "nothing to undo");
+    assert!(!matches!(e.execute(Command::Undo(Default::default()), fonts()), Outcome::Changed(_)), "nothing to undo");
     assert_eq!(view_of(&e), crate::docx::FieldView::Code);
 }
 
@@ -1622,11 +1622,11 @@ fn undo_after_alt_f9_takes_back_the_edit_before_and_keeps_every_code_shown() {
     assert_eq!((view_of(&e), page_view(&e)), (crate::docx::FieldView::Code, crate::docx::FieldView::Code));
     assert_eq!((e.history().undo_depth(), e.history().next_undo().map(str::to_string)), (depth, label), "no undo step");
     assert!(!e.is_dirty(), "a view doesn't modify the document");
-    assert!(matches!(e.execute(Command::Undo, fonts()), Outcome::Changed(_)));
+    assert!(matches!(e.execute(Command::Undo(Default::default()), fonts()), Outcome::Changed(_)));
     assert_eq!(texts(&e).last().map(String::as_str), Some("Tail"), "the typing went");
     assert_eq!((view_of(&e), page_view(&e)), (crate::docx::FieldView::Code, crate::docx::FieldView::Code), "both still show codes");
     assert_eq!(folds(&e), 2);
-    e.execute(Command::Redo, fonts());
+    e.execute(Command::Redo(Default::default()), fonts());
     assert_eq!(texts(&e).last().map(String::as_str), Some("Tailx"));
     assert_eq!((view_of(&e), folds(&e)), (crate::docx::FieldView::Code, 2));
     assert!(!e.is_dirty());
@@ -1648,22 +1648,22 @@ fn an_edit_in_a_shown_code_undoes_and_redoes_in_any_view() {
     assert_eq!(e.tables_of_contents()[0].code, edited);
     // Shown as results, then the code's edit undone and redone
     show_codes(&mut e, false);
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!((view_of(&e), folds(&e)), (crate::docx::FieldView::Result, 0), "the view stays");
     assert_eq!(e.tables_of_contents()[0].code, r#" TOC \o "1-3" \h "#);
-    e.execute(Command::Redo, fonts());
+    e.execute(Command::Redo(Default::default()), fonts());
     assert_eq!((view_of(&e), folds(&e)), (crate::docx::FieldView::Result, 0));
     assert_eq!(e.tables_of_contents()[0].code, edited);
     // Back past the code's edit and the typing before it: codes shown, as now
     show_codes(&mut e, true);
-    e.execute(Command::Undo, fonts());
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(texts(&e).last().map(String::as_str), Some("One"));
     assert_eq!((view_of(&e), folds(&e)), (crate::docx::FieldView::Code, 2));
     assert_eq!(drawn_lines(&mut e)[0], r#"{ TOC \o "1-3" \h }"#);
     show_codes(&mut e, false);
-    e.execute(Command::Redo, fonts());
-    e.execute(Command::Redo, fonts());
+    e.execute(Command::Redo(Default::default()), fonts());
+    e.execute(Command::Redo(Default::default()), fonts());
     assert_eq!((view_of(&e), folds(&e)), (crate::docx::FieldView::Result, 0));
     assert_eq!(e.tables_of_contents()[0].code, edited);
     assert_eq!(texts(&e).last().map(String::as_str), Some("One!"));
@@ -1677,14 +1677,14 @@ fn a_composition_taken_back_leaves_the_view_and_the_redo_steps() {
     let mut e = Editor::open(&doc_with(READ_TOC, HEADINGS), fonts()).unwrap();
     // An entry's edit, undone: redone where the result shows
     type_at_end(&mut e, 0, "!");
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     show_codes(&mut e, true);
     caret_at_end(&mut e, 3);
     e.compose("k", 1, fonts());
     e.end_composition(fonts());
     assert_eq!((e.history().undo_depth(), e.history().redo_depth()), (0, 1));
     assert_eq!((view_of(&e), folds(&e)), (crate::docx::FieldView::Code, 2));
-    e.execute(Command::Redo, fonts());
+    e.execute(Command::Redo(Default::default()), fonts());
     assert_eq!((view_of(&e), folds(&e)), (crate::docx::FieldView::Code, 2));
     assert_eq!(drawn_lines(&mut e)[0], r#"{ TOC \o "1-3" \h }"#);
     show_codes(&mut e, false);
@@ -2271,4 +2271,132 @@ fn an_entire_update_keeps_a_mark_a_locked_reference_reads() {
         assert!(matches!(e.update_toc(&t, TocUpdate::Entire, fonts()), Outcome::Changed(_)));
         assert_eq!(e.bookmarks().iter().any(|b| b.name == "_Toc000000005"), lock, "locked {lock}");
     }
+}
+
+#[test]
+fn a_long_style_list_reads_back_against_many_styles() {
+    const N: usize = 10_000;
+    let defs: String = (0..N)
+        .map(|k| format!(r#"<w:style w:type="paragraph" w:customStyle="1" w:styleId="S{k}"><w:name w:val="Style {k},Alias {k}"/></w:style>"#))
+        .collect();
+    let list: Vec<String> = (0..N).map(|k| if k % 2 == 0 { format!("style {k},1") } else { format!("ALIAS {k},2") }).collect();
+    let code = format!(r#" TOC \t "{},Missing,3" "#, list.join(","));
+    let body = format!(
+        r#"<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve">{code}</w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>One</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>{}{}"#,
+        para("S9998", "Even"),
+        para("S0", "First"),
+    ) + &para("S1", "By alias");
+    let e = Editor::open(&doc_from(&body, &defs, None), fonts()).unwrap();
+    let tables = e.tables_of_contents();
+    assert_eq!(tables.len(), 1);
+    let o = e.toc_options_api(&tables[0].options(','), &std::cell::OnceCell::new());
+    assert_eq!(o.style_levels.len(), N, "the missing name left out");
+    assert_eq!(o.style_levels[0].style.0, "S0");
+    assert_eq!((o.style_levels[1].style.0.as_str(), o.style_levels[1].level), ("S1", 2));
+    let found: Vec<(u8, String)> = e.toc_entries(&tables[0].options(',')).into_iter().map(|x| (x.level, x.text)).collect();
+    assert_eq!(found, [(1, "Even".to_string()), (1, "First".to_string()), (2, "By alias".to_string())], "as the readback maps them");
+}
+
+#[test]
+fn locking_the_selected_fields_locks_a_table() {
+    let mut e = Editor::open(&doc_with(READ_TOC, HEADINGS), fonts()).unwrap();
+    let lock = |e: &mut Editor, locked: bool| e.execute(Command::SetFieldsLocked(crate::api::command::FieldsLocked { locked, ids: None }), fonts());
+    e.execute(Command::SelectAll, fonts());
+    assert!(matches!(lock(&mut e, true), Outcome::Changed(_)));
+    assert!(e.tables_of_contents()[0].lock);
+    assert!(saved(&e).contains(r#"w:fldLock="1""#));
+    assert!(!matches!(e.update_table_of_contents(TocUpdate::Entire, fonts()), Outcome::Changed(_)));
+    assert!(matches!(lock(&mut e, false), Outcome::Changed(_)));
+    assert!(!e.tables_of_contents()[0].lock);
+    // A caret in an entry's text, no other field there: the table's.
+    let first = texts_ids(&e)[0];
+    e.select_range(first, Unit(1), Unit(1), fonts());
+    assert!(matches!(lock(&mut e, true), Outcome::Changed(_)));
+    assert!(e.tables_of_contents()[0].lock);
+    e.execute(Command::Undo(Default::default()), fonts());
+    assert!(!e.tables_of_contents()[0].lock);
+}
+
+fn unlink(e: &mut Editor) -> Outcome {
+    e.execute(Command::UnlinkFields(crate::api::command::ElementIds { ids: None }), fonts())
+}
+
+#[test]
+fn unlinking_the_selected_fields_turns_a_table_into_text() {
+    let mut e = Editor::open(&sample(), fonts()).unwrap();
+    at_start(&mut e);
+    insert(&mut e, &TocOptions::word_default());
+    let before: Vec<String> = body_paras(&e)[..4].iter().map(|p| shown(p)).collect();
+    e.execute(Command::SelectAll, fonts());
+    assert!(matches!(unlink(&mut e), Outcome::Changed(_)));
+    assert!(e.tables_of_contents().is_empty());
+    assert_eq!(balance(&saved(&e)), (0, 0, 0), "the links and page numbers too");
+    assert_eq!(body_paras(&e)[..4].iter().map(|p| shown(p)).collect::<Vec<_>>(), before);
+    e.execute(Command::Undo(Default::default()), fonts());
+    assert_eq!(e.tables_of_contents().len(), 1);
+    assert_eq!(balance(&saved(&e)).2, 1 + 4 * 2);
+    // Showing its code: its result stays.
+    show_codes(&mut e, true);
+    e.execute(Command::SelectAll, fonts());
+    assert!(matches!(unlink(&mut e), Outcome::Changed(_)));
+    assert!(e.tables_of_contents().is_empty());
+    assert_eq!(body_paras(&e)[..4].iter().map(|p| shown(p)).collect::<Vec<_>>(), before);
+}
+
+const BEGIN: &str = r#"<w:fldChar w:fldCharType="begin"/>"#;
+const LOCKED_BEGIN: &str = r#"<w:fldChar w:fldCharType="begin" w:fldLock="1"/>"#;
+
+#[test]
+fn a_locked_field_at_the_caret_stays_linked() {
+    for (begin, linked) in [(LOCKED_BEGIN, true), (BEGIN, false)] {
+        let body = format!("<w:p>{}</w:p>", field("DATE", "1/1/2026").replacen(BEGIN, begin, 1));
+        let mut e = Editor::open(&doc_with(&body, HEADINGS), fonts()).unwrap();
+        e.select_range(texts_ids(&e)[0], Unit(0), Unit(0), fonts());
+        let out = unlink(&mut e);
+        assert_eq!(matches!(out, Outcome::Unchanged("the field is locked")), linked, "{out:?}");
+        assert_eq!(balance(&saved(&e)), if linked { (1, 1, 1) } else { (0, 0, 0) });
+    }
+}
+
+#[test]
+fn a_locked_table_keeps_the_fields_inside_it() {
+    let entry = field(r#"HYPERLINK \l "_Toc1""#, "Two") + &field(r#"PAGEREF _Toc1 \h"#, "1");
+    let toc = READ_TOC.replacen(BEGIN, LOCKED_BEGIN, 1).replacen("<w:r><w:t>Two</w:t></w:r>", &entry, 1);
+    let mut e = Editor::open(&doc_with(&toc, HEADINGS), fonts()).unwrap();
+    let before = saved(&e);
+    e.execute(Command::SelectAll, fonts());
+    assert!(matches!(unlink(&mut e), Outcome::Unchanged("the field is locked")));
+    e.select_range(texts_ids(&e)[1], Unit(1), Unit(1), fonts());
+    assert!(matches!(unlink(&mut e), Outcome::Unchanged("the field is locked")));
+    assert_eq!(saved(&e), before);
+    assert_eq!(balance(&before), (3, 3, 3));
+    assert_eq!(e.tables_of_contents().len(), 1);
+    // A locked page number in an unlocked table stays a field.
+    let entry = field(r#"HYPERLINK \l "_Toc1""#, "Two") + &field(r#"PAGEREF _Toc1 \h"#, "1").replacen(BEGIN, LOCKED_BEGIN, 1);
+    let toc = READ_TOC.replacen("<w:r><w:t>Two</w:t></w:r>", &entry, 1);
+    let mut e = Editor::open(&doc_with(&toc, HEADINGS), fonts()).unwrap();
+    e.execute(Command::SelectAll, fonts());
+    assert!(matches!(unlink(&mut e), Outcome::Changed(_)));
+    assert!(e.tables_of_contents().is_empty());
+    let after = saved(&e);
+    assert_eq!(balance(&after), (1, 1, 1));
+    assert!(after.contains("PAGEREF") && !after.contains("HYPERLINK"));
+}
+
+#[test]
+fn unlinking_at_the_caret_takes_its_table_unless_locked() {
+    let mut e = Editor::open(&doc_with(READ_TOC, HEADINGS), fonts()).unwrap();
+    let first = texts_ids(&e)[0];
+    e.select_range(first, Unit(1), Unit(1), fonts());
+    e.execute(Command::SetFieldsLocked(crate::api::command::FieldsLocked { locked: true, ids: None }), fonts());
+    assert!(!matches!(unlink(&mut e), Outcome::Changed(_)));
+    assert_eq!(e.tables_of_contents().len(), 1);
+    e.execute(Command::Undo(Default::default()), fonts());
+    e.select_range(first, Unit(1), Unit(1), fonts());
+    assert!(matches!(unlink(&mut e), Outcome::Changed(_)));
+    assert!(e.tables_of_contents().is_empty());
+    assert!(edges(&e).iter().all(|x| x.is_empty()));
+    assert_eq!(body_paras(&e)[..2].iter().map(|p| shown(p)).collect::<Vec<_>>(), ["One", "Two"]);
+    e.execute(Command::Undo(Default::default()), fonts());
+    assert_eq!(e.tables_of_contents().len(), 1);
 }

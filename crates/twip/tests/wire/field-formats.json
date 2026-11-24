@@ -1,0 +1,22 @@
+[
+  {
+    "datePictures": [
+      "d MMMM yyyy"
+    ],
+    "numberFormats": [
+      {
+        "label": "I, II, III, ...",
+        "value": "Roman"
+      }
+    ],
+    "numericPictures": [
+      "0.00"
+    ],
+    "textFormats": [
+      {
+        "label": "Uppercase",
+        "value": "Upper"
+      }
+    ]
+  }
+]

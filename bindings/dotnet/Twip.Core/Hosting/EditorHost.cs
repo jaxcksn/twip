@@ -160,15 +160,18 @@ public sealed class EditorHost : IDisposable
         Send(Method.Paste, PasteRequest(content, asText));
     }
 
-    /// <summary>The context menu's Paste: reads the system clipboard, as Ctrl+V does, then pastes.</summary>
-    internal async Task PasteAsync(bool asText, CancellationToken ct)
+    /// <summary>The context menu's Paste and Paste Special: reads the system clipboard, as Ctrl+V does, then pastes as <paramref name="mode"/> takes it (null: as the paste options say).</summary>
+    internal async Task PasteAsync(PasteMode? mode, CancellationToken ct)
     {
         var content = await Adapter.GetClipboardAsync().ConfigureAwait(false);
         if (content is null || _disposed) return;
-        await _session.CallAsync(Method.Paste, PasteRequest(content, asText), ct).ConfigureAwait(false);
+        await _session.CallAsync(Method.Paste, PasteRequest(content, mode == PasteMode.Text, mode is PasteMode.Text or PasteMode.Formatted ? null : mode), ct).ConfigureAwait(false);
     }
 
-    private static byte[] PasteRequest(ClipboardContent content, bool asText)
+    /// <summary>The system clipboard's content, for Paste Special's list.</summary>
+    internal async Task<ClipboardContent> ClipboardAsync() => await Adapter.GetClipboardAsync().ConfigureAwait(false) ?? new ClipboardContent("");
+
+    private static byte[] PasteRequest(ClipboardContent content, bool asText, PasteMode? mode = null)
     {
         // A copy from any editor of the process carries the engine's token: it pastes with everything kept.
         var data = content with { Text = content.Text ?? "" };
@@ -178,6 +181,11 @@ public sealed class EditorHost : IDisposable
             w.WritePropertyName("data");
             JsonSerializer.Serialize(w, data, TwipJsonContext.Default.ClipboardContent);
             w.WriteBoolean("asText", asText);
+            if (mode is { } m)
+            {
+                w.WritePropertyName("as");
+                JsonSerializer.Serialize(w, m, TwipJsonContext.Default.PasteMode);
+            }
             w.WriteEndObject();
         });
     }
@@ -582,6 +590,7 @@ public sealed class EditorHost : IDisposable
             Popover.TabType t => t with { Anchor = R(t.Anchor) },
             Popover.TabStop t => t with { Anchor = R(t.Anchor) },
             Popover.AutoCorrect a => a with { Anchor = R(a.Anchor) },
+            Popover.AutoFormat a => a with { Anchor = R(a.Anchor) },
             _ => p,
         };
     }
@@ -589,7 +598,13 @@ public sealed class EditorHost : IDisposable
     internal CommentAnchor ToClient(CommentAnchor a)
     {
         var s = Scale;
-        return a with { Start = ToClient(a.Start), End = ToClient(a.End), LineTop = a.LineTop * s, LineBottom = a.LineBottom * s, PageEdge = a.PageEdge * s };
+        return a with { Start = ToClient(a.Start), End = ToClient(a.End), LineTop = a.LineTop * s, LineBottom = a.LineBottom * s, PageEdge = a.PageEdge * s, PageLeft = a.PageLeft * s };
+    }
+
+    internal RevisionAnchor ToClient(RevisionAnchor a)
+    {
+        var s = Scale;
+        return a with { Start = ToClient(a.Start), LineTop = a.LineTop * s, LineBottom = a.LineBottom * s, PageEdge = a.PageEdge * s, PageLeft = a.PageLeft * s };
     }
 
     internal RulerView ToClient(RulerView v)
@@ -627,8 +642,12 @@ public sealed class EditorHost : IDisposable
                 Post(() => Adapter.SetClipboard(clipboard.Data));
                 break;
             case CaretRequest caret:
-                var bounds = new RectangleF((float)(caret.X - _scrollX) * s, (float)(caret.Y - _scrollY) * s, s, (float)caret.Height * s);
-                Post(() => Adapter.SetCaret(new CaretInfo(bounds, caret.Visible)));
+                // Across a vertical line the bar is as wide as the line and a device pixel high.
+                var (cx, cy) = ((float)(caret.X - _scrollX) * s, (float)(caret.Y - _scrollY) * s);
+                var bounds = caret.Line == LineDirection.Horizontal
+                    ? new RectangleF(cx, cy, s, (float)caret.Height * s)
+                    : new RectangleF(cx, cy, (float)caret.Width * s, s);
+                Post(() => Adapter.SetCaret(new CaretInfo(bounds, caret.Visible, caret.Line)));
                 break;
             case ScrollToRequest scroll:
                 var (vw, vh) = (_width / s, _height / s);

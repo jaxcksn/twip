@@ -12,7 +12,7 @@ use crate::api::review::CommentAnchor;
 use crate::api::services::{
     AccessibleNode, ClientPoint, ClientRect, HitResult, PageRect, RulerAxis, RulerUnit, RulerView, TabSelector, Tooltip, TooltipKind,
 };
-use crate::api::value::{Color, ElementId};
+use crate::api::value::{Color, ElementId, LineDirection};
 use crate::editing::commands::Outcome;
 use crate::editing::elements;
 use crate::editing::input::Request;
@@ -40,14 +40,25 @@ pub enum HostRequest {
         /// What was copied.
         data: ClipboardData,
     },
-    /// The caret moved: for the IME window and the system caret.
+    /// The caret moved: for the IME window and the system caret. `x`, `y`, `width` and `height` are the caret bar's
+    /// box: across a horizontal line `width` is 0, across a vertical one `height` is.
     Caret {
         /// Its left.
         x: f64,
         /// Its top.
         y: f64,
-        /// Its height.
+        /// Its width: the line's thickness across a vertical line, else 0.
+        #[serde(default)]
+        width: f64,
+        /// Its height: the line's height across a horizontal line, else 0.
         height: f64,
+        /// The way the caret's line runs: place the IME's text vertically along a `down` or `up` line.
+        #[serde(default)]
+        line: LineDirection,
+        /// The bar's two ends, on the line's top side then its bottom side, when it runs along neither of the page's
+        /// axes (a text box turned by other than quarter turns); the box then bounds them.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ends: Option<[[f64; 2]; 2]>,
         /// A collapsed selection shows a caret.
         visible: bool,
     },
@@ -89,8 +100,11 @@ pub enum HostRequest {
 struct Sink {
     deliver: Option<Box<dyn FnMut(HostRequest)>>,
     cursor: Option<Cursor>,
-    caret: Option<(f64, f64, f64, bool)>,
+    caret: Option<CaretSent>,
     tooltip: Option<Tooltip>,
+    /// The editor's hover tip `tooltip` was made from, with the scroll and zoom it was placed at: an unchanged tip
+    /// is not converted again.
+    hovered: Option<(crate::editing::hover::Hovered, (f64, f64), f64)>,
     /// The hovered and the selected element as last sent.
     hover: Option<crate::api::services::ElementHover>,
     selected: Option<crate::api::services::ElementSelection>,
@@ -100,6 +114,18 @@ struct Sink {
     a11y_armed: bool,
     /// The caret window the host was last sent.
     window: Option<crate::services::a11y::Window>,
+}
+
+/// The caret as last sent.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct CaretSent {
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    line: LineDirection,
+    ends: Option<[[f64; 2]; 2]>,
+    visible: bool,
 }
 
 /// The timer that sends the accessibility tree's changes after an edit (timer 1 is background layout, 2 the caret's
@@ -139,8 +165,17 @@ pub struct FrameInfo {
     pub caret_x: f64,
     /// The caret's top, content CSS px.
     pub caret_y: f64,
-    /// The caret's height, CSS px.
+    /// The caret's height, CSS px: 0 across a vertical line.
     pub caret_height: f64,
+    /// The caret's width, CSS px: the line's thickness across a vertical line, 0 across a horizontal one.
+    #[serde(default)]
+    pub caret_width: f64,
+    /// The way the caret's line runs.
+    #[serde(default)]
+    pub caret_line: LineDirection,
+    /// The caret bar's two ends, content CSS px, when it is slanted (a text box turned by other than quarter turns).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub caret_ends: Option<[[f64; 2]; 2]>,
     /// A collapsed selection shows a caret.
     pub caret_visible: bool,
     /// The pages laid out so far.
@@ -291,10 +326,16 @@ impl RulerDrag {
     /// Where the drag puts its marker, page points along its ruler: snapped to the unit's minor marks from the text
     /// start, unless Alt is down.
     pub fn value(&self) -> f64 {
-        let (h, v) = (&self.view.model.horizontal, &self.view.model.vertical);
-        let horizontal = self.marker.is_none_or(Marker::horizontal);
-        let (axis, at, zero) =
-            if horizontal { (self.view.horizontal, self.now.x, h.text.start.0) } else { (self.view.vertical, self.now.y, v.text.start.0) };
+        let m = &self.view.model;
+        let horizontal = self.horizontal();
+        // Indents and stops snap from the line start, the others from the text's start along their ruler.
+        let zero = match self.marker {
+            None => crate::services::ruler::along(m).start,
+            Some(k) if k.on_lines() => crate::services::ruler::along(m).start,
+            Some(_) if horizontal => m.horizontal.text.start.0,
+            Some(_) => m.vertical.text.start.0,
+        };
+        let (axis, at) = if horizontal { (self.view.horizontal, self.now.x) } else { (self.view.vertical, self.now.y) };
         let pt = (at - axis.origin) / axis.scale.max(1e-9);
         if self.free { pt } else { crate::services::ruler::snap(pt, zero, self.view.unit) }
     }
@@ -302,8 +343,15 @@ impl RulerDrag {
     /// The guide line over the document: along which ruler, and its client coordinate.
     fn guide(&self) -> Option<(bool, f64)> {
         let m = self.marker.filter(|_| self.moved && !self.removing)?;
-        let axis = if m.horizontal() { self.view.horizontal } else { self.view.vertical };
-        Some((m.horizontal(), axis.origin + self.value() * axis.scale))
+        let horizontal = m.horizontal(&self.view.model);
+        let axis = if horizontal { self.view.horizontal } else { self.view.vertical };
+        Some((horizontal, axis.origin + self.value() * axis.scale))
+    }
+
+    /// Whether it moves along the horizontal ruler: a click on the text area does where the indents are.
+    pub fn horizontal(&self) -> bool {
+        let m = &self.view.model;
+        self.marker.map_or(m.lines == crate::api::value::LineDirection::Horizontal, |k| k.horizontal(m))
     }
 }
 
@@ -581,12 +629,14 @@ pub(super) fn fill_state(s: &Session, state: &mut crate::api::state::State) {
         if let Some(paste) = state.commands.get_mut(&C::Paste) {
             paste.enabled &= s.editor.clipboard().is_some() || s.shared.clipboard.borrow().is_some();
         }
-        let corrected = s.editor.correction().is_some();
+        let corrected = s.editor.correction().is_some() || s.editor.auto_format_change().is_some();
         for id in [C::RevertAutoCorrect, C::NeverAutoCorrect, C::ShowAutoCorrectOptions] {
             state.commands.insert(id, CommandState { enabled: corrected, checked: None, value: None });
         }
         state.commands.insert(C::SetAutoCorrect, CommandState { enabled: true, checked: None, value: None });
     }
+    state.paste_options = crate::api::command::PasteSettings::of(&s.editor.paste_defaults());
+    state.auto_caption = s.editor.auto_caption().map(crate::editing::commands::references::auto_caption_api);
     let a = &s.autocorrect;
     state.auto_correct = crate::api::services::AutoCorrectOptions {
         two_initial_capitals: a.two_initial_capitals,
@@ -600,12 +650,31 @@ pub(super) fn fill_state(s: &Session, state: &mut crate::api::state::State) {
         dashes: a.dashes,
         numbered_lists: a.numbered_lists,
         bulleted_lists: a.bulleted_lists,
+        border_lines: a.border_lines,
+        internet_paths: a.internet_paths,
+        tab_indents: s.editor.indent_keys,
         never: a.never.clone(),
     };
-    state.view.formatting_marks = s.formatting_marks;
+    let marks = s.editor.mark_options();
+    state.view.formatting_marks = marks.all;
+    state.view.tab_characters = marks.tabs;
+    state.view.spaces = marks.spaces;
+    state.view.paragraph_marks = marks.paragraphs;
+    state.view.hidden_text = marks.hidden;
+    state.view.optional_hyphens = marks.optional_hyphens;
+    state.view.object_anchors = marks.anchors;
+    state.view.click_and_type = s.editor.click_and_type_on();
+    state.view.text_drag_and_drop = s.editor.text_drag_and_drop();
+    state.view.hide_white_space = s.editor.white_space_hidden();
+    state.view.editing_wrap_points = s.editor.editing_wrap_points();
+    state.view.find_highlights = s.editor.find_highlights().is_some();
+    state.view.linking_text_box = s.editor.linking();
+    state.view.selecting_objects = s.editor.selecting_objects();
+    state.view.highlighter = s.editor.highlighter().and_then(crate::editing::commands::highlight_color);
     state.view.text_boundaries = s.text_boundaries;
     state.view.field_shading = s.field_shading;
     state.view.bookmarks = s.show_bookmarks;
+    state.view.show_editable_regions = s.show_editable_regions;
     state.view.cursor_overrides.clone_from(&s.cursor_overrides);
     state.view.live_layout = s.editor.live_layout;
     state.view.control_labels = s.editor.control_labels;
@@ -667,22 +736,56 @@ impl Session {
 
     /// The options of the correction just made, at its options button (or its text), viewport CSS px.
     pub(super) fn auto_correct_popover(&mut self) -> Option<crate::api::services::Popover> {
-        let from = self.editor.correction()?.from.clone();
-        let to = self.editor.correction_text()?;
+        use crate::api::services::{AutoFormatKind, Popover};
+        use crate::editing::CorrectionKind as K;
+        let what = match (self.editor.correction(), self.editor.auto_format_change()) {
+            (Some(c), _) => Ok((c.from.clone(), c.to.clone())),
+            (None, Some(c)) => Err((
+                match c.kind {
+                    K::Hyperlink => AutoFormatKind::Hyperlink,
+                    K::BorderLine { .. } => AutoFormatKind::BorderLine,
+                    _ => AutoFormatKind::Indent,
+                },
+                c.from.clone(),
+            )),
+            (None, None) => return None,
+        };
         let pages = 0..self.editor.stack().pages.len();
         let view = self.editor.correction_view(pages)?;
         let (page, r) = view.button.or_else(|| view.rects.last().copied())?;
+        let anchor = self.page_rect(page, r)?;
+        Some(match what {
+            Ok((from, to)) => Popover::AutoCorrect { anchor, from, to },
+            Err((change, text)) => Popover::AutoFormat { anchor, change, text },
+        })
+    }
+
+    /// A box on page `page`, page points, in viewport CSS px.
+    fn page_rect(&self, page: usize, r: [f64; 4]) -> Option<crate::api::services::ClientRect> {
         let stack = self.editor.stack();
         let [px, py, ..] = *stack.pages.get(page)?;
         let p = &self.presentation;
         let k = p.px_per_pt();
-        let anchor = crate::api::services::ClientRect {
+        Some(crate::api::services::ClientRect {
             left: (px + r[0]) * k - p.scroll.0,
             top: (py + r[1]) * k - p.scroll.1,
             width: (r[2] - r[0]) * k,
             height: (r[3] - r[1]) * k,
-        };
-        Some(crate::api::services::Popover::AutoCorrect { anchor, from, to })
+        })
+    }
+
+    /// The Paste Options button of the paste just made, viewport CSS px: while the paste is the last change and the
+    /// options show the button.
+    fn paste_options_popover(&mut self) -> Option<crate::api::services::Popover> {
+        self.editor.last_paste()?;
+        let pages = 0..self.editor.stack().pages.len();
+        let v = self.editor.paste_options_view(pages)?;
+        Some(crate::api::services::Popover::PasteOptions {
+            anchor: self.page_rect(v.page, v.button)?,
+            end: self.page_rect(v.page, v.end)?,
+            choices: v.choices.iter().map(|c| c.to_api()).collect(),
+            current: v.current.to_api(),
+        })
     }
 
     /// Whether document point (`x`, `y`) is on the correction mark's options button.
@@ -710,14 +813,42 @@ impl Session {
     /// Dismisses the open popover, if there is one, with `popoverClosed` (after the state).
     pub(super) fn close_popover(&mut self) -> Option<crate::api::services::Popover> {
         let open = self.presentation.popover.take()?;
+        // Closed, the Paste Options button doesn't come back for this paste.
+        if matches!(open, crate::api::services::Popover::PasteOptions { .. }) {
+            self.editor.dismiss_paste_options();
+        }
         self.presentation.want_frame();
         self.changed(vec![Event::PopoverClosed]);
         Some(open)
     }
 
-    /// Closes the tab stop popover when its stop is gone.
+    /// Closes the tab stop popover when its stop is gone; shows the Paste Options button after a paste, and closes it
+    /// once the paste isn't the last change.
     pub(super) fn popover_follow(&mut self) {
         use crate::api::services::Popover;
+        let pasting = matches!(self.presentation.popover, Some(Popover::PasteOptions { .. }));
+        if pasting || (self.presentation.popover.is_none() && self.editor.last_paste().is_some()) {
+            match self.paste_options_popover() {
+                Some(p) if self.presentation.popover.as_ref() != Some(&p) => {
+                    let mut events = Vec::new();
+                    if self.presentation.popover.take().is_some() {
+                        events.push(Event::PopoverClosed);
+                    }
+                    self.presentation.popover = Some(p.clone());
+                    self.presentation.want_frame();
+                    events.push(Event::PopoverRequested(p));
+                    events.into_iter().for_each(|e| self.emit(e));
+                }
+                Some(_) => {}
+                None if pasting => {
+                    self.presentation.popover = None;
+                    self.presentation.want_frame();
+                    self.emit(Event::PopoverClosed);
+                }
+                None => {}
+            }
+            return;
+        }
         if let Some(Popover::TabStop { position, .. }) = &self.presentation.popover
             && !self.state.ruler.horizontal.tabs.iter().any(|t| (t.position.0 - position.0).abs() < 0.5)
         {
@@ -739,17 +870,21 @@ impl Session {
     /// The options of the caret's paragraph's stop at `position` (within half a point), by its mark on the ruler.
     pub(super) fn tab_stop_popover(&self, position: f64) -> Option<crate::api::services::Popover> {
         let view = self.ruler_view();
-        let t = view.model.horizontal.tabs.iter().find(|t| (t.position.0 - position).abs() < 0.5)?;
+        let t = crate::services::ruler::along(&view.model).tabs.iter().find(|t| (t.position.0 - position).abs() < 0.5)?;
         let anchor = crate::services::ruler::tab_anchor(&view, t.position.0);
         Some(crate::api::services::Popover::TabStop { anchor, position: t.position, alignment: t.alignment, leader: t.leader })
     }
 
-    /// The position of the caret's paragraph's stop nearest viewport x `x`.
-    pub(super) fn nearest_tab_stop(&self, x: f64) -> Option<f64> {
+    /// The position of the caret's paragraph's stop nearest the viewport point `at`, along the ruler the stops are on.
+    pub(super) fn nearest_tab_stop(&self, at: ClientPoint) -> Option<f64> {
         let view = self.ruler_view();
-        let centre = |p: f64| crate::services::ruler::tab_anchor(&view, p).left + 7.0;
-        let tabs = view.model.horizontal.tabs.iter().map(|t| t.position.0);
-        tabs.min_by(|a, b| (centre(*a) - x).abs().total_cmp(&(centre(*b) - x).abs()))
+        let across = view.model.lines == crate::api::value::LineDirection::Horizontal;
+        let centre = |p: f64| {
+            let r = crate::services::ruler::tab_anchor(&view, p);
+            if across { r.left + 7.0 - at.client_x } else { r.top + 7.0 - at.client_y }
+        };
+        let tabs = crate::services::ruler::along(&view.model).tabs.iter().map(|t| t.position.0);
+        tabs.min_by(|a, b| centre(*a).abs().total_cmp(&centre(*b).abs()))
     }
 
     /// What the rulers measure now: the drag under way's dimension line or chip.
@@ -769,7 +904,7 @@ impl Session {
         let h = p.ruler_hover.filter(|_| p.popover.is_none() && p.ruler_drag.is_none())?;
         let view = self.ruler_view();
         let (rect, text) = hint(&view, hit(&view, p.rulers, h.at.x, h.at.y)?, p.tab_selector, h.free)?;
-        Some(Tooltip { kind: TooltipKind::Ruler, text, at: ClientPoint { client_x: h.at.x, client_y: h.at.y }, rect })
+        Some(Tooltip { kind: TooltipKind::Ruler, text, at: ClientPoint { client_x: h.at.x, client_y: h.at.y }, rect, ..Tooltip::default() })
     }
 
     /// Where a click on the empty ruler under the pointer adds a tab stop of the box's type (page points), drawn as
@@ -853,7 +988,7 @@ impl Session {
                 Request::ReleasePointer => out.push(HostRequest::Release),
                 // A keyboard copy: the engine's clipboard too, so a paste in any session keeps its formatting.
                 Request::Clipboard { text, html } => {
-                    let data = held.clone().unwrap_or(ClipboardData { text, html, internal: None });
+                    let data = held.clone().unwrap_or(ClipboardData { text, html, internal: None, image: None });
                     out.push(HostRequest::Clipboard { data });
                 }
                 Request::ScrollIntoView { page, rect: [x0, y0, x1, y1], at_top } => {
@@ -869,7 +1004,6 @@ impl Session {
         self.element_feedback();
         let view = self.editor.view(0..0);
         let ruler = self.ruler_tooltip();
-        let hovered = if ruler.is_some() { None } else { self.editor.hover_tooltip() };
         let cursor = self.cursor_override().unwrap_or(view.cursor);
         let s = &mut self.presentation.sink;
         if s.cursor != Some(cursor) {
@@ -877,11 +1011,20 @@ impl Session {
             out.push(HostRequest::Cursor { cursor });
         }
         let info = self.host().caret_info();
-        let caret = (info.caret_x, info.caret_y, info.caret_height, info.caret_visible);
+        let caret = CaretSent {
+            x: info.caret_x,
+            y: info.caret_y,
+            width: info.caret_width,
+            height: info.caret_height,
+            line: info.caret_line,
+            ends: info.caret_ends,
+            visible: info.caret_visible,
+        };
         let (scroll, s) = (self.presentation.scroll, &mut self.presentation.sink);
         if s.caret != Some(caret) {
             s.caret = Some(caret);
-            out.push(HostRequest::Caret { x: caret.0, y: caret.1, height: caret.2, visible: caret.3 });
+            let CaretSent { x, y, width, height, line, ends, visible } = caret;
+            out.push(HostRequest::Caret { x, y, width, height, line, ends, visible });
         }
         // The window keeps its last text while the selection holds no text position (an object).
         if let Some(w) = crate::services::a11y::window(&mut self.editor, &self.services.spelling, &self.language, self.read_only) {
@@ -891,17 +1034,34 @@ impl Session {
                 sink.window = Some(w);
             }
         }
-        let s = &mut self.presentation.sink;
-        let tooltip = hovered.and_then(|(kind, t)| {
-            let (x, y) = stack.to_doc(t.page, t.rect[0], t.rect[1])?;
-            let (left, top) = (x * k - scroll.0, y * k - scroll.1);
-            let (width, height) = ((t.rect[2] - t.rect[0]) * k, (t.rect[3] - t.rect[1]) * k);
-            let rect = ClientRect { left, top, width, height };
-            Some(Tooltip { kind, text: t.text, at: ClientPoint { client_x: left, client_y: top + height }, rect })
-        });
-        let tooltip = ruler.or(tooltip);
-        let tooltip_changed = s.tooltip != tooltip;
-        s.tooltip.clone_from(&tooltip);
+        let tooltip_changed = match ruler {
+            Some(t) => {
+                let s = &mut self.presentation.sink;
+                s.hovered = None;
+                let changed = s.tooltip.as_ref() != Some(&t);
+                s.tooltip = Some(t);
+                changed
+            }
+            None => {
+                let same = match (self.editor.hover_tip(), &self.presentation.sink.hovered) {
+                    (Some(h), Some((was, at, zoom))) => h == was && *at == scroll && *zoom == k,
+                    (None, None) => self.presentation.sink.tooltip.is_none(),
+                    _ => false,
+                };
+                if same {
+                    false
+                } else {
+                    let hovered = self.editor.hover_tip().cloned();
+                    let tooltip = hovered.as_ref().and_then(|h| api_tooltip(&self.editor, &stack, h, k, scroll));
+                    let s = &mut self.presentation.sink;
+                    s.hovered = hovered.map(|h| (h, scroll, k));
+                    let changed = s.tooltip != tooltip;
+                    s.tooltip = tooltip;
+                    changed
+                }
+            }
+        };
+        let tooltip = if tooltip_changed { self.presentation.sink.tooltip.clone() } else { None };
         let revision = a11y_key(&self.editor);
         match &self.presentation.sink.a11y {
             None if !self.presentation.sink.a11y_armed => {
@@ -926,16 +1086,76 @@ impl Session {
     }
 }
 
+/// The API's tooltip for the editor's hover tip `h`, placed in client px.
+fn api_tooltip(
+    e: &crate::editing::Editor,
+    stack: &crate::editing::view::PageStack,
+    h: &crate::editing::hover::Hovered,
+    k: f64,
+    scroll: (f64, f64),
+) -> Option<Tooltip> {
+    use crate::editing::hover::HoverTip as H;
+    let (tip, t, detail) = h;
+    let kind = match tip {
+        H::Mark => TooltipKind::Mark,
+        H::Link => TooltipKind::Link,
+        H::Revision => TooltipKind::Revision,
+        H::Comment => TooltipKind::Comment,
+        H::Note => TooltipKind::Note,
+        H::WhiteSpace => TooltipKind::WhiteSpace,
+    };
+    let (x, y) = stack.to_doc(t.page, t.rect[0], t.rect[1])?;
+    let (left, top) = (x * k - scroll.0, y * k - scroll.1);
+    let (width, height) = ((t.rect[2] - t.rect[0]) * k, (t.rect[3] - t.rect[1]) * k);
+    let rect = ClientRect { left, top, width, height };
+    let mut out = Tooltip { kind, text: t.text.clone(), at: ClientPoint { client_x: left, client_y: top + height }, rect, ..Tooltip::default() };
+    if let Some(d) = detail {
+        out.author = Some(super::review::person(e.document(), d.author));
+        out.time = d.time.as_ref().and_then(|t| t.utc).map(crate::api::record::Timestamp);
+        out.change = d.change.map(super::review::revision_kind);
+        out.body = Some(d.body.clone());
+    }
+    Some(out)
+}
+
 impl Session {
     /// The pages on screen.
     fn pages_on_screen(&self) -> std::ops::Range<usize> {
         let p = &self.presentation;
         let k = p.px_per_pt();
         let stack = self.editor.stack();
-        let on = |&[_, y, _, h]: &[f64; 4]| y * k - p.scroll.1 < p.height && (y + h) * k - p.scroll.1 > 0.0;
-        let first = stack.pages.iter().position(on).unwrap_or(0);
-        let end = stack.pages.iter().rposition(on).map_or(first, |i| i + 1);
+        // A host that hasn't sized the viewport sees the editor's own.
+        let height = if p.height > 0.0 { p.height } else { self.editor.viewport().height * k };
+        let on = |i: usize| stack.shown(i).is_some_and(|[_, y, _, h]| y * k - p.scroll.1 < height && (y + h) * k - p.scroll.1 > 0.0);
+        let first = (0..stack.pages.len()).position(on).unwrap_or(0);
+        let end = (0..stack.pages.len()).rposition(on).map_or(first, |i| i + 1);
         first..end
+    }
+
+    /// Where the selection is on screen, client px over the pages in view: each selected line's or cell's box, each
+    /// selected object's frame, and the box around them. Hosts ask again on `stateChanged` and after a scroll.
+    pub fn selection_bounds(&mut self) -> crate::api::services::SelectionBounds {
+        use crate::api::services::{ObjectFrame, SelectionBounds};
+        let pages = self.pages_on_screen();
+        let (k, scroll) = (self.presentation.px_per_pt(), self.presentation.scroll);
+        let b = self.editor.selection_bounds(pages);
+        let stack = self.editor.stack();
+        let client = |page: usize, [x0, y0, x1, y1]: [f64; 4]| {
+            let (x, y) = stack.to_doc(page, x0, y0)?;
+            Some(ClientRect { left: x * k - scroll.0, top: y * k - scroll.1, width: (x1 - x0) * k, height: (y1 - y0) * k })
+        };
+        let rects = b.rects.iter().filter_map(|&(p, r)| client(p, r)).collect();
+        let frames = b
+            .frames
+            .iter()
+            .filter_map(|o| Some(ObjectFrame { rect: client(o.page, o.rect)?, rotation: o.rot, bounds: client(o.page, o.turned_box())? }))
+            .collect();
+        let bounds = b.bounds.iter().filter_map(|&(p, r)| client(p, r)).reduce(|a, b| {
+            let (left, top) = (a.left.min(b.left), a.top.min(b.top));
+            let (right, bottom) = ((a.left + a.width).max(b.left + b.width), (a.top + a.height).max(b.top + b.height));
+            ClientRect { left, top, width: right - left, height: bottom - top }
+        });
+        SelectionBounds { rects, frames, bounds }
     }
 
     /// An element's boxes on screen, in client px.
@@ -1108,6 +1328,31 @@ impl HostSurface<'_> {
     }
 
     /// Draws the viewport into `pixels` on the CPU.
+    /// Page `page` (from 0, as `visiblePages` numbers them) drawn whole into `pixels`, `width` x `height` RGBA
+    /// (premultiplied, rows packed), as large as fits, centred, over the view's background, with its page colour:
+    /// a thumbnail. The size the page is drawn at.
+    pub fn page_thumbnail(&mut self, page: u32, pixels: &mut [u8], width: u32, height: u32) -> Result<crate::api::services::ThumbnailSize, Error> {
+        if width == 0 || height == 0 {
+            return Err(Error::invalid("the thumbnail size is empty"));
+        }
+        let size = (width as usize).checked_mul(height as usize).and_then(|n| n.checked_mul(4));
+        if size != Some(pixels.len()) {
+            return Err(Error::invalid("pixels aren't width × height × 4 bytes"));
+        }
+        let s = &mut *self.session;
+        let fonts = s.fonts.fonts();
+        s.editor.ensure_page(page as usize, &fonts);
+        let snapshot = s.editor.snapshot();
+        let Some(fragment) = snapshot.pages().get(page as usize) else { return Err(Error::invalid("no such page")) };
+        let p = &mut s.presentation;
+        p.renderer.set_page_background(s.editor.document());
+        p.graphics.set_fonts(&fonts);
+        let clear = p.renderer.background.unwrap_or(p.renderer.theme.tokens.desk);
+        let drawn = p.graphics.page_thumbnail(&p.renderer, fragment, &s.editor.document().images, pixels, (width, height), clear);
+        let (width, height) = drawn.ok_or_else(|| Error::invalid("the page can't be drawn at that size"))?;
+        Ok(crate::api::services::ThumbnailSize { width, height })
+    }
+
     fn draw_cpu(&mut self, pixels: &mut [u8], width: u32, height: u32) -> Result<(), Error> {
         let row = width as usize * 4;
         let mut target = twip_graphics::cpu::Target::new(pixels, width, height, row, twip_graphics::cpu::Format::Rgba8)
@@ -1235,17 +1480,26 @@ impl HostSurface<'_> {
             s.editor.ensure_page(visible.end - 1, &fonts);
         }
         let marks = s.services.spelling.squiggles(&mut s.editor, visible.clone(), &s.language);
-        let mut formatting_marks = if s.formatting_marks { s.editor.formatting_marks(visible.clone()) } else { Vec::new() };
+        let mut formatting_marks = s.editor.shown_marks(visible.clone());
         if s.show_bookmarks {
             formatting_marks.extend(s.editor.bookmark_marks(visible.clone()));
         }
         let boundaries = if s.text_boundaries { s.editor.text_boundaries(visible.clone()) } else { Vec::new() };
         let field_shading = s.editor.field_shading(visible.clone(), s.field_shading);
+        let enforced = s.editor.document().settings.protection.as_ref().is_some_and(|p| p.enforced);
+        let editable_regions = if s.show_editable_regions && enforced {
+            let (bands, marks) = s.editor.editable_region_views(visible.clone());
+            formatting_marks.extend(marks);
+            bands
+        } else {
+            Vec::new()
+        };
         let mut view = s.editor.view(visible);
         view.spelling = marks;
         view.formatting_marks = formatting_marks;
         view.boundaries = boundaries;
         view.field_shading = field_shading;
+        view.editable_regions = editable_regions;
         p.renderer.gridlines = s.gridlines;
         p.renderer.set_page_background(s.editor.document());
         p.graphics.set_fonts(&fonts);
@@ -1327,24 +1581,41 @@ impl HostSurface<'_> {
         let k = self.session.presentation.px_per_pt();
         let e = &mut self.session.editor;
         let stack = e.stack();
-        let caret = e.caret_view().and_then(|c| Some((stack.to_doc(c.page, c.x, c.top)?, c.bottom - c.top)));
-        let ((caret_x, caret_y), caret_height) = caret.unwrap_or(((0.0, 0.0), 0.0));
+        let view = e.caret_view();
+        let caret = view.and_then(|c| Some((c, stack.to_doc(c.page, c.x, c.top)?)));
+        let doc = |page: usize, [x, y]: [f64; 2]| stack.to_doc(page, x, y).map(|(x, y)| [x * k, y * k]);
+        let ends = caret.filter(|(c, _)| c.slanted()).and_then(|(c, _)| Some([doc(c.page, c.ends[0])?, doc(c.page, c.ends[1])?]));
+        let line = match caret.map(|(c, _)| c.dir) {
+            Some(crate::editing::geometry::LineDir::Down) => LineDirection::Down,
+            Some(crate::editing::geometry::LineDir::Up) => LineDirection::Up,
+            _ => LineDirection::Horizontal,
+        };
+        let ((caret_x, caret_y), (caret_width, caret_height)) =
+            caret.map_or(((0.0, 0.0), (0.0, 0.0)), |(c, at)| (at, (c.right - c.x, c.bottom - c.top)));
         FrameInfo {
             content_width: stack.width * k + self.session.presentation.markup_pane,
             content_height: stack.height * k,
             caret_x: caret_x * k,
             caret_y: caret_y * k,
             caret_height: caret_height * k,
+            caret_width: caret_width * k,
+            caret_line: line,
+            caret_ends: ends,
             caret_visible: caret.is_some() && e.selection().is_collapsed(),
             pages: e.snapshot().pages().len() as u32,
         }
     }
 
-    /// The caret's bottom-left in the viewport: where a menu opened from the keyboard goes.
+    /// Where a menu opened from the keyboard goes, in the viewport: the caret bar's bottom-left, or across a line
+    /// running down the page its right end.
     pub(super) fn caret_client_point(&mut self) -> crate::api::services::ClientPoint {
         let f = self.frame_info();
         let (x, y) = self.session.presentation.scroll;
-        crate::api::services::ClientPoint { client_x: f.caret_x - x, client_y: f.caret_y + f.caret_height - y }
+        let (cx, cy) = match f.caret_line {
+            LineDirection::Down => (f.caret_x + f.caret_width, f.caret_y),
+            _ => (f.caret_x, f.caret_y + f.caret_height),
+        };
+        crate::api::services::ClientPoint { client_x: cx - x, client_y: cy - y }
     }
 
     /// The one-shot timers the session wants armed since the last call, as `(timer, ms)`: the host arms each and calls
@@ -1561,8 +1832,9 @@ impl HostSurface<'_> {
     pub fn reveal_selection(&mut self) {
         let e = &mut self.session.editor;
         let Some(c) = e.caret_view() else { return };
-        let Some((x, y)) = e.stack().to_doc(c.page, c.x, c.top) else { return };
-        let request = self.session.presentation.scroll_to([x, y, x + 1.0, y + c.bottom - c.top], false);
+        let [x0, y0, x1, y1] = c.rect();
+        let Some((x, y)) = e.stack().to_doc(c.page, x0, y0) else { return };
+        let request = self.session.presentation.scroll_to([x, y, x + (x1 - x0), y + (y1 - y0)], false);
         if let Some(deliver) = self.session.presentation.sink.deliver.as_mut() {
             deliver(request);
         }
@@ -1574,9 +1846,10 @@ impl HostSurface<'_> {
         let p = &self.session.presentation;
         let k = p.px_per_pt();
         let stack = self.session.editor.stack();
-        let pages = stack.pages.iter().enumerate().map(|(i, &[x, y, w, h])| {
+        let pages = (0..stack.pages.len()).filter_map(|i| {
+            let [x, y, w, h] = stack.shown(i)?;
             let rect = ClientRect { left: x * k - p.scroll.0, top: y * k - p.scroll.1, width: w * k, height: h * k };
-            PageRect { page: i as u32, rect }
+            Some(PageRect { page: i as u32, rect })
         });
         pages.filter(|r| r.rect.top < p.height && r.rect.top + r.rect.height > 0.0).collect()
     }
@@ -1728,6 +2001,27 @@ mod tests {
                 _ => None,
             });
             shown.collect()
+        }
+
+        #[test]
+        fn a_first_line_drag_on_the_vertical_ruler_of_vertical_text_sets_the_first_line_indent() {
+            use crate::api::command::{SectionValue, TextFlow};
+            use crate::api::value::LineDirection;
+            let (mut engine, id, _) = ruled();
+            let s = engine.session(id).expect("a session");
+            s.run(Command::SetSectionTextDirection(SectionValue { value: TextFlow::TbRl, apply_to: None })).expect("sets");
+            let m = s.state().ruler.clone();
+            assert_eq!(m.lines, LineDirection::Down, "{m:?}");
+            assert_eq!((m.vertical.text.start, m.vertical.text.end), (Points(72.0), Points(720.0)));
+            let view = s.ruler_view();
+            let y = |pt: f64| view.vertical.origin + pt * view.vertical.scale;
+            // The first-line marker is at the band's right edge, the horizontal band's top turned with the text.
+            at(s, K::Down, 15.0, y(72.0), false);
+            at(s, K::Move, 15.0, y(90.0), false);
+            assert!(s.presentation.ruler_drag.as_ref().and_then(RulerDrag::guide).is_some_and(|(h, _)| !h), "the guide runs across the page");
+            at(s, K::Up, 15.0, y(90.0), false);
+            let m = s.state().ruler.clone();
+            assert_eq!((m.vertical.indents.first_line, m.horizontal.indents.first_line), (Points(18.0), Points(0.0)));
         }
 
         #[test]
@@ -1960,13 +2254,13 @@ mod tests {
             assert_eq!(tabs(s), [(144.0, TabAlignment::Right, TabLeader::Dots)]);
             assert_eq!(s.state().history.undo_label.as_deref(), Some("Add Tab Stop"));
             assert_eq!(popovers(&events).len(), 1, "still open");
-            s.run(Command::Undo).expect("undoes");
+            s.run(Command::Undo(Default::default())).expect("undoes");
             assert_eq!(tabs(s), [(144.0, TabAlignment::Left, TabLeader::None)]);
             // Clearing it is one step, and its popover closes with it.
             s.run(Command::DeleteTabStop(Points(144.0))).expect("clears");
             assert!(tabs(s).is_empty());
             assert_eq!(popovers(&events), [Some(request), None]);
-            s.run(Command::Undo).expect("undoes");
+            s.run(Command::Undo(Default::default())).expect("undoes");
             assert_eq!(tabs(s).len(), 1);
             // From the keyboard: the stop nearest the caret.
             click(s, x(400.0), 10.0);

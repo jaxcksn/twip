@@ -20,6 +20,7 @@
     "priority": 9,
     "quick": true,
     "type": "paragraph",
+    "uses": 3,
     "visibility": "hideUntilUsed"
   }
 ]

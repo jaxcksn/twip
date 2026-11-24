@@ -1,11 +1,17 @@
 [
   {
+    "autoCaption": {
+      "label": "Table",
+      "position": "above"
+    },
     "autoCorrect": {
+      "borderLines": true,
       "bulletedLists": true,
       "cellCapitals": true,
       "dashes": true,
       "dayNames": true,
       "fractions": true,
+      "internetPaths": true,
       "never": [
         "teh"
       ],
@@ -14,6 +20,7 @@
       "replaceText": true,
       "sentenceCapitals": true,
       "smartQuotes": true,
+      "tabIndents": true,
       "twoInitialCapitals": true
     },
     "commands": {
@@ -96,16 +103,33 @@
       "characterSpacing": 0.5,
       "characterStyle": "Emphasis",
       "color": "auto",
+      "colorValue": {
+        "theme": "text2",
+        "transforms": [
+          {
+            "kind": "shade",
+            "value": 0.75
+          }
+        ]
+      },
       "contextualAlternates": false,
       "doubleStrikethrough": false,
       "emboss": false,
       "engrave": false,
+      "fitText": 72.5,
       "font": "Calibri",
+      "fontTheme": "body",
       "hidden": false,
       "highlight": "yellow",
       "italic": false,
       "kerning": 0.0,
       "language": "en-US",
+      "ligatureFlags": {
+        "contextual": false,
+        "discretionary": false,
+        "historical": false,
+        "standard": true
+      },
       "ligatures": "mixed",
       "noProof": false,
       "numberForm": "lining",
@@ -118,11 +142,36 @@
       "smallCaps": false,
       "strikethrough": false,
       "stylisticSet": 0,
+      "stylisticSets": [
+        1,
+        3
+      ],
       "subscript": false,
       "superscript": false,
+      "textBorder": {
+        "color": "auto",
+        "shadow": false,
+        "space": 1.0,
+        "style": "single",
+        "width": 0.5
+      },
       "textEffects": {},
+      "textShading": {
+        "color": "auto",
+        "fill": {
+          "theme": "text2",
+          "transforms": [
+            {
+              "kind": "shade",
+              "value": 0.75
+            }
+          ]
+        },
+        "pattern": "pct10"
+      },
       "underline": "none",
-      "underlineColor": "auto"
+      "underlineColor": "auto",
+      "underlineColorValue": "auto"
     },
     "history": {
       "canRedo": false,
@@ -138,6 +187,7 @@
       "chapterNumbers": null,
       "columns": {
         "count": 1,
+        "equal": true,
         "separator": false,
         "spacing": 36.5,
         "widths": []
@@ -185,6 +235,28 @@
       },
       "multiplePages": "normal",
       "orientation": "portrait",
+      "pageBorders": {
+        "behindText": false,
+        "display": "allPages",
+        "offsetFrom": "page",
+        "surroundFooter": true,
+        "surroundHeader": true,
+        "top": {
+          "color": {
+            "theme": "text2",
+            "transforms": [
+              {
+                "kind": "shade",
+                "value": 0.75
+              }
+            ]
+          },
+          "shadow": false,
+          "space": 24.0,
+          "style": "single",
+          "width": 0.5
+        }
+      },
       "pageNumberFormat": "decimal",
       "pageNumberStart": 1,
       "size": {
@@ -201,6 +273,25 @@
     },
     "paragraph": {
       "alignment": "left",
+      "borderBetween": null,
+      "borderBottom": "mixed",
+      "borderLeft": "none",
+      "borderRight": "none",
+      "borderTop": {
+        "color": {
+          "theme": "text2",
+          "transforms": [
+            {
+              "kind": "shade",
+              "value": 0.75
+            }
+          ]
+        },
+        "shadow": false,
+        "space": 1.0,
+        "style": "double",
+        "width": 0.75
+      },
       "borders": "other",
       "collapsed": false,
       "contextualSpacing": true,
@@ -233,27 +324,141 @@
       "listLevel": 1,
       "outlineLevel": 2,
       "shading": "#D9E2F3",
+      "shadingValue": {
+        "color": "auto",
+        "fill": {
+          "rgb": "#D9E2F3"
+        },
+        "pattern": "clear"
+      },
       "spaceAfter": 8.5,
       "spaceBefore": "auto",
       "style": "Normal",
+      "tabs": [
+        {
+          "alignment": "right",
+          "inherited": true,
+          "leader": "dots",
+          "position": 72.5
+        }
+      ],
       "textDirection": "lrTb"
+    },
+    "pasteOptions": {
+      "between": "keepSource",
+      "conflict": "destinationStyles",
+      "keepBullets": true,
+      "other": "textOnly",
+      "showButton": true,
+      "smart": {
+        "fromExcel": true,
+        "fromPowerPoint": true,
+        "mergeLists": true,
+        "paragraphSpacing": true,
+        "styles": true,
+        "tables": true,
+        "wordSpacing": true
+      },
+      "smartCutPaste": true,
+      "within": "keepSource"
     },
     "readOnly": false,
     "review": {
       "activeComment": "c4",
+      "balloonMode": "commentsAndFormatting",
       "comments": 2,
+      "counts": {
+        "all": {
+          "comments": 2,
+          "deletions": 1,
+          "formatting": 0,
+          "insertions": 2,
+          "moves": 0
+        },
+        "shown": {
+          "comments": 1,
+          "deletions": 1,
+          "formatting": 0,
+          "insertions": 2,
+          "moves": 0
+        }
+      },
+      "markupStyle": {
+        "changeBarColor": "auto",
+        "changeBars": "outside",
+        "deletedCells": {
+          "fixed": "#FF99CC"
+        },
+        "deletions": {
+          "color": "byAuthor",
+          "mark": "strikethrough"
+        },
+        "formatting": {
+          "color": "byAuthor",
+          "mark": "none"
+        },
+        "insertedCells": {
+          "fixed": "#99CCFF"
+        },
+        "insertions": {
+          "color": "byAuthor",
+          "mark": "underline"
+        },
+        "mergedCells": {
+          "fixed": "#FFFF99"
+        },
+        "movedFrom": {
+          "color": {
+            "fixed": "#00A050"
+          },
+          "mark": "doubleStrikethrough"
+        },
+        "movedTo": {
+          "color": {
+            "fixed": "#00A050"
+          },
+          "mark": "doubleUnderline"
+        },
+        "splitCells": {
+          "fixed": "#FFCC99"
+        }
+      },
       "markupView": "all",
       "protection": {
+        "autoFormatOverride": false,
+        "blockStyleSetSwitching": false,
+        "blockThemeSwitching": true,
+        "editorsHere": [
+          {
+            "group": "everyone"
+          },
+          {
+            "user": "ada@example.com"
+          }
+        ],
         "enforced": true,
+        "exceptionsAllowed": true,
         "formatting": false,
         "inEditableRange": true,
         "kind": "readOnly",
         "password": true,
+        "rangeCount": 2,
+        "sectionsAllowed": false,
         "unprotectedSections": [
           1
         ]
       },
       "revisions": 3,
+      "showMarkup": {
+        "comments": true,
+        "formatting": false,
+        "hiddenReviewers": [
+          "Grace Hopper"
+        ],
+        "insertionsDeletions": true
+      },
+      "trackFormatting": false,
+      "trackMoves": true,
       "tracking": true,
       "trackingLocked": false
     },
@@ -271,12 +476,18 @@
           }
         ],
         "defaultTabStop": 36.5,
+        "endMargin": "outside",
+        "gutter": {
+          "end": 72.5,
+          "start": 54.5
+        },
         "indents": {
           "firstLine": -18.5,
           "left": 36.5,
           "right": 0.5
         },
         "pageWidth": 612.5,
+        "startMargin": "inside",
         "tableColumns": [
           72.5,
           200.5
@@ -294,12 +505,20 @@
           "start": 72.5
         }
       },
+      "lines": "horizontal",
       "mixed": true,
       "vertical": {
+        "defaultTabStop": 0.0,
+        "indents": {
+          "firstLine": 0.0,
+          "left": 0.0,
+          "right": 0.0
+        },
         "pageHeight": 792.5,
         "tableRows": [
           100.5
         ],
+        "tabs": [],
         "text": {
           "end": 720.5,
           "start": 72.5
@@ -307,6 +526,18 @@
       }
     },
     "selection": {
+      "cellBlocks": [
+        {
+          "firstColumn": 0,
+          "firstRow": 1,
+          "lastColumn": 1,
+          "lastRow": 2,
+          "start": {
+            "offset": 0,
+            "paragraph": "31"
+          }
+        }
+      ],
       "comment": "c4",
       "context": [
         {
@@ -316,27 +547,39 @@
             "buildingBlocks": [
               "Signature"
             ],
+            "calendar": "gregorian",
+            "category": "General",
             "checkedSymbol": "☒",
             "color": "#2E74B5",
+            "date": "2027-02-03T00:00:00Z",
+            "gallery": "Quick Parts",
+            "storeAs": "dateTime",
             "style": "Strong",
             "temporary": false,
             "uncheckedSymbol": "☐"
           },
+          "dirty": true,
           "exact": true,
           "form": {
             "calculateOnExit": false,
+            "defaultEntry": 0,
             "enabled": true,
             "entries": [
               "Yes",
               "No"
             ],
             "entry": 1,
+            "entryMacro": "Entered",
+            "helpIsAutoText": false,
             "kind": "dropDown",
             "name": "Dropdown1",
+            "statusIsAutoText": true,
             "statusText": "Pick one"
           },
           "id": "field-1",
           "kind": "field",
+          "locked": false,
+          "showingCode": true,
           "size": {
             "height": 54.0,
             "width": 216.0
@@ -355,8 +598,16 @@
       },
       "kind": "cells",
       "link": {
-        "address": "https://example.com",
+        "address": "https://example.com#Prices",
+        "bookmark": "Prices",
+        "frame": "_blank",
+        "screenTip": "Go",
+        "target": "https://example.com",
         "text": "Example"
+      },
+      "listNumbers": {
+        "level": 1,
+        "list": 3
       },
       "mode": "block",
       "object": {
@@ -376,7 +627,29 @@
         "flipH": true,
         "flipV": false,
         "height": 72.5,
+        "hidden": false,
+        "id": {
+          "float": "7",
+          "path": [
+            1
+          ]
+        },
         "kind": "textBox",
+        "lockAspect": true,
+        "name": "Text Box 3",
+        "originalSize": {
+          "height": 240.0,
+          "width": 320.0
+        },
+        "pictureAdjust": {
+          "brightness": 0.25,
+          "contrast": -0.5,
+          "recolor": {
+            "kind": "blackAndWhite",
+            "threshold": 0.5
+          },
+          "transparency": 0.0
+        },
         "placement": {
           "allowOverlap": true,
           "distance": {
@@ -420,12 +693,32 @@
               "radius": 5.5
             },
             "outerShadow": {
+              "align": "bottomLeft",
               "blur": 4.5,
               "colour": {
                 "rgb": "#000000"
               },
               "direction": 45.5,
-              "distance": 3.5
+              "distance": 3.5,
+              "rotateWithShape": false,
+              "scaleX": 1.0,
+              "scaleY": 0.5,
+              "skewX": -20.5,
+              "skewY": 0.0
+            },
+            "reflection": {
+              "align": "bottomLeft",
+              "blur": 0.5,
+              "direction": 90.0,
+              "distance": 2.5,
+              "fadeDirection": 90.0,
+              "rotateWithShape": false,
+              "scaleX": 1.0,
+              "scaleY": -1.0,
+              "size": 0.5,
+              "skewX": 0.0,
+              "skewY": 0.0,
+              "transparency": 0.5
             },
             "softEdge": 2.5
           },
@@ -486,40 +779,146 @@
               7.2,
               3.6
             ],
+            "upright": true,
             "wrapText": true
           }
         },
+        "stackIndex": 0,
+        "textBoxLink": {
+          "count": 2,
+          "index": 0,
+          "next": {
+            "float": "9"
+          }
+        },
+        "title": "Note",
         "transparentColor": "#FFFFFF",
         "width": 144.5,
-        "wrap": "inFrontOfText"
+        "wrap": "inFrontOfText",
+        "wrapPolygon": {
+          "edited": true,
+          "points": [
+            {
+              "x": 0.0,
+              "y": 0.0
+            },
+            {
+              "x": 1.0,
+              "y": 0.0
+            },
+            {
+              "x": 0.5,
+              "y": 1.0
+            }
+          ]
+        }
       },
       "page": 2,
+      "pendingMove": {
+        "copy": true,
+        "placed": false
+      },
+      "ranges": [
+        {
+          "end": {
+            "offset": 2,
+            "paragraph": "18"
+          },
+          "start": {
+            "offset": 4,
+            "paragraph": "17"
+          }
+        },
+        {
+          "end": {
+            "offset": 5,
+            "paragraph": "20"
+          },
+          "start": {
+            "offset": 0,
+            "paragraph": "20"
+          }
+        }
+      ],
+      "rangesTruncated": false,
       "revision": "r7",
       "story": "header",
       "table": {
         "alignment": "center",
+        "bands": {
+          "columns": 1,
+          "ownRows": 2,
+          "rows": 2
+        },
         "canMerge": true,
         "cellAlignment": "bottom",
+        "cellBorders": {
+          "bottom": "none",
+          "diagonalDown": null,
+          "diagonalUp": null,
+          "insideHorizontal": null,
+          "insideVertical": null,
+          "left": "mixed",
+          "right": null,
+          "top": {
+            "color": "auto",
+            "shadow": false,
+            "space": 0.0,
+            "style": "single",
+            "width": 0.5
+          }
+        },
+        "cellMargins": {
+          "bottom": 0.0,
+          "left": 5.4,
+          "right": "mixed",
+          "top": 0.0
+        },
         "cellShading": "none",
+        "cellShadingValue": {
+          "color": "auto",
+          "fill": {
+            "rgb": "#FFFF00"
+          },
+          "pattern": "pct10"
+        },
         "cellSpacing": 1.5,
         "cellWidth": {
           "kind": "percent",
           "value": 25.0
         },
         "column": 2,
+        "columnSpan": 2,
         "columnWidth": "mixed",
         "columns": 3,
+        "defaultCellMargins": {
+          "bottom": 0.0,
+          "left": 5.4,
+          "right": 5.4,
+          "top": 0.0
+        },
         "description": "Yearly totals by region",
+        "fit": "window",
         "fitText": "mixed",
         "headerRow": true,
+        "hideMark": false,
         "indent": 0.5,
         "row": 1,
         "rowCanBreak": "mixed",
+        "rowExceptions": {
+          "alignment": "center",
+          "any": true,
+          "borders": "none",
+          "cellSpacing": "mixed",
+          "indent": "none",
+          "shading": "none"
+        },
         "rowHeight": {
           "height": 20.5,
           "rule": "exact"
         },
         "rowHidden": false,
+        "rowSpan": 1,
         "rows": 4,
         "style": "TableGrid",
         "styleOptions": {
@@ -529,6 +928,22 @@
           "headerRow": true,
           "lastColumn": false,
           "totalRow": false
+        },
+        "tableBorders": {
+          "insideVertical": {
+            "color": "auto",
+            "shadow": false,
+            "space": 0.0,
+            "style": "single",
+            "width": 0.5
+          },
+          "top": {
+            "color": "auto",
+            "shadow": false,
+            "space": 0.0,
+            "style": "single",
+            "width": 0.5
+          }
         },
         "textDirection": "btLr",
         "title": "Totals",
@@ -550,6 +965,10 @@
       "#000000",
       "#FFFFFF"
     ],
+    "themeFonts": {
+      "body": "Calibri",
+      "heading": "Calibri Light"
+    },
     "type": "stateChanged",
     "view": {
       "accent": "#0A74E4",
@@ -557,22 +976,44 @@
       "appearance": "light",
       "background": "#E8E7E3",
       "bookmarks": false,
+      "clickAndType": true,
       "controlLabels": true,
       "detail": "standard",
+      "editingWrapPoints": false,
       "fieldCodes": false,
       "fieldShading": "whenSelected",
+      "findHighlights": false,
       "formattingMarks": false,
       "gridlines": false,
+      "hiddenText": false,
+      "hideWhiteSpace": false,
+      "linkingTextBox": false,
       "liveLayout": true,
       "markupPaneWidth": 0.0,
+      "objectAnchors": true,
       "objectGrid": "whileDragging",
+      "optionalHyphens": false,
+      "paragraphMarks": false,
       "rulerUnit": "inches",
       "rulers": {
         "horizontal": false,
         "vertical": false
       },
+      "selectingObjects": false,
+      "showEditableRegions": true,
+      "spaces": false,
+      "tabCharacters": false,
       "tabSelector": "left",
+      "tablePen": {
+        "color": "auto",
+        "shadow": false,
+        "space": 0.0,
+        "style": "single",
+        "width": 0.5
+      },
+      "tableTool": "none",
       "textBoundaries": false,
+      "textDragAndDrop": true,
       "theme": "light",
       "themeColors": {},
       "zoom": 100.0
@@ -608,6 +1049,18 @@
     "type": "documentChanged"
   },
   {
+    "cellBlocks": [
+      {
+        "firstColumn": 0,
+        "firstRow": 1,
+        "lastColumn": 1,
+        "lastRow": 2,
+        "start": {
+          "offset": 0,
+          "paragraph": "31"
+        }
+      }
+    ],
     "comment": "c4",
     "context": [
       {
@@ -617,27 +1070,39 @@
           "buildingBlocks": [
             "Signature"
           ],
+          "calendar": "gregorian",
+          "category": "General",
           "checkedSymbol": "☒",
           "color": "#2E74B5",
+          "date": "2027-02-03T00:00:00Z",
+          "gallery": "Quick Parts",
+          "storeAs": "dateTime",
           "style": "Strong",
           "temporary": false,
           "uncheckedSymbol": "☐"
         },
+        "dirty": true,
         "exact": true,
         "form": {
           "calculateOnExit": false,
+          "defaultEntry": 0,
           "enabled": true,
           "entries": [
             "Yes",
             "No"
           ],
           "entry": 1,
+          "entryMacro": "Entered",
+          "helpIsAutoText": false,
           "kind": "dropDown",
           "name": "Dropdown1",
+          "statusIsAutoText": true,
           "statusText": "Pick one"
         },
         "id": "field-1",
         "kind": "field",
+        "locked": false,
+        "showingCode": true,
         "size": {
           "height": 54.0,
           "width": 216.0
@@ -656,8 +1121,16 @@
     },
     "kind": "cells",
     "link": {
-      "address": "https://example.com",
+      "address": "https://example.com#Prices",
+      "bookmark": "Prices",
+      "frame": "_blank",
+      "screenTip": "Go",
+      "target": "https://example.com",
       "text": "Example"
+    },
+    "listNumbers": {
+      "level": 1,
+      "list": 3
     },
     "mode": "block",
     "object": {
@@ -677,7 +1150,29 @@
       "flipH": true,
       "flipV": false,
       "height": 72.5,
+      "hidden": false,
+      "id": {
+        "float": "7",
+        "path": [
+          1
+        ]
+      },
       "kind": "textBox",
+      "lockAspect": true,
+      "name": "Text Box 3",
+      "originalSize": {
+        "height": 240.0,
+        "width": 320.0
+      },
+      "pictureAdjust": {
+        "brightness": 0.25,
+        "contrast": -0.5,
+        "recolor": {
+          "kind": "blackAndWhite",
+          "threshold": 0.5
+        },
+        "transparency": 0.0
+      },
       "placement": {
         "allowOverlap": true,
         "distance": {
@@ -721,12 +1216,32 @@
             "radius": 5.5
           },
           "outerShadow": {
+            "align": "bottomLeft",
             "blur": 4.5,
             "colour": {
               "rgb": "#000000"
             },
             "direction": 45.5,
-            "distance": 3.5
+            "distance": 3.5,
+            "rotateWithShape": false,
+            "scaleX": 1.0,
+            "scaleY": 0.5,
+            "skewX": -20.5,
+            "skewY": 0.0
+          },
+          "reflection": {
+            "align": "bottomLeft",
+            "blur": 0.5,
+            "direction": 90.0,
+            "distance": 2.5,
+            "fadeDirection": 90.0,
+            "rotateWithShape": false,
+            "scaleX": 1.0,
+            "scaleY": -1.0,
+            "size": 0.5,
+            "skewX": 0.0,
+            "skewY": 0.0,
+            "transparency": 0.5
           },
           "softEdge": 2.5
         },
@@ -787,40 +1302,146 @@
             7.2,
             3.6
           ],
+          "upright": true,
           "wrapText": true
         }
       },
+      "stackIndex": 0,
+      "textBoxLink": {
+        "count": 2,
+        "index": 0,
+        "next": {
+          "float": "9"
+        }
+      },
+      "title": "Note",
       "transparentColor": "#FFFFFF",
       "width": 144.5,
-      "wrap": "inFrontOfText"
+      "wrap": "inFrontOfText",
+      "wrapPolygon": {
+        "edited": true,
+        "points": [
+          {
+            "x": 0.0,
+            "y": 0.0
+          },
+          {
+            "x": 1.0,
+            "y": 0.0
+          },
+          {
+            "x": 0.5,
+            "y": 1.0
+          }
+        ]
+      }
     },
     "page": 2,
+    "pendingMove": {
+      "copy": true,
+      "placed": false
+    },
+    "ranges": [
+      {
+        "end": {
+          "offset": 2,
+          "paragraph": "18"
+        },
+        "start": {
+          "offset": 4,
+          "paragraph": "17"
+        }
+      },
+      {
+        "end": {
+          "offset": 5,
+          "paragraph": "20"
+        },
+        "start": {
+          "offset": 0,
+          "paragraph": "20"
+        }
+      }
+    ],
+    "rangesTruncated": false,
     "revision": "r7",
     "story": "header",
     "table": {
       "alignment": "center",
+      "bands": {
+        "columns": 1,
+        "ownRows": 2,
+        "rows": 2
+      },
       "canMerge": true,
       "cellAlignment": "bottom",
+      "cellBorders": {
+        "bottom": "none",
+        "diagonalDown": null,
+        "diagonalUp": null,
+        "insideHorizontal": null,
+        "insideVertical": null,
+        "left": "mixed",
+        "right": null,
+        "top": {
+          "color": "auto",
+          "shadow": false,
+          "space": 0.0,
+          "style": "single",
+          "width": 0.5
+        }
+      },
+      "cellMargins": {
+        "bottom": 0.0,
+        "left": 5.4,
+        "right": "mixed",
+        "top": 0.0
+      },
       "cellShading": "none",
+      "cellShadingValue": {
+        "color": "auto",
+        "fill": {
+          "rgb": "#FFFF00"
+        },
+        "pattern": "pct10"
+      },
       "cellSpacing": 1.5,
       "cellWidth": {
         "kind": "percent",
         "value": 25.0
       },
       "column": 2,
+      "columnSpan": 2,
       "columnWidth": "mixed",
       "columns": 3,
+      "defaultCellMargins": {
+        "bottom": 0.0,
+        "left": 5.4,
+        "right": 5.4,
+        "top": 0.0
+      },
       "description": "Yearly totals by region",
+      "fit": "window",
       "fitText": "mixed",
       "headerRow": true,
+      "hideMark": false,
       "indent": 0.5,
       "row": 1,
       "rowCanBreak": "mixed",
+      "rowExceptions": {
+        "alignment": "center",
+        "any": true,
+        "borders": "none",
+        "cellSpacing": "mixed",
+        "indent": "none",
+        "shading": "none"
+      },
       "rowHeight": {
         "height": 20.5,
         "rule": "exact"
       },
       "rowHidden": false,
+      "rowSpan": 1,
       "rows": 4,
       "style": "TableGrid",
       "styleOptions": {
@@ -830,6 +1451,22 @@
         "headerRow": true,
         "lastColumn": false,
         "totalRow": false
+      },
+      "tableBorders": {
+        "insideVertical": {
+          "color": "auto",
+          "shadow": false,
+          "space": 0.0,
+          "style": "single",
+          "width": 0.5
+        },
+        "top": {
+          "color": "auto",
+          "shadow": false,
+          "space": 0.0,
+          "style": "single",
+          "width": 0.5
+        }
       },
       "textDirection": "btLr",
       "title": "Totals",
@@ -881,6 +1518,7 @@
           "label": "the"
         },
         {
+          "inline": true,
           "items": [
             {
               "action": {
@@ -893,6 +1531,15 @@
           ],
           "kind": "submenu",
           "label": "Paste Options"
+        },
+        {
+          "action": {
+            "address": "https://example.com",
+            "type": "openLink"
+          },
+          "enabled": true,
+          "kind": "action",
+          "label": "Open Hyperlink"
         },
         {
           "kind": "separator"
@@ -992,11 +1639,13 @@
   {
     "added": [
       {
+        "dirty": false,
         "display": "Ada",
         "id": "control-3",
         "kind": "plainText",
         "locked": false,
         "parent": "control-1",
+        "showingCode": false,
         "showingPlaceholder": true,
         "size": {
           "height": 54.0,
@@ -1024,6 +1673,10 @@
     "type": "fieldsUpdateRequested"
   },
   {
+    "index": 0,
+    "type": "tableOfContentsUpdateRequested"
+  },
+  {
     "type": "revisionsChanged"
   },
   {
@@ -1043,11 +1696,31 @@
         "lineTop": 288.5,
         "page": 3,
         "pageEdge": 856.5,
+        "pageLeft": 40.5,
         "start": {
           "x": 120.5,
           "y": 300.5
         },
         "thread": "c4"
+      }
+    ]
+  },
+  {
+    "type": "revisionBalloons",
+    "value": [
+      {
+        "author": "Ada Lovelace",
+        "kind": "deletion",
+        "lineBottom": 304.5,
+        "lineTop": 288.5,
+        "page": 2,
+        "pageEdge": 856.5,
+        "pageLeft": 40.5,
+        "revision": "r7",
+        "start": {
+          "x": 120.5,
+          "y": 300.5
+        }
       }
     ]
   },
@@ -1093,12 +1766,18 @@
           }
         ],
         "defaultTabStop": 36.5,
+        "endMargin": "outside",
+        "gutter": {
+          "end": 72.5,
+          "start": 54.5
+        },
         "indents": {
           "firstLine": -18.5,
           "left": 36.5,
           "right": 0.5
         },
         "pageWidth": 612.5,
+        "startMargin": "inside",
         "tableColumns": [
           72.5,
           200.5
@@ -1116,12 +1795,20 @@
           "start": 72.5
         }
       },
+      "lines": "horizontal",
       "mixed": true,
       "vertical": {
+        "defaultTabStop": 0.0,
+        "indents": {
+          "firstLine": 0.0,
+          "left": 0.0,
+          "right": 0.0
+        },
         "pageHeight": 792.5,
         "tableRows": [
           100.5
         ],
+        "tabs": [],
         "text": {
           "end": 720.5,
           "start": 72.5
@@ -1167,6 +1854,18 @@
         "clientX": 310.5,
         "clientY": 220.5
       },
+      "author": {
+        "color": "#7030A0",
+        "identity": {
+          "provider": "AD",
+          "userId": "S-1-5-21"
+        },
+        "initials": "AL",
+        "name": "Ada Lovelace",
+        "visible": true
+      },
+      "body": "Inserted",
+      "change": "insertion",
       "kind": "revision",
       "rect": {
         "height": 1056.5,
@@ -1174,7 +1873,8 @@
         "top": 80.5,
         "width": 816.5
       },
-      "text": "Ada Lovelace inserted"
+      "text": "Ada Lovelace, 3/14/2026 9:26:53 AM\nInserted",
+      "time": "2026-03-14T09:26:53Z"
     }
   },
   {
@@ -1200,9 +1900,12 @@
         }
       ],
       "element": {
+        "dirty": false,
         "exact": false,
         "id": "control-3",
         "kind": "checkbox",
+        "locked": true,
+        "showingCode": false,
         "tag": "agree",
         "title": "Agree"
       }
@@ -1216,9 +1919,12 @@
     "button": "primary",
     "count": 2,
     "element": {
+      "dirty": false,
       "exact": false,
       "id": "control-3",
       "kind": "checkbox",
+      "locked": true,
+      "showingCode": false,
       "tag": "agree",
       "title": "Agree"
     },
@@ -1242,9 +1948,12 @@
         }
       ],
       "element": {
+        "dirty": false,
         "exact": true,
         "id": "control-3",
         "kind": "checkbox",
+        "locked": true,
+        "showingCode": false,
         "tag": "agree",
         "title": "Agree"
       }

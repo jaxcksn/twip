@@ -16,7 +16,7 @@ fn ed(body: &str) -> Editor {
 }
 
 fn query(text: &str, whole: bool) -> FindQuery {
-    FindQuery { text: text.into(), match_case: None, whole_words: whole.then_some(true) }
+    FindQuery { text: text.into(), match_case: None, whole_words: whole.then_some(true), ..FindQuery::default() }
 }
 
 #[test]

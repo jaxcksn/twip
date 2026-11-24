@@ -98,14 +98,34 @@ public readonly record struct Length : IComparable<Length>
     public override string ToString() => Points.ToString(CultureInfo.InvariantCulture) + " pt";
 }
 
-/// <summary>A colour in the document: an RGB colour (alpha is ignored), <see cref="Auto"/>, or <see cref="None"/>.</summary>
+/// <summary>
+/// A colour in the document: an RGB colour (alpha is ignored), <see cref="Auto"/>, <see cref="None"/>, or a colour as
+/// written (<see cref="FromValue"/>): a theme colour with its tint or shade, which follows the theme.
+/// </summary>
 [JsonConverter(typeof(ColorValueConverter))]
 public readonly record struct ColorValue
 {
-    private readonly byte _kind; // 0 rgb, 1 auto, 2 none
+    private readonly byte _kind; // 0 rgb, 1 auto, 2 none, 3 a colour as written
     private readonly Color _color;
+    private readonly ShapeColor? _value;
 
-    private ColorValue(byte kind, Color color) => (_kind, _color) = (kind, color);
+    private ColorValue(byte kind, Color color, ShapeColor? value = null) => (_kind, _color, _value) = (kind, color, value);
+
+    /// <summary>
+    /// A colour as written: a theme colour, an RGB colour or a preset, with its transforms. Text and table colours take
+    /// a theme colour with at most one tint or shade; the editor reads them back this way.
+    /// </summary>
+    /// <param name="value">The colour.</param>
+    public static ColorValue FromValue(ShapeColor value) => new(3, default, value ?? throw new ArgumentNullException(nameof(value)));
+
+    /// <summary>A theme colour, lighter by a tint or darker by a shade (Word's colour picker grid).</summary>
+    /// <param name="theme">The theme colour.</param>
+    /// <param name="tintOrShade">Its tint or shade, or none.</param>
+    public static ColorValue FromTheme(ThemeColor theme, ColorTransform? tintOrShade = null) =>
+        FromValue(tintOrShade is { } t ? ShapeColor.FromTheme(theme, t) : ShapeColor.FromTheme(theme));
+
+    /// <summary>The colour as written, for a <see cref="FromValue"/> colour; null otherwise.</summary>
+    public ShapeColor? Value => _kind == 3 ? _value : null;
 
     /// <summary>The automatic colour (black text on a light background).</summary>
     public static ColorValue Auto => new(1, default);
@@ -133,14 +153,20 @@ public readonly record struct ColorValue
     /// <summary>Whether this is <see cref="None"/>.</summary>
     public bool IsNone => _kind == 2;
 
-    /// <summary>The RGB colour, or null for <see cref="Auto"/> and <see cref="None"/>.</summary>
-    public Color? Color => _kind == 0 ? _color : null;
+    /// <summary>The RGB colour (a colour as written that is plain RGB too), or null for the others.</summary>
+    public Color? Color => _kind switch
+    {
+        0 => _color,
+        3 when _value is { Theme: null, Preset: null, Transforms: null or { Count: 0 }, Rgb: { } rgb } => rgb.Color,
+        _ => null,
+    };
 
-    /// <summary>The colour as <c>#RRGGBB</c>, <c>auto</c> or <c>none</c>.</summary>
+    /// <summary>The colour as <c>#RRGGBB</c>, <c>auto</c> or <c>none</c>; a colour as written as its record.</summary>
     public override string ToString() => _kind switch
     {
         1 => "auto",
         2 => "none",
+        3 => _value?.ToString() ?? "",
         _ => $"#{_color.R:X2}{_color.G:X2}{_color.B:X2}",
     };
 
@@ -209,6 +235,44 @@ public readonly record struct StyleId(string Value)
 
     /// <inheritdoc/>
     public override string ToString() => Value;
+}
+
+/// <summary>The id of a paragraph: stable while the document is open and the paragraph exists (a split keeps it on the first half, a join keeps the first paragraph's), not saved in the file.</summary>
+/// <param name="Value">The id, a decimal string.</param>
+[JsonConverter(typeof(ParagraphIdConverter))]
+public readonly record struct ParagraphId(string Value)
+{
+    /// <inheritdoc/>
+    public override string ToString() => Value;
+}
+
+/// <summary>A place in a paragraph's text.</summary>
+/// <param name="Paragraph">The paragraph.</param>
+/// <param name="Offset">The offset in the paragraph's text, in Unicode scalar values (not UTF-16 units): a field counts as its result, an object or a note reference as one U+FFFC, and hidden and deleted text count. Past the end reads as the end.</param>
+public sealed record TextPoint(ParagraphId Paragraph, int Offset);
+
+/// <summary>A range of text. State gives the earlier end first; <see cref="EditorCommands.SetSelectionAsync"/> takes the ends either way round.</summary>
+/// <param name="Start">Where it starts.</param>
+/// <param name="End">Where it ends.</param>
+public sealed record TextRange(TextPoint Start, TextPoint End);
+
+/// <summary>A rectangular block of a table's cells.</summary>
+/// <param name="Start">The start of the block's first cell's text: names the table.</param>
+/// <param name="FirstRow">The first row, from 0.</param>
+/// <param name="FirstColumn">The first grid column, from 0.</param>
+/// <param name="LastRow">The last row.</param>
+/// <param name="LastColumn">The last grid column.</param>
+public sealed record CellBlock(TextPoint Start, int FirstRow, int FirstColumn, int LastRow, int LastColumn);
+
+/// <summary>The way a line of text runs on the page.</summary>
+public enum LineDirection
+{
+    /// <summary>Across the page.</summary>
+    Horizontal,
+    /// <summary>Down the page, as vertical East Asian text runs.</summary>
+    Down,
+    /// <summary>Up the page, as text turned counter-clockwise runs.</summary>
+    Up,
 }
 
 /// <summary>Whether a formatting value is the same across the selection.</summary>
@@ -386,10 +450,12 @@ public sealed record TableWidth(TableWidthKind Kind, [property: JsonIgnore(Condi
 /// <param name="Horizontal">The horizontal place: an alignment or an offset.</param>
 /// <param name="Vertical">The vertical place: an alignment or an offset.</param>
 /// <param name="WrapDistance">How far the text around it keeps, 0 to 1584 pt.</param>
+/// <param name="AllowOverlap">Other positioned tables may overlap it.</param>
 public sealed record TablePosition(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] HorizontalPosition? Horizontal = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] VerticalPosition? Vertical = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TextDistance? WrapDistance = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] TextDistance? WrapDistance = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? AllowOverlap = null);
 
 /// <summary>How line spacing is measured.</summary>
 public enum LineSpacingRule
@@ -570,14 +636,138 @@ public abstract record FillValue
     public sealed record Pattern(string Preset, ShapeColor Foreground, ShapeColor Background) : FillValue;
 
     /// <summary>A picture.</summary>
-    /// <param name="Image">The image (PNG, JPEG, GIF, BMP).</param>
-    /// <param name="Tile">Tiled at its own size instead of stretched.</param>
+    /// <param name="Image">The image (PNG, JPEG, GIF, BMP); empty in the state (read it with the shape fill image query).</param>
+    /// <param name="Stretch">Stretched over the box inset by these fractions from each edge (negative: beyond it); ignored when tiled.</param>
+    /// <param name="Tile">Tiled instead of stretched (<c>new Tile()</c>: at its own size).</param>
+    /// <param name="RotateWithShape">Turns with the shape; default true.</param>
     public sealed record Picture(
-        ReadOnlyMemory<byte> Image, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Tile = null) : FillValue;
+        ReadOnlyMemory<byte> Image,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Insets? Stretch = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Tile? Tile = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? RotateWithShape = null) : FillValue;
 
     /// <summary>The style reference's fill: as a command argument, it removes the explicit fill.</summary>
     public sealed record FromStyle : FillValue;
 }
+
+/// <summary>A point on a page, in points from its top left corner; on the wire, <c>[x, y]</c>.</summary>
+/// <param name="X">Across.</param>
+/// <param name="Y">Down.</param>
+[JsonConverter(typeof(PagePointConverter))]
+public sealed record PagePoint(Length X, Length Y);
+
+/// <summary>Fractions of a box from each edge.</summary>
+/// <param name="Left">From the left edge.</param>
+/// <param name="Top">From the top edge.</param>
+/// <param name="Right">From the right edge.</param>
+/// <param name="Bottom">From the bottom edge.</param>
+public sealed record Insets(double Left, double Top, double Right, double Bottom);
+
+/// <summary>A place in a rectangle: a corner, an edge's middle or its centre.</summary>
+public enum RectAlign
+{
+    /// <summary>The top left corner.</summary>
+    TopLeft,
+    /// <summary>The top edge's middle.</summary>
+    Top,
+    /// <summary>The top right corner.</summary>
+    TopRight,
+    /// <summary>The left edge's middle.</summary>
+    Left,
+    /// <summary>The centre.</summary>
+    Center,
+    /// <summary>The right edge's middle.</summary>
+    Right,
+    /// <summary>The bottom left corner.</summary>
+    BottomLeft,
+    /// <summary>The bottom edge's middle.</summary>
+    Bottom,
+    /// <summary>The bottom right corner.</summary>
+    BottomRight,
+}
+
+/// <summary>How tiles mirror their neighbours.</summary>
+public enum TileMirror
+{
+    /// <summary>Every tile the same way round.</summary>
+    None,
+    /// <summary>Every other tile flipped left to right.</summary>
+    Horizontal,
+    /// <summary>Every other tile flipped top to bottom.</summary>
+    Vertical,
+    /// <summary>Both.</summary>
+    Both,
+}
+
+/// <summary>A picture fill's tiling.</summary>
+/// <param name="OffsetX">The tiles' offset across, −1584 to 1584 pt.</param>
+/// <param name="OffsetY">The tiles' offset down.</param>
+/// <param name="ScaleX">The tile's width as a share of the image's own, 0.01 to 100.</param>
+/// <param name="ScaleY">The tile's height as a share of the image's own.</param>
+/// <param name="Align">Where the first tile is placed.</param>
+/// <param name="Mirror">How tiles mirror their neighbours.</param>
+public sealed record Tile(Length OffsetX = default, Length OffsetY = default, double ScaleX = 1, double ScaleY = 1, RectAlign Align = RectAlign.TopLeft, TileMirror Mirror = TileMirror.None);
+
+/// <summary>A reflection: the shape mirrored beside itself, fading away from it.</summary>
+/// <param name="Size">How much of the shape shows before it has faded away, 0 to 1.</param>
+/// <param name="Transparency">How see-through it is where it starts, 0 to 1.</param>
+/// <param name="Blur">How far it blurs, 0 to 100 pt.</param>
+/// <param name="Distance">How far from the shape, 0 to 1584 pt.</param>
+/// <param name="Direction">Which way it is offset, degrees clockwise from the right (90: below).</param>
+/// <param name="FadeDirection">Which way it fades.</param>
+/// <param name="ScaleX">Its width as a share of the shape's (negative flips it).</param>
+/// <param name="ScaleY">Its height as a share of the shape's (−1: flipped top to bottom).</param>
+/// <param name="SkewX">Its slant across, degrees.</param>
+/// <param name="SkewY">Its slant down.</param>
+/// <param name="Align">The point its scale and skew are about.</param>
+/// <param name="RotateWithShape">It turns with the shape.</param>
+public sealed record Reflection(
+    double Size, double Transparency, Length Blur = default, Length Distance = default, double Direction = 90, double FadeDirection = 90,
+    double ScaleX = 1, double ScaleY = -1, double SkewX = 0, double SkewY = 0, RectAlign Align = RectAlign.BottomLeft, bool RotateWithShape = false);
+
+/// <summary>A picture's recolouring (Picture Color, Recolor).</summary>
+[JsonPolymorphic(TypeDiscriminatorPropertyName = "kind")]
+[JsonDerivedType(typeof(None), "none")]
+[JsonDerivedType(typeof(Grayscale), "grayscale")]
+[JsonDerivedType(typeof(BlackAndWhite), "blackAndWhite")]
+[JsonDerivedType(typeof(Duotone), "duotone")]
+public abstract record Recolor
+{
+    private Recolor() { }
+
+    /// <summary>Its own colours.</summary>
+    public sealed record None : Recolor;
+
+    /// <summary>Shades of grey.</summary>
+    public sealed record Grayscale : Recolor;
+
+    /// <summary>Black and white: pixels lighter than the threshold white, the rest black.</summary>
+    /// <param name="Threshold">The threshold, 0 to 1.</param>
+    public sealed record BlackAndWhite(double Threshold) : Recolor;
+
+    /// <summary>Two colours: its darkest drawn in one, its lightest in the other.</summary>
+    /// <param name="Dark">The colour its darkest pixels take.</param>
+    /// <param name="Light">The colour its lightest pixels take.</param>
+    public sealed record Duotone(ShapeColor Dark, ShapeColor Light) : Recolor;
+}
+
+/// <summary>A picture's adjustments as they read.</summary>
+/// <param name="Brightness">Lighter (positive, to 1) or darker (to −1).</param>
+/// <param name="Contrast">More (positive, to 1) or less contrast (to −1).</param>
+/// <param name="Transparency">How see-through it is: 0 opaque to 1 invisible.</param>
+/// <param name="Recolor">Its recolouring.</param>
+public sealed record PictureAdjustState(double Brightness, double Contrast, double Transparency, Recolor Recolor);
+
+/// <summary>A point in an object's box, as fractions of its width and height from its top left corner.</summary>
+/// <param name="X">Across, from its left edge.</param>
+/// <param name="Y">Down, from its top edge.</param>
+public sealed record BoxPoint(double X, double Y);
+
+/// <summary>A floating object, or one of the objects in a floating group.</summary>
+/// <param name="Float">The floating object: a decimal string, stable while the document is open.</param>
+/// <param name="Path">A group child's place: its index in the group, then in each group within it; empty for the floating object.</param>
+public sealed record ObjectId(
+    string Float, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<int>? Path = null);
 
 /// <summary>How a line is drawn along its length.</summary>
 public enum LineCompound
@@ -670,7 +860,15 @@ public sealed record LineValue(Length Width, FillValue Fill, string Dash, LineCo
 /// <param name="Blur">How far it blurs.</param>
 /// <param name="Distance">How far from the shape.</param>
 /// <param name="Direction">Which way, in degrees clockwise from the right.</param>
-public sealed record Shadow([property: JsonPropertyName("colour")] ShapeColor Color, Length Blur, Length Distance, double Direction);
+/// <param name="ScaleX">An outer shadow's width as a share of the shape's (negative flips it); an inner shadow ignores it.</param>
+/// <param name="ScaleY">An outer shadow's height as a share of the shape's.</param>
+/// <param name="SkewX">An outer shadow's slant across, degrees.</param>
+/// <param name="SkewY">An outer shadow's slant down.</param>
+/// <param name="Align">The point an outer shadow's scale and skew are about.</param>
+/// <param name="RotateWithShape">An outer shadow turns with the shape.</param>
+public sealed record Shadow(
+    [property: JsonPropertyName("colour")] ShapeColor Color, Length Blur, Length Distance, double Direction,
+    double ScaleX = 1, double ScaleY = 1, double SkewX = 0, double SkewY = 0, RectAlign Align = RectAlign.Bottom, bool RotateWithShape = false);
 
 /// <summary>A glow.</summary>
 /// <param name="Color">Its colour.</param>
@@ -683,12 +881,14 @@ public sealed record Glow([property: JsonPropertyName("colour")] ShapeColor Colo
 /// <param name="Glow">A glow around the shape.</param>
 /// <param name="SoftEdge">Edges faded over this distance.</param>
 /// <param name="Blur">The whole shape blurred by this radius.</param>
+/// <param name="Reflection">A reflection.</param>
 public sealed record EffectsValue(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Shadow? OuterShadow = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Shadow? InnerShadow = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Glow? Glow = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? SoftEdge = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Blur = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Length? Blur = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Reflection? Reflection = null);
 
 /// <summary>Which way a text watermark runs.</summary>
 public enum WatermarkLayout
@@ -1007,6 +1207,8 @@ public sealed record CursorOverride(CursorTarget On, Hosting.EditorCursor Cursor
 [JsonDerivedType(typeof(TabType), "tabType")]
 [JsonDerivedType(typeof(TabStop), "tabStop")]
 [JsonDerivedType(typeof(AutoCorrect), "autoCorrect")]
+[JsonDerivedType(typeof(AutoFormat), "autoFormat")]
+[JsonDerivedType(typeof(PasteOptions), "pasteOptions")]
 public abstract record Popover
 {
     private protected Popover() { }
@@ -1032,6 +1234,39 @@ public abstract record Popover
     /// <param name="From">What was typed.</param>
     /// <param name="To">What it became.</param>
     public sealed record AutoCorrect(RectangleF Anchor, string From, string To) : Popover;
+
+    /// <summary>
+    /// The options of the AutoFormat change just made: <see cref="EditorCommands.RevertAutoCorrectAsync"/> undoes it (Undo
+    /// Hyperlink, Undo Border Line, Undo Automatic Indent), <see cref="EditorCommands.NeverAutoCorrectAsync"/> undoes it and
+    /// turns its option off (Stop Automatically Creating Hyperlinks or Border Lines, Stop Setting Indent on Tabs and
+    /// Backspaces); your AutoCorrect dialog is Control AutoFormat Options.
+    /// </summary>
+    /// <param name="Anchor">The change's options button, or what it made, in client pixels.</param>
+    /// <param name="Change">What it made.</param>
+    /// <param name="Text">What was typed: the address, or the characters a border line replaced; empty for an indent.</param>
+    public sealed record AutoFormat(RectangleF Anchor, AutoFormatKind Change, string Text) : Popover;
+
+    /// <summary>
+    /// The Paste Options button of the paste just made, shown while nothing has changed since (typing, another edit,
+    /// undo or Esc closes it): <see cref="EditorCommands.RepasteAsync"/> pastes it again another way,
+    /// <see cref="EditorCommands.DismissPasteOptionsAsync"/> hides it.
+    /// </summary>
+    /// <param name="Anchor">The button, below the end of the paste at its right, in client pixels.</param>
+    /// <param name="End">The end of the paste's caret box, in client pixels.</param>
+    /// <param name="Choices">The ways it can paste again, in Word's order; <paramref name="Current"/> among them.</param>
+    /// <param name="Current">The way it was pasted.</param>
+    public sealed record PasteOptions(RectangleF Anchor, RectangleF End, IReadOnlyList<PasteMode> Choices, PasteMode Current) : Popover;
+}
+
+/// <summary>What an AutoFormat change as you type made.</summary>
+public enum AutoFormatKind
+{
+    /// <summary>A hyperlink from an Internet or network path.</summary>
+    Hyperlink,
+    /// <summary>A border line from a row of characters.</summary>
+    BorderLine,
+    /// <summary>An indent from Tab at a paragraph's start.</summary>
+    Indent,
 }
 
 /// <summary>One entry of the tab type picker.</summary>

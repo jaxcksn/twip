@@ -1,0 +1,55 @@
+{
+  "name": "paste-options",
+  "fixture": "editor/FX-EMPTY.docx",
+  "steps": [
+    { "op": "open" },
+    { "op": "expectState", "match": { "pasteOptions": { "within": "keepSource", "between": "keepSource", "conflict": "destinationStyles", "other": "keepSource", "keepBullets": true, "showButton": true, "smartCutPaste": true, "smart": { "wordSpacing": true, "tables": true, "mergeLists": true } } } },
+    { "op": "call", "method": "pasteContent", "args": [{ "text": "bold", "html": "<p><b>bold</b></p>" }] },
+    { "op": "expectEvents", "match": [
+      { "type": "documentChanged" },
+      { "type": "popoverRequested", "kind": "pasteOptions", "choices": { "$exact": ["keepSource", "merge", "textOnly"] }, "current": "keepSource", "anchor": { "$type": "object" }, "end": { "$type": "object" } }
+    ] },
+    { "op": "call", "method": "find.next", "args": [{ "text": "bold" }] },
+    { "op": "expectState", "match": { "formatting": { "bold": true } } },
+    { "op": "command", "command": { "type": "moveSelection", "by": "document", "direction": "forward" } },
+    { "op": "command", "command": { "type": "repaste", "value": "textOnly" } },
+    { "op": "expectEvents", "match": [{ "type": "popoverRequested", "kind": "pasteOptions", "current": "textOnly" }] },
+    { "op": "command", "command": { "type": "repaste", "value": "picture" } },
+    { "op": "expectError", "code": "unavailable" },
+    { "op": "call", "method": "find.next", "args": [{ "text": "bold" }] },
+    { "op": "expectState", "match": { "formatting": { "bold": false } } },
+    { "op": "command", "command": { "type": "undo" } },
+    { "op": "expectEvents", "match": [{ "type": "popoverClosed" }] },
+    { "op": "call", "method": "find.all", "args": [{ "text": "bold" }], "result": { "matches": { "$exact": [] } } },
+    { "op": "command", "command": { "type": "repaste", "value": "merge" } },
+    { "op": "expectError", "code": "unavailable" },
+
+    { "op": "command", "command": { "type": "setPasteOptions", "other": "textOnly" } },
+    { "op": "expectState", "match": { "pasteOptions": { "other": "textOnly", "within": "keepSource" } } },
+    { "op": "call", "method": "pasteContent", "args": [{ "text": "bold", "html": "<p><b>bold</b></p>" }] },
+    { "op": "call", "method": "find.next", "args": [{ "text": "bold" }] },
+    { "op": "expectState", "match": { "formatting": { "bold": false } } },
+    { "op": "command", "command": { "type": "setPasteOptions", "within": "picture" } },
+    { "op": "expectError", "code": "invalid-argument" },
+    { "op": "command", "command": { "type": "setPasteOptions", "conflict": "destinationStyles", "smart": { "tables": false } } },
+    { "op": "expectState", "match": { "pasteOptions": { "conflict": "destinationStyles", "smart": { "tables": false, "mergeLists": true } } } },
+
+    { "op": "command", "command": { "type": "moveSelection", "by": "document", "direction": "forward" } },
+    { "op": "call", "method": "pasteContent", "args": [{ "text": " again" }] },
+    { "op": "expectEvents", "match": [{ "type": "popoverRequested", "kind": "pasteOptions" }] },
+    { "op": "command", "command": { "type": "dismissPasteOptions" } },
+    { "op": "expectEvents", "match": [{ "type": "popoverClosed" }] },
+    { "op": "command", "command": { "type": "repaste", "value": "keepSource" } },
+    { "op": "expectError", "code": "unavailable" },
+
+    { "op": "command", "command": { "type": "setPasteOptions", "showButton": false } },
+    { "op": "expectEvents", "match": [] },
+    { "op": "call", "method": "pasteContent", "args": [{ "text": " more" }] },
+    { "op": "expectState", "match": { "pasteOptions": { "showButton": false } } },
+    { "op": "call", "method": "setReadOnly", "args": [true] },
+    { "op": "command", "command": { "type": "setPasteOptions", "showButton": true, "other": "keepSource" } },
+    { "op": "expectState", "match": { "readOnly": true, "pasteOptions": { "showButton": true, "other": "keepSource" } } },
+    { "op": "call", "method": "pasteContent", "args": [{ "text": "x" }] },
+    { "op": "expectError", "code": "read-only" }
+  ]
+}

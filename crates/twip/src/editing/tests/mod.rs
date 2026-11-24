@@ -69,7 +69,7 @@ mod text_units;
 mod toc;
 mod tracked_structure;
 mod transactions;
-mod vertical;
+pub(crate) mod vertical;
 
 use std::path::Path;
 

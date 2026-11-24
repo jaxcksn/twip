@@ -1,0 +1,17 @@
+{
+  "name": "table-border-drag",
+  "fixture": "editor/FX-TBL-BASIC.docx",
+  "steps": [
+    { "op": "open" },
+    { "op": "expectState", "match": { "history": { "canUndo": false } } },
+    { "op": "drag", "from": { "tableColumn": { "text": "C1", "border": 1 } }, "by": { "dx": 30 }, "release": false },
+    { "op": "expectState", "match": { "history": { "canUndo": false } } },
+    { "op": "release" },
+    { "op": "expectState", "match": { "history": { "undoLabel": "Column Width" } } },
+    { "op": "command", "command": { "type": "undo" } },
+    { "op": "expectState", "match": { "history": { "canUndo": false, "canRedo": true } } },
+    { "op": "command", "command": { "type": "setViewOptions", "liveLayout": false } },
+    { "op": "drag", "from": { "tableColumn": { "text": "C1", "border": 1 } }, "by": { "dx": 30 } },
+    { "op": "expectState", "match": { "history": { "undoLabel": "Column Width" } } }
+  ]
+}

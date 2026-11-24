@@ -1,0 +1,13 @@
+[
+  {
+    "moreRedo": false,
+    "moreUndo": true,
+    "redo": [
+      "Font Color"
+    ],
+    "undo": [
+      "Bold",
+      "Typing"
+    ]
+  }
+]

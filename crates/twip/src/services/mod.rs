@@ -26,11 +26,24 @@ pub struct Services {
     pub said: Vec<(crate::api::services::AnnouncementKind, String)>,
     /// The kinds of announcements the application turned off.
     pub silenced: Vec<crate::api::services::AnnouncementKind>,
-    /// The revision count as last counted.
-    pub revision_count: Option<RevisionCount>,
     /// The visible comments' anchors as `commentAnchors` last reported them (kept over an open, so the host hears
     /// that the last document's are gone).
     pub anchors: Vec<crate::api::review::CommentAnchor>,
+    /// The revision balloons' anchors last emitted.
+    pub balloons: Vec<crate::api::review::RevisionAnchor>,
+    /// The laid-out pages' versions, for the host's thumbnails.
+    pub page_versions: pages::PageVersions,
+    /// The selection a find within the selection searches, while the match it selected last stays selected.
+    pub find_within: Option<FindWithin>,
+}
+
+/// The ranges a find within the selection searches, and the match it selected in them.
+#[derive(Clone, Debug)]
+pub struct FindWithin {
+    /// The match: paragraph and units.
+    pub hit: (crate::layout::ParaId, crate::layout::Unit, crate::layout::Unit),
+    /// The selection's ranges when the find began.
+    pub ranges: Vec<(crate::layout::ParaId, crate::layout::Unit, crate::layout::Unit)>,
 }
 
 impl Services {
@@ -49,21 +62,10 @@ impl Services {
     /// Another document is open: what was reported about the last one goes, but for the anchors the host still
     /// shows.
     pub fn document_replaced(&mut self) {
-        self.revision_count = None;
         self.announcer = a11y::Announcer::default();
         self.tree_cache = a11y::TreeCache::default();
+        self.find_within = None;
     }
-}
-
-/// The revision count, and when it was counted.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct RevisionCount {
-    /// The marks' generations ([`crate::editing::Editor::revision_marks`]).
-    pub marks: (u64, u64),
-    /// The sub-template being edited.
-    pub sub_template: Option<u32>,
-    /// The count.
-    pub n: u32,
 }
 
 /// The page (from 1) each laid-out paragraph starts on. Pages not laid out yet aren't looked at.

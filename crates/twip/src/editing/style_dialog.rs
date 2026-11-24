@@ -118,7 +118,7 @@ fn table_style_edits(raw: &str, was: &StyleDialog, now: &StyleDialog, region: Op
         let edges = |name: &str| -> String {
             let one = |side: &str| match &now.border {
                 Some(b) => {
-                    let color = match b.color {
+                    let color = match super::readback::rgb_only(&b.color) {
                         AutoOr::Auto => "auto".to_string(),
                         AutoOr::Value(c) => format!("{:06X}", c.0),
                     };
@@ -312,7 +312,7 @@ impl Editor {
         let table = now.kind == StyleDialogType::Table;
         let mut commands = Vec::new();
         if now.font != was.font && !now.font.trim().is_empty() {
-            commands.push(Command::SetFont(now.font.clone()));
+            commands.push(Command::SetFont(crate::api::command::FontChoice::Name(now.font.clone())));
         }
         if now.size != was.size {
             commands.push(Command::SetFontSize(now.size));
@@ -327,7 +327,7 @@ impl Editor {
             commands.push(Command::SetUnderline(now.underline));
         }
         if now.color != was.color {
-            commands.push(Command::SetFontColor(now.color));
+            commands.push(Command::SetFontColor(super::commands::rgb_value(now.color)));
         }
         if (para || table) && now.alignment != was.alignment {
             commands.push(Command::SetAlignment(now.alignment));
@@ -649,7 +649,7 @@ impl Editor {
         };
         let line = |side: &str, b: &Option<crate::api::command::Border>| match b {
             Some(b) => {
-                let color = match b.color {
+                let color = match super::readback::rgb_only(&b.color) {
                     AutoOr::Auto => "auto".to_string(),
                     AutoOr::Value(c) => format!("{:06X}", c.0),
                 };

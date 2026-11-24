@@ -36,6 +36,8 @@ typedef struct TwipFrameInfo {
     double caret_height;
     uint32_t caret_visible; /* 1 when a caret shows */
     uint32_t pages;         /* laid out so far */
+    double caret_width;     /* across a vertical line; 0 across a horizontal one (caret_height is 0 then) */
+    uint32_t caret_line;    /* the way the caret's line runs: 0 across the page, 1 down, 2 up */
 } TwipFrameInfo;
 
 /* Statuses: 0 ok, or one of these (the api ErrorCode order). */
@@ -88,10 +90,10 @@ enum TwipMethod {
     TWIP_DIALOG_UPDATE = 12,          /* {model, patch} -> DialogModel */
     TWIP_DIALOG_APPLY = 13,           /* DialogModel -> Commit */
     TWIP_FIND = 14,                   /* {query, direction} -> FindResult */
-    TWIP_FIND_ALL = 15,               /* FindQuery -> FindMatch[] */
+    TWIP_FIND_ALL = 15,               /* FindQuery -> FindMatches */
     TWIP_SELECT_MATCH = 16,           /* MatchId -> null */
-    TWIP_REPLACE = 17,                /* {query, with} -> FindResult */
-    TWIP_REPLACE_ALL = 18,            /* {query, with} -> {count} */
+    TWIP_REPLACE = 17,                /* {query, with, replaceFormat?} -> FindResult */
+    TWIP_REPLACE_ALL = 18,            /* {query, with, replaceFormat?} -> FindCount */
     TWIP_SPELLING_ADD_DICTIONARY = 19,/* Dictionary -> null */
     TWIP_SPELLING_SET_ENABLED = 20,   /* bool -> null */
     TWIP_SPELLING_SET_LANGUAGE = 21,  /* string -> null */
@@ -120,7 +122,7 @@ enum TwipMethod {
     TWIP_GESTURES_RESET = 44,         /* GestureId | null -> null */
     TWIP_WORD_COUNT = 45,             /* -> WordCount */
     TWIP_COPY = 46,                   /* {cut} -> ClipboardData | null */
-    TWIP_PASTE = 47,                  /* {data, asText} -> null */
+    TWIP_PASTE = 47,                  /* {data, asText?, as?} -> null */
     TWIP_FONT_FAMILIES = 48,          /* -> string[] */
     TWIP_FONT_SET_REPLACEMENTS = 49,  /* FontRule[] -> null */
     TWIP_FONT_SET_FALLBACK = 50,      /* string | null -> null */
@@ -171,7 +173,50 @@ enum TwipMethod {
     TWIP_FONT_CHARACTERS = 95, /* string (a family) -> CharRange[]: the characters the font has */
     TWIP_CHARACTER_PICTURE = 96, /* { family, character, size } -> Picture: a character in a font */
     TWIP_BOOKMARKS = 97, /* -> BookmarkInfo[] */
-    TWIP_DOCUMENT_PROPERTIES = 98 /* -> DocumentProperties */
+    TWIP_DOCUMENT_PROPERTIES = 98, /* -> DocumentProperties */
+    TWIP_WORD_AT_SELECTION = 99, /* -> WordAt | null: the word at the selection, for a thesaurus. */
+    TWIP_SELECTION_BOUNDS = 100, /* -> SelectionBounds: the selection on screen. */
+    TWIP_DRAG_OUT = 101, /* -> DragSource | null: starts a drag of the selection out of the view. */
+    TWIP_DRAG_END = 102, /* DropEffect -> null: the drag out ended. */
+    TWIP_DROP_DRAGGED = 103, /* { at, copy } -> Commit: the drag out came back and dropped at at. */
+    TWIP_SET_DEFAULT_PICTURE_WRAP = 104, /* ObjectWrap -> null: the wrap inserted pictures take. */
+    TWIP_DEFAULT_PICTURE_WRAP = 105, /* -> ObjectWrap. */
+    TWIP_SET_CLICK_AND_TYPE_STYLE = 106, /* StyleId | null -> null: the style Click and Type's paragraphs take. */
+    TWIP_HISTORY_LABELS = 107, /* { limit? } | null -> HistoryLabels: the undo and redo lists. */
+    TWIP_STYLE_DEFINITION = 108, /* StyleId -> StyleDefinition | null. */
+    TWIP_BUILT_IN_STYLES = 109, /* -> BuiltInStyle[]. */
+    TWIP_DOCUMENT_DEFAULTS = 110, /* -> DefaultsDefinition | null: the document's default formatting. */
+    TWIP_LIST_DEFINITION = 111, /* -> ListDefinition | null: the list at the selection. */
+    TWIP_THEME_COLOUR_GRID = 112, /* -> ThemeColumn[]: the theme colour grid. */
+    TWIP_OBJECT_LIST = 113, /* u32 (a page, from 0) -> ObjectListEntry[]: the Selection Pane's objects on the page. */
+    TWIP_OBJECT_IMAGE = 114, /* -> Bytes | null: the selected picture's image. */
+    TWIP_SHAPE_FILL_IMAGE = 115, /* -> Bytes | null: the selected shape's picture fill's image. */
+    TWIP_WATERMARK_IMAGE = 116, /* u32 (a section, from 0) -> Bytes | null: its picture watermark's image. */
+    TWIP_PAGE_FILL_IMAGE = 117, /* -> Bytes | null: the page colour's picture. */
+    TWIP_TEXT_TO_TABLE_SIZE = 118, /* TextToTable -> TableSize | null: the table Convert Text to Table would make. */
+    TWIP_NOTES = 119, /* -> NoteInfo[]: the footnotes, then the endnotes. */
+    TWIP_NOTE_SEPARATORS = 120, /* NoteType -> NoteSeparators. */
+    TWIP_COLUMN_PRESET = 121, /* ColumnPreset -> Columns: the columns a preset gives the selection's section. */
+    TWIP_PAGE_NUMBER_SAMPLE = 122, /* { format, chapterSeparator? } -> string: Format Page Numbers' example. */
+    TWIP_RECOMMENDED_MINIMUM_STYLES = 123, /* -> StyleId[]: Formatting Restrictions' Recommended Minimum. */
+    TWIP_EDITABLE_RANGES = 124, /* -> EditableRangeInfo[]. */
+    TWIP_FIELD_CATALOGUE = 125, /* FieldCategory | null -> FieldDescription[]: Insert Field's fields. */
+    TWIP_FIELD_FORMATS = 126, /* -> FieldFormats. */
+    TWIP_COMPOSE_FIELD = 127, /* FieldChoice -> ComposedField. */
+    TWIP_PARSE_FIELD = 128, /* string (a field code) -> FieldChoice. */
+    TWIP_FIELD_HERE = 129, /* -> FieldHere | null: the field at the selection, with its choices. */
+    TWIP_DATE_FORMATS = 130, /* string (a locale) -> string[]: a date control's display formats. */
+    TWIP_PAGE_VERSIONS = 131, /* -> u64[]: each laid-out page's version. */
+    TWIP_CURRENT_HEADING = 132, /* -> HeadingId | null: the heading the selection is under. */
+    TWIP_FIND_HIGHLIGHT_ALL = 133, /* FindQuery -> FindCount: Highlight All. */
+    TWIP_FIND_CLEAR_HIGHLIGHTS = 134, /* -> null: Highlight All's highlights go. */
+    TWIP_PASTE_CHOICES = 135, /* ClipboardData -> PasteChoices: Paste Special's list. */
+    TWIP_CLIPBOARD_HTML = 136, /* string (a copy's token) -> string: its HTML, objects drawn. */
+    TWIP_CROSS_REFERENCE_TARGETS = 137, /* CrossReferenceKind -> CrossReferenceTarget[]. */
+    TWIP_CAPTION_LABELS = 138, /* string[] (the host's labels) -> string[]: the caption labels. */
+    TWIP_TABLES_OF_CONTENTS = 139, /* -> TablesOfContents. */
+    TWIP_TOC_ENTRIES = 140, /* TableOfContentsOptions -> TocEntryPreview[]. */
+    TWIP_PASTE_CONTENT = 141 /* {data, as?} -> null: pastes clipboard data the application read, failing where it can't paste. */
 };
 
 int32_t twip_call(TwipEngine* engine, uint32_t session, uint32_t method, const uint8_t* req, size_t len, TwipBuf* out);
@@ -204,7 +249,7 @@ int32_t twip_pdf_convert(const uint8_t* docx, size_t len, const TwipPdfFonts* fo
 
 /* Hot input. key: a TwipKey; mods: TWIP_MOD_* bits. twip_key returns 0 unhandled, 1 handled, or 2 + n for host
  * command n in api::HostCommand order (save, saveAs, print, open, new, find, replace, goTo, insertHyperlink,
- * nextMisspelling, focusFont, focusFontSize, help). Composition phase: start 0, update 1, end 2. Pointer kind: down
+ * nextMisspelling, focusFont, focusFontSize, help, and on). Composition phase: start 0, update 1, end 2. Pointer kind: down
  * 0, move 1, up 2, cancel 3, leave 4; x and y are viewport CSS px; button (the one pressed or released): primary 0,
  * secondary 1, middle 2. */
 #define TWIP_MOD_CTRL 1u
@@ -247,6 +292,10 @@ void twip_surface(TwipEngine* engine, uint32_t session, double width, double hei
 void twip_scroll(TwipEngine* engine, uint32_t session, double x, double y);
 /* CPU pixels: width x height device pixels, RGBA, premultiplied, rows packed. info may be null. */
 int32_t twip_frame_rgba(TwipEngine* engine, uint32_t session, uint8_t* pixels, uint32_t width, uint32_t height, TwipFrameInfo* info);
+/* A page (from 0) drawn whole into pixels (len bytes: width x height x 4, RGBA, premultiplied), as large as fits,
+ * centred, over the view's background: a thumbnail. Its drawn size goes to out_width and out_height (either may be
+ * null). */
+int32_t twip_page_thumbnail(TwipEngine* engine, uint32_t session, uint32_t page, uint8_t* pixels, size_t len, uint32_t width, uint32_t height, uint32_t* out_width, uint32_t* out_height);
 /* Native GPU frames: twip-graphics on wgpu into the host's window. On Windows window is an HWND (D3D12, then Vulkan);
  * on macOS a CAMetalLayer (Metal), whose device, pixel format and drawable size the engine sets. twip_attach_window
  * returns the backend (1 D3D12, 3 Vulkan, 4 Metal) or fails TWIP_E_UNAVAILABLE; twip_frame_rgba is the fallback.

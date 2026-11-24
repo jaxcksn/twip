@@ -22,7 +22,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let warnings = session.open(&std::fs::read(path)?)?;
     println!("opened {path}, {} warning(s)", warnings.len());
 
-    for command in [Command::SelectAll, Command::SetBold(true), Command::Undo] {
+    for command in [Command::SelectAll, Command::SetBold(true), Command::Undo(Default::default())] {
         session.run(command)?;
     }
 

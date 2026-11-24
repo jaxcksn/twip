@@ -1,0 +1,125 @@
+{
+  "name": "form-field-keys",
+  "steps": [
+    {
+      "op": "command",
+      "command": {
+        "type": "insertFormField",
+        "value": "checkBox"
+      }
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "insertText",
+        "value": " "
+      }
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "insertFormField",
+        "value": "dropDown"
+      }
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "setFormField",
+        "dropDown": {
+          "entries": [
+            "Yes",
+            "No"
+          ]
+        }
+      }
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "setDocumentProtection",
+        "kind": "forms",
+        "enforce": true
+      }
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "moveSelection",
+        "by": "document",
+        "direction": "backward"
+      }
+    },
+    {
+      "op": "key",
+      "key": "Tab"
+    },
+    {
+      "op": "expectState",
+      "match": {
+        "selection": {
+          "context": [
+            {
+              "form": {
+                "kind": "dropDown"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "op": "key",
+      "key": "F4"
+    },
+    {
+      "op": "expectEvents",
+      "match": [
+        {
+          "type": "hostCommand",
+          "command": "openFormFieldList"
+        }
+      ]
+    },
+    {
+      "op": "key",
+      "key": "Tab",
+      "mods": [
+        "shift"
+      ]
+    },
+    {
+      "op": "expectState",
+      "match": {
+        "selection": {
+          "context": [
+            {
+              "form": {
+                "kind": "checkBox"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "op": "text",
+      "text": " "
+    },
+    {
+      "op": "expectState",
+      "match": {
+        "selection": {
+          "context": [
+            {
+              "form": {
+                "kind": "checkBox",
+                "checked": true
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

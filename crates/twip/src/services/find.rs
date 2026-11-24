@@ -179,6 +179,21 @@ fn tri<T: PartialEq>(q: &Tri<T>, v: &Tri<T>) -> bool {
 }
 
 impl FindFormat {
+    /// The engine's form of an API [`crate::api::services::FindFormat`].
+    pub fn of_api(f: &crate::api::services::FindFormat) -> FindFormat {
+        FindFormat {
+            font: f.font.as_ref().map(|v| v.to_tri()).unwrap_or_default(),
+            paragraph: f.paragraph.as_ref().map(|v| v.to_tri()).unwrap_or_default(),
+            style: f.style.clone(),
+            highlight: f.highlight,
+            highlight_color: f.highlight_color,
+            language: f.language.clone(),
+            no_proof: f.no_proof,
+            tabs: f.tabs.clone(),
+            frame: f.frame.clone(),
+        }
+    }
+
     /// Nothing asked for.
     pub fn is_empty(&self) -> bool {
         *self == FindFormat::default()
@@ -407,10 +422,25 @@ impl Default for FindSpec {
 }
 
 impl FindSpec {
-    /// The spec of a [`FindQuery`]: its text in normal mode, case and whole words.
+    /// The spec of a [`FindQuery`], but for its `inSelection` (the caller gives `within` the selection's ranges).
     pub fn of_query(q: &FindQuery) -> FindSpec {
-        let options = MatchOptions { case: q.match_case.unwrap_or(false), whole: q.whole_words.unwrap_or(false), ..Default::default() };
-        FindSpec { text: q.text.clone(), options, ..FindSpec::default() }
+        let on = |v: Option<bool>| v.unwrap_or(false);
+        let options = MatchOptions {
+            case: on(q.match_case),
+            whole: on(q.whole_words),
+            prefix: on(q.match_prefix),
+            suffix: on(q.match_suffix),
+            ignore_punct: on(q.ignore_punctuation),
+            ignore_space: on(q.ignore_white_space),
+        };
+        FindSpec {
+            text: q.text.clone(),
+            options,
+            regex: on(q.regex),
+            format: q.format.as_ref().map(FindFormat::of_api),
+            within: None,
+            wrap: q.wrap.unwrap_or(true),
+        }
     }
 }
 
@@ -1171,6 +1201,7 @@ pub fn describe(e: &Editor, h: Hit, page: u32) -> FindMatch {
         text,
         after: clean(&end_seen.chars[t..(t + 30).min(end_seen.chars.len())]),
         page,
+        heading: None,
     }
 }
 

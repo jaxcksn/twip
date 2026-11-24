@@ -65,8 +65,8 @@ impl Editor {
     }
 
     pub(in crate::editing) fn set_cell_borders(&mut self, b: CellBorders, fonts: &Fonts) -> Outcome {
-        let (edges, border) = cell_borders(b);
-        self.table_format(&TableFormat::CellBorders(edges, border), fonts)
+        let line = b.border.as_ref().map(|l| crate::editing::readback::BorderLine::of_api(l, 0.0, false));
+        self.set_cell_border_lines(b.edges, line.as_ref(), fonts)
     }
 
     /// Sets edges `edges` of the selected cells to `line` (default: a ½ pt single automatic line), its colour an RGB or
@@ -83,8 +83,12 @@ impl Editor {
     }
 
     /// `edges` and `line` as a table border edit (default: a ½ pt single automatic line).
-    fn border_lines(&self, edges: BorderEdges, line: Option<&crate::editing::readback::BorderLine>) -> Result<(Edges, Border), String> {
-        let (edges, mut border) = cell_borders(CellBorders { edges, border: None });
+    pub(in crate::editing) fn border_lines(
+        &self,
+        edges: BorderEdges,
+        line: Option<&crate::editing::readback::BorderLine>,
+    ) -> Result<(Edges, Border), String> {
+        let (edges, mut border) = cell_borders(edges);
         if let Some(l) = line {
             let colour = crate::editing::readback::checked(self, l)?;
             border = Border {
@@ -164,52 +168,35 @@ impl Editor {
     }
 
     pub(in crate::editing) fn set_row_properties(&mut self, p: crate::api::command::RowProperties, fonts: &Fonts) -> Outcome {
-        let exceptions = p.exceptions.map(|x| super::super::table_format::RowEx {
+        let exceptions = p.exceptions.map(|x| RowExceptionsEdit {
             reset: x.reset.unwrap_or(false),
-            jc: x.alignment.map(|a| match a {
-                HorizontalAlignment::Center => Jc::Center,
-                HorizontalAlignment::Right => Jc::Right,
-                _ => Jc::Left,
-            }),
-            cell_spacing: x.cell_spacing.map(|s| s.0),
-            ind: None,
-            shading: x.shading.map(|c| crate::editing::table_format::Shading::fill(Some(crate::editing::theme::WordColour::rgb(c.0)))),
-            borders: x.borders.map(cell_borders),
+            alignment: x.alignment,
+            cell_spacing: x.cell_spacing,
+            indent: x.indent,
+            shading: x.shading,
+            borders: x.borders.map(|b| (b.edges, b.border.map(|l| crate::editing::readback::BorderLine::of_api(&l, 0.0, false)))),
         });
-        self.table_format(&TableFormat::RowProps { hidden: p.hidden, exceptions }, fonts)
+        self.set_row_exceptions(p.hidden, exceptions.as_ref(), fonts)
     }
 }
 
-/// `setCellBorders`'s edges and line.
-pub(in crate::editing) fn cell_borders(b: CellBorders) -> (Edges, Border) {
-    {
-        let edges = match b.edges {
-            BorderEdges::All => Edges::All,
-            BorderEdges::Outside => Edges::Outside,
-            BorderEdges::Inside => Edges::Inside,
-            BorderEdges::InsideHorizontal => Edges::InsideH,
-            BorderEdges::InsideVertical => Edges::InsideV,
-            BorderEdges::Top => Edges::Top,
-            BorderEdges::Bottom => Edges::Bottom,
-            BorderEdges::Left => Edges::Left,
-            BorderEdges::Right => Edges::Right,
-            BorderEdges::DiagonalDown => Edges::DiagonalDown,
-            BorderEdges::DiagonalUp => Edges::DiagonalUp,
-            BorderEdges::None => Edges::None,
-        };
-        let border = match b.border {
-            Some(x) => {
-                let style = x.style.val();
-                let color = match x.color {
-                    AutoOr::Auto => None,
-                    AutoOr::Value(c) => Some(c.0),
-                };
-                Border { style: style.into(), width: x.width.0, space: 0.0, shadow: false, color, color_theme: None }
-            }
-            None => Border { style: "single".into(), width: 0.5, space: 0.0, shadow: false, color: None, color_theme: None },
-        };
-        (edges, border)
-    }
+/// `setCellBorders`' edges as a table edit's, and the line they take by default: a ½ pt single automatic line.
+pub(in crate::editing) fn cell_borders(edges: BorderEdges) -> (Edges, Border) {
+    let edges = match edges {
+        BorderEdges::All => Edges::All,
+        BorderEdges::Outside => Edges::Outside,
+        BorderEdges::Inside => Edges::Inside,
+        BorderEdges::InsideHorizontal => Edges::InsideH,
+        BorderEdges::InsideVertical => Edges::InsideV,
+        BorderEdges::Top => Edges::Top,
+        BorderEdges::Bottom => Edges::Bottom,
+        BorderEdges::Left => Edges::Left,
+        BorderEdges::Right => Edges::Right,
+        BorderEdges::DiagonalDown => Edges::DiagonalDown,
+        BorderEdges::DiagonalUp => Edges::DiagonalUp,
+        BorderEdges::None => Edges::None,
+    };
+    (edges, Border { style: "single".into(), width: 0.5, space: 0.0, shadow: false, color: None, color_theme: None })
 }
 
 impl Editor {

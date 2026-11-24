@@ -24,7 +24,7 @@ fn pages(e: &mut Editor) -> Vec<(usize, Rc<PageGeometry>)> {
 }
 
 /// The first line on page `pg` (of a story `story` picks) whose text starts with `text`, and its index.
-fn line_of(e: &mut Editor, pg: usize, text: &str, story: impl Fn(StoryId) -> bool) -> (Rc<PageGeometry>, usize) {
+pub(crate) fn line_of(e: &mut Editor, pg: usize, text: &str, story: impl Fn(StoryId) -> bool) -> (Rc<PageGeometry>, usize) {
     let g = pages(e).into_iter().find(|(p, _)| *p == pg).map(|(_, g)| g).expect("the page");
     let i = (0..g.lines.len())
         .find(|&i| {
@@ -41,7 +41,7 @@ fn starts(e: &Editor, para: crate::layout::ParaId, l: &GLine, text: &str) -> boo
     l.first_of(para).is_some_and(|u| t.text.chars().skip(u.0 as usize).collect::<String>().starts_with(text))
 }
 
-fn press(e: &mut Editor, pg: usize, p: [f64; 2], mods: Mods) {
+pub(crate) fn press(e: &mut Editor, pg: usize, p: [f64; 2], mods: Mods) {
     let (x, y) = e.stack().to_doc(pg, p[0], p[1]).expect("on the stack");
     e.pointer_input(PointerKind::Down, x, y, 1, mods, fonts());
     e.pointer_input(PointerKind::Up, x, y, 0, mods, fonts());
@@ -58,7 +58,7 @@ fn focus(e: &Editor) -> (crate::layout::ParaId, u32) {
 }
 
 /// A stop in the middle of line `i`, and the page point at it in the middle of the line's band.
-fn middle(g: &PageGeometry, i: usize) -> (super::super::geometry::Stop, [f64; 2]) {
+pub(crate) fn middle(g: &PageGeometry, i: usize) -> (super::super::geometry::Stop, [f64; 2]) {
     let l = &g.lines[i];
     let s = l.stops[l.stops.len() / 2];
     (s, l.page(s.x, (l.top + l.bottom) / 2.0))
@@ -243,7 +243,7 @@ fn undo_after_typing_in_a_vertical_line_puts_the_caret_back_across_it() {
     e.execute(crate::api::command::Command::InsertText("x".into()), fonts());
     e.complete(fonts());
     assert_eq!(focus(&e), (s.para, s.unit.0 + 1));
-    e.execute(crate::api::command::Command::Undo, fonts());
+    e.execute(crate::api::command::Command::Undo(Default::default()), fonts());
     e.complete(fonts());
     assert_eq!(focus(&e), (s.para, s.unit.0), "the caret goes back");
     let c = e.caret_view().expect("a caret");
@@ -409,7 +409,10 @@ fn editor(body: &str) -> Editor {
 #[test]
 fn a_table_in_a_tbrl_section_stands_upright() {
     let mut e = editor(&format!("<w:p><w:r><w:t>Before the table</w:t></w:r></w:p>{}<w:p/>", table_xml(2, 3, "", "")));
-    e.execute(crate::api::command::Command::SetSectionTextDirection(crate::api::command::TextFlow::TbRl), fonts());
+    e.execute(
+        crate::api::command::Command::SetSectionTextDirection(crate::api::command::SectionValue::here(crate::api::command::TextFlow::TbRl)),
+        fonts(),
+    );
     e.complete(fonts());
     let g = pages(&mut e).into_iter().next().map(|(_, g)| g).expect("a page");
     assert!(g.lines.iter().any(|l| l.chain.is_empty() && l.dir() == LineDir::Down), "the section's text runs down");
@@ -548,6 +551,13 @@ fn rotated_box(name: &str) -> Editor {
 
 /// `name`'s first text box frame turned `rot` sixty-thousandths of a degree.
 fn rotated_box_by(name: &str, rot: u32) -> Editor {
+    let mut e = Editor::open(&rotated_box_bytes(name, rot), fonts()).expect("opens");
+    e.complete(fonts());
+    e
+}
+
+/// Layout fixture `name` with its first shape turned by `rot` (60000ths of a degree).
+pub(crate) fn rotated_box_bytes(name: &str, rot: u32) -> Vec<u8> {
     use std::io::{Read, Write};
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/layout").join(name);
     let src = std::fs::read(path).expect("the fixture");
@@ -567,10 +577,7 @@ fn rotated_box_by(name: &str, rot: u32) -> Editor {
         out.start_file(name, zip::write::SimpleFileOptions::default()).expect("writes");
         out.write_all(&data).expect("writes");
     }
-    let bytes = out.finish().expect("a zip").into_inner();
-    let mut e = Editor::open(&bytes, fonts()).expect("opens");
-    e.complete(fonts());
-    e
+    out.finish().expect("a zip").into_inner()
 }
 
 #[test]
@@ -594,6 +601,8 @@ fn the_text_under_the_pointer_says_which_way_it_runs() {
         let (_, p) = middle(&g, i);
         let (x, y) = e.stack().to_doc(pg, p[0], p[1]).expect("on the stack");
         assert_eq!(e.text_dir_at(x, y, fonts()), Some(dir));
+        let i_beam = if dir == LineDir::Horizontal { super::super::input::Cursor::Text } else { super::super::input::Cursor::VerticalText };
+        assert_eq!(e.hover(x, y, Mods::default(), fonts()), i_beam, "the I-beam lies across the line");
     }
 }
 
@@ -659,7 +668,10 @@ fn tbrl_with_float() -> Editor {
     let paras: String = (0..8).map(|k| format!("<w:p><w:r><w:t>P{k} {words}</w:t></w:r>{}</w:p>", if k == 0 { &a } else { "" })).collect();
     let mut e = Editor::open(&bytes(&paras).expect("a package"), fonts()).expect("opens");
     e.complete(fonts());
-    e.execute(crate::api::command::Command::SetSectionTextDirection(crate::api::command::TextFlow::TbRl), fonts());
+    e.execute(
+        crate::api::command::Command::SetSectionTextDirection(crate::api::command::SectionValue::here(crate::api::command::TextFlow::TbRl)),
+        fonts(),
+    );
     e.complete(fonts());
     e
 }
@@ -688,7 +700,10 @@ fn a_float_dragged_in_a_tbrl_section_moves_with_the_pointer_and_anchors_to_the_l
 fn an_inline_picture_floated_in_a_tbrl_section_stays_where_it_was_drawn() {
     let data = super::open("FX-OBJ.docx").document().images.last().cloned().expect("an image");
     let mut e = editor("<w:p><w:r><w:t>Body text here</w:t></w:r></w:p>");
-    e.execute(crate::api::command::Command::SetSectionTextDirection(crate::api::command::TextFlow::TbRl), fonts());
+    e.execute(
+        crate::api::command::Command::SetSectionTextDirection(crate::api::command::SectionValue::here(crate::api::command::TextFlow::TbRl)),
+        fonts(),
+    );
     e.complete(fonts());
     e.set_caret_for_benchmark(Selection::Caret(Position::text(StoryId::Body, super::para_id(&e, 0), crate::layout::Unit(2))));
     let pic = crate::api::command::Picture { data: crate::api::value::Bytes(data), alt_text: None };
@@ -712,7 +727,7 @@ fn vertical_with_footnote(flow: crate::api::command::TextFlow) -> Editor {
     e.set_caret_for_benchmark(Selection::Caret(Position::text(StoryId::Body, super::para_id(&e, 0), crate::layout::Unit(2))));
     e.execute(Command::InsertFootnote, fonts());
     e.execute(Command::InsertText("Note text runs here.".into()), fonts());
-    e.execute(Command::SetSectionTextDirection(flow), fonts());
+    e.execute(Command::SetSectionTextDirection(crate::api::command::SectionValue::here(flow)), fonts());
     e.complete(fonts());
     e
 }

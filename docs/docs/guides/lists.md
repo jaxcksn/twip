@@ -15,7 +15,7 @@ A level (`ListLevel`) is what the Define dialogs edit:
 
 | Value | What it is |
 |---|---|
-| `format` | The number style: `decimal`, `upperRoman`, `lowerRoman`, `upperLetter`, `lowerLetter`, `ordinal`, `cardinalText`, `ordinalText`, `decimalZero`, `bullet` or `none`. |
+| `format` | The number style: `decimal`, `upperRoman`, `lowerRoman`, `upperLetter`, `lowerLetter`, `ordinal`, `cardinalText`, `ordinalText`, `decimalZero`, `bullet`, `none`, `numberInDash`, `hex`, `chicago`, `russianLower`, `russianUpper`, `hindiVowels`, `hindiConsonants`, `hindiNumbers`, `thaiLetters`, `thaiNumbers`, or any other by its WordprocessingML name as `{ other: 'aiueoFullWidth' }` (1 to 64 ASCII letters and digits; it numbers in decimal). .NET: `NumberFormat.Chicago`, `NumberFormat.Named("aiueoFullWidth")`. |
 | `text` | The number format, with `%1` to `%9` for the numbers of this level and the levels above it (`Section %1.%2`). For a bullet, its character. |
 | `start` | The number it starts at. |
 | `alignment`, `numberPosition`, `textIndent` | How the number aligns, where it is, and where the text is, from the margin. |
@@ -24,6 +24,20 @@ A level (`ListLevel`) is what the Define dialogs edit:
 | `legal` | Legal style numbering: every level's number in Arabic numerals. |
 | `linkedStyle` | The paragraph style linked to the level. |
 | `font`, `picture` | The number's or bullet's font, and a picture bullet's image. |
+| `bold`, `italic`, `underline`, `size`, `color`, `highlight` | The number's own formatting. Absent, the paragraph's applies; setting a level, an absent one is cleared. |
+
+`lists.definition()` (.NET: `Lists.GetDefinitionAsync`) reads the list of the paragraph the selection's focus is in, without a
+dialog: its `id` (paragraphs number together exactly when theirs is the same), `name`, the list `style` it is defined
+by, the current `level` and whether it is a `bullet`, and its nine `levels` in full. Outside a list it is `null`. It is
+a query, not state: nine levels on every change would be too much to send. `setListDefinition` takes the same levels
+back, so a level read and set unchanged stays as it was.
+
+## Selecting the numbers
+
+A click on a list's number selects the numbers of that level, as Word does: `state.selection.listNumbers` is
+`{ list, level }` while they are selected, and the view shades every number of the level. Character formatting
+commands (`setBold` to `setUnderlineColor`, `setTextBorder`, text `setShading`) then format the level's numbers, one
+undo step each, and `state.formatting` reports the numbers' formatting. Any selection move ends it.
 
 ## Galleries
 

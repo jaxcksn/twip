@@ -5,7 +5,7 @@ import { EditorError, type ErrorCode } from '../errors.js';
 import type { TwipEvents } from '../events.js';
 import type { FaceInfo } from '../fonts/library.js';
 import type { AccessibleId, AccessibleNode } from '../services/accessibility.js';
-import type { Warning } from '../types.js';
+import type { LineDirection, Warning } from '../types.js';
 
 /** Structured call numbers: `TwipMethod` in `twip.h`, the C ABI's `Method`. The two lists must match exactly. */
 /** An export's options on the wire: the format, and a PDF's options beside it. */
@@ -113,6 +113,49 @@ export const Method = {
   CharacterPicture: 96,
   Bookmarks: 97,
   DocumentProperties: 98,
+  WordAtSelection: 99,
+  SelectionBounds: 100,
+  DragOut: 101,
+  DragEnd: 102,
+  DropDragged: 103,
+  SetDefaultPictureWrap: 104,
+  DefaultPictureWrap: 105,
+  SetClickAndTypeStyle: 106,
+  HistoryLabels: 107,
+  StyleDefinition: 108,
+  BuiltInStyles: 109,
+  DocumentDefaults: 110,
+  ListDefinition: 111,
+  ThemeColourGrid: 112,
+  ObjectList: 113,
+  ObjectImage: 114,
+  ShapeFillImage: 115,
+  WatermarkImage: 116,
+  PageFillImage: 117,
+  TextToTableSize: 118,
+  Notes: 119,
+  NoteSeparators: 120,
+  ColumnPreset: 121,
+  PageNumberSample: 122,
+  RecommendedMinimumStyles: 123,
+  EditableRanges: 124,
+  FieldCatalogue: 125,
+  FieldFormats: 126,
+  ComposeField: 127,
+  ParseField: 128,
+  FieldHere: 129,
+  DateFormats: 130,
+  PageVersions: 131,
+  CurrentHeading: 132,
+  FindHighlightAll: 133,
+  FindClearHighlights: 134,
+  PasteChoices: 135,
+  ClipboardHtml: 136,
+  CrossReferenceTargets: 137,
+  CaptionLabels: 138,
+  TablesOfContents: 139,
+  TocEntries: 140,
+  PasteContent: 141,
 } as const;
 
 /** A structured call number. */
@@ -144,7 +187,24 @@ export type Cursor =
   | 'cellSelect'
   | 'columnSelect'
   | 'rowSelect'
-  | 'rotate';
+  | 'rotate'
+  /** Click and Type: what a double-click here types lines up left, indented, centred or right. */
+  | 'clickAndTypeLeft'
+  | 'clickAndTypeLeftIndent'
+  | 'clickAndTypeCenter'
+  | 'clickAndTypeRight'
+  /** Between pages: a double-click hides the white space. */
+  | 'hideWhiteSpace'
+  /** On the hidden pages' meeting line: a double-click shows the white space. */
+  | 'showWhiteSpace'
+  /** The highlighter is on over text. */
+  | 'highlighter'
+  /** Over text whose lines run down or up the page: the I-beam lies across them. */
+  | 'verticalText'
+  | 'linkReady'
+  | 'linking'
+  | 'pencil'
+  | 'eraser';
 
 /** What a copy puts on the clipboard: the engine's `ClipboardData`. */
 export interface ClipboardData {
@@ -152,6 +212,8 @@ export interface ClipboardData {
   html?: string;
   /** The engine's own copy, for a paste back into it. */
   internal?: string;
+  /** A picture: a copy of an object's (`image/png`), or what the system clipboard holds for a paste. */
+  image?: { mime: string; data: Uint8Array };
 }
 
 /** Something only the view showing a session can do: the {@link Kind.HostRequest} payload. Content CSS px. */
@@ -162,8 +224,22 @@ export type HostRequest =
   | { type: 'release' }
   /** A cut or copy from the keyboard, for the system clipboard. */
   | { type: 'clipboard'; data: ClipboardData }
-  /** The caret moved: for the IME and the system caret. */
-  | { type: 'caret'; x: number; y: number; height: number; visible: boolean }
+  /**
+   * The caret moved: for the IME and the system caret. `x`, `y`, `width` and `height` are the caret bar's box: across
+   * a horizontal line `width` is 0, across a vertical one (`line` `'down'` or `'up'`) `height` is. `ends` are the bar's
+   * two ends, on the line's top side then its bottom side, when it is slanted (a text box turned by other than quarter
+   * turns); the box then bounds them.
+   */
+  | {
+      type: 'caret';
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      line: LineDirection;
+      ends?: [[number, number], [number, number]];
+      visible: boolean;
+    }
   /** Scroll the viewport's top-left to this point, after the next frame sizes the content (a zoom). */
   | { type: 'scroll'; x: number; y: number }
   /** Scroll so this rectangle shows. */
@@ -283,6 +359,11 @@ export interface Transport {
    * there is no canvas or nothing to draw.
    */
   frame(session: number, width: number, height: number): Promise<FrameInfo | null>;
+  /**
+   * Draws page `page` (from 0) whole into `width` x `height` RGBA pixels (premultiplied), as large as fits, centred:
+   * the pixels, and the size the page is drawn at.
+   */
+  pageThumbnail(session: number, page: number, width: number, height: number): Promise<{ bytes: Uint8Array; width: number; height: number }>;
   /** Receives a session's messages, after the operation that caused them and before its promise settles. */
   listen(session: number, listener: (message: Message) => void): () => void;
 }

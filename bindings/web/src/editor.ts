@@ -21,6 +21,7 @@ import { createFind, type Find } from './services/find.js';
 import { createMenus, type MenuAction, type Menus } from './services/menus.js';
 import { createLists, type Lists } from './services/lists.js';
 import { createNavigation, createStyles, type Navigation, type Styles } from './services/navigation.js';
+import { createReferences, type PasteChoices, type References } from './services/references.js';
 import { createRuler, type Ruler, type RulerModelSource, type RulerUnit, type RulerView } from './services/ruler.js';
 import { createSpelling, type Dictionary, type Spelling } from './services/spelling.js';
 import { createGestures, type GestureBinding, type Gestures, type View } from './services/view.js';
@@ -28,7 +29,28 @@ import type { EditorState } from './state.js';
 import { directTransport } from './transport/direct.js';
 import { chooseExecution, workerTransport } from './transport/worker.js';
 import { decodeEvent, type FrameInfo, Kind, Method, type Input, type Message, type Transport } from './transport/protocol.js';
-import type { Author, ClientRect, Color, DocumentProperties, OverlayColors, ShapeGalleryGroup, Warning, WordCount } from './types.js';
+import type { ObjectListEntry, ObjectWrap } from './state.js';
+import type { ChapterNumbers, NumberFormat, OpArgs, PasteAs } from './commands.js';
+import type {
+  Author,
+  ClipboardContent,
+  ClientRect,
+  Color,
+  DocumentProperties,
+  EditableRangeInfo,
+  NoteInfo,
+  NoteSeparators,
+  PageThumbnail,
+  DragSource,
+  HistoryLabels,
+  OverlayColors,
+  SelectionBounds,
+  ShapeGalleryGroup,
+  StyleId,
+  ThemeColumn,
+  Warning,
+  WordCount,
+} from './types.js';
 
 /** Options for a new session. */
 export interface SessionOptions {
@@ -115,6 +137,8 @@ export interface PdfOptions {
   openPassword?: string;
   /** Written to the PDF's keywords metadata, in order. Blank entries are dropped. */
   keywords?: readonly string[];
+  /** Prints hidden text (Word's Print hidden text). Default: off, whatever the view shows. */
+  hiddenText?: boolean;
 }
 
 /** What {@link HeadlessEditor.export} writes: DOCX, or PDF with its options. */
@@ -166,6 +190,18 @@ function deepFreeze<T>(value: T): T {
     for (const v of Object.values(value)) deepFreeze(v);
   }
   return value;
+}
+
+/** Base64 as the engine sends bytes, as bytes. */
+function bytesOf(wire: string | null): Uint8Array | null {
+  return wire === null ? null : Uint8Array.from(atob(wire), (c) => c.charCodeAt(0));
+}
+
+/** Clipboard content as the engine sends it, its picture's base64 as bytes. */
+export function contentOf(d: ClipboardContent): ClipboardContent {
+  const image = d.image as { mime: string; data: Uint8Array | string } | undefined;
+  if (image && typeof image.data === 'string') return { ...d, image: { mime: image.mime, data: bytesOf(image.data)! } };
+  return d;
 }
 
 /** The state in the SDK's shape: a picture's image, base64 as the engine sends it, as bytes. */
@@ -393,6 +429,8 @@ export class HeadlessEditor {
   readonly navigation: Navigation;
   /** The document's styles. */
   readonly styles: Styles;
+  /** Tables of contents, captions and cross-references. */
+  readonly references: References;
   /** The list galleries, and the characters of fonts for a symbol picker. */
   readonly lists: Lists;
   /** Tracked changes and comments. */
@@ -425,6 +463,7 @@ export class HeadlessEditor {
     this.spelling = createSpelling(session);
     this.navigation = createNavigation(session);
     this.styles = createStyles(session);
+    this.references = createReferences(session);
     this.lists = createLists(session);
     this.review = createReview(session);
     this.elements = createElements(session);
@@ -516,9 +555,191 @@ export class HeadlessEditor {
     return this.#set(Method.SetAuthor, author);
   }
 
-  /** Counts words, characters, paragraphs, lines and pages. */
-  wordCount(): Promise<WordCount> {
-    return sessionOf(this).call(Method.WordCount);
+  /**
+   * Counts words, characters, paragraphs, lines and pages: the document's, or with `selection` the selected text's (the
+   * document's when nothing is selected). Text boxes, footnotes and endnotes count unless
+   * `includeTextboxesAndNotes` is false. A count walks the whole document, so it isn't part of the state: a status
+   * bar's "N of M words" asks twice (with `selection` and without) when it refreshes.
+   */
+  wordCount(options?: { selection?: boolean; includeTextboxesAndNotes?: boolean }): Promise<WordCount> {
+    return sessionOf(this).call(Method.WordCount, options ?? null);
+  }
+
+  /**
+   * The undo and redo lists (the Undo and Redo drop-downs): at most `limit` labels each (default and most 100),
+   * most recent first. Undo `n` of them with `commands.undo({ count: n })`.
+   */
+  historyLabels(options?: { limit?: number }): Promise<HistoryLabels> {
+    return sessionOf(this).call(Method.HistoryLabels, options ?? null);
+  }
+
+  /**
+   * The theme colour grid colour pickers show: a column for each of Background 1, Text 1, Background 2, Text 2 and
+   * Accent 1 to 6, each the colour then its five lighter and darker variants, named. Ask again when the state's
+   * `themeColours` change.
+   */
+  themeColourGrid(): Promise<ThemeColumn[]> {
+    return sessionOf(this).call(Method.ThemeColourGrid);
+  }
+
+  /**
+   * The floating objects on page `page` (from 0) the selection's story reaches, front first, hidden ones too, each
+   * group's objects within it, as Word's Selection Pane lists them. Empty past the last page.
+   */
+  objectList(page: number): Promise<ObjectListEntry[]> {
+    return sessionOf(this).call(Method.ObjectList, page);
+  }
+
+  /** The selected picture's image (a group child's when one is selected), as the document holds it; `null` without one. */
+  async objectImage(): Promise<Uint8Array | null> {
+    return bytesOf(await sessionOf(this).call<string | null>(Method.ObjectImage));
+  }
+
+  /** The selected shape's picture fill's image (the state's fill carries no bytes); `null` without one. */
+  async shapeFillImage(): Promise<Uint8Array | null> {
+    return bytesOf(await sessionOf(this).call<string | null>(Method.ShapeFillImage));
+  }
+
+  /** Section `section`'s (from 0) picture watermark's image; `null` without one. */
+  async watermarkImage(section: number): Promise<Uint8Array | null> {
+    return bytesOf(await sessionOf(this).call<string | null>(Method.WatermarkImage, section));
+  }
+
+  /** The page colour's picture or texture; `null` without one. */
+  async pageFillImage(): Promise<Uint8Array | null> {
+    return bytesOf(await sessionOf(this).call<string | null>(Method.PageFillImage));
+  }
+
+  /**
+   * The rows and columns `convertTextToTable` with `options` would make of the selection (Convert Text to Table's
+   * Number of rows and columns); `null` when it can't convert it.
+   */
+  textToTableSize(options: {
+    separator: 'paragraphs' | 'tabs' | 'commas' | 'other';
+    character?: string;
+    columns?: number;
+  }): Promise<{ rows: number; columns: number } | null> {
+    return sessionOf(this).call(Method.TextToTableSize, options);
+  }
+
+  /** The footnotes, then the endnotes, each in their references' order (those nothing refers to after), for a notes list. */
+  notes(): Promise<NoteInfo[]> {
+    return sessionOf(this).call(Method.Notes);
+  }
+
+  /** The separators of footnotes or endnotes (`setNoteSeparator` changes them). */
+  noteSeparators(kind: 'footnote' | 'endnote'): Promise<NoteSeparators> {
+    return sessionOf(this).call(Method.NoteSeparators, kind);
+  }
+
+  /** The columns one of Word's column presets gives the selection's section, for `setColumns`. */
+  columnPreset(preset: 'one' | 'two' | 'three' | 'left' | 'right'): Promise<OpArgs<'setColumns'>> {
+    return sessionOf(this).call(Method.ColumnPreset, preset);
+  }
+
+  /** The example Format Page Numbers shows for a format, with chapter numbers when `chapterSeparator` is given. */
+  pageNumberSample(format: NumberFormat, chapterSeparator?: ChapterNumbers['separator']): Promise<string> {
+    return sessionOf(this).call(Method.PageNumberSample, { format, chapterSeparator });
+  }
+
+  /** The styles Formatting Restrictions' Recommended Minimum leaves allowed (`setStyleVisibility` locks the others). */
+  recommendedMinimumStyles(): Promise<StyleId[]> {
+    return sessionOf(this).call(Method.RecommendedMinimumStyles);
+  }
+
+  /** The editable ranges, in document order: each stretch's permissions, editors and page. */
+  editableRanges(): Promise<EditableRangeInfo[]> {
+    return sessionOf(this).call(Method.EditableRanges);
+  }
+
+  /**
+   * One version per laid-out page, from page 0: a page keeps its version while layout keeps it, and takes a new one
+   * (never 0, never reused) when laid out again. Key cached thumbnails by it.
+   */
+  pageVersions(): Promise<number[]> {
+    return sessionOf(this).call(Method.PageVersions);
+  }
+
+  /**
+   * Page `page` (from 0) drawn whole into `width` x `height` device pixels, as large as fits, centred over the view's
+   * background, for a Pages pane. Rejects `invalid-argument` for a page not laid out or an empty size.
+   */
+  async pageThumbnail(page: number, width: number, height: number): Promise<PageThumbnail> {
+    const s = sessionOf(this);
+    const drawn = await s.transport.pageThumbnail(s.id, page, width, height);
+    const pixels = new Uint8ClampedArray(drawn.bytes.buffer as ArrayBuffer, drawn.bytes.byteOffset, drawn.bytes.byteLength);
+    return { pixels, width: drawn.width, height: drawn.height };
+  }
+
+  /**
+   * Where the selection is on screen, client px over the pages in view: each selected line's or cell's box, each selected
+   * object's frame, and the box around them. Ask again on `stateChanged` and after a scroll, to place a floating toolbar.
+   */
+  selectionBounds(): Promise<SelectionBounds> {
+    return sessionOf(this).call(Method.SelectionBounds);
+  }
+
+  /**
+   * Starts a drag of the selection out of the editor, to another application or editor: what the platform drag carries
+   * (a copy's clipboard data). `null` for a caret, or with text drag and drop off. End it with {@link HeadlessEditor.dragEnd},
+   * or {@link HeadlessEditor.dropDragged} when it comes back.
+   */
+  async dragOut(): Promise<DragSource | null> {
+    const d = await sessionOf(this).call<DragSource | null>(Method.DragOut);
+    return d && { ...d, data: contentOf(d.data) };
+  }
+
+  /**
+   * Copies (or cuts) the selection for an application that owns the system clipboard: what to put on it (a copy of an
+   * object carries its picture; its HTML gives objects as alternative text, {@link HeadlessEditor.clipboardHtml} the
+   * HTML with them drawn). `null` when nothing is selected.
+   */
+  async copyContent(options?: { cut?: boolean }): Promise<ClipboardContent | null> {
+    const d = await sessionOf(this).call<ClipboardContent | null>(Method.Copy, { cut: options?.cut ?? false });
+    return d && contentOf(d);
+  }
+
+  /** The HTML of the copy `token` (its `internal`) names, its objects drawn as pictures: for a target that takes HTML. */
+  clipboardHtml(token: string): Promise<string> {
+    return sessionOf(this).call(Method.ClipboardHtml, token);
+  }
+
+  /**
+   * Pastes clipboard content the application read, as one transaction: as the paste options say for where it came
+   * from, or as `as` takes it (Paste Special; refused when the clipboard holds nothing to paste that way).
+   */
+  pasteContent(data: ClipboardContent, options?: { as?: PasteAs }): Promise<void> {
+    return sessionOf(this).call(Method.PasteContent, { data, ...(options?.as ? { as: options.as } : {}) });
+  }
+
+  /** What `data` can paste as at the selection, in Word's order (Paste Special's list), and what Ctrl+V takes. */
+  pasteChoices(data: ClipboardContent): Promise<PasteChoices> {
+    return sessionOf(this).call(Method.PasteChoices, data);
+  }
+
+  /** The drag out ended elsewhere: `'move'` deletes the dragged text as one undo step, unless it changed since. */
+  dragEnd(effect: 'none' | 'copy' | 'move'): Promise<void> {
+    return sessionOf(this).call(Method.DragEnd, effect);
+  }
+
+  /** The drag out came back and dropped at `at` (viewport CSS px): the text moves there, or is copied, as one undo step. */
+  dropDragged(at: { x: number; y: number }, copy: boolean): Promise<void> {
+    return sessionOf(this).commit(Method.DropDragged, { at, copy });
+  }
+
+  /** The wrap pictures inserted from now on take (Set as Default Layout); pasted content keeps its own. Never saved. */
+  setDefaultPictureWrap(wrap: ObjectWrap): Promise<void> {
+    return sessionOf(this).call(Method.SetDefaultPictureWrap, wrap);
+  }
+
+  /** The wrap inserted pictures take (`'inline'` by default). */
+  defaultPictureWrap(): Promise<ObjectWrap> {
+    return sessionOf(this).call(Method.DefaultPictureWrap);
+  }
+
+  /** The paragraph style Click and Type gives the paragraphs it adds; `null` is the default paragraph style. Never saved. */
+  setClickAndTypeStyle(styleId: StyleId | null): Promise<void> {
+    return sessionOf(this).call(Method.SetClickAndTypeStyle, styleId);
   }
 
   /** The document's properties (core, extended and custom) and variables. */
@@ -555,6 +776,12 @@ export class Editor extends HeadlessEditor {
   readonly gestures: Gestures;
   readonly #focus: () => void;
   readonly #drawn: () => Promise<void>;
+  readonly #pasteChoices: () => Promise<PasteChoices>;
+
+  /** What clipboard content (by default the system clipboard's) can paste as at the selection: Paste Special's list. */
+  override pasteChoices(data?: ClipboardContent): Promise<PasteChoices> {
+    return data ? super.pasteChoices(data) : this.#pasteChoices();
+  }
 
   /** Editors are made by {@link Editor.mount}. */
   protected constructor() {
@@ -565,12 +792,15 @@ export class Editor extends HeadlessEditor {
     this.executionMode = mounting!.execution;
     this.#focus = host.focus;
     this.#drawn = host.ready;
+    this.#pasteChoices = host.pasteChoices;
     this.ruler = createRuler(session, rulerView);
-    this.review = Object.assign(createReview(session), createMountedReview(session), {
+    const review = Object.assign(createReview(session), createMountedReview(session), {
       setMarkupPaneWidth: host.setMarkupPaneWidth,
       balloonLayer: host.balloonLayer,
       attachBalloon: host.attachBalloon,
+      setBalloonOptions: host.setBalloonOptions,
     });
+    this.review = Object.defineProperty(review, 'balloonOptions', { get: host.balloonOptions, enumerable: true }) as MountedReview;
     const { hitTest, dragOver, dragLeave, drop } = host;
     this.elements = Object.assign(createElements(session), { hitTest, dragOver, dragLeave, drop });
     this.view = host.view;
@@ -582,7 +812,7 @@ export class Editor extends HeadlessEditor {
     (this as { menus: Menus }).menus = Object.freeze({
       ...this.menus,
       invoke: (action: MenuAction) => {
-        const command = (action as unknown as { command?: { type?: string; as?: 'formatted' | 'text' } }).command;
+        const command = (action as unknown as { command?: { type?: string; as?: PasteAs } }).command;
         return command?.type === 'paste' ? host.paste(command.as ? { as: command.as } : undefined) : invoke(action);
       },
     });

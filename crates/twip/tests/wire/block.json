@@ -3,6 +3,12 @@
     "elements": [
       "field-1"
     ],
+    "hiddenMarks": [
+      {
+        "at": 12,
+        "styleSeparator": true
+      }
+    ],
     "kind": "paragraph",
     "textLength": 42
   },

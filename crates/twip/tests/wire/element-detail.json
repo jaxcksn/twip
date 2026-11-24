@@ -9,16 +9,21 @@
       "field-9"
     ],
     "code": "DATE",
+    "date": "2026-10-27T00:00:00Z",
+    "dirty": false,
     "display": "2026-10-27",
     "id": "control-3",
     "kind": "date",
     "lock": "both",
     "locked": true,
     "options": {
-      "format": "yyyy-MM-dd"
+      "calendar": "gregorian",
+      "format": "yyyy-MM-dd",
+      "storeAs": "dateTime"
     },
     "parent": null,
     "placeholder": "Pick a date",
+    "showingCode": false,
     "story": "footer",
     "tag": "due",
     "title": "Due"

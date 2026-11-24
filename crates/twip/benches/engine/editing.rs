@@ -51,7 +51,7 @@ impl Input {
             Input::Enter => Command::InsertParagraph,
             Input::Down => commands::moving(MoveBy::Line, Dir::Forward, false),
             Input::Right => commands::moving(MoveBy::Char, Dir::Forward, false),
-            Input::Undo => Command::Undo,
+            Input::Undo => Command::Undo(Default::default()),
         }
     }
 }
@@ -111,7 +111,7 @@ fn typing_nested(bencher: Bencher, which: &str) {
         .with_inputs(|| {
             let mut e = e.borrow_mut();
             if std::mem::replace(&mut typed, true) {
-                e.execute(Command::Undo, &fonts);
+                e.execute(Command::Undo(Default::default()), &fonts);
             }
             caret(&mut e, para, len);
             while e.idle(&fonts) {}
@@ -171,7 +171,7 @@ fn typing_in(bencher: Bencher, at: &str) {
         .with_inputs(|| {
             let mut e = e.borrow_mut();
             if std::mem::replace(&mut typed, true) {
-                e.execute(Command::Undo, &fonts);
+                e.execute(Command::Undo(Default::default()), &fonts);
             }
             caret(&mut e, para, len);
             while e.idle(&fonts) {}
@@ -280,7 +280,7 @@ mod merge {
             .with_inputs(|| {
                 let mut e = e.borrow_mut();
                 if std::mem::replace(&mut renamed, true) {
-                    e.execute(Command::Undo, &fonts);
+                    e.execute(Command::Undo(Default::default()), &fonts);
                 }
                 while e.idle(&fonts) {}
                 command(rename.clone())

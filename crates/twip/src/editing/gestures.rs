@@ -55,6 +55,25 @@ pub struct CanvasPress {
     pub target: GestureTarget,
 }
 
+impl CanvasPress {
+    /// The gesture, as the API names it.
+    fn gesture(self) -> Gesture {
+        use CanvasGesture as C;
+        let id = match self.gesture {
+            C::ObjectDoubleClick => GestureId::ObjectDoubleClick,
+            C::ObjectResizeDrag => GestureId::ObjectResizeDrag,
+            C::ShapeHandleDrag => GestureId::ShapeHandleDrag,
+            C::TableMoveDrag => GestureId::TableMoveDrag,
+            C::TableZoneClick => GestureId::TableZoneClick,
+            C::TableInsertClick => GestureId::TableInsertClick,
+            C::NoteDoubleClick => GestureId::NoteDoubleClick,
+            C::ClickAndType => GestureId::ClickAndType,
+            C::PageGapDoubleClick => GestureId::PageGapDoubleClick,
+        };
+        Gesture { id, page: self.page, target: self.target }
+    }
+}
+
 fn area(kind: AreaKind) -> GestureTarget {
     GestureTarget::Area { kind }
 }
@@ -114,7 +133,16 @@ impl Editor {
         }
     }
 
+    /// The gesture a press at (`x`, `y`) makes, before the press runs: the text, margin, area and control gestures,
+    /// then the canvas's own.
     pub(crate) fn press_gesture(&mut self, x: f64, y: f64, clicks: u8, mods: Mods, fonts: &Fonts) -> Option<Gesture> {
+        if let Some(g) = self.text_press_gesture(x, y, clicks, mods, fonts) {
+            return Some(g);
+        }
+        self.canvas_press(x, y, clicks, mods, fonts).map(CanvasPress::gesture)
+    }
+
+    fn text_press_gesture(&mut self, x: f64, y: f64, clicks: u8, mods: Mods, fonts: &Fonts) -> Option<Gesture> {
         use GestureId as G;
         let stack = self.stack();
         if clicks >= 2 && stack.toggles_white_space(y, 3.0 / self.viewport.zoom.max(0.1)) {
@@ -162,6 +190,13 @@ impl Editor {
         if !shift && self.checkbox_toggles_at(x, y, fonts).is_some() {
             return None;
         }
+        if !shift && let Some((f, press)) = self.form_field_press_at(x, y, clicks, fonts) {
+            let id = match press {
+                super::forms::FormPress::OpenList => G::FormFieldClick,
+                super::forms::FormPress::Options => G::FormFieldDoubleClick,
+            };
+            return found(id, GestureTarget::Menu(MenuTarget::Element { id: super::api_id(crate::docx::ElementId::Field(f)) }));
+        }
         if clicks == 1
             && !shift
             && (ctrl || self.mode == Mode::ReadOnly)
@@ -197,9 +232,12 @@ impl Editor {
     }
 
     pub(crate) fn release_gesture(&mut self, x: f64, y: f64) -> Option<Gesture> {
+        if let Some(c) = self.canvas_release(x, y) {
+            return Some(c.gesture());
+        }
         let (id, target) = if self.border_drag.as_ref().is_some_and(|d| d.now != d.start) {
             (GestureId::TableBorderDrag, area(AreaKind::TableBorder))
-        } else if self.object_drag.as_ref().is_some_and(|d| d.now != d.start) {
+        } else if self.object_drag.as_ref().is_some_and(|d| d.handle.is_none() && d.now != d.start) {
             let text_box = self.selected_object().is_some_and(|o| o.kind == ObjectKind::TextBox);
             (GestureId::ObjectDrag, GestureTarget::Menu(if text_box { MenuTarget::TextBox } else { MenuTarget::Picture }))
         } else if self.text_drag.as_ref().is_some_and(|d| d.moved) {
@@ -220,7 +258,7 @@ impl Editor {
             return None;
         }
         if clicks == 2 && self.stack().toggles_white_space(y, 3.0 / self.viewport.zoom.max(0.1)) {
-            return found(C::PageGapDoubleClick, GestureTarget::Area { kind: AreaKind::Margin });
+            return found(C::PageGapDoubleClick, GestureTarget::Area { kind: AreaKind::PageGap });
         }
         if self.handle_at(x, y, fonts).is_some() || self.shape_handle_at(x, y).is_some() {
             return None;
@@ -375,7 +413,7 @@ mod tests {
 
         fn at(&mut self, text: &str) -> Point {
             let s = self.s();
-            assert!(s.find(&FindQuery { text: text.into(), ..FindQuery::default() }, Order::Next).found, "{text}");
+            assert!(s.find(&FindQuery { text: text.into(), ..FindQuery::default() }, Order::Next).expect("finds").found, "{text}");
             let end = s.host().frame_info();
             let back = MoveSelection { by: MoveUnit::Character, direction: Direction::Backward, extend: None };
             s.run(Command::MoveSelection(back)).expect("moves");
@@ -384,7 +422,7 @@ mod tests {
         }
 
         fn select(&mut self, text: &str) {
-            assert!(self.s().find(&FindQuery { text: text.into(), ..FindQuery::default() }, Order::Next).found, "{text}");
+            assert!(self.s().find(&FindQuery { text: text.into(), ..FindQuery::default() }, Order::Next).expect("finds").found, "{text}");
         }
 
         fn click(&mut self, at: Point, clicks: u8, mods: Modifiers) {
@@ -407,7 +445,7 @@ mod tests {
         }
 
         fn has(&mut self, text: &str) -> bool {
-            !self.s().find_all(&FindQuery { text: text.into(), ..FindQuery::default() }).is_empty()
+            !self.s().find_all(&FindQuery { text: text.into(), ..FindQuery::default() }).expect("finds").matches.is_empty()
         }
 
         fn take(&mut self) -> Vec<Event> {
@@ -423,7 +461,7 @@ mod tests {
         }
 
         fn undo(&mut self) {
-            self.s().run(Command::Undo).expect("undoes");
+            self.s().run(Command::Undo(Default::default())).expect("undoes");
         }
     }
 
@@ -507,7 +545,12 @@ mod tests {
         let tip = f.take().into_iter().find_map(|e| if let Event::Tooltip(t) = e { t } else { None }).expect("a tooltip");
         assert_eq!((tip.kind, tip.text.as_str()), (crate::api::services::TooltipKind::Link, "https://example.com/"));
         assert!(tip.rect.left <= link.x && link.x <= tip.rect.left + tip.rect.width && tip.at.client_y >= link.y);
+        // Above the first page, the white space's tip; on the page away from the link, none.
         f.s().pointer(PointerKind::Move, Point { x: 5.0, y: 5.0 }, PointerButton::Primary, 0, NONE);
+        let gap = f.take().into_iter().find_map(|e| if let Event::Tooltip(t) = e { t } else { None }).expect("the gap's tooltip");
+        assert_eq!(gap.kind, crate::api::services::TooltipKind::WhiteSpace);
+        let page = f.s().host().visible_pages()[0].rect;
+        f.s().pointer(PointerKind::Move, Point { x: page.left + 10.0, y: page.top + 10.0 }, PointerButton::Primary, 0, NONE);
         assert!(f.take().contains(&Event::Tooltip(None)));
     }
 
@@ -559,7 +602,7 @@ mod tests {
     fn bindings_emit_ignore_or_run_an_op_and_reset() {
         let mut f = Fixture::open("editor/FX-bad-image.docx");
         let bindings = f.s().gestures().bindings();
-        assert_eq!(bindings.len(), 21);
+        assert_eq!(bindings.len(), 32);
         assert!(bindings.iter().all(|b| b.action == GestureAction::Default && !b.label.is_empty()));
         let at = f.at("Type");
         f.click(at, 1, NONE);
@@ -717,11 +760,14 @@ mod tests {
         let state = |s: &mut Session| s.state().commands.get(&CommandId::SetTablePosition).cloned().expect("a state");
         let st = state(s);
         assert!(st.enabled && st.value.is_none(), "{st:?}");
-        let to = TablePosition { horizontal: None, vertical: None, wrap_distance: None };
+        let to = TablePosition { horizontal: None, vertical: None, wrap_distance: None, allow_overlap: None };
         s.run(Command::SetTablePosition(Some(to))).expect("positions");
         let st = state(s);
         assert!(
-            matches!(st.value, Some(CommandValue::TablePosition(TablePosition { horizontal: Some(_), vertical: Some(_), wrap_distance: Some(_) }))),
+            matches!(
+                st.value,
+                Some(CommandValue::TablePosition(TablePosition { horizontal: Some(_), vertical: Some(_), wrap_distance: Some(_), .. }))
+            ),
             "{st:?}"
         );
     }

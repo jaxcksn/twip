@@ -4,6 +4,7 @@
     "elements": [
       {
         "code": "SUBTEMPLATE Violation",
+        "dirty": false,
         "display": "",
         "id": "field-7",
         "kind": "field",
@@ -15,6 +16,7 @@
           "nearMatch": "Violation",
           "resolution": "nearMatch"
         },
+        "showingCode": false,
         "story": "subTemplate",
         "subTemplate": "Notice"
       }

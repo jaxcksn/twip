@@ -70,7 +70,7 @@ mod tests {
         let after = v.update(e.snapshot().pages()).to_vec();
         assert_ne!(after[0], first[0], "the page typed on");
         assert_eq!(after[1..], first[1..], "the pages layout kept");
-        e.execute(C::Undo, fonts());
+        e.execute(C::Undo(Default::default()), fonts());
         e.complete(fonts());
         let undone = v.update(e.snapshot().pages()).to_vec();
         assert!(undone[0] != first[0] && undone[0] != after[0], "a page laid out again never takes an old version");

@@ -99,6 +99,16 @@ impl<'de, T: DeserializeOwned> Deserialize<'de> for NoneOr<T> {
     }
 }
 
+/// One of the theme's two fonts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ThemeFont {
+    /// The heading font (`+Headings`, the theme's major font).
+    Headings,
+    /// The body font (`+Body`, the theme's minor font).
+    Body,
+}
+
 /// A paragraph's outline level: body text, or a level from 1 to 9. On the wire: `'body'` or the number.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum OutlineLevel {
@@ -204,6 +214,85 @@ ids! {
     MatchId,
     /// A style, by its `w:styleId`.
     StyleId,
+    /// A paragraph, as a decimal string: stable while the document is open and the paragraph exists (a split keeps it
+    /// on the first half, a join keeps the first paragraph's), not saved in the file.
+    ParagraphId,
+    /// A floating object, as a decimal string: stable while the document is open and the object exists (undo restores
+    /// it), not saved in the file.
+    FloatId,
+}
+
+/// A floating object, or one of the objects in a floating group.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ObjectId {
+    /// The floating object.
+    pub float: FloatId,
+    /// A group child's place: its index in the group, then in each group within it; empty for the floating object.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub path: Vec<u16>,
+}
+
+impl ObjectId {
+    /// The floating object `id` itself.
+    pub(crate) fn of(id: crate::layout::FloatId) -> ObjectId {
+        ObjectId { float: FloatId(id.0.to_string()), path: Vec::new() }
+    }
+
+    /// The engine's id for the floating object; `None` when it isn't a number.
+    pub(crate) fn float_id(&self) -> Option<crate::layout::FloatId> {
+        self.float.0.parse().ok().map(crate::layout::FloatId)
+    }
+}
+
+/// A place in a paragraph's text.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TextPoint {
+    /// The paragraph.
+    pub paragraph: ParagraphId,
+    /// The offset in the paragraph's text, in Unicode scalar values: a field counts as its result, an object or a
+    /// note reference as one U+FFFC, and hidden and deleted text count. Past the end reads as the end.
+    pub offset: u32,
+}
+
+/// A range of text from one place to another.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TextRange {
+    /// Where it starts. State gives the earlier end first; a command takes the ends either way round.
+    pub start: TextPoint,
+    /// Where it ends.
+    pub end: TextPoint,
+}
+
+/// A rectangular block of a table's cells.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CellBlock {
+    /// The start of the block's first cell's text: names the table.
+    pub start: TextPoint,
+    /// The first row, from 0.
+    pub first_row: u32,
+    /// The first grid column, from 0.
+    pub first_column: u32,
+    /// The last row.
+    pub last_row: u32,
+    /// The last grid column.
+    pub last_column: u32,
+}
+
+/// The way a line of text runs on the page.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum LineDirection {
+    /// Across the page (the caret is a vertical bar).
+    #[default]
+    Horizontal,
+    /// Down the page, as vertical East Asian text runs (the caret is a horizontal bar).
+    Down,
+    /// Up the page, as text turned counter-clockwise runs.
+    Up,
 }
 
 /// The two ways along a sequence.
@@ -656,6 +745,16 @@ pub enum ControlKind {
     Group,
     /// A section that repeats per item.
     RepeatingSection,
+    /// A building block gallery: it offers the building blocks of a gallery and category.
+    BuildingBlockGallery,
+    /// A building block inserted from a gallery (a cover page, a table of contents); read only.
+    BuildingBlock,
+    /// A citation; read only.
+    Citation,
+    /// A bibliography; read only.
+    Bibliography,
+    /// An equation; read only.
+    Equation,
 }
 
 /// What a content control's lock keeps: the control itself, its content, or both.
@@ -713,6 +812,20 @@ pub enum ControlOptions {
     Picture(PictureOptions),
     /// A repeating section's options.
     RepeatingSection(RepeatingSectionOptions),
+    /// A building block gallery's gallery and category.
+    Gallery(GalleryOptions),
+}
+
+/// The building blocks a building block gallery control offers.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct GalleryOptions {
+    /// The gallery, by Word's name for it (`Quick Parts`, `AutoText`, `Custom 1`); `None` or `""`: any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gallery: Option<String>,
+    /// The category in the gallery; `None` or `""`: any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
 }
 
 /// A repeating section control's options.
@@ -775,6 +888,139 @@ pub struct DateOptions {
     /// The locale (`en-US`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub locale: Option<String>,
+    /// The calendar its dates are in (default Gregorian).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub calendar: Option<CalendarType>,
+    /// What a bound date control stores in its data (default the date and time).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub store_as: Option<DateStorage>,
+}
+
+/// One of the separators between the text and the notes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum NoteSeparatorPart {
+    /// Above the notes on the page they start.
+    Separator,
+    /// Above the notes continued from the page before.
+    ContinuationSeparator,
+    /// Below notes that continue on the next page.
+    ContinuationNotice,
+}
+
+/// A group or a person an editable range lets edit: `{ "group": "editors" }` or `{ "user": "ada@example.com" }`.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum RangeEditorRef {
+    /// A group: `everyone`, `administrators`, `contributors`, `editors`, `owners`, `current`.
+    Group(String),
+    /// One person: a name or email address.
+    User(String),
+}
+
+/// One of Word's column presets.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ColumnPreset {
+    /// One column.
+    One,
+    /// Two equal columns.
+    Two,
+    /// Three equal columns.
+    Three,
+    /// Two, the narrow one on the left.
+    Left,
+    /// Two, the narrow one on the right.
+    Right,
+}
+
+/// A date control's calendar.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CalendarType {
+    /// Gregorian (localized).
+    #[default]
+    Gregorian,
+    /// Hijri.
+    Hijri,
+    /// Hebrew lunar.
+    Hebrew,
+    /// Taiwan.
+    Taiwan,
+    /// Japanese emperor era.
+    Japan,
+    /// Thai.
+    Thai,
+    /// Korean Tangun era.
+    Korea,
+    /// Saka era.
+    Saka,
+    /// Gregorian, transliterated English.
+    GregorianXlitEnglish,
+    /// Gregorian, transliterated French.
+    GregorianXlitFrench,
+    /// Gregorian, US English.
+    GregorianUs,
+    /// Gregorian, Middle East French.
+    GregorianMeFrench,
+    /// Gregorian, Arabic.
+    GregorianArabic,
+}
+
+impl CalendarType {
+    /// Every calendar.
+    pub const ALL: &'static [CalendarType] = &[
+        CalendarType::Gregorian,
+        CalendarType::Hijri,
+        CalendarType::Hebrew,
+        CalendarType::Taiwan,
+        CalendarType::Japan,
+        CalendarType::Thai,
+        CalendarType::Korea,
+        CalendarType::Saka,
+        CalendarType::GregorianXlitEnglish,
+        CalendarType::GregorianXlitFrench,
+        CalendarType::GregorianUs,
+        CalendarType::GregorianMeFrench,
+        CalendarType::GregorianArabic,
+    ];
+
+    /// Its name as documents write it (`gregorianUs`).
+    pub fn val(self) -> &'static str {
+        match self {
+            CalendarType::Gregorian => "gregorian",
+            CalendarType::Hijri => "hijri",
+            CalendarType::Hebrew => "hebrew",
+            CalendarType::Taiwan => "taiwan",
+            CalendarType::Japan => "japan",
+            CalendarType::Thai => "thai",
+            CalendarType::Korea => "korea",
+            CalendarType::Saka => "saka",
+            CalendarType::GregorianXlitEnglish => "gregorianXlitEnglish",
+            CalendarType::GregorianXlitFrench => "gregorianXlitFrench",
+            CalendarType::GregorianUs => "gregorianUs",
+            CalendarType::GregorianMeFrench => "gregorianMeFrench",
+            CalendarType::GregorianArabic => "gregorianArabic",
+        }
+    }
+
+    /// The calendar named `val`.
+    pub fn of_val(val: &str) -> Option<CalendarType> {
+        CalendarType::ALL.iter().copied().find(|c| c.val() == val)
+    }
+}
+
+/// What a bound date control stores in its data.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DateStorage {
+    /// The text it shows.
+    Text,
+    /// The date.
+    Date,
+    /// The date and time.
+    #[default]
+    DateTime,
 }
 
 /// A drop-down's or combo box's entries.

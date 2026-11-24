@@ -81,7 +81,7 @@ fn a_picture_controls_handles_resize_it() {
     let again = Editor::open(&bytes, fonts()).expect("reopens");
     let (_, props) = control(&again, "Placeholder:Signature.X");
     assert!(props.showing_placeholder && props.alias.as_deref() == Some("Signature"));
-    r.e.execute(Command::Undo, fonts());
+    r.e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(size(&r.e, "Placeholder:Signature.X"), (w, h));
 }
 
@@ -149,7 +149,7 @@ fn dragging_a_picture_control_moves_its_control() {
     assert_eq!((props.alias.as_deref(), props.showing_placeholder), (Some("Signature"), true));
     assert_eq!(r.e.document().controls.values().filter(|k| k.props.tag.as_deref() == Some("Placeholder:Signature.X")).count(), 1);
     assert_eq!(r.e.history().undo_depth(), depth + 1, "one step");
-    r.e.execute(Command::Undo, fonts());
+    r.e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(place(&r.e, "Placeholder:Signature.X").0, p0);
 
     let k = pick(&mut r, "Logo");
@@ -190,7 +190,7 @@ fn protected_pictures_keep_their_picture() {
     pick(&mut r, "Placeholder:Signature.X");
     r.step(&json!({ "key": "Delete" }));
     assert!(!has(&r.e, "Placeholder:Signature.X") && pictures(&r.e) == n - 1, "design mode: the whole control goes");
-    r.e.execute(Command::Undo, fonts());
+    r.e.execute(Command::Undo(Default::default()), fonts());
     assert!(has(&r.e, "Placeholder:Signature.X") && pictures(&r.e) == n, "one undo step");
 
     let mut r = Run::open(FX, "protected editing");
@@ -253,7 +253,7 @@ fn a_protected_floating_picture_control_goes_with_its_box() {
     assert_eq!(tag_of(&r.e).as_deref(), Some("Placeholder:Secure.Y"), "{:?}", r.e.selection());
     r.step(&json!({ "key": "Delete" }));
     assert_eq!((body_floats(&r.e).len(), has(&r.e)), (floats - 1, false), "the box goes with the control");
-    r.e.execute(Command::Undo, fonts());
+    r.e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!((body_floats(&r.e).len(), has(&r.e)), (floats, true), "one undo step");
 }
 
@@ -306,6 +306,7 @@ fn floating_picture_control_round_trip() {
             image: Some(crate::api::value::Bytes(png)),
             docx: None,
             building_block: None,
+            date: None,
         }),
         fonts(),
     );
@@ -391,7 +392,7 @@ fn dragging_a_picture_control_later_in_its_paragraph_keeps_its_control() {
     let pic = p.inlines.iter().position(|i| matches!(i, crate::docx::Inline::Picture(..))).expect("the picture");
     assert!(matches!(p.inlines[pic - 1], crate::docx::Inline::ControlStart(x) if x == c));
     assert!(matches!(p.inlines[pic + 1], crate::docx::Inline::ControlEnd(x) if x == c));
-    r.e.execute(Command::Undo, fonts());
+    r.e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(place(&r.e, tag), (para, offset, true));
 }
 
@@ -404,6 +405,7 @@ fn fill_image(e: &mut Editor, c: ControlId, data: Vec<u8>) -> crate::editing::co
             image: Some(crate::api::value::Bytes(data)),
             docx: None,
             building_block: None,
+            date: None,
         }),
         fonts(),
     )
@@ -605,7 +607,7 @@ fn pasting_a_picture_over_a_picture_control_fills_it() {
         let k = (w.0 / 40.0).min(w.1 / 10.0);
         assert!((s.0 - 40.0 * k).abs() <= 0.05 && (s.1 - 10.0 * k).abs() <= 0.05, "fitted to its box, its shape kept: {s:?} in {w:?}");
         assert_eq!(r.e.history().next_undo(), Some("Paste"));
-        r.e.execute(Command::Undo, fonts());
+        r.e.execute(Command::Undo(Default::default()), fonts());
         assert_eq!((image_of(&r.e, c), size_of(&r.e, c)), (was, size), "one undo step");
     }
 }

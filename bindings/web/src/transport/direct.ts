@@ -25,9 +25,9 @@ const statusCodes: ErrorCode[] = [
   'internal',
 ];
 
-/** A `TwipBuf` is `{ ptr, len }`: two 32-bit words in wasm32. `TwipFrameInfo` is five f64 then two u32. */
+/** A `TwipBuf` is `{ ptr, len }`: two 32-bit words in wasm32. `TwipFrameInfo` is five f64, two u32, an f64 and a u32, padded to 64 bytes. */
 const BUF_SIZE = 8;
-const FRAME_INFO_SIZE = 48;
+const FRAME_INFO_SIZE = 64;
 /** Lost WebGPU devices the engine replaces with new ones; past these, the canvases show CPU pixels copied in. */
 const MAX_DEVICE_LOSSES = 3;
 
@@ -251,7 +251,7 @@ export class DirectTransport implements Transport {
           drawn = this.#frameRgba(session, width, height, info, (p) => context.putImageData(new ImageData(new Uint8ClampedArray(p.buffer), width, height), 0, 0));
         }
         if (!drawn) return null;
-        // TwipFrameInfo: content_width and content_height are its first two f64s, pages its last u32.
+        // TwipFrameInfo: content_width and content_height are its first two f64s, pages the u32 at 44.
         const view = new DataView(m.HEAPU8.buffer, info, FRAME_INFO_SIZE);
         return { contentWidth: view.getFloat64(0, true), contentHeight: view.getFloat64(8, true), pages: view.getUint32(44, true) };
       } finally {
@@ -285,6 +285,26 @@ export class DirectTransport implements Transport {
           this.#pending.push({ kind: Kind.RequestFrame, sessionId: session, payload: undefined });
         }
       });
+    });
+  }
+
+  pageThumbnail(session: number, page: number, width: number, height: number): Promise<{ bytes: Uint8Array; width: number; height: number }> {
+    return this.#enqueue(() => {
+      // Width and height reach the engine as u32s: a negative or fractional size is refused there as an empty one.
+      const w = Number.isInteger(width) && width > 0 ? width : 0;
+      const h = Number.isInteger(height) && height > 0 ? height : 0;
+      const size = w * h * 4;
+      const pixels = this.#m._twip_alloc(Math.max(size, 1));
+      const out = this.#m._twip_alloc(8);
+      try {
+        const status = this.#m._twip_page_thumbnail(this.#engine, session, page >>> 0, pixels, size, w, h, out, out + 4);
+        if (status !== 0) envelope(status, new Uint8Array());
+        const drawn = { width: this.#m.HEAPU32[out >> 2] ?? 0, height: this.#m.HEAPU32[(out >> 2) + 1] ?? 0 };
+        return { bytes: this.#m.HEAPU8.slice(pixels, pixels + size), ...drawn };
+      } finally {
+        this.#m._twip_free(out, 8);
+        this.#m._twip_free(pixels, Math.max(size, 1));
+      }
     });
   }
 

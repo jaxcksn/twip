@@ -35,6 +35,7 @@ export interface TwipModule {
   _twip_surface(engine: Ptr, session: number, width: number, height: number, dpr: number): void;
   _twip_scroll(engine: Ptr, session: number, x: number, y: number): void;
   _twip_frame_rgba(engine: Ptr, session: number, pixels: Ptr, width: number, height: number, info: Ptr): number;
+  _twip_page_thumbnail(engine: Ptr, session: number, page: number, pixels: Ptr, len: number, width: number, height: number, outWidth: Ptr, outHeight: Ptr): number;
   _twip_frame_window(engine: Ptr, session: number, width: number, height: number, info: Ptr): number;
   _twip_detach_window(engine: Ptr, session: number): void;
   _twip_test_lose_gpu(engine: Ptr, session: number): void;

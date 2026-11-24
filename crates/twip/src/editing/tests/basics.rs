@@ -20,9 +20,9 @@ fn typing_inserts_at_the_caret_and_one_undo_removes_the_run() {
     let after = texts(&e);
     assert!(after[0].starts_with("Hello"), "{:?}", after[0]);
     assert_eq!(after[0], format!("Hello{}", before[0]));
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(texts(&e), before);
-    e.execute(Command::Redo, fonts());
+    e.execute(Command::Redo(Default::default()), fonts());
     assert_eq!(texts(&e), after);
 }
 
@@ -37,7 +37,7 @@ fn typing_elsewhere_in_the_paragraph_is_an_undo_step_of_its_own() {
     // A caret move that writes the selection itself, as Shift+F9 and extend mode do, keeps the typing run.
     e.selection = Selection::Caret(Position::text(StoryId::Body, para, Unit(0)));
     type_text(&mut e, "x");
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(texts(&e), typed, "one undo takes back only the x");
 }
 
@@ -54,9 +54,9 @@ fn enter_splits_and_backspace_joins_back() {
     assert_eq!(format!("{}{}", split[0], split[1]), before[0]);
     e.execute(crate::editing::tests::del(Dir::Back, false), fonts());
     assert_eq!(texts(&e), before);
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(texts(&e), split);
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(texts(&e), before);
 }
 
@@ -165,7 +165,7 @@ fn tab_in_the_last_cell_of_a_nested_table_adds_a_row_to_that_table_only() {
     let chain = e.index().chain_of(&e.selection().focus().expect("caret"));
     assert_eq!(chain.len(), 2);
     assert_eq!(chain[1].row, rows, "the caret is in the new inner row");
-    e.execute(Command::Undo, fonts);
+    e.execute(Command::Undo(Default::default()), fonts);
     let t = e.index().table(e.document(), crate::layout::TableId(inner)).expect("inner table");
     assert_eq!(t.rows.len(), rows);
 }
@@ -673,7 +673,7 @@ fn an_inserted_footnote_saves_and_deleting_its_reference_deletes_it() {
     let bytes = crate::docx::write::save(e.document()).expect("saves");
     let again = super::super::Editor::open(&bytes, fonts()).expect("reopens");
     assert_eq!(note_texts(&again), before);
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(note_texts(&e), edited);
 }
 
@@ -754,7 +754,7 @@ fn editing_works_in_every_layout_status() {
         e.complete(fonts());
         assert!(texts(&e)[0].starts_with("Still editable. "));
         assert!(crate::docx::write::save(e.document()).is_ok());
-        e.execute(Command::Undo, fonts());
+        e.execute(Command::Undo(Default::default()), fonts());
         assert_eq!(texts(&e), before);
         HF_ALTERNATE.set(0.0);
         FAIL_VERIFY.set(false);
@@ -957,7 +957,7 @@ fn wrapping_and_the_anchor_lock_save() {
     }
     assert_eq!(texts(&again), texts(&e));
     for _ in 0..4 {
-        e.execute(Command::Undo, fonts());
+        e.execute(Command::Undo(Default::default()), fonts());
     }
     let undone = body_floats(&e);
     assert!(undone.iter().zip(&was).all(|(a, b)| a.wrap == b.wrap && a.behind == b.behind && a.locked == b.locked));
@@ -1120,9 +1120,9 @@ fn an_inline_picture_floats_where_it_is_and_goes_back_in_line() {
     let again = super::super::Editor::open(&bytes, fonts()).expect("reopens");
     assert_eq!((body_pictures(&again).len(), body_floats(&again).len()), (pictures - 1, floats + 1));
     assert_eq!(texts(&again), texts(&r.e));
-    r.e.execute(Command::Undo, fonts());
+    r.e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!((body_pictures(&r.e).len(), body_floats(&r.e).len()), (pictures, floats));
-    r.e.execute(Command::Redo, fonts());
+    r.e.execute(Command::Redo(Default::default()), fonts());
     assert_eq!((body_pictures(&r.e).len(), body_floats(&r.e).len()), (pictures - 1, floats + 1));
     r.e.set_caret_for_benchmark(Selection::Object(ObjectRef::Floating(crate::layout::FloatId(f.id))));
     assert!(matches!(r.e.execute(Command::SetObjectWrap(ObjectWrap::Inline), fonts()), super::super::Outcome::Changed(_)));
@@ -1157,7 +1157,7 @@ fn an_inline_picture_drags_to_a_new_place_in_the_text() {
     };
     assert!(at(&r.e, o2) && !at(&r.e, Unit(0)));
     assert_eq!(body_pictures(&r.e).len(), pictures);
-    r.e.execute(Command::Undo, fonts());
+    r.e.execute(Command::Undo(Default::default()), fonts());
     assert!(at(&r.e, Unit(0)));
     assert_eq!(text(&r.e), before);
     r.step(&json!({ "click": { "picture": 0 } }));
@@ -1226,7 +1226,7 @@ fn live_layout_lays_the_dragged_float_out_where_the_pointer_is() {
     let (after, after_lines) = drawn(&mut r.e);
     let differ: Vec<_> = after_lines.as_array().unwrap().iter().zip(mid_lines.as_array().unwrap()).filter(|(a, b)| a != b).take(2).collect();
     assert!((after - mid).abs() < 0.5 && after_lines == mid_lines, "the release lays out as the preview did: {after} vs {mid}, {differ:?}");
-    r.e.execute(Command::Undo, fonts());
+    r.e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(body_floats(&r.e), was, "one undo step");
     r.step(&json!({ "click": { "float": 1 } }));
     r.step(&json!({ "press": { "float": 1 } }));
@@ -1323,7 +1323,7 @@ fn position_commands_place_the_float_and_the_state_reports_it() {
     );
     assert!((a.v_offset - b.v_offset).abs() < 0.06);
     for _ in 0..3 {
-        e.execute(Command::Undo, fonts());
+        e.execute(Command::Undo(Default::default()), fonts());
     }
     let back = object_box(&mut e);
     assert!(back.iter().zip(&before).all(|(a, b)| (a - b).abs() < 0.1), "{before:?} -> {back:?}");
@@ -1390,8 +1390,8 @@ fn an_inserted_picture_saves_with_its_image() {
         assert!((a.0 - b.0).abs() < 0.01 && (a.1 - b.1).abs() < 0.01 && a.2 == b.2, "{:?} vs {:?}", (a.0, a.1), (b.0, b.1));
     }
     assert_eq!(texts(&again), texts(&e));
-    e.execute(Command::Undo, fonts());
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert!(pictures(&e).is_empty());
 }
 
@@ -1441,8 +1441,8 @@ fn an_inserted_text_box_takes_typing_and_saves() {
     let (a, b) = (&body_floats(&again)[before], &body_floats(&e)[before]);
     assert!((a.w - b.w).abs() < 0.01 && (a.h - b.h).abs() < 0.01 && a.wrap == b.wrap && a.h_relative == b.h_relative, "{a:?}");
     assert_eq!(texts(&again), texts(&e));
-    e.execute(Command::Undo, fonts());
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(body_floats(&e).len(), before);
 }
 
@@ -1521,7 +1521,7 @@ fn table_properties_save_and_reopen() {
     same_lines(&table_formatting(&again), &edited);
     assert_eq!(texts(&again), texts(&r.e));
     for _ in 0..steps.len() {
-        r.e.execute(Command::Undo, fonts());
+        r.e.execute(Command::Undo(Default::default()), fonts());
     }
     same_lines(&table_formatting(&r.e), &before);
 }
@@ -1599,7 +1599,7 @@ fn a_new_header_and_footer_save() {
     assert!(again.document().sections[0].headers[0].is_some() && again.document().sections[0].footers[0].is_some());
     assert_eq!(texts(&again), texts(&e));
     for _ in 0..4 {
-        e.execute(Command::Undo, fonts());
+        e.execute(Command::Undo(Default::default()), fonts());
     }
     assert!(e.document().stories.is_empty(), "{:?}", story_texts(&e));
 }
@@ -1675,6 +1675,7 @@ fn a_picture_control_activates_and_fills() {
             image: Some(crate::api::value::Bytes(data.clone())),
             docx: None,
             building_block: None,
+            date: None,
         }),
         fonts(),
     );
@@ -1884,7 +1885,7 @@ fn alt_text_saves() {
     let again = super::super::Editor::open(&bytes, fonts()).expect("reopens");
     assert_eq!(alts(again.document()), alts(r.e.document()));
     assert_eq!(texts(&again), texts(&r.e));
-    r.e.execute(Command::Undo, fonts());
+    r.e.execute(Command::Undo(Default::default()), fonts());
     assert!(!alts(r.e.document()).contains(&"The board seal".to_string()));
 }
 
@@ -1995,7 +1996,7 @@ fn block_selection_selects_copies_formats_and_deletes() {
     let before = texts(&e);
     e.execute(crate::editing::tests::del(Dir::Forward, false), fonts());
     assert_eq!(texts(&e), ["abfgh", "ijnop", "qrvwx", "yz"]);
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(texts(&e), before);
     e.execute(Command::SetSelectionMode(crate::api::command::SelectionMode::Block), fonts());
     mv(&mut e, MoveBy::Line, Dir::Forward);
@@ -2068,7 +2069,7 @@ fn drag_and_drop_moves_and_copies_text() {
     assert_eq!(t[0], "The brown fox.", "no doubled space left (smart cut)");
     assert!(t[1].contains("quick"), "{t:?}");
     assert_eq!(r.e.selected_text().trim(), "quick");
-    r.e.execute(Command::Undo, fonts());
+    r.e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(texts(&r.e), before, "one undo step");
     let mut r = super::scenarios::Run::from_bytes(&doc, "dnd-copy");
     select_quick(&mut r);
@@ -2160,7 +2161,7 @@ fn rows_move_up_and_down() {
         "at the top"
     );
     assert!(matches!(e.selection(), Selection::Cells { anchor: crate::editing::selection::CellRef { row: 0, .. }, .. }), "the moved row is selected");
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(table_texts(&e), [["a1", "a2"], ["c1", "c2"], ["b1", "b2"]]);
     let saved = crate::docx::write::save(e.document()).unwrap();
     assert_eq!(table_texts(&super::super::Editor::open(&saved, fonts()).unwrap()), table_texts(&e), "saved in the new order");
@@ -2254,9 +2255,9 @@ fn after_a_page_break_the_caret_shows_on_the_next_page() {
     e.execute(Command::InsertPageBreak, fonts());
     assert_eq!(e.caret_view().expect("caret").page, p0 + 1, "the caret follows the break");
     assert_eq!(texts(&e), ["Conversation\u{c}", ""], "the break ends its paragraph");
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(texts(&e), ["Conversation"], "one undo step");
-    e.execute(Command::Redo, fonts());
+    e.execute(Command::Redo(Default::default()), fonts());
     e.execute(Command::InsertText("abc".into()), fonts());
     let typed = e.caret_view().expect("caret");
     assert_eq!(typed.page, p0 + 1);
@@ -2303,12 +2304,12 @@ fn tab_changes_the_level_of_list_items() {
     let tab = e.key_command("Tab", Mods::default()).unwrap();
     assert!(matches!(e.execute(tab, fonts()), super::super::Outcome::Changed(_)), "the first item");
     assert_eq!((level(&e, 2), left(&e, 3) > was), (Some(0), true), "the first item takes the whole list along");
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     e.indent_keys = false;
     let tab = e.key_command("Tab", Mods::default()).unwrap();
     e.execute(tab, fonts());
     assert_eq!(level(&e, 2), Some(1), "with the AutoFormat option off, a level down");
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     e.indent_keys = true;
     let before = texts(&e);
     e.set_caret_for_benchmark(Selection::Text {
@@ -2364,7 +2365,7 @@ fn select_all_delete_across_sections() {
     assert_eq!(pages(&again), pages(&e));
     let xml = crate::docx::write::main_xml(e.document()).unwrap().unwrap();
     assert_eq!(xml.matches("<w:sectPr").count(), 1, "{xml}");
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(texts(&e), before);
     assert_eq!(pages(&e), was);
     assert!(crate::docx::write::main_xml(e.document()).unwrap().is_none(), "undone, nothing to save");
@@ -2401,8 +2402,8 @@ fn backspace_and_delete_take_a_section_break() {
     e.selection = Selection::Caret(super::super::position::Position::text(StoryId::Body, p, len));
     e.execute(crate::editing::tests::del(Dir::Forward, false), fonts());
     assert_eq!(pages(&e).len(), n - 2);
-    e.execute(Command::Undo, fonts());
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!((pages(&e), texts(&e)), (was, before));
 }
 
@@ -2436,7 +2437,7 @@ fn hyphenation_settings_change_undo_and_save_in_schema_order() {
     let again = crate::docx::read_editable(&saved).expect("reads");
     assert_eq!((again.settings.auto_hyphenation, again.settings.consecutive_hyphen_limit), (true, 2));
     for _ in 0..4 {
-        e.execute(Command::Undo, fonts());
+        e.execute(Command::Undo(Default::default()), fonts());
     }
     let s = &e.document().settings;
     assert_eq!((s.auto_hyphenation, s.consecutive_hyphen_limit, s.do_not_hyphenate_caps), (false, 0, false));
@@ -2520,7 +2521,7 @@ fn a_float_dropped_on_the_next_page_between_idles_lands_there() {
     assert_eq!(f["page"], json!(1), "{f}");
     let top = g["geometry"]["pages"][1][1].as_f64().unwrap();
     assert!(f["rect"][1].as_f64().unwrap() > top, "{f}");
-    r.e.execute(Command::Undo, fonts());
+    r.e.execute(Command::Undo(Default::default()), fonts());
     while r.e.idle(fonts()) {}
     let g = crate::editing::inspect::inspect(&mut r.e, "geometry", true);
     assert_eq!(g["geometry"]["floats"][0]["rect"].as_array().unwrap().iter().map(|v| v.as_f64().unwrap()).collect::<Vec<_>>(), v, "undone");
@@ -2775,7 +2776,10 @@ fn change_case_leaves_field_code_alone() {
     use crate::api::command::{CaseChange, Hyperlink};
     use crate::docx::fields;
     let mut e = super::super::Editor::open(&blank_with("hello "), fonts()).expect("opens");
-    e.execute(Command::InsertHyperlink(Hyperlink { address: "https://example.com/Path".into(), text: Some("click".into()) }), fonts());
+    e.execute(
+        Command::InsertHyperlink(Hyperlink { address: "https://example.com/Path".into(), text: Some("click".into()), ..Default::default() }),
+        fonts(),
+    );
     e.execute(Command::SelectAll, fonts());
     e.execute(Command::ChangeCase(CaseChange::Upper), fonts());
     let id = super::texts_ids(&e)[0];
@@ -2805,7 +2809,10 @@ fn repeat_reapplies_formatting() {
         p.inlines.iter().find_map(|i| if let Inline::Text(_, r) = i { Some(r.color) } else { None }).expect("a run")
     };
     select(&mut e, 0);
-    assert!(matches!(e.execute(Command::SetFontColor(AutoOr::Value(Color(0xC00000))), fonts()), super::super::commands::Outcome::Changed(_)));
+    assert!(matches!(
+        e.execute(Command::SetFontColor(AutoOr::Value(crate::api::drawing::ColourValue::rgb(Color(0xC00000)))), fonts()),
+        super::super::commands::Outcome::Changed(_)
+    ));
     select(&mut e, 1);
     let o = e.execute(Command::Repeat, fonts());
     assert_eq!(texts(&e), ["ab", "cd"], "nothing typed again: {o:?}");
@@ -2869,7 +2876,7 @@ fn dragging_the_selection_out_carries_it_and_a_move_deletes_it() {
     r.e.drag_out().expect("a selection");
     r.e.drag_out_end(true, fonts());
     assert_eq!(texts(&r.e)[0], "The brown fox.");
-    r.e.execute(Command::Undo, fonts());
+    r.e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(texts(&r.e)[0], "The quick brown fox.");
     r.e.drag_out().expect("a selection");
     let para = r.e.document().sections[0].blocks.iter().filter_map(|b| if let crate::docx::Block::Para(p) = b { Some(p.id) } else { None }).nth(1);
@@ -2924,7 +2931,7 @@ fn selected_cells_dragged_out_and_back_are_copied_not_moved() {
     assert!(matches!(out, super::super::commands::Outcome::Changed(_)), "{out:?}");
     let t = texts(&e);
     assert!(["a", "b"].iter().all(|c| t.iter().filter(|s| s == c).count() == 2), "both cells copied: {t:?}");
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(texts(&e), ["a", "b", "after"], "one undo step");
 }
 

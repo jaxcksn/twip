@@ -62,12 +62,19 @@ pub struct PdfOptions {
     /// Written to the PDF's keywords metadata, in order. Blank entries are dropped.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub keywords: Vec<String>,
+    /// Prints hidden text (Word's Print hidden text). Default: off, whatever the view shows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hidden_text: Option<bool>,
 }
 
 impl std::fmt::Debug for PdfOptions {
     /// Never prints the password.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("PdfOptions").field("open_password", &self.open_password.as_ref().map(|_| "***")).field("keywords", &self.keywords).finish()
+        f.debug_struct("PdfOptions")
+            .field("open_password", &self.open_password.as_ref().map(|_| "***"))
+            .field("keywords", &self.keywords)
+            .field("hidden_text", &self.hidden_text)
+            .finish()
     }
 }
 
@@ -186,15 +193,13 @@ impl Session {
                     return Err(Error::new(ErrorCode::ExportFailed, "the font library has no font to draw text with"));
                 }
                 let fonts = self.fonts.fonts();
-                let (bytes, written) = if self.editor.document().review.view == crate::docx::review::MarkupView::NoMarkup
-                    && !self.editor.shows_expansions()
-                    && self.editor.editing_sub_template().is_none()
-                {
+                // The document as printed: no markup, hidden text only when asked for, no optional hyphens shown.
+                let hidden = pdf.hidden_text.unwrap_or(false);
+                let (bytes, written) = if self.editor.lays_out_as_printed(hidden) {
                     self.editor.complete(&fonts);
                     crate::pdf::export::export_with(self.editor.document(), &self.editor.snapshot(), "", pdf, None, Some(&fonts))?
                 } else {
-                    let mut doc = self.editor.document().clone();
-                    doc.review.view = crate::docx::review::MarkupView::NoMarkup;
+                    let doc = self.editor.printed_document(hidden);
                     crate::pdf::export::export_with(&doc, &crate::layout::layout(&doc, &fonts), "", pdf, None, Some(&fonts))?
                 };
                 let state = super::fonts::document_fonts(self.editor.document(), self.editor.index(), &fonts);

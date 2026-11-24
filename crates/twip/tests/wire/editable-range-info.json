@@ -1,0 +1,17 @@
+[
+  {
+    "editors": [
+      {
+        "group": "editors"
+      },
+      {
+        "user": "ada@example.com"
+      }
+    ],
+    "ids": [
+      "1",
+      "2"
+    ],
+    "page": 1
+  }
+]

@@ -1,0 +1,17 @@
+[
+  {
+    "customMark": false,
+    "id": 2,
+    "kind": "footnote",
+    "mark": "1",
+    "page": 1,
+    "text": "First"
+  },
+  {
+    "customMark": true,
+    "id": 5,
+    "kind": "endnote",
+    "mark": "*",
+    "text": ""
+  }
+]

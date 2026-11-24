@@ -95,7 +95,7 @@ fn cursor_over_a_float_moves_and_its_handles_resize_by_direction() {
     let (xm, ym) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
     assert_eq!(hover(&mut e, pg, xm, ym, Mods::default()), Cursor::Move, "the body");
     assert_eq!(drag(&mut e, pg, (xm, ym), (xm + 2.0, ym), Mods::default()), Cursor::Move, "moving it");
-    e.execute(super::super::commands::Command::Undo, fonts());
+    e.execute(super::super::commands::Command::Undo(Default::default()), fonts());
     let (pg, [x0, y0, x1, y1]) = float_picture(&mut e);
     let (xm, ym) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
     let handles = [

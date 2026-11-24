@@ -98,6 +98,7 @@ Enter, Esc) and announce them as menus, in `view.accent` and `view.accentOn` to 
 | `tabType` | `current`, and `choices` with a name and a one-line description | `setRulerTabType(value)` |
 | `tabStop` | the stop's `position`, `alignment` and `leader` | `addTabStop` at its position (changes the alignment or leader; the popover stays open), `deleteTabStop` |
 | `autoCorrect` | `from` (what was typed) and `to` (what it became) | `revertAutoCorrect`, `neverAutoCorrect`, or your AutoCorrect dialog (see [AutoCorrect](autocorrect.md)) |
+| `autoFormat` | `change` (`hyperlink`, `borderLine`, `indent`) and `text` (what was typed) | `revertAutoCorrect` (Undo), `neverAutoCorrect` (Stop Automatically …), or your AutoCorrect dialog |
 
 `popoverClosed` says the engine dismissed the open one: Esc, a press elsewhere, its target gone, or its answer
 (except a `tabStop` change). Opening one closes the one open. When your popover closes on its own, run `closePopover`

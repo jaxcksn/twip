@@ -136,7 +136,7 @@ pub(super) fn highlight_color(rgb: Option<u32>) -> NoneOr<HighlightColor> {
 /// The character formatting of `runs` together: each value uniform, mixed or unavailable.
 pub fn character(runs: &[&RunStyle]) -> CharacterFormatting {
     let tri = |f: &dyn Fn(&RunStyle) -> bool| fold(runs.iter().map(|r| f(r)));
-    CharacterFormatting {
+    let mut out = CharacterFormatting {
         font: fold(runs.iter().map(|r| r.ascii.clone())),
         size: fold(runs.iter().map(|r| Points(r.size))),
         bold: tri(&|r| r.bold),
@@ -201,7 +201,10 @@ pub fn character(runs: &[&RunStyle]) -> CharacterFormatting {
         shadow: tri(&|r| r.shadow),
         underline_color: fold(runs.iter().map(|r| r.underline_color.map_or(AutoOr::Auto, |c| AutoOr::Value(Color(c))))),
         text_effects: fold(runs.iter().map(|r| r.effects.as_deref().map(crate::api::drawing::TextEffects::of).unwrap_or_default())),
-    }
+        ..CharacterFormatting::default()
+    };
+    super::readback::character(runs).fill(&mut out);
+    out
 }
 
 fn borders_of(p: &ParaStyle) -> BorderState {
@@ -214,11 +217,11 @@ fn borders_of(p: &ParaStyle) -> BorderState {
     }
 }
 
-/// The paragraph formatting of `paras` (each style and whether it is in a list) together.
+/// The paragraphs' formatting; their tab stops are unavailable (the editor reads them).
 pub fn paragraph(paras: &[(&ParaStyle, Option<bool>)]) -> ParagraphFormatting {
     let tri = |f: &dyn Fn(&ParaStyle) -> bool| fold(paras.iter().map(|(p, _)| f(p)));
     let pt = |f: &dyn Fn(&ParaStyle) -> f64| fold(paras.iter().map(|(p, _)| Points(f(p))));
-    ParagraphFormatting {
+    let mut out = ParagraphFormatting {
         style: fold(paras.iter().map(|(p, _)| StyleId(p.style_id.clone().unwrap_or_else(|| "Normal".into())))),
         alignment: fold(paras.iter().map(|(p, _)| match p.jc {
             Jc::Left => Alignment::Left,
@@ -281,7 +284,10 @@ pub fn paragraph(paras: &[(&ParaStyle, Option<bool>)]) -> ParagraphFormatting {
             }
         })),
         drop_cap: None,
-    }
+        ..ParagraphFormatting::default()
+    };
+    super::readback::paragraph(&paras.iter().map(|(p, _)| *p).collect::<Vec<_>>(), crate::api::state::Tri::Unavailable).fill(&mut out);
+    out
 }
 
 /// What the selection's formatting is read from.
@@ -348,6 +354,12 @@ impl Editor {
             paras.iter().filter_map(|&p| Some((self.index.para(&self.doc, p)?.style.clone(), self.para_list(p)))).collect();
         styles.dedup_by(|a, b| Rc::ptr_eq(&a.0, &b.0) && a.1 == b.1);
         let mut paragraph = self::paragraph(&styles.iter().map(|(s, l)| (&**s, *l)).collect::<Vec<_>>());
+        // The tab stops: the first paragraph's, when every one has the same.
+        paragraph.tabs = match styles.first() {
+            Some((first, _)) if styles.iter().all(|(p, _)| p.tabs == first.tabs) => crate::api::state::Tri::Uniform(self.tab_stops(paras[0])),
+            Some(_) => crate::api::state::Tri::Mixed,
+            None => crate::api::state::Tri::Unavailable,
+        };
         paragraph.drop_cap = self.drop_cap().filter(|d| d.position != crate::api::command::DropCapPosition::None);
         let level = focus.and_then(|p| self.index.chain_of(&p).last().copied());
         let table = match self.selection {
@@ -425,6 +437,11 @@ impl Editor {
             mac: self.mac,
             arrows: if code.starts_with("Arrow") { self.caret_arrows() } else { None },
         };
+        // Tab and Shift+Tab move between legacy form fields where forms are filled in.
+        if code == "Tab" && !mods.ctrl && !mods.alt && !mods.meta && self.tab_moves_between_form_fields() {
+            let order = if mods.shift { crate::api::value::Order::Previous } else { crate::api::value::Order::Next };
+            return Some(Command::SelectNextFormField(order));
+        }
         match super::keymap::command(code, mods, cx)? {
             // Tab takes a list along from its first item as an AutoFormat option: off, it changes the level.
             Bound::Run(c @ (Command::IncreaseIndent | Command::DecreaseIndent)) if code == "Tab" && !self.indent_keys => {
@@ -445,6 +462,10 @@ impl Editor {
         }
         if let Toggle::CaseCycle = t {
             return self.case_cycle().map(Command::ChangeCase);
+        }
+        if let Toggle::FormattingMarks = t {
+            let marks = Some(!self.mark_options().all);
+            return Some(Command::SetViewOptions(crate::api::command::ViewOptions { formatting_marks: marks, ..Default::default() }));
         }
         let f = self.format_state()?;
         let c = &f.character;
@@ -473,7 +494,7 @@ impl Editor {
                     contextual: None,
                 })
             }
-            Toggle::TrackChanges | Toggle::FieldCodes { .. } | Toggle::CaseCycle => return None,
+            Toggle::TrackChanges | Toggle::FieldCodes { .. } | Toggle::CaseCycle | Toggle::FormattingMarks => return None,
         })
     }
 
@@ -503,6 +524,7 @@ impl Editor {
         let can_merge = matches!(self.selection, Selection::Cells { anchor, focus, .. } if anchor != focus);
         let link = self.link_here().is_some();
         let comments = !self.doc.comments.by_id.is_empty();
+        let frame_object = matches!(self.selection, Selection::Object(ObjectRef::Floating(f)) if self.float_of(f).is_some_and(|fl| fl.is_frame()));
         let back = !self.edit_marks.is_empty();
         let repeat =
             f.is_some_and(|f| f.can_redo) || self.repeat.as_ref().is_some_and(|c| !(self.is_discontiguous() && super::multi::single_only(c.id())));
@@ -519,6 +541,9 @@ impl Editor {
                 (C::Cut, _) => (editable && selected, (None, None)),
                 (C::Copy, _) => (selected, (None, None)),
                 (C::Paste, _) => (editable, (None, None)),
+                (C::Repaste, _) => (editable && self.last_paste().is_some(), (None, None)),
+                (C::DismissPasteOptions, _) => (self.last_paste().is_some(), (None, None)),
+                (C::SetPasteOptions | C::SetAutoCaption | C::GoTo, _) => (true, (None, None)),
                 (C::CopyFormatting, _) => (f.is_some(), (None, None)),
                 (C::PasteFormatting, _) => (formatted && self.painter.is_some(), (None, None)),
                 (C::Undo, _) => {
@@ -640,9 +665,25 @@ impl Editor {
                     | C::SetTableAlignment
                     | C::SetTableIndent
                     | C::SetTableStyle
-                    | C::SetTableStyleOptions,
+                    | C::SetTableStyleOptions
+                    | C::SetTableBandSizes
+                    | C::SetTableCellMargins
+                    | C::InsertCells,
                     _,
                 ) => (editable && in_table, (None, None)),
+                (C::DrawTableStroke | C::EraseTableBorder, _) => (editable, (None, None)),
+                (C::SetTableTool | C::SetTablePen, _) => (true, (None, None)),
+                (C::SetObjectName | C::SetObjectTitle | C::SetLockAspectRatio, _) => (editable && object.is_some() && !frame_object, (None, None)),
+                (C::SetObjectHidden | C::RestackObject, _) => (editable, (None, None)),
+                (C::SelectObject, _) => (true, (None, None)),
+                (C::SetPictureRecolor | C::ResetPicture, _) => (editable && shape.as_ref().is_some_and(|s| s.pic), (None, None)),
+                (C::SetWrapPoints | C::ResetWrapPoints, _) => (editable && self.wrap_points_target().is_ok(), (None, None)),
+                (C::LinkTextBox | C::BeginTextBoxLink, _) => {
+                    let last = self.text_box_link().is_none_or(|l| l.next.is_none());
+                    (editable && object == Some(ObjectKind::TextBox) && last, ((id == C::BeginTextBoxLink).then_some(self.linking()), None))
+                }
+                (C::UnlinkTextBox, _) => (editable && self.text_box_link().is_some_and(|l| l.next.is_some()), (None, None)),
+                (C::SetSelectObjects, _) => (true, (Some(self.selecting_objects()), None)),
                 (C::SetTablePosition, _) => (editable && in_table, (None, self.table_position().map(CommandValue::TablePosition))),
                 (C::SetObjectSize | C::SetObjectWrap | C::SetAltText | C::DeleteObject, _) => (editable && object.is_some(), (None, None)),
                 (C::AlignObjects, _) => (editable && floating, (None, None)),
@@ -670,6 +711,21 @@ impl Editor {
                 }
                 (C::SetTrackChanges, _) => (editable && !(locked && tracking), (Some(tracking), None)),
                 (C::SetMarkupView, _) => (true, (None, Some(CommandValue::MarkupView(self.doc.review.view)))),
+                (C::SetTrackOptions | C::AcceptAllAndStopTracking, _) => (editable && !locked, (None, None)),
+                (C::DeleteAllComments, _) => (editable && comments, (None, None)),
+                (C::PromoteOutline | C::DemoteOutline | C::PromoteToHeading1 | C::DemoteToBodyText, _) => {
+                    (formatted && !matches!(self.selection, Selection::Object(_)) && self.style_target.is_none(), (None, None))
+                }
+                (
+                    C::PromoteHeading
+                    | C::DemoteHeading
+                    | C::MoveHeading
+                    | C::DeleteHeading
+                    | C::InsertHeadingBefore
+                    | C::InsertHeadingAfter
+                    | C::InsertSubheading,
+                    _,
+                ) => (editable && self.style_target.is_none(), (None, None)),
                 (C::SetActiveComment | C::SelectComment, _) => (comments, (None, None)),
                 (C::ReplyToComment | C::EditComment | C::DeleteComment | C::ResolveComment, _) => (editable && comments, (None, None)),
                 (C::SetAutoHyphenation, _) => (editable, (Some(self.doc.settings.auto_hyphenation), None)),
@@ -689,6 +745,20 @@ impl Editor {
                 (C::ClearTabStops, _) => (editable && tab_stops, (None, None)),
                 (C::InsertFootnote | C::InsertEndnote | C::InsertNote, _) => (editable && notes, (None, None)),
                 (C::AddComment, _) => (editable && commentable, (None, None)),
+                (C::MoveText | C::CopyText, _) => (editable && selected && matches!(self.selection, Selection::Text { .. }), (None, None)),
+                (C::SelectField, _) => (true, (None, None)),
+                (C::ShrinkSelection, _) => (self.modes.extend >= 2, (None, None)),
+                (C::SelectSimilarFormatting, _) => (self.selection.focus().is_some(), (None, None)),
+                (C::SelectStyleInstances, _) => (self.doc.resolver.is_some(), (None, None)),
+                (C::ToggleCharacterCode | C::GrowFontOnePoint | C::ShrinkFontOnePoint | C::ClearAllFormatting | C::SetFitText, _) => {
+                    (chars, (None, None))
+                }
+                (C::InsertStyleSeparator | C::IncreaseHangingIndent | C::DecreaseHangingIndent | C::ClearParagraphFormatting, _) => {
+                    (formatted, (None, None))
+                }
+                (C::MoveParagraphs, _) => (formatted && !matches!(self.selection, Selection::Object(_) | Selection::Cells { .. }), (None, None)),
+                (C::RegroupObjects, _) => (editable && self.regroupable().is_some(), (None, None)),
+                (C::EditWrapPoints, _) => (editable && self.wrap_points_target().is_ok(), (Some(self.editing_wrap_points()), None)),
                 (C::SetHeaderFooterLinked, _) => (editable && section > 0, (None, None)),
                 (_, None) if info.mutates => (false, (None, None)),
                 _ => (editable || !info.mutates, (None, None)),
@@ -793,6 +863,8 @@ impl Editor {
             cell_spacing: (t.cell_spacing > 0.0).then_some(Points(t.cell_spacing)),
             title: t.alt.as_ref().map(|a| a.title.clone()).unwrap_or_default(),
             description: t.alt.as_ref().map(|a| a.description.clone()).unwrap_or_default(),
+            bands: self.table_band_sizes().unwrap_or_default(),
+            ..self.table_readback().map(super::table_readback::TableReadback::into_state).unwrap_or_default()
         })
     }
 
@@ -831,6 +903,7 @@ impl Editor {
             transparent_color: self.selected_transparent_color(),
             relative_width: self.selected_relative_size(0),
             relative_height: self.selected_relative_size(1),
+            ..ObjectSelection::default()
         })
     }
 
@@ -852,37 +925,51 @@ impl Editor {
                     let s = crate::docx::fields::span_at(&p.inlines, k)?;
                     Some(crate::docx::fields::code_text(&p.inlines, s).trim().to_string())
                 });
-                let form = para.and_then(|p| {
-                    p.inlines.iter().find_map(|i| match i {
-                        crate::docx::Inline::FieldBegin { id, form: Some(ff), .. } if *id == f => Some(Box::new(super::forms::info(&ff.data))),
-                        _ => None,
-                    })
-                });
-                ElementContext { id, kind: ElementKind::Field, exact, code, tag: None, title: None, size: None, form, control: None }
+                let begin = para.and_then(|p| p.inlines.iter().find(|i| matches!(i, crate::docx::Inline::FieldBegin { id, .. } if *id == f)));
+                let (mut locked, mut showing_code, mut dirty, mut form) = (false, false, false, None);
+                if let Some(crate::docx::Inline::FieldBegin { lock, dirty: d, view, form: ff, .. }) = begin {
+                    (locked, showing_code, dirty) = (*lock, *view == crate::docx::FieldView::Code, *d);
+                    form = ff.as_ref().map(|ff| Box::new(super::forms::info(&ff.data)));
+                }
+                ElementContext {
+                    id,
+                    kind: ElementKind::Field,
+                    exact,
+                    locked,
+                    showing_code,
+                    dirty,
+                    code,
+                    tag: None,
+                    title: None,
+                    size: None,
+                    form,
+                    control: None,
+                }
             }
             crate::docx::ElementId::Control(c) => {
                 let props = self.doc.controls.get(&c).map(|k| k.props.clone()).unwrap_or_default();
-                let kind = match props.kind {
-                    crate::docx::ControlKind::PlainText { .. } => ElementKind::PlainText,
-                    crate::docx::ControlKind::Picture => ElementKind::Picture,
-                    crate::docx::ControlKind::Checkbox { .. } => ElementKind::Checkbox,
-                    crate::docx::ControlKind::Date { .. } => ElementKind::Date,
-                    crate::docx::ControlKind::DropDown if props.combo_box() => ElementKind::ComboBox,
-                    crate::docx::ControlKind::DropDown => ElementKind::DropDown,
-                    crate::docx::ControlKind::Group => ElementKind::Group,
-                    crate::docx::ControlKind::RepeatingSection => ElementKind::RepeatingSection,
-                    crate::docx::ControlKind::RepeatingItem => ElementKind::RepeatingItem,
-                    crate::docx::ControlKind::RichText | crate::docx::ControlKind::Other => ElementKind::RichText,
-                };
+                let kind = control_kind(&props);
                 let mut info = control_info(&props);
                 if let Some(crate::docx::KeptKind::Gallery { gallery, category }) = props.kept_kind() {
                     info.building_blocks = self.gallery_entries(gallery.as_deref(), category.as_deref()).map(|b| b.name.clone()).collect();
+                }
+                // A date control's date, from the text it shows
+                if matches!(props.kind, crate::docx::ControlKind::Date { .. }) && !props.showing_placeholder {
+                    let text = para.and_then(|p| {
+                        let k = p.inlines.iter().position(|i| *i == crate::docx::Inline::ControlStart(c))?;
+                        let end = p.inlines[k..].iter().position(|i| *i == crate::docx::Inline::ControlEnd(c)).map_or(p.inlines.len(), |e| k + e);
+                        Some(crate::docx::fields::visible(&p.inlines[k + 1..end]))
+                    });
+                    info.date = text.and_then(|t| crate::docx::binding::full_date(&props, &t));
                 }
                 let control = Some(Box::new(info));
                 ElementContext {
                     id,
                     kind,
                     exact,
+                    locked: !props.lock.editable(),
+                    showing_code: false,
+                    dirty: false,
                     code: None,
                     tag: props.tag,
                     title: props.alias,
@@ -895,7 +982,14 @@ impl Editor {
     }
 
     pub fn link_info(&self) -> Option<LinkInfo> {
-        self.link_here().map(|l| LinkInfo { address: l.address, text: l.text })
+        self.link_here().map(|l| LinkInfo {
+            address: l.address,
+            text: l.text,
+            target: l.target,
+            bookmark: l.bookmark,
+            screen_tip: l.tip,
+            frame: l.frame,
+        })
     }
 
     pub fn header_footer_info(&mut self, page: u32) -> Option<HeaderFooterInfo> {
@@ -939,6 +1033,7 @@ impl Editor {
                 } else {
                     s.columns.cols.iter().map(|&(w, sp)| crate::api::command::ColumnWidth { width: Points(w), spacing: Points(sp) }).collect()
                 },
+                equal: s.columns.equal,
             },
             header_distance: Points(s.header),
             footer_distance: Points(s.footer),
@@ -1011,6 +1106,7 @@ impl Editor {
             footnote_columns: s.footnote_columns,
             background: self.background_state(),
             watermark: self.watermark_state(section),
+            page_borders: self.page_borders_of(section).map(Into::into).unwrap_or_default(),
         }
     }
 }
@@ -1035,8 +1131,33 @@ fn note_settings(n: &crate::docx::NoteProps, position: NotePosition, default: Nu
     }
 }
 
+/// A content control's public kind.
+pub fn control_kind(p: &crate::docx::ControlProps) -> ElementKind {
+    use crate::docx::{ControlKind as K, KeptKind};
+    match p.kind {
+        K::PlainText { .. } => ElementKind::PlainText,
+        K::Picture => ElementKind::Picture,
+        K::Checkbox { .. } => ElementKind::Checkbox,
+        K::Date { .. } => ElementKind::Date,
+        K::DropDown if p.combo_box() => ElementKind::ComboBox,
+        K::DropDown => ElementKind::DropDown,
+        K::Group => ElementKind::Group,
+        K::RepeatingSection => ElementKind::RepeatingSection,
+        K::RepeatingItem => ElementKind::RepeatingItem,
+        K::RichText => ElementKind::RichText,
+        K::Other => match p.kept_kind() {
+            Some(KeptKind::Gallery { .. }) => ElementKind::BuildingBlockGallery,
+            Some(KeptKind::BuildingBlock { .. }) => ElementKind::BuildingBlock,
+            Some(KeptKind::Citation) => ElementKind::Citation,
+            Some(KeptKind::Bibliography) => ElementKind::Bibliography,
+            Some(KeptKind::Equation) => ElementKind::Equation,
+            None => ElementKind::RichText,
+        },
+    }
+}
+
 /// A content control's look and options, from its properties as kept.
-fn control_info(p: &crate::docx::ControlProps) -> crate::api::state::ControlInfo {
+pub fn control_info(p: &crate::docx::ControlProps) -> crate::api::state::ControlInfo {
     let rest = |name: &str| p.rest.iter().find(|(n, _)| n == name).map(|(_, x)| x.as_str());
     let val = |x: &str, key: &str| {
         let at = x.find(key)? + key.len();
@@ -1062,6 +1183,19 @@ fn control_info(p: &crate::docx::ControlProps) -> crate::api::state::ControlInfo
             let x = p.kind_xml.as_deref().unwrap_or_default();
             info.section_title = x.find("sectionTitle").and_then(|at| val(&x[at..], "val=\""));
             info.allow_insert_delete = Some(!super::merge::items_fixed(x));
+        }
+        crate::docx::ControlKind::Date { .. } => {
+            if let Some(d) = super::merge::date_settings(p) {
+                info.calendar = Some(crate::api::value::CalendarType::of_val(&d.calendar).unwrap_or_default());
+                info.store_as = Some(d.storage.to_api());
+            }
+        }
+        crate::docx::ControlKind::Other => {
+            if let Some(crate::docx::KeptKind::Gallery { gallery, category } | crate::docx::KeptKind::BuildingBlock { gallery, category }) =
+                p.kept_kind()
+            {
+                (info.gallery, info.category) = (gallery, category);
+            }
         }
         _ => {}
     }

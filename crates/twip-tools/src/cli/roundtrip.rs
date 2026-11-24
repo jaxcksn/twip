@@ -55,7 +55,7 @@ fn families() -> Vec<(&'static str, Vec<Command>)> {
                 twip::internal::editing::commands::deleting(Dir::Back, false),
             ],
         ),
-        ("breaks", vec![Command::InsertLineBreak, Command::InsertTab, Command::InsertPageBreak]),
+        ("breaks", vec![Command::InsertLineBreak(Default::default()), Command::InsertTab, Command::InsertPageBreak]),
         ("select-all-typing", vec![Command::SelectAll, Command::InsertText("Replaced".into())]),
         (
             "bold",

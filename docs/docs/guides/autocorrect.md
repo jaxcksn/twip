@@ -49,6 +49,10 @@ change, so it has no undo step and isn't saved in the document.
 - `firstLetterExceptions` and `initialCapsExceptions`, in place of the shipped exception lists;
 - `never`, the texts never corrected (what *Never correct* adds to). `state.autoCorrect.never` lists them; an
   application that keeps them between sessions sets them again at start.
+- AutoFormat as you type: `borderLines` (`---`, `___`, `===`, `***`, `~~~` or `###` then Enter makes the paragraph a
+  bottom border), `internetPaths` (an address such as `www.example.com`, `\\server\share` or `name@example.com` then a
+  space or Enter becomes a link) and `tabIndents` (Tab and Backspace at a paragraph's start set its indents, and Tab at
+  a list's first item moves the whole list). Each is on by default and each change is one undo step of its own.
 
 ## Revert and Never
 
@@ -64,5 +68,11 @@ menu: `popoverRequested` with `kind: 'autoCorrect'`, `from` (what was typed) and
 
 The commands are available while there's a correction to act on (`state.commands.revertAutoCorrect.enabled`). The
 mark goes once you type on or move away.
+
+An AutoFormat change asks for its own menu: `popoverRequested` with `kind: 'autoFormat'`, `change` (`hyperlink`,
+`borderLine` or `indent`) and `text` (what was typed). `revertAutoCorrect` is its Undo Hyperlink (Undo Border Line, Undo
+Automatic Indent), `neverAutoCorrect` its Stop Automatically Creating Hyperlinks (Border Lines; Stop Setting Indent on
+Tabs and Backspaces), which reverts it and turns the option off; Control AutoFormat Options is your AutoCorrect
+dialog.
 
 Your application draws the menu (see [Appearance](appearance.md#popovers)); the editor draws none.

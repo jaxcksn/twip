@@ -10,7 +10,7 @@ use twip_graphics::scene::{Clip, Recorder};
 
 use super::{Graphics, chrome_face, dashed, measure, pen, rect_path};
 use crate::api::services::{Popover, RulerView, TabSelector};
-use crate::api::value::TabAlignment;
+use crate::api::value::{LineDirection, TabAlignment};
 use crate::editing::view::{RulerMeasure, Tone};
 use crate::font::Face;
 use crate::render::ChromeFace;
@@ -133,8 +133,6 @@ pub(super) fn paint(g: &mut Graphics, rec: &mut Recorder, view: &RulerView, them
 
     let dragged = |m: Marker| f.drag.filter(|d| d.marker == m);
     let moved = |m: Marker, now: f64| dragged(m).map_or(now, |d| d.at);
-    let colour_of = |on: bool| if on { accent } else { ink };
-
     // Ticks from `zero` (the text start) both ways along `0..len` points, `at` placing a point along the ruler: every
     // tick first (its place, length in CSS px and ink), then each labelled mark's place and number.
     let ticks = |zero: f64, len: f64, at: &dyn Fn(f64) -> f64, each: &mut dyn FnMut(Tick)| {
@@ -173,8 +171,14 @@ pub(super) fn paint(g: &mut Graphics, rec: &mut Recorder, view: &RulerView, them
         g.draw_shape(rec, kurbo::RoundedRect::from_rect(strip.inflate(0.5, 0.5), 2.5), Some(&pen(1.0)), line);
         hatch(rec, kurbo::Rect::new(page_l, S0, x(start), S1), 5.0, line);
         hatch(rec, kurbo::Rect::new(x(end), S0, page_r, S1), 5.0, line);
+        // The gutter: denser, beside the margin it widens.
+        if let Some(g) = r.gutter {
+            hatch(rec, kurbo::Rect::new(x(g.start.0), S0, x(g.end.0), S1), 2.5, line);
+        }
+        // Between the columns' facing edges: right to left for vertical text stacked from the right.
         for c in r.columns.windows(2) {
-            hatch(rec, kurbo::Rect::new(x(c[0].end.0), S0, x(c[1].start.0), S1), 5.0, line);
+            let (a, z) = (c[0].end.0.min(c[1].end.0), c[0].start.0.max(c[1].start.0));
+            hatch(rec, kurbo::Rect::new(x(a), S0, x(z), S1), 5.0, line);
         }
         ticks(start, r.page_width.0, &x, &mut |tick| match tick {
             Tick::Mark(px, len, c) => fill(rec, px, S1 - len, px + 1.0, S1, c),
@@ -204,37 +208,8 @@ pub(super) fn paint(g: &mut Graphics, rec: &mut Recorder, view: &RulerView, them
                 rec.stroke_path(&rect_path(cell.inflate(-0.5, -0.5)), &pen(1.0), ink3);
             }
         }
-        // Tab stops: accent while dragged or while their popover is open, faint while a release removes them.
-        let open = match f.popover {
-            Some(Popover::TabStop { position, .. }) => Some(position.0),
-            Some(Popover::TabType { .. } | Popover::AutoCorrect { .. }) | None => None,
-        };
-        for s in &r.tabs {
-            let m = Marker::Tab(s.position.0);
-            let d = dragged(m);
-            let on = d.is_some() || open.is_some_and(|p| (p - s.position.0).abs() < 0.5);
-            let c = colour_of(on).with_alpha_f(if d.is_some_and(|d| d.removing) { 0.25 } else { 1.0 });
-            tab_glyph(rec, s.alignment, x(moved(m, start + s.position.0)), S1 - 12.0, c);
-        }
-        // The indent markers on the strip's edges: first line at the top, hanging (with the left indent) and right at
-        // the bottom.
-        let left = match f.drag {
-            Some(d) if matches!(d.marker, Marker::Hanging | Marker::Left) => d.at,
-            _ => start + r.indents.left.0,
-        };
-        let first = match f.drag {
-            Some(d) if d.marker == Marker::FirstLine => d.at,
-            Some(d) if d.marker == Marker::Left => d.at + r.indents.first_line.0,
-            _ => start + r.indents.left.0 + r.indents.first_line.0,
-        };
-        let right = moved(Marker::Right, end - r.indents.right.0);
-        let on = |ms: &[Marker]| f.drag.is_some_and(|d| ms.contains(&d.marker));
-        indent(rec, x(first), S0 - 2.0, true, colour_of(on(&[Marker::FirstLine, Marker::Left])));
-        indent(rec, x(left), S1 - 10.0, false, colour_of(on(&[Marker::Hanging, Marker::Left])));
-        indent(rec, x(right), S1 - 10.0, false, colour_of(on(&[Marker::Right])));
-        // The ghost of the stop a click adds.
-        if let Some((gh, a)) = f.ghost.zip(alignment(f.selector)) {
-            tab_glyph(rec, a, x(gh), S1 - 12.0, accent.with_alpha_f(0.5));
+        if view.model.lines == LineDirection::Horizontal {
+            line_marks(rec, view, f, &x, accent, ink);
         }
         if let Some((true, at)) = f.guide {
             fill(rec, at, S0, at + 1.0, S1, accent);
@@ -262,13 +237,18 @@ pub(super) fn paint(g: &mut Graphics, rec: &mut Recorder, view: &RulerView, them
         rec.push_clip(Clip::Rect { rect: kurbo::Rect::new(0.0, from, band, h), aa: true });
         let top = moved(Marker::Top, r.text.start.0);
         let bottom = moved(Marker::Bottom, r.text.end.0);
+        // Ticks count from where the lines start: the bottom for lines running up.
+        let zero = if view.model.lines == LineDirection::Up { bottom } else { top };
         let (page_t, page_b) = (y(0.0), y(r.page_height.0));
         let strip = kurbo::Rect::new(S0, page_t, S1, page_b);
         rec.fill_rrect(strip, 2.0, paper);
         g.draw_shape(rec, kurbo::RoundedRect::from_rect(strip.inflate(0.5, 0.5), 2.5), Some(&pen(1.0)), line);
         hatch(rec, kurbo::Rect::new(S0, page_t, S1, y(top)), 5.0, line);
         hatch(rec, kurbo::Rect::new(S0, y(bottom), S1, page_b), 5.0, line);
-        ticks(top, r.page_height.0, &y, &mut |tick| match tick {
+        if let Some(g) = r.gutter {
+            hatch(rec, kurbo::Rect::new(S0, y(g.start.0), S1, y(g.end.0)), 2.5, line);
+        }
+        ticks(zero, r.page_height.0, &y, &mut |tick| match tick {
             Tick::Mark(py, len, c) => fill(rec, S1 - len, py, S1, py + 1.0, c),
             Tick::Number(py, n) => {
                 if let Some(face) = &numbers {
@@ -295,6 +275,21 @@ pub(super) fn paint(g: &mut Graphics, rec: &mut Recorder, view: &RulerView, them
                 rec.stroke_path(&rect_path(cell.inflate(-0.5, -0.5)), &pen(1.0), ink3);
             }
         }
+        // The indents and stops of lines down or up the page: the horizontal ruler's turned a quarter with the text,
+        // its top edge at the band's right (down) or left (up).
+        match view.model.lines {
+            LineDirection::Horizontal => {}
+            LineDirection::Down => {
+                rec.push_transform(Affine::new([0.0, 1.0, -1.0, 0.0, band, 0.0]));
+                line_marks(rec, view, f, &y, accent, ink);
+                rec.pop();
+            }
+            LineDirection::Up => {
+                rec.push_transform(Affine::new([0.0, -1.0, 1.0, 0.0, 0.0, 0.0]));
+                line_marks(rec, view, f, &|pt| -y(pt), accent, ink);
+                rec.pop();
+            }
+        }
         if let Some((false, at)) = f.guide {
             fill(rec, S0, at, S1, at + 1.0, accent);
         }
@@ -314,6 +309,45 @@ pub(super) fn paint(g: &mut Graphics, rec: &mut Recorder, view: &RulerView, them
     }
     measures(g, rec, view, &f.page, f.measures);
     rec.pop();
+}
+
+/// The line markers in the horizontal band's frame, `u` placing a page point along it: the tab stops (accent while
+/// dragged or while their popover is open, faint while a release removes them), the indents on the strip's edges
+/// (first line at the top, hanging with the left indent and right at the bottom), and the ghost of the stop a click
+/// adds.
+fn line_marks(rec: &mut Recorder, view: &RulerView, f: &RulerFrame, u: &dyn Fn(f64) -> f64, accent: Color, ink: Color) {
+    let a = crate::services::ruler::along(&view.model);
+    let colour_of = |on: bool| if on { accent } else { ink };
+    let dragged = |m: Marker| f.drag.filter(|d| d.marker == m);
+    let open = match f.popover {
+        Some(Popover::TabStop { position, .. }) => Some(position.0),
+        Some(Popover::TabType { .. } | Popover::AutoCorrect { .. } | Popover::AutoFormat { .. } | Popover::PasteOptions { .. }) | None => None,
+    };
+    for s in a.tabs {
+        let m = Marker::Tab(s.position.0);
+        let d = dragged(m);
+        let on = d.is_some() || open.is_some_and(|p| (p - s.position.0).abs() < 0.5);
+        let c = colour_of(on).with_alpha_f(if d.is_some_and(|d| d.removing) { 0.25 } else { 1.0 });
+        tab_glyph(rec, s.alignment, u(d.map_or(a.at(s.position.0), |d| d.at)), S1 - 12.0, c);
+    }
+    let (left, first_line) = (a.indents.left.0, a.indents.first_line.0);
+    let left_at = match f.drag {
+        Some(d) if matches!(d.marker, Marker::Hanging | Marker::Left) => d.at,
+        _ => a.at(left),
+    };
+    let first = match f.drag {
+        Some(d) if d.marker == Marker::FirstLine => d.at,
+        Some(d) if d.marker == Marker::Left => d.at + a.sign * first_line,
+        _ => a.at(left + first_line),
+    };
+    let right = dragged(Marker::Right).map_or(a.before_end(a.indents.right.0), |d| d.at);
+    let on = |ms: &[Marker]| f.drag.is_some_and(|d| ms.contains(&d.marker));
+    indent(rec, u(first), S0 - 2.0, true, colour_of(on(&[Marker::FirstLine, Marker::Left])));
+    indent(rec, u(left_at), S1 - 10.0, false, colour_of(on(&[Marker::Hanging, Marker::Left])));
+    indent(rec, u(right), S1 - 10.0, false, colour_of(on(&[Marker::Right])));
+    if let Some((gh, kind)) = f.ghost.zip(alignment(f.selector)) {
+        tab_glyph(rec, kind, u(gh), S1 - 12.0, accent.with_alpha_f(0.5));
+    }
 }
 
 /// Draws the measurements in the page's theme: dimension lines with end ticks and their label on the paper colour,

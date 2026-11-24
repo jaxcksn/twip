@@ -60,7 +60,7 @@ public sealed class ContractTests
 
     private static bool TakesInput(JsonNode? step) => step?["op"]?.GetValue<string>() switch
     {
-        "key" or "text" or "click" => true,
+        "key" or "text" or "click" or "hover" or "drag" or "release" => true,
         "concurrent" => step["steps"]!.AsArray().Any(TakesInput),
         "repeat" => TakesInput(step["step"]),
         _ => false,
@@ -278,7 +278,15 @@ public sealed class ContractTests
                 case "text":
                     return Input(() => _host!.OnText(step["text"]!.GetValue<string>()));
                 case "click":
-                    return ClickAsync(step["text"]!.GetValue<string>(), ModsOf(step, at), at);
+                    return ClickAsync(step["text"]!.GetValue<string>(), ModsOf(step, at), at, (int?)step["clicks"] ?? 1, ButtonOf(step, at));
+                case "hover":
+                    return HoverAsync(step["text"]!.GetValue<string>(), at);
+                case "drag":
+                    return DragAsync(step, at);
+                case "release":
+                    if (_held is not { } held) throw new XunitException($"{runner}: {name}, {at}: release with no drag held");
+                    _held = null;
+                    return Input(() => _host!.OnPointer(PointerKind.Up, held.X, held.Y, held.Button, 1, held.Mods));
                 case "destroy":
                     return _session.DisposeAsync().AsTask();
                 case var other:
@@ -323,6 +331,7 @@ public sealed class ContractTests
                 case "setReadOnly": await _session.SetReadOnlyAsync(Parse<bool>(0)); return null;
                 case "setAuthor": await _session.SetAuthorAsync(Parse<Author>(0)); return null;
                 case "catalog": return Json(_session.Catalog);
+                case "getState": return JsonSerializer.SerializeToNode(_session.State, Ctx.EditorState);
                 case "fonts.setReplacements" when Arg(0) is JsonObject: _session.Fonts.SetReplacements(Parse<IReadOnlyDictionary<string, string>>(0)); return null;
                 case "fonts.setReplacements": _session.Fonts.SetReplacements(Parse<IReadOnlyList<FontRule>>(0)); return null;
                 case "fonts.setAliases" when Arg(0) is JsonObject: _session.Fonts.SetAliases(Parse<IReadOnlyDictionary<string, string>>(0)); return null;
@@ -336,10 +345,28 @@ public sealed class ContractTests
                 case "find.previous": return Json(await _session.Find.PreviousAsync(Parse<FindQuery>(0), ct));
                 case "find.all": return Json(await _session.Find.FindAllAsync(Parse<FindQuery>(0), ct));
                 case "find.select": await _session.Find.SelectAsync(Parse<MatchId>(0), ct); return null;
-                case "find.replace": return Json(await _session.Find.ReplaceAsync(Parse<FindQuery>(0), Parse<string>(1), ct));
-                // The scripts take the TypeScript shape, `{ count }`.
-                case "find.replaceAll": return new JsonObject { ["count"] = await _session.Find.ReplaceAllAsync(Parse<FindQuery>(0), Parse<string>(1), ct) };
-                case "menus.contextMenu": return Json(await _session.Menus.GetContextMenuAsync(ct));
+                case "find.replace": return Json(await _session.Find.ReplaceAsync(Parse<FindQuery>(0), Parse<string>(1), Arg(2) is null ? null : Parse<FindFormat>(2), ct));
+                case "find.replaceAll": return Json(await _session.Find.ReplaceAllAsync(Parse<FindQuery>(0), Parse<string>(1), Arg(2) is null ? null : Parse<FindFormat>(2), ct));
+                case "find.highlightAll": return Json(await _session.Find.HighlightAllAsync(Parse<FindQuery>(0), ct));
+                case "find.clearHighlights": await _session.Find.ClearHighlightsAsync(ct); return null;
+                case "copyContent": return Json(await _session.CopyContentAsync((bool?)Arg(0)?["cut"] ?? false, ct));
+                case "clipboardHtml": return Json(await _session.GetClipboardHtmlAsync(Parse<string>(0), ct));
+                case "pasteContent":
+                    await _session.PasteContentAsync(Parse<ClipboardContent>(0), Arg(1)?["as"]?.Deserialize(WireJson.Info<PasteMode?>()), ct);
+                    return null;
+                case "pasteChoices": return Json(await _session.GetPasteChoicesAsync(Parse<ClipboardContent>(0), ct));
+                case "references.crossReferenceTargets": return Json(await _session.References.GetCrossReferenceTargetsAsync(Parse<CrossReferenceKind>(0), ct));
+                case "references.captionLabels": return Json(await _session.References.GetCaptionLabelsAsync(Arg(0) is null ? null : Parse<IReadOnlyList<string>>(0), ct));
+                case "references.tablesOfContents": return Json(await _session.References.GetTablesOfContentsAsync(ct));
+                case "references.tocEntries": return Json(await _session.References.GetTocEntriesAsync(Parse<TableOfContentsOptions>(0), ct));
+                case "menus.contextMenu": return Json(await _session.Menus.GetContextMenuAsync(Arg(0)?["synonyms"]?.Deserialize(WireJson.Info<IReadOnlyList<string>>()), ct));
+                case "menus.wordAtSelection": return Json(await _session.Menus.WordAtSelectionAsync(ct));
+                case "selectionBounds": return Json(await _session.GetSelectionBoundsAsync(ct));
+                case "dragOut": return Json(await _session.DragOutAsync(ct));
+                case "dragEnd": await _session.DragEndAsync(Parse<DropEffect>(0), ct); return null;
+                case "setDefaultPictureWrap": await _session.SetDefaultPictureWrapAsync(Parse<ObjectWrap>(0), ct); return null;
+                case "defaultPictureWrap": return Json(await _session.GetDefaultPictureWrapAsync(ct));
+                case "elements.structure": return Json(await _session.Elements.GetStructureAsync(Arg(0)?["root"]?.Deserialize(WireJson.Info<ElementId?>()), (int?)Arg(0)?["depth"], ct));
                 case "menus.invoke": await _session.Menus.InvokeAsync(new MenuAction(Arg(0)?.DeepClone()), ct); return null;
                 case "spelling.addDictionary": await _session.Spelling.AddDictionaryAsync(Parse<Dictionary>(0), ct); return null;
                 case "spelling.setEnabled": await _session.Spelling.SetEnabledAsync(Parse<bool>(0)); return null;
@@ -355,6 +382,24 @@ public sealed class ContractTests
                 case "documentProperties": return Json(await _session.GetDocumentPropertiesAsync(ct));
                 case "navigation.select": await _session.Navigation.SelectAsync(Parse<HeadingId>(0), ct); return null;
                 case "styles.list": return Json(await _session.Styles.ListAsync(Arg(0)?["type"]?.Deserialize(WireJson.Info<StyleType>()), ct));
+                case "styles.definition": return Json(await _session.Styles.GetDefinitionAsync(Parse<StyleId>(0), ct));
+                case "styles.builtIn": return Json(await _session.Styles.GetBuiltInAsync(ct));
+                case "styles.documentDefaults": return Json(await _session.Styles.GetDocumentDefaultsAsync(ct));
+                case "lists.definition": return Json(await _session.Lists.GetDefinitionAsync(ct));
+                case "wordCount": return Json(await _session.GetWordCountAsync(Arg(0) is null ? null : Parse<WordCountOptions>(0), ct));
+                case "historyLabels": return Json(await _session.GetHistoryLabelsAsync(Arg(0)?["limit"]?.GetValue<int>(), ct));
+                case "themeColourGrid": return Json(await _session.GetThemeColourGridAsync(ct));
+                case "objectList": return Json(await _session.GetObjectListAsync(Arg(0)!.GetValue<int>(), ct));
+                case "objectImage": return Json(await _session.GetObjectImageAsync(ct));
+                case "shapeFillImage": return Json(await _session.GetShapeFillImageAsync(ct));
+                case "watermarkImage": return Json(await _session.GetWatermarkImageAsync(Arg(0)!.GetValue<int>(), ct));
+                case "pageFillImage": return Json(await _session.GetPageFillImageAsync(ct));
+                case "textToTableSize":
+                    return Json(await _session.GetTextToTableSizeAsync(
+                        Arg(0)!["separator"]!.Deserialize(WireJson.Info<TextSeparator>()),
+                        Arg(0)?["character"]?.GetValue<string>(),
+                        Arg(0)?["columns"]?.GetValue<int>(),
+                        ct));
                 case "lists.galleries": return Json(await _session.Lists.GalleriesAsync(Parse<ListGalleryKind>(0), ct));
                 case "elements.list": return Json(await _session.Elements.ListAsync(Arg(0) is null ? null : Parse<ElementFilter>(0), ct));
                 case "elements.boxes": return Json(await _session.Elements.BoxesAsync(Parse<ElementId>(0), ct));
@@ -365,6 +410,28 @@ public sealed class ContractTests
                 case "subTemplates.remove": await _session.SubTemplates.RemoveAsync(Parse<string>(0), ct: ct); return null;
                 case "review.revisions": return Json(await _session.Review.GetRevisionsAsync(ct));
                 case "review.comments": return Json(await _session.Review.GetCommentsAsync(ct));
+                case "review.people": return Json(await _session.Review.GetPeopleAsync(ct));
+                case "elements.get": return Json(await _session.Elements.GetAsync(Parse<ElementId>(0), ct));
+                case "elements.fieldCatalogue": return Json(await _session.Elements.GetFieldCatalogueAsync(Arg(0) is null ? null : Parse<FieldCategory>(0), ct));
+                case "elements.fieldFormats": return Json(await _session.Elements.GetFieldFormatsAsync(ct));
+                case "elements.composeField": return Json(await _session.Elements.ComposeFieldAsync(Parse<FieldChoice>(0), ct));
+                case "elements.parseField": return Json(await _session.Elements.ParseFieldAsync(Parse<string>(0), ct));
+                case "elements.fieldHere": return Json(await _session.Elements.GetFieldHereAsync(ct));
+                case "elements.dateFormats": return Json(await _session.Elements.GetDateFormatsAsync(Parse<string>(0), ct));
+                case "navigation.currentHeading": return Json(await _session.Navigation.GetCurrentHeadingAsync(ct));
+                case "notes": return Json(await _session.GetNotesAsync(ct));
+                case "noteSeparators": return Json(await _session.GetNoteSeparatorsAsync(Parse<NoteType>(0), ct));
+                case "columnPreset": return Json(await _session.GetColumnPresetAsync(Parse<ColumnPreset>(0), ct));
+                case "pageNumberSample": return Json(await _session.GetPageNumberSampleAsync(Parse<NumberFormat>(0), Arg(1) is null ? null : Parse<ChapterSeparator>(1), ct));
+                case "recommendedMinimumStyles": return Json(await _session.GetRecommendedMinimumStylesAsync(ct));
+                case "editableRanges": return Json(await _session.GetEditableRangesAsync(ct));
+                case "pageVersions": return Json(await _session.GetPageVersionsAsync(ct));
+                case "pageThumbnail":
+                {
+                    var (w, h) = (Arg(1)!.GetValue<int>(), Arg(2)!.GetValue<int>());
+                    var pixels = new byte[Math.Max(0, w) * Math.Max(0, h) * 4];
+                    return Json(await _session.GetPageThumbnailAsync(Arg(0)!.GetValue<int>(), pixels, w, h, ct));
+                }
             }
             if (method.StartsWith("commands.", StringComparison.Ordinal))
             {
@@ -447,24 +514,128 @@ public sealed class ContractTests
             }) ?? KeyModifiers.None;
 
         /// <summary>
-        /// Clicks the middle of the first occurrence of <paramref name="text"/> (of its first line): it is found, and
-        /// the caret the host reports at its end and, collapsed, at its start gives the line.
+        /// The middle of the first occurrence of <paramref name="text"/> (of its first line): it is found, and the caret
+        /// the host reports at its end and, collapsed, at its start gives the line. The caret is left at its start.
         /// </summary>
-        private async Task ClickAsync(string text, KeyModifiers mods, string at)
+        private async Task<(double X, double Y)> MiddleOf(string text, string at)
         {
-            if (!(await _session.Find.NextAsync(new FindQuery(text), default)).Found) Fail(at, $"no {text} to click");
+            if (!(await _session.Find.NextAsync(new FindQuery(text), default)).Found) Fail(at, $"no {text} to point at");
             await _adapter!.FlushAsync();
             var end = _adapter.Caret!.Bounds;
             await _session.RunAsync(EditorOperation.FromWire(new JsonObject { ["type"] = "moveSelection", ["by"] = "character", ["direction"] = "backward" }), default);
             await _adapter.FlushAsync();
             var start = _adapter.Caret!.Bounds;
             var x = start.Y == end.Y ? (start.X + end.X) / 2 : start.X + 2;
-            var y = start.Y + start.Height / 2;
+            return (x, start.Y + start.Height / 2);
+        }
+
+        /// <summary>Where the first occurrence of <paramref name="text"/> ends: the caret after it.</summary>
+        private async Task<(double X, double Y)> EndOf(string text, string at)
+        {
+            if (!(await _session.Find.NextAsync(new FindQuery(text), default)).Found) Fail(at, $"no {text} to point at");
+            await _adapter!.FlushAsync();
+            var end = _adapter.Caret!.Bounds;
+            return (end.X, end.Y + end.Height / 2);
+        }
+
+        private PointerButton ButtonOf(JsonNode step, string at) => (string?)step["button"] switch
+        {
+            null or "primary" => PointerButton.Primary,
+            "secondary" => PointerButton.Secondary,
+            var other => throw new XunitException($"{runner}: {name}, {at}: unknown button {other}"),
+        };
+
+        /// <summary>
+        /// The selection of text and cells as SetSelection puts it back, as the Rust runner keeps it: finding where a text
+        /// is moves the selection, and a Ctrl or Shift gesture goes on from the one before. Null for a caret, one block
+        /// of cells or an object.
+        /// </summary>
+        private EditorOperation? Kept()
+        {
+            var s = _session.State.Selection;
+            int? active = s.Kind == SelectionKind.Cells && s.CellBlocks.Count > 0 ? s.CellBlocks.Count - 1 : null;
+            return !s.RangesTruncated && (s.Ranges.Count > 0 || active is not null) ? EditorOperation.SetSelection(s.Ranges, s.CellBlocks, active) : null;
+        }
+
+        private async Task Restore(EditorOperation? kept)
+        {
+            if (kept is not null) await _session.RunAsync(kept, default);
+        }
+
+        private async Task ClickAsync(string text, KeyModifiers mods, string at, int clicks, PointerButton button)
+        {
+            var kept = Kept();
+            var (x, y) = await MiddleOf(text, at);
+            await Restore(kept);
             await Input(() =>
             {
-                _host!.OnPointer(PointerKind.Down, x, y, PointerButton.Primary, 1, mods);
-                _host.OnPointer(PointerKind.Up, x, y, PointerButton.Primary, 1, mods);
+                for (var n = 1; n <= Math.Clamp(clicks, 1, 3); n++)
+                {
+                    _host!.OnPointer(PointerKind.Down, x, y, button, n, mods);
+                    _host.OnPointer(PointerKind.Up, x, y, button, n, mods);
+                }
             });
+        }
+
+        private async Task HoverAsync(string text, string at)
+        {
+            var kept = Kept();
+            var (x, y) = await MiddleOf(text, at);
+            await Restore(kept);
+            await Input(() => _host!.OnPointer(PointerKind.Move, x, y, PointerButton.Primary, 0, KeyModifiers.None));
+        }
+
+        private (double X, double Y, PointerButton Button, KeyModifiers Mods)? _held;
+
+        /// <summary>A <c>drag</c>: the press, 8 moves and (unless held) the release, as the README's Steps table says.</summary>
+        private async Task DragAsync(JsonNode step, string at)
+        {
+            if (_held is not null) throw new XunitException($"{runner}: {name}, {at}: drag while a drag is held");
+            var (mods, button) = (ModsOf(step, at), ButtonOf(step, at));
+            var from = step["from"]!;
+            var kept = Kept();
+            (double X, double Y) start;
+            if (from["tableColumn"] is { } col)
+            {
+                var (cx, cy) = await MiddleOf(col["text"]!.GetValue<string>(), at);
+                await Input(() =>
+                {
+                    _host!.OnPointer(PointerKind.Down, cx, cy, PointerButton.Primary, 1, KeyModifiers.None);
+                    _host.OnPointer(PointerKind.Up, cx, cy, PointerButton.Primary, 1, KeyModifiers.None);
+                });
+                await _adapter!.FlushAsync();
+                var view = _host!.RulerView;
+                var border = (int)col["border"]!;
+                if (border >= view.Model.Horizontal.TableColumns.Count) Fail(at, $"no column border {border}");
+                var caret = _adapter.Caret!.Bounds;
+                start = (view.Horizontal.Origin + view.Model.Horizontal.TableColumns[border].Points * view.Horizontal.Scale, caret.Y + caret.Height / 2);
+            }
+            else
+            {
+                start = await MiddleOf(from["text"]!.GetValue<string>(), at);
+            }
+            (double X, double Y) end;
+            if (step["to"] is { } to)
+            {
+                end = await EndOf(to["text"]!.GetValue<string>(), at);
+            }
+            else
+            {
+                var scale = _host!.RulerView.Horizontal.Scale;
+                end = (start.X + ((double?)step["by"]?["dx"] ?? 0) * scale, start.Y + ((double?)step["by"]?["dy"] ?? 0) * scale);
+            }
+            await Restore(kept);
+            if ((bool?)from["select"] == true)
+                await _session.Find.NextAsync(new FindQuery(from["text"]!.GetValue<string>()), default);
+            var release = (bool?)step["release"] ?? true;
+            await Input(() =>
+            {
+                _host!.OnPointer(PointerKind.Down, start.X, start.Y, button, 1, mods);
+                for (var k = 1; k <= 8; k++)
+                    _host.OnPointer(PointerKind.Move, start.X + (end.X - start.X) * k / 8, start.Y + (end.Y - start.Y) * k / 8, button, 1, mods);
+                if (release) _host.OnPointer(PointerKind.Up, end.X, end.Y, button, 1, mods);
+            });
+            if (!release) _held = (end.X, end.Y, button, mods);
         }
 
         private Task Input(Action send)
@@ -558,6 +729,7 @@ public sealed class ContractTests
             _session.GestureRequested += (_, e) => Record("gesture", JsonSerializer.SerializeToNode(new GestureEvent(e.Gesture, e.Location, e.Page, e.Target), Ctx.GestureEvent));
             _session.ElementsChanged += (_, e) => Record("elementsChanged", JsonSerializer.SerializeToNode(new ElementsChangedPayload(e.Added, e.Removed, e.Changed), Ctx.ElementsChangedPayload));
             _session.FieldsUpdateRequested += (_, e) => Record("fieldsUpdateRequested", JsonSerializer.SerializeToNode(new FieldsUpdateRequestedPayload(e.Token, e.Fields), Ctx.FieldsUpdateRequestedPayload));
+            _session.TableOfContentsUpdateRequested += (_, e) => Record("tableOfContentsUpdateRequested", new JsonObject { ["index"] = e.Index });
             _session.CommentAnchorsChanged += (_, e) => Record("commentAnchors", JsonSerializer.SerializeToNode(new CommentAnchorsPayload(e.Anchors), Ctx.CommentAnchorsPayload));
             _session.RulerChanged += (_, e) => Record("rulerChanged", JsonSerializer.SerializeToNode(e.View, Ctx.RulerView));
             _session.TooltipChanged += (_, e) => Record("tooltip", JsonSerializer.SerializeToNode(

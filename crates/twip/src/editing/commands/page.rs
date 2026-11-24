@@ -4,7 +4,8 @@ use crate::api::command::{
     Columns, HeaderFooterDistance, LineNumberRestart, LineNumbers, Margins, MultiplePages, MultiplePagesMode, PageNumber, PageNumberFormat,
     PageNumberPlace, PageNumbering, PageVerticalAlignment, SectionBreakKind, TextFlow,
 };
-use crate::api::value::{Alignment, HorizontalAlignment};
+pub use crate::api::command::{MarginSide, PageNumberAlign};
+use crate::api::value::Alignment;
 use crate::docx::{Inline, SectionPage};
 use crate::font::Fonts;
 
@@ -151,7 +152,7 @@ impl Editor {
 
     pub(in crate::editing) fn set_page_numbering(&mut self, n: PageNumbering, fonts: &Fonts) -> Outcome {
         use crate::api::command::{ChapterSeparator, NumberFormat};
-        if n.format.is_some_and(|f| matches!(f, NumberFormat::Bullet | NumberFormat::None)) {
+        if n.format.as_ref().is_some_and(|f| matches!(f, NumberFormat::Bullet | NumberFormat::None)) {
             return Outcome::invalid("a page number format is a number style");
         }
         if let Some(Some(c)) = &n.chapter
@@ -162,11 +163,14 @@ impl Editor {
         if n.start.flatten().is_some_and(|s| s > 32767) {
             return Outcome::invalid("the first page number is 0…32767");
         }
+        if n.format.as_ref().is_some_and(|f| !f.writable()) {
+            return Outcome::invalid("a number style is 1 to 64 ASCII letters and digits");
+        }
         self.set_page(
             "Page Number Format",
             |p| {
-                if let Some(f) = n.format {
-                    p.pg_fmt = (f != NumberFormat::Decimal).then(|| f.val().to_string());
+                if let Some(f) = &n.format {
+                    p.pg_fmt = (*f != NumberFormat::Decimal).then(|| f.val().to_string());
                 }
                 if let Some(start) = n.start {
                     p.pg_start = start.map(i64::from);
@@ -323,14 +327,10 @@ impl Editor {
         let place = match p.place {
             Some(PageNumberPlace::Header) => PageNumberSpot::Header,
             Some(PageNumberPlace::Footer) => PageNumberSpot::Footer,
-            _ => PageNumberSpot::Caret,
+            Some(PageNumberPlace::Margin { side }) => PageNumberSpot::Margin(side),
+            Some(PageNumberPlace::Caret) | None => PageNumberSpot::Caret,
         };
-        let align = p.alignment.map(|a| match a {
-            HorizontalAlignment::Left => PageNumberAlign::Left,
-            HorizontalAlignment::Center => PageNumberAlign::Center,
-            HorizontalAlignment::Right => PageNumberAlign::Right,
-        });
-        self.insert_page_number_at(p.format, place, align, fonts)
+        self.insert_page_number_shown(p.format, place, p.alignment, p.show_on_first_page.unwrap_or(true), fonts)
     }
 
     /// Inserts a page number field showing `format` at `place`: at the caret, in the section's header or footer, or
@@ -528,36 +528,6 @@ fn shows_page(blocks: &[crate::docx::Block]) -> bool {
         crate::docx::Block::Para(p) => p.inlines.iter().any(|i| matches!(i, Inline::FieldBegin { kind: Some(crate::docx::FieldKind::Page), .. })),
         crate::docx::Block::Table(t) => t.rows.iter().flat_map(|r| &r.cells).any(|c| shows_page(&c.blocks)),
     })
-}
-
-/// A page margin, or a facing page's inside or outside one.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum MarginSide {
-    /// The left side of every page, as wide as the section's left margin (and gutter). With mirrored margins that
-    /// is the inside margin on odd pages and the outside one on even pages; [`MarginSide::Inside`] and
-    /// [`MarginSide::Outside`] follow the facing page.
-    Left,
-    /// The right side of every page, as wide as the section's right margin (see [`MarginSide::Left`]).
-    Right,
-    /// The margin by the binding: the left on odd pages, the right on even ones.
-    Inside,
-    /// The margin away from the binding.
-    Outside,
-}
-
-/// How a page number in the header or footer is aligned.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum PageNumberAlign {
-    /// On the left.
-    Left,
-    /// Centred.
-    Center,
-    /// On the right.
-    Right,
-    /// On the inside edge: the left on odd pages, the right on even ones.
-    Inside,
-    /// On the outside edge.
-    Outside,
 }
 
 /// The sample Word's Format Page Numbers shows for page numbers in `format` with chapter numbers `chapter` (its

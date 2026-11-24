@@ -24,6 +24,7 @@ public sealed class EditorSession : IDisposable, IAsyncDisposable, ICallbackSink
     private uint _id; // engine thread only
     private long _latestState;
     private IReadOnlyList<CommentAnchor> _anchors = [];
+    private IReadOnlyList<RevisionAnchor> _revisionAnchors = [];
     private Task? _closed;
 
     /// <summary>Creates a session over a blank document. Construction is lightweight and loads no native code.</summary>
@@ -37,6 +38,7 @@ public sealed class EditorSession : IDisposable, IAsyncDisposable, ICallbackSink
         Find = new EditorFind(this);
         Spelling = new EditorSpelling(this);
         Navigation = new EditorNavigation(this);
+        References = new EditorReferences(this);
         Styles = new EditorStyles(this);
         Lists = new EditorLists(this);
         Review = new EditorReview(this);
@@ -221,6 +223,9 @@ public sealed class EditorSession : IDisposable, IAsyncDisposable, ICallbackSink
     /// <summary>Headings, for a navigation pane.</summary>
     public EditorNavigation Navigation { get; }
 
+    /// <summary>Tables of contents, captions and cross-references.</summary>
+    public EditorReferences References { get; }
+
     /// <summary>The document's styles.</summary>
     public EditorStyles Styles { get; }
 
@@ -251,15 +256,228 @@ public sealed class EditorSession : IDisposable, IAsyncDisposable, ICallbackSink
     /// <summary>The session's font library.</summary>
     public FontLibrary Fonts { get; }
 
-    /// <summary>Document statistics, computed on request.</summary>
+    /// <summary>
+    /// Word, character, paragraph, line and page counts, computed on request: the document's, or the selected text's.
+    /// A count walks the whole document, so it isn't part of the state: a status bar's "N of M words" asks twice.
+    /// </summary>
+    /// <param name="options">What to count; null: the whole document, text boxes and notes included.</param>
     /// <param name="ct">Cancels the request.</param>
     /// <returns>The counts.</returns>
-    public Task<WordCount> GetWordCountAsync(CancellationToken ct = default) => CallAsync<WordCount>(Method.WordCount, [], ct);
+    public Task<WordCount> GetWordCountAsync(WordCountOptions? options = null, CancellationToken ct = default) =>
+        CallAsync<WordCount>(Method.WordCount, options is null ? [] : WireJson.ToUtf8(options), ct);
+
+    /// <summary>The undo and redo lists (the Undo and Redo drop-downs); undo several with <see cref="EditorCommands.UndoAsync"/>.</summary>
+    /// <param name="limit">At most this many labels each (default and most 100).</param>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>The lists.</returns>
+    public Task<HistoryLabels> GetHistoryLabelsAsync(int? limit = null, CancellationToken ct = default) =>
+        CallAsync<HistoryLabels>(Method.HistoryLabels, WireJson.ToUtf8(new HistoryLabelsRequest(limit)), ct);
+
+    /// <summary>
+    /// The theme colour grid colour pickers show: a column for each of Background 1, Text 1, Background 2, Text 2 and
+    /// Accent 1 to 6, each the colour then its five lighter and darker variants. Ask again when <see cref="EditorState.ThemeColors"/> change.
+    /// </summary>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>The grid's columns.</returns>
+    public Task<IReadOnlyList<ThemeColumn>> GetThemeColourGridAsync(CancellationToken ct = default) =>
+        CallAsync<IReadOnlyList<ThemeColumn>>(Method.ThemeColourGrid, [], ct);
+
+    /// <summary>
+    /// The floating objects on a page the selection's story reaches, front first, hidden ones too, each group's objects
+    /// within it, as Word's Selection Pane lists them. Empty past the last page.
+    /// </summary>
+    /// <param name="page">The page, from 0.</param>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>The objects.</returns>
+    public Task<IReadOnlyList<ObjectListEntry>> GetObjectListAsync(int page, CancellationToken ct = default) =>
+        CallAsync<IReadOnlyList<ObjectListEntry>>(Method.ObjectList, WireJson.ToUtf8(page), ct);
+
+    /// <summary>The selected picture's image (a group child's when one is selected), as the document holds it; null without one.</summary>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>The image's bytes.</returns>
+    public Task<byte[]?> GetObjectImageAsync(CancellationToken ct = default) => CallAsync<byte[]?>(Method.ObjectImage, [], ct);
+
+    /// <summary>The selected shape's picture fill's image (the state's fill carries no bytes); null without one.</summary>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>The image's bytes.</returns>
+    public Task<byte[]?> GetShapeFillImageAsync(CancellationToken ct = default) => CallAsync<byte[]?>(Method.ShapeFillImage, [], ct);
+
+    /// <summary>A section's picture watermark's image; null without one.</summary>
+    /// <param name="section">The section, from 0.</param>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>The image's bytes.</returns>
+    public Task<byte[]?> GetWatermarkImageAsync(int section, CancellationToken ct = default) =>
+        CallAsync<byte[]?>(Method.WatermarkImage, WireJson.ToUtf8(section), ct);
+
+    /// <summary>The page colour's picture or texture; null without one.</summary>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>The image's bytes.</returns>
+    public Task<byte[]?> GetPageFillImageAsync(CancellationToken ct = default) => CallAsync<byte[]?>(Method.PageFillImage, [], ct);
+
+    /// <summary>The rows and columns Convert Text to Table would make of the selection; null when it can't convert it.</summary>
+    /// <param name="separator">Where the text splits into cells.</param>
+    /// <param name="character">The one character to split at, with <see cref="TextSeparator.Other"/>.</param>
+    /// <param name="columns">The number of columns, 1 to 63 (by default the most pieces a paragraph has).</param>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>The table's size.</returns>
+    public Task<TableSize?> GetTextToTableSizeAsync(TextSeparator separator, string? character = null, int? columns = null, CancellationToken ct = default) =>
+        CallAsync<TableSize?>(Method.TextToTableSize, WireJson.ToUtf8(new TextToTableRequest(separator, character, columns)), ct);
+
+    /// <summary>The footnotes, then the endnotes, each in their references' order, for a notes list.</summary>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>The notes.</returns>
+    public Task<IReadOnlyList<NoteInfo>> GetNotesAsync(CancellationToken ct = default) => CallAsync<IReadOnlyList<NoteInfo>>(Method.Notes, [], ct);
+
+    /// <summary>The separators of footnotes or endnotes.</summary>
+    /// <param name="kind">Footnotes' or endnotes'.</param>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>The separators.</returns>
+    public Task<NoteSeparators> GetNoteSeparatorsAsync(NoteType kind, CancellationToken ct = default) =>
+        CallAsync<NoteSeparators>(Method.NoteSeparators, WireJson.ToUtf8(kind), ct);
+
+    /// <summary>The columns one of Word's column presets gives the selection's section.</summary>
+    /// <param name="preset">The preset.</param>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>The columns, for <see cref="EditorCommands.SetColumnsAsync"/>.</returns>
+    public Task<ColumnSettings> GetColumnPresetAsync(ColumnPreset preset, CancellationToken ct = default) =>
+        CallAsync<ColumnSettings>(Method.ColumnPreset, WireJson.ToUtf8(preset), ct);
+
+    /// <summary>The example Format Page Numbers shows for a number format, with chapter numbers when a separator is given.</summary>
+    /// <param name="format">The number format.</param>
+    /// <param name="chapterSeparator">The chapter numbers' separator; null for none.</param>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>The example.</returns>
+    public Task<string> GetPageNumberSampleAsync(NumberFormat format, ChapterSeparator? chapterSeparator = null, CancellationToken ct = default) =>
+        CallAsync<string>(Method.PageNumberSample, WireJson.ToUtf8(new PageNumberSampleRequest(format, chapterSeparator)), ct);
+
+    /// <summary>The styles Formatting Restrictions' Recommended Minimum leaves allowed.</summary>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>The styles.</returns>
+    public Task<IReadOnlyList<StyleId>> GetRecommendedMinimumStylesAsync(CancellationToken ct = default) =>
+        CallAsync<IReadOnlyList<StyleId>>(Method.RecommendedMinimumStyles, [], ct);
+
+    /// <summary>The editable ranges, in document order.</summary>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>The ranges.</returns>
+    public Task<IReadOnlyList<EditableRangeInfo>> GetEditableRangesAsync(CancellationToken ct = default) =>
+        CallAsync<IReadOnlyList<EditableRangeInfo>>(Method.EditableRanges, [], ct);
+
+    /// <summary>One version per laid-out page, from page 0: kept while layout keeps the page, new (never 0, never reused) when it is laid out again. Key cached thumbnails by it.</summary>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>The versions.</returns>
+    public Task<IReadOnlyList<ulong>> GetPageVersionsAsync(CancellationToken ct = default) => CallAsync<IReadOnlyList<ulong>>(Method.PageVersions, [], ct);
+
+    /// <summary>Draws a page whole into <paramref name="pixels"/>, as large as fits, centred over the view's background: a thumbnail.</summary>
+    /// <param name="page">The page, from 0.</param>
+    /// <param name="pixels">The pixels: <paramref name="width"/> x <paramref name="height"/> x 4 bytes, RGBA, premultiplied, rows packed.</param>
+    /// <param name="width">The thumbnail's width in pixels.</param>
+    /// <param name="height">The thumbnail's height in pixels.</param>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>The size the page is drawn at.</returns>
+    public Task<ThumbnailSize> GetPageThumbnailAsync(int page, Memory<byte> pixels, int width, int height, CancellationToken ct = default) => Enqueue(id =>
+    {
+        int status;
+        uint w = 0, h = 0;
+        unsafe
+        {
+            using var pin = pixels.Pin();
+            status = TwipNative.PageThumbnail(Engine, id, (uint)Math.Max(page, 0), (byte*)pin.Pointer, (nuint)pixels.Length, (uint)Math.Max(width, 0), (uint)Math.Max(height, 0), &w, &h);
+        }
+        WireJson.Unwrap(default, status);
+        return new ThumbnailSize((int)w, (int)h);
+    }, ct);
 
     /// <summary>The document's properties (core, extended and custom) and variables.</summary>
     /// <param name="ct">Cancels the request.</param>
     /// <returns>The properties.</returns>
     public Task<DocumentProperties> GetDocumentPropertiesAsync(CancellationToken ct = default) => CallAsync<DocumentProperties>(Method.DocumentProperties, [], ct);
+
+    /// <summary>Where the selection is on screen, over the pages in view: each selected line's or cell's box, each selected object's frame, and the box around them. Ask again on <see cref="StateChanged"/> and after a scroll, to place a floating toolbar.</summary>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>The bounds, in client pixels when a host is attached.</returns>
+    public async Task<SelectionBounds> GetSelectionBoundsAsync(CancellationToken ct = default)
+    {
+        var b = await CallAsync<SelectionBounds>(Method.SelectionBounds, [], ct).ConfigureAwait(false);
+        if (_host is not { } h)
+            return b;
+        return new SelectionBounds([.. b.Rects.Select(h.ToClient)], [.. b.Frames.Select(f => f with { Rect = h.ToClient(f.Rect), Bounds = h.ToClient(f.Bounds) })], b.Bounds is { } all ? h.ToClient(all) : null);
+    }
+
+    /// <summary>Starts a drag of the selection out of the editor, to another application or editor: what the platform drag carries. Null for a caret, or with text drag and drop off. End it with <see cref="DragEndAsync"/>, or <see cref="DropDraggedAsync"/> when it comes back.</summary>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>What the drag carries.</returns>
+    public Task<DragSource?> DragOutAsync(CancellationToken ct = default) => CallAsync<DragSource?>(Method.DragOut, [], ct);
+
+    /// <summary>
+    /// Copies (or cuts) the selection for an application that owns the clipboard: what to put on it (a copy of an object
+    /// carries its picture; its HTML gives objects as alternative text, <see cref="GetClipboardHtmlAsync"/> the HTML with
+    /// them drawn). Null when nothing is selected.
+    /// </summary>
+    /// <param name="cut">Cut instead of copying.</param>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>The clipboard content.</returns>
+    public Task<Hosting.ClipboardContent?> CopyContentAsync(bool cut = false, CancellationToken ct = default) =>
+        CallAsync<Hosting.ClipboardContent?>(Method.Copy, WireJson.ToUtf8(new CopyContentRequest(cut)), ct);
+
+    /// <summary>The HTML of the copy <paramref name="token"/> (its <see cref="Hosting.ClipboardContent.Native"/>) names, its objects drawn: for delayed rendering of <c>HTML Format</c>.</summary>
+    /// <param name="token">The copy's token.</param>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>The HTML.</returns>
+    public Task<string> GetClipboardHtmlAsync(string token, CancellationToken ct = default) => CallAsync<string>(Method.ClipboardHtml, WireJson.ToUtf8(token), ct);
+
+    /// <summary>
+    /// Pastes clipboard content the application read, as one transaction: as the paste options say for where it came
+    /// from, or as <paramref name="mode"/> takes it (Paste Special; refused when the clipboard holds nothing to paste that way).
+    /// </summary>
+    /// <param name="content">What the clipboard holds.</param>
+    /// <param name="mode">How it pastes; null for the paste options.</param>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>Completes when the paste has committed.</returns>
+    public Task PasteContentAsync(Hosting.ClipboardContent content, PasteMode? mode = null, CancellationToken ct = default) =>
+        CallAsync(Method.PasteContent, WireJson.ToUtf8(new PasteContentRequest(content with { Text = content.Text ?? "" }, mode)), ct);
+
+    /// <summary>What <paramref name="content"/> can paste as at the selection, in Word's order (Paste Special's list), and what Ctrl+V takes.</summary>
+    /// <param name="content">What the clipboard holds; null for the attached host's system clipboard.</param>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>The choices.</returns>
+    public async Task<PasteChoices> GetPasteChoicesAsync(Hosting.ClipboardContent? content = null, CancellationToken ct = default)
+    {
+        content ??= Host is { } host ? await host.ClipboardAsync().ConfigureAwait(false) : new Hosting.ClipboardContent("");
+        return await CallAsync<PasteChoices>(Method.PasteChoices, WireJson.ToUtf8(content with { Text = content.Text ?? "" }), ct).ConfigureAwait(false);
+    }
+
+    /// <summary>The drag out ended elsewhere: <see cref="DropEffect.Move"/> deletes the dragged text as one undo step, unless it changed since.</summary>
+    /// <param name="effect">What the drop target did.</param>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>Completes when the engine has taken it.</returns>
+    public Task DragEndAsync(DropEffect effect, CancellationToken ct = default) => CallAsync(Method.DragEnd, WireJson.ToUtf8(effect), ct);
+
+    /// <summary>The drag out came back and dropped at (<paramref name="x"/>, <paramref name="y"/>), viewport pixels: the text moves there, or is copied, as one undo step.</summary>
+    /// <param name="x">The x.</param>
+    /// <param name="y">The y.</param>
+    /// <param name="copy">Copies rather than moves.</param>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>Completes when the drop has committed.</returns>
+    public Task DropDraggedAsync(double x, double y, bool copy, CancellationToken ct = default) =>
+        CallAsync(Method.DropDragged, WireJson.ToUtf8(new System.Text.Json.Nodes.JsonObject { ["at"] = new System.Text.Json.Nodes.JsonObject { ["x"] = x, ["y"] = y }, ["copy"] = copy }), ct);
+
+    /// <summary>The wrap pictures inserted from now on take (Set as Default Layout); pasted content keeps its own. Never saved.</summary>
+    /// <param name="wrap">The wrap.</param>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>Completes when the engine has taken it.</returns>
+    public Task SetDefaultPictureWrapAsync(ObjectWrap wrap, CancellationToken ct = default) => CallAsync(Method.SetDefaultPictureWrap, WireJson.ToUtf8(wrap), ct);
+
+    /// <summary>The wrap inserted pictures take (<see cref="ObjectWrap.Inline"/> by default).</summary>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>The wrap.</returns>
+    public Task<ObjectWrap> GetDefaultPictureWrapAsync(CancellationToken ct = default) => CallAsync<ObjectWrap>(Method.DefaultPictureWrap, [], ct);
+
+    /// <summary>The paragraph style Click and Type gives the paragraphs it adds; null is the default paragraph style. Never saved.</summary>
+    /// <param name="style">The style.</param>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>Completes when the engine has taken it.</returns>
+    public Task SetClickAndTypeStyleAsync(StyleId? style, CancellationToken ct = default) =>
+        CallAsync(Method.SetClickAndTypeStyle, style is { } s ? WireJson.ToUtf8(s) : "null"u8.ToArray(), ct);
 
     // Hosting
 
@@ -346,6 +564,9 @@ public sealed class EditorSession : IDisposable, IAsyncDisposable, ICallbackSink
     /// <summary>Fields need results the application computes; answer with <see cref="EditorCommands.SetFieldResultsAsync"/>.</summary>
     public event EventHandler<FieldsUpdateRequestedEventArgs>? FieldsUpdateRequested;
 
+    /// <summary>F9 with the selection in a table of contents: ask how to update it, then call <see cref="EditorCommands.UpdateTableOfContentsAsync"/>.</summary>
+    public event EventHandler<TableOfContentsUpdateRequestedEventArgs>? TableOfContentsUpdateRequested;
+
     /// <summary>Revisions were added, removed or changed.</summary>
     public event EventHandler? RevisionsChanged;
 
@@ -354,6 +575,9 @@ public sealed class EditorSession : IDisposable, IAsyncDisposable, ICallbackSink
 
     /// <summary>The visible comment anchors moved. Attached only.</summary>
     public event EventHandler<CommentAnchorsChangedEventArgs>? CommentAnchorsChanged;
+
+    /// <summary>The revision balloons' anchors changed (All Markup with balloons). Attached only.</summary>
+    public event EventHandler<RevisionBalloonsChangedEventArgs>? RevisionBalloonsChanged;
 
     /// <summary>The ruler view changed. Attached only.</summary>
     public event EventHandler<RulerChangedEventArgs>? RulerChanged;
@@ -455,6 +679,9 @@ public sealed class EditorSession : IDisposable, IAsyncDisposable, ICallbackSink
     /// <summary>The visible comments' anchors, from the latest <c>commentAnchors</c> event; empty while unattached.</summary>
     internal IReadOnlyList<CommentAnchor> CommentAnchors => Volatile.Read(ref _anchors);
 
+    /// <summary>The revision balloons' anchors, from the latest <c>revisionBalloons</c> event; empty while unattached.</summary>
+    internal IReadOnlyList<RevisionAnchor> RevisionAnchors => Volatile.Read(ref _revisionAnchors);
+
     internal Task RunAsync(EditorOperation operation, CancellationToken ct) =>
         CallAsync(Method.Run, WireJson.ToUtf8(operation), ct);
 
@@ -521,7 +748,7 @@ public sealed class EditorSession : IDisposable, IAsyncDisposable, ICallbackSink
 
     private Task<(byte[] Bytes, SaveResult Result)> ExportAsync(string format, PdfOptions? pdf, CancellationToken ct) => Enqueue(id =>
     {
-        var options = WireJson.ToUtf8(new ExportOptionsWire(format, pdf?.OpenPassword, pdf?.Keywords is { Count: > 0 } k ? k : null));
+        var options = WireJson.ToUtf8(new ExportOptionsWire(format, pdf?.OpenPassword, pdf?.Keywords is { Count: > 0 } k ? k : null, pdf?.HiddenText == true ? true : null));
         TwipBuf bytes = default, meta = default;
         int status;
         unsafe
@@ -682,6 +909,10 @@ public sealed class EditorSession : IDisposable, IAsyncDisposable, ICallbackSink
                 var fields = root.Deserialize(ctx.FieldsUpdateRequestedPayload)!;
                 Notify(() => Raise(FieldsUpdateRequested, new FieldsUpdateRequestedEventArgs(fields.Token, fields.Fields, snapshot)));
                 break;
+            case "tableOfContentsUpdateRequested":
+                var toc = root.Deserialize(ctx.TableOfContentsUpdateRequestedPayload)!;
+                Notify(() => Raise(TableOfContentsUpdateRequested, new TableOfContentsUpdateRequestedEventArgs(toc.Index, snapshot)));
+                break;
             case "revisionsChanged":
                 Notify(() => Raise(RevisionsChanged, EventArgs.Empty));
                 break;
@@ -694,13 +925,19 @@ public sealed class EditorSession : IDisposable, IAsyncDisposable, ICallbackSink
                 Volatile.Write(ref _anchors, anchors.Anchors);
                 Notify(() => Raise(CommentAnchorsChanged, new CommentAnchorsChangedEventArgs(anchors.Anchors, snapshot)));
                 break;
+            case "revisionBalloons":
+                var balloons = root.Deserialize(ctx.RevisionBalloonsPayload)!;
+                if (_host is { } balloonHost) balloons = balloons with { Anchors = [.. balloons.Anchors.Select(balloonHost.ToClient)] };
+                Volatile.Write(ref _revisionAnchors, balloons.Anchors);
+                Notify(() => Raise(RevisionBalloonsChanged, new RevisionBalloonsChangedEventArgs(balloons.Anchors, snapshot)));
+                break;
             case "rulerChanged":
                 var ruler = root.Deserialize(ctx.RulerView)!;
                 if (_host is { } rulerHost) ruler = rulerHost.ToClient(ruler);
                 Notify(() => Raise(RulerChanged, new RulerChangedEventArgs(ruler, snapshot)));
                 break;
             case "tooltip":
-                var tip = root.Deserialize(ctx.TooltipPayload)!.Tooltip is { } t ? new TooltipInfo(t.Kind, t.Text, t.At, t.Rect) : null;
+                var tip = root.Deserialize(ctx.TooltipPayload)!.Tooltip is { } t ? new TooltipInfo(t.Kind, t.Text, t.At, t.Rect) { Author = t.Author, Time = t.Time, Change = t.Change, Body = t.Body } : null;
                 if (tip is not null && _host is { } tipHost) tip = tipHost.ToClient(tip);
                 _host?.OnTooltip(tip);
                 Notify(() => Raise(TooltipChanged, new TooltipEventArgs(tip, snapshot)));

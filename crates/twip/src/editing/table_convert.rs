@@ -230,7 +230,13 @@ impl Editor {
     }
 
     pub(super) fn convert_text_to_table(&mut self, o: &TextToTable, fonts: &Fonts) -> Outcome {
-        self.convert_text_to_table_fit(o, ConvertFit::Fixed(None), fonts)
+        use crate::api::state::TableFit;
+        let fit = match o.autofit.unwrap_or_default() {
+            TableFit::Fixed => ConvertFit::Fixed(o.column_width.map(|w| w.0)),
+            TableFit::Contents => ConvertFit::Contents,
+            TableFit::Window => ConvertFit::Window,
+        };
+        self.convert_text_to_table_fit(o, fit, fonts)
     }
 
     /// The paragraphs Convert Text to Table would convert, in the selection's container: none when the selection
@@ -387,7 +393,7 @@ impl Editor {
     }
 
     pub(super) fn convert_table_to_text(&mut self, o: &TableToText, fonts: &Fonts) -> Outcome {
-        self.convert_table_to_text_nested(o, false, fonts)
+        self.convert_table_to_text_nested(o, o.convert_nested.unwrap_or(false), fonts)
     }
 
     /// Convert Table to Text; `nested` converts the tables in its cells too, with the same separator (Word's "Convert

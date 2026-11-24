@@ -22,7 +22,7 @@ fn set(id: &crate::api::value::ElementId) -> SetControl {
 }
 
 fn fill(id: &crate::api::value::ElementId, text: &str) -> Command {
-    Command::FillControl(FillControl { id: id.clone(), text: Some(text.into()), image: None, docx: None, building_block: None })
+    Command::FillControl(FillControl { id: id.clone(), text: Some(text.into()), image: None, docx: None, building_block: None, date: None })
 }
 
 fn case(doc: &crate::docx::Document) -> usize {
@@ -51,7 +51,7 @@ fn bound_controls_show_their_node_and_write_it_back() {
     let xml = &e.document().data_parts[case(e.document())].xml;
     assert!(xml.contains("<name>Grace &amp; Co</name>"), "{xml}");
     assert!(line(&e, "Address").contains("Grace & Co"), "the other control follows");
-    run(&mut e, Command::Undo);
+    run(&mut e, Command::Undo(Default::default()));
     assert!(e.document().data_parts[case(e.document())].xml.contains("<name>Ada</name>") && line(&e, "Address").contains("Ada"));
     // Saved with other data, the controls show it when opened.
     let mut doc = e.document().clone();
@@ -70,7 +70,7 @@ fn a_temporary_control_goes_when_its_content_is_edited() {
     run(&mut e, fill(&name, "Grace"));
     assert!(!e.document().controls.contains_key(&c), "the control went");
     assert!(texts(&e).iter().any(|t| t.contains("Grace")), "its content stays");
-    run(&mut e, Command::Undo);
+    run(&mut e, Command::Undo(Default::default()));
     assert!(e.document().controls.contains_key(&c), "undo brings it back");
 }
 
@@ -93,9 +93,19 @@ fn a_gallery_control_takes_a_building_block_of_its_category() {
     assert_eq!((gallery.as_deref(), category.as_deref()), (Some("Custom 1"), Some("Sub-templates")));
     let names: Vec<String> = e.gallery_entries(gallery.as_deref(), category.as_deref()).map(|b| b.name.clone()).collect();
     assert!(names.iter().any(|n| n == "Violation"), "{names:?}");
-    run(&mut e, Command::FillControl(FillControl { id: id.clone(), text: None, image: None, docx: None, building_block: Some("Violation".into()) }));
+    run(
+        &mut e,
+        Command::FillControl(FillControl {
+            id: id.clone(),
+            text: None,
+            image: None,
+            docx: None,
+            building_block: Some("Violation".into()),
+            date: None,
+        }),
+    );
     assert!(texts(&e).iter().any(|t| t == "Violation notice") && !texts(&e).iter().any(|t| t == "Choose"), "{:?}", texts(&e));
-    let none = FillControl { id, text: None, image: None, docx: None, building_block: Some("Nope".into()) };
+    let none = FillControl { id, text: None, image: None, docx: None, building_block: Some("Nope".into()), date: None };
     assert!(matches!(e.execute(Command::FillControl(none), fonts()), Outcome::Refused(_)));
     let saved = crate::docx::write::save(e.document()).expect("saves");
     let again = Editor::open(&saved, fonts()).expect("reopens");
@@ -128,7 +138,7 @@ fn a_building_block_name_two_categories_share_is_refused() {
     .expect("repackages");
     let mut e = Editor::open(&bytes, fonts()).expect("opens");
     let (_, id) = control(&e, "Pick");
-    let pick = |name: &str| FillControl { id: id.clone(), text: None, image: None, docx: None, building_block: Some(name.into()) };
+    let pick = |name: &str| FillControl { id: id.clone(), text: None, image: None, docx: None, building_block: Some(name.into()), date: None };
     assert!(matches!(e.execute(Command::FillControl(pick("Summary")), fonts()), Outcome::Refused(_)), "which one was meant is unknown");
     assert!(texts(&e).iter().any(|t| t == "Choose"), "nothing was inserted");
     assert!(matches!(e.execute(Command::FillControl(pick("Notice")), fonts()), Outcome::Changed(_)), "an unambiguous name fills");

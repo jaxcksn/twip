@@ -39,6 +39,8 @@ fn new_page_borders_take_the_documents_header_setting() {
         style: crate::api::command::BorderStyle::Single,
         width: crate::api::value::Points(0.5),
         color: crate::api::value::AutoOr::Auto,
+        space: None,
+        shadow: None,
     };
     e.execute(Command::SetPageBorders(PageBordersChange { top: Some(Some(line)), ..Default::default() }), fonts());
     assert_eq!(surround(&e), [Some(false), Some(false)]);
@@ -49,7 +51,7 @@ fn new_page_borders_take_the_documents_header_setting() {
 fn a_hyperlink_address_ending_in_a_backslash_round_trips() {
     for address in ["C:\\docs\\", "say \"hi\""] {
         let mut e = Editor::open(&blank_body("<w:p><w:r><w:t>x</w:t></w:r></w:p>"), fonts()).expect("opens");
-        e.execute(Command::InsertHyperlink(Hyperlink { address: address.into(), text: Some("folder".into()) }), fonts());
+        e.execute(Command::InsertHyperlink(Hyperlink { address: address.into(), text: Some("folder".into()), ..Default::default() }), fonts());
         e.complete(fonts());
         for _ in 0..3 {
             e.execute(mv(MoveBy::Char, Dir::Back, false), fonts());
@@ -70,7 +72,7 @@ fn undoing_a_tracked_edit_leaves_no_new_person_in_the_saved_package() {
         z.file_names().filter_map(|n| n.ok()).any(|n| n.contains("people"))
     };
     assert!(people(&e), "the tracked insertion names its author");
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert!(!people(&e));
 }
 

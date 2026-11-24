@@ -9,7 +9,6 @@ use super::position::{Position, StoryId};
 use super::readback::BorderLine;
 use super::selection::{ObjectRef, Selection};
 use super::step::Step;
-use crate::api::value::Points;
 use crate::docx::NoteKind;
 use crate::layout::Unit;
 
@@ -265,7 +264,7 @@ impl Editor {
         let s = self.doc.sections.get(self.focus_section());
         let separator = s.map(|s| s.columns.separator);
         let width = s.map_or(468.0, |s| s.page_w - s.right - s.left - self.gutter_axes(s.gutter, s.page_w, s.page_h).0);
-        let equal = |n| Columns { count: n, spacing: Some(Points(SPACE)), separator, widths: None };
+        let equal = |n| Columns { count: n, spacing: Some(Points(SPACE)), separator, widths: None, apply_to: None, start_new_column: None };
         let narrow = ((width - 2.0 * SPACE) / 3.0).max(1.0);
         let wide = (width - SPACE - narrow).max(1.0);
         let two = |a: f64, b: f64| Columns {
@@ -273,6 +272,8 @@ impl Editor {
             spacing: Some(Points(SPACE)),
             separator,
             widths: Some(vec![ColumnWidth { width: Points(a), spacing: Points(SPACE) }, ColumnWidth { width: Points(b), spacing: Points(0.0) }]),
+            apply_to: None,
+            start_new_column: None,
         };
         match preset {
             ColumnPreset::One => equal(1),
@@ -286,13 +287,14 @@ impl Editor {
     /// Sets the page borders of the selection's section, or of every section.
     pub(super) fn set_page_borders(&mut self, c: crate::api::command::PageBordersChange, fonts: &Fonts) -> Outcome {
         let shadow = c.shadow;
-        let line = |l: &crate::api::command::Border| BorderLine {
-            style: l.style,
-            width: l.width,
-            color: super::commands::rgb_value(l.color),
-            space: Points(0.0),
-            shadow: false,
-        };
+        let line = |l: &crate::api::command::Border| BorderLine::of_api(l, 0.0, false);
+        if let Some(why) = [&c.top, &c.left, &c.bottom, &c.right].into_iter().flatten().flatten().find_map(|l| line(l).check().err()) {
+            return Outcome::invalid(&why);
+        }
+        let given = [&c.top, &c.left, &c.bottom, &c.right].map(|e| match e {
+            Some(Some(l)) => (l.space.is_some(), l.shadow.is_some()),
+            _ => (false, false),
+        });
         let edit = PageBordersEdit {
             top: c.top.as_ref().map(|e| e.as_ref().map(line)),
             left: c.left.as_ref().map(|e| e.as_ref().map(line)),
@@ -302,12 +304,12 @@ impl Editor {
             display: c.display,
             surround_header: c.surround_header,
             surround_footer: c.surround_footer,
-            behind_text: None,
+            behind_text: c.behind_text,
             apply_to: c.apply_to,
         };
-        // The line's own distance and shadow aren't given: an edge keeps its distance (a new one takes Word's), and
-        // the shadow is the far edges', as given, else each edge's as it was.
-        self.edit_page_borders(&edit, Some(shadow), fonts)
+        // Where a line gives no distance or shadow of its own: an edge keeps its distance (a new one takes Word's),
+        // and the shadow is the far edges', as given, else each edge's as it was.
+        self.edit_page_borders(&edit, Some((shadow, given)), fonts)
     }
 
     /// Sets the page borders of the selection's section, or of every section: each edge's line, colour (RGB or a
@@ -346,7 +348,7 @@ impl Editor {
     }
 
     /// Sets page borders by `c`; `legacy` (the shadow given, if any) when the lines' distances and shadows aren't.
-    fn edit_page_borders(&mut self, c: &PageBordersEdit, legacy: Option<Option<bool>>, fonts: &Fonts) -> Outcome {
+    fn edit_page_borders(&mut self, c: &PageBordersEdit, legacy: Option<(Option<bool>, [(bool, bool); 4])>, fonts: &Fonts) -> Outcome {
         use crate::api::command::{PageBorderDisplay, PageBorderOffset, PageBorderScope};
         let focus = self.focus_section();
         let in_scope = |section: usize| c.apply_to == PageBorderScope::WholeDocument || section == focus;
@@ -414,8 +416,9 @@ impl Editor {
                 b.behind_text = on;
             }
             // A shadow given goes on the far edges; none given, each edge keeps its own (a new one the page's)
-            let given = legacy.flatten();
+            let given = legacy.and_then(|(g, _)| g);
             let page_shadow = b.bottom.as_ref().is_some_and(|x| x.shadow);
+            let own = |k: usize| legacy.map_or((true, true), |(_, g)| g[k]);
             // A new edge's space: 24 pt from the page's edge, or 1 pt (top, bottom) and 4 pt (sides) from the text.
             let space = |side: &str, page: bool| {
                 if page {
@@ -437,14 +440,14 @@ impl Editor {
                 Some(Some(l)) => Some(crate::docx::props::Border {
                     style: l.style.val().into(),
                     width: l.width.0,
-                    space: match legacy {
-                        Some(_) => old.as_ref().map_or_else(|| space(side, b.offset_from_page), |o| o.space),
-                        None => l.space.0,
+                    space: match own(k).0 {
+                        false => old.as_ref().map_or_else(|| space(side, b.offset_from_page), |o| o.space),
+                        true => l.space.0,
                     },
-                    shadow: match legacy {
-                        None => l.shadow,
-                        Some(Some(s)) => s && far,
-                        Some(None) => old.as_ref().map_or(page_shadow && far, |o| o.shadow),
+                    shadow: match (own(k).1, given) {
+                        (true, _) => l.shadow,
+                        (false, Some(s)) => s && far,
+                        (false, None) => old.as_ref().map_or(page_shadow && far, |o| o.shadow),
                     },
                     color: colours[k].map(|c| c.rgb),
                     color_theme: colours[k].and_then(|c| c.theme),
@@ -553,6 +556,22 @@ pub struct PageBordersEdit {
     pub behind_text: Option<bool>,
     /// The sections they apply to.
     pub apply_to: crate::api::command::PageBorderScope,
+}
+
+impl From<PageBordersReadback> for crate::api::state::PageBorders {
+    fn from(b: PageBordersReadback) -> crate::api::state::PageBorders {
+        crate::api::state::PageBorders {
+            top: b.top.map(Into::into),
+            left: b.left.map(Into::into),
+            bottom: b.bottom.map(Into::into),
+            right: b.right.map(Into::into),
+            offset_from: b.offset_from,
+            display: b.display,
+            surround_header: b.surround_header,
+            surround_footer: b.surround_footer,
+            behind_text: b.behind_text,
+        }
+    }
 }
 
 /// A section's page borders as read back.

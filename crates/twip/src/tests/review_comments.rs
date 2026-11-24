@@ -126,7 +126,7 @@ fn ranges_follow_edits_and_go_with_all_their_text() {
     select(&mut e, 5, 8);
     changed(e.execute(crate::editing::tests::del(Dir::Forward, false), fonts()));
     assert!(e.document().comments.by_id.is_empty());
-    changed(e.execute(Command::Undo, fonts()));
+    changed(e.execute(Command::Undo(Default::default()), fonts()));
     assert_eq!(e.comment_threads()[0].scope.as_deref(), Some("Yta"));
 }
 
@@ -144,7 +144,7 @@ fn deleting_a_root_deletes_its_replies_and_undo_restores_them() {
     changed(e.delete_comment(root, fonts()));
     assert!(e.document().comments.by_id.is_empty());
     assert!(e.comment_threads().is_empty());
-    changed(e.execute(Command::Undo, fonts()));
+    changed(e.execute(Command::Undo(Default::default()), fonts()));
     assert_eq!(threads(&mut e)[0].1.len(), 2);
     let back = reread(&e);
     assert_eq!(back.document().comments.by_id.len(), 2);
@@ -281,7 +281,7 @@ fn delete_all_comments_and_the_shown_ones() {
     changed(e.delete_all_comments(true, fonts()));
     let left: Vec<Vec<String>> = threads(&mut e).iter().map(|t| t.1.iter().map(|c| c.1.clone()).collect()).collect();
     assert_eq!(left, vec![vec!["two".to_string(), "ann's reply".to_string()]], "Bob's thread stays whole");
-    changed(e.execute(Command::Undo, fonts()));
+    changed(e.execute(Command::Undo(Default::default()), fonts()));
     assert_eq!(threads(&mut e).len(), 2, "one undo step");
     assert_eq!(e.set_show_markup(true, true, false), Outcome::Moved);
     e.complete(fonts());
@@ -291,6 +291,6 @@ fn delete_all_comments_and_the_shown_ones() {
     assert!(e.document().comments.by_id.is_empty() && threads(&mut e).is_empty());
     let mut back = reread(&e);
     assert!(threads(&mut back).is_empty(), "saved without them");
-    changed(e.execute(Command::Undo, fonts()));
+    changed(e.execute(Command::Undo(Default::default()), fonts()));
     assert_eq!(threads(&mut e).len(), 2);
 }

@@ -28,6 +28,10 @@ export interface MountedReview extends Review {
   attachBalloon(thread: CommentId, card: HTMLElement): () => void;
   /** The current anchors, also delivered by the `commentAnchors` event. */
   anchors(): CommentAnchor[];
+  /** Sets where and how attached balloons go; what isn't given is kept. */
+  setBalloonOptions(options: Partial<BalloonOptions>): void;
+  /** Where and how attached balloons go. */
+  readonly balloonOptions: BalloonOptions;
 }
 
 /** A tracked revision. */
@@ -63,6 +67,8 @@ export interface RevisionInfo {
   story: SelectionSummary['story'];
   /** A move's other half. */
   pair?: RevisionId;
+  /** Show Markup shows it (its kind and its reviewer); one not shown draws as if accepted. */
+  shown: boolean;
 }
 
 /** A comment and its replies. */
@@ -77,6 +83,8 @@ export interface CommentThread {
   page: number;
   /** The first comment, then its replies. */
   comments: Comment[];
+  /** Show Markup shows the thread. */
+  shown: boolean;
 }
 
 /** One comment. */
@@ -91,6 +99,8 @@ export interface Comment {
   body: RichText;
   /** The body as plain text. */
   plainText: string;
+  /** Show Markup shows it: a reply shows exactly when its thread does. */
+  shown: boolean;
 }
 
 /** Someone who made a revision or a comment. */
@@ -103,6 +113,147 @@ export interface Person {
   identity?: { provider: string; userId: string };
   /** The colour the editor marks their changes with. */
   color: Color;
+  /** Show Markup shows their revisions and comments. */
+  visible: boolean;
+}
+
+/** Where revisions show in All Markup: in balloons beside the page, in place, or only formatting changes in balloons. */
+export type BalloonMode = 'balloons' | 'inline' | 'commentsAndFormatting';
+
+/** Which kinds of markup show, and whose. */
+export interface ShowMarkup {
+  /** Insertions and deletions: of text, moves, rows and cells. */
+  insertionsDeletions: boolean;
+  /** Formatting changes. */
+  formatting: boolean;
+  /** Comments. */
+  comments: boolean;
+  /** The reviewers whose markup doesn't show, by name. */
+  hiddenReviewers: string[];
+}
+
+/** How a revision marks its text; `hidden`, `caret` and `pound` are for deleted and moved-away text only. */
+export type TextMark =
+  | 'none'
+  | 'colorOnly'
+  | 'bold'
+  | 'italic'
+  | 'underline'
+  | 'doubleUnderline'
+  | 'strikethrough'
+  | 'doubleStrikethrough'
+  | 'hidden'
+  | 'caret'
+  | 'pound';
+
+/** The colour a mark or cell highlight draws in: the author's, the text's own, or a fixed one. */
+export type MarkColor = 'byAuthor' | 'auto' | { fixed: Color };
+
+/** How one kind of revision draws. */
+export interface MarkLook {
+  /** How the text is marked. */
+  mark: TextMark;
+  /** The mark's colour. */
+  color: MarkColor;
+}
+
+/** Which side of the text change bars go. */
+export type BarSide = 'none' | 'left' | 'right' | 'outside';
+
+/** How revisions draw (Track Changes Options). Not saved. */
+export interface MarkupStyle {
+  /** Inserted text. */
+  insertions: MarkLook;
+  /** Deleted text. */
+  deletions: MarkLook;
+  /** Text with formatting changes. */
+  formatting: MarkLook;
+  /** Text moved away. */
+  movedFrom: MarkLook;
+  /** Text moved here. */
+  movedTo: MarkLook;
+  /** Where change bars go. */
+  changeBars: BarSide;
+  /** The change bars' colour, or `auto`: red in Simple Markup, grey in All Markup. */
+  changeBarColor: Color | 'auto';
+  /** Inserted cells' fill. */
+  insertedCells: MarkColor;
+  /** Deleted cells' fill. */
+  deletedCells: MarkColor;
+  /** Merged cells' fill. */
+  mergedCells: MarkColor;
+  /** Split cells' fill. */
+  splitCells: MarkColor;
+}
+
+/** `setMarkupStyle`'s options: what isn't given is kept. */
+export interface MarkupStyleChange {
+  /** Inserted text. */
+  insertions?: Partial<MarkLook>;
+  /** Deleted text (`hidden`, `caret` and `pound` marks too). */
+  deletions?: Partial<MarkLook>;
+  /** Text with formatting changes. */
+  formatting?: Partial<MarkLook>;
+  /** Text moved away (`hidden`, `caret` and `pound` marks too). */
+  movedFrom?: Partial<MarkLook>;
+  /** Text moved here. */
+  movedTo?: Partial<MarkLook>;
+  /** Where change bars go. */
+  changeBars?: BarSide;
+  /** The change bars' colour, or `'auto'`. */
+  changeBarColor?: Color | 'auto';
+  /** Inserted cells' fill. */
+  insertedCells?: MarkColor;
+  /** Deleted cells' fill. */
+  deletedCells?: MarkColor;
+  /** Merged cells' fill. */
+  mergedCells?: MarkColor;
+  /** Split cells' fill. */
+  splitCells?: MarkColor;
+}
+
+/** How many revisions of each kind, and comment threads. */
+export interface MarkupCounts {
+  /** Inserted text, rows and cells. */
+  insertions: number;
+  /** Deleted text, rows and cells. */
+  deletions: number;
+  /** Both halves of each move. */
+  moves: number;
+  /** Formatting changes. */
+  formatting: number;
+  /** Comment threads. */
+  comments: number;
+}
+
+/** The review counts: of everything, and of what Show Markup shows. */
+export interface ReviewCounts {
+  /** Every revision and thread. */
+  all: MarkupCounts;
+  /** Those Show Markup shows. */
+  shown: MarkupCounts;
+}
+
+/** Where a revision balloon goes, for a host that draws balloons beside the page (`revisionBalloons`). */
+export interface RevisionAnchor {
+  /** The revision (`review.revisions()` gives its text and description). */
+  revision: RevisionId;
+  /** What changed. */
+  kind: RevisionInfo['kind'];
+  /** Who made it. */
+  author: string;
+  /** The page. */
+  page: number;
+  /** The revision's first character, at its baseline. */
+  start: ContentPoint;
+  /** The first line's top. */
+  lineTop: number;
+  /** The first line's bottom. */
+  lineBottom: number;
+  /** The x where a leader line leaves the page. */
+  pageEdge: number;
+  /** The x of the page's left edge, for balloons on the left. */
+  pageLeft: number;
 }
 
 /** Formatted text: paragraphs of runs. */
@@ -147,6 +298,45 @@ export interface CommentAnchor {
   lineBottom: number;
   /** The x where a leader line leaves the page. */
   pageEdge: number;
+  /** The x of the page's left edge, for balloons on the left. */
+  pageLeft: number;
+}
+
+/**
+ * Where the SDK places attached balloons, and how (Track Changes Options' balloon settings). Not saved: a view
+ * setting of the mounted editor.
+ */
+export interface BalloonOptions {
+  /** The margin the balloons go in. Default `'right'`. */
+  side: 'left' | 'right';
+  /**
+   * A balloon's preferred width: in points, or a percent (0 to 100) of the page's width. Default 3.7 in
+   * (`{ points: 266.4 }`).
+   */
+  width: { points: number } | { percent: number };
+  /** Leader lines join each balloon to its text. Default true. */
+  connectingLines: boolean;
+  /** The colour comment cards take: their author's, or one colour. Default `'byAuthor'`. */
+  commentColor: 'byAuthor' | { fixed: Color };
+}
+
+/** Word's balloon settings. */
+export const defaultBalloonOptions: BalloonOptions = { side: 'right', width: { points: 266.4 }, connectingLines: true, commentColor: 'byAuthor' };
+
+/** `options` over `was`, the width's percent kept to 0 to 100 and its points to 0 and up. */
+export function balloonOptions(was: BalloonOptions, options: Partial<BalloonOptions>): BalloonOptions {
+  const next = { ...was, ...options };
+  const width = 'percent' in next.width ? { percent: Math.min(100, Math.max(0, next.width.percent || 0)) } : { points: Math.max(0, next.width.points || 0) };
+  return { ...next, width };
+}
+
+/**
+ * Where a balloon `width` CSS px wide goes beside its anchor: right of the page (or in a markup pane `paneLeft` px
+ * from the content's left) or left of it, `gap` px off.
+ */
+export function balloonLeft(anchor: CommentAnchor, width: number, side: BalloonOptions['side'], gap: number, paneLeft?: number): number {
+  if (side === 'left') return anchor.pageLeft - gap - width;
+  return paneLeft ?? anchor.pageEdge + gap;
 }
 
 /** Where the SDK placed an attached balloon. */

@@ -215,6 +215,6 @@ fn the_format_painter_copies_a_runs_and_its_paragraphs_formatting() {
     assert_ne!(s.state().revision, rev);
     assert_eq!(s.state().formatting.bold, Tri::Uniform(true), "the word at the caret takes the run's formatting");
     assert_eq!(s.state().paragraph.alignment, Tri::Uniform(Alignment::Center), "and the paragraph the paragraph's");
-    s.run(Command::Undo).expect("undoes");
+    s.run(Command::Undo(Default::default())).expect("undoes");
     assert_eq!(s.state().paragraph.alignment, Tri::Uniform(Alignment::Left), "in one step");
 }

@@ -91,10 +91,10 @@ const FIELD: &str = "<w:p><w:r><w:fldChar w:fldCharType=\"begin\"/></w:r><w:r><w
 #[test]
 fn field_codes_are_not_text_to_find_count_or_copy() {
     with_session(&package(FIELD, "", ""), |s| {
-        assert_eq!(s.find_all(&q("pricing")).len(), 0, "the code isn't found");
-        assert_eq!(s.find_all(&q("link")).len(), 1, "the result is");
-        assert_eq!(s.replace_all(&q("HYPERLINK"), "x").unwrap_or(0), 0, "nor replaced");
-        assert_eq!(s.word_count().words, 1, "only the result counts");
+        assert_eq!(s.find_all(&q("pricing")).expect("finds").matches.len(), 0, "the code isn't found");
+        assert_eq!(s.find_all(&q("link")).expect("finds").matches.len(), 1, "the result is");
+        assert_eq!(s.replace_all(&q("HYPERLINK"), "x", None).map(|c| c.count).unwrap_or(0), 0, "nor replaced");
+        assert_eq!(s.word_count(Default::default()).words, 1, "only the result counts");
         s.run(Command::SelectAll).expect("selects");
         assert_eq!(s.state().selection.text.as_deref(), Some("link"), "the selection's text is the result");
         assert_eq!(s.copy(false).map(|c| c.text).as_deref(), Some("link"), "so is the copy's");
@@ -111,10 +111,10 @@ fn a_match_never_takes_part_of_a_field() {
     with_session(&package(&text_then_link("Total "), "", ""), |s| {
         for whole in [false, true] {
             let query = FindQuery { whole_words: Some(whole), ..q("l li") };
-            assert_eq!(s.find_all(&query).len(), 0, "no match across the field's begin");
-            assert_eq!(s.replace_all(&query, "X").expect("replaces"), 0, "nor a replacement");
+            assert_eq!(s.find_all(&query).expect("finds").matches.len(), 0, "no match across the field's begin");
+            assert_eq!(s.replace_all(&query, "X", None).map(|c| c.count).expect("replaces"), 0, "nor a replacement");
         }
-        assert_eq!(s.replace_all(&q("in"), "X").expect("replaces"), 1, "a match in the result is replaced");
+        assert_eq!(s.replace_all(&q("in"), "X", None).map(|c| c.count).expect("replaces"), 1, "a match in the result is replaced");
         let fields = s.with_editor(|e| {
             crate::docx::fields::spans(
                 &e.document().sections[0]
@@ -129,7 +129,7 @@ fn a_match_never_takes_part_of_a_field() {
             .len()
         });
         assert_eq!(fields, 1, "the field is whole");
-        assert_eq!(s.find_all(&q("lXk")).len(), 1);
+        assert_eq!(s.find_all(&q("lXk")).expect("finds").matches.len(), 1);
     });
 }
 
@@ -173,14 +173,14 @@ fn tracked_text_the_view_hides_does_not_split_words() {
 fn find_next_takes_the_whole_grapheme_cluster_it_lands_in() {
     with_session(&package(&p("a\u{1F44D}\u{1F3FD}b \u{1F44D}\u{1F3FD}"), "", ""), |s| {
         let query = q("\u{1F44D}");
-        assert!(s.find(&query, Order::Next).found);
+        assert!(s.find(&query, Order::Next).expect("finds").found);
         let first = s.state().selection.text.clone();
         assert_eq!(first.as_deref(), Some("\u{1F44D}\u{1F3FD}"), "the cluster is selected");
         let at = s.with_editor(|e| e.selection());
-        assert!(s.find(&query, Order::Next).found);
+        assert!(s.find(&query, Order::Next).expect("finds").found);
         assert_ne!(s.with_editor(|e| e.selection()), at, "Find Next moves on");
-        s.replace(&query, "X").expect("replaces");
-        assert_eq!(s.find_all(&q("X")).len(), 1, "Replace replaced the selected match");
+        s.replace(&query, "X", None).expect("replaces");
+        assert_eq!(s.find_all(&q("X")).expect("finds").matches.len(), 1, "Replace replaced the selected match");
     });
 }
 
@@ -188,13 +188,13 @@ fn find_next_takes_the_whole_grapheme_cluster_it_lands_in() {
 fn the_selection_names_the_revision_it_is_in() {
     let body = "<w:p><w:ins w:id=\"2\" w:author=\"A\" w:date=\"2024-01-01T00:00:00Z\"><w:r><w:t>hello</w:t></w:r></w:ins><w:r><w:t xml:space=\"preserve\"> plain</w:t></w:r></w:p>";
     with_session(&package(body, "", ""), |s| {
-        assert!(s.find(&q("ell"), Order::Next).found);
+        assert!(s.find(&q("ell"), Order::Next).expect("finds").found);
         let id = s.state().selection.revision.clone().expect("the insertion");
         assert_eq!(s.revisions().first().map(|r| r.id.clone()), Some(id.clone()), "as the list names it");
         let menu = s.context_menu();
         assert!(matches!(&menu.target, MenuTarget::Revision { id: m } if *m == id));
         assert!(format!("{:?}", menu.items).contains("Accept Change"));
-        assert!(s.find(&q("plain"), Order::Next).found);
+        assert!(s.find(&q("plain"), Order::Next).expect("finds").found);
         assert_eq!(s.state().selection.revision, None, "outside it");
     });
 }
@@ -350,7 +350,7 @@ fn a_language_tag_in_another_case_is_the_same_language() {
 fn table_properties_start_from_the_cells_margins() {
     let body = "<w:tbl><w:tblPr><w:tblW w:w=\"0\" w:type=\"auto\"/><w:tblCellMar><w:left w:w=\"0\" w:type=\"dxa\"/><w:right w:w=\"200\" w:type=\"dxa\"/></w:tblCellMar></w:tblPr><w:tblGrid><w:gridCol w:w=\"4000\"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>";
     with_session(&package(body, "", ""), |s| {
-        assert!(s.find(&q("cell"), Order::Next).found);
+        assert!(s.find(&q("cell"), Order::Next).expect("finds").found);
         let m = s.dialog_open(DialogKind::TableProperties).expect("opens");
         let crate::api::services::DialogValues::TableProperties(v) = &m.values else { panic!("{m:?}") };
         assert_eq!((v.cell_margins.left.0, v.cell_margins.right.0), (0.0, 10.0), "the table's margins");
@@ -392,12 +392,12 @@ fn find_replace_and_spelling_reach_every_story() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-STORIES.docx");
     with_session(&std::fs::read(path).expect("the fixture"), |s| {
         for (text, story) in [("Text box, second", "a text box"), ("Footnote 1:", "a footnote"), ("odd-page", "a header")] {
-            assert_eq!(s.find_all(&q(text)).len(), 1, "{text:?} in {story}");
+            assert_eq!(s.find_all(&q(text)).expect("finds").matches.len(), 1, "{text:?} in {story}");
         }
-        assert!(s.find(&q("Footnote 1:"), Order::Next).found);
+        assert!(s.find(&q("Footnote 1:"), Order::Next).expect("finds").found);
         assert_eq!(s.state().selection.story, crate::api::value::Story::Footnote, "Find Next goes into the note");
-        assert_eq!(s.replace_all(&q("Text box, second"), "Box two").expect("replaces"), 1);
-        assert_eq!(s.find_all(&q("Box two")).len(), 1, "the text box was replaced");
+        assert_eq!(s.replace_all(&q("Text box, second"), "Box two", None).map(|c| c.count).expect("replaces"), 1);
+        assert_eq!(s.find_all(&q("Box two")).expect("finds").matches.len(), 1, "the text box was replaced");
         s.spelling().add_dictionary(dictionary("en-US", &["a"])).expect("loads");
         let body = s.with_editor(|e| {
             let mut sp = crate::services::spelling::Spellers::default();

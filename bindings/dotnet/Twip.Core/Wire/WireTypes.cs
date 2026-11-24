@@ -22,7 +22,8 @@ internal sealed record EngineOptionsWire(string Fonts);
 internal sealed record ExportOptionsWire(
     string Format,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? OpenPassword = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? Keywords = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? Keywords = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? HiddenText = null);
 
 internal sealed record PdfFontSetWire(
     bool IncludeSystemFonts, IReadOnlyList<string> FontFiles, IReadOnlyList<FontRule> Replacements, IReadOnlyList<Alias> Aliases,
@@ -32,7 +33,8 @@ internal sealed record PdfFontSetWire(
 
 internal sealed record PdfOptionsWire(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? OpenPassword,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? Keywords);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? Keywords,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? HiddenText = null);
 
 internal sealed record PdfConvertMeta(IReadOnlyList<Warning> Warnings, FontsReport Fonts);
 
@@ -81,7 +83,17 @@ internal sealed record ElementsChangedPayload(IReadOnlyList<ElementInfo> Added, 
 
 internal sealed record FieldsUpdateRequestedPayload(long Token, IReadOnlyList<FieldUpdateRequest> Fields);
 
+internal sealed record TableOfContentsUpdateRequestedPayload(int Index);
+
+internal sealed record CopyContentRequest(bool Cut);
+
+internal sealed record PasteContentRequest(ClipboardContent Data, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), JsonPropertyName("as")] PasteMode? Mode);
+
 internal sealed record CommentAnchorsPayload([property: JsonPropertyName("value")] IReadOnlyList<CommentAnchor> Anchors);
+
+internal sealed record RevisionBalloonsPayload([property: JsonPropertyName("value")] IReadOnlyList<RevisionAnchor> Anchors);
+
+internal sealed record PageNumberSampleRequest(NumberFormat Format, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ChapterSeparator? ChapterSeparator);
 
 internal sealed record BalloonsLaidOutPayload([property: JsonPropertyName("value")] IReadOnlyList<BalloonPlacement> Placements);
 
@@ -102,7 +114,11 @@ internal sealed record ElementSelectPayload([property: JsonPropertyName("value")
 
 internal sealed record TooltipWire(
     TooltipKind Kind, string Text,
-    [property: JsonConverter(typeof(ClientPointConverter))] PointF At, RectangleF Rect);
+    [property: JsonConverter(typeof(ClientPointConverter))] PointF At, RectangleF Rect,
+    Person? Author = null,
+    [property: JsonConverter(typeof(NullableUtcTimeConverter))] DateTimeOffset? Time = null,
+    RevisionKind? Change = null,
+    string? Body = null);
 
 internal sealed record AnnouncementPayload(string Text, AnnouncementKind Kind);
 
@@ -138,7 +154,9 @@ internal sealed record ReleaseRequest : HostRequest;
 internal sealed record ClipboardRequest(ClipboardContent Data) : HostRequest;
 
 /// <summary>The caret moved: for the IME window and the system caret.</summary>
-internal sealed record CaretRequest(double X, double Y, double Height, bool Visible) : HostRequest;
+internal sealed record CaretRequest(
+    double X, double Y, double Width, double Height, LineDirection Line,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double[][]? Ends, bool Visible) : HostRequest;
 
 /// <summary>Scroll the view's top-left to this point (a zoom), once the next frame has sized the content.</summary>
 internal sealed record ScrollRequest(double X, double Y) : HostRequest;
@@ -205,12 +223,15 @@ internal sealed record KeyOutcome(string Type, [property: JsonIgnore(Condition =
 
 /// <summary>The drawn frame's document size and caret, for scrollbars and the IME.</summary>
 internal sealed record FrameInfo(
-    double ContentWidth, double ContentHeight, double CaretX, double CaretY, double CaretHeight, bool CaretVisible, int Pages);
+    double ContentWidth, double ContentHeight, double CaretX, double CaretY, double CaretHeight, bool CaretVisible, int Pages,
+    double CaretWidth = 0, LineDirection CaretLine = LineDirection.Horizontal,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double[][]? CaretEnds = null);
 
-/// <summary>What a command made: an element or comment <c>id</c>, a data part's <c>itemId</c>, or a <c>changed</c> count (and a <c>skipped</c> one).</summary>
+/// <summary>What a command made: an element or comment <c>id</c>, a data part's <c>itemId</c>, a style's <c>styleId</c>, or a <c>changed</c> count (and a <c>skipped</c> one).</summary>
 internal sealed record CommandResult(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Id = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ItemId = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? StyleId = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Changed = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Skipped = null);
 
@@ -251,7 +272,7 @@ internal sealed record FindRequest(FindQuery Query, NavigationDirection Directio
 
 internal sealed record SubTemplateExportRequest(string Name, string? Category);
 
-internal sealed record ReplaceRequest(FindQuery Query, string With);
+internal sealed record ReplaceRequest(FindQuery Query, string With, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] FindFormat? ReplaceFormat = null);
 
 internal sealed record ReplaceAllResult(int Count);
 

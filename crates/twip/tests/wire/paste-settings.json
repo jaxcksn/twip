@@ -1,0 +1,20 @@
+[
+  {
+    "between": "keepSource",
+    "conflict": "destinationStyles",
+    "keepBullets": true,
+    "other": "keepSource",
+    "showButton": true,
+    "smart": {
+      "fromExcel": true,
+      "fromPowerPoint": true,
+      "mergeLists": true,
+      "paragraphSpacing": true,
+      "styles": true,
+      "tables": true,
+      "wordSpacing": true
+    },
+    "smartCutPaste": true,
+    "within": "keepSource"
+  }
+]

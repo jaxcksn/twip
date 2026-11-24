@@ -56,9 +56,11 @@ impl Editor {
     }
 
     pub(in crate::editing) fn resolve_all(&mut self, accept: bool, a: AuthorFilter, fonts: &Fonts) -> Outcome {
-        let scope = match a.author {
-            Some(name) => Scope::Author(name),
-            None => Scope::All,
+        let scope = match (a.author, a.shown.unwrap_or(false)) {
+            (Some(_), true) => return Outcome::invalid("author or shown"),
+            (Some(name), false) => Scope::Author(name),
+            (None, true) => Scope::Shown,
+            (None, false) => Scope::All,
         };
         self.resolve_revisions(accept, &scope, fonts)
     }

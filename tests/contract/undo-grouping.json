@@ -26,6 +26,18 @@
     { "op": "expectState", "match": { "revision": 9, "history": { "canUndo": true } } },
     { "op": "command", "command": { "type": "undo" } },
     { "op": "call", "method": "find.next", "args": [{ "text": "Hello" }], "result": { "found": false } },
-    { "op": "expectState", "match": { "revision": 10, "history": { "canUndo": false, "canRedo": true } } }
+    { "op": "expectState", "match": { "revision": 10, "history": { "canUndo": false, "canRedo": true } } },
+    { "op": "key", "key": "y", "mods": ["ctrl"] },
+    { "op": "call", "method": "find.next", "args": [{ "text": "Hello" }], "result": { "found": true } },
+    { "op": "expectState", "match": { "history": { "canUndo": true } } },
+    { "op": "command", "command": { "type": "selectAll" } },
+    { "op": "command", "command": { "type": "setBold", "value": true } },
+    { "op": "command", "command": { "type": "setItalic", "value": true } },
+    { "op": "call", "method": "historyLabels", "args": [{ "limit": 2 }], "result": { "undo": { "$exact": ["Italic", "Bold"] }, "moreUndo": true, "redo": { "$exact": [] }, "moreRedo": false } },
+    { "op": "command", "command": { "type": "undo", "count": 2 } },
+    { "op": "expectState", "match": { "formatting": { "bold": false, "italic": false }, "history": { "canRedo": true, "redoLabel": "Bold" } } },
+    { "op": "call", "method": "historyLabels", "result": { "redo": { "$exact": ["Bold", "Italic"] } } },
+    { "op": "command", "command": { "type": "redo", "count": 5 } },
+    { "op": "expectState", "match": { "formatting": { "bold": true, "italic": true }, "history": { "canRedo": false } } }
   ]
 }

@@ -52,7 +52,12 @@ fn select(e: &mut Editor, from: usize, to: usize) {
 }
 
 fn shade(target: ShadingTarget, fill: u32) -> Command {
-    Command::SetShading(ShadingChange { target, fill: NoneOr::Value(Color(fill)), pattern: ShadingPattern::Clear, color: AutoOr::Auto })
+    Command::SetShading(ShadingChange {
+        target,
+        fill: NoneOr::Value(crate::api::drawing::ColourValue::rgb(Color(fill))),
+        pattern: ShadingPattern::Clear,
+        color: AutoOr::Auto,
+    })
 }
 
 #[test]
@@ -156,7 +161,12 @@ fn a_fill_alone_keeps_the_pattern_the_style_gives() {
     .expect("repackages");
     let mut e = Editor::open(&package, fonts()).expect("opens");
     let fill = |target| {
-        Command::SetShading(ShadingChange { target, fill: NoneOr::Value(Color(0x00B050)), pattern: ShadingPattern::Other, color: AutoOr::Auto })
+        Command::SetShading(ShadingChange {
+            target,
+            fill: NoneOr::Value(crate::api::drawing::ColourValue::rgb(Color(0x00B050))),
+            pattern: ShadingPattern::Other,
+            color: AutoOr::Auto,
+        })
     };
     for (para, target) in [(0, ShadingTarget::Cell), (4, ShadingTarget::Paragraph), (5, ShadingTarget::Table)] {
         select(&mut e, para, para);
@@ -207,8 +217,9 @@ fn borders_and_shading_show_a_merged_cells_last_row_bottom() {
     for row in [0, 1] {
         e.set_selection(Selection::Cells { table, anchor: CellRef { row, col: 0 }, focus: CellRef { row, col: 0 }, shape: CellShape::Rect });
         let v = e.table_borders_shading(ShadingTarget::Cell).expect("the dialog opens");
-        let edge = |b: &Option<crate::api::command::Border>| b.as_ref().map(|b| (b.width.0, b.color));
-        assert_eq!(edge(&v.top), Some((1.0, AutoOr::Value(Color(0x000000)))), "row {row}: the merged cell's top");
-        assert_eq!(edge(&v.bottom), Some((3.0, AutoOr::Value(Color(0xFF0000)))), "row {row}: the merged cell's last row's bottom");
+        let edge = |b: &Option<crate::api::command::Border>| b.as_ref().map(|b| (b.width.0, b.color.clone()));
+        let rgb = |c| AutoOr::Value(crate::api::drawing::ColourValue::rgb(Color(c)));
+        assert_eq!(edge(&v.top), Some((1.0, rgb(0x000000))), "row {row}: the merged cell's top");
+        assert_eq!(edge(&v.bottom), Some((3.0, rgb(0xFF0000))), "row {row}: the merged cell's last row's bottom");
     }
 }
