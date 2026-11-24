@@ -191,6 +191,8 @@ fn a_copy_of_half_a_table_holds_no_edge() {
     e.execute(Command::Copy, fonts());
     e.select_range(ps[3], Unit(3), Unit(3), fonts());
     e.execute(Command::Paste(Default::default()), fonts());
+    let all: Vec<String> = body_paras(&e).iter().map(|p| shown(p)).collect();
+    assert_eq!(all[3..], ["OneOne", "Tw"], "{all:?}");
     assert_eq!(balance(&saved(&e)), (1, 1, 1));
     assert_eq!(e.tables_of_contents().len(), 1);
 }
@@ -665,8 +667,12 @@ const OUTLINE: &str = concat!(
 );
 
 fn numbered(level: u8, text: &str, mark: Option<&str>) -> String {
+    static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(100);
     let (a, b) = match mark {
-        Some(m) => (format!(r#"<w:bookmarkStart w:id="{level}{m}" w:name="{m}"/>"#), format!(r#"<w:bookmarkEnd w:id="{level}{m}"/>"#)),
+        Some(m) => {
+            let id = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            (format!(r#"<w:bookmarkStart w:id="{id}" w:name="{m}"/>"#), format!(r#"<w:bookmarkEnd w:id="{id}"/>"#))
+        }
         None => (String::new(), String::new()),
     };
     format!(
@@ -1317,11 +1323,22 @@ fn many_references_with_notes_update_in_one_pass() {
     e.select_range(alpha, Unit(0), Unit(6), fonts());
     e.execute(Command::InsertBookmark("Mark".into()), fonts());
     let before = e.document().footnotes.len();
+    let source: Vec<i64> = e.document().footnotes.keys().copied().collect();
     // Twice: the second round's old copies go.
     for round in 0..2 {
         e.execute(Command::SelectAll, fonts());
         e.execute(Command::UpdateFields(Default::default()), fonts());
         assert_eq!(e.document().footnotes.len(), before + n, "round {round}");
+        // Each result owns a note of its own, and every note is referred to.
+        let made: Vec<i64> = body_paras(&e)[1..]
+            .iter()
+            .flat_map(|p| p.inlines.iter())
+            .filter_map(|i| if let Inline::NoteRef { id, .. } = i { Some(*id) } else { None })
+            .collect();
+        let distinct: std::collections::HashSet<i64> = made.iter().copied().collect();
+        assert_eq!((made.len(), distinct.len()), (n, n), "round {round}");
+        assert!(made.iter().all(|id| e.document().footnotes.contains_key(id) && !source.contains(id)), "round {round}");
+        assert!(e.document().footnotes.keys().all(|k| distinct.contains(k) || source.contains(k)), "round {round}");
     }
 }
 
@@ -1330,11 +1347,18 @@ fn an_entire_update_drops_many_orphan_marks_in_one_walk() {
     let n = 3_000;
     let refs: String = (0..n).map(|k| field(&format!("PAGEREF _Toc{k:09} \\h"), "1")).collect();
     let toc = READ_TOC.replacen("<w:r><w:t>Two</w:t></w:r>", &format!("<w:r><w:t>Two</w:t></w:r>{refs}"), 1);
-    let body = toc + &para("Normal", "x").repeat(n);
+    let marked: String = (0..n)
+        .map(|k| format!(r#"<w:p><w:bookmarkStart w:id="{k}" w:name="_Toc{k:09}"/><w:r><w:t>x</w:t></w:r><w:bookmarkEnd w:id="{k}"/></w:p>"#))
+        .collect();
+    let body = toc + &marked;
     let mut e = Editor::open(&doc_with(&body, HEADINGS), fonts()).unwrap();
+    let hidden = |e: &Editor| e.bookmarks().into_iter().filter(|b| b.name.starts_with("_Toc")).count();
+    assert_eq!(hidden(&e), n);
     let t = e.tables_of_contents().remove(0);
     assert!(matches!(e.update_toc(&t, TocUpdate::Entire, fonts()), Outcome::Changed(_)));
     assert_eq!(e.tables_of_contents().len(), 1);
+    // The new table's one mark, on its heading.
+    assert_eq!(hidden(&e), 1);
     assert!(!saved(&e).contains("_Toc000000001"));
 }
 
@@ -1809,4 +1833,284 @@ fn alt_f9_on_a_field_whose_result_holds_tables_shows_only_its_code() {
     assert_eq!(e.selection().focus().and_then(|p| p.para_offset()), Some((end_para, Unit(0))));
     show_codes(&mut e, false);
     assert_eq!(drawn_lines(&mut e), ["Cell", "More", "After"]);
+}
+
+// Note copies, note targets and table handles
+
+/// `body` with the footnotes and endnotes `(id, text)`.
+fn with_notes(body: &str, foot: &[(i64, &str)], end: &[(i64, &str)]) -> Vec<u8> {
+    use super::empty_stories::{NS, build};
+    let notes = |tag: &str, list: &[(i64, &str)]| -> String {
+        let inner: String = list.iter().map(|(id, t)| format!(r#"<w:{tag} w:id="{id}"><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:{tag}>"#)).collect();
+        format!(r#"<w:{tag}s {NS}>{inner}</w:{tag}s>"#)
+    };
+    let (f, n) = (notes("footnote", foot), notes("endnote", end));
+    build(body, "", &[("footnotes.xml", "footnotes", "footnotes", &f), ("endnotes.xml", "endnotes", "endnotes", &n)])
+}
+
+fn foot_ref(id: i64) -> String {
+    format!(r#"<w:r><w:footnoteReference w:id="{id}"/></w:r>"#)
+}
+
+fn note_ids(p: &Paragraph) -> Vec<i64> {
+    p.inlines.iter().filter_map(|i| if let Inline::NoteRef { id, .. } = i { Some(*id) } else { None }).collect()
+}
+
+fn note_text(e: &Editor, id: i64) -> String {
+    match e.document().footnotes.get(&id).and_then(|b| b.first()) {
+        Some(Block::Para(p)) => shown(p),
+        _ => String::new(),
+    }
+}
+
+fn update_all(e: &mut Editor) {
+    e.execute(Command::SelectAll, fonts());
+    e.execute(Command::UpdateFields(Default::default()), fonts());
+}
+
+#[test]
+fn note_copies_take_ids_no_note_has_past_the_largest() {
+    let max = i64::from(i32::MAX);
+    let body = [
+        format!(
+            r#"<w:p><w:bookmarkStart w:id="1" w:name="Mark"/><w:r><w:t>A</w:t></w:r>{}{}<w:bookmarkEnd w:id="1"/></w:p>"#,
+            foot_ref(2),
+            foot_ref(max)
+        ),
+        format!("<w:p>{}</w:p>", field("REF Mark \\f", "old")),
+    ]
+    .concat();
+    let mut e = Editor::open(&with_notes(&body, &[(2, "two"), (max, "last")], &[]), fonts()).unwrap();
+    update_all(&mut e);
+    let made = note_ids(body_paras(&e)[1]);
+    assert_eq!(made.len(), 2, "{made:?}");
+    assert!(made[0] != made[1] && made.iter().all(|id| *id != 2 && *id != max), "{made:?}");
+    assert_eq!((note_text(&e, 2), note_text(&e, max)), ("two".to_string(), "last".to_string()));
+    assert_eq!((note_text(&e, made[0]), note_text(&e, made[1])), ("two".to_string(), "last".to_string()));
+}
+
+#[test]
+fn a_reference_whose_notes_dont_all_fit_keeps_its_result() {
+    let limit = super::super::xref::MAX_NOTE_COPIES;
+    let mark = |name: &str, id: u32, refs: &[i64]| {
+        let refs: String = refs.iter().map(|&r| foot_ref(r)).collect();
+        format!(r#"<w:p><w:bookmarkStart w:id="{id}" w:name="{name}"/><w:r><w:t>{name}</w:t></w:r>{refs}<w:bookmarkEnd w:id="{id}"/></w:p>"#)
+    };
+    // One copy, then two each: the last field has one copy left of the two it needs.
+    let pairs = limit / 2;
+    let body = [
+        mark("One", 1, &[1]),
+        mark("Two", 2, &[2, 3]),
+        format!("<w:p>{}</w:p>", field("REF One \\f", "old")),
+        format!("<w:p>{}</w:p>", field("REF Two \\f", "old")).repeat(pairs),
+    ]
+    .concat();
+    let mut e = Editor::open(&with_notes(&body, &[(1, "a"), (2, "b"), (3, "c")], &[]), fonts()).unwrap();
+    update_all(&mut e);
+    let ps = body_paras(&e);
+    assert_eq!(note_ids(ps[ps.len() - 2]).len(), 2);
+    let last = ps[ps.len() - 1];
+    assert!(note_ids(last).is_empty() && shown(last) == "old", "{}", shown(last));
+    assert_eq!(e.document().footnotes.len(), 3 + limit - 1);
+}
+
+#[test]
+fn a_cross_reference_to_an_endnote_marks_the_endnote() {
+    let body = format!(
+        r#"<w:p><w:r><w:t>Both</w:t></w:r>{}<w:r><w:endnoteReference w:id="1"/></w:r></w:p><w:p><w:r><w:t xml:space="preserve">See </w:t></w:r></w:p>"#,
+        foot_ref(1)
+    );
+    let mut e = Editor::open(&with_notes(&body, &[(1, "foot")], &[(1, "end")]), fonts()).unwrap();
+    let t = e.cross_reference_targets(&RefKind::Endnote).remove(0);
+    let see = texts_ids(&e)[1];
+    e.select_range(see, Unit(4), Unit(4), fonts());
+    assert!(matches!(e.insert_cross_reference(&t, &xref(RefContent::NoteNumber), fonts()), Outcome::Changed(_)));
+    let mark = e.bookmarks().into_iter().find(|b| b.name.starts_with("_Ref")).unwrap();
+    // After "Both" and the footnote's mark.
+    assert_eq!(mark.start.unit, Unit(5));
+}
+
+#[test]
+fn non_ascii_bookmark_names_are_no_hidden_marks() {
+    let body = format!(
+        r#"<w:p><w:bookmarkStart w:id="1" w:name="abcé"/><w:r><w:t>x</w:t></w:r><w:bookmarkEnd w:id="1"/></w:p>{}<w:p><w:r><w:t>See</w:t></w:r></w:p>"#,
+        para("Heading1", "One")
+    );
+    let mut e = Editor::open(&doc_with(&body, HEADINGS), fonts()).unwrap();
+    let t = e.cross_reference_targets(&RefKind::Heading).remove(0);
+    let see = texts_ids(&e)[2];
+    e.select_range(see, Unit(3), Unit(3), fonts());
+    assert!(matches!(e.insert_cross_reference(&t, &xref(RefContent::Text), fonts()), Outcome::Changed(_)));
+    at_start(&mut e);
+    assert!(matches!(insert(&mut e, &TocOptions::default()), Outcome::Changed(_)));
+}
+
+#[test]
+fn a_missing_bookmark_limits_a_table_to_nothing() {
+    let body = [para("Heading1", "One"), para("Heading2", "Two")].concat();
+    assert!(entries(&body, r#" TOC \o "1-3" \b Missing "#).is_empty());
+    assert_eq!(entries(&body, r#" TOC \o "1-3" "#).len(), 2);
+}
+
+#[test]
+fn a_hidden_run_before_a_captions_number_keeps_its_title_whole() {
+    let hidden = r#"<w:r><w:rPr><w:vanish/></w:rPr><w:t xml:space="preserve">Secret </w:t></w:r>"#;
+    let body = caption("1", "A cat").replacen("</w:pPr>", &format!("</w:pPr>{hidden}"), 1);
+    let names: Vec<String> = entries(&body, r#" TOC \h \z \a "Figure" "#).into_iter().map(|x| x.1).collect();
+    assert_eq!(names, ["A cat"]);
+}
+
+#[test]
+fn a_table_pasted_after_another_fields_start_is_found() {
+    let quote = r#"<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> QUOTE x </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>abcd</w:t></w:r></w:p><w:p><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>"#;
+    let mut e = Editor::open(&doc_with(&[quote, READ_TOC].concat(), HEADINGS), fonts()).unwrap();
+    assert_eq!(e.tables_of_contents().len(), 1);
+    let f = e.clip_blocks(e.document().sections[0].blocks[2..5].to_vec());
+    let p = texts_ids(&e)[0];
+    e.select_range(p, Unit(2), Unit(2), fonts());
+    e.paste_fragment(&f, fonts());
+    // Both start in the first paragraph, the other field's first.
+    assert_eq!(edges(&e)[0].len(), 2, "{:?}", edges(&e));
+    assert_eq!(e.tables_of_contents().len(), 2);
+}
+
+#[test]
+fn page_numbers_update_only_inside_the_table() {
+    let after = format!(r#"<w:r><w:t xml:space="preserve">See </w:t></w:r>{}"#, field("PAGEREF Mark", "99"));
+    let end = r#"<w:p><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>"#;
+    let body = READ_TOC.replacen(end, &format!(r#"<w:p><w:r><w:fldChar w:fldCharType="end"/></w:r>{after}</w:p>"#), 1).replacen(
+        "<w:r><w:t>Two</w:t></w:r>",
+        &format!("<w:r><w:t>Two</w:t></w:r>{}", field("PAGEREF Mark", "7")),
+        1,
+    ) + r#"<w:p><w:bookmarkStart w:id="1" w:name="Mark"/><w:r><w:t>Here</w:t></w:r><w:bookmarkEnd w:id="1"/></w:p>"#;
+    let mut e = Editor::open(&doc_with(&body, HEADINGS), fonts()).unwrap();
+    let t = e.tables_of_contents().remove(0);
+    assert!(matches!(e.update_toc(&t, TocUpdate::Pages, fonts()), Outcome::Changed(_)));
+    assert_eq!((page_results(body_paras(&e)[1]), page_results(body_paras(&e)[2])), (vec!["1".to_string()], vec!["99".to_string()]));
+}
+
+#[test]
+fn a_stale_table_handle_is_refused() {
+    let body = [format!(r#"<w:p><w:r><w:t xml:space="preserve">Lead </w:t></w:r>{}</w:p>"#, field(r#"TOC \o "1-3""#, "x")), para("Heading1", "One")]
+        .concat();
+    let mut e = Editor::open(&doc_with(&body, HEADINGS), fonts()).unwrap();
+    let t = e.tables_of_contents().remove(0);
+    at_start(&mut e);
+    e.execute(Command::InsertText("\t".into()), fonts());
+    assert_ne!(e.tables_of_contents()[0], t, "the edit moved the field");
+    assert!(!matches!(e.remove_table_of_contents(&t, fonts()), Outcome::Changed(_)));
+    assert!(!matches!(e.update_toc(&t, TocUpdate::Entire, fonts()), Outcome::Changed(_)));
+    assert_eq!(e.tables_of_contents().len(), 1);
+    let now = e.tables_of_contents().remove(0);
+    assert!(matches!(e.remove_table_of_contents(&now, fonts()), Outcome::Changed(_)));
+    assert!(e.tables_of_contents().is_empty());
+}
+
+#[test]
+fn a_mark_a_link_goes_to_stays() {
+    let refs = field("PAGEREF _Toc000000001 \\h", "1");
+    let toc = READ_TOC.replacen("<w:r><w:t>Two</w:t></w:r>", &format!("<w:r><w:t>Two</w:t></w:r>{refs}"), 1);
+    let body = [
+        toc,
+        r#"<w:p><w:bookmarkStart w:id="1" w:name="_Toc000000001"/><w:r><w:t>x</w:t></w:r><w:bookmarkEnd w:id="1"/></w:p>"#.into(),
+        format!("<w:p>{}</w:p>", field(r#"HYPERLINK \l "_Toc000000001""#, "go")),
+    ]
+    .concat();
+    let mut e = Editor::open(&doc_with(&body, HEADINGS), fonts()).unwrap();
+    let t = e.tables_of_contents().remove(0);
+    assert!(matches!(e.update_toc(&t, TocUpdate::Entire, fonts()), Outcome::Changed(_)));
+    assert!(e.bookmark("_Toc000000001").is_some());
+}
+
+#[test]
+fn auto_caption_captions_a_table_made_in_a_cell() {
+    let table = r#"<w:tbl><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#;
+    let mut e = Editor::open(&doc_with(&[table, &para("Normal", "After")].concat(), HEADINGS), fonts()).unwrap();
+    e.set_auto_caption(Some(caption_opts("Table", "")));
+    let cell = texts_ids(&e)[0];
+    e.select_range(cell, Unit(4), Unit(4), fonts());
+    let out = e.execute(Command::InsertTable(serde_json::from_value(serde_json::json!({"rows": 1, "columns": 1})).unwrap()), fonts());
+    assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
+    assert!(body_paras(&e).iter().all(|p| style_of(p) != "Caption"), "no caption beside the outer table");
+    let Some(Block::Table(t)) = e.document().sections[0].blocks.first() else { panic!("the outer table first") };
+    let in_cell: Vec<String> = t.rows[0].cells[0]
+        .blocks
+        .iter()
+        .filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None })
+        .filter(|p| style_of(p) == "Caption")
+        .map(shown)
+        .collect();
+    assert_eq!(in_cell, ["Table 1"]);
+}
+
+#[test]
+fn a_percent_placed_floats_caption_takes_its_place_across() {
+    use crate::layout::tests::shapes::{anchor, bytes, sp};
+    let a = anchor(100, 300, 60, 30, 1, false, 5, &sp(0, 0, 60, 30, "rect", "", "0000FF"));
+    let pct = r#"<wp:positionH relativeFrom="margin"><wp14:pctPosHOffset xmlns:wp14="http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing">40000</wp14:pctPosHOffset></wp:positionH>"#;
+    let placed = a.replacen(&a[a.find("<wp:positionH").unwrap()..a.find("</wp:positionH>").unwrap() + "</wp:positionH>".len()], pct, 1);
+    let mut e = Editor::open(&bytes(&format!("<w:p><w:r><w:t>Text</w:t></w:r>{placed}</w:p>")).unwrap(), fonts()).unwrap();
+    e.complete(fonts());
+    let mut ids = Vec::new();
+    super::super::paste::tests_each_float(&e.document().sections[0].blocks, &mut |f| ids.push(crate::layout::FloatId(f)));
+    let f = ids[0];
+    e.select_float(f);
+    let (_, pic) = e.float_box(f, fonts()).unwrap();
+    assert!(matches!(e.insert_caption(&caption_opts("Figure", ""), fonts()), Outcome::Changed(_)));
+    e.complete(fonts());
+    let mut ids = Vec::new();
+    super::super::paste::tests_each_float(&e.document().sections[0].blocks, &mut |f| ids.push(crate::layout::FloatId(f)));
+    let boxed = *ids.iter().find(|&&g| g != f).unwrap();
+    let (_, cap) = e.float_box(boxed, fonts()).unwrap();
+    assert!((cap[0] - pic[0]).abs() < 0.1, "picture {pic:?}, caption {cap:?}");
+}
+
+#[test]
+fn a_table_of_contents_title_is_out_of_numbered_headings_list() {
+    let heading = r#"<w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/><w:pPr><w:numPr><w:numId w:val="1"/></w:numPr><w:outlineLvl w:val="0"/></w:pPr></w:style>"#;
+    let numbering = r#"<w:abstractNum w:abstractNumId="1"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="Chapter %1"/><w:pStyle w:val="Heading1"/></w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="1"/></w:num>"#;
+    let body = ["<w:p/>".to_string(), para("Heading1", "Intro")].concat();
+    let mut e = Editor::open(&doc_from(&body, heading, Some(numbering)), fonts()).unwrap();
+    at_start(&mut e);
+    let frame = TocFrame { title: Some("Contents".into()), ..TocFrame::default() };
+    assert!(matches!(e.insert_table_of_contents(&TocOptions::default(), TocLook::default(), &frame, fonts()), Outcome::Changed(_)));
+    let again = Editor::open(&crate::docx::write::save(e.document()).unwrap(), fonts()).unwrap();
+    let ps = body_paras(&again);
+    let title = ps.iter().find(|p| style_of(p) == "TOCHeading").unwrap();
+    assert!(title.list.as_ref().is_none_or(|l| l.text.is_empty()), "{:?}", title.list);
+    let intro = ps.iter().find(|p| style_of(p) == "Heading1").unwrap();
+    assert_eq!(intro.list.as_ref().map(|l| l.text.as_str()), Some("Chapter 1"));
+}
+
+#[test]
+fn a_deletion_into_a_table_keeps_the_edges_of_fields_it_doesnt_take_whole() {
+    let table = r#"<w:tbl><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>r1</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:r><w:t>r2</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#;
+    // The table's start in the paragraph the deletion begins in, its end after the table.
+    let body = READ_TOC.replacen(r#"<w:p><w:r><w:t>Two</w:t></w:r></w:p>"#, &format!(r#"<w:p><w:r><w:t>Two</w:t></w:r></w:p>{table}"#), 1);
+    for rows_left in [true, false] {
+        let mut e = Editor::open(&doc_with(&body, HEADINGS), fonts()).unwrap();
+        assert_eq!(e.tables_of_contents().len(), 1);
+        let ps = texts_ids(&e);
+        let into = if rows_left { ps[2] } else { ps[3] };
+        e.select_between((ps[0], Unit(0)), (into, Unit(1)), fonts());
+        let out =
+            e.execute(Command::Delete(crate::api::command::DeleteOptions { direction: crate::api::value::Direction::Forward, unit: None }), fonts());
+        assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
+        assert_eq!(balance(&saved(&e)), (1, 1, 1), "rows left {rows_left}");
+        assert_eq!(e.tables_of_contents().len(), 1, "rows left {rows_left}: {:?}", edges(&e));
+    }
+}
+
+#[test]
+fn a_deletion_into_a_table_leaves_a_fields_start_before_it_out_of_the_cell() {
+    let table = r#"<w:tbl><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>r1</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:r><w:t>r2</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#;
+    let body = READ_TOC.replacen(r#"<w:p><w:r><w:t>Two</w:t></w:r></w:p>"#, &format!(r#"<w:p><w:r><w:t>Two</w:t></w:r></w:p>{table}"#), 1);
+    let mut e = Editor::open(&doc_with(&body, HEADINGS), fonts()).unwrap();
+    let ps = texts_ids(&e);
+    e.select_between((ps[0], Unit(1)), (ps[2], Unit(1)), fonts());
+    let out =
+        e.execute(Command::Delete(crate::api::command::DeleteOptions { direction: crate::api::value::Direction::Forward, unit: None }), fonts());
+    assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
+    assert_eq!(balance(&saved(&e)), (1, 1, 1));
+    assert_eq!(e.tables_of_contents().len(), 1, "{:?}", edges(&e));
 }

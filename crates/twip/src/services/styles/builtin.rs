@@ -440,7 +440,8 @@ fn formatting(id: &str) -> (String, String) {
             r#"<w:spacing w:after="200" w:line="240" w:lineRule="auto"/>"#,
             r#"<w:i/><w:iCs/><w:color w:val="0E2841"/><w:sz w:val="18"/><w:szCs w:val="18"/>"#,
         ),
-        "TOCHeading" => (r#"<w:outlineLvl w:val="9"/>"#.to_string(), String::new()),
+        // Out of a list Heading 1 numbers in.
+        "TOCHeading" => (r#"<w:numPr><w:numId w:val="0"/></w:numPr><w:outlineLvl w:val="9"/>"#.to_string(), String::new()),
         "TableofFigures" => s(r#"<w:spacing w:after="0"/>"#, ""),
         "Header" | "Footer" => s(
             r#"<w:tabs><w:tab w:val="center" w:pos="4680"/><w:tab w:val="right" w:pos="9360"/></w:tabs><w:spacing w:after="0" w:line="240" w:lineRule="auto"/>"#,

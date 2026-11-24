@@ -163,7 +163,7 @@ enum Item {
     Para(ParaId),
     /// An inline picture's paragraph.
     Picture(ParaId),
-    /// A table, the outermost one.
+    /// A table: the outermost one the selection is in, or one just made.
     Table(TableId),
     /// A floating object.
     Float(FloatId),
@@ -229,6 +229,11 @@ impl Editor {
     /// paragraph; for a floating object, a text box beside it. The sequence's numbers after it, and every chapter
     /// number, update with it. One undo step.
     pub fn insert_caption(&mut self, c: &CaptionOptions, fonts: &Fonts) -> Outcome {
+        self.caption_on(c, None, fonts)
+    }
+
+    /// [`Editor::insert_caption`] for `item`, else the item the selection is on.
+    fn caption_on(&mut self, c: &CaptionOptions, item: Option<Item>, fonts: &Fonts) -> Outcome {
         if !valid_label(&c.label) {
             return Outcome::invalid("a label is a letter, then letters, digits, spaces and underscores");
         }
@@ -241,7 +246,7 @@ impl Editor {
         if self.refuse_locked_content() {
             return Outcome::Unchanged("locked");
         }
-        let Some(item) = self.caption_item() else { return Outcome::unavailable("nothing to caption") };
+        let Some(item) = item.or_else(|| self.caption_item()) else { return Outcome::unavailable("nothing to caption") };
         let position = c.position.unwrap_or(if matches!(item, Item::Table(_)) { CaptionPosition::Above } else { CaptionPosition::Below });
         self.begin_batch(Some("Insert Caption".into()));
         if !self.doc.resolver.as_ref().is_some_and(|r| r.styles.by_id.contains_key("Caption"))
@@ -445,7 +450,8 @@ impl Editor {
             ))),
             rot_swap: false,
             vml: false,
-            relative: Default::default(),
+            // A percentage across: the same share of the same frame.
+            relative: crate::docx::Relative { pos: [obj.relative.pos[0], None], ..Default::default() },
         };
         let mut inlines = p.inlines.clone();
         inlines.insert(k + 1, Inline::Float(Box::new(float), run));
@@ -488,7 +494,9 @@ impl Editor {
 
     /// Sets the values (and cached results) of the body's fields of the kinds `want` takes to what evaluating the
     /// document gives now: sequence numbers after a caption, references after their targets changed, the note a
-    /// `NOTEREF` reads. One read-only evaluation of the body; returns how many changed.
+    /// `NOTEREF` reads. One read-only evaluation of the body; returns how many changed: those whose value and cached
+    /// result were both written. One whose result can't be written (a result across paragraphs) still shows its new
+    /// value.
     pub fn refresh_values(&mut self, want: &dyn Fn(crate::docx::FieldId, &FieldKind) -> bool, fonts: &Fonts) -> usize {
         type Note = Option<(crate::docx::NoteKind, i64)>;
         let (now, _) = fields::field_changes(&self.doc, crate::docx::now_local());
@@ -520,6 +528,7 @@ impl Editor {
             return 0;
         }
         let mut tx = self.begin("Update Fields");
+        let mut n = 0;
         for (para, f, v, note) in &changed {
             let Some(p) = self.index.para(&self.doc, *para) else { continue };
             let mut inlines: Vec<Inline> = p.inlines.clone();
@@ -535,12 +544,12 @@ impl Editor {
                     }
                 }
             }
-            let _ = self.step(&mut tx, Step::Restyle { para: *para, inlines });
-            if let Some(v) = v {
-                self.set_result(&mut tx, *f, &Body::Text(v.clone()));
+            if self.step(&mut tx, Step::Restyle { para: *para, inlines }).is_ok()
+                && v.as_ref().is_none_or(|v| self.set_result(&mut tx, *f, &Body::Text(v.clone())))
+            {
+                n += 1;
             }
         }
-        let n = changed.len();
         self.commit(tx, None, fonts);
         n
     }
@@ -632,7 +641,9 @@ impl Editor {
         let out = self.insert_table(rows, columns, fonts);
         if matches!(out, Outcome::Changed(_)) {
             let back = self.selection;
-            if matches!(self.insert_caption(&c, fonts), Outcome::Changed(_)) {
+            // The table just made, the innermost the caret is in.
+            let made = self.selection.focus().and_then(|at| self.index.chain_of(&at).last().map(|l| Item::Table(l.table)));
+            if matches!(self.caption_on(&c, made, fonts), Outcome::Changed(_)) {
                 self.selection = back;
             }
         }

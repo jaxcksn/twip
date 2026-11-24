@@ -2079,7 +2079,8 @@ impl Editor {
                 let (pa, oa) = a.para_offset().ok_or(StepError::Missing)?;
                 let len = para_len(self.index.para(&self.doc, pa).ok_or(StepError::Missing)?);
                 self.delete_text(tx, pa, oa..len)?;
-                if let Some(target) = moved_into {
+                // A paragraph holding an edge of a field across paragraphs stays out of the cell, the edge with its partner.
+                if let Some(target) = moved_into.filter(|_| !self.holds_span_edge(pa)) {
                     let n = self.move_para_into(tx, pa, target)?;
                     return Ok(Some(Position::text(story, target, Unit(n))));
                 }
@@ -2091,6 +2092,11 @@ impl Editor {
     /// Moves `para`'s content to the start of `target` and removes it; returns the units moved. Untracked, every
     /// inline moves (anchored objects, bookmarks, comment and control edges); tracked, the deleted paragraph keeps
     /// its markers and only its text is inserted.
+    /// Whether `para` holds an edge of a field across paragraphs.
+    fn holds_span_edge(&self, para: ParaId) -> bool {
+        self.index.para(&self.doc, para).is_some_and(|p| p.inlines.iter().any(|i| crate::docx::fields::span_edge(i).is_some()))
+    }
+
     fn move_para_into(&mut self, tx: &mut Tx, para: ParaId, target: ParaId) -> Result<u32, StepError> {
         let p = self.index.para(&self.doc, para).ok_or(StepError::Missing)?;
         let inlines: Vec<Inline> = if tx.tracked {
@@ -2721,6 +2727,7 @@ impl Editor {
                     self.selection = Selection::Caret(end);
                     self.commit(tx, None, fonts)
                 }
+                Some(Err(_)) if self.holds_span_edge(para) => Outcome::Unchanged("an edge of a field across paragraphs"),
                 Some(Err(table)) => {
                     let Some(target) = self
                         .index

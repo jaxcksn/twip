@@ -245,7 +245,9 @@ impl Editor {
         let Some(p) = self.index.para(&self.doc, target.para).cloned() else { return Outcome::unavailable("no such target") };
         // The range the bookmark covers, in the target's paragraph.
         let range: (u32, u32) = if note {
-            let Some(k) = p.inlines.iter().position(|i| matches!(i, Inline::NoteRef { id, .. } if Some(*id) == target.note)) else {
+            let want = if target.kind == RefKind::Footnote { NoteKind::Foot } else { NoteKind::End };
+            let Some(k) = p.inlines.iter().position(|i| matches!(i, Inline::NoteRef { kind, id, .. } if *kind == want && Some(*id) == target.note))
+            else {
                 return Outcome::unavailable("no such note");
             };
             let at = p.inlines[..k].iter().map(|i| i.units() as u32).sum::<u32>();
@@ -343,7 +345,7 @@ impl Editor {
         let all = self.bookmarks();
         if let Some(f) = all.iter().find(|f| {
             f.name.len() > 4
-                && f.name[..4].eq_ignore_ascii_case("_ref")
+                && f.name.get(..4).is_some_and(|p| p.eq_ignore_ascii_case("_ref"))
                 && f.start.para == para
                 && f.start.unit == Unit(a)
                 && f.end.is_some_and(|e| e.para == para && e.unit == Unit(b))
@@ -368,7 +370,11 @@ impl Editor {
 }
 
 /// How many notes one update brings again into `REF \f` results: a hostile document's past it keep their results.
+#[cfg(not(test))]
 const MAX_NOTE_COPIES: usize = 1 << 14;
+/// How many notes one update brings again into `REF \f` results (a smaller bound, so tests reach it).
+#[cfg(test)]
+pub(super) const MAX_NOTE_COPIES: usize = 1 << 12;
 
 /// How many inlines one update of `REF \f` results reads (each field reads its own paragraph and its bookmark's):
 /// a crafted document of many such fields over long paragraphs keeps the results past it.
@@ -449,7 +455,9 @@ impl Editor {
             let notes = if k == NoteKind::Foot { &self.doc.footnotes } else { &self.doc.endnotes };
             notes.keys().copied().chain(counts.keys().filter(|c| c.0 == k).map(|c| c.1)).max().unwrap_or(0)
         });
-        for (para, f, name) in todo {
+        // Where the search for a free id below the largest starts, once the largest is the last one there is.
+        let mut low = [1i64; 2];
+        'fields: for (para, f, name) in todo {
             let Some(&at) = marks.get(&name.to_ascii_lowercase()) else { continue };
             let Some(src) = self.index.para(&self.doc, at) else { continue };
             work += src.inlines.len();
@@ -479,22 +487,30 @@ impl Editor {
                         with.push(Inline::Text(t.chars().skip(a).take(z.saturating_sub(a)).collect(), r.clone()));
                     }
                     (Inline::Tab(_) | Inline::Break(..), fields::Shown::Itself) => with.push(i.clone()),
-                    (Inline::NoteRef { kind, id, custom, run }, fields::Shown::Itself) if copies < MAX_NOTE_COPIES => {
+                    (Inline::NoteRef { kind, id, custom, run }, fields::Shown::Itself) => {
                         let body = if *kind == NoteKind::Foot { self.doc.footnotes.get(id) } else { self.doc.endnotes.get(id) };
                         let Some(body) = body else { continue };
+                        // A field whose notes don't all fit keeps its result.
+                        if copies + notes.len() >= MAX_NOTE_COPIES {
+                            break 'fields;
+                        }
                         let map = if *kind == NoteKind::Foot { &self.doc.footnotes } else { &self.doc.endnotes };
-                        let slot = &mut next[usize::from(*kind == NoteKind::End)];
-                        let to_id = super::notes::free_note_id(*slot, 1, |n| map.contains_key(&n));
-                        *slot = to_id;
+                        let k = usize::from(*kind == NoteKind::End);
+                        let to_id = super::notes::free_note_id(next[k], low[k], |n| map.contains_key(&n) || counts.contains_key(&(*kind, n)));
+                        if to_id > next[k] {
+                            next[k] = to_id;
+                        } else {
+                            low[k] = to_id + 1;
+                        }
                         let mut copy: Vec<crate::docx::Block> = body.iter().map(super::clipboard::fresh).collect();
                         renumber_marks(&mut copy, *kind, to_id);
                         notes.push((*kind, to_id, copy));
                         with.push(Inline::NoteRef { kind: *kind, id: to_id, custom: *custom, run: run.clone() });
-                        copies += 1;
                     }
                     _ => {}
                 }
             }
+            copies += notes.len();
             // The field's result now, and the notes it brought.
             let Some(p) = self.index.para(&self.doc, para) else { continue };
             work += p.inlines.len();

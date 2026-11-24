@@ -456,25 +456,7 @@ fn entry_pieces(p: &Paragraph, o: &TocOptions, review: &crate::docx::review::Rev
         out.push((EntryPiece::Tab, None));
     }
     let shown = fields::shown(&p.inlines);
-    for (i, s) in p.inlines.iter().zip(shown) {
-        let run = i.run().filter(|r| !r.hidden && !review.hides(&r.rev));
-        if i.run().is_some() && run.is_none() {
-            continue;
-        }
-        let run = run.cloned();
-        match (s, i) {
-            (Shown::Value(v), _) if !v.is_empty() => out.push((EntryPiece::Text(v), run)),
-            (Shown::Itself, Inline::Text(t, _)) if !t.is_empty() => out.push((EntryPiece::Text(t.clone()), run)),
-            (Shown::Itself, Inline::Sym { ch, .. }) => out.push((EntryPiece::Text(ch.to_string()), run)),
-            (Shown::Itself, Inline::Tab(_) | Inline::PTab(..)) => {
-                out.push(if o.keep_tabs { (EntryPiece::Tab, run) } else { (EntryPiece::Text(" ".into()), run) })
-            }
-            (Shown::Itself, Inline::Break(crate::docx::BreakKind::Line, _)) => {
-                out.push(if o.keep_breaks { (EntryPiece::Break, run) } else { (EntryPiece::Text(" ".into()), run) })
-            }
-            _ => {}
-        }
-    }
+    out.extend(p.inlines.iter().zip(shown).filter_map(|(i, s)| entry_piece(i, s, o, review)));
     // Trailing white space goes.
     while let Some((EntryPiece::Text(t), _)) = out.last_mut() {
         let n = t.trim_end().len();
@@ -485,6 +467,43 @@ fn entry_pieces(p: &Paragraph, o: &TocOptions, review: &crate::docx::review::Rev
         out.pop();
     }
     out
+}
+
+/// What inline `i`, shown as `s`, puts in an entry.
+fn entry_piece(i: &Inline, s: Shown, o: &TocOptions, review: &crate::docx::review::ReviewView) -> Option<(EntryPiece, Option<Run>)> {
+    let run = i.run().filter(|r| !r.hidden && !review.hides(&r.rev));
+    if i.run().is_some() && run.is_none() {
+        return None;
+    }
+    let run = run.cloned();
+    Some(match (s, i) {
+        (Shown::Value(v), _) if !v.is_empty() => (EntryPiece::Text(v), run),
+        (Shown::Itself, Inline::Text(t, _)) if !t.is_empty() => (EntryPiece::Text(t.clone()), run),
+        (Shown::Itself, Inline::Sym { ch, .. }) => (EntryPiece::Text(ch.to_string()), run),
+        (Shown::Itself, Inline::Tab(_) | Inline::PTab(..)) => {
+            if o.keep_tabs {
+                (EntryPiece::Tab, run)
+            } else {
+                (EntryPiece::Text(" ".into()), run)
+            }
+        }
+        (Shown::Itself, Inline::Break(crate::docx::BreakKind::Line, _)) => {
+            if o.keep_breaks {
+                (EntryPiece::Break, run)
+            } else {
+                (EntryPiece::Text(" ".into()), run)
+            }
+        }
+        _ => return None,
+    })
+}
+
+/// Characters a piece counts for.
+fn piece_len(p: &EntryPiece) -> usize {
+    match p {
+        EntryPiece::Text(t) => t.chars().count(),
+        _ => 1,
+    }
 }
 
 fn pieces_text(pieces: &[(EntryPiece, Option<Run>)]) -> String {
@@ -500,39 +519,31 @@ fn pieces_text(pieces: &[(EntryPiece, Option<Run>)]) -> String {
 
 /// The caption text after the sequence field of `label` (and the separator after it): a table of figures' entry
 /// without its label and number (`\a`).
-fn after_label(pieces: Vec<(EntryPiece, Option<Run>)>, p: &Paragraph, label: &str) -> Vec<(EntryPiece, Option<Run>)> {
-    // Units of text before the sequence field's end, as entry_pieces counts them.
-    let shown = fields::shown(&p.inlines);
-    let mut before = 0usize;
-    let mut found = false;
+fn after_label(
+    pieces: Vec<(EntryPiece, Option<Run>)>,
+    p: &Paragraph,
+    label: &str,
+    o: &TocOptions,
+    review: &crate::docx::review::ReviewView,
+) -> Vec<(EntryPiece, Option<Run>)> {
+    // Characters of the entry before the sequence field's end, as entry_pieces makes them.
     let spans = fields::spans(&p.inlines);
-    let end = spans
+    let Some(sp) = spans
         .iter()
-        .find(|s| matches!(&p.inlines[s.begin], Inline::FieldBegin { kind: Some(FieldKind::Seq(id)), .. } if id.eq_ignore_ascii_case(label)));
-    if let Some(sp) = end {
-        for (i, s) in p.inlines.iter().zip(&shown).take(sp.end + 1) {
-            match (s, i) {
-                (Shown::Value(v), _) => before += v.chars().count(),
-                (Shown::Itself, Inline::Text(t, _)) => before += t.chars().count(),
-                (Shown::Itself, Inline::Tab(_) | Inline::PTab(..) | Inline::Sym { .. } | Inline::Break(..)) => before += 1,
-                _ => {}
-            }
-        }
-        found = true;
-    }
-    if !found {
+        .find(|s| matches!(&p.inlines[s.begin], Inline::FieldBegin { kind: Some(FieldKind::Seq(id)), .. } if id.eq_ignore_ascii_case(label)))
+    else {
         return pieces;
-    }
+    };
+    let shown = fields::shown(&p.inlines);
+    let mut before: usize =
+        p.inlines.iter().zip(shown).take(sp.end + 1).filter_map(|(i, s)| entry_piece(i, s, o, review)).map(|(piece, _)| piece_len(&piece)).sum();
     if p.list.as_ref().is_some_and(|l| !l.text.is_empty() && l.picture.is_none()) {
         before += p.list.as_ref().map_or(0, |l| l.text.chars().count()) + 1;
     }
     let mut out = Vec::new();
     let mut skipping = true;
     for (piece, run) in pieces {
-        let n = match &piece {
-            EntryPiece::Text(t) => t.chars().count(),
-            _ => 1,
-        };
+        let n = piece_len(&piece);
         if before >= n {
             before -= n;
             continue;
@@ -558,6 +569,15 @@ fn after_label(pieces: Vec<(EntryPiece, Option<Run>)>, p: &Paragraph, label: &st
         out.push((piece, run));
     }
     out
+}
+
+/// The bookmark a `HYPERLINK \l` code links to, without case.
+fn link_mark(code: &str) -> Option<String> {
+    let c = fields::parse(code);
+    if c.name != "HYPERLINK" {
+        return None;
+    }
+    c.switches.into_iter().find(|s| s.flag == 'l').and_then(|s| s.arg).map(|a| a.to_ascii_lowercase())
 }
 
 /// A `_Toc` bookmark name Word would give: `_Toc` and nine digits, past `taken`'s.
@@ -609,25 +629,25 @@ impl Editor {
             while pairs.get(at).is_some_and(|((sb, _), _)| *sb < b) {
                 at += 1;
             }
-            if let Some(&((sb, si), (eb, ei))) = pairs.get(at).filter(|((sb, _), _)| *sb == b)
-                && b >= covered
-            {
-                let Block::Para(p) = &blocks[sb] else { continue };
-                if let Some(FieldEdge::Start { lock, .. }) = edge(&p.inlines[si])
-                    && let code = fields::span_code(&p.inlines, si)
-                    && is_toc(&code)
-                {
-                    out.push(TocField {
+            // The first table among the fields across paragraphs starting here.
+            if b >= covered
+                && let Block::Para(p) = block
+                && let Some(t) = pairs[at..].iter().take_while(|((sb, _), _)| *sb == b).find_map(|&((_, si), (eb, ei))| {
+                    let Some(FieldEdge::Start { lock, .. }) = edge(&p.inlines[si]) else { return None };
+                    let code = fields::span_code(&p.inlines, si);
+                    is_toc(&code).then(|| TocField {
                         container,
-                        first: sb,
+                        first: b,
                         last: eb,
                         code: code.into_owned(),
                         lock: *lock,
                         shape: Shape::Spanning { start: si, end: ei },
-                    });
-                    covered = eb + 1;
-                    continue;
-                }
+                    })
+                })
+            {
+                covered = t.last + 1;
+                out.push(t);
+                continue;
             }
             match block {
                 Block::Para(p) => {
@@ -680,7 +700,8 @@ impl Editor {
             let f = self.bookmark(b)?;
             Some((f.start.para, f.end.map_or(f.start.para, |e| e.para)))
         });
-        let mut inside = scope.is_none();
+        // No `\b`: the whole document; one the document doesn't have: nothing.
+        let mut inside = o.bookmark.is_none();
         // Sequences, as field evaluation counts them
         let mut seq = fields::Sequences::default();
         let mut walk = |p: &Paragraph, in_box: bool, out: &mut Vec<TocEntry>| {
@@ -724,7 +745,7 @@ impl Editor {
             {
                 let mut pieces = entry_pieces(p, o, &review);
                 if !cap.include_label {
-                    pieces = after_label(pieces, p, &cap.label);
+                    pieces = after_label(pieces, p, &cap.label, o, &review);
                 }
                 if !pieces.is_empty() {
                     out.push(entry(1, pieces, false, true));
@@ -829,6 +850,12 @@ impl Editor {
         n
     }
 
+    /// Whether handle `t` is one of the document's tables as they are now: one from before an edit that moved or
+    /// changed its table isn't.
+    fn toc_current(&self, t: &TocField) -> bool {
+        self.tables_of_contents().contains(t)
+    }
+
     /// Table `t`'s field across paragraphs.
     fn toc_span(&self, t: &TocField) -> Option<super::span_codes::SpanField> {
         let Shape::Spanning { start, end } = t.shape else { return None };
@@ -888,6 +915,9 @@ impl Editor {
     /// title of a built-in table. What shares its first and last paragraphs stays. One undo step; a lock on the content
     /// refuses.
     pub fn remove_table_of_contents(&mut self, t: &TocField, fonts: &Fonts) -> Outcome {
+        if !self.toc_current(t) {
+            return Outcome::unavailable("no such table of contents");
+        }
         self.begin_batch(Some("Remove Table of Contents".into()));
         let t = &self.toc_result_shown(t, fonts);
         let out = self.remove_toc(t, fonts);
@@ -1167,6 +1197,9 @@ impl Editor {
 
     /// Updates table `t` as [`Editor::update_table_of_contents`] does.
     pub fn update_toc(&mut self, t: &TocField, mode: TocUpdate, fonts: &Fonts) -> Outcome {
+        if !self.toc_current(t) {
+            return Outcome::unavailable("no such table of contents");
+        }
         if self.toc_locked(t) {
             self.refused = Some("locked");
             return Outcome::Unchanged("locked");
@@ -1319,7 +1352,7 @@ impl Editor {
         {
             let para = ParaId(rest.id);
             let run = o.run.clone().unwrap_or_else(|| rest.mark.clone());
-            let cut = vec![CutEdge { edge: o, keep: false, para }];
+            let cut = vec![CutEdge { edge: o, keep: false, para, container: t.container, block: t.last }];
             let deleted = self.delete_whole_fields(&mut tx, cut, None).is_ok();
             // The new end right after the deleted one.
             let under = self.index.para(&self.doc, para).map_or(0, |p| {
@@ -1354,9 +1387,26 @@ impl Editor {
         let mut read: HashSet<String> = HashSet::new();
         for para in self.paras_in_order() {
             let Some(p) = self.index.para(&self.doc, para) else { continue };
+            let mut links = false;
             for i in &p.inlines {
-                if let Inline::FieldBegin { kind: Some(FieldKind::PageRef(n) | FieldKind::Ref(n) | FieldKind::NoteRef(n, _)), .. } = i {
-                    read.insert(n.to_ascii_lowercase());
+                match i {
+                    Inline::FieldBegin { kind: Some(FieldKind::PageRef(n) | FieldKind::Ref(n) | FieldKind::NoteRef(n, _)), .. } => {
+                        read.insert(n.to_ascii_lowercase());
+                    }
+                    Inline::FieldBegin { kind: None, .. } => links = true,
+                    i => {
+                        if let Some(FieldEdge::Start { code, .. }) = edge(i) {
+                            read.extend(link_mark(code));
+                        }
+                    }
+                }
+            }
+            // Links to a bookmark (`HYPERLINK \l`)
+            if links {
+                for s in fields::spans(&p.inlines) {
+                    if matches!(p.inlines[s.begin], Inline::FieldBegin { kind: None, .. }) {
+                        read.extend(link_mark(&fields::code_text(&p.inlines, s)));
+                    }
                 }
             }
         }
@@ -1447,7 +1497,10 @@ impl Editor {
         let mut next = first_free("_Toc", all.iter().map(|b| b.name.as_str()));
         let mut have: HashMap<ParaId, String> = HashMap::new();
         for b in &all {
-            if b.name.len() > 4 && b.name[..4].eq_ignore_ascii_case("_toc") && b.start.unit == Unit(0) && b.end.is_none_or(|e| e.para == b.start.para)
+            if b.name.len() > 4
+                && b.name.get(..4).is_some_and(|p| p.eq_ignore_ascii_case("_toc"))
+                && b.start.unit == Unit(0)
+                && b.end.is_none_or(|e| e.para == b.start.para)
             {
                 have.entry(b.start.para).or_insert_with(|| b.name.clone());
             }
@@ -1642,9 +1695,15 @@ impl Editor {
         let mut want: Vec<(FieldId, String)> = Vec::new();
         for t in tables {
             let Some(blocks) = self.index.blocks(&self.doc, t.container) else { continue };
-            for b in blocks.get(t.first..=t.last.min(blocks.len().saturating_sub(1))).unwrap_or_default() {
+            // Inside its edges in its first and last paragraphs.
+            let (after, before) = match t.shape {
+                Shape::Spanning { start, end } => (start, end),
+                Shape::Inline { begin, end } => (begin, end),
+            };
+            for (k, b) in blocks.get(t.first..=t.last.min(blocks.len().saturating_sub(1))).unwrap_or_default().iter().enumerate() {
                 let Block::Para(p) = b else { continue };
-                for s in fields::spans(&p.inlines) {
+                let (first, last) = (k == 0, t.first + k == t.last);
+                for s in fields::spans(&p.inlines).into_iter().filter(|s| !(first && s.begin <= after || last && s.end >= before)) {
                     let Inline::FieldBegin { id, kind: Some(FieldKind::PageRef(name)), .. } = &p.inlines[s.begin] else { continue };
                     let code = fields::code_text(&p.inlines, s);
                     let page = crate::layout::text::PageRef::shown(pages.get(name), &code);
@@ -1717,6 +1776,9 @@ pub(super) struct CutEdge {
     keep: bool,
     /// The paragraph it was in.
     para: ParaId,
+    /// The container the deletion works in, and the block it begins at there.
+    container: Container,
+    block: usize,
 }
 
 impl Editor {
@@ -1724,24 +1786,18 @@ impl Editor {
     /// outside it, so a deletion never leaves half a field. Only when the range holds one does the container's pairing
     /// get read.
     pub(super) fn edges_in(&self, a: Position, b: Position) -> Vec<CutEdge> {
-        let (Some((pa, _)), Some((pb, _))) = (a.para_offset(), b.para_offset()) else { return Vec::new() };
-        let (Some(sa), Some(sb)) = (self.index.para_slot(pa), self.index.para_slot(pb)) else { return Vec::new() };
-        if sa.container != sb.container {
-            return Vec::new();
-        }
-        let Some(blocks) = self.index.blocks(&self.doc, sa.container) else { return Vec::new() };
-        let range = sa.block.min(sb.block)..=sa.block.max(sb.block);
-        let within = |pos: &Position| self.index.cmp(&a, pos).is_le() && self.index.cmp(pos, &b).is_le();
+        let Some((container, from, to)) = self.cut_bounds(a, b) else { return Vec::new() };
+        let Some(blocks) = self.index.blocks(&self.doc, container) else { return Vec::new() };
         // Edges inside the range, by (block, inline).
         let mut inside: Vec<(usize, usize)> = Vec::new();
-        for blk in range {
+        for blk in from.0..=to.0.min(blocks.len().saturating_sub(1)) {
             let Block::Para(p) = &blocks[blk] else { continue };
             if !p.inlines.iter().any(|i| edge(i).is_some()) {
                 continue;
             }
             let mut u = 0u32;
             for (k, i) in p.inlines.iter().enumerate() {
-                if edge(i).is_some() && within(&Position::text(a.story, ParaId(p.id), Unit(u))) {
+                if edge(i).is_some() && from <= (blk, Unit(u)) && (blk, Unit(u)) <= to {
                     inside.push((blk, k));
                 }
                 u += i.units() as u32;
@@ -1752,11 +1808,29 @@ impl Editor {
             let Some(partner) = partner(blocks, place) else { continue };
             let Block::Para(p) = &blocks[place.0] else { continue };
             let Inline::Opaque(o) = &p.inlines[place.1] else { continue };
-            out.push(CutEdge { edge: o.clone(), keep: !inside.contains(&partner), para: ParaId(p.id) });
+            out.push(CutEdge { edge: o.clone(), keep: !inside.contains(&partner), para: ParaId(p.id), container, block: from.0 });
         }
         // Ends before starts: an earlier field's end comes before a later one's start where both are kept.
         out.sort_by_key(|c| matches!(c.edge.field, Some(FieldEdge::Start { .. })));
         out
+    }
+
+    /// The container a deletion of `a..b` works in (where it crosses a table, the one holding that table) and where
+    /// it begins and ends there, as (block, unit): a table there stands for the whole of it.
+    fn cut_bounds(&self, a: Position, b: Position) -> Option<(Container, (usize, Unit), (usize, Unit))> {
+        let (ca, cb) = (self.index.chain_of(&a), self.index.chain_of(&b));
+        let k = ca.iter().zip(&cb).take_while(|(x, y)| x.table == y.table && x.row == y.row && x.cell == y.cell).count();
+        let top = |p: &Position, chain: &[super::index::Level], end: Unit| -> Option<(Container, (usize, Unit))> {
+            match chain.get(k) {
+                Some(l) => self.index.table_slot(l.table).map(|s| (s.container, (s.block, end))),
+                None => {
+                    let (para, u) = p.para_offset()?;
+                    self.index.para_slot(para).map(|s| (s.container, (s.block, u)))
+                }
+            }
+        };
+        let ((xa, from), (xb, to)) = (top(&a, &ca, Unit(0))?, top(&b, &cb, Unit(u32::MAX))?);
+        (xa == xb).then_some((xa, from.min(to), from.max(to)))
     }
 
     /// After a tracked deletion (leaving the caret at `at`): the edges of the fields it took whole are deleted with
@@ -1796,12 +1870,39 @@ impl Editor {
         }
         let Some((para, u)) = at.and_then(|p| p.para_offset()) else { return Ok(()) };
         let Some(slot) = self.index.para_slot(para) else { return Ok(()) };
-        // Where each still is: the caret's paragraph and its neighbours.
+        let container = cut[0].container;
+        // Outside the container, none stays at the caret: what moved there with the paragraph it was in comes out.
+        if slot.container != container
+            && let Some(q) = self.index.para(&self.doc, para)
+        {
+            let moved = |i: &Inline| matches!(i, Inline::Opaque(x) if cut.iter().any(|c| Rc::ptr_eq(x, &c.edge)));
+            if q.inlines.iter().any(moved) {
+                let inlines: Vec<Inline> = q.inlines.iter().filter(|i| !moved(i)).cloned().collect();
+                self.step(tx, Step::Restyle { para, inlines })?;
+            }
+        }
+        // Where they go back: the caret, or (a deletion across a table leaving it in a cell) the container's first
+        // paragraph from where the deletion began, else its last before.
+        let (para, u, block, before) = if slot.container == container {
+            (para, u, slot.block, false)
+        } else {
+            let Some(bl) = self.index.blocks(&self.doc, container) else { return Ok(()) };
+            let from = cut[0].block.min(bl.len());
+            let para_at = |k: usize| if let Block::Para(p) = &bl[k] { Some(p) } else { None };
+            match (from..bl.len()).find_map(|k| Some((k, para_at(k)?))) {
+                Some((k, p)) => (ParaId(p.id), Unit(0), k, true),
+                None => match (0..from).rev().find_map(|k| Some((k, para_at(k)?))) {
+                    Some((k, p)) => (ParaId(p.id), para_len(p), k, false),
+                    None => return Ok(()),
+                },
+            }
+        };
+        // Where each still is: that paragraph and its neighbours.
         let near: Vec<ParaId> = self
             .index
-            .blocks(&self.doc, slot.container)
+            .blocks(&self.doc, container)
             .map(|bl| {
-                bl[slot.block.saturating_sub(1)..(slot.block + 2).min(bl.len())]
+                bl[block.saturating_sub(1)..(block + 2).min(bl.len())]
                     .iter()
                     .filter_map(|b| if let Block::Para(p) = b { Some(ParaId(p.id)) } else { None })
                     .collect()
@@ -1826,7 +1927,15 @@ impl Editor {
             }
         }
         if !back.is_empty() {
-            self.step(tx, Step::Text { para, range: u..u, with: back, edges: Default::default() })?;
+            // At a following paragraph's start: before its markers, which came after them.
+            let under = if before {
+                self.index
+                    .para(&self.doc, para)
+                    .map_or(0, |p| p.inlines.iter().take_while(|i| i.units() == 0).filter(|i| !matches!(i, Inline::Text(..))).count() as u32)
+            } else {
+                0
+            };
+            self.step(tx, Step::Text { para, range: u..u, with: back, edges: super::step::Edges { under, ..Default::default() } })?;
         }
         Ok(())
     }
