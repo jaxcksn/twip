@@ -201,7 +201,6 @@ fn a_table_whose_first_cell_starts_with_a_table_and_pages_from_a_range() {
 }
 
 #[test]
-#[ignore = "needs Editor::ensure_page to lay out past a pending snapshot's last page"]
 fn pages_and_lines_past_the_laid_out_ones() {
     let brk = "<w:r><w:br w:type=\"page\"/></w:r>";
     let body: String = (0..12).map(|k| format!("<w:p>{}{brk}</w:p>", t(&format!("p{k}")))).collect();
@@ -268,4 +267,12 @@ fn a_named_bookmark_by_number_zero_and_an_object_in_another_prefix() {
     let mut e = open(&format!("<w:p>{}{object}</w:p>", t("a")), &[]);
     assert!(matches!(go(&mut e, W::Object, T::Absolute(1), Some("Excel.Sheet")), Outcome::Moved), "{:?}", e.document().sections[0].blocks);
     assert!(matches!(go(&mut e, W::Graphic, T::Absolute(1), None), Outcome::Unchanged(_)), "not a graphic");
+}
+
+#[test]
+fn equations_in_any_prefix() {
+    let math = r#"<mm:oMathPara xmlns:mm="http://schemas.openxmlformats.org/officeDocument/2006/math"><mm:oMath><mm:r><mm:t>x</mm:t></mm:r></mm:oMath></mm:oMathPara>"#;
+    let mut e = open(&format!("<w:p>{}</w:p><w:p>{}{math}</w:p>", t("a"), t("eq ")), &[]);
+    go(&mut e, W::Equation, T::Absolute(1), None);
+    assert_eq!(at(&e), (1, 3));
 }

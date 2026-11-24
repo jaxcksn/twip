@@ -1031,7 +1031,11 @@ impl Editor {
         self.sync_expansions(fonts);
         let snapshot = self.layout.snapshot();
         let stale = snapshot.revision() != self.layout.revision();
-        let pending = if stale { Some(0) } else { snapshot.info().iter().position(|i| i.provisional) };
+        let pending = match snapshot.status() {
+            _ if stale => Some(0),
+            crate::layout::LayoutStatus::Pending { stale_from } => Some(*stale_from),
+            _ => None,
+        };
         if pending.is_some_and(|p| page >= p) {
             self.with_flow(|l, d| l.through(d, fonts, Target::Page(page)));
         }

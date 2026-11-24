@@ -87,13 +87,18 @@ fn first_para(blocks: &[Block]) -> Option<ParaId> {
     })
 }
 
+/// The local name of the element `xml` starts with, whatever its prefix.
+fn local_name(xml: &str) -> Option<&str> {
+    let tag = xml.trim_start().strip_prefix('<')?;
+    let name = &tag[..tag.find(|c: char| c.is_whitespace() || c == '>' || c == '/').unwrap_or(tag.len())];
+    name.rsplit(':').next()
+}
+
 /// An embedded object's program id, from its `w:object` as read (in whatever prefix: a picture's source is a run
 /// child of the main namespace or `mc:AlternateContent`): the first `ProgID` attribute, either quote, any spacing round
 /// its `=`.
 fn prog_id(src: &str) -> Option<&str> {
-    let tag = src.trim_start().strip_prefix('<')?;
-    let name = &tag[..tag.find(|c: char| c.is_whitespace() || c == '>' || c == '/').unwrap_or(tag.len())];
-    if name.rsplit(':').next() != Some("object") {
+    if local_name(src) != Some("object") {
         return None;
     }
     let mut rest = src;
@@ -323,7 +328,9 @@ impl Editor {
                     (GoToWhat::Object, Inline::Picture(pic, _)) => prog_id(pic.src.0.as_deref().unwrap_or(""))
                         .filter(|id| named(name, id, true))
                         .map(|_| Land::Object(ObjectRef::Inline { para, offset: Unit(u) })),
-                    (GoToWhat::Equation, Inline::Opaque(o)) if o.xml.0.as_deref().is_some_and(|x| x.trim_start().starts_with("<m:oMath")) => {
+                    (GoToWhat::Equation, Inline::Opaque(o))
+                        if o.xml.0.as_deref().and_then(local_name).is_some_and(|n| n == "oMath" || n == "oMathPara") =>
+                    {
                         Some(Land::Caret)
                     }
                     (GoToWhat::Bookmark, Inline::Bookmark(n)) if !n.starts_with('/') && !n.starts_with('_') => {
