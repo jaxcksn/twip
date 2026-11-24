@@ -48,7 +48,8 @@ pub enum PasteChoice {
     Unformatted,
     /// The clipboard's picture, in line.
     Picture,
-    /// Copied cells as a table nested in the cell at the caret.
+    /// Copied cells as a table nested in the cell at the caret; at a paragraph after a table (not in a cell), as a
+    /// table of their own there.
     NestTable,
     /// Copied cells as rows above the caret's row, made like the rows of this table.
     MergeTable,
@@ -362,21 +363,26 @@ impl Editor {
         }
         let out = match &clip.fragment {
             // As the selection suggests: the table choice it names
-            Some(f) if choice.is_table() && !asked.is_table() && self.paste_defaults.tables() => {
-                let out = self.paste_fragment(f, fonts);
-                self.paste_moved(f, &out, fonts);
-                out
-            }
+            Some(f) if choice.is_table() && !asked.is_table() && self.paste_defaults.tables() => self.paste_moving(f, fonts),
             _ => self.paste_as(&clip, choice, fonts),
         };
-        // HTML that pastes nothing (a remote picture without alternative text, or no content): what else it holds
         let html_only = clip.fragment.is_none() && clip.html.is_some();
-        let out = match out {
-            Outcome::Unchanged(_)
-                if !told && html_only && matches!(choice, PasteChoice::KeepSource | PasteChoice::Merge | PasteChoice::DestinationStyles) =>
-            {
+        let instead = match (&out, choice) {
+            _ if told || !html_only => None,
+            // HTML that pastes nothing (a remote picture without alternative text, or no content): what else it holds
+            (Outcome::Unchanged(_), PasteChoice::KeepSource | PasteChoice::Merge | PasteChoice::DestinationStyles) => {
+                Some([PasteChoice::Picture, PasteChoice::Unformatted])
+            }
+            // A picture the engine doesn't take for HTML naming only remote ones: the HTML, else the text
+            (Outcome::Unchanged(_) | Outcome::Refused(_), PasteChoice::Picture) => {
+                Some([self.landing(&clip, self.paste_defaults.other), PasteChoice::Unformatted])
+            }
+            _ => None,
+        };
+        let out = match instead {
+            Some(next) => {
                 let mut out = out;
-                for next in [PasteChoice::Picture, PasteChoice::Unformatted].into_iter().filter(|c| choices.contains(c)) {
+                for next in next.into_iter().filter(|c| *c != choice && choices.contains(c)) {
                     out = self.paste_as(&clip, next, fonts);
                     if matches!(out, Outcome::Changed(_)) {
                         choice = next;
@@ -385,7 +391,7 @@ impl Editor {
                 }
                 out
             }
-            out => out,
+            None => out,
         };
         self.last_paste = match (&out, self.paste_defaults.show_button) {
             (Outcome::Changed(_), true) => {
@@ -407,7 +413,7 @@ impl Editor {
             TextOnly => {
                 let text = match &clip.fragment {
                     Some(f) => text_only(f, self.paste_defaults.keep_bullets),
-                    None => match clip.html.as_deref().and_then(|h| self.html_text(h)) {
+                    None => match clip.html.as_deref().and_then(|h| self.html_text(h)).filter(|t| !t.is_empty()) {
                         Some(t) => t,
                         None => clip.text.clone(),
                     },
@@ -455,9 +461,16 @@ impl Editor {
                 &merged
             }
         };
+        self.paste_moving(f, fonts)
+    }
+
+    /// `f` pasted, with the move a tracked cut of it makes ([`Editor::paste_moved`]), as one step.
+    fn paste_moving(&mut self, f: &Fragment, fonts: &Fonts) -> Outcome {
+        self.begin_batch(None);
         let out = self.paste_fragment(f, fonts);
         self.paste_moved(f, &out, fonts);
-        out
+        let end = self.end_batch(!matches!(out, Outcome::Refused(_)), fonts);
+        if matches!(end, Outcome::Changed(_)) { end } else { out }
     }
 
     /// Copied cells (or a table) pasted into the table at the selection as `choice` takes them.
@@ -553,17 +566,25 @@ impl Editor {
         let p = crate::api::command::Picture { data: bytes, alt_text: None };
         self.joined("Paste", fonts, |e| {
             // Over a selected object: it goes, and the picture takes its place.
-            if matches!(e.selection, Selection::Object(_))
-                && let Some(o @ Outcome::Refused(_)) = e.delete_object(fonts)
-            {
-                return o;
+            let mut gone = false;
+            if matches!(e.selection, Selection::Object(_)) {
+                match e.delete_object(fonts) {
+                    Some(o @ Outcome::Refused(_)) => return o,
+                    Some(Outcome::Changed(_)) => gone = true,
+                    _ => {}
+                }
             }
-            let out = e.insert_picture_with(p, fonts);
-            // The caret after what was pasted, as a paste leaves it
-            if matches!(out, Outcome::Changed(_)) {
-                e.caret_after_object();
+            match e.insert_picture_with(p, fonts) {
+                // The caret after what was pasted, as a paste leaves it
+                out @ Outcome::Changed(_) => {
+                    e.caret_after_object();
+                    out
+                }
+                // The object stays without a picture in its place.
+                Outcome::Unchanged(why) if gone => Outcome::unavailable(why),
+                Outcome::Moved if gone => Outcome::unavailable("the picture wasn't inserted"),
+                out => out,
             }
-            out
         })
     }
 
@@ -700,7 +721,7 @@ impl Editor {
         use crate::drawing::units::Emu;
         let Some(Inline::Float(m, run)) = self.float_inline_of(g) else { return None };
         let tree = m.shape.as_deref()?;
-        let r = self.laid_float_box(g)?;
+        let (page, r) = self.laid_float_box(g)?;
         let emu = |v: f64| Emu((v * 12700.0).round() as i64);
         // The group's own box, unswapped about its laid-out centre
         let (cx, cy) = ((r[0] + r[2]) / 2.0, (r[1] + r[3]) / 2.0);
@@ -753,22 +774,27 @@ impl Editor {
         // Placed where it is drawn, from the group's place
         let (cx, cy) = ((rect[0] + rect[2]) / 2.0, (rect[1] + rect[3]) / 2.0);
         let (nw, nh) = if n.rot_swap { (n.h, n.w) } else { (n.w, n.h) };
-        if m.h_align.is_none() {
-            n.h_offset = m.h_offset + (cx - nw / 2.0) - r[0];
-        }
-        if m.v_align.is_none() {
-            n.v_offset = m.v_offset + (cy - nh / 2.0) - r[1];
-        }
+        // An aligned or percentage place as the offset from its reference the group is drawn at
+        let unplace = [m.h_align.is_some() || m.relative.pos[0].is_some(), m.v_align.is_some() || m.relative.pos[1].is_some()];
+        let (h, v) = if unplace.contains(&true) {
+            let at = self.placed_float(g, page, r, r, unplace)?;
+            (n.h_align, n.v_align, n.relative.pos) = (at.h_align, at.v_align, at.relative.pos);
+            (at.h_offset, at.v_offset)
+        } else {
+            (m.h_offset, m.v_offset)
+        };
+        n.h_offset = h + (cx - nw / 2.0) - r[0];
+        n.v_offset = v + (cy - nh / 2.0) - r[1];
         Some(Inline::Float(Box::new(n), run))
     }
 
-    /// Float `f`'s box on the page it is laid out on, among those laid out.
-    fn laid_float_box(&mut self, f: FloatId) -> Option<[f64; 4]> {
+    /// Float `f`'s box, and the page it is laid out on, among those laid out.
+    fn laid_float_box(&mut self, f: FloatId) -> Option<(usize, [f64; 4])> {
         let n = self.pages.len();
         let near = self.near.min(n.saturating_sub(1));
         (0..n).flat_map(|d| [near.checked_sub(d), (d > 0).then_some(near + d)]).flatten().filter(|&p| p < n).find_map(|p| {
             let geo = self.pages.page(p, &self.index)?;
-            geo.stories.iter().find(|s| s.float == Some(f)).map(|s| s.rect)
+            geo.stories.iter().find(|s| s.float == Some(f)).map(|s| (p, s.rect))
         })
     }
 

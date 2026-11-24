@@ -77,6 +77,19 @@ fn undoing_past_evicted_steps_is_not_the_opened_document() {
 }
 
 #[test]
+fn eviction_keeps_the_fewest_edits_between_view_changes() {
+    let mut h = History::default();
+    for _ in 0..MIN_STEPS + 5 {
+        let mut view = tx(1 << 20);
+        view.undo.push(super::super::step::Step::Restyle { para: crate::layout::ParaId(0), inlines: Vec::new() });
+        view.view = Some(Vec::new());
+        h.set_pending(Some(view));
+        h.record(tx(1 << 20), None);
+    }
+    assert_eq!(h.undo_depth(), MIN_STEPS, "the edits kept, however many views' steps are between them");
+}
+
+#[test]
 fn a_style_edit_counts_the_tables_it_keeps() {
     let mut e = opened();
     let id = e.document().resolver.as_ref().and_then(|r| r.styles.by_id.keys().next().cloned()).expect("a style");

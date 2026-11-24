@@ -119,24 +119,18 @@ impl Editor {
             let mut tx = self.begin("Paste Rows");
             let mut new = self.take_rows(&mut tx, src, f, &rows, at);
             let grid = if choice == Some(PasteChoice::MergeTable) {
+                let mut wider = false;
                 if let Some(like) = rows.get(at.min(rows.len().saturating_sub(1))) {
+                    wider = new.iter().any(|r| r.cells.len() > like.cells.len());
                     new = merged_rows(&new, like);
                 }
-                t.grid.clone()
+                if wider { wide(&t.grid) } else { t.grid.clone() }
             } else {
                 wide(&t.grid)
             };
             let n = new.len();
             rows.splice(at..at, new);
-            if n > 0
-                && let Some(below) = rows.get_mut(at + n)
-            {
-                for c in &mut below.cells {
-                    if c.v_merge == crate::docx::VMerge::Continue {
-                        c.v_merge = crate::docx::VMerge::Restart;
-                    }
-                }
-            }
+            split_merges(&mut rows, at, n);
             return Some(self.rebuild_in(tx, id, rows, grid, (at, 0), fonts));
         }
         let overwrite = choice == Some(PasteChoice::OverwriteCells);
@@ -163,19 +157,12 @@ impl Editor {
             let new = self.take_rows(&mut tx, src, f, &rows, tg.rows.0);
             let (at, n) = (tg.rows.0, new.len());
             rows.splice(at..at, new);
-            // A merged cell the rows land in splits around them: its part below starts again.
-            if at > 0 && n > 0 {
-                for c in &mut rows[at + n].cells {
-                    if c.v_merge == crate::docx::VMerge::Continue {
-                        c.v_merge = crate::docx::VMerge::Restart;
-                    }
-                }
-            }
+            split_merges(&mut rows, at, n);
             return Some(self.rebuild_in(tx, tg.table, rows, wide(&t.grid), (tg.rows.0, 0), fonts));
         }
         let mut tx = self.begin("Paste Cells");
         let mut taken = super::clipboard::Taken::default();
-        if block && single {
+        if block && single && !overwrite {
             // One selected cell
             let Some(k) = g.cell_at(tg.rows.0, tg.cols.0) else {
                 self.abort(tx);
@@ -189,7 +176,7 @@ impl Editor {
             cell.blocks.extend(closing);
             return Some(self.rebuild_in(tx, tg.table, rows, t.grid.clone(), (tg.rows.0, tg.cols.0), fonts));
         }
-        if block {
+        if block && !single {
             // Cell block
             let at: Vec<(usize, Vec<usize>)> = (tg.rows.0..=tg.rows.1)
                 .map(|r| {
@@ -216,7 +203,7 @@ impl Editor {
             }
             return Some(self.rebuild_in(tx, tg.table, rows, t.grid.clone(), (tg.rows.0, tg.cols.0), fonts));
         }
-        // Caret in a cell
+        // Caret in a cell, or one selected cell written over from
         let Some(k0) = g.cell_at(tg.rows.0, tg.cols.0) else {
             self.abort(tx);
             return None;
@@ -312,7 +299,8 @@ impl Editor {
 }
 
 /// Pasted rows made like `like`, a row of the table they land in: its cells (their widths and formatting), each
-/// holding the content of the pasted cell in its place, the pasted row's controls and revision kept.
+/// holding the content of the pasted cell in its place, the pasted row's controls and revision kept; pasted cells
+/// past its last kept as they were.
 fn merged_rows(new: &[Row], like: &Row) -> Vec<Row> {
     new.iter()
         .map(|r| {
@@ -326,7 +314,24 @@ fn merged_rows(new: &[Row], like: &Row) -> Vec<Row> {
                     None => empty_cell(c),
                 };
             }
+            let kept = row.cells.len();
+            row.cells.extend(r.cells.iter().skip(kept).map(|c| crate::docx::Cell { v_merge: crate::docx::VMerge::None, ..c.clone() }));
             row
         })
         .collect()
+}
+
+/// Rows `at..at + n` just put in `rows`: vertically merged cells don't merge across their edges, a continued one
+/// at either starting again.
+fn split_merges(rows: &mut [Row], at: usize, n: usize) {
+    if n == 0 {
+        return;
+    }
+    for k in [at, at + n] {
+        for c in rows.get_mut(k).into_iter().flat_map(|r| r.cells.iter_mut()) {
+            if c.v_merge == crate::docx::VMerge::Continue {
+                c.v_merge = crate::docx::VMerge::Restart;
+            }
+        }
+    }
 }

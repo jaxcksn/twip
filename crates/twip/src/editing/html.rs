@@ -132,6 +132,7 @@ struct Seen {
     text: bool,
     drawn: bool,
     remote: bool,
+    table: bool,
 }
 
 fn entity(name: &str) -> Option<char> {
@@ -633,6 +634,7 @@ impl Reader {
                     self.deep -= 1;
                 } else if let Some((rows, _)) = self.tables.pop() {
                     let blocks = placed(rows);
+                    self.seen.table |= !blocks.is_empty();
                     self.target().extend(blocks);
                 }
             }
@@ -721,7 +723,7 @@ pub(super) fn only_remote_pictures(html: &str) -> bool {
         return false;
     }
     let s = scan(html).seen;
-    s.remote && !s.drawn && !s.text
+    s.remote && !s.drawn && !s.text && !s.table
 }
 
 /// HTML read: its blocks, and what it met.
@@ -780,6 +782,7 @@ fn scan(html: &str) -> Reader {
     r.end_para();
     while let Some((rows, _)) = r.tables.pop() {
         let blocks = placed(rows);
+        r.seen.table |= !blocks.is_empty();
         r.target().extend(blocks);
     }
     r
@@ -1134,17 +1137,17 @@ impl Editor {
         let (pw, ph, dx, dy) = crate::docx::image::image_info(&img.data).unwrap_or((96.0, 96.0, 96.0, 96.0));
         let natural = (pw * 72.0 / if dx > 1.0 { dx } else { 96.0 }, ph * 72.0 / if dy > 1.0 { dy } else { 96.0 });
         let pt = 72.0 / 96.0;
-        let (mut w, mut h) = match (img.w, img.h) {
+        let (w, h) = match (img.w, img.h) {
             (Some(w), Some(h)) => (w * pt, h * pt),
-            (Some(w), None) if natural.0 > 0.0 => (w * pt, natural.1 * w * pt / natural.0),
-            (None, Some(h)) if natural.1 > 0.0 => (natural.0 * h * pt / natural.1, h * pt),
+            (Some(w), None) if natural.0 > 0.0 => (w * pt, natural.1 * (w * pt / natural.0)),
+            (None, Some(h)) if natural.1 > 0.0 => (natural.0 * (h * pt / natural.1), h * pt),
             _ => natural,
         };
+        let (mut w, mut h) = if w.is_finite() && h.is_finite() { (w.max(0.0), h.max(0.0)) } else { natural };
         if w > width && w > 0.0 {
-            (w, h) = (width, h * width / w);
+            (w, h) = (width, h * (width / w));
         }
         // Both sides by one factor, the larger within the largest side
-        let (w, h) = if w.is_finite() && h.is_finite() { (w.max(0.0), h.max(0.0)) } else { natural };
         let k = (MAX_PICTURE_SIDE / w.max(h)).min(1.0);
         let side = |v: f64| ((v * k * 20.0).round() / 20.0).clamp(1.0, MAX_PICTURE_SIDE);
         let (w, h) = (side(w), side(h));

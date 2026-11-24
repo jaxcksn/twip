@@ -124,7 +124,7 @@ impl History {
             self.undo.push_back(tx);
         }
         self.typing = typing.map(|t| TypingRun { at: t.at, ..t });
-        while self.bytes > self.budget && self.undo.len() > MIN_STEPS {
+        while self.bytes > self.budget && self.undo_depth() > MIN_STEPS {
             if let Some(old) = self.undo.pop_front() {
                 self.bytes -= old.bytes;
                 self.evicted = old.id;

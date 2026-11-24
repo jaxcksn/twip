@@ -602,7 +602,8 @@ fn pasting_a_picture_over_a_picture_control_fills_it() {
         assert_eq!(super::texts(&r.e).concat().matches('\u{FFFC}').count(), count, "the one picture");
         let s = size_of(&r.e, c).expect("a size");
         let w = size.expect("a size");
-        assert!(s.0 <= w.0 + 0.05 && s.1 <= w.1 + 0.05, "fitted to its box: {s:?} in {w:?}");
+        let k = (w.0 / 40.0).min(w.1 / 10.0);
+        assert!((s.0 - 40.0 * k).abs() <= 0.05 && (s.1 - 10.0 * k).abs() <= 0.05, "fitted to its box, its shape kept: {s:?} in {w:?}");
         assert_eq!(r.e.history().next_undo(), Some("Paste"));
         r.e.execute(Command::Undo, fonts());
         assert_eq!((image_of(&r.e, c), size_of(&r.e, c)), (was, size), "one undo step");

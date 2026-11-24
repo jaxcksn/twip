@@ -9,7 +9,7 @@ use crate::font::Fonts;
 /// 96 dpi, with transparency, cut to what it draws (its effects included). `None` when the copy isn't of an object.
 pub fn image(f: &Fragment, fonts: &Fonts) -> Option<ClipPicture> {
     let items = f.image.as_ref()?;
-    picture(items, fonts, &f.images())
+    picture(items, fonts, &f.images(), u64::MAX).map(|(p, _)| p)
 }
 
 /// The copy's HTML, its objects drawn as PNG pictures in it, at most [`MAX_DRAWN_PIXELS`] in all (a copy of an object
@@ -32,16 +32,16 @@ pub fn html(editor: &Editor, f: &Fragment, fonts: &Fonts) -> String {
     let pictures: Vec<Option<ClipPicture>> = drawn
         .iter()
         .map(|d| {
-            let p = picture(d.as_ref()?, fonts, &images)?;
-            let px = (p.size[0] * 96.0 / 72.0).ceil() as u64 * (p.size[1] * 96.0 / 72.0).ceil() as u64;
-            budget = budget.checked_sub(px)?;
+            let (p, px) = picture(d.as_ref()?, fonts, &images, budget)?;
+            budget -= px;
             Some(p)
         })
         .collect();
     f.html_with(&pictures)
 }
 
-fn picture(items: &[crate::layout::fragment::Clipped], fonts: &Fonts, images: &[Vec<u8>]) -> Option<ClipPicture> {
-    let (png, _, size) = crate::render::preview::object_png(items, fonts, images)?;
-    Some(ClipPicture { png, size })
+/// Items drawn as a clipboard picture of at most `max_pixels`, with the pixels it takes.
+fn picture(items: &[crate::layout::fragment::Clipped], fonts: &Fonts, images: &[Vec<u8>], max_pixels: u64) -> Option<(ClipPicture, u64)> {
+    let (png, [w, h], size) = crate::render::preview::object_png(items, fonts, images, max_pixels)?;
+    Some((ClipPicture { png, size }, u64::from(w) * u64::from(h)))
 }

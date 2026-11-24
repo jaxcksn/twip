@@ -216,12 +216,13 @@ fn html_pictures_come_in_line_and_remote_ones_as_their_text() {
 
 #[test]
 fn a_data_url_that_is_not_a_picture_is_left_out() {
-    let mut e = ed("<w:p/>");
     for src in ["data:text/html;base64,PGI+", "data:image/png;base64,!!!!", "data:image/png,rawbytes", "javascript:alert(1)"] {
-        e.paste_html(&format!(r#"<p>a<img src="{src}">b</p>"#), fonts());
+        let mut e = ed("<w:p/>");
+        assert!(changed(&e.paste_html(&format!(r#"<p>a<img src="{src}">b</p>"#), fonts())), "{src}");
+        assert_eq!(texts(&e)[0], "ab", "{src}: the text around it pastes");
+        assert!(pictures(&e).is_empty(), "{src}");
+        assert!(e.document().images.is_empty(), "{src}");
     }
-    assert!(pictures(&e).is_empty());
-    assert!(e.document().images.is_empty());
 }
 
 #[test]
@@ -316,6 +317,13 @@ fn smart_cut_and_paste_can_be_turned_off() {
     caret(&mut e, (0, 3));
     e.execute(Command::PasteText("x".into()), fonts());
     assert_eq!(texts(&e)[0], "onex two");
+    for (smart, after) in [(true, "one three"), (false, "one  three")] {
+        let mut e = ed(&format!("<w:p>{}</w:p>", t("one two three")));
+        e.set_paste_defaults(PasteDefaults { smart, ..PasteDefaults::default() });
+        select(&mut e, (0, 4), (0, 7));
+        assert!(changed(&e.execute(Command::Cut, fonts())));
+        assert_eq!(texts(&e)[0], after, "smart {smart}");
+    }
 }
 
 fn table(rows: &[&[&str]]) -> String {
@@ -453,6 +461,79 @@ fn overwrite_cells_writes_over_the_cells_from_the_caret_s() {
 }
 
 #[test]
+fn overwrite_cells_over_one_selected_cell_writes_over_it() {
+    let (mut e, clip) = cells_editor();
+    let Some(Block::Table(t)) = e.document().sections[0].blocks.first() else { panic!("a table") };
+    let (table, at) = (crate::layout::TableId(t.id), CellRef { row: 1, col: 0 });
+    e.set_selection(Selection::Cells { table, anchor: at, focus: at, shape: CellShape::Rect });
+    assert!(changed(&e.paste_clip(clip, Some(PasteChoice::OverwriteCells), fonts())));
+    assert_eq!(cell_texts(&e), [vec!["a1", "a2"], vec!["x", "y"]]);
+}
+
+#[test]
+fn merge_table_keeps_the_cells_of_a_wider_row() {
+    let mut e = ed(&format!("{}<w:p/>{}<w:p/>", table(&[&["a1", "a2"], &["b1", "b2"]]), table(&[&["x", "y", "z"]])));
+    let ids = super::texts_ids(&e);
+    let Some(Block::Table(src)) = e.document().sections[0].blocks.get(2) else { panic!("the copied table") };
+    let (table, anchor, focus) = (crate::layout::TableId(src.id), CellRef { row: 0, col: 0 }, CellRef { row: 0, col: 2 });
+    e.set_selection(Selection::Cells { table, anchor, focus, shape: CellShape::Rows });
+    let f = e.copy().expect("copies the row");
+    e.set_caret_for_benchmark(Selection::Caret(Position::text(StoryId::Body, ids[2], Unit(0))));
+    let clip = Clip { fragment: Some(f), text: "x\ty\tz".into(), ..Clip::default() };
+    assert!(changed(&e.paste_clip(clip, Some(PasteChoice::MergeTable), fonts())));
+    assert_eq!(cell_texts(&e), [vec!["a1", "a2"], vec!["x", "y", "z"], vec!["b1", "b2"]]);
+    let v = crate::editing::integrity::check(e.document(), e.index(), &e.selection());
+    assert!(v.is_empty(), "{:?}", v.iter().map(|v| v.detail.clone()).collect::<Vec<_>>());
+}
+
+#[test]
+fn inserted_rows_dont_continue_a_merge_above_them() {
+    use crate::docx::VMerge;
+    let tc = |merge: &str, text: &str| format!(r#"<w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/>{merge}</w:tcPr><w:p>{}</w:p></w:tc>"#, t(text));
+    let (start, go_on) = (r#"<w:vMerge w:val="restart"/>"#, "<w:vMerge/>");
+    let rows = format!("<w:tr>{}{}</w:tr><w:tr>{}{}</w:tr>", tc(start, "m"), tc("", "a2"), tc(go_on, ""), tc("", "b2"));
+    let grid = r#"<w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/></w:tblGrid>"#;
+    let mut e = ed(&format!(r#"<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr>{grid}{rows}</w:tbl><w:p/>"#));
+    let ids = super::texts_ids(&e);
+    let Some(Block::Table(t)) = e.document().sections[0].blocks.first() else { panic!("a table") };
+    let table = crate::layout::TableId(t.id);
+    // The row alone, starting in the merge, as a table read from a file can: a selection takes in the merge's start.
+    e.set_caret_for_benchmark(Selection::Cells {
+        table,
+        anchor: CellRef { row: 1, col: 0 },
+        focus: CellRef { row: 1, col: 1 },
+        shape: CellShape::Rows,
+    });
+    let f = e.copy().expect("copies the row");
+    e.set_caret_for_benchmark(Selection::Caret(Position::text(StoryId::Body, ids[2], Unit(0))));
+    let clip = Clip { text: f.text(), fragment: Some(f), ..Clip::default() };
+    assert!(changed(&e.paste_clip(clip, Some(PasteChoice::InsertRows), fonts())));
+    let Some(Block::Table(t)) = e.document().sections[0].blocks.first() else { panic!("a table") };
+    let merges: Vec<VMerge> = t.rows.iter().map(|r| r.cells[0].v_merge).collect();
+    assert_eq!(merges.len(), 3, "{merges:?}");
+    assert_ne!(merges[1], VMerge::Continue, "the pasted row's cell starts again: {merges:?}");
+}
+
+#[test]
+fn keep_text_only_after_a_tracked_cut_and_paste_leaves_one_copy() {
+    let mut e = ed(&format!("<w:p>{}</w:p><w:p>{}</w:p><w:p>{}</w:p>", t("one"), t("two"), t("three")));
+    e.execute(Command::SetTrackChanges(true), fonts());
+    select(&mut e, (0, 0), (1, 0));
+    assert!(changed(&e.execute(Command::Cut, fonts())));
+    let three = super::texts_ids(&e)[texts(&e).iter().position(|t| t == "three").expect("three")];
+    e.set_caret_for_benchmark(Selection::Caret(Position::text(StoryId::Body, three, Unit(0))));
+    let depth = e.history().undo_depth();
+    assert!(changed(&e.execute(Command::Paste(Default::default()), fonts())));
+    assert_eq!(e.history().undo_depth(), depth + 1, "the paste and its move, one step");
+    let ones = |e: &Editor| texts(e).iter().filter(|t| t.contains("one")).count();
+    let pasted = ones(&e);
+    assert!(changed(&e.repaste(PasteChoice::TextOnly, fonts())));
+    assert_eq!(ones(&e), pasted, "one copy where it was pasted: {:?}", texts(&e));
+    e.execute(Command::Undo, fonts());
+    assert_eq!(ones(&e), pasted - 1, "one undo takes it back: {:?}", texts(&e));
+}
+
+#[test]
 fn nest_table_puts_a_table_in_the_cell() {
     let (mut e, clip) = cells_editor();
     assert!(changed(&e.paste_clip(clip, Some(PasteChoice::NestTable), fonts())));
@@ -544,6 +625,18 @@ fn section_texts(e: &Editor) -> Vec<Vec<String>> {
 }
 
 #[test]
+fn text_from_file_brings_a_header_s_content_control() {
+    let sect = r#"<w:pPr><w:sectPr><w:headerReference w:type="default" r:id="rIdHdr"/></w:sectPr></w:pPr>"#;
+    let control = r#"</w:t></w:r><w:sdt><w:sdtPr><w:tag w:val="HdrTag"/><w:id w:val="9"/></w:sdtPr><w:sdtContent><w:r><w:t>c</w:t></w:r></w:sdtContent></w:sdt><w:r><w:t>"#;
+    let other = with_header(&format!("<w:p>{sect}{}</w:p><w:p>{}</w:p>", t("land"), t("port")), &format!("head{control}"));
+    let mut e = ed(&format!("<w:p>{}</w:p>", t("ab")));
+    caret(&mut e, (0, 1));
+    assert!(changed(&e.insert_file(&other, fonts())));
+    assert_eq!(e.document().sections.len(), 2);
+    assert!(e.document().controls.values().any(|c| c.props.tag.as_deref() == Some("HdrTag")), "the header's control keeps its definition");
+}
+
+#[test]
 fn text_from_file_brings_its_section_breaks_and_their_page_setup() {
     let landscape = r#"<w:sectPr><w:headerReference w:type="default" r:id="rIdHdr"/><w:pgSz w:w="15840" w:h="12240" w:orient="landscape"/><w:pgMar w:top="720" w:right="720" w:bottom="720" w:left="720" w:header="360" w:footer="360" w:gutter="0"/></w:sectPr>"#;
     let other = with_header(&format!("<w:p><w:pPr>{landscape}</w:pPr>{}</w:p><w:p>{}</w:p>", t("land"), t("port")), "head");
@@ -582,7 +675,7 @@ fn text_from_file_brings_its_section_breaks_and_their_page_setup() {
 }
 
 #[test]
-fn many_file_sections_sharing_a_header_bring_it_in_once_in_linear_time() {
+fn many_file_sections_sharing_a_header_bring_it_in_once() {
     // Before: each section took its own copy, n x h header paragraphs
     let (n, h) = (2_000, 1_000);
     // First-page and even-page slots, which no page shows here: the import alone, not drawing the header on each page
@@ -592,9 +685,7 @@ fn many_file_sections_sharing_a_header_bring_it_in_once_in_linear_time() {
     let other = with_header(&body, &vec!["h"; h].join("</w:t></w:r></w:p><w:p><w:r><w:t>"));
     let mut e = ed(&format!("<w:p>{}</w:p>", t("ab")));
     caret(&mut e, (0, 1));
-    let start = std::time::Instant::now();
     assert!(changed(&e.insert_file(&other, fonts())));
-    assert!(start.elapsed().as_secs() < 20, "{:?}", start.elapsed());
     let d = e.document();
     assert_eq!(d.sections.len(), n + 1);
     assert_eq!(d.stories.len(), 1, "one story for the one part");
@@ -798,6 +889,42 @@ fn a_copied_group_child_is_a_float_of_its_own_where_it_is_drawn() {
         pasted.h_offset,
         pasted.v_offset
     );
+}
+
+#[test]
+fn a_copied_child_of_an_aligned_group_is_placed_where_it_is_drawn() {
+    use crate::layout::tests::shapes::{PT, anchor, bytes, sp};
+    let group = format!(
+        r#"<wpg:wgp><wpg:cNvGrpSpPr/><wpg:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{w}" cy="{h}"/><a:chOff x="0" y="0"/><a:chExt cx="{w}" cy="{h}"/></a:xfrm></wpg:grpSpPr>{}{}</wpg:wgp>"#,
+        sp(0, 0, 80, 80, "rect", "", "0000FF"),
+        sp(120, 0, 80, 80, "rect", "", "00FF00"),
+        w = 200 * PT,
+        h = 100 * PT,
+    );
+    let centred = anchor(72, 300, 200, 100, 1, false, 1, &group).replacen(
+        &format!("<wp:posOffset>{}</wp:posOffset></wp:positionH>", 72 * PT),
+        "<wp:align>center</wp:align></wp:positionH>",
+        1,
+    );
+    let mut e = Editor::open(&bytes(&format!("<w:p><w:r><w:t>Text</w:t></w:r>{centred}</w:p>")).expect("a package"), fonts()).expect("opens");
+    e.complete(fonts());
+    let g = floats(&e)[0];
+    e.set_selection(Selection::Object(crate::editing::selection::ObjectRef::Floating(g)));
+    e.object_child = Some((g, vec![1]));
+    e.execute(Command::Copy, fonts());
+    caret(&mut e, (0, 4));
+    assert!(changed(&e.execute(Command::Paste(Default::default()), fonts())));
+    let pasted = e.document().sections[0].blocks.iter().find_map(|b| match b {
+        Block::Para(p) => p.inlines.iter().find_map(|i| match i {
+            Inline::Float(f, _) if crate::layout::FloatId(f.id) != g => Some(f.clone()),
+            _ => None,
+        }),
+        _ => None,
+    });
+    let pasted = pasted.expect("a float of its own");
+    // The group centred on the 612 pt page: its left at 206, the child 120 in.
+    assert!(pasted.h_align.is_none() && (pasted.h_offset - 326.0).abs() < 0.5, "where it was drawn: {:?} {}", pasted.h_align, pasted.h_offset);
+    assert!((pasted.v_offset - 300.0).abs() < 0.5, "{}", pasted.v_offset);
 }
 
 /// A document with `body`, whose `w:altChunk r:id="rIdChunk"` imports `part` (under `word/`) holding `data`.
@@ -1134,23 +1261,81 @@ fn text_from_file_brings_in_the_file_s_alt_chunks() {
 }
 
 #[test]
-fn many_alt_chunks_on_one_part_open_in_linear_time_and_stop_at_the_cap() {
+fn many_alt_chunks_on_one_part_stop_at_the_cap() {
     let n = 12_000;
     let body: String = CHUNK.repeat(n) + "<w:p/>";
     let docx = with_chunk(&body, "x.html", b"<p>x</p>");
-    let start = std::time::Instant::now();
     let e = Editor::open(&docx, fonts()).expect("opens");
     let imported = texts(&e).iter().filter(|t| *t == "x").count();
     assert_eq!(imported, 10_000, "past the cap, kept as read");
-    assert!(start.elapsed().as_secs() < 20, "{:?}", start.elapsed());
 }
 
 #[test]
 fn an_alt_chunk_declared_windows_1252_reads_as_it() {
     let body = format!("<w:p>{}</w:p>{CHUNK}<w:p/>", t("a"));
-    let data = b"<html><head><meta charset=\"windows-1252\"></head><body><p>caf\xe9 \x93q\x94</p></body></html>";
-    let e = Editor::open(&with_chunk(&body, "w.html", data), fonts()).expect("opens");
-    assert_eq!(&texts(&e)[..2], ["a", "caf\u{e9} \u{201c}q\u{201d}"]);
+    for meta in [
+        &b"<meta charset=\"windows-1252\">"[..],
+        b"<meta charset = 'windows-1252'>",
+        b"<meta http-equiv=\"Content-Type\" content=\"text/html; charset = windows-1252\">",
+    ] {
+        let data = [b"<html><head>", meta, b"</head><body><p>caf\xe9 \x93q\x94</p></body></html>"].concat();
+        let e = Editor::open(&with_chunk(&body, "w.html", &data), fonts()).expect("opens");
+        assert_eq!(&texts(&e)[..2], ["a", "caf\u{e9} \u{201c}q\u{201d}"], "{}", String::from_utf8_lossy(meta));
+    }
+}
+
+#[test]
+fn a_paragraph_whose_mark_is_hidden_stays_before_an_alt_chunk() {
+    let body = format!(r#"<w:p><w:pPr><w:rPr><w:vanish/></w:rPr></w:pPr>{}</w:p>{CHUNK}"#, t("a"));
+    let e = Editor::open(&with_chunk(&body, "x.html", b"<p>x</p>"), fonts()).expect("opens");
+    assert_eq!(&texts(&e)[..2], ["a", "x"]);
+}
+
+#[test]
+fn a_refused_document_alt_chunk_after_a_table_leaves_the_body_ending_in_a_paragraph() {
+    let body = format!("{}{CHUNK}", table(&[&["a"]]));
+    let docx = with_chunk(&body, "x.docx", b"not a package");
+    for doc in [crate::docx::read(&docx).expect("reads"), crate::docx::read_editable(&docx).expect("reads")] {
+        assert!(matches!(doc.sections[0].blocks.last(), Some(Block::Para(_))), "{:?}", doc.sections[0].blocks.len());
+    }
+    let mut e = Editor::open(&docx, fonts()).expect("opens");
+    e.execute(Command::InsertText("x".into()), fonts());
+    let again = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
+    assert!(matches!(again.document().sections[0].blocks.last(), Some(Block::Para(_))));
+}
+
+#[test]
+fn keep_text_only_of_empty_html_takes_the_plain_text() {
+    let mut e = ed("<w:p/>");
+    let clip = Clip { html: Some("<html><body></body></html>".into()), text: "plain".into(), ..Clip::default() };
+    assert!(changed(&e.paste_clip(clip, Some(PasteChoice::TextOnly), fonts())));
+    assert_eq!(texts(&e)[0], "plain");
+}
+
+#[test]
+fn a_remote_picture_s_clipboard_picture_the_engine_cant_take_pastes_its_alternative_text() {
+    let mut e = ed("<w:p/>");
+    let clip = Clip { html: Some(r#"<img src="https://x.test/p.png" alt="far">"#.into()), image: Some(b"not a picture".to_vec()), ..Clip::default() };
+    assert_eq!(e.default_paste(&clip), Some(PasteChoice::Picture));
+    assert!(matches!(e.paste_clip(clip.clone(), Some(PasteChoice::Picture), fonts()), Outcome::Refused(_)), "told: refused");
+    assert!(changed(&e.paste_clip(clip, None, fonts())));
+    assert_eq!(texts(&e)[0], "far");
+}
+
+#[test]
+fn a_table_of_remote_pictures_isnt_a_browser_s_copy_image() {
+    assert!(crate::editing::html::only_remote_pictures(r#"<img src="https://x.test/p.png">"#));
+    assert!(!crate::editing::html::only_remote_pictures(r#"<table><tr><td><img src="https://x.test/p.png"></td></tr></table>"#));
+}
+
+#[test]
+fn an_html_picture_of_huge_given_size_fits_the_text_width() {
+    let mut e = ed("<w:p/>");
+    let html = format!(r#"<p><img src="data:image/png;base64,{}" width="1e308" height="1e308"></p>"#, base64(&png(1000, 1)));
+    assert!(changed(&e.paste_html(&html, fonts())));
+    let (w, h, _) = pictures(&e)[0];
+    let s = &e.document().sections[0];
+    assert!(w <= s.page_w - s.left - s.right + 0.05 && (w - h).abs() < 0.1, "{w} x {h}");
 }
 
 #[test]

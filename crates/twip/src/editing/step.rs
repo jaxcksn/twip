@@ -1340,7 +1340,8 @@ fn split_sections(doc: &mut Document, section: usize, backs: Vec<SectionBack>, s
 
 fn join_sections(doc: &mut Document, section: usize, count: usize, names: Vec<String>) -> Result<Split, StepError> {
     let end = section + count;
-    if count == 0 || end >= doc.sections.len() || names.iter().any(|k| !doc.stories.contains_key(k)) {
+    // Into a section with blocks: splitting them back leaves it some.
+    if count == 0 || end >= doc.sections.len() || doc.sections[end].blocks.is_empty() || names.iter().any(|k| !doc.stories.contains_key(k)) {
         return Err(StepError::OutOfRange);
     }
     let mut blocks = Vec::new();
@@ -1355,4 +1356,17 @@ fn join_sections(doc: &mut Document, section: usize, count: usize, names: Vec<St
     doc.edited_sections = doc.edited_sections.iter().filter(|&&k| k < section || k >= end).map(|&k| if k >= end { k - count } else { k }).collect();
     let stories = names.into_iter().filter_map(|k| doc.stories.remove(&k).map(|b| (k, b))).collect();
     Ok(Split::Apart { backs, stories })
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn sections_join_only_into_one_with_blocks_a_split_gives_back() {
+        let mut doc = crate::docx::read(&crate::editing::tests::blank_body("<w:p/>")).expect("reads");
+        let empty = crate::docx::Section { blocks: Vec::new(), ..doc.sections[0].clone() };
+        doc.sections.push(empty);
+        doc.section_sources = vec![1, 0];
+        assert!(super::join_sections(&mut doc, 0, 1, Vec::new()).is_err());
+        assert_eq!((doc.sections.len(), doc.sections[0].blocks.len()), (2, 1), "as it was");
+    }
 }

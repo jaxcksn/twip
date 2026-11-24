@@ -1309,6 +1309,7 @@ impl Editor {
         }
         let refs = super::clipboard::refs_of(&doc, &blocks);
         let mut controls = super::clipboard::controls_of(&blocks, &doc);
+        controls.extend(super::clipboard::controls_of(&breaks.parts, &doc));
         for body in refs.notes.iter().map(|n| &n.2).chain(refs.comments.iter().map(|c| &c.body)) {
             controls.extend(super::clipboard::controls_of(body, &doc));
         }
@@ -1356,7 +1357,7 @@ impl Editor {
             }
         }
         let names = self.new_story_names(order.iter().map(|&(_, footer)| footer));
-        let hf = super::clipboard::Fragment { origin: f.origin.clone(), look: f.look, ..Default::default() };
+        let hf = super::clipboard::Fragment { origin: f.origin.clone(), look: f.look, controls: f.controls.clone(), ..Default::default() };
         let mut taken = super::clipboard::Taken::default();
         let mut tx = self.begin("Insert File");
         let mut stories = Vec::with_capacity(order.len());
@@ -1917,7 +1918,10 @@ impl Editor {
             })
             .collect();
         if !kinds.is_empty() {
-            self.refresh_values(&|id, _| kinds.contains_key(&id), fonts);
+            // References read their bookmarks' text as the first pass left it: the sequences in it renumbered.
+            if self.refresh_values(&|id, _| kinds.contains_key(&id), fonts) > 0 {
+                self.refresh_values(&|id, k| matches!(k, FieldKind::Ref(_)) && kinds.contains_key(&id), fonts);
+            }
             let refs: std::collections::HashSet<FieldId> = kinds.iter().filter(|(_, k)| matches!(k, FieldKind::Ref(_))).map(|(f, _)| *f).collect();
             self.refresh_note_copies(&refs, fonts);
             let laid: std::collections::HashSet<FieldId> =
