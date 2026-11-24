@@ -5,6 +5,7 @@ use std::rc::Rc;
 
 #[cfg(test)]
 use std::cell::Cell;
+use std::cell::RefCell;
 
 use crate::docx::model::*;
 use crate::font::Fonts;
@@ -17,7 +18,7 @@ use super::ids::{LayoutRevision, ParaId, Revision, Unit};
 use super::incremental::Reuse;
 use super::job::{Budget, Memos, Meter, Step, Yield};
 use super::node::{Blocks, Notes, SectionNode};
-use super::page::{Cursor, Next, Paginator, PassInfo, PassRun};
+use super::page::{Cursor, HfSources, Next, Paginator, PassInfo, PassRun};
 use super::record::PageRecord;
 use super::snapshot::{LayoutStatus, PageMeta, Snapshot};
 use super::space::HfHeights;
@@ -113,8 +114,14 @@ pub(crate) fn used(pg: &PageRecord) -> HfHeights {
 pub struct PassCx<'d> {
     pub doc: &'d Document,
     pub ctx: LayoutCtx<'d>,
-    pub nodes: Vec<SectionNode<'d>>,
     pub notes: &'d JobNotes,
+    facts: &'d DocFacts,
+    /// The section being laid out, built when it is first asked for.
+    node: RefCell<Option<Rc<SectionNode<'d>>>>,
+}
+
+/// What every pass and run of a job reads from the whole document, read once.
+pub struct DocFacts {
     /// The headers' and footers' `STYLEREF` codes and what each looks for.
     wanted: Vec<(String, crate::docx::fields::StyleQuery)>,
     /// What a `STYLEREF` can show from each body paragraph.
@@ -122,30 +129,28 @@ pub struct PassCx<'d> {
     /// The body paragraphs' list numbers, when a `STYLEREF` there shows one.
     numbers: HashMap<u64, crate::docx::fields::ParaNumber>,
     chapters: Chapters,
+    hf_sources: HfSources,
 }
 
-impl<'d> PassCx<'d> {
-    pub fn new(doc: &'d Document, ctx: LayoutCtx<'d>, notes: &'d JobNotes) -> PassCx<'d> {
-        let nsec = doc.sections.len();
-        let nodes: Vec<SectionNode> = doc
-            .sections
-            .iter()
-            .enumerate()
-            .map(|(si, s)| {
-                let mut blocks = Blocks::of(&s.blocks);
-                if notes.ends.contains(&si) {
-                    blocks.append(notes.separator.iter());
-                    for id in notes.after(si) {
-                        blocks.append(notes.stories(doc, 1).get(&id).into_iter().flatten());
-                    }
-                }
-                let next = match doc.sections.get(si + 1).and_then(|n| n.blocks.first()) {
-                    Some(Block::Para(p)) => Some(&**p.para_style_in(doc.review.view)),
-                    _ => None,
-                };
-                SectionNode { index: si, section: s, blocks, breaks: si + 1 < nsec, next }
-            })
-            .collect();
+/// Section `si` with the endnotes that follow it.
+fn section_node<'d>(doc: &'d Document, notes: &'d JobNotes, si: usize) -> SectionNode<'d> {
+    let s = &doc.sections[si];
+    let mut blocks = Blocks::of(&s.blocks);
+    if notes.follow(si) {
+        blocks.append(notes.separator.iter());
+        for id in notes.after(si) {
+            blocks.append(notes.stories(doc, 1).get(&id).into_iter().flatten());
+        }
+    }
+    let next = match doc.sections.get(si + 1).and_then(|n| n.blocks.first()) {
+        Some(Block::Para(p)) => Some(&**p.para_style_in(doc.review.view)),
+        _ => None,
+    };
+    SectionNode { index: si, section: s, blocks, breaks: si + 1 < doc.sections.len(), next }
+}
+
+impl DocFacts {
+    pub fn new(doc: &Document, notes: &JobNotes) -> DocFacts {
         fn codes(blocks: &[Block], out: &mut Vec<String>) {
             for b in blocks {
                 match b {
@@ -169,8 +174,8 @@ impl<'d> PassCx<'d> {
         let wanted: Vec<_> = wanted.into_iter().map(|code| (code.clone(), crate::docx::fields::StyleQuery::new(&code, styles))).collect();
         let mut paras = HashMap::new();
         if !wanted.is_empty() {
-            for n in &nodes {
-                for b in n.blocks.iter() {
+            for si in 0..doc.sections.len() {
+                for b in section_node(doc, notes, si).blocks.iter() {
                     if let Block::Para(p) = b {
                         paras.insert(ParaId(p.id), crate::docx::fields::style_hits(p));
                     }
@@ -178,7 +183,22 @@ impl<'d> PassCx<'d> {
             }
         }
         let numbers = if wanted.iter().any(|(_, q)| q.numbered()) { crate::docx::fields::para_numbers(doc) } else { HashMap::new() };
-        PassCx { doc, ctx, nodes, notes, wanted, paras, numbers, chapters: chapters(doc) }
+        DocFacts { wanted, paras, numbers, chapters: chapters(doc), hf_sources: HfSources::new(&doc.sections) }
+    }
+}
+
+impl<'d> PassCx<'d> {
+    pub fn new(doc: &'d Document, ctx: LayoutCtx<'d>, notes: &'d JobNotes, facts: &'d DocFacts) -> PassCx<'d> {
+        PassCx { doc, ctx, notes, facts, node: RefCell::new(None) }
+    }
+
+    /// Section `si` as laid out.
+    pub fn node(&self, si: usize) -> Rc<SectionNode<'d>> {
+        let mut node = self.node.borrow_mut();
+        match &*node {
+            Some(n) if n.index == si => n.clone(),
+            _ => node.insert(Rc::new(section_node(self.doc, self.notes, si))).clone(),
+        }
     }
 
     fn notes(&self) -> Notes<'d> {
@@ -192,7 +212,8 @@ impl<'d> PassCx<'d> {
             stories: &self.doc.stories,
             notes: self.notes(),
             note_numbers: &self.notes.numbers,
-            chapters: self.chapters.body.clone(),
+            chapters: self.facts.chapters.body.clone(),
+            hf_sources: &self.facts.hf_sources,
             run,
         }
     }
@@ -203,7 +224,7 @@ impl<'d> PassCx<'d> {
 pub(crate) fn endnote_split(cx: &PassCx, si: usize) -> Option<usize> {
     let doc = cx.doc;
     let in_flow = doc.settings.compat() == crate::docx::Compat::Legacy && si + 1 < doc.sections.len();
-    (doc.sections[si].section_in(doc.review.view).columns.num > 1 && cx.notes.ends.contains(&si) && !in_flow).then(|| doc.sections[si].blocks.len())
+    (doc.sections[si].section_in(doc.review.view).columns.num > 1 && cx.notes.follow(si) && !in_flow).then(|| doc.sections[si].blocks.len())
 }
 
 /// The next place after `block` where the section's layout starts again below what came before: the end of its body
@@ -308,14 +329,14 @@ pub fn step(run: &mut PassRun, cx: &PassCx, reuse: Option<&mut Reuse>, memos: &m
             }
             let balance = balances(cx, si, &token);
             let split = next_split(cx, si, token.flow.block);
+            let n = cx.node(si);
             let body_only;
             let node = match split {
                 Some(e) => {
-                    let n = &cx.nodes[si];
                     body_only = SectionNode { index: n.index, section: n.section, blocks: n.blocks.first(e), breaks: n.breaks, next: n.next };
                     &body_only
                 }
-                None => &cx.nodes[si],
+                None => &*n,
             };
             let mut p = cx.paginator(run);
             let next = p.body(node, token, top, balance, memos)?;
@@ -378,6 +399,7 @@ pub struct LayoutJob {
     finished: Option<Finished>,
     /// Note numbers the last pass found different on its pages, for the next pass.
     renumber: Option<HashMap<(NoteKind, i64), String>>,
+    facts: Option<Rc<DocFacts>>,
 }
 
 impl LayoutJob {
@@ -394,6 +416,7 @@ impl LayoutJob {
             history: Vec::new(),
             finished: None,
             renumber: None,
+            facts: None,
         }
     }
 
@@ -435,8 +458,9 @@ impl LayoutJob {
         cache.begin();
         let mut meter = Meter::new(budget);
         let mut notes = std::mem::take(&mut self.notes);
+        let facts = self.facts(doc, &notes);
         let step_result = loop {
-            let cx = PassCx::new(doc, *ctx, &notes);
+            let cx = PassCx::new(doc, *ctx, &notes, &facts);
             let mut memos = Memos { cache, meter: &mut meter };
             let r = loop {
                 if let Cursor::Done = self.run.cursor {
@@ -468,8 +492,9 @@ impl LayoutJob {
             return;
         }
         let notes = std::mem::take(&mut self.notes);
+        let facts = self.facts(doc, &notes);
         {
-            let cx = PassCx::new(doc, *ctx, &notes);
+            let cx = PassCx::new(doc, *ctx, &notes, &facts);
             let mut meter = Meter::new(Budget::Unlimited);
             let mut memos = Memos { cache, meter: &mut meter };
             let run = &mut self.run;
@@ -478,7 +503,7 @@ impl LayoutJob {
             run.info = Some(PassInfo {
                 num_pages: Some(n.max(pages).to_string()),
                 section_pages: section_pages(&run.pages, nsec),
-                page_refs: Rc::new(bookmark_pages(doc, cx.chapters.body.as_deref(), &run.pages)),
+                page_refs: Rc::new(bookmark_pages(doc, cx.facts.chapters.body.as_deref(), &run.pages)),
                 para_at: Rc::new(para_at(&run.pages)),
             });
             for i in 0..n {
@@ -491,6 +516,16 @@ impl LayoutJob {
             run.info = None;
         }
         self.notes = notes;
+    }
+
+    /// The document's [`DocFacts`], read on the job's first run.
+    fn facts(&mut self, doc: &Document, notes: &JobNotes) -> Rc<DocFacts> {
+        self.facts.get_or_insert_with(|| Rc::new(DocFacts::new(doc, notes))).clone()
+    }
+
+    /// The document changed in what layout reads, though nothing needs laying out again.
+    pub fn document_changed(&mut self) {
+        self.facts = None;
     }
 
     fn end_pass(&mut self, doc: &Document, notes: &JobNotes) -> bool {
@@ -595,7 +630,7 @@ fn pass_info(cx: &PassCx, pages: &[PageRecord]) -> PassInfo {
     PassInfo {
         num_pages: Some(pages.len().to_string()),
         section_pages: section_pages(pages, cx.doc.sections.len()),
-        page_refs: Rc::new(bookmark_pages(cx.doc, cx.chapters.body.as_deref(), pages)),
+        page_refs: Rc::new(bookmark_pages(cx.doc, cx.facts.chapters.body.as_deref(), pages)),
         para_at: Rc::new(para_at(pages)),
     }
 }

@@ -79,6 +79,8 @@ pub struct PageRecord {
     pub reused: Option<usize>,
     pub number: i64,
     pub blank: bool,
+    /// Its section's pages so far that aren't blank, this one included.
+    pub in_section: usize,
     /// The page's borders, and the rectangle their outer edges are on (page coordinates).
     pub page_borders: Option<(Rc<crate::docx::PageBorders>, [f64; 4])>,
 }

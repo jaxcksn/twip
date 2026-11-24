@@ -107,6 +107,15 @@ impl JobNotes {
         let mut paged = Vec::new();
         let mut keyed = Vec::new();
         let nsec = doc.sections.len();
+        // Each section's endnotes follow it, or the next one without `w:noEndnote`; the last one when none is.
+        let mut end_of = vec![nsec.saturating_sub(1); nsec];
+        for e in (0..nsec).rev() {
+            if !doc.sections[e].no_endnote {
+                end_of[e] = e;
+            } else if e + 1 < nsec {
+                end_of[e] = end_of[e + 1];
+            }
+        }
         let generic = doc.settings.compat() == crate::docx::Compat::Generic;
         let (mut all, mut all_seen) = (Vec::new(), HashSet::new());
         for s in &doc.sections {
@@ -162,8 +171,7 @@ impl JobNotes {
                 count[k] += i64::from(!custom);
                 if kind == NoteKind::End {
                     // After its section, or the next one without `w:noEndnote`; all at the end with docEnd.
-                    let end = (si..nsec).find(|&e| !doc.sections[e].no_endnote).unwrap_or(nsec - 1);
-                    ends.push(if doc.settings.endnotes_sect_end { end } else { nsec - 1 });
+                    ends.push(if doc.settings.endnotes_sect_end { end_of[si] } else { nsec - 1 });
                 }
             }
         }
@@ -233,8 +241,14 @@ impl JobNotes {
         (!changed.is_empty()).then_some(changed)
     }
 
-    /// The endnotes that follow section `si`.
+    /// The endnotes that follow section `si`: `ends` is in section order.
     pub(super) fn after(&self, si: usize) -> impl Iterator<Item = i64> + '_ {
-        self.endnotes.iter().zip(&self.ends).filter(move |e| *e.1 == si).map(|e| *e.0)
+        let (from, to) = (self.ends.partition_point(|&e| e < si), self.ends.partition_point(|&e| e <= si));
+        self.endnotes[from..to].iter().copied()
+    }
+
+    /// Whether endnotes follow section `si`.
+    pub(super) fn follow(&self, si: usize) -> bool {
+        self.ends.binary_search(&si).is_ok()
     }
 }

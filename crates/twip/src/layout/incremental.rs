@@ -657,6 +657,9 @@ impl DocumentLayout {
     /// The document changed: its environment is read again, though nothing needs laying out again.
     pub fn document_changed(&mut self) {
         self.env = None;
+        if let Some(r) = &mut self.job {
+            r.job.document_changed();
+        }
     }
 
     fn env(&mut self, doc: &Document) -> Rc<LayoutEnv> {

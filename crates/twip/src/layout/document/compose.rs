@@ -7,7 +7,7 @@ use crate::docx::model::*;
 use crate::layout::fragment::{BoxFragment, BoxKind, PageChild, PageFragment};
 use crate::layout::ids::{FragmentId, ParaId};
 use crate::layout::job::{Memos, Yield};
-use crate::layout::page::{PassRun, margins, story_ref_in};
+use crate::layout::page::{PassRun, margins};
 use crate::layout::record::{HfRecord, PageRecord};
 use crate::layout::snapshot::PageMeta;
 use crate::layout::space::HfHeights;
@@ -30,7 +30,7 @@ pub(crate) fn hf_fields(run: &PassRun, cx: &PassCx, i: usize) -> FieldValues {
         style_refs: style_refs(cx, &run.pages, i),
         page_fmt: cx.doc.sections[si].pg_fmt.clone(),
         chapter: page_chapter(cx, &run.pages, i),
-        section_chapter: cx.chapters.sections.get(si).cloned().flatten(),
+        section_chapter: cx.facts.chapters.sections.get(si).cloned().flatten(),
         chapters: None,
         here: Some(i),
         para_at: Some(info.para_at.clone()),
@@ -79,10 +79,15 @@ pub(super) fn chapters(doc: &Document) -> Chapters {
     });
     let heads: Vec<(usize, i64, String)> = paras.iter().enumerate().filter_map(|(k, (_, p))| chapter_of(r, p).map(|(l, t)| (k, l, t))).collect();
     // The last heading of the section's level at or before paragraph `k`; before the first, the first.
+    let mut levels: HashMap<i64, Vec<&(usize, i64, String)>> = HashMap::new();
+    for h in &heads {
+        levels.entry(h.1).or_default().push(h);
+    }
     let at = |si: usize, k: usize| {
         let (level, sep) = doc.sections[si].chapter.as_ref()?;
-        let mut of_level = heads.iter().filter(|h| h.1 == *level);
-        of_level.clone().take_while(|h| h.0 <= k).last().or_else(|| of_level.next()).map(|h| format!("{}{sep}", h.2))
+        let of_level = levels.get(level)?;
+        let h = of_level[of_level.partition_point(|h| h.0 <= k).saturating_sub(1)];
+        Some(format!("{}{sep}", h.2))
     };
     let mut body = HashMap::new();
     for (k, (si, p)) in paras.iter().enumerate() {
@@ -99,7 +104,7 @@ pub(super) fn chapters(doc: &Document) -> Chapters {
 /// The chapter prefix of page `i`'s headers and footers: from the last heading at or before the page's end.
 fn page_chapter(cx: &PassCx, pages: &[PageRecord], i: usize) -> Option<String> {
     let (level, sep) = cx.doc.sections.get(pages[i].section)?.chapter.as_ref()?;
-    let heads = &cx.chapters.heads;
+    let heads = &cx.facts.chapters.heads;
     let head = |id: &ParaId| heads.iter().find(|h| h.0 == *id && h.1 == *level);
     let h = (0..=i).rev().find_map(|k| pages[k].effects.paras.iter().rev().find_map(head)).or_else(|| heads.iter().find(|h| h.1 == *level))?;
     Some(format!("{}{sep}", h.2))
@@ -110,9 +115,11 @@ pub(crate) fn hf_parts<'d>(run: &PassRun, cx: &PassCx<'d>, i: usize) -> [Option<
     if pg.blank {
         return [None, None];
     }
-    let pis = run.pages[..i].iter().filter(|p| p.section == pg.section && !p.blank).count();
+    let pis = pg.in_section - 1;
     let part = |footer| {
-        story_ref_in(&cx.doc.sections, cx.ctx.env.text.review.view, cx.ctx.env.even_and_odd, pg.section, pis, pg.number, footer)
+        cx.facts
+            .hf_sources
+            .story_ref(&cx.doc.sections, cx.ctx.env.text.review.view, cx.ctx.env.even_and_odd, pg.section, pis, pg.number, footer)
             .1
             .filter(|p| cx.doc.stories.contains_key(*p))
     };
@@ -261,11 +268,12 @@ pub(crate) fn finish_page(pg: &PageRecord, section_page: usize) -> (Rc<PageFragm
 fn style_refs(cx: &PassCx, pages: &[PageRecord], i: usize) -> Vec<(String, String)> {
     let on = |k: usize| pages.get(k).map(|p| &p.effects.paras[..]).unwrap_or(&[]);
     let resolver = cx.doc.resolver.as_deref();
-    cx.wanted
+    cx.facts
+        .wanted
         .iter()
         .filter_map(|(code, q)| {
             let hit = |list: &[ParaId], rev: bool| {
-                let find = |r: &ParaId| Some(q.shown(q.find(cx.paras.get(r)?, rev)?, cx.numbers.get(&r.0), resolver));
+                let find = |r: &ParaId| Some(q.shown(q.find(cx.facts.paras.get(r)?, rev)?, cx.facts.numbers.get(&r.0), resolver));
                 if rev { list.iter().rev().find_map(find) } else { list.iter().find_map(find) }
             };
             hit(on(i), q.last)
