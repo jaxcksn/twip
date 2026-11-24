@@ -740,7 +740,7 @@ impl Editor {
         }
     }
 
-    /// Types `text` at `at` as its own edit of the batch open; where it ends.
+    /// Types `text` at `at` as its own edit of the batch open; where it ends, `None` when it couldn't.
     fn type_at(
         &mut self,
         at: Position,
@@ -748,9 +748,9 @@ impl Editor {
         run: Option<&crate::docx::Run>,
         keep: &mut Option<(Position, Position)>,
         fonts: &Fonts,
-    ) -> Position {
+    ) -> Option<Position> {
         if text.is_empty() {
-            return at;
+            return Some(at);
         }
         self.selection = Selection::Caret(at);
         let mut tx = self.begin("Replace");
@@ -762,20 +762,40 @@ impl Editor {
                 if matches!(self.commit(tx, None, fonts), Outcome::Changed(_)) {
                     self.map_kept(keep);
                 }
-                p
+                Some(p)
             }
             Err(_) => {
                 self.abort(tx);
-                at
+                None
             }
         }
     }
 
     /// Replaces the selection with `rep`'s pieces, each its own edit of the batch open: typed text, paragraph marks
     /// and breaks at once, the copies of the text found (`pastes`) and the `clipboard` pasted. Where the replacement
-    /// starts and ends; `None` when nothing could be put in. `join`: the selection crosses a paragraph mark, which
-    /// deleting it joins.
+    /// starts and ends; `None`, every edit of it undone, when a piece couldn't be put in. `join`: the selection
+    /// crosses a paragraph mark, which deleting it joins.
     fn insert_replacement(
+        &mut self,
+        rep: &Replacement,
+        pastes: &Pastes,
+        clipboard: Option<&super::clipboard::Fragment>,
+        join: bool,
+        keep: &mut Option<(Position, Position)>,
+        fonts: &Fonts,
+    ) -> Option<(Position, Position)> {
+        let kept = *keep;
+        self.begin_batch(None);
+        let done = self.replacement_pieces(rep, pastes, clipboard, join, keep, fonts);
+        let _ = self.end_batch(done.is_some(), fonts);
+        if done.is_none() {
+            *keep = kept;
+        }
+        done
+    }
+
+    /// [`Editor::insert_replacement`]'s edits, in the batch it opens.
+    fn replacement_pieces(
         &mut self,
         rep: &Replacement,
         pastes: &Pastes,
@@ -810,31 +830,46 @@ impl Editor {
                     continue;
                 }
             };
-            end = self.type_at(end, &std::mem::take(&mut typed), run.as_ref(), keep, fonts);
+            end = self.type_at(end, &std::mem::take(&mut typed), run.as_ref(), keep, fonts)?;
             if let Some(f) = paste {
                 self.selection = Selection::Caret(end);
                 self.pasting_replacement = true;
                 let pasted = self.paste_fragment(f, fonts);
                 self.pasting_replacement = false;
-                if matches!(pasted, Outcome::Changed(_)) {
-                    self.map_kept(keep);
-                    end = self.caret().unwrap_or(end);
+                if !matches!(pasted, Outcome::Changed(_)) {
+                    return None;
                 }
+                self.map_kept(keep);
+                end = self.caret().unwrap_or(end);
             }
         }
-        Some((at, self.type_at(end, &typed, run.as_ref(), keep, fonts)))
+        Some((at, self.type_at(end, &typed, run.as_ref(), keep, fonts)?))
     }
 }
 
 impl Editor {
-    /// Highlights `pieces` (paragraph unit ranges, as find matches cover them) on the pages, as Word's Highlight All
-    /// does, without changing the document: until it next changes or [`Editor::clear_find_highlights`].
+    /// Highlights `pieces` (paragraph unit ranges, as find matches cover them; one past its paragraph's end takes its
+    /// mark too) on the pages, as Word's Highlight All does, without changing the document: until it next changes or
+    /// [`Editor::clear_find_highlights`].
     pub fn set_find_highlights(&mut self, pieces: impl IntoIterator<Item = (ParaId, Unit, Unit)>) {
         let mut by: std::collections::HashMap<ParaId, Vec<(Unit, Unit)>> = std::collections::HashMap::new();
         for (p, a, b) in pieces.into_iter().filter(|r| r.1 < r.2) {
             by.entry(p).or_default().push((a, b));
         }
-        by.values_mut().for_each(|v| v.sort_unstable());
+        // Overlapping ranges merged: each paragraph's are disjoint, in order.
+        for v in by.values_mut() {
+            v.sort_unstable();
+            let mut n = 0;
+            for k in 0..v.len() {
+                if n > 0 && v[k].0 < v[n - 1].1 {
+                    v[n - 1].1 = v[n - 1].1.max(v[k].1);
+                } else {
+                    v[n] = v[k];
+                    n += 1;
+                }
+            }
+            v.truncate(n);
+        }
         self.find_highlights = Some((self.revision, by));
     }
 
@@ -861,9 +896,13 @@ impl Editor {
                 for &para in l.paras.iter() {
                     let Some(ranges) = by.get(&para) else { continue };
                     let (Some(lf), Some(ll)) = (l.first_of(para), l.last_of(para)) else { continue };
-                    for &(a, b) in ranges.iter().filter(|r| r.0 < ll && r.1 > lf) {
+                    let shown_end = l.stops.last().is_some_and(|s| s.end && s.para == para);
+                    let first = ranges.partition_point(|r| r.1 <= lf);
+                    for &(a, b) in ranges[first..].iter().take_while(|r| r.0 < ll || (r.0 == ll && shown_end)) {
                         let (from, to) = (a.max(lf), b.min(ll));
                         let (Some(x0), Some(x1)) = (l.x_of(para, from), l.x_of(para, to)) else { continue };
+                        // The paragraph's mark, as a selection across it shows it.
+                        let x1 = x1 + if b > ll && shown_end { 4.0 } else { 0.0 };
                         if (x1 - x0).abs() > 0.01 {
                             out.push((page, l.strip(x0.min(x1), x0.max(x1))));
                         }

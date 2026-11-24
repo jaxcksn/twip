@@ -244,6 +244,8 @@ pub fn parse(text: &str) -> Result<Needle, SearchError> {
                 '\u{2011}' => Token::NonBreakingHyphen,
                 '\u{AD}' => Token::OptionalHyphen,
                 '\u{b}' | '\u{2028}' => Token::LineBreak,
+                '\u{c}' => Token::PageOrSection,
+                '\u{e}' => Token::ColumnBreak,
                 '\r' | '\n' | '\u{2029}' => {
                     out.seps.push(Sep::Paragraph);
                     out.parts.push(Vec::new());
@@ -587,6 +589,23 @@ impl Hay {
         self.fmt.as_ref().is_none_or(|f| f.get(k).copied().unwrap_or(false))
     }
 
+    /// Whether characters `a..b` all have the formatting searched for.
+    pub fn formatted(&self, a: usize, b: usize) -> bool {
+        self.fmt.is_none() || (a..b).all(|k| self.fmt_ok(k))
+    }
+
+    /// Whether the characters read at units `a..b` all have the formatting searched for, comments' references aside,
+    /// in a paragraph that does.
+    pub fn formatted_units(&self, a: Unit, b: Unit) -> bool {
+        let (s, t) = (self.seen.units.partition_point(|&u| u < a.0), self.seen.units.partition_point(|&u| u < b.0));
+        self.fmt.is_none() || (self.para_ok && (s..t).all(|k| self.fmt_ok(k) || self.kind(k) == Kind::Comment))
+    }
+
+    /// Whether character `k` is white space of the formatting searched for.
+    pub fn white_at(&self, k: usize) -> bool {
+        self.one(Token::White, k, false)
+    }
+
     /// The units characters `a..b` read at.
     pub fn units_of(&self, a: usize, b: usize) -> (Unit, Unit) {
         let Some(ends) = &self.ends else { return self.seen.units_of(a, b) };
@@ -844,10 +863,10 @@ impl Pattern {
     }
 
     /// The matches in `hay` from character `from`, as character ranges with their replacement (`with` expanded:
-    /// text as typed, each group a [`Piece::Copy`] of its units), each of more than nothing and all of the
-    /// formatting searched for. Each search is charged to the text's end against the budget; past it, the remaining
-    /// matches are given up.
-    pub fn matches(&self, hay: &Hay, from: usize, with: Option<&Template>) -> Vec<(usize, usize, Vec<Piece>)> {
+    /// text as typed, each group a [`Piece::Copy`] of its units), each of more than nothing, all of the formatting
+    /// searched for and taken by `ok`; past one refused, from the character after its start. Each search is charged
+    /// to the text's end against the budget; past it, the remaining matches are given up.
+    pub fn matches(&self, hay: &Hay, from: usize, with: Option<&Template>, ok: impl Fn(usize, usize) -> bool) -> Vec<(usize, usize, Vec<Piece>)> {
         let text: String = hay.chars().iter().collect();
         // Byte offset of each character, and the end.
         let mut bytes: Vec<usize> = text.char_indices().map(|(b, _)| b).collect();
@@ -867,7 +886,7 @@ impl Pattern {
             let Some(caps) = self.re.captures_at(&text, at) else { break };
             let Some(m) = caps.get(0) else { break };
             let (a, b) = (char_of(m.start()), char_of(m.end()));
-            if a < b && (a..b).all(|k| hay.fmt_ok(k)) {
+            if a < b && hay.formatted(a, b) && ok(a, b) {
                 let mut pieces = Vec::new();
                 for part in with.map_or(&[][..], |t| &t.parts) {
                     match part {
@@ -977,7 +996,7 @@ mod tests {
         assert_eq!(p.weight, 2, "a program of a few hundred bytes");
         let h = hay(&"A".repeat(20_000));
         h.budget.set(2_000_000);
-        let found = p.matches(&h, 0, None);
+        let found = p.matches(&h, 0, None, |_, _| true);
         assert!(h.spent(), "spent");
         assert!((40..60).contains(&found.len()), "gives up the rest past its budget: {}", found.len());
         // A large program costs time per character in proportion to its size, and is charged so.
@@ -987,7 +1006,7 @@ mod tests {
         let h = hay(&"x".repeat(4_000_000));
         h.budget.set(REGEX_BUDGET);
         let started = std::time::Instant::now();
-        assert!(big.matches(&h, 0, None).is_empty());
+        assert!(big.matches(&h, 0, None, |_, _| true).is_empty());
         assert!(h.spent(), "a search past the budget isn't started");
         assert!(started.elapsed() < std::time::Duration::from_secs(5), "{:?}", started.elapsed());
         assert!(matches!(Pattern::new("(?:.{0,50}){0,50}!", true), Err(SearchError::Regex(_))), "past REGEX_SIZE");
@@ -1006,11 +1025,11 @@ mod tests {
         let t = p.template("${host}:$1 $$ $9 $x ${2}");
         let copy = |a, b| Piece::Copy(Unit(a), Unit(b));
         let text = |s: &str| Piece::Text(s.into());
-        assert_eq!(p.matches(&h, 0, Some(&t)), [(5, 16, vec![copy(9, 16), text(":"), copy(5, 8), text(" $   "), copy(9, 16)])]);
+        assert_eq!(p.matches(&h, 0, Some(&t), |_, _| true), [(5, 16, vec![copy(9, 16), text(":"), copy(5, 8), text(" $   "), copy(9, 16)])]);
         assert_eq!(p.template("a$").parts, [Part::Text("a$".into())]);
         assert_eq!(p.template("${1").parts, [Part::Text("${1".into())]);
         let i = Pattern::new("BOB", false).expect("compiles");
-        assert_eq!(i.matches(&h, 0, None).len(), 1, "ASCII case folded");
+        assert_eq!(i.matches(&h, 0, None, |_, _| true).len(), 1, "ASCII case folded");
     }
 
     #[test]
@@ -1018,7 +1037,7 @@ mod tests {
         let p = Pattern::new("a", true).expect("compiles");
         let h = hay(&"a".repeat(10_000));
         h.budget.set(REGEX_BUDGET);
-        assert_eq!(p.matches(&h, 0, None).len(), 10_000);
+        assert_eq!(p.matches(&h, 0, None, |_, _| true).len(), 10_000);
         assert!(!h.spent());
     }
 }

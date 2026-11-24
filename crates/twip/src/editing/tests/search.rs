@@ -815,3 +815,111 @@ fn a_character_code_takes_three_digits_unless_it_starts_with_zero() {
     assert_eq!(found(&e, spec("^1001")), ["d1"], "^100 then 1");
     assert_eq!(found(&e, spec("^0233")), ["\u{e9}"]);
 }
+
+#[test]
+fn a_match_starting_inside_the_selection_isnt_lost_to_an_overlapping_one_before_it() {
+    let mut e = ed(&p("ababa."));
+    assert_eq!(search(spec("aba")).all(&e).iter().map(|h| h.start).collect::<Vec<_>>(), [0], "unlimited, none overlapping");
+    let a = para_id(&e, 0);
+    e.set_caret_for_benchmark(Selection::range(
+        Position::text(StoryId::Body, a, Unit(2)),
+        Position::text(StoryId::Body, a, Unit(6)),
+        Default::default(),
+    ));
+    let inside = search(FindSpec { within: Some(e.selected_ranges()), ..spec("aba") });
+    assert_eq!(inside.all(&e).iter().map(|h| (h.start, h.end)).collect::<Vec<_>>(), [(2, 5)]);
+    assert_eq!(inside.next(&e, false).map(|(h, _)| h.start), Some(2));
+}
+
+#[test]
+fn find_previous_skips_a_match_across_paragraphs_ending_past_the_caret() {
+    let mut e = ed(&format!("{}{}", p("one"), p("two")));
+    let up = FindSpec { wrap: false, ..spec("one^ptwo") };
+    e.set_caret_for_benchmark(Selection::Caret(Position::text(StoryId::Body, para_id(&e, 1), Unit(0))));
+    assert!(search(up.clone()).next(&e, true).is_none(), "it ends after the caret");
+    e.set_caret_for_benchmark(Selection::Caret(Position::text(StoryId::Body, para_id(&e, 1), Unit(3))));
+    assert!(search(up).next(&e, true).is_some(), "it ends at the caret");
+}
+
+#[test]
+fn a_comment_reaching_past_the_selection_isnt_found_in_it() {
+    let comments = format!(r#"<w:comments {NS}><w:comment w:id="1" w:author="Ann"><w:p>{}</w:p></w:comment></w:comments>"#, t("c"));
+    let mut body = format!(r#"<w:p><w:commentRangeStart w:id="1"/>{}</w:p>"#, t("x"));
+    (1..257).for_each(|_| body.push_str(&p("x")));
+    body.push_str(&format!(r#"<w:p>{}<w:commentRangeEnd w:id="1"/><w:r><w:commentReference w:id="1"/></w:r></w:p>"#, t("x")));
+    let mut e = Editor::open(&build(&body, "", &[("comments.xml", "comments", "comments", &comments)]), fonts()).expect("opens");
+    assert_eq!(search(spec("^a")).all(&e).len(), 1);
+    e.set_caret_for_benchmark(Selection::range(
+        Position::text(StoryId::Body, para_id(&e, 0), Unit(0)),
+        Position::text(StoryId::Body, para_id(&e, 255), Unit(1)),
+        Default::default(),
+    ));
+    assert!(search(FindSpec { within: Some(e.selected_ranges()), ..spec("^a") }).all(&e).is_empty());
+}
+
+#[test]
+fn comment_marks_with_formatting() {
+    let c = |i: u32, s: &str| {
+        format!(r#"<w:commentRangeStart w:id="{i}"/>{s}<w:commentRangeEnd w:id="{i}"/><w:r><w:commentReference w:id="{i}"/></w:r>"#)
+    };
+    let comments = format!(
+        r#"<w:comments {NS}><w:comment w:id="1" w:author="Ann"><w:p>{}</w:p></w:comment><w:comment w:id="2" w:author="Bob"><w:p>{}</w:p></w:comment></w:comments>"#,
+        t("c1"),
+        t("c2")
+    );
+    let bold = "<w:r><w:rPr><w:b/></w:rPr><w:t>bold</w:t></w:r>";
+    let body = format!("<w:p>{}{}{}</w:p>", c(1, &t("plain")), t(" and "), c(2, bold));
+    let mut e = Editor::open(&build(&body, "", &[("comments.xml", "comments", "comments", &comments)]), fonts()).expect("opens");
+    let style =
+        |s: FontStyle| FindFormat { font: crate::api::services::FontDialog { style: Tri::Uniform(s), ..Default::default() }, ..Default::default() };
+    assert_eq!(found(&e, FindSpec { format: Some(style(FontStyle::Bold)), ..spec("^a") }), ["bold"], "the bold comment's alone");
+    let s = search(spec("^a"));
+    let hits = s.all(&e);
+    assert!(replace_with(&mut e, &s, &hits, "x", Some(&style(FontStyle::Italic)), true, fonts()).is_err(), "text and formatting together");
+    let (n, _) = replace_with(&mut e, &s, &hits, "", Some(&style(FontStyle::Italic)), true, fonts()).expect("formats");
+    assert_eq!(n, 2);
+    assert_eq!(e.document().comments.by_id.len(), 2, "formatting alone keeps the comments");
+    assert_eq!(found(&e, FindSpec { format: Some(style(FontStyle::Italic)), ..spec("") }), ["plain", "bold"]);
+}
+
+#[test]
+fn a_regular_expression_match_refused_at_a_field_marker_lets_a_later_overlapping_one_match() {
+    let field = r#"<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> QUOTE "bc" </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>bc</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>"#;
+    let e = ed(&format!("<w:p>{}{field}</w:p>", t("a")));
+    assert_eq!(found(&e, FindSpec { regex: true, ..spec("ab|bc") }), ["bc"]);
+}
+
+#[test]
+fn raw_break_characters_find_the_breaks_replace_puts_in() {
+    let e = ed(&format!(r#"<w:p>{}<w:r><w:br w:type="page"/></w:r>{}<w:r><w:br w:type="column"/></w:r>{}</w:p>"#, t("a"), t("b"), t("c")));
+    assert_eq!(found(&e, spec("a\u{c}")).len(), 1, "a page break, as ^12");
+    assert!(found(&e, spec("b\u{c}")).is_empty(), "not a column break");
+    assert_eq!(found(&e, spec("b\u{e}")).len(), 1, "a column break, as ^14");
+}
+
+#[test]
+fn formatting_holds_over_a_widened_cluster_and_after_plain_white_space() {
+    let bold = |s: &str| format!("<w:r><w:rPr><w:b/></w:rPr><w:t xml:space=\"preserve\">{s}</w:t></w:r>");
+    let is_bold =
+        || FindFormat { font: crate::api::services::FontDialog { style: Tri::Uniform(FontStyle::Bold), ..Default::default() }, ..Default::default() };
+    let with = |text: &str| FindSpec { format: Some(is_bold()), ..spec(text) };
+    let e = ed(&format!("<w:p>{}{}</w:p>", bold("\u{1F44D}"), t("\u{1F3FD}")));
+    assert!(found(&e, with("\u{1F44D}")).is_empty(), "the modifier isn't bold");
+    let e = ed(&format!("<w:p>{}</w:p>", bold("\u{1F44D}\u{1F3FD}")));
+    assert_eq!(found(&e, with("\u{1F44D}")), ["\u{1F44D}\u{1F3FD}"], "the whole cluster");
+    let e = ed(&format!("<w:p>{}{}</w:p>", t(" "), bold(" x")));
+    assert_eq!(found(&e, with("^wx")), [" x"]);
+}
+
+#[test]
+fn highlight_all_shows_a_paragraph_mark_found_alone() {
+    let mut e = ed(&format!("{}{}", p("one"), p("two")));
+    e.complete(fonts());
+    assert_eq!(crate::services::find::highlight_all(&mut e, &search(spec("^p"))), 1);
+    let bands = e.find_highlight_bands(0..1);
+    assert_eq!(bands.len(), 1, "the mark: {bands:?}");
+    let [x0, _, x1, _] = bands[0].1.rect;
+    assert!((x1 - x0 - 4.0).abs() < 0.01, "{bands:?}");
+    e.set_find_highlights([(para_id(&e, 0), Unit(0), Unit(2)), (para_id(&e, 0), Unit(1), Unit(3))]);
+    assert_eq!(e.find_highlight_bands(0..1).len(), 1, "overlapping ranges merged");
+}

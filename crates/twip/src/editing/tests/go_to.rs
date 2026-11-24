@@ -187,13 +187,85 @@ fn a_table_whose_first_cell_starts_with_a_table_and_pages_from_a_range() {
     assert_eq!(at(&e), first, "the outer table and the one in its first cell both start at the inner one's first cell");
     go(&mut e, W::Table, T::Absolute(3), None);
     assert_ne!(at(&e), first, "the third is the last table");
-    // A range on page 2: the next page counts from it.
-    let (a, b) = (para_id(&e, 1), para_id(&e, 4));
+    // A range from page 2 to page 3: the previous page counts from its start.
+    let mut e = open(&format!("<w:p>{}{brk}</w:p><w:p>{}{brk}</w:p>{}", t("one"), t("two"), p("three")), &[]);
+    let (a, b) = (para_id(&e, 1), para_id(&e, 2));
     e.set_caret_for_benchmark(Selection::range(
         crate::editing::position::Position::text(StoryId::Body, a, Unit(0)),
         crate::editing::position::Position::text(StoryId::Body, b, Unit(1)),
         Default::default(),
     ));
+    assert_eq!(e.selection().focus().and_then(|f| e.page_showing(f)), Some(2));
     assert!(matches!(go(&mut e, W::Page, T::Previous, None), Outcome::Moved));
-    assert_eq!(e.caret().and_then(|c| e.page_showing(c)), Some(0), "back from the selection's page, not from page 1");
+    assert_eq!(e.caret().and_then(|c| e.page_showing(c)), Some(0), "back from the selection's start, not its focus");
+}
+
+#[test]
+#[ignore = "needs Editor::ensure_page to lay out past a pending snapshot's last page"]
+fn pages_and_lines_past_the_laid_out_ones() {
+    let brk = "<w:r><w:br w:type=\"page\"/></w:r>";
+    let body: String = (0..12).map(|k| format!("<w:p>{}{brk}</w:p>", t(&format!("p{k}")))).collect();
+    let fresh = || Editor::open(&build(&format!("{body}{}", p("end")), "", &[]), fonts()).expect("opens");
+    let mut e = fresh();
+    assert!(!e.layout_complete());
+    assert!(matches!(go(&mut e, W::Page, T::Absolute(13), None), Outcome::Moved));
+    assert_eq!(e.caret().and_then(|c| e.page_showing(c)), Some(12));
+    let mut e = fresh();
+    assert!(matches!(go(&mut e, W::Line, T::Absolute(13), None), Outcome::Moved));
+    assert_eq!(at(&e), (12, 0), "the last page's line");
+}
+
+#[test]
+fn a_field_across_paragraphs_named_numbered_and_selected() {
+    let fld = |kind: &str| format!(r#"<w:r><w:fldChar w:fldCharType="{kind}"/></w:r>"#);
+    let body = format!(
+        r#"<w:p>{}{}<w:r><w:instrText xml:space="preserve"> QUOTE "x" </w:instrText></w:r>{}{}</w:p><w:p>{}{}{}<w:r><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r>{}{}{}</w:p>"#,
+        t("a"),
+        fld("begin"),
+        fld("separate"),
+        t("one"),
+        t("two"),
+        fld("end"),
+        fld("begin"),
+        fld("separate"),
+        t("1"),
+        fld("end")
+    );
+    let mut e = open(&body, &[]);
+    assert!(matches!(go(&mut e, W::Field, T::Absolute(1), Some("quote")), Outcome::Moved));
+    let (s, f) = e.selection().ordered(e.index()).expect("a selection");
+    assert_eq!(s.para_offset().map(|(p, u)| (p == para_id(&e, 0), u.0)), Some((true, 1)));
+    assert_eq!(f.para_offset().map(|(p, _)| p), Some(para_id(&e, 1)), "to its end in the next paragraph");
+    go(&mut e, W::Field, T::Next, None);
+    assert_eq!(at(&e).0, 1, "the PAGE field after it");
+    go(&mut e, W::Field, T::Absolute(1), None);
+    assert_eq!(at(&e), (0, 1), "the first of any kind");
+}
+
+#[test]
+fn floats_at_one_place_go_one_by_one_and_an_object_scrolls_into_view() {
+    let float = super::empty_stories::anchored_box("<w:txbxContent><w:p/></w:txbxContent>");
+    let mut e = open(&format!("<w:p>{}{float}{float}</w:p>", t("a")), &[]);
+    e.take_requests();
+    assert!(matches!(go(&mut e, W::Graphic, T::Absolute(1), None), Outcome::Moved));
+    let Selection::Object(first) = e.selection() else { panic!("{:?}", e.selection()) };
+    assert!(e.take_requests().iter().any(|r| matches!(r, crate::editing::input::Request::ScrollIntoView { .. })), "scrolled to");
+    assert!(matches!(go(&mut e, W::Graphic, T::Next, None), Outcome::Moved));
+    let Selection::Object(second) = e.selection() else { panic!("{:?}", e.selection()) };
+    assert_ne!(first, second);
+    assert!(matches!(go(&mut e, W::Graphic, T::Next, None), Outcome::Unchanged(_)));
+    go(&mut e, W::Graphic, T::Previous, None);
+    assert_eq!(e.selection(), Selection::Object(first));
+}
+
+#[test]
+fn a_named_bookmark_by_number_zero_and_an_object_in_another_prefix() {
+    let body = format!(r#"<w:p><w:bookmarkStart w:id="0" w:name="Mark"/>{}<w:bookmarkEnd w:id="0"/></w:p>"#, t("marked"));
+    let mut e = open(&body, &[]);
+    assert!(matches!(go(&mut e, W::Bookmark, T::Absolute(0), Some("Mark")), Outcome::Unchanged(_)));
+    assert!(e.selection().is_collapsed());
+    let object = r#"<w:r><wpml:object xmlns:wpml="http://schemas.openxmlformats.org/wordprocessingml/2006/main" wpml:dxaOrig="1440" wpml:dyaOrig="1440"><v:shape xmlns:v="urn:schemas-microsoft-com:vml" id="s1" style="width:72pt;height:72pt"/><o:OLEObject xmlns:o="urn:schemas-microsoft-com:office:office" Type="Embed" ProgID="Excel.Sheet.12" ShapeID="s1" DrawAspect="Content" ObjectID="_1"/></wpml:object></w:r>"#;
+    let mut e = open(&format!("<w:p>{}{object}</w:p>", t("a")), &[]);
+    assert!(matches!(go(&mut e, W::Object, T::Absolute(1), Some("Excel.Sheet")), Outcome::Moved), "{:?}", e.document().sections[0].blocks);
+    assert!(matches!(go(&mut e, W::Graphic, T::Absolute(1), None), Outcome::Unchanged(_)), "not a graphic");
 }

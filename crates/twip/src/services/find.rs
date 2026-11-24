@@ -575,14 +575,11 @@ impl Search {
             at(i)
                 && at(end)
                 && !hay.seen.crosses(c.start(i), c.next(end))
+                && hay.formatted(c.start(i), c.next(end))
                 && (!edges || search::edges(chars, c, i, end, o.whole || o.prefix, o.whole || o.suffix))
         };
         if let Some(p) = &self.pattern {
-            for (a, b, r) in p.matches(hay, 0, with) {
-                if fits(a, b, false) {
-                    found.push((a, b, r));
-                }
-            }
+            found = p.matches(hay, 0, with, |a, b| fits(a, b, false));
         } else if self.needle.is_empty() {
             // Formatting alone: each stretch of the text that has it, between field markers.
             let mut k = 0;
@@ -608,7 +605,7 @@ impl Search {
             let mut i = 0;
             while i < n && !hay.spent() {
                 // A run of white space matched greedily: a start inside it ends where one before it did.
-                if lead_white && !overlap && i > 0 && failed == Some(i - 1) && search::is_white(chars[i - 1]) {
+                if lead_white && !overlap && i > 0 && failed == Some(i - 1) && hay.white_at(i - 1) && hay.white_at(i) {
                     failed = Some(i);
                     i += 1;
                     continue;
@@ -652,6 +649,7 @@ impl Search {
             let ok = s == n0
                 || ((c0.starts(s) || !first.chars()[c0.start(s)].is_alphanumeric())
                     && !first.seen.crosses(c0.start(s), n0)
+                    && first.formatted(c0.start(s), s)
                     && search::edges(first.chars(), &c0, s, n0, o.whole || o.prefix, false));
             if ok && (s < n0 || first.para_ok) {
                 break c0.start(s.min(n0));
@@ -685,6 +683,7 @@ impl Search {
             if end > 0 {
                 let fits = (c.starts(end) || !hay.chars()[c.start(end)].is_alphanumeric())
                     && !hay.seen.crosses(0, c.next(end))
+                    && hay.formatted(end, c.next(end))
                     && search::edges(hay.chars(), &c, 0, end, false, o.whole || o.suffix);
                 if !fits {
                     return None;
@@ -766,6 +765,9 @@ impl Search {
         if (p == para && k == i) || !ends || last.seen.crosses(from, c.next(k.min(len))) {
             return None;
         }
+        if !first.formatted(i0, i.min(n0)) || !last.formatted(k.min(len), c.next(k.min(len))) {
+            return None;
+        }
         if k < len && !search::edges(last.chars(), c, from, k, false, o.whole || o.suffix) {
             return None;
         }
@@ -813,7 +815,11 @@ impl Search {
                 }
                 by
             });
-            return spans.get(&para).map_or_else(Vec::new, |v| v.iter().copied().filter(|h| h.start >= from).collect());
+            let hits: Vec<Hit> = spans.get(&para).map_or_else(Vec::new, |v| v.iter().copied().filter(|h| h.start >= from).collect());
+            if self.format().is_none() {
+                return hits;
+            }
+            return hits.into_iter().filter(|h| self.formatted(e, h, cache)).collect();
         }
         let Some(hay) = self.hay(e, para, cache) else { return Vec::new() };
         if self.flex {
@@ -843,7 +849,34 @@ impl Search {
         if h.last == h.para {
             return fits(h.para, Unit(h.start), Unit(h.end));
         }
-        h.pieces(e).iter().all(|&(p, a, b)| fits(p, a, b))
+        let pieces = h.pieces(e);
+        pieces.last().is_some_and(|l| l.0 == h.last) && pieces.iter().all(|&(p, a, b)| fits(p, a, b))
+    }
+
+    /// Whether the text `h` covers, all of it read, has the formatting searched for.
+    fn formatted(&self, e: &Editor, h: &Hit, cache: &mut Memo) -> bool {
+        let pieces = h.pieces(e);
+        pieces.last().is_some_and(|l| l.0 == h.last)
+            && pieces.iter().all(|&(p, a, b)| self.hay(e, p, cache).is_some_and(|hay| hay.formatted_units(a, b)))
+    }
+
+    /// The matches starting in paragraph `para` (from unit `from`) within the ranges searched, in order, none
+    /// overlapping another. Limited to ranges, each candidate is tried, so one cut off by a range's start yields to one
+    /// starting inside it.
+    fn scoped_hits(&self, e: &Editor, para: ParaId, from: u32, cache: &mut Memo) -> Vec<Hit> {
+        if self.spec.within.is_none() {
+            return self.para_hits(e, para, from, false, cache);
+        }
+        let mut end = 0u32;
+        let mut out = Vec::new();
+        for h in self.para_hits(e, para, from, true, cache) {
+            if h.start < end || !self.inside(e, &h) {
+                continue;
+            }
+            end = if h.last == para { h.end } else { u32::MAX };
+            out.push(h);
+        }
+        out
     }
 
     /// The paragraphs searched, in order.
@@ -863,7 +896,7 @@ impl Search {
         let (mut k, mut from) = (0, 0);
         while k < order.len() {
             let n = out.len();
-            out.extend(self.para_hits(e, order[k], from, false, &mut cache).into_iter().filter(|h| self.inside(e, h)));
+            out.extend(self.scoped_hits(e, order[k], from, &mut cache));
             from = 0;
             k += 1;
             // Past a match across paragraph marks: on from its end, in the paragraph it ends in.
@@ -921,13 +954,20 @@ impl Search {
                 self.done(&cache);
                 return None;
             }
-            let hits = self.para_hits(e, order[i], 0, false, &mut cache);
+            let hits = self.scoped_hits(e, order[i], 0, &mut cache);
             let first = k == 0 && inside;
-            let ok = |h: &Hit| self.inside(e, h);
+            // Going back, before wrapping: ending at or before where the search starts, across paragraphs too.
+            let ends_before = |h: &Hit| {
+                if h.last == h.para {
+                    h.para != from_para || h.end <= from.0
+                } else {
+                    !h.pieces(e).iter().any(|&(p, _, b)| p == from_para && (p != h.last || b.0 > from.0))
+                }
+            };
             let hit = if back {
-                hits.into_iter().rev().find(|h| (!first || if h.last == h.para { h.end <= from.0 } else { h.start < from.0 }) && ok(h))
+                hits.into_iter().rev().find(|h| wrapped || ends_before(h))
             } else {
-                hits.into_iter().find(|h| (!first || h.start >= from.0) && ok(h))
+                hits.into_iter().find(|h| !first || h.start >= from.0)
             };
             if let Some(h) = hit {
                 self.done(&cache);
@@ -1024,7 +1064,14 @@ pub fn highlight_all(e: &mut Editor, search: &Search) -> usize {
         e.clear_find_highlights();
         return 0;
     }
-    let pieces: Vec<_> = hits.iter().flat_map(|h| h.pieces(e)).collect();
+    // Each piece but a match's last runs on across its paragraph's mark.
+    let mut pieces = Vec::new();
+    for h in &hits {
+        let from = pieces.len();
+        pieces.extend(h.pieces(e));
+        let last = pieces.len() - 1;
+        pieces[from..last].iter_mut().for_each(|p: &mut (ParaId, Unit, Unit)| p.2 = Unit(p.2.0 + 1));
+    }
     e.set_find_highlights(pieces);
     hits.len()
 }
@@ -1098,7 +1145,12 @@ pub fn replace_with(
 ) -> Result<(usize, Outcome), Error> {
     let mut pieces = search.replacements(e, hits, with).map_err(|why| Error::invalid(why.to_string()))?;
     let label = if all { "Replace All" } else { "Replace" };
-    if search.comment_marks_only() {
+    let format = format.filter(|f| !f.is_empty());
+    // A comment's mark with formatting alone: the commented text formatted, its comment kept.
+    if search.comment_marks_only() && !(with.is_empty() && format.is_some()) {
+        if format.is_some() {
+            return Err(Error::invalid("a comment's mark is replaced with text or formatted, not both"));
+        }
         // The text found is the commented text, which stays: nothing to paste.
         if let Some(c) = pieces.iter().flatten().flatten().find_map(|p| match p {
             Piece::Found => Some("^&"),
@@ -1117,7 +1169,6 @@ pub fn replace_with(
         let rep = Replacement { pieces: pieces.into_iter().next().flatten().unwrap_or_default(), keep: false };
         return Ok(e.replace_comment_marks(label, &marks, &rep, all, fonts));
     }
-    let format = format.filter(|f| !f.is_empty());
     let commands = format.map(|f| f.commands(e)).transpose()?.unwrap_or_default();
     let keep_text = with.is_empty() && format.is_some();
     // With a regular expression, one replacement each: hits no longer matched are left.

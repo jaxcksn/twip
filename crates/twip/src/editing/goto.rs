@@ -3,7 +3,7 @@
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
-use crate::docx::{Block, Inline};
+use crate::docx::{Block, FieldEdge, FieldView, Inline, fields};
 use crate::font::Fonts;
 use crate::layout::{FloatId, ParaId, Unit};
 
@@ -87,10 +87,13 @@ fn first_para(blocks: &[Block]) -> Option<ParaId> {
     })
 }
 
-/// An embedded object's program id, from its `w:object` as read: the first `ProgID` attribute, either quote, any
-/// spacing round its `=`.
+/// An embedded object's program id, from its `w:object` as read (in whatever prefix: a picture's source is a run
+/// child of the main namespace or `mc:AlternateContent`): the first `ProgID` attribute, either quote, any spacing round
+/// its `=`.
 fn prog_id(src: &str) -> Option<&str> {
-    if !src.trim_start().starts_with("<w:object") {
+    let tag = src.trim_start().strip_prefix('<')?;
+    let name = &tag[..tag.find(|c: char| c.is_whitespace() || c == '>' || c == '/').unwrap_or(tag.len())];
+    if name.rsplit(':').next() != Some("object") {
         return None;
     }
     let mut rest = src;
@@ -152,17 +155,28 @@ impl Editor {
             GoToWhat::Page => return self.go_to_page_at(target, fonts),
             GoToWhat::Line => return self.go_to_line(target, fonts),
             GoToWhat::Section => return self.go_to_section(target, fonts),
-            GoToWhat::Bookmark if matches!(target, GoToTarget::Absolute(_)) && name.is_some_and(|n| !n.trim().is_empty()) => {
+            GoToWhat::Bookmark if matches!(target, GoToTarget::Absolute(1..)) && name.is_some_and(|n| !n.trim().is_empty()) => {
                 return self.go_to_bookmark(name.unwrap_or_default().trim(), true, fonts);
             }
             _ => {}
         }
         let items = self.go_to_items(what, name);
-        let here = self.go_to_from().filter(|a| a.story == StoryId::Body || items.iter().any(|i| i.0.story == a.story));
-        let before = here.map_or(0, |h| items.iter().filter(|i| self.index.cmp(&i.0, &h) == Ordering::Less).count());
-        let after = match here {
-            Some(h) => items.iter().position(|i| self.index.cmp(&i.0, &h) == Ordering::Greater),
-            None => (!items.is_empty()).then_some(0),
+        // A selected object among them counts from itself: objects at one place (floats take no units) stay apart.
+        let current = match self.selection {
+            Selection::Object(o) => items.iter().position(|i| matches!(i.1, Land::Object(x) if x == o)),
+            _ => None,
+        };
+        let (before, after) = match current {
+            Some(k) => (k, (k + 1 < items.len()).then_some(k + 1)),
+            None => {
+                let here = self.go_to_from().filter(|a| a.story == StoryId::Body || items.iter().any(|i| i.0.story == a.story));
+                let before = here.map_or(0, |h| items.iter().filter(|i| self.index.cmp(&i.0, &h) == Ordering::Less).count());
+                let after = match here {
+                    Some(h) => items.iter().position(|i| self.index.cmp(&i.0, &h) == Ordering::Greater),
+                    None => (!items.is_empty()).then_some(0),
+                };
+                (before, after)
+            }
         };
         let k = match pick(target, items.len(), before, after) {
             Ok(k) => k,
@@ -177,8 +191,18 @@ impl Editor {
             Land::Object(o) => Selection::Object(o),
         });
         self.ensure(&at, fonts);
-        self.jump_to_caret();
+        match land {
+            Land::Object(_) => self.jump_to_object(at),
+            _ => self.jump_to_caret(),
+        }
         Outcome::Moved
+    }
+
+    /// After Go To lands on an object: its frame at the top of the view, else the place it is anchored at.
+    fn jump_to_object(&mut self, anchor: Position) {
+        let Some(c) = self.caret_at(anchor) else { return };
+        let frame = self.selection_bounds(c.page..c.page + 1).bounds.first().map(|b| b.1);
+        self.requests.push(super::input::Request::ScrollIntoView { page: c.page, rect: frame.unwrap_or_else(|| c.rect()), at_top: true });
     }
 
     /// Where Go To counts on and back from: the selection's start, a selected object's place.
@@ -236,6 +260,26 @@ impl Editor {
                 ends.entry(f.name.to_ascii_lowercase()).or_insert(f.end);
             }
         }
+        // Fields across paragraphs by the paragraph each starts in: the start's unit and the end's place.
+        let mut spanning: HashMap<ParaId, Vec<(u32, Position)>> = HashMap::new();
+        if what == GoToWhat::Field {
+            for f in self.span_fields() {
+                let Some(blocks) = self.index.blocks(&self.doc, f.container) else { continue };
+                let place = |(b, k): (usize, usize)| match blocks.get(b) {
+                    Some(Block::Para(p)) => Some((ParaId(p.id), p.inlines.get(..k)?.iter().map(|i| i.units() as u32).sum::<u32>(), p)),
+                    _ => None,
+                };
+                let (Some((sp, su, p)), Some((ep, eu, _))) = (place(f.start), place(f.end)) else { continue };
+                let code = match p.inlines.get(f.start.1).and_then(fields::span_edge) {
+                    Some(FieldEdge::Start { view: FieldView::Code, .. }) => fields::span_code_text(&p.inlines, f.start.1),
+                    Some(FieldEdge::Start { code, .. }) => code.clone(),
+                    _ => continue,
+                };
+                if named(name, fields::words(&code).first().map_or("", String::as_str), false) {
+                    spanning.entry(sp).or_default().push((su, Position::text(self.index.story(f.container), ep, Unit(eu))));
+                }
+            }
+        }
         // Each inline's first unit, per paragraph.
         let mut starts: Vec<u32> = Vec::new();
         for para in self.story_paras(Stories::default()) {
@@ -255,14 +299,16 @@ impl Editor {
                     *u += i.units() as u32;
                     Some(s)
                 }));
-                for s in crate::docx::fields::spans(&p.inlines) {
-                    let code = crate::docx::fields::code_text(&p.inlines, s);
-                    let kind = crate::docx::fields::words(&code).into_iter().next().unwrap_or_default();
+                let mut found = spanning.remove(&para).unwrap_or_default();
+                for s in fields::spans(&p.inlines) {
+                    let code = fields::code_text(&p.inlines, s);
                     let (Some(&a), Some(&b)) = (starts.get(s.begin), starts.get(s.end)) else { continue };
-                    if named(name, &kind, false) {
-                        out.push((at(a), Land::Range(at(b + 1))));
+                    if named(name, fields::words(&code).first().map_or("", String::as_str), false) {
+                        found.push((a, at(b + 1)));
                     }
                 }
+                found.sort_by_key(|f| f.0);
+                out.extend(found.into_iter().map(|(a, end)| (at(a), Land::Range(end))));
                 continue;
             }
             let mut u = 0u32;
@@ -312,7 +358,7 @@ impl Editor {
                 fonts,
             );
         }
-        let n = self.stack().pages.len();
+        let n = self.layout.snapshot().pages().len();
         match step(target, n, cur) {
             Ok(k) => self.go_to_page(k as u32 + 1, fonts),
             Err(why) => Outcome::Unchanged(why),
@@ -355,7 +401,7 @@ impl Editor {
     /// Go To line: the n-th line of the body (from its first page), or lines on and back from the caret's; past the
     /// last, the last.
     fn go_to_line(&mut self, target: GoToTarget, fonts: &Fonts) -> Outcome {
-        let pages = |e: &Editor| e.stack().pages.len();
+        let pages = |e: &Editor| e.layout.snapshot().pages().len();
         let found = match target {
             GoToTarget::Absolute(0) => return Outcome::invalid("lines count from 1"),
             GoToTarget::Absolute(n) => {
@@ -368,6 +414,7 @@ impl Editor {
                     left -= lines.len();
                     last = lines.last().copied().or(last);
                     page += 1;
+                    self.ensure_page(page, fonts);
                     if page >= pages(self) {
                         break last;
                     }
@@ -375,6 +422,8 @@ impl Editor {
             }
             _ => {
                 let Some(focus) = self.selection.focus() else { return Outcome::Unchanged("no caret") };
+                // Laid out first: its page's lines and its line's start from one layout.
+                self.ensure(&focus, fonts);
                 let Some(at) = self.nav().line_of(focus) else { return Outcome::Unchanged("the caret's line isn't laid out") };
                 let lines = self.body_lines(at.page, fonts);
                 let line_start = self.nav().line_edge(focus, false).unwrap_or(focus);
@@ -456,6 +505,8 @@ mod tests {
     fn program_ids_and_names() {
         assert_eq!(prog_id(r#"<w:object><o:OLEObject Type="Embed" ProgID="Excel.Sheet.12" r:id="x"/></w:object>"#), Some("Excel.Sheet.12"));
         assert_eq!(prog_id("<w:pict/>"), None);
+        assert_eq!(prog_id(r#"<wpml:object><o:OLEObject ProgID="Excel.Sheet.12"/></wpml:object>"#), Some("Excel.Sheet.12"), "any prefix");
+        assert_eq!(prog_id(r#"<w:objects ProgID="x"/>"#), None);
         assert!(named(Some("excel.sheet"), "Excel.Sheet.12", true));
         assert!(!named(Some("A"), "\u{c4}xcel.Sheet", true), "a name ending inside a character");
         assert_eq!(prog_id("<w:object><o:OLEObject ProgID = 'Word.Document.12'/></w:object>"), Some("Word.Document.12"));

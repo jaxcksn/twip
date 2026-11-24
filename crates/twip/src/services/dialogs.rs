@@ -1341,11 +1341,9 @@ pub fn paragraph_commands(v: &ParagraphDialog, n: &ParagraphDialog, out: &mut Ve
     let special = v.special != n.special || v.by != n.by;
     // Setting one of first line and hanging clears the other.
     let (first_line, hanging) = match (&v.special, &v.by) {
-        (Tri::Uniform(s), Tri::Uniform(by)) if special => match s {
-            SpecialIndent::None => (Some(Points(0.0)), None),
-            SpecialIndent::FirstLine => (Some(*by), None),
-            SpecialIndent::Hanging => (None, Some(*by)),
-        },
+        (Tri::Uniform(SpecialIndent::None), _) if special => (Some(Points(0.0)), None),
+        (Tri::Uniform(SpecialIndent::FirstLine), Tri::Uniform(by)) if special => (Some(*by), None),
+        (Tri::Uniform(SpecialIndent::Hanging), Tri::Uniform(by)) if special => (None, Some(*by)),
         _ => (None, None),
     };
     check(!matches!(v.by, Tri::Uniform(Points(b)) if b < 0.0), "by is 0 or more")?;
@@ -1840,5 +1838,13 @@ mod tests {
         let DialogValues::Tabs(v) = &m.values else { panic!() };
         assert_eq!((v.stops.len(), v.action), (1, TabsAction::None));
         assert!(matches!(commands(&m.values, &state, &cx).expect("valid")[..], [Command::AddTabStop(_)]));
+    }
+
+    #[test]
+    fn no_special_indent_clears_it_whatever_its_size() {
+        let v = ParagraphDialog { special: Tri::Uniform(SpecialIndent::None), by: Tri::Unavailable, ..Default::default() };
+        let mut out = Vec::new();
+        paragraph_commands(&v, &ParagraphDialog::default(), &mut out).expect("valid");
+        assert!(matches!(&out[..], [Command::SetIndents(Indents { first_line: Some(Points(0.0)), hanging: None, .. })]), "{out:?}");
     }
 }
