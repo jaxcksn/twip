@@ -736,7 +736,7 @@ impl Editor {
             RangeEditor::Group(g) => format!("{w}edGrp=\"{}\"", esc(g)),
             RangeEditor::User(u) => format!("{w}ed=\"{}\"", esc(u)),
         };
-        let marker = |x: String| Inline::Opaque(Rc::new(Opaque { xml: Raw(Some(Rc::from(x.as_str()))) }));
+        let marker = |x: String| Inline::Opaque(Rc::new(Opaque { xml: Raw(Some(Rc::from(x.as_str()))), field: None, src: None, run: None }));
         let mut tx = self.begin("Editable Range");
         // Ranges, last first
         for (k, &((pa, oa), (pb, ob))) in ends.iter().enumerate().rev() {

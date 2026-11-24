@@ -238,6 +238,11 @@ impl Counters {
         self.values.get(&numbering.abstract_of(num_id, styles)?)?.get(ilvl.clamp(0, 8) as usize).copied().flatten()
     }
 
+    /// Every level's counter for `num_id`'s list now.
+    pub fn values(&self, numbering: &Numbering, styles: &super::styles::Styles, num_id: i64) -> Option<[Option<i64>; 9]> {
+        self.values.get(&numbering.abstract_of(num_id, styles)?).copied()
+    }
+
     /// Advances the counter for an item at `ilvl` of `num_id` and returns the label text.
     pub fn next(&mut self, numbering: &Numbering, styles: &super::styles::Styles, num_id: i64, ilvl: i64) -> Option<String> {
         let a = numbering.abstract_of(num_id, styles)?;

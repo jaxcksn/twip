@@ -27,7 +27,9 @@ use body::{BodyEnv, layout_body};
 pub struct PassInfo {
     pub num_pages: Option<String>,
     pub section_pages: Vec<String>,
-    pub page_refs: Rc<HashMap<String, String>>,
+    pub page_refs: Rc<HashMap<String, crate::layout::text::PageRef>>,
+    /// The page and place on it of each paragraph on the pages holding reference fields with `\p`.
+    pub para_at: Rc<HashMap<super::ids::ParaId, (usize, usize)>>,
 }
 
 pub fn margins(s: &Section, ctx: &LayoutCtx, page_number: i64) -> (f64, f64, f64) {
@@ -251,6 +253,8 @@ impl<'d> Paginator<'d, '_> {
             chapter: None,
             section_chapter: None,
             chapters: self.chapters.clone(),
+            here: self.run.pages.len().checked_sub(1),
+            para_at: Some(self.run.known.para_at.clone()),
         }
     }
 
@@ -550,7 +554,7 @@ pub(crate) fn fields_used<'b>(fields: &BodyFields, blocks: impl IntoIterator<Ite
         for b in blocks {
             match b {
                 Block::Para(p) => {
-                    for i in &p.inlines {
+                    for (k, i) in p.inlines.iter().enumerate() {
                         if let Inline::Float(f, _) = i {
                             for tb in f.text_box.iter().chain(f.parts.iter().filter_map(|p| p.text_box.as_ref())) {
                                 walk(&mut tb.blocks.iter(), out, all);
@@ -569,11 +573,26 @@ pub(crate) fn fields_used<'b>(fields: &BodyFields, blocks: impl IntoIterator<Ite
                             FieldKind::Section => out.section.clone_from(&all.section),
                             FieldKind::SectionPages => out.section_pages.clone_from(&all.section_pages),
                             FieldKind::StyleRef(_) => out.style_refs.clone_from(&all.style_refs),
-                            FieldKind::PageRef(name) => {
+                            FieldKind::PageRef(name) | FieldKind::NoteRef(name, _) => {
+                                let relative = crate::docx::fields::relative_at(&p.inlines, k);
+                                if matches!(kind, FieldKind::NoteRef(..)) && !relative {
+                                    continue;
+                                }
                                 let value = all.page_refs.as_ref().and_then(|m| m.get(name)).cloned();
+                                let mark = value.as_ref().map(|v| v.para);
                                 let refs = Rc::make_mut(out.page_refs.get_or_insert_with(Default::default));
                                 if let Some(v) = value {
                                     refs.insert(name.clone(), v);
+                                }
+                                // `\p`: where the field's own page is, and where its paragraph and its bookmark's are.
+                                if relative {
+                                    out.here = all.here;
+                                    let at = Rc::make_mut(out.para_at.get_or_insert_with(Default::default));
+                                    for q in std::iter::once(super::ids::ParaId(p.id)).chain(mark) {
+                                        if let Some(v) = all.para_at.as_ref().and_then(|m| m.get(&q)) {
+                                            at.insert(q, *v);
+                                        }
+                                    }
                                 }
                             }
                             _ => {}

@@ -967,6 +967,17 @@ impl<'a> Builder<'a> {
                 at += inl.units() as u32;
                 continue;
             }
+            // A code's brace of a field across paragraphs showing its code: in its edge's run.
+            if let (Inline::Opaque(o), Shown::Value(v)) = (inl, &shown[k]) {
+                self.flush_text(&mut pend, &mut pend_runs, &mut pend_units)?;
+                let first = self.pieces.len();
+                self.text(v, o.run.as_ref().map_or_else(|| para.mark_in(view), |r| run_in(r, view)))?;
+                for i in first..self.pieces.len() {
+                    self.pieces[i].src = Some(Unit(at));
+                }
+                at += inl.units() as u32;
+                continue;
+            }
             if matches!(
                 inl,
                 Inline::Bookmark(_)
@@ -976,6 +987,7 @@ impl<'a> Builder<'a> {
                     | Inline::ControlStart(_)
                     | Inline::ControlEnd(_)
             ) {
+                at += inl.units() as u32;
                 continue;
             }
             self.flush_text(&mut pend, &mut pend_runs, &mut pend_units)?;
@@ -2009,6 +2021,21 @@ pub fn shape_space(
                     (FieldKind::NoteRef(_, Some(n)), _) => notes.get(n).cloned(),
                     _ => fields.value(kind, code.trim()),
                 };
+                // `\p`: where the bookmark is from the field.
+                let value = match kind {
+                    FieldKind::PageRef(name) | FieldKind::NoteRef(name, _)
+                        if crate::docx::fields::span_in(&spans, k).is_some_and(|s| crate::docx::fields::has_word(&para.inlines, s, "\\p")) =>
+                    {
+                        match (value, fields.page_refs.as_ref().and_then(|m| m.get(name))) {
+                            (Some(v), Some(r)) => {
+                                let above = r.above(name, para, k, fields.here, fields.para_at.as_deref());
+                                Some(r.relative(&v, matches!(kind, FieldKind::PageRef(_)), above, fields.here))
+                            }
+                            (v, _) => v,
+                        }
+                    }
+                    _ => value,
+                };
                 space.fields.push(value.map(|v| chapter.cloned().unwrap_or_default() + &v))
             }
             Inline::NoteRef { kind, id, .. } => space.notes.push(notes.get(&(*kind, *id)).cloned().unwrap_or_default()),
@@ -2029,6 +2056,57 @@ pub fn shape_space(
     space
 }
 
+/// A bookmark's page as `PAGEREF` shows it: the page's number in its section's format, after the chapter number in
+/// force where the bookmark starts.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PageRef {
+    /// The page's number.
+    pub number: i64,
+    /// Its section's page number format.
+    pub fmt: Option<String>,
+    /// The chapter number and separator before it.
+    pub chapter: Option<String>,
+    /// The page's place in the document (0 the first).
+    pub page: usize,
+    /// The paragraph the bookmark starts in.
+    pub para: ParaId,
+}
+
+impl PageRef {
+    /// What a `PAGEREF` with code `code` shows for `page`: Word's error when the bookmark isn't laid out.
+    pub fn shown(page: Option<&PageRef>, code: &str) -> String {
+        let Some(p) = page else { return "Error! Bookmark not defined.".to_string() };
+        let n = format_field(&p.number.to_string(), code, p.fmt.as_deref());
+        match &p.chapter {
+            Some(c) => format!("{c}{n}"),
+            None => n,
+        }
+    }
+
+    /// Whether bookmark `name` (this one) is before a field at inline `k` of paragraph `para`, which is on page `here`
+    /// (`order`: paragraphs' pages and places on them, for the pages holding such fields).
+    pub fn above(&self, name: &str, para: &Paragraph, k: usize, here: Option<usize>, order: Option<&HashMap<ParaId, (usize, usize)>>) -> bool {
+        if self.para == ParaId(para.id) {
+            return para.inlines[..k.min(para.inlines.len())].iter().any(|i| matches!(i, Inline::Bookmark(b) if b.eq_ignore_ascii_case(name)));
+        }
+        match here {
+            Some(h) if h != self.page => self.page < h,
+            _ => order.and_then(|o| Some(o.get(&self.para)? < o.get(&ParaId(para.id))?)).unwrap_or(false),
+        }
+    }
+
+    /// What a reference field with `\p` shows: a `PAGEREF` "on page N" when it is on another page than the bookmark,
+    /// else "above" or "below"; a `NOTEREF` its note's number then "above" or "below".
+    pub fn relative(&self, shown: &str, page_ref: bool, above: bool, here: Option<usize>) -> String {
+        let side = if above { "above" } else { "below" };
+        match (page_ref, here == Some(self.page)) {
+            (true, true) => side.to_string(),
+            (true, false) => format!("on page {shown}"),
+            (false, _) => format!("{shown} {side}"),
+        }
+    }
+}
+
 // Field values
 #[derive(Clone, Default, Debug, PartialEq)]
 pub struct FieldValues {
@@ -2036,7 +2114,7 @@ pub struct FieldValues {
     pub num_pages: Option<String>,
     pub section: Option<String>,
     pub section_pages: Option<String>,
-    pub page_refs: Option<Rc<HashMap<String, String>>>,
+    pub page_refs: Option<Rc<HashMap<String, PageRef>>>,
     pub style_refs: Vec<(String, String)>,
     pub page_fmt: Option<String>,
     /// The chapter number and separator page numbers lead with: the page's (headers and footers), or each
@@ -2045,6 +2123,10 @@ pub struct FieldValues {
     /// A header's or footer's `w:pgNum` chapter number: its section's.
     pub section_chapter: Option<String>,
     pub chapters: Option<Rc<HashMap<ParaId, String>>>,
+    /// The page's place in the document (0 the first).
+    pub here: Option<usize>,
+    /// The page and place on it of each paragraph on the pages holding reference fields with `\p`.
+    pub para_at: Option<Rc<HashMap<ParaId, (usize, usize)>>>,
 }
 
 impl FieldValues {
@@ -2057,10 +2139,7 @@ impl FieldValues {
             FieldKind::NumPages => self.num_pages.clone().map(|p| format_field(&p, code, None)),
             FieldKind::SectionPages => self.section_pages.clone().map(|p| format_field(&p, code, None)),
             FieldKind::Section => self.section.clone().map(|p| format_field(&p, code, None)),
-            FieldKind::PageRef(name) => self
-                .page_refs
-                .as_ref()
-                .map(|m| m.get(name).map_or_else(|| "Error! Bookmark not defined.".to_string(), |p| format_field(p, code, None))),
+            FieldKind::PageRef(name) => self.page_refs.as_ref().map(|m| PageRef::shown(m.get(name), code)),
             FieldKind::StyleRef(_) => self.style_refs.iter().find(|(k, _)| k == code).map(|(_, t)| t.clone()),
             _ => None,
         }

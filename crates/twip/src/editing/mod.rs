@@ -5,6 +5,7 @@ mod background;
 mod bindings;
 pub mod bookmarks;
 mod borders_dialog;
+pub mod captions;
 mod cell_clipboard;
 mod char_code;
 pub mod click_type;
@@ -71,6 +72,7 @@ pub mod selection;
 mod shapes;
 mod smart;
 pub(crate) mod snap;
+pub mod span_codes;
 pub mod state;
 pub mod step;
 mod stories;
@@ -78,6 +80,7 @@ pub mod style_defs;
 mod style_dialog;
 mod styles;
 pub mod text_links;
+pub mod toc;
 pub use styles::formats_a_style;
 pub mod sub_templates;
 pub use crate::docx::grid as table;
@@ -93,6 +96,7 @@ pub mod theme;
 mod touched;
 pub mod view;
 mod wrap_points;
+pub mod xref;
 
 #[cfg(test)]
 pub(crate) mod tests;
@@ -304,6 +308,8 @@ pub struct Editor {
     editing_groups: Vec<String>,
     drop: Option<Position>,
     field_labels: HashMap<String, String>,
+    /// The host's AutoCaption for inserted tables.
+    auto_caption: Option<captions::CaptionOptions>,
     sub_template_rules: Vec<sub_templates::Rule>,
     touched: touched::Touched,
     /// Counts the transactions that touched revision marks, tables, sections or sub-templates, and those that
@@ -425,6 +431,14 @@ struct Tx {
     relabel: bool,
     /// The control whose placeholder the selection replaces: its paragraph and unit, where what is put in goes inside it.
     placeholder: Option<(ParaId, Unit, crate::docx::ControlId)>,
+    /// How many of the first steps take back the pending view's steps: not recorded.
+    skip: usize,
+    /// The views' steps an undo or redo takes with its edit: where each one's steps start, and it.
+    chain: Vec<(usize, Transaction)>,
+    /// Where the edit's own steps start.
+    real: usize,
+    /// The steps from this one on show fields across paragraphs as codes or results: a view's, the fields and how.
+    view: Option<(usize, Vec<(span_codes::SpanKey, bool)>)>,
 }
 
 struct Batch {
@@ -543,6 +557,7 @@ impl Editor {
             comment_edits: 0,
             drop: None,
             field_labels: HashMap::new(),
+            auto_caption: None,
             sub_template_rules: Vec::new(),
             application_field_types: Vec::new(),
             protected_prefixes: Vec::new(),
@@ -1202,7 +1217,11 @@ impl Editor {
     fn normalize(&self, s: Selection) -> Selection {
         let snap = |p: Position, end: bool| match p.place {
             Place::Text { para, offset, affinity } => match self.index.para(&self.doc, para).map(UnitText::of) {
-                Some(t) => Position { place: Place::Text { para, offset: t.widen(offset, end), affinity }, ..p },
+                Some(t) => {
+                    let p = Position { place: Place::Text { para, offset: t.widen(offset, end), affinity }, ..p };
+                    // A place a field showing its code hides: where it shows.
+                    span_codes::shown_place(&self.doc, &self.index, p).unwrap_or(p)
+                }
                 None => p,
             },
             Place::RowEnd { .. } => p,
@@ -1317,6 +1336,10 @@ impl Editor {
             boxes: false,
             relabel: false,
             placeholder: None,
+            skip: 0,
+            chain: Vec::new(),
+            real: 0,
+            view: None,
         }
     }
 
@@ -1571,7 +1594,9 @@ impl Editor {
         self.map_marks(&maps);
         self.map_multi(&maps);
         if !matches!(tx.origin, Origin::Undo | Origin::Redo) {
-            self.mark_edit();
+            if tx.view.is_none() {
+                self.mark_edit();
+            }
             self.last_maps = maps;
         }
         crate::prof::time("edit:elements", || self.track_elements(&tx.undo));
@@ -1586,18 +1611,57 @@ impl Editor {
     fn finish(&mut self, mut tx: Tx, label: Cow<'static, str>, typing: Option<TypingRun>, fonts: &Fonts) -> Outcome {
         let before = tx.before.selection;
         self.revision += 1;
-        let undo = std::mem::take(&mut tx.undo);
+        let mut undo = std::mem::take(&mut tx.undo);
+        let view = tx.view.take().map(|(from, keys)| (undo.split_off(from.min(undo.len())), keys));
+        let real = undo.split_off(tx.real.min(undo.len()));
+        let mut chain: Vec<Transaction> = Vec::with_capacity(tx.chain.len());
+        for (from, mut v) in std::mem::take(&mut tx.chain).into_iter().rev() {
+            v.undo = undo.split_off(from.min(undo.len()));
+            v.bytes = v.undo.iter().map(history::step_bytes).sum();
+            chain.push(v);
+        }
+        let undo = real;
         let bytes = undo.iter().map(history::step_bytes).sum();
         // Starting or stopping enforced protection fences the history
         let enforced = self.enforced_protection().is_some();
         let enforces = undo.iter().any(|s| matches!(s, Step::Protection(was) if was.as_ref().is_some_and(|p| p.enforced) != enforced));
+        let after = self.record();
         match tx.replayed.take() {
-            Some(done) if tx.origin == Origin::Undo => self.history.push_redo(Transaction { undo, bytes, ..done }),
-            Some(done) => self.history.push_undo_keep_redo(Transaction { undo, bytes, ..done }),
-            None => {
-                let after = self.record();
-                self.history.record(Transaction { undo, before: tx.before, after, label: label.clone(), bytes, id: 0 }, typing);
+            Some(done) if tx.origin == Origin::Undo => {
+                for v in chain.into_iter().rev() {
+                    self.history.push_redo(v);
+                }
+                self.history.push_redo(Transaction { undo, bytes, ..done });
             }
+            Some(done) => {
+                for v in chain.into_iter().rev() {
+                    self.history.push_undo_keep_redo(v);
+                }
+                self.history.push_undo_keep_redo(Transaction { undo, bytes, ..done });
+            }
+            // Only a view's steps: no edit
+            None if view.is_some() => {}
+            None => {
+                let tx = Transaction { undo, before: tx.before.clone(), after: after.clone(), label: label.clone(), bytes, id: 0, view: None };
+                self.history.record(tx, typing);
+            }
+        }
+        if let Some((undo, keys)) = view {
+            if !undo.is_empty() {
+                // A paste's options went with the view's change of places
+                self.last_paste = None;
+            }
+            let bytes = undo.iter().map(history::step_bytes).sum();
+            let pending = (!undo.is_empty() || !keys.is_empty()).then(|| Transaction {
+                undo,
+                before: tx.before,
+                after,
+                label: label.clone(),
+                bytes,
+                id: 0,
+                view: Some(keys),
+            });
+            self.history.set_pending(pending);
         }
         if enforces {
             self.history.fence();
@@ -1688,13 +1752,33 @@ impl Editor {
         if self.batch.is_some() {
             return Outcome::Unchanged("in a batch");
         }
-        let done = if undo { self.history.pop_undo() } else { self.history.pop_redo() };
-        let Some(mut done) = done else { return Outcome::Unchanged(if undo { "nothing to undo" } else { "nothing to redo" }) };
+        if (if undo { self.history.undo_depth() } else { self.history.redo_depth() }) == 0 {
+            return Outcome::Unchanged(if undo { "nothing to undo" } else { "nothing to redo" });
+        }
         let mut tx = self.begin("");
         tx.origin = if undo { Origin::Undo } else { Origin::Redo };
+        // Fields across paragraphs shown otherwise since the last edit, undo or redo: as they were for the edit, as
+        // they are now after it
+        let mut keys = self.history.take_pending().map(|p| {
+            self.replay(&mut tx, p.undo);
+            p.view.unwrap_or_default()
+        });
+        tx.skip = tx.undo.len();
+        while let Some(mut v) = if undo { self.history.pop_undo_view() } else { self.history.pop_redo_view() } {
+            let from = tx.undo.len();
+            self.replay(&mut tx, std::mem::take(&mut v.undo));
+            keys = Some(history::merge_views(v.view.clone().unwrap_or_default(), keys.unwrap_or_default()));
+            tx.chain.push((from, v));
+        }
+        tx.real = tx.undo.len();
+        let done = if undo { self.history.pop_undo() } else { self.history.pop_redo() };
+        let Some(mut done) = done else { return Outcome::Unchanged(if undo { "nothing to undo" } else { "nothing to redo" }) };
         self.replay(&mut tx, std::mem::take(&mut done.undo));
         self.selection = if undo { done.before.selection } else { done.after.selection };
         self.pending = None;
+        if let Some(keys) = keys {
+            self.reshow_views(&mut tx, keys);
+        }
         tx.replayed = Some(done);
         let out = self.commit(tx, None, fonts);
         self.follow_selection();
@@ -1782,8 +1866,17 @@ impl Editor {
     fn delete_range_joining(&mut self, tx: &mut Tx, join: bool) -> Result<Option<Position>, StepError> {
         self.take_placeholder(tx)?;
         let end = self.selection.ordered(&self.index).map(|(_, b)| b).filter(|_| tx.tracked && matches!(self.selection, Selection::Text { .. }));
+        let cut = match self.selection.ordered(&self.index) {
+            Some((a, b)) if !a.same_place(&b) && matches!(self.selection, Selection::Text { .. }) => self.edges_in(a, b),
+            _ => Vec::new(),
+        };
         let from = tx.maps.len();
         let at = self.delete_range_untracked(tx, join)?;
+        if tx.tracked {
+            self.delete_whole_fields(tx, cut, at)?;
+        } else {
+            self.settle_edges(tx, cut, at)?;
+        }
         Ok(match (at, end) {
             (Some(_), Some(b)) => Some(tx.maps[from..].iter().fold(b, |p, m| m.apply(p))),
             _ => at,
@@ -2357,6 +2450,11 @@ impl Editor {
             self.abort(tx);
             return (Outcome::Unchanged("caret at a row end"), None);
         };
+        // A code a field across paragraphs shows stays on its line.
+        if self.index.para(&self.doc, para).is_some_and(|p| span_codes::in_code(p, at)) {
+            self.abort(tx);
+            return (Outcome::Unchanged("in a field's code"), None);
+        }
         if enter
             && at == Unit(0)
             && let Some(slot) = self.index.para_slot(para)
@@ -2484,6 +2582,11 @@ impl Editor {
                 && let Some(merge::Where::Inline { story, para, start, end, .. }) = self.locate(crate::docx::ElementId::Field(f))
             {
                 self.set_selection(Selection::range(Position::text(story, para, start), Position::text(story, para, end), Granularity::Char));
+                return Outcome::Moved;
+            }
+            // A brace of a field across paragraphs showing its code, or its end: the whole field selected.
+            if let Some((a, b)) = span_codes::brace_field(&self.doc, &self.index, p, dir == Dir::Back) {
+                self.set_selection(Selection::range(a, b, Granularity::Char));
                 return Outcome::Moved;
             }
         }

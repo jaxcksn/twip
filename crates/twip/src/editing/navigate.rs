@@ -153,6 +153,9 @@ impl Nav<'_> {
     // Logical movement
 
     pub fn right(&self, pos: Position, word: bool) -> Position {
+        if let Some(p) = super::span_codes::fold_step(self.doc, self.idx, pos, true) {
+            return p;
+        }
         match pos.place {
             Place::Text { para, offset, .. } => {
                 let Some(t) = self.text(para) else { return pos };
@@ -168,6 +171,9 @@ impl Nav<'_> {
     }
 
     pub fn left(&self, pos: Position, word: bool) -> Position {
+        if let Some(p) = super::span_codes::fold_step(self.doc, self.idx, pos, false) {
+            return p;
+        }
         match pos.place {
             Place::Text { para, offset, .. } => {
                 let Some(t) = self.text(para) else { return pos };

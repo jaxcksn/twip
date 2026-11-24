@@ -266,6 +266,12 @@ impl Recording {
 
     // Inlines and blocks
 
+    /// Field edge `o` deleted with the whole field a tracked deletion takes: `None` when it is the author's own
+    /// insertion, which goes.
+    pub(in crate::editing) fn delete_edge(&mut self, o: &Rc<crate::docx::Opaque>, ids: &mut IdCounter) -> Option<Inline> {
+        self.del_inline(&Inline::Opaque(o.clone()), true, ids, &mut Vec::new())
+    }
+
     fn ins_inline(&mut self, i: Inline, ids: &mut IdCounter) -> Inline {
         let Some(r) = run(&i).cloned() else { return i };
         let r = self.inserted(&r, ids);
@@ -421,7 +427,8 @@ impl Recording {
             let (s, e) = (at, at + n);
             at = e;
             let inside = if n == 0 { s > a && s < b } else { s < b && e > a };
-            let Some(r) = run(i).filter(|_| inside) else {
+            // A field's edges go only with the whole field ([`Recording::delete_edge`]).
+            let Some(r) = run(i).filter(|_| inside && !matches!(i, Inline::Opaque(_))) else {
                 push(&mut inlines, i.clone());
                 continue;
             };
@@ -949,9 +956,11 @@ pub fn all_deleted(p: &Paragraph, a: Unit, b: Unit) -> bool {
     any
 }
 
+/// The run whose tracked changes an inline carries: a field edge's too.
 fn run(i: &Inline) -> Option<&Run> {
     match i {
         Inline::CommentRef { .. } | Inline::Separator { .. } => None,
+        Inline::Opaque(o) => o.field.as_ref().and(o.run.as_ref()),
         _ => i.run(),
     }
 }

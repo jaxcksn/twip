@@ -4014,10 +4014,48 @@ struct Emit<'s, 'a, 'i> {
     fresh_written: usize,
 }
 
+/// A field edge's runs `xml` (main namespace prefix `w`) with their code as deleted (`w:delInstrText`) or not.
+fn edge_runs(xml: &str, w: &str, deleted: bool) -> String {
+    let (from, to) = if deleted { ("instrText", "delInstrText") } else { ("delInstrText", "instrText") };
+    xml.replace(&format!("<{w}{from}"), &format!("<{w}{to}")).replace(&format!("</{w}{from}>"), &format!("</{w}{to}>"))
+}
+
+/// Where the runs are of the field edges ([`super::model::FieldEdge`]) paragraphs `qs` were read with that paragraphs
+/// `ps` don't hold now.
+fn gone_edges<'q>(qs: &'q [&Paragraph], ps: &'q [&Paragraph]) -> impl Iterator<Item = Range<usize>> + 'q {
+    let held =
+        move |o: &Rc<super::model::Opaque>| ps.iter().flat_map(|p| p.inlines.iter()).any(|i| matches!(i, Inline::Opaque(x) if Rc::ptr_eq(x, o)));
+    qs.iter().flat_map(|p| p.inlines.iter()).filter_map(move |i| match i {
+        Inline::Opaque(o) if o.field.is_some() && !held(o) => o.src.clone(),
+        _ => None,
+    })
+}
+
 impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
     /// A group's XML: its source walked, with markers added since reading written where they are, when that comes out
     /// whole (well-formed, every added marker written); else as [`Emit::group_as`] without them.
     fn group(s: &'s Saver<'a, 'i>, qs: &[&Paragraph], srcs: &[&ParaSrc], ps: &[&Paragraph]) -> Result<String, String> {
+        // Fields across paragraphs showing their codes are written showing their results (a view isn't saved).
+        let results: Vec<Option<Paragraph>> = if ps.iter().any(|p| super::fields::shows_span_code(&p.inlines)) {
+            ps.iter()
+                .map(|p| {
+                    super::fields::shows_span_code(&p.inlines).then(|| {
+                        let mut q = (*p).clone();
+                        super::fields::show_span_results(&mut q.inlines);
+                        q
+                    })
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let shown: Vec<&Paragraph>;
+        let ps = if results.is_empty() {
+            ps
+        } else {
+            shown = ps.iter().zip(&results).map(|(p, r)| r.as_ref().unwrap_or(p)).collect();
+            &shown
+        };
         match Emit::group_as(s, qs, srcs, ps, true)? {
             Some(x) => Ok(x),
             None => Emit::group_as(s, qs, srcs, ps, false).map(|x| x.unwrap_or_default()),
@@ -4315,6 +4353,8 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
             .filter(|(id, _, r)| !now.iter().any(|(n, _, q)| n == id && same_rev(r, q)))
             .filter_map(|(_, src, _)| src)
             .chain(removed.iter().map(|(_, r)| r.clone()))
+            // The marker runs of a field edge read here and gone since.
+            .chain(gone_edges(qs, ps))
             .collect();
         let all = |ps: &[&Paragraph]| -> Vec<Float> {
             ps.iter().flat_map(|p| p.inlines.iter()).filter_map(|i| if let Inline::Float(f, _) = i { Some((**f).clone()) } else { None }).collect()
@@ -4525,7 +4565,9 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                 continue;
             }
             // A deleted float's element (or the run or wrapper holding only it).
-            if self.dropped.iter().any(|d| r.start <= d.start && d.end <= r.end) && !self.seg_starts.iter().any(|&x| x >= r.start && x < r.end) {
+            if self.dropped.iter().any(|d| (r.start <= d.start && d.end <= r.end) || (d.start <= r.start && r.end <= d.end))
+                && !self.seg_starts.iter().any(|&x| x >= r.start && x < r.end)
+            {
                 continue;
             }
             if let Some(&k) = self.seg_at.get(&r.start) {
@@ -4879,6 +4921,20 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                         format!("<{w}bookmarkEnd {w}id=\"{id}\"/>")
                     };
                     self.out.push_str(&x);
+                }
+                // A field edge in the wrappers of its tracked changes.
+                Marker::Opaque(o) if o.field.is_some() && o.run.is_some() => {
+                    let Some(run) = o.run.clone() else { continue };
+                    self.flush();
+                    self.close_wrap();
+                    let (level, ins, del) = self.own_level(&run);
+                    self.open_to(level);
+                    let (open, close) = revisions::wrappers(&self.s.w, ins.as_deref(), del.as_deref(), self.s.people);
+                    let deleted = run.rev.del.as_ref().is_some_and(|m| m.kind != crate::docx::review::MarkKind::MoveFrom);
+                    let x = edge_runs(o.xml.0.as_deref().unwrap_or(""), &self.s.w, deleted);
+                    self.out.push_str(&open);
+                    self.out.push_str(&x);
+                    self.out.push_str(&close);
                 }
                 Marker::Opaque(o) => {
                     self.flush();

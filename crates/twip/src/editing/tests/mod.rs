@@ -65,6 +65,7 @@ mod table_handles;
 mod table_structure;
 mod table_tools;
 mod text_units;
+mod toc;
 mod tracked_structure;
 mod transactions;
 mod vertical;

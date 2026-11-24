@@ -148,7 +148,13 @@ fn resolve_inlines(p: &Paragraph, pick: &Pick, accept: bool) -> Option<(Vec<Inli
                 changed = true;
                 continue;
             }
-            let Some(r) = piece.run() else {
+            // A field edge's changes are on its run.
+            let edge = matches!(&piece, Inline::Opaque(o) if o.field.is_some());
+            let r = match &piece {
+                Inline::Opaque(o) if edge => o.run.as_ref(),
+                _ => piece.run(),
+            };
+            let Some(r) = r else {
                 out.push((piece, false));
                 at += n;
                 continue;
@@ -165,7 +171,7 @@ fn resolve_inlines(p: &Paragraph, pick: &Pick, accept: bool) -> Option<(Vec<Inli
                 Some((remove, run)) => {
                     changed = true;
                     let float = matches!(piece, Inline::Float(..));
-                    match (float, remove) {
+                    match (float || edge, remove) {
                         (true, true) => {}
                         (false, true) if n > 0 => out.push((piece, true)),
                         _ => out.push((super::super::format::with_run(&piece, &run), false)),

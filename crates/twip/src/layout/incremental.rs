@@ -392,6 +392,8 @@ fn same_used(used: &BodyFields, now: &BodyFields) -> bool {
         && (used.num_pages.is_none() || used.num_pages == now.num_pages)
         && (used.section_pages.is_none() || used.section_pages == now.section_pages)
         && used.page_refs.as_ref().is_none_or(|m| m.iter().all(|(k, v)| now.page_refs.as_ref().and_then(|n| n.get(k)) == Some(v)))
+        && (used.here.is_none() || used.here == now.here)
+        && used.para_at.as_ref().is_none_or(|m| m.iter().all(|(k, v)| now.para_at.as_ref().and_then(|n| n.get(k)) == Some(v)))
 }
 
 #[cfg(test)]
@@ -608,6 +610,8 @@ pub struct DocumentLayout {
     layout_revision: u64,
     revision: Revision,
     baseline: Option<Baseline>,
+    /// The last finished layout, converged or not.
+    last: Option<Rc<Finished>>,
     acc: Accumulated,
     job: Option<Running>,
     current: bool,
@@ -637,6 +641,7 @@ impl DocumentLayout {
             layout_revision: 0,
             revision: Revision(0),
             baseline: None,
+            last: None,
             acc: Accumulated { full: true, ..Default::default() },
             job: None,
             current: false,
@@ -677,6 +682,23 @@ impl DocumentLayout {
 
     pub fn snapshot(&self) -> Rc<Snapshot> {
         self.published.clone()
+    }
+
+    /// Each bookmark's page number in the last finished layout (the first page its start is on), as `PAGEREF` shows it:
+    /// one walk over the pages, when asked.
+    pub fn bookmark_pages(&self, doc: &Document) -> HashMap<String, crate::layout::text::PageRef> {
+        self.last.as_ref().map(|f| super::document::bookmark_pages_of(doc, &f.records)).unwrap_or_default()
+    }
+
+    /// The page (0 the first) each paragraph of the last finished layout starts on.
+    pub fn para_pages(&self) -> HashMap<ParaId, usize> {
+        let mut out = HashMap::new();
+        for (i, pg) in self.last.iter().flat_map(|f| f.records.iter().enumerate()) {
+            for p in &pg.effects.paras {
+                out.entry(*p).or_insert(i);
+            }
+        }
+        out
     }
 
     /// The footnote and endnote references of the last finished layout: each note's number as laid out and the first
@@ -1070,7 +1092,8 @@ impl DocumentLayout {
         let Some(finished) = r.job.into_finished() else { return };
         let records: Vec<&PageRecord> = finished.records.iter().collect();
         let pages = self.fragments(&records);
-        let finished = Finished { pages, ..finished };
+        let finished = Rc::new(Finished { pages, ..finished });
+        self.last = Some(finished.clone());
         self.reused = (finished.records.iter().filter(|p| p.reused.is_some()).count(), finished.records.len());
         self.cache.fit(finished.records.len());
         let lrev = self.next_layout_revision();
@@ -1107,7 +1130,7 @@ impl DocumentLayout {
             }
             _ => (Extras::new(doc, fonts, &endnotes, &env), shadow(doc), None),
         };
-        self.baseline = Some(Baseline { finished: Rc::new(finished), extras, shadow, note_numbers, notes, table });
+        self.baseline = Some(Baseline { finished, extras, shadow, note_numbers, notes, table });
         self.acc = Accumulated::default();
     }
 }

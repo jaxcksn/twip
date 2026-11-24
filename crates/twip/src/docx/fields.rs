@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use super::model::{Block, DATE_BLOCKS, Document, FieldId, FieldKind, FieldView, Inline, NoteKind, Paragraph, Run};
+use super::model::{Block, DATE_BLOCKS, Document, FieldEdge, FieldId, FieldKind, FieldView, Inline, NoteKind, Paragraph, Run};
 
 /// A field's markers in a paragraph's inlines: the indexes of its begin, separator (if it has one) and
 /// end.
@@ -82,6 +82,60 @@ pub fn span_at(inlines: &[Inline], begin: usize) -> Option<FieldSpan> {
         }
     }
     None
+}
+
+/// Whether the reference field beginning at `begin` shows where its bookmark is from it (`\p`).
+pub fn relative_at(inlines: &[Inline], begin: usize) -> bool {
+    span_at(inlines, begin).is_some_and(|s| has_word(inlines, s, "\\p"))
+}
+
+/// Whether field `s`'s own code has the word `word` (ASCII, any case), read as [`words`] reads it, without
+/// collecting the code.
+pub fn has_word(inlines: &[Inline], s: FieldSpan, word: &str) -> bool {
+    let want = word.as_bytes();
+    // The word so far: its length, and whether it still reads as `word`.
+    let (mut len, mut same, mut quoted) = (0usize, true, false);
+    let mut depth = 0usize;
+    let end = |len: &mut usize, same: &mut bool| {
+        let hit = *len == want.len() && *same;
+        (*len, *same) = (0, true);
+        hit
+    };
+    for i in &inlines[s.begin + 1..s.code_end()] {
+        let chars: &str = match i {
+            Inline::FieldBegin { .. } => {
+                depth += 1;
+                continue;
+            }
+            Inline::FieldEnd { .. } => {
+                depth = depth.saturating_sub(1);
+                continue;
+            }
+            Inline::Text(t, _) if depth == 0 => t,
+            Inline::Tab(_) | Inline::PTab(..) if depth == 0 => "\t",
+            _ => continue,
+        };
+        for c in chars.chars() {
+            match c {
+                '"' => {
+                    if (quoted || len > 0) && end(&mut len, &mut same) {
+                        return true;
+                    }
+                    quoted = !quoted;
+                }
+                c if c.is_whitespace() && !quoted => {
+                    if len > 0 && end(&mut len, &mut same) {
+                        return true;
+                    }
+                }
+                c => {
+                    same &= want.get(len).is_some_and(|w| c.is_ascii() && (c as u8).eq_ignore_ascii_case(w));
+                    len += 1;
+                }
+            }
+        }
+    }
+    len > 0 && end(&mut len, &mut same)
 }
 
 /// A field's own code text: the text from its begin to its separator, the fields nested in it left out.
@@ -249,7 +303,11 @@ fn show_at(inlines: &[Inline], views: bool, keep: &dyn Fn(&Run) -> bool, stand_i
         }
         not(&mut out, s.begin..=s.code_end());
         out[s.end] = Shown::Not;
-        if kind.is_some() {
+        // A REF's result holding the notes it brings again (`\f`), without a value: drawn as it is.
+        let notes_again = value.is_none()
+            && matches!(kind, Some(FieldKind::Ref(_)))
+            && s.sep.is_some_and(|sep| inlines[sep + 1..s.end].iter().any(|i| matches!(i, Inline::NoteRef { .. })));
+        if kind.is_some() && !notes_again {
             not(&mut out, s.code_end()..=s.end);
             if visible {
                 out[s.begin] = Shown::Value(value.clone().unwrap_or_else(|| match s.sep {
@@ -263,7 +321,161 @@ fn show_at(inlines: &[Inline], views: bool, keep: &dyn Fn(&Run) -> bool, stand_i
             out[s.begin] = Shown::Value(l.to_string());
         }
     }
+    span_codes(inlines, views, &mut out);
     out
+}
+
+/// The edge of a field across paragraphs an inline is, its code view's markers included.
+pub fn span_edge(i: &Inline) -> Option<&FieldEdge> {
+    match i {
+        Inline::Opaque(o) => o.field.as_ref(),
+        _ => None,
+    }
+}
+
+/// How the fields across paragraphs in `inlines` show their codes: in `views`, a start showing its code is its opening
+/// brace, its code runs show up to its closing brace and the result after it doesn't show up to the field's end (a
+/// joined line holds the whole field; a paragraph alone, its part). As results show, the code and braces don't.
+fn span_codes(inlines: &[Inline], views: bool, out: &mut [Shown]) {
+    let mut k = 0;
+    while k < inlines.len() {
+        let (from, close) = match span_edge(&inlines[k]) {
+            Some(FieldEdge::Start { view: FieldView::Code, .. }) => {
+                let next = inlines[k + 1..].iter().position(|i| span_edge(i).is_some()).map(|c| k + 1 + c);
+                let close = next.filter(|&c| matches!(span_edge(&inlines[c]), Some(FieldEdge::Code)));
+                (k, close)
+            }
+            // The code's line split: the code's closing part starts the paragraph.
+            Some(FieldEdge::Code) => (0, Some(k)),
+            _ => {
+                k += 1;
+                continue;
+            }
+        };
+        let close_at = close.unwrap_or(inlines.len() - 1);
+        if !views {
+            out[from..=close_at].fill(Shown::Not);
+            k = close_at + 1;
+            continue;
+        }
+        if matches!(span_edge(&inlines[from]), Some(FieldEdge::Start { .. })) {
+            out[from] = Shown::Value("{".into());
+        }
+        let Some(c) = close else { return };
+        out[c] = Shown::Value("}".into());
+        let mut depth = 0usize;
+        let mut j = c + 1;
+        while j < inlines.len() {
+            match span_edge(&inlines[j]) {
+                Some(FieldEdge::Start { .. }) => depth += 1,
+                Some(FieldEdge::End) if depth == 0 => break,
+                Some(FieldEdge::End) => depth -= 1,
+                _ => {}
+            }
+            j += 1;
+        }
+        out[c + 1..j.min(inlines.len())].fill(Shown::Not);
+        if let Some(e) = out.get_mut(j) {
+            *e = Shown::Not;
+        }
+        k = j + 1;
+    }
+}
+
+/// Whether a field showing its code folds `p`'s mark into the next paragraph: a fold mark among its last markers.
+pub fn folded(p: &Paragraph) -> bool {
+    p.inlines.iter().rev().take_while(|i| i.units() == 0).any(|i| matches!(span_edge(i), Some(FieldEdge::Fold)))
+}
+
+/// The folded paragraph whose fold holds the table at `blocks[b]`: the paragraph before the tables there, when it is
+/// folded ([`folded`]).
+pub fn fold_over<B: std::borrow::Borrow<Block>>(blocks: &[B], b: usize) -> Option<usize> {
+    let k = blocks.get(..b)?.iter().rposition(|x| matches!(x.borrow(), Block::Para(_)))?;
+    matches!(blocks[k].borrow(), Block::Para(p) if folded(p)).then_some(k)
+}
+
+/// Whether `inlines` hold a code view's markers of a field across paragraphs.
+pub fn shows_span_code(inlines: &[Inline]) -> bool {
+    inlines.iter().any(|i| matches!(span_edge(i), Some(FieldEdge::Start { view: FieldView::Code, .. } | FieldEdge::Code | FieldEdge::Fold)))
+}
+
+/// The code a start showing its code at `inlines[k]` reads now: its runs' text up to its closing brace (or the
+/// paragraph's end), a tracked deletion's left out.
+pub fn span_code_text(inlines: &[Inline], k: usize) -> String {
+    let mut code = String::new();
+    for i in inlines.iter().skip(k + 1) {
+        match i {
+            _ if span_edge(i).is_some() => break,
+            Inline::Text(t, r) if r.rev.del.is_none() => code.push_str(t),
+            Inline::Tab(r) if r.rev.del.is_none() => code.push('\t'),
+            _ => {}
+        }
+    }
+    code
+}
+
+/// `inlines` with every field across paragraphs showing its result: a start showing its code takes the code its runs
+/// read, its runs and closing brace go, and fold marks go. Units that aren't the code's stay (a bookmark in the code
+/// stays after the start).
+pub fn show_span_results(inlines: &mut Vec<Inline>) {
+    let mut k = 0;
+    while k < inlines.len() {
+        match span_edge(&inlines[k]) {
+            Some(FieldEdge::Fold) | Some(FieldEdge::Code) => {
+                inlines.remove(k);
+            }
+            Some(FieldEdge::Start { view: FieldView::Code, .. }) => {
+                let code = span_code_text(inlines, k);
+                let Inline::Opaque(o) = &inlines[k] else { unreachable!("an edge") };
+                inlines[k] = start_in_view(o, code, FieldView::Result);
+                let mut j = k + 1;
+                // The code's runs go; its markers stay
+                while j < inlines.len() && span_edge(&inlines[j]).is_none() {
+                    if inlines[j].units() > 0 || matches!(inlines[j], Inline::Text(..)) {
+                        inlines.remove(j);
+                    } else {
+                        j += 1;
+                    }
+                }
+                if matches!(inlines.get(j).and_then(span_edge), Some(FieldEdge::Code)) {
+                    inlines.remove(j);
+                }
+                k += 1;
+            }
+            _ => k += 1,
+        }
+    }
+}
+
+/// Start edge `o` in `view` with `code`: its runs written again in the prefix they were in, its source left (written
+/// anew).
+pub fn start_in_view(o: &super::model::Opaque, code: String, view: FieldView) -> Inline {
+    let Some(FieldEdge::Start { lock, dirty, .. }) = &o.field else {
+        return Inline::Opaque(std::rc::Rc::new(super::model::Opaque {
+            xml: o.xml.clone(),
+            field: o.field.clone(),
+            src: o.src.clone(),
+            run: o.run.clone(),
+        }));
+    };
+    let edge = FieldEdge::Start { code, lock: *lock, dirty: *dirty, view };
+    let w = edge_prefix(o.xml.0.as_deref().unwrap_or(""));
+    let xml = super::model::Raw(Some(edge.xml(w).into()));
+    Inline::Opaque(std::rc::Rc::new(super::model::Opaque { xml, field: Some(edge), src: None, run: o.run.clone() }))
+}
+
+/// The code of the start edge at `inlines[k]` as it reads now: its runs' in its code view, else its own.
+pub fn span_code(inlines: &[Inline], k: usize) -> std::borrow::Cow<'_, str> {
+    match span_edge(&inlines[k]) {
+        Some(FieldEdge::Start { view: FieldView::Code, .. }) => std::borrow::Cow::Owned(span_code_text(inlines, k)),
+        Some(FieldEdge::Start { code, .. }) => std::borrow::Cow::Borrowed(code),
+        _ => std::borrow::Cow::Borrowed(""),
+    }
+}
+
+/// The main namespace prefix an edge's runs were written in (`w:`).
+fn edge_prefix(xml: &str) -> &str {
+    xml.strip_prefix('<').and_then(|x| x.split_once("r>")).map_or("w:", |(w, _)| w)
 }
 
 /// The text of `inlines` as results show it: codes left out, an evaluated field as its value (or its result).
@@ -538,6 +750,40 @@ pub fn kind_at(inlines: &[Inline], s: FieldSpan) -> Option<FieldKind> {
     parse(&code_text(inlines, s)).kind()
 }
 
+/// [`paras`] read only: every paragraph of `blocks` in document order (table cells; a paragraph's text boxes after it,
+/// `true` for theirs).
+pub(crate) fn each_para<'d>(blocks: &'d [Block], in_box: bool, f: &mut dyn FnMut(&'d Paragraph, bool)) {
+    for b in blocks {
+        match b {
+            Block::Para(p) => {
+                f(p, in_box);
+                for i in &p.inlines {
+                    if let Some((_, tb)) = i.story() {
+                        each_para(&tb.blocks, true, f);
+                    }
+                }
+            }
+            Block::Table(t) => t.rows.iter().flat_map(|r| r.cells.iter()).for_each(|c| each_para(&c.blocks, in_box, f)),
+        }
+    }
+}
+
+/// The sequence fields of `blocks` numbered on from `seq`.
+fn number_sequences(seq: &mut Sequences, blocks: &mut [Block]) {
+    paras(blocks, &mut |p| {
+        for sp in spans(&p.inlines) {
+            let Inline::FieldBegin { kind: Some(FieldKind::Seq(id)), run, .. } = &p.inlines[sp.begin] else { continue };
+            let (id, deleted) = (id.clone(), run.rev.del.is_some());
+            let code = code_text(&p.inlines, sp).trim().to_string();
+            let v = seq.next(&id, &code, &words(&code), deleted);
+            if let Inline::FieldBegin { value, .. } = &mut p.inlines[sp.begin] {
+                *value = Some(v);
+            }
+        }
+        seq.passed(p);
+    });
+}
+
 pub(crate) fn paras(blocks: &mut [Block], f: &mut dyn FnMut(&mut Paragraph)) {
     for b in blocks {
         match b {
@@ -609,6 +855,8 @@ pub struct StyleQuery {
     pub char: bool,
     pub last: bool,
     pub error: String,
+    /// `\n`, `\r`, `\w`, `\s`, `\t`: the paragraph number it shows in place of the text.
+    number: Option<NumberContext>,
 }
 
 impl StyleQuery {
@@ -627,6 +875,7 @@ impl StyleQuery {
             key: style.map_or(key, |s| style_key(&s.id)),
             char: style.is_some_and(|s| s.kind == super::styles::StyleKind::Character),
             last: c.switches.iter().any(|s| s.flag == 'l'),
+            number: NumberContext::of(&words(code)),
             error: match style {
                 Some(_) => "Error! No text of specified style in document.".into(),
                 None => format!("Error! Use the Home tab to apply {arg} to the text that you want to appear here."),
@@ -639,6 +888,35 @@ impl StyleQuery {
         let mut it = hits.iter().filter(|h| h.0 == self.key && h.1 == self.char);
         if rev { it.next_back() } else { it.next() }.map(|h| h.2.clone())
     }
+
+    /// What it shows from a paragraph with text `text` and list number `n` (of [`para_numbers`]): the number when it
+    /// asks for one (no paragraph before it to be relative to, so `\r` is in full context), else the text.
+    pub(crate) fn shown(&self, text: String, n: Option<&ParaNumber>, r: Option<&super::resolve::Resolver>) -> String {
+        match (self.number, n, r) {
+            (Some(cx), Some(n), Some(r)) => n.text(cx, None, None, r),
+            _ => text,
+        }
+    }
+
+    /// Whether it shows paragraph numbers.
+    pub(crate) fn numbered(&self) -> bool {
+        self.number.is_some()
+    }
+}
+
+/// Each body paragraph's list number, by paragraph id, counted in document order as fields count them.
+pub(crate) fn para_numbers(doc: &Document) -> HashMap<u64, ParaNumber> {
+    let mut out = HashMap::new();
+    let Some(r) = doc.resolver.as_deref() else { return out };
+    let mut counters = super::numbering::Counters::default();
+    for s in &doc.sections {
+        each_para(&s.blocks, false, &mut |p, _| {
+            if let Some(n) = ParaNumber::next(p, &mut counters, r) {
+                out.insert(p.id, n);
+            }
+        });
+    }
+    out
 }
 
 /// Field-code words, quotes removed from quoted ones.
@@ -698,6 +976,40 @@ fn error_run(inlines: &[Inline], sp: FieldSpan) -> Option<Run> {
 
 pub fn evaluate(doc: &mut Document, now: i64) {
     date_blocks(doc, now);
+    let (changes, order) = field_changes(doc, now);
+    let mut changes = changes.into_iter();
+    for s in &mut doc.sections {
+        paras(&mut s.blocks, &mut |p| {
+            for sp in spans(&p.inlines) {
+                let Inline::FieldBegin { kind: Some(kind), value, run, .. } = &mut p.inlines[sp.begin] else { continue };
+                let Some(c) = changes.next() else { return };
+                if let Some(r) = c.run {
+                    *run = r;
+                }
+                if let (FieldKind::NoteRef(_, note), Some(n)) = (kind, c.note) {
+                    *note = n;
+                }
+                if c.value.is_some() {
+                    *value = c.value;
+                }
+            }
+        });
+    }
+    stories_fields(doc, &order);
+}
+
+/// What evaluating sets on one field: its value, its run (a REF's source formatting, an error's) and a NOTEREF's note.
+pub(crate) struct FieldChange {
+    pub(crate) id: FieldId,
+    pub(crate) para: u64,
+    pub(crate) value: Option<String>,
+    run: Option<Run>,
+    pub(crate) note: Option<Option<(NoteKind, i64)>>,
+}
+
+/// What evaluating the body sets on each field it computes (in document order, one for each field of a known kind),
+/// and every body paragraph's [`style_hits`]: read only.
+pub(crate) fn field_changes(doc: &Document, now: i64) -> (Vec<FieldChange>, Vec<Vec<(String, bool, String)>>) {
     let properties = doc.properties.clone();
     let variables = doc.settings.variables.clone();
     let resolver = doc.resolver.clone();
@@ -705,9 +1017,15 @@ pub fn evaluate(doc: &mut Document, now: i64) {
     // The bookmarks fields read (REF, NOTEREF, a bookmark's own name, a formula's names), without case: only theirs
     // are found.
     let mut wanted: std::collections::HashSet<String> = std::collections::HashSet::new();
-    for s in &mut doc.sections {
-        paras(&mut s.blocks, &mut |p| {
+    // Whether a REF or STYLEREF shows a paragraph number: only then are paragraphs' numbers kept.
+    let mut need_numbers = false;
+    for s in &doc.sections {
+        each_para(&s.blocks, false, &mut |p, _| {
             for sp in spans(&p.inlines) {
+                if !need_numbers && matches!(&p.inlines[sp.begin], Inline::FieldBegin { kind: Some(FieldKind::Ref(_) | FieldKind::StyleRef(_)), .. })
+                {
+                    need_numbers = NumberContext::of(&words(&code_text(&p.inlines, sp))).is_some();
+                }
                 match &p.inlines[sp.begin] {
                     Inline::FieldBegin { kind: Some(FieldKind::Ref(n) | FieldKind::Bookmark(n) | FieldKind::NoteRef(n, _)), .. } => {
                         wanted.insert(n.to_ascii_lowercase());
@@ -731,9 +1049,18 @@ pub fn evaluate(doc: &mut Document, now: i64) {
     let mut order: Vec<Vec<(String, bool, String)>> = Vec::new();
     // Each bookmark's first note reference.
     let mut notes: HashMap<String, (NoteKind, i64)> = HashMap::new();
-    for s in &mut doc.sections {
-        paras(&mut s.blocks, &mut |p| {
+    // Each paragraph's list number (by its place in `order`), and each bookmark's paragraph.
+    let mut numbers: Vec<Option<ParaNumber>> = Vec::new();
+    let mut counters = super::numbering::Counters::default();
+    let mut mark_at: HashMap<String, usize> = HashMap::new();
+    for s in &doc.sections {
+        each_para(&s.blocks, false, &mut |p, _| {
+            let here = order.len();
+            if need_numbers {
+                numbers.push(resolver.as_deref().and_then(|r| ParaNumber::next(p, &mut counters, r)));
+            }
             bookmark_texts(p, &wanted, &mut names, &mut marks, &mut |name, first, note| {
+                mark_at.entry(name.to_string()).or_insert(here);
                 if let Some(n) = note {
                     notes.entry(name.to_string()).or_insert(n);
                 }
@@ -752,38 +1079,58 @@ pub fn evaluate(doc: &mut Document, now: i64) {
         formula_values(&s.blocks, None, decimal, list, &marks, &mut formulas);
     }
     let file_name = doc.file_name.clone();
-    let mut seq: HashMap<String, i64> = HashMap::new();
+    let mut seq = Sequences::default();
     let mut lists: HashMap<String, [i64; 9]> = HashMap::new();
     let mut autonum = 0;
     let mut at = 0;
-    for s in &mut doc.sections {
-        paras(&mut s.blocks, &mut |p| {
+    // Each list's last numbered paragraph before `at`.
+    let mut last: HashMap<i64, usize> = HashMap::new();
+    let mut out: Vec<FieldChange> = Vec::new();
+    for s in &doc.sections {
+        each_para(&s.blocks, false, &mut |p, _| {
             for sp in spans(&p.inlines) {
                 let code = code_text(&p.inlines, sp).trim().to_string();
                 let error_run = error_run(&p.inlines, sp);
                 let cached_empty = result_text(&p.inlines, sp).is_empty();
                 let nested = p.inlines[sp.begin + 1..sp.code_end()].iter().any(|i| matches!(i, Inline::FieldBegin { .. }));
-                let Inline::FieldBegin { id, kind: Some(kind), value: slot, run, .. } = &mut p.inlines[sp.begin] else { continue };
+                let Inline::FieldBegin { id, kind: Some(kind), run, .. } = &p.inlines[sp.begin] else { continue };
+                let mut c = FieldChange { id: *id, para: p.id, value: None, run: None, note: None };
                 let code = &code;
                 let w = words(code);
-                let has = |sw: &str| w.iter().any(|x| x.eq_ignore_ascii_case(sw));
                 let value = match kind {
-                    FieldKind::Seq(id) => {
-                        let n = seq.entry(id.clone()).or_insert(0);
-                        if let Some(r) = w.iter().position(|x| x.eq_ignore_ascii_case("\\r")).and_then(|k| w.get(k + 1)?.parse().ok()) {
-                            *n = r;
-                        } else if !has("\\c") {
-                            *n += 1;
-                        }
-                        if has("\\h") { Some(String::new()) } else { Some(format_field(&n.to_string(), code, None)) }
-                    }
+                    FieldKind::Seq(id) => Some(seq.next(id, code, &w, run.rev.del.is_some())),
                     // Word's result for a bookmark the document doesn't have.
+                    // `\f` over notes: the result brings them again as notes of its own, made on update.
+                    FieldKind::Ref(name) if notes.contains_key(&name.to_ascii_lowercase()) && w.iter().any(|x| x.eq_ignore_ascii_case("\\f")) => None,
                     FieldKind::Ref(name) => {
                         let name = name.to_ascii_lowercase();
                         if let Some((src, src_style)) = sources.get(&name) {
-                            *run = with_direct(run, src, src_style);
+                            c.run = Some(with_direct(run, src, src_style));
                         }
-                        Some(marks.get(&name).cloned().unwrap_or_else(|| "Error! Reference source not found.".into()))
+                        let numbered = NumberContext::of(&w).map(|cx| {
+                            let target = mark_at.get(&name).and_then(|&k| numbers.get(k)?.as_ref());
+                            target
+                                .and_then(|t| {
+                                    let near = last.get(&t.list).and_then(|&k| numbers[k].as_ref());
+                                    // `\d`: what goes between the levels' numbers.
+                                    let sep = w.iter().position(|x| x.eq_ignore_ascii_case("\\d")).and_then(|k| w.get(k + 1));
+                                    Some(t.text(cx, near, sep.map(String::as_str), resolver.as_deref()?))
+                                })
+                                .unwrap_or_default()
+                        });
+                        // `\p`: where the bookmark is from the field, after its number or alone.
+                        let side = w.iter().any(|x| x.eq_ignore_ascii_case("\\p")).then(|| {
+                            // In the field's own paragraph: by the bookmark's start before the field or after it.
+                            let in_para = || p.inlines[..sp.begin].iter().any(|i| matches!(i, Inline::Bookmark(b) if b.eq_ignore_ascii_case(&name)));
+                            if mark_at.get(&name).is_some_and(|&k| k < at || (k == at && in_para())) { "above" } else { "below" }
+                        });
+                        match (numbered, marks.get(&name), side) {
+                            (Some(n), Some(_), Some(s)) => Some(format!("{n} {s}")),
+                            (None, Some(_), Some(s)) => Some(s.to_string()),
+                            (Some(n), Some(_), None) => Some(n),
+                            (_, Some(t), _) => Some(t.clone()),
+                            (_, None, _) => Some("Error! Reference source not found.".into()),
+                        }
                     }
                     FieldKind::Bookmark(_) if !cached_empty => None,
                     FieldKind::Bookmark(name) => {
@@ -797,8 +1144,9 @@ pub fn evaluate(doc: &mut Document, now: i64) {
                     FieldKind::Formula => formulas.get(id).cloned(),
                     FieldKind::FileName => file_name.as_deref().map(|n| file_name_shown(n, code)),
                     // The note's number is the layout's; a bookmark without a note is Word's error.
-                    FieldKind::NoteRef(name, note) => {
-                        *note = notes.get(&name.to_ascii_lowercase()).copied();
+                    FieldKind::NoteRef(name, _) => {
+                        let note = notes.get(&name.to_ascii_lowercase()).copied();
+                        c.note = Some(note);
                         note.is_none().then(|| "Error! Reference source not found.".into())
                     }
                     FieldKind::AutoNum => {
@@ -813,27 +1161,80 @@ pub fn evaluate(doc: &mut Document, now: i64) {
                     // In the body: the nearest text in the style before the field, else the next one.
                     FieldKind::StyleRef(_) => {
                         let q = StyleQuery::new(code, styles);
-                        let before = order[..(at + 1).min(order.len())].iter().rev().find_map(|h| q.find(h, true));
-                        Some(before.or_else(|| order[at.min(order.len())..].iter().find_map(|h| q.find(h, false))).unwrap_or(q.error))
+                        let before = order[..(at + 1).min(order.len())].iter().enumerate().rev().find_map(|(k, h)| Some((k, q.find(h, true)?)));
+                        let found = before.or_else(|| order.iter().enumerate().skip(at).find_map(|(k, h)| Some((k, q.find(h, false)?))));
+                        // A paragraph number in place of the text (`\n`, `\r`, `\w`; `\s` alone: without its words).
+                        let numbered = |k: usize| {
+                            let cx = NumberContext::of(&w)?;
+                            let t = numbers.get(k)?.as_ref()?;
+                            let near = last.get(&t.list).and_then(|&k| numbers[k].as_ref());
+                            Some(t.text(cx, near, None, resolver.as_deref()?))
+                        };
+                        Some(match found {
+                            Some((k, text)) => numbered(k).unwrap_or(text),
+                            None => q.error,
+                        })
                     }
                     _ => None,
                 };
                 // A PAGEREF to a bookmark the document doesn't have shows its error text at layout.
-                let page_error = matches!(&*kind, FieldKind::PageRef(n) if !names.contains(&n.to_ascii_lowercase()));
+                let page_error = matches!(kind, FieldKind::PageRef(n) if !names.contains(&n.to_ascii_lowercase()));
                 if page_error && let Some(e) = &error_run {
-                    *run = e.clone();
+                    c.run = Some(e.clone());
                 }
                 if let Some(v) = value {
                     if v.starts_with("Error! ")
                         && let Some(e) = error_run
                     {
-                        *run = e;
+                        c.run = Some(e);
                     }
-                    *slot = Some(v);
+                    c.value = Some(v);
                 }
+                out.push(c);
+            }
+            seq.passed(p);
+            if let Some(Some(n)) = numbers.get(at) {
+                last.insert(n.list, at);
             }
             at += 1;
         });
+    }
+    (out, order)
+}
+
+/// The fields of the other stories: headers and footers number their sequences apart, footnotes and endnotes in the
+/// order the body refers to them; a header's or footer's `STYLEREF` that finds nothing in `order` shows its error.
+fn stories_fields(doc: &mut Document, order: &[Vec<(String, bool, String)>]) {
+    let resolver = doc.resolver.clone();
+    let styles = resolver.as_deref().map(|r| &r.styles);
+    // Every other story (headers, footers) numbers its sequences apart; footnotes are one story, endnotes another, in
+    // the order the body refers to them (those it doesn't after, by id).
+    for b in doc.stories.values_mut() {
+        number_sequences(&mut Sequences::default(), b);
+    }
+    let mut refs: [Vec<i64>; 2] = Default::default();
+    for s in &mut doc.sections {
+        paras(&mut s.blocks, &mut |p| {
+            for i in &p.inlines {
+                if let Inline::NoteRef { kind, id, .. } = i {
+                    refs[usize::from(*kind == NoteKind::End)].push(*id);
+                }
+            }
+        });
+    }
+    for (notes, mut order) in [&mut doc.footnotes, &mut doc.endnotes].into_iter().zip(refs) {
+        let mut rest: Vec<i64> = notes.keys().copied().collect();
+        rest.sort_unstable();
+        order.extend(rest);
+        let mut seen = std::collections::HashSet::new();
+        let mut seq = Sequences::default();
+        for id in order {
+            if seen.insert(id)
+                && let Some(b) = notes.get_mut(&id)
+            {
+                number_sequences(&mut seq, b);
+            }
+        }
     }
     // A header's or footer's STYLEREF is found on each page at layout; one that finds nothing shows its error.
     for b in doc.stories.values_mut() {
@@ -852,6 +1253,151 @@ pub fn evaluate(doc: &mut Document, now: i64) {
                 }
             }
         });
+    }
+}
+
+/// A list paragraph's number: its list, level and every level's counter there.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct ParaNumber {
+    num_id: i64,
+    list: i64,
+    ilvl: usize,
+    values: [Option<i64>; 9],
+}
+
+/// The paragraph number a `REF` or `STYLEREF` shows (`\n`, `\r`, `\w`), and `\s`: without the words around it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct NumberContext {
+    mode: char,
+    suppress: bool,
+}
+
+impl NumberContext {
+    fn of(w: &[String]) -> Option<NumberContext> {
+        let has = |sw: &str| w.iter().any(|x| x.eq_ignore_ascii_case(sw));
+        let suppress = has("\\t") || has("\\s");
+        let mode = ['w', 'r', 'n'].into_iter().find(|m| has(&format!("\\{m}")));
+        match (mode, suppress) {
+            (Some(mode), _) => Some(NumberContext { mode, suppress }),
+            (None, true) => Some(NumberContext { mode: 'n', suppress }),
+            _ => None,
+        }
+    }
+}
+
+impl ParaNumber {
+    /// Paragraph `p`'s number, counting it in `counters` (read in document order), when it shows a list number.
+    fn next(p: &Paragraph, counters: &mut super::numbering::Counters, r: &super::resolve::Resolver) -> Option<ParaNumber> {
+        let (num_id, ilvl) = p.style.num?;
+        p.list.as_ref()?;
+        counters.next(&r.numbering, &r.styles, num_id, ilvl)?;
+        let values = counters.values(&r.numbering, &r.styles, num_id)?;
+        let list = r.numbering.abstract_of(num_id, &r.styles)?;
+        Some(ParaNumber { num_id, list, ilvl: ilvl.clamp(0, 8) as usize, values })
+    }
+
+    /// Its number as `cx` asks: the level's own text (`n`), from the first level that differs from `near`'s (`r`), or
+    /// every level's own number (`w`), without trailing periods; `suppress`: the level texts' words left out; `sep`
+    /// (`\d`): in place of what the level texts put between two numbers.
+    fn text(&self, cx: NumberContext, near: Option<&ParaNumber>, sep: Option<&str>, r: &super::resolve::Resolver) -> String {
+        let Some(levels) = r.numbering.levels(self.num_id, &r.styles) else { return String::new() };
+        let value = |k: usize| self.values[k].unwrap_or_else(|| levels[k].map_or(1, |l| l.start));
+        // A level's text, each `%n` its number; `own`: the other levels' numbers (and what leads to them) left out.
+        // Pieces: numbers and the literal text between them.
+        let piece = |k: usize, own: bool, out: &mut Vec<(bool, String)>| {
+            let Some(l) = levels[k] else { return };
+            let from = out.len();
+            let mut chars = l.text.chars().peekable();
+            while let Some(c) = chars.next() {
+                if c == '%'
+                    && let Some(d) = chars.peek().and_then(|d| d.to_digit(10))
+                {
+                    chars.next();
+                    let j = (d as usize).saturating_sub(1).min(8);
+                    if own && j != k {
+                        out.truncate(from);
+                        continue;
+                    }
+                    let fmt = levels[j].map_or("decimal", |l| l.fmt.as_str());
+                    let fmt = if l.is_lgl && fmt != "decimalZero" { "decimal" } else { fmt };
+                    out.push((true, super::numbering::format_number(value(j), fmt)));
+                    continue;
+                }
+                if !(cx.suppress && (c.is_alphanumeric() || c.is_whitespace())) {
+                    let here = out.len() > from;
+                    match out.last_mut() {
+                        Some((false, t)) if here => t.push(c),
+                        _ => out.push((false, c.to_string())),
+                    }
+                }
+            }
+        };
+        let from = match cx.mode {
+            'w' => 0,
+            'r' => match near {
+                Some(n) => (0..self.ilvl).find(|&k| n.values[k] != self.values[k]).unwrap_or(self.ilvl),
+                None => 0,
+            },
+            _ => self.ilvl,
+        };
+        let mut pieces = Vec::new();
+        if from == self.ilvl {
+            piece(self.ilvl, false, &mut pieces);
+        } else {
+            (from..=self.ilvl).for_each(|k| piece(k, k > from, &mut pieces));
+        }
+        let mut text = String::new();
+        for (k, (num, t)) in pieces.iter().enumerate() {
+            let between = !num && k > 0 && pieces[..k].iter().any(|p| p.0) && pieces[k + 1..].iter().any(|p| p.0);
+            match sep {
+                Some(s) if between => text.push_str(s),
+                _ => text.push_str(t),
+            }
+        }
+        text.trim_end_matches('.').trim().to_string()
+    }
+}
+
+/// The `SEQ` counters of one story as its fields are read in order: each identifier's number, and the headings passed
+/// (by outline level) for `\s`, which starts a sequence again after each heading of its level.
+#[derive(Default)]
+pub(crate) struct Sequences {
+    numbers: HashMap<String, (i64, u64)>,
+    headings: [u64; 9],
+}
+
+impl Sequences {
+    /// The value of the next `SEQ` field of identifier `id` (code `code`, its words `w`); a deleted one shows the
+    /// number it has without counting.
+    pub(crate) fn next(&mut self, id: &str, code: &str, w: &[String], deleted: bool) -> String {
+        let has = |sw: &str| w.iter().any(|x| x.eq_ignore_ascii_case(sw));
+        let arg = |sw: &str| w.iter().position(|x| x.eq_ignore_ascii_case(sw)).and_then(|k| w.get(k + 1)?.parse::<i64>().ok());
+        let level = arg("\\s").filter(|l| (1..=9).contains(l));
+        let (n, mark) = self.numbers.entry(id.to_ascii_lowercase()).or_insert((0, 0));
+        if let Some(l) = level {
+            let passed = self.headings[l as usize - 1];
+            if *mark != passed {
+                (*n, *mark) = (0, passed);
+            }
+        }
+        if let Some(r) = arg("\\r") {
+            *n = r;
+        } else if !has("\\c") && !deleted {
+            *n += 1;
+        }
+        if has("\\h") { String::new() } else { format_field(&n.to_string(), code, None) }
+    }
+
+    /// Sequence `id`'s number so far.
+    pub(crate) fn current(&self, id: &str) -> i64 {
+        self.numbers.get(&id.to_ascii_lowercase()).map_or(0, |n| n.0)
+    }
+
+    /// Paragraph `p` was read: a heading counts at its level (a `\s` sequence of that level starts again after it).
+    pub(crate) fn passed(&mut self, p: &Paragraph) {
+        if let Some(l) = p.style.outline_lvl.filter(|l| (0..9).contains(l)) {
+            self.headings[l as usize] += 1;
+        }
     }
 }
 
@@ -1478,26 +2024,28 @@ pub(crate) fn format_field(value: &str, code: &str, default: Option<&str>) -> St
     let mut fmt: Option<&str> = None;
     let mut case: Option<String> = None;
     for sw in code.split("\\*").skip(1) {
-        let w = sw.split_whitespace().next().unwrap_or("");
+        let w = sw.split_whitespace().next().unwrap_or("").trim_matches('"');
+        // Word reads the names without case, but for roman numerals' and letters' case.
         let f = match w {
-            "Arabic" | "arabic" => "decimal",
             "roman" => "lowerRoman",
-            "ROMAN" | "Roman" => "upperRoman",
             "alphabetic" => "lowerLetter",
-            "ALPHABETIC" | "Alphabetic" => "upperLetter",
-            "ArabicDash" => "numberInDash",
-            "CardText" | "cardtext" => "cardinalTextLower",
-            "OrdText" | "ordtext" => "ordinalTextLower",
-            "Ordinal" | "ordinal" => "ordinal",
-            "Hex" | "hex" => "hex",
-            "Caps" | "FirstCap" | "Upper" | "Lower" | "caps" | "upper" | "lower" => {
-                if fmt.is_some() {
-                    case = Some(w.to_lowercase());
+            _ => match w.to_ascii_lowercase().as_str() {
+                "arabic" => "decimal",
+                "roman" => "upperRoman",
+                "alphabetic" => "upperLetter",
+                "arabicdash" => "numberInDash",
+                "cardtext" => "cardinalTextLower",
+                "ordtext" => "ordinalTextLower",
+                "dollartext" => "dollarText",
+                "ordinal" => "ordinal",
+                "hex" => "hex",
+                l @ ("caps" | "firstcap" | "upper" | "lower") => {
+                    case = Some(l.to_string());
+                    continue;
                 }
-                continue;
-            }
-            // MERGEFORMAT, CHARFORMAT: formatting only.
-            _ => continue,
+                // MERGEFORMAT, CHARFORMAT: formatting only.
+                _ => continue,
+            },
         };
         fmt.get_or_insert(f);
     }
@@ -1515,6 +2063,7 @@ pub(crate) fn format_field(value: &str, code: &str, default: Option<&str>) -> St
     let text = match fmt.or(default) {
         Some("cardinalTextLower") => crate::docx::numbering::cardinal(n),
         Some("ordinalTextLower") => crate::docx::numbering::ordinal_text(n),
+        Some("dollarText") => format!("{} and 00/100", crate::docx::numbering::cardinal(n)),
         Some(f) => crate::docx::numbering::format_number(n, f),
         None => n.to_string(),
     };
@@ -1540,6 +2089,26 @@ pub(crate) fn format_field(value: &str, code: &str, default: Option<&str>) -> St
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_codes_word_is_found_as_words_reads_it() {
+        let doc = crate::docx::read(&crate::docx::blank::blank_docx()).expect("the blank document reads");
+        let Some(Block::Para(p)) = doc.sections[0].blocks.first() else { panic!("a paragraph") };
+        let run = p.mark.clone();
+        for (code, want) in [
+            (" PAGEREF _Toc1 \\p ", true),
+            (" PAGEREF _Toc1 \\P\t", true),
+            (" PAGEREF _Toc1 \\h", false),
+            (" PAGEREF \"\\p\" ", true),
+            (" PAGEREF _Toc1 \\pp ", false),
+            (" PAGEREF _Toc1 \"a\"\\p", true),
+        ] {
+            let inlines = field_inlines_with(FieldId::next(), code, "1", &run);
+            let s = span_at(&inlines, 0).expect("a field");
+            assert_eq!(has_word(&inlines, s, "\\p"), want, "{code}");
+            assert_eq!(has_word(&inlines, s, "\\p"), words(&code_text(&inlines, s)).iter().any(|w| w.eq_ignore_ascii_case("\\p")), "{code}");
+        }
+    }
 
     #[test]
     fn an_argument_quoted_parses_back_to_itself_in_its_place() {

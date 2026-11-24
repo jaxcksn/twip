@@ -61,7 +61,7 @@ fn a_batch_refused_in_read_only_is_still_reverted() {
 fn tx(bytes: usize) -> Transaction {
     let at = Position::text(StoryId::Body, crate::layout::ParaId(0), crate::layout::Unit(0));
     let rec = SelectionRecord { selection: Selection::Caret(at), chain: Vec::new() };
-    Transaction { undo: Vec::new(), before: rec.clone(), after: rec, label: "t".into(), bytes, id: 0 }
+    Transaction { undo: Vec::new(), before: rec.clone(), after: rec, label: "t".into(), bytes, id: 0, view: None }
 }
 
 #[test]

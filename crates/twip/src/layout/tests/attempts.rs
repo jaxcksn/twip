@@ -39,7 +39,7 @@ fn discarded_attempt_leaves_no_effects() {
     assert!(snapshot.pages().len() >= 2);
     assert!(!paras_drawn(&snapshot.pages()[0]).contains(&id), "the rewound heading's lines stayed on page 1");
     assert!(!effects[0].paras.contains(&id), "page 1 recorded the rewound heading");
-    assert!(!effects[0].bookmarks.iter().any(|b| b == "moved"), "page 1 recorded the rewound heading's bookmark");
+    assert!(!effects[0].bookmarks.iter().any(|b| b.0 == "moved"), "page 1 recorded the rewound heading's bookmark");
     assert!(paras_drawn(&snapshot.pages()[1]).contains(&id));
-    assert!(effects[1].bookmarks.iter().any(|b| b == "moved"));
+    assert!(effects[1].bookmarks.iter().any(|b| b.0 == "moved"));
 }

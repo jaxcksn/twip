@@ -1081,8 +1081,38 @@ struct OpenField {
     spanning: bool,
     /// A TOC field (known at its separator): its result doesn't show the Hyperlink character style.
     toc: bool,
+    /// Where its begin run starts in the part, and then the part's bytes of its begin, code and separator runs when they
+    /// hold only those (one parent): what its start edge keeps once it spans paragraphs.
+    begin_at: usize,
+    marker_runs: Option<std::ops::Range<usize>>,
+    /// It spans paragraphs and its start is kept as an edge ([`FieldEdge`]): its end is kept too.
+    edge: bool,
     /// A legacy form field's data (`w:ffData`): the kind it lays out as, and a drop-down's shown entry.
     form: Option<(FieldKind, Option<String>)>,
+}
+
+/// The main namespace's prefix where `n` is (`w:`, or empty when it is the default namespace).
+fn prefix_of(n: Node) -> String {
+    n.lookup_prefix(W).filter(|p| !p.is_empty()).map_or_else(String::new, |p| format!("{p}:"))
+}
+
+/// The part's bytes from `from` (where a field's begin run starts) to the end of run `r`, when `r` and the elements
+/// before it back to `from` are runs holding only field markers and code (one parent): what a field's edge keeps.
+fn marker_runs(r: Node, from: usize) -> Option<std::ops::Range<usize>> {
+    let markers =
+        |n: Node| is_w(n, "r") && n.children().filter(|c| c.is_element()).all(|c| is_w(c, "rPr") || is_w(c, "fldChar") || is_w(c, "instrText"));
+    // Bounded by the parent's children: one walk back.
+    let mut at = r;
+    loop {
+        if !markers(at) {
+            return None;
+        }
+        match at.range().start.cmp(&from) {
+            std::cmp::Ordering::Equal => return Some(from..r.range().end),
+            std::cmp::Ordering::Less => return None,
+            std::cmp::Ordering::Greater => at = at.prev_sibling_element()?,
+        }
+    }
 }
 
 /// A legacy form field's `w:ffData`: a check box (its `w:size` in points, shown checked), or a drop-down and the entry
@@ -1994,7 +2024,7 @@ impl Reader {
             rev.ins = ins.or(rev.ins.take());
             rev.del = del.or(rev.del.take());
         }
-        self.cut_spanning_fields(&mut inlines);
+        self.cut_spanning_fields(n, &mut inlines);
         self.para_no = outer_para;
         let (segs, lossy, simple) =
             (std::mem::replace(&mut self.segs, outer.0), std::mem::replace(&mut self.lossy, outer.1), std::mem::replace(&mut self.simple, outer.2));
@@ -2172,7 +2202,7 @@ impl Reader {
     /// An element between runs the engine doesn't model, kept as read (editable reads).
     fn opaque(&mut self, e: Node, out: &mut Vec<Inline>) {
         if self.record {
-            out.push(Inline::Opaque(Rc::new(Opaque { xml: Raw(Some(raw(e))) })));
+            out.push(Inline::Opaque(Rc::new(Opaque { xml: Raw(Some(raw(e))), field: None, src: None, run: None })));
         }
     }
 
@@ -2187,7 +2217,7 @@ impl Reader {
         let name = &open[1..open.find(|ch: char| ch.is_whitespace() || ch == '>' || ch == '/').unwrap_or(1)];
         let rpr = child(r, "rPr").map_or_else(String::new, |p| raw(p).to_string());
         let xml = format!("{open}{rpr}{}</{name}>", raw(c));
-        out.push(Inline::Opaque(Rc::new(Opaque { xml: Raw(Some(xml.into())) })));
+        out.push(Inline::Opaque(Rc::new(Opaque { xml: Raw(Some(xml.into())), field: None, src: None, run: None })));
     }
 
     /// [`Reader::opaque`], reported as content that isn't drawn.
@@ -2260,6 +2290,9 @@ impl Reader {
                             begin: out.len(),
                             spanning: false,
                             toc: false,
+                            begin_at: r.range().start,
+                            marker_runs: None,
+                            edge: false,
                             form: child(c, "ffData").and_then(form_data),
                         });
                         let (lock, dirty) = (flag("fldLock"), flag("dirty"));
@@ -2285,6 +2318,7 @@ impl Reader {
                         {
                             f.in_result = true;
                             if !f.spanning {
+                                f.marker_runs = marker_runs(r, f.begin_at);
                                 let code: String =
                                     out[f.begin..].iter().filter_map(|i| if let Inline::Text(t, _) = i { Some(t.as_str()) } else { None }).collect();
                                 f.toc = code.split_whitespace().next().is_some_and(|w| w.eq_ignore_ascii_case("TOC"));
@@ -2293,12 +2327,27 @@ impl Reader {
                         }
                     }
                     Some("end") => {
-                        if let (Some(id), Some(f)) = (id, self.fields.pop())
-                            && !f.spanning
-                        {
-                            out.push(Inline::FieldEnd { id, run: run.clone() });
-                            let style = self.run_style(&self.run_props(base, None));
-                            self.close_field(out, f, &run, &style);
+                        if let (Some(id), Some(f)) = (id, self.fields.pop()) {
+                            if !f.spanning {
+                                out.push(Inline::FieldEnd { id, run: run.clone() });
+                                let style = self.run_style(&self.run_props(base, None));
+                                self.close_field(out, f, &run, &style);
+                            } else if f.edge && self.record {
+                                let at = marker_runs(r, r.range().start);
+                                let xml = match &at {
+                                    Some(at) => Rc::from(&r.document().input_text()[at.clone()]),
+                                    None => {
+                                        self.lossy = true;
+                                        Rc::from(FieldEdge::End.xml(&prefix_of(r)).as_str())
+                                    }
+                                };
+                                out.push(Inline::Opaque(Rc::new(Opaque {
+                                    xml: Raw(Some(xml)),
+                                    field: Some(FieldEdge::End),
+                                    src: at,
+                                    run: Some(run.clone()),
+                                })));
+                            }
                         }
                     }
                     _ => {}
@@ -2647,6 +2696,9 @@ impl Reader {
             begin,
             spanning: false,
             toc: false,
+            begin_at: e.range().start,
+            marker_runs: None,
+            edge: false,
             form: None,
         });
         self.read_inlines(e, base, pkg, out);
@@ -2662,7 +2714,7 @@ impl Reader {
 
     /// At a paragraph's end: a field begun in it and still open spans paragraphs. Its markers and code (with the
     /// fields in it) come out of the paragraph, and its result reads as plain text from here on.
-    fn cut_spanning_fields(&mut self, out: &mut Vec<Inline>) {
+    fn cut_spanning_fields(&mut self, n: Node, out: &mut Vec<Inline>) {
         let no = self.para_no;
         let Some(first) = self.fields.iter().position(|f| f.para == no && !f.spanning) else { return };
         let begin = self.fields[first].begin;
@@ -2671,7 +2723,29 @@ impl Reader {
         let stop = out[begin..].iter().position(|i| matches!(i, Inline::FieldSep { id: s, .. } if *s == id)).map_or(out.len(), |k| begin + k + 1);
         let units_before: usize = out[..begin].iter().map(Inline::units).sum();
         let cut: usize = out[begin..stop].iter().map(Inline::units).sum();
+        // Its start is kept as an edge, as its runs were written when they hold only its markers and code.
+        let sep = out[begin..stop].iter().position(|i| matches!(i, Inline::FieldSep { id: s, .. } if *s == id)).map(|k| begin + k);
+        let edge = match (&out[begin], sep) {
+            (Inline::FieldBegin { lock, dirty, .. }, Some(sep)) if self.record => {
+                let code = super::fields::code_text(out, super::fields::FieldSpan { begin, sep: Some(sep), end: sep });
+                Some(FieldEdge::Start { code, lock: *lock, dirty: *dirty, view: FieldView::Result })
+            }
+            _ => None,
+        };
+        let begin_run = out[begin].run().cloned();
         out.drain(begin..stop);
+        if let Some(edge) = edge {
+            let at = self.fields[first].marker_runs.clone();
+            let xml = match &at {
+                Some(at) => Rc::from(&n.document().input_text()[at.clone()]),
+                None => {
+                    self.lossy = true;
+                    Rc::from(edge.xml(&prefix_of(n)).as_str())
+                }
+            };
+            out.insert(begin, Inline::Opaque(Rc::new(Opaque { xml: Raw(Some(xml)), field: Some(edge), src: at, run: begin_run })));
+            self.fields[first].edge = true;
+        }
         for f in &mut self.fields[first..] {
             f.spanning = true;
             // A code doesn't go on past its paragraph: what follows shows (a field without its end reads as text).

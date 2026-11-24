@@ -41,9 +41,9 @@ impl JoinMap {
 
 /// Whether `b`'s mark joins it to the next paragraph: a tracked deletion the markup view hides, or, while hidden text
 /// doesn't show, a vanished mark (a hidden paragraph mark, a style separator) made since reading, which joins as
-/// reading joins one.
+/// reading joins one; or a mark inside the result of a field across paragraphs showing its code (its fold mark).
 fn hides_mark(b: &Block, review: &ReviewView) -> bool {
-    matches!(b, Block::Para(p) if review.hides(&p.mark.rev) || (p.mark.hidden && !review.show_hidden))
+    matches!(b, Block::Para(p) if review.hides(&p.mark.rev) || (p.mark.hidden && !review.show_hidden) || crate::docx::fields::folded(p))
 }
 
 /// Whether mark `r` is a style separator (`w:specVanish`).
@@ -51,19 +51,40 @@ fn spec_vanish(r: &crate::docx::Run) -> bool {
     r.direct.0.as_deref().is_some_and(|x| crate::docx::write::props::flag_of(x, "specVanish"))
 }
 
+/// The last paragraph of the chain from `blocks[i]`; a fold's chain runs on past the tables inside it
+/// ([`crate::docx::fields::fold_over`]), which aren't laid out.
 pub fn chain_end<B: Borrow<Block>>(blocks: &[B], i: usize, review: &ReviewView) -> usize {
-    let para = |k: usize| blocks.get(k).is_some_and(|b| matches!(b.borrow(), Block::Para(_)));
+    let table = |k: usize| blocks.get(k).is_some_and(|b| matches!(b.borrow(), Block::Table(_)));
     let mut j = i;
-    while para(j + 1) && blocks.get(j).is_some_and(|b| hides_mark(b.borrow(), review)) {
-        j += 1;
+    while let Some(Block::Para(p)) = blocks.get(j).map(Borrow::borrow)
+        && hides_mark(blocks[j].borrow(), review)
+    {
+        let mut next = j + 1;
+        if crate::docx::fields::folded(p) {
+            while table(next) {
+                next += 1;
+            }
+        }
+        if !matches!(blocks.get(next).map(Borrow::borrow), Some(Block::Para(_))) {
+            break;
+        }
+        j = next;
     }
     j
 }
 
+/// The first block of the chain holding `blocks[i]` ([`chain_end`]).
 pub fn chain_start<B: Borrow<Block>>(blocks: &[B], i: usize, review: &ReviewView) -> usize {
     let mut s = i.min(blocks.len());
-    while s > 0 && hides_mark(blocks[s - 1].borrow(), review) {
-        s -= 1;
+    while s > 0 {
+        s = match blocks[s - 1].borrow() {
+            Block::Para(_) if hides_mark(blocks[s - 1].borrow(), review) => s - 1,
+            Block::Table(_) => match crate::docx::fields::fold_over(blocks, s - 1) {
+                Some(k) => k,
+                None => break,
+            },
+            Block::Para(_) => break,
+        };
     }
     s
 }
@@ -88,13 +109,18 @@ fn table_first<'a>(t: &'a Table, review: &ReviewView) -> Option<&'a Paragraph> {
 }
 
 /// The paragraph whose mark a hidden mark at the end of a chain joins when no paragraph follows it: the next shown mark
-/// in text order from `blocks[from]` on, past hidden marks and tables whose rows are all hidden; a shown table's first
+/// in text order from `blocks[from]` on, past hidden marks, tables whose rows are all hidden and tables inside a fold; a shown table's first
 /// cell paragraph counts. `None` at the end of `blocks`.
 pub fn next_shown_mark<'a, B: Borrow<Block>>(blocks: &'a [B], from: usize, review: &ReviewView) -> Option<&'a Paragraph> {
+    // Whether the tables met are inside a fold
+    let mut fold = crate::docx::fields::fold_over(blocks, from).is_some();
     blocks.get(from..)?.iter().find_map(|b| match b.borrow() {
         Block::Para(p) if !hides_mark(b.borrow(), review) => Some(p),
-        Block::Para(_) => None,
-        Block::Table(t) if table_hidden(t, review) => None,
+        Block::Para(p) => {
+            fold = crate::docx::fields::folded(p);
+            None
+        }
+        Block::Table(t) if fold || table_hidden(t, review) => None,
         Block::Table(t) => table_first(t, review),
     })
 }

@@ -115,7 +115,7 @@ fn refs_inline(inlines: &[Inline], out: &mut Vec<(NoteKind, i64)>) {
 
 impl Editor {
     /// The numbers the references to notes of `kind` give, so a new note answers no reference read without its note.
-    fn note_refs(&self, kind: NoteKind) -> std::collections::HashSet<i64> {
+    pub(super) fn note_refs(&self, kind: NoteKind) -> std::collections::HashSet<i64> {
         let mut out = std::collections::HashSet::new();
         for pid in self.index.para_ids() {
             let Some(p) = self.index.para(&self.doc, pid) else { continue };

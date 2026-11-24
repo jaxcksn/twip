@@ -826,7 +826,7 @@ impl Editor {
                 if to != id
                     && let Some(x) = o.xml.0.as_deref().and_then(|x| with_perm_id(x, to))
                 {
-                    *i = Inline::Opaque(Rc::new(crate::docx::Opaque { xml: crate::docx::Raw(Some(x.into())) }));
+                    *i = Inline::Opaque(Rc::new(crate::docx::Opaque { xml: crate::docx::Raw(Some(x.into())), field: None, src: None, run: None }));
                 }
             }
         });
@@ -1325,6 +1325,12 @@ impl Editor {
 /// permission's anywhere in them; and move ranges, which a copy isn't part of.
 pub(super) fn drop_unpaired(blocks: &mut [Block]) {
     use crate::docx::review::RangeKind;
+    // A copy's fields across paragraphs show their results.
+    each_inlines(blocks, &mut |v| {
+        if crate::docx::fields::shows_span_code(v) {
+            crate::docx::fields::show_span_results(v);
+        }
+    });
     let (mut starts, mut ends): (HashSet<String>, HashSet<String>) = (HashSet::new(), HashSet::new());
     let (mut perm_starts, mut perm_ends): (HashSet<i64>, HashSet<i64>) = (HashSet::new(), HashSet::new());
     let mut any = false;
@@ -1337,6 +1343,7 @@ pub(super) fn drop_unpaired(blocks: &mut [Block]) {
             };
         }
         Inline::Opaque(o) => {
+            any |= o.field.is_some();
             if let Some((start, id)) = o.permission() {
                 any = true;
                 if start {
@@ -1349,16 +1356,40 @@ pub(super) fn drop_unpaired(blocks: &mut [Block]) {
         Inline::Range(r) if !matches!(r.kind, RangeKind::CommentStart | RangeKind::CommentEnd) => any = true,
         _ => {}
     });
+    // Fields across paragraphs: both edges, each paired in its own container (the top level, cells, text boxes).
+    let mut paired: HashSet<*const crate::docx::Opaque> = HashSet::new();
+    if any {
+        edges_paired(blocks, &mut paired);
+    }
     let keep = |i: &Inline| match i {
         Inline::Bookmark(n) => match n.strip_prefix('/') {
             Some(n) => starts.contains(&n.to_lowercase()),
             None => ends.contains(&n.to_lowercase()),
         },
+        Inline::Opaque(o) if o.field.is_some() => paired.contains(&Rc::as_ptr(o)),
         Inline::Opaque(o) => o.permission().is_none_or(|(start, id)| if start { perm_ends.contains(&id) } else { perm_starts.contains(&id) }),
         Inline::Range(r) => matches!(r.kind, RangeKind::CommentStart | RangeKind::CommentEnd),
         _ => true,
     };
     drop_unpaired_in(blocks, any.then_some(&keep));
+}
+
+/// The field edges of `blocks` that pair within their container, and within each container they hold.
+fn edges_paired(blocks: &[Block], out: &mut HashSet<*const crate::docx::Opaque>) {
+    let ptr = |(b, k): (usize, usize)| match &blocks[b] {
+        Block::Para(p) => match &p.inlines[k] {
+            Inline::Opaque(o) => Some(Rc::as_ptr(o)),
+            _ => None,
+        },
+        Block::Table(_) => None,
+    };
+    out.extend(super::toc::edge_pairs(blocks).into_iter().flat_map(|(s, e)| [ptr(s), ptr(e)]).flatten());
+    for b in blocks {
+        match b {
+            Block::Para(p) => p.inlines.iter().filter_map(Inline::story).for_each(|(_, tb)| edges_paired(&tb.blocks, out)),
+            Block::Table(t) => t.rows.iter().flat_map(|r| &r.cells).for_each(|c| edges_paired(&c.blocks, out)),
+        }
+    }
 }
 
 fn drop_unpaired_in(blocks: &mut [Block], keep: Option<&dyn Fn(&Inline) -> bool>) {

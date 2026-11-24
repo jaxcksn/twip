@@ -396,7 +396,7 @@ impl Editor {
             Command::CloseHeaderFooter => self.close_header_footer(),
             Command::InsertPageNumber(p) => self.insert_page_number(p, fonts),
             // Insert
-            Command::InsertTable(t) => self.insert_table(t.rows as usize, t.columns as usize, fonts),
+            Command::InsertTable(t) => self.insert_table_captioned(t.rows as usize, t.columns as usize, fonts),
             Command::InsertPicture(p) => self.insert_picture_with(p, fonts),
             Command::InsertTextBox => self.insert_text_box(fonts),
             Command::InsertFootnote => self.insert_note(crate::docx::NoteKind::Foot, None, fonts),
@@ -492,7 +492,7 @@ impl Editor {
             Command::UpdateFields(ids) => self.update_fields(ids.ids.as_deref(), fonts),
             Command::SetFieldsLocked(l) => self.lock_fields(l.locked, l.ids.as_deref(), fonts),
             Command::UnlinkFields(ids) => self.unlink_fields(ids.ids.as_deref(), fonts),
-            Command::ShowFieldCodes(s) => self.show_field_codes(s.show, s.ids.as_deref()),
+            Command::ShowFieldCodes(s) => self.show_field_codes(s.show, s.ids.as_deref(), fonts),
             Command::SetFieldLabels(l) => self.set_field_labels(l),
             Command::SetSubTemplateRules(r) => self.set_sub_template_rules(r),
             Command::SetApplicationFieldTypes(t) => self.set_application_field_types(t),

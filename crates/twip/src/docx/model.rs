@@ -893,6 +893,68 @@ pub struct FormField {
 pub struct Opaque {
     /// The element as read.
     pub xml: Raw,
+    /// The edge of a field across paragraphs these runs are.
+    pub field: Option<FieldEdge>,
+    /// Where an edge's runs are in its part as read.
+    pub src: Option<std::ops::Range<usize>>,
+    /// An edge's run: its markers' formatting and tracked changes.
+    pub run: Option<Run>,
+}
+
+/// An edge of a field whose result runs across paragraphs (a table of contents): its start (its begin marker, code
+/// and separator) or its end, each kept as the runs of its markers. A story's starts and ends pair as they nest.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum FieldEdge {
+    /// Where the field begins: its result follows.
+    Start {
+        /// The field's code.
+        code: String,
+        /// Locked: updating leaves its result.
+        lock: bool,
+        /// Its result is to be updated (`w:dirty`).
+        dirty: bool,
+        /// Showing its code (Alt+F9, Shift+F9; not saved): the edge is the code's opening brace, the code runs follow
+        /// up to a [`FieldEdge::Code`], and the result after it is hidden up to the end.
+        view: FieldView,
+    },
+    /// The closing brace of a start's code shown as text: the code's runs are between the start and it.
+    Code,
+    /// The end of a paragraph whose mark a field showing its code hides: the result's paragraphs join the code's line.
+    Fold,
+    /// Where the field's result ends.
+    End,
+}
+
+impl FieldEdge {
+    /// The markers' runs in the main namespace's prefix `w` (`w:`).
+    pub fn xml(&self, w: &str) -> String {
+        match self {
+            FieldEdge::Start { code, lock, dirty, .. } => {
+                let lock = if *lock { format!(" {w}fldLock=\"1\"") } else { String::new() };
+                let dirty = if *dirty { format!(" {w}dirty=\"1\"") } else { String::new() };
+                let code = code.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
+                format!(
+                    "<{w}r><{w}fldChar {w}fldCharType=\"begin\"{lock}{dirty}/></{w}r><{w}r><{w}instrText xml:space=\"preserve\">{code}</{w}instrText></{w}r><{w}r><{w}fldChar {w}fldCharType=\"separate\"/></{w}r>"
+                )
+            }
+            FieldEdge::End => format!("<{w}r><{w}fldChar {w}fldCharType=\"end\"/></{w}r>"),
+            FieldEdge::Code | FieldEdge::Fold => String::new(),
+        }
+    }
+
+    /// The units the edge takes: a code's braces one each, other edges none.
+    pub fn units(&self) -> usize {
+        match self {
+            FieldEdge::Start { view: FieldView::Code, .. } | FieldEdge::Code => 1,
+            _ => 0,
+        }
+    }
+
+    /// The marker inline in `run`: its runs written in prefix `w`.
+    pub fn inline(self, w: &str, run: Run) -> Inline {
+        let xml = self.xml(w);
+        Inline::Opaque(Rc::new(Opaque { xml: Raw(Some(xml.into())), field: Some(self), src: None, run: Some(run) }))
+    }
 }
 
 /// The date blocks' element names and the date pictures they show.
@@ -2122,8 +2184,8 @@ impl Inline {
             | Inline::CommentRef { .. }
             | Inline::Float(..)
             | Inline::ControlStart(_)
-            | Inline::ControlEnd(_)
-            | Inline::Opaque(_) => 0,
+            | Inline::ControlEnd(_) => 0,
+            Inline::Opaque(o) => o.field.as_ref().map_or(0, FieldEdge::units),
             _ => 1,
         }
     }

@@ -1776,24 +1776,43 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
-    pub(super) fn show_field_codes(&mut self, show: bool, ids: Option<&[crate::api::value::ElementId]>) -> Outcome {
-        let targets: Vec<(FieldId, ParaId)> = match ids {
-            Some(_) => self.fields_here(ids, false),
-            None => self.all_fields().iter().map(|f| (f.0, f.2)).collect(),
+    /// Shows the fields' codes or results: `ids`' fields; with none, every field (fields across paragraphs too); with
+    /// an empty list, the field across paragraphs at the selection (it has no id).
+    pub(super) fn show_field_codes(&mut self, show: bool, ids: Option<&[crate::api::value::ElementId]>, fonts: &Fonts) -> Outcome {
+        let (targets, spans): (Vec<(FieldId, ParaId)>, Vec<super::span_codes::SpanField>) = match ids {
+            Some([]) => (Vec::new(), self.span_fields_selected()),
+            Some(_) => (self.fields_here(ids, false), Vec::new()),
+            None => (self.all_fields().iter().map(|f| (f.0, f.2)).collect(), self.span_fields()),
         };
-        self.field_views(targets, if show { FieldView::Code } else { FieldView::Result })
+        let out = self.field_views(targets, if show { FieldView::Code } else { FieldView::Result });
+        match self.set_span_views(&spans, show, fonts) {
+            o @ Outcome::Changed(_) => o,
+            _ => out,
+        }
     }
 
+    /// Alt+F9 (`all`) and Shift+F9: what toggling field codes does. Shift+F9 takes the innermost field at the
+    /// selection, a field across paragraphs (a table of contents) when no field in a paragraph holds it or the
+    /// selection crosses paragraphs.
     pub fn field_codes_toggle(&self, all: bool) -> Option<crate::api::command::ShowFieldCodes> {
         let targets: Vec<(FieldId, ParaId)> =
             if all { self.all_fields().iter().map(|f| (f.0, f.2)).collect() } else { self.fields_here(None, false) };
+        if all {
+            let spans = self.span_fields();
+            if targets.is_empty() && spans.is_empty() {
+                return None;
+            }
+            let codes = targets.iter().all(|&(f, p)| self.field_view(f, p) == Some(FieldView::Code)) && spans.iter().all(|f| self.span_shows_code(f));
+            return Some(crate::api::command::ShowFieldCodes { show: !codes, ids: None });
+        }
+        let across = self.selection.ordered(&self.index).is_some_and(|(a, b)| a.para_offset().map(|p| p.0) != b.para_offset().map(|p| p.0));
+        let spans = if targets.is_empty() || across { self.span_fields_selected() } else { Vec::new() };
+        if let Some(span) = spans.first() {
+            return Some(crate::api::command::ShowFieldCodes { show: !self.span_shows_code(span), ids: Some(Vec::new()) });
+        }
         let &(f, para) = targets.first()?;
-        let codes = if all {
-            targets.iter().all(|&(f, p)| self.field_view(f, p) == Some(FieldView::Code))
-        } else {
-            self.field_view(f, para) == Some(FieldView::Code)
-        };
-        let ids = (!all).then(|| targets.iter().map(|&(f, _)| api_id(ElementId::Field(f))).collect());
+        let codes = self.field_view(f, para) == Some(FieldView::Code);
+        let ids = Some(targets.iter().map(|&(f, _)| api_id(ElementId::Field(f))).collect());
         Some(crate::api::command::ShowFieldCodes { show: !codes, ids })
     }
 
@@ -1874,10 +1893,37 @@ impl Editor {
                     .is_some_and(|p| p.inlines.iter().any(|i| matches!(i, Inline::FieldBegin { id, lock: false, .. } if id == f)))
             })
             .collect();
+        self.begin_batch(Some("Update Fields".into()));
         let out = match self.show_results(&unlocked, fonts) {
             o @ Outcome::Changed(_) => o,
             _ => Outcome::Moved,
         };
+        // References, sequences and page and note numbers in the body (text boxes in it too): the engine's to compute;
+        // in headers, footers and notes the host's.
+        let kinds: std::collections::HashMap<FieldId, FieldKind> = unlocked
+            .iter()
+            .filter(|(_, para)| {
+                self.index.para_slot(*para).is_some_and(|s| self.index.host(self.index.story(s.container)) == super::position::StoryId::Body)
+            })
+            .filter_map(|(f, para)| {
+                let p = self.index.para(&self.doc, *para)?;
+                p.inlines.iter().find_map(|i| match i {
+                    Inline::FieldBegin { id, kind: Some(k), .. } if id == f => Some((*f, k.clone())),
+                    _ => None,
+                })
+            })
+            .filter(|(_, k)| {
+                matches!(k, FieldKind::Ref(_) | FieldKind::PageRef(_) | FieldKind::NoteRef(..) | FieldKind::Seq(_) | FieldKind::StyleRef(_))
+            })
+            .collect();
+        if !kinds.is_empty() {
+            self.refresh_values(&|id, _| kinds.contains_key(&id), fonts);
+            let refs: std::collections::HashSet<FieldId> = kinds.iter().filter(|(_, k)| matches!(k, FieldKind::Ref(_))).map(|(f, _)| *f).collect();
+            self.refresh_note_copies(&refs, fonts);
+            let laid: std::collections::HashSet<FieldId> =
+                kinds.iter().filter(|(_, k)| matches!(k, FieldKind::PageRef(_) | FieldKind::NoteRef(..))).map(|(f, _)| *f).collect();
+            self.fill_layout_results(&laid, fonts);
+        }
         // Document properties and variables: the engine's to compute.
         let own: Vec<(FieldId, String)> = unlocked
             .iter()
@@ -1909,9 +1955,11 @@ impl Editor {
         };
         self.update_token += 1;
         let token = self.update_token;
+        let batch = self.end_batch(true, fonts);
+        let out = if matches!(batch, Outcome::Changed(_)) { batch } else { out };
         let fields: Vec<(ElementId, String)> = unlocked
             .iter()
-            .filter(|(f, _)| !own.iter().any(|(g, _)| g == f))
+            .filter(|(f, _)| !own.iter().any(|(g, _)| g == f) && !kinds.contains_key(f))
             .filter_map(|(f, para)| {
                 let p = self.index.para(&self.doc, *para)?;
                 let k = p.inlines.iter().position(|i| matches!(i, Inline::FieldBegin { id, .. } if id == f))?;
@@ -2070,7 +2118,13 @@ impl Editor {
         }
         let a = if ua2 == ua { a } else { Position::text(a.story, pa, ua2) };
         let b = if ub2 == ub { b } else { Position::text(b.story, pb, ub2) };
-        (a, b)
+        // A code a field across paragraphs shows: an end in it with the other outside takes the whole field.
+        let (ca, cb) = (super::span_codes::code_around(&self.doc, &self.index, a), super::span_codes::code_around(&self.doc, &self.index, b));
+        match (ca, cb) {
+            (Some(f), g) if g != Some(f) => (f.0, g.map_or(b, |g| g.1)),
+            (None, Some(g)) => (a, g.1),
+            _ => (a, b),
+        }
     }
 
     pub(super) fn set_field_labels(&mut self, l: FieldLabels) -> Outcome {
@@ -3216,7 +3270,7 @@ fn attr_value(tag: &str, local: &str) -> Option<std::ops::Range<usize>> {
 }
 
 /// A block's block controls, outermost first.
-fn block_controls(b: &Block) -> &Vec<ControlId> {
+pub(super) fn block_controls(b: &Block) -> &Vec<ControlId> {
     match b {
         Block::Para(p) => &p.controls,
         Block::Table(t) => &t.controls,

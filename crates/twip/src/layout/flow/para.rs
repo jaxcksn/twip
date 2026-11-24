@@ -386,11 +386,12 @@ impl<'d> PageFill<'d, '_> {
     }
 
     /// The space before of the paragraph whose mark the hidden marks ending at `end` join, when a table whose rows are
-    /// all hidden follows them (else 0).
+    /// all hidden, or one inside a fold, follows them (else 0).
     pub(super) fn hidden_table_before(&self, end: usize) -> f64 {
         let view = self.ctx.env.text.review.view;
         let blocks = &self.sec.blocks;
-        if !matches!(blocks.get(end + 1), Some(Block::Table(t)) if crate::layout::join::table_hidden(t, &self.ctx.env.text.review)) {
+        let fold = matches!(blocks.get(end), Some(Block::Para(p)) if crate::docx::fields::folded(p));
+        if !matches!(blocks.get(end + 1), Some(Block::Table(t)) if fold || crate::layout::join::table_hidden(t, &self.ctx.env.text.review)) {
             return 0.0;
         }
         blocks.next_shown_mark(end + 1, &self.ctx.env.text.review).map_or(0.0, |q| space_before(&self.ctx.env.text, q.para_style_in(view)))
