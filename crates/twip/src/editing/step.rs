@@ -132,6 +132,11 @@ pub enum Step {
         section: usize,
         back: Option<Box<SectionBack>>,
     },
+    /// Sections split off the front of section `section`, or the ones before it joined back into it.
+    Sections {
+        section: usize,
+        split: Box<Split>,
+    },
     /// The style new tables take.
     DefaultTableStyle(Option<String>),
     /// The document's protection.
@@ -215,6 +220,14 @@ pub struct SectionBack {
     pub edited: bool,
 }
 
+/// Sections split off the front of one, in order, with the header and footer stories only they refer to; or how many
+/// before one join back into it, and the stories they take out.
+#[derive(Clone, Debug)]
+pub enum Split {
+    Apart { backs: Vec<SectionBack>, stories: Vec<(String, Vec<Block>)> },
+    Joined { count: usize, stories: Vec<String> },
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct TableProps {
     pub style_id: Option<String>,
@@ -266,6 +279,7 @@ impl Step {
             Step::Blocks { with, .. } => blocks(with, images),
             Step::Rows { with, .. } => with.iter().flat_map(|r| r.cells.iter()).map(|c| blocks(&c.blocks, images)).sum(),
             Step::HeaderPart { blocks: Some(b), .. } | Step::Note { blocks: Some(b), .. } => blocks(b, images),
+            Step::Sections { split, .. } => split.stories().map(|b| blocks(b, images)).sum(),
             _ => 0,
         }
     }
@@ -319,6 +333,7 @@ impl Targets {
                 self.tables.insert(*table);
             }
             Step::HeaderPart { blocks: Some(b), .. } | Step::Note { blocks: Some(b), .. } => self.blocks(b),
+            Step::Sections { split, .. } => split.stories().for_each(|b| self.blocks(b)),
             Step::SectionPage { change: Some(c), .. } => {
                 self.revisions.insert(c.mark.id);
             }
@@ -1124,6 +1139,21 @@ impl Step {
                 idx.flow = flow;
                 Ok(Applied { inverse, map: Map::Same, hint: None })
             }
+            Step::Sections { section, split } => {
+                let n = doc.sections.len();
+                if doc.section_sources.len() != n {
+                    doc.section_sources = vec![1; n];
+                }
+                let inverse = match *split {
+                    Split::Apart { backs, stories } => split_sections(doc, section, backs, stories)?,
+                    Split::Joined { count, stories } => join_sections(doc, section, count, stories)?,
+                };
+                let parts = idx.parts().to_vec();
+                let flow = idx.flow;
+                *idx = DocIndex::build_with_parts(doc, &parts);
+                idx.flow = flow;
+                Ok(Applied { inverse: Step::Sections { section, split: Box::new(inverse) }, map: Map::Same, hint: None })
+            }
             Step::SectionPage { section, page, change } => {
                 let s = doc.sections.get_mut(section).ok_or(StepError::Missing)?;
                 let old = Box::new(s.page());
@@ -1259,4 +1289,70 @@ pub fn first_position(doc: &Document, idx: &DocIndex, container: Container, from
         Block::Para(p) => Some(Position::text(story, ParaId(p.id), para_len(p))),
         Block::Table(_) => first_in(b).map(|p| Position::text(story, p, Unit(0))),
     })
+}
+
+impl Split {
+    /// The blocks of the stories it puts in.
+    pub fn stories(&self) -> impl Iterator<Item = &[Block]> {
+        let v = match self {
+            Split::Apart { stories, .. } => &stories[..],
+            Split::Joined { .. } => &[],
+        };
+        v.iter().map(|(_, b)| &b[..])
+    }
+}
+
+// Section splits
+
+fn split_sections(doc: &mut Document, section: usize, backs: Vec<SectionBack>, stories: Vec<(String, Vec<Block>)>) -> Result<Split, StepError> {
+    let (blocks, sources) = backs.iter().fold((0, 0), |(b, s), x| (b + x.blocks, s + x.sources));
+    let next = doc.sections.get_mut(section).ok_or(StepError::Missing)?;
+    if backs.is_empty()
+        || blocks >= next.blocks.len()
+        || doc.section_sources[section] < sources
+        || stories.iter().any(|(k, _)| doc.stories.contains_key(k))
+    {
+        return Err(StepError::OutOfRange);
+    }
+    let count = backs.len();
+    let mut taken = next.blocks.drain(..blocks);
+    let mut made = Vec::with_capacity(count);
+    let mut made_sources = Vec::with_capacity(count);
+    let mut edited = Vec::new();
+    for (k, b) in backs.into_iter().enumerate() {
+        let mut s = b.section;
+        s.blocks = taken.by_ref().take(b.blocks).collect();
+        made.push(s);
+        made_sources.push(b.sources);
+        if b.edited {
+            edited.push(section + k);
+        }
+    }
+    drop(taken);
+    doc.section_sources[section] -= sources;
+    doc.section_sources.splice(section..section, made_sources);
+    doc.sections.splice(section..section, made);
+    doc.edited_sections = doc.edited_sections.iter().map(|&k| if k >= section { k + count } else { k }).chain(edited).collect();
+    let names = stories.iter().map(|(k, _)| k.clone()).collect();
+    doc.stories.extend(stories);
+    Ok(Split::Joined { count, stories: names })
+}
+
+fn join_sections(doc: &mut Document, section: usize, count: usize, names: Vec<String>) -> Result<Split, StepError> {
+    let end = section + count;
+    if count == 0 || end >= doc.sections.len() || names.iter().any(|k| !doc.stories.contains_key(k)) {
+        return Err(StepError::OutOfRange);
+    }
+    let mut blocks = Vec::new();
+    let mut backs = Vec::with_capacity(count);
+    for (k, (mut s, sources)) in doc.sections.drain(section..end).zip(doc.section_sources.drain(section..end)).enumerate() {
+        let b = std::mem::take(&mut s.blocks);
+        backs.push(SectionBack { blocks: b.len(), section: s, sources, edited: doc.edited_sections.contains(&(section + k)) });
+        blocks.extend(b);
+    }
+    doc.sections[section].blocks.splice(0..0, blocks);
+    doc.section_sources[section] += backs.iter().map(|b| b.sources).sum::<usize>();
+    doc.edited_sections = doc.edited_sections.iter().filter(|&&k| k < section || k >= end).map(|&k| if k >= end { k - count } else { k }).collect();
+    let stories = names.into_iter().filter_map(|k| doc.stories.remove(&k).map(|b| (k, b))).collect();
+    Ok(Split::Apart { backs, stories })
 }

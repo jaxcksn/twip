@@ -272,7 +272,7 @@ impl Editor {
             Command::Delete(d) => self.delete_by(d, fonts),
             // Clipboard and history
             Command::Cut => self.cut(fonts),
-            Command::Copy => self.copy_selection(),
+            Command::Copy => self.copy_selection(fonts),
             Command::Paste(p) => self.paste_held(p, fonts),
             Command::PasteText(t) => self.paste_text(&t, fonts),
             Command::Undo => self.undo(true, fonts),

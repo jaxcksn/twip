@@ -35,6 +35,7 @@ mod navigation;
 mod objects;
 mod outline;
 mod page_background;
+mod paste;
 mod perf;
 mod picture_controls;
 mod protection;

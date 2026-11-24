@@ -242,7 +242,8 @@ impl Marks {
                 | Step::Note { .. }
                 | Step::Separator { .. }
                 | Step::SectionPage { .. }
-                | Step::SectionBreak { .. } => return Err(Lost),
+                | Step::SectionBreak { .. }
+                | Step::Sections { .. } => return Err(Lost),
             }
         }
         for &p in paras {

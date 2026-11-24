@@ -503,9 +503,9 @@ impl Editor {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     /// A PNG of `w` × `h` RGBA pixels.
-    fn png(w: u32, h: u32, rgba: &[u8]) -> Vec<u8> {
+    pub(crate) fn png(w: u32, h: u32, rgba: &[u8]) -> Vec<u8> {
         use std::io::Write;
         let chunk = |out: &mut Vec<u8>, kind: &[u8; 4], data: &[u8]| {
             out.extend((data.len() as u32).to_be_bytes());

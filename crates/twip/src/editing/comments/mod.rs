@@ -756,6 +756,7 @@ impl Editor {
                 Step::Blocks { with, .. } => ids_in_blocks(with, &mut hit),
                 Step::Rows { with, .. } => with.iter().flat_map(|r| r.cells.iter()).for_each(|c| ids_in_blocks(&c.blocks, &mut hit)),
                 Step::Note { blocks: Some(b), .. } | Step::HeaderPart { blocks: Some(b), .. } => ids_in_blocks(b, &mut hit),
+                Step::Sections { split, .. } => split.stories().for_each(|b| ids_in_blocks(b, &mut hit)),
                 _ => {}
             }
         }

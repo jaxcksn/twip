@@ -45,7 +45,9 @@ pub(crate) fn convert(
         return Err(Error::new(ErrorCode::ExportFailed, "the font library has no font to draw text with"));
     }
     crate::api::session::documents::unsupported_package(docx)?;
-    let mut doc = crate::docx::read(docx).map_err(|e| Error::new(ErrorCode::ImportFailed, e))?;
+    let doc = crate::docx::read(docx).map_err(|e| Error::new(ErrorCode::ImportFailed, e))?;
+    // Its imported HTML drawn as a session draws it
+    let mut doc = crate::editing::opened(doc, fonts);
     doc.review.view = crate::docx::review::MarkupView::NoMarkup;
     let snapshot = crate::layout::layout_until(&doc, fonts, || cancel.is_some_and(|c| c.load(Ordering::Relaxed))).ok_or_else(aborted)?;
     let (bytes, written) = export_with(&doc, &snapshot, "", options, cancel, Some(fonts))?;

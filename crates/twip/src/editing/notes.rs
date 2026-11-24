@@ -605,6 +605,7 @@ impl Editor {
                     }
                 }
                 Step::Note { blocks: Some(b), .. } | Step::HeaderPart { blocks: Some(b), .. } => blocks(b, &mut gone),
+                Step::Sections { split, .. } => split.stories().for_each(|b| blocks(b, &mut gone)),
                 Step::Control { id, control: None } => gone.push(*id),
                 _ => {}
             }

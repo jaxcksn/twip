@@ -197,7 +197,8 @@ impl Editor {
             | Step::BuildingBlock { .. }
             | Step::Note { .. }
             | Step::Comment { .. }
-            | Step::SectionBreak { .. } => true,
+            | Step::SectionBreak { .. }
+            | Step::Sections { .. } => true,
             _ => false,
         }
     }

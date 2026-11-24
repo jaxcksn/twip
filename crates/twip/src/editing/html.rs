@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use crate::docx::write::props::{Cx, Props};
-use crate::docx::{Block, Inline, Paragraph, VMerge};
+use crate::docx::{AltContent, Block, Inline, Paragraph, VMerge};
 use crate::font::Fonts;
 
 use super::Editor;
@@ -16,6 +16,8 @@ pub(super) const MAX_HTML: usize = 8 << 20;
 const MAX_OPEN: usize = 256;
 /// The deepest table nesting kept; deeper tables read as their cells' paragraphs.
 const MAX_TABLES: usize = 8;
+/// The largest side of a pasted picture, points: Word's, 22 inches.
+const MAX_PICTURE_SIDE: f64 = 1584.0;
 /// The most table cells a paste makes, nested tables' included; more pastes as text.
 const MAX_CELLS: usize = 1 << 17;
 
@@ -34,6 +36,18 @@ struct Run {
     text: String,
     fmt: Fmt,
     link: Option<String>,
+    /// A picture in place of text.
+    image: Option<Image>,
+}
+
+/// An `<img>` whose source is the picture itself (a `data:` URL): its bytes, and the width and height it is given,
+/// CSS px.
+#[derive(Clone, Debug, PartialEq)]
+struct Image {
+    data: Vec<u8>,
+    w: Option<f64>,
+    h: Option<f64>,
+    alt: String,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -107,6 +121,17 @@ struct Reader {
     space: bool,
     pre: usize,
     skip: usize,
+    /// What was read besides structure: text (a picture's alternative text not counted), pictures drawn, and
+    /// pictures that aren't (remote ones).
+    seen: Seen,
+}
+
+/// What a read of HTML met.
+#[derive(Clone, Copy, Debug, Default)]
+struct Seen {
+    text: bool,
+    drawn: bool,
+    remote: bool,
 }
 
 fn entity(name: &str) -> Option<char> {
@@ -353,7 +378,7 @@ impl Reader {
                 let trimmed = last.text.trim_end_matches(' ').len();
                 last.text.truncate(trimmed);
             }
-            p.runs.retain(|r| !r.text.is_empty());
+            p.runs.retain(|r| !r.text.is_empty() || r.image.is_some());
             if !p.runs.is_empty() || p.kind != Kind::Body {
                 self.target().push(HBlock::Para(p));
             }
@@ -389,6 +414,7 @@ impl Reader {
         if t.is_empty() || t == " " && self.para.is_none() {
             return;
         }
+        self.seen.text |= !t.trim().is_empty();
         self.append(&t);
     }
 
@@ -400,9 +426,39 @@ impl Reader {
         let (fmt, link, _) = self.fmt();
         let Some(p) = self.para.as_mut() else { return };
         match p.runs.last_mut() {
-            Some(r) if r.fmt == fmt && r.link == link => r.text.push_str(t),
-            _ => p.runs.push(Run { text: t.to_string(), fmt, link }),
+            Some(r) if r.fmt == fmt && r.link == link && r.image.is_none() => r.text.push_str(t),
+            _ => p.runs.push(Run { text: t.to_string(), fmt, link, image: None }),
         }
+    }
+
+    /// An `<img>`: the picture when its source is one (a `data:` URL), else its alternative text; nothing is fetched.
+    fn image(&mut self, tag: &str) {
+        let alt = attr(tag, "alt").unwrap_or_default();
+        let Some(data) = attr(tag, "src").as_deref().and_then(data_image) else {
+            self.seen.remote = true;
+            let alt = alt.trim();
+            if !alt.is_empty() {
+                self.append(alt);
+                self.space = false;
+            }
+            return;
+        };
+        let style = attr(tag, "style").unwrap_or_default();
+        let px = |name: &str| {
+            let v = css(&style, name).or_else(|| attr(tag, name))?;
+            let v = v.trim().trim_end_matches("px").trim().parse::<f64>().ok()?;
+            (v.is_finite() && v > 0.0).then_some(v)
+        };
+        let (w, h) = (px("width"), px("height"));
+        self.seen.drawn = true;
+        if self.para.is_none() {
+            self.para = Some(Para { kind: Kind::Body, align: self.fmt().2, runs: Vec::new() });
+        }
+        let (fmt, link, _) = self.fmt();
+        if let Some(p) = self.para.as_mut() {
+            p.runs.push(Run { text: String::new(), fmt, link, image: Some(Image { data, w, h, alt }) });
+        }
+        self.space = false;
     }
 
     fn start(&mut self, name: &str, tag: &str) {
@@ -516,7 +572,13 @@ impl Reader {
                     *open = true;
                 }
             }
-            "img" | "input" | "meta" | "link" | "area" | "base" | "col" | "embed" | "param" | "source" | "track" | "wbr" => return,
+            "img" => {
+                if self.skip == 0 {
+                    self.image(tag);
+                }
+                return;
+            }
+            "input" | "meta" | "link" | "area" | "base" | "col" | "embed" | "param" | "source" | "track" | "wbr" => return,
             _ => {}
         }
         if name == "pre" {
@@ -579,9 +641,91 @@ impl Reader {
     }
 }
 
+/// The picture a `data:` URL holds, when it is one Twip draws (`image/...;base64`).
+fn data_image(src: &str) -> Option<Vec<u8>> {
+    let src = src.trim();
+    let (meta, payload) = src.get(..5).filter(|s| s.eq_ignore_ascii_case("data:")).and_then(|_| src[5..].split_once(','))?;
+    let mut parts = meta.split(';');
+    let mime = parts.next()?.trim();
+    if !mime.get(..6).is_some_and(|m| m.eq_ignore_ascii_case("image/")) || !parts.any(|p| p.trim().eq_ignore_ascii_case("base64")) {
+        return None;
+    }
+    let clean: String = payload.chars().filter(|c| !c.is_ascii_whitespace()).collect();
+    let data = crate::api::value::from_base64(&clean)?;
+    (crate::docx::image::image_type(&data).is_some() && crate::docx::image::image_info(&data).is_some()).then_some(data)
+}
+
+/// Keep Text Only's text of HTML: each paragraph's text (a picture's left out), a list item's number or bullet before
+/// it when `bullets`, a table's rows as lines of cells between tabs.
+pub(super) fn text_only(html: &str, bullets: bool) -> Option<String> {
+    if html.len() > MAX_HTML {
+        return None;
+    }
+    fn walk(blocks: &[HBlock], bullets: bool, counts: &mut HashMap<usize, [u32; 9]>, out: &mut String) {
+        for b in blocks {
+            match b {
+                HBlock::Para(p) => {
+                    if let Kind::Item { list, numbered, level } = p.kind {
+                        let c = counts.entry(list).or_insert([0; 9]);
+                        let l = usize::from(level.min(8));
+                        c[l] += 1;
+                        c[l + 1..].fill(0);
+                        if bullets {
+                            if numbered {
+                                out.push_str(&format!("{}.\t", c[l]));
+                            } else {
+                                out.push_str("\u{2022}\t");
+                            }
+                        }
+                    }
+                    for r in p.runs.iter().filter(|r| r.image.is_none()) {
+                        out.extend(r.text.chars().map(|c| if c == '\u{2028}' { '\n' } else { c }));
+                    }
+                    out.push('\n');
+                }
+                HBlock::Table { rows, .. } => {
+                    for row in rows {
+                        for (k, slot) in row.iter().enumerate() {
+                            if k > 0 {
+                                out.push('\t');
+                            }
+                            let mut s = String::new();
+                            walk(&slot.blocks, bullets, counts, &mut s);
+                            out.push_str(s.trim_end_matches('\n').replace('\n', " ").as_str());
+                        }
+                        out.push('\n');
+                    }
+                }
+            }
+        }
+    }
+    let read = read(html);
+    let mut out = String::new();
+    walk(&read, bullets, &mut HashMap::new(), &mut out);
+    if matches!(read.last(), Some(HBlock::Para(p)) if p.kind == Kind::Body) && out.ends_with('\n') {
+        out.pop();
+    }
+    Some(out)
+}
+
 /// The blocks of an HTML clipboard fragment (only what its `StartFragment` and `EndFragment` comments mark, when it
 /// has them).
 fn read(html: &str) -> Vec<HBlock> {
+    scan(html).out
+}
+
+/// Whether HTML holds nothing but pictures the engine doesn't draw (remote ones, never fetched): a browser's Copy
+/// Image, whose picture the clipboard also holds.
+pub(super) fn only_remote_pictures(html: &str) -> bool {
+    if html.len() > MAX_HTML {
+        return false;
+    }
+    let s = scan(html).seen;
+    s.remote && !s.drawn && !s.text
+}
+
+/// HTML read: its blocks, and what it met.
+fn scan(html: &str) -> Reader {
     let html = match (html.find("<!--StartFragment-->"), html.find("<!--EndFragment-->")) {
         (Some(a), Some(b)) if a < b => &html[a + "<!--StartFragment-->".len()..b],
         _ => html,
@@ -598,6 +742,7 @@ fn read(html: &str) -> Vec<HBlock> {
         space: true,
         pre: 0,
         skip: 0,
+        seen: Seen::default(),
     };
     let mut rest = html;
     while !rest.is_empty() {
@@ -637,7 +782,7 @@ fn read(html: &str) -> Vec<HBlock> {
         let blocks = placed(rows);
         r.target().extend(blocks);
     }
-    r.out
+    r
 }
 
 /// The lists `blocks` use, each with whether it is numbered.
@@ -656,6 +801,12 @@ impl Editor {
     /// document has), lists (as new lists), tables, links and bold, italic, underline, strikethrough, superscript and
     /// subscript. `Unchanged` when it holds no text, for a paste of the plain text instead.
     pub fn paste_html(&mut self, html: &str, fonts: &Fonts) -> Outcome {
+        self.paste_html_as(html, super::paste::PasteChoice::KeepSource, fonts)
+    }
+
+    /// [`Editor::paste_html`] as `choice` takes it: keep source (and destination styles, the same for HTML) or merge
+    /// formatting. Its `data:` pictures come in line.
+    pub(super) fn paste_html_as(&mut self, html: &str, choice: super::paste::PasteChoice, fonts: &Fonts) -> Outcome {
         if html.len() > MAX_HTML {
             return Outcome::Unchanged("too much HTML");
         }
@@ -683,10 +834,23 @@ impl Editor {
             }
             let Some(res) = self.doc.resolver.clone() else { break 'paste Outcome::Unchanged("no styles") };
             let cx = self.cx();
-            let blocks = self.html_blocks(&read, &res, &cx, &nums, &template, width);
+            let mut images = Vec::new();
+            let blocks = self.html_blocks(&read, &res, &cx, &nums, &template, width, &mut images);
             // A last paragraph of a kind or alignment of its own is pasted with its mark; plain text joins the caret's.
             let open_end = matches!(read.last(), Some(HBlock::Para(p)) if p.kind == Kind::Body && p.align.is_none());
-            let f = Fragment { id: 0, blocks, open_end, ..Default::default() };
+            let mut f = Fragment { id: 0, blocks, open_end, ..Default::default() };
+            if !images.is_empty() {
+                // Its pictures, by their index in `images`, become this document's as another document's do.
+                let o =
+                    super::import::Origin { key: super::import::next_key(), images, resolver: None, people: Default::default(), main: String::new() };
+                f.origin = Some(std::rc::Rc::new(o));
+            }
+            if choice == super::paste::PasteChoice::Merge {
+                match self.merged(&f) {
+                    Some(m) => f = m,
+                    None => break 'paste Outcome::Unchanged("no caret"),
+                }
+            }
             self.paste_fragment(&f, fonts)
         };
         // The new lists go with a paste that pasted nothing.
@@ -694,14 +858,16 @@ impl Editor {
         if matches!(end, Outcome::Changed(_)) { end } else { out }
     }
 
+    #[allow(clippy::too_many_arguments, reason = "the blocks, how they resolve, their lists, template and width, and their pictures")]
     fn html_blocks(
-        &self,
+        &mut self,
         blocks: &[HBlock],
         res: &crate::docx::resolve::Resolver,
         cx: &Cx,
         nums: &[(usize, i64)],
         template: &Paragraph,
         width: f64,
+        images: &mut Vec<(usize, Vec<u8>)>,
     ) -> Vec<Block> {
         let w = &cx.w;
         let mut out = Vec::new();
@@ -746,6 +912,21 @@ impl Editor {
                             rp.set("rStyle", format!("<{w}rStyle {w}val=\"Hyperlink\"/>"));
                         }
                         let run = res.run_from_xml(&para.base, rp.xml().as_deref(), cx);
+                        if let Some(img) = &r.image {
+                            let pic = self.html_picture(img, width, images, &run);
+                            match &r.link {
+                                Some(address) => {
+                                    let code = crate::docx::fields::link_code(address);
+                                    let mut field = crate::docx::fields::field_inlines(&code, "\u{fffc}", &run);
+                                    if let Some(k) = field.iter().position(|i| matches!(i, Inline::Text(t, _) if t == "\u{fffc}")) {
+                                        field[k] = pic;
+                                    }
+                                    inlines.extend(field);
+                                }
+                                None => inlines.push(pic),
+                            }
+                            continue;
+                        }
                         match &r.link {
                             Some(address) => {
                                 let code = crate::docx::fields::link_code(address);
@@ -794,7 +975,7 @@ impl Editor {
                             cell.span = s.span;
                             cell.v_merge = s.merge;
                             cell.width = Some(crate::docx::props::Width::Dxa(col * s.span as f64));
-                            let blocks = self.html_blocks(&s.blocks, res, cx, nums, template, col * s.span as f64);
+                            let blocks = self.html_blocks(&s.blocks, res, cx, nums, template, col * s.span as f64, images);
                             if !blocks.is_empty() {
                                 let end = std::mem::replace(&mut cell.blocks, blocks);
                                 // A cell ends in a paragraph
@@ -814,6 +995,215 @@ impl Editor {
         }
         out
     }
+}
+
+impl Editor {
+    /// The document's imported HTML (`w:altChunk`) brought in as content in place of the paragraphs standing for it,
+    /// as Word does when it opens the document: not an edit (no undo step, not tracked, the document unchanged as far
+    /// as saving goes until then), and saved as the content it became. HTML the importer finds nothing in leaves
+    /// nothing; one in a story the editor doesn't hold is left as read.
+    pub(super) fn import_alt_chunks(&mut self, fonts: &Fonts) {
+        use super::index::Container;
+        if self.doc.alt_chunks.is_empty() {
+            return;
+        }
+        if self.doc.resolver.is_none() {
+            return;
+        }
+        let chunks = std::mem::take(&mut self.doc.alt_chunks);
+        let tracking = std::mem::replace(&mut self.doc.settings.track_revisions, false);
+        // Each placeholder's HTML, read, by container in block order
+        let mut read_in: Vec<(Container, usize, Paragraph, Chunk)> = chunks
+            .iter()
+            .filter_map(|c| {
+                let para = crate::layout::ParaId(c.para);
+                let (slot, template) = (self.index.para_slot(para)?, self.index.para(&self.doc, para)?.clone());
+                let read = match &c.content {
+                    AltContent::Html(html) => {
+                        let read = if html.len() > MAX_HTML { Vec::new() } else { read(html) };
+                        Chunk::Html(if cells(&read) > MAX_CELLS { Vec::new() } else { read })
+                    }
+                    AltContent::Text(t) => Chunk::Text(t.clone()),
+                    AltContent::Document { doc, match_src } => Chunk::Document(doc.clone(), *match_src),
+                };
+                Some((slot.container, slot.block, template, read))
+            })
+            .collect();
+        let mut first: HashMap<Container, usize> = HashMap::new();
+        for r in &read_in {
+            let n = first.len();
+            first.entry(r.0).or_insert(n);
+        }
+        read_in.sort_by_key(|r| (first[&r.0], r.1));
+        // Their lists first, in one step: the paragraphs resolve with them.
+        let mut nums: Vec<Vec<(usize, i64)>> = vec![Vec::new(); read_in.len()];
+        let mut tx = self.begin("Open");
+        let mut any = false;
+        for (k, (.., read)) in read_in.iter().enumerate() {
+            let Chunk::Html(read) = read else { continue };
+            let mut used = Vec::new();
+            lists(read, &mut used);
+            any |= !used.is_empty();
+            nums[k] = used.iter().map(|&(list, numbered)| (list, self.new_list(&mut tx, !numbered))).collect();
+        }
+        if any {
+            self.commit(tx, None, fonts);
+        } else {
+            self.abort(tx);
+        }
+        // Read after the lists step: it holds their numbering.
+        let Some(res) = self.doc.resolver.clone() else {
+            (self.doc.alt_chunks, self.doc.settings.track_revisions) = (chunks, tracking);
+            return;
+        };
+        let cx = self.cx();
+        let mut tx = self.begin("Open");
+        let mut taken = super::clipboard::Taken::default();
+        // One step a container: its blocks from its first placeholder to its last, each placeholder its HTML's.
+        let mut k = 0;
+        while k < read_in.len() {
+            let container = read_in[k].0;
+            let end = k + read_in[k..].iter().take_while(|r| r.0 == container).count();
+            let Some(len) = self.index.blocks(&self.doc, container).map(Vec::len) else {
+                k = end;
+                continue;
+            };
+            let width = self.text_width(container);
+            let (lo, hi) = (read_in[k].1, read_in[end - 1].1 + 1);
+            let mut with = Vec::new();
+            let mut at = lo;
+            for j in k..end {
+                let (_, block, template, read) = &read_in[j];
+                if let Some(between) = self.index.blocks(&self.doc, container).and_then(|b| b.get(at..*block)) {
+                    with.extend_from_slice(between);
+                }
+                let mut f = Fragment { id: 0, open_end: false, ..Default::default() };
+                let mut blocks: Vec<Block> = match read {
+                    Chunk::Html(read) => {
+                        let mut images = Vec::new();
+                        let blocks =
+                            self.html_blocks(read, &res, &cx, &nums[j], template, width, &mut images).iter().map(super::clipboard::fresh).collect();
+                        if !images.is_empty() {
+                            let o = super::import::Origin {
+                                key: super::import::next_key(),
+                                images,
+                                resolver: None,
+                                people: Default::default(),
+                                main: String::new(),
+                            };
+                            f.origin = Some(std::rc::Rc::new(o));
+                        }
+                        blocks
+                    }
+                    Chunk::Text(t) => text_blocks(t, template),
+                    Chunk::Document(doc, match_src) => match self.document_body((**doc).clone(), fonts) {
+                        Ok(d) => {
+                            f = d;
+                            f.look = if *match_src { super::clipboard::Look::Source } else { super::clipboard::Look::Destination };
+                            f.blocks.iter().map(super::clipboard::fresh).collect()
+                        }
+                        Err(_) => Vec::new(),
+                    },
+                };
+                taken.next_fragment();
+                self.take_in(&mut tx, &mut blocks, &f, &mut taken);
+                with.append(&mut blocks);
+                at = block + 1;
+            }
+            // A story (a cell) ends in a paragraph.
+            if hi == len {
+                let before = lo.checked_sub(1).and_then(|i| self.index.blocks(&self.doc, container)?.get(i));
+                if !matches!(with.last().or(before), Some(Block::Para(_))) {
+                    with.push(Block::Para(super::tables::blank_para(&read_in[end - 1].2)));
+                }
+            }
+            // A container that can't take its HTML keeps its placeholders; the others still come in. Pictures taken
+            // for it stay unreferenced: saving writes only the media a part names.
+            let _ = self.step(&mut tx, super::step::Step::Blocks { container, range: lo..hi, with });
+            k = end;
+        }
+        self.commit(tx, None, fonts);
+        self.doc.settings.track_revisions = tracking;
+        self.history = super::history::History::default();
+        self.saved.0 = self.history.position();
+    }
+
+    /// An HTML picture in line: its own size, or the width and height it is given (one of them keeping its shape),
+    /// no wider than `width`; its bytes go in `images` under the index it shows.
+    fn html_picture(&mut self, img: &Image, width: f64, images: &mut Vec<(usize, Vec<u8>)>, run: &crate::docx::Run) -> Inline {
+        let (pw, ph, dx, dy) = crate::docx::image::image_info(&img.data).unwrap_or((96.0, 96.0, 96.0, 96.0));
+        let natural = (pw * 72.0 / if dx > 1.0 { dx } else { 96.0 }, ph * 72.0 / if dy > 1.0 { dy } else { 96.0 });
+        let pt = 72.0 / 96.0;
+        let (mut w, mut h) = match (img.w, img.h) {
+            (Some(w), Some(h)) => (w * pt, h * pt),
+            (Some(w), None) if natural.0 > 0.0 => (w * pt, natural.1 * w * pt / natural.0),
+            (None, Some(h)) if natural.1 > 0.0 => (natural.0 * h * pt / natural.1, h * pt),
+            _ => natural,
+        };
+        if w > width && w > 0.0 {
+            (w, h) = (width, h * width / w);
+        }
+        // Both sides by one factor, the larger within the largest side
+        let (w, h) = if w.is_finite() && h.is_finite() { (w.max(0.0), h.max(0.0)) } else { natural };
+        let k = (MAX_PICTURE_SIDE / w.max(h)).min(1.0);
+        let side = |v: f64| ((v * k * 20.0).round() / 20.0).clamp(1.0, MAX_PICTURE_SIDE);
+        let (w, h) = (side(w), side(h));
+        let k = images.len();
+        images.push((k, img.data.clone()));
+        let emu = crate::drawing::units::Emu::from_pt;
+        let mut shape = crate::drawing::Shape::picture(k, emu(w), emu(h));
+        shape.nv.name = self.new_object_name("Picture");
+        Inline::Picture(
+            crate::docx::Picture {
+                w,
+                h,
+                image: Some(k),
+                alt: img.alt.trim().into(),
+                lock_aspect: true,
+                effect: [0.0; 4],
+                shape: Some(Box::new(shape)),
+                text: None,
+                src: Default::default(),
+            },
+            run.clone(),
+        )
+    }
+}
+
+/// A `w:altChunk`'s content, read.
+enum Chunk {
+    Html(Vec<HBlock>),
+    Text(std::rc::Rc<str>),
+    Document(std::rc::Rc<crate::docx::Document>, bool),
+}
+
+/// Plain text as paragraphs like `template`: a line each (ended by CR LF, CR or LF; a last line ending ends the last
+/// paragraph), tabs as tabs, other control characters left out.
+fn text_blocks(t: &str, template: &Paragraph) -> Vec<Block> {
+    let t = t.strip_suffix("\r\n").or_else(|| t.strip_suffix(['\r', '\n'])).unwrap_or(t);
+    if t.is_empty() {
+        return Vec::new();
+    }
+    let base = super::tables::blank_para(template);
+    t.split("\r\n")
+        .flat_map(|l| l.split(['\r', '\n']))
+        .map(|line| {
+            let mut inlines = Vec::new();
+            for (k, piece) in line.split('\t').enumerate() {
+                if k > 0 {
+                    inlines.push(Inline::Tab(base.mark.clone()));
+                }
+                let text: String = piece.chars().filter(|c| !c.is_control()).collect();
+                if !text.is_empty() {
+                    inlines.push(Inline::Text(text, base.mark.clone()));
+                }
+            }
+            if inlines.is_empty() {
+                inlines.push(Inline::Text(String::new(), base.mark.clone()));
+            }
+            Block::Para(Paragraph { inlines, id: crate::docx::next_para_id(), ..base.clone() })
+        })
+        .collect()
 }
 
 #[cfg(test)]

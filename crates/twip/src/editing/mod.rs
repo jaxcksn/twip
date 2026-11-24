@@ -54,6 +54,7 @@ pub mod navigate;
 mod notes;
 pub mod object_props;
 pub mod objects;
+pub mod paste;
 pub mod picture_controls;
 mod pictures;
 pub mod pointer;
@@ -214,6 +215,10 @@ pub struct Editor {
     ungrouped: Option<Vec<crate::layout::FloatId>>,
     /// The wrap a picture is inserted with (Word's "Insert/paste pictures as").
     default_picture_wrap: crate::api::value::ObjectWrap,
+    /// The cut, copy and paste options.
+    paste_defaults: paste::PasteDefaults,
+    /// The paste just made, for its Paste Options.
+    last_paste: Option<paste::LastPaste>,
     snaps: snap::SnapLines,
     shape_insert: Option<shapes::ShapeInsert>,
     toggled_checkbox: Option<objects::ToggledCheckbox>,
@@ -476,6 +481,8 @@ impl Editor {
             anchor_drag: None,
             ungrouped: None,
             default_picture_wrap: crate::api::value::ObjectWrap::Inline,
+            paste_defaults: paste::PasteDefaults::default(),
+            last_paste: None,
             snaps: snap::SnapLines::default(),
             shape_insert: None,
             toggled_checkbox: None,
@@ -591,12 +598,24 @@ impl Editor {
         let start = e.nav().story_edge(StoryId::Body, false).unwrap_or(Position::text(StoryId::Body, ParaId(0), Unit(0)));
         e.selection = Selection::Caret(start);
         e.layout.edit(Revision(e.generation), None);
+        if !e.doc.alt_chunks.is_empty() {
+            e.import_alt_chunks(fonts);
+            e.elems = elements::by_id(&e.doc, &e.index);
+            let start = e.nav().story_edge(StoryId::Body, false).unwrap_or(Position::text(StoryId::Body, ParaId(0), Unit(0)));
+            e.selection = Selection::Caret(start);
+        }
+        let start = e.selection.focus().unwrap_or(start);
         e.ensure(&start, fonts);
         e
     }
 
     pub fn document(&self) -> &Document {
         &self.doc
+    }
+
+    /// The document, as the editor holds it (its imported HTML brought in).
+    pub fn into_document(self) -> Document {
+        self.doc
     }
 
     pub fn index(&self) -> &DocIndex {
@@ -1532,7 +1551,7 @@ impl Editor {
         // Table, row and cell marks, and a section's or sub-template's, aren't in the targets.
         if !tx.targets.revisions.is_empty()
             || !tx.targets.tables.is_empty()
-            || tx.undo.iter().any(|s| matches!(s, Step::SectionBreak { .. } | Step::BuildingBlock { .. }))
+            || tx.undo.iter().any(|s| matches!(s, Step::SectionBreak { .. } | Step::Sections { .. } | Step::BuildingBlock { .. }))
         {
             self.revision_marks.0 += 1;
         }
@@ -1582,6 +1601,10 @@ impl Editor {
         }
         if enforces {
             self.history.fence();
+        }
+        // A paste's options go with the next change, and its clipboard with them
+        if self.last_paste.as_ref().is_some_and(|l| l.position() != self.history.position()) {
+            self.last_paste = None;
         }
         self.commits.push(Committed { revision: self.revision, origin: tx.origin, label, targets: tx.targets });
         self.after_edit(before, fonts);
@@ -4089,11 +4112,16 @@ impl Editor {
 
     pub fn copy(&mut self) -> Option<clipboard::Fragment> {
         let f = self.clip()?;
+        Some(self.copied_to_clipboard(f))
+    }
+
+    /// `f`, just copied, the clipboard: the host is asked to put its text and HTML on the system clipboard.
+    pub(super) fn copied_to_clipboard(&mut self, f: clipboard::Fragment) -> clipboard::Fragment {
         // The clipboard changes: Ctrl+Shift+V pastes it, not the painter's formatting.
         self.painter_claim = None;
         self.requests.push(Request::Clipboard { text: f.text(), html: Some(f.html()) });
         self.clipboard = Some(f.clone());
-        Some(f)
+        f
     }
 
     pub fn selected_text(&mut self) -> String {
@@ -4176,6 +4204,15 @@ impl Editor {
         }
         (out, self.index.cmp(&p, &b) != std::cmp::Ordering::Less)
     }
+}
+
+/// A read document as an editor holds it once opened: its imported HTML (`w:altChunk`) brought in as content, as
+/// Word does on open. The document as it is when it has none.
+pub fn opened(doc: Document, fonts: &Fonts) -> Document {
+    if doc.alt_chunks.is_empty() {
+        return doc;
+    }
+    Editor::with_document(doc, fonts).into_document()
 }
 
 /// A character of text as plain text: breaks as line ends, objects as spaces.

@@ -30,6 +30,32 @@ pub struct Fragment {
     pub moved: bool,
     /// Its plain text keeps hidden text, which showed where it was copied.
     pub hidden_text: bool,
+    /// Whose look a paste of it takes where a style of the same name differs.
+    pub look: Look,
+    /// Its objects as drawn, in the order its HTML meets them (`None`: not drawn); empty when not drawn.
+    pub drawn: Rc<[Option<super::paste::Drawing>]>,
+    /// The selected object (or objects) as drawn: what the picture a copy of an object puts on the clipboard shows.
+    pub image: Option<super::paste::Drawing>,
+}
+
+/// A copied object's picture, for its HTML: PNG, and the size it draws at, points.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ClipPicture {
+    /// The picture, PNG.
+    pub png: Vec<u8>,
+    /// The size it draws at, points: width, height.
+    pub size: [f64; 2],
+}
+
+/// Whose look pasted content takes: its own (its formatting, and a differing style's made direct formatting), or this
+/// document's styles.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Look {
+    /// Its own.
+    #[default]
+    Source,
+    /// This document's styles.
+    Destination,
 }
 
 /// The notes and comments a fragment refers to, as they were when it was copied: pasting brings them back (a cut's
@@ -51,6 +77,14 @@ pub(super) struct Taken {
     lists: super::import::Lists,
     replaced: HashSet<ParaId>,
     refs: Option<RefIndex>,
+}
+
+impl Taken {
+    /// Ready for a piece of another fragment: the notes, comments and lists it refers to are that fragment's.
+    pub(super) fn next_fragment(&mut self) {
+        self.refs = None;
+        self.lists = Default::default();
+    }
 }
 
 impl Taken {
@@ -170,6 +204,26 @@ pub(super) fn refs_of(doc: &crate::docx::Document, blocks: &[Block]) -> Refs {
     Refs { notes, comments }
 }
 
+/// The paragraphs and tables of `blocks`, at every depth, to resolve again when `tx` commits.
+fn stale_of(blocks: &[Block], tx: &mut super::Tx) {
+    for b in blocks {
+        match b {
+            Block::Para(p) => {
+                tx.stale_paras.push(ParaId(p.id));
+                for i in &p.inlines {
+                    if let Some((_, tb)) = i.story() {
+                        stale_of(&tb.blocks, tx);
+                    }
+                }
+            }
+            Block::Table(t) => {
+                tx.stale_tables.push(crate::layout::TableId(t.id));
+                t.rows.iter().flat_map(|r| r.cells.iter()).for_each(|c| stale_of(&c.blocks, tx));
+            }
+        }
+    }
+}
+
 /// Every paragraph's inlines in `blocks`, table cells and text boxes included.
 fn each_inlines(blocks: &mut [Block], f: &mut dyn FnMut(&mut Vec<Inline>)) {
     for b in blocks {
@@ -265,7 +319,7 @@ pub(super) fn severed_markers(p: &Paragraph, a: Unit, b: Unit) -> Vec<u32> {
         .collect()
 }
 
-fn slice(p: &Paragraph, a: Unit, b: Unit) -> Vec<Inline> {
+pub(super) fn slice(p: &Paragraph, a: Unit, b: Unit) -> Vec<Inline> {
     let mut out = Vec::new();
     let mut at = 0u32;
     let bound = bound_markers(p, a, b, true);
@@ -395,7 +449,7 @@ fn css_run(r: &RunStyle) -> String {
     s
 }
 
-fn html(blocks: &[Block], out: &mut String) {
+fn html(blocks: &[Block], out: &mut String, drawn: &mut std::slice::Iter<'_, Option<ClipPicture>>) {
     for b in blocks {
         match b {
             Block::Para(p) => {
@@ -410,6 +464,8 @@ fn html(blocks: &[Block], out: &mut String) {
                     out.push_str(&format!("<span style=\"{}\">{}&#9;</span>", css_run(&l.run), esc(&l.text)));
                 }
                 for (i, shown) in p.inlines.iter().zip(crate::docx::fields::shown(&p.inlines)) {
+                    // Every object takes its drawing, shown or not, as `Editor::draw_objects` draws them.
+                    let pic = if matches!(i, Inline::Picture(..) | Inline::Float(..)) { drawn.next() } else { None };
                     let text = match (shown, i) {
                         (crate::docx::fields::Shown::Value(v), _) => esc(&v),
                         (crate::docx::fields::Shown::Not, _) => continue,
@@ -417,6 +473,8 @@ fn html(blocks: &[Block], out: &mut String) {
                         (_, Inline::Tab(_) | Inline::PTab(..)) => "&#9;".into(),
                         (_, Inline::Break(..)) => "<br>".into(),
                         (_, Inline::Sym { ch, .. }) => esc(&ch.to_string()),
+                        (_, Inline::Picture(p, _)) => img(pic, &p.alt),
+                        (_, Inline::Float(f, _)) => img(pic, &f.alt),
                         _ => continue,
                     };
                     match i.run() {
@@ -448,7 +506,7 @@ fn html(blocks: &[Block], out: &mut String) {
                             "<td style=\"border:1px solid #000;vertical-align:top\" colspan=\"{}\" rowspan=\"{rows}\">",
                             c.span.max(1)
                         ));
-                        html(&c.blocks, out);
+                        html(&c.blocks, out, drawn);
                         out.push_str("</td>");
                     }
                     out.push_str("</tr>");
@@ -456,6 +514,22 @@ fn html(blocks: &[Block], out: &mut String) {
                 out.push_str("</table>");
             }
         }
+    }
+}
+
+/// An object in HTML: its drawing as a PNG `data:` URL at the size it draws on the page (CSS px), else its
+/// alternative text.
+fn img(drawn: Option<&Option<ClipPicture>>, alt: &str) -> String {
+    let px = |pt: f64| (pt * 96.0 / 72.0).round().max(1.0);
+    match drawn.and_then(Option::as_ref) {
+        Some(d) => format!(
+            "<img src=\"data:image/png;base64,{}\" width=\"{}\" height=\"{}\" alt=\"{}\">",
+            crate::api::value::base64(&d.png),
+            px(d.size[0]),
+            px(d.size[1]),
+            esc(alt)
+        ),
+        None => esc(alt),
     }
 }
 
@@ -558,9 +632,26 @@ impl Fragment {
         s
     }
 
+    /// The images its objects draw, by their index where it was copied (an index none of them draws holds none).
+    pub fn images(&self) -> Vec<Vec<u8>> {
+        let Some(o) = &self.origin else { return Vec::new() };
+        let mut v = vec![Vec::new(); o.images.iter().map(|(k, _)| k + 1).max().unwrap_or(0)];
+        for (k, data) in &o.images {
+            v[*k].clone_from(data);
+        }
+        v
+    }
+
+    /// Its HTML, its objects as their alternative text.
     pub fn html(&self) -> String {
+        self.html_with(&[])
+    }
+
+    /// Its HTML, its objects as `pictures` (in the order of [`Fragment::drawn`]) where they have one, else as their
+    /// alternative text.
+    pub fn html_with(&self, pictures: &[Option<ClipPicture>]) -> String {
         let mut s = String::from("<meta charset=\"utf-8\">");
-        html(&self.blocks, &mut s);
+        html(&self.blocks, &mut s, &mut pictures.iter());
         s
     }
 }
@@ -642,6 +733,15 @@ impl Editor {
     pub(super) fn take_in(&mut self, tx: &mut super::Tx, blocks: &mut [Block], f: &Fragment, taken: &mut Taken) {
         // Only those these blocks refer to: a cell block pastes its cells' content piece by piece.
         let mut refs = taken.refs.get_or_insert_with(|| RefIndex::of(&f.refs)).held(&f.refs, blocks);
+        // From another document: its paragraphs show as this document's styles have them, or keep their own look.
+        if let Some(o) = f.origin.as_deref().filter(|o| o.key != self.key) {
+            if f.look == Look::Source
+                && let Some(from) = o.resolver.as_deref()
+            {
+                self.keep_para_looks(blocks, from);
+            }
+            stale_of(blocks, tx);
+        }
         if let Some(o) = f.origin.as_deref().filter(|o| o.key != self.key || !o.images.is_empty()) {
             self.import(tx, blocks, &mut refs, o, &mut taken.lists);
         }
@@ -858,6 +958,10 @@ impl Editor {
             return self.copy_cells(id);
         }
         let id = self.clipboard.as_ref().map_or(1, |f| f.id + 1);
+        if let Selection::Object(o) = self.selection {
+            let blocks = vec![Block::Para(self.copy_object(o)?)];
+            return Some(Fragment { id, blocks, open_end: true, ..Default::default() });
+        }
         // Block selection
         if let Selection::Block { .. } = self.selection {
             let mut out = Vec::new();
@@ -913,7 +1017,7 @@ impl Editor {
         Some(Fragment { id, blocks: out, open_end: true, ..Default::default() })
     }
 
-    fn keep_look(&self, src: &Run, base: &crate::docx::props::RunProps, cache: &mut HashMap<*const RunStyle, Run>) -> Run {
+    pub(super) fn keep_look(&self, src: &Run, base: &crate::docx::props::RunProps, cache: &mut HashMap<*const RunStyle, Run>) -> Run {
         if let Some(r) = cache.get(&Rc::as_ptr(src)) {
             return r.clone();
         }
@@ -981,7 +1085,10 @@ impl Editor {
         out
     }
 
-    fn fit_inlines(&self, para: ParaId, inlines: &[Inline]) -> Vec<Inline> {
+    fn fit_inlines(&self, para: ParaId, inlines: &[Inline], look: Look) -> Vec<Inline> {
+        if look == Look::Destination {
+            return inlines.to_vec();
+        }
         let Some(res) = self.doc.resolver.clone() else { return inlines.to_vec() };
         let cx = self.cx();
         let Some(p) = self.index.para(&self.doc, para) else { return inlines.to_vec() };
@@ -1028,7 +1135,7 @@ impl Editor {
         }
         for p in ids {
             if let Some(q) = self.index.para(&self.doc, p).cloned() {
-                let with = self.fit_inlines(p, &q.inlines);
+                let with = self.fit_inlines(p, &q.inlines, f.look);
                 let _ = self.step(&mut tx, Step::Restyle { para: p, inlines: with });
             }
         }
@@ -1040,7 +1147,9 @@ impl Editor {
             return o;
         }
         let spaces = match f.blocks.as_slice() {
-            [Block::Para(p)] if f.open_end && !self.pasting_replacement => self.smart_spaces(&super::text::UnitText::of(p).text),
+            [Block::Para(p)] if f.open_end && !self.pasting_replacement && self.paste_defaults.spaces() => {
+                self.smart_spaces(&super::text::UnitText::of(p).text)
+            }
             _ => (false, false),
         };
         if self.refuse_replacing() {
@@ -1060,6 +1169,12 @@ impl Editor {
         };
         let mut blocks: Vec<Block> = f.blocks.iter().map(fresh).collect();
         self.take_in(&mut tx, &mut blocks, f, &mut Taken::default());
+        // Landing in a list item: its list goes on through the pasted items.
+        if self.paste_defaults.lists()
+            && let Some((num, _)) = self.index.para(&self.doc, para).and_then(|p| p.style.num)
+        {
+            self.join_list(&mut blocks, num);
+        }
         let dest: Vec<crate::docx::ControlId> = self.index.para(&self.doc, para).map(|p| p.controls.clone()).unwrap_or_default();
         if !dest.is_empty() {
             for b in &mut blocks {
@@ -1080,7 +1195,7 @@ impl Editor {
             && f.open_end
             && let Some(inl) = &first_inlines
         {
-            let mut with = self.fit_inlines(para, inl);
+            let mut with = self.fit_inlines(para, inl, f.look);
             let space = |i: Option<&Inline>| i.and_then(|i| i.run()).map(|r| Inline::Text(" ".into(), r.clone()));
             if spaces.0
                 && let Some(s) = space(with.first())
@@ -1121,13 +1236,13 @@ impl Editor {
             }
             for p in ids {
                 if let Some(q) = self.index.para(&self.doc, p).cloned() {
-                    let with = self.fit_inlines(p, &q.inlines);
+                    let with = self.fit_inlines(p, &q.inlines, f.look);
                     let _ = self.step(&mut tx, Step::Restyle { para: p, inlines: with });
                 }
             }
             let mut k = 0;
             if let Some(inl) = last {
-                let with = self.fit_inlines(para, &inl);
+                let with = self.fit_inlines(para, &inl, f.look);
                 k = units(&with);
                 if k > 0 && self.step(&mut tx, Step::Text { para, range: Unit(0)..Unit(0), with, edges: Default::default() }).is_err() {
                     self.abort(tx);
@@ -1158,7 +1273,7 @@ impl Editor {
                 return Outcome::Unchanged("paste failed");
             }
             middle.remove(0);
-            let with = self.fit_inlines(para, inl);
+            let with = self.fit_inlines(para, inl, f.look);
             if self.step(&mut tx, Step::Text { para, range: at..at, with, edges: Default::default() }).is_err() {
                 self.abort(tx);
                 return Outcome::Unchanged("paste failed");
@@ -1185,13 +1300,13 @@ impl Editor {
         }
         for p in ids {
             if let Some(q) = self.index.para(&self.doc, p).cloned() {
-                let with = self.fit_inlines(p, &q.inlines);
+                let with = self.fit_inlines(p, &q.inlines, f.look);
                 let _ = self.step(&mut tx, Step::Restyle { para: p, inlines: with });
             }
         }
         let caret_after = match last_inlines {
             Some(inl) => {
-                let with = self.fit_inlines(tail, &inl);
+                let with = self.fit_inlines(tail, &inl, f.look);
                 let k = units(&with);
                 if self.step(&mut tx, Step::Text { para: tail, range: Unit(0)..Unit(0), with, edges: Default::default() }).is_err() {
                     self.abort(tx);

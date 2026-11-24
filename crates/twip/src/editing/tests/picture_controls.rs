@@ -578,3 +578,33 @@ fn a_quarter_turned_picture_control_fits_its_image_unturned() {
     assert!(changed(&fill_image(&mut e, c, bmp(40, 20))));
     assert_eq!(frame(&e), (60.0, 120.0, true), "a 2:1 image fits as it is");
 }
+
+/// Pasting a picture over a picture control's picture fills the control, protected or not, fitted to its box, as one
+/// undo step.
+#[test]
+fn pasting_a_picture_over_a_picture_control_fills_it() {
+    for protected in [true, false] {
+        let mut r = Run::open(FX, "paste-fill");
+        if protected {
+            r.e.execute(
+                Command::SetProtectedPictureControls(crate::api::command::ProtectedPictureControls { tag_prefixes: vec!["Placeholder:".into()] }),
+                fonts(),
+            );
+        }
+        let c = control(&r.e, "Placeholder:Signature.X").0;
+        let (was, size, count) = (image_of(&r.e, c), size_of(&r.e, c), super::texts(&r.e).concat().matches('\u{FFFC}').count());
+        pick(&mut r, "Placeholder:Signature.X");
+        let png = crate::editing::wrap_points::tests::png(40, 10, &[90u8; 40 * 10 * 4]);
+        let out = r.e.paste_clip(crate::editing::paste::Clip { image: Some(png.clone()), ..Default::default() }, None, fonts());
+        assert!(changed(&out), "protected {protected}: {out:?}");
+        let now = image_of(&r.e, c);
+        assert!(now.is_some() && now != was && r.e.document().images[now.unwrap()] == png, "protected {protected}: the control shows it");
+        assert_eq!(super::texts(&r.e).concat().matches('\u{FFFC}').count(), count, "the one picture");
+        let s = size_of(&r.e, c).expect("a size");
+        let w = size.expect("a size");
+        assert!(s.0 <= w.0 + 0.05 && s.1 <= w.1 + 0.05, "fitted to its box: {s:?} in {w:?}");
+        assert_eq!(r.e.history().next_undo(), Some("Paste"));
+        r.e.execute(Command::Undo, fonts());
+        assert_eq!((image_of(&r.e, c), size_of(&r.e, c)), (was, size), "one undo step");
+    }
+}

@@ -2311,13 +2311,15 @@ impl<'a, 'i> Saver<'a, 'i> {
                 }
             }
         }
+        let chunk = self.take_chunks(&mut qs);
         if p.iter().any(|b| matches!(b, Block::Table(_))) {
             self.gone_marks(&qs, p);
             let closing = take_closing(&mut qs);
-            return self.with_new_tables(&qs, p, at, closing);
+            return self.with_new_tables(&qs, p, at, closing, chunk);
         }
         let ps: Vec<&Paragraph> = p.iter().filter_map(|b| if let Block::Para(x) = b { Some(x) } else { None }).collect();
         if qs.is_empty() && ps.is_empty() {
+            self.splices.extend(chunk.map(|r| (r, String::new())));
             return Ok(());
         }
         if qs.len() == 1
@@ -2350,6 +2352,7 @@ impl<'a, 'i> Saver<'a, 'i> {
             for r in srcs.iter().flat_map(|s| s.ranges.iter()) {
                 self.splices.push((r.clone(), String::new()));
             }
+            self.splices.extend(chunk.map(|r| (r, String::new())));
             return Ok(());
         }
         let mut text = Emit::group(self, &qs, &srcs, &ps)?;
@@ -2379,7 +2382,7 @@ impl<'a, 'i> Saver<'a, 'i> {
                     self.splices.push((r.clone(), String::new()));
                 }
             }
-            None => self.put(closing, at, text, "nowhere to put new paragraphs")?,
+            None => self.put(chunk, closing, at, text, "nowhere to put new paragraphs")?,
         }
         Ok(())
     }
@@ -2421,8 +2424,37 @@ impl<'a, 'i> Saver<'a, 'i> {
         self.splices.extend(gone);
     }
 
-    /// `text` where a group without source paragraphs goes: in place of its closing paragraph, else at `at`.
-    fn put(&mut self, closing: Option<Range<usize>>, at: Option<usize>, text: String, none: &str) -> Result<(), String> {
+    /// Takes the paragraphs standing for imported HTML (`w:altChunk`, a source that is no `w:p`) out of `qs`: their
+    /// elements go, all but the first; that one goes too when `qs` has others left, and is returned, for the group to
+    /// be written in its place, when it hasn't.
+    fn take_chunks(&mut self, qs: &mut Vec<&Paragraph>) -> Option<Range<usize>> {
+        let mut chunks = Vec::new();
+        qs.retain(|q| match q.src.as_deref().and_then(|s| s.ranges.first()) {
+            Some(r) if !self.paras.contains_key(&r.start) && !q.src.as_deref().is_some_and(|s| s.closing) => {
+                chunks.push(r.clone());
+                false
+            }
+            _ => true,
+        });
+        let mut chunks = chunks.into_iter();
+        let first = chunks.next();
+        self.splices.extend(chunks.map(|r| (r, String::new())));
+        match first {
+            Some(r) if !qs.is_empty() => {
+                self.splices.push((r, String::new()));
+                None
+            }
+            first => first,
+        }
+    }
+
+    /// `text` where a group without source paragraphs goes: in place of the imported HTML it holds (`chunk`), else of
+    /// its closing paragraph, else at `at`.
+    fn put(&mut self, chunk: Option<Range<usize>>, closing: Option<Range<usize>>, at: Option<usize>, text: String, none: &str) -> Result<(), String> {
+        if let Some(r) = chunk {
+            self.splices.push((r, text));
+            return Ok(());
+        }
         let splice = match closing {
             Some(r) if !r.is_empty() => {
                 let el = &self.xml[r.clone()];
@@ -2441,7 +2473,14 @@ impl<'a, 'i> Saver<'a, 'i> {
     /// A paragraph group with new tables among its paragraphs: each run of paragraphs is written with the source
     /// paragraphs it continues (deleted ones with the first run), each table from the model.
     // shortcut: a section break in the group goes with the run its source paragraph went to, which may not be the last.
-    fn with_new_tables(&mut self, qs: &[&Paragraph], p: &[Block], at: Option<usize>, closing: Option<Range<usize>>) -> Result<(), String> {
+    fn with_new_tables(
+        &mut self,
+        qs: &[&Paragraph],
+        p: &[Block],
+        at: Option<usize>,
+        closing: Option<Range<usize>>,
+        chunk: Option<Range<usize>>,
+    ) -> Result<(), String> {
         let mut runs: Vec<Vec<&Paragraph>> = vec![Vec::new()];
         for b in p {
             match b {
@@ -2486,7 +2525,7 @@ impl<'a, 'i> Saver<'a, 'i> {
                     self.splices.push((r, String::new()));
                 }
             }
-            None => self.put(closing, at, text, "nowhere to put new blocks")?,
+            None => self.put(chunk, closing, at, text, "nowhere to put new blocks")?,
         }
         Ok(())
     }

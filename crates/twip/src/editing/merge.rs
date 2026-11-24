@@ -1081,7 +1081,7 @@ impl Editor {
             let gallery = control.props.gallery();
             let frag = match (&f.building_block, &f.docx, &f.text) {
                 (Some(name), ..) => Some(self.building_block_fragment(name, &control.props)?),
-                (None, Some(d), _) => Some(self.fragment_of(&d.0)?),
+                (None, Some(d), _) => Some(self.fragment_of(&d.0, fonts)?),
                 (None, None, Some(_)) => None,
                 (None, None, None) => return Err(bad("text")),
             };
@@ -1223,10 +1223,88 @@ impl Editor {
         Ok(super::clipboard::Fragment { id: 0, blocks, open_end: true, controls, ..Default::default() })
     }
 
-    fn fragment_of(&self, bytes: &[u8]) -> Result<super::clipboard::Fragment, Refused> {
+    /// Insert > Text from File: the body of another document (`bytes`, a DOCX read under the open limits) in place of
+    /// the selection, as one step, with its styles (this document's where it has one of the same name), lists,
+    /// pictures, notes and comments. Landing in the body, its section breaks come with it, each with its section's
+    /// page setup, headers and footers (its last section's are this document's); elsewhere they go, as no section
+    /// breaks there. `Refused` when it isn't a document.
+    pub fn insert_file(&mut self, bytes: &[u8], fonts: &Fonts) -> Outcome {
+        let (mut f, breaks) = match self.file_fragment(bytes, fonts, true) {
+            Ok(f) => f,
+            Err(e) => return Outcome::Refused(e),
+        };
+        f.look = super::clipboard::Look::Destination;
+        self.joined("Insert File", fonts, |e| {
+            let out = e.paste_fragment(&f, fonts);
+            if matches!(out, Outcome::Changed(_)) && !breaks.breaks.is_empty() {
+                e.file_breaks(&f, breaks, fonts);
+            }
+            out
+        })
+    }
+
+    /// Another document's body as a fragment to paste, its imported HTML (`w:altChunk`) brought in as opening it
+    /// would.
+    fn fragment_of(&self, bytes: &[u8], fonts: &Fonts) -> Result<super::clipboard::Fragment, Refused> {
+        self.file_fragment(bytes, fonts, false).map(|(f, _)| f)
+    }
+
+    /// [`Editor::fragment_of`], and with `sections` the section breaks between its sections, but the last.
+    fn file_fragment(&self, bytes: &[u8], fonts: &Fonts, sections: bool) -> Result<(super::clipboard::Fragment, FileBreaks), Refused> {
         let doc = crate::docx::read_editable(bytes).map_err(|_| bad("docx"))?;
-        let mut blocks: Vec<Block> = doc.sections.iter().flat_map(|s| s.blocks.iter().cloned()).collect();
-        if blocks.len() > 1 && matches!(blocks.last(), Some(Block::Para(p)) if super::step::para_len(p) == Unit(0)) {
+        self.document_fragment(doc, fonts, sections)
+    }
+
+    /// [`Editor::fragment_of`] of a document read.
+    pub(super) fn document_body(&self, doc: crate::docx::Document, fonts: &Fonts) -> Result<super::clipboard::Fragment, Refused> {
+        self.document_fragment(doc, fonts, false).map(|(f, _)| f)
+    }
+
+    /// [`Editor::file_fragment`] of a document read.
+    fn document_fragment(
+        &self,
+        mut doc: crate::docx::Document,
+        fonts: &Fonts,
+        sections: bool,
+    ) -> Result<(super::clipboard::Fragment, FileBreaks), Refused> {
+        if !doc.alt_chunks.is_empty() {
+            doc = Editor::with_document(doc, fonts).into_document();
+        }
+        let n = doc.sections.len();
+        let mut breaks = FileBreaks::default();
+        let mut blocks: Vec<Block> = Vec::new();
+        // Each header or footer part once, however many sections show it
+        let mut seen: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        for (k, mut s) in std::mem::take(&mut doc.sections).into_iter().enumerate() {
+            blocks.append(&mut s.blocks);
+            if !sections || k + 1 >= n || blocks.is_empty() {
+                continue;
+            }
+            let mut refs = Vec::new();
+            for (footer, slots) in [(false, &s.headers), (true, &s.footers)] {
+                for (slot, name) in slots.iter().enumerate() {
+                    let Some(name) = name.as_ref() else { continue };
+                    let part = match seen.get(name) {
+                        Some(&part) => part,
+                        None => {
+                            let Some(b) = doc.stories.get(name) else { continue };
+                            let at = breaks.parts.len();
+                            breaks.parts.extend(b.iter().cloned());
+                            breaks.stories.push((footer, at..breaks.parts.len()));
+                            seen.insert(name.clone(), breaks.stories.len() - 1);
+                            breaks.stories.len() - 1
+                        }
+                    };
+                    refs.push((footer, slot, part));
+                }
+            }
+            let shell = crate::docx::Section { headers: Default::default(), footers: Default::default(), change: None, read: None, ..s };
+            breaks.breaks.push(FileBreak { after: blocks.len() - 1, shell, refs });
+        }
+        // A last empty paragraph stays with this document's, unless a section break comes before it. The reader ends
+        // the last section with a paragraph (an empty one after a closing section break), so the last break always
+        // has a block after it.
+        if breaks.breaks.is_empty() && blocks.len() > 1 && matches!(blocks.last(), Some(Block::Para(p)) if super::step::para_len(p) == Unit(0)) {
             blocks.pop();
         }
         let refs = super::clipboard::refs_of(&doc, &blocks);
@@ -1234,9 +1312,78 @@ impl Editor {
         for body in refs.notes.iter().map(|n| &n.2).chain(refs.comments.iter().map(|c| &c.body)) {
             controls.extend(super::clipboard::controls_of(body, &doc));
         }
+        let body = blocks.len();
+        // The headers' and footers' pictures come from the document with the body's.
+        blocks.append(&mut breaks.parts);
         let mut f = super::clipboard::Fragment { id: 0, blocks, open_end: true, controls, refs, ..Default::default() };
         f.origin = Some(super::import::Origin::of_document(doc, &mut f));
-        Ok(f)
+        breaks.parts = f.blocks.split_off(body);
+        Ok((f, breaks))
+    }
+
+    /// Inserted file `f`'s section breaks, its blocks just pasted before the caret: the body section holding them split
+    /// after each of its sections' last blocks, each taking its own page setup, headers and footers, in one step.
+    fn file_breaks(&mut self, f: &super::clipboard::Fragment, breaks: FileBreaks, fonts: &Fonts) {
+        let Some((tail, _)) = self.caret().and_then(|p| p.para_offset()) else { return };
+        let Some(slot) = self.index.para_slot(tail) else { return };
+        // Section breaks are the body's: in a cell, a note, a header or a text box they go.
+        let Container::Section(section) = slot.container else { return };
+        let n = f.blocks.len();
+        // The last block pasted joined the caret's paragraph, else the blocks are all before it.
+        let joined = f.open_end && matches!(f.blocks.last(), Some(Block::Para(_)));
+        let Some(first) = slot.block.checked_sub(if joined { n - 1 } else { n }) else { return };
+        // The sections split off: how many blocks each, its page setup, and its headers and footers
+        let mut kept = Vec::with_capacity(breaks.breaks.len());
+        let mut from = 0;
+        for b in breaks.breaks {
+            if b.after + usize::from(joined) >= n {
+                break;
+            }
+            let Some(k) = b.after.checked_sub(from) else { continue };
+            from = b.after + 1;
+            kept.push((if kept.is_empty() { first + k + 1 } else { k + 1 }, b));
+        }
+        if kept.is_empty() {
+            return;
+        }
+        // The stories they show, each once
+        let mut used: Vec<Option<usize>> = vec![None; breaks.stories.len()];
+        let mut order = Vec::new();
+        for (footer, _, part) in kept.iter().flat_map(|(_, b)| b.refs.iter()) {
+            if used[*part].is_none() {
+                used[*part] = Some(order.len());
+                order.push((*part, *footer));
+            }
+        }
+        let names = self.new_story_names(order.iter().map(|&(_, footer)| footer));
+        let hf = super::clipboard::Fragment { origin: f.origin.clone(), look: f.look, ..Default::default() };
+        let mut taken = super::clipboard::Taken::default();
+        let mut tx = self.begin("Insert File");
+        let mut stories = Vec::with_capacity(order.len());
+        for (&(part, _), name) in order.iter().zip(&names) {
+            let mut blocks: Vec<Block> = breaks.parts[breaks.stories[part].1.clone()].iter().map(super::clipboard::fresh).collect();
+            self.take_in(&mut tx, &mut blocks, &hf, &mut taken);
+            stories.push((name.clone(), blocks));
+        }
+        let backs = kept
+            .into_iter()
+            .map(|(blocks, b)| {
+                let mut shell = b.shell;
+                for (footer, slot, part) in b.refs {
+                    let slots = if footer { &mut shell.footers } else { &mut shell.headers };
+                    if let (Some(r), Some(k)) = (slots.get_mut(slot), used[part]) {
+                        *r = Some(names[k].clone());
+                    }
+                }
+                super::step::SectionBack { blocks, section: shell, sources: 0, edited: true }
+            })
+            .collect();
+        let split = Box::new(super::step::Split::Apart { backs, stories });
+        if self.step(&mut tx, Step::Sections { section, split }).is_err() {
+            self.abort(tx);
+            return;
+        }
+        self.commit(tx, None, fonts);
     }
 
     // Locks
@@ -1949,7 +2096,9 @@ impl Editor {
                         _ => None,
                     })
                     .collect();
-                if steps.iter().any(|s| matches!(s, Step::Blocks { .. } | Step::Rows { .. } | Step::Note { .. } | Step::HeaderPart { .. })) {
+                if steps.iter().any(|s| {
+                    matches!(s, Step::Blocks { .. } | Step::Rows { .. } | Step::Note { .. } | Step::HeaderPart { .. } | Step::Sections { .. })
+                }) {
                     v.extend(self.elems.values().filter(|e| e.props.is_none()).filter_map(|e| e.at));
                 }
                 v
@@ -3149,6 +3298,24 @@ fn placeholder_data(p: &crate::api::value::PlaceholderImage) -> Result<Vec<u8>, 
         Some((m, _)) if m == want => Ok(p.data.0.clone()),
         _ => Err(Error::invalid(format!("placeholderImage: the data isn't {want}"))),
     }
+}
+
+/// An inserted file's section breaks: after which of its blocks each comes, and the section it ends.
+#[derive(Default)]
+struct FileBreaks {
+    breaks: Vec<FileBreak>,
+    /// The headers and footers they show, each part once: whether a footer, and its blocks in [`FileBreaks::parts`].
+    stories: Vec<(bool, std::ops::Range<usize>)>,
+    parts: Vec<Block>,
+}
+
+struct FileBreak {
+    /// The index of the last block of its section among the file's.
+    after: usize,
+    /// Its section's page setup, without blocks, headers or footers.
+    shell: crate::docx::Section,
+    /// Its headers and footers: whether a footer, the slot, and which of [`FileBreaks::stories`].
+    refs: Vec<(bool, usize, usize)>,
 }
 
 /// A picture control's size from its options, each side within 1…1584 pt; a side not given keeps `was`'s.

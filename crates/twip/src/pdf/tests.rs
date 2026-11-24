@@ -90,6 +90,51 @@ fn converts_like_the_editor_export() {
     }
 }
 
+/// The blank document with `body`, whose `w:altChunk r:id="rIdChunk"` imports `word/{part}` holding `data`.
+fn with_chunk(body: &str, part: &str, data: &[u8]) -> Vec<u8> {
+    use std::io::{Read, Write};
+    let mut z = zip::ZipArchive::new(std::io::Cursor::new(crate::docx::blank::blank_docx())).expect("a zip");
+    let mut out = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    for i in 0..z.len() {
+        let mut f = z.by_index(i).expect("an entry");
+        let name = f.name().expect("a name").to_string();
+        let mut bytes = Vec::new();
+        f.read_to_end(&mut bytes).expect("reads");
+        let text = || String::from_utf8(bytes.clone()).expect("utf-8");
+        if name == "word/document.xml" {
+            bytes = text().replacen("<w:p/>", body, 1).into_bytes();
+        } else if name == "word/_rels/document.xml.rels" {
+            let rel = format!(
+                r#"<Relationship Id="rIdChunk" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/aFChunk" Target="{part}"/></Relationships>"#
+            );
+            bytes = text().replacen("</Relationships>", &rel, 1).into_bytes();
+        }
+        out.start_file(name, zip::write::SimpleFileOptions::default()).expect("starts");
+        out.write_all(&bytes).expect("writes");
+    }
+    out.start_file(format!("word/{part}"), zip::write::SimpleFileOptions::default()).expect("starts");
+    out.write_all(data).expect("writes");
+    out.finish().expect("finishes").into_inner()
+}
+
+/// A document whose imported HTML (`w:altChunk`) is content: the converter draws it as a session does.
+#[test]
+fn converts_imported_html_like_the_editor_export() {
+    let body = "<w:p><w:r><w:t>before</w:t></w:r></w:p><w:altChunk r:id=\"rIdChunk\"/><w:p><w:r><w:t>after</w:t></w:r></w:p>";
+    let html = b"<p>from <b>html</b></p><ul><li>item</li></ul>";
+    let bytes = with_chunk(body, "chunk.html", html);
+    let mut engine = Engine::new(FontLibrary::system());
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    s.open(&bytes).expect("opens");
+    let editor = s.export(&ExportOptions::Pdf(PdfOptions::default())).expect("exports");
+    let converted = convert(&bytes, &FontSet::system(), &PdfOptions::default()).expect("converts");
+    let (ours, theirs) = (undated(converted.bytes), undated(editor.bytes.0));
+    assert!(ours == theirs, "the converter's PDF differs from the editor's, {}", first_difference(&ours, &theirs));
+    let plain = convert(&with_chunk(body, "chunk.html", b""), &FontSet::system(), &PdfOptions::default());
+    assert!(undated(plain.expect("converts").bytes) != ours, "the HTML is drawn");
+}
+
 #[test]
 fn cancel_stops_conversion() {
     let (_, bytes) = fixtures().into_iter().next().expect("a fixture");

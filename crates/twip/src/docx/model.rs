@@ -1910,6 +1910,27 @@ pub struct AddedList {
     pub abstract_xml: String,
 }
 
+/// Content a document imports in place (`w:altChunk`): Word reads it as content when it opens the document.
+#[derive(Clone, Debug)]
+pub struct AltChunk {
+    /// The empty paragraph standing in its place ([`Paragraph::id`]), whose source is the `w:altChunk` element.
+    pub para: u64,
+    pub content: AltContent,
+}
+
+/// What a `w:altChunk` imports, shared by every one importing the same part.
+#[derive(Clone, Debug)]
+pub enum AltContent {
+    Html(Rc<str>),
+    /// Plain text: a paragraph a line.
+    Text(Rc<str>),
+    /// A document, read: its body comes in, in this document's styles unless `match_src` (`w:matchSrc`).
+    Document {
+        doc: Rc<Document>,
+        match_src: bool,
+    },
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct Document {
     pub sections: Vec<Section>,
@@ -1928,6 +1949,8 @@ pub struct Document {
     /// Footnote separator / continuation separator stories, when the document defines them.
     pub separators: HashMap<String, Vec<Block>>,
     pub images: Vec<Vec<u8>>,
+    /// HTML imported in place (`w:altChunk`), each standing as an empty paragraph until the editor brings it in.
+    pub alt_chunks: Vec<AltChunk>,
     /// The core, extended and custom document properties.
     pub properties: super::properties::Properties,
     /// The file's name, and folder when the host gave one: what FILENAME shows. Not saved.
