@@ -150,6 +150,7 @@ impl<'d> PageFill<'d, '_> {
                 let space = ParaSpace {
                     width: pb.width,
                     start: pb.from + l.start,
+                    part: l.part,
                     borders: pb.borders.clone(),
                     x0: pb.x0,
                     env,
@@ -195,7 +196,10 @@ impl<'d> PageFill<'d, '_> {
         if done {
             pos.next_block();
         } else {
-            pos.at = At::Piece(last.as_ref().map_or(pb.from + pb.lines[take].start, |a| a.from + a.lines[0].end));
+            pos.at = match &last {
+                Some(a) => At::Piece(a.from + a.lines[0].end, a.lines.get(1).map_or(pb.lines[take].part, |l| l.part)),
+                None => At::Piece(pb.from + pb.lines[take].start, pb.lines[take].part),
+            };
             carry.letter_break = !last.as_ref().map_or(&pb.lines[take - 1], |a| &a.lines[0]).hyphen;
         }
         if notes_continue && stop_kind.is_none() && !(self.hold_notes && self.at_section_end(pos)) {

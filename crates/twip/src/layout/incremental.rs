@@ -338,7 +338,7 @@ fn row_restart(
         pg.bodies.first().filter(|b| (b.token.section, b.token.flow.block) == (span.section, span.first) && b.start_table.is_some())
     }
     let first_row = span.first_row.min(row);
-    let key = (span.section, span.first, 2u8, first_row);
+    let key = (span.section, span.first, 2u8, first_row, 0);
     let p = base.iter().rposition(|pg| inside(pg, span).is_some_and(|b| start_key(&b.token) < key));
     let rec = p.or_else(|| base.iter().position(|pg| inside(pg, span).is_some()))?;
     let width = base[rec].bodies[0].space.columns[0].width;
@@ -365,14 +365,14 @@ fn row_restart(
     old.keeps_rows_above(&new, first_row).then_some(p)
 }
 
-fn start_key(t: &PageToken) -> (usize, usize, u8, usize) {
-    let (kind, i) = match &t.flow.at {
-        At::Start => (0, 0),
-        At::Piece(i) => (1, *i),
-        At::Row(r) => (2, *r),
-        At::RowPart { row, .. } => (3, *row),
+fn start_key(t: &PageToken) -> (usize, usize, u8, usize, usize) {
+    let (kind, i, part) = match &t.flow.at {
+        At::Start => (0, 0, 0),
+        At::Piece(i, part) => (1, *i, *part),
+        At::Row(r) => (2, *r, 0),
+        At::RowPart { row, .. } => (3, *row, 0),
     };
-    (t.section, t.flow.block, kind, i)
+    (t.section, t.flow.block, kind, i, part)
 }
 
 fn shifted(t: &PageToken, span: Option<&Span>) -> PageToken {
@@ -408,7 +408,7 @@ pub struct Reuse {
     restart: usize,
     /// The header and footer parts that changed: pages showing one compose them again.
     parts: Vec<String>,
-    keys: Vec<(usize, usize, u8, usize)>,
+    keys: Vec<(usize, usize, u8, usize, usize)>,
     renumbered: std::collections::HashSet<(NoteKind, i64)>,
 }
 
@@ -416,7 +416,7 @@ pub struct Reuse {
 fn past_row(pages: &[PageRecord], section: usize, block: usize, row: usize) -> bool {
     pages.iter().any(|pg| {
         pg.bodies.iter().any(|b| {
-            let (s, blk, kind, i) = start_key(&b.end);
+            let (s, blk, kind, i, _) = start_key(&b.end);
             b.section_end.is_some_and(|_| b.token.section == section)
                 || (s, blk) > (section, block)
                 || (s, blk) == (section, block) && kind >= 2 && i > row
@@ -883,7 +883,7 @@ impl DocumentLayout {
             run.cursor = Cursor::Body { si: body.token.section, token: body.token.clone(), top: None };
         }
         let mut keys = Vec::with_capacity(base.len());
-        let mut last = (0, 0, 0, 0);
+        let mut last = (0, 0, 0, 0, 0);
         for pg in base {
             if let Some(b) = pg.bodies.first() {
                 last = start_key(&shifted(&b.token, closed.as_ref()));

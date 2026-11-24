@@ -326,6 +326,7 @@ fn stack_para<'b>(w: &StoryIn<'b, '_>, st: &mut Stack<'b>, bi: usize, laid: &'b 
     let ps = ParaSpace {
         width,
         start: from,
+        part: 0,
         borders: neighbour_borders(style, prev, next),
         x0: 0.0,
         env: TextEnv { line_grid, ..text.clone() },
@@ -655,17 +656,16 @@ fn wrap_bands(
     (top, before): (f64, f64),
     fonts: &Fonts,
 ) -> Vec<(f64, Vec<Line>)> {
-    let frame = Frame::new(ps);
+    let mut frame = Frame::new(ps);
     let pieces = lines.pieces();
-    let n = pieces.len();
     let mark = p.mark_in(ps.env.review.view);
     let est = lines.lines.first().map_or(13.0, |l| l.pitch);
     let mut bands: Vec<(f64, Vec<Line>)> = Vec::new();
-    let (mut yy, mut s) = (top, 0);
+    // Where the next band starts: its piece and shown part, `None` once the paragraph is laid out.
+    let (mut yy, mut s, mut next) = (top, 0, Some(frame.part));
     for _ in 0..4000 {
-        if s >= n && !bands.is_empty() {
-            break;
-        }
+        let Some(part) = next else { break };
+        frame.part = part;
         let (mut h, mut got, mut trial, mut no_room) = (est, None, None, false);
         for attempt in 0..2 {
             got = None;
@@ -673,10 +673,10 @@ fn wrap_bands(
             no_room = iv.is_empty();
             let open = iv.len() == 1 && iv[0].0.abs() < EPS && (iv[0].1 - ps.width).abs() < EPS;
             match band(&lines.shaped, pieces, s, &iv, bands.is_empty(), style, mark, &frame, fonts, open) {
-                Ok((segs, e)) => {
+                Ok((segs, e, more)) => {
                     let ph = segs[0].pitch;
                     let done = (ph - h).abs() < EPS || attempt == 1;
-                    got = Some((segs, e));
+                    got = Some((segs, e, more));
                     if done {
                         break;
                     }
@@ -688,11 +688,11 @@ fn wrap_bands(
                 }
             }
         }
-        if let Some((segs, e)) = got {
+        if let Some((segs, e, more)) = got {
             let ph = segs[0].pitch;
             bands.push((yy, segs));
             yy += ph;
-            s = e;
+            (s, next) = (e, more);
             continue;
         }
         // Compat ≤ 14 steps down by the text's height past square-wrapped floats; a floating table that leaves no piece

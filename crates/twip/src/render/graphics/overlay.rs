@@ -450,18 +450,19 @@ impl Graphics {
                     let dots = dashed(1.0 / px, 1.0 / px, 2.0 / px);
                     let double = matches!(m.kind, MarkKind::SectionBreak(_));
                     let ys: &[f64] = if double { &[mid - 1.0, mid + 1.0] } else { &[mid] };
-                    let (size, start) = ((h * 0.45).min(8.0), x0 + 2.0);
+                    let (size, start, gap) = ((h * 0.45).min(8.0), x0 + 2.0, 2.0);
                     let w = face.as_ref().map_or(0.0, |f| label_width(f, label, size));
-                    let (lx, gap) = (((start + x1 - w) / 2.0).max(start), 2.0);
+                    let lx = break_label_at(start, x1, w, gap).filter(|_| face.is_some());
                     for &y in ys {
-                        if lx - gap > start {
-                            rec.line((start, y).into(), (lx - gap, y).into(), &dots, ink);
+                        let (a, b) = lx.map_or((x1, x1), |lx| (lx - gap, lx + w + gap));
+                        if a > start {
+                            rec.line((start, y).into(), (a, y).into(), &dots, ink);
                         }
-                        if lx + w + gap < x1 {
-                            rec.line((lx + w + gap, y).into(), (x1, y).into(), &dots, ink);
+                        if b < x1 {
+                            rec.line((b, y).into(), (x1, y).into(), &dots, ink);
                         }
                     }
-                    if let Some(face) = &face {
+                    if let (Some(face), Some(lx)) = (&face, lx) {
                         self.text(rec, face, label, lx, mid + size * 0.35, size, ink);
                     }
                 }
@@ -486,6 +487,12 @@ fn label_width(face: &crate::font::Face, text: &str, size: f64) -> f64 {
     text.chars().map(|c| face.advance(face.glyph(c).unwrap_or(0)) * k).sum()
 }
 
+/// Where a break mark's label `w` wide starts, centred between `start` and `end` with `gap` either side; `None` when
+/// it doesn't fit there (the mark is its dots alone).
+fn break_label_at(start: f64, end: f64, w: f64, gap: f64) -> Option<f64> {
+    (end - start >= w + 2.0 * gap).then(|| (start + end - w) / 2.0)
+}
+
 /// Word's name for a section break, as its mark labels it.
 fn section_break_label(k: crate::docx::SectionBreak) -> &'static str {
     match k {
@@ -494,5 +501,18 @@ fn section_break_label(k: crate::docx::SectionBreak) -> &'static str {
         crate::docx::SectionBreak::EvenPage => "Section Break (Even Page)",
         crate::docx::SectionBreak::OddPage => "Section Break (Odd Page)",
         crate::docx::SectionBreak::NextColumn => "Section Break (Next Column)",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::break_label_at;
+
+    #[test]
+    fn a_break_label_is_centred_where_it_fits_and_left_out_where_it_doesnt() {
+        assert_eq!(break_label_at(100.0, 300.0, 60.0, 2.0), Some(170.0));
+        assert_eq!(break_label_at(100.0, 164.0, 60.0, 2.0), Some(102.0), "just fits");
+        assert_eq!(break_label_at(100.0, 160.0, 60.0, 2.0), None, "too narrow");
+        assert_eq!(break_label_at(470.0, 468.0, 60.0, 2.0), None, "a mark at the column's edge, after right-aligned text");
     }
 }

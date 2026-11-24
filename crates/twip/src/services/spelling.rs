@@ -257,14 +257,19 @@ pub fn word_at_selection(e: &Editor, default: &str) -> Option<WordAt> {
     let (para, a, b) = selected_range(e)?;
     let text = check_text(e, para);
     let k = text.units.partition_point(|&u| (u as usize) < a);
-    let part = |c: char| c.is_alphanumeric();
-    let joins = |i: usize| {
-        matches!(text.chars.get(i), Some('\'' | '\u{2019}' | '-'))
-            && i > 0
-            && text.chars.get(i - 1).is_some_and(|&c| part(c))
-            && text.chars.get(i + 1).is_some_and(|&c| part(c))
+    // Letters and digits, and what goes on the grapheme of one (combining marks), as `Speller::errors` reads them.
+    let extends = match text.chars.iter().all(char::is_ascii) {
+        true => Vec::new(),
+        false => continuations(&text.chars.iter().collect::<String>(), text.chars.len()),
     };
-    let inside = |i: usize| text.chars.get(i).is_some_and(|&c| part(c)) || joins(i);
+    let mut letters = Vec::with_capacity(text.chars.len());
+    for (i, c) in text.chars.iter().enumerate() {
+        let on = c.is_alphanumeric() || extends.get(i).copied().unwrap_or(false) && i > 0 && letters[i - 1];
+        letters.push(on);
+    }
+    let part = |i: usize| letters.get(i).copied().unwrap_or(false);
+    let joins = |i: usize| matches!(text.chars.get(i), Some('\'' | '\u{2019}' | '-')) && i > 0 && part(i - 1) && part(i + 1);
+    let inside = |i: usize| part(i) || joins(i);
     let mut start = k;
     while start > 0 && k - start <= MAX_WORD && inside(start - 1) {
         start -= 1;
@@ -601,6 +606,21 @@ mod tests {
         assert_eq!(word_at_selection(&e, "en-US").expect("a word").word, "fox's");
         e.select_range(para, Unit(2), Unit(9), fonts());
         assert!(word_at_selection(&e, "en-US").is_none(), "past the word");
+    }
+
+    #[test]
+    fn the_word_at_the_caret_takes_its_combining_marks() {
+        use crate::editing::tests::{blank_with, fonts};
+        let mut e = Editor::open(&blank_with("A cafe\u{301}ine \u{301}x."), fonts()).expect("opens");
+        e.complete(fonts());
+        let para = crate::editing::tests::para_id(&e, 0);
+        for at in [3, 6, 8] {
+            e.select_range(para, Unit(at), Unit(at), fonts());
+            let w = word_at_selection(&e, "en-US").expect("a word");
+            assert_eq!((w.word.as_str(), w.start, w.end), ("cafe\u{301}ine", Unit(2), Unit(10)), "from {at}");
+        }
+        e.select_range(para, Unit(13), Unit(13), fonts());
+        assert_eq!(word_at_selection(&e, "en-US").expect("a word").word, "x", "a mark after a space isn't a letter");
     }
 
     #[test]

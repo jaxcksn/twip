@@ -50,6 +50,11 @@ fn numbered_page(settings: &str, rpr: &str, body: &str, numbering: &str, page: u
 
 /// The document of [`numbered_baselines`]: compat 12 unless `settings` sets a mode; `None` without Arial.
 pub(super) fn test_doc(settings: &str, rpr: &str, body: &str, numbering: &str) -> Option<crate::docx::Document> {
+    Some(crate::docx::read(&test_package(settings, rpr, body, numbering)?).expect("reads"))
+}
+
+/// The package of [`test_doc`].
+pub(super) fn test_package(settings: &str, rpr: &str, body: &str, numbering: &str) -> Option<Vec<u8>> {
     fonts().face("Arial", None, false, false)?;
     let compat = if settings.contains("compatibilityMode") {
         ""
@@ -74,7 +79,7 @@ pub(super) fn test_doc(settings: &str, rpr: &str, body: &str, numbering: &str) -
         parts.push(("word/numbering.xml", format!(r#"<w:numbering xmlns:w="{W}">{numbering}</w:numbering>"#)));
     }
     let parts: Vec<(String, Vec<u8>)> = parts.into_iter().map(|(n, x)| (n.to_string(), x.into_bytes())).collect();
-    Some(crate::docx::read(&repackage(&blank_docx(), &parts, zip::CompressionMethod::Deflated).expect("repackages")).expect("reads"))
+    Some(repackage(&blank_docx(), &parts, zip::CompressionMethod::Deflated).expect("repackages"))
 }
 
 const ARIAL_12: &str = r#"<w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:eastAsiaTheme="minorEastAsia"/><w:sz w:val="24"/>"#;

@@ -95,6 +95,9 @@ impl BorderGroup {
 pub struct ParaSpace {
     pub width: f64,
     pub start: usize,
+    /// While hidden text shows, the joined paragraph's part (`ShapedPara::parts`) the text from `start` is in, where
+    /// several can be: empty parts there, or one ending there with its last line still to come.
+    pub part: usize,
     pub borders: (BorderKey, BorderKey),
     pub x0: f64,
     pub env: TextEnv,

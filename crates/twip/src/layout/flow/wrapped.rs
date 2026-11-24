@@ -10,11 +10,15 @@ use crate::layout::fragment::{Child, ParaFragment, PlacedLine};
 use crate::layout::ids::ParaId;
 use crate::layout::job::{Memos, Yield};
 use crate::layout::join::piece_para;
-use crate::layout::line::{Below, Frame, Line, LineOrigin, ParaLines, apply_borders, band, border_key, breaks_only, draw_line, top_border_extra};
+use crate::layout::line::{
+    Below, Frame, Line, LineOrigin, ParaLines, apply_borders, band, border_key, breaks_only, continued_key, draw_line, opens_part, shade_gap,
+    top_border_extra,
+};
 use crate::layout::paragraph::{gap, lines_to_take, space_after, space_before};
+use crate::layout::space::BorderKey;
 use crate::layout::space::{ColumnSpace, ParaSpace};
 use crate::layout::story::StoryEnv;
-use crate::layout::text::{FieldValues, Kind, Object, Piece, ShapedPara, para_id};
+use crate::layout::text::{FieldValues, Kind, Object, Part, Piece, ShapedPara, para_id};
 use crate::layout::token::{At, FlowState, NoteArea, NotePart};
 use crate::layout::units::EPS;
 
@@ -61,6 +65,29 @@ impl WrapIn<'_> {
         let &WrapIn { cx0, cx1, si, bi, .. } = self;
         (f.key.0, f.key.1) == (si, bi) && f.wrap != Wrap::None && f.excl[0] < cx1 - EPS && f.excl[2] > cx0 + EPS
     }
+
+    /// While hidden text shows, the border key above shown part `part`'s lines from band `a` on, and whether they open
+    /// the part: the paragraph's own before its first, the part before's at a part's first line.
+    fn part_top(&self, parts: &[Part], part: usize, a: usize) -> (BorderKey, bool) {
+        let starts = a > 0 || if part == 0 { self.first_part || self.restarts } else { opens_part(self.sp, self.pieces, part) };
+        let key = match part {
+            0 if a == 0 && starts => self.pb.borders.0.clone(),
+            1.. if starts => border_key(&parts[part - 1].style),
+            _ => continued_key(&parts[part].style),
+        };
+        (key, starts)
+    }
+
+    /// How far below `line`, the last of its shown part, its bottom border goes before part `next`'s first line.
+    fn part_bottom(&self, parts: &[Part], line: &Line, next: usize) -> f64 {
+        let (s, q) = (&*parts[line.part].style, &*parts[next].style);
+        if border_key(s).is_none() && s.div_boxes.is_empty() {
+            return 0.0;
+        }
+        let mut probe = [Line { pitch: line.pitch, after: line.after, ..Line::empty(line.start) }];
+        apply_borders(&mut probe, s, continued_key(s).as_deref(), border_key(q).as_deref(), self.col.width, true, false, true, 0.0, &[]);
+        probe[0].pitch - line.pitch
+    }
 }
 
 // A band's strip
@@ -73,7 +100,7 @@ struct Strip {
 
 // A band tried
 struct Tried {
-    got: Option<(Vec<Line>, usize)>,
+    got: Option<(Vec<Line>, usize, Option<usize>)>,
     blocked: bool,
     trial: Option<f64>,
     no_room: bool,
@@ -154,7 +181,17 @@ impl<'d> PageFill<'d, '_> {
         }
         let letter_break = !first_part && carry.letter_break;
         let env = self.ctx.env.text.clone();
-        let space = ParaSpace { width: col.width, start: pb.from, borders: (None, None), x0: col.x, env, fit: false, letter_break, shade_gap: 0.0 };
+        let space = ParaSpace {
+            width: col.width,
+            start: pb.from,
+            part: pos.at.part(),
+            borders: (None, None),
+            x0: col.x,
+            env,
+            fit: false,
+            letter_break,
+            shade_gap: 0.0,
+        };
         let frame = Frame::new(&space);
         let sp: &ShapedPara = &pb.shaped;
         let pieces = pb.pieces();
@@ -225,23 +262,55 @@ impl<'d> PageFill<'d, '_> {
             anchor,
             after,
         };
-        let (mut bands, s) = self.fit_bands(&w, carry, lead, frame);
+        let (mut bands, s, more) = self.fit_bands(&w, carry, lead, frame);
         if bands.is_empty() {
             if self.at.frames_only {
                 return Ok(Stop::Page);
             }
             return self.place_plain(p, pb, cur, col, memos);
         }
-        if border_key(style).is_some()
+        if let Some(parts) = sp.parts.as_deref() {
+            // Shown parts: each its own borders and shading, the parts beside it its neighbours.
+            let (mut a, nb) = (0, bands.len());
+            while a < nb {
+                let part = bands[a].1[0].part;
+                let b = (a + 1..nb).find(|&b| bands[b].1[0].part != part).unwrap_or(nb);
+                let s = &*parts[part].style;
+                let (before, starts) = w.part_top(parts, part, a);
+                let (next, last, gap) = match bands.get(b).map(|q| &*parts[q.1[0].part].style) {
+                    Some(q) => (border_key(q), true, shade_gap(&self.ctx.env.text, s, Some(q), true)),
+                    None if more.is_some() => (border_key(s), false, 0.0),
+                    None => (pb.borders.1.clone(), true, pb.shade_gap),
+                };
+                let mut firsts: Vec<Line> = bands[a..b].iter().map(|(_, segs)| segs[0].clone()).collect();
+                let tops: Vec<f64> = bands[a..b].iter().map(|(y, _)| *y).collect();
+                apply_borders(&mut firsts, s, before.as_deref(), next.as_deref(), col.width, true, starts, last, gap, &tops);
+                for ((_, segs), l) in bands[a..b].iter_mut().zip(firsts) {
+                    segs[0] = l;
+                }
+                a = b;
+            }
+        } else if border_key(style).is_some()
             || style.shading.is_some()
             || style.shd.as_ref().is_some_and(|s| s.hatch().is_some())
             || !style.div_boxes.is_empty()
         {
             let mut firsts: Vec<Line> = bands.iter().map(|(_, segs)| segs[0].clone()).collect();
             let tops: Vec<f64> = bands.iter().map(|(y, _)| *y).collect();
-            let next = if s >= n { pb.borders.1.clone() } else { border_key(style) };
-            let gap = if s >= n { pb.shade_gap } else { 0.0 };
-            apply_borders(&mut firsts, style, pb.borders.0.as_deref(), next.as_deref(), col.width, first_part, first_part, s >= n, gap, &tops);
+            let next = if more.is_none() { pb.borders.1.clone() } else { border_key(style) };
+            let gap = if more.is_none() { pb.shade_gap } else { 0.0 };
+            apply_borders(
+                &mut firsts,
+                style,
+                pb.borders.0.as_deref(),
+                next.as_deref(),
+                col.width,
+                first_part,
+                first_part,
+                more.is_none(),
+                gap,
+                &tops,
+            );
             for ((_, segs), l) in bands.iter_mut().zip(firsts) {
                 segs[0] = l;
             }
@@ -316,25 +385,28 @@ impl<'d> PageFill<'d, '_> {
                 return Ok(if at_top { Stop::Page } else { Stop::Full });
             }
         }
-        self.emit_wrapped(&w, &bands, &areas, take, s, page_end, cur)
+        self.emit_wrapped(&w, &bands, &areas, take, (s, more), page_end, cur)
     }
 
     // Compat ≤ 14, a keepLines paragraph and its own float: the tops of its lines from `from`, laid out from `top`
     // beside the floats while they start above `stop`, and the top of the first one at or below it when lines
     // remain. None when a line finds no piece.
-    fn tops(&self, w: &WrapIn, top: f64, from: usize, stop: f64) -> Option<(Vec<f64>, Option<f64>)> {
+    fn tops(&self, w: &WrapIn, top: f64, (from, part): (usize, usize), stop: f64) -> Option<(Vec<f64>, Option<f64>)> {
         let &WrapIn { style, sp, pieces, n, est, cx0, cx1, floats, first_part, restarts, mark, plain, .. } = w;
-        let (mut t, mut k, mut v) = (top, from, Vec::new());
-        while k < n {
+        let (mut t, mut k, mut v, mut frame) = (top, from, Vec::new(), plain);
+        // The shown part of the next line, `None` once the paragraph is laid out
+        let mut next = (k < n || sp.parts.is_some()).then_some(part);
+        while let Some(part) = next {
             if t >= stop - EPS {
                 return Some((v, Some(t)));
             }
             let iv = float::intervals(floats, cx0, cx1, t, t + est, true)?;
             let ivc: Vec<(f64, f64)> = iv.iter().map(|(a, b)| (a - cx0, b - cx0)).collect();
-            match band(sp, pieces, k, &ivc, k == 0 && (first_part || restarts), style, mark, &plain, self.ctx.fonts, iv.len() == 1) {
-                Ok((segs, e)) if e > k => {
+            frame.part = part;
+            match band(sp, pieces, k, &ivc, k == 0 && (first_part || restarts), style, mark, &frame, self.ctx.fonts, iv.len() == 1) {
+                Ok((segs, e, more)) if (e, more) != (k, Some(part)) => {
                     v.push(t);
-                    k = e;
+                    (k, next) = (e, more);
                     t += segs[0].pitch;
                 }
                 _ => return None,
@@ -343,7 +415,7 @@ impl<'d> PageFill<'d, '_> {
         Some((v, None))
     }
 
-    fn all_beside(&self, w: &WrapIn, top: f64, from: usize, bottom: f64) -> bool {
+    fn all_beside(&self, w: &WrapIn, top: f64, from: (usize, usize), bottom: f64) -> bool {
         matches!(self.tops(w, top, from, bottom), Some((_, None)))
     }
 
@@ -365,11 +437,11 @@ impl<'d> PageFill<'d, '_> {
                         break y;
                     }
                     let next = if ft >= y + est - EPS {
-                        self.tops(w, y, 0, ft + 2.0 * EPS).and_then(|(v, more)| more.and(v.last().copied()))
+                        self.tops(w, y, (0, w.plain.part), ft + 2.0 * EPS).and_then(|(v, more)| more.and(v.last().copied()))
                     } else if ft >= y - EPS && fb - y <= ft - p0 + EPS {
                         break fb;
                     } else {
-                        match self.tops(w, y, 0, fb) {
+                        match self.tops(w, y, (0, w.plain.part), fb) {
                             Some((_, None)) => break y,
                             low => low.and_then(|(_, t)| t),
                         }
@@ -391,7 +463,7 @@ impl<'d> PageFill<'d, '_> {
         strip_at: &Option<(Vec<(f64, f64)>, f64, f64)>,
         slack_on: f64,
         h: f64,
-        s: usize,
+        at: (usize, usize),
         mut yy: f64,
     ) -> (f64, Option<Strip>) {
         let &WrapIn { style, col, cx0, cx1, compat, first_part, at_top, .. } = w;
@@ -499,7 +571,7 @@ impl<'d> PageFill<'d, '_> {
                     // bottom there; else down past the float in steps of its height, full width.
                     let (ft, fb) = (f.excl[1], f.excl[3]);
                     yy = ft;
-                    if at_top && first_part && w.own_float(&f) && !self.all_beside(w, ft, s, fb) {
+                    if at_top && first_part && w.own_float(&f) && !self.all_beside(w, ft, at, fb) {
                         yy = ft + ((fb - ft) / h - EPS).ceil() * h;
                     }
                     return (yy, None);
@@ -584,18 +656,26 @@ impl<'d> PageFill<'d, '_> {
                         open || lone_picture,
                     );
                     match r {
-                        Ok((mut segs, e)) => {
-                            if first {
-                                for l in &mut segs {
-                                    l.pitch += top_extra;
-                                    l.baseline += top_extra;
+                        Ok((mut segs, e, more)) => {
+                            let extra = match sp.parts.as_deref() {
+                                // A shown part's first band takes its top border
+                                Some(parts) if bands.last().is_none_or(|b| b.1[0].part != segs[0].part) => {
+                                    let (key, starts) = w.part_top(parts, segs[0].part, bands.len());
+                                    top_border_extra(&parts[segs[0].part].style, key.as_deref(), starts)
                                 }
+                                Some(_) => 0.0,
+                                None if first => top_extra,
+                                None => 0.0,
+                            };
+                            for l in &mut segs {
+                                l.pitch += extra;
+                                l.baseline += extra;
                             }
                             // Compat ≤ 14 tests the paragraph's last line with its space after.
                             let tail = if compat == Compat::Legacy && e >= n { kept_after } else { 0.0 };
                             let (ph, segs_below) = (segs[0].pitch + tail, segs[0].below + tail);
                             let done = (ph - h).abs() < EPS && (segs_below - below).abs() < EPS || attempt == 1;
-                            got = Some((segs, e));
+                            got = Some((segs, e, more));
                             if done {
                                 break;
                             }
@@ -615,7 +695,8 @@ impl<'d> PageFill<'d, '_> {
     }
 
     // Bands
-    fn fit_bands(&self, w: &WrapIn, carry: &FlowState, mut lead: f64, mut frame: Frame) -> (Vec<(f64, Vec<Line>)>, usize) {
+    /// The paragraph's bands, where the next one would start and its shown part (`None`: the paragraph is laid out).
+    fn fit_bands(&self, w: &WrapIn, carry: &FlowState, mut lead: f64, mut frame: Frame) -> (Vec<(f64, Vec<Line>)>, usize, Option<usize>) {
         let &WrapIn { style, col, sp, pieces, n, est, est_below, cx0, cx1, compat, floats, first_part, at_top, top, share, bi, .. } = w;
         let mut bands: Vec<(f64, Vec<Line>)> = Vec::new();
         let mut yy = top;
@@ -652,19 +733,25 @@ impl<'d> PageFill<'d, '_> {
         let trailing = |bands: &[(f64, Vec<Line>)]| {
             bands.last().and_then(|(_, segs)| segs.last()).is_some_and(|l| l.end == n && l.start < l.end && l.hard == Some(Kind::LineBreak))
         };
-        while (s < n || bands.is_empty() || trailing(&bands)) && guard < 4000 {
+        let mut more = Some(frame.part);
+        while (more.is_some() || bands.is_empty() || trailing(&bands)) && guard < 4000 {
             guard += 1;
             let h = est;
             let below = est_below;
             let here: &[Placed] = if yy >= col.bottom.to_pt() - EPS || unplaced && bands.is_empty() { &[] } else { floats };
-            let (moved_to, strip) = self.choose_strip(w, here, &ordered, &strip_at, slack_on, h, s, yy);
+            let (moved_to, strip) = self.choose_strip(w, here, &ordered, &strip_at, slack_on, h, (s, frame.part), yy);
             yy = moved_to;
             let Some(Strip { uncut, forced, fitted, reuse }) = strip else { continue };
             let cutting = uncut.as_deref().unwrap_or(here);
             let Tried { got, blocked, trial, no_room, h, slack } = self.try_band(w, &bands, cutting, &forced, lead, &frame, s, yy, h, below);
             match (got, blocked) {
-                (Some((segs, e)), false) => {
+                (Some((segs, e, next)), false) => {
                     let ph = segs[0].pitch;
+                    // A shown part's bottom border below its last band
+                    let below_part = match (sp.parts.as_deref(), next) {
+                        (Some(parts), Some(q)) if q != segs[0].part => w.part_bottom(parts, &segs[0], q),
+                        _ => 0.0,
+                    };
                     let hard = segs.last().is_some_and(|l| matches!(l.hard, Some(Kind::PageBreak | Kind::ColumnBreak)));
                     let clear = segs.last().and_then(|l| Some((crate::layout::line::clear_of(sp, pieces, l)?, l.xs.first().copied().unwrap_or(0.0))));
                     if segs.last().is_some_and(|l| !l.hyphen) {
@@ -695,7 +782,8 @@ impl<'d> PageFill<'d, '_> {
                             .flatten();
                     }
                     bands.push((yy, segs));
-                    let next = yy + ph;
+                    (more, frame.part) = (next, next.unwrap_or(frame.part));
+                    let next = yy + ph + below_part;
                     yy = match clear {
                         Some(((l, r), x)) if compat == Compat::Generic => {
                             let iv = float::intervals(here, cx0, cx1, next - ph, next, false).unwrap_or_default();
@@ -767,7 +855,7 @@ impl<'d> PageFill<'d, '_> {
                 }
             }
         }
-        (bands, s)
+        (bands, s, more)
     }
 
     // Anchored floats
@@ -1155,11 +1243,11 @@ impl<'d> PageFill<'d, '_> {
         bands: &[(f64, Vec<Line>)],
         areas: &[(NoteArea, Vec<NotePart>)],
         take: usize,
-        s: usize,
+        (s, more): (usize, Option<usize>),
         page_end: bool,
         cur: &mut ColumnCursor,
     ) -> Result<Stop, Yield> {
-        let &WrapIn { p, pb, style, col, sp, n, first_part, top, anchor, after, .. } = w;
+        let &WrapIn { p, pb, style, col, sp, first_part, top, anchor, after, .. } = w;
         let (pos, carry, y, empty, area, out) = cur.parts();
         let nb = bands.len();
         let (a, rest) = areas[take.min(areas.len() - 1)].clone();
@@ -1199,7 +1287,7 @@ impl<'d> PageFill<'d, '_> {
             self.line_number(carry, style, col, bt + segs[0].baseline, &mut numbers);
             end_y = bt + segs[0].pitch;
         }
-        if take < nb || s < n {
+        if take < nb || more.is_some() {
             for l in &mut lines {
                 l.line = l.line.clipped(end_y - l.y);
             }
@@ -1211,12 +1299,15 @@ impl<'d> PageFill<'d, '_> {
         carry.prev = Some(p.para_style_in(self.ctx.env.text.review.view).clone());
         carry.balanced_after = 0.0;
         carry.prev_after = after;
-        let after_break = (take == nb && s < n).then_some(s);
+        let after_break = more.filter(|_| take == nb).map(|part| (s, part));
         let done = take >= nb && after_break.is_none();
         if done {
             pos.next_block();
         } else {
-            pos.at = At::Piece(pb.from + after_break.unwrap_or_else(|| bands[take].1[0].start));
+            pos.at = match after_break {
+                Some((s, part)) => At::Piece(pb.from + s, part),
+                None => At::Piece(pb.from + bands[take].1[0].start, bands[take].1[0].part),
+            };
             carry.letter_break = !take.checked_sub(1).and_then(|k| bands[k].1.last()).is_some_and(|l| l.hyphen);
         }
         if notes_continue && stop_kind.is_none() {

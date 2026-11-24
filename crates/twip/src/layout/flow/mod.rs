@@ -302,7 +302,7 @@ impl<'d> PageFill<'d, '_> {
         bi: usize,
         end: usize,
         width: f64,
-        (from, letter_break): (usize, bool),
+        (from, part, letter_break): (usize, usize, bool),
         x0: f64,
         memos: &mut Memos,
     ) -> Result<Rc<ParaLines>, Yield> {
@@ -329,7 +329,7 @@ impl<'d> PageFill<'d, '_> {
         }
         let shaped = shape(p, &space, self.ctx.fonts, memos)?;
         let mut ps = para_space(style, prev, next, width, from, x0, &self.ctx);
-        ps.letter_break = from > 0 && letter_break;
+        (ps.part, ps.letter_break) = (part, from > 0 && letter_break);
         if from > 0 && shaped.pieces[..from.min(shaped.pieces.len())].iter().all(|q| matches!(q.kind, Kind::PageBreak | Kind::ColumnBreak)) {
             ps.borders.0 = super::line::neighbour_borders(style, prev, None).0;
         }
@@ -600,7 +600,7 @@ impl<'d> PageFill<'d, '_> {
         let framed = matches!(p.inlines.first(), Some(Inline::Float(f, _)) if f.text_box.is_some() && f.shape.is_none());
         let mut breaks = cur.pos.at.at_start() && style.page_break_before && !(*cur.empty && page_empty);
         if cur.pos.at.at_start() && style.page_break_before && framed {
-            let pb = self.para_lines(&laid, bi, end, col.width, (0, false), col.x, memos)?;
+            let pb = self.para_lines(&laid, bi, end, col.width, (0, 0, false), col.x, memos)?;
             self.at.frames_only = true;
             let r = self.place_para(p, &pb, cur, col, memos);
             self.at.frames_only = false;
@@ -616,7 +616,7 @@ impl<'d> PageFill<'d, '_> {
         if cur.pos.at.at_start() && style.page_break_before && self.ctx.env.text.compat == Compat::Legacy {
             cur.carry.keep_top = true;
         }
-        let pb = self.para_lines(&laid, bi, end, col.width, (cur.pos.at.index(), cur.carry.letter_break), col.x, memos)?;
+        let pb = self.para_lines(&laid, bi, end, col.width, (cur.pos.at.index(), cur.pos.at.part(), cur.carry.letter_break), col.x, memos)?;
         let placed = self.place_para(p, &pb, cur, col, memos)?;
         if cur.pos.block > bi {
             cur.pos.block = end + 1;
@@ -718,7 +718,7 @@ impl<'d> PageFill<'d, '_> {
             None => Ok(true),
             Some(Block::Para(_)) => {
                 let Some((laid, end)) = self.laid(bi) else { unreachable!("a paragraph block") };
-                let pb = self.para_lines(&laid, bi, end, col.width, (0, false), col.x, memos)?;
+                let pb = self.para_lines(&laid, bi, end, col.width, (0, 0, false), col.x, memos)?;
                 let s = laid.para().para_style_in(self.ctx.env.text.review.view);
                 let g = match &carry.prev {
                     Some(ps) => gap(&self.ctx.env.text, ps, carry.prev_after, s, space_before(&self.ctx.env.text, s)),

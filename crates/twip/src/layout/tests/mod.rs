@@ -19,6 +19,7 @@ mod metrics;
 mod notes;
 pub(crate) mod output;
 mod page_numbers;
+mod parts;
 mod pending;
 mod random_edits;
 mod rebreak;

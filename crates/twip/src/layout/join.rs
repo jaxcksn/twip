@@ -92,7 +92,7 @@ fn table_first<'a>(t: &'a Table, review: &ReviewView) -> Option<&'a Paragraph> {
 /// cell paragraph counts. `None` at the end of `blocks`.
 pub fn next_shown_mark<'a, B: Borrow<Block>>(blocks: &'a [B], from: usize, review: &ReviewView) -> Option<&'a Paragraph> {
     blocks.get(from..)?.iter().find_map(|b| match b.borrow() {
-        Block::Para(p) if !review.view.hides(&p.mark.rev) => Some(p),
+        Block::Para(p) if !hides_mark(b.borrow(), review) => Some(p),
         Block::Para(_) => None,
         Block::Table(t) if table_hidden(t, review) => None,
         Block::Table(t) => table_first(t, review),
@@ -361,5 +361,31 @@ mod tests {
         assert_eq!(next_shown_mark(&blocks, 1, &hidden).map(|p| p.id), Some(id(&blocks[2]).0), "past the hidden table");
         assert_eq!(next_shown_mark(&blocks, 1, &shown).map(|p| p.id), first, "into the shown table's first cell");
         assert!(first.is_some());
+    }
+
+    #[test]
+    fn the_next_shown_mark_is_past_a_vanished_one_while_hidden_text_doesnt_show() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/review/FX-REVIEW-TABLES.docx");
+        let d = super::super::tests::doc(&path).expect("the tables fixture");
+        let Some(Block::Table(mut table)) = d.sections[0].blocks.iter().find(|b| matches!(b, Block::Table(_))).cloned() else { panic!("a table") };
+        for r in &mut table.rows {
+            r.vanished = true;
+            r.rev = Default::default();
+        }
+        let mut blocks = blocks(&[("a", true)]);
+        blocks.push(Block::Table(table));
+        blocks.extend(blocks_after(&["vanished", "shown"]));
+        let Block::Para(p) = &mut blocks[2] else { unreachable!() };
+        Rc::make_mut(&mut p.mark).hidden = true;
+        let hidden = ReviewView { view: MarkupView::NoMarkup, ..ReviewView::default() };
+        assert_eq!(next_shown_mark(&blocks, 1, &hidden).map(|p| p.id), Some(id(&blocks[3]).0), "past the vanished mark");
+        let shown = ReviewView { show_hidden: true, ..hidden };
+        let Block::Table(t) = &blocks[1] else { unreachable!() };
+        assert_eq!(next_shown_mark(&blocks, 1, &shown).map(|p| p.id), table_first(t, &shown).map(|p| p.id), "the table shows");
+    }
+
+    fn blocks_after(texts: &[&str]) -> Vec<Block> {
+        let texts: Vec<String> = texts.iter().map(|t| t.to_string()).collect();
+        super::super::tests::plain_doc(&texts).expect("plain").sections.remove(0).blocks
     }
 }

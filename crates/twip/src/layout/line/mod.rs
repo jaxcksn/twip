@@ -24,7 +24,7 @@ mod draw;
 mod size;
 
 pub use borders::{apply_borders, border_key, border_space, continued_key, neighbour_borders, shade_gap, top_border_extra};
-pub use breaking::{band, break_paragraph, clear_of};
+pub use breaking::{band, break_paragraph, clear_of, opens_part};
 pub use draw::{Below, LineOrigin, draw_label, draw_line};
 
 use breaking::line_style;
@@ -107,7 +107,8 @@ fn object_drop(a: f64, d: f64, align: Align) -> f64 {
 }
 
 impl Line {
-    fn empty(start: usize) -> Line {
+    /// An empty line at piece `start`.
+    pub fn empty(start: usize) -> Line {
         Line {
             start,
             end: start,
@@ -166,6 +167,8 @@ pub struct Frame {
     pub exact_on_top: bool,
     pub exact_extra_after: bool,
     pub drop_cut_indents: bool,
+    /// The shown part of a joined paragraph its first line is in ([`ParaSpace::part`]).
+    pub part: usize,
 }
 
 impl Frame {
@@ -194,6 +197,7 @@ impl Frame {
             exact_on_top: e.exact_on_top,
             exact_extra_after: e.exact_extra_after,
             drop_cut_indents: e.drop_cut_indents,
+            part: space.part,
         }
     }
 }
@@ -388,24 +392,30 @@ pub fn break_lines_uncached(
     let from = space.start.min(shaped.pieces.len());
     let pieces = &shaped.pieces[from..];
     // After a leading page or column break the paragraph starts again: first-line indent, borders.
-    let opens = shaped.opens && (from == 0 || shaped.pieces[..from].iter().all(|q| matches!(q.kind, Kind::PageBreak | Kind::ColumnBreak)));
+    let opens =
+        shaped.opens && space.part == 0 && (from == 0 || shaped.pieces[..from].iter().all(|q| matches!(q.kind, Kind::PageBreak | Kind::ColumnBreak)));
     let frame = Frame::new(space);
     let view = space.env.review.view;
     let (style, mark) = (para.para_style_in(view), para.mark_in(view));
     let mut lines =
         super::job::unit("line breaking", || crate::prof::time("break", || break_paragraph(shaped, pieces, style, mark, &frame, fonts, !opens)));
     let prev = if opens { space.borders.0.clone() } else { continued_key(style) };
-    // A joined paragraph (compat ≤ 14): each line has the borders and shading of the paragraph its first character
-    // is in, the top rule only above the first line and the bottom rule only below the last.
-    let (mut a, n) = (0, lines.len());
-    while a < n {
-        let s = line_style(shaped, style, pieces, &lines[a]);
-        let b = (a + 1..n).find(|&b| !std::ptr::eq(line_style(shaped, style, pieces, &lines[b]), s)).unwrap_or(n);
-        let before = if a == 0 && opens { prev.clone() } else { continued_key(s) };
-        let next = if b == n { space.borders.1.clone() } else { continued_key(s) };
-        let gap = if b == n { space.shade_gap } else { 0.0 };
-        apply_borders(&mut lines[a..b], s, before.as_deref(), next.as_deref(), space.width, false, opens && a == 0, b == n, gap, &[]);
-        a = b;
+    match &shaped.parts {
+        Some(parts) => shown_borders(&mut lines, parts, shaped, pieces, space, opens, &prev),
+        None => {
+            // A joined paragraph (compat ≤ 14): each line has the borders and shading of the paragraph its first
+            // character is in, the top rule only above the first line and the bottom rule only below the last.
+            let (mut a, n) = (0, lines.len());
+            while a < n {
+                let s = line_style(shaped, style, pieces, &lines[a]);
+                let b = (a + 1..n).find(|&b| !std::ptr::eq(line_style(shaped, style, pieces, &lines[b]), s)).unwrap_or(n);
+                let before = if a == 0 && opens { prev.clone() } else { continued_key(s) };
+                let next = if b == n { space.borders.1.clone() } else { continued_key(s) };
+                let gap = if b == n { space.shade_gap } else { 0.0 };
+                apply_borders(&mut lines[a..b], s, before.as_deref(), next.as_deref(), space.width, false, opens && a == 0, b == n, gap, &[]);
+                a = b;
+            }
+        }
     }
     memos.meter.unit_done();
     let n = lines.len();
@@ -431,6 +441,37 @@ pub fn break_lines_uncached(
     })
 }
 
+/// The borders and shading of a joined paragraph's parts while hidden text shows: each part's own, as the paragraph
+/// it shows as, its neighbours the parts beside it.
+fn shown_borders(
+    lines: &mut [Line],
+    parts: &[super::text::Part],
+    shaped: &ShapedPara,
+    pieces: &[Piece],
+    space: &ParaSpace,
+    opens: bool,
+    prev: &BorderKey,
+) {
+    let (mut a, n) = (0, lines.len());
+    while a < n {
+        let part = lines[a].part;
+        let s = &*parts[part].style;
+        let b = (a + 1..n).find(|&b| lines[b].part != part).unwrap_or(n);
+        let starts = if a == 0 { opens || opens_part(shaped, pieces, part) } else { true };
+        let before = match (a, part) {
+            (0, 0) if opens => prev.clone(),
+            (_, 1..) if starts => border_key(&parts[part - 1].style),
+            _ => continued_key(s),
+        };
+        let (next, gap) = match lines.get(b).map(|l| &*parts[l.part].style) {
+            Some(q) => (border_key(q), shade_gap(&space.env, s, Some(q), true)),
+            None => (space.borders.1.clone(), space.shade_gap),
+        };
+        apply_borders(&mut lines[a..b], s, before.as_deref(), next.as_deref(), space.width, false, starts, true, gap, &[]);
+        a = b;
+    }
+}
+
 pub fn para_space(
     style: &ParaStyle,
     prev: Option<&ParaStyle>,
@@ -448,5 +489,5 @@ pub fn para_space(
         }
     };
     let shade_gap = shade_gap(&ctx.env.text, style, next, true);
-    ParaSpace { width, start: from, borders, x0, env: ctx.env.text.clone(), fit: false, letter_break: false, shade_gap }
+    ParaSpace { width, start: from, part: 0, borders, x0, env: ctx.env.text.clone(), fit: false, letter_break: false, shade_gap }
 }

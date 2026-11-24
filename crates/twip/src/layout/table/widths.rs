@@ -39,6 +39,7 @@ fn vertical_width(blocks: &[Block], env: &StoryEnv, memos: &mut Memos) -> Result
         let ps = ParaSpace {
             width: 1e9,
             start: 0,
+            part: 0,
             borders: neighbour_borders(s, None, None),
             x0: 0.0,
             env: env.ctx.env.text.clone(),
@@ -100,6 +101,7 @@ fn content_widths_uncached(blocks: &[LaidBlock], env: &StoryEnv, fixed: bool, me
                 let ps = ParaSpace {
                     width: 1e9,
                     start: 0,
+                    part: 0,
                     borders: neighbour_borders(s, None, None),
                     x0: 0.0,
                     env: env.ctx.env.text.clone(),
