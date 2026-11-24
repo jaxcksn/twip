@@ -266,3 +266,73 @@ fn editable_ranges_list_their_editors_and_take_groups() {
     assert!(matches!(e.select_all_editable_ranges(), Outcome::Changed(_) | Outcome::Moved));
     assert!(e.in_editable_range("Author"));
 }
+
+fn grant_doc() -> Editor {
+    let mut e = Editor::open(&blank_body("<w:p><w:r><w:t>one two three four</w:t></w:r></w:p>"), fonts()).expect("opens");
+    e.complete(fonts());
+    e.selection = Selection::range(at(&e, 0, 4), at(&e, 0, 7), Granularity::Char);
+    e
+}
+
+fn markers(e: &Editor) -> usize {
+    inlines(e).iter().filter(|i| matches!(i, Inline::Opaque(_))).count()
+}
+
+#[test]
+fn a_grant_to_a_person_isn_t_one_to_a_group_of_that_name() {
+    use crate::editing::commands::Outcome;
+    use crate::editing::protection::RangeEditor;
+    let mut e = grant_doc();
+    assert!(matches!(e.set_range_editor(RangeEditor::User("Ada".into()), true, fonts()), Outcome::Changed(_)));
+    let protect = DocumentProtection { kind: Some(ProtectionKind::ReadOnly), enforce: Some(true), ..Default::default() };
+    assert!(matches!(e.execute(Command::SetDocumentProtection(protect), fonts()), Outcome::Changed(_)));
+    e.set_editing_groups(vec!["Ada".into()]);
+    assert!(!e.in_editable_range("Bob"), "a member of a group called Ada isn't the person Ada");
+    e.selection = Selection::Caret(at(&e, 0, 0));
+    assert!(matches!(e.select_next_editable_range(true), Outcome::Unchanged(_)), "and navigation lists the same regions");
+    e.selection = Selection::range(at(&e, 0, 4), at(&e, 0, 7), Granularity::Char);
+    assert!(e.in_editable_range("ada"), "names match without case");
+}
+
+#[test]
+fn a_group_grant_writes_a_canonical_group_and_refuses_others() {
+    use crate::editing::commands::Outcome;
+    use crate::editing::protection::RangeEditor;
+    let mut e = grant_doc();
+    assert!(matches!(e.set_range_editor(RangeEditor::Group("Editors".into()), true, fonts()), Outcome::Changed(_)));
+    let xml = inlines(&e)
+        .iter()
+        .find_map(|i| if let Inline::Opaque(o) = i { o.xml.0.as_deref().filter(|x| x.contains("permStart")).map(str::to_string) } else { None });
+    assert!(xml.is_some_and(|x| x.contains(r#"edGrp="editors""#)));
+    let before = markers(&e);
+    assert!(!matches!(e.set_range_editor(RangeEditor::Group("Marketing".into()), true, fonts()), Outcome::Changed(_)));
+    assert_eq!(markers(&e), before, "no markers for a group the format doesn't have");
+}
+
+#[test]
+fn a_person_s_grant_is_added_and_revoked_without_regard_to_case() {
+    use crate::editing::commands::Outcome;
+    use crate::editing::protection::RangeEditor;
+    let mut e = grant_doc();
+    assert!(matches!(e.set_range_editor(RangeEditor::User("Ada".into()), true, fonts()), Outcome::Changed(_)));
+    assert!(matches!(e.set_range_editor(RangeEditor::User("ada".into()), true, fonts()), Outcome::Unchanged(_)), "no second grant");
+    assert_eq!(markers(&e), 2);
+    assert!(matches!(e.set_range_editor(RangeEditor::User("ADA".into()), false, fonts()), Outcome::Changed(_)));
+    assert!(e.editors_here().is_empty());
+    assert_eq!(markers(&e), 0);
+}
+
+#[test]
+fn a_grant_reaches_every_selected_span_that_lacks_it() {
+    use crate::editing::commands::Outcome;
+    use crate::editing::protection::RangeEditor;
+    let mut e = grant_doc();
+    let ada = RangeEditor::User("Ada".into());
+    assert!(matches!(e.set_range_editor(ada.clone(), true, fonts()), Outcome::Changed(_)));
+    // The primary span has the grant; a second selected span doesn't.
+    e.select_ranges(&[(at(&e, 0, 12), at(&e, 0, 15)), (at(&e, 0, 4), at(&e, 0, 7))]);
+    assert!(e.is_discontiguous());
+    assert!(matches!(e.set_range_editor(ada.clone(), true, fonts()), Outcome::Changed(_)), "the other span gets one");
+    assert_eq!(markers(&e), 4, "one range each, the first not doubled");
+    assert!(matches!(e.set_range_editor(ada, true, fonts()), Outcome::Unchanged(_)), "all granted: nothing to do");
+}

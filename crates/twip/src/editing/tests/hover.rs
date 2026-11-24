@@ -333,3 +333,64 @@ fn note_separators_are_set_read_back_saved_and_reset() {
     e.undo_many(true, 2, fonts());
     assert_eq!((sep(&e, S::Separator), sep(&e, S::Notice)), (Some((String::new(), true)), None), "undone");
 }
+
+fn separator_doc(foot: &str, settings: &str) -> Editor {
+    use super::empty_stories::NS;
+    let foot = format!(r#"<w:footnotes {NS}>{foot}</w:footnotes>"#);
+    let settings = format!(r#"<w:settings {NS}>{settings}</w:settings>"#);
+    let body = "<w:p><w:r><w:t>Text</w:t></w:r></w:p>";
+    let parts = [("footnotes.xml", "footnotes", "footnotes", foot.as_str()), ("settings.xml", "settings", "settings", settings.as_str())];
+    let mut e = Editor::open(&super::empty_stories::build(body, "", &parts), fonts()).expect("opens");
+    e.complete(fonts());
+    e
+}
+
+fn separator_note(id: i64, text: &str) -> String {
+    format!(r#"<w:footnote w:type="separator" w:id="{id}"><w:p><w:r><w:t>{text}</w:t></w:r></w:p></w:footnote>"#)
+}
+
+#[test]
+fn a_separator_edit_updates_the_story_the_reader_uses() {
+    use crate::docx::{NoteKind, NoteSeparator as S};
+    // -1 is unlisted; -3 is listed and the active one.
+    let foot = separator_note(-1, "Unlisted") + &separator_note(-3, "Listed");
+    let mut e = separator_doc(&foot, r#"<w:footnotePr><w:footnote w:id="-3"/></w:footnotePr>"#);
+    let text = |e: &Editor| e.note_separator(NoteKind::Foot, S::Separator).map(|s| s.text);
+    assert_eq!(text(&e), Some("Listed".into()));
+    assert!(matches!(e.set_note_separator(NoteKind::Foot, S::Separator, Some("New"), fonts()), crate::editing::Outcome::Changed(_)));
+    let saved = crate::docx::write::save(e.document()).expect("saves");
+    assert_eq!(text(&Editor::open(&saved, fonts()).expect("reopens")), Some("New".into()), "the edit survives");
+}
+
+#[test]
+fn a_separator_reset_removes_every_listed_story_of_the_type() {
+    use crate::docx::{NoteKind, NoteSeparator as S};
+    let foot = separator_note(-1, "A") + &separator_note(-3, "B");
+    let mut e = separator_doc(&foot, r#"<w:footnotePr><w:footnote w:id="-1"/><w:footnote w:id="-3"/></w:footnotePr>"#);
+    assert!(matches!(e.set_note_separator(NoteKind::Foot, S::Notice, None, fonts()), crate::editing::Outcome::Unchanged(_)));
+    assert!(matches!(e.set_note_separator(NoteKind::Foot, S::Separator, None, fonts()), crate::editing::Outcome::Changed(_)));
+    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let again = Editor::open(&saved, fonts()).expect("reopens");
+    assert_eq!(again.note_separator(NoteKind::Foot, S::Separator).map(|s| (s.text, s.builtin)), Some((String::new(), true)));
+}
+
+#[test]
+fn a_separator_edit_keeps_the_note_properties_namespace_declarations() {
+    use crate::docx::{NoteKind, NoteSeparator as S};
+    let foot = separator_note(-1, "Old");
+    let pr = r#"<w:footnotePr xmlns:p="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><p:numFmt p:val="upperRoman"/></w:footnotePr>"#;
+    let mut e = separator_doc(&foot, pr);
+    assert!(matches!(e.set_note_separator(NoteKind::Foot, S::Separator, Some("New"), fonts()), crate::editing::Outcome::Changed(_)));
+    let saved = crate::docx::write::save(e.document()).expect("saves a settings part with a bound prefix");
+    let again = Editor::open(&saved, fonts()).expect("reopens");
+    assert_eq!(again.note_separator(NoteKind::Foot, S::Separator).map(|s| s.text), Some("New".into()));
+}
+
+#[test]
+fn a_separator_with_a_table_reports_its_cells_text() {
+    use crate::docx::{NoteKind, NoteSeparator as S};
+    let table = r#"<w:tbl><w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>Notes</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>here</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p><w:r><w:t>after</w:t></w:r></w:p>"#;
+    let foot = format!(r#"<w:footnote w:type="separator" w:id="-1">{table}</w:footnote>"#);
+    let e = separator_doc(&foot, r#"<w:footnotePr><w:footnote w:id="-1"/></w:footnotePr>"#);
+    assert_eq!(e.note_separator(NoteKind::Foot, S::Separator).map(|s| s.text), Some("Notes\nhere\nafter".into()));
+}

@@ -83,3 +83,36 @@ fn the_scan_finds_direct_reads() {
     assert!(reads("p.para_style_in(view)").is_empty());
     assert!(reads("src.style.change.is_some()").is_empty());
 }
+
+#[test]
+fn a_field_value_shows_its_revisions_text_mark() {
+    use crate::docx::review::TextMark;
+    let fld = |t: &str| format!(r#"<w:r><w:fldChar w:fldCharType="{t}"/></w:r>"#);
+    let ins = r#"w:id="9" w:author="a" w:date="2026-01-01T00:00:00Z""#;
+    let body = format!(
+        r#"<w:p><w:r><w:t>Z</w:t></w:r><w:ins {ins}>{}<w:r><w:instrText xml:space="preserve"> DATE \@ "dd MMMM yyyy" </w:instrText></w:r>{}<w:r><w:t>x</w:t></w:r>{}</w:ins><w:r><w:t>Q</w:t></w:r></w:p>"#,
+        fld("begin"),
+        fld("separate"),
+        fld("end")
+    );
+    let src = crate::docx::blank::blank_docx();
+    let mut z = zip::ZipArchive::new(std::io::Cursor::new(src)).expect("a package");
+    let mut parts: Vec<(String, Vec<u8>)> = Vec::new();
+    for i in 0..z.len() {
+        use std::io::Read;
+        let mut f = z.by_index(i).expect("an entry");
+        let name = f.name().expect("a name").to_string();
+        let mut data = Vec::new();
+        f.read_to_end(&mut data).expect("reads");
+        if name == "word/document.xml" {
+            data = String::from_utf8(data).expect("utf-8").replacen("<w:p/>", &body, 1).into_bytes();
+        }
+        parts.push((name, data));
+    }
+    let bytes = crate::docx::write::repackage(&crate::docx::blank::blank_docx(), &parts, zip::CompressionMethod::Deflated).expect("repackages");
+    let mut d = crate::docx::read_at(&bytes, 1_794_096_000).expect("reads");
+    let after = |d: &crate::docx::Document| super::page_chars(d)[0].iter().find(|c| c.0 == 'Q').map(|c| c.1).expect("the text after the field");
+    let plain = after(&d);
+    std::rc::Rc::make_mut(&mut d.review.markup).style.insertions.mark = TextMark::Bold;
+    assert!(after(&d) > plain, "the field's value is bold like the rest of the insertion");
+}

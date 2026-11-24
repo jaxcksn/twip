@@ -166,7 +166,14 @@ fn a_field_reads_back_its_view_and_staleness_and_an_update_clears_it() {
     assert_eq!(field(&e), (true, true), "showing its code");
     let r = send(&mut e, json!({ "type": "command", "command": { "type": "updateFields" } }));
     assert!(r["answer"].get("error").is_none(), "{r}");
-    assert_eq!(field(&e), (false, false), "an update shows the result and clears the flag");
+    assert_eq!(field(&e), (false, true), "an update shows the result; the application's answer is still to come");
+    let id = send(&mut e, json!({ "type": "query", "q": "elements" }))["answer"][0]["id"].clone();
+    let r = send(&mut e, json!({ "type": "command", "command": { "type": "setFieldResults", "results": [{ "id": id, "display": "new" }] } }));
+    assert!(r["answer"].get("error").is_none(), "{r}");
+    assert_eq!(field(&e), (false, false), "a result set clears the flag");
+    let r = send(&mut e, json!({ "type": "command", "command": { "type": "undo" } }));
+    assert!(r["answer"].get("error").is_none(), "{r}");
+    assert_eq!(field(&e), (false, true), "undoing the result brings the stale flag back");
     let r = send(&mut e, json!({ "type": "command", "command": { "type": "undo" } }));
     assert!(r["answer"].get("error").is_none(), "{r}");
     assert_eq!(field(&e), (true, true));

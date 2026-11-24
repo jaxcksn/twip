@@ -397,6 +397,12 @@ impl Editor {
             return self.insert_page_number_at(format, place, align, fonts);
         }
         use crate::editing::commands::Command;
+        // Text's own number shows on its page; only a header or footer's first-page version can leave it out.
+        if place == PageNumberSpot::Caret
+            && !matches!(self.selection.focus().map(|p| p.story), Some(crate::editing::position::StoryId::HeaderFooter(_)))
+        {
+            return Outcome::unavailable("a number in the text shows on the first page too");
+        }
         self.joined("Page Number", fonts, |e| {
             // Into the header or footer every page but the first shows
             let first = e.doc.sections.get(e.focus_section()).is_some_and(|s| s.title_pg);

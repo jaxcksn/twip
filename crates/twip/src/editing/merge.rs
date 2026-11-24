@@ -1100,7 +1100,15 @@ impl Editor {
                     self.follow(&tx);
                     self.commit(tx, None, fonts)
                 }
-                (Where::Blocks { container, range }, f) if !plain => {
+                (Where::Blocks { container, range }, f) => {
+                    // A plain-text or date control around whole paragraphs holds the text, in one paragraph.
+                    let plain_text = plain.then(|| f.as_ref().map_or_else(|| given.clone(), |f| f.text()));
+                    if plain_text
+                        .as_ref()
+                        .is_some_and(|t| t.contains('\n') && !matches!(control.props.kind, ControlKind::PlainText { multi_line: true }))
+                    {
+                        return Err(bad("text"));
+                    }
                     let blocks = self.index.blocks(&self.doc, *container).ok_or_else(no_element)?;
                     // The control and the ones around it
                     let lead = match &blocks[range.start] {
@@ -1110,18 +1118,21 @@ impl Editor {
                     let lead: Vec<ControlId> = lead[..lead.iter().position(|x| *x == c).map_or(lead.len(), |k| k + 1)].to_vec();
                     let mut tx = self.begin(label);
                     let mut new: Vec<Block> = match f {
-                        Some(f) => {
+                        Some(f) if plain_text.is_none() => {
                             let mut b: Vec<Block> = f.blocks.iter().map(super::clipboard::fresh).collect();
                             self.take_in(&mut tx, &mut b, &f, &mut super::clipboard::Taken::default());
                             b
                         }
-                        None => {
+                        _ => {
                             let blocks = self.index.blocks(&self.doc, *container).ok_or_else(no_element)?;
                             let first = blocks[range.clone()].iter().find_map(super::first_para_of).ok_or_else(no_element)?;
                             let mut p = self.split_template(first).ok_or_else(no_element)?;
                             p.controls.clear();
                             let run = p.mark.clone();
-                            p.inlines = vec![Inline::Text(given.clone(), run)];
+                            p.inlines = match &plain_text {
+                                Some(t) => crate::docx::binding::text_inlines(&crate::docx::xml::legal(t), &run),
+                                None => vec![Inline::Text(given.clone(), run)],
+                            };
                             vec![Block::Para(p)]
                         }
                     };
@@ -1170,7 +1181,12 @@ impl Editor {
     /// A building block's body, to fill gallery control `props` with.
     fn building_block_fragment(&self, name: &str, props: &ControlProps) -> Result<super::clipboard::Fragment, Refused> {
         let Some(crate::docx::KeptKind::Gallery { gallery, category }) = props.kept_kind() else { return Err(bad("id")) };
-        let part = self.gallery_entries(gallery.as_deref(), category.as_deref()).find(|b| b.name == name).ok_or_else(|| bad("buildingBlock"))?;
+        let mut named = self.gallery_entries(gallery.as_deref(), category.as_deref()).filter(|b| b.name == name);
+        let part = named.next().ok_or_else(|| bad("buildingBlock"))?;
+        // A name two categories share can't say which entry was chosen: refuse rather than insert the wrong one.
+        if named.next().is_some() {
+            return Err(bad("buildingBlock"));
+        }
         let mut blocks = part.body.clone();
         if blocks.len() > 1 && matches!(blocks.last(), Some(Block::Para(p)) if super::step::para_len(p) == Unit(0)) {
             blocks.pop();
@@ -1572,20 +1588,7 @@ impl Editor {
             if !views.is_empty() {
                 let _ = self.step(&mut tx, Step::FieldViews { para, views });
             }
-            // An updated result is current
-            let Some(p) = self.index.para(&self.doc, para) else { continue };
-            let stale = |i: &Inline| matches!(i, Inline::FieldBegin { id, dirty: true, .. } if fields.iter().any(|f| f.0 == *id && f.1 == para));
-            if p.inlines.iter().any(stale) {
-                let mut inlines = p.inlines.clone();
-                for i in inlines.iter_mut() {
-                    if stale(i)
-                        && let Inline::FieldBegin { dirty, .. } = i
-                    {
-                        *dirty = false;
-                    }
-                }
-                let _ = self.step(&mut tx, Step::Restyle { para, inlines });
-            }
+            // A field is current once its result is set ([`Self::set_result`]), not when one is asked for.
         }
         self.commit(tx, None, fonts)
     }
@@ -1778,7 +1781,23 @@ impl Editor {
                 Step::Text { para, range: at(s.end)..at(s.end), with, edges: Default::default() }
             }
         };
-        self.step(tx, step).is_ok()
+        if self.step(tx, step).is_err() {
+            return false;
+        }
+        // The result is current now
+        let Some(p) = self.index.para(&self.doc, para) else { return true };
+        if p.inlines.iter().any(|i| matches!(i, Inline::FieldBegin { id, dirty: true, .. } if *id == f)) {
+            let mut inlines = p.inlines.clone();
+            for i in &mut inlines {
+                if let Inline::FieldBegin { id, dirty, .. } = i
+                    && *id == f
+                {
+                    *dirty = false;
+                }
+            }
+            return self.step(tx, Step::Restyle { para, inlines }).is_ok();
+        }
+        true
     }
 
     pub(super) fn lock_fields(&mut self, lock: bool, ids: Option<&[crate::api::value::ElementId]>, fonts: &Fonts) -> Outcome {
@@ -2611,10 +2630,12 @@ impl Editor {
             let (e, _) = self.element(id)?;
             let ElementId::Control(c) = e else { return Err(bad("id")) };
             let mut control = self.doc.controls.get(&c).cloned().ok_or_else(no_element)?;
-            let ControlKind::Date { format, .. } = &control.props.kind else { return Err(bad("id")) };
+            let ControlKind::Date { format, lid } = &control.props.kind else { return Err(bad("id")) };
             let w = self.cx().w;
             let esc = crate::docx::write::props::esc;
-            let mut x = control.props.kind_xml.clone().unwrap_or_else(|| format!("<{w}date><{w}dateFormat {w}val=\"{}\"/></{w}date>", esc(format)));
+            let lid = lid.as_deref().map(|l| format!("<{w}lid {w}val=\"{}\"/>", esc(l))).unwrap_or_default();
+            let mut x =
+                control.props.kind_xml.clone().unwrap_or_else(|| format!("<{w}date><{w}dateFormat {w}val=\"{}\"/>{lid}</{w}date>", esc(format)));
             let after_lid = if x.contains("lid") { "lid" } else { "dateFormat" };
             if let Some(s) = storage {
                 x = with_child_val(&x, "storeMappedDataAs", s.xml(), &w, Some(after_lid));
@@ -3259,7 +3280,10 @@ pub fn date_settings(props: &ControlProps) -> Option<DateSettings> {
     let ControlKind::Date { format, lid } = &props.kind else { return None };
     let x = props.kind_xml.as_deref().unwrap_or_default();
     let val = |local: &str| {
-        let at = x.find(&format!(":{local} ")).or_else(|| x.find(&format!("<{local} ")))?;
+        // The element's name, then any XML whitespace before its attributes.
+        let at = [format!(":{local}"), format!("<{local}")].iter().find_map(|name| {
+            x.match_indices(name.as_str()).find(|(i, _)| x[i + name.len()..].starts_with(|c: char| c.is_ascii_whitespace())).map(|(i, _)| i)
+        })?;
         let tag = &x[at..at + crate::docx::binding::tag_end(&x[at..])?];
         attr_value(tag, "val").map(|r| crate::docx::binding::unescape(&tag[r]))
     };

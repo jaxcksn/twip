@@ -103,6 +103,39 @@ fn a_gallery_control_takes_a_building_block_of_its_category() {
 }
 
 #[test]
+fn a_building_block_name_two_categories_share_is_refused() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-SUBTEMPLATES.docx");
+    let gallery = r#"<w:sdt><w:sdtPr><w:alias w:val="Pick"/><w:id w:val="9"/><w:docPartList><w:docPartGallery w:val="Custom 1"/></w:docPartList></w:sdtPr><w:sdtContent><w:p><w:r><w:t>Choose</w:t></w:r></w:p></w:sdtContent></w:sdt>"#;
+    let xml = format!(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>{gallery}<w:p><w:r><w:t>After</w:t></w:r></w:p><w:sectPr/></w:body></w:document>"#
+    );
+    let part = |name: &str, category: &str, text: &str| {
+        format!(
+            r#"<w:docPart><w:docPartPr><w:name w:val="{name}"/><w:category><w:name w:val="{category}"/><w:gallery w:val="custom1"/></w:category><w:behaviors><w:behavior w:val="content"/></w:behaviors></w:docPartPr><w:docPartBody><w:p><w:r><w:t>{text}</w:t></w:r></w:p></w:docPartBody></w:docPart>"#
+        )
+    };
+    let glossary = format!(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:glossaryDocument xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docParts>{}{}{}</w:docParts></w:glossaryDocument>"#,
+        part("Summary", "General", "General summary"),
+        part("Summary", "Legal", "Legal summary"),
+        part("Notice", "Legal", "Legal notice")
+    );
+    let bytes = crate::docx::write::repackage(
+        &std::fs::read(path).expect("fixture"),
+        &[("word/document.xml".into(), xml.into_bytes()), ("word/glossary/document.xml".into(), glossary.into_bytes())],
+        zip::CompressionMethod::Deflated,
+    )
+    .expect("repackages");
+    let mut e = Editor::open(&bytes, fonts()).expect("opens");
+    let (_, id) = control(&e, "Pick");
+    let pick = |name: &str| FillControl { id: id.clone(), text: None, image: None, docx: None, building_block: Some(name.into()) };
+    assert!(matches!(e.execute(Command::FillControl(pick("Summary")), fonts()), Outcome::Refused(_)), "which one was meant is unknown");
+    assert!(texts(&e).iter().any(|t| t == "Choose"), "nothing was inserted");
+    assert!(matches!(e.execute(Command::FillControl(pick("Notice")), fonts()), Outcome::Changed(_)), "an unambiguous name fills");
+    assert!(texts(&e).iter().any(|t| t == "Legal notice"));
+}
+
+#[test]
 fn a_bound_control_inside_another_opens_and_shows_its_node() {
     let mut e = open("FX-MERGE-CONTROLS.docx");
     let ns = "urn:case";

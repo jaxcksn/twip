@@ -105,6 +105,9 @@ pub struct SwitchSpec {
     /// The letter (or `!`) after the backslash.
     pub flag: &'static str,
     pub arg: SwitchArg,
+    /// The value may be left out: the switch alone is a form Word takes (`TOC \n` leaves page numbers out at every
+    /// level).
+    pub optional: bool,
     pub description: &'static str,
 }
 
@@ -159,7 +162,12 @@ const fn arg(name: &'static str, kind: ArgKind, required: bool) -> ArgSpec {
 }
 
 const fn sw(flag: &'static str, arg: SwitchArg, description: &'static str) -> SwitchSpec {
-    SwitchSpec { flag, arg, description }
+    SwitchSpec { flag, arg, optional: false, description }
+}
+
+/// A switch whose value may be left out.
+const fn sw_opt(flag: &'static str, arg: SwitchArg, description: &'static str) -> SwitchSpec {
+    SwitchSpec { flag, arg, optional: true, description }
 }
 
 const NONE: Formats = Formats { text: false, numeric: false, date: false };
@@ -1040,11 +1048,11 @@ pub static CATALOGUE: &[FieldSpec] = &[
             sw("b", S::Bookmark, "Builds it from the bookmarked part"),
             sw("c", S::Name, "Builds a table of figures of this caption label"),
             sw("d", S::Text, "The separator between sequence and page numbers"),
-            sw("f", S::Text, "Builds it from TC entries of this list"),
+            sw_opt("f", S::Text, "Builds it from TC entries of this list, or of every list"),
             sw("h", S::None, "Makes the entries hyperlinks"),
             sw("l", S::Levels, "Builds it from TC entries of these levels"),
-            sw("n", S::Levels, "Leaves out page numbers at these levels"),
-            sw("o", S::Levels, "Builds it from headings of these outline levels"),
+            sw_opt("n", S::Levels, "Leaves out page numbers at these levels, or at every level"),
+            sw_opt("o", S::Levels, "Builds it from headings of these outline levels"),
             sw("p", S::Text, "The separator between an entry and its page number"),
             sw("s", S::Name, "Includes the sequence number with the page number"),
             sw("t", S::Text, "Builds it from these styles and their levels"),
@@ -1289,7 +1297,9 @@ pub fn check(code: &str) -> Vec<FieldProblem> {
         let flag = s.flag.to_string();
         match spec.switch(&flag) {
             None => out.push(FieldProblem::UnknownSwitch(flag)),
-            Some(sp) if sp.arg != SwitchArg::None && s.arg.as_deref().is_none_or(str::is_empty) => out.push(FieldProblem::MissingSwitchValue(flag)),
+            Some(sp) if sp.arg != SwitchArg::None && !sp.optional && s.arg.as_deref().is_none_or(str::is_empty) => {
+                out.push(FieldProblem::MissingSwitchValue(flag))
+            }
             Some(sp) if sp.arg == SwitchArg::Number && s.arg.as_deref().is_some_and(|a| a.trim().parse::<i64>().is_err()) => {
                 out.push(FieldProblem::NotANumber(flag))
             }
@@ -1332,6 +1342,14 @@ mod tests {
     }
 
     #[test]
+    fn a_switch_whose_value_is_optional_may_stand_alone() {
+        for code in [" TOC \\n ", " TOC \\n 2-3 ", " TOC \\o ", " TOC \\o \"1-3\" \\h ", " TOC \\f ", " TOC \\f A ", " TOC \\n \\h "] {
+            assert!(check(code).is_empty(), "{code}: {:?}", check(code));
+        }
+        assert_eq!(check(" TOC \\n \\b "), [FieldProblem::MissingSwitchValue("b".into())], "a required value still is");
+    }
+
+    #[test]
     fn a_code_s_problems_are_found() {
         assert!(check(" PAGE \\* roman ").is_empty());
         assert!(check(" REF Intro \\h ").is_empty());
@@ -1339,7 +1357,8 @@ mod tests {
         assert_eq!(check(" REF "), [FieldProblem::MissingArgument("Bookmark")]);
         assert_eq!(check(" PAGEREF Intro \\q "), [FieldProblem::UnknownSwitch("q".into())]);
         assert_eq!(check(" SEQ Figure \\r x "), [FieldProblem::NotANumber("r".into())]);
-        assert_eq!(check(" TOC \\o "), [FieldProblem::MissingSwitchValue("o".into())]);
+        assert_eq!(check(" TOC \\b "), [FieldProblem::MissingSwitchValue("b".into())]);
+        assert_eq!(check(" TOC \\p "), [FieldProblem::MissingSwitchValue("p".into())]);
         assert_eq!(check(" NUMPAGES \\@ \"d\" "), [FieldProblem::FormatNotTaken('@')]);
         assert_eq!(check(" NOSUCH "), [FieldProblem::UnknownField("NOSUCH".into())]);
         assert!(check(" =2+2 ").is_empty() && check(" = ").contains(&FieldProblem::MissingArgument("Formula")));

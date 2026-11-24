@@ -457,7 +457,9 @@ impl Editor {
     pub fn select_next_form_field(&mut self, forward: bool) -> Outcome {
         use crate::docx::ControlKind;
         let Some(focus) = self.selection.focus() else { return Outcome::Unchanged("no selection") };
-        let Some((here, at)) = focus.para_offset() else { return Outcome::Unchanged("no paragraph") };
+        // Going on from the selection's far end, back from its near one: a paragraph and a unit of the same place.
+        let (a, b) = self.selection.ordered(&self.index).unwrap_or((focus, focus));
+        let Some((here, start)) = (if forward { b } else { a }).para_offset() else { return Outcome::Unchanged("no paragraph") };
         let story = focus.story;
         // Every place to fill in, in order: (paragraph, unit, what)
         enum Stop {
@@ -494,8 +496,6 @@ impl Editor {
             return Outcome::Unchanged("no form fields");
         }
         // The stop holding the selection counts as passed
-        let (a, _) = self.selection.ordered(&self.index).unwrap_or((focus, focus));
-        let start = a.para_offset().map_or(at, |x| x.1);
         let key = |s: &(usize, ParaId, Unit, Stop)| (s.0, s.2);
         let pick = if forward {
             stops.iter().find(|s| key(s) > (mine, start)).or(stops.first())

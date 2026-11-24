@@ -698,3 +698,29 @@ fn a_cell_block_pasted_from_another_document_takes_each_cells_note_once() {
     // 4x the cells should cost about 4x; quadratic is about 16x.
     assert!(large < small * 10 + std::time::Duration::from_millis(50), "{small:?} for 256 cells, {large:?} for 1024");
 }
+
+#[test]
+fn accepting_a_whole_table_revision_removes_its_deleted_cells() {
+    let d = r#"w:id="1" w:author="a" w:date="2020-01-01T00:00:00Z""#;
+    let cell = |text: &str, pr: &str| format!(r#"<w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/>{pr}</w:tcPr><w:p>{}</w:p></w:tc>"#, t(text));
+    let table = format!(
+        r#"<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/></w:tblGrid><w:tr>{}{}</w:tr><w:tr>{}{}</w:tr></w:tbl>"#,
+        cell("keep", ""),
+        cell("gone", &format!("<w:cellDel {d}/>")),
+        cell("a", ""),
+        cell("b", "")
+    );
+    let e = ed(&format!("{table}<w:p/>"));
+    let blocks = e.document().sections[0].blocks[..1].to_vec();
+    let f = crate::editing::clipboard::Fragment { blocks, ..Default::default() }.accepted();
+    let [Block::Table(t)] = f.blocks.as_slice() else { panic!("a table: {:?}", f.blocks) };
+    let text = |c: &crate::docx::Cell| {
+        c.blocks
+            .iter()
+            .filter_map(|b| if let Block::Para(p) = b { Some(crate::editing::text::UnitText::of(p).text) } else { None })
+            .collect::<String>()
+    };
+    let rows: Vec<Vec<String>> = t.rows.iter().map(|r| r.cells.iter().map(text).collect()).collect();
+    assert_eq!(rows[0], ["keep"], "the deleted cell and its text are gone: {rows:?}");
+    assert_eq!(rows[1], ["a", "b"]);
+}

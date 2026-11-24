@@ -992,10 +992,10 @@ impl<'a> Builder<'a> {
                     match crate::docx::fields::span_at(&para.inlines, k).filter(|_| evaluated) {
                         Some(s) => {
                             for (t, r) in crate::docx::fields::value_runs(&para.inlines, s, &text, run) {
-                                self.text(&t, run_in(&r, view))?;
+                                self.text(&t, &marked_run(run_in(&r, view), view, &space.markup))?;
                             }
                         }
-                        None => self.text(&text, run_in(run, view))?,
+                        None => self.text(&text, &marked_run(run_in(run, view), view, &space.markup))?,
                     }
                 }
             }
@@ -1031,7 +1031,7 @@ impl<'a> Builder<'a> {
                     self.atom(p, "");
                 }
                 (Inline::Sym { ch, font, control, .. }, Some(run)) => {
-                    let mut r = (**run).clone();
+                    let mut r = (*marked_run(run, view, &space.markup)).clone();
                     r.ascii = font.clone();
                     r.h_ansi = font.clone();
                     if control.is_some() && run.hint_east_asia {
@@ -1071,7 +1071,7 @@ impl<'a> Builder<'a> {
                 // tall as the annotation is long, about its middle. The annotation is one font at one size: every run
                 // at `w:hps`, in the first run's ascii font, not bold, in its own colour.
                 (Inline::Ruby(r, _), Some(run)) => self.turned_ruby_piece(r, run, view)?,
-                (Inline::DateBlock(_, text, _), Some(run)) => self.text(text, run)?,
+                (Inline::DateBlock(_, text, _), Some(run)) => self.text(text, &marked_run(run, view, &space.markup))?,
                 (Inline::Float(f, _), Some(_)) if space.hide == Some(f.id) || f.hidden() => {}
                 // A note's anchor: an inline object where it stands.
                 (Inline::Float(f, _), Some(run)) if f.in_note => self.picture(
@@ -1101,7 +1101,7 @@ impl<'a> Builder<'a> {
                         self.pending_note = Some(Object::Note(*kind, *id));
                     } else {
                         let start = self.pieces.len();
-                        self.text(&number, run)?;
+                        self.text(&number, &marked_run(run, view, &space.markup))?;
                         if start < self.pieces.len() {
                             self.objects.push(Object::Note(*kind, *id));
                             self.pieces[start].object = Some((self.objects.len() - 1) as u32);
@@ -1111,7 +1111,7 @@ impl<'a> Builder<'a> {
                 (Inline::NoteMark(_, _, _), Some(run)) => {
                     let number = space.notes.get(note).cloned().unwrap_or_default();
                     note += 1;
-                    self.text(&number, run)?;
+                    self.text(&number, &marked_run(run, view, &space.markup))?;
                 }
                 (Inline::Separator { continuation, full, .. }, Some(run)) => {
                     let f = self.face(&run.ascii, run);

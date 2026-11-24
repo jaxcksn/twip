@@ -362,6 +362,10 @@ impl Editor {
             };
             let Some(l) = level.filter(|_| subtopics) else { continue };
             let delta = to as i64 - l as i64;
+            // Nothing moves under a heading that stays: a selected child takes its own change.
+            if delta == 0 {
+                continue;
+            }
             for (q, k) in self.subtopics(para, l) {
                 let n = (k as i64 + delta).clamp(1, 9) as u32;
                 if seen.insert(q) && n != k {
@@ -381,13 +385,31 @@ impl Editor {
     /// Moves a heading and the headings under it by `delta` levels, each kept within 1 to 9.
     fn shift_heading(&mut self, label: &'static str, heading: ParaId, delta: i64, fonts: &Fonts) -> Outcome {
         let Some(l) = self.outline_level(heading) else { return Outcome::Unchanged("not a heading") };
+        let headings: Vec<(ParaId, u32)> = std::iter::once((heading, l)).chain(self.subtopics(heading, l)).collect();
+        self.shift_headings(label, &headings, delta, fonts)
+    }
+
+    /// Moves exactly `headings` (with their levels) by `delta` levels, each kept within 1 to 9.
+    fn shift_headings(&mut self, label: &'static str, headings: &[(ParaId, u32)], delta: i64, fonts: &Fonts) -> Outcome {
         let to = |k: u32| (k as i64 + delta).clamp(1, 9) as u32;
-        let out: Vec<(ParaId, Target)> = std::iter::once((heading, l))
-            .chain(self.subtopics(heading, l))
-            .filter(|&(_, k)| to(k) != k)
-            .map(|(q, k)| (q, Target::Level(to(k))))
-            .collect();
+        let out: Vec<(ParaId, Target)> = headings.iter().filter(|&&(_, k)| to(k) != k).map(|&(q, k)| (q, Target::Level(to(k)))).collect();
         self.relevel(label, &out, fonts)
+    }
+
+    /// The headings from paragraph `first` through paragraph `last` of its story, with their levels.
+    fn headings_between(&self, first: ParaId, last: ParaId) -> Vec<(ParaId, u32)> {
+        let mut out = Vec::new();
+        let mut take = |p: &Paragraph| out.extend(heading_level(&self.doc, p).map(|l| (ParaId(p.id), l)));
+        if let Some(p) = self.index.para(&self.doc, first) {
+            take(p);
+        }
+        if first != last {
+            self.paras_after(first, |p| {
+                take(p);
+                p.id != last.0
+            });
+        }
+        out
     }
 
     /// Gives paragraphs their targets as one undo step: the built-in heading styles they take join the document first.
@@ -520,15 +542,17 @@ impl Editor {
         };
         self.begin_batch(Some("Move Heading".into()));
         let moved = if self.tracking() { self.move_content_tracked(&c, dest, down, fonts) } else { self.move_content(&c, dest, down, fonts) };
-        let moved = match moved {
+        let (moved, moved_last) = match moved {
             Ok(h) => h,
             Err(o) => {
                 self.end_batch(false, fonts);
                 return o;
             }
         };
+        // The headings that moved, as the move placed them: not the ones that follow them in their new place.
+        let headings = self.headings_between(moved, moved_last);
         if let Some(l) = level
-            && matches!(self.shift_heading("Move Heading", moved, l as i64 - c.level as i64, fonts), Outcome::Unchanged("locked"))
+            && matches!(self.shift_headings("Move Heading", &headings, l as i64 - c.level as i64, fonts), Outcome::Unchanged("locked"))
         {
             self.end_batch(false, fonts);
             return Outcome::Unchanged("locked");
@@ -660,8 +684,8 @@ impl Editor {
     /// [`Self::move_heading`]'s move, untracked: the blocks themselves (their paragraphs keep their ids) and the section
     /// breaks they hold go. Block controls around the content stay and the destination's go round it; a section break
     /// moved to the story's end is followed by a new last paragraph, as a section ends in its last paragraph. The
-    /// heading.
-    fn move_content(&mut self, c: &Content, dest: Dest, down: bool, fonts: &Fonts) -> Result<ParaId, Outcome> {
+    /// heading and the content's last paragraph.
+    fn move_content(&mut self, c: &Content, dest: Dest, down: bool, fonts: &Fonts) -> Result<(ParaId, ParaId), Outcome> {
         if self.content_kept(c, Some(dest)) {
             self.refused = Some("locked");
             self.events.push(super::input::Notice::Refused { sub_template: None, element: None });
@@ -671,6 +695,8 @@ impl Editor {
         let parts = c.parts.clone();
         let heading =
             self.part_block(&parts, c.first).and_then(|b| edge_para_ref(b, false)).map(|p| ParaId(p.id)).ok_or(Outcome::Unchanged("no paragraph"))?;
+        let end =
+            self.part_block(&parts, c.last).and_then(|b| edge_para_ref(b, true)).map(|p| ParaId(p.id)).ok_or(Outcome::Unchanged("no paragraph"))?;
         let runs = self.runs(&parts, c.first, c.last);
         // The blocks and the breaks of the sections they end
         let ends_break = c.ends_break(self);
@@ -749,7 +775,7 @@ impl Editor {
             return Err(Outcome::Unchanged("the heading didn't move"));
         }
         self.commit(tx, None, fonts);
-        Ok(heading)
+        Ok((heading, end))
     }
 
     /// Takes content `c`, holding `breaks` section breaks, out of its story: its breaks go, the sections they end
@@ -819,8 +845,8 @@ impl Editor {
     /// break can't be tracked, so the breaks stay where they were, as a tracked delete keeps them. A comment's range
     /// into the blocks passed keeps its ends in the text moved from. Past the story's last paragraph, the copies' last
     /// ends in the story's last mark, taking its properties; moving the story's end up, the paragraph before it joins
-    /// that mark. The copied heading.
-    fn move_content_tracked(&mut self, c: &Content, dest: Dest, down: bool, fonts: &Fonts) -> Result<ParaId, Outcome> {
+    /// that mark. The copied heading and the copies' last paragraph.
+    fn move_content_tracked(&mut self, c: &Content, dest: Dest, down: bool, fonts: &Fonts) -> Result<(ParaId, ParaId), Outcome> {
         if self.content_kept(c, Some(dest)) {
             self.refused = Some("locked");
             self.events.push(super::input::Notice::Refused { sub_template: None, element: None });
@@ -909,7 +935,7 @@ impl Editor {
             }
         }
         self.selection = Selection::Caret(Position::text(story, copy_first, Unit(0)));
-        Ok(copy_first)
+        Ok((copy_first, copy_last))
     }
 
     /// Deletes a heading with its content (a navigation pane's Delete), as one undo step; tracked when changes are. The

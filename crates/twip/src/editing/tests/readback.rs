@@ -531,3 +531,16 @@ fn a_single_quoted_font_attribute_is_replaced_not_duplicated() {
     assert!(!tag.contains("w:ascii=") && !tag.contains("w:hAnsi="), "{tag}");
     assert!(roxmltree::Document::parse(&xml).is_ok(), "{xml}");
 }
+
+#[test]
+fn a_page_number_in_the_text_can_t_be_left_off_the_first_page() {
+    use crate::api::command::PageNumberFormat;
+    use crate::editing::commands::PageNumberSpot;
+    let mut e = edit(TWO);
+    let (depth, titled) = (e.history().undo_depth(), e.document().sections[0].title_pg);
+    let out = e.insert_page_number_shown(PageNumberFormat::Page, PageNumberSpot::Caret, None, false, fonts());
+    assert!(matches!(out, Outcome::Refused(_)), "{out:?}");
+    assert_eq!((e.history().undo_depth(), e.document().sections[0].title_pg), (depth, titled), "nothing changed");
+    let out = e.insert_page_number_shown(PageNumberFormat::Page, PageNumberSpot::Caret, None, true, fonts());
+    assert!(matches!(out, Outcome::Changed(_)), "shown on the first page it's fine: {out:?}");
+}

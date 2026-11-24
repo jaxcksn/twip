@@ -1653,7 +1653,10 @@ fn notes_xml(
     let mut listing = Vec::new();
     let mut free = root.children().filter(|n| is_w(*n, tag)).filter_map(id_of).min().unwrap_or(0).min(0) - 1;
     for (t, blocks) in e.separators {
-        let had = root.children().find(|n| is_w(*n, tag) && n.attribute((W, "type")) == Some(*t));
+        let same: Vec<roxmltree::Node> = root.children().filter(|n| is_w(*n, tag) && n.attribute((W, "type")) == Some(*t)).collect();
+        // The reader keeps the last listed story of a type: that one is the active story.
+        let listed = |n: &roxmltree::Node| id_of(*n).is_some_and(|id| doc.settings.listed_notes.iter().any(|l| *l == format!("{tag}:{id}")));
+        let had = same.iter().rev().find(|n| listed(n)).or(same.first()).copied();
         match (had, blocks) {
             (Some(n), Some(b)) => {
                 let id = id_of(n).unwrap_or(free);
@@ -1661,10 +1664,13 @@ fn notes_xml(
                 splices.push((n.range(), format!("<{w}{tag} {w}type=\"{t}\" {w}id=\"{id}\">{body}</{w}{tag}>")));
                 listing.push((id, true));
             }
-            (Some(n), None) => {
-                splices.push((n.range(), String::new()));
-                if let Some(id) = id_of(n) {
-                    listing.push((id, false));
+            (Some(active), None) => {
+                // Every listed story of the type goes, or an earlier one would become the active one.
+                for n in same.iter().filter(|n| **n == active || listed(n)) {
+                    splices.push((n.range(), String::new()));
+                    if let Some(id) = id_of(*n) {
+                        listing.push((id, false));
+                    }
                 }
             }
             (None, Some(b)) => {
@@ -1709,7 +1715,7 @@ fn list_notes(doc: &Document, src: &Source, parts: &mut Vec<(String, Vec<u8>)>, 
     };
     let Some(mut out) = package::read(&src.package, parts, &name)? else { return Ok(()) };
     let pr = format!("{tag}Pr");
-    let (w, at, mut entries) = {
+    let (w, at, mut entries, open) = {
         let dom = roxmltree::Document::parse(&out).map_err(|e| e.to_string())?;
         let w = match dom.root_element().lookup_prefix(W) {
             Some(p) if !p.is_empty() => format!("{p}:"),
@@ -1721,7 +1727,18 @@ fn list_notes(doc: &Document, src: &Source, parts: &mut Vec<(String, Vec<u8>)>, 
         // Its properties, which the list follows
         let props: String =
             el.into_iter().flat_map(|p| p.children().filter(|c| c.is_element() && !is_w(*c, tag))).map(|c| out[c.range()].to_string()).collect();
-        (w, props, entries)
+        // The parent's own start tag (attributes and namespace declarations), which the rebuilt list keeps.
+        let open = el.map(|p| {
+            let raw = &out[p.range()];
+            match p.first_child().map(|c| c.range().start) {
+                Some(at) => raw[..at - p.range().start].to_string(),
+                None => match raw.strip_suffix("/>") {
+                    Some(t) => format!("{}>", t.trim_end()),
+                    None => raw[..raw.rfind("</").unwrap_or(raw.len())].to_string(),
+                },
+            }
+        });
+        (w, props, entries, open)
     };
     for (id, on) in changes {
         entries.retain(|e| *e != id);
@@ -1731,7 +1748,9 @@ fn list_notes(doc: &Document, src: &Source, parts: &mut Vec<(String, Vec<u8>)>, 
     }
     let list: String = entries.iter().map(|id| format!("<{w}{tag} {w}id=\"{id}\"/>")).collect();
     let body = format!("{at}{list}");
-    set_setting(&mut out, &pr, (!body.is_empty()).then(|| format!("<{w}{pr}>{body}</{w}{pr}>")))?;
+    let parent = open.unwrap_or_else(|| format!("<{w}{pr}>"));
+    let name_of = parent[1..].split(|c: char| c.is_whitespace() || c == '>').next().unwrap_or("").to_string();
+    set_setting(&mut out, &pr, (!body.is_empty()).then(|| format!("{parent}{body}</{name_of}>")))?;
     match parts.iter_mut().find(|(m, _)| *m == name) {
         Some(p) => p.1 = out.into_bytes(),
         None => parts.push((name, out.into_bytes())),

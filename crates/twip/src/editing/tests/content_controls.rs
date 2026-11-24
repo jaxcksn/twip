@@ -479,3 +479,48 @@ fn a_date_control_s_calendar_and_storage_are_set_and_read() {
     assert_eq!(date_formats("en-US")[0], "M/d/yyyy");
     assert_eq!(date_formats("de-DE")[0], "dd.MM.yyyy");
 }
+
+#[test]
+fn a_date_control_around_a_paragraph_fills_from_a_date() {
+    let date = r#"<w:date w:fullDate="2026-01-01T00:00:00Z"><w:dateFormat w:val="MMMM yyyy"/><w:lid w:val="en-US"/><w:calendar w:val="gregorian"/></w:date>"#;
+    let body = format!(
+        r#"<w:sdt><w:sdtPr><w:alias w:val="C"/><w:id w:val="5"/>{date}</w:sdtPr><w:sdtContent><w:p><w:r><w:t>January 2026</w:t></w:r></w:p></w:sdtContent></w:sdt><w:p><w:r><w:t>Other</w:t></w:r></w:p>"#
+    );
+    let mut e = Editor::open(&blank_body(&body), fonts()).expect("opens");
+    let c = by_alias(&e, "C");
+    let id = crate::api::value::ElementId(api(c));
+    assert!(matches!(e.fill_control_date(&id, "2027-02-03", fonts()), Outcome::Changed(_)));
+    assert_eq!(texts(&e), ["February 2027", "Other"]);
+    assert!(doc_xml(&e).contains(r#"w:fullDate="2027-02-03T00:00:00Z""#));
+    e.undo_many(true, 1, fonts());
+    assert_eq!(texts(&e), ["January 2026", "Other"], "one undo step");
+    assert!(doc_xml(&e).contains(r#"w:fullDate="2026-01-01T00:00:00Z""#));
+}
+
+#[test]
+fn a_date_control_s_settings_are_read_whatever_whitespace_follows_an_element_name() {
+    use crate::editing::{DateStorage, date_settings};
+    let date = "<w:date><w:dateFormat w:val=\"M/d/yyyy\"/><w:lid w:val=\"en-US\"/><w:storeMappedDataAs\tw:val=\"text\"/><w:calendar\n  w:val=\"hijri\"/></w:date>";
+    let e = with_control(date, "<w:r><w:t>1/1/2026</w:t></w:r>");
+    let c = by_alias(&e, "C");
+    let s = date_settings(&e.document().controls[&c].props).expect("a date control");
+    assert_eq!((s.calendar.as_str(), s.storage), ("hijri", DateStorage::Text));
+}
+
+#[test]
+fn a_date_control_without_its_xml_keeps_its_locale_when_its_calendar_is_set() {
+    use crate::editing::date_settings;
+    let mut e = Editor::open(&blank_body("<w:p><w:r><w:t>Hi </w:t></w:r></w:p>"), fonts()).expect("opens");
+    caret(&mut e, 0, 3);
+    ok(&cmd(&mut e, json!({ "type": "insertControl", "kind": "date" })));
+    let c = ctl(&e, |_| true);
+    let id = crate::api::value::ElementId(api(c));
+    ok(&cmd(&mut e, json!({ "type": "setControl", "id": id.0, "options": { "locale": "de-DE" } })));
+    assert!(e.document().controls[&c].props.kind_xml.is_none(), "no XML of its own yet");
+    assert!(matches!(e.set_date_control_storage(&id, Some("hijri"), None, fonts()), Outcome::Changed(_)));
+    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let again = Editor::open(&saved, fonts()).expect("reopens");
+    let k = ctl(&again, |_| true);
+    let s = date_settings(&again.document().controls[&k].props).expect("a date control");
+    assert_eq!((s.locale.as_deref(), s.calendar.as_str()), (Some("de-DE"), "hijri"));
+}

@@ -407,3 +407,21 @@ fn a_drop_down_click_and_a_form_field_double_click_ask_the_host() {
     assert_eq!(e.form_field_press_at(x, y, 1, fonts()).map(|p| p.1), Some(FormPress::OpenList));
     assert_eq!(e.form_field_press_at(tx, ty, 1, fonts()).map(|p| p.1), None, "a text field is typed in");
 }
+
+#[test]
+fn tab_from_a_selection_across_paragraphs_goes_on_from_its_end() {
+    let field = |n: usize| {
+        let data = format!(r#"<w:name w:val="T{n}"/><w:textInput/>"#);
+        format!(r#"<w:p><w:r><w:t xml:space="preserve">A </w:t></w:r>{}</w:p>"#, form_field_xml(&data, "FORMTEXT", "abc"))
+    };
+    let body: String = (0..4).map(field).collect();
+    let mut e = Editor::open(&blank_body(&body), fonts()).expect("opens");
+    e.complete(fonts());
+    protect(&mut e);
+    let len = crate::editing::step::para_len(e.index().para(e.document(), para_id(&e, 2)).expect("a paragraph"));
+    let (a, b) = (Position::text(StoryId::Body, para_id(&e, 2), len), Position::text(StoryId::Body, para_id(&e, 3), Unit(1)));
+    e.selection = Selection::range(a, b, crate::editing::selection::Granularity::Char);
+    e.select_next_form_field(true);
+    let got = e.selection.ordered(&e.index).and_then(|(a, _)| a.para_offset()).map(|p| p.0);
+    assert_eq!(got, Some(para_id(&e, 3)), "the field after the selection's end, not one paragraph on");
+}

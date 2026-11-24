@@ -4,6 +4,7 @@ use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use crate::docx::props::VertAlign;
+use crate::docx::review::CellMarkKind;
 use crate::docx::write::props::{Props, esc};
 use crate::docx::{Block, Inline, Paragraph, Run, RunStyle, VMerge};
 use crate::font::Fonts;
@@ -488,6 +489,21 @@ fn accept(blocks: &mut Vec<Block>) {
             Block::Table(t) => {
                 t.rows.retain(|r| r.rev.del.is_none());
                 (t.change, t.grid_change) = (None, None);
+                // Cells with a tracked deletion go, their columns with them where nothing else needs them.
+                let mut gone = Vec::new();
+                for (ri, r) in t.rows.iter().enumerate() {
+                    gone.extend(
+                        r.cells
+                            .iter()
+                            .enumerate()
+                            .filter(|(_, c)| matches!(c.rev.structural, Some((_, CellMarkKind::Delete))))
+                            .map(|(ci, _)| (ri, ci)),
+                    );
+                }
+                if !gone.is_empty() {
+                    super::tables::remove_cells(&mut t.rows, &gone, &mut t.grid);
+                    super::tables::tidy_merges(&mut t.rows);
+                }
                 for r in &mut t.rows {
                     r.rev = Default::default();
                     for c in &mut r.cells {

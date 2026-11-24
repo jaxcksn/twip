@@ -198,8 +198,12 @@ impl Editor {
                 if a.same_place(&b) {
                     return Outcome::unavailable("no text selected");
                 }
+                // Sections are body text's: a selection in a header, a note or a box has none to set.
+                let (Some(ka), Some(kb)) = (e.section_at(&a), e.section_at(&b)) else {
+                    return Outcome::unavailable("columns apply to text in the body");
+                };
                 let edge = |e: &Editor, p: &Position, end: bool| -> bool {
-                    let Some(k) = e.section_at(p) else { return true };
+                    let Some(k) = e.section_at(p) else { return false };
                     let blocks = &e.doc.sections[k].blocks;
                     match (p.para_offset(), end) {
                         (Some((para, u)), false) => u == Unit(0) && blocks.first().and_then(super::first_para_of) == Some(para),
@@ -224,8 +228,10 @@ impl Editor {
                         return out;
                     }
                 }
-                let k = e.focus_section();
-                e.section_scope = Some(k..=k);
+                // The sections the text is in: a break at its start moved it one section on, and its end's section is
+                // the one before a break there.
+                let shift = usize::from(!at_start);
+                e.section_scope = Some(ka + shift..=kb + shift);
                 let out = columns(e);
                 e.section_scope = None;
                 out

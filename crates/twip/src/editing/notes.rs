@@ -229,8 +229,8 @@ impl Editor {
         let blocks = self.doc.separators.get(&key)?;
         let builtin =
             blocks.len() == 1 && matches!(&blocks[0], Block::Para(p) if p.inlines.len() == 1 && matches!(p.inlines[0], Inline::Separator { .. }));
-        let text = blocks.iter().filter_map(|b| if let Block::Para(p) = b { Some(super::text::UnitText::of(p).text) } else { None });
-        let text: Vec<String> = text.map(|t| t.chars().filter(|c| *c != '\u{FFFC}').collect()).collect();
+        let mut text: Vec<String> = Vec::new();
+        paragraphs_text(blocks, &mut text);
         Some(NoteSeparatorInfo { text: text.join("\n"), builtin })
     }
 
@@ -614,4 +614,14 @@ pub struct NoteSeparatorInfo {
     pub text: String,
     /// It is Word's built-in line.
     pub builtin: bool,
+}
+
+/// The text of each paragraph in `blocks`, in order, a table's cells included. Table nesting is bounded when read.
+fn paragraphs_text(blocks: &[Block], out: &mut Vec<String>) {
+    for b in blocks {
+        match b {
+            Block::Para(p) => out.push(super::text::UnitText::of(p).text.chars().filter(|c| *c != '\u{FFFC}').collect()),
+            Block::Table(t) => t.rows.iter().flat_map(|r| &r.cells).for_each(|c| paragraphs_text(&c.blocks, out)),
+        }
+    }
 }

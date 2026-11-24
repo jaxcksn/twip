@@ -309,9 +309,8 @@ impl Editor {
                 if !f.items.iter().any(|it| show.shows(&it.mark)) {
                     return None;
                 }
-                let touches = |it: &Item| show.shows(&it.mark);
-                let moves = base(Who::All).with_moves(&f, touches);
-                Pick { who: Who::Shown(show), ..moves }
+                // Only the moves a shown revision is part of: with `Who::All` every move would be taken.
+                base(Who::Shown(show.clone())).with_moves(&f, |it| show.shows(&it.mark))
             }
             Scope::Revision(id) => {
                 let list = revisions(&self.doc, &self.index);

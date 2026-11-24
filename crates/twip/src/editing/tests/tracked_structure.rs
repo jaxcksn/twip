@@ -274,3 +274,29 @@ fn wholly_deleted_paragraphs_have_balloons() {
     assert_eq!(got, want, "one balloon per deletion: {balloons:?}");
     assert!(balloons.iter().all(|b| b.at[1] < b.at[2] && b.page < pages), "anchored on a line: {balloons:?}");
 }
+
+#[test]
+fn accepting_the_shown_changes_leaves_hidden_moves_alone() {
+    let d = r#"w:author="a" w:date="2020-01-01T00:00:00Z""#;
+    let body = format!(
+        r#"<w:p><w:moveFromRangeStart w:id="1" w:name="m1" {d}/><w:moveFrom w:id="2" {d}><w:r><w:t>moved</w:t></w:r></w:moveFrom><w:moveFromRangeEnd w:id="1"/></w:p><w:p><w:moveToRangeStart w:id="3" w:name="m1" {d}/><w:moveTo w:id="4" {d}><w:r><w:t>moved</w:t></w:r></w:moveTo><w:moveToRangeEnd w:id="3"/></w:p><w:p><w:r><w:rPr><w:b/><w:rPrChange w:id="5" {d}><w:rPr/></w:rPrChange></w:rPr><w:t>fmt</w:t></w:r></w:p>"#
+    );
+    let mut e = Editor::open(&super::blank_body(&body), fonts()).expect("opens");
+    e.complete(fonts());
+    let marks = |e: &Editor| {
+        let s = String::from_utf8({
+            use std::io::Read;
+            let mut z = zip::ZipArchive::new(std::io::Cursor::new(crate::docx::write::save(e.document()).expect("saves"))).unwrap();
+            let mut v = Vec::new();
+            z.by_name("word/document.xml").unwrap().read_to_end(&mut v).unwrap();
+            v
+        })
+        .unwrap();
+        (s.contains("<w:moveFrom ") && s.contains("<w:moveTo "), s.contains("rPrChange"))
+    };
+    assert_eq!(marks(&e), (true, true));
+    e.set_show_markup(false, true, true);
+    assert!(!e.document().review.markup.show.insertions_deletions, "insertions and deletions hidden");
+    assert!(matches!(e.resolve_shown(true, fonts()), Outcome::Changed(_)));
+    assert_eq!(marks(&e), (true, false), "the shown formatting change is accepted, the hidden move stays");
+}

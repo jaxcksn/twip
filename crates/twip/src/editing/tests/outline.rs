@@ -680,3 +680,26 @@ fn a_level_kept_keeps_a_custom_heading_style() {
     assert_eq!((style(&e, "X").as_deref(), level(&e, "X")), (Some("Heading2"), Some(2)));
     assert_eq!((style(&e, "x9").as_deref(), level(&e, "x9")), (Some("Deep"), Some(9)), "a subtopic at 9 stays as it is");
 }
+
+#[test]
+fn a_moved_heading_s_level_change_leaves_the_headings_it_lands_before() {
+    for tracked in [false, true] {
+        let mut e = doc(&[("Heading1", "A"), ("Heading2", "B"), ("Heading2", "D"), ("Heading3", "C"), ("Heading1", "E")]);
+        e.execute(C::SetTrackChanges(tracked), fonts());
+        let (b, c) = (id(&e, "B"), id(&e, "C"));
+        assert!(changed(&e.move_heading(b, c, Beside::Before, Some(1), fonts())), "tracked {tracked}");
+        e.execute(C::AcceptAllRevisions(AuthorFilter::default()), fonts());
+        assert_eq!(texts(&e), ["A", "D", "B", "C", "E"], "tracked {tracked}");
+        let levels: Vec<_> = ["A", "D", "B", "C", "E"].iter().map(|t| level(&e, t)).collect();
+        assert_eq!(levels, [Some(1), Some(2), Some(1), Some(3), Some(1)], "tracked {tracked}: only B changed");
+    }
+}
+
+#[test]
+fn a_selected_child_takes_heading_1_when_its_parent_already_has_it() {
+    let mut e = outline();
+    let (a, b) = (id(&e, "A"), id(&e, "B"));
+    e.selection = Selection::range(Position::text(StoryId::Body, a, Unit(0)), Position::text(StoryId::Body, b, Unit(1)), Default::default());
+    assert!(changed(&e.change_outline(OutlineChange::Heading1, true, fonts())));
+    assert_eq!([level(&e, "A"), level(&e, "B"), level(&e, "C"), level(&e, "D")], [1, 1, 2, 2].map(Some), "B, and C under it by as many");
+}
