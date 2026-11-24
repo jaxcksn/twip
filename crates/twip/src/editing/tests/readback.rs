@@ -516,3 +516,18 @@ fn a_page_number_left_off_the_first_page_takes_a_different_first_page() {
     assert_eq!(page_number_sample(NumberFormat::UpperLetter, Some(ChapterSeparator::Hyphen)), "1-A");
     assert_eq!(page_number_sample(NumberFormat::LowerRoman, None), "i");
 }
+
+#[test]
+fn a_single_quoted_font_attribute_is_replaced_not_duplicated() {
+    let mut e = all(
+        "<w:p><w:r><w:rPr><w:rFonts w:ascii='Arial' w:asciiTheme='majorHAnsi' w:hAnsi = 'Arial' w:hAnsiTheme='majorHAnsi'/></w:rPr><w:t>one</w:t></w:r></w:p>",
+    );
+    assert!(matches!(e.set_theme_font(ThemeFont::Minor, fonts()), Outcome::Changed(_)));
+    let xml = doc_xml(&e);
+    let at = xml.find("<w:rFonts").expect("fonts");
+    let tag = &xml[at..at + xml[at..].find("/>").unwrap()];
+    assert_eq!(tag.matches("w:asciiTheme").count(), 1, "{tag}");
+    assert_eq!(tag.matches("w:hAnsiTheme").count(), 1, "{tag}");
+    assert!(!tag.contains("w:ascii=") && !tag.contains("w:hAnsi="), "{tag}");
+    assert!(roxmltree::Document::parse(&xml).is_ok(), "{xml}");
+}

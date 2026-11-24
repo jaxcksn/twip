@@ -663,3 +663,23 @@ fn a_built_in_table_style_outside_a_table_adds_nothing() {
     assert!(styles(&e).get("TableSimple1").is_none(), "no definition added");
     assert_eq!((e.revision(), e.history().undo_depth()), (rev, undo), "no undo step");
 }
+
+#[test]
+fn defaults_set_in_a_self_closing_styles_part_save_well_formed() {
+    let doc = format!(
+        r#"<w:document xmlns:w="{W}"><w:body><w:p><w:r><w:t>x</w:t></w:r></w:p><w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr></w:body></w:document>"#
+    );
+    let empty = format!(r#"<w:styles xmlns:w="{W}"/>"#);
+    let parts = vec![("word/document.xml".to_string(), doc.into_bytes()), ("word/styles.xml".to_string(), empty.into_bytes())];
+    let bytes = crate::docx::write::repackage(&crate::docx::blank::blank_docx(), &parts, zip::CompressionMethod::Deflated).expect("repackages");
+    let mut e = open_pkg(&bytes);
+    let d = crate::api::command::DocumentDefaults { size: Some(crate::api::value::Points(14.0)), ..Default::default() };
+    e.execute(Command::SetDocumentDefaults(d), fonts());
+    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let mut xml = String::new();
+    std::io::Read::read_to_string(&mut zip::ZipArchive::new(std::io::Cursor::new(&saved)).unwrap().by_name("word/styles.xml").unwrap(), &mut xml)
+        .unwrap();
+    let dom = roxmltree::Document::parse(&xml).unwrap_or_else(|err| panic!("{err}: {xml}"));
+    assert!(dom.root_element().children().any(|n| n.has_tag_name("docDefaults")), "{xml}");
+    assert_eq!(styles(&reopened(&e)).doc_rpr.size, Some(14.0));
+}

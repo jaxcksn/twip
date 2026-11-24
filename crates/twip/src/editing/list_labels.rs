@@ -172,7 +172,10 @@ impl Editor {
         let Some(m) = res.numbering.nums.get(&list) else { return Outcome::unavailable("no such list") };
         let own = m.level_overrides.contains_key(&level);
         let Some(abstract_id) = res.numbering.abstract_of(list, &res.styles) else { return Outcome::unavailable("no such list") };
-        let raw = if own { m.raw.clone() } else { res.numbering.abstracts.get(&abstract_id).map(|a| a.raw.clone()).unwrap_or_default() };
+        let abstract_raw = res.numbering.abstracts.get(&abstract_id).map(|a| a.raw.clone()).unwrap_or_default();
+        let raw = if own { m.raw.clone() } else { abstract_raw.clone() };
+        // A level other lists share stays theirs: this list's formatting goes in an override of its own.
+        let write_own = own || res.numbering.nums.keys().any(|&n| n != list && res.numbering.abstract_of(n, &res.styles) == Some(abstract_id));
         let Some(lvl) = level_in(&raw, level, own, &ncx) else { return Outcome::unavailable("the list doesn't define that level") };
         let mut lp = Props::parse(Some(&lvl), "lvl", &ncx);
         let rpr = lp.get("rPr").map(str::to_string);
@@ -192,11 +195,11 @@ impl Editor {
             None => lp.remove("rPr"),
         }
         let Some(lvl) = lp.xml() else { return Outcome::Unchanged("no level") };
-        let replaced = with_level(&raw, level, own, &lvl, &ncx);
+        let replaced = with_level(if write_own { &m.raw } else { &raw }, level, write_own, &lvl, &ncx);
         self.edit_numbering(
             "Font",
             |n, _, colours| {
-                if own { n.set_num_xml(replaced, colours).map(|_| ()) } else { n.set_abstract_xml(replaced, colours).map(|_| ()) }
+                if write_own { n.set_num_xml(replaced, colours).map(|_| ()) } else { n.set_abstract_xml(replaced, colours).map(|_| ()) }
             },
             &[],
             false,
@@ -251,10 +254,12 @@ fn level_in(raw: &str, k: i64, over: bool, cx: &Cx) -> Option<String> {
     if name == "lvlOverride" { Props::parse(Some(x), "lvlOverride", cx).get("lvl").map(str::to_string) } else { Some(x.clone()) }
 }
 
-/// The `w:abstractNum` (or `w:num`, `over`) with level `k`'s `w:lvl` replaced by `lvl`.
+/// The `w:abstractNum` (or `w:num`, `over`) with level `k`'s `w:lvl` replaced by `lvl`; a `w:num` without an override
+/// of that level gets one, in level order.
 fn with_level(raw: &str, k: i64, over: bool, lvl: &str, cx: &Cx) -> String {
     let mut parent = Props::parse(Some(raw), if over { "num" } else { "abstractNum" }, cx);
     let ilvl = |x: &str| cx.parse(x, |_, n| crate::docx::xml::attr(n, "ilvl").and_then(|v| v.parse::<i64>().ok())).flatten();
+    let mut found = false;
     for (name, x) in parent.kids.iter_mut() {
         if ilvl(x) != Some(k) {
             continue;
@@ -263,9 +268,15 @@ fn with_level(raw: &str, k: i64, over: bool, lvl: &str, cx: &Cx) -> String {
             let mut o = Props::parse(Some(x), "lvlOverride", cx);
             o.set("lvl", lvl.to_string());
             *x = o.xml().unwrap_or_default();
+            found = true;
         } else if name == "lvl" && !over {
             *x = lvl.to_string();
         }
+    }
+    if over && !found {
+        let w = &cx.w;
+        let at = parent.kids.iter().position(|(n, x)| n == "lvlOverride" && ilvl(x) > Some(k)).unwrap_or(parent.kids.len());
+        parent.kids.insert(at, ("lvlOverride".to_string(), format!("<{w}lvlOverride {w}ilvl=\"{k}\">{lvl}</{w}lvlOverride>")));
     }
     parent.xml().unwrap_or_else(|| raw.to_string())
 }

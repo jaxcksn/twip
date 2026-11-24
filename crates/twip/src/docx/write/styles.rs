@@ -41,6 +41,8 @@ pub(super) fn styles(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Resu
         package::set(parts, &part, xml.into_bytes());
         return Ok(());
     };
+    let open = expanded(&xml, roxmltree::Document::parse(&xml).map_err(|e| e.to_string())?.root_element());
+    let xml = open.unwrap_or(xml);
     let dom = roxmltree::Document::parse(&xml).map_err(|e| e.to_string())?;
     let root = dom.root_element();
     let mut splices: Vec<Splice> = Vec::new();
@@ -109,4 +111,13 @@ pub(super) fn styles(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Resu
     let name = name.ok_or("a styles part without its name")?;
     package::set(parts, &name, out.into_bytes());
     Ok(())
+}
+
+/// `xml` with its root `<w:styles .../>` written as `<w:styles ...></w:styles>`, when it is the empty element form.
+fn expanded(xml: &str, root: roxmltree::Node) -> Option<String> {
+    let r = root.range();
+    let tag = xml.get(r.clone())?;
+    let name = tag.strip_prefix('<')?.split(|c: char| c.is_whitespace() || matches!(c, '/' | '>')).next()?;
+    let head = tag.strip_suffix("/>")?;
+    Some(format!("{}{head}></{name}>{}", &xml[..r.start], &xml[r.end..]))
 }

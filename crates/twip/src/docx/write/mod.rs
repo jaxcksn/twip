@@ -2268,6 +2268,7 @@ impl<'a, 'i> Saver<'a, 'i> {
             && a.width == b.width
             && (a.cell_spacing, &a.alt) == (b.cell_spacing, &b.alt)
             && self.direct_shd(a) == self.direct_shd(b)
+            && self.direct_bands(a) == self.direct_bands(b)
             && self.direct_cell_margins(a) == self.direct_cell_margins(b)
             && (&a.style_id, a.look, a.jc, a.ind, a.ind_pct, a.floating) == (&b.style_id, b.look, b.jc, b.ind, b.ind_pct, b.floating)
             && (a.fixed, a.cell_spacing, &a.alt) == (b.fixed, b.cell_spacing, &b.alt);

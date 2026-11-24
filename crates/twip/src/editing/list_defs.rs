@@ -489,7 +489,8 @@ pub(super) fn abstract_xml(id: i64, old: Option<&str>, levels: Levels, name: Opt
         None => {}
     }
     let parsed = old.and_then(|o| cx.parse(o, |text, el| crate::docx::numbering::parse_abstract(el, text, &Default::default()))).flatten();
-    for k in 0..levels.len().min(9) {
+    // A copy keeps the `w:num`'s own levels past the ones supplied too: it has no `w:num` of that list to hold them.
+    for k in 0..if copy { 9 } else { levels.len().min(9) } {
         let over = over.get(k).and_then(Option::as_ref);
         if over.is_some() && !copy {
             continue;
@@ -500,8 +501,11 @@ pub(super) fn abstract_xml(id: i64, old: Option<&str>, levels: Levels, name: Opt
             Some((x, v)) => Some((x.as_str(), v)),
             None => raw.map(|i| a.kids[i].1.as_str()).zip(old_level.as_ref()),
         };
-        let Some(new) = levels.at(k, base.map(|b| b.1)) else { continue };
-        let xml = level_xml(k, base, &new, pics.get(k).copied().flatten(), cx);
+        let xml = match (levels.at(k, base.map(|b| b.1)), over) {
+            (Some(new), _) => level_xml(k, base, &new, pics.get(k).copied().flatten(), cx),
+            (None, Some((x, _))) => x.clone(),
+            (None, None) => continue,
+        };
         match raw {
             Some(i) => a.kids[i].1 = xml,
             None => a.add("lvl", xml),

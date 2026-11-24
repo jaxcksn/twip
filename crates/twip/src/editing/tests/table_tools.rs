@@ -642,3 +642,14 @@ fn the_pen_and_eraser_are_refused_in_a_contents_locked_control() {
     assert_eq!(e.revision(), rev);
     assert_eq!(texts(&e), [vec!["a", "b"], vec!["c", "d"]]);
 }
+
+#[test]
+fn a_band_size_alone_changes_a_read_table_and_saves() {
+    let mut e = open(&grid2(["", "", "", ""], "", ["", ""]));
+    cells(&mut e, (0, 0), (0, 0));
+    assert!(matches!(e.set_table_band_sizes(Some(Some(2)), None, fonts()), Outcome::Changed(_)));
+    assert!(doc_xml(&e).contains(r#"<w:tblStyleRowBandSize w:val="2"/>"#), "{}", doc_xml(&e));
+    let mut again = reopened(&e);
+    cells(&mut again, (0, 0), (0, 0));
+    assert_eq!(again.table_band_sizes().map(|b| b.own_rows), Some(Some(2)));
+}

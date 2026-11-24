@@ -19,20 +19,37 @@ fn toggle_xml(w: &str, name: &str, on: bool) -> String {
     if on { format!("<{w}{name}/>") } else { format!("<{w}{name} {w}val=\"0\"/>") }
 }
 
+/// The span of attribute `name` in `tag` as `(start of its leading space, start of its value, end of its value)`,
+/// written with either quote.
+fn attr_span(tag: &str, name: &str) -> Option<(usize, usize, usize)> {
+    let mut from = 0;
+    while let Some(i) = tag[from..].find(name) {
+        let k = from + i;
+        from = k + name.len();
+        let rest = tag[from..].trim_start();
+        let Some(v) = rest.strip_prefix('=').map(str::trim_start) else { continue };
+        let Some(q) = v.chars().next().filter(|c| matches!(c, '"' | '\'')) else { continue };
+        if !tag[..k].ends_with(char::is_whitespace) {
+            continue;
+        }
+        let start = tag.len() - v.len() + 1;
+        let end = tag[start..].find(q).map_or(tag.len(), |e| start + e);
+        let lead = tag[..k].trim_end().len();
+        return Some((lead, start, end));
+    }
+    None
+}
+
 /// `tag` without the attribute `name`.
 fn strip(tag: &str, name: &str) -> String {
-    let Some(k) = tag.find(&format!(" {name}=\"")) else { return tag.to_string() };
-    let from = k + name.len() + 3;
-    let to = tag[from..].find('"').map_or(tag.len(), |e| from + e + 1);
-    format!("{}{}", &tag[..k], &tag[to..])
+    let Some((lead, _, end)) = attr_span(tag, name) else { return tag.to_string() };
+    format!("{}{}", &tag[..lead], &tag[(end + 1).min(tag.len())..])
 }
 
 /// `tag` (one start tag or empty element) with the attribute `name` set.
 pub(crate) fn with_attr(tag: &str, name: &str, value: &str) -> String {
     let v = crate::docx::write::props::esc(value);
-    if let Some(k) = tag.find(&format!(" {name}=\"")) {
-        let from = k + name.len() + 3;
-        let to = tag[from..].find('"').map_or(tag.len(), |e| from + e);
+    if let Some((_, from, to)) = attr_span(tag, name) {
         return format!("{}{v}{}", &tag[..from], &tag[to..]);
     }
     let at = tag.rfind("/>").or_else(|| tag.rfind('>')).unwrap_or(tag.len());

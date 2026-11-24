@@ -859,3 +859,47 @@ fn the_state_shows_the_selected_numbers_formatting() {
     assert!(e.list_label_selection().is_none(), "navigation ends it");
     assert_eq!(e.format_state().expect("a state").character.bold, Tri::Uniform(false), "the text's again");
 }
+
+#[test]
+fn a_copied_list_keeps_the_levels_its_num_overrides_past_the_ones_supplied() {
+    let abs = abstract_of(2, &levels("decimal", |i| format!("%{}.", i + 1)));
+    let over = format!(
+        "<w:num w:numId=\"5\"><w:abstractNumId w:val=\"2\"/><w:lvlOverride w:ilvl=\"1\">{}</w:lvlOverride></w:num>",
+        lvl(1, "upperRoman", "%2)", "")
+    );
+    let nums = numbering(&(abs + &over));
+    let mut e = editor(&pkg(&np("A", 5, 0), Some(&nums), ""));
+    let mut ls = e.list_levels(5).unwrap();
+    assert_eq!(ls[1].format, NumberFormat::UpperRoman, "setup: the override shows");
+    ls.truncate(1);
+    ls[0].text = "%1}".into();
+    caret_in(&mut e, 0);
+    e.execute(Command::SetListDefinition(ListDefinitionChange { levels: ls, apply_to: ListApplyTo::CurrentParagraph, name: None }), fonts());
+    let now = levels_of(&mut e, 0);
+    assert_eq!(now[0].text, "%1}", "the copy took the change");
+    assert_eq!(now[1].format, NumberFormat::UpperRoman, "level 1 keeps the list's own definition");
+    let again = editor(&saved(&e));
+    let (_, num, _) = {
+        let mut a = again;
+        caret_in(&mut a, 0);
+        a.selection_list().unwrap()
+    };
+    assert_ne!(num, 5, "a new list");
+}
+
+#[test]
+fn formatting_a_number_of_a_shared_definition_stays_with_its_list() {
+    let abs = abstract_of(2, &levels("decimal", |i| format!("%{}.", i + 1)));
+    let nums = numbering(&(abs + &num(5, 2) + &num(6, 2)));
+    let mut e = editor(&pkg(&(np("A", 5, 0) + &np("B", 6, 0)), Some(&nums), ""));
+    let para = super::para_id(&e, 0);
+    let o = e.format_list_label(para, vec![Command::SetBold(true)], fonts());
+    assert!(matches!(o, crate::editing::commands::Outcome::Changed(_)), "{o:?}");
+    let part = part(&saved(&e), "word/numbering.xml");
+    let at = part.find("<w:num w:numId=\"5\"").expect("list 5");
+    assert!(part[at..part[at..].find("</w:num>").unwrap() + at].contains("<w:lvlOverride w:ilvl=\"0\"><w:lvl"), "{part}");
+    assert!(part[at..].contains("<w:b/>"), "list 5 has the bold: {part}");
+    assert!(!part[..at].contains("<w:b/>"), "the shared definition does not: {part}");
+    let at6 = part.find("<w:num w:numId=\"6\"").expect("list 6");
+    assert!(!part[at6..].contains("lvlOverride"), "{part}");
+}
