@@ -113,7 +113,10 @@ impl Editor {
         if self.mode == super::Mode::ReadOnly && cmd.mutates() {
             return self.refuse_read_only();
         }
+        // F2's Enter is checked where it drops the text, not at the selection.
+        let move_to_enter = self.move_to.is_some() && matches!(cmd, Command::InsertParagraph);
         if cmd.mutates()
+            && !move_to_enter
             && let Some(e) = self.protection_refusal(&cmd)
         {
             return Outcome::Refused(e);

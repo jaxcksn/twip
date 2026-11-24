@@ -2853,6 +2853,75 @@ fn dragging_the_selection_out_carries_it_and_a_move_deletes_it() {
     assert!(r.e.drag_out().is_some_and(|o| !o.can_move));
 }
 
+/// Document coordinates of the caret at unit `u` of the `n`th paragraph.
+fn caret_point(e: &mut super::super::Editor, n: usize, u: u32) -> (f64, f64) {
+    use super::super::position::Position;
+    let c = e.caret_at(Position::text(StoryId::Body, super::para_id(e, n), crate::layout::Unit(u))).expect("laid out");
+    e.stack().to_doc(c.page, c.x, (c.top + c.bottom) / 2.0).expect("on the stack")
+}
+
+#[test]
+fn selected_cells_dragged_out_and_back_are_copied_not_moved() {
+    use super::super::selection::{CellRef, CellShape};
+    let cell = |t: &str| format!("<w:tc><w:tcPr><w:tcW w:w=\"2000\" w:type=\"dxa\"/></w:tcPr><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:tc>");
+    let body = format!(
+        "<w:tbl><w:tblGrid><w:gridCol w:w=\"2000\"/><w:gridCol w:w=\"2000\"/></w:tblGrid><w:tr>{}{}</w:tr></w:tbl><w:p><w:r><w:t>after</w:t></w:r></w:p>",
+        cell("a"),
+        cell("b")
+    );
+    let mut e = super::super::Editor::open(&super::blank_body(&body), fonts()).expect("opens");
+    e.complete(fonts());
+    let table = e.index().table_ids().next().expect("a table");
+    let cells = Selection::Cells { table, anchor: CellRef { row: 0, col: 0 }, focus: CellRef { row: 0, col: 1 }, shape: CellShape::Rect };
+    e.set_selection(cells);
+    assert!(e.drag_out().is_some_and(|o| !o.can_move), "cells are copied");
+    let (x, y) = caret_point(&mut e, 2, 5);
+    let out = e.drag_out_drop(x, y, false, fonts());
+    assert!(matches!(out, super::super::commands::Outcome::Unchanged(_)), "no move: {out:?}");
+    assert_eq!(texts(&e), ["a", "b", "after"]);
+    e.set_selection(cells);
+    e.drag_out().expect("the cells");
+    let (x, y) = caret_point(&mut e, 0, 0);
+    assert!(matches!(e.drag_out_drop(x, y, true, fonts()), super::super::commands::Outcome::Unchanged(_)), "dropped on the cells");
+    e.drag_out().expect("the cells");
+    let (x, y) = caret_point(&mut e, 2, 5);
+    let out = e.drag_out_drop(x, y, true, fonts());
+    assert!(matches!(out, super::super::commands::Outcome::Changed(_)), "{out:?}");
+    let t = texts(&e);
+    assert_eq!(t.iter().filter(|s| *s == "a").count() + t.iter().filter(|s| *s == "b").count(), 4, "{t:?}");
+    e.execute(Command::Undo, fonts());
+    assert_eq!(texts(&e), ["a", "b", "after"], "one undo step");
+}
+
+#[test]
+fn a_block_dragged_out_and_back_is_copied() {
+    use crate::editing::commands::{Dir, MoveBy};
+    let mut e = super::super::Editor::open(&super::blank_in("abcdefgh\nijklmnop\nqrstuvwx\nyz", "Courier New"), fonts()).unwrap();
+    e.complete(fonts());
+    let mv = |e: &mut super::super::Editor, by, dir| {
+        e.execute(crate::editing::tests::mv(by, dir, false), fonts());
+    };
+    mv(&mut e, MoveBy::Story, Dir::Back);
+    mv(&mut e, MoveBy::Char, Dir::Forward);
+    mv(&mut e, MoveBy::Char, Dir::Forward);
+    e.execute(Command::SetSelectionMode(crate::api::command::SelectionMode::Block), fonts());
+    mv(&mut e, MoveBy::Line, Dir::Forward);
+    mv(&mut e, MoveBy::Char, Dir::Forward);
+    mv(&mut e, MoveBy::Char, Dir::Forward);
+    let block = e.selection();
+    assert!(matches!(block, Selection::Block { .. }), "{block:?}");
+    assert!(e.drag_out().is_some_and(|o| !o.can_move && o.text == "cd\nkl"));
+    let (x, y) = caret_point(&mut e, 3, 2);
+    assert!(matches!(e.drag_out_drop(x, y, false, fonts()), super::super::commands::Outcome::Unchanged(_)), "no move");
+    e.set_selection(block);
+    e.drag_out().expect("the block");
+    let (x, y) = caret_point(&mut e, 3, 2);
+    let out = e.drag_out_drop(x, y, true, fonts());
+    assert!(matches!(out, super::super::commands::Outcome::Changed(_)), "{out:?}");
+    let t = texts(&e);
+    assert!(t[..3] == ["abcdefgh", "ijklmnop", "qrstuvwx"] && t.concat().matches("cd").count() == 2, "{t:?}");
+}
+
 #[test]
 fn with_text_drag_and_drop_off_a_press_in_the_selection_places_the_caret() {
     use super::super::input::{Cursor, PointerKind};

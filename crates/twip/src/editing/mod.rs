@@ -224,10 +224,11 @@ pub struct Editor {
     pub indent_keys: bool,
     /// F2 or Shift+F2 waiting for its place.
     move_to: Option<move_to::MoveTo>,
-    /// Where the open drop menu of a right-button drag drops the text, and the revision it opened at.
-    drop_menu: Option<(Position, u64)>,
-    /// The highlighter's colour (`w:highlight` value), while it is on.
-    highlighter: Option<String>,
+    /// Where the open drop menu of a right-button drag drops the text, the selection it drags and the revision it
+    /// opened at.
+    drop_menu: Option<(Position, Selection, u64)>,
+    /// The highlighter's colour, while it is on.
+    highlighter: Option<crate::api::value::HighlightColor>,
     pub view_settings: view::ViewSettings,
     elems: std::collections::HashMap<crate::docx::ElementId, elements::Element>,
     changes: elements::Changes,

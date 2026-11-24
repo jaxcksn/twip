@@ -85,8 +85,16 @@ impl Editor {
         if self.drag_out.take() != Some((self.selection, self.revision)) {
             return Outcome::Unchanged("the selection or the document changed");
         }
-        let Some(press) = self.selection.focus() else { return Outcome::Unchanged("no selection") };
         let drop = self.hit(x, y, fonts);
+        // Where the drag started stands for the selection's story: a picture's paragraph's, or the drop's for cells.
+        let press = match self.selection {
+            Selection::Object(super::selection::ObjectRef::Inline { para, offset }) => {
+                let story = self.index.para_slot(para).map_or(super::position::StoryId::Body, |s| self.index.story(s.container));
+                Some(Position::text(story, para, offset))
+            }
+            s => s.focus().or(drop),
+        };
+        let Some(press) = press else { return Outcome::Unchanged("no drop place") };
         self.text_drag = Some(TextDrag { start: (x, y), press, moved: true, copy, drop, menu: false });
         self.text_drag_release(fonts).unwrap_or(Outcome::Unchanged("no drag"))
     }
@@ -184,7 +192,16 @@ impl Editor {
                 e.selection = o;
             }
         };
-        let Some((a, b)) = self.selection.ordered(&self.index) else { return Outcome::Unchanged("no selection") };
+        // Selected cells and a block are copied, never moved: their fragment is what a drop pastes.
+        let source = match self.selection {
+            Selection::Cells { .. } | Selection::Block { .. } if !copy => return Outcome::Unchanged("the selection can't be moved"),
+            Selection::Cells { .. } | Selection::Block { .. } => None,
+            s => match s.ordered(&self.index) {
+                Some(r) => Some(r),
+                None => return Outcome::Unchanged("no selection"),
+            },
+        };
+        let pieces = if source.is_none() { self.selected_ranges() } else { Vec::new() };
         // Where the story dropped in is hosted: a text box's float, a note's reference.
         let in_box = match drop.story {
             super::position::StoryId::TextBox(f) => self.index.float_anchor(f).and_then(|para| {
@@ -198,7 +215,10 @@ impl Editor {
             super::position::StoryId::Endnote(id) => self.note_reference(crate::docx::NoteKind::End, id).map(|(at, _)| at),
             _ => None,
         };
-        let inside = |p: &Position| self.index.cmp(&a, p) != std::cmp::Ordering::Greater && self.index.cmp(p, &b) != std::cmp::Ordering::Greater;
+        let inside = |p: &Position| match source {
+            Some((a, b)) => self.index.cmp(&a, p) != std::cmp::Ordering::Greater && self.index.cmp(p, &b) != std::cmp::Ordering::Greater,
+            None => p.para_offset().is_some_and(|(q, u)| pieces.iter().any(|&(r, s, t)| r == q && s <= u && u <= t)),
+        };
         if inside(&drop) || in_box.is_some_and(|p| inside(&p)) {
             restore(self);
             return Outcome::Unchanged("dropped on the selection");
@@ -241,7 +261,7 @@ impl Editor {
             }
             ok
         };
-        let after = self.index.cmp(&drop, &b) == std::cmp::Ordering::Greater;
+        let after = source.is_some_and(|(_, b)| self.index.cmp(&drop, &b) == std::cmp::Ordering::Greater);
         let mut paste = |e: &mut Self, placed: &mut Option<(Position, Position)>| {
             let ok = paste(e, placed);
             if ok {

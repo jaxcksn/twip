@@ -881,6 +881,119 @@ fn the_highlighter_highlights_what_it_drags_over() {
     assert_eq!(e.highlighter(), None, "Esc puts it down");
 }
 
+fn protect(e: &mut Editor) {
+    let p = crate::api::command::DocumentProtection {
+        kind: Some(crate::api::command::ProtectionKind::ReadOnly),
+        enforce: Some(true),
+        ..Default::default()
+    };
+    assert!(matches!(e.execute(C::SetDocumentProtection(p), fonts()), super::super::commands::Outcome::Changed(_)));
+}
+
+#[test]
+fn shift_f2_copies_kept_text_into_an_editable_range() {
+    let range = r#"<w:p><w:permStart w:id="1" w:edGrp="everyone"/><w:r><w:t>three</w:t></w:r><w:permEnd w:id="1"/></w:p>"#;
+    let mut e = edit(&format!("<w:p><w:r><w:t>one two</w:t></w:r></w:p>{range}"));
+    protect(&mut e);
+    select(&mut e, 0, 0, 3);
+    e.begin_move_to(true);
+    let to = at(&mut e, 1, 5, 0.0);
+    e.pointer_input(super::super::input::PointerKind::Down, to.0, to.1, 1, Mods::default(), fonts());
+    e.pointer_input(super::super::input::PointerKind::Up, to.0, to.1, 1, Mods::default(), fonts());
+    let out = e.execute(C::InsertParagraph, fonts());
+    assert!(matches!(out, super::super::commands::Outcome::Changed(_)), "{out:?}");
+    assert_eq!(texts(&e), ["one two", "three one"], "copied at the place in the range");
+    select(&mut e, 0, 0, 3);
+    e.begin_move_to(false);
+    e.pointer_input(super::super::input::PointerKind::Down, to.0, to.1, 1, Mods::default(), fonts());
+    e.pointer_input(super::super::input::PointerKind::Up, to.0, to.1, 1, Mods::default(), fonts());
+    e.execute(C::InsertParagraph, fonts());
+    assert_eq!(texts(&e), ["one two", "three one"], "F2 can't take the kept text");
+    caret(&mut e, 0, 1);
+    assert!(!matches!(e.execute(C::InsertParagraph, fonts()), super::super::commands::Outcome::Changed(_)), "Enter outside the range");
+}
+
+#[test]
+fn f2_gives_up_when_the_selection_changes_before_enter() {
+    let mut e = edit("<w:p><w:r><w:t>one two</w:t></w:r></w:p><w:p><w:r><w:t>three</w:t></w:r></w:p>");
+    select(&mut e, 0, 0, 3);
+    e.begin_move_to(false);
+    let to = at(&mut e, 1, 5, 0.0);
+    e.pointer_input(super::super::input::PointerKind::Down, to.0, to.1, 1, Mods::default(), fonts());
+    e.pointer_input(super::super::input::PointerKind::Up, to.0, to.1, 1, Mods::default(), fonts());
+    let para = texts_ids(&e)[0];
+    e.select_range(para, Unit(4), Unit(7), fonts());
+    e.execute(C::InsertParagraph, fonts());
+    assert_eq!(texts(&e), ["one two", "three"], "two isn't moved to one's place");
+}
+
+#[test]
+fn the_drop_menu_closes_when_the_selection_changes() {
+    use super::super::input::PointerKind;
+    use super::super::move_to::DropChoice;
+    let mut e = edit("<w:p><w:r><w:t>one two</w:t></w:r></w:p><w:p><w:r><w:t>three</w:t></w:r></w:p>");
+    select(&mut e, 0, 0, 3);
+    let (from, to) = (at(&mut e, 0, 1, 0.0), at(&mut e, 1, 5, 0.0));
+    assert!(e.right_press(from.0, from.1, fonts()));
+    e.pointer_input(PointerKind::Move, to.0, to.1, 0, Mods::default(), fonts());
+    e.right_release().expect("dropped");
+    let para = texts_ids(&e)[0];
+    e.select_range(para, Unit(4), Unit(7), fonts());
+    assert!(e.drop_menu().is_none(), "another selection");
+    assert!(matches!(e.choose_drop(DropChoice::Move, fonts()), super::super::commands::Outcome::Unchanged(_)));
+    assert_eq!(texts(&e), ["one two", "three"]);
+}
+
+#[test]
+fn link_here_takes_a_bookmark_name_unused_in_any_case() {
+    use super::super::input::PointerKind;
+    let mut e = edit(
+        r#"<w:p><w:bookmarkStart w:id="0" w:name="ole_link1"/><w:r><w:t>one</w:t></w:r><w:bookmarkEnd w:id="0"/><w:r><w:t xml:space="preserve"> two</w:t></w:r></w:p><w:p><w:r><w:t>three</w:t></w:r></w:p>"#,
+    );
+    e.execute(C::SetFileName("Report.docx".into()), fonts());
+    select(&mut e, 0, 4, 7);
+    let (from, to) = (at(&mut e, 0, 5, 0.0), at(&mut e, 1, 5, 0.0));
+    e.right_press(from.0, from.1, fonts());
+    e.pointer_input(PointerKind::Move, to.0, to.1, 0, Mods::default(), fonts());
+    e.right_release().expect("dropped");
+    e.choose_drop(super::super::move_to::DropChoice::Link, fonts());
+    assert_eq!(link_codes(&e, 1), [r#"LINK Word.Document.12 "Report.docx" "OLE_LINK2" \a \r"#]);
+    let names: Vec<String> = e.bookmarks().into_iter().map(|b| b.name).collect();
+    assert_eq!(names, ["ole_link1", "OLE_LINK2"], "the old link's bookmark stays");
+}
+
+#[test]
+fn link_here_past_the_last_bookmark_number_is_refused() {
+    use super::super::input::PointerKind;
+    let mut e = edit(
+        r#"<w:p><w:bookmarkStart w:id="0" w:name="OLE_LINK4294967295"/><w:r><w:t>one</w:t></w:r><w:bookmarkEnd w:id="0"/><w:r><w:t xml:space="preserve"> two</w:t></w:r></w:p><w:p><w:r><w:t>three</w:t></w:r></w:p>"#,
+    );
+    e.execute(C::SetFileName("Report.docx".into()), fonts());
+    select(&mut e, 0, 4, 7);
+    let (from, to) = (at(&mut e, 0, 5, 0.0), at(&mut e, 1, 5, 0.0));
+    e.right_press(from.0, from.1, fonts());
+    e.pointer_input(PointerKind::Move, to.0, to.1, 0, Mods::default(), fonts());
+    e.right_release().expect("dropped");
+    let out = e.choose_drop(super::super::move_to::DropChoice::Link, fonts());
+    assert!(matches!(out, super::super::commands::Outcome::Unchanged(_)), "{out:?}");
+    assert!(link_codes(&e, 1).is_empty());
+}
+
+#[test]
+fn the_highlighter_keeps_to_document_protection() {
+    use super::super::input::PointerKind;
+    let mut e = edit("<w:p><w:r><w:t>one two</w:t></w:r></w:p>");
+    protect(&mut e);
+    caret(&mut e, 0, 0);
+    e.toggle_highlighter(Some(crate::api::value::HighlightColor::Yellow));
+    let (from, to) = (at(&mut e, 0, 0, 0.0), at(&mut e, 0, 3, 0.0));
+    let m = Mods::default();
+    e.pointer_input(PointerKind::Down, from.0, from.1, 1, m, fonts());
+    e.pointer_input(PointerKind::Move, to.0, to.1, 0, m, fonts());
+    e.pointer_input(PointerKind::Up, to.0, to.1, 0, m, fonts());
+    assert!(para(&e, 0).inlines.iter().all(|i| !matches!(i, Inline::Text(_, r) if r.highlight.is_some())), "nothing highlighted");
+}
+
 #[test]
 fn ctrl_shift_v_pastes_formatting_until_the_clipboard_changes() {
     let mut e = edit("<w:p><w:r><w:rPr><w:b/></w:rPr><w:t>bold</w:t></w:r><w:r><w:t xml:space=\"preserve\"> plain</w:t></w:r></w:p>");

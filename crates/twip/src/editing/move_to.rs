@@ -7,7 +7,6 @@ use crate::font::Fonts;
 
 use super::Editor;
 use super::commands::Outcome;
-use super::format::Format;
 use super::position::Position;
 use super::selection::Selection;
 
@@ -31,6 +30,8 @@ pub enum DropChoice {
 pub struct MoveTo {
     pub copy: bool,
     pub target: Option<Position>,
+    /// The selection F2 moves and the revision it started at: Enter gives up once either changed.
+    source: (Selection, u64),
 }
 
 impl Editor {
@@ -40,7 +41,7 @@ impl Editor {
         if !matches!(self.selection, Selection::Text { .. }) || self.selection.is_collapsed() {
             return Outcome::unavailable("no text selected");
         }
-        self.move_to = Some(MoveTo { copy, target: None });
+        self.move_to = Some(MoveTo { copy, target: None, source: (self.selection, self.revision) });
         Outcome::Moved
     }
 
@@ -64,6 +65,9 @@ impl Editor {
         match cmd {
             Command::InsertParagraph => {
                 self.move_to = None;
+                if m.source != (self.selection, self.revision) {
+                    return Some(Outcome::Unchanged("the selection or the document changed"));
+                }
                 let Some(target) = m.target else { return Some(Outcome::Unchanged("no place chosen")) };
                 Some(self.drop_at(target, m.copy, fonts))
             }
@@ -120,20 +124,20 @@ impl Editor {
         let d = self.text_drag.take_if(|d| d.menu)?;
         self.requests.push(super::input::Request::ReleasePointer);
         let drop = d.drop.filter(|p| d.moved && !self.inside_selection(p))?;
-        self.drop_menu = Some((drop, self.revision));
+        self.drop_menu = Some((drop, self.selection, self.revision));
         Some(drop)
     }
 
-    /// Where the open drop menu drops the text; `None` once the document changed after it opened.
+    /// Where the open drop menu drops the text; `None` once the selection or the document changed after it opened.
     pub fn drop_menu(&self) -> Option<Position> {
-        self.drop_menu.filter(|&(_, at)| at == self.revision).map(|(p, _)| p)
+        self.drop_menu.filter(|&(_, sel, at)| (sel, at) == (self.selection, self.revision)).map(|(p, ..)| p)
     }
 
     /// The drop menu's choice, as one undo step. Link Here needs the document's file name.
     pub fn choose_drop(&mut self, choice: DropChoice, fonts: &Fonts) -> Outcome {
-        let Some((drop, at)) = self.drop_menu.take() else { return Outcome::unavailable("no drop menu open") };
-        if at != self.revision {
-            return Outcome::Unchanged("the document changed");
+        let Some((drop, sel, at)) = self.drop_menu.take() else { return Outcome::unavailable("no drop menu open") };
+        if (sel, at) != (self.selection, self.revision) {
+            return Outcome::Unchanged("the selection or the document changed");
         }
         match choice {
             DropChoice::Move | DropChoice::Copy => self.drop_at(drop, choice == DropChoice::Copy, fonts),
@@ -183,12 +187,14 @@ impl Editor {
             .filter_map(|p| self.index.para(&self.doc, p))
             .flat_map(|p| p.inlines.iter())
             .filter_map(|i| match i {
-                Inline::Bookmark(n) => n.strip_prefix("OLE_LINK").and_then(|k| k.parse::<u32>().ok()),
+                // Bookmark names are without case: `ole_link1` is OLE_LINK1's.
+                Inline::Bookmark(n) => n.get(..8).filter(|p| p.eq_ignore_ascii_case("OLE_LINK")).and_then(|_| n[8..].parse::<u32>().ok()),
                 _ => None,
             })
             .max()
             .unwrap_or(0);
-        let name = format!("OLE_LINK{}", used + 1);
+        let Some(next) = used.checked_add(1) else { return Outcome::Unchanged("no bookmark name") };
+        let name = format!("OLE_LINK{next}");
         let quote = crate::docx::fields::quote;
         let code = format!("LINK Word.Document.12 {} {} \\a \\r", quote(&file), quote(&name));
         self.joined("Link", fonts, |e| {
@@ -205,7 +211,7 @@ impl Editor {
     /// drags over in `color`; again (or Esc) turns it off.
     pub fn toggle_highlighter(&mut self, color: Option<HighlightColor>) -> Outcome {
         self.highlighter = match (self.highlighter.take(), color) {
-            (None, Some(c)) => Some(super::commands::highlight_value(c).to_string()),
+            (None, Some(c)) => Some(c),
             _ => None,
         };
         Outcome::Moved
@@ -213,17 +219,17 @@ impl Editor {
 
     /// The highlighter's colour, while it is on.
     pub fn highlighter(&self) -> Option<&str> {
-        self.highlighter.as_deref()
+        self.highlighter.map(super::commands::highlight_value)
     }
 
-    /// The highlighter's drag ends: the text it went over is highlighted, the caret at its end.
+    /// The highlighter's drag ends: the text it went over is highlighted, as Highlight does it, the caret at its end.
     pub(super) fn highlighter_release(&mut self, fonts: &Fonts) {
-        let Some(name) = self.highlighter.clone() else { return };
+        let Some(color) = self.highlighter else { return };
         if self.selection.is_collapsed() || !matches!(self.selection, Selection::Text { .. }) {
             return;
         }
         let end = self.selection.focus();
-        let _ = self.format(&Format::Highlight(Some(name)), fonts);
+        let _ = self.execute(Command::SetHighlight(Some(color)), fonts);
         if let Some(end) = end {
             self.set_selection(Selection::Caret(end));
         }
