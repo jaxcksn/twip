@@ -116,22 +116,25 @@ fn resolve_inlines(p: &Paragraph, pick: &Pick, accept: bool) -> Option<(Vec<Inli
     let inside = pick.inside.as_ref().map(|i| i.get(&ParaId(p.id)));
     let tied = pick.tied.get(&ParaId(p.id));
     let mut cuts: Vec<u32> = inside.flatten().into_iter().flatten().flat_map(|r| [r.start, r.end]).collect();
+    cuts.sort_unstable();
     cuts.dedup();
     let mut cache: HashMap<(*const RunStyle, bool), Option<(bool, Run)>> = HashMap::new();
     let mut out: Vec<(Inline, bool)> = Vec::with_capacity(p.inlines.len());
     let (mut at, mut changed) = (0u32, false);
     for i in &p.inlines {
         let n = i.units() as u32;
+        // The cuts inside it, the run read once from its start to its end.
+        let inner = &cuts[cuts.partition_point(|&c| c <= at)..cuts.partition_point(|&c| c < at + n)];
         let pieces: Vec<Inline> = match i {
-            Inline::Text(t, r) if cuts.iter().any(|&c| at < c && c < at + n) => {
-                let mut v = Vec::new();
-                let mut from = 0usize;
-                for &c in cuts.iter().filter(|&&c| at < c && c < at + n) {
+            Inline::Text(t, r) if !inner.is_empty() => {
+                let mut v = Vec::with_capacity(inner.len() + 1);
+                let (mut chars, mut from) = (t.chars(), 0usize);
+                for &c in inner {
                     let k = (c - at) as usize;
-                    v.push(Inline::Text(t.chars().skip(from).take(k - from).collect(), r.clone()));
+                    v.push(Inline::Text(chars.by_ref().take(k - from).collect(), r.clone()));
                     from = k;
                 }
-                v.push(Inline::Text(t.chars().skip(from).collect(), r.clone()));
+                v.push(Inline::Text(chars.collect(), r.clone()));
                 v
             }
             _ => vec![i.clone()],

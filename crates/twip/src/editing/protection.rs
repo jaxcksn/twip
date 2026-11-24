@@ -301,24 +301,22 @@ impl Editor {
         }
     }
 
-    /// [`Editor::openings`] of the selection, every range of a discontiguous one (its own range alone for command
-    /// `id` when that replaces only it); of floats selected together, those every one's anchor has.
-    fn selection_openings(&self, id: CommandId) -> Openings {
-        let at = self.selection_span().map_or_else(Openings::default, |(a, b)| self.openings(&a, &b));
-        let both = |x: Openings, o: Openings| Openings { range: x.range && o.range, form: x.form && o.form, section: x.section && o.section };
-        let others = if replaces_primary(id) { &[][..] } else { self.other_ranges() };
-        let at = others.iter().fold(at, |at, (a, b)| both(at, self.openings(a, b)));
-        let cells = if replaces_primary(id) { &[][..] } else { self.other_cells() };
-        let at = cells.iter().fold(at, |at, c| match c {
-            super::selection::Selection::Cells { table, .. } => {
-                both(at, self.table_point(*table).map_or_else(Openings::default, |p| self.openings(&p, &p)))
-            }
-            _ => at,
-        });
-        self.selected_floats()
-            .into_iter()
-            .skip(1)
-            .fold(at, |at, f| both(at, self.float_point(f).map_or_else(Openings::default, |p| self.openings(&p, &p))))
+    /// [`Editor::openings`] of each place the selection edits, apart: every range of a discontiguous one (its own
+    /// range alone for command `id` when that replaces only it), the table of each block of cells, each float selected
+    /// together.
+    fn selection_openings(&self, id: CommandId) -> Vec<Openings> {
+        let mut out = vec![self.selection_span().map_or_else(Openings::default, |(a, b)| self.openings(&a, &b))];
+        if !replaces_primary(id) {
+            out.extend(self.other_ranges().iter().map(|(a, b)| self.openings(a, b)));
+            out.extend(self.other_cells().iter().filter_map(|c| match c {
+                super::selection::Selection::Cells { table, .. } => {
+                    Some(self.table_point(*table).map_or_else(Openings::default, |p| self.openings(&p, &p)))
+                }
+                _ => None,
+            }));
+        }
+        out.extend(self.selected_floats().into_iter().skip(1).map(|f| self.float_point(f).map_or_else(Openings::default, |p| self.openings(&p, &p))));
+        out
     }
 
     /// Where float `f` is anchored.
@@ -365,7 +363,7 @@ impl Editor {
             return true;
         }
         let Some(p) = self.enforced_protection() else { return false };
-        refusal(p, id, || self.table_point(t).map_or_else(Openings::default, |at| self.openings(&at, &at))).is_some()
+        refusal(p, id, || [self.table_point(t).map_or_else(Openings::default, |at| self.openings(&at, &at))]).is_some()
     }
 
     /// Why a tool's edit of table `t`, command `id`'s, is refused where it lands (the table under the pointer, not the
@@ -374,7 +372,7 @@ impl Editor {
         match self.table_point(t) {
             Some(at) => self.edit_refusal_at(id, &at),
             None if self.mode == super::Mode::ReadOnly => Some(Error::new(ErrorCode::ReadOnly, "the document is read only")),
-            None => refusal(self.enforced_protection()?, id, Openings::default),
+            None => refusal(self.enforced_protection()?, id, || [Openings::default()]),
         }
     }
 
@@ -408,14 +406,16 @@ impl Editor {
             _ => command.id(),
         };
         refusal(p, id, || match command {
-            Command::Delete(d) if self.selection.is_collapsed() => self.delete_span(d).map_or_else(Openings::default, |(a, b)| self.openings(&a, &b)),
+            Command::Delete(d) if self.selection.is_collapsed() => {
+                vec![self.delete_span(d).map_or_else(Openings::default, |(a, b)| self.openings(&a, &b))]
+            }
             _ => self.selection_openings(command.id()),
         })
     }
 
     /// Why document protection refuses an edit that command `id` would make at `a..b`: a gesture's, where it lands.
     pub(super) fn protection_refuses_at(&self, id: CommandId, a: &Position, b: &Position) -> Option<Error> {
-        refusal(self.enforced_protection()?, id, || self.openings(a, b))
+        refusal(self.enforced_protection()?, id, || [self.openings(a, b)])
     }
 
     /// Whether an edit that command `id` would make at `a..b`, which isn't the command's own (a correction, a
@@ -435,8 +435,8 @@ impl Editor {
     pub(super) fn protection_gate(&self) -> Option<impl Fn(CommandId) -> bool + '_> {
         let p = self.enforced_protection()?;
         let all = self.selection_openings(CommandId::Delete);
-        let own = if self.is_discontiguous() { self.selection_openings(CommandId::InsertText) } else { all };
-        Some(move |id| refusal(p, id, || if replaces_primary(id) { own } else { all }).is_some())
+        let own = if self.is_discontiguous() { self.selection_openings(CommandId::InsertText) } else { all.clone() };
+        Some(move |id| refusal(p, id, || if replaces_primary(id) { &own[..] } else { &all[..] }).is_some())
     }
 
     /// What a delete at the caret removes, as [`Editor::delete`] finds it: the grapheme or word beside it in the
@@ -575,7 +575,7 @@ impl Editor {
             return self.kept(id, a, b);
         };
         let open = Protection { formatting: false, ..p.clone() };
-        refusal(&open, id, || self.openings(a, b)).is_some() || self.locked_edit(a, b) || self.expanded_in(a, b).is_some()
+        refusal(&open, id, || [self.openings(a, b)]).is_some() || self.locked_edit(a, b) || self.expanded_in(a, b).is_some()
     }
 
     /// Starts enforcing the protection set, as Word's Start Enforcement Protection does: the password typed twice
@@ -995,7 +995,7 @@ pub fn restricts_formatting(id: CommandId) -> bool {
 
 /// Why an enforced protection `p` refuses command `id`, where `at` says the edit falls: formatting protection, a
 /// tracked-changes protection's revisions, then what Restrict Editing allows and where.
-fn refusal(p: &Protection, id: CommandId, at: impl FnOnce() -> Openings) -> Option<Error> {
+fn refusal<P: AsRef<[Openings]>>(p: &Protection, id: CommandId, at: impl FnOnce() -> P) -> Option<Error> {
     use CommandId as C;
     if !p.enforced || !crate::api::catalog::info(id).is_some_and(|i| i.mutates) {
         return None;
@@ -1018,11 +1018,18 @@ fn refusal(p: &Protection, id: CommandId, at: impl FnOnce() -> Openings) -> Opti
     if allows(p, id) {
         return None;
     }
-    let at = at();
-    let range = matches!(p.edit, ProtectionKind::ReadOnly | ProtectionKind::Comments) && edits_selection(id, false) && at.range;
-    let form = p.edit == ProtectionKind::Forms && matches!(id, C::InsertText | C::Delete | C::PasteText) && at.form;
-    let section = p.edit == ProtectionKind::Forms && edits_selection(id, true) && at.section;
-    (!range && !form && !section).then(|| Error::new(ErrorCode::NotAllowed, "the document is protected"))
+    // Each place the edit falls on needs an exception of its own: a form field in one and an open section in another
+    // are both allowed.
+    let places = at();
+    let opens = |at: &Openings| {
+        let range = matches!(p.edit, ProtectionKind::ReadOnly | ProtectionKind::Comments) && edits_selection(id, false) && at.range;
+        let form = p.edit == ProtectionKind::Forms && matches!(id, C::InsertText | C::Delete | C::PasteText) && at.form;
+        let section = p.edit == ProtectionKind::Forms && edits_selection(id, true) && at.section;
+        range || form || section
+    };
+    let places = places.as_ref();
+    let allowed = if places.is_empty() { opens(&Openings::default()) } else { places.iter().all(opens) };
+    (!allowed).then(|| Error::new(ErrorCode::NotAllowed, "the document is protected"))
 }
 
 /// What Word's Restrict Editing pane offers with editing restriction `kind`: exceptions (editable ranges and who may

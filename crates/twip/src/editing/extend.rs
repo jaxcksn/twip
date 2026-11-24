@@ -58,19 +58,26 @@ impl Editor {
             return Outcome::Unchanged("no caret");
         };
         self.modes.origin = Some(origin);
-        let level = (self.modes.extend - 1).min(4);
-        self.modes.extend = level;
-        let unit = match level {
-            1 => {
-                self.selection = Selection::Caret(origin);
+        let current = self.selection.ordered(&self.index);
+        let mut level = (self.modes.extend - 1).min(4);
+        // The largest unit below the extension's that stays within the selection: a selection made smaller since
+        // (by `select_range`) isn't grown to a word.
+        while level > 1 {
+            let unit = match level {
+                2 => Granularity::Word,
+                3 => Granularity::Sentence,
+                _ => Granularity::Paragraph,
+            };
+            let (a, b) = self.span(origin, unit);
+            if current.is_some_and(|(x, y)| self.index.cmp(&x, &a).is_le() && self.index.cmp(&b, &y).is_le()) {
+                self.modes.extend = level;
+                self.selection = Selection::range(a, b, unit);
                 return Outcome::Moved;
             }
-            2 => Granularity::Word,
-            3 => Granularity::Sentence,
-            _ => Granularity::Paragraph,
-        };
-        let (a, b) = self.span(origin, unit);
-        self.selection = Selection::range(a, b, unit);
+            level -= 1;
+        }
+        self.modes.extend = 1;
+        self.selection = Selection::Caret(origin);
         Outcome::Moved
     }
 

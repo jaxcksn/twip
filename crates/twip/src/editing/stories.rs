@@ -543,8 +543,11 @@ impl Editor {
                 let best = geo
                     .lines
                     .iter()
-                    .filter(|l| !l.repeat && ok(geo.stories[l.story].story))
-                    .filter(|l| !first || if down { band(l)[1] >= bottom - 0.01 } else { band(l)[3] <= top + 0.01 })
+                    .enumerate()
+                    // Never the line moved from, whatever its band: an empty quarter-turned line has none.
+                    .filter(|&(k, l)| !(first && k == at.line) && !l.repeat && ok(geo.stories[l.story].story))
+                    .filter(|(_, l)| !first || if down { band(l)[1] >= bottom - 0.01 } else { band(l)[3] <= top + 0.01 })
+                    .map(|(_, l)| l)
                     .min_by(|a, b| {
                         let (ra, rb) = (band(a), band(b));
                         let ka = if down { ra[1] } else { -ra[3] };

@@ -362,7 +362,7 @@ pub fn inspect(e: &mut Editor, what: &str, settled: bool) -> Value {
                     lines.push(json!({
                         "page": page, "story": story(g.stories[l.story].story, &o), "para": o.paras.get(&para),
                         "first": first.unit.0, "last": last.unit.0, "rect": [x0, y0, x1, y1], "repeat": l.repeat,
-                        "stops": stops.iter().map(|s| json!([to(s.x, 0.0).0, s.unit.0])).collect::<Vec<_>>(),
+                        "stops": stops.iter().map(|s| { let [x, y] = l.page(s.x, (l.top + l.bottom) / 2.0); let (x, y) = to(x, y); json!([x, y, s.unit.0]) }).collect::<Vec<_>>(),
                     }));
                 }
             }

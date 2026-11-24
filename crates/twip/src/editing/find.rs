@@ -204,10 +204,12 @@ impl Editor {
 
     /// The paragraph ids of `story` in document order, tables included, not the text boxes it anchors.
     pub(crate) fn paras_of(&self, story: super::position::StoryId) -> Vec<ParaId> {
-        if story == super::position::StoryId::Body {
-            return self.story_paras(Stories::default());
-        }
         let mut out = Vec::new();
+        if story == super::position::StoryId::Body {
+            // The document's own body, whatever sub-template is edited.
+            self.doc.sections.iter().for_each(|s| walk(&s.blocks, &mut out, &mut Vec::new()));
+            return out;
+        }
         if let Some(blocks) = self.index.blocks(&self.doc, crate::editing::index::Container::Story(story)) {
             walk(blocks, &mut out, &mut Vec::new());
         }

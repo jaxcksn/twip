@@ -290,15 +290,18 @@ impl Run {
         let within = lines.iter().find(|l| l["first"].as_u64() <= Some(u) && Some(u) <= l["last"].as_u64());
         let line = if t["line"] == "last" { lines[lines.len() - 1] } else { within.copied().unwrap_or(lines[lines.len() - 1]) };
         let stops = line["stops"].as_array().cloned().unwrap_or_default();
-        let stop =
-            stops.iter().filter(|s| s[1].as_u64() <= Some(u)).max_by_key(|s| s[1].as_u64()).or(stops.first()).cloned().unwrap_or(json!([0.0, 0]));
+        let unit = |s: &Value| s[2].as_u64();
+        let stop = stops.iter().filter(|s| unit(s) <= Some(u)).max_by_key(|s| unit(s)).or(stops.first()).cloned();
         let r = &line["rect"];
-        let y = (r[1].as_f64().unwrap_or(0.0) + r[3].as_f64().unwrap_or(0.0)) / 2.0;
+        let mid = |a: &Value, b: &Value| (a.as_f64().unwrap_or(0.0) + b.as_f64().unwrap_or(0.0)) / 2.0;
+        let Some(stop) = stop else { return (dx, mid(&r[1], &r[3]) + dy) };
+        let (x, y) = (stop[0].as_f64().unwrap_or(0.0), stop[1].as_f64().unwrap_or(0.0));
+        // Inside the first glyph, along the line.
         let inside = match stops.get(1) {
-            Some(s1) if stops.first() == Some(&stop) => 0.4 * (s1[0].as_f64().unwrap_or(0.0) - stop[0].as_f64().unwrap_or(0.0)),
-            _ => 0.0,
+            Some(s1) if stops.first() == Some(&stop) => [0.4 * (s1[0].as_f64().unwrap_or(0.0) - x), 0.4 * (s1[1].as_f64().unwrap_or(0.0) - y)],
+            _ => [0.0, 0.0],
         };
-        (stop[0].as_f64().unwrap_or(0.0) + inside + dx, y + dy)
+        (x + inside[0] + dx, y + inside[1] + dy)
     }
 
     fn resolve(&mut self, v: &Value) -> Value {

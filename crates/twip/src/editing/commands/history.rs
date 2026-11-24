@@ -34,7 +34,7 @@ impl Editor {
                 (false, false) => self.delete(Dir::Forward, false, fonts),
             };
         }
-        let moving = self.tracking() && self.moves_whole();
+        let moving = self.tracking() && !self.is_discontiguous() && self.moves_whole();
         if !moving && !self.is_discontiguous() {
             self.smart_cut();
         }

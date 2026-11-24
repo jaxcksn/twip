@@ -109,7 +109,8 @@ fn a_tbrl_section_stacks_its_lines_right_to_left_and_tblrv_left_to_right() {
         let (g, i) = line_of(&mut e, pg, text, is_body);
         let (a, b) = (&g.lines[i], &g.lines[i + 1]);
         let (ra, rb) = (a.band(a.x0(), a.x1()), b.band(b.x0(), b.x1()));
-        assert_eq!(rb[0] < ra[0], leftwards, "page {pg}: the next line lies {}", if leftwards { "left" } else { "right" });
+        let (next, side) = if leftwards { (rb[0] < ra[0], "left") } else { (rb[0] > ra[0], "right") };
+        assert!(next, "page {pg}: the next line lies {side} of the one before: {ra:?} {rb:?}");
         assert!(ra[3] - ra[1] > ra[2] - ra[0], "a line is a tall strip");
         assert!((ra[1] - rb[1]).abs() < 1.0, "lines start at the same top");
     }
@@ -480,17 +481,23 @@ fn upright_east_asian_glyphs_have_a_stop_each() {
     let mut e = layout_fixture("vertical-directions.docx");
     for pg in [2, 3] {
         let (g, i) = line_of(&mut e, pg, "Second paragraph.", is_body);
-        let l = &g.lines[i];
-        let para = l.para().expect("para");
+        let para = g.lines[i].para().expect("para");
         let text = super::super::text::UnitText::of(e.index.para(&e.doc, para).expect("para")).text;
         let cjk: Vec<u32> = text.chars().enumerate().filter(|(_, c)| *c == '漢').map(|(k, _)| k as u32).collect();
         assert!(!cjk.is_empty());
-        for u in cjk.iter().filter(|&&u| l.first_of(para).is_some_and(|f| f.0 <= u) && l.last_of(para).is_some_and(|z| u < z.0)) {
-            let s = l.stops.iter().filter(|s| s.para == para && s.unit.0 == *u).count();
-            assert_eq!(s, 1, "page {pg}: the upright glyph at {u} has its own stop");
+        // Every line of the paragraph drawn on the page
+        let mut seen: Vec<u32> = Vec::new();
+        for l in g.lines.iter().filter(|l| l.paras.contains(&para)) {
+            let (first, last) = (l.first_of(para).expect("a first unit").0, l.last_of(para).expect("a last unit").0);
+            for &u in cjk.iter().filter(|&&u| first <= u && u < last) {
+                let n = l.stops.iter().filter(|s| s.para == para && s.unit.0 == u).count();
+                assert_eq!(n, 1, "page {pg}: the upright glyph at {u} has its own stop");
+                seen.push(u);
+            }
+            let xs: Vec<f64> = l.stops.iter().filter(|s| s.para == para && cjk.contains(&s.unit.0)).map(|s| s.x).collect();
+            assert!(xs.windows(2).all(|w| w[1] > w[0] + 1.0), "page {pg}: upright glyphs' stops advance along the line: {xs:?}");
         }
-        let xs: Vec<f64> = l.stops.iter().filter(|s| cjk.contains(&s.unit.0)).map(|s| s.x).collect();
-        assert!(xs.windows(2).all(|w| w[1] > w[0] + 1.0), "page {pg}: upright glyphs' stops advance along the line: {xs:?}");
+        assert_eq!(seen, cjk, "page {pg}: every upright glyph of the paragraph has a stop, in order");
     }
 }
 
@@ -720,5 +727,28 @@ fn a_line_move_past_a_vertical_cell_goes_to_the_next_row() {
         press(&mut e, 0, p, Mods::default());
         key(&mut e, prev, Mods::default());
         assert_eq!(caret_para_text(&e), "r0c0", "{flow}: {prev} past its first line goes to the row above");
+    }
+}
+
+#[test]
+fn a_line_move_out_of_an_empty_turned_note_line_leaves_it_or_stops() {
+    let ns = r#"xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main""#;
+    let foot = format!(r#"<w:footnotes {ns}><w:footnote w:id="1"><w:p/></w:footnote></w:footnotes>"#);
+    let body = r#"<w:p><w:r><w:t>Body</w:t></w:r><w:r><w:footnoteReference w:id="1"/></w:r></w:p>"#;
+    let sect = r#"<w:textDirection w:val="tbRl"/>"#;
+    let bytes = super::empty_stories::build(body, sect, &[("footnotes.xml", "footnotes", "footnotes", &foot)]);
+    let mut e = Editor::open(&bytes, fonts()).expect("opens");
+    e.complete(fonts());
+    let g = pages(&mut e)[0].1.clone();
+    let line = g.lines.iter().find(|l| matches!(g.stories[l.story].story, StoryId::Footnote(_))).expect("a note line");
+    assert_ne!(line.dir(), LineDir::Horizontal, "the note's line is turned");
+    let band = line.band(line.x0(), line.x1());
+    assert!((band[3] - band[1]).abs() < 0.01, "an empty line has no extent along the page's height: {band:?}");
+    let s = line.stops[0];
+    let focus = Position::text(g.stories[line.story].story, s.para, s.unit);
+    let goal = line.page(s.x, (line.top + line.bottom) / 2.0);
+    for down in [true, false] {
+        let to = e.cross_vertical(focus, goal, down, fonts());
+        assert_ne!(to, Some(focus), "down: {down}: not the place it started from");
     }
 }

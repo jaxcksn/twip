@@ -99,8 +99,9 @@ impl Editor {
     /// The selected text dropped at `target`, as a drag ends: refused where the text is kept or can't go.
     fn drop_at(&mut self, target: Position, copy: bool, fonts: &Fonts) -> Outcome {
         let Some((a, b)) = self.selection.ordered(&self.index) else { return Outcome::Unchanged("no selection") };
-        let taken = self.kept(CommandId::Delete, &a, &b) || self.other_ranges().iter().any(|(a, b)| self.kept(CommandId::Delete, a, b));
-        if (!copy && taken) || !self.editable(&target) || self.kept(CommandId::Paste, &target, &target) {
+        // A copy takes nothing out of its source.
+        let taken = !copy && (self.kept(CommandId::Delete, &a, &b) || self.other_ranges().iter().any(|(a, b)| self.kept(CommandId::Delete, a, b)));
+        if taken || !self.editable(&target) || self.kept(CommandId::Paste, &target, &target) {
             return Outcome::Unchanged("kept");
         }
         self.drop_selection(target, copy, None, fonts)

@@ -100,6 +100,14 @@ fn bounds(anchor: CellRef, focus: CellRef) -> (usize, usize, usize, usize) {
     (anchor.row.min(focus.row), anchor.row.max(focus.row), anchor.col.min(focus.col), anchor.col.max(focus.col))
 }
 
+/// A block of cells' rows and columns, first to last.
+fn bounds_of(s: Selection) -> Option<(usize, usize, usize, usize)> {
+    match s {
+        Selection::Cells { anchor, focus, .. } => Some(bounds(anchor, focus)),
+        _ => None,
+    }
+}
+
 /// What a drag's selection `s` goes over: a range or a block of cells, none for a caret.
 fn swept_by(s: Selection) -> Option<Selection> {
     matches!(s, Selection::Text { .. } | Selection::Cells { .. }).then_some(s)
@@ -174,7 +182,8 @@ impl Editor {
         self.held_cell(p, &self.cell_blocks()).is_some()
     }
 
-    /// Block `s` without the cells of block `cut`: up to four blocks, merged cells whole.
+    /// Block `s` without the cells of block `cut`: blocks of exactly the cells left (a merged cell that `cut` goes
+    /// over is gone whole, one it doesn't touch stays whole).
     fn cells_without(&self, s: Selection, cut: Selection) -> Vec<Selection> {
         let (Selection::Cells { table, anchor, focus, .. }, Selection::Cells { table: ct, anchor: ca, focus: cf, .. }) = (s, cut) else {
             return vec![s];
@@ -183,22 +192,105 @@ impl Editor {
         if table != ct || x1 < r0 || x0 > r1 || y1 < c0 || y0 > c1 {
             return vec![s];
         }
-        let block = |e: &Self, (ar, ac): (usize, usize), (fr, fc): (usize, usize)| {
-            e.normalize(Selection::Cells { table, anchor: CellRef { row: ar, col: ac }, focus: CellRef { row: fr, col: fc }, shape: CellShape::Rect })
+        let rect = |(ar, ac): (usize, usize), (fr, fc): (usize, usize)| Selection::Cells {
+            table,
+            anchor: CellRef { row: ar, col: ac },
+            focus: CellRef { row: fr, col: fc },
+            shape: CellShape::Rect,
         };
         let (m0, m1) = (r0.max(x0), r1.min(x1));
-        let mut out = Vec::with_capacity(4);
+        let mut parts = Vec::with_capacity(4);
         if x0 > r0 {
-            out.push(block(self, (r0, c0), (x0 - 1, c1)));
+            parts.push(((r0, c0), (x0 - 1, c1)));
         }
         if x1 < r1 {
-            out.push(block(self, (x1 + 1, c0), (r1, c1)));
+            parts.push(((x1 + 1, c0), (r1, c1)));
         }
         if y0 > c0 {
-            out.push(block(self, (m0, c0), (m1, y0 - 1)));
+            parts.push(((m0, c0), (m1, y0 - 1)));
         }
         if y1 < c1 {
-            out.push(block(self, (m0, y1 + 1), (m1, c1)));
+            parts.push(((m0, y1 + 1), (m1, c1)));
+        }
+        // The four strips, each made whole over the merges it crosses, when none then reaches the cut or another strip.
+        let strips: Vec<Selection> = parts.iter().map(|&(a, f)| self.normalize(rect(a, f))).collect();
+        let spans: Vec<(usize, usize, usize, usize)> = strips.iter().filter_map(|&b| bounds_of(b)).collect();
+        let apart = |p: &(usize, usize, usize, usize), q: &(usize, usize, usize, usize)| p.1 < q.0 || q.1 < p.0 || p.3 < q.2 || q.3 < p.2;
+        let cut_span = (x0, x1, y0, y1);
+        if spans.iter().enumerate().all(|(k, p)| apart(p, &cut_span) && spans[..k].iter().all(|q| apart(p, q))) {
+            return strips;
+        }
+        self.cells_left(table, (r0, r1, c0, c1), cut_span)
+    }
+
+    /// The cells of rows `r0..=r1` and columns `c0..=c1` of `table` that the block `cut` doesn't touch, as blocks:
+    /// each cell whole, row by row, grown right and down while the cells beside and below it line up.
+    fn cells_left(
+        &self,
+        table: crate::layout::TableId,
+        (r0, r1, c0, c1): (usize, usize, usize, usize),
+        cut: (usize, usize, usize, usize),
+    ) -> Vec<Selection> {
+        let Some(t) = self.index.table(&self.doc, table) else { return Vec::new() };
+        let g = Grid::of(t);
+        // Each cell that starts in the block: its rows and columns, first to last
+        let mut cells: Vec<(usize, usize, usize, usize)> = Vec::new();
+        for r in r0..=r1.min(g.rows.len().saturating_sub(1)) {
+            for (k, &(c, span, _)) in g.rows[r].iter().enumerate() {
+                if g.continues(r, k) || c + span.max(1) <= c0 || c > c1 {
+                    continue;
+                }
+                let mut end = r;
+                while g.cell_at(end + 1, c).is_some_and(|kk| g.continues(end + 1, kk)) {
+                    end += 1;
+                }
+                let cell = (r, end, c, c + span.max(1) - 1);
+                if cell.1 < cut.0 || cut.1 < cell.0 || cell.3 < cut.2 || cut.3 < cell.2 {
+                    cells.push(cell);
+                }
+            }
+        }
+        let at: HashMap<(usize, usize), usize> = cells.iter().enumerate().map(|(k, c)| ((c.0, c.2), k)).collect();
+        let mut used = vec![false; cells.len()];
+        let mut out = Vec::new();
+        for k in 0..cells.len() {
+            if std::mem::replace(&mut used[k], true) {
+                continue;
+            }
+            let (top, mut bottom, left, mut right) = cells[k];
+            // Right, along the cells that start in the block's rows
+            while let Some(&j) = at.get(&(top, right + 1)) {
+                if used[j] || cells[j].1 != bottom {
+                    break;
+                }
+                used[j] = true;
+                right = cells[j].3;
+            }
+            // Down, while the next row's cells fill exactly the block's columns
+            'down: loop {
+                let (mut col, mut last, mut run) = (left, None, Vec::new());
+                while col <= right {
+                    match at.get(&(bottom + 1, col)) {
+                        Some(&j) if !used[j] && last.is_none_or(|l| l == cells[j].1) => {
+                            last = Some(cells[j].1);
+                            col = cells[j].3 + 1;
+                            run.push(j);
+                        }
+                        _ => break 'down,
+                    }
+                }
+                if col != right + 1 || run.is_empty() {
+                    break;
+                }
+                run.iter().for_each(|&j| used[j] = true);
+                bottom = last.unwrap_or(bottom);
+            }
+            out.push(Selection::Cells {
+                table,
+                anchor: CellRef { row: top, col: left },
+                focus: CellRef { row: bottom, col: right },
+                shape: CellShape::Rect,
+            });
         }
         out
     }
@@ -347,7 +439,17 @@ impl Editor {
                 Some(c) => c,
                 None => return Outcome::Unchanged("no ranges"),
             },
-            (None, Some(&(la, lb))) => {
+            (None, Some(&given)) => {
+                // The last range that isn't empty; the last one when they all are.
+                let (la, lb) = ranges
+                    .iter()
+                    .rev()
+                    .copied()
+                    .find(|&r| {
+                        let (a, b) = normal(self, r);
+                        !a.same_place(&b)
+                    })
+                    .unwrap_or(given);
                 let primary = normal(self, (la, lb));
                 // The joined range that holds the last one given
                 let k = joined
@@ -469,10 +571,28 @@ impl Editor {
 
     /// After that press: the block of cells it selected goes with what was selected before, to join it on release.
     pub(super) fn zone_added(&mut self, adding: Option<Adding>) {
+        let adding = adding.map(|mut a| {
+            // A press on cells all selected already takes them out.
+            let mut left = vec![self.selection];
+            for &c in &a.cells {
+                left = left.iter().flat_map(|&s| self.cells_without(s, c)).collect();
+            }
+            a.remove = left.is_empty();
+            a
+        });
         if let Some(a) = &adding {
             self.multi = Multi { primary: Some(self.selection), others: a.base.clone(), cells: a.cells.clone() };
         }
         self.adding = adding;
+    }
+
+    /// The end of a press in a table's selection zone that adds cells (or, on selected cells, takes out all it went over).
+    pub(super) fn zone_release(&mut self, at: Position, cancel: bool) {
+        let swept = Some(self.selection);
+        if let Some(a) = self.adding.as_mut().filter(|a| a.remove) {
+            a.swept = swept;
+        }
+        self.add_release(at, cancel);
     }
 
     /// A Ctrl press on the selection's own range, which a drag makes a Ctrl drag-and-drop copy: released where it
@@ -554,8 +674,28 @@ impl Editor {
     /// nowhere adds the sentence at `at`), or, for a press on selected text or a selected cell, goes out of the
     /// selection (a click the sentence, or the cell); cancelled, the selection is what it was.
     pub(super) fn add_release(&mut self, at: Position, cancel: bool) {
-        let Some(Adding { base: mut ranges, cells, was, remove, swept }) = self.adding.clone() else { return };
-        if remove && !cancel {
+        let Some(Adding { base: mut ranges, mut cells, was, remove, swept }) = self.adding.clone() else { return };
+        if cancel {
+            // The selection as it was: its direction and unit too, the others as they were.
+            match was {
+                Selection::Cells { .. } => {
+                    if let Some(k) = cells.iter().rposition(|c| *c == was) {
+                        cells.remove(k);
+                    }
+                }
+                _ => {
+                    if let Some((a, b)) = was.ordered(&self.index)
+                        && let Some(k) = ranges.iter().position(|r| r.0.same_place(&a) && r.1.same_place(&b))
+                    {
+                        ranges.remove(k);
+                    }
+                }
+            }
+            self.selection = was;
+            self.multi = if ranges.is_empty() && cells.is_empty() { Multi::default() } else { Multi { primary: Some(was), others: ranges, cells } };
+            return;
+        }
+        if remove {
             let cut = swept.or_else(|| self.held_cell(&at, &cells)).unwrap_or_else(|| {
                 let (a, b) = self.span(at, Granularity::Sentence);
                 Selection::range(a, b, Granularity::Char)
@@ -563,7 +703,7 @@ impl Editor {
             self.select_without(&ranges, &cells, Some(cut), was, at);
             return;
         }
-        let now = if cancel { was } else { self.selection };
+        let now = self.selection;
         if let Selection::Cells { .. } = now {
             self.select_pieces(&ranges, cells, Some(now));
             return;
@@ -638,26 +778,64 @@ impl Editor {
         let k0 = others.partition_point(|r| self.index.cmp(&r.1, &lo).is_lt());
         let k1 = others.partition_point(|r| self.index.cmp(&r.0, &hi).is_le());
         let mut shown = others[k0..k1.max(k0)].to_vec();
-        shown.extend(self.selection.ordered(&self.index).filter(|r| shows(self, r)));
-        for (a, b) in shown {
-            out.extend(self.range_rects(a, b, pages.clone()));
+        if let Some(r) = self.selection.ordered(&self.index).filter(|r| shows(self, r)) {
+            let at = shown.partition_point(|o| self.index.cmp(&o.0, &r.0).is_lt());
+            shown.insert(at, r);
         }
+        out.extend(self.ranges_rects(&shown, pages));
         out
     }
 
-    /// Each range's and block of cells' paragraph pieces, in document order.
+    /// Each range's and block of cells' paragraph pieces, in document order: the stretch of a paragraph that more than
+    /// one holds (a selected cell and a range in it) once, joined with what touches it.
     pub(super) fn multi_pieces(&mut self) -> Vec<(ParaId, Unit, Unit)> {
-        self.each_piece(|e| e.selected_ranges()).into_iter().flatten().collect()
+        let mut out: Vec<Option<(ParaId, Unit, Unit)>> = Vec::new();
+        let mut by_para: HashMap<ParaId, Vec<usize>> = HashMap::new();
+        for (para, mut a, mut b) in self.each_piece(|e| e.selected_ranges()).into_iter().flatten() {
+            let held = by_para.entry(para).or_default();
+            // The stretches it reaches, until it reaches no more
+            let mut first: Option<usize> = None;
+            loop {
+                let before = held.len();
+                held.retain(|&k| match out[k] {
+                    Some((_, x, y)) if x <= b && a <= y => {
+                        (a, b) = (a.min(x), b.max(y));
+                        match first {
+                            None => first = Some(k),
+                            Some(_) => out[k] = None,
+                        }
+                        false
+                    }
+                    _ => true,
+                });
+                if held.len() == before {
+                    break;
+                }
+            }
+            match first {
+                Some(k) => {
+                    out[k] = Some((para, a, b));
+                    held.push(k);
+                }
+                None => {
+                    held.push(out.len());
+                    out.push(Some((para, a, b)));
+                }
+            }
+        }
+        out.into_iter().flatten().collect()
     }
 
-    /// The paragraphs whose marks a range holds.
+    /// The paragraphs whose marks a range holds, each once.
     pub(super) fn multi_marks(&mut self) -> Vec<ParaId> {
+        let mut seen = std::collections::HashSet::new();
         self.each_piece(|e| {
             let r = e.selected_ranges();
             e.selected_marks(&r)
         })
         .into_iter()
         .flatten()
+        .filter(|p| seen.insert(*p))
         .collect()
     }
 
@@ -677,8 +855,9 @@ impl Editor {
                 && let Some(first) = blocks.next()
             {
                 match first {
-                    Block::Para(p) => last.inlines.extend(p.inlines),
-                    t => o.blocks.push(t),
+                    // A paragraph in other block controls stays whole, with them.
+                    Block::Para(p) if p.controls == last.controls => last.inlines.extend(p.inlines),
+                    first => o.blocks.push(first),
                 }
             }
             o.blocks.extend(blocks);
@@ -738,7 +917,7 @@ impl Editor {
             }
         }
         for c in &cells {
-            let Some((table, rows, grid)) = self.cleared_cells(*c) else { continue };
+            let Some((table, rows, grid, _)) = self.cleared_cells(*c) else { continue };
             let n = self.index.table(&self.doc, table).map_or(0, |t| t.rows.len());
             if self.step(&mut tx, Step::Rows { table, range: 0..n, with: rows, grid: Some(grid) }).is_err() {
                 return stale(self, tx);
@@ -781,7 +960,7 @@ impl Editor {
     /// each stretch of runs with it for a character style.
     pub fn select_style_instances(&mut self, id: &str) -> Outcome {
         let Some(paragraph) = self.style_kind(id) else { return Outcome::invalid("no such style") };
-        let story = super::position::StoryId::Body;
+        let story = self.editing_sub_template().map_or(StoryId::Body, StoryId::BuildingBlock);
         let ranges = if paragraph {
             let mut out: Vec<(Position, Position)> = Vec::new();
             for para in self.paras_of(story) {
@@ -891,10 +1070,12 @@ impl Editor {
     }
 
     /// The first `limit` selected ranges ([`Editor::selection_ranges`]) as text points ([`Editor::text_point`]), and
-    /// whether that is all of them. Each paragraph's text is read once, however many ends it holds.
+    /// whether that is all of them. A range that starts at a row's end starts where the text after the row does, and
+    /// one that ends at a row's end ends where its last cell's text does (as copying takes it). Each paragraph's text is
+    /// read once, however many ends it holds.
     pub fn selection_text_ranges(&mut self, limit: usize) -> (Vec<((ParaId, u32), (ParaId, u32))>, bool) {
         let ranges = self.selection_ranges();
-        let whole = ranges.len() <= limit;
+        let mut whole = true;
         let mut read: Option<(ParaId, Vec<u32>)> = None;
         let mut point = |e: &Self, p: &Position| -> Option<(ParaId, u32)> {
             let (para, u) = p.para_offset()?;
@@ -904,7 +1085,19 @@ impl Editor {
             let units = &read.as_ref()?.1;
             Some((para, units.partition_point(|&x| x < u.0) as u32))
         };
-        let out = ranges.iter().take(limit).filter_map(|(a, b)| Some((point(self, a)?, point(self, b)?))).collect();
+        let mut out = Vec::with_capacity(ranges.len().min(limit));
+        for (a, b) in ranges {
+            if out.len() == limit {
+                whole = false;
+                break;
+            }
+            let a = if a.para_offset().is_some() { a } else { self.nav().right(a, false) };
+            let b = if b.para_offset().is_some() { b } else { self.nav().left(b, false) };
+            match (point(self, &a), point(self, &b)) {
+                (Some(x), Some(y)) => out.push((x, y)),
+                _ => whole = false,
+            }
+        }
         (out, whole)
     }
 

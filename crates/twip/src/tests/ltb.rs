@@ -286,7 +286,7 @@ fn id_steps(steps: &[&str]) -> Vec<String> {
                 break;
             };
             let len = paragraph(&st["dump"], n as usize)["text"].as_str().map_or(0, |t| t.chars().count()) as u64;
-            if l["stops"].as_array().into_iter().flatten().any(|s| s[1].as_u64().is_none_or(|u| u > len)) {
+            if l["stops"].as_array().into_iter().flatten().any(|s| s[2].as_u64().is_none_or(|u| u > len)) {
                 failures.push(format!("{what}: paragraph {n} ({len} units) has a stop past its end: {}", l["stops"]));
             }
         }

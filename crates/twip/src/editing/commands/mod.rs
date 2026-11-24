@@ -113,6 +113,7 @@ fn repeats(c: &Command) -> bool {
 impl Editor {
     pub fn execute(&mut self, cmd: Command, fonts: &Fonts) -> Outcome {
         self.sync_multi();
+        self.set_aside = None;
         self.made = None;
         self.refused = None;
         if self.mode == super::Mode::ReadOnly && cmd.mutates() {

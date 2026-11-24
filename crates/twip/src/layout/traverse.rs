@@ -739,8 +739,9 @@ impl<'a> SpatialWalk<'a> {
             match c {
                 Child::Box(b) => match &b.kind {
                     BoxKind::Float { anchor, float, rect, .. } => {
-                        let n = self.stories.len();
                         self.story(StoryRef::Float { float: *float, anchor: *anchor }, b, dx, dy);
+                        // Pushed after any story nested in it.
+                        let n = self.stories.len() - 1;
                         let r = self.frame.rects().rect([rect[0] + dx, rect[1] + dy, rect[2] + dx, rect[3] + dy]);
                         self.stories[n].rect = r;
                         self.stories[n].turn = float_turn(&b.children, r);
@@ -973,6 +974,56 @@ mod tests {
         assert_eq!(rows[0].rect[0], 72.0);
         assert_eq!(lines.len(), 4);
         assert!(lines.windows(2).all(|w| w[0].rect[1] <= w[1].rect[1]));
+    }
+
+    #[test]
+    fn a_float_in_a_float_keeps_each_its_own_frame_and_turn() {
+        use crate::drawing::geom::Geom;
+        let shape = Item::Shape(Rc::new(ShapeItem {
+            rect: [0.0, 0.0, 100.0, 100.0],
+            rot: 45.0,
+            flip_h: false,
+            flip_v: false,
+            geom: Rc::new(Geom { paths: vec![], text_rect: [0.0; 4], handles: vec![], cxn: vec![] }),
+            fill: crate::drawing::paint::Paint::None,
+            line: crate::drawing::paint::ResolvedLine::none(),
+            effects: Default::default(),
+            behind: false,
+            float: 0,
+            path: Vec::new(),
+            picture: false,
+            ink: false,
+            decoration: false,
+            snap: false,
+            clip_bottom: None,
+            text_float: 0,
+            text: None,
+            text_path: None,
+            of: Default::default(),
+        }));
+        let float = |id: u64, rect: [f64; 4]| BoxKind::Float { anchor: ParaId(1), float: FloatId(id), rect, layer: Default::default() };
+        let mut inner = BoxBuilder::new();
+        inner.push(Child::Items(Box::new([rect(0.0, 1)])));
+        let mut outer = BoxBuilder::new();
+        outer.push(Child::Items(Box::new([shape])));
+        outer.push(Child::Box(inner.finish(float(22, [10.0, 10.0, 20.0, 20.0]), (0.0, 0.0), (10.0, 10.0))));
+        let mut body = BoxBuilder::new();
+        body.push(Child::Box(outer.finish(float(21, [0.0, 0.0, 100.0, 100.0]), (0.0, 0.0), (100.0, 100.0))));
+        let page = PageFragment {
+            id: FragmentId::next(),
+            w: 612.0,
+            h: 792.0,
+            body_area: None,
+            children: Box::new([PageChild::Body(Rc::new(body.finish(BoxKind::Body, (0.0, 0.0), (612.0, 792.0))))]),
+            borders: Box::new([]),
+            borders_behind: false,
+        };
+        let tree = spatial_tree(&page, false).expect("a tree");
+        let of = |id: u64| tree.stories.iter().find(|s| matches!(s.story, StoryRef::Float { float, .. } if float == FloatId(id))).expect("the float");
+        assert_ne!(of(21).turn, Turn::NONE, "the outer float is turned");
+        assert_eq!(of(22).turn, Turn::NONE, "the float inside it is not");
+        assert_eq!(of(21).rect, [0.0, 0.0, 100.0, 100.0]);
+        assert_eq!(of(22).rect, [10.0, 10.0, 20.0, 20.0]);
     }
 
     #[test]

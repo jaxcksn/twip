@@ -972,12 +972,36 @@ fn a_range_on_a_shown_body_keeps_every_range_from_formatting() {
     e.select_ranges(&[(a, b), free]);
     assert!(e.is_discontiguous());
     let before = e.document().sections[0].blocks.clone();
+    let free_text = text_of(&e, after);
+    assert!(free_text.chars().count() > 2, "setup: {free_text:?}");
     let out = e.execute(Command::SetBold(true), fonts());
     assert!(!matches!(out, super::super::commands::Outcome::Changed(_)), "{out:?}");
     assert_eq!(e.document().sections[0].blocks, before, "neither range formatted");
     let out = e.execute(Command::InsertText("x".into()), fonts());
     assert!(matches!(out, super::super::commands::Outcome::Changed(_)), "typing replaces the free range alone: {out:?}");
     assert_eq!(e.document().sections[0].blocks[1], before[1], "the reference is kept");
+    let want: String = std::iter::once('x').chain(free_text.chars().skip(2)).collect();
+    assert_eq!(text_of(&e, after), want, "the free range's two units are replaced by the typed text, the rest kept");
+}
+
+#[test]
+fn a_shown_body_is_checked_when_a_cell_block_is_the_selection() {
+    let (mut e, reference) = expanded();
+    click_line(&mut e, reference, 1);
+    let (a, b) = e.selection().ordered(e.index()).expect("the reference field");
+    let table = e.document().sections[0]
+        .blocks
+        .iter()
+        .find_map(|b| if let Block::Table(t) = b { Some(crate::layout::TableId(t.id)) } else { None })
+        .expect("a table");
+    let cell = crate::editing::selection::CellRef { row: 0, col: 0 };
+    let cells = crate::editing::selection::Selection::Cells { table, anchor: cell, focus: cell, shape: crate::editing::selection::CellShape::Rect };
+    e.select_pieces(&[(a, b)], Vec::new(), Some(cells));
+    assert!(matches!(e.selection(), crate::editing::selection::Selection::Cells { .. }) && e.is_discontiguous());
+    let before = e.document().sections[0].blocks.clone();
+    let out = e.execute(Command::SetBold(true), fonts());
+    assert!(!matches!(out, super::super::commands::Outcome::Changed(_)), "{out:?}");
+    assert_eq!(e.document().sections[0].blocks, before, "the reference's range is checked whichever range is the selection");
 }
 
 #[test]

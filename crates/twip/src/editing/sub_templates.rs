@@ -1046,8 +1046,8 @@ impl Editor {
     }
 
     pub(super) fn refuse_expanded(&mut self) -> bool {
-        let Some((a, b)) = self.selection.ordered(&self.index) else { return false };
-        let field = self.expanded_in(&a, &b).or_else(|| self.other_ranges().iter().find_map(|(a, b)| self.expanded_in(a, b)));
+        let primary = self.selection.ordered(&self.index).and_then(|(a, b)| self.expanded_in(&a, &b));
+        let field = primary.or_else(|| self.other_ranges().iter().find_map(|(a, b)| self.expanded_in(a, b)));
         self.refuse_field(field)
     }
 

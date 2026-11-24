@@ -1306,8 +1306,21 @@ impl Editor {
         let refused = self.refuse_expanded() || self.refuse_locked();
         if refused {
             self.multi = multi;
+            self.set_aside = None;
+        } else {
+            self.set_aside = multi.primary.is_some().then_some(multi);
         }
         refused
+    }
+
+    /// Puts back the ranges [`Editor::refuse_replacing`] set aside, once the edit changed nothing and the selection
+    /// is the one they went with.
+    pub(super) fn restore_aside(&mut self) {
+        if let Some(m) = self.set_aside.take()
+            && m.primary == Some(self.selection)
+        {
+            self.multi = m;
+        }
     }
 
     /// Whether a lock refuses the edit of selection `s` (cells, a block, an object, a discontiguous selection): each

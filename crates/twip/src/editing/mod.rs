@@ -242,6 +242,8 @@ pub struct Editor {
     modes: extend::Modes,
     /// The other ranges of a discontiguous selection.
     multi: multi::Multi,
+    /// The other ranges an edit that replaces the selection set aside, to put back should the edit change nothing.
+    set_aside: Option<multi::Multi>,
     /// The ranges selected before a Ctrl click or drag that adds one, while its clicks go on.
     adding: Option<multi::Adding>,
     mac: bool,
@@ -491,6 +493,7 @@ impl Editor {
             repeat: None,
             modes: extend::Modes::default(),
             multi: multi::Multi::default(),
+            set_aside: None,
             adding: None,
             mac: false,
             edit_marks: Vec::new(),
@@ -1351,6 +1354,7 @@ impl Editor {
 
     fn abort(&mut self, tx: Tx) {
         self.selection = tx.before.selection;
+        self.restore_aside();
         self.pending_controls.clear();
         self.pending_images.clear();
         self.perm_generation += 1;
@@ -1367,8 +1371,10 @@ impl Editor {
             return Outcome::Unchanged(why);
         }
         if tx.undo.is_empty() {
+            self.restore_aside();
             return Outcome::Unchanged("no change");
         }
+        self.set_aside = None;
         self.repair_selection();
         crate::prof::time("edit:effects", || self.effects(&mut tx));
         if tx.replayed.is_none()
@@ -2099,6 +2105,7 @@ impl Editor {
                 if why != "no caret" {
                     self.abort(tx);
                 }
+                self.restore_aside();
                 Outcome::Unchanged(why)
             }
         }
@@ -3308,7 +3315,7 @@ impl Editor {
                 if self.adding.is_some()
                     && let Some(at) = self.cells_start(&self.selection)
                 {
-                    self.add_release(at, kind == PointerKind::Cancel);
+                    self.zone_release(at, kind == PointerKind::Cancel);
                 }
                 self.adding = None;
             }
@@ -3637,23 +3644,37 @@ impl Editor {
         for page in pages {
             let Some(geo) = self.pages.page(page, &self.index) else { continue };
             for (l, para) in geo.lines.iter().flat_map(|l| l.paras.iter().map(move |&p| (l, p))) {
-                if geo.stories[l.story].story != a.story {
+                if geo.stories[l.story].story == a.story
+                    && let Some(band) = range_band(&self.index, l, para, &a, &b)
+                {
+                    out.push((page, band));
+                }
+            }
+        }
+        out
+    }
+
+    /// The highlight of `ranges` (in order, none touching another, all of one story) on `pages`: the lines are walked
+    /// once, each meeting only the ranges that reach it.
+    pub(super) fn ranges_rects(&mut self, ranges: &[(Position, Position)], pages: std::ops::Range<usize>) -> Vec<(usize, view::Band)> {
+        let mut out = Vec::new();
+        let Some(story) = ranges.first().map(|r| r.0.story) else { return out };
+        for page in pages {
+            let Some(geo) = self.pages.page(page, &self.index) else { continue };
+            for (l, para) in geo.lines.iter().flat_map(|l| l.paras.iter().map(move |&p| (l, p))) {
+                if geo.stories[l.story].story != story {
                     continue;
                 }
                 let (Some(lf), Some(ll)) = (l.first_of(para), l.last_of(para)) else { continue };
-                let first = Position::text(a.story, para, lf);
-                let last = Position::text(a.story, para, ll);
-                if self.index.cmp(&last, &a) == std::cmp::Ordering::Less || self.index.cmp(&first, &b) == std::cmp::Ordering::Greater {
-                    continue;
-                }
-                let lo = if self.index.cmp(&first, &a) == std::cmp::Ordering::Less { a.para_offset().map(|(_, u)| u) } else { Some(lf) };
-                let hi = if self.index.cmp(&last, &b) == std::cmp::Ordering::Greater { b.para_offset().map(|(_, u)| u) } else { Some(ll) };
-                let (Some(lo), Some(hi)) = (lo, hi) else { continue };
-                let (Some(x0), Some(x1)) = (l.x_of(para, lo), l.x_of(para, hi)) else { continue };
-                let shown_end = l.stops.last().is_some_and(|s| s.end && s.para == para);
-                let mark = if hi == ll && self.index.cmp(&last, &b) == std::cmp::Ordering::Less && shown_end { 4.0 } else { 0.0 };
-                if x1 + mark > x0 + 0.01 {
-                    out.push((page, l.strip(x0, x1 + mark)));
+                let (first, last) = (Position::text(story, para, lf), Position::text(story, para, ll));
+                let from = ranges.partition_point(|r| self.index.cmp(&r.1, &first) == std::cmp::Ordering::Less);
+                for (a, b) in &ranges[from..] {
+                    if self.index.cmp(a, &last) == std::cmp::Ordering::Greater {
+                        break;
+                    }
+                    if let Some(band) = range_band(&self.index, l, para, a, b) {
+                        out.push((page, band));
+                    }
                 }
             }
         }
@@ -4203,4 +4224,21 @@ fn splits_a_control(p: &crate::docx::Paragraph, at: Unit) -> bool {
 
 fn moves_picture_controls(s: &Step) -> bool {
     matches!(s, Step::Control { .. }) || s.pictures_where(&|_| true) > 0
+}
+
+/// The band of `a..b` on line `l`'s part of paragraph `para`, if it reaches any.
+fn range_band(index: &index::DocIndex, l: &geometry::GLine, para: ParaId, a: &Position, b: &Position) -> Option<view::Band> {
+    use std::cmp::Ordering::{Greater, Less};
+    let (lf, ll) = (l.first_of(para)?, l.last_of(para)?);
+    let first = Position::text(a.story, para, lf);
+    let last = Position::text(a.story, para, ll);
+    if index.cmp(&last, a) == Less || index.cmp(&first, b) == Greater {
+        return None;
+    }
+    let lo = if index.cmp(&first, a) == Less { a.para_offset().map(|(_, u)| u) } else { Some(lf) }?;
+    let hi = if index.cmp(&last, b) == Greater { b.para_offset().map(|(_, u)| u) } else { Some(ll) }?;
+    let (x0, x1) = (l.x_of(para, lo)?, l.x_of(para, hi)?);
+    let shown_end = l.stops.last().is_some_and(|s| s.end && s.para == para);
+    let mark = if hi == ll && index.cmp(&last, b) == Less && shown_end { 4.0 } else { 0.0 };
+    (x1 + mark > x0 + 0.01).then(|| l.strip(x0, x1 + mark))
 }

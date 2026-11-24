@@ -1184,28 +1184,31 @@ impl Editor {
                 _ => Outcome::Unchanged("Delete Cells dialog"),
             });
         }
-        let (_, rows, grid) = self.cleared_cells(self.selection)?;
-        Some(self.rebuild("Clear", table, rows, grid, (r0, c0), fonts))
+        let (_, rows, grid, first) = self.cleared_cells(self.selection)?;
+        Some(self.rebuild("Clear", table, rows, grid, first.unwrap_or((r0, c0)), fonts))
     }
 
-    /// Block of cells `s`'s table with the block's cells emptied: the table, its rows and its grid.
-    pub(super) fn cleared_cells(&self, s: Selection) -> Option<(TableId, Vec<Row>, Vec<f64>)> {
+    /// Block of cells `s`'s table with the block's cells emptied: the table, its rows and its grid, and the row and
+    /// column of the first cell emptied.
+    pub(super) fn cleared_cells(&self, s: Selection) -> Option<(TableId, Vec<Row>, Vec<f64>, Option<(usize, usize)>)> {
         let Selection::Cells { table, anchor, focus, .. } = s else { return None };
         let t = self.index.table(&self.doc, table)?;
         let g = Grid::of(t);
         let (r0, r1) = (anchor.row.min(focus.row), anchor.row.max(focus.row));
         let (c0, c1) = (anchor.col.min(focus.col), anchor.col.max(focus.col));
         let mut rows = t.rows.clone();
+        let mut first = None;
         for (r, row) in rows.iter_mut().enumerate().filter(|(r, _)| (r0..=r1).contains(r)) {
             for (k, cell) in row.cells.iter_mut().enumerate() {
                 let (c, s, _) = g.rows[r][k];
                 if c + s > c0 && c <= c1 {
+                    first.get_or_insert((r, c));
                     *cell = Cell { blocks: empty_cell(cell).blocks, ..cell.clone() };
                 }
             }
         }
         tidy_merges(&mut rows);
-        Some((table, rows, t.grid.clone()))
+        Some((table, rows, t.grid.clone(), first))
     }
 
     pub(super) fn select_to_edge(&mut self, row_wise: bool, end: bool) -> Outcome {

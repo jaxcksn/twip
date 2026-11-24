@@ -439,6 +439,10 @@ impl Editor {
         self.table_format_on(tg, f, fonts)
     }
 
+    pub(super) fn table_format_on(&mut self, tg: super::tables::Target, f: &TableFormat, fonts: &Fonts) -> Outcome {
+        self.table_format_blocks(&[tg], f, fonts)
+    }
+
     /// Cell formatting `f` of a discontiguous selection: each block of cells, and the cells each range is in, in one
     /// undo step.
     fn table_format_each(&mut self, f: &TableFormat, fonts: &Fonts) -> Outcome {
@@ -451,14 +455,24 @@ impl Editor {
         if targets.is_empty() {
             return Outcome::Unchanged("not in a table");
         }
-        self.begin_batch(Some("Table Properties".into()));
+        // One edit per table, over every block of it.
+        let mut by_table: Vec<Vec<super::tables::Target>> = Vec::new();
         for t in targets {
-            self.table_format_on(t, f, fonts);
+            match by_table.iter_mut().find(|g| g[0].table == t.table) {
+                Some(g) => g.push(t),
+                None => by_table.push(vec![t]),
+            }
+        }
+        self.begin_batch(Some("Table Properties".into()));
+        for blocks in by_table {
+            self.table_format_blocks(&blocks, f, fonts);
         }
         self.end_batch(true, fonts)
     }
 
-    pub(super) fn table_format_on(&mut self, tg: super::tables::Target, f: &TableFormat, fonts: &Fonts) -> Outcome {
+    /// Formats `f` over `blocks`, blocks of cells of one table, in one edit of its rows.
+    fn table_format_blocks(&mut self, blocks: &[super::tables::Target], f: &TableFormat, fonts: &Fonts) -> Outcome {
+        let tg = blocks[0];
         let Some(t) = self.index.table(&self.doc, tg.table) else { return Outcome::Unchanged("no table") };
         let g = Grid::of(t);
         let mut rows = t.rows.clone();
@@ -472,7 +486,10 @@ impl Editor {
             p.set(local, xml);
             cell.direct = crate::docx::Raw(Some(std::rc::Rc::from(p.xml().unwrap_or_else(|| format!("<{w}tcPr/>")).as_str())));
         };
-        let in_block = |r: usize, c: usize, s: usize| (tg.rows.0..=tg.rows.1).contains(&r) && c + s.max(1) > tg.cols.0 && c <= tg.cols.1;
+        let in_one = |tg: &super::tables::Target, r: usize, c: usize, s: usize| {
+            (tg.rows.0..=tg.rows.1).contains(&r) && c + s.max(1) > tg.cols.0 && c <= tg.cols.1
+        };
+        let in_block = |r: usize, c: usize, s: usize| blocks.iter().any(|tg| in_one(tg, r, c, s));
         let (r0, r1) = (tg.rows.0, tg.rows.1.min(rows.len().saturating_sub(1)));
         match f {
             TableFormat::CellAlign(_) | TableFormat::CellShading(_) | TableFormat::CellMargins(_) => {
@@ -531,82 +548,86 @@ impl Editor {
                 }
             }
             TableFormat::CellBorders(edges, b) => {
-                let (c0, c1) = tg.cols;
-                let want = |outside: bool, horizontal: bool, side: Edges| match edges {
-                    Edges::All | Edges::None => true,
-                    Edges::Outside => outside,
-                    Edges::Inside => !outside,
-                    Edges::InsideH => !outside && horizontal,
-                    Edges::InsideV => !outside && !horizontal,
-                    Edges::DiagonalDown | Edges::DiagonalUp => false,
-                    e => outside && *e == side,
-                };
-                let value = if *edges == Edges::None { nil() } else { b.clone() };
-                let mut shared: Vec<(usize, usize, usize)> = Vec::new();
-                let mut touched: Vec<(usize, usize, u8)> = Vec::new();
-                for r in r0..=r1 {
-                    for (k, &(c, s, _)) in g.rows[r].iter().enumerate() {
-                        if !in_block(r, c, s) {
-                            continue;
-                        }
-                        let last = c + s.max(1) - 1;
-                        let sides = [
-                            (r == r0, true, Edges::Top),
-                            (c <= c0, false, Edges::Left),
-                            (r == r1, true, Edges::Bottom),
-                            (last >= c1, false, Edges::Right),
-                        ];
-                        let cell = &mut rows[r].cells[k];
-                        let mut bits: u8 = if *edges == Edges::None { 48 } else { 0 };
-                        for (i, (outside, horizontal, side)) in sides.into_iter().enumerate() {
-                            if !want(outside, horizontal, side) {
+                for &tg in blocks {
+                    let (r0, r1) = (tg.rows.0, tg.rows.1.min(rows.len().saturating_sub(1)));
+                    let in_block = |r: usize, c: usize, s: usize| in_one(&tg, r, c, s);
+                    let (c0, c1) = tg.cols;
+                    let want = |outside: bool, horizontal: bool, side: Edges| match edges {
+                        Edges::All | Edges::None => true,
+                        Edges::Outside => outside,
+                        Edges::Inside => !outside,
+                        Edges::InsideH => !outside && horizontal,
+                        Edges::InsideV => !outside && !horizontal,
+                        Edges::DiagonalDown | Edges::DiagonalUp => false,
+                        e => outside && *e == side,
+                    };
+                    let value = if *edges == Edges::None { nil() } else { b.clone() };
+                    let mut shared: Vec<(usize, usize, usize)> = Vec::new();
+                    let mut touched: Vec<(usize, usize, u8)> = Vec::new();
+                    for r in r0..=r1 {
+                        for (k, &(c, s, _)) in g.rows[r].iter().enumerate() {
+                            if !in_block(r, c, s) {
                                 continue;
                             }
-                            bits |= 1 << i;
-                            *[&mut cell.top, &mut cell.left, &mut cell.bottom, &mut cell.right][i] = Some(value.clone());
-                            if outside {
-                                let overlaps = |row: usize| {
-                                    g.rows
-                                        .get(row)
-                                        .into_iter()
-                                        .flatten()
-                                        .enumerate()
-                                        .filter(move |(_, (oc, os, _))| *oc + (*os).max(1) > c && *oc <= last)
-                                        .map(|(j, _)| j)
-                                };
-                                match i {
-                                    0 if r > 0 => shared.extend(overlaps(r - 1).map(|j| (r - 1, j, 2))),
-                                    2 => shared.extend(overlaps(r + 1).map(|j| (r + 1, j, 0))),
-                                    1 if k > 0 => shared.push((r, k - 1, 3)),
-                                    3 if k + 1 < g.rows[r].len() => shared.push((r, k + 1, 1)),
-                                    _ => {}
+                            let last = c + s.max(1) - 1;
+                            let sides = [
+                                (r == r0, true, Edges::Top),
+                                (c <= c0, false, Edges::Left),
+                                (r == r1, true, Edges::Bottom),
+                                (last >= c1, false, Edges::Right),
+                            ];
+                            let cell = &mut rows[r].cells[k];
+                            let mut bits: u8 = if *edges == Edges::None { 48 } else { 0 };
+                            for (i, (outside, horizontal, side)) in sides.into_iter().enumerate() {
+                                if !want(outside, horizontal, side) {
+                                    continue;
+                                }
+                                bits |= 1 << i;
+                                *[&mut cell.top, &mut cell.left, &mut cell.bottom, &mut cell.right][i] = Some(value.clone());
+                                if outside {
+                                    let overlaps = |row: usize| {
+                                        g.rows
+                                            .get(row)
+                                            .into_iter()
+                                            .flatten()
+                                            .enumerate()
+                                            .filter(move |(_, (oc, os, _))| *oc + (*os).max(1) > c && *oc <= last)
+                                            .map(|(j, _)| j)
+                                    };
+                                    match i {
+                                        0 if r > 0 => shared.extend(overlaps(r - 1).map(|j| (r - 1, j, 2))),
+                                        2 => shared.extend(overlaps(r + 1).map(|j| (r + 1, j, 0))),
+                                        1 if k > 0 => shared.push((r, k - 1, 3)),
+                                        3 if k + 1 < g.rows[r].len() => shared.push((r, k + 1, 1)),
+                                        _ => {}
+                                    }
                                 }
                             }
+                            touched.push((r, k, bits));
                         }
-                        touched.push((r, k, bits));
                     }
-                }
-                for (r, k, side) in shared {
-                    let cell = &mut rows[r].cells[k];
-                    *[&mut cell.top, &mut cell.left, &mut cell.bottom, &mut cell.right][side] = Some(value.clone());
-                    touched.push((r, k, 1 << side));
-                }
-                touched.sort_unstable();
-                touched.dedup_by(|b, a| {
-                    let same = (a.0, a.1) == (b.0, b.1);
-                    if same {
-                        a.2 |= b.2;
+                    for (r, k, side) in shared {
+                        let cell = &mut rows[r].cells[k];
+                        *[&mut cell.top, &mut cell.left, &mut cell.bottom, &mut cell.right][side] = Some(value.clone());
+                        touched.push((r, k, 1 << side));
                     }
-                    same
-                });
-                for (r, k, bits) in touched {
-                    let cell = &mut rows[r].cells[k];
-                    // No Border clears the selected cells' diagonals too.
-                    if *edges == Edges::None && in_block(r, g.rows[r][k].0, g.rows[r][k].1) {
-                        cell.diagonals = None;
+                    touched.sort_unstable();
+                    touched.dedup_by(|b, a| {
+                        let same = (a.0, a.1) == (b.0, b.1);
+                        if same {
+                            a.2 |= b.2;
+                        }
+                        same
+                    });
+                    for (r, k, bits) in touched {
+                        let cell = &mut rows[r].cells[k];
+                        // No Border clears the selected cells' diagonals too.
+                        if *edges == Edges::None && in_block(r, g.rows[r][k].0, g.rows[r][k].1) {
+                            cell.diagonals = None;
+                        }
+                        let xml = tc_borders(&cx, cell, bits);
+                        set_direct(cell, "tcBorders", xml);
                     }
-                    let xml = tc_borders(&cx, cell, bits);
-                    set_direct(cell, "tcBorders", xml);
                 }
             }
             TableFormat::CellProps(p) => {

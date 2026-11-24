@@ -412,11 +412,15 @@ fn paragraph_formatting_applies_to_every_range() {
     e.execute(Command::SetAlignment(Alignment::Center), fonts());
     let centred: Vec<bool> = blocks(&e).iter().map(|p| p.style.jc == crate::docx::props::Jc::Center).collect();
     assert_eq!(centred, [true, false, true, false, false]);
+    let style_of = |e: &Editor| -> Vec<Option<String>> { blocks(e).iter().map(|p| p.style.style_id.clone()).collect() };
+    let was = style_of(&e);
     e.execute(Command::SetParagraphStyle(StyleId("Heading1".into())), fonts());
-    let styles: Vec<Option<String>> = blocks(&e).iter().map(|p| p.style.style_id.clone()).collect();
+    let styles = style_of(&e);
     assert_eq!(styles[0].as_deref(), Some("Heading1"));
     assert_eq!(styles[2].as_deref(), Some("Heading1"));
-    assert_ne!(styles[1], styles[0].clone().filter(|_| false), "unchanged");
+    for k in [1, 3, 4] {
+        assert_eq!(styles[k], was[k], "paragraph {k} isn't selected: its style stays");
+    }
     e.execute(Command::SetList(Some(crate::api::command::ListKind::Numbered)), fonts());
     let listed: Vec<bool> = blocks(&e).iter().map(|p| p.list.is_some()).collect();
     assert_eq!(&listed[..3], [true, false, true]);
@@ -431,6 +435,7 @@ fn cut_takes_every_range_in_one_step_and_redoes() {
     assert_eq!(r.e.clipboard().map(|f| f.text()).as_deref(), Some("quickfox"));
     assert_eq!(texts(&r.e)[0], "The  brown  jumps.");
     let after = texts(&r.e);
+    assert_ne!(after, before, "the cut took the text out");
     r.e.execute(Command::Undo, fonts());
     assert_eq!(texts(&r.e), before, "one step");
     r.e.execute(Command::Redo, fonts());
@@ -440,9 +445,12 @@ fn cut_takes_every_range_in_one_step_and_redoes() {
 #[test]
 fn delete_of_several_ranges_redoes() {
     let mut r = two_ranges();
+    let before = texts(&r.e);
     r.e.execute(super::del(crate::editing::commands::Dir::Back, false), fonts());
     let after = (texts(&r.e), r.e.selection());
+    assert_eq!(after.0[0], "The  brown  jumps.", "both ranges went");
     r.e.execute(Command::Undo, fonts());
+    assert_eq!(texts(&r.e), before, "undo brought both back");
     r.e.execute(Command::Redo, fonts());
     assert_eq!((texts(&r.e), r.e.selection()), after);
 }
@@ -460,15 +468,20 @@ fn ranges_in_a_header_and_another_story_starting_over() {
     e.select_ranges(&[(p(0), p(2)), (p(4), p(6))]);
     assert!(e.is_discontiguous());
     e.execute(Command::SetBold(true), fonts());
-    let bold: u32 = e
+    // Bold at each of the paragraph's first eight offsets
+    let bold: Vec<bool> = e
         .index()
         .para(e.document(), para)
         .unwrap()
         .inlines
         .iter()
-        .filter_map(|i| if let crate::docx::Inline::Text(t, r) = i { r.bold.then(|| t.chars().count() as u32) } else { None })
-        .sum();
-    assert!(bold >= 4, "both ranges bold: {bold}");
+        .flat_map(|i| match i {
+            crate::docx::Inline::Text(t, r) => vec![r.bold; t.chars().count()],
+            _ => Vec::new(),
+        })
+        .take(6)
+        .collect();
+    assert_eq!(bold, [true, true, false, false, true, true], "offsets 0..2 and 4..6 are bold, the offsets between are not");
     let body = Position::text(StoryId::Body, para_id_of_body(&e), Unit(0));
     e.add_selection_range(body, Position::text(StoryId::Body, para_id_of_body(&e), Unit(1)));
     assert!(!e.is_discontiguous(), "a range in another story starts over");
@@ -955,4 +968,344 @@ fn ranges_and_cells_in_different_stories_are_refused() {
     assert!(invalid(e.select_pieces(&[range], Vec::new(), Some(cells))));
     assert_eq!(e.selection(), before);
     assert!(!e.is_discontiguous());
+}
+
+/// A table of a2 b2 / a3 b3 style rows built from `rows` (each cell: its text and `tcPr` inner XML), after "Intro."
+/// and before "After.": paragraphs 0, then the cells' in order, then "After.".
+fn table_doc(rows: &[&[(&str, &str)]], row_pr: &[&str]) -> Run {
+    let cell = |(t, pr): &(&str, &str)| {
+        format!("<w:tc><w:tcPr><w:tcW w:w=\"2000\" w:type=\"dxa\"/>{pr}</w:tcPr><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:tc>")
+    };
+    let body: String = rows
+        .iter()
+        .enumerate()
+        .map(|(k, r)| format!("<w:tr>{}{}</w:tr>", row_pr.get(k).copied().unwrap_or(""), r.iter().map(cell).collect::<String>()))
+        .collect();
+    let grid = "<w:gridCol w:w=\"2000\"/>".repeat(3);
+    let xml = format!(
+        "<w:p><w:r><w:t>Intro.</w:t></w:r></w:p><w:tbl><w:tblPr><w:tblW w:w=\"6000\" w:type=\"dxa\"/></w:tblPr><w:tblGrid>{grid}</w:tblGrid>{body}</w:tbl><w:p><w:r><w:t>After.</w:t></w:r></w:p>"
+    );
+    Run::from_bytes(&super::blank_body(&xml), "multisel-table-doc")
+}
+
+fn table_id(e: &Editor) -> crate::layout::TableId {
+    e.document()
+        .sections
+        .iter()
+        .flat_map(|s| &s.blocks)
+        .find_map(|b| if let crate::docx::Block::Table(t) = b { Some(crate::layout::TableId(t.id)) } else { None })
+        .expect("a table")
+}
+
+fn cells_of(e: &Editor, a: (usize, usize), f: (usize, usize)) -> Selection {
+    use crate::editing::selection::{CellRef, CellShape};
+    Selection::Cells { table: table_id(e), anchor: CellRef { row: a.0, col: a.1 }, focus: CellRef { row: f.0, col: f.1 }, shape: CellShape::Rect }
+}
+
+#[test]
+fn a_copy_keeps_a_block_control_the_range_holds_whole() {
+    let body = r#"<w:p><w:r><w:t>free text</w:t></w:r></w:p><w:sdt><w:sdtPr><w:alias w:val="Box"/><w:id w:val="4"/><w:richText/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>controlled</w:t></w:r></w:p></w:sdtContent></w:sdt><w:p><w:r><w:t>tail</w:t></w:r></w:p>"#;
+    let mut e = Editor::open(&super::blank_body(body), fonts()).unwrap();
+    let len = crate::editing::step::para_len(e.index().para(e.document(), para(&e, 1)).unwrap()).0;
+    e.select_ranges(&[(at(&e, 0, 0), at(&e, 0, 4)), (at(&e, 1, 0), at(&e, 2, 0))]);
+    assert!(e.is_discontiguous());
+    assert_eq!(len, 10);
+    let f = e.copy().expect("copies");
+    let crate::docx::Block::Para(first) = &f.blocks[0] else { panic!() };
+    assert!(first.controls.is_empty(), "the free text isn't in the control");
+    let crate::docx::Block::Para(second) = &f.blocks[1] else { panic!("{:?}", f.blocks) };
+    assert!(!second.controls.is_empty(), "the controlled paragraph stays a block of its own, with its control");
+    assert_eq!(f.controls.len(), 1, "and the control's definition");
+}
+
+#[test]
+fn style_instances_are_those_of_the_sub_template_being_edited() {
+    use crate::api::command::SubTemplateName;
+    let mut e = super::open("FX-SUBTEMPLATES.docx");
+    e.execute(crate::editing::sub_templates::rules("SUBTEMPLATE", "Sub-templates"), fonts());
+    e.complete(fonts());
+    let name = SubTemplateName { name: "Violation".into(), category: None };
+    e.execute(Command::EditSubTemplate(name), fonts());
+    assert_eq!(e.editing_sub_template(), Some(0));
+    assert_eq!(e.select_style_instances("Heading1"), crate::editing::commands::Outcome::Moved);
+    let ranges = e.selection_ranges();
+    assert!(!ranges.is_empty());
+    assert!(ranges.iter().all(|r| r.0.story == StoryId::BuildingBlock(0) && r.1.story == StoryId::BuildingBlock(0)), "{ranges:?}");
+    let body: Vec<ParaId> = e.document().glossary.as_ref().unwrap().parts[0]
+        .body
+        .iter()
+        .filter_map(|b| if let crate::docx::Block::Para(p) = b { Some(ParaId(p.id)) } else { None })
+        .collect();
+    assert!(ranges.iter().all(|r| r.0.para_offset().is_some_and(|(p, _)| body.contains(&p))), "paragraphs of the sub-template's body");
+}
+
+#[test]
+fn formatting_reaches_the_other_ranges_when_the_selection_is_a_caret() {
+    let mut r = two_ranges();
+    let others = r.e.selection_ranges();
+    let caret = Selection::Caret(at(&r.e, 0, 12));
+    r.e.selection = caret;
+    r.e.multi = crate::editing::multi::Multi { primary: Some(caret), others, cells: Vec::new() };
+    assert!(r.e.is_discontiguous());
+    r.e.execute(Command::SetBold(true), fonts());
+    assert_eq!(bold_text(&r.e, 0), "quickfox", "every range, not the word at the caret");
+}
+
+fn sizes(e: &Editor, k: usize) -> Vec<f64> {
+    let p = e.index().para(e.document(), para(e, k)).unwrap();
+    p.inlines
+        .iter()
+        .flat_map(|i| match i {
+            crate::docx::Inline::Text(t, r) => vec![r.size; t.chars().count()],
+            _ => Vec::new(),
+        })
+        .collect()
+}
+
+#[test]
+fn a_cell_and_a_range_in_it_format_once() {
+    let mut cell_only = with_table();
+    let c = cells_of(&cell_only.e, (0, 0), (0, 0));
+    cell_only.e.select_pieces(&[], Vec::new(), Some(c));
+    let mut both = with_table();
+    let c = cells_of(&both.e, (0, 0), (0, 0));
+    let range = (at(&both.e, 1, 0), at(&both.e, 1, 1));
+    both.e.select_pieces(&[range], vec![c], None);
+    assert!(both.e.is_discontiguous());
+    let was = sizes(&both.e, 1);
+    cell_only.e.execute(Command::GrowFont, fonts());
+    both.e.execute(Command::GrowFont, fonts());
+    assert_ne!(sizes(&both.e, 1), was, "grown");
+    assert_eq!(sizes(&both.e, 1), sizes(&cell_only.e, 1), "by one step, as the cell alone grows");
+}
+
+#[test]
+fn many_cells_of_a_table_format_in_one_edit_of_its_rows() {
+    let shade = |r: &mut Run, pieces: &[usize]| -> usize {
+        let ranges: Vec<_> = pieces.iter().map(|&k| (at(&r.e, k, 0), at(&r.e, k, 1))).collect();
+        r.e.select_ranges(&ranges);
+        let before = r.e.history.bytes();
+        assert!(matches!(r.e.execute(red(), fonts()), crate::editing::commands::Outcome::Changed(_)));
+        r.e.history.bytes() - before
+    };
+    let one = shade(&mut with_table(), &[1]);
+    let mut r = with_table();
+    let many = shade(&mut r, &[1, 2, 3, 4, 5, 6]);
+    assert_eq!(shaded(&r.e).len(), 6, "every cell");
+    assert!(many < one * 2, "the table's rows replaced once, not for each cell: {one} bytes for one, {many} for six");
+}
+
+#[test]
+fn a_cut_of_several_ranges_is_not_a_move() {
+    let mut r = Run::from_bytes(&blank_with("One two. Three four. Five six."), "multisel-cut-move");
+    r.e.execute(Command::SetTrackChanges(true), fonts());
+    r.e.select_ranges(&[(at(&r.e, 0, 0), at(&r.e, 0, 9)), (at(&r.e, 0, 21), at(&r.e, 0, 30))]);
+    assert!(r.e.is_discontiguous());
+    r.e.execute(Command::Cut, fonts());
+    assert!(r.e.cut_move.is_none(), "a paste would otherwise record a move over the text between the ranges too");
+}
+
+#[test]
+fn shrink_does_not_grow_a_selection_made_smaller() {
+    let mut r = Run::from_bytes(&blank_with("One two three. Four five six."), "multisel-shrink-inside");
+    r.step(&json!({ "click": { "para": 0, "offset": 5 } }));
+    for _ in 0..3 {
+        r.step(&json!({ "key": "F8" }));
+    }
+    assert_eq!(r.e.selected_text(), "One two three. ");
+    sel(&mut r, 0, 5, 7);
+    assert_eq!(r.e.selected_text(), "wo");
+    r.e.shrink_selection();
+    assert_eq!(r.e.selection(), Selection::Caret(at(&r.e, 0, 5)), "the caret at where extending began, not the word");
+}
+
+#[test]
+fn clicks_at_the_stops_of_vertical_lines_land_on_them() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/layout/vertical-directions.docx");
+    let mut r = Run::from_bytes(&std::fs::read(path).unwrap(), "multisel-vertical-point");
+    for offset in [1u32, 4, 8] {
+        r.step(&json!({ "click": { "para": 0, "offset": offset } }));
+        assert_eq!(r.e.selection(), Selection::Caret(at(&r.e, 0, offset)), "a click aimed at offset {offset}");
+    }
+}
+
+#[test]
+fn a_failed_replacement_keeps_the_other_ranges() {
+    let body = r#"<w:p><w:r><w:t xml:space="preserve">free </w:t></w:r><w:sdt><w:sdtPr><w:id w:val="5"/><w:text/></w:sdtPr><w:sdtContent><w:r><w:t>control</w:t></w:r></w:sdtContent></w:sdt></w:p>"#;
+    let mut e = Editor::open(&super::blank_body(body), fonts()).unwrap();
+    // The range in the control is the selection; typing a line break there can't split it.
+    e.select_ranges(&[(at(&e, 0, 0), at(&e, 0, 2)), (at(&e, 0, 7), at(&e, 0, 9))]);
+    assert!(e.is_discontiguous());
+    let (selection, ranges, before) = (e.selection(), e.selection_ranges(), texts(&e));
+    let out = e.execute(Command::InsertText("a\nb".into()), fonts());
+    assert!(!matches!(out, crate::editing::commands::Outcome::Changed(_)), "{out:?}");
+    assert_eq!(texts(&e), before);
+    assert_eq!(e.selection(), selection);
+    assert!(e.is_discontiguous(), "the ranges are still selected");
+    assert_eq!(e.selection_ranges(), ranges);
+}
+
+#[test]
+fn the_last_range_that_is_not_empty_goes_on_as_the_selection() {
+    let mut e = Editor::open(&blank_with("abcdefghijkl"), fonts()).unwrap();
+    let id = para(&e, 0);
+    let p = |u| Position::text(StoryId::Body, id, Unit(u));
+    e.select_ranges(&[(p(1), p(4)), (p(8), p(11)), (p(2), p(2))]);
+    assert_eq!(e.selection().ordered(e.index()), Some((p(8), p(11))));
+    assert_eq!(e.other_ranges(), [(p(1), p(4))]);
+}
+
+#[test]
+fn ctrl_click_in_the_selection_zone_on_a_selected_cell_takes_it_out() {
+    let mut r = with_table();
+    sel(&mut r, 0, 0, 5);
+    let zone = json!({ "click": { "table": 0, "row": 1, "border": 2, "dx_px": 5 }, "mods": { "ctrl": true } });
+    r.step(&zone);
+    assert_eq!(block(&r.e), Some((1, 2, 1, 2)));
+    r.step(&zone);
+    assert!(r.e.cell_blocks().is_empty(), "{:?}", r.e.cell_blocks());
+    assert_eq!(r.e.selection_ranges().len(), 1, "the text range stays");
+}
+
+#[test]
+fn a_cancelled_ctrl_press_puts_the_selection_back_as_it_was() {
+    let mut r = Run::from_bytes(&blank_with("The quick brown fox jumps over it."), "multisel-cancel-exact");
+    r.e.select_ranges(&[(at(&r.e, 0, 16), at(&r.e, 0, 19)), (at(&r.e, 0, 9), at(&r.e, 0, 4))]);
+    let (selection, others) = (r.e.selection(), r.e.other_ranges().to_vec());
+    assert_eq!(selection.anchor(), Some(at(&r.e, 0, 9)), "the selection runs backwards");
+    r.step(&json!({ "press": { "para": 0, "offset": 24 }, "mods": { "ctrl": true } }));
+    r.step(&json!({ "move_to": { "para": 0, "offset": 30 }, "mods": { "ctrl": true } }));
+    r.send(json!({ "type": "pointer", "kind": "cancel", "x": 0, "y": 0 }));
+    assert_eq!(r.e.selection(), selection, "its direction too");
+    assert_eq!(r.e.other_ranges(), others);
+    // A word selection keeps its unit
+    let mut r = Run::from_bytes(&blank_with("The quick brown fox jumps over it."), "multisel-cancel-unit");
+    r.step(&json!({ "click": { "para": 0, "offset": 5 }, "clicks": 2 }));
+    r.e.add_selection_range(at(&r.e, 0, 16), at(&r.e, 0, 19));
+    r.e.select_ranges(&[(at(&r.e, 0, 16), at(&r.e, 0, 19)), (at(&r.e, 0, 4), at(&r.e, 0, 9))]);
+    let selection = r.e.selection();
+    r.step(&json!({ "press": { "para": 0, "offset": 24 }, "mods": { "ctrl": true } }));
+    r.send(json!({ "type": "pointer", "kind": "cancel", "x": 0, "y": 0 }));
+    assert_eq!(r.e.selection(), selection);
+}
+
+#[test]
+fn text_ranges_ending_at_a_row_end_are_converted() {
+    let mut r = with_table();
+    sel(&mut r, 0, 0, 5);
+    r.step(&json!({ "drag": { "from": { "para": 0, "offset": 11 }, "to": { "para": 2, "offset": 1 } }, "mods": { "ctrl": true } }));
+    let ranges = r.e.selection_ranges();
+    assert!(ranges[1].1.para_offset().is_none(), "the range ends at the row's end");
+    let (points, whole) = r.e.selection_text_ranges(10);
+    assert!(whole);
+    assert_eq!(points.len(), 2, "no range dropped: {points:?}");
+    assert_eq!(points[1], ((para(&r.e, 0), 11), (para(&r.e, 3), 2)), "to the end of the row's last cell's text");
+    let (points, whole) = r.e.selection_text_ranges(1);
+    assert_eq!((points.len(), whole), (1, false), "capped");
+}
+
+#[test]
+fn forms_protection_checks_each_range_for_its_own_exception() {
+    use crate::api::command::{DocumentProtection, ProtectionKind};
+    let field = r#"<w:sdt><w:sdtPr><w:id w:val="5"/><w:text/></w:sdtPr><w:sdtContent><w:r><w:t>filled in</w:t></w:r></w:sdtContent></w:sdt>"#;
+    let body = format!(
+        r#"<w:p>{field}</w:p><w:p><w:pPr><w:sectPr><w:formProt w:val="1"/></w:sectPr></w:pPr></w:p><w:p><w:r><w:t>free text here</w:t></w:r></w:p>"#
+    );
+    let mut e = Editor::open(&super::blank_body(&body), fonts()).unwrap();
+    let p = DocumentProtection { kind: Some(ProtectionKind::Forms), enforce: Some(true), unprotected_sections: Some(vec![1]), ..Default::default() };
+    assert!(matches!(e.execute(Command::SetDocumentProtection(p), fonts()), crate::editing::commands::Outcome::Changed(_)));
+    e.complete(fonts());
+    let open = at(&e, 2, 0);
+    assert_eq!(e.protection_state("x").map(|p| p.unprotected_sections), Some(vec![1]), "the second section is open");
+    // "filled" inside the field, and "free" in the open section
+    let result = {
+        let crate::docx::Block::Para(p) = &e.document().sections[0].blocks[0] else { panic!() };
+        let mut u = 0u32;
+        p.inlines
+            .iter()
+            .find_map(|i| {
+                u += i.units() as u32;
+                matches!(i, crate::docx::Inline::Text(t, _) if t == "filled in").then(|| u - 9)
+            })
+            .expect("the field's result")
+    };
+    let (a, b) = (at(&e, 0, result + 2), at(&e, 0, result + 5));
+    e.select_ranges(&[(open, at(&e, 2, 4)), (a, b)]);
+    assert!(e.is_discontiguous());
+    assert!(e.in_form_field(), "the selection is in the field");
+    let was = texts(&e);
+    e.execute(super::del(crate::editing::commands::Dir::Forward, false), fonts());
+    assert_ne!(texts(&e), was, "each range has its own exception: the field's, the open section's");
+}
+
+#[test]
+fn a_tracked_run_is_split_at_every_selected_cut() {
+    let mut r = Run::from_bytes(&blank_with("x"), "multisel-cuts");
+    r.e.execute(Command::SetTrackChanges(true), fonts());
+    r.e.select_range(para(&r.e, 0), Unit(1), Unit(1), fonts());
+    r.e.execute(Command::InsertText("abcdefghij".into()), fonts());
+    r.e.select_ranges(&[(at(&r.e, 0, 2), at(&r.e, 0, 4)), (at(&r.e, 0, 6), at(&r.e, 0, 8))]);
+    r.e.execute(Command::AcceptRevisionsInSelection, fonts());
+    let crate::docx::Block::Para(p) = &r.e.document().sections[0].blocks[0] else { panic!() };
+    let pieces: Vec<(&str, bool)> = p
+        .inlines
+        .iter()
+        .filter_map(|i| if let crate::docx::Inline::Text(t, run) = i { Some((t.as_str(), run.rev.ins.is_some())) } else { None })
+        .collect();
+    assert_eq!(pieces, [("x", false), ("a", true), ("bc", false), ("de", true), ("fg", false), ("hij", true)]);
+}
+
+#[test]
+fn a_row_end_is_in_its_tables_section() {
+    let table = r#"<w:tbl><w:tblPr><w:tblW w:w="2000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#;
+    let body = format!(
+        r#"<w:p><w:pPr><w:sectPr/></w:pPr><w:r><w:t>zero</w:t></w:r></w:p><w:p><w:r><w:t>one</w:t></w:r></w:p>{table}<w:p><w:pPr><w:sectPr/></w:pPr></w:p><w:p><w:r><w:t>two</w:t></w:r></w:p>"#
+    );
+    let mut e = Editor::open(&super::blank_body(&body), fonts()).unwrap();
+    let row_end = Position::row_end(StoryId::Body, table_id(&e), 0);
+    assert_eq!(e.section_at(&row_end), Some(1));
+    let last = super::texts(&e).len() - 1;
+    e.select_ranges(&[(at(&e, 0, 0), row_end), (at(&e, last, 0), at(&e, last, 2))]);
+    assert!(e.is_discontiguous());
+    assert_eq!(e.selected_sections(), [0, 1, 2]);
+}
+
+#[test]
+fn clear_puts_the_caret_in_the_first_cell_it_emptied() {
+    let row0 = [("b1", ""), ("c1", "")];
+    let row1 = [("a2", ""), ("b2", ""), ("c2", "")];
+    let mut r = table_doc(&[&row0, &row1], &["<w:trPr><w:gridBefore w:val=\"1\"/></w:trPr>", ""]);
+    let c = cells_of(&r.e, (0, 0), (1, 0));
+    r.e.select_pieces(&[], Vec::new(), Some(c));
+    r.e.execute(super::del(crate::editing::commands::Dir::Forward, false), fonts());
+    assert_eq!(texts(&r.e)[1..6], ["b1", "c1", "", "b2", "c2"], "the cell in column 0 is cleared");
+    assert_eq!(r.e.selection(), Selection::Caret(at(&r.e, 3, 0)), "in the first cell cleared");
+}
+
+#[test]
+fn removing_a_cell_leaves_the_merged_cell_beside_it_whole() {
+    let rows: [&[(&str, &str)]; 2] = [&[("a", "<w:vMerge w:val=\"restart\"/>"), ("b", "")], &[("", "<w:vMerge/>"), ("d", "")]];
+    let mut r = table_doc(&rows, &[]);
+    r.step(&json!({ "drag": { "from": { "para": 1, "offset": 0 }, "to": { "para": 4, "offset": 1 } } }));
+    assert_eq!(block(&r.e), Some((0, 0, 1, 1)), "{:?}", r.e.selection());
+    r.step(&json!({ "click": { "para": 2, "offset": 0 }, "mods": { "ctrl": true } }));
+    let mut blocks: Vec<_> = r.e.cell_blocks().into_iter().filter_map(bounds_of).collect();
+    blocks.sort();
+    assert_eq!(blocks, [(0, 0, 1, 0), (1, 1, 1, 1)], "the merged cell and the bottom right one, not the cell taken out");
+}
+
+#[test]
+fn the_view_of_many_ranges_is_that_of_each_range_alone() {
+    let text = (0..60).map(|k| format!("word{k}")).collect::<Vec<_>>().join(" ");
+    let mut e = Editor::open(&blank_with(&text), fonts()).unwrap();
+    let ranges: Vec<_> = (0..40).map(|k| (at(&e, 0, k * 14 + 1), at(&e, 0, k * 14 + 5))).collect();
+    e.select_ranges(&ranges);
+    let all = e.selection_ranges();
+    assert_eq!(all.len(), 40);
+    let mut one_by_one: Vec<String> = all.iter().flat_map(|&(a, b)| e.range_rects(a, b, 0..1)).map(|r| format!("{r:?}")).collect();
+    let mut together: Vec<String> = e.multi_rects(0..1).into_iter().map(|r| format!("{r:?}")).collect();
+    one_by_one.sort();
+    together.sort();
+    assert!(!together.is_empty());
+    assert_eq!(together, one_by_one);
 }

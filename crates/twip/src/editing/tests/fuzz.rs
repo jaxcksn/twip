@@ -164,7 +164,7 @@ fn generate(r: &mut Run, rng: &mut Rng) -> Value {
             }
             let l = lines[rng.below(lines.len())];
             let stops = l["stops"].as_array().cloned().unwrap_or_default();
-            let u = stops.get(rng.below(stops.len())).map_or(0, |s| s[1].as_u64().unwrap_or(0));
+            let u = stops.get(rng.below(stops.len())).map_or(0, |s| s[2].as_u64().unwrap_or(0));
             let clicks = [1, 1, 1, 2, 3][rng.below(5)];
             json!({ "click": { "para": l["para"], "offset": u }, "clicks": clicks, "shift": rng.below(6) == 0 })
         }

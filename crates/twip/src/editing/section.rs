@@ -81,12 +81,20 @@ impl Editor {
         if matches!(at.story, StoryId::HeaderFooter(_)) {
             return None;
         }
-        self.para_section(at.para_offset()?.0)
+        let slot = match at.place {
+            super::position::Place::Text { para, .. } => self.index.para_slot(para)?,
+            // A row's end is in its table's section.
+            super::position::Place::RowEnd { table, .. } => self.index.table_slot(table)?,
+        };
+        self.top_section(slot)
     }
 
     /// The section a paragraph lays out in: in a sub-template being edited, the section it was entered from.
     pub(super) fn para_section(&self, para: crate::layout::ParaId) -> Option<usize> {
-        let slot = self.index.para_slot(para)?;
+        self.top_section(self.index.para_slot(para)?)
+    }
+
+    fn top_section(&self, slot: Slot) -> Option<usize> {
         let (section, _, _) = self.index.top_block(slot.container, slot.block)?;
         match &self.surface {
             Some(s) if self.index.story(slot.container) != StoryId::Body => Some(s.section),

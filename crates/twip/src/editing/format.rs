@@ -607,7 +607,7 @@ impl Editor {
         let mut ranges: Vec<(ParaId, Unit, Unit)> = Vec::new();
         // The paragraphs whose marks are in the selection.
         let mut marks: Vec<ParaId> = Vec::new();
-        if self.selection.is_collapsed() {
+        if self.selection.is_collapsed() && !self.is_discontiguous() {
             let Some(caret) = self.caret() else { return Outcome::Unchanged("no caret") };
             let (Some((para, off)), Some(run)) = (caret.para_offset(), self.run_at(&caret)) else { return Outcome::Unchanged("no paragraph") };
             let Some(base) = self.run_base(para, off, &res, &cx) else { return Outcome::Unchanged("no paragraph") };
