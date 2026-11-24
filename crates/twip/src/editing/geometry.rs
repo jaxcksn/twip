@@ -836,9 +836,14 @@ fn note_areas(children: &[Child], dx: f64, dy: f64, depth: usize, out: &mut Vec<
         match b.kind {
             BoxKind::Notes => {
                 let (x, y) = (dx + b.offset.0, dy + b.offset.1);
-                let top = b.children.iter().filter_map(|c| if let Child::Box(p) = c { first_group(p) } else { None }).reduce(f64::min);
-                if let Some(top) = top {
-                    out.push([x, y + top, x + b.size.0, y + top + b.size.1]);
+                // The note column sits where its groups are placed, in the box's own coordinates.
+                let at = b
+                    .children
+                    .iter()
+                    .filter_map(|c| if let Child::Box(p) = c { first_group(p) } else { None })
+                    .reduce(|a, g| (a.0.min(g.0), a.1.min(g.1)));
+                if let Some((left, top)) = at {
+                    out.push([x + left, y + top, x + left + b.size.0, y + top + b.size.1]);
                 }
             }
             BoxKind::Body | BoxKind::Column => note_areas(&b.children, dx + b.offset.0, dy + b.offset.1, depth + 1, out),
@@ -847,6 +852,10 @@ fn note_areas(children: &[Child], dx: f64, dy: f64, depth: usize, out: &mut Vec<
     }
 }
 
-fn first_group(b: &BoxFragment) -> Option<f64> {
-    b.children.iter().filter_map(|c| if let Child::Group { offset, .. } = c { Some(b.offset.1 + offset.1) } else { None }).reduce(f64::min)
+/// The left and top of `b`'s first group.
+fn first_group(b: &BoxFragment) -> Option<(f64, f64)> {
+    b.children
+        .iter()
+        .filter_map(|c| if let Child::Group { offset, .. } = c { Some((b.offset.0 + offset.0, b.offset.1 + offset.1)) } else { None })
+        .reduce(|a, g| (a.0.min(g.0), a.1.min(g.1)))
 }

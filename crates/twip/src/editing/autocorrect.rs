@@ -158,8 +158,7 @@ pub fn internet_path(before: &[char]) -> Option<(usize, usize, String)> {
     let word = &before[start..];
     let lead = word.iter().take_while(|c| matches!(c, '(' | '[' | '<' | '"' | '\'' | '\u{201C}' | '\u{2018}')).count();
     let core = &word[lead..];
-    let trail = core.iter().rev().take_while(|c| ends_word(**c) || matches!(c, ')' | ']' | '>' | '"' | '\'' | '\u{201D}' | '\u{2019}')).count();
-    let core = &core[..core.len() - trail];
+    let core = &core[..trimmed_len(core)];
     // What it can be is told from the characters: text is made only for an address.
     let after = |prefix: &str| {
         core.len() > prefix.len()
@@ -176,11 +175,44 @@ pub fn internet_path(before: &[char]) -> Option<(usize, usize, String)> {
     } else if core.starts_with(&['\\', '\\']) && core.get(2).is_some_and(|c| c.is_alphanumeric()) && core[2..].contains(&'\\') {
         format!("file:///{}", text())
     } else if core.contains(&'@') && is_email(&text()) {
-        format!("mailto:{}", text())
+        // The mailbox's own `?`, `%` and `#` are not the URI's delimiters.
+        let mut uri = String::from("mailto:");
+        for c in core {
+            match c {
+                '?' => uri.push_str("%3F"),
+                '%' => uri.push_str("%25"),
+                '#' => uri.push_str("%23"),
+                _ => uri.push(*c),
+            }
+        }
+        uri
     } else {
         return None;
     };
     Some((start + lead, core.len(), address))
+}
+
+/// How many of `core`'s characters stay once its closing punctuation is dropped: a closing bracket stays when it
+/// balances an opening one before it.
+fn trimmed_len(core: &[char]) -> usize {
+    let mut n = core.len();
+    while let Some(&c) = n.checked_sub(1).map(|i| &core[i]) {
+        let open = match c {
+            ')' => '(',
+            ']' => '[',
+            '>' => '<',
+            _ if ends_word(c) || matches!(c, '"' | '\'' | '\u{201D}' | '\u{2019}') => ' ',
+            _ => break,
+        };
+        if open != ' ' {
+            let (opens, closes) = core[..n].iter().fold((0, 0), |(o, k), &x| (o + usize::from(x == open), k + usize::from(x == c)));
+            if opens >= closes {
+                break;
+            }
+        }
+        n -= 1;
+    }
+    n
 }
 
 /// `local@domain.tld`, as Word takes an email address.
@@ -590,7 +622,7 @@ impl Editor {
         let twips = |pt: f64| ((pt * 20.0).round() as i64).to_string();
         let cx = self.cx();
         let set: Vec<(&str, Option<String>)> = if first > 0.0 {
-            vec![("left", Some(twips((left + tab).min(1584.0)))), ("start", None)]
+            vec![("left", Some(twips(super::format::grid_step(left, tab, true)))), ("start", None)]
         } else {
             vec![("firstLine", Some(twips(tab))), ("hanging", None)]
         };
@@ -672,14 +704,12 @@ impl Editor {
             return None;
         }
         let typed = super::text::UnitText::of(p).text.chars().skip(range.start).take(range.len()).collect();
+        // One step that undoes to the typing caret and redoes to the caret after the link.
+        self.begin_batch(Some("AutoFormat".into()));
         self.selection = Selection::range(pa, pb, super::selection::Granularity::Char);
-        let out = self.joined("AutoFormat", fonts, |e| e.insert_hyperlink(crate::api::command::Hyperlink { address, text: None }, fonts));
-        if matches!(out, Outcome::Changed(_))
-            && let Some(p) = self.index.para(&self.doc, para)
-            && let Some(end) = field_end_at(&p.inlines, a.0)
-        {
-            self.auto_formatted(para, a..Unit(end), typed, super::CorrectionKind::Hyperlink);
-        }
+        let out = self.insert_hyperlink(crate::api::command::Hyperlink { address, text: None }, fonts);
+        let linked = matches!(out, Outcome::Changed(_));
+        let field_end = linked.then(|| self.index.para(&self.doc, para).and_then(|p| field_end_at(&p.inlines, a.0))).flatten();
         self.selection = match (self.selection, caret.para_offset()) {
             (Selection::Caret(end), Some((p, off))) if p == para => match end.para_offset() {
                 Some((q, e)) => Selection::Caret(Position::text(caret.story, q, Unit(e.0 + off.0 - b.0))),
@@ -687,6 +717,11 @@ impl Editor {
             },
             _ => Selection::Caret(caret),
         };
+        let end = self.end_batch(!matches!(out, Outcome::Refused(_)), fonts);
+        let out = if matches!(end, Outcome::Changed(_)) { end } else { out };
+        if let Some(end) = field_end {
+            self.auto_formatted(para, a..Unit(end), typed, super::CorrectionKind::Hyperlink);
+        }
         Some(out)
     }
 
@@ -766,6 +801,9 @@ impl Editor {
     pub fn stop_auto_format(&mut self, ac: &mut AutoCorrect, fonts: &Fonts) -> Outcome {
         let Some(kind) = self.auto_format_change().map(|c| c.kind.clone()) else { return Outcome::unavailable("no AutoFormat change") };
         let out = self.revert_correction(fonts);
+        if !matches!(out, Outcome::Changed(_)) {
+            return out;
+        }
         match kind {
             super::CorrectionKind::Hyperlink => ac.internet_paths = false,
             super::CorrectionKind::BorderLine { .. } => ac.border_lines = false,
@@ -793,6 +831,15 @@ impl Editor {
             return Outcome::unavailable("no correction");
         }
         let Some(c) = self.correction.take() else { return Outcome::unavailable("no correction") };
+        let out = self.revert_taken(&c, fonts);
+        // A revert that could not run leaves the change, so its record stays.
+        if !matches!(out, Outcome::Changed(_)) {
+            self.correction = Some(c);
+        }
+        out
+    }
+
+    fn revert_taken(&mut self, c: &super::Correction, fonts: &Fonts) -> Outcome {
         let label = if c.kind == super::CorrectionKind::Text { "AutoCorrect" } else { "AutoFormat" };
         if self.history.next_undo() == Some(label) && c.typed == 0 {
             return self.execute(super::commands::Command::Undo, fonts);
@@ -813,7 +860,7 @@ impl Editor {
 
     /// An AutoFormat change put back once more was done after it: the link's text plain again, the characters typed in
     /// place of the border, the tab in place of the indent.
-    fn revert_auto_format(&mut self, c: super::Correction, fonts: &Fonts) -> Outcome {
+    fn revert_auto_format(&mut self, c: &super::Correction, fonts: &Fonts) -> Outcome {
         let Some(story) = self.index.para_slot(c.para).map(|s| self.index.story(s.container)) else { return Outcome::Unchanged("no paragraph") };
         let start = Position::text(story, c.para, c.range.start);
         let caret = self.selection;

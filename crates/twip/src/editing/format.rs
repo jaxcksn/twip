@@ -1063,7 +1063,7 @@ pub enum Format {
 }
 
 /// `left` moved to the next (or last) multiple of `tab`, within 0 to 1584 points.
-fn grid_step(left: f64, tab: f64, more: bool) -> f64 {
+pub(super) fn grid_step(left: f64, tab: f64, more: bool) -> f64 {
     let at = left / tab;
     let to = if more { (at + 1e-6).floor() + 1.0 } else { (at - 1e-6).ceil() - 1.0 };
     (to * tab).clamp(0.0, 1584.0)

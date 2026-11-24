@@ -106,17 +106,30 @@ impl Editor {
                 return Some((HoverTip::Note, Tooltip { text, page, rect }, None));
             }
         }
+        // The pointer over a character's right half resolves to the stop after it: the character it is over is the
+        // one at the stop or before it whose own rectangle holds the pointer.
+        let over = [Some(p), self.char_before(p)].into_iter().flatten().find(|&q| {
+            let next = q.para_offset().map(|(para, u)| Position::text(q.story, para, Unit(u.0 + 1)));
+            next.is_some_and(|n| under(self, q, n).is_some())
+        });
+        let over = over.unwrap_or(p);
         if self.doc.review.view == MarkupView::All
-            && let Some((a, b, d)) = self.revision_under(p)
+            && let Some((a, b, d)) = self.revision_under(over)
             && let Some(rect) = under(self, a, b)
         {
             let text = format!("{}\n{}", self.byline(&d), d.body);
             return Some((HoverTip::Revision, Tooltip { text, page, rect }, Some(d)));
         }
-        let (a, b, d) = self.comment_under(p)?;
+        let (a, b, d) = self.comment_under(over)?;
         let rect = under(self, a, b)?;
         let text = format!("{}\n{}", self.byline(&d), d.body);
         Some((HoverTip::Comment, Tooltip { text, page, rect }, Some(d)))
+    }
+
+    /// The position a character before `p`, in its paragraph.
+    fn char_before(&self, p: Position) -> Option<Position> {
+        let (para, u) = p.para_offset()?;
+        Some(Position::text(p.story, para, Unit(u.0.checked_sub(1)?)))
     }
 
     /// The footnote or endnote reference at `p` or just before it: where it is, and its note's text.

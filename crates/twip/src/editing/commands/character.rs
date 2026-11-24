@@ -345,12 +345,14 @@ impl Editor {
         for &(para, a, b) in &ranges {
             let Some(p) = self.index.para(&self.doc, para) else { continue };
             let mut at = 0u32;
-            for i in &p.inlines {
+            let code = field_code_depth(&p.inlines);
+            for (k, i) in p.inlines.iter().enumerate() {
                 let n = i.units() as u32;
                 let (s, e) = (at, at + n);
                 at = e;
                 let Inline::Text(text, _) = i else { continue };
-                if e <= a.0 || s >= b.0 {
+                // Field codes keep their case, so they don't count toward it.
+                if code[k] > 0 || e <= a.0 || s >= b.0 {
                     continue;
                 }
                 let (from, to) = (a.0.max(s) - s, b.0.min(e) - s);
@@ -383,14 +385,9 @@ impl Editor {
             let mut with = Vec::new();
             let mut at = 0u32;
             let (mut word, mut sentence) = (true, true);
-            let mut code = vec![0i32; p.inlines.len() + 1];
-            for f in crate::docx::fields::spans(&p.inlines) {
-                code[f.begin + 1] += 1;
-                code[f.code_end()] -= 1;
-            }
-            let mut in_code = 0;
+            let code = field_code_depth(&p.inlines);
             for (k, i) in p.inlines.iter().enumerate() {
-                in_code += code[k];
+                let in_code = code[k];
                 let n = i.units() as u32;
                 let (s, e) = (at, at + n);
                 at = e;
@@ -630,4 +627,19 @@ fn clipboard_fingerprint(text: &str, html: Option<&str>) -> u64 {
     let mut h = std::collections::hash_map::DefaultHasher::new();
     (text, html).hash(&mut h);
     h.finish()
+}
+
+/// For each of `inlines`, how many fields' instruction text it is in.
+fn field_code_depth(inlines: &[Inline]) -> Vec<i32> {
+    let mut depth = vec![0i32; inlines.len() + 1];
+    for f in crate::docx::fields::spans(inlines) {
+        depth[f.begin + 1] += 1;
+        depth[f.code_end()] -= 1;
+    }
+    let mut run = 0;
+    for d in &mut depth {
+        run += *d;
+        *d = run;
+    }
+    depth
 }

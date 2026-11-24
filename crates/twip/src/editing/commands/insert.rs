@@ -41,7 +41,8 @@ impl Editor {
     }
 
     /// Sets the wrap pictures are inserted with (Word's "Insert/paste pictures as", and Wrap Text > Set as Default
-    /// Layout): in line with the text by default. An editor setting, not saved, no undo step.
+    /// Layout): in line with the text by default. An editor setting, not saved, no undo step. In a footnote or
+    /// endnote, which hold no floating objects, a picture is inserted in line whatever the default.
     pub fn set_default_picture_wrap(&mut self, wrap: ObjectWrap) {
         self.default_picture_wrap = wrap;
     }

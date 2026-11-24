@@ -85,7 +85,7 @@ impl Editor {
                 let cx = self.cx();
                 let ind = if left > 0.0 {
                     let tab = self.tab_grid();
-                    vec![("left", Some(twips(((left - 1e-6) / tab).ceil().max(1.0) * tab - tab).to_string())), ("start", None)]
+                    vec![("left", Some(twips(super::format::grid_step(left, tab, false)).to_string())), ("start", None)]
                 } else {
                     vec![("firstLine", Some("0".to_string()))]
                 };

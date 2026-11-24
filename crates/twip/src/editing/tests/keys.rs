@@ -104,6 +104,20 @@ fn shift_f3_cycles_lower_upper_and_capitalised() {
 }
 
 #[test]
+fn shift_f3_ignores_field_codes_when_it_picks_the_case() {
+    let mut e =
+        edit(&format!(r#"<w:p><w:r><w:t xml:space="preserve">hello </w:t></w:r>{}</w:p>"#, field_xml(r#"HYPERLINK "http://X.COM""#, "world")));
+    let n = crate::editing::step::para_len(para(&e, 0)).0;
+    select(&mut e, 0, 0, n);
+    press(&mut e, "F3", SHIFT);
+    assert_eq!(
+        texts(&e)[0],
+        "HELLO \u{FFFC} HYPERLINK \"http://X.COM\" \u{FFFC}WORLD\u{FFFC}",
+        "lowercase text goes to upper, whatever the code's case"
+    );
+}
+
+#[test]
 fn change_case_at_a_caret_changes_its_word() {
     let mut e = edit("<w:p><w:r><w:t>one two three</w:t></w:r></w:p>");
     caret(&mut e, 0, 5);
@@ -290,6 +304,17 @@ fn alt_x_toggles_the_code_before_the_caret() {
     assert_eq!(texts(&e)[0], "a 00E9.", "and back");
     e.execute(C::Undo, fonts());
     assert_eq!(texts(&e)[0], "a é.", "each its own undo step");
+}
+
+#[test]
+fn alt_x_undo_restores_the_original_caret() {
+    let mut e = edit("<w:p><w:r><w:t>a 00e9</w:t></w:r></w:p>");
+    caret(&mut e, 0, 6);
+    let before = e.selection;
+    e.toggle_character_code(fonts());
+    e.execute(C::Undo, fonts());
+    assert_eq!(texts(&e)[0], "a 00e9");
+    assert_eq!(e.selection, before, "the caret, not the code selected");
 }
 
 fn field_xml(code: &str, result: &str) -> String {
@@ -670,6 +695,57 @@ fn tab_at_a_paragraphs_start_indents_it() {
     caret(&mut e2, 0, 0);
     type_in(&mut e2, "\t");
     assert_eq!(texts(&e2)[0], "\ttext", "the option off");
+}
+
+#[test]
+fn internet_paths_keep_balanced_brackets_and_encode_mailboxes() {
+    use crate::editing::autocorrect::internet_path;
+    let path = |s: &str| internet_path(&s.chars().collect::<Vec<_>>());
+    assert_eq!(path("https://example.com/Topic_(detail)"), Some((0, 34, "https://example.com/Topic_(detail)".into())));
+    assert_eq!(path("https://example.com/Topic_(detail))."), Some((0, 34, "https://example.com/Topic_(detail)".into())));
+    assert_eq!(path("(https://example.com)"), Some((1, 19, "https://example.com".into())));
+    assert_eq!(path("a?b@example.com").map(|p| p.2), Some("mailto:a%3Fb@example.com".into()));
+    assert_eq!(path("mailto:a?b@example.com").map(|p| p.2), Some("mailto:a?b@example.com".into()), "a typed mailto: stays as typed");
+}
+
+#[test]
+fn hyperlink_autoformat_undoes_to_the_typing_caret() {
+    let mut e = edit("<w:p/>");
+    caret(&mut e, 0, 0);
+    type_in(&mut e, "See www.example.com ");
+    let typed = e.selection;
+    e.execute(C::Undo, fonts());
+    assert!(link_codes(&e, 0).is_empty());
+    assert_eq!(e.selection, Selection::Caret(Position::text(StoryId::Body, texts_ids(&e)[0], Unit(20))), "after the space, not the address selected");
+    e.execute(C::Redo, fonts());
+    assert_eq!(e.selection, typed, "redo returns to the caret after the link and space");
+}
+
+#[test]
+fn a_revert_that_cannot_run_keeps_the_record_and_the_option() {
+    use crate::editing::autocorrect::AutoCorrect;
+    let mut e = edit("<w:p/>");
+    caret(&mut e, 0, 0);
+    type_in(&mut e, "See www.example.com ");
+    let mut ac = AutoCorrect::default();
+    e.begin_batch(None);
+    let out = e.stop_auto_format(&mut ac, fonts());
+    assert!(!matches!(out, Outcome::Changed(_)));
+    assert!(ac.internet_paths, "the option stays on");
+    assert!(e.auto_format_change().is_some(), "the record stays");
+    e.end_batch(true, fonts());
+    e.stop_auto_format(&mut ac, fonts());
+    assert!(!ac.internet_paths && link_codes(&e, 0).is_empty());
+}
+
+#[test]
+fn tab_and_backspace_step_off_grid_indents_along_the_same_grid() {
+    let mut e = edit(r#"<w:p><w:pPr><w:ind w:left="400" w:firstLine="720"/></w:pPr><w:r><w:t>text</w:t></w:r></w:p>"#);
+    caret(&mut e, 0, 0);
+    type_in(&mut e, "\t");
+    assert_eq!(para(&e, 0).style.ind_left, 36.0, "the next tab stop, as Increase Indent goes");
+    e.execute(C::Delete(crate::api::command::DeleteOptions { direction: crate::api::value::Direction::Backward, unit: None }), fonts());
+    assert_eq!(para(&e, 0).style.ind_left, 0.0, "Backspace back along the same grid");
 }
 
 #[test]

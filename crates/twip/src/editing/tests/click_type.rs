@@ -102,6 +102,18 @@ fn a_double_click_between_pages_hides_the_white_space_and_on_their_line_shows_it
 }
 
 #[test]
+fn a_one_page_document_can_show_hidden_white_space_again() {
+    let mut e = open_one();
+    e.set_white_space_hidden(true);
+    let stack = e.stack();
+    assert_eq!(stack.pages.len(), 1);
+    let [_, top, _, h] = stack.shown(0).expect("page 1");
+    assert_eq!(e.white_space_toggle_at(top), Some(false), "its top");
+    assert_eq!(e.white_space_toggle_at(top + h), Some(false), "its bottom");
+    assert_eq!(e.white_space_toggle_at(top + h / 2.0), None, "on the page");
+}
+
+#[test]
 fn hidden_white_space_ends_where_a_tall_header_pushes_the_body() {
     let sec = r#"<w:sectPr><w:headerReference w:type="default" r:id="rIdH"/><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr>"#;
     let header: String = (0..12).map(|i| format!("<w:p><w:r><w:t>Header line {i}</w:t></w:r></w:p>")).collect();
@@ -143,6 +155,22 @@ fn a_double_click_on_footnote_text_below_the_end_selects_a_word() {
     assert_eq!(texts(&e).len(), 1, "no paragraphs added");
     let sel = e.selection();
     assert!(matches!(sel.focus().map(|f| f.story), Some(StoryId::Footnote(_))) && !sel.is_collapsed(), "a word: {sel:?}");
+}
+
+#[test]
+fn the_note_area_spans_the_columns_own_width() {
+    let ns = r#"xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main""#;
+    let foot =
+        format!(r#"<w:footnotes {ns}><w:footnote w:id="1"><w:p><w:r><w:t>Some footnote words here</w:t></w:r></w:p></w:footnote></w:footnotes>"#);
+    let body = r#"<w:p><w:r><w:t>Body</w:t></w:r><w:r><w:footnoteReference w:id="1"/></w:r></w:p>"#;
+    let bytes = super::empty_stories::build(body, "", &[("footnotes.xml", "footnotes", "footnotes", &foot)]);
+    let mut e = Editor::open(&bytes, fonts()).expect("opens");
+    e.complete(fonts());
+    let g = e.page_geometries()[0].1.clone();
+    let notes = g.notes[0];
+    assert_eq!((notes[0], notes[2]), (72.0, 540.0), "the 72 pt margins of a letter page: {notes:?}");
+    assert!(!g.in_notes(540.0 + 5.0, (notes[1] + notes[3]) / 2.0), "right of the column is not the notes");
+    assert!(!g.in_notes(notes[0] - 5.0, (notes[1] + notes[3]) / 2.0), "left of the column is not the notes");
 }
 
 #[test]

@@ -770,6 +770,19 @@ fn regroup_groups_again_what_ungroup_made_until_one_is_gone() {
 }
 
 #[test]
+fn the_default_picture_wrap_inserts_in_line_in_a_note() {
+    let data = open("FX-OBJ.docx").document().images.last().cloned().expect("an image");
+    let mut e = Editor::open(&super::blank_with("Body text here"), fonts()).expect("opens");
+    e.set_default_picture_wrap(ObjectWrap::Square);
+    e.set_caret_for_benchmark(Selection::Caret(Position::text(StoryId::Body, super::para_id(&e, 0), Unit(2))));
+    e.execute(Command::InsertFootnote, fonts());
+    assert_ne!(e.caret().map(|p| p.story), Some(StoryId::Body), "the caret is in the note");
+    let out = e.execute(Command::InsertPicture(Picture { data: Bytes(data), alt_text: None }), fonts());
+    assert!(changed(&out), "{out:?}");
+    assert!(all_floats(&e).is_empty(), "a note holds no floating object: the picture is in line");
+}
+
+#[test]
 fn the_default_picture_wrap_floats_an_inserted_picture_in_one_step() {
     let data = open("FX-OBJ.docx").document().images.last().cloned().expect("an image");
     let mut e = Editor::open(&super::blank_with("Body text here"), fonts()).expect("opens");

@@ -52,12 +52,13 @@ impl Editor {
         let text: Vec<char> = UnitText::of(p).text.chars().skip(start).take(to.0 as usize - start).collect();
         let Some((k, with)) = code_toggle(&text, whole) else { return Outcome::unavailable("no character code there") };
         let at = Unit(to.0 - k as u32);
+        let original = self.selection;
+        let mut tx = self.begin("Unicode");
         self.selection = Selection::range(Position::text(a.story, para, at), b, Granularity::Char);
         if self.refuse_expanded() || self.refuse_locked() {
-            self.selection = Selection::range(a, b, Granularity::Char);
+            self.selection = original;
             return Outcome::Unchanged("locked");
         }
-        let mut tx = self.begin("Unicode");
         match self.type_into(&mut tx, &with) {
             Ok((caret, _)) => {
                 self.selection = Selection::Caret(caret);
@@ -65,7 +66,6 @@ impl Editor {
             }
             Err(why) => {
                 self.abort(tx);
-                self.selection = Selection::range(a, b, Granularity::Char);
                 Outcome::Unchanged(why)
             }
         }

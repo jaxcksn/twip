@@ -67,12 +67,16 @@ impl PageStack {
     }
 
     /// Where a double-click shows or hides the white space between pages: between two pages, above the first or below
-    /// the last; with it hidden, within `tol` of the line where two pages meet. Any `x` across the stack.
+    /// the last; with it hidden, within `tol` of the line where two pages meet, or of the first page's top or the last
+    /// page's bottom (the only targets of a one-page document). Any `x` across the stack.
     pub fn toggles_white_space(&self, y: f64, tol: f64) -> bool {
         if self.bands.is_empty() {
             return self.in_gap(y);
         }
-        (1..self.pages.len()).filter_map(|i| self.shown(i)).any(|[_, top, ..]| (y - top).abs() <= tol)
+        let seam = (1..self.pages.len()).filter_map(|i| self.shown(i)).any(|[_, top, ..]| (y - top).abs() <= tol);
+        let first = self.shown(0).is_some_and(|[_, top, ..]| (y - top).abs() <= tol);
+        let last = self.pages.len().checked_sub(1).and_then(|i| self.shown(i)).is_some_and(|[_, top, _, h]| (y - (top + h)).abs() <= tol);
+        seam || first || last
     }
 
     pub fn page_at(&self, x: f64, y: f64) -> Option<(usize, f64, f64)> {

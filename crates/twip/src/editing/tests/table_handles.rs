@@ -824,3 +824,16 @@ fn a_live_table_preview_is_not_the_document_as_printed() {
     assert!(!e.table_preview.is_empty());
     assert!(!e.lays_out_as_printed(false), "laid out as the drag would leave it");
 }
+
+#[test]
+fn a_text_box_tables_hint_has_no_row_of_the_anchors_blocks() {
+    use crate::layout::tests::shapes::{anchor, sp};
+    let cell = r#"<w:tc><w:p><w:r><w:t>x</w:t></w:r></w:p></w:tc>"#;
+    let table = format!(r#"<w:tbl><w:tblGrid><w:gridCol w:w="1500"/></w:tblGrid><w:tr>{cell}</w:tr><w:tr>{cell}</w:tr></w:tbl><w:p/>"#);
+    let story = format!(r#"<wps:txbx><w:txbxContent>{table}</w:txbxContent></wps:txbx><wps:bodyPr/>"#);
+    let boxed = sp(0, 0, 300, 100, "rect", "", "FFFFFF").replace("<wps:bodyPr/>", &story);
+    let e = opened(&format!("<w:p><w:r><w:t>Anchor</w:t></w:r>{}</w:p>", anchor(72, 200, 300, 100, 1, false, 1, &boxed)));
+    let id = e.index.table_ids().next().expect("the box's table");
+    let hint = super::super::step::table_hint(&e.index, id, Some(1)).expect("a hint");
+    assert_eq!(hint.row, None, "row 1 of the box's table is not a row of the anchor's block");
+}

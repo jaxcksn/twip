@@ -1190,7 +1190,16 @@ pub(super) fn changes_header_footer(idx: &DocIndex, s: &Step) -> bool {
 /// Table `table` changed; `row`, when it is a section's own table, the one row of it that did.
 pub(super) fn table_hint(idx: &DocIndex, table: TableId, row: Option<usize>) -> Option<Change> {
     let slot = idx.table_slot(table)?;
-    idx.top_block(slot.container, slot.block).map(|(section, b, r)| Change { section, first: b, old_end: b + 1, new_end: b + 1, row: r.or(row) })
+    // The row is the table's own only when the table is the block the hint names; in a text box or a cell it isn't.
+    let own = matches!(slot.container, Container::Section(_))
+        || matches!(slot.container, Container::Story(super::position::StoryId::BuildingBlock(k)) if idx.flow == Some(k));
+    idx.top_block(slot.container, slot.block).map(|(section, b, r)| Change {
+        section,
+        first: b,
+        old_end: b + 1,
+        new_end: b + 1,
+        row: r.or(row.filter(|_| own)),
+    })
 }
 
 fn block_id(b: &Block) -> u64 {

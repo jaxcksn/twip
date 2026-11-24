@@ -55,6 +55,9 @@ fn along(at: Point, border: Border, d: f64) -> Point {
     }
 }
 
+/// The furthest a `fresh` drag goes from its press, px, before it is released, undone and pressed again.
+const FRESH_LIMIT: f64 = 40.0;
+
 /// One pointer move of a pressed border with the frame that shows it, live layout on (the default): alternating
 /// between 10 and 30 px from where it was pressed, or with `fresh`, a quarter px further each move, so each lays the
 /// table out at widths it hasn't had.
@@ -68,6 +71,15 @@ fn moving(bencher: Bencher, name: &str, border: Border, fresh: bool) {
         .with_inputs(|| {
             far = !far;
             moved += 0.25;
+            // Well before a column reaches its neighbour's minimum width or a row its maximum height, the drag is
+            // released and undone, then pressed again, so every move still lays out at a width it hasn't had.
+            if fresh && moved > FRESH_LIMIT {
+                let mut s = s.borrow_mut();
+                s.pointer(PointerKind::Up, along(at, border, moved), PointerButton::Primary, 1, NONE);
+                s.run(Command::Undo).expect("the drag is undone");
+                s.pointer(PointerKind::Down, at, PointerButton::Primary, 1, NONE);
+                moved = 10.25;
+            }
             along(
                 at,
                 border,

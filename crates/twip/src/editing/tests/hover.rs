@@ -17,6 +17,11 @@ fn hover_after(name: &str, want: impl Fn(&Inline) -> bool, after: u32) -> Option
 
 /// [`hover_after`]'s editor, with the pointer there.
 fn hovered(name: &str, want: impl Fn(&Inline) -> bool, after: u32) -> Editor {
+    hovered_by(name, want, after, 1.0)
+}
+
+/// [`hovered`] with the pointer `dx` points right of the caret there.
+fn hovered_by(name: &str, want: impl Fn(&Inline) -> bool, after: u32, dx: f64) -> Editor {
     let mut e = open(name);
     e.complete(fonts());
     let at = e.document().sections.iter().flat_map(|s| &s.blocks).find_map(|b| {
@@ -31,7 +36,7 @@ fn hovered(name: &str, want: impl Fn(&Inline) -> bool, after: u32) -> Editor {
         None
     });
     let c = e.caret_at(at.expect("found")).expect("laid out");
-    let (x, y) = e.stack().to_doc(c.page, c.x + 1.0, (c.top + c.bottom) / 2.0).expect("on the stack");
+    let (x, y) = e.stack().to_doc(c.page, c.x + dx, (c.top + c.bottom) / 2.0).expect("on the stack");
     e.pointer_input(PointerKind::Move, x, y, 0, Mods::default(), fonts());
     e
 }
@@ -52,6 +57,23 @@ fn a_tracked_change_shows_its_author_and_kind() {
     let (kind, text) = hover_after("review/FX-REVIEW-RUNS.docx", |i| i.run().is_some_and(|r| r.rev.ins.is_some()), 1).expect("a tooltip");
     assert_eq!(kind, HoverTip::Revision);
     assert!(text.ends_with("\nInserted"), "{text}");
+}
+
+#[test]
+fn a_tip_shows_over_a_changes_last_character_right_half() {
+    let ins = |i: &Inline| i.run().is_some_and(|r| r.rev.ins.is_some());
+    let (kind, text) = tip(&mut hovered_by("review/FX-REVIEW-RUNS.docx", ins, 67, -1.0)).expect("a tooltip");
+    assert_eq!(kind, HoverTip::Revision);
+    assert!(text.ends_with("\nInserted"), "{text}");
+}
+
+#[test]
+fn a_tip_shows_over_a_comments_last_character_right_half() {
+    let inner = |i: &Inline| matches!(i, Inline::Range(m) if m.kind == crate::docx::review::RangeKind::CommentStart && m.id == 3);
+    let (kind, text) = tip(&mut hovered_by("review/FX-REVIEW-COMMENTS.docx", inner, 29, -1.0)).expect("a tooltip");
+    assert_eq!(kind, HoverTip::Comment);
+    let again = tip(&mut hovered_by("review/FX-REVIEW-COMMENTS.docx", inner, 28, 1.0)).expect("a tooltip");
+    assert_eq!(text, again.1, "the same comment, the innermost, from either half");
 }
 
 #[test]
