@@ -653,3 +653,178 @@ fn a_band_size_alone_changes_a_read_table_and_saves() {
     cells(&mut again, (0, 0), (0, 0));
     assert_eq!(again.table_band_sizes().map(|b| b.own_rows), Some(Some(2)));
 }
+
+/// Each row's grid columns, before, cells and after, add up to the grid.
+fn rows_fit_the_grid(e: &Editor) {
+    let t = table(e);
+    for (r, row) in t.rows.iter().enumerate() {
+        let n = row.grid_before + row.cells.iter().map(|c| c.span.max(1)).sum::<usize>() + row.grid_after;
+        assert_eq!(n, t.grid.len(), "row {r}: {:?} over {:?}", row.cells.iter().map(|c| c.span).collect::<Vec<_>>(), t.grid);
+    }
+}
+
+fn tcw(w: u32, text: &str) -> String {
+    format!("<w:tc><w:tcPr><w:tcW w:w=\"{w}\" w:type=\"dxa\"/></w:tcPr><w:p><w:r><w:t>{text}</w:t></w:r></w:p></w:tc>")
+}
+
+#[test]
+fn insert_cells_keeps_a_zero_width_column_apart() {
+    use crate::editing::table_cells::InsertShift;
+    let body = format!(
+        "<w:tbl><w:tblPr><w:tblW w:w=\"0\" w:type=\"auto\"/></w:tblPr><w:tblGrid><w:gridCol w:w=\"1440\"/><w:gridCol w:w=\"0\"/></w:tblGrid><w:tr>{}{}</w:tr></w:tbl><w:p/>",
+        tcw(1440, "a"),
+        tcw(0, "z")
+    );
+    let mut e = open(&body);
+    cells(&mut e, (0, 0), (0, 0));
+    assert!(matches!(e.insert_cells(InsertShift::Right, fonts()), Outcome::Changed(_)));
+    assert_eq!(texts(&e), [vec!["", "a", "z"]]);
+    assert_eq!(table(&e).grid, [72.0, 72.0, 0.0]);
+    rows_fit_the_grid(&e);
+    // Columns the grid leaves out, 0 wide: the other row keeps its cells over its columns.
+    let row = format!("<w:tr>{}{}{}</w:tr>", tcw(1440, "a"), tcw(1440, "b"), tcw(0, "c"));
+    let body = format!(
+        "<w:tbl><w:tblPr><w:tblW w:w=\"0\" w:type=\"auto\"/></w:tblPr><w:tblGrid><w:gridCol w:w=\"1440\"/><w:gridCol w:w=\"1440\"/></w:tblGrid>{row}{}</w:tbl><w:p/>",
+        row.replace(">a<", ">d<").replace(">b<", ">e<").replace(">c<", ">f<")
+    );
+    let mut e = open(&body);
+    cells(&mut e, (0, 0), (0, 0));
+    assert!(matches!(e.insert_cells(InsertShift::Right, fonts()), Outcome::Changed(_)));
+    assert_eq!(texts(&e), [vec!["", "a", "b", "c"], vec!["d", "e", "f"]]);
+    rows_fit_the_grid(&e);
+    assert_eq!(table(&e).rows[1].cells.iter().map(|c| c.span).collect::<Vec<_>>(), [1, 1, 1]);
+}
+
+const RED: &str = r#"<w:shd w:val="clear" w:color="auto" w:fill="FF0000"/>"#;
+
+#[test]
+fn shifting_cells_vertically_moves_their_formatting() {
+    use crate::editing::table_cells::InsertShift;
+    let mut e = open(&grid2([RED, "", "", ""], "", ["", ""]));
+    cells(&mut e, (0, 0), (0, 0));
+    assert!(matches!(e.insert_cells(InsertShift::Down, fonts()), Outcome::Changed(_)));
+    assert_eq!(texts(&e), [vec!["", "b"], vec!["a", "d"], vec!["c", ""]]);
+    let shading = |e: &Editor, r: usize| table(e).rows[r].cells[0].shading;
+    assert_eq!((shading(&e, 1), shading(&e, 2)), (Some(0xFF0000), None), "a's shading goes down with it, c's none with c");
+    let mut e = open(&grid2(["", "", RED, ""], "", ["", ""]));
+    cells(&mut e, (0, 0), (0, 0));
+    assert!(matches!(e.execute(Command::DeleteCells(crate::api::command::CellShift::Up), fonts()), Outcome::Changed(_)));
+    assert_eq!(texts(&e), [vec!["c", "b"], vec!["", "d"]]);
+    assert_eq!(shading(&e, 0), Some(0xFF0000), "c's shading goes up with it");
+}
+
+#[test]
+fn a_tracked_shift_down_brings_the_paragraphs_formatting() {
+    use crate::editing::table_cells::InsertShift;
+    let body =
+        grid2(["", "", "", ""], "", ["", ""]).replace("<w:p><w:r><w:t>a</w:t>", "<w:p><w:pPr><w:jc w:val=\"center\"/></w:pPr><w:r><w:t>a</w:t>");
+    for accept in [true, false] {
+        let mut e = open(&body);
+        e.execute(Command::SetTrackChanges(true), fonts());
+        cells(&mut e, (0, 0), (0, 0));
+        assert!(matches!(e.insert_cells(InsertShift::Down, fonts()), Outcome::Changed(_)));
+        e.execute(if accept { Command::AcceptAllRevisions(Default::default()) } else { Command::RejectAllRevisions(Default::default()) }, fonts());
+        let (r, text, jc) = if accept { (1, "a", crate::docx::props::Jc::Center) } else { (1, "c", crate::docx::props::Jc::Left) };
+        assert_eq!(texts(&e)[r][0], text, "accept {accept}");
+        let Some(Block::Para(p)) = table(&e).rows[r].cells[0].blocks.first() else { panic!("a paragraph") };
+        assert_eq!(p.style.jc, jc, "accept {accept}");
+    }
+}
+
+#[test]
+fn a_tracked_shift_down_keeps_a_moved_notes_text() {
+    use crate::editing::table_cells::InsertShift;
+    let ns = r#"xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main""#;
+    let foot = format!(r#"<w:footnotes {ns}><w:footnote w:id="1"><w:p><w:r><w:t>Note text</w:t></w:r></w:p></w:footnote></w:footnotes>"#);
+    let body = grid2(["", "", "", ""], "", ["", ""]).replace("<w:t>a</w:t></w:r>", r#"<w:t>a</w:t></w:r><w:r><w:footnoteReference w:id="1"/></w:r>"#);
+    let bytes = super::empty_stories::build(&body, "", &[("footnotes.xml", "footnotes", "footnotes", &foot)]);
+    let mut e = Editor::open(&bytes, fonts()).expect("opens");
+    e.complete(fonts());
+    e.execute(Command::SetTrackChanges(true), fonts());
+    cells(&mut e, (0, 0), (0, 0));
+    assert!(matches!(e.insert_cells(InsertShift::Down, fonts()), Outcome::Changed(_)));
+    e.execute(Command::AcceptAllRevisions(Default::default()), fonts());
+    let note: String = e
+        .document()
+        .footnotes
+        .get(&1)
+        .expect("the note")
+        .iter()
+        .map(|b| match b {
+            Block::Para(p) => crate::editing::text::UnitText::of(p).text,
+            Block::Table(_) => String::new(),
+        })
+        .collect();
+    assert!(note.contains("Note text"), "the note keeps its text: {note:?}");
+}
+
+#[test]
+fn inside_borders_read_back_both_cells_sides() {
+    let top = r#"<w:tcBorders><w:top w:val="double" w:sz="12" w:space="0" w:color="FF0000"/></w:tcBorders>"#;
+    let left = r#"<w:tcBorders><w:left w:val="double" w:sz="12" w:space="0" w:color="FF0000"/></w:tcBorders>"#;
+    let double =
+        |b: &Tri<NoneOr<crate::editing::readback::BorderLine>>| matches!(b, Tri::Uniform(NoneOr::Value(l)) if l.style == BorderStyle::Double);
+    let mut e = open(&grid2(["", "", top, top], "", ["", ""]));
+    cells(&mut e, (0, 0), (1, 1));
+    let r = e.table_readback().expect("in a table");
+    assert!(double(&r.cell_borders.inside_horizontal), "the lower cells' tops: {:?}", r.cell_borders.inside_horizontal);
+    let mut e = open(&grid2(["", left, "", left], "", ["", ""]));
+    cells(&mut e, (0, 0), (1, 1));
+    let r = e.table_readback().expect("in a table");
+    assert!(double(&r.cell_borders.inside_vertical), "the right cells' lefts: {:?}", r.cell_borders.inside_vertical);
+}
+
+#[test]
+fn the_pen_draws_down_a_rows_own_borders_where_it_is_indented() {
+    use crate::editing::table_draw::Stroke;
+    // A row's own indent, which Word takes in a fixed-layout row
+    let ind = r#"<w:tblPrEx><w:tblInd w:w="720" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPrEx>"#;
+    let mut e = open(&grid2(["", "", "", ""], "", ["", ind]));
+    let (c, d) = (cell_rect(&mut e, 1, 0), cell_rect(&mut e, 1, 1));
+    assert!(c[0] - cell_rect(&mut e, 0, 0)[0] > 30.0, "the row is indented: {c:?}");
+    // Along the indented row's own border: redrawn, nothing split.
+    let x = d[0];
+    let out = e.draw_table_stroke(Stroke { page: 0, from: [x, d[1] + 1.0], to: [x, d[3] - 1.0] }, fonts());
+    assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
+    assert_eq!((table(&e).grid.len(), table(&e).rows[1].cells.len(), table(&e).rows[0].cells.len()), (2, 2, 2));
+    e.execute(Command::Undo, fonts());
+    // Across its first cell where the row above has a border: split there in this row.
+    let x = cell_rect(&mut e, 0, 0)[2];
+    assert!(x > c[0] + 4.0 && x < c[2] - 4.0);
+    assert!(matches!(e.draw_table_stroke(Stroke { page: 0, from: [x, c[1] + 1.0], to: [x, c[3] - 1.0] }, fonts()), Outcome::Changed(_)));
+    assert_eq!(table(&e).rows[1].cells.len(), 3, "the indented row's cell splits");
+    assert_eq!(table(&e).rows[0].cells.len(), 2, "the row above keeps its cells");
+    assert!((cell_rect(&mut e, 1, 0)[2] - x).abs() < 0.5, "where it was drawn");
+    rows_fit_the_grid(&e);
+}
+
+#[test]
+fn a_pen_stroke_from_a_table_out_over_the_text_draws_no_new_table() {
+    use crate::editing::table_draw::Stroke;
+    let after: String = (0..20).map(|_| "<w:p><w:r><w:t>Body text under the table, line after line.</w:t></w:r></w:p>").collect();
+    let mut e = open(&format!("{}{after}", grid2(["", "", "", ""], "", ["", ""])));
+    let a = cell_rect(&mut e, 0, 0);
+    let rev = e.revision();
+    let out = e.draw_table_stroke(Stroke { page: 0, from: [a[0] + 5.0, a[1] + 5.0], to: [a[0] + 400.0, a[1] + 300.0] }, fonts());
+    assert!(!matches!(out, Outcome::Changed(_)), "{out:?}");
+    assert_eq!(e.revision(), rev, "no table drawn");
+}
+
+#[test]
+fn the_pen_redraws_no_border_where_a_page_cuts_a_row() {
+    use crate::editing::table_draw::Stroke;
+    let long: String = (0..80).map(|k| format!("<w:p><w:r><w:t>Line {k}</w:t></w:r></w:p>")).collect();
+    let body = grid2(["", "", "", ""], "", ["", ""]).replace("<w:p><w:r><w:t>c</w:t></w:r></w:p>", &long);
+    let mut e = open(&body);
+    let geo = e.page_geometries().into_iter().find(|(p, _)| *p == 1).map(|(_, g)| g).expect("page 1");
+    let part = geo.rows.iter().find(|r| r.row == 1).map(|r| r.rect).expect("row 1 goes on");
+    let rev = e.revision();
+    let y = part[1];
+    let out = e.draw_table_stroke(Stroke { page: 1, from: [part[0] + 2.0, y], to: [part[2] - 2.0, y] }, fonts());
+    assert!(!matches!(out, Outcome::Changed(_)), "the top of a row's continuation isn't a border: {out:?}");
+    assert_eq!(e.revision(), rev);
+    // The rows' real border still redraws.
+    let b = cell_rect(&mut e, 1, 1);
+    let y = b[1];
+    assert!(matches!(e.draw_table_stroke(Stroke { page: 0, from: [b[0] + 2.0, y], to: [b[2] - 2.0, y] }, fonts()), Outcome::Changed(_)));
+}

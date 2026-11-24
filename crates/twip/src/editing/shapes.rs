@@ -434,6 +434,10 @@ impl Editor {
         };
         let moved = d.now != d.start;
         if let ObjectRef::Inline { .. } = d.obj {
+            // The edit lands on the selection: only while it is still the dragged picture.
+            if self.selection != Selection::Object(d.obj) {
+                return Some(super::commands::Outcome::Unchanged("the selection moved"));
+            }
             let p = moved.then(|| self.dragged_inline(&d)).flatten();
             return Some(match p {
                 Some(p) => self.edit_inline(label, |q| std::mem::replace(q, p) != *q, fonts),

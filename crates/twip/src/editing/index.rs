@@ -488,9 +488,16 @@ impl DocIndex {
         self.links.iter().filter(move |(_, l)| l.0 == chain).map(|(f, _)| *f)
     }
 
-    /// The highest text box chain id in use (0 for none).
-    pub fn max_chain(&self) -> u32 {
-        self.links.values().map(|l| l.0).max().unwrap_or(0)
+    /// An unused text box chain id within DrawingML's 16-bit range: one past the highest, else the lowest free one;
+    /// `None` when every one is in use.
+    pub fn free_chain(&self) -> Option<u32> {
+        const MAX: u32 = u16::MAX as u32;
+        let max = self.links.values().map(|l| l.0).max().unwrap_or(0);
+        if max < MAX {
+            return Some(max + 1);
+        }
+        let used: std::collections::HashSet<u32> = self.links.values().map(|l| l.0).collect();
+        (1..=MAX).find(|c| !used.contains(c))
     }
 
     pub fn box_story(&self, f: FloatId) -> FloatId {

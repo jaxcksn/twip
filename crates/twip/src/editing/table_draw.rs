@@ -71,10 +71,11 @@ fn over_other_story(geo: &PageGeometry, ctx: StoryId, p: [f64; 2]) -> bool {
         .is_some_and(|s| !reachable(ctx, s.host))
 }
 
-/// A table as drawn on a page: its rows there (model row, top, bottom) and where each grid edge is.
+/// A table as drawn on a page: its rows there (model row, top, bottom, where its grid starts: a row with an indent of
+/// its own starts elsewhere) and each grid edge's place from the grid's start.
 struct Drawn {
-    rows: Vec<(usize, f64, f64)>,
-    xs: Vec<f64>,
+    rows: Vec<(usize, f64, f64, f64)>,
+    offsets: Vec<f64>,
     widths: Vec<f64>,
 }
 
@@ -82,25 +83,60 @@ impl Drawn {
     fn of(geo: &PageGeometry, table: TableId, t: &crate::docx::Table, cols: usize) -> Option<Drawn> {
         let mut widths = super::tables::full_grid(t, cols);
         super::tables::drawn_grid(geo, table, &mut widths);
-        let mut rows: Vec<(usize, f64, f64)> =
-            geo.rows.iter().filter(|r| r.table == table && !r.repeat).map(|r| (r.row, r.rect[1], r.rect[3])).collect();
-        rows.sort_by_key(|r| r.0);
-        let &(x, k) = geo.rows.iter().filter(|r| r.table == table && !r.repeat).flat_map(|r| r.edges.iter()).next()?;
-        let origin = x - widths[..k.min(widths.len())].iter().sum::<f64>();
-        let xs = std::iter::once(origin)
-            .chain(widths.iter().scan(origin, |x, w| {
+        let offsets: Vec<f64> = std::iter::once(0.0)
+            .chain(widths.iter().scan(0.0, |x, w| {
                 *x += w;
                 Some(*x)
             }))
             .collect();
-        Some(Drawn { rows, xs, widths })
+        let origin = |e: &[(f64, usize)]| e.first().map(|&(x, k)| x - offsets[k.min(offsets.len() - 1)]);
+        let parts = || geo.rows.iter().filter(|r| r.table == table && !r.repeat);
+        let table_origin = parts().find_map(|r| origin(&r.edges))?;
+        let mut rows: Vec<(usize, f64, f64, f64)> =
+            parts().map(|r| (r.row, r.rect[1], r.rect[3], origin(&r.edges).unwrap_or(table_origin))).collect();
+        rows.sort_by_key(|r| r.0);
+        Some(Drawn { rows, offsets, widths })
     }
 
-    /// Where the cell over grid columns `c..c + s` starts and ends.
-    fn span(&self, c: usize, s: usize) -> (f64, f64) {
-        let at = |k: usize| self.xs.get(k).or(self.xs.last()).copied().unwrap_or(0.0);
+    /// Where model row `r`'s grid starts: the table's where the row isn't on the page.
+    fn origin(&self, r: usize) -> f64 {
+        self.rows.iter().find(|x| x.0 == r).or(self.rows.first()).map_or(0.0, |x| x.3)
+    }
+
+    /// Where the cell over grid columns `c..c + s` starts and ends, in a row whose grid starts at `origin`.
+    fn span(&self, origin: f64, c: usize, s: usize) -> (f64, f64) {
+        let at = |k: usize| origin + self.offsets.get(k).or(self.offsets.last()).copied().unwrap_or(0.0);
         (at(c), at(c + s.max(1)))
     }
+}
+
+/// Whether segment `p`–`q` meets rectangle `r` (Liang–Barsky).
+fn segment_meets(r: [f64; 4], p: [f64; 2], q: [f64; 2]) -> bool {
+    let (dx, dy) = (q[0] - p[0], q[1] - p[1]);
+    let (mut t0, mut t1) = (0.0f64, 1.0f64);
+    for (den, num) in [(-dx, p[0] - r[0]), (dx, r[2] - p[0]), (-dy, p[1] - r[1]), (dy, r[3] - p[1])] {
+        if den == 0.0 {
+            if num < 0.0 {
+                return false;
+            }
+        } else if den < 0.0 {
+            t0 = t0.max(num / den);
+        } else {
+            t1 = t1.min(num / den);
+        }
+    }
+    t0 <= t1
+}
+
+/// The innermost table cell stroke `s` passes over, or within [`REACH`] of, in a story editing in `ctx` reaches.
+fn cell_along<'g>(geo: &'g PageGeometry, ctx: StoryId, s: &Stroke) -> Option<&'g GCell> {
+    let near = |c: &&GCell| {
+        let r = [c.rect[0] - REACH, c.rect[1] - REACH, c.rect[2] + REACH, c.rect[3] + REACH];
+        !c.chain.is_empty()
+            && geo.stories.get(c.story).is_some_and(|x| reachable(ctx, x.host))
+            && segment_meets(r, c.turn.back(s.from), c.turn.back(s.to))
+    };
+    geo.cells.iter().filter(near).max_by_key(|c| c.chain.len())
 }
 
 /// Every cell of the vertical merges `cells` are in, sorted.
@@ -146,7 +182,8 @@ impl Editor {
         let mid = [(s.from[0] + s.to[0]) / 2.0, (s.from[1] + s.to[1]) / 2.0];
         let Some(geo) = self.laid_page(s.page, fonts) else { return Outcome::unavailable("no such page") };
         let ctx = self.editing();
-        let Some(cell) = cell_near(&geo, ctx, mid) else {
+        // A stroke from a table out over the text edits the table it crosses.
+        let Some(cell) = cell_near(&geo, ctx, mid).or_else(|| cell_along(&geo, ctx, &s)) else {
             let corner = [s.from[0].min(s.to[0]), s.from[1].min(s.to[1])];
             if over_other_story(&geo, ctx, mid) || over_other_story(&geo, ctx, corner) {
                 return Outcome::unavailable("not in the story being edited");
@@ -199,21 +236,28 @@ impl Editor {
         let Some(t) = self.index.table(&self.doc, table) else { return Outcome::unavailable("not in a table") };
         let (g, mut rows, grid) = (Grid::of(t), t.rows.clone(), t.grid.clone());
         let over = |r: usize| {
+            let origin = d.origin(r);
             g.rows[r].iter().enumerate().filter(move |&(_, &(c, s, _))| {
-                let (l, rr) = d.span(c, s);
+                let (l, rr) = d.span(origin, c, s);
                 xs.1.min(rr) - xs.0.max(l) > REACH
             })
         };
         let pen = self.table_pen.clone();
         let cx = self.cx();
-        let band = d.rows.iter().find(|&&(_, top, bottom)| y > top + REACH && y < bottom - REACH).copied();
+        let band = d.rows.iter().find(|&&(_, top, bottom, _)| y > top + REACH && y < bottom - REACH).map(|&(r, top, bottom, _)| (r, top, bottom));
         let Some((r, top, bottom)) = band else {
-            // Along the border over row `b`
-            let at = d.rows.iter().find_map(
-                |&(r, top, bottom)| {
-                    if (y - top).abs() <= REACH { Some(r) } else { ((y - bottom).abs() <= REACH).then_some(r + 1) }
-                },
-            );
+            // Along the border over row `b`: a row's top or bottom, not where a page cuts it
+            let mut at = None;
+            for &(r, top, bottom, _) in &d.rows {
+                if (y - top).abs() <= REACH && self.row_beyond(table, r, page, fonts).0 == 0.0 {
+                    at = Some(r);
+                } else if (y - bottom).abs() <= REACH && self.row_beyond(table, r, page, fonts).1 == 0.0 {
+                    at = Some(r + 1);
+                }
+                if at.is_some() {
+                    break;
+                }
+            }
             let Some(b) = at else { return Outcome::Unchanged("no cell there") };
             let (above, below): (Vec<usize>, Vec<usize>) = (
                 b.checked_sub(1).map_or(Vec::new(), |r| over(r).map(|x| x.0).collect()),
@@ -288,30 +332,50 @@ impl Editor {
     }
 
     /// A pen line down the table at `x` from `ys.0` to `ys.1`: the cells it crosses split into two columns there (a
-    /// vertically merged cell over all its rows), or along a column border, the border redrawn.
+    /// vertically merged cell over all its rows), or along a column border, the border redrawn. Each row is matched
+    /// where it is drawn: one with an indent of its own splits at its own place in the grid.
     fn draw_down(&mut self, table: TableId, d: &Drawn, x: f64, ys: (f64, f64), fonts: &Fonts) -> Outcome {
         let Some(t) = self.index.table(&self.doc, table) else { return Outcome::unavailable("not in a table") };
         let g = Grid::of(t);
-        let edge = (0..d.xs.len()).filter(|&e| (d.xs[e] - x).abs() <= REACH).min_by(|&a, &b| (d.xs[a] - x).abs().total_cmp(&(d.xs[b] - x).abs()));
-        let (mut crossed, mut along) = (Vec::new(), Vec::new());
-        for &(r, ..) in d.rows.iter().filter(|&&(_, top, bottom)| ys.1.min(bottom) - ys.0.max(top) > REACH) {
+        let offs = &d.offsets;
+        // Where a crossed cell splits: at a grid edge, or at a new one this far from the grid's start
+        #[derive(Clone, Copy)]
+        enum At {
+            Edge(usize),
+            New(f64),
+        }
+        let (mut crossed, mut along, mut at_row) = (Vec::new(), Vec::new(), Vec::new());
+        for &(r, _, _, origin) in d.rows.iter().filter(|&&(_, top, bottom, _)| ys.1.min(bottom) - ys.0.max(top) > REACH) {
+            let dist = |e: usize| (origin + offs[e] - x).abs();
+            let edge = (0..offs.len()).filter(|&e| dist(e) <= REACH).min_by(|&a, &b| dist(a).total_cmp(&dist(b)));
             for (k, &(c, s, _)) in g.rows[r].iter().enumerate() {
-                let (l, rr) = d.span(c, s);
+                let (l, rr) = d.span(origin, c, s);
                 if x > l + REACH && x < rr - REACH {
                     crossed.push((r, k));
-                } else if edge.is_some_and(|e| c == e || c + s.max(1) == e) {
-                    along.push((r, k, c == edge.unwrap_or(0)));
+                } else if let Some(e) = edge.filter(|&e| c == e || c + s.max(1) == e) {
+                    along.push((r, k, c == e));
                 }
             }
+            // To the 20th of a point a grid holds
+            at_row.push((r, edge.map_or(At::New(((x - origin) * 20.0).round() / 20.0), At::Edge)));
         }
         if crossed.is_empty() && along.is_empty() {
             return Outcome::Unchanged("no cell there");
+        }
+        // A merge splits where the stroke crosses it, in all its rows
+        let mut place: Vec<((usize, usize), At)> = Vec::with_capacity(crossed.len());
+        for &(r, k) in &crossed {
+            let start = g.merge_start(r, k);
+            if !place.iter().any(|p| p.0 == start)
+                && let Some(&(_, a)) = at_row.iter().find(|p| p.0 == r)
+            {
+                place.push((start, a));
+            }
         }
         whole_merges(&g, &mut crossed);
         let pen = self.table_pen.clone();
         let cx = self.cx();
         let mut rows = t.rows.clone();
-        let mut grid = d.widths.clone();
         for &(r, k, starts) in &along {
             set_cell_sides(&mut rows[r].cells[k], if starts { LEFT } else { RIGHT }, &pen, &cx);
         }
@@ -321,37 +385,64 @@ impl Editor {
             return self.rebuild(DRAW_TABLE, table, rows, t.grid.clone(), (r, col), fonts);
         };
         let caret = (r, g.rows[r][k].0);
-        // The grid edge the split cells split at: the one drawn over, else a new one at the line
-        let at = match edge {
-            Some(e) => e,
-            None => {
-                let Some(j) = (0..grid.len()).find(|&j| d.xs[j] < x && x < d.xs[j + 1]) else { return Outcome::Unchanged("no cell there") };
-                if grid.len() + 1 > super::tables::MAX_COLUMNS.max(grid.len()) {
-                    return Outcome::unavailable("too many columns");
-                }
-                grid.splice(j..=j, [x - d.xs[j], d.xs[j + 1] - x]);
-                for (r, row) in rows.iter_mut().enumerate() {
-                    if j < row.grid_before {
-                        row.grid_before += 1;
-                        continue;
-                    }
-                    match g.cell_at(r, j) {
-                        Some(k) if crossed.binary_search(&(r, k)).is_err() => row.cells[k].span = row.cells[k].span.max(1) + 1,
-                        Some(_) => {}
-                        None => row.grid_after += 1,
-                    }
-                }
-                j + 1
+        let split_of = |r: usize, k: usize| place.iter().find(|p| p.0 == g.merge_start(r, k)).map(|p| p.1);
+        // The new grid edges, inside a column each: the cells across them span one more column
+        let mut fresh: Vec<f64> = crossed
+            .iter()
+            .filter_map(|&(r, k)| match split_of(r, k) {
+                Some(At::New(u)) => Some(u),
+                _ => None,
+            })
+            .collect();
+        fresh.sort_by(f64::total_cmp);
+        fresh.dedup();
+        if fresh.iter().any(|&u| !(0..d.widths.len()).any(|j| offs[j] < u && u < offs[j + 1])) {
+            return Outcome::Unchanged("no cell there");
+        }
+        if d.widths.len() + fresh.len() > super::tables::MAX_COLUMNS.max(d.widths.len()) {
+            return Outcome::unavailable("too many columns");
+        }
+        let before = |u: f64| fresh.partition_point(|&v| v < u);
+        // Grid edge `e` and new edge `u` in the new grid
+        let edge_now = |e: usize| e + before(offs[e.min(offs.len() - 1)]);
+        let new_now = |u: f64| offs.partition_point(|&o| o < u) + before(u);
+        let mut grid = Vec::with_capacity(d.widths.len() + fresh.len());
+        for (j, &w) in d.widths.iter().enumerate() {
+            let inside = &fresh[before(offs[j])..before(offs[j + 1])];
+            if inside.is_empty() {
+                grid.push(w);
+                continue;
             }
-        };
+            let cuts: Vec<f64> = std::iter::once(offs[j]).chain(inside.iter().copied()).chain([offs[j + 1]]).collect();
+            grid.extend(cuts.windows(2).map(|p| p[1] - p[0]));
+        }
+        if !fresh.is_empty() {
+            for (r, row) in rows.iter_mut().enumerate() {
+                let line = &g.rows[r];
+                let end = line.last().map_or(row.grid_before, |&(c, s, _)| c + s.max(1));
+                row.grid_before = edge_now(row.grid_before);
+                for (cell, &(c, s, _)) in row.cells.iter_mut().zip(line) {
+                    cell.span = edge_now(c + s.max(1)) - edge_now(c);
+                }
+                row.grid_after = edge_now(end + row.grid_after) - edge_now(end);
+            }
+        }
         // Right to left in each row: a split moves the cells after it on
         for &(r, k) in crossed.iter().rev() {
+            let Some(a) = split_of(r, k) else { continue };
             let (c, s, _) = g.rows[r][k];
-            let (left, right) = (at - c, c + s.max(1) + usize::from(edge.is_none()) - at);
+            let (from, to) = (edge_now(c), edge_now(c + s.max(1)));
+            let at = match a {
+                At::Edge(e) => edge_now(e),
+                At::New(u) => new_now(u),
+            };
+            if at <= from || at >= to {
+                continue;
+            }
             let cell = &mut rows[r].cells[k];
             let mut new = empty_cell(cell);
             new.v_merge = cell.v_merge;
-            (cell.span, new.span) = (left.max(1), right.max(1));
+            (cell.span, new.span) = (at - from, to - at);
             set_cell_sides(cell, RIGHT, &pen, &cx);
             set_cell_sides(&mut new, LEFT, &pen, &cx);
             rows[r].cells.insert(k + 1, new);

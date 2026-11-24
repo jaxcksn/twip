@@ -206,11 +206,13 @@ pub(super) fn remove_cells(rows: &mut Vec<Row>, gone: &[(usize, usize)], grid: &
 pub(super) fn drawn_grid(geo: &super::geometry::PageGeometry, table: TableId, grid: &mut [f64]) {
     let mut xs: Vec<Option<f64>> = vec![None; grid.len() + 1];
     for r in geo.rows.iter().filter(|r| r.table == table && !r.repeat) {
+        // A row with an indent of its own is drawn shifted: its edges are taken where the rows before put theirs.
+        let shift = r.edges.iter().find_map(|&(x, k)| xs.get(k).copied().flatten().map(|known| known - x)).unwrap_or(0.0);
         for &(x, k) in &r.edges {
             if let Some(slot) = xs.get_mut(k)
                 && slot.is_none()
             {
-                *slot = Some(x);
+                *slot = Some(x + shift);
             }
         }
     }

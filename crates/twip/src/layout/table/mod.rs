@@ -21,7 +21,7 @@ mod draw;
 mod key;
 mod widths;
 
-pub use assemble::{cells_box, float_box, legacy_lead, nested_shift, outer_box, placed_indent, row_borders};
+pub use assemble::{cells_box, float_box, legacy_lead, nested_shift, outer_box, placed_indent, row_borders, shared_edge};
 pub(super) use borders::{drawn, edge, edge_from, shadow, stroked, thick};
 pub(super) use clip::clip_stroke;
 pub use draw::{CellPart, DrawnRow, draw_row, draw_whole_row, frame_part, whole};

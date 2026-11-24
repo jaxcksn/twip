@@ -764,6 +764,8 @@ impl Recording {
                 grid = Some(g);
             }
         }
+        // A note whose reference moves stays: only those no reference is left to go with their references.
+        notes.retain(|&(kind, id)| !rows.iter().flat_map(|r| &r.cells).any(|c| live_note_ref(&c.blocks, kind, id, 0)));
         let mut out: Vec<Step> = if changed { self.table_change(table, grid_changed, doc, idx, ids).into_iter().collect() } else { Vec::new() };
         out.push(Step::Rows { table, range, with: rows, grid });
         out.extend(self.note_steps(notes, doc, ids));
@@ -877,6 +879,9 @@ impl Recording {
         }
         match (new, kept.first_mut()) {
             ([Block::Para(p)], Some(Block::Para(first))) => {
+                // The paragraph takes the incoming one's properties, as a tracked change of them.
+                first.style = self.para_change(&first.style, p.style.clone(), ids);
+                first.list.clone_from(&p.list);
                 let inlines: Vec<Inline> = p.inlines.iter().filter(|i| !matches!(i, Inline::Text(t, _) if t.is_empty())).cloned().collect();
                 let inlines: Vec<Inline> = inlines.into_iter().map(|i| self.ins_inline(i, ids)).collect();
                 first.inlines.splice(0..0, inlines);
@@ -912,6 +917,20 @@ impl Recording {
         }
         Some(Step::Blocks { container: slot.container, range: slot.block..slot.block + 1, with: vec![Block::Table(n)] })
     }
+}
+
+/// Whether `blocks` hold a reference to note `id` that isn't deleted.
+fn live_note_ref(blocks: &[Block], kind: NoteKind, id: i64, depth: usize) -> bool {
+    // Deeper nesting than a document can be read with holds nothing.
+    if depth > crate::docx::xml::MAX_DEPTH {
+        return false;
+    }
+    blocks.iter().any(|b| match b {
+        Block::Para(p) => {
+            p.inlines.iter().any(|i| matches!(i, Inline::NoteRef { kind: k, id: n, run, .. } if *k == kind && *n == id && run.rev.del.is_none()))
+        }
+        Block::Table(t) => t.rows.iter().flat_map(|r| &r.cells).any(|c| live_note_ref(&c.blocks, kind, id, depth + 1)),
+    })
 }
 
 pub fn all_deleted(p: &Paragraph, a: Unit, b: Unit) -> bool {

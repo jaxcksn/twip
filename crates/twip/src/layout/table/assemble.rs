@@ -222,27 +222,37 @@ pub(super) struct CellEdges {
 
 /// Each cell's resolved edges. A shared edge goes to the conflict winner of the two cells' borders, or with `single`
 /// to the right or lower cell's border, the left or upper one's when that is nil.
+struct Side<'a> {
+    b: Option<&'a Border>,
+    cell: bool,
+}
+
+fn side<'a>(own: &'a Option<Border>, table: &'a Option<Border>) -> Side<'a> {
+    match own {
+        Some(b) => Side { b: Some(b), cell: true },
+        None => Side { b: table.as_ref(), cell: false },
+    }
+}
+
+/// A cell's own side against its neighbour's; `later`: the cell is the right or lower one.
+fn shared_side(own: &Side, other: &Side, later: bool, single: bool) -> Option<Border> {
+    if single {
+        let (first, second) = if later { (other, own) } else { (own, other) };
+        second.b.filter(|b| b.visible()).or(first.b.filter(|b| b.visible())).cloned()
+    } else {
+        conflict((own.b, own.cell), (other.b, other.cell))
+    }
+}
+
+/// The line drawn where two cells meet, as [`cell_edges`] resolves it: the left or upper cell's side (its own border,
+/// else its row's or table's line there) against the right or lower one's.
+pub fn shared_edge(first: (&Option<Border>, &Option<Border>), second: (&Option<Border>, &Option<Border>), single: bool) -> Option<Border> {
+    shared_side(&side(first.0, first.1), &side(second.0, second.1), false, single)
+}
+
 pub(super) fn cell_edges<'k>(t: &Table, ncols: usize, single: bool, kept: &dyn Fn(usize) -> Option<&'k RowBox>) -> Vec<Vec<CellEdges>> {
     let nrows = t.rows.len();
-    struct Side<'a> {
-        b: Option<&'a Border>,
-        cell: bool,
-    }
-    fn side<'a>(own: &'a Option<Border>, table: &'a Option<Border>) -> Side<'a> {
-        match own {
-            Some(b) => Side { b: Some(b), cell: true },
-            None => Side { b: table.as_ref(), cell: false },
-        }
-    }
-    // A cell's own side against its neighbour's; `later`: the cell is the right or lower one.
-    let shared = |own: &Side, other: &Side, later: bool| {
-        if single {
-            let (first, second) = if later { (other, own) } else { (own, other) };
-            second.b.filter(|b| b.visible()).or(first.b.filter(|b| b.visible())).cloned()
-        } else {
-            conflict((own.b, own.cell), (other.b, other.cell))
-        }
-    };
+    let shared = |own: &Side, other: &Side, later: bool| shared_side(own, other, later, single);
     let mut grid_cells: Vec<Vec<(usize, usize)>> = Vec::new();
     for r in &t.rows {
         let mut col = r.grid_before;

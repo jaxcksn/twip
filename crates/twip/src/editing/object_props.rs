@@ -291,6 +291,9 @@ impl Editor {
 
     /// Edits the selected object's shape (a group child's when one is selected), inline or floating.
     fn edit_nv(&mut self, label: &'static str, edit: impl Fn(&mut crate::drawing::NonVisual), fonts: &Fonts) -> Outcome {
+        if self.selected_object_kept() {
+            return Outcome::unavailable("the object can't be changed");
+        }
         match self.selection {
             Selection::Object(ObjectRef::Inline { .. }) => self.edit_inline(
                 label,
@@ -318,6 +321,15 @@ impl Editor {
         }
     }
 
+    /// Whether the selected object is kept from changing: read only, document protection or a locked control.
+    fn selected_object_kept(&self) -> bool {
+        match self.selection {
+            Selection::Object(ObjectRef::Inline { .. }) => self.gesture_kept(crate::api::command::CommandId::SetObjectSize),
+            Selection::Object(ObjectRef::Floating(f)) => !self.float_changeable(f),
+            _ => false,
+        }
+    }
+
     /// Renames the selected object (at most [`MAX_NAME`] characters).
     pub fn set_object_name(&mut self, name: &str, fonts: &Fonts) -> Outcome {
         let name: String = name.trim().chars().take(MAX_NAME).collect();
@@ -341,6 +353,9 @@ impl Editor {
             }
             std::mem::replace(lock, on) != on
         };
+        if self.selected_object_kept() {
+            return Outcome::unavailable("the object can't be changed");
+        }
         match self.selection {
             Selection::Object(ObjectRef::Inline { .. }) => {
                 self.edit_inline("Lock Aspect Ratio", |p| set(&mut p.lock_aspect, p.shape.as_deref_mut()), fonts)

@@ -209,13 +209,32 @@ impl Editor {
             own.clone().or_else(|| tb[table].clone())
         };
         let ends = |r: usize, k: usize| r + rows_spanned(&g, r, k) - 1;
+        // Where two selected cells meet: both cells' sides, as the edge is drawn.
+        let settings = &self.doc.settings;
+        let single = settings.compat() == crate::docx::Compat::Legacy && settings.has("useSingleBorderforContiguousCells");
+        let (row_borders, shared_edge) = (crate::layout::table::row_borders, crate::layout::table::shared_edge);
+        let gr = &g;
         let cell_borders = CellEdgeLines {
             top: fold(cells.iter().filter(|&&(r, ..)| r <= r0).map(|&(r, k, c, s)| line(&edge(r, k, c, s, 0)))),
             left: fold(cells.iter().filter(|&&(_, _, c, _)| c <= c0).map(|&(r, k, c, s)| line(&edge(r, k, c, s, 1)))),
             bottom: fold(cells.iter().filter(|&&(r, k, ..)| ends(r, k) >= r1).map(|&(r, k, c, s)| line(&edge(r, k, c, s, 2)))),
             right: fold(cells.iter().filter(|&&(_, _, c, s)| c + s > c1).map(|&(r, k, c, s)| line(&edge(r, k, c, s, 3)))),
-            inside_horizontal: fold(cells.iter().filter(|&&(r, k, ..)| ends(r, k) < r1).map(|&(r, k, c, s)| line(&edge(r, k, c, s, 2)))),
-            inside_vertical: fold(cells.iter().filter(|&&(_, _, c, s)| c + s <= c1).map(|&(r, k, c, s)| line(&edge(r, k, c, s, 3)))),
+            inside_horizontal: fold(cells.iter().filter(|&&(r, k, ..)| ends(r, k) < r1).flat_map(|&(r, k, c, s)| {
+                let end = ends(r, k);
+                let above = (gr.cell_at(end, c).map_or(&cell(r, k).bottom, |n| &t.rows[end].cells[n].bottom), &row_borders(t, end)[4]);
+                gr.rows[end + 1]
+                    .iter()
+                    .enumerate()
+                    .filter(move |&(_, &(bc, bs, _))| bc < c + s && bc + bs.max(1) > c)
+                    .map(move |(n, _)| line(&shared_edge(above, (&t.rows[end + 1].cells[n].top, &row_borders(t, end + 1)[4]), single)))
+            })),
+            inside_vertical: fold(cells.iter().filter(|&&(_, _, c, s)| c + s <= c1).flat_map(|&(r, k, c, s)| {
+                (r.max(r0)..=ends(r, k).min(r1)).filter_map(move |rr| {
+                    let (a, b) = (gr.cell_at(rr, c)?, gr.cell_at(rr, c + s)?);
+                    let (row, inside) = (&t.rows[rr], &row_borders(t, rr)[5]);
+                    (a != b).then(|| line(&shared_edge((&row.cells[a].right, inside), (&row.cells[b].left, inside), single)))
+                })
+            })),
             diagonal_down: fold(cells.iter().map(|&(r, k, ..)| line(&cell(r, k).diagonals.as_deref().and_then(|d| d[0].clone())))),
             diagonal_up: fold(cells.iter().map(|&(r, k, ..)| line(&cell(r, k).diagonals.as_deref().and_then(|d| d[1].clone())))),
         };

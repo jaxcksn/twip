@@ -1330,3 +1330,49 @@ fn a_column_float_dragged_to_the_other_column_keeps_its_place() {
     // 130 from the page's edge is 194 left of the right column (324).
     assert!((fl.h_offset + 194.0).abs() < 0.1, "from the right column: {}", fl.h_offset);
 }
+
+fn protect_read_only(e: &mut Editor) {
+    use crate::api::command::{DocumentProtection, ProtectionKind};
+    let read_only = DocumentProtection { kind: Some(ProtectionKind::ReadOnly), enforce: Some(true), ..Default::default() };
+    assert!(changed(&e.execute(Command::SetDocumentProtection(read_only), fonts())));
+}
+
+#[test]
+fn object_property_setters_respect_protection() {
+    let mut e = with_inserted_picture();
+    protect_read_only(&mut e);
+    select_first_inline_picture(&mut e);
+    let was = selected_picture(&e).cloned().expect("the picture");
+    assert!(!changed(&e.set_object_name("Renamed", fonts())), "an inline picture keeps its name");
+    assert!(!changed(&e.set_object_title("Title", fonts())));
+    assert!(!changed(&e.set_lock_aspect(!was.lock_aspect, fonts())));
+    assert_eq!(selected_picture(&e), Some(&was));
+    let mut e = editor(&format!(
+        "<w:p><w:r><w:t>Text</w:t></w:r>{}</w:p>",
+        anchor(100, 300, 100, 100, 1, false, 5, &sp(0, 0, 100, 100, "rect", "", "FF0000"))
+    ));
+    protect_read_only(&mut e);
+    let f = all_floats(&e)[0];
+    select(&mut e, f);
+    let was = e.float_of(FloatId(f)).cloned();
+    assert!(!changed(&e.set_object_name("Renamed", fonts())), "a float keeps its name");
+    assert!(!changed(&e.set_object_title("Title", fonts())));
+    assert!(!changed(&e.set_lock_aspect(true, fonts())));
+    assert_eq!(e.float_of(FloatId(f)).cloned(), was);
+}
+
+#[test]
+fn reset_wrap_points_respects_protection() {
+    let star = sp(0, 0, 100, 100, "star5", "", "FF0000");
+    let mut e = editor(&format!("<w:p><w:r><w:t>Text</w:t></w:r>{}</w:p>", anchor(100, 300, 100, 100, 1, false, 5, &star)));
+    let f = all_floats(&e)[0];
+    select(&mut e, f);
+    assert!(changed(&e.execute(Command::SetObjectWrap(ObjectWrap::Tight), fonts())));
+    let square = [(0.0, 0.0), (0.0, 1.0), (1.0, 1.0), (1.0, 0.0)];
+    assert!(changed(&e.set_wrap_points(&square, fonts())));
+    protect_read_only(&mut e);
+    select(&mut e, f);
+    assert!(!changed(&e.reset_wrap_points(fonts())));
+    let kept = e.selected_wrap_polygon().expect("a polygon");
+    assert_eq!((kept.points.len(), kept.edited), (4, true), "the edited polygon stays");
+}

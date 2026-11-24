@@ -1079,3 +1079,29 @@ fn track_formatting_off_leaves_row_and_cell_changes_untracked() {
         assert_eq!(changes, (formatting, formatting, formatting), "track formatting {formatting}");
     }
 }
+
+#[test]
+fn table_to_text_keeps_a_nested_cells_content_control() {
+    let inner = format!(
+        "<w:tbl><w:tblPr><w:tblW w:w=\"0\" w:type=\"auto\"/></w:tblPr><w:tblGrid><w:gridCol w:w=\"700\"/><w:gridCol w:w=\"700\"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>x</w:t></w:r></w:p></w:tc><w:tc>{}</w:tc></w:tr></w:tbl><w:p/>",
+        sdt(9, "<w:p><w:r><w:t>y</w:t></w:r></w:p>")
+    );
+    let body = format!(
+        "<w:tbl><w:tblPr><w:tblW w:w=\"0\" w:type=\"auto\"/></w:tblPr><w:tblGrid><w:gridCol w:w=\"1440\"/><w:gridCol w:w=\"1440\"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc><w:tc>{inner}</w:tc></w:tr></w:tbl>{END}"
+    );
+    let at = |e: &mut Editor| {
+        let first = para_id(e, 0);
+        e.set_selection(Selection::Caret(crate::editing::position::Position::text(crate::editing::position::StoryId::Body, first, Unit(0))));
+    };
+    let tabs: crate::api::command::TableToText = serde_json::from_value(serde_json::json!({"separator":"tabs"})).unwrap();
+    let mut e = open_xml(&body);
+    at(&mut e);
+    assert!(!matches!(e.convert_table_to_text_nested(&tabs, true, fonts()), Outcome::Changed(_)), "y can't join x and keep its control");
+    assert_eq!(body_shape(&e), ["table 1x2", "end"]);
+    let paras: crate::api::command::TableToText = serde_json::from_value(serde_json::json!({"separator":"paragraphs"})).unwrap();
+    at(&mut e);
+    assert!(matches!(e.convert_table_to_text_nested(&paras, true, fonts()), Outcome::Changed(_)));
+    let live = controlled(&e);
+    assert_eq!(live.iter().map(|(t, n)| (t.as_str(), *n)).collect::<Vec<_>>(), [("a", 0), ("x", 0), ("y", 1), ("", 0), ("end", 0)], "{live:?}");
+    assert_eq!(violations(&e), Vec::<String>::new());
+}

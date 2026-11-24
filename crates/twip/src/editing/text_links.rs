@@ -1,6 +1,6 @@
 //! Linked text boxes
 
-use crate::docx::Block;
+use crate::docx::{Block, Inline};
 use crate::drawing::ShapeText;
 use crate::font::Fonts;
 use crate::layout::FloatId;
@@ -81,10 +81,12 @@ impl Editor {
         let empty = self.float_of(target).is_some_and(|t| {
             let sp = t.shape.as_deref().and_then(|s| s.sp());
             let free = sp.is_some_and(|sp| sp.text_box && sp.text == ShapeText::Story && sp.chain.is_none());
-            let blank = t
-                .text_box
-                .as_ref()
-                .is_none_or(|tb| tb.blocks.iter().all(|b| matches!(b, Block::Para(p) if p.inlines.iter().all(|i| i.units() == 0))));
+            // Its story is dropped: only empty paragraphs, no markers (bookmarks, comments, controls) or anchored objects.
+            let blank = t.text_box.as_ref().is_none_or(|tb| {
+                tb.blocks.iter().all(|b| {
+                    matches!(b, Block::Para(p) if p.controls.is_empty() && p.inlines.iter().all(|i| matches!(i, Inline::Text(s, _) if s.is_empty())))
+                })
+            });
             free && blank && !t.is_frame()
         });
         empty && self.index.link(target).is_none() && story(f) == story(target)
@@ -97,19 +99,34 @@ impl Editor {
         }
         let Selection::Object(ObjectRef::Floating(f)) = self.selection else { return Outcome::unavailable("no text box selected") };
         let Some((chain, boxes)) = self.chain_of(f) else { return Outcome::unavailable("no text box selected") };
-        let chain = chain.unwrap_or_else(|| self.index.max_chain().saturating_add(1));
-        let seq = boxes.len() as u32;
+        let Some(chain) = chain.or_else(|| self.index.free_chain()) else { return Outcome::unavailable("no chain id left") };
+        // After the last box's place; DrawingML's places are 16-bit, so a chain with no room after it is numbered again.
+        let tail = match self.float_of(f).and_then(|n| n.shape.as_deref()?.sp()).map(|sp| &sp.text) {
+            Some(ShapeText::Linked { seq, .. }) => *seq,
+            _ => 0,
+        };
+        let renumber = tail >= u32::from(u16::MAX);
+        let seq = if renumber { boxes.len() as u32 } else { tail + 1 };
+        let mut ids = if renumber { boxes } else { vec![f] };
+        ids.push(target);
+        let order = ids.clone();
         self.end_linking();
         self.edit_floats(
             "Create Link",
-            &[f, target],
+            &ids,
             |n, _| {
+                let id = FloatId(n.id);
                 let Some(sp) = n.shape.as_deref_mut().and_then(|s| s.sp_mut()) else { return false };
-                if FloatId(n.id) == target {
+                if id == target {
                     (sp.text, sp.chain) = (ShapeText::Linked { chain, seq }, None);
                     n.text_box = None;
                 } else if sp.text == ShapeText::Story {
                     sp.chain = Some(chain);
+                } else if renumber
+                    && let ShapeText::Linked { seq, .. } = &mut sp.text
+                    && let Some(j) = order.iter().position(|g| *g == id)
+                {
+                    *seq = j as u32;
                 }
                 true
             },
@@ -130,7 +147,14 @@ impl Editor {
             return Outcome::unavailable("the text box can't be changed");
         }
         let rest = boxes[k + 1..].to_vec();
-        let fresh = self.index.max_chain().saturating_add(1);
+        // A chain id only when more than one box is left after the break.
+        let fresh = match rest.len() {
+            1 => 0,
+            _ => match self.index.free_chain() {
+                Some(c) => c,
+                None => return Outcome::unavailable("no chain id left"),
+            },
+        };
         let Some(empty) = self.empty_story() else { return Outcome::Unchanged("no styles") };
         let last_kept = k == 0;
         let ids: Vec<FloatId> = boxes.clone();

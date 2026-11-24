@@ -3200,6 +3200,7 @@ impl<'a, 'i> Saver<'a, 'i> {
             }
             // The shape's own properties first (their ranges are in the source as read), then its placement.
             let mut edits = drawing::changed(was, f, &src).unwrap_or_default();
+            edits.extend(self.story_edit(was, f));
             edits.extend(text);
             if !edits.is_empty() {
                 src = drawing::apply(&src, edits);
@@ -3211,6 +3212,15 @@ impl<'a, 'i> Saver<'a, 'i> {
             push(&if copied.is_some() { self.new_doc_pr_ids(&d) } else { d });
         }
         out
+    }
+
+    /// A story the float's shape gained (typed into a shape without one, or a box no longer going on from another):
+    /// its `wps:txbx`, written from the model, at its place in the float's source.
+    fn story_edit(&self, was: &Float, now: &Float) -> Option<drawing::Edit> {
+        let (at, tb) = (drawing::story_added(was, now)?, now.text_box.as_ref()?);
+        let blocks = self.nested_blocks(&tb.blocks).ok()?;
+        let txbx = format!("{}<{w}txbxContent>{blocks}</{w}txbxContent></wps:txbx>", drawing::txbx_open(now.shape.as_deref()), w = self.w);
+        Some((at..at, txbx))
     }
 
     /// The source element at exactly `r`, inside one of the part's paragraphs.
@@ -3312,6 +3322,15 @@ impl<'a, 'i> Saver<'a, 'i> {
     fn alternate_content(&self, r: Range<usize>) -> Option<Range<usize>> {
         let ch = self.node_at(r)?.parent().filter(|c| is(*c, MC, "Choice"))?;
         ch.parent().filter(|a| is(*a, MC, "AlternateContent")).map(|a| a.range())
+    }
+
+    /// The `mc:AlternateContent` in the element at `within` whose Choice's `w:drawing` holds source position `at`, and
+    /// that drawing.
+    fn choice_around(&self, within: Range<usize>, at: usize) -> Option<(Range<usize>, Range<usize>)> {
+        self.node_at(within)?.descendants().filter(|a| is(*a, MC, "AlternateContent")).find_map(|ac| {
+            let d = ac.children().find(|c| is(*c, MC, "Choice"))?.children().find(|d| is_w(*d, "drawing"))?;
+            d.range().contains(&at).then(|| (ac.range(), d.range()))
+        })
     }
 
     /// The Choice's `w:drawing` of the `mc:AlternateContent` at `r`.
@@ -4283,12 +4302,8 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                 }
                 // The shape's own properties (their ranges are in the source as read), then its placement.
                 let mut shape = drawing::changed(a, b, &text);
-                // A story added by typing into the shape: its `wps:txbx`, written from the model.
-                if let (Some(at), Some(tb)) = (drawing::story_added(a, b), b.text_box.as_ref())
-                    && let Ok(blocks) = s.nested_blocks(&tb.blocks)
-                {
-                    let txbx = format!("{}<{w}txbxContent>{blocks}</{w}txbxContent></wps:txbx>", drawing::txbx_open(b.shape.as_deref()), w = s.w);
-                    shape.get_or_insert_with(Vec::new).push((at..at, txbx));
+                if let Some(story) = s.story_edit(a, b) {
+                    shape.get_or_insert_with(Vec::new).push(story);
                 }
                 // A floating picture control drops the fallback copy beside it: its bare Choice drawing.
                 let bare = b.picture_control(&s.controls).is_some() && s.alternate_content(src.clone()).is_some();
@@ -4655,7 +4670,8 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                     if let Some(size) = resized(self, i).filter(|_| Rc::as_ptr(&run) == self.orig[i].run) {
                         let was = self.orig[i].size.as_ref();
                         let p = Placement { decorative: None, nv: None, ..size.placement(was) };
-                        let src = self.src(range.clone());
+                        let edits = self.contained_shape_edits(range.clone(), was, &size);
+                        let src = self.src_with(range.clone(), edits);
                         let x = self.s.picture_patched(&src, p, was, &size);
                         self.flush();
                         self.open_to(self.stack.len());
@@ -5034,10 +5050,19 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
 
     /// Source bytes, with moved or resized floats and changed controls' properties in them patched.
     fn src(&self, r: Range<usize>) -> String {
+        self.src_with(r, Vec::new())
+    }
+
+    /// [`Emit::src`] with `edits` (source ranges and their text) made too.
+    fn src_with(&self, r: Range<usize>, edits: Vec<drawing::Edit>) -> String {
         // Floats patched in place, the rest with its nested rewrites (text boxes) applied.
         let floats = self.patched.iter().map(|(d, p)| (d.clone(), Ok(p)));
-        let mut inside: Vec<(Range<usize>, Result<&Placement, &str>)> =
-            floats.chain(self.prs.iter().map(|(d, x)| (d.clone(), Err(x.as_str())))).filter(|(d, _)| r.start <= d.start && d.end <= r.end).collect();
+        let mut inside: Vec<(Range<usize>, Result<&Placement, &str>)> = edits
+            .iter()
+            .map(|(d, x)| (d.clone(), Err(x.as_str())))
+            .chain(floats.chain(self.prs.iter().map(|(d, x)| (d.clone(), Err(x.as_str())))))
+            .filter(|(d, _)| r.start <= d.start && d.end <= r.end)
+            .collect();
         inside.sort_by_key(|(d, _)| d.start);
         let mut out = String::new();
         let mut at = r.start;
@@ -5054,6 +5079,23 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
         }
         out.push_str(&self.s.src_text(at..r.end));
         out
+    }
+
+    /// The edits of a resized inline picture's shape (its crop, outline, ...) in the element `r` around it (a content
+    /// control), in source ranges: an edited shape's `mc:AlternateContent` becomes its Choice's drawing, as in a run.
+    fn contained_shape_edits(&self, r: Range<usize>, was: Option<&PicState>, now: &PicState) -> Vec<drawing::Edit> {
+        let (Some(a), Some(b)) = (was.and_then(|s| s.0.shape.as_deref()), now.0.shape.as_deref()) else { return Vec::new() };
+        let Some(at) = a.spans.shape.as_ref().map(|x| x.start) else { return Vec::new() };
+        match self.s.choice_around(r.clone(), at) {
+            Some((ac, d)) => {
+                let text = self.s.src_text(d.clone());
+                drawing::shape_changed(a, b, d.start, &text).map_or_else(Vec::new, |e| vec![(ac, drawing::apply(&text, e))])
+            }
+            None => {
+                let edits = drawing::shape_changed(a, b, r.start, &self.s.src_text(r.clone())).unwrap_or_default();
+                edits.into_iter().map(|(x, t)| (x.start + r.start..x.end + r.start, t)).collect()
+            }
+        }
     }
 
     /// A paragraph mark: the output paragraph ends, except the group's last, which takes what is left of the
@@ -5467,7 +5509,7 @@ impl Saver<'_, '_> {
         let [dt, db, dl, dr] = f.dist.map(emu);
         Some(format!(
             concat!(
-                r#"<{w}drawing><wp:anchor xmlns:wp="{wp}" distT="{dt}" distB="{db}" distL="{dl}" distR="{dr}" simplePos="0" relativeHeight="{id}" "#,
+                r#"<{w}drawing><wp:anchor xmlns:wp="{wp}" distT="{dt}" distB="{db}" distL="{dl}" distR="{dr}" simplePos="0" relativeHeight="{z}" "#,
                 r#"behindDoc="{behind}" locked="{locked}" layoutInCell="{cell}" allowOverlap="{overlap}"><wp:simplePos x="0" y="0"/>{h}{v}"#,
                 r#"<wp:extent cx="{cx}" cy="{cy}"/><wp:effectExtent {ee}/>{wrap}<wp:docPr id="{id}" name="{name}"{title}{descr}/>"#,
                 r#"<wp:cNvGraphicFramePr>{locks}</wp:cNvGraphicFramePr><a:graphic xmlns:a="{a}">{graphic}</a:graphic>{sizes}</wp:anchor></{w}drawing>"#
@@ -5476,6 +5518,7 @@ impl Saver<'_, '_> {
             wp = WP,
             a = A,
             ee = effect_extent(f.effect),
+            z = f.z,
             dt = dt,
             db = db,
             dl = dl,
@@ -6087,9 +6130,13 @@ impl Placement {
         if let Some(e) = self.effect {
             let ee = effect_extent(e);
             match find_tag(&s, "effectExtent", 0) {
+                // Its own start tag, self-closing or not, with the extents set.
                 Some((start, end)) => {
-                    let p = &s[start + 1..end].split(|c: char| c.is_whitespace() || c == '/' || c == '>').next().unwrap_or("").to_string();
-                    s.replace_range(start..end, &format!("<{p} {ee}/>"));
+                    let mut tag = s[start..end].to_string();
+                    for (name, v) in ["l", "t", "r", "b"].into_iter().zip(e) {
+                        tag = set_attr(&tag, name, &emu(v));
+                    }
+                    s.replace_range(start..end, &tag);
                 }
                 // None: after the extent (the schema's order: extent, effectExtent, docPr, ...).
                 None if e != [0.0; 4] => {
@@ -6113,10 +6160,10 @@ impl Placement {
             && let Some((start, end)) = find_tag(&s, "docPr", 0)
         {
             let mut tag = set_attr(&s[start..end], "name", &props::esc(name));
-            if !title.is_empty() || tag.contains(" title=\"") {
+            if !title.is_empty() || attr_range(&tag, "title").is_some() {
                 tag = set_attr(&tag, "title", &props::esc(title));
             }
-            if *hidden || tag.contains(" hidden=\"") {
+            if *hidden || attr_range(&tag, "hidden").is_some() {
                 tag = set_attr(&tag, "hidden", if *hidden { "1" } else { "0" });
             }
             s.replace_range(start..end, &tag);
@@ -6329,14 +6376,43 @@ fn set_content(s: &mut String, local: &str, with: impl Fn(&str) -> String) {
     s.replace_range(end..close, &with(&prefix));
 }
 
-fn set_attr(tag: &str, name: &str, value: &str) -> String {
-    let key = format!(" {name}=\"");
-    match tag.find(&key) {
-        Some(k) => {
-            let v0 = k + key.len();
-            let v1 = tag[v0..].find('"').map_or(tag.len(), |e| v0 + e);
-            format!("{}{value}{}", &tag[..v0], &tag[v1..])
+/// Attribute `name`'s value in start tag `tag`, quoted either way: its range, between the quotes. The tag's attributes
+/// are read in turn, so one whose value holds ` name=` isn't taken for it.
+pub(super) fn attr_range(tag: &str, name: &str) -> Option<Range<usize>> {
+    let b = tag.as_bytes();
+    let skip = |mut i: usize| {
+        while b.get(i).is_some_and(u8::is_ascii_whitespace) {
+            i += 1;
         }
+        i
+    };
+    let mut i = tag.find(|c: char| c.is_ascii_whitespace())?;
+    loop {
+        let k0 = skip(i);
+        i = k0;
+        while b.get(i).is_some_and(|c| !c.is_ascii_whitespace() && !matches!(c, b'=' | b'/' | b'>')) {
+            i += 1;
+        }
+        let key = &tag[k0..i];
+        i = skip(i);
+        if key.is_empty() || b.get(i) != Some(&b'=') {
+            return None;
+        }
+        i = skip(i + 1);
+        let q = *b.get(i).filter(|q| matches!(q, b'"' | b'\''))?;
+        let v0 = i + 1;
+        let v1 = v0 + tag[v0..].find(q as char)?;
+        if key == name {
+            return Some(v0..v1);
+        }
+        i = v1 + 1;
+    }
+}
+
+/// Start tag `tag` with attribute `name` set to `value` (already escaped), double quoted: in its place, else added.
+pub(super) fn set_attr(tag: &str, name: &str, value: &str) -> String {
+    match attr_range(tag, name) {
+        Some(r) => format!("{}\"{value}\"{}", &tag[..r.start - 1], &tag[r.end + 1..]),
         None => {
             let at = if tag.ends_with("/>") { tag.len() - 2 } else { tag.len() - 1 };
             format!("{} {name}=\"{value}\"{}", &tag[..at], &tag[at..])

@@ -183,6 +183,33 @@ fn flatten(
     }
 }
 
+/// The row and cell controls of rows `rows` of `t` and of the nested tables [`flatten`] flattens with `depth`, into
+/// `ids`; whether a cell or a paragraph in one is in a control of its own, which a cell joined to the one before it
+/// can't keep.
+fn row_and_cell_controls(t: &crate::docx::Table, rows: std::ops::RangeInclusive<usize>, depth: Option<usize>, ids: &mut Vec<ControlId>) -> bool {
+    let mut own = false;
+    for row in &t.rows[rows] {
+        ids.extend_from_slice(&row.controls);
+        for cell in &row.cells {
+            ids.extend_from_slice(&cell.controls);
+            own |= !cell.controls.is_empty();
+            for b in &cell.blocks {
+                match b {
+                    Block::Para(p) => own |= !p.controls.is_empty(),
+                    Block::Table(n) => {
+                        if let Some(d) = depth.and_then(|d| d.checked_sub(1))
+                            && !n.rows.is_empty()
+                        {
+                            own |= row_and_cell_controls(n, 0..=n.rows.len() - 1, Some(d), ids);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    own
+}
+
 impl Editor {
     /// `p`'s formatting without its numbering, re-resolved: the cells after a numbered paragraph's first.
     fn unnumbered(&self, p: &Paragraph) -> Option<std::rc::Rc<ParaStyle>> {
@@ -372,17 +399,14 @@ impl Editor {
         let spans = super::tables::control_rows(&t.rows);
         let cut =
             t.rows[r0..=r1].iter().flat_map(|r| r.controls.iter()).any(|c| spans.get(c).is_some_and(|&(first, last, _)| first < r0 || last > r1));
-        let cell_controls = t.rows[r0..=r1]
-            .iter()
-            .flat_map(|r| r.cells.iter())
-            .any(|c| !c.controls.is_empty() || c.blocks.iter().any(|b| matches!(b, Block::Para(p) if !p.controls.is_empty())));
+        // Row and cell controls, those of the nested tables flattened too: the rows and cells they were read around
+        // go, so they are written from their properties around the blocks they hold now.
+        let depth = nested.then_some(MAX_FLATTEN);
+        let mut moved: Vec<ControlId> = Vec::new();
+        let cell_controls = row_and_cell_controls(t, r0..=r1, depth, &mut moved);
         if cut || (cell_controls && sep != Sep::Paragraphs) {
             return self.region_boundary();
         }
-        // Row and cell controls: the rows and cells they were read around go, so they are written from their
-        // properties around the blocks they hold now.
-        let mut moved: Vec<ControlId> =
-            t.rows[r0..=r1].iter().flat_map(|r| r.controls.iter().chain(r.cells.iter().flat_map(|c| c.controls.iter()))).copied().collect();
         moved.sort_unstable();
         moved.dedup();
         let moved: Vec<(ControlId, Control)> = moved
@@ -390,7 +414,7 @@ impl Editor {
             .filter_map(|id| self.doc.controls.get(&id).filter(|c| !c.open.is_empty()).map(|c| (id, Control::new(c.props.clone()))))
             .collect();
         let mut out: Vec<Block> = Vec::new();
-        flatten(t, r0..=r1, &[], sep, nested.then_some(MAX_FLATTEN), &mut out);
+        flatten(t, r0..=r1, &[], sep, depth, &mut out);
         // The rows before and after stay tables.
         let before = (r0 > 0).then(|| {
             let mut x = t.clone();

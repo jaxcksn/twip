@@ -1,7 +1,7 @@
 //! Table cell commands
 
 use crate::docx::props::Width;
-use crate::docx::{Row, VMerge};
+use crate::docx::{Cell, Row, VMerge};
 use crate::font::Fonts;
 
 use super::Editor;
@@ -19,34 +19,49 @@ pub enum InsertShift {
 }
 
 /// `rows`' grid again from each row's cell widths (`widths`, twips, and its offset before its first cell): every edge
-/// any row has becomes a grid edge, so each cell keeps its width and place.
-fn regrid(rows: &mut [Row], widths: &[(i64, Vec<i64>)]) -> Vec<f64> {
-    let mut all: Vec<i64> = Vec::with_capacity(widths.iter().map(|(_, w)| w.len() + 1).sum());
-    for (before, w) in widths {
-        let mut x = *before;
-        all.push(x);
-        for v in w {
+/// any row has becomes a grid edge, so each cell keeps its width and place. Edges a row has at one place (a cell of no
+/// width) stay apart, the `j`th at a place in each row on one grid edge. `None` when a row's edges go back.
+fn regrid(rows: &mut [Row], widths: &[(i64, Vec<i64>)]) -> Option<Vec<f64>> {
+    // Each edge: its place and how many of the row's edges before it are there too.
+    fn edges((before, w): &(i64, Vec<i64>)) -> impl Iterator<Item = (i64, u32)> + '_ {
+        let (mut x, mut j) = (*before, 0u32);
+        std::iter::once((x, 0)).chain(w.iter().map(move |v| {
+            let was = x;
             x += v;
-            all.push(x);
-        }
+            j = if x == was { j + 1 } else { 0 };
+            (x, j)
+        }))
+    }
+    if widths.iter().any(|(b, w)| *b < 0 || w.iter().any(|v| *v < 0)) {
+        return None;
+    }
+    let mut all: Vec<(i64, u32)> = Vec::with_capacity(widths.iter().map(|(_, w)| w.len() + 1).sum());
+    for w in widths {
+        all.extend(edges(w));
     }
     all.sort_unstable();
     all.dedup();
-    let at = |x: i64| all.binary_search(&x).unwrap_or(0);
+    let at = |e: (i64, u32)| all.binary_search(&e).unwrap_or(0);
     let last = all.len().saturating_sub(1);
-    for (row, (before, w)) in rows.iter_mut().zip(widths) {
-        let mut x = *before;
-        row.grid_before = at(x);
-        for (cell, v) in row.cells.iter_mut().zip(w) {
-            let from = at(x);
-            x += v;
-            cell.span = (at(x) - from).max(1);
+    for (row, w) in rows.iter_mut().zip(widths) {
+        let mut e = edges(w);
+        let mut from = e.next().map_or(0, at);
+        row.grid_before = from;
+        for (cell, end) in row.cells.iter_mut().zip(e) {
+            let to = at(end);
+            cell.span = to - from;
+            from = to;
         }
-        row.grid_after = last - at(x);
+        row.grid_after = last - from;
         row.w_before = None;
         row.w_after = None;
     }
-    all.windows(2).map(|p| (p[1] - p[0]) as f64 / 20.0).collect()
+    Some(all.windows(2).map(|p| (p[1].0 - p[0].0) as f64 / 20.0).collect())
+}
+
+/// Cell `from` moved to `to`'s place: its content and formatting, over `to`'s columns.
+fn moved_cell(from: Cell, to: &Cell) -> Cell {
+    Cell { width: to.width, span: to.span, ..from }
 }
 
 /// Whether cell `k` of row `r` continues a vertical merge from a cell over the same columns.
@@ -120,7 +135,7 @@ impl Editor {
                     }
                     widths.push((tw(0, row.grid_before), w));
                 }
-                let grid = regrid(&mut rows, &widths);
+                let Some(grid) = regrid(&mut rows, &widths) else { return Outcome::unavailable("the columns can't be kept") };
                 if grid.len() > super::tables::MAX_COLUMNS.max(g.cols) {
                     return Outcome::unavailable("too many columns");
                 }
@@ -176,8 +191,9 @@ impl Editor {
                 for c in starts(r0) {
                     let ks: Vec<usize> = (0..rows.len()).map(|r| all.cell_at(r, c).unwrap_or(0)).collect();
                     for r in (r0..rows.len()).rev() {
-                        let blocks = if r >= r0 + n { rows[r - n].cells[ks[r - n]].blocks.clone() } else { empty_cell(&rows[r].cells[ks[r]]).blocks };
-                        rows[r].cells[ks[r]].blocks = blocks;
+                        let cell = if r >= r0 + n { rows[r - n].cells[ks[r - n]].clone() } else { empty_cell(&rows[r].cells[ks[r]]) };
+                        let to = &mut rows[r].cells[ks[r]];
+                        *to = moved_cell(cell, to);
                     }
                 }
                 (grid, (r0, c0))
@@ -208,9 +224,9 @@ impl Editor {
                 let ks: Vec<usize> = (0..rows.len()).map(|r| g.cell_at(r, c).unwrap_or(0)).collect();
                 for r in r0..rows.len() {
                     let from = r + n;
-                    let blocks =
-                        if from < rows.len() { t.rows[from].cells[ks[from]].blocks.clone() } else { empty_cell(&t.rows[r].cells[ks[r]]).blocks };
-                    rows[r].cells[ks[r]].blocks = blocks;
+                    let cell = if from < rows.len() { t.rows[from].cells[ks[from]].clone() } else { empty_cell(&t.rows[r].cells[ks[r]]) };
+                    let to = &mut rows[r].cells[ks[r]];
+                    *to = moved_cell(cell, to);
                 }
             }
         } else {

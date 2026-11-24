@@ -444,6 +444,9 @@ impl Editor {
     /// One undo step ("Reset Wrap Points").
     pub fn reset_wrap_points(&mut self, fonts: &Fonts) -> Outcome {
         let Selection::Object(ObjectRef::Floating(f)) = self.selection else { return Outcome::unavailable("no floating object selected") };
+        if self.object_fixed(ObjectRef::Floating(f)) || !self.float_editable(f) || self.gesture_kept(CommandId::SetObjectWrap) {
+            return Outcome::unavailable("the object can't be changed");
+        }
         let Some(mut n) = self.float_of(f).cloned() else { return Outcome::Unchanged("no float") };
         let mut poly = outline_polygon(&|k| self.image_bytes(k), &n);
         if let Some(&first) = poly.first() {
