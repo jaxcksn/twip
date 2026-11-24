@@ -5,7 +5,7 @@ use crate::docx::{Block, Inline, NoteKind, RunStyle};
 use crate::layout::Unit;
 
 use super::Editor;
-use super::position::Position;
+use super::position::{Position, StoryId};
 use super::revisions::index::RevisionKind;
 use super::stories::inline_at;
 use super::view::Tooltip;
@@ -44,12 +44,13 @@ pub struct HoverDetail {
 /// A hover tooltip: what it's over, the tip, and for a change or a comment its parts.
 pub type Hovered = (HoverTip, Tooltip, Option<HoverDetail>);
 
-/// What a hover tooltip was looked up for: the pointer, the document's generation and the markup view.
+/// What a hover tooltip was looked up for: the pointer, the document's generation, the markup view and the story being edited.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct HoverKey {
     at: (u64, u64),
     generation: u64,
     view: MarkupView,
+    story: StoryId,
 }
 
 /// The most characters a note's or comment's tooltip shows, an ellipsis after.
@@ -59,13 +60,14 @@ impl Editor {
     /// The tooltip under the pointer: a marked range's message, a link's address, a footnote or endnote reference's
     /// note text, a tracked change's author, time and kind (in the All Markup view), or a commented range's comment;
     /// for a change or a comment, its parts too. None once the document changes, until the pointer moves again.
-    /// Looked up again only when the pointer, the document or the markup view changed since the last call.
+    /// Looked up again only when the pointer, the document, the markup view
+    /// or the story being edited changed since the last call.
     pub fn hover_tip(&mut self) -> Option<&Hovered> {
         let (x, y) = self.hover?;
         if self.hover_generation != self.generation {
             return None;
         }
-        let key = HoverKey { at: (x.to_bits(), y.to_bits()), generation: self.generation, view: self.doc.review.view };
+        let key = HoverKey { at: (x.to_bits(), y.to_bits()), generation: self.generation, view: self.doc.review.view, story: self.editing() };
         if self.hover_cache.as_ref().is_none_or(|(k, _)| *k != key) {
             #[cfg(test)]
             {

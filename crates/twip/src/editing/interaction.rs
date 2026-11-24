@@ -49,6 +49,9 @@ impl Editor {
         if !on {
             self.drop_menu = None;
             self.drag_out = None;
+            if self.text_drag.take().is_some() {
+                self.requests.push(Request::ReleasePointer);
+            }
         }
     }
 
@@ -75,14 +78,14 @@ impl Editor {
         let source = self.selection.ordered(&self.index);
         let can_move = self.mode != super::Mode::ReadOnly
             && source.is_some_and(|(a, b)| !self.kept(crate::api::command::CommandId::Delete, &a, &b) && self.editable(&a));
-        self.drag_out = Some((self.selection, self.revision));
+        self.drag_out = Some((self.selection, self.revision, fragment.blocks.clone()));
         Some(DragOut { text: fragment.text(), html: fragment.html(), fragment, can_move })
     }
 
     /// A drag out of the editor came back and dropped at (`x`, `y`): a move, or with `copy` a copy, as a drag inside
     /// the editor makes it.
     pub fn drag_out_drop(&mut self, x: f64, y: f64, copy: bool, fonts: &Fonts) -> Outcome {
-        if self.drag_out.take() != Some((self.selection, self.revision)) {
+        if self.drag_out.take().is_none_or(|(s, r, _)| (s, r) != (self.selection, self.revision)) {
             return Outcome::Unchanged("the selection or the document changed");
         }
         let drop = self.hit(x, y, fonts);
@@ -102,13 +105,22 @@ impl Editor {
     /// A drag out of the editor ended elsewhere: a move (`moved`) deletes the dragged selection as one undo step,
     /// unless the selection changed since it started.
     pub fn drag_out_end(&mut self, moved: bool, fonts: &Fonts) -> Outcome {
-        let dragged = self.drag_out.take() == Some((self.selection, self.revision));
+        let carried = self.drag_out.take().filter(|(s, r, _)| (*s, *r) == (self.selection, self.revision));
+        // A batched edit leaves the revision alone: the selection must still hold what the drag carried.
+        let dragged = carried.is_some_and(|(.., blocks)| self.clip().is_some_and(|f| f.blocks == blocks));
         if !moved || !dragged {
             return Outcome::Unchanged("nothing moved");
         }
         // Smart cut
         if !matches!(self.selection, Selection::Object(_) | Selection::Cells { .. }) && !(self.tracking() && self.moves_whole()) {
+            let dragged = self.selection;
             self.smart_cut();
+            // The space it takes along may be out of reach where the dragged text is not.
+            let refused = self.selection != dragged
+                && self.selection.ordered(&self.index).is_some_and(|(a, b)| self.kept(crate::api::command::CommandId::Delete, &a, &b));
+            if refused {
+                self.selection = dragged;
+            }
         }
         let delete = crate::api::command::DeleteOptions { direction: crate::api::value::Direction::Forward, unit: None };
         self.execute(crate::api::command::Command::Delete(delete), fonts)

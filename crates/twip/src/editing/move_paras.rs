@@ -258,7 +258,9 @@ impl Editor {
         let was = self.selection;
         let ends = (place(was.anchor()), place(was.focus()));
         self.selection = Selection::range(Position::text(story, first, Unit(0)), Position::text(story, last, last_len), Granularity::Char);
-        let Some(mut frag) = self.clip() else {
+        // An empty paragraph has no text to select: it is taken whole.
+        let empty = (first == last && last_len == Unit(0)).then(|| Block::Para(src_last.clone()));
+        let Some(mut frag) = self.clip().or_else(|| empty.map(|b| self.clip_blocks(vec![b]))) else {
             self.selection = was;
             return Outcome::Unchanged("nothing to move");
         };

@@ -562,18 +562,35 @@ impl Editor {
     }
 
     pub fn copy_fragment(&mut self) -> Option<Fragment> {
-        let mut f = self.copy_content()?;
+        let f = self.copy_content()?;
+        Some(self.completed(f))
+    }
+
+    fn completed(&mut self, mut f: Fragment) -> Fragment {
         f.hidden_text = self.doc.review.show_hidden;
         strip_partial_comments(&mut f.blocks);
         f.refs = self.refs_of(&f.blocks);
-        Some(f)
+        f
+    }
+
+    /// `blocks`, whole paragraphs of this document, as [`Self::clip`] takes content: for a paragraph with no text,
+    /// which no selection of text holds.
+    pub(super) fn clip_blocks(&mut self, blocks: Vec<Block>) -> Fragment {
+        let id = self.clipboard.as_ref().map_or(1, |f| f.id + 1);
+        let f = self.completed(Fragment { id, blocks, open_end: true, ..Default::default() });
+        self.clipped(f)
     }
 
     /// The selection as content to paste, as Copy and dragging take it: revisions accepted, markers whose partner it
     /// doesn't hold and move ranges left out, block controls it holds only part of left out, and the definitions of
     /// the controls in it (and in the notes and comments it refers to) and where it was copied from kept with it.
     pub(super) fn clip(&mut self) -> Option<Fragment> {
-        let mut f = self.copy_fragment()?.accepted();
+        let f = self.copy_fragment()?;
+        Some(self.clipped(f))
+    }
+
+    fn clipped(&mut self, f: Fragment) -> Fragment {
+        let mut f = f.accepted();
         drop_unpaired(&mut f.blocks);
         drop_partial(&mut f.blocks, &self.index);
         f.controls = controls_of(&f.blocks, &self.doc);
@@ -581,7 +598,7 @@ impl Editor {
             f.controls.extend(controls_of(body, &self.doc));
         }
         f.origin = Some(self.origin_of(&mut f));
-        Some(f)
+        f
     }
 
     /// Pasted `blocks` (fresh copies) made this document's, in `tx`: their controls' definitions, the notes and comments

@@ -1250,14 +1250,19 @@ impl Editor {
     /// across paragraphs (reading keeps such a field's result as text), so each paragraph's nesting starts at 0.
     pub fn select_field(&mut self, order: crate::api::value::Order, fonts: &Fonts) -> Outcome {
         let Some((a, _)) = self.selection.ordered(&self.index) else { return Outcome::Unchanged("no caret") };
-        let Some((from, at)) = a.para_offset() else { return Outcome::Unchanged("no caret") };
         let next = order == crate::api::value::Order::Next;
+        let nav = self.nav();
+        // A row end has no text: the walk starts in the paragraph beside it, whole.
+        let start = a.para_offset().map(|(p, u)| (p, Some(u.0))).or_else(|| {
+            let beside = if next { nav.right(a, false) } else { nav.left(a, false) };
+            beside.para_offset().map(|(p, _)| (p, None))
+        });
+        let Some((from, at)) = start else { return Outcome::Unchanged("no caret") };
         let found = {
-            let nav = self.nav();
             let mut para = from;
             loop {
                 let Some(p) = nav.idx.para(nav.doc, para) else { break None };
-                if let Some((s, e)) = outer_field(&p.inlines, next, (para == from).then_some(at.0)) {
+                if let Some((s, e)) = outer_field(&p.inlines, next, if para == from { at } else { None }) {
                     break Some((para, s, e));
                 }
                 match nav.para_beside(para, next) {

@@ -579,3 +579,47 @@ fn typing_in_a_header_lays_out_to_the_carets_page_reusing_the_bodies() {
         .collect();
     assert!(header.iter().any(|t| t.contains("er")), "{header:?}");
 }
+
+#[test]
+fn a_header_links_tip_goes_when_the_header_closes_under_a_still_pointer() {
+    use super::super::input::PointerKind;
+    use super::super::keymap::Mods;
+    let link = r#"<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> HYPERLINK "http://example.com" </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>Link</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>"#;
+    let mut e = package(&format!("{}<w:sectPr>{HEADER_REF}{SEC}</w:sectPr>", p("Body")), Some(Some(link)));
+    e.execute(Command::EditHeader, fonts());
+    let Some(StoryId::HeaderFooter(h)) = story(&e) else { panic!("{:?}", e.selection()) };
+    let (hp, _) = e.selection().focus().and_then(|f| f.para_offset()).expect("a caret in the header");
+    let c = e.caret_at(Position::text(StoryId::HeaderFooter(h), hp, Unit(2))).expect("laid out");
+    let (x, y) = e.stack().to_doc(c.page, c.x, (c.top + c.bottom) / 2.0).expect("on the stack");
+    e.pointer_input(PointerKind::Move, x, y, 0, Mods::default(), fonts());
+    assert!(e.hover_tip().is_some_and(|(k, ..)| *k == super::super::hover::HoverTip::Link), "the header's link");
+    e.execute(Command::CloseHeaderFooter, fonts());
+    assert!(e.hover_tip().is_none(), "the header is out of reach");
+}
+
+#[test]
+fn selecting_an_earlier_note_does_not_lay_out_the_rest_of_the_document() {
+    let lines: String = (0..600).map(|i| p(&format!("Line {i:03}"))).collect();
+    let mut e = package(&format!("{lines}<w:sectPr>{SEC}</w:sectPr>"), None);
+    let on = |e: &mut Editor, para: ParaId| {
+        caret(e, StoryId::Body, para, 0);
+        e.caret_view().expect("a caret").page
+    };
+    let paras: Vec<ParaId> = (0..600).map(|i| para_of(&e, &format!("Line {i:03}"))).collect();
+    let first_page = paras.iter().take_while(|&&q| on(&mut e, q) == 0).count();
+    caret(&mut e, StoryId::Body, paras[first_page - 4], 8);
+    e.execute(Command::InsertFootnote, fonts());
+    let Some(StoryId::Footnote(id)) = story(&e) else { panic!("{:?}", e.selection()) };
+    let note = footnote_para(&e, id);
+    e.complete(fonts());
+    // A change at the top leaves the pages after it to lay out; the caret then reads far on.
+    caret(&mut e, StoryId::Body, paras[0], 0);
+    e.execute(Command::InsertParagraph, fonts());
+    let far = paras[first_page * 2 + 2];
+    e.select_range(far, Unit(0), Unit(0), fonts());
+    assert!(e.caret_view().expect("a caret").page >= 2);
+    assert!(matches!(e.snapshot().status(), crate::layout::LayoutStatus::Pending { .. }), "laid out only to the caret's page");
+    e.select_range(note, Unit(0), Unit(0), fonts());
+    assert_eq!(e.caret_view().expect("the note's caret").page, 0);
+    assert!(matches!(e.snapshot().status(), crate::layout::LayoutStatus::Pending { .. }), "the note's line was on a page already laid out");
+}

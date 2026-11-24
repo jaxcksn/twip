@@ -205,7 +205,8 @@ pub struct Editor {
     back_from: Option<Position>,
     last_maps: Vec<step::Map>,
     text_drag: Option<interaction::TextDrag>,
-    drag_out: Option<(Selection, u64)>,
+    /// A drag out of the editor: the selection, the revision and the blocks it carried.
+    drag_out: Option<(Selection, u64, Vec<crate::docx::Block>)>,
     text_drag_off: bool,
     mark_options: view::MarkOptions,
     click_and_type_off: bool,
@@ -578,6 +579,7 @@ impl Editor {
             && !r.show_optional_hyphens
             && !self.shows_expansions()
             && self.editing_sub_template().is_none()
+            && self.table_preview.is_empty()
     }
 
     /// The document as printed, to lay out on its own when [`Editor::lays_out_as_printed`] is false: no markup, hidden
@@ -798,11 +800,13 @@ impl Editor {
         self.pages.sync(&snapshot);
     }
 
-    /// Whether a page from the one before `near` through `last` has the line holding `u` of `para`.
+    /// Whether a page laid out through `last` has the line holding `u` of `para`: from the one before `near` on, then
+    /// the pages before that, where a note chosen from far on has its line.
     fn laid_out_shows(&mut self, para: ParaId, u: Unit, affinity: Affinity, last: usize) -> bool {
         let snapshot = self.layout.snapshot();
         self.pages.sync(&snapshot);
-        (self.near.saturating_sub(1)..=last).any(|i| {
+        let from = self.near.saturating_sub(1);
+        (from..=last).chain(0..from).any(|i| {
             self.pages
                 .page(i, &self.index)
                 .is_some_and(|g| g.line_at(para, u, affinity).is_some_and(|l| g.lines[l].last_of(para).is_some_and(|end| u <= end)))

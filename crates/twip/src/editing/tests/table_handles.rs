@@ -797,3 +797,15 @@ fn a_text_box_tables_border_drag_lays_it_out_live() {
     click(&mut e, d.rows[0][0] + 10.0, (d.rows[0][1] + d.rows[0][3]) / 2.0);
     live_drags_one_transaction(&mut e);
 }
+
+#[test]
+fn a_live_table_preview_is_not_the_document_as_printed() {
+    let mut e = page();
+    e.doc.review.view = crate::docx::review::MarkupView::NoMarkup;
+    assert!(e.lays_out_as_printed(false));
+    let d = Drawn::of(&mut e);
+    let from = (d.edges[1], (d.rows[1][1] + d.rows[1][3]) / 2.0);
+    drag(&mut e, from, (36.0, 0.0), NONE, false);
+    assert!(!e.table_preview.is_empty());
+    assert!(!e.lays_out_as_printed(false), "laid out as the drag would leave it");
+}

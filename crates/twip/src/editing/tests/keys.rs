@@ -1146,3 +1146,94 @@ fn tab_on_a_lists_first_item_moves_the_list() {
     press(&mut e, "Tab", SHIFT);
     assert_eq!(left(&e, 1), a);
 }
+
+#[test]
+fn turning_drags_off_cancels_a_right_drag_under_way() {
+    use super::super::input::PointerKind;
+    let mut e = edit("<w:p><w:r><w:t>one two</w:t></w:r></w:p><w:p><w:r><w:t>three</w:t></w:r></w:p>");
+    select(&mut e, 0, 0, 3);
+    let (from, to) = (at(&mut e, 0, 1, 0.0), at(&mut e, 1, 5, 0.0));
+    assert!(e.right_press(from.0, from.1, fonts()));
+    e.pointer_input(PointerKind::Move, to.0, to.1, 0, Mods::default(), fonts());
+    e.set_text_drag_and_drop(false);
+    assert_eq!(e.right_release(), None, "the drag was cancelled");
+    assert!(e.drop_menu().is_none());
+}
+
+#[test]
+fn f11_goes_on_from_a_row_end() {
+    let body = format!(
+        r#"<w:p><w:r><w:t>top</w:t></w:r>{}</w:p><w:tbl><w:tr><w:tc><w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p>{}<w:r><w:t>end</w:t></w:r></w:p>"#,
+        field_xml("DATE", "d"),
+        field_xml("PAGE", "1"),
+    );
+    let mut e = edit(&body);
+    let ids = texts_ids(&e);
+    let cell = ids.iter().copied().find(|&p| texts(&e)[ids.iter().position(|&q| q == p).unwrap()] == "cell").expect("the cell");
+    let row_end = e.nav().right(Position::text(StoryId::Body, cell, Unit(4)), false);
+    assert!(row_end.para_offset().is_none(), "{row_end:?}");
+    let field = |e: &Editor| e.selection.ordered(e.index()).and_then(|(a, _)| a.para_offset()).map(|(p, u)| (p, u.0));
+    e.selection = Selection::Caret(row_end);
+    assert!(matches!(e.select_field(crate::api::value::Order::Next, fonts()), super::super::commands::Outcome::Moved));
+    assert_eq!(field(&e), Some((*ids.last().unwrap(), 0)), "the field at the start of the next paragraph");
+    e.selection = Selection::Caret(row_end);
+    assert!(matches!(e.select_field(crate::api::value::Order::Previous, fonts()), super::super::commands::Outcome::Moved));
+    assert_eq!(field(&e), Some((ids[0], 3)), "the field above the table");
+}
+
+#[test]
+fn a_drag_out_move_does_not_widen_past_an_editable_range() {
+    let mut e = edit(
+        r#"<w:p><w:permStart w:id="1" w:edGrp="everyone"/><w:r><w:t>cat</w:t></w:r><w:permEnd w:id="1"/><w:r><w:t xml:space="preserve"> dog</w:t></w:r></w:p>"#,
+    );
+    let on = crate::api::command::DocumentProtection {
+        kind: Some(crate::api::command::ProtectionKind::ReadOnly),
+        enforce: Some(true),
+        ..Default::default()
+    };
+    e.execute(C::SetDocumentProtection(on), fonts());
+    select(&mut e, 0, 0, 3);
+    assert!(e.drag_out().is_some_and(|o| o.can_move));
+    let out = e.drag_out_end(true, fonts());
+    assert!(matches!(out, super::super::commands::Outcome::Changed(_)), "{out:?}");
+    assert_eq!(texts(&e), [" dog"], "cat is gone, the protected space stays");
+}
+
+#[test]
+fn a_drag_out_move_leaves_text_that_replaced_the_dragged_content() {
+    let mut e = edit("<w:p><w:r><w:t>one two three</w:t></w:r></w:p>");
+    select(&mut e, 0, 4, 7);
+    assert!(e.drag_out().is_some_and(|o| o.text == "two"));
+    // An edit that doesn't advance the revision, then the same offsets selected again.
+    e.begin_batch(None);
+    e.execute(C::InsertText("six".into()), fonts());
+    select(&mut e, 0, 4, 7);
+    assert_eq!(texts(&e), ["one six three"]);
+    let out = e.drag_out_end(true, fonts());
+    assert!(matches!(out, super::super::commands::Outcome::Unchanged(_)), "{out:?}");
+    assert_eq!(texts(&e), ["one six three"]);
+}
+
+#[test]
+fn a_tracked_move_of_an_empty_paragraph() {
+    for accept in [true, false] {
+        let mut e = edit(concat!(
+            "<w:p><w:r><w:t>one</w:t></w:r></w:p>",
+            r#"<w:p><w:pPr><w:jc w:val="center"/></w:pPr></w:p>"#,
+            "<w:p><w:r><w:t>three</w:t></w:r></w:p>",
+        ));
+        e.execute(C::SetTrackChanges(true), fonts());
+        caret(&mut e, 1, 0);
+        let out = e.move_paragraphs(true, fonts());
+        assert!(matches!(out, crate::editing::commands::Outcome::Changed(_)), "{out:?}");
+        if accept {
+            e.execute(C::AcceptAllRevisions(Default::default()), fonts());
+            assert_eq!(texts(&e), ["", "one", "three"]);
+            assert!(centred(&e, ""), "it keeps its properties");
+        } else {
+            e.execute(C::RejectAllRevisions(Default::default()), fonts());
+            assert_eq!(texts(&e), ["one", "", "three"]);
+            assert!(centred(&e, ""));
+        }
+    }
+}
