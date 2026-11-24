@@ -211,3 +211,26 @@ fn editable_regions_tint_the_paper_pale_gold_and_a_dark_page_dark_gold() {
     assert!((0..3).all(|c| lit[c] > page[c]), "screened lighter than the page: {lit:?} over {page:?}");
     assert!(lit[0] > lit[2] && lit[1] > lit[2], "gold, not grey: {lit:?}");
 }
+
+#[test]
+fn highlight_all_paints_every_match_yellow_until_the_document_changes() {
+    use crate::services::find::{FindSpec, Search, highlight_all};
+    let mut e = Editor::open(&crate::editing::tests::blank_body("<w:p><w:r><w:t>aaaa ccc aaaa</w:t></w:r></w:p>"), fonts()).expect("opens");
+    e.complete(fonts());
+    let s = Search::new(FindSpec { text: "aaaa".into(), ..FindSpec::default() }).expect("searches");
+    assert_eq!(highlight_all(&mut e, &s), 2);
+    let bands = e.find_highlight_bands(0..1);
+    assert_eq!(bands.len(), 2, "{bands:?}");
+    let [px, py, ..] = e.stack().pages[0];
+    let [x0, y0, x1, _] = bands[0].1.rect;
+    let [c0, ..] = bands[1].1.rect;
+    // Above the lower-case letters, inside the band: the highlight over paper. Between the two: paper.
+    let (x, y) = (px + (x0 + x1) / 2.0, py + y0 + 1.0);
+    let drawn = draw(&mut e, py, None);
+    assert_eq!(&drawn.at(py, x, y)[..3], &[0xFF, 0xFF, 0x00], "Word's yellow multiplied over white");
+    assert!(paper(drawn.at(py, px + (x1 + c0) / 2.0, y)), "the text between isn't highlighted");
+    e.execute(crate::api::command::Command::InsertText("x".into()), fonts());
+    assert!(e.find_highlights().is_none(), "an edit clears them");
+    let drawn = draw(&mut e, py, None);
+    assert!(paper(drawn.at(py, x, y)));
+}

@@ -26,6 +26,7 @@ mod frames;
 pub mod geometry;
 pub(crate) mod gestures;
 mod goback;
+pub mod goto;
 pub mod history;
 pub mod hover;
 mod html;
@@ -63,6 +64,7 @@ pub mod protection;
 pub mod readback;
 mod resize;
 pub mod revisions;
+pub mod search;
 pub mod section;
 pub mod selection;
 mod shapes;
@@ -260,6 +262,10 @@ pub struct Editor {
     white_space_hidden: bool,
     click_and_type_style: Option<String>,
     clipboard: Option<clipboard::Fragment>,
+    /// The find matches highlighted (Highlight All), by paragraph, and the revision they were found at.
+    find_highlights: Option<(u64, std::collections::HashMap<ParaId, Vec<(Unit, Unit)>>)>,
+    /// A replace pastes: no smart spaces round what it pastes.
+    pasting_replacement: bool,
     /// The document's identity among those open: what tells a fragment copied from it from one copied elsewhere.
     key: u64,
     /// The find match selected last, with the selection that selected it.
@@ -575,6 +581,8 @@ impl Editor {
             #[cfg(test)]
             track_work: 0,
             clipboard: None,
+            pasting_replacement: false,
+            find_highlights: None,
             key: import::next_key(),
             found: None,
         };
@@ -2120,6 +2128,11 @@ impl Editor {
     /// for each tab character. Where the caret ends, and whether the text was one line; on an error, `tx` is to be
     /// aborted (except "no caret", where nothing changed).
     fn type_into(&mut self, tx: &mut Tx, text: &str) -> Result<(Position, bool), &'static str> {
+        self.type_into_with(tx, text, false)
+    }
+
+    /// [`Editor::type_into`]; `breaks`, with U+000B a line break, U+000C a page break and U+000E a column break.
+    fn type_into_with(&mut self, tx: &mut Tx, text: &str, breaks: bool) -> Result<(Position, bool), &'static str> {
         let caret = match self.delete_range(tx) {
             Ok(Some(p)) => p,
             Ok(None) => return Err("no caret"),
@@ -2142,13 +2155,21 @@ impl Editor {
                 at = Unit(0);
             }
             let mut inlines = Vec::new();
-            for (j, seg) in line.split('\t').enumerate() {
-                if j > 0 {
-                    inlines.push(Inline::Tab(run.clone()));
+            let special = |c: char| c == '\t' || (breaks && matches!(c, '\u{b}' | '\u{c}' | '\u{e}'));
+            let mut seg = line;
+            while !seg.is_empty() {
+                let cut = seg.find(special).unwrap_or(seg.len());
+                if cut > 0 {
+                    inlines.push(Inline::Text(seg[..cut].to_string(), run.clone()));
                 }
-                if !seg.is_empty() {
-                    inlines.push(Inline::Text(seg.to_string(), run.clone()));
-                }
+                let Some(c) = seg[cut..].chars().next() else { break };
+                inlines.push(match c {
+                    '\t' => Inline::Tab(run.clone()),
+                    '\u{b}' => Inline::Break(crate::docx::BreakKind::Line, run.clone()),
+                    '\u{c}' => Inline::Break(crate::docx::BreakKind::Page, run.clone()),
+                    _ => Inline::Break(crate::docx::BreakKind::Column, run.clone()),
+                });
+                seg = &seg[cut + c.len_utf8()..];
             }
             let n: u32 = inlines.iter().map(|i| i.units() as u32).sum();
             if n > 0 && self.step(tx, Step::Text { para, range: at..at, with: inlines, edges: Default::default() }).is_err() {
@@ -3785,6 +3806,7 @@ impl Editor {
             boundaries: Vec::new(),
             field_shading: Vec::new(),
             editable_regions: Vec::new(),
+            find_highlights: self.find_highlight_bands(visible_pages.clone()),
             list_labels: self.list_label_rects(visible_pages.clone()),
             drop: self
                 .text_drag

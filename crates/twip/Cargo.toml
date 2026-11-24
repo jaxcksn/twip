@@ -18,6 +18,9 @@ spellbook = "0.4.2"
 # Grapheme, word and sentence boundaries (UAX #29) for caret movement, deletion and selection (editing::text).
 unicode-segmentation = "1.12"
 serde_json = "1.0.154"
+# Find's regular expressions: linear-time matching with bounded compile size, and a fraction of `regex`'s WASM size
+# (no Unicode tables or lazy DFA).
+regex-lite = "0.1.9"
 # The public API's types cross the SDK wire as JSON (api::wire).
 serde = { version = "1", features = ["derive", "rc"] }
 # WOFF and WOFF2 fonts (what web font services serve) decoded to TrueType/OpenType: Brotli and glyf reconstruction.

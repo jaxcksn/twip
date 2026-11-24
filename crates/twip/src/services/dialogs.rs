@@ -14,7 +14,7 @@ use crate::api::services::{
     DialogModel, DialogValues, FieldInfo, FieldKind, FontDialog, FontStyle, HyperlinkDialog, InsertTableDialog, PageSetupDialog, ParagraphDialog,
     PictureSizeDialog, SpecialIndent, StyleDialog, StyleDialogType, TablePropertiesDialog, TabsAction, TabsDialog,
 };
-use crate::api::state::{State, Tri};
+use crate::api::state::{CharacterFormatting, ParagraphFormatting, State, Tri};
 use crate::api::value::{NoneOr, Orientation, Points};
 
 /// What a dialog shows besides the state: the selected text, the document's accessibility issues and the font
@@ -94,88 +94,96 @@ pub fn availability(state: &State, reach: Reach) -> BTreeMap<DialogKind, bool> {
     KINDS.iter().map(|&k| (k, available(k, state, reach))).collect()
 }
 
+/// The Font dialog's values for text formatted as `f`.
+pub fn font_values(f: &CharacterFormatting) -> FontDialog {
+    FontDialog {
+        font: f.font.clone(),
+        style: match (&f.bold, &f.italic) {
+            (Tri::Uniform(b), Tri::Uniform(i)) => Tri::Uniform(match (b, i) {
+                (true, true) => FontStyle::BoldItalic,
+                (true, false) => FontStyle::Bold,
+                (false, true) => FontStyle::Italic,
+                (false, false) => FontStyle::Regular,
+            }),
+            (Tri::Unavailable, _) | (_, Tri::Unavailable) => Tri::Unavailable,
+            _ => Tri::Mixed,
+        },
+        size: f.size,
+        color: f.color,
+        underline: f.underline,
+        underline_color: f.underline_color,
+        strikethrough: f.strikethrough,
+        double_strikethrough: f.double_strikethrough,
+        superscript: f.superscript,
+        subscript: f.subscript,
+        small_caps: f.small_caps,
+        all_caps: f.all_caps,
+        hidden: f.hidden,
+        character_spacing: f.character_spacing,
+        position: f.position,
+        emboss: f.emboss,
+        engrave: f.engrave,
+        outline: f.outline,
+        shadow: f.shadow,
+        scale: f.scale,
+        kerning: f.kerning,
+        ligatures: f.ligatures,
+        number_spacing: f.number_spacing,
+        number_form: f.number_form,
+        stylistic_set: f.stylistic_set,
+        contextual_alternates: f.contextual_alternates,
+        text_fill: effect(&f.text_effects, |e| e.fill.clone()),
+        text_outline: effect(&f.text_effects, |e| e.outline.clone()),
+        text_shadow: effect(&f.text_effects, |e| e.shadow.clone()),
+        text_reflection: effect(&f.text_effects, |e| e.reflection.clone()),
+        text_glow: effect(&f.text_effects, |e| e.glow.clone()),
+    }
+}
+
+/// The Paragraph dialog's values for paragraphs formatted as `p`.
+pub fn paragraph_values(p: &ParagraphFormatting) -> ParagraphDialog {
+    let i = &p.indents;
+    let (special, by) = match (&i.first_line, &i.hanging) {
+        (Tri::Uniform(Points(h)), _) if *h > 0.0 => (Tri::Uniform(SpecialIndent::FirstLine), i.first_line),
+        (_, Tri::Uniform(Points(h))) if *h > 0.0 => (Tri::Uniform(SpecialIndent::Hanging), i.hanging),
+        (Tri::Uniform(_), Tri::Uniform(_)) => (Tri::Uniform(SpecialIndent::None), Tri::Uniform(Points(0.0))),
+        (Tri::Unavailable, _) => (Tri::Unavailable, Tri::Unavailable),
+        _ => (Tri::Mixed, Tri::Mixed),
+    };
+    ParagraphDialog {
+        alignment: p.alignment,
+        outline_level: match p.outline_level {
+            Tri::Uniform(0) => Tri::Uniform(crate::api::value::OutlineLevel::Body),
+            Tri::Uniform(n) => Tri::Uniform(crate::api::value::OutlineLevel::Level(n)),
+            Tri::Mixed => Tri::Mixed,
+            Tri::Unavailable => Tri::Unavailable,
+        },
+        left: i.left,
+        right: i.right,
+        special,
+        by,
+        before: p.space_before,
+        after: p.space_after,
+        line_spacing: p.line_spacing,
+        keep_with_next: p.flow.keep_with_next,
+        keep_lines_together: p.flow.keep_lines_together,
+        page_break_before: p.flow.page_break_before,
+        widow_control: p.flow.widow_control,
+        collapsed: p.collapsed,
+        mirror_indents: i.mirror,
+        contextual_spacing: p.contextual_spacing,
+        suppress_line_numbers: p.flow.suppress_line_numbers,
+        dont_hyphenate: p.flow.dont_hyphenate,
+    }
+}
+
 /// The selection's values for `kind`.
 pub fn values(kind: DialogKind, state: &State, cx: &Context) -> Result<DialogValues, Error> {
     let f = &state.formatting;
     let p = &state.paragraph;
     Ok(match kind {
-        DialogKind::Font => DialogValues::Font(FontDialog {
-            font: f.font.clone(),
-            style: match (&f.bold, &f.italic) {
-                (Tri::Uniform(b), Tri::Uniform(i)) => Tri::Uniform(match (b, i) {
-                    (true, true) => FontStyle::BoldItalic,
-                    (true, false) => FontStyle::Bold,
-                    (false, true) => FontStyle::Italic,
-                    (false, false) => FontStyle::Regular,
-                }),
-                (Tri::Unavailable, _) | (_, Tri::Unavailable) => Tri::Unavailable,
-                _ => Tri::Mixed,
-            },
-            size: f.size,
-            color: f.color,
-            underline: f.underline,
-            underline_color: f.underline_color,
-            strikethrough: f.strikethrough,
-            double_strikethrough: f.double_strikethrough,
-            superscript: f.superscript,
-            subscript: f.subscript,
-            small_caps: f.small_caps,
-            all_caps: f.all_caps,
-            hidden: f.hidden,
-            character_spacing: f.character_spacing,
-            position: f.position,
-            emboss: f.emboss,
-            engrave: f.engrave,
-            outline: f.outline,
-            shadow: f.shadow,
-            scale: f.scale,
-            kerning: f.kerning,
-            ligatures: f.ligatures,
-            number_spacing: f.number_spacing,
-            number_form: f.number_form,
-            stylistic_set: f.stylistic_set,
-            contextual_alternates: f.contextual_alternates,
-            text_fill: effect(&f.text_effects, |e| e.fill.clone()),
-            text_outline: effect(&f.text_effects, |e| e.outline.clone()),
-            text_shadow: effect(&f.text_effects, |e| e.shadow.clone()),
-            text_reflection: effect(&f.text_effects, |e| e.reflection.clone()),
-            text_glow: effect(&f.text_effects, |e| e.glow.clone()),
-        }),
-        DialogKind::Paragraph => {
-            let i = &p.indents;
-            let (special, by) = match (&i.first_line, &i.hanging) {
-                (Tri::Uniform(Points(h)), _) if *h > 0.0 => (Tri::Uniform(SpecialIndent::FirstLine), i.first_line),
-                (_, Tri::Uniform(Points(h))) if *h > 0.0 => (Tri::Uniform(SpecialIndent::Hanging), i.hanging),
-                (Tri::Uniform(_), Tri::Uniform(_)) => (Tri::Uniform(SpecialIndent::None), Tri::Uniform(Points(0.0))),
-                (Tri::Unavailable, _) => (Tri::Unavailable, Tri::Unavailable),
-                _ => (Tri::Mixed, Tri::Mixed),
-            };
-            DialogValues::Paragraph(ParagraphDialog {
-                alignment: p.alignment,
-                outline_level: match p.outline_level {
-                    Tri::Uniform(0) => Tri::Uniform(crate::api::value::OutlineLevel::Body),
-                    Tri::Uniform(n) => Tri::Uniform(crate::api::value::OutlineLevel::Level(n)),
-                    Tri::Mixed => Tri::Mixed,
-                    Tri::Unavailable => Tri::Unavailable,
-                },
-                left: i.left,
-                right: i.right,
-                special,
-                by,
-                before: p.space_before,
-                after: p.space_after,
-                line_spacing: p.line_spacing,
-                keep_with_next: p.flow.keep_with_next,
-                keep_lines_together: p.flow.keep_lines_together,
-                page_break_before: p.flow.page_break_before,
-                widow_control: p.flow.widow_control,
-                collapsed: p.collapsed,
-                mirror_indents: i.mirror,
-                contextual_spacing: p.contextual_spacing,
-                suppress_line_numbers: p.flow.suppress_line_numbers,
-                dont_hyphenate: p.flow.dont_hyphenate,
-            })
-        }
+        DialogKind::Font => DialogValues::Font(font_values(f)),
+        DialogKind::Paragraph => DialogValues::Paragraph(paragraph_values(p)),
         DialogKind::PageSetup => {
             let g = &state.page;
             DialogValues::PageSetup(PageSetupDialog {
@@ -1261,6 +1269,118 @@ fn check(ok: bool, what: &str) -> Result<(), Error> {
     if ok { Ok(()) } else { Err(Error::invalid(what)) }
 }
 
+/// The commands that set what Font dialog values `v` change from `n`, onto `out`.
+pub fn font_commands(v: &FontDialog, n: &FontDialog, out: &mut Vec<Command>) -> Result<(), Error> {
+    if let Some(f) = set(&v.font, &n.font) {
+        check(!f.trim().is_empty(), "font needs a name")?;
+        out.push(Command::SetFont(f.trim().to_string()));
+    }
+    if let Some(s) = set(&v.size, &n.size) {
+        check((1.0..=1638.0).contains(&s.0), "size is 1 to 1638 points")?;
+        out.push(Command::SetFontSize(s));
+    }
+    if let Some(style) = set(&v.style, &n.style) {
+        let (b, i) = (matches!(style, FontStyle::Bold | FontStyle::BoldItalic), matches!(style, FontStyle::Italic | FontStyle::BoldItalic));
+        out.extend([Command::SetBold(b), Command::SetItalic(i)]);
+    }
+    out.extend(set(&v.color, &n.color).map(Command::SetFontColor));
+    out.extend(set(&v.underline, &n.underline).map(Command::SetUnderline));
+    out.extend(set(&v.strikethrough, &n.strikethrough).map(Command::SetStrikethrough));
+    out.extend(set(&v.double_strikethrough, &n.double_strikethrough).map(Command::SetDoubleStrikethrough));
+    out.extend(set(&v.superscript, &n.superscript).map(Command::SetSuperscript));
+    out.extend(set(&v.subscript, &n.subscript).map(Command::SetSubscript));
+    out.extend(set(&v.small_caps, &n.small_caps).map(Command::SetSmallCaps));
+    out.extend(set(&v.all_caps, &n.all_caps).map(Command::SetAllCaps));
+    out.extend(set(&v.hidden, &n.hidden).map(Command::SetHidden));
+    out.extend(set(&v.character_spacing, &n.character_spacing).map(Command::SetCharacterSpacing));
+    out.extend(set(&v.position, &n.position).map(Command::SetCharacterPosition));
+    out.extend(set(&v.underline_color, &n.underline_color).map(Command::SetUnderlineColor));
+    let effects = crate::api::command::CharacterEffects {
+        emboss: set(&v.emboss, &n.emboss),
+        engrave: set(&v.engrave, &n.engrave),
+        outline: set(&v.outline, &n.outline),
+        shadow: set(&v.shadow, &n.shadow),
+    };
+    if effects != crate::api::command::CharacterEffects::default() {
+        out.push(Command::SetCharacterEffects(effects));
+    }
+    let typography = crate::api::command::Typography {
+        scale: set(&v.scale, &n.scale),
+        kerning: set(&v.kerning, &n.kerning),
+        ligatures: set(&v.ligatures, &n.ligatures),
+        number_spacing: set(&v.number_spacing, &n.number_spacing),
+        number_form: set(&v.number_form, &n.number_form),
+        stylistic_set: set(&v.stylistic_set, &n.stylistic_set),
+        contextual_alternates: set(&v.contextual_alternates, &n.contextual_alternates),
+    };
+    if let Some(s) = typography.scale {
+        check((1.0..=600.0).contains(&s), "scale is 1 to 600 percent")?;
+    }
+    check(typography.stylistic_set.is_none_or(|s| s <= 20), "stylistic set is 0 to 20")?;
+    if typography != crate::api::command::Typography::default() {
+        out.push(Command::SetTypography(typography));
+    }
+    let effects = crate::api::drawing::TextEffectsChange {
+        fill: set(&v.text_fill, &n.text_fill).map(own),
+        outline: set(&v.text_outline, &n.text_outline).map(own),
+        shadow: set(&v.text_shadow, &n.text_shadow).map(own),
+        glow: set(&v.text_glow, &n.text_glow).map(own),
+        reflection: set(&v.text_reflection, &n.text_reflection).map(own),
+    };
+    if effects != crate::api::drawing::TextEffectsChange::default() {
+        effects.to_model().map_err(|why| Error::invalid(&why))?;
+        out.push(Command::SetTextEffects(effects));
+    }
+    Ok(())
+}
+
+/// The commands that set what Paragraph dialog values `v` change from `n`, onto `out`.
+pub fn paragraph_commands(v: &ParagraphDialog, n: &ParagraphDialog, out: &mut Vec<Command>) -> Result<(), Error> {
+    out.extend(set(&v.alignment, &n.alignment).map(Command::SetAlignment));
+    let (left, right) = (set(&v.left, &n.left), set(&v.right, &n.right));
+    let special = v.special != n.special || v.by != n.by;
+    // Setting one of first line and hanging clears the other.
+    let (first_line, hanging) = match (&v.special, &v.by) {
+        (Tri::Uniform(s), Tri::Uniform(by)) if special => match s {
+            SpecialIndent::None => (Some(Points(0.0)), None),
+            SpecialIndent::FirstLine => (Some(*by), None),
+            SpecialIndent::Hanging => (None, Some(*by)),
+        },
+        _ => (None, None),
+    };
+    check(!matches!(v.by, Tri::Uniform(Points(b)) if b < 0.0), "by is 0 or more")?;
+    let indents = Indents { left, right, first_line, hanging, mirror: set(&v.mirror_indents, &n.mirror_indents) };
+    if indents != Indents::default() {
+        out.push(Command::SetIndents(indents));
+    }
+    let (before, after, contextual) = (set(&v.before, &n.before), set(&v.after, &n.after), set(&v.contextual_spacing, &n.contextual_spacing));
+    if before.is_some() || after.is_some() || contextual.is_some() {
+        out.push(Command::SetParagraphSpacing(ParagraphSpacing { before, after, contextual }));
+    }
+    let level = set(&v.outline_level, &n.outline_level).map(|l| match l {
+        crate::api::value::OutlineLevel::Body => 0,
+        crate::api::value::OutlineLevel::Level(n) => n,
+    });
+    let collapsed = set(&v.collapsed, &n.collapsed);
+    if level.is_some() || collapsed.is_some() {
+        out.push(Command::SetOutline(crate::api::command::Outline { level, collapsed }));
+    }
+    out.extend(set(&v.line_spacing, &n.line_spacing).map(Command::SetLineSpacing));
+    let flow = ParagraphFlow {
+        keep_with_next: set(&v.keep_with_next, &n.keep_with_next),
+        keep_lines_together: set(&v.keep_lines_together, &n.keep_lines_together),
+        page_break_before: set(&v.page_break_before, &n.page_break_before),
+        widow_control: set(&v.widow_control, &n.widow_control),
+        dont_hyphenate: set(&v.dont_hyphenate, &n.dont_hyphenate),
+        suppress_line_numbers: set(&v.suppress_line_numbers, &n.suppress_line_numbers),
+        textbox_tight_wrap: None,
+    };
+    if flow != ParagraphFlow::default() {
+        out.push(Command::SetParagraphFlow(flow));
+    }
+    Ok(())
+}
+
 /// The commands that set what the dialog changed from the selection's values now, in order; none when nothing
 /// changed.
 pub fn commands(values: &DialogValues, state: &State, cx: &Context) -> Result<Vec<Command>, Error> {
@@ -1274,112 +1394,8 @@ pub fn commands(values: &DialogValues, state: &State, cx: &Context) -> Result<Ve
     let now = self::values(kind_of(values), state, cx)?;
     let mut out = Vec::new();
     match (values, &now) {
-        (DialogValues::Font(v), DialogValues::Font(n)) => {
-            if let Some(f) = set(&v.font, &n.font) {
-                check(!f.trim().is_empty(), "font needs a name")?;
-                out.push(Command::SetFont(f.trim().to_string()));
-            }
-            if let Some(s) = set(&v.size, &n.size) {
-                check((1.0..=1638.0).contains(&s.0), "size is 1 to 1638 points")?;
-                out.push(Command::SetFontSize(s));
-            }
-            if let Some(style) = set(&v.style, &n.style) {
-                let (b, i) = (matches!(style, FontStyle::Bold | FontStyle::BoldItalic), matches!(style, FontStyle::Italic | FontStyle::BoldItalic));
-                out.extend([Command::SetBold(b), Command::SetItalic(i)]);
-            }
-            out.extend(set(&v.color, &n.color).map(Command::SetFontColor));
-            out.extend(set(&v.underline, &n.underline).map(Command::SetUnderline));
-            out.extend(set(&v.strikethrough, &n.strikethrough).map(Command::SetStrikethrough));
-            out.extend(set(&v.double_strikethrough, &n.double_strikethrough).map(Command::SetDoubleStrikethrough));
-            out.extend(set(&v.superscript, &n.superscript).map(Command::SetSuperscript));
-            out.extend(set(&v.subscript, &n.subscript).map(Command::SetSubscript));
-            out.extend(set(&v.small_caps, &n.small_caps).map(Command::SetSmallCaps));
-            out.extend(set(&v.all_caps, &n.all_caps).map(Command::SetAllCaps));
-            out.extend(set(&v.hidden, &n.hidden).map(Command::SetHidden));
-            out.extend(set(&v.character_spacing, &n.character_spacing).map(Command::SetCharacterSpacing));
-            out.extend(set(&v.position, &n.position).map(Command::SetCharacterPosition));
-            out.extend(set(&v.underline_color, &n.underline_color).map(Command::SetUnderlineColor));
-            let effects = crate::api::command::CharacterEffects {
-                emboss: set(&v.emboss, &n.emboss),
-                engrave: set(&v.engrave, &n.engrave),
-                outline: set(&v.outline, &n.outline),
-                shadow: set(&v.shadow, &n.shadow),
-            };
-            if effects != crate::api::command::CharacterEffects::default() {
-                out.push(Command::SetCharacterEffects(effects));
-            }
-            let typography = crate::api::command::Typography {
-                scale: set(&v.scale, &n.scale),
-                kerning: set(&v.kerning, &n.kerning),
-                ligatures: set(&v.ligatures, &n.ligatures),
-                number_spacing: set(&v.number_spacing, &n.number_spacing),
-                number_form: set(&v.number_form, &n.number_form),
-                stylistic_set: set(&v.stylistic_set, &n.stylistic_set),
-                contextual_alternates: set(&v.contextual_alternates, &n.contextual_alternates),
-            };
-            if let Some(s) = typography.scale {
-                check((1.0..=600.0).contains(&s), "scale is 1 to 600 percent")?;
-            }
-            check(typography.stylistic_set.is_none_or(|s| s <= 20), "stylistic set is 0 to 20")?;
-            if typography != crate::api::command::Typography::default() {
-                out.push(Command::SetTypography(typography));
-            }
-            let effects = crate::api::drawing::TextEffectsChange {
-                fill: set(&v.text_fill, &n.text_fill).map(own),
-                outline: set(&v.text_outline, &n.text_outline).map(own),
-                shadow: set(&v.text_shadow, &n.text_shadow).map(own),
-                glow: set(&v.text_glow, &n.text_glow).map(own),
-                reflection: set(&v.text_reflection, &n.text_reflection).map(own),
-            };
-            if effects != crate::api::drawing::TextEffectsChange::default() {
-                effects.to_model().map_err(|why| Error::invalid(&why))?;
-                out.push(Command::SetTextEffects(effects));
-            }
-        }
-        (DialogValues::Paragraph(v), DialogValues::Paragraph(n)) => {
-            out.extend(set(&v.alignment, &n.alignment).map(Command::SetAlignment));
-            let (left, right) = (set(&v.left, &n.left), set(&v.right, &n.right));
-            let special = v.special != n.special || v.by != n.by;
-            // Setting one of first line and hanging clears the other.
-            let (first_line, hanging) = match (&v.special, &v.by) {
-                (Tri::Uniform(s), Tri::Uniform(by)) if special => match s {
-                    SpecialIndent::None => (Some(Points(0.0)), None),
-                    SpecialIndent::FirstLine => (Some(*by), None),
-                    SpecialIndent::Hanging => (None, Some(*by)),
-                },
-                _ => (None, None),
-            };
-            check(!matches!(v.by, Tri::Uniform(Points(b)) if b < 0.0), "by is 0 or more")?;
-            let indents = Indents { left, right, first_line, hanging, mirror: set(&v.mirror_indents, &n.mirror_indents) };
-            if indents != Indents::default() {
-                out.push(Command::SetIndents(indents));
-            }
-            let (before, after, contextual) = (set(&v.before, &n.before), set(&v.after, &n.after), set(&v.contextual_spacing, &n.contextual_spacing));
-            if before.is_some() || after.is_some() || contextual.is_some() {
-                out.push(Command::SetParagraphSpacing(ParagraphSpacing { before, after, contextual }));
-            }
-            let level = set(&v.outline_level, &n.outline_level).map(|l| match l {
-                crate::api::value::OutlineLevel::Body => 0,
-                crate::api::value::OutlineLevel::Level(n) => n,
-            });
-            let collapsed = set(&v.collapsed, &n.collapsed);
-            if level.is_some() || collapsed.is_some() {
-                out.push(Command::SetOutline(crate::api::command::Outline { level, collapsed }));
-            }
-            out.extend(set(&v.line_spacing, &n.line_spacing).map(Command::SetLineSpacing));
-            let flow = ParagraphFlow {
-                keep_with_next: set(&v.keep_with_next, &n.keep_with_next),
-                keep_lines_together: set(&v.keep_lines_together, &n.keep_lines_together),
-                page_break_before: set(&v.page_break_before, &n.page_break_before),
-                widow_control: set(&v.widow_control, &n.widow_control),
-                dont_hyphenate: set(&v.dont_hyphenate, &n.dont_hyphenate),
-                suppress_line_numbers: set(&v.suppress_line_numbers, &n.suppress_line_numbers),
-                textbox_tight_wrap: None,
-            };
-            if flow != ParagraphFlow::default() {
-                out.push(Command::SetParagraphFlow(flow));
-            }
-        }
+        (DialogValues::Font(v), DialogValues::Font(n)) => font_commands(v, n, &mut out)?,
+        (DialogValues::Paragraph(v), DialogValues::Paragraph(n)) => paragraph_commands(v, n, &mut out)?,
         (DialogValues::PageSetup(v), DialogValues::PageSetup(n)) => {
             let changed = |a: Points, b: Points| (a != b).then_some(a);
             for (x, name) in [(v.top, "top"), (v.bottom, "bottom"), (v.left, "left"), (v.right, "right"), (v.gutter, "gutter")] {

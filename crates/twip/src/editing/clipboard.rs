@@ -1040,7 +1040,7 @@ impl Editor {
             return o;
         }
         let spaces = match f.blocks.as_slice() {
-            [Block::Para(p)] if f.open_end => self.smart_spaces(&super::text::UnitText::of(p).text),
+            [Block::Para(p)] if f.open_end && !self.pasting_replacement => self.smart_spaces(&super::text::UnitText::of(p).text),
             _ => (false, false),
         };
         if self.refuse_replacing() {

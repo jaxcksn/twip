@@ -271,7 +271,7 @@ impl Nav<'_> {
     }
 
     /// The place `stop` of line `line` on `page` stands for, upstream when downstream would show it on another line.
-    fn at_stop(&mut self, story: StoryId, page: usize, line: usize, stop: Stop) -> Position {
+    pub(in crate::editing) fn at_stop(&mut self, story: StoryId, page: usize, line: usize, stop: Stop) -> Position {
         let down = Position::text(story, stop.para, stop.unit);
         if !stop.end {
             return down;
