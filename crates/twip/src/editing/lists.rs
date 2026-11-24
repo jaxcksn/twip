@@ -1,6 +1,7 @@
 //! Lists
 
 use std::collections::HashSet;
+use std::ops::ControlFlow;
 use std::rc::Rc;
 
 use crate::docx::numbering::Counters;
@@ -382,22 +383,41 @@ pub(super) fn direct_num(ppr: Option<&str>, cx: &Cx) -> bool {
 
 /// Each paragraph in `blocks` and the text boxes anchored in them, as the reader reaches them.
 fn walk<'d>(blocks: &'d [Block], out: &mut Vec<(&'d Paragraph, bool)>) {
+    let _ = visit(blocks, &mut |p| {
+        out.push((p, false));
+        ControlFlow::<()>::Continue(())
+    });
+}
+
+/// [`walk`] until `f` breaks.
+fn visit<'d, B>(blocks: &'d [Block], f: &mut impl FnMut(&'d Paragraph) -> ControlFlow<B>) -> ControlFlow<B> {
     for b in blocks {
         match b {
             Block::Para(p) => {
-                out.push((p, false));
+                f(p)?;
                 for i in &p.inlines {
                     match i {
-                        Inline::Float(f, _) => {
-                            f.text_box.iter().chain(f.parts.iter().filter_map(|g| g.text_box.as_ref())).for_each(|t| walk(&t.blocks, out))
+                        Inline::Float(fl, _) => {
+                            for t in fl.text_box.iter().chain(fl.parts.iter().filter_map(|g| g.text_box.as_ref())) {
+                                visit(&t.blocks, f)?;
+                            }
                         }
-                        _ => i.story().into_iter().for_each(|(_, t)| walk(&t.blocks, out)),
+                        _ => {
+                            if let Some((_, t)) = i.story() {
+                                visit(&t.blocks, f)?;
+                            }
+                        }
                     }
                 }
             }
-            Block::Table(t) => t.rows.iter().flat_map(|r| r.cells.iter()).for_each(|c| walk(&c.blocks, out)),
+            Block::Table(t) => {
+                for c in t.rows.iter().flat_map(|r| r.cells.iter()) {
+                    visit(&c.blocks, f)?;
+                }
+            }
         }
     }
+    ControlFlow::Continue(())
 }
 
 /// Whether a paragraph holds anything but marks: an empty one that ends a section is left out of its list.
@@ -422,19 +442,34 @@ fn has_content(p: &Paragraph) -> bool {
 /// whether the reader leaves it uncounted: an empty paragraph that ends a section after another paragraph.
 pub(super) fn numbered_paras<'d>(doc: &'d Document, idx: &DocIndex) -> Vec<(&'d Paragraph, bool)> {
     let mut out = Vec::new();
-    let ended = doc.sections.len().saturating_sub(1);
-    for (k, (_, blocks)) in super::elements::stories(doc, idx).into_iter().enumerate() {
+    for (ends, blocks) in numbered_stories(doc, idx) {
         walk(blocks, &mut out);
-        if k < ended
+        if ends
             && matches!(blocks, [.., Block::Para(_), Block::Para(p)] if !has_content(p))
             && let Some(last) = out.last_mut()
         {
             last.1 = true;
         }
     }
-    doc.comments.by_id.values().for_each(|c| walk(&c.body, &mut out));
-    for part in doc.glossary.iter().flat_map(|g| g.parts.iter()).filter(|p| p.state != crate::docx::PartState::Removed) {
-        walk(&part.body, &mut out);
-    }
     out
+}
+
+/// The first paragraph of list `num` in the order lists number through them.
+pub(super) fn first_numbered(doc: &Document, idx: &DocIndex, num: i64) -> Option<ParaId> {
+    numbered_stories(doc, idx).find_map(|(_, blocks)| {
+        visit(blocks, &mut |p| match p.style.num {
+            Some((id, _)) if id == num => ControlFlow::Break(ParaId(p.id)),
+            _ => ControlFlow::Continue(()),
+        })
+        .break_value()
+    })
+}
+
+/// The stories of [`numbered_paras`] in order, each with whether it is a section another follows.
+fn numbered_stories<'d>(doc: &'d Document, idx: &DocIndex) -> impl Iterator<Item = (bool, &'d [Block])> {
+    let ended = doc.sections.len().saturating_sub(1);
+    let comments = doc.comments.by_id.values().map(|c| c.body.as_slice());
+    let glossary = doc.glossary.iter().flat_map(|g| g.parts.iter()).filter(|p| p.state != crate::docx::PartState::Removed).map(|p| p.body.as_slice());
+    let stories = super::elements::stories(doc, idx).into_iter().enumerate().map(move |(k, (_, b))| (k < ended, b));
+    stories.chain(comments.chain(glossary).map(|b| (false, b)))
 }

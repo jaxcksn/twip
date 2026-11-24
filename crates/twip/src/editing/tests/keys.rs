@@ -968,6 +968,50 @@ fn ctrl_alt_enter_inserts_a_style_separator() {
 }
 
 #[test]
+fn a_style_separator_in_a_lists_empty_last_item_splits_it() {
+    let mut e = edit("<w:p><w:r><w:t>one</w:t></w:r></w:p>");
+    caret(&mut e, 0, 3);
+    e.execute(C::SetList(Some(crate::api::command::ListKind::Numbered)), fonts());
+    e.execute(C::InsertParagraph, fonts());
+    assert!(para(&e, 1).style.num.is_some_and(|(id, _)| id != 0), "setup: an empty last item");
+    assert!(matches!(e.insert_style_separator(fonts()), crate::editing::commands::Outcome::Changed(_)));
+    assert_eq!(texts(&e), ["one", "", ""], "the empty item splits at the caret");
+    let ids = texts_ids(&e);
+    assert!(e.hidden_marks(ids[0]).is_empty(), "the item before keeps its mark");
+    assert_eq!(e.hidden_marks(ids[1]), [(Unit(0), true)], "the first part's mark is the separator");
+    assert!(para(&e, 1).style.num.is_some_and(|(id, _)| id != 0), "the item stays in its list");
+    e.execute(C::Undo, fonts());
+    assert_eq!(texts(&e), ["one", ""], "one undo step");
+    assert!(!para(&e, 1).mark.hidden && para(&e, 1).style.num.is_some_and(|(id, _)| id != 0));
+}
+
+#[test]
+fn clearing_formatting_keeps_a_style_separator() {
+    let body = concat!(
+        r#"<w:p><w:r><w:rPr><w:b/><w:vanish/></w:rPr><w:t xml:space="preserve">Head body</w:t></w:r></w:p>"#,
+        "<w:p><w:r><w:t>next</w:t></w:r></w:p>",
+    );
+    let ctrl_space = |e: &mut Editor| {
+        e.execute(C::ClearFormatting, fonts());
+    };
+    let clear_all = |e: &mut Editor| {
+        e.clear_all_formatting(fonts());
+    };
+    for (clear, name) in [(&ctrl_space as &dyn Fn(&mut Editor), "Ctrl+Space"), (&clear_all, "Clear All Formatting")] {
+        let mut e = edit(body);
+        caret(&mut e, 0, 4);
+        e.insert_style_separator(fonts());
+        let ids = texts_ids(&e);
+        e.selection =
+            Selection::range(Position::text(StoryId::Body, ids[0], Unit(0)), Position::text(StoryId::Body, ids[1], Unit(5)), Default::default());
+        clear(&mut e);
+        assert_eq!(e.hidden_marks(ids[0]), [(Unit(4), true)], "{name}: the separator stays");
+        let run = para(&e, 0).inlines.iter().find_map(|i| i.run()).expect("a run");
+        assert!(!run.hidden && !run.bold, "{name}: hidden text is formatting: {run:?}");
+    }
+}
+
+#[test]
 fn tab_on_a_lists_first_item_moves_the_list() {
     let mut e = edit("<w:p><w:r><w:t>one</w:t></w:r></w:p><w:p><w:r><w:t>two</w:t></w:r></w:p>");
     e.selection = Selection::range(

@@ -121,9 +121,8 @@ fn level_xml(k: usize, old: Option<(&str, &ListLevel)>, new: &ListLevel, pic: Op
             format!("<{w}ind {w}left=\"{}\" {w}firstLine=\"{}\"/>", twips(new.text_indent), twips(Points(-hanging)))
         };
         ppr.set("ind", ind);
-        match new.tab {
-            Some(t) => ppr.set("tabs", format!("<{w}tabs><{w}tab {w}val=\"num\" {w}pos=\"{}\"/></{w}tabs>", twips(t))),
-            None => ppr.remove("tabs"),
+        if old.is_none() || was.tab != new.tab {
+            level_tab(&mut ppr, new.tab, cx);
         }
         if let Some(x) = ppr.xml() {
             p.set("pPr", x);
@@ -144,6 +143,32 @@ fn level_xml(k: usize, old: Option<(&str, &ListLevel)>, new: &ListLevel, pic: Op
         }
     }
     p.xml().unwrap_or_default()
+}
+
+/// `ppr`'s tab stops with the level's own (the first that isn't a clear, as [`list_level`] reads it) at `tab`: moved
+/// with its kind and leader, added as a list tab, or removed. Its other stops stay.
+fn level_tab(ppr: &mut Props, tab: Option<Points>, cx: &Cx) {
+    use crate::docx::write::props::attr_of;
+    let w = &cx.w;
+    let mut tabs = Props::parse(ppr.get("tabs"), "tabs", cx);
+    let own = tabs.kids.iter().position(|(n, x)| n == "tab" && attr_of(x, "pos").is_some() && attr_of(x, "val").as_deref() != Some("clear"));
+    let pos = |t: Points| (t.0 * 20.0).round() as i64;
+    match (own, tab) {
+        (Some(i), Some(t)) => {
+            let x = &tabs.kids[i].1;
+            let keep = |a: &str| attr_of(x, a).map(|v| format!(" {w}{a}=\"{}\"", esc(&v))).unwrap_or_default();
+            tabs.kids[i].1 = format!("<{w}tab{}{} {w}pos=\"{}\"/>", keep("val"), keep("leader"), pos(t));
+        }
+        (None, Some(t)) => tabs.add("tab", format!("<{w}tab {w}val=\"num\" {w}pos=\"{}\"/>", pos(t))),
+        (Some(i), None) => {
+            tabs.kids.remove(i);
+        }
+        (None, None) => return,
+    }
+    match tabs.xml() {
+        Some(x) => ppr.set("tabs", x),
+        None => ppr.remove("tabs"),
+    }
 }
 
 /// A level's picture bullet change: `None` keeps it, `Some(None)` removes it, `Some(Some(id))` sets it.

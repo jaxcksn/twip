@@ -2068,24 +2068,32 @@ impl Editor {
         if let Some(o) = self.list_enter(fonts) {
             return o;
         }
+        self.split_at_caret(true, fonts).0
+    }
+
+    /// Enter's split: the selection replaced, the caret's paragraph split there (the part after it in the style that
+    /// follows at a paragraph's end), the caret at the second part's start. With `enter`, Enter's own cases too: a row
+    /// added at a row end, a paragraph before a table that starts its story. Answers the first part when it split.
+    fn split_at_caret(&mut self, enter: bool, fonts: &Fonts) -> (Outcome, Option<ParaId>) {
         let mut tx = self.begin("Enter");
         let collapsed = matches!(self.selection, Selection::Caret(_));
         let caret = match self.delete_range(&mut tx) {
             Ok(Some(p)) => p,
             _ => {
                 self.abort(tx);
-                return Outcome::Unchanged("no caret");
+                return (Outcome::Unchanged("no caret"), None);
             }
         };
-        if let Place::RowEnd { table, row } = caret.place {
+        if let (true, Place::RowEnd { table, row }) = (enter, caret.place) {
             self.abort(tx);
-            return self.add_row(table, row, caret.story, fonts);
+            return (self.add_row(table, row, caret.story, fonts), None);
         }
         let Some((para, at)) = caret.para_offset() else {
             self.abort(tx);
-            return Outcome::Unchanged("caret at a row end");
+            return (Outcome::Unchanged("caret at a row end"), None);
         };
-        if at == Unit(0)
+        if enter
+            && at == Unit(0)
             && let Some(slot) = self.index.para_slot(para)
             && slot.block == 0
             && let Some(table_slot) = self.table_needing_paragraph_before(slot.container)
@@ -2096,7 +2104,7 @@ impl Editor {
             });
             let Some(mut p) = template else {
                 self.abort(tx);
-                return Outcome::Unchanged("no paragraph");
+                return (Outcome::Unchanged("no paragraph"), None);
             };
             p.inlines = self.run_at(&caret).map(|r| vec![Inline::Text(String::new(), r)]).unwrap_or_default();
             let new_id = ParaId(p.id);
@@ -2108,15 +2116,15 @@ impl Editor {
                 .is_err()
             {
                 self.abort(tx);
-                return Outcome::Unchanged("insert failed");
+                return (Outcome::Unchanged("insert failed"), None);
             }
             tx.stale_paras.push(new_id);
             self.selection = Selection::Caret(if collapsed { Position::text(caret.story, new_id, Unit(0)) } else { caret });
-            return self.commit(tx, None, fonts);
+            return (self.commit(tx, None, fonts), None);
         }
         let Some(mut second) = self.split_template(para) else {
             self.abort(tx);
-            return Outcome::Unchanged("no paragraph");
+            return (Outcome::Unchanged("no paragraph"), None);
         };
         let at_end = self.index.para(&self.doc, para).is_some_and(|p| para_len(p) == at);
         if at_end && let Some(s) = self.next_style_paragraph(para, second.clone()) {
@@ -2126,10 +2134,10 @@ impl Editor {
         let id = ParaId(second.id);
         if self.step(&mut tx, Step::Split { para, at, second, kept: Vec::new() }).is_err() {
             self.abort(tx);
-            return Outcome::Unchanged("split failed");
+            return (Outcome::Unchanged("split failed"), None);
         }
         self.selection = Selection::Caret(Position::text(caret.story, id, Unit(0)));
-        self.commit(tx, None, fonts)
+        (self.commit(tx, None, fonts), Some(para))
     }
 
     fn table_needing_paragraph_before(&self, container: Container) -> Option<index::Slot> {

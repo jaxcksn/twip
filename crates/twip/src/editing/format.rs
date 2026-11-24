@@ -568,14 +568,25 @@ impl Editor {
         let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
         let cx = self.cx();
         let w = cx.w.clone();
-        let rpr = |xml: Option<&str>, run: &RunStyle, base: &RunProps| -> Option<String> {
+        // A style separator mark keeps its flags
+        let rpr = |xml: Option<&str>, run: &RunStyle, base: &RunProps, mark: bool| -> Option<String> {
             let mut p = Props::parse(xml, "rPr", &cx);
+            let sep = mark && p.get("specVanish").is_some() && xml.is_some_and(|x| crate::docx::write::props::flag_of(x, "specVanish"));
+            let flags = sep.then(|| ["vanish", "specVanish"].map(|k| p.get(k).map(str::to_string)));
             edit(&mut p, &w, run);
+            for (k, x) in ["vanish", "specVanish"].into_iter().zip(flags.into_iter().flatten()) {
+                if let Some(x) = x {
+                    p.set(k, x);
+                }
+            }
             let new = res.rerun_xml(base, run, p.xml().as_deref(), &cx);
             settle(&mut p, &w, &new);
             p.xml()
         };
-        let patch = |run: &RunStyle, base: &RunProps| -> Run { res.rerun_xml(base, run, rpr(run.direct.0.as_deref(), run, base).as_deref(), &cx) };
+        let patch_as = |run: &RunStyle, base: &RunProps, mark: bool| -> Run {
+            res.rerun_xml(base, run, rpr(run.direct.0.as_deref(), run, base, mark).as_deref(), &cx)
+        };
+        let patch = |run: &RunStyle, base: &RunProps| patch_as(run, base, false);
         let mut ranges: Vec<(ParaId, Unit, Unit)> = Vec::new();
         // The paragraphs whose marks are in the selection.
         let mut marks: Vec<ParaId> = Vec::new();
@@ -599,7 +610,7 @@ impl Editor {
         for para in marks {
             let Some(again) = self.para_again(para, None, &res, &cx) else { continue };
             let Some(p) = self.index.para(&self.doc, para) else { continue };
-            let mark = patch(&p.mark, again.mark_base());
+            let mark = patch_as(&p.mark, again.mark_base(), true);
             if *mark == *p.mark {
                 continue;
             }
@@ -639,7 +650,7 @@ impl Editor {
                         with.push(Inline::Text(part, new));
                     }
                     Inline::Ruby(r, _) => {
-                        let edit = |xml: Option<&str>, run: &RunStyle| rpr(xml, run, base);
+                        let edit = |xml: Option<&str>, run: &RunStyle| rpr(xml, run, base, false);
                         with.push(Inline::Ruby(ruby_again(r, base, Some((&edit, false)), &res, &cx).unwrap_or_else(|| r.clone()), new));
                     }
                     other => with.push(with_run(other, &new)),
@@ -905,25 +916,10 @@ impl Editor {
         }))
     }
 
-    /// Whether no paragraph before `para` in its container (tables in it too) is in list `num`: a backward walk that
-    /// stops at the nearest earlier item.
+    /// Whether `para` is list `num`'s first paragraph in the order the list numbers through them, its stories and
+    /// tables too: a walk that stops at the list's first paragraph.
     fn first_in_list(&self, para: ParaId, num: i64) -> bool {
-        use crate::docx::Block;
-        let Some(slot) = self.index.para_slot(para) else { return false };
-        let Some(blocks) = self.index.blocks(&self.doc, slot.container) else { return false };
-        let mut stack = vec![blocks[..slot.block.min(blocks.len())].iter().rev()];
-        while let Some(it) = stack.last_mut() {
-            match it.next() {
-                None => {
-                    stack.pop();
-                }
-                Some(Block::Para(p)) if p.style.num.is_some_and(|(id, _)| id == num) => return false,
-                Some(Block::Para(_)) => {}
-                // The last cell's blocks are walked first.
-                Some(Block::Table(t)) => stack.extend(t.rows.iter().flat_map(|r| &r.cells).map(|c| c.blocks.iter().rev())),
-            }
-        }
-        true
+        super::lists::first_numbered(&self.doc, &self.index, num) == Some(para)
     }
 
     /// Moves every level of list `num` a default tab stop right (or left, no further than the margin).
@@ -975,17 +971,9 @@ impl Editor {
             let target = if at_end {
                 para
             } else {
-                let out = e.execute(super::commands::Command::InsertParagraph, fonts);
-                if !matches!(out, Outcome::Changed(_)) {
-                    return out;
-                }
-                // The paragraph before the caret's
-                let Some(here) = e.selection.focus().and_then(|p| p.para_offset()).and_then(|(p, _)| e.index.para_slot(p)) else {
-                    return Outcome::Unchanged("no paragraph");
-                };
-                match here.block.checked_sub(1).and_then(|b| e.index.blocks(&e.doc, here.container)?.get(b)) {
-                    Some(crate::docx::Block::Para(p)) => ParaId(p.id),
-                    _ => return Outcome::Unchanged("no paragraph"),
+                match e.split_at_caret(false, fonts) {
+                    (Outcome::Changed(_), Some(first)) => first,
+                    (out, _) => return out,
                 }
             };
             e.separator_mark(target, fonts)
