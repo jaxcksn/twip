@@ -503,89 +503,99 @@ Phase 3 is done: every chunk below has landed, and the render gate (3.1) guards 
 
 The workflows on top of a complete model, the framework packages, and the API freeze.
 
-<Chunk id="4.1" title="Table of contents, captions and cross-references" deps={['2.8']}>
+:::tip Editing done
+
+The editing chunks below have landed: every property Twip draws can be set and read through the API, and in-canvas
+behavior (keys, mouse, drags, handles, as-you-type rules) matches Word. Twip gives a host the commands and state to
+build its own panes and dialogs; it doesn't model Word's dialogs. Still open: accessibility (4.10), the framework
+packages (4.11) and the API freeze (4.13). Moved to [later](#later): outline view and collapse, Sort, Find's sounds-like
+and word forms, and the reflow and start-up work in 4.9 that isn't drags or typing.
+
+:::
+
+<Chunk id="4.1" title="Table of contents, captions and cross-references" deps={['2.8']} done>
 
 **Goal:** templates can hold a table of contents that builds and updates.
 
 - Generate and update a table of contents from outline levels and styles, with `\h` links, page numbers and style
-  separators.
+  separators; TC entries.
 - Table of figures.
-- Insert Caption: labels, numbering and chapter numbers.
-- The cross-reference dialog model.
+- Insert Caption: labels, numbering and chapter numbers; AutoCaption for tables.
+- Cross-references: a query of every target, and insertion with each "reference to" option.
 
 </Chunk>
 
-<Chunk id="4.2" title="Find, replace and Go To">
+<Chunk id="4.2" title="Find, replace and Go To" done>
 
 **Goal:** Word's search.
 
-- Find and replace with formatting, wildcards, special characters (`^p`, `^t`, `^m`) and within the selection.
-- Go To a section, bookmark, comment, field, table, footnote or line.
+- Find and replace with formatting, regular expressions in place of wildcards, special characters (`^p`, `^t`, `^m`)
+  and within the selection.
+- Go To a page, section, line, bookmark, comment, field, table, note, graphic, equation, heading or object.
 
 </Chunk>
 
-<Chunk id="4.3" title="Review workflow">
+<Chunk id="4.3" title="Review workflow" done>
 
 **Goal:** the review tools around track changes and comments.
 
 - Show Markup filters by kind and reviewer.
 - Balloons or inline revisions.
-- Delete All Comments.
+- Delete All Comments, and the data for a reviewing pane.
 
 </Chunk>
 
-<Chunk id="4.4" title="Outline and navigation">
+<Chunk id="4.4" title="Outline and navigation" done>
 
 **Goal:** working with long documents.
 
-- Outline view: promote, demote, collapse.
+- Promote and demote headings with their subtopics.
 - Reorder headings, with their content, in the navigation pane.
 
 </Chunk>
 
-<Chunk id="4.5" title="Object layout dialogs" deps={['2.10']}>
+<Chunk id="4.5" title="Object layout API" deps={['2.10']} done>
 
-**Goal:** the float and picture layout API, as dialogs.
+**Goal:** everything a Layout dialog or Format Shape pane needs, as commands and state.
 
-- The Layout dialog: Position, Text Wrapping and Size.
-- The Format Shape pane.
-
-</Chunk>
-
-<Chunk id="4.6" title="Document dialogs" deps={['2.6', '2.7', '2.13', '2.14']}>
-
-**Goal:** dialog models over phase 2's commands.
-
-- Insert Field, Content Control Properties, Footnote and Endnote, Columns, Drop Cap and Format Page Numbers.
-- The Restrict Editing pane.
+- Position, text wrapping and size, settable and readable.
+- Fill, line and effects; wrap points; the objects list for a selection pane.
 
 </Chunk>
 
-<Chunk id="4.7" title="Table tools" deps={['2.9']}>
+<Chunk id="4.6" title="Document properties API" deps={['2.6', '2.7', '2.13', '2.14']} done>
+
+**Goal:** phase 2's features fully settable and readable, so a host can build any pane over them.
+
+- Fields, content controls, footnotes and endnotes, columns, drop caps and page number formats.
+- Restrict Editing.
+
+</Chunk>
+
+<Chunk id="4.7" title="Table tools" deps={['2.9']} done>
 
 **Goal:** the remaining table commands.
 
-- Convert text to a table and back.
-- Sort.
+- Convert text to a table and back, with AutoFit options.
+- Insert and delete cells; Draw Table and Eraser.
 
 </Chunk>
 
-<Chunk id="4.8" title="Image paste">
+<Chunk id="4.8" title="Image and HTML paste" done>
 
-**Goal:** paste a picture from the clipboard.
+**Goal:** paste pictures and HTML from other apps.
 
 - Clipboard data carries images; pasting one inserts an inline picture.
+- HTML paste, Paste Special and paste options.
 
 </Chunk>
 
-<Chunk id="4.9" title="Editor performance" deps={['1.1']}>
+<Chunk id="4.9" title="Editor performance" deps={['1.1']} done>
 
-**Goal:** typing, reflow and drags stay inside their frame budgets on long documents.
+**Goal:** typing and drags stay inside their frame budgets on long documents.
 
-- Paragraph content shared copy-on-write, with content hashes for the layout caches.
-- Cached lines placed by offset, and header and footer measurements cached, so reflow redoes less.
 - Drags laid out provisionally and committed on release.
-- First page and start-up times within budget.
+- Typing, deleting and caret moves don't allocate per keystroke once warm.
 - The layout gate's equivalence check stays green throughout.
 
 </Chunk>
@@ -609,7 +619,7 @@ The workflows on top of a complete model, the framework packages, and the API fr
 
 </Chunk>
 
-<Chunk id="4.12" title="Editing vertical text" deps={['1.11']}>
+<Chunk id="4.12" title="Editing vertical text" deps={['1.11']} done>
 
 **Goal:** vertical sections, paragraphs, cells and text boxes edit as Word edits them.
 
@@ -652,6 +662,11 @@ The workflows on top of a complete model, the framework packages, and the API fr
 - Right-to-left and East Asian layout and editing, with IME (below)
 - WordArt warps (`a:prstTxWarp`) and 3-D rotation, bevel and extrusion (`scene3d`, `sp3d`, VML extrusion): kept on
   save, drawn without them
+- Outline view, and collapsing headings
+- Sort
+- Find's sounds-like and all word forms
+- Reflow and start-up work: paragraph content shared copy-on-write, cached lines placed by offset, cached header and
+  footer measurements, and first page and start-up budgets
 
 ### Right-to-left and East Asian
 
