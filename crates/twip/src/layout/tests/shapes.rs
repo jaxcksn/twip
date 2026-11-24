@@ -540,3 +540,20 @@ fn a_float_in_a_text_box_float_paints_as_its_own() {
     assert!(floats.contains(&(inside.id, Some(inside.id))), "{floats:?}");
     assert!(floats.contains(&(outer.id, Some(outer.id))), "{floats:?}");
 }
+
+#[test]
+fn a_vertical_text_boxs_text_is_read_where_a_horizontal_boxs_is() {
+    let read = |bodypr: &str| {
+        let wsp = box_wsp(100, 200, "", bodypr, "BOXTEXT");
+        let body = format!(
+            "<w:p><w:r><w:t>before</w:t></w:r></w:p><w:p>{}</w:p><w:p><w:r><w:t>after</w:t></w:r></w:p>",
+            anchor(100, 300, 100, 200, 1, false, 1, &wsp)
+        );
+        super::vertical::reading(&settings_doc(&body, 15).expect("the document reads"))
+    };
+    let horizontal = read("<wps:bodyPr/>");
+    assert!(horizontal.0.contains("BOXTEXT") && horizontal.1.iter().any(|t| t == "BOXTEXT"), "{horizontal:?}");
+    for vert in ["vert", "vert270", "eaVert"] {
+        assert_eq!(read(&format!(r#"<wps:bodyPr vert="{vert}"/>"#)), horizontal, "{vert}");
+    }
+}

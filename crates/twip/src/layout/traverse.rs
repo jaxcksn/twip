@@ -416,20 +416,32 @@ pub enum Spatial {
     Page { lines: Vec<SpatialLine>, rows: Vec<SpatialRow> },
 }
 
+fn holds_turned(children: &[Child]) -> bool {
+    children.iter().any(|c| match c {
+        Child::Turned { .. } => true,
+        Child::Group { children, .. } => holds_turned(children),
+        _ => false,
+    })
+}
+
 pub fn spatial(page: &PageFragment, provisional: bool) -> Spatial {
     if provisional {
         return Spatial::Provisional;
     }
     let (mut lines, mut rows) = (Vec::new(), Vec::new());
-    fn add(lines: &mut Vec<SpatialLine>, para: Option<ParaId>, p: &PlacedLine, dx: f64, dy: f64, h: f64) {
+    fn add(lines: &mut Vec<SpatialLine>, para: Option<ParaId>, p: &PlacedLine, dx: f64, dy: f64, h: f64, peel: bool) {
         {
             let (x, y) = (dx + p.x, dy + p.y);
-            let mut runs = p.line.items.iter().filter(|it| matches!(it, Item::Glyphs(_))).peekable();
+            let items: &[Item] = match &*p.line.items {
+                [Item::Turned(t)] if peel => &t.items,
+                items => items,
+            };
+            let mut runs = items.iter().filter(|it| matches!(it, Item::Glyphs(_))).peekable();
             if runs.peek().is_some() && runs.all(|it| below_page(it, y, h)) {
                 return;
             }
             let first = lines.len();
-            for it in p.line.items.iter() {
+            for it in items.iter() {
                 let Item::Glyphs(r) = it else { continue };
                 let q = r.para.or(para);
                 let k = match lines[first..].iter().position(|l| l.para == q) {
@@ -453,17 +465,17 @@ pub fn spatial(page: &PageFragment, provisional: bool) -> Spatial {
             }
         }
     }
-    fn walk(children: &[Child], dx: f64, dy: f64, h: f64, lines: &mut Vec<SpatialLine>, rows: &mut Vec<SpatialRow>) {
+    fn walk(children: &[Child], dx: f64, dy: f64, h: f64, peel: bool, lines: &mut Vec<SpatialLine>, rows: &mut Vec<SpatialRow>) {
         for c in children {
             match c {
-                Child::Box(b) => walk(&b.children, dx + b.offset.0, dy + b.offset.1, h, lines, rows),
-                Child::Group { offset, children } => walk(children, dx + offset.0, dy + offset.1, h, lines, rows),
+                Child::Box(b) => walk(&b.children, dx + b.offset.0, dy + b.offset.1, h, peel || matches!(b.kind, BoxKind::Turned(_)), lines, rows),
+                Child::Group { offset, children } => walk(children, dx + offset.0, dy + offset.1, h, peel, lines, rows),
                 Child::Para(p) => {
                     for l in p.lines.iter() {
-                        add(lines, Some(p.para), l, dx, dy, h);
+                        add(lines, Some(p.para), l, dx, dy, h, peel);
                     }
                 }
-                Child::Line { para, placed } => add(lines, *para, placed, dx, dy, h),
+                Child::Line { para, placed } => add(lines, *para, placed, dx, dy, h, peel),
                 Child::Table(t) => {
                     for r in t.rows.iter() {
                         let rect = [r.rect[0] + dx, r.rect[1] + dy, r.rect[2] + dx, r.rect[3] + dy];
@@ -475,11 +487,28 @@ pub fn spatial(page: &PageFragment, provisional: bool) -> Spatial {
                             edges: r.edges.iter().map(|&(x, k)| (x + dx, k)).collect(),
                         });
                         for cell in r.cells.iter() {
-                            walk(&cell.content, dx, dy, h, lines, rows);
+                            let first = lines.len();
+                            walk(&cell.content, dx, dy, h, peel, lines, rows);
+                            // A vertical cell's lines sort at its corner, in the order they read.
+                            if holds_turned(&cell.content) {
+                                let [x, y, ..] = cell.place.rect;
+                                for l in &mut lines[first..] {
+                                    l.rect[0] = x + dx;
+                                    l.rect[1] = y + dy;
+                                }
+                            }
                         }
                     }
                 }
-                Child::Items(_) | Child::Turned { .. } => {}
+                Child::Items(_) => {}
+                Child::Turned { text, .. } => {
+                    for u in text.iter() {
+                        let (mut inner, mut unused) = (Vec::new(), Vec::new());
+                        walk(&u.children, 0.0, 0.0, f64::INFINITY, false, &mut inner, &mut unused);
+                        let drawn = u.turn.then(Turn::NONE.shifted(dx, dy));
+                        lines.extend(inner.into_iter().map(|l| SpatialLine { rect: drawn.rect(l.rect), ..l }));
+                    }
+                }
             }
         }
     }
@@ -488,7 +517,7 @@ pub fn spatial(page: &PageFragment, provisional: bool) -> Spatial {
             PageChild::Body(b) => &**b,
             PageChild::Header(b) | PageChild::Footer(b) => b,
         };
-        walk(&b.children, b.offset.0, b.offset.1, page.h, &mut lines, &mut rows);
+        walk(&b.children, b.offset.0, b.offset.1, page.h, false, &mut lines, &mut rows);
     }
     lines.sort_by(|a, b| a.rect[1].total_cmp(&b.rect[1]).then(a.rect[0].total_cmp(&b.rect[0])));
     Spatial::Page { lines, rows }
@@ -827,41 +856,37 @@ pub fn semantic_chars(page: &PageFragment, out: &mut Vec<(ParaId, Unit, char)>) 
             out.extend(r.chars.iter().filter_map(|&(c, _, u)| u.map(|u| (para, u, c))));
         }
     }
-    fn walk(children: &[Child], dy: f64, h: f64, out: &mut Vec<(ParaId, Unit, char)>) {
+    // A vertical section's lines hold their items turned, in one item.
+    fn line(l: &PlacedLine, peel: bool, dy: f64, h: f64, out: &mut Vec<(ParaId, Unit, char)>) {
+        let items = match &*l.line.items {
+            [Item::Turned(t)] if peel => &t.items[..],
+            items => items,
+        };
+        items.iter().for_each(|it| run(it, dy + l.y, h, out));
+    }
+    fn walk(children: &[Child], dy: f64, h: f64, peel: bool, out: &mut Vec<(ParaId, Unit, char)>) {
         for c in children {
             match c {
-                Child::Box(b) => walk(&b.children, dy + b.offset.1, h, out),
-                Child::Group { offset, children } => walk(children, dy + offset.1, h, out),
-                Child::Para(p) => {
-                    for l in p.lines.iter() {
-                        for it in l.line.items.iter() {
-                            run(it, dy + l.y, h, out);
-                        }
-                    }
-                }
-                Child::Line { placed, .. } => {
-                    for it in placed.line.items.iter() {
-                        run(it, dy + placed.y, h, out);
-                    }
-                }
+                Child::Box(b) => walk(&b.children, dy + b.offset.1, h, peel || matches!(b.kind, BoxKind::Turned(_)), out),
+                Child::Group { offset, children } => walk(children, dy + offset.1, h, peel, out),
+                Child::Para(p) => p.lines.iter().for_each(|l| line(l, peel, dy, h, out)),
+                Child::Line { placed, .. } => line(placed, peel, dy, h, out),
                 Child::Table(t) => {
                     for r in t.rows.iter().filter(|r| !r.repeat) {
                         for cell in r.cells.iter() {
-                            walk(&cell.content, dy, h, out);
+                            walk(&cell.content, dy, h, peel, out);
                         }
                     }
                 }
-                Child::Items(items) | Child::Turned { items, .. } => {
-                    for it in items.iter() {
-                        run(it, dy, h, out);
-                    }
-                }
+                Child::Items(items) => items.iter().for_each(|it| run(it, dy, h, out)),
+                // The text as laid out, whose lines are unturned: nothing of it is below the page.
+                Child::Turned { text, .. } => text.iter().for_each(|u| walk(&u.children, f64::NEG_INFINITY, h, false, out)),
             }
         }
     }
     for c in page.children.iter() {
         let PageChild::Body(b) = c else { continue };
-        walk(&b.children, b.offset.1, page.h, out);
+        walk(&b.children, b.offset.1, page.h, false, out);
     }
 }
 
