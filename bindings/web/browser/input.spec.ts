@@ -277,6 +277,25 @@ test('host keys emit hostCommand, and the browser’s Save, Print and Find stay 
   expect(defaults.filter(Boolean)).toHaveLength(3);
 });
 
+test('AltGr types the layout’s character; Ctrl+Alt without it is a shortcut', async ({ page }) => {
+  await mount(page);
+  await typed(page, 'x');
+  const press = (altGraph: boolean, key: string) =>
+    page.evaluate(
+      ([altGraph, key]) => {
+        const input = document.querySelector('#editor [data-twip="input"]')!;
+        const init = { key, code: 'KeyT', ctrlKey: true, altKey: true, modifierAltGraph: altGraph, bubbles: true, cancelable: true };
+        const e = new KeyboardEvent('keydown', init);
+        input.dispatchEvent(e);
+        return e.defaultPrevented;
+      },
+      [altGraph, key] as const,
+    );
+  expect(await press(true, '\u0167')).toBe(false);
+  expect(await press(false, 't')).toBe(true);
+  await expect.poll(() => text(page)).toBe('x\u2122');
+});
+
 test('Ctrl+D asks for the font dialog, and the browser’s bookmark dialog stays shut', async ({ page }) => {
   await mount(page);
   await typed(page, 'keys');

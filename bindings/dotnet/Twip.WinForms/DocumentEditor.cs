@@ -769,8 +769,10 @@ public class DocumentEditor : Control
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
     {
         // Ctrl and Alt chords reach the engine before the form's menus and accelerators: a key the engine owns (Ctrl+B)
-        // stays here, and an application key (Ctrl+S) raises HostCommandRequested instead.
-        if (_host is not null && (msg.Msg is WmKeyDown or WmSysKeyDown) && (keyData & (Keys.Control | Keys.Alt)) != 0)
+        // stays here, and an application key (Ctrl+S) raises HostCommandRequested instead. AltGr (Ctrl+Alt) typing a
+        // character on this keyboard layout types it, as Word does.
+        if (_host is not null && (msg.Msg is WmKeyDown or WmSysKeyDown) && (keyData & (Keys.Control | Keys.Alt)) != 0
+            && !((keyData & (Keys.Control | Keys.Alt)) == (Keys.Control | Keys.Alt) && LayoutKeys.TypesCharacter(msg)))
         {
             var key = KeyMap.ToEditorKey(keyData & Keys.KeyCode);
             if (key != EditorKey.None)

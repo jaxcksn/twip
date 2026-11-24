@@ -254,6 +254,8 @@ export function startInput(
   ledger.listen(input, 'keyup', modifier);
   ledger.listen(input, 'keydown', (e: KeyboardEvent) => {
     if (e.isComposing || e.keyCode === 229 || modifier(e)) return;
+    // AltGr typing a character: the layout's character (through beforeinput), not a Ctrl+Alt shortcut.
+    if ([...e.key].length === 1 && e.getModifierState('AltGraph')) return;
     const code = codeOf(e);
     if (code === 'F6' && !e.ctrlKey && !e.altKey && !e.metaKey) {
       e.preventDefault();
