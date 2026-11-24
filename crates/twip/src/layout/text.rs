@@ -971,7 +971,8 @@ impl<'a> Builder<'a> {
             if let (Inline::Opaque(o), Shown::Value(v)) = (inl, &shown[k]) {
                 self.flush_text(&mut pend, &mut pend_runs, &mut pend_units)?;
                 let first = self.pieces.len();
-                self.text(v, o.run.as_ref().map_or_else(|| para.mark_in(view), |r| run_in(r, view)))?;
+                let run = o.run.as_ref().map(|r| marked_run(run_in(r, view), view, &space.markup));
+                self.text(v, run.as_ref().unwrap_or_else(|| para.mark_in(view)))?;
                 for i in first..self.pieces.len() {
                     self.pieces[i].src = Some(Unit(at));
                 }
@@ -2000,10 +2001,32 @@ pub fn shape_space(
         ..ShapeSpace::default()
     };
     let spans = crate::docx::fields::spans(&para.inlines);
+    // The value here of the field at `k` (`kind`): `\p`, where its bookmark is from it.
+    let value_at = |k: usize, kind: &FieldKind| {
+        let span = crate::docx::fields::span_in(&spans, k);
+        let value = match kind {
+            // A NOTEREF: its note's number, as the reference shows it.
+            FieldKind::NoteRef(_, Some(n)) => notes.get(n).cloned(),
+            _ => fields.value(kind, span.map(|s| crate::docx::fields::code_text(&para.inlines, s)).unwrap_or_default().trim()),
+        };
+        match kind {
+            FieldKind::PageRef(name) | FieldKind::NoteRef(name, _)
+                if span.is_some_and(|s| crate::docx::fields::has_word(&para.inlines, s, "\\p")) =>
+            {
+                match (value, fields.page_refs.as_ref().and_then(|m| m.get(name))) {
+                    (Some(v), Some(r)) => {
+                        let above = r.above(name, para, k, fields.here, fields.para_at.as_deref());
+                        Some(r.relative(&v, matches!(kind, FieldKind::PageRef(_)), above, fields.here))
+                    }
+                    (v, _) => v,
+                }
+            }
+            _ => value,
+        }
+    };
     for (k, inl) in para.inlines.iter().enumerate() {
         match inl {
             Inline::FieldBegin { kind: Some(kind), .. } => {
-                let code = crate::docx::fields::span_in(&spans, k).map(|s| crate::docx::fields::code_text(&para.inlines, s)).unwrap_or_default();
                 let chapter =
                     fields.chapters.as_ref().and_then(|c| c.get(&ParaId(para.id))).filter(|_| matches!(kind, FieldKind::Page | FieldKind::PgNum));
                 let value = match (kind, crate::docx::fields::span_in(&spans, k)) {
@@ -2014,27 +2037,10 @@ pub fn shape_space(
                         };
                         // A field that isn't computed: its cached result.
                         let Some(kind) = kind else { return Some(crate::docx::fields::result_text(&para.inlines, s)) };
-                        fields.value(kind, crate::docx::fields::code_text(&para.inlines, s).trim()).or_else(|| value.clone())
+                        value_at(b, kind).or_else(|| value.clone())
                     })
                     .and_then(|c| crate::docx::fields::if_field(&crate::docx::fields::words(&c))),
-                    // A NOTEREF: its note's number, as the reference shows it.
-                    (FieldKind::NoteRef(_, Some(n)), _) => notes.get(n).cloned(),
-                    _ => fields.value(kind, code.trim()),
-                };
-                // `\p`: where the bookmark is from the field.
-                let value = match kind {
-                    FieldKind::PageRef(name) | FieldKind::NoteRef(name, _)
-                        if crate::docx::fields::span_in(&spans, k).is_some_and(|s| crate::docx::fields::has_word(&para.inlines, s, "\\p")) =>
-                    {
-                        match (value, fields.page_refs.as_ref().and_then(|m| m.get(name))) {
-                            (Some(v), Some(r)) => {
-                                let above = r.above(name, para, k, fields.here, fields.para_at.as_deref());
-                                Some(r.relative(&v, matches!(kind, FieldKind::PageRef(_)), above, fields.here))
-                            }
-                            (v, _) => v,
-                        }
-                    }
-                    _ => value,
+                    _ => value_at(k, kind),
                 };
                 space.fields.push(value.map(|v| chapter.cloned().unwrap_or_default() + &v))
             }

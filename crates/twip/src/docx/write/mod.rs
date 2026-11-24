@@ -4014,8 +4014,9 @@ struct Emit<'s, 'a, 'i> {
     fresh_written: usize,
 }
 
-/// A field edge's runs `xml` (main namespace prefix `w`) with their code as deleted (`w:delInstrText`) or not.
-fn edge_runs(xml: &str, w: &str, deleted: bool) -> String {
+/// A field edge's runs `xml` with their code as deleted (`w:delInstrText`) or not, in the prefix the runs are in.
+fn edge_runs(xml: &str, deleted: bool) -> String {
+    let w = crate::docx::fields::edge_prefix(xml);
     let (from, to) = if deleted { ("instrText", "delInstrText") } else { ("delInstrText", "instrText") };
     xml.replace(&format!("<{w}{from}"), &format!("<{w}{to}")).replace(&format!("</{w}{from}>"), &format!("</{w}{to}>"))
 }
@@ -4427,7 +4428,9 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
             let mut read = Vec::new();
             qs.iter().flat_map(|q| q.inlines.iter()).for_each(|i| marker(i, &mut read));
             marker_outside = read.iter().filter_map(Marker::element).filter(|k| !marker_src.contains_key(k)).collect();
-            for m in read.iter().filter(|m| s.marker_range(m, srcs).is_none()) {
+            // A field edge the reader made (not its source's) is its paragraph's.
+            let made = |m: &Marker| matches!(m, Marker::Opaque(o) if o.field.is_some() && o.src.is_none());
+            for m in read.iter().filter(|m| !made(m) && s.marker_range(m, srcs).is_none()) {
                 match m {
                     Marker::Bookmark(n) => marks_outside.0.push(n.clone()),
                     Marker::Opaque(o) => marks_outside.1.push(Rc::as_ptr(o)),
@@ -4931,7 +4934,7 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                     self.open_to(level);
                     let (open, close) = revisions::wrappers(&self.s.w, ins.as_deref(), del.as_deref(), self.s.people);
                     let deleted = run.rev.del.as_ref().is_some_and(|m| m.kind != crate::docx::review::MarkKind::MoveFrom);
-                    let x = edge_runs(o.xml.0.as_deref().unwrap_or(""), &self.s.w, deleted);
+                    let x = edge_runs(o.xml.0.as_deref().unwrap_or(""), deleted);
                     self.out.push_str(&open);
                     self.out.push_str(&x);
                     self.out.push_str(&close);

@@ -41,5 +41,5 @@ fn discarded_attempt_leaves_no_effects() {
     assert!(!effects[0].paras.contains(&id), "page 1 recorded the rewound heading");
     assert!(!effects[0].bookmarks.iter().any(|b| b.0 == "moved"), "page 1 recorded the rewound heading's bookmark");
     assert!(paras_drawn(&snapshot.pages()[1]).contains(&id));
-    assert!(effects[1].bookmarks.iter().any(|b| b.0 == "moved"));
+    assert!(effects[1].bookmarks.contains(&("moved".to_string(), id)), "page 2 recorded the bookmark in the heading");
 }

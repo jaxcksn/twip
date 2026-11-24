@@ -763,3 +763,34 @@ fn a_copy_drops_a_comment_whose_start_was_in_a_deleted_cell() {
     walk(&f.blocks, &mut ids);
     assert_eq!(ids, [2, 2, 2], "the comment cut off by the deleted cell goes, the whole one stays");
 }
+
+#[test]
+fn html_skips_a_merged_cells_drawings_with_it() {
+    use crate::editing::clipboard::{ClipPicture, Fragment};
+    let doc = super::open("FX-OBJ.docx");
+    let mut pic = None;
+    for b in &doc.document().sections[0].blocks {
+        if let Block::Para(p) = b {
+            pic = pic.or_else(|| p.inlines.iter().find(|i| matches!(i, Inline::Picture(..))).cloned());
+        }
+    }
+    let pic = pic.expect("FX-OBJ has an inline picture");
+    let cell = |merge: &str| format!(r#"<w:tc><w:tcPr>{merge}</w:tcPr><w:p>{}</w:p></w:tc>"#, t("x"));
+    let row = |a: &str| format!("<w:tr>{}{}</w:tr>", cell(a), cell(""));
+    let e = ed(&format!(
+        r#"<w:tbl><w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/></w:tblGrid>{}{}</w:tbl><w:p/>"#,
+        row(r#"<w:vMerge w:val="restart"/>"#),
+        row("<w:vMerge/>")
+    ));
+    let Some(Block::Table(mut table)) = e.document().sections[0].blocks.first().cloned() else { panic!("a table") };
+    // A picture in the merged cell, then one in the cell after it.
+    for (r, c) in [(1, 0), (1, 1)] {
+        let Some(Block::Para(p)) = table.rows[r].cells[c].blocks.first_mut() else { panic!("a paragraph") };
+        p.inlines.push(pic.clone());
+    }
+    let f = Fragment { blocks: vec![Block::Table(table)], ..Default::default() };
+    let png = |b: u8| ClipPicture { png: vec![b; 3], size: [10.0, 10.0] };
+    let html = f.html_with(&[Some(png(1)), Some(png(2))]);
+    let src = |b: u8| format!("data:image/png;base64,{}", crate::api::value::base64(&[b; 3]));
+    assert!(html.contains(&src(2)) && !html.contains(&src(1)), "the later cell's own drawing: {html}");
+}

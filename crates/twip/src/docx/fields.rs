@@ -474,8 +474,12 @@ pub fn span_code(inlines: &[Inline], k: usize) -> std::borrow::Cow<'_, str> {
 }
 
 /// The main namespace prefix an edge's runs were written in (`w:`).
-fn edge_prefix(xml: &str) -> &str {
-    xml.strip_prefix('<').and_then(|x| x.split_once("r>")).map_or("w:", |(w, _)| w)
+pub(crate) fn edge_prefix(xml: &str) -> &str {
+    xml.strip_prefix('<')
+        .and_then(|x| x.split(|c: char| c.is_whitespace() || c == '>' || c == '/').next())
+        .and_then(|name| name.strip_suffix('r'))
+        .filter(|w| w.is_empty() || w.ends_with(':'))
+        .unwrap_or("w:")
 }
 
 /// The text of `inlines` as results show it: codes left out, an evaluated field as its value (or its result).
@@ -1053,6 +1057,8 @@ pub(crate) fn field_changes(doc: &Document, now: i64) -> (Vec<FieldChange>, Vec<
     let mut numbers: Vec<Option<ParaNumber>> = Vec::new();
     let mut counters = super::numbering::Counters::default();
     let mut mark_at: HashMap<String, usize> = HashMap::new();
+    // Each such bookmark's end's paragraph.
+    let mut mark_end: HashMap<String, usize> = HashMap::new();
     for s in &doc.sections {
         each_para(&s.blocks, false, &mut |p, _| {
             let here = order.len();
@@ -1070,6 +1076,17 @@ pub(crate) fn field_changes(doc: &Document, now: i64) -> (Vec<FieldChange>, Vec<
                     sources.entry(name.to_string()).or_insert((first.clone(), r.run_style(&base)));
                 }
             });
+            if !mark_at.is_empty() {
+                for i in &p.inlines {
+                    if let Inline::Bookmark(b) = i
+                        && let Some(n) = b.strip_prefix('/')
+                        && let Some((name, _)) = mark_at.get_key_value(n.to_ascii_lowercase().as_str())
+                        && !mark_end.contains_key(name)
+                    {
+                        mark_end.insert(name.clone(), here);
+                    }
+                }
+            }
             order.push(style_hits(p));
         });
     }
@@ -1120,13 +1137,28 @@ pub(crate) fn field_changes(doc: &Document, now: i64) -> (Vec<FieldChange>, Vec<
                         });
                         // `\p`: where the bookmark is from the field, after its number or alone.
                         let side = w.iter().any(|x| x.eq_ignore_ascii_case("\\p")).then(|| {
-                            // In the field's own paragraph: by the bookmark's start before the field or after it.
-                            let in_para = || p.inlines[..sp.begin].iter().any(|i| matches!(i, Inline::Bookmark(b) if b.eq_ignore_ascii_case(&name)));
-                            if mark_at.get(&name).is_some_and(|&k| k < at || (k == at && in_para())) { "above" } else { "below" }
+                            // In the field's own paragraph: by the bookmark's start (and end) before the field or after it.
+                            let before = |k: Option<&usize>, end: bool| {
+                                let is_mark = |x: &String| match x.strip_prefix('/') {
+                                    Some(n) => end && n.eq_ignore_ascii_case(&name),
+                                    None => !end && x.eq_ignore_ascii_case(&name),
+                                };
+                                k.is_some_and(|&k| {
+                                    k < at || (k == at && p.inlines[..sp.begin].iter().any(|i| matches!(i, Inline::Bookmark(x) if is_mark(x))))
+                                })
+                            };
+                            let started = before(mark_at.get(&name), false);
+                            let ended = mark_end.get(&name).map_or(started, |k| before(Some(k), true));
+                            match (started, ended) {
+                                (true, false) => None,
+                                (true, true) => Some("above"),
+                                _ => Some("below"),
+                            }
                         });
                         match (numbered, marks.get(&name), side) {
-                            (Some(n), Some(_), Some(s)) => Some(format!("{n} {s}")),
-                            (None, Some(_), Some(s)) => Some(s.to_string()),
+                            (_, Some(_), Some(None)) => Some("Error! Not a valid bookmark self-reference.".into()),
+                            (Some(n), Some(_), Some(Some(s))) => Some(format!("{n} {s}")),
+                            (None, Some(_), Some(Some(s))) => Some(s.to_string()),
                             (Some(n), Some(_), None) => Some(n),
                             (_, Some(t), _) => Some(t.clone()),
                             (_, None, _) => Some("Error! Reference source not found.".into()),
@@ -1358,6 +1390,9 @@ impl ParaNumber {
     }
 }
 
+/// A `SEQ` past the largest number.
+const SEQ_OVERFLOW: &str = "Error! Number cannot be represented in specified format.";
+
 /// The `SEQ` counters of one story as its fields are read in order: each identifier's number, and the headings passed
 /// (by outline level) for `\s`, which starts a sequence again after each heading of its level.
 #[derive(Default)]
@@ -1373,19 +1408,25 @@ impl Sequences {
         let has = |sw: &str| w.iter().any(|x| x.eq_ignore_ascii_case(sw));
         let arg = |sw: &str| w.iter().position(|x| x.eq_ignore_ascii_case(sw)).and_then(|k| w.get(k + 1)?.parse::<i64>().ok());
         let level = arg("\\s").filter(|l| (1..=9).contains(l));
-        let (n, mark) = self.numbers.entry(id.to_ascii_lowercase()).or_insert((0, 0));
+        let counter = self.numbers.entry(id.to_ascii_lowercase()).or_insert((0, 0));
+        let (mut n, mut mark) = *counter;
         if let Some(l) = level {
             let passed = self.headings[l as usize - 1];
-            if *mark != passed {
-                (*n, *mark) = (0, passed);
+            if mark != passed {
+                (n, mark) = (0, passed);
             }
         }
         if let Some(r) = arg("\\r") {
-            *n = r;
+            n = r;
         } else if !has("\\c") && !deleted {
-            *n += 1;
+            let Some(next) = n.checked_add(1) else { return SEQ_OVERFLOW.into() };
+            n = next;
         }
-        if has("\\h") { String::new() } else { format_field(&n.to_string(), code, None) }
+        if !deleted {
+            *counter = (n, mark);
+        }
+        // `\h` hides it, unless a format switch is there too.
+        if has("\\h") && !w.iter().any(|x| x.starts_with("\\*")) { String::new() } else { format_field(&n.to_string(), code, None) }
     }
 
     /// Sequence `id`'s number so far.
@@ -2644,5 +2685,26 @@ mod tests {
         markup.style.deletions.mark = crate::docx::review::TextMark::Caret;
         let caret = crate::docx::review::ReviewView { view: MarkupView::All, markup: Rc::new(markup), ..Default::default() };
         assert_eq!(visible_in(&v, &caret), "a 1^2^ z", "each deletion as its stand-in");
+    }
+
+    #[test]
+    fn deleted_sequences_leave_the_counter_and_hidden_ones_show_with_a_format() {
+        let mut seq = Sequences::default();
+        let mut next = |code: &str, deleted: bool| seq.next("Figure", code, &words(code), deleted);
+        assert_eq!(next(" SEQ Figure ", false), "1");
+        assert_eq!(next(r" SEQ Figure \r 9 ", true), "9", "a deleted restart shows its number");
+        assert_eq!(next(" SEQ Figure ", false), "2", "and leaves the count");
+        assert_eq!(next(r" SEQ Figure \h ", false), "");
+        assert_eq!(next(r" SEQ Figure \h \* ROMAN ", false), "IV", "a format switch shows a hidden one");
+        assert_eq!(next(&format!(r" SEQ Figure \r {} ", i64::MAX), false), i64::MAX.to_string());
+        assert!(next(" SEQ Figure ", false).starts_with("Error! "), "no number past the largest");
+    }
+
+    #[test]
+    fn an_edge_prefix_is_its_runs_tag_prefix() {
+        assert_eq!(edge_prefix(r#"<w:r w:rsidR="00AB"><w:fldChar w:fldCharType="begin"/></w:r>"#), "w:");
+        assert_eq!(edge_prefix("<x:r><x:fldChar/></x:r>"), "x:");
+        assert_eq!(edge_prefix("<r><fldChar/></r>"), "");
+        assert_eq!(edge_prefix("<w:fldSimple/>"), "w:");
     }
 }

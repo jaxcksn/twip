@@ -15,6 +15,7 @@ mod depth;
 mod edit_cost;
 mod empty_stories;
 mod field_control_edits;
+mod field_edges;
 mod field_shading;
 mod fields;
 mod find_replace;

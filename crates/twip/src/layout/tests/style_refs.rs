@@ -67,7 +67,7 @@ fn doc() -> Option<crate::docx::Document> {
 
 #[test]
 fn a_header_styleref_finds_its_style_by_name_on_its_page() {
-    let Some(doc) = doc() else { return };
+    let doc = doc().expect("the STYLEREF fixture loads");
     let pages: Vec<String> = page_chars(&doc)
         .into_iter()
         .map(|mut p| {
@@ -133,7 +133,7 @@ fn numbered() -> Option<crate::docx::Document> {
 
 #[test]
 fn a_header_styleref_shows_paragraph_numbers() {
-    let Some(doc) = numbered() else { return };
+    let doc = numbered().expect("the numbered STYLEREF fixture loads");
     let pages: Vec<String> = page_chars(&doc)
         .into_iter()
         .map(|mut p| {

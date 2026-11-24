@@ -328,8 +328,9 @@ pub(super) fn slice(p: &Paragraph, a: Unit, b: Unit) -> Vec<Inline> {
         let (s, e) = (at, at + n);
         at = e;
         if n == 0 {
-            let control = matches!(i, Inline::ControlStart(_) | Inline::ControlEnd(_));
-            if (s > a.0 && s < b.0) || (control && s >= a.0 && s <= b.0) || bound.contains(&k) {
+            // Controls and field edges at the ends: pairing keeps those whose partner is in it.
+            let edge = matches!(i, Inline::ControlStart(_) | Inline::ControlEnd(_)) || crate::docx::fields::span_edge(i).is_some();
+            if (s > a.0 && s < b.0) || (edge && s >= a.0 && s <= b.0) || bound.contains(&k) {
                 out.push(i.clone());
             }
             continue;
@@ -493,7 +494,9 @@ fn html(blocks: &[Block], out: &mut String, drawn: &mut std::slice::Iter<'_, Opt
                 for (ri, r) in t.rows.iter().enumerate() {
                     out.push_str("<tr>");
                     for (ci, c) in r.cells.iter().enumerate() {
+                        // A merged cell's drawings, which it doesn't show
                         if c.v_merge == VMerge::Continue {
+                            skip_drawn(&c.blocks, drawn);
                             continue;
                         }
                         let col = g.rows[ri][ci].0;
@@ -513,6 +516,18 @@ fn html(blocks: &[Block], out: &mut String, drawn: &mut std::slice::Iter<'_, Opt
                 }
                 out.push_str("</table>");
             }
+        }
+    }
+}
+
+/// Past the drawings of the objects in `blocks`.
+fn skip_drawn(blocks: &[Block], drawn: &mut std::slice::Iter<'_, Option<ClipPicture>>) {
+    for b in blocks {
+        match b {
+            Block::Para(p) => p.inlines.iter().filter(|i| matches!(i, Inline::Picture(..) | Inline::Float(..))).for_each(|_| {
+                drawn.next();
+            }),
+            Block::Table(t) => t.rows.iter().flat_map(|r| &r.cells).for_each(|c| skip_drawn(&c.blocks, drawn)),
         }
     }
 }
@@ -539,14 +554,22 @@ fn without_revisions(r: &Run) -> Run {
     Rc::new(s)
 }
 
+/// The run holding `i`'s tracked changes: a field edge's is its markers'.
+fn marked_run(i: &Inline) -> Option<&Run> {
+    match i {
+        Inline::Opaque(o) if o.field.is_some() => o.run.as_ref(),
+        _ => i.run(),
+    }
+}
+
 fn accept(blocks: &mut Vec<Block>) {
     join_deleted_marks(blocks);
     for b in blocks.iter_mut() {
         match b {
             Block::Para(p) => {
-                p.inlines.retain(|i| i.run().is_none_or(|r| r.rev.del.is_none()));
+                p.inlines.retain(|i| marked_run(i).is_none_or(|r| r.rev.del.is_none()));
                 for i in &mut p.inlines {
-                    if let Some(r) = i.run().filter(|r| !r.rev.is_empty()) {
+                    if let Some(r) = marked_run(i).filter(|r| !r.rev.is_empty()) {
                         *i = super::format::with_run(i, &without_revisions(r));
                     }
                     if let Some(tb) = i.story_mut() {

@@ -110,16 +110,14 @@ fn place(blocks: &[Block], story: super::position::StoryId, (b, k): (usize, usiz
     Some(Position::text(story, ParaId(p.id), Unit(units_before(&p.inlines, k))))
 }
 
-/// The first closing brace in `p`: its inline and unit.
-fn close_in(p: &Paragraph) -> Option<(usize, u32)> {
+/// The closing braces in `p`: each one's inline and unit.
+fn closes(p: &Paragraph) -> impl Iterator<Item = (usize, u32)> + '_ {
     let mut at = 0u32;
-    for (j, i) in p.inlines.iter().enumerate() {
-        if matches!(span_edge(i), Some(FieldEdge::Code)) {
-            return Some((j, at));
-        }
+    p.inlines.iter().enumerate().filter_map(move |(j, i)| {
+        let u = at;
         at += i.units() as u32;
-    }
-    None
+        matches!(span_edge(i), Some(FieldEdge::Code)).then_some((j, u))
+    })
 }
 
 /// The first end edge in `p` at or after unit `u`: its inline and unit.
@@ -132,6 +130,27 @@ fn end_in(p: &Paragraph, u: u32) -> Option<(usize, u32)> {
         at += i.units() as u32;
     }
     None
+}
+
+/// The field showing its code that ends at the first end edge of `p` (block `b`) at or after unit `u`, of those ending
+/// there the outermost: its start, and the end's unit.
+fn shown_end_from(blocks: &[Block], b: usize, p: &Paragraph, u: u32) -> Option<((usize, usize), u32)> {
+    let (_, e) = end_in(p, u)?;
+    let mut at = 0u32;
+    let mut shown = None;
+    for (j, i) in p.inlines.iter().enumerate() {
+        if at > e {
+            break;
+        }
+        if at == e
+            && matches!(span_edge(i), Some(FieldEdge::End))
+            && let Some(s) = partner(blocks, (b, j)).filter(|&s| shows_code(blocks, s))
+        {
+            shown = Some((s, e));
+        }
+        at += i.units() as u32;
+    }
+    shown
 }
 
 /// Where a place a field showing its code hides shows: after the field's end (its result is hidden from its code's
@@ -147,13 +166,20 @@ pub(super) fn shown_place(doc: &Document, idx: &DocIndex, pos: Position) -> Opti
     if !p.inlines.iter().any(|i| matches!(i, Inline::Opaque(o) if o.field.is_some())) {
         return None;
     }
-    if let Some((j, c)) = close_in(p) {
+    let mut braced = false;
+    for (j, c) in closes(p) {
         if u.0 <= c {
             return None;
         }
+        braced = true;
         let end = end_from(blocks, (slot.block, j + 1))?;
         let at = place(blocks, pos.story, end)?;
-        return (end.0 != slot.block || at.para_offset().is_some_and(|(_, e)| u < e)).then_some(at);
+        if end.0 != slot.block || at.para_offset().is_some_and(|(_, e)| u < e) {
+            return Some(at);
+        }
+    }
+    if braced {
+        return None;
     }
     if crate::docx::fields::folded(p) {
         return place(blocks, pos.story, end_from(blocks, (slot.block, 0))?);
@@ -161,8 +187,7 @@ pub(super) fn shown_place(doc: &Document, idx: &DocIndex, pos: Position) -> Opti
     if !may_end_shown(blocks, slot.block) {
         return None;
     }
-    let (j, e) = end_in(p, u.0 + 1)?;
-    shows_code(blocks, partner(blocks, (slot.block, j))?).then(|| Position::text(pos.story, para, Unit(e)))
+    shown_end_from(blocks, slot.block, p, u.0 + 1).map(|(_, e)| Position::text(pos.story, para, Unit(e)))
 }
 
 /// Where a place in a cell of a table inside a fold shows: after the end of the field folding the outermost such table.
@@ -189,17 +214,13 @@ pub(super) fn fold_step(doc: &Document, idx: &DocIndex, pos: Position, forward: 
         return None;
     }
     if forward {
-        let (j, c) = close_in(p)?;
-        return if u.0 < c { None } else { place(blocks, pos.story, end_from(blocks, (slot.block, j + 1))?) };
+        let (j, _) = closes(p).find(|&(_, c)| c == u.0)?;
+        return place(blocks, pos.story, end_from(blocks, (slot.block, j + 1))?);
     }
-    if close_in(p).is_none() && !may_end_shown(blocks, slot.block) {
+    if closes(p).next().is_none() && !may_end_shown(blocks, slot.block) {
         return None;
     }
-    let (j, _) = end_in(p, u.0)?;
-    let start = partner(blocks, (slot.block, j))?;
-    if !shows_code(blocks, start) {
-        return None;
-    }
+    let (start, _) = shown_end_from(blocks, slot.block, p, u.0)?;
     let close = close_after(blocks, start)?;
     let before = place(blocks, pos.story, close)?;
     // Inside the code (a field in one paragraph): an ordinary step.
@@ -236,7 +257,7 @@ pub(super) fn brace_field(doc: &Document, idx: &DocIndex, pos: Position, back: b
             let close = after.para_offset()?;
             let slot = idx.para_slot(close.0)?;
             let p = para_of(blocks, slot.block)?;
-            let (j, _) = close_in(p)?;
+            let (j, _) = closes(p).find(|&(_, c)| c == close.1.0)?;
             partner_start(blocks, (slot.block, j))?
         }
         None => return None,
@@ -260,17 +281,27 @@ fn partner_start(blocks: &[Block], (b, k): (usize, usize)) -> Option<(usize, usi
 /// Whether unit `u` of `p` is inside a code a field across paragraphs shows (after its opening brace, up to its
 /// closing one).
 pub(super) fn in_code(p: &Paragraph, u: Unit) -> bool {
+    code_close(p, u).is_some()
+}
+
+/// The closing brace (its inline) of the code holding unit `u` of `p`, as [`in_code`] finds it.
+fn code_close(p: &Paragraph, u: Unit) -> Option<usize> {
     let mut at = 0u32;
     let mut open = false;
-    for i in &p.inlines {
+    for (j, i) in p.inlines.iter().enumerate() {
         match span_edge(i) {
             Some(FieldEdge::Start { view: FieldView::Code, .. }) => open = at < u.0,
-            Some(FieldEdge::Code) if open => return u.0 <= at,
+            Some(FieldEdge::Code) if open => {
+                if u.0 <= at {
+                    return Some(j);
+                }
+                open = false;
+            }
             _ => {}
         }
         at += i.units() as u32;
     }
-    false
+    None
 }
 
 /// The field across paragraphs whose shown code holds `pos` (after its opening brace, up to its closing one): its
@@ -280,10 +311,7 @@ pub(super) fn code_around(doc: &Document, idx: &DocIndex, pos: Position) -> Opti
     let slot = idx.para_slot(para)?;
     let blocks = idx.blocks(doc, slot.container)?;
     let p = para_of(blocks, slot.block)?;
-    if !in_code(p, u) {
-        return None;
-    }
-    let (j, _) = close_in(p)?;
+    let j = code_close(p, u)?;
     let start = partner_start(blocks, (slot.block, j))?;
     Some((place(blocks, pos.story, start)?, place(blocks, pos.story, partner(blocks, start)?)?))
 }
@@ -444,6 +472,49 @@ impl Editor {
         Some(SpanKey { para: ParaId(p.id), nth })
     }
 
+    /// Each of `keys` with the place of its field's start and which start there is its, to follow through steps.
+    pub(super) fn span_places(&self, keys: Vec<(SpanKey, bool)>) -> Vec<(SpanKey, Option<(Position, usize)>, bool)> {
+        keys.into_iter()
+            .map(|(k, code)| {
+                let place = self.span_field_of(k).and_then(|f| {
+                    let p = self.span_para(&f, f.start.0)?;
+                    let u = units_before(&p.inlines, f.start.1);
+                    let nth = p.inlines[..f.start.1].iter().rev().take_while(|i| i.units() == 0).filter(|i| is_start(i)).count();
+                    Some((Position::text(self.index.story(f.container), ParaId(p.id), Unit(u)), nth))
+                });
+                (k, place, code)
+            })
+            .collect()
+    }
+
+    /// The keys of [`Editor::span_places`]'s fields once `maps` moved their starts (a key whose start isn't found
+    /// stays).
+    pub(super) fn span_keys_after(&self, places: Vec<(SpanKey, Option<(Position, usize)>, bool)>, maps: &[super::step::Map]) -> Vec<(SpanKey, bool)> {
+        places
+            .into_iter()
+            .map(|(k, place, code)| {
+                let moved = place.and_then(|(pos, nth)| {
+                    let (para, u) = maps.iter().fold(pos, |p, m| m.apply(p)).para_offset()?;
+                    let p = self.index.para(&self.doc, para)?;
+                    let mut at = 0u32;
+                    let j = p
+                        .inlines
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, i)| {
+                            let here = at == u.0;
+                            at += i.units() as u32;
+                            here && is_start(i)
+                        })
+                        .nth(nth)?
+                        .0;
+                    Some(SpanKey { para, nth: p.inlines[..j].iter().filter(|i| is_start(i)).count() as u32 })
+                });
+                (moved.unwrap_or(k), code)
+            })
+            .collect()
+    }
+
     /// The field across paragraphs of key `k`, if it is still there.
     fn span_field_of(&self, k: SpanKey) -> Option<SpanField> {
         let slot = self.index.para_slot(k.para)?;
@@ -464,6 +535,12 @@ impl Editor {
     /// The paragraph block `b` of `f`'s container is.
     fn span_para(&self, f: &SpanField, b: usize) -> Option<&Paragraph> {
         para_of(self.index.blocks(&self.doc, f.container)?, b)
+    }
+
+    /// Shows `fields` as their results, as part of `tx`'s edit: whether every one did.
+    pub(super) fn show_span_results(&mut self, tx: &mut super::Tx, mut fields: Vec<SpanField>) -> bool {
+        fields.sort_by_key(|f| std::cmp::Reverse(f.start));
+        fields.iter().all(|f| self.show_result(tx, f))
     }
 
     /// Shows `f`'s code: its start a brace with the code's runs and the closing brace after it, a fold mark on each
@@ -525,7 +602,7 @@ impl Editor {
                 return false;
             }
         }
-        for b in f.start.0..=f.end.0 {
+        for b in f.start.0..f.end.0 {
             if let Some(step) = self.span_para(f, b).and_then(unfold_step)
                 && self.apply_step(tx, step).is_err()
             {

@@ -1773,7 +1773,11 @@ impl Editor {
         tx.real = tx.undo.len();
         let done = if undo { self.history.pop_undo() } else { self.history.pop_redo() };
         let Some(mut done) = done else { return Outcome::Unchanged(if undo { "nothing to undo" } else { "nothing to redo" }) };
+        // The fields' starts followed through the edit's steps
+        let places = keys.map(|k| self.span_places(k));
+        let maps = tx.maps.len();
         self.replay(&mut tx, std::mem::take(&mut done.undo));
+        let keys = places.map(|p| self.span_keys_after(p, &tx.maps[maps..]));
         self.selection = if undo { done.before.selection } else { done.after.selection };
         self.pending = None;
         if let Some(keys) = keys {

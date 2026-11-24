@@ -70,6 +70,19 @@ impl Pick {
         self.moved(m) || in_range && self.who.has(m)
     }
 
+    /// Whether the units `at..at + n` of paragraph `para` are in what it resolves.
+    fn covers(&self, para: ParaId, at: u32, n: u32) -> bool {
+        match &self.inside {
+            None => true,
+            Some(i) => i.get(&para).is_some_and(|x| x.iter().any(|x| x.start <= at && at + n <= x.end)),
+        }
+    }
+
+    /// Whether it takes run mark `m` of paragraph `para` (in what it resolves: `in_range`).
+    fn takes(&self, para: ParaId, m: &RevisionMark, in_range: bool) -> bool {
+        self.run(m, in_range) || self.tied.get(&para).is_some_and(|t| t.contains(&m.id))
+    }
+
     fn with_moves(mut self, found: &Found, touches: impl Fn(&Item) -> bool) -> Pick {
         let all = matches!(self.who, Who::All) && self.blocks.is_none();
         self.moves = found.items.iter().filter(|it| touches(it)).filter_map(|it| it.mark.move_name.clone()).collect();
@@ -112,9 +125,19 @@ fn decide(r: &Run, accept: bool, take: impl Fn(&RevisionMark) -> bool) -> Option
     Some((remove, Rc::new(s)))
 }
 
+/// Whether the field edge at `p.inlines[k]` goes with what `pick` resolves.
+fn edge_goes(p: &Paragraph, k: usize, pick: &Pick, accept: bool) -> bool {
+    let Some(Inline::Opaque(o)) = p.inlines.get(k) else { return false };
+    let Some(r) = o.run.as_ref().filter(|_| o.field.is_some()) else { return false };
+    let para = ParaId(p.id);
+    let at: u32 = p.inlines[..k].iter().map(|i| i.units() as u32).sum();
+    let in_range = pick.covers(para, at, p.inlines[k].units() as u32);
+    decide(r, accept, |m| pick.takes(para, m, in_range)).is_some_and(|d| d.0)
+}
+
 fn resolve_inlines(p: &Paragraph, pick: &Pick, accept: bool) -> Option<(Vec<Inline>, Vec<Range<u32>>)> {
-    let inside = pick.inside.as_ref().map(|i| i.get(&ParaId(p.id)));
-    let tied = pick.tied.get(&ParaId(p.id));
+    let para = ParaId(p.id);
+    let inside = pick.inside.as_ref().map(|i| i.get(&para));
     let mut cuts: Vec<u32> = inside.flatten().into_iter().flatten().flat_map(|r| [r.start, r.end]).collect();
     cuts.sort_unstable();
     cuts.dedup();
@@ -124,7 +147,10 @@ fn resolve_inlines(p: &Paragraph, pick: &Pick, accept: bool) -> Option<(Vec<Inli
     for i in &p.inlines {
         let n = i.units() as u32;
         // The cuts inside it, the run read once from its start to its end.
-        let inner = if n > 0 { &cuts[cuts.partition_point(|&c| c <= at)..cuts.partition_point(|&c| c < at + n)] } else { &[][..] };
+        let inner = match i {
+            Inline::Text(..) if n > 0 => &cuts[cuts.partition_point(|&c| c <= at)..cuts.partition_point(|&c| c < at + n)],
+            _ => &[],
+        };
         let pieces: Vec<Inline> = match i {
             Inline::Text(t, r) if !inner.is_empty() => {
                 let mut v = Vec::with_capacity(inner.len() + 1);
@@ -159,12 +185,8 @@ fn resolve_inlines(p: &Paragraph, pick: &Pick, accept: bool) -> Option<(Vec<Inli
                 at += n;
                 continue;
             };
-            let in_range = match &inside {
-                None => true,
-                Some(None) => false,
-                Some(Some(x)) => x.iter().any(|x| x.start <= at && at + n <= x.end),
-            };
-            let take = |m: &RevisionMark| pick.run(m, in_range) || tied.is_some_and(|t| t.contains(&m.id));
+            let in_range = pick.covers(para, at, n);
+            let take = |m: &RevisionMark| pick.takes(para, m, in_range);
             let d = cache.entry((Rc::as_ptr(r), in_range)).or_insert_with(|| decide(r, accept, take)).clone();
             match d {
                 None => out.push((piece, false)),
@@ -266,7 +288,7 @@ impl Editor {
         let Some(pick) = self.pick(scope) else { return Outcome::Unchanged("no revision") };
         let mut tx = self.begin(if accept { "Accept" } else { "Reject" });
         tx.tracked = false;
-        if self.apply_pick(&mut tx, &pick, accept).is_err() {
+        if self.apply_pick(&mut tx, pick, accept).is_err() {
             self.abort(tx);
             return Outcome::Unchanged("revisions don't resolve");
         }
@@ -426,7 +448,38 @@ impl Editor {
         p.with_moves(f, touches)
     }
 
-    fn apply_pick(&mut self, tx: &mut Tx, pick: &Pick, accept: bool) -> Result<(), StepError> {
+    /// The fields across paragraphs showing their codes whose starts go shown as their results first, their braces,
+    /// codes and folds going with that: the parts `pick` resolves moved with them.
+    fn show_going_results(&mut self, tx: &mut Tx, pick: &mut Pick, accept: bool) -> Result<(), StepError> {
+        let going: Vec<_> = self
+            .span_fields()
+            .into_iter()
+            .filter(|f| match self.index.blocks(&self.doc, f.container).and_then(|b| b.get(f.start.0)) {
+                Some(Block::Para(p)) => self.span_shows_code(f) && edge_goes(p, f.start.1, pick, accept),
+                _ => false,
+            })
+            .collect();
+        if going.is_empty() {
+            return Ok(());
+        }
+        let from = tx.maps.len();
+        if !self.show_span_results(tx, going) {
+            return Err(StepError::Missing);
+        }
+        let maps = &tx.maps[from..];
+        for (para, ranges) in pick.inside.iter_mut().flatten() {
+            let at =
+                |u: u32| maps.iter().fold(Position::text(StoryId::Body, *para, Unit(u)), |p, m| m.apply(p)).para_offset().map_or(u, |(_, u)| u.0);
+            for r in ranges.iter_mut() {
+                *r = at(r.start)..at(r.end);
+            }
+        }
+        Ok(())
+    }
+
+    fn apply_pick(&mut self, tx: &mut Tx, mut pick: Pick, accept: bool) -> Result<(), StepError> {
+        self.show_going_results(tx, &mut pick, accept)?;
+        let pick = &pick;
         for section in 0..self.doc.sections.len() {
             let s = &self.doc.sections[section];
             let Some(c) = s.change.as_ref().filter(|c| pick.block(&c.mark, Spot::Section(section))) else { continue };
