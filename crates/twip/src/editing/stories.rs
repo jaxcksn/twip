@@ -99,14 +99,18 @@ impl Editor {
         if self.end_modes() {
             return Outcome::Moved;
         }
-        if self.drop_menu.take().is_some() || self.highlighter.take().is_some() {
-            return Outcome::Moved;
-        }
-        if self.object_cancel() || self.shape_cancel() || self.shape_insert.take().is_some() {
+        // A drag in progress ends before an idle tool does.
+        if self.object_cancel() || self.shape_cancel() {
             return Outcome::Moved;
         }
         if self.border_cancel() || self.table_drag.take().is_some() {
             self.requests.push(super::input::Request::ReleasePointer);
+            return Outcome::Moved;
+        }
+        if self.drop_menu.take().is_some() || self.highlighter.take().is_some() {
+            return Outcome::Moved;
+        }
+        if self.shape_insert.take().is_some() {
             return Outcome::Moved;
         }
         if self.selected_child().is_some() {

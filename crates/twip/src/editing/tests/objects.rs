@@ -695,6 +695,47 @@ fn wrap_points_drag_add_and_remove_as_one_step_each_and_save() {
     assert!(!e.editing_wrap_points() && e.view(0..1).wrap_points.is_none());
 }
 
+fn protect(e: &mut Editor) {
+    let p = crate::api::command::DocumentProtection {
+        kind: Some(crate::api::command::ProtectionKind::ReadOnly),
+        enforce: Some(true),
+        ..Default::default()
+    };
+    assert!(matches!(e.execute(Command::SetDocumentProtection(p), fonts()), Outcome::Changed(_)));
+}
+
+#[test]
+fn wrap_points_are_kept_by_document_protection() {
+    let mut e = two_shapes();
+    press(&mut e, 150.0, 350.0, NONE);
+    protect(&mut e);
+    assert!(matches!(e.edit_wrap_points(), Outcome::Refused(_)), "not entered");
+    let mut e = two_shapes();
+    press(&mut e, 150.0, 350.0, NONE);
+    assert!(matches!(e.edit_wrap_points(), Outcome::Moved));
+    let [x, y] = wrap_points(&mut e)[0];
+    protect(&mut e);
+    let depth = e.history.undo_depth();
+    drag_doc(&mut e, [x, y], [x + 20.0, y + 20.0], NONE);
+    assert_eq!((poly(&e), e.history.undo_depth()), (None, depth), "the polygon stays");
+}
+
+#[test]
+fn a_point_drag_ends_without_a_change_when_another_object_is_selected() {
+    let mut e = two_shapes();
+    press(&mut e, 150.0, 350.0, NONE);
+    assert!(matches!(e.edit_wrap_points(), Outcome::Moved));
+    let [x, y] = wrap_points(&mut e)[0];
+    let depth = e.history.undo_depth();
+    e.pointer_input(PointerKind::Down, x, y, 1, NONE, fonts());
+    e.pointer_input(PointerKind::Move, x + 20.0, y + 20.0, 0, NONE, fonts());
+    let other = FloatId(all_floats(&e)[1]);
+    e.selection = Selection::Object(ObjectRef::Floating(other));
+    e.pointer_input(PointerKind::Up, x + 20.0, y + 20.0, 0, NONE, fonts());
+    assert_eq!((poly(&e), e.history.undo_depth()), (None, depth), "nothing committed");
+    assert_eq!(e.selection(), Selection::Object(ObjectRef::Floating(other)), "the selection stays");
+}
+
 #[test]
 fn escape_ends_wrap_points_and_an_inline_picture_has_none() {
     let mut e = two_shapes();

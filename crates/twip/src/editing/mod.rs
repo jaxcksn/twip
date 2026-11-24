@@ -128,6 +128,9 @@ pub struct Correction {
     pub to: String,
     pub typed: usize,
     pub kind: CorrectionKind,
+    /// For an indent or border line: the paragraph property (`w:ind`, `w:pBdr`) as AutoFormat wrote it, so a later change
+    /// to it ends the correction.
+    pub(crate) applied: Option<Option<String>>,
 }
 
 /// What an automatic change made, which its AutoCorrect Options offer to undo or stop.

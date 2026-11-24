@@ -1,6 +1,7 @@
 //! Word's keyboard surface: shortcuts and what they do
 
 use super::super::Editor;
+use super::super::commands::Outcome;
 use super::super::keymap::Mods;
 use super::super::position::{Position, StoryId};
 use super::super::selection::Selection;
@@ -859,6 +860,19 @@ fn link_here_bookmarks_the_text_and_links_to_it() {
     assert!(para(&e, 0).inlines.iter().any(|i| matches!(i, Inline::Bookmark(n) if n == "OLE_LINK1")));
     e.execute(C::Undo, fonts());
     assert!(link_codes(&e, 1).is_empty() && !para(&e, 0).inlines.iter().any(|i| matches!(i, Inline::Bookmark(_))), "one undo step");
+}
+
+#[test]
+fn change_back_leaves_an_indent_set_after_the_automatic_one() {
+    let mut e = edit("<w:p><w:r><w:t>text</w:t></w:r></w:p>");
+    caret(&mut e, 0, 0);
+    type_in(&mut e, "\t");
+    assert!(e.auto_format_change().is_some());
+    e.execute(C::IncreaseIndent, fonts());
+    let (left, first) = (para(&e, 0).style.ind_left, para(&e, 0).style.ind_first);
+    assert!(e.auto_format_change().is_none(), "the indent it made is no longer there");
+    assert!(matches!(e.revert_correction(fonts()), Outcome::Unchanged(_) | Outcome::Refused(_)));
+    assert_eq!((texts(&e)[0].as_str(), para(&e, 0).style.ind_left, para(&e, 0).style.ind_first), ("text", left, first));
 }
 
 #[test]

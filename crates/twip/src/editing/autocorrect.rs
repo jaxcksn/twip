@@ -562,7 +562,8 @@ impl Editor {
         }
         let range = Unit(end.0.saturating_sub(chars.len() as u32))..end;
         let to = chars.iter().collect();
-        self.correction = Some(super::Correction { para, range, from: fix.from.clone(), to, typed: 0, kind: super::CorrectionKind::Text });
+        self.correction =
+            Some(super::Correction { para, range, from: fix.from.clone(), to, typed: 0, kind: super::CorrectionKind::Text, applied: None });
         self.commit(tx, None, fonts)
     }
 
@@ -614,8 +615,9 @@ impl Editor {
 
     /// The AutoFormat change just made, which its AutoCorrect Options undo or stop.
     fn auto_formatted(&mut self, para: crate::layout::ParaId, range: Range<Unit>, from: String, kind: super::CorrectionKind) {
-        let mut c = super::Correction { para, range, from, to: String::new(), typed: 0, kind };
+        let mut c = super::Correction { para, range, from, to: String::new(), typed: 0, kind, applied: None };
         c.to = self.text_in(&c).unwrap_or_default();
+        c.applied = Self::auto_ppr(&c.kind).map(|local| self.direct_ppr(para, local));
         self.correction = Some(c);
     }
 
@@ -733,7 +735,19 @@ impl Editor {
 
     /// The automatic change just made, while its range still holds what it made.
     fn live_correction(&self) -> Option<&super::Correction> {
-        self.correction.as_ref().filter(|c| self.text_in(c).is_some_and(|t| t == c.to))
+        self.correction.as_ref().filter(|c| {
+            self.text_in(c).is_some_and(|t| t == c.to)
+                && c.applied.as_ref().is_none_or(|a| Self::auto_ppr(&c.kind).is_some_and(|local| self.direct_ppr(c.para, local) == *a))
+        })
+    }
+
+    /// The paragraph property an AutoFormat change writes.
+    fn auto_ppr(kind: &super::CorrectionKind) -> Option<&'static str> {
+        match kind {
+            super::CorrectionKind::Indent { .. } => Some("ind"),
+            super::CorrectionKind::BorderLine { .. } => Some("pBdr"),
+            _ => None,
+        }
     }
 
     /// The AutoCorrect replacement just made, while its range still holds the corrected text.

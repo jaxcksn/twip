@@ -5,11 +5,13 @@ use std::rc::Rc;
 use crate::font::Fonts;
 use crate::layout::FloatId;
 
+use crate::api::command::CommandId;
+
+use super::Editor;
 use super::commands::Outcome;
 use super::position::Position;
 use super::selection::{ObjectRef, Selection};
 use super::view::WrapPoints;
-use super::{Editor, Mode};
 
 /// The float whose wrap points are being edited, and the point being dragged.
 #[derive(Clone, Debug)]
@@ -105,7 +107,7 @@ impl Editor {
         if self.selected_floats().len() != 1 || self.selected_child().is_some() {
             return Outcome::unavailable("select one floating object");
         }
-        if self.mode == Mode::ReadOnly || self.object_fixed(ObjectRef::Floating(f)) || !self.float_editable(f) {
+        if self.object_fixed(ObjectRef::Floating(f)) || !self.float_editable(f) || self.gesture_kept(CommandId::SetObjectWrap) {
             return Outcome::unavailable("the object can't be changed");
         }
         if self.float_of(f).is_none_or(|fl| fl.in_note) {
@@ -251,7 +253,8 @@ impl Editor {
     pub(super) fn wrap_point_release(&mut self, fonts: &Fonts) -> bool {
         let Some((f, d)) = self.wrap_edit.as_mut().and_then(|w| Some((w.f, w.drag.take()?))) else { return false };
         self.requests.push(super::input::Request::ReleasePointer);
-        if !d.moved {
+        // Another object selected meanwhile: the drag was of one no longer shown.
+        if !d.moved || self.wrap_float() != Some(f) {
             return true;
         }
         let Some(frame) = self.wrap_frame(f, d.page) else { return true };
@@ -280,6 +283,9 @@ impl Editor {
 
     /// Sets `f`'s wrap polygon (box fractions, closed on save), and a tight wrap unless it is tight or through.
     fn set_wrap_polygon(&mut self, f: FloatId, mut poly: Vec<(f64, f64)>, fonts: &Fonts) -> Outcome {
+        if self.gesture_kept(CommandId::SetObjectWrap) {
+            return Outcome::Unchanged("the wrap is protected");
+        }
         let Some(mut n) = self.float_of(f).cloned() else { return Outcome::Unchanged("no float") };
         if let Some(&first) = poly.first() {
             poly.push(first);

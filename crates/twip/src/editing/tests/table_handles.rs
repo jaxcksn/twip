@@ -615,6 +615,21 @@ fn a_column_border_drag_lays_the_table_out_live_and_commits_once() {
 }
 
 #[test]
+fn escape_cancels_a_border_drag_before_it_puts_the_highlighter_down() {
+    let mut e = page();
+    let d = Drawn::of(&mut e);
+    let was = grid(&e, d.table);
+    e.toggle_highlighter(Some(crate::api::value::HighlightColor::Yellow));
+    let from = (d.edges[1], (d.rows[1][1] + d.rows[1][3]) / 2.0);
+    drag(&mut e, from, (36.0, 0.0), NONE, false);
+    assert!(e.border_drag.is_some(), "the drag is on");
+    e.execute(Command::Escape, fonts());
+    assert!(e.border_drag.is_none(), "Esc ends the drag");
+    at(&mut e, PointerKind::Up, from.0 + 36.0, from.1, NONE);
+    assert_eq!((grid(&e, d.table), e.history.undo_depth()), (was, 0), "the release changes nothing");
+}
+
+#[test]
 fn a_cancelled_live_drag_lays_the_table_out_as_it_was() {
     let mut e = page();
     let d = Drawn::of(&mut e);
