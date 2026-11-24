@@ -325,7 +325,7 @@ fn border_units(b: &crate::docx::props::Border, dpi: i64) -> i64 {
     let dev = |tw: i64| (tw * dpi / 1440).max(1);
     let sz = (b.width * 8.0).round() as i64;
     let w = dev(sz * 5 / 2);
-    let total = match b.style.as_str() {
+    let total = match &*b.style {
         "none" | "nil" => 0,
         "double" => 3 * w,
         "triple" => 5 * w,

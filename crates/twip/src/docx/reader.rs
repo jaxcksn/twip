@@ -883,7 +883,7 @@ fn fold_divs(blocks: &mut [Block], divs: &HashMap<i64, Division>, in_cell: bool)
         reopened.clone()
     };
     let most = |ids: &mut dyn Iterator<Item = &i64>, i: usize| ids.map(|id| divs[id].margins[i]).fold(0.0, f64::max);
-    let width = |b: &Option<Border>| b.as_ref().map_or(0.0, |b| b.width * if b.style == "double" { 3.0 } else { 1.0 } + b.space);
+    let width = |b: &Option<Border>| b.as_ref().map_or(0.0, |b| b.width * if &*b.style == "double" { 3.0 } else { 1.0 } + b.space);
     let boxes = |chain: &[i64], prev: &[i64], next: &[i64], again: &[i64]| -> Vec<DivBox> {
         (0..chain.len())
             .rev()
@@ -1967,7 +1967,7 @@ impl Reader {
         if let Some(b) = child(s, "pgBorders") {
             sec.page_borders_xml = Some(raw(b).to_string());
             let side = |n| child(b, n).map(|n| Border::parse(n, &self.res.styles.colours));
-            sec.page_borders = Some(PageBorders {
+            sec.page_borders = Some(Rc::new(PageBorders {
                 top: side("top"),
                 left: side("left"),
                 bottom: side("bottom"),
@@ -1977,7 +1977,7 @@ impl Reader {
                 surround_header: !self.settings.borders_do_not_surround_header,
                 surround_footer: !self.settings.borders_do_not_surround_footer,
                 behind_text: attr(b, "zOrder") == Some("back"),
-            });
+            }));
         }
         if let Some(c) = child(s, "sectPrChange") {
             let mark = self.mark(c, MarkKind::Format);

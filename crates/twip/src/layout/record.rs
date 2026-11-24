@@ -80,5 +80,5 @@ pub struct PageRecord {
     pub number: i64,
     pub blank: bool,
     /// The page's borders, and the rectangle their outer edges are on (page coordinates).
-    pub page_borders: Option<(crate::docx::PageBorders, [f64; 4])>,
+    pub page_borders: Option<(Rc<crate::docx::PageBorders>, [f64; 4])>,
 }

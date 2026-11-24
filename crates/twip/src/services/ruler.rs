@@ -85,7 +85,7 @@ pub fn model(e: &mut Editor, section: usize) -> RulerModel {
     let Some(s) = e.document().sections.get(section) else { return RulerModel::default() };
     let (left, right) = (m.text.start.0, m.text.end.0);
     let s = s.section_in(e.document().review.view);
-    let columns = columns(&s.columns, left, right);
+    let columns = columns(s.columns, left, right);
     let (page_w, page_h, top, bottom) = (s.page_w, s.page_h, m.top, s.page_h - s.bottom);
     let side = |edge: MarginEdge| match (edge, m.mirrored) {
         (MarginEdge::Left, false) => crate::api::command::MarginSide::Left,

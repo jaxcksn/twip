@@ -280,7 +280,7 @@ impl<'d> PageFill<'d, '_> {
         // With columns the page's text up to the line can be spread over them, which leaves the area the room under
         // it: before the last column, notes that need more than the room under the line make it wait for a later
         // column; a cut note fills the room the spread text leaves.
-        let cs = &self.sec.section.section_in(self.ctx.env.text.review.view).columns;
+        let cs = self.sec.section.section_in(self.ctx.env.text.review.view).columns;
         let n = if cs.equal || cs.cols.is_empty() { cs.num } else { cs.cols.len() }.max(1);
         let full = col.bottom.to_pt() - col.top.to_pt();
         let used = self.column as f64 * (full - area.total()) + line_bottom - col.top.to_pt();

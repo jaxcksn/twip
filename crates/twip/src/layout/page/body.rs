@@ -192,7 +192,7 @@ impl Trial<'_> {
         // line height, the height grows while content is left over by the failed fill's mean line height, each
         // column's height counted at most up to the height tried.
         let (lines, total) = stats.iter().fold((0, 0), |(n, t), s| (n + s.lines, t + s.used + s.extra));
-        let columns = &sec.section.section_in(fill.ctx.env.text.review.view).columns;
+        let columns = sec.section.section_in(fill.ctx.env.text.review.view).columns;
         h = if columns.equal {
             (total + cols.len() as i64 - 1) / cols.len().max(1) as i64
         } else {
@@ -482,7 +482,7 @@ pub fn layout_body(
     inline_text_boxes(&fill, &mut body, memos)?;
     let shown = crate::layout::expansion::shown(&body);
     body.extend(shown);
-    separators(&s.section_in(env.ctx.env.text.review.view).columns, cols, page_top, earlier, &mut body);
+    separators(s.section_in(env.ctx.env.text.review.view).columns, cols, page_top, earlier, &mut body);
     if env.ctx.env.text.review.change_bars() {
         change_bars(space, &env.ctx.env.text.review, env.ctx.env.mirror_margins, &mut body);
     }

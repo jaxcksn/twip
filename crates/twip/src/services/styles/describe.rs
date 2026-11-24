@@ -71,7 +71,7 @@ fn font_name(f: &FontRef) -> String {
 }
 
 fn border_line(b: &Border) -> String {
-    let style = match b.style.as_str() {
+    let style = match &*b.style {
         "single" => "Single solid line",
         "double" => "Double solid lines",
         "dotted" => "Dotted line",

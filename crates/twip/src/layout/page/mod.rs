@@ -51,7 +51,7 @@ pub struct Facing {
 
 /// Whether page `page_number` of section `s` shows the section's left margin on its right: a mirrored even page, or
 /// a landscape book fold's page on the other side.
-pub fn swaps_margins(s: &crate::docx::SectionPage, facing: Facing, page_number: i64) -> bool {
+pub fn swaps_margins(s: &crate::docx::PageSetup, facing: Facing, page_number: i64) -> bool {
     let odd = page_number % 2 == 1;
     match facing.book_fold {
         Some(rev) => s.page_w > s.page_h && odd != rev,
@@ -453,7 +453,7 @@ impl<'d> Paginator<'d, '_> {
                 page_h: s.page_w,
                 margins: (top, s.bottom, first),
                 area,
-                columns: columns(&s.columns, &area, start.unwrap_or(area.top.to_pt())),
+                columns: columns(s.columns, &area, start.unwrap_or(area.top.to_pt())),
                 mid_page: start.is_some(),
                 balance,
                 next_continuous: self.sections.get(si + 1).is_some_and(|n| super::vertical::same_page(sec, n)),
@@ -492,7 +492,7 @@ impl<'d> Paginator<'d, '_> {
             page_h: s.page_h,
             margins: (left, right, top),
             area,
-            columns: columns(&s.columns, &area, start.unwrap_or(area.top.to_pt())),
+            columns: columns(s.columns, &area, start.unwrap_or(area.top.to_pt())),
             mid_page: start.is_some(),
             balance,
             next_continuous: self.sections.get(si + 1).is_some_and(|n| super::vertical::same_page(sec, n)),

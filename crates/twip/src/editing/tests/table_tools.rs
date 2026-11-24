@@ -390,9 +390,9 @@ fn the_pen_redraws_a_border_it_follows() {
     assert!(matches!(e.draw_table_stroke(Stroke { page: 0, from: [r[0] + 2.0, r[3]], to: [r[2] - 2.0, r[3]] }, fonts()), Outcome::Changed(_)));
     let t = table(&e);
     assert_eq!(t.rows.len(), 2, "no split");
-    assert_eq!(t.rows[0].cells[0].bottom.as_ref().map(|b| b.style.as_str()), Some("double"));
-    assert_eq!(t.rows[1].cells[0].top.as_ref().map(|b| b.style.as_str()), Some("double"));
-    assert_ne!(t.rows[0].cells[1].bottom.as_ref().map(|b| b.style.as_str()), Some("double"), "only where it was drawn");
+    assert_eq!(t.rows[0].cells[0].bottom.as_ref().map(|b| &*b.style), Some("double"));
+    assert_eq!(t.rows[1].cells[0].top.as_ref().map(|b| &*b.style), Some("double"));
+    assert_ne!(t.rows[0].cells[1].bottom.as_ref().map(|b| &*b.style), Some("double"), "only where it was drawn");
 }
 
 #[test]

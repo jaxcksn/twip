@@ -374,7 +374,7 @@ impl Editor {
             let mut page = s.page();
             // Around the header and footer: a document setting, every section's borders following it.
             if !in_scope(section) {
-                let Some(b) = page.page_borders.as_mut() else { continue };
+                let Some(b) = page.page_borders.as_mut().map(std::rc::Rc::make_mut) else { continue };
                 b.surround_header = c.surround_header.unwrap_or(b.surround_header);
                 b.surround_footer = c.surround_footer.unwrap_or(b.surround_footer);
                 if page == s.page() {
@@ -388,7 +388,7 @@ impl Editor {
                 changed = true;
                 continue;
             }
-            let mut b = page.page_borders.clone().unwrap_or(crate::docx::PageBorders {
+            let mut b = page.page_borders.as_deref().cloned().unwrap_or(crate::docx::PageBorders {
                 display: "allPages".into(),
                 offset_from_page: true,
                 surround_header: !self.doc.settings.borders_do_not_surround_header,
@@ -473,7 +473,7 @@ impl Editor {
                     line("right", &b.right)
                 )
             });
-            (page.page_borders, page.page_borders_xml) = (any.then_some(b), xml);
+            (page.page_borders, page.page_borders_xml) = (any.then(|| std::rc::Rc::new(b)), xml);
             if page == s.page() {
                 continue;
             }

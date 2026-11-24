@@ -64,7 +64,7 @@ pub(in crate::layout) fn drawn(b: &Border) -> bool {
 }
 
 fn art(b: &Border) -> Option<f64> {
-    (!ORDER.contains(&b.style.as_str())).then(|| (b.width * 8.0).min(255.0))
+    (!ORDER.contains(&&*b.style)).then(|| (b.width * 8.0).min(255.0))
 }
 
 pub(super) fn conflict(a: (Option<&Border>, bool), b: (Option<&Border>, bool)) -> Option<Border> {
@@ -117,7 +117,7 @@ pub(super) fn space_h(b: &Option<Border>) -> f64 {
         return b.space.clamp(0.0, 31.0);
     }
     let w = (b.width.clamp(0.25, 12.0) * 20.0 + 1e-6).floor() / 20.0;
-    let line = match b.style.as_str() {
+    let line = match &*b.style {
         "wave" if (b.width - 1.5).abs() < EPS => 3.75,
         "wave" | "dashDotStroked" => 3.0,
         "doubleWave" => 5.25,
@@ -155,7 +155,7 @@ impl std::ops::Deref for Stripes {
 }
 
 fn stripes(b: &Border) -> Stripes {
-    let (w, s) = (b.width, b.style.as_str());
+    let (w, s) = (b.width, &*b.style);
     let (thin, gap, thick) = if s.ends_with("SmallGap") {
         (0.75, 0.75, w)
     } else if s.ends_with("MediumGap") {
@@ -211,14 +211,14 @@ pub(in crate::layout) fn edge_from(out: &mut Vec<Item>, rect: [f64; 4], horizont
         out.push(Item::Rect { rect, colour, snap: false, dash, phase: phase as f32 });
         return;
     }
-    match b.style.as_str() {
+    match &*b.style {
         "wave" => return wave(out, rect, horizontal, 1, colour, phase),
         "doubleWave" => return wave(out, rect, horizontal, 2, colour, phase),
         "dashDotStroked" => return hatch(out, rect, horizontal, colour, phase),
         // Outset is light at the top and left and dark at the bottom and right; inset the other way.
         "outset" | "inset" => {
             let [light, _, dark] = tones(b.color.unwrap_or(0xA0A0A0));
-            let lit = (b.style == "outset") != far;
+            let lit = (&*b.style == "outset") != far;
             out.push(Item::rect(rect, if lit { light } else { dark }));
             return;
         }
@@ -323,14 +323,14 @@ pub(in crate::layout) fn diagonal(out: &mut Vec<Item>, rect: [f64; 4], up: bool,
     if !(w > EPS && h > EPS && len.is_finite()) {
         return;
     }
-    let dash: &[f64] = match b.style.as_str() {
+    let dash: &[f64] = match &*b.style {
         "dotted" => &[3.0, 3.0],
         "dashed" | "dashSmallGap" => &[18.0, 6.0],
         "dotDash" => &[9.0, 6.0, 3.0, 6.0],
         "dotDotDash" => &[9.0, 3.0, 3.0, 3.0, 3.0, 3.0],
         _ => &[],
     };
-    let width = match b.style.as_str() {
+    let width = match &*b.style {
         _ if !dash.is_empty() => DEVICE_PX,
         "thick" => 2.0 * b.width,
         "double" => 3.0 * b.width,
@@ -449,7 +449,7 @@ pub(in crate::layout) fn shadow(out: &mut Vec<Item>, rect: [f64; 4], horizontal:
 }
 
 fn three_d(b: &Border) -> Option<[u32; 3]> {
-    let engrave = match b.style.as_str() {
+    let engrave = match &*b.style {
         "threeDEmboss" => false,
         "threeDEngrave" => true,
         _ => return None,
