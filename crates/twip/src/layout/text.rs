@@ -132,6 +132,21 @@ pub struct Piece {
     pub natural: Option<f64>,
 }
 
+/// A paragraph joined into another through its vanished mark, as it shows while hidden text does: the unit it starts
+/// at, its own style, and the space between it and the one before.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Part {
+    /// The unit the part starts at.
+    pub start: u32,
+    /// The part's own paragraph style.
+    pub style: Rc<crate::docx::ParaStyle>,
+    /// The space between it and the part before, points.
+    pub gap: f64,
+}
+
+/// The parts of a joined paragraph ([`Part`]), the first starting at 0.
+pub type Parts = Rc<[Part]>;
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct ShapedPara {
     pub pieces: Box<[Piece]>,
@@ -142,6 +157,8 @@ pub struct ShapedPara {
     pub text: Box<str>,
     pub objects: Box<[Object]>,
     pub join: Option<Rc<super::join::JoinMap>>,
+    /// While hidden text shows, its joined paragraphs' parts (empty otherwise): each starts its own lines.
+    pub parts: Option<Parts>,
     pub em1000: bool,
     pub rules: MetricRules,
     /// The patterns, whether capitals are left alone, and the fewest letters after a break.
@@ -734,7 +751,15 @@ impl<'a> Builder<'a> {
         let Some(face) = face else { return };
         let (size, raise) = self.vertical(run, &face);
         let kern = run.kern > 0.0 && size >= run.kern - 1e-9;
-        let shaped_text: String = s.chars().map(|c| if c == '\u{2011}' { '-' } else { c }).collect();
+        let shown_hyphens = self.rules.show_optional_hyphens;
+        let shaped_text: String = s
+            .chars()
+            .map(|c| match c {
+                '\u{2011}' => '-',
+                '\u{AD}' if shown_hyphens => '\u{AC}',
+                c => c,
+            })
+            .collect();
         let ligatures = if run.spacing != 0.0 { run.ligatures & 16 } else { run.ligatures };
         let mut glyphs = face.shape(&shaped_text, kern, ligatures, run.figures);
         // Synthesized bold: each glyph one font unit wider than the regular face's.
@@ -790,7 +815,9 @@ impl<'a> Builder<'a> {
                 .as_ref()
                 .map(|kt| (by_cluster[g0..gi].iter().map(|&i| kt[i]).sum::<f64>() * scale + run.spacing * n_chars as f64).max(0.0));
             p.break_after = kind == Kind::Space || breaks_after(first, self.rules.dash_breaks);
-            if first == '\u{AD}' {
+            if first == '\u{AD}' && self.rules.show_optional_hyphens {
+                p.break_after = true;
+            } else if first == '\u{AD}' {
                 p.soft_hyphen = true;
                 p.break_after = true;
                 p.width = 0.0;
@@ -889,7 +916,7 @@ impl<'a> Builder<'a> {
                 at += inl.units() as u32;
                 continue;
             }
-            if inl.run().is_some_and(|r| r.hidden || view.hides(&r.rev)) || shown[k] == Shown::Not {
+            if inl.run().is_some_and(|r| (r.hidden && !space.show_hidden) || view.hides(&r.rev)) || shown[k] == Shown::Not {
                 match inl {
                     _ if evaluated => field += 1,
                     Inline::NoteRef { .. } | Inline::NoteMark(..) => note += 1,
@@ -1526,6 +1553,7 @@ impl<'a> Builder<'a> {
             text: self.text.into_boxed_str(),
             objects: self.objects.into_boxed_slice(),
             join: None,
+            parts: None,
             em1000: self.em1000,
             rules: self.rules,
             hyphenate: None,
@@ -1824,7 +1852,15 @@ pub fn shape_uncached(para: &Paragraph, space: &ShapeSpace, fonts: &Fonts, memos
     let opens = !continues_after_break(para, space);
     let mut stops = para.para_style_in(space.view).tabs.iter().filter(|t| t.kind != crate::docx::props::TabKind::Clear);
     let decimal_lead = space.in_cell && stops.next().is_some_and(|t| t.kind == crate::docx::props::TabKind::Decimal) && stops.next().is_none();
-    Ok(ShapedPara { join: space.join.clone(), hyphenate: space.hyphenate.clone(), east_asian_default, opens, decimal_lead, ..b.finish() })
+    Ok(ShapedPara {
+        join: space.join.clone(),
+        parts: space.parts.clone(),
+        hyphenate: space.hyphenate.clone(),
+        east_asian_default,
+        opens,
+        decimal_lead,
+        ..b.finish()
+    })
 }
 
 /// Compat 15: the paragraph's first content is a page or column break (empty runs and bookmarks before it don't
@@ -1839,6 +1875,25 @@ fn continues_after_break(para: &Paragraph, space: &ShapeSpace) -> bool {
             .iter()
             .find(|i| !matches!(i, Inline::Bookmark(_) | Inline::Opaque(_) | Inline::Range(_)) && !matches!(i, Inline::Text(t, _) if t.is_empty()))
             .is_some_and(|i| matches!(i, Inline::Break(BreakKind::Page | BreakKind::Column, _)))
+}
+
+/// While hidden text shows, the paragraphs vanished marks joined into `para` ([`crate::docx::ParaStyle::parts`]), with
+/// where each starts (as editing keeps them, [`crate::docx::ParaSrc::joined`]) and the space between each and the next.
+fn shown_parts(para: &Paragraph, text: &TextEnv) -> Option<Parts> {
+    use super::paragraph::{gap, space_after, space_before};
+    let styles = &para.para_style_in(text.review.view).parts;
+    let ends = &para.src.as_ref()?.joined;
+    if !text.review.show_hidden || styles.len() < 2 || ends.len() + 1 != styles.len() {
+        return None;
+    }
+    let starts = std::iter::once(0).chain(ends.iter().map(|j| j.end));
+    let mut prev: Option<&Rc<crate::docx::ParaStyle>> = None;
+    let parts = styles.iter().zip(starts).map(|(s, start)| {
+        let g = prev.map_or(0.0, |p| gap(text, p, space_after(text, p), s, space_before(text, s)));
+        prev = Some(s);
+        Part { start, style: s.clone(), gap: g }
+    });
+    Some(parts.collect())
 }
 
 pub fn shape_space(
@@ -1866,8 +1921,11 @@ pub fn shape_space(
             wp_line_heights: text.wp_line_heights,
             dash_breaks: text.dash_breaks,
             kern_table_fit: text.compat == crate::docx::Compat::Legacy,
+            show_optional_hyphens: text.review.show_optional_hyphens,
         },
         view: text.review.view,
+        show_hidden: text.review.show_hidden,
+        parts: shown_parts(para, text),
         hyphenate: text
             .hyphenation
             .as_ref()

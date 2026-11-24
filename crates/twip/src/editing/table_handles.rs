@@ -130,7 +130,7 @@ impl Editor {
         let px = 0.75 / self.viewport.zoom.max(0.1);
         let full = |s: Snapping| set.detail == MeasureDetail::Full || (set.detail == MeasureDetail::Standard && s == Snapping::Free);
         let mut preview = None;
-        if let Some(d) = self.border_drag.filter(|d| d.now != d.start)
+        if let Some(d) = self.border_drag.as_ref().filter(|d| d.now != d.start)
             && let Some(geo) = self.pages.page(d.page, &self.index)
             && let Some(tb) = table_on(&geo, d.table)
         {

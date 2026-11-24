@@ -629,3 +629,178 @@ fn inlining_a_quarter_turned_float_keeps_the_pictures_own_size() {
     let p = selected_picture(&e).expect("in line");
     assert!((p.w - n.w).abs() < 0.1 && (p.h - n.h).abs() < 0.1, "({}, {}) vs ({}, {})", p.w, p.h, n.w, n.h);
 }
+
+/// The selected float's wrap polygon on page 0, in document points.
+fn wrap_points(e: &mut Editor) -> Vec<[f64; 2]> {
+    let w = e.wrap_points(0..1).expect("editing wrap points");
+    w.points.iter().map(|&[x, y]| e.stack().to_doc(w.page, x, y).map(|(x, y)| [x, y]).expect("on the stack")).collect()
+}
+
+fn drag_doc(e: &mut Editor, from: [f64; 2], to: [f64; 2], m: Mods) {
+    e.pointer_input(PointerKind::Down, from[0], from[1], 1, m, fonts());
+    e.pointer_input(PointerKind::Move, to[0], to[1], 0, m, fonts());
+    e.pointer_input(PointerKind::Up, to[0], to[1], 0, m, fonts());
+}
+
+fn poly(e: &Editor) -> Option<Vec<(i64, i64)>> {
+    let f = FloatId(all_floats(e)[0]);
+    e.float_of(f)?.poly.as_ref().map(|p| p.iter().map(|&(x, y)| ((x * 100.0).round() as i64, (y * 100.0).round() as i64)).collect())
+}
+
+#[test]
+fn wrap_points_drag_add_and_remove_as_one_step_each_and_save() {
+    let mut e = two_shapes();
+    press(&mut e, 150.0, 350.0, NONE);
+    assert!(matches!(e.edit_wrap_points(), Outcome::Moved));
+    let pts = wrap_points(&mut e);
+    assert_eq!(pts.len(), 4, "the box: {pts:?}");
+    let depth = e.history.undo_depth();
+    let [x, y] = pts[0];
+    e.pointer_input(PointerKind::Move, x, y, 0, NONE, fonts());
+    assert_eq!(e.view(0..1).cursor, super::super::input::Cursor::Move, "the move pointer over a vertex");
+    e.pointer_input(PointerKind::Move, (pts[1][0] + pts[2][0]) / 2.0, pts[1][1], 0, NONE, fonts());
+    assert_eq!(e.view(0..1).cursor, super::super::input::Cursor::Crosshair, "over an edge");
+    // A vertex dragged a fifth of the way in
+    drag_doc(&mut e, [x, y], [x + 20.0, y + 20.0], NONE);
+    assert_eq!(e.history.undo_depth(), depth + 1, "one step");
+    assert_eq!(poly(&e), Some(vec![(20, 20), (0, 100), (100, 100), (100, 0), (20, 20)]));
+    let f = FloatId(all_floats(&e)[0]);
+    assert_eq!(e.float_of(f).map(|f| f.wrap.as_str()), Some("tight"), "a square wrap becomes tight");
+    assert!(e.editing_wrap_points(), "still editing");
+    // A point added on the bottom edge
+    let pts = wrap_points(&mut e);
+    let mid = [(pts[1][0] + pts[2][0]) / 2.0, pts[1][1]];
+    drag_doc(&mut e, mid, [mid[0], mid[1] + 10.0], NONE);
+    assert_eq!(poly(&e).map(|p| p.len()), Some(6), "{:?}", poly(&e));
+    assert_eq!(poly(&e).and_then(|p| p.get(2).copied()), Some((50, 110)));
+    // Ctrl+click removes it
+    let pts = wrap_points(&mut e);
+    let ctrl = Mods { ctrl: true, ..NONE };
+    e.pointer_input(PointerKind::Down, pts[2][0], pts[2][1], 1, ctrl, fonts());
+    e.pointer_input(PointerKind::Up, pts[2][0], pts[2][1], 1, ctrl, fonts());
+    assert_eq!(poly(&e).map(|p| p.len()), Some(5));
+    assert_eq!(e.history.undo_depth(), depth + 3);
+    // Saved and read again
+    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let again = Editor::open(&saved, fonts()).expect("opens");
+    assert_eq!(poly(&again), poly(&e));
+    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo, fonts());
+    assert_eq!(poly(&e), None, "undone");
+    // A press elsewhere ends it
+    assert!(matches!(e.edit_wrap_points(), Outcome::Moved));
+    let (dx, dy) = e.stack().to_doc(0, 400.0, 600.0).expect("on the stack");
+    e.pointer_input(PointerKind::Down, dx, dy, 1, NONE, fonts());
+    assert!(!e.editing_wrap_points() && e.view(0..1).wrap_points.is_none());
+}
+
+fn protect(e: &mut Editor) {
+    let p = crate::api::command::DocumentProtection {
+        kind: Some(crate::api::command::ProtectionKind::ReadOnly),
+        enforce: Some(true),
+        ..Default::default()
+    };
+    assert!(matches!(e.execute(Command::SetDocumentProtection(p), fonts()), Outcome::Changed(_)));
+}
+
+#[test]
+fn wrap_points_are_kept_by_document_protection() {
+    let mut e = two_shapes();
+    press(&mut e, 150.0, 350.0, NONE);
+    protect(&mut e);
+    assert!(matches!(e.edit_wrap_points(), Outcome::Refused(_)), "not entered");
+    let mut e = two_shapes();
+    press(&mut e, 150.0, 350.0, NONE);
+    assert!(matches!(e.edit_wrap_points(), Outcome::Moved));
+    let [x, y] = wrap_points(&mut e)[0];
+    protect(&mut e);
+    let depth = e.history.undo_depth();
+    drag_doc(&mut e, [x, y], [x + 20.0, y + 20.0], NONE);
+    assert_eq!((poly(&e), e.history.undo_depth()), (None, depth), "the polygon stays");
+}
+
+#[test]
+fn a_point_drag_ends_without_a_change_when_another_object_is_selected() {
+    let mut e = two_shapes();
+    press(&mut e, 150.0, 350.0, NONE);
+    assert!(matches!(e.edit_wrap_points(), Outcome::Moved));
+    let [x, y] = wrap_points(&mut e)[0];
+    let depth = e.history.undo_depth();
+    e.pointer_input(PointerKind::Down, x, y, 1, NONE, fonts());
+    e.pointer_input(PointerKind::Move, x + 20.0, y + 20.0, 0, NONE, fonts());
+    let other = FloatId(all_floats(&e)[1]);
+    e.selection = Selection::Object(ObjectRef::Floating(other));
+    e.pointer_input(PointerKind::Up, x + 20.0, y + 20.0, 0, NONE, fonts());
+    assert_eq!((poly(&e), e.history.undo_depth()), (None, depth), "nothing committed");
+    assert_eq!(e.selection(), Selection::Object(ObjectRef::Floating(other)), "the selection stays");
+}
+
+#[test]
+fn escape_ends_wrap_points_and_an_inline_picture_has_none() {
+    let mut e = two_shapes();
+    press(&mut e, 150.0, 350.0, NONE);
+    assert!(matches!(e.edit_wrap_points(), Outcome::Moved));
+    e.execute(Command::Escape, fonts());
+    assert!(!e.editing_wrap_points());
+    assert!(matches!(e.selection(), Selection::Object(_)), "the object stays selected");
+    let mut e = with_inserted_picture();
+    assert!(matches!(e.edit_wrap_points(), Outcome::Refused(_)), "in line with the text");
+}
+
+#[test]
+fn regroup_groups_again_what_ungroup_made_until_one_is_gone() {
+    let mut e = two_shapes();
+    select_both(&mut e);
+    assert!(changed(&e.group_objects(fonts())));
+    assert!(e.regroupable().is_none(), "nothing ungrouped yet");
+    assert!(changed(&e.ungroup_objects(fonts())));
+    let made = e.regroupable().map(<[FloatId]>::to_vec).expect("the members");
+    assert_eq!(made.len(), 2);
+    press(&mut e, 400.0, 600.0, NONE);
+    let depth = e.history.undo_depth();
+    let out = e.regroup_objects(fonts());
+    assert!(changed(&out), "{out:?}");
+    assert_eq!((all_floats(&e).len(), e.history.undo_depth()), (1, depth + 1), "one group, one step");
+    assert!(e.regroupable().is_none());
+    assert!(changed(&e.ungroup_objects(fonts())));
+    e.execute(Command::Undo, fonts());
+    assert!(e.regroupable().is_none(), "an undone ungroup leaves nothing to regroup");
+    assert!(matches!(e.regroup_objects(fonts()), Outcome::Refused(_)));
+}
+
+#[test]
+fn the_default_picture_wrap_inserts_in_line_in_a_note() {
+    let data = open("FX-OBJ.docx").document().images.last().cloned().expect("an image");
+    let mut e = Editor::open(&super::blank_with("Body text here"), fonts()).expect("opens");
+    e.set_default_picture_wrap(ObjectWrap::Square);
+    e.set_caret_for_benchmark(Selection::Caret(Position::text(StoryId::Body, super::para_id(&e, 0), Unit(2))));
+    e.execute(Command::InsertFootnote, fonts());
+    let Some(StoryId::Footnote(note)) = e.caret().map(|p| p.story) else { panic!("the caret is in the note") };
+    let out = e.execute(Command::InsertPicture(Picture { data: Bytes(data), alt_text: None }), fonts());
+    assert!(changed(&out), "{out:?}");
+    let inlines: Vec<&Inline> =
+        e.document().footnotes[&note].iter().filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None }).flat_map(|p| &p.inlines).collect();
+    assert_eq!(inlines.iter().filter(|i| matches!(i, Inline::Picture(..))).count(), 1, "the picture is in line in the note");
+    assert!(!inlines.iter().any(|i| matches!(i, Inline::Float(..))), "a note holds no floating object");
+    assert!(all_floats(&e).is_empty());
+}
+
+#[test]
+fn the_default_picture_wrap_floats_an_inserted_picture_in_one_step() {
+    let data = open("FX-OBJ.docx").document().images.last().cloned().expect("an image");
+    let mut e = Editor::open(&super::blank_with("Body text here"), fonts()).expect("opens");
+    assert_eq!(e.default_picture_wrap(), ObjectWrap::Inline);
+    e.set_default_picture_wrap(ObjectWrap::Square);
+    e.set_caret_for_benchmark(Selection::Caret(Position::text(StoryId::Body, super::para_id(&e, 0), Unit(2))));
+    let depth = e.history.undo_depth();
+    let out = e.execute(Command::InsertPicture(Picture { data: Bytes(data), alt_text: Some("A".into()) }), fonts());
+    assert!(changed(&out), "{out:?}");
+    assert_eq!(e.history.undo_depth(), depth + 1, "one step");
+    let f = all_floats(&e);
+    assert_eq!(f.len(), 1, "floating");
+    let fl = e.float_of(FloatId(f[0])).expect("the float");
+    assert_eq!((fl.wrap.as_str(), &*fl.alt), ("square", "A"));
+    e.execute(Command::Undo, fonts());
+    assert!(all_floats(&e).is_empty());
+}

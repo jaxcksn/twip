@@ -12,9 +12,9 @@ use super::env::TextEnv;
 pub struct ShapeSpace {
     pub fields: Vec<Option<String>>,
     pub notes: Vec<String>,
-    pub balance: Option<String>,
+    pub balance: Option<std::rc::Rc<str>>,
     /// The document's default East Asian font.
-    pub default_east_asia: Option<String>,
+    pub default_east_asia: Option<std::rc::Rc<str>>,
     pub compress: bool,
     /// Compat 15: with the spaces balanced, compressed punctuation keeps the breaks after hyphens and dashes.
     pub balanced_dashes: bool,
@@ -39,7 +39,11 @@ pub struct ShapeSpace {
     /// Fitted regions keep their natural widths (still never broken).
     pub unfitted: bool,
     pub view: MarkupView,
+    /// Hidden text is laid out.
+    pub show_hidden: bool,
     pub join: Option<std::rc::Rc<super::join::JoinMap>>,
+    /// While hidden text shows, the paragraphs vanished marks joined into this one, each laid out as its own.
+    pub parts: Option<super::text::Parts>,
     pub float: Option<std::rc::Rc<crate::docx::Float>>,
     pub hide: Option<u64>,
     pub expansion: Option<std::rc::Rc<super::expansion::Expansion>>,
@@ -60,6 +64,8 @@ pub struct MetricRules {
     pub dash_breaks: bool,
     /// Compat ≤ 14: a kerned run fits its lines with the font's legacy `kern` table pairs, drawn with its GPOS kerning.
     pub kern_table_fit: bool,
+    /// Optional hyphens show as `¬`, taking their width, a break after each (the display option).
+    pub show_optional_hyphens: bool,
 }
 
 pub type BorderKey = Option<std::rc::Rc<BorderGroup>>;
@@ -89,6 +95,9 @@ impl BorderGroup {
 pub struct ParaSpace {
     pub width: f64,
     pub start: usize,
+    /// While hidden text shows, the joined paragraph's part (`ShapedPara::parts`) the text from `start` is in, where
+    /// several can be: empty parts there, or one ending there with its last line still to come.
+    pub part: usize,
     pub borders: (BorderKey, BorderKey),
     pub x0: f64,
     pub env: TextEnv,

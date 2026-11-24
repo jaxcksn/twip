@@ -114,6 +114,19 @@ fn inline_chars(i: &Inline) -> impl Iterator<Item = char> + '_ {
     text.chars().chain(one)
 }
 
+/// The character [`UnitText`] gives unit `u` of `p`, without building it.
+pub fn char_at(p: &Paragraph, u: Unit) -> Option<char> {
+    let mut at = 0u32;
+    for i in &p.inlines {
+        let n = i.units() as u32;
+        if u.0 < at + n {
+            return inline_chars(i).nth((u.0 - at) as usize);
+        }
+        at += n;
+    }
+    None
+}
+
 pub struct UnitText {
     pub text: String,
     bytes: Vec<usize>,
@@ -123,7 +136,7 @@ pub struct UnitText {
 
 impl UnitText {
     pub fn of(p: &Paragraph) -> UnitText {
-        UnitText::build(p, |_| false, false)
+        UnitText::build(p, |_| false, false, false)
     }
 
     pub fn of_view(p: &Paragraph, view: MarkupView) -> UnitText {
@@ -132,20 +145,25 @@ impl UnitText {
 
     /// The units as `view` shows them: the revisions it hides are hidden units that keep their characters.
     pub fn in_view(p: &Paragraph, view: MarkupView) -> UnitText {
-        UnitText::build(p, |rev| view.hides(rev), false)
+        UnitText::build(p, |rev| view.hides(rev), false, false)
+    }
+
+    /// [`Self::in_view`] in the document's view: hidden text is no hidden unit while it shows.
+    pub fn in_review(p: &Paragraph, review: &crate::docx::review::ReviewView) -> UnitText {
+        UnitText::build(p, |rev| review.view.hides(rev), false, review.show_hidden)
     }
 
     pub fn masked(p: &Paragraph, mask: impl Fn(&RunRevisions) -> bool) -> UnitText {
-        UnitText::build(p, mask, true)
+        UnitText::build(p, mask, true, false)
     }
 
-    fn build(p: &Paragraph, mask: impl Fn(&RunRevisions) -> bool, blank: bool) -> UnitText {
+    fn build(p: &Paragraph, mask: impl Fn(&RunRevisions) -> bool, blank: bool, show_hidden: bool) -> UnitText {
         let mut text = String::new();
         let mut bytes = Vec::new();
         let mut hidden = Vec::new();
         for i in &p.inlines {
             let masked = i.run().is_some_and(|r| mask(&r.rev));
-            let h = masked || i.run().is_some_and(|r| r.hidden);
+            let h = masked || (!show_hidden && i.run().is_some_and(|r| r.hidden));
             let blank = masked && blank;
             let mut push = |c: char, text: &mut String| {
                 bytes.push(text.len());
@@ -345,6 +363,13 @@ impl UnitText {
             }
         }
         (start, end)
+    }
+
+    /// The word `u` is in or at either end of, the one after it when it ends one word and starts another.
+    pub fn word_touching(&self, u: Unit) -> Option<(Unit, Unit)> {
+        let words = self.words();
+        let touching = |w: &&(Unit, Unit, Class)| w.2 == Class::Word && w.0 <= u && u <= w.1;
+        words.iter().filter(touching).find(|w| u < w.1).or_else(|| words.iter().find(touching)).map(|w| (w.0, w.1))
     }
 
     pub fn letters_around(&self, u: Unit) -> Option<(Unit, Unit)> {

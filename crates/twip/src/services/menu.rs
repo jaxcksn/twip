@@ -1,12 +1,17 @@
 //! The context menu: what the selection is on, and the items for it, each with its state from the command states.
-//! Spelling suggestions come first on a misspelling; then the clipboard, then the table, object, link, review and
-//! header and footer actions.
+//! Spelling suggestions come first on a misspelling; then the clipboard and paste options, then the field, link,
+//! list, table, object, review and header and footer actions, Synonyms, then New Comment.
 
 use crate::api::catalog;
-use crate::api::command::{Command, CommentResolve, HorizontalSide, InsertColumns, InsertRows, PasteOptions, VerticalSide};
+use crate::api::command::{
+    AutoFit, Command, CommentResolve, ElementIds, HorizontalSide, InsertColumns, InsertRows, ObjectPosition, PasteAs, PasteOptions, ShowFieldCodes,
+    VerticalSide,
+};
+use crate::api::drawing::Arrange;
+use crate::api::review::Body;
 use crate::api::services::{ContextMenu, MenuAction, MenuItem, MenuTarget};
-use crate::api::state::{ObjectKind, State};
-use crate::api::value::Story;
+use crate::api::state::{ElementKind, ListState, ObjectKind, ObjectSelection, State, Tri};
+use crate::api::value::{ObjectWrap, Story, VerticalPosition, VerticalReference};
 
 /// A misspelling under the selection, with its suggestions.
 pub struct Misspelled {
@@ -61,8 +66,49 @@ fn item(state: &State, label: &str, command: Command, needs_selection: bool) -> 
     MenuItem::Command { command: id, label: label.into(), enabled, checked, shortcut, action: MenuAction::Command { command: Box::new(command) } }
 }
 
+/// What the menu needs beyond the state: the Toggle Field Codes command for the fields at the selection, and the
+/// synonyms the host gave for the word at the selection.
+#[derive(Clone, Debug, Default)]
+pub struct MenuFacts {
+    /// What Toggle Field Codes sets, `None` without a field at the selection.
+    pub field_codes: Option<ShowFieldCodes>,
+    /// The Synonyms submenu's words, as the host's thesaurus gives them; `None` shows no Synonyms submenu.
+    pub synonyms: Option<Vec<String>>,
+}
+
+impl MenuFacts {
+    /// The facts for `editor`'s selection, without synonyms.
+    pub fn of(editor: &crate::editing::Editor) -> MenuFacts {
+        MenuFacts { field_codes: editor.field_codes_toggle(false), synonyms: None }
+    }
+}
+
+fn submenu(label: &str, items: Vec<MenuItem>) -> MenuItem {
+    MenuItem::Submenu { label: label.into(), items }
+}
+
+fn checked(mut i: MenuItem, on: bool) -> MenuItem {
+    if let MenuItem::Command { checked, .. } = &mut i {
+        *checked = Some(on);
+    }
+    i
+}
+
+fn enabled_if(mut i: MenuItem, on: bool) -> MenuItem {
+    if let MenuItem::Command { enabled, .. } = &mut i {
+        *enabled &= on;
+    }
+    i
+}
+
 /// The context menu for the selection.
 pub fn build(state: &State, misspelled: Option<&Misspelled>) -> ContextMenu {
+    build_with(state, misspelled, &MenuFacts::default())
+}
+
+/// The context menu for the selection, in Word's order: spelling, the clipboard and paste options, the target's
+/// own items (field, link, list, table, object, revision, comment, header and footer), Synonyms, then New Comment.
+pub fn build_with(state: &State, misspelled: Option<&Misspelled>, facts: &MenuFacts) -> ContextMenu {
     let target = target(state, misspelled);
     let mut items = Vec::new();
     if let Some(m) = misspelled {
@@ -82,7 +128,8 @@ pub fn build(state: &State, misspelled: Option<&Misspelled>) -> ContextMenu {
     }
     items.push(item(state, "Cut", Command::Cut, true));
     items.push(item(state, "Copy", Command::Copy, true));
-    items.push(item(state, "Paste", Command::Paste(PasteOptions::default()), false));
+    let paste = |label, as_| item(state, label, Command::Paste(PasteOptions { as_: Some(as_) }), false);
+    items.push(submenu("Paste Options", vec![paste("Keep Source Formatting", PasteAs::Formatted), paste("Keep Text Only", PasteAs::Text)]));
     let s = &state.selection;
     let group = |list: Vec<MenuItem>, items: &mut Vec<MenuItem>| {
         if !list.is_empty() {
@@ -90,37 +137,30 @@ pub fn build(state: &State, misspelled: Option<&Misspelled>) -> ContextMenu {
             items.extend(list);
         }
     };
-    if let Some(t) = &s.table {
-        let rows = |side, label| item(state, label, Command::InsertRows(InsertRows { side, count: None }), false);
-        let cols = |side, label| item(state, label, Command::InsertColumns(InsertColumns { side, count: None }), false);
-        let mut merge = item(state, "Merge Cells", Command::MergeCells, false);
-        if let MenuItem::Command { enabled, .. } = &mut merge {
-            *enabled &= t.can_merge;
+    if let Some(e) = s.context.first().filter(|e| e.kind == ElementKind::Field) {
+        let ids = ElementIds { ids: Some(vec![e.id.clone()]) };
+        let mut list = vec![item(state, "Update Field", Command::UpdateFields(ids), false)];
+        if let Some(t) = &facts.field_codes {
+            list.push(item(state, "Toggle Field Codes", Command::ShowFieldCodes(t.clone()), false));
         }
-        group(
-            vec![
-                rows(VerticalSide::Above, "Insert Rows Above"),
-                rows(VerticalSide::Below, "Insert Rows Below"),
-                cols(HorizontalSide::Left, "Insert Columns to the Left"),
-                cols(HorizontalSide::Right, "Insert Columns to the Right"),
-                item(state, "Delete Rows", Command::DeleteRows, false),
-                item(state, "Delete Columns", Command::DeleteColumns, false),
-                item(state, "Delete Table", Command::DeleteTable, false),
-                merge,
-            ],
-            &mut items,
-        );
-    }
-    if let Some(o) = &s.object {
-        let mut list = Vec::new();
-        if o.kind == ObjectKind::Picture {
-            list.push(item(state, "Reset Size", Command::ResetObjectSize, false));
-        }
-        list.push(item(state, "Delete", Command::DeleteObject, false));
         group(list, &mut items);
     }
     if s.link.is_some() {
         group(vec![item(state, "Remove Hyperlink", Command::RemoveHyperlink, false)], &mut items);
+    }
+    if s.object.is_none() && state.paragraph.list == Tri::Uniform(ListState::Numbered) {
+        group(
+            vec![item(state, "Restart at 1", Command::RestartNumbering, false), item(state, "Continue Numbering", Command::ContinueNumbering, false)],
+            &mut items,
+        );
+    }
+    if let Some(t) = &s.table
+        && s.object.is_none()
+    {
+        group(table(state, t.can_merge), &mut items);
+    }
+    if let Some(o) = &s.object {
+        group(object(state, o), &mut items);
     }
     if let Some(id) = &s.revision {
         group(
@@ -143,7 +183,89 @@ pub fn build(state: &State, misspelled: Option<&Misspelled>) -> ContextMenu {
     if s.header_footer.is_some() {
         group(vec![item(state, "Close Header and Footer", Command::CloseHeaderFooter, false)], &mut items);
     }
+    if let Some(words) = facts.synonyms.as_ref().filter(|_| s.object.is_none()) {
+        let list = words.iter().map(|w| MenuItem::Suggestion { label: w.clone(), action: MenuAction::ReplaceWord { with: w.clone() } }).collect();
+        group(vec![submenu("Synonyms", list)], &mut items);
+    }
+    if s.header_footer.is_none() {
+        group(vec![item(state, "New Comment", Command::AddComment(Body::Text(String::new())), false)], &mut items);
+    }
     ContextMenu { target, items }
+}
+
+/// A table's Insert and Delete submenus, for several cells Merge Cells and Distribute Rows and Columns Evenly, then the
+/// AutoFit submenu.
+fn table(state: &State, can_merge: bool) -> Vec<MenuItem> {
+    let rows = |side, label| item(state, label, Command::InsertRows(InsertRows { side, count: None }), false);
+    let cols = |side, label| item(state, label, Command::InsertColumns(InsertColumns { side, count: None }), false);
+    let mut items = vec![
+        submenu(
+            "Insert",
+            vec![
+                cols(HorizontalSide::Left, "Insert Columns to the Left"),
+                cols(HorizontalSide::Right, "Insert Columns to the Right"),
+                rows(VerticalSide::Above, "Insert Rows Above"),
+                rows(VerticalSide::Below, "Insert Rows Below"),
+            ],
+        ),
+        submenu(
+            "Delete",
+            vec![
+                item(state, "Delete Columns", Command::DeleteColumns, false),
+                item(state, "Delete Rows", Command::DeleteRows, false),
+                item(state, "Delete Table", Command::DeleteTable, false),
+            ],
+        ),
+    ];
+    if can_merge {
+        items.push(item(state, "Merge Cells", Command::MergeCells, false));
+        items.push(item(state, "Distribute Rows Evenly", Command::DistributeRows, false));
+        items.push(item(state, "Distribute Columns Evenly", Command::DistributeColumns, false));
+    }
+    let fit = |label, a| item(state, label, Command::AutoFitColumns(a), false);
+    items.push(submenu(
+        "AutoFit",
+        vec![fit("AutoFit to Contents", AutoFit::Contents), fit("AutoFit to Window", AutoFit::Window), fit("Fixed Column Width", AutoFit::Fixed)],
+    ));
+    items
+}
+
+/// A picture's or shape's Group, Bring to Front, Send to Back and Wrap Text submenus.
+fn object(state: &State, o: &ObjectSelection) -> Vec<MenuItem> {
+    let arrange = |label, a| item(state, label, Command::ArrangeObject(a), false);
+    let floating = o.wrap != ObjectWrap::Inline;
+    let mut group = vec![enabled_if(item(state, "Group", Command::GroupObjects, false), o.count >= 2)];
+    if o.kind == ObjectKind::Group {
+        group.push(item(state, "Ungroup", Command::UngroupObjects, false));
+    }
+    let wrap = |label, w| checked(item(state, label, Command::SetObjectWrap(w), false), o.wrap == w);
+    let vertical = |relative_to| {
+        let v = VerticalPosition { relative_to, align: None, offset: None, percent: None };
+        Command::SetObjectPosition(ObjectPosition { horizontal: None, vertical: Some(v), allow_overlap: None, layout_in_cell: None })
+    };
+    let moves = o.placement.as_ref().is_some_and(|p| matches!(p.vertical.relative_to, VerticalReference::Paragraph | VerticalReference::Line));
+    let mut wraps = vec![
+        wrap("In Line with Text", ObjectWrap::Inline),
+        wrap("Square", ObjectWrap::Square),
+        wrap("Tight", ObjectWrap::Tight),
+        wrap("Through", ObjectWrap::Through),
+        wrap("Top and Bottom", ObjectWrap::TopAndBottom),
+        wrap("Behind Text", ObjectWrap::BehindText),
+        wrap("In Front of Text", ObjectWrap::InFrontOfText),
+    ];
+    if floating {
+        wraps.push(MenuItem::Separator);
+        wraps.push(checked(item(state, "Move with Text", vertical(VerticalReference::Paragraph), false), moves));
+        wraps.push(checked(item(state, "Fix Position on Page", vertical(VerticalReference::Page), false), !moves));
+    }
+    let front = vec![
+        arrange("Bring to Front", Arrange::ToFront),
+        arrange("Bring Forward", Arrange::Forward),
+        arrange("Bring in Front of Text", Arrange::InFrontOfText),
+    ];
+    let back =
+        vec![arrange("Send to Back", Arrange::ToBack), arrange("Send Backward", Arrange::Backward), arrange("Send Behind Text", Arrange::BehindText)];
+    vec![submenu("Group", group), submenu("Bring to Front", front), submenu("Send to Back", back), submenu("Wrap Text", wraps)]
 }
 
 /// The command ids a menu's items run, nested items included (for checking menus against the catalog).
@@ -191,18 +313,110 @@ mod tests {
         let menu = build(&state, None);
         assert_eq!(menu.target, MenuTarget::Table);
         let ids = commands(&menu.items);
-        for id in [CommandId::InsertRows, CommandId::DeleteRows, CommandId::InsertColumns, CommandId::DeleteColumns, CommandId::MergeCells] {
+        for id in [CommandId::InsertRows, CommandId::DeleteRows, CommandId::InsertColumns, CommandId::DeleteColumns] {
             assert!(ids.contains(&id), "{id:?}");
         }
-        let state_of = |want: CommandId| {
-            menu.items.iter().find_map(|i| match i {
+        fn state_of(items: &[MenuItem], want: CommandId) -> Option<bool> {
+            items.iter().find_map(|i| match i {
                 MenuItem::Command { command, enabled, .. } if *command == want => Some(*enabled),
+                MenuItem::Submenu { items, label } if label != "Paste Options" => state_of(items, want),
+                _ => None,
+            })
+        }
+        let state_of = |want| state_of(&menu.items, want);
+        assert_eq!(state_of(CommandId::DeleteTable), Some(false), "from the command state");
+        assert_eq!(state_of(CommandId::Cut), Some(false), "nothing selected");
+        assert_eq!(state_of(CommandId::MergeCells), None, "one cell");
+        assert_eq!(state_of(CommandId::Paste), None, "in Paste Options");
+        assert!(menu.items.iter().any(|i| matches!(i, MenuItem::Submenu { label, items } if label == "Paste Options" && items.len() == 2)));
+    }
+
+    #[test]
+    fn several_cells_distribute_and_every_table_has_autofit() {
+        let mut state = State::default();
+        state.selection.table = Some(TableSelection { rows: 2, columns: 2, ..TableSelection::default() });
+        let one = commands(&build(&state, None).items);
+        assert!(one.contains(&CommandId::AutoFitColumns) && !one.contains(&CommandId::DistributeRows), "{one:?}");
+        state.selection.table = Some(TableSelection { rows: 2, columns: 2, can_merge: true, ..TableSelection::default() });
+        let menu = build(&state, None);
+        let ids = commands(&menu.items);
+        let at = |id| ids.iter().position(|i| *i == id).unwrap_or_else(|| panic!("{id:?}"));
+        assert!(at(CommandId::MergeCells) < at(CommandId::DistributeRows) && at(CommandId::DistributeRows) < at(CommandId::DistributeColumns));
+        assert!(at(CommandId::DistributeColumns) < at(CommandId::AutoFitColumns));
+        let fit = menu.items.iter().find_map(|i| match i {
+            MenuItem::Submenu { label, items } if label == "AutoFit" => Some(items.len()),
+            _ => None,
+        });
+        assert_eq!(fit, Some(3), "contents, window, fixed");
+    }
+
+    #[test]
+    fn synonyms_come_before_new_comment_when_the_host_gives_them() {
+        let state = State::default();
+        let facts = MenuFacts { synonyms: Some(vec!["fast".into(), "rapid".into()]), ..MenuFacts::default() };
+        let menu = build_with(&state, None, &facts);
+        let n = menu.items.len();
+        let MenuItem::Submenu { label, items } = &menu.items[n - 3] else { panic!("{:?}", menu.items) };
+        assert_eq!(label, "Synonyms");
+        assert_eq!(items[1], MenuItem::Suggestion { label: "rapid".into(), action: MenuAction::ReplaceWord { with: "rapid".into() } });
+        assert!(matches!(menu.items[n - 1], MenuItem::Command { command: CommandId::AddComment, .. }));
+        assert!(!build(&state, None).items.iter().any(|i| matches!(i, MenuItem::Submenu { label, .. } if label == "Synonyms")), "no synonyms given");
+    }
+
+    #[test]
+    fn an_object_has_word_arrange_and_wrap_submenus() {
+        use crate::api::state::ObjectPlacement;
+        let mut state = State::default();
+        let placement = ObjectPlacement {
+            vertical: VerticalPosition { relative_to: VerticalReference::Page, ..VerticalPosition::default() },
+            ..ObjectPlacement::default()
+        };
+        state.selection.object = Some(ObjectSelection {
+            kind: ObjectKind::Picture,
+            wrap: ObjectWrap::Square,
+            count: 1,
+            placement: Some(placement),
+            ..ObjectSelection::default()
+        });
+        let menu = build(&state, None);
+        assert_eq!(menu.target, MenuTarget::Picture);
+        let sub = |label: &str| {
+            menu.items.iter().find_map(|i| match i {
+                MenuItem::Submenu { label: l, items } if l == label => Some(items.clone()),
                 _ => None,
             })
         };
-        assert_eq!(state_of(CommandId::DeleteTable), Some(false), "from the command state");
-        assert_eq!(state_of(CommandId::Cut), Some(false), "nothing selected");
-        assert_eq!(state_of(CommandId::MergeCells), Some(false), "one cell");
-        assert_eq!(state_of(CommandId::Paste), Some(true));
+        let labels = |items: Vec<MenuItem>| {
+            items
+                .into_iter()
+                .filter_map(|i| match i {
+                    MenuItem::Command { label, checked, enabled, .. } => Some((label, checked, enabled)),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        let wrap = labels(sub("Wrap Text").expect("wrap text"));
+        assert_eq!(wrap.len(), 9);
+        assert_eq!(wrap.iter().filter(|w| w.1 == Some(true)).map(|w| w.0.as_str()).collect::<Vec<_>>(), ["Square", "Fix Position on Page"]);
+        assert_eq!(labels(sub("Bring to Front").expect("front"))[2].0, "Bring in Front of Text");
+        assert_eq!(labels(sub("Send to Back").expect("back"))[2].0, "Send Behind Text");
+        assert_eq!(labels(sub("Group").expect("group")), [("Group".to_string(), None, false)], "one object");
+        assert!(matches!(menu.items.last(), Some(MenuItem::Command { command: CommandId::AddComment, .. })), "New Comment last on an object");
+    }
+
+    #[test]
+    fn a_numbered_field_paragraph_has_list_and_field_items_and_new_comment() {
+        use crate::api::state::ElementContext;
+        let mut state = State::default();
+        state.paragraph.list = Tri::Uniform(ListState::Numbered);
+        state.selection.context = vec![ElementContext { kind: ElementKind::Field, ..ElementContext::default() }];
+        let facts = MenuFacts { field_codes: Some(ShowFieldCodes { show: true, ids: None }), ..MenuFacts::default() };
+        let ids = commands(&build_with(&state, None, &facts).items);
+        for id in
+            [CommandId::UpdateFields, CommandId::ShowFieldCodes, CommandId::RestartNumbering, CommandId::ContinueNumbering, CommandId::AddComment]
+        {
+            assert!(ids.contains(&id), "{id:?}");
+        }
+        assert!(!commands(&build(&state, None).items).contains(&CommandId::ShowFieldCodes), "needs the editor's field view");
     }
 }

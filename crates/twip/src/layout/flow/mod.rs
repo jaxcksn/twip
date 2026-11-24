@@ -10,7 +10,7 @@ use super::LayoutCtx;
 use super::float::Placed;
 use super::fragment::Child;
 use super::job::{Memos, Yield};
-use super::join::{Joined, LaidPara, laid_para};
+use super::join::{Joined, LaidPara};
 use super::line::{ParaLines, break_lines, para_space};
 use super::node::{Notes, SectionNode};
 use super::paragraph::{gap, space_after, space_before};
@@ -63,7 +63,29 @@ struct Breakpoint {
     area: NoteArea,
     starts: usize,
     found: usize,
-    effects: PageEffects,
+    effects: EffectsMark,
+}
+
+/// How far the fill's [`PageEffects`] went at a breakpoint: they only grow until it rolls back to one.
+#[derive(Clone, Copy)]
+struct EffectsMark {
+    paras: usize,
+    bookmarks: usize,
+    notes_shown: usize,
+    notes_top: Option<f64>,
+}
+
+impl EffectsMark {
+    fn of(e: &PageEffects) -> EffectsMark {
+        EffectsMark { paras: e.paras.len(), bookmarks: e.bookmarks.len(), notes_shown: e.notes_shown.len(), notes_top: e.notes_top }
+    }
+
+    fn restore(self, e: &mut PageEffects) {
+        e.paras.truncate(self.paras);
+        e.bookmarks.truncate(self.bookmarks);
+        e.notes_shown.truncate(self.notes_shown);
+        e.notes_top = self.notes_top;
+    }
 }
 
 fn step_back(members: &[(Breakpoint, usize, bool, bool)]) -> Option<(Breakpoint, usize)> {
@@ -244,10 +266,9 @@ impl<'d> PageFill<'d, '_> {
             return Some((r.clone(), end));
         }
         let blocks = &self.sec.blocks;
-        let story_end = blocks.stories.iter().copied().find(|&s| s > end).unwrap_or(blocks.len());
         let in_note = blocks.stories.first().is_some_and(|&s| bi >= s);
         let last = if in_note { self.ctx.env.normal.as_ref() } else { None };
-        let Some(style) = super::join::joined_target(&blocks.blocks[..story_end], end, view, last) else { return Some((laid, end)) };
+        let Some(style) = blocks.joined_target(end, &self.ctx.env.text.review, last) else { return Some((laid, end)) };
         let r = laid.restyled(style.clone());
         self.pass.restyled.insert(key, r.clone());
         Some((r, end))
@@ -255,7 +276,7 @@ impl<'d> PageFill<'d, '_> {
 
     fn laid_chain(&mut self, bi: usize) -> Option<(LaidPara<'d>, usize)> {
         let Some(Block::Para(p)) = self.sec.blocks.get(bi) else { return None };
-        let end = self.sec.blocks.chain_end(bi, self.ctx.env.text.review.view);
+        let end = self.sec.blocks.chain_end(bi, &self.ctx.env.text.review);
         if end == bi {
             return Some((LaidPara::One(p), bi));
         }
@@ -263,7 +284,10 @@ impl<'d> PageFill<'d, '_> {
         let j = match self.pass.joined.get(&key) {
             Some(j) => j.clone(),
             None => {
-                let Some(LaidPara::Joined(j)) = laid_para(&self.sec.blocks.blocks[bi..=end]) else { return Some((LaidPara::One(p), bi)) };
+                let Some(LaidPara::Joined(j)) = self.sec.blocks.laid_para(bi, end, self.ctx.env.text.compat == crate::docx::model::Compat::Legacy)
+                else {
+                    return Some((LaidPara::One(p), bi));
+                };
                 self.pass.joined.insert(key, j.clone());
                 j
             }
@@ -278,13 +302,13 @@ impl<'d> PageFill<'d, '_> {
         bi: usize,
         end: usize,
         width: f64,
-        (from, letter_break): (usize, bool),
+        (from, part, letter_break): (usize, usize, bool),
         x0: f64,
         memos: &mut Memos,
     ) -> Result<Rc<ParaLines>, Yield> {
         let p = laid.para();
         let view = self.ctx.env.text.review.view;
-        let (prev, next) = self.sec.blocks.neighbours(bi, end, view);
+        let (prev, next) = self.sec.blocks.neighbours(bi, end, &self.ctx.env.text.review);
         let style = p.para_style_in(view);
         let breaks_first = |b: Option<&Block>| {
             let Some(Block::Para(q)) = b else { return false };
@@ -305,7 +329,7 @@ impl<'d> PageFill<'d, '_> {
         }
         let shaped = shape(p, &space, self.ctx.fonts, memos)?;
         let mut ps = para_space(style, prev, next, width, from, x0, &self.ctx);
-        ps.letter_break = from > 0 && letter_break;
+        (ps.part, ps.letter_break) = (part, from > 0 && letter_break);
         if from > 0 && shaped.pieces[..from.min(shaped.pieces.len())].iter().all(|q| matches!(q.kind, Kind::PageBreak | Kind::ColumnBreak)) {
             ps.borders.0 = super::line::neighbour_borders(style, prev, None).0;
         }
@@ -324,7 +348,7 @@ impl<'d> PageFill<'d, '_> {
             return Ok(tb.clone());
         }
         let env = StoryEnv { ctx: self.ctx, fields: self.fields, notes: self.note_numbers };
-        let prev = self.sec.blocks.neighbours(bi, bi, self.ctx.env.text.review.view).0;
+        let prev = self.sec.blocks.neighbours(bi, bi, &self.ctx.env.text.review).0;
         let tb = crate::prof::time("table", || super::table::layout(t, width, &env, prev, false, memos))?;
         hold(&mut self.pass.held.tables, &tb);
         if !varies {
@@ -373,7 +397,7 @@ impl<'d> PageFill<'d, '_> {
             let text = r.1 + if pos.at.at_start() { carry.prev_after } else { 0.0 };
             // Compat 15: the first section on the page with a footnote reference (on this page or an earlier one)
             // gives the page's footnote area its columns, notes on this page or not.
-            let starts_area = || !area.parts.is_empty() || received || self.sec.blocks.blocks.iter().any(|b| super::node::has_footnote_refs(b));
+            let starts_area = || !area.parts.is_empty() || received || self.sec.blocks.iter().any(super::node::has_footnote_refs);
             if r.0 == Stop::Done && self.hold_notes && starts_area() {
                 if area.cols.is_empty() {
                     area.cols = vec![(col.x, col.width)];
@@ -397,7 +421,7 @@ impl<'d> PageFill<'d, '_> {
             area: cur.area.clone(),
             starts: self.at.starts.len(),
             found: self.at.found.len(),
-            effects: self.at.effects.clone(),
+            effects: EffectsMark::of(&self.at.effects),
         }
     }
 
@@ -408,7 +432,7 @@ impl<'d> PageFill<'d, '_> {
         cur.out.truncate(bp.out);
         self.at.starts.truncate(bp.starts);
         self.at.found.truncate(bp.found);
-        self.at.effects = bp.effects;
+        bp.effects.restore(&mut self.at.effects);
         (bp.y, bp.empty)
     }
 
@@ -511,7 +535,8 @@ impl<'d> PageFill<'d, '_> {
 
     // Blocks not laid out
     fn skip_block(&self, cur: &mut ColumnCursor, generic: bool) -> bool {
-        let vanished = matches!(self.sec.blocks.get(cur.pos.block), Some(Block::Para(p)) if super::paragraph::vanished(p));
+        let vanished =
+            matches!(self.sec.blocks.get(cur.pos.block), Some(Block::Para(p)) if super::paragraph::vanished(p, self.ctx.env.text.review.show_hidden));
         if cur.pos.at.at_start()
             && let Some(end) = self.deleted_before_table(cur.pos.block)
         {
@@ -575,7 +600,7 @@ impl<'d> PageFill<'d, '_> {
         let framed = matches!(p.inlines.first(), Some(Inline::Float(f, _)) if f.text_box.is_some() && f.shape.is_none());
         let mut breaks = cur.pos.at.at_start() && style.page_break_before && !(*cur.empty && page_empty);
         if cur.pos.at.at_start() && style.page_break_before && framed {
-            let pb = self.para_lines(&laid, bi, end, col.width, (0, false), col.x, memos)?;
+            let pb = self.para_lines(&laid, bi, end, col.width, (0, 0, false), col.x, memos)?;
             self.at.frames_only = true;
             let r = self.place_para(p, &pb, cur, col, memos);
             self.at.frames_only = false;
@@ -591,7 +616,7 @@ impl<'d> PageFill<'d, '_> {
         if cur.pos.at.at_start() && style.page_break_before && self.ctx.env.text.compat == Compat::Legacy {
             cur.carry.keep_top = true;
         }
-        let pb = self.para_lines(&laid, bi, end, col.width, (cur.pos.at.index(), cur.carry.letter_break), col.x, memos)?;
+        let pb = self.para_lines(&laid, bi, end, col.width, (cur.pos.at.index(), cur.pos.at.part(), cur.carry.letter_break), col.x, memos)?;
         let placed = self.place_para(p, &pb, cur, col, memos)?;
         if cur.pos.block > bi {
             cur.pos.block = end + 1;
@@ -693,7 +718,7 @@ impl<'d> PageFill<'d, '_> {
             None => Ok(true),
             Some(Block::Para(_)) => {
                 let Some((laid, end)) = self.laid(bi) else { unreachable!("a paragraph block") };
-                let pb = self.para_lines(&laid, bi, end, col.width, (0, false), col.x, memos)?;
+                let pb = self.para_lines(&laid, bi, end, col.width, (0, 0, false), col.x, memos)?;
                 let s = laid.para().para_style_in(self.ctx.env.text.review.view);
                 let g = match &carry.prev {
                     Some(ps) => gap(&self.ctx.env.text, ps, carry.prev_after, s, space_before(&self.ctx.env.text, s)),
@@ -723,7 +748,7 @@ impl<'d> PageFill<'d, '_> {
     fn after_kept(&self, block: usize, style: &ParaStyle) -> f64 {
         let text = &self.ctx.env.text;
         let after = space_after(text, style);
-        match self.sec.blocks.neighbours(block, block, text.review.view).1 {
+        match self.sec.blocks.neighbours(block, block, &text.review).1 {
             Some(next) => gap(text, style, after, next, 0.0),
             None => after,
         }
@@ -746,7 +771,7 @@ impl<'d> PageFill<'d, '_> {
                 if let Inline::Bookmark(name) = i
                     && !name.starts_with('/')
                 {
-                    self.at.effects.bookmarks.retain(|b| b != name);
+                    // A name found again moves to the end where the page's effects are merged.
                     self.at.effects.bookmarks.push(name.clone());
                 }
             }

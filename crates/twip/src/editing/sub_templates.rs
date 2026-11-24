@@ -493,6 +493,16 @@ impl Editor {
     }
 
     pub(super) fn with_flow<R>(&mut self, f: impl FnOnce(&mut DocumentLayout, &Document) -> R) -> R {
+        if self.table_preview.is_empty() {
+            return self.flow_in(f);
+        }
+        self.swap_table_preview(false);
+        let out = self.flow_in(f);
+        self.swap_table_preview(true);
+        out
+    }
+
+    fn flow_in<R>(&mut self, f: impl FnOnce(&mut DocumentLayout, &Document) -> R) -> R {
         let Some(s) = &mut self.surface else { return f(&mut self.layout, &self.doc) };
         let Some(part) = self.doc.glossary.as_mut().and_then(|g| g.parts.get_mut(s.part as usize)) else {
             return f(&mut self.layout, &self.doc);
@@ -1038,7 +1048,12 @@ impl Editor {
 
     pub(super) fn refuse_expanded(&mut self) -> bool {
         let Some((a, b)) = self.selection.ordered(&self.index) else { return false };
-        let Some(field) = self.expanded_in(&a, &b) else { return false };
+        self.refuse_expanded_in(&a, &b)
+    }
+
+    /// [`Editor::refuse_expanded`] for `a..b` rather than the selection.
+    pub(super) fn refuse_expanded_in(&mut self, a: &Position, b: &Position) -> bool {
+        let Some(field) = self.expanded_in(a, b) else { return false };
         let part = self.references.by_field.get(&field).and_then(|r| r.part);
         let name = part.and_then(|k| self.doc.glossary.as_ref()?.parts.get(k as usize)).map(|b| b.name.clone());
         self.refused = Some("sub-template");

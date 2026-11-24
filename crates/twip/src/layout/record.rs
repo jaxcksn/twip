@@ -63,12 +63,15 @@ pub struct PageRecord {
     pub w: f64,
     pub h: f64,
     pub body_area: Option<(f64, f64)>,
-    pub bodies: Vec<BodyRecord>,
+    /// Shared with the layout a page is reused from, as is `effects`.
+    pub bodies: std::rc::Rc<Vec<BodyRecord>>,
     pub section: usize,
-    pub effects: PageEffects,
+    pub effects: std::rc::Rc<PageEffects>,
     pub hf: [Option<HfRecord>; 2],
     pub hf_boxes: [Option<BoxFragment>; 2],
     pub hf_full: HfHeights,
+    /// Its headers and footers were composed, though it may have none.
+    pub composed: bool,
     pub reused: Option<usize>,
     pub number: i64,
     pub blank: bool,

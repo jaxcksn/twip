@@ -210,6 +210,19 @@ impl Graphics {
                 rec.stroke_path(d.elements(), &hair, object);
             }
         }
+        // Wrap points being edited: the polygon as a red dashed line, a black 7 px square at each vertex.
+        if let Some(w) = view.wrap_points.as_ref().filter(|w| w.page == i && !w.points.is_empty()) {
+            let mut path = kurbo::BezPath::new();
+            for (n, &[x, y]) in w.points.iter().enumerate() {
+                if n == 0 { path.move_to((x, y)) } else { path.line_to((x, y)) }
+            }
+            path.close_path();
+            rec.stroke_path(path.elements(), &dashed(1.0 / k, 4.0 / k, 2.0 / k), aliased(Color::rgb(0xFF_0000)));
+            let h = 3.5 / k;
+            for &[x, y] in &w.points {
+                rec.fill_rect(kurbo::Rect::new(x - h, y - h, x + h, y + h), aliased(Color::rgb(0x00_0000)));
+            }
+        }
         self.table_affordances(rec, r, view, i, f);
         self.object_feedback(rec, r, view, i, f);
         self.marks(rec, r, view, i, f);
@@ -407,9 +420,57 @@ impl Graphics {
                     rec.line((x0, t).into(), (x0 + w, t).into(), &line, ink);
                     rec.line((x0, b).into(), (x0 + w, b).into(), &line, ink);
                 }
+                MarkKind::HiddenParagraph => {
+                    if let Some(face) = &face {
+                        let size = h * 0.7;
+                        self.text(rec, face, "\u{b6}", x0 + 0.5, bottom - h * 0.22, size, ink);
+                        let (y, w) = (bottom - 1.0 / px, label_width(face, "\u{b6}", size));
+                        rec.line((x0 + 0.5, y).into(), (x0 + 0.5 + w, y).into(), &dashed(1.0 / px, 1.0 / px, 1.0 / px), ink);
+                    }
+                }
                 MarkKind::Hidden => {
                     let y = bottom - 1.0 / px;
                     rec.line((x0, y).into(), (x1, y).into(), &dashed(1.0 / px, 1.0 / px, 1.0 / px), ink);
+                }
+                MarkKind::NonBreakingSpace => {
+                    if let Some(face) = &face {
+                        let size = h * 0.5;
+                        let w = label_width(face, "\u{b0}", size);
+                        self.text(rec, face, "\u{b0}", (x0 + x1 - w) / 2.0, mid, size, ink);
+                    }
+                }
+                MarkKind::NonBreakingHyphen => rec.line((x0, mid).into(), (x1, mid).into(), &line, ink),
+                MarkKind::PageBreak | MarkKind::ColumnBreak | MarkKind::SectionBreak(_) => {
+                    let label = match m.kind {
+                        MarkKind::PageBreak => "Page Break",
+                        MarkKind::ColumnBreak => "Column Break",
+                        MarkKind::SectionBreak(k) => section_break_label(k),
+                        _ => "",
+                    };
+                    let dots = dashed(1.0 / px, 1.0 / px, 2.0 / px);
+                    let double = matches!(m.kind, MarkKind::SectionBreak(_));
+                    let ys: &[f64] = if double { &[mid - 1.0, mid + 1.0] } else { &[mid] };
+                    let (size, start, gap) = ((h * 0.45).min(8.0), x0 + 2.0, 2.0);
+                    let w = face.as_ref().map_or(0.0, |f| label_width(f, label, size));
+                    let lx = break_label_at(start, x1, w, gap).filter(|_| face.is_some());
+                    for &y in ys {
+                        let (a, b) = lx.map_or((x1, x1), |lx| (lx - gap, lx + w + gap));
+                        if a > start {
+                            rec.line((start, y).into(), (a, y).into(), &dots, ink);
+                        }
+                        if b < x1 {
+                            rec.line((b, y).into(), (x1, y).into(), &dots, ink);
+                        }
+                    }
+                    if let (Some(face), Some(lx)) = (&face, lx) {
+                        self.text(rec, face, label, lx, mid + size * 0.35, size, ink);
+                    }
+                }
+                MarkKind::CellEnd | MarkKind::RowEnd => {
+                    if let Some(face) = &face {
+                        let x = if m.kind == MarkKind::RowEnd { x0 + 2.0 } else { x0 + 0.5 };
+                        self.text(rec, face, "\u{a4}", x, bottom - h * 0.22, h * 0.7, ink);
+                    }
                 }
             }
         }
@@ -417,5 +478,41 @@ impl Graphics {
         for (_, b) in view.boundaries.iter().filter(|(pg, _)| *pg == i) {
             rec.stroke_path(&rect_path(rect(*b)), &edge, ink.with_alpha(150));
         }
+    }
+}
+
+/// The width of `text` in `face` at `size`.
+fn label_width(face: &crate::font::Face, text: &str, size: f64) -> f64 {
+    let k = face.scale(size);
+    text.chars().map(|c| face.advance(face.glyph(c).unwrap_or(0)) * k).sum()
+}
+
+/// Where a break mark's label `w` wide starts, centred between `start` and `end` with `gap` either side; `None` when
+/// it doesn't fit there (the mark is its dots alone).
+fn break_label_at(start: f64, end: f64, w: f64, gap: f64) -> Option<f64> {
+    (end - start >= w + 2.0 * gap).then(|| (start + end - w) / 2.0)
+}
+
+/// Word's name for a section break, as its mark labels it.
+fn section_break_label(k: crate::docx::SectionBreak) -> &'static str {
+    match k {
+        crate::docx::SectionBreak::NextPage => "Section Break (Next Page)",
+        crate::docx::SectionBreak::Continuous => "Section Break (Continuous)",
+        crate::docx::SectionBreak::EvenPage => "Section Break (Even Page)",
+        crate::docx::SectionBreak::OddPage => "Section Break (Odd Page)",
+        crate::docx::SectionBreak::NextColumn => "Section Break (Next Column)",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::break_label_at;
+
+    #[test]
+    fn a_break_label_is_centred_where_it_fits_and_left_out_where_it_doesnt() {
+        assert_eq!(break_label_at(100.0, 300.0, 60.0, 2.0), Some(170.0));
+        assert_eq!(break_label_at(100.0, 164.0, 60.0, 2.0), Some(102.0), "just fits");
+        assert_eq!(break_label_at(100.0, 160.0, 60.0, 2.0), None, "too narrow");
+        assert_eq!(break_label_at(470.0, 468.0, 60.0, 2.0), None, "a mark at the column's edge, after right-aligned text");
     }
 }

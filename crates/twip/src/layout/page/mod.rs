@@ -12,7 +12,7 @@ use super::flow::PassMemo;
 use super::fragment::{BoxFragment, BoxKind, Child, Item};
 use super::job::{Memos, Yield};
 use super::node::{Notes, SectionNode};
-use super::record::{BodyRecord, PageEffects, PageRecord};
+use super::record::{BodyRecord, PageRecord};
 use super::space::{BodyArea, BodyFields, BodySpace, ColumnSpace, HfHeights};
 use super::story::{StoryEnv, hf_limit, stack_limited};
 use super::text::FieldValues;
@@ -278,11 +278,12 @@ impl<'d> Paginator<'d, '_> {
             w: s.page_w,
             h: s.page_h,
             body_area: None,
-            bodies: Vec::new(),
+            bodies: Default::default(),
             section: si,
-            effects: PageEffects::default(),
+            effects: Default::default(),
             hf: [None, None],
             hf_boxes: [None, None],
+            composed: false,
             hf_full: [None, None],
             reused: None,
             number: self.run.page_number,
@@ -507,12 +508,12 @@ impl<'d> Paginator<'d, '_> {
             None => (space.area.top.to_pt(), space.area.bottom.to_pt()),
         };
         page.body_area = page.body_area.or(Some(band));
-        page.effects.merge(&b.effects);
-        let last = sec.blocks.chain_end(b.end.flow.block, self.ctx.env.text.review.view).min(sec.blocks.len().saturating_sub(1));
-        let shown = sec.blocks.blocks.get(token.flow.block..=last).unwrap_or(&[]);
+        Rc::make_mut(&mut page.effects).merge(&b.effects);
+        let last = sec.blocks.chain_end(b.end.flow.block, &self.ctx.env.text.review).min(sec.blocks.len().saturating_sub(1));
+        let shown = sec.blocks.range(token.flow.block..last + 1);
         let end = b.end.clone();
         let page_h = space.page_h;
-        page.bodies.push(BodyRecord {
+        Rc::make_mut(&mut page.bodies).push(BodyRecord {
             fields: fields_used(&fields, shown),
             token,
             space,
@@ -534,7 +535,7 @@ impl<'d> Paginator<'d, '_> {
     }
 }
 
-pub(crate) fn fields_used(fields: &BodyFields, blocks: &[&Block]) -> BodyFields {
+pub(crate) fn fields_used<'b>(fields: &BodyFields, blocks: impl IntoIterator<Item = &'b Block>) -> BodyFields {
     fn walk(blocks: &mut dyn Iterator<Item = &Block>, out: &mut BodyFields, all: &BodyFields) {
         for b in blocks {
             match b {
@@ -580,6 +581,6 @@ pub(crate) fn fields_used(fields: &BodyFields, blocks: &[&Block]) -> BodyFields 
         }
     }
     let mut out = BodyFields::default();
-    walk(&mut blocks.iter().copied(), &mut out, fields);
+    walk(&mut blocks.into_iter(), &mut out, fields);
     out
 }

@@ -187,3 +187,32 @@ fn deleting_an_editable_ranges_end_shrinks_it() {
     e.selection = Selection::Caret(at(&e, 0, 5));
     assert!(e.in_editable_range("someone"), "what is left of the range is editable");
 }
+
+fn perm(id: u32, text: &str) -> String {
+    format!(r#"<w:p><w:permStart w:id="{id}" w:edGrp="everyone"/><w:r><w:t>{text}</w:t></w:r><w:permEnd w:id="{id}"/></w:p>"#)
+}
+
+#[test]
+fn an_editable_paragraph_cant_move_past_a_read_only_one() {
+    let body = format!("<w:p><w:r><w:t>one</w:t></w:r></w:p>{}<w:p><w:r><w:t>three</w:t></w:r></w:p>", perm(1, "two"));
+    for tracked in [false, true] {
+        let mut e = protected(&body);
+        e.set_tracking(tracked);
+        assert_eq!(e.tracking(), tracked);
+        for up in [true, false] {
+            e.selection = Selection::Caret(at(&e, 1, 1));
+            let o = e.move_paragraphs(up, fonts());
+            assert!(matches!(o, super::super::commands::Outcome::Unchanged("locked")), "{tracked} {up}: {o:?}");
+            assert_eq!(texts(&e), ["one", "two", "three"], "{tracked} {up}");
+        }
+    }
+}
+
+#[test]
+fn an_editable_paragraph_moves_past_an_editable_one() {
+    let body = format!("<w:p><w:r><w:t>one</w:t></w:r></w:p>{}{}", perm(1, "two"), perm(2, "three"));
+    let mut e = protected(&body);
+    e.selection = Selection::Caret(at(&e, 2, 1));
+    e.move_paragraphs(true, fonts());
+    assert_eq!(texts(&e), ["one", "three", "two"]);
+}

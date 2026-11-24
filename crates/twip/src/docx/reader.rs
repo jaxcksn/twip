@@ -132,7 +132,7 @@ pub fn now_local() -> i64 {
 
 /// The local time zone's offset from UTC at `t` (seconds since 1970, UTC), in seconds; 0 without a time zone. In the
 /// browser, the page's.
-fn local_offset(t: i64) -> i64 {
+pub(crate) fn local_offset(t: i64) -> i64 {
     #[cfg(all(target_family = "wasm", target_os = "unknown"))]
     {
         crate::clock::local_offset(t)

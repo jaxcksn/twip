@@ -673,7 +673,12 @@ fn longest_line(tb: &crate::docx::TextBox, width: f64, env: &StoryEnv, memos: &m
     let view = env.ctx.env.text.review.view;
     let mut w: f64 = 0.0;
     let mut lines = 0;
-    for b in crate::layout::join::laid_in(&tb.blocks, view, env.ctx.env.normal.as_ref()) {
+    for b in crate::layout::join::laid_in(
+        &tb.blocks,
+        &env.ctx.env.text.review,
+        env.ctx.env.normal.as_ref(),
+        env.ctx.env.text.compat == crate::docx::model::Compat::Legacy,
+    ) {
         let LaidBlock::Para(laid) = b else { continue };
         let p = laid.para();
         let space = laid.shape_space(env.fields, env.notes, &env.ctx, memos)?;

@@ -23,9 +23,122 @@ pub(super) struct TextDrag {
     pub moved: bool,
     pub copy: bool,
     pub drop: Option<Position>,
+    /// A right-button drag: its release opens the drop menu.
+    pub menu: bool,
+}
+
+/// The selection dragged out of the editor: its content, as Copy takes it, and whether the drag may move it (the
+/// source can be deleted).
+#[derive(Clone, Debug)]
+pub struct DragOut {
+    /// The content, as Copy takes it.
+    pub fragment: super::clipboard::Fragment,
+    /// Its plain text.
+    pub text: String,
+    /// Its HTML.
+    pub html: String,
+    /// The drag may move it: the selection can be deleted.
+    pub can_move: bool,
 }
 
 impl Editor {
+    /// Turns text drag and drop on or off (on by default; Word's "Allow text to be dragged and dropped"). Off, a press
+    /// inside the selection places the caret, and the selection can't be dragged out.
+    pub fn set_text_drag_and_drop(&mut self, on: bool) {
+        self.text_drag_off = !on;
+        if !on {
+            self.drop_menu = None;
+            self.drag_out = None;
+            if self.text_drag.take().is_some() {
+                self.requests.push(Request::ReleasePointer);
+            }
+        }
+    }
+
+    /// Whether text drag and drop is on.
+    pub fn text_drag_and_drop(&self) -> bool {
+        !self.text_drag_off
+    }
+
+    /// Whether a text drag can start: drag and drop on, an editable document and no extend mode.
+    pub(super) fn text_drags(&self) -> bool {
+        !self.text_drag_off && self.mode != super::Mode::ReadOnly && self.modes == super::extend::Modes::default()
+    }
+
+    /// Starts dragging the selection out of the editor, to another application or editor: an internal text drag
+    /// under way ends, and the selection's content is what the drag carries. Nothing for a caret.
+    pub fn drag_out(&mut self) -> Option<DragOut> {
+        if self.text_drag.take().is_some() {
+            self.requests.push(Request::ReleasePointer);
+        }
+        if self.selection.is_collapsed() || self.text_drag_off {
+            return None;
+        }
+        let fragment = self.clip()?;
+        let source = self.selection.ordered(&self.index);
+        let can_move = self.mode != super::Mode::ReadOnly
+            && source.is_some_and(|(a, b)| !self.kept(crate::api::command::CommandId::Delete, &a, &b) && self.editable(&a));
+        self.drag_out = Some((self.selection, self.revision, fragment.blocks.clone()));
+        Some(DragOut { text: fragment.text(), html: fragment.html(), fragment, can_move })
+    }
+
+    /// A drag out of the editor came back and dropped at (`x`, `y`): a move, or with `copy` a copy, as a drag inside
+    /// the editor makes it.
+    pub fn drag_out_drop(&mut self, x: f64, y: f64, copy: bool, fonts: &Fonts) -> Outcome {
+        if !self.still_carried() {
+            return Outcome::Unchanged("the selection or the document changed");
+        }
+        let drop = self.hit(x, y, fonts);
+        // Where the drag started stands for the selection's story: a picture's paragraph's, or the drop's for cells.
+        let press = match self.selection {
+            Selection::Object(super::selection::ObjectRef::Inline { para, offset }) => {
+                let story = self.index.para_slot(para).map_or(super::position::StoryId::Body, |s| self.index.story(s.container));
+                Some(Position::text(story, para, offset))
+            }
+            s => s.focus().or(drop),
+        };
+        let Some(press) = press else { return Outcome::Unchanged("no drop place") };
+        self.text_drag = Some(TextDrag { start: (x, y), press, moved: true, copy, drop, menu: false });
+        self.text_drag_release(fonts).unwrap_or(Outcome::Unchanged("no drag"))
+    }
+
+    /// A drag out of the editor ended elsewhere: a move (`moved`) deletes the dragged selection as one undo step,
+    /// unless the selection changed since it started.
+    pub fn drag_out_end(&mut self, moved: bool, fonts: &Fonts) -> Outcome {
+        let dragged = self.still_carried();
+        if !moved || !dragged {
+            return Outcome::Unchanged("nothing moved");
+        }
+        // Smart cut
+        if !matches!(self.selection, Selection::Object(_) | Selection::Cells { .. }) && !(self.tracking() && self.moves_whole()) {
+            let dragged = self.selection;
+            self.smart_cut();
+            // The space it takes along may be out of reach where the dragged text is not.
+            let refused = self.selection != dragged
+                && self.selection.ordered(&self.index).is_some_and(|(a, b)| self.kept(crate::api::command::CommandId::Delete, &a, &b));
+            if refused {
+                self.selection = dragged;
+            }
+        }
+        let delete = crate::api::command::DeleteOptions { direction: crate::api::value::Direction::Forward, unit: None };
+        self.execute(crate::api::command::Command::Delete(delete), fonts)
+    }
+
+    /// Ends the drag out: whether the selection and the document are as it started, the selection still holding what
+    /// the drag carried (a batched edit leaves the revision alone).
+    fn still_carried(&mut self) -> bool {
+        let carried = self.drag_out.take().filter(|(s, r, _)| (*s, *r) == (self.selection, self.revision));
+        carried.is_some_and(|(.., blocks)| {
+            self.clip().is_some_and(|mut f| {
+                // Copied cells: a table with an id of its own each time
+                if let ([crate::docx::Block::Table(was)], [crate::docx::Block::Table(now)]) = (&blocks[..], &mut f.blocks[..]) {
+                    now.id = was.id;
+                }
+                f.blocks == blocks
+            })
+        })
+    }
+
     pub(super) fn inside_selection(&self, p: &Position) -> bool {
         let Selection::Text { .. } = self.selection else { return false };
         let Some((a, b)) = self.selection.ordered(&self.index) else { return false };
@@ -45,24 +158,26 @@ impl Editor {
         self.text_drag = Some(d);
     }
 
+    /// Whether a moved drag can't drop where it is: the source can't be taken (a move) or the drop place can't take
+    /// it, by protection, a lock or the mode.
+    pub(super) fn drop_refused(&self, d: &TextDrag) -> bool {
+        let Some(drop) = d.drop.filter(|_| d.moved) else { return false };
+        let source = match self.selection {
+            Selection::Object(super::selection::ObjectRef::Inline { para, offset }) => {
+                Some((Position::text(d.press.story, para, offset), Position::text(d.press.story, para, Unit(offset.0 + 1))))
+            }
+            s => s.ordered(&self.index),
+        };
+        use crate::api::command::CommandId as C;
+        let taken = !d.copy && source.is_none_or(|(a, b)| self.kept(C::Delete, &a, &b));
+        taken || !self.editable(&drop) || self.kept(C::Paste, &drop, &drop)
+    }
+
     pub(super) fn text_drag_release(&mut self, fonts: &Fonts) -> Option<Outcome> {
         let d = self.text_drag.take()?;
         self.requests.push(Request::ReleasePointer);
-        // Drag source and drop place
-        if d.moved
-            && let Some(drop) = d.drop
-        {
-            let source = match self.selection {
-                Selection::Object(super::selection::ObjectRef::Inline { para, offset }) => {
-                    Some((Position::text(d.press.story, para, offset), Position::text(d.press.story, para, Unit(offset.0 + 1))))
-                }
-                s => s.ordered(&self.index),
-            };
-            use crate::api::command::CommandId as C;
-            let taken = !d.copy && source.is_none_or(|(a, b)| self.kept(C::Delete, &a, &b));
-            if taken || !self.editable(&drop) || self.kept(C::Paste, &drop, &drop) {
-                return Some(Outcome::Unchanged("kept"));
-            }
+        if self.drop_refused(&d) {
+            return Some(Outcome::Unchanged("kept"));
         }
         // A picture that is all of a picture control moves with its control.
         if let (Selection::Object(super::selection::ObjectRef::Inline { para, offset }), true, false, Some(drop)) =
@@ -85,16 +200,33 @@ impl Editor {
             }
             return Some(Outcome::Moved);
         }
+        let Some(drop) = d.drop else {
+            if let Some(o) = object {
+                self.selection = o;
+            }
+            return Some(Outcome::Unchanged("no drop place"));
+        };
+        Some(self.drop_selection(drop, d.copy, object, fonts))
+    }
+
+    /// Moves (or copies) the selected text to `drop` as a drag and drop does: one undo step, a tracked move when
+    /// changes are tracked, the moved text selected after. `object`: the inline object selection the text stands for.
+    pub(super) fn drop_selection(&mut self, drop: Position, copy: bool, object: Option<Selection>, fonts: &Fonts) -> Outcome {
         let restore = |e: &mut Self| {
             if let Some(o) = object {
                 e.selection = o;
             }
         };
-        let Some(drop) = d.drop else {
-            restore(self);
-            return Some(Outcome::Unchanged("no drop place"));
+        // Selected cells and a block are copied, never moved: their fragment is what a drop pastes.
+        let source = match self.selection {
+            Selection::Cells { .. } | Selection::Block { .. } if !copy => return Outcome::Unchanged("the selection can't be moved"),
+            Selection::Cells { .. } | Selection::Block { .. } => None,
+            s => match s.ordered(&self.index) {
+                Some(r) => Some(r),
+                None => return Outcome::Unchanged("no selection"),
+            },
         };
-        let Some((a, b)) = self.selection.ordered(&self.index) else { return Some(Outcome::Unchanged("no selection")) };
+        let pieces = if source.is_none() { self.selected_ranges() } else { Vec::new() };
         // Where the story dropped in is hosted: a text box's float, a note's reference.
         let in_box = match drop.story {
             super::position::StoryId::TextBox(f) => self.index.float_anchor(f).and_then(|para| {
@@ -108,16 +240,19 @@ impl Editor {
             super::position::StoryId::Endnote(id) => self.note_reference(crate::docx::NoteKind::End, id).map(|(at, _)| at),
             _ => None,
         };
-        let inside = |p: &Position| self.index.cmp(&a, p) != std::cmp::Ordering::Greater && self.index.cmp(p, &b) != std::cmp::Ordering::Greater;
+        let inside = |p: &Position| match source {
+            Some((a, b)) => self.index.cmp(&a, p) != std::cmp::Ordering::Greater && self.index.cmp(p, &b) != std::cmp::Ordering::Greater,
+            None => p.para_offset().is_some_and(|(q, u)| pieces.iter().any(|&(r, s, t)| r == q && s <= u && u <= t)),
+        };
         if inside(&drop) || in_box.is_some_and(|p| inside(&p)) {
             restore(self);
-            return Some(Outcome::Unchanged("dropped on the selection"));
+            return Outcome::Unchanged("dropped on the selection");
         }
         // What a drop pastes is what Copy takes.
-        let mut frag = self.clip()?;
-        frag.moved = !d.copy;
+        let Some(mut frag) = self.clip() else { return Outcome::Unchanged("nothing to move") };
+        frag.moved = !copy;
         let sel = self.selection;
-        let moving = !d.copy && self.tracking() && self.moves_whole();
+        let moving = !copy && self.tracking() && self.moves_whole();
         let mut marks = (Vec::new(), Vec::new());
         let mut placed: Option<(Position, Position)> = None;
         let paste = |e: &mut Self, placed: &mut Option<(Position, Position)>| {
@@ -151,7 +286,7 @@ impl Editor {
             }
             ok
         };
-        let after = self.index.cmp(&drop, &b) == std::cmp::Ordering::Greater;
+        let after = source.is_some_and(|(_, b)| self.index.cmp(&drop, &b) == std::cmp::Ordering::Greater);
         let mut paste = |e: &mut Self, placed: &mut Option<(Position, Position)>| {
             let ok = paste(e, placed);
             if ok {
@@ -166,10 +301,10 @@ impl Editor {
             }
             ok
         };
-        self.begin_batch(Some(if d.copy { "Copy" } else { "Move" }.into()));
+        self.begin_batch(Some(if copy { "Copy" } else { "Move" }.into()));
         // Paste and delete, together or not at all
         #[allow(clippy::if_same_then_else, reason = "the order differs: each call moves what the other one sees")]
-        let done = if d.copy {
+        let done = if copy {
             paste(self, &mut placed)
         } else if after {
             paste(self, &mut placed) && delete(self, &mut placed)
@@ -179,7 +314,7 @@ impl Editor {
         if !done {
             self.end_batch(false, fonts);
             restore(self);
-            return Some(Outcome::Unchanged("nothing dropped"));
+            return Outcome::Unchanged("nothing dropped");
         }
         if moving && !marks.0.is_empty() && !marks.1.is_empty() {
             self.record_move(&marks.0, &marks.1, fonts);
@@ -191,7 +326,7 @@ impl Editor {
         } else if let Some((s, t)) = placed {
             self.selection = self.normalize(Selection::range(s, t, super::selection::Granularity::Char));
         }
-        Some(self.end_batch(true, fonts))
+        self.end_batch(true, fonts)
     }
 
     pub(super) fn paste_moved(&mut self, f: &super::clipboard::Fragment, out: &Outcome, fonts: &Fonts) {

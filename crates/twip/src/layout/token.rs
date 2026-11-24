@@ -10,7 +10,8 @@ use super::story::StoryUnit;
 pub enum At {
     #[default]
     Start,
-    Piece(usize),
+    /// A paragraph's piece, and while hidden text shows the joined paragraph's part it starts ([`super::space::ParaSpace::part`]).
+    Piece(usize, usize),
     Row(usize),
     RowPart {
         row: usize,
@@ -22,7 +23,8 @@ impl PartialEq for At {
     fn eq(&self, o: &Self) -> bool {
         match (self, o) {
             (At::Start, At::Start) => true,
-            (At::Piece(a), At::Piece(b)) | (At::Row(a), At::Row(b)) => a == b,
+            (At::Piece(a, p), At::Piece(b, q)) => (a, p) == (b, q),
+            (At::Row(a), At::Row(b)) => a == b,
             (At::RowPart { row: a, rest: x }, At::RowPart { row: b, rest: y }) => a == b && Rc::ptr_eq(x, y),
             _ => false,
         }
@@ -33,13 +35,21 @@ impl At {
     pub fn index(&self) -> usize {
         match self {
             At::Start => 0,
-            At::Piece(i) | At::Row(i) => *i,
+            At::Piece(i, _) | At::Row(i) => *i,
             At::RowPart { row, .. } => *row,
         }
     }
 
     pub fn at_start(&self) -> bool {
-        self.index() == 0 && !matches!(self, At::RowPart { .. })
+        self.index() == 0 && !matches!(self, At::RowPart { .. } | At::Piece(_, 1..))
+    }
+
+    /// The joined paragraph's shown part a paragraph goes on in.
+    pub fn part(&self) -> usize {
+        match self {
+            At::Piece(_, p) => *p,
+            _ => 0,
+        }
     }
 
     pub fn rest(&self) -> Option<&Rc<Vec<Vec<StoryUnit>>>> {

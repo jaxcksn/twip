@@ -45,6 +45,30 @@ fn units_before(inlines: &[Inline], k: usize) -> u32 {
     inlines[..k].iter().map(|i| i.units() as u32).sum()
 }
 
+/// The first (or last) outermost field in `inlines` that starts after (or before) unit `from`, when given: its units.
+fn outer_field(inlines: &[Inline], first: bool, from: Option<u32>) -> Option<(Unit, Unit)> {
+    let (mut depth, mut at, mut pick) = (0usize, 0u32, None);
+    for (k, i) in inlines.iter().enumerate() {
+        match i {
+            Inline::FieldBegin { .. } => {
+                if depth == 0 && from.is_none_or(|u| if first { at > u } else { at < u }) {
+                    pick = Some((k, at));
+                    if first {
+                        break;
+                    }
+                }
+                depth += 1;
+            }
+            Inline::FieldEnd { .. } => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+        at += i.units() as u32;
+    }
+    let (k, start) = pick?;
+    let s = crate::docx::fields::span_at(inlines, k)?;
+    Some((Unit(start), Unit(units_before(inlines, s.end) + 1)))
+}
+
 fn bad(name: &str) -> Refused {
     Error::invalid(format!("bad {name}"))
 }
@@ -240,6 +264,7 @@ impl Editor {
             };
             new.push(Mark { id, severity, message: mark.message });
         }
+        self.hover_cache = None;
         if m.clear.unwrap_or(false) {
             self.marks.clear();
         }
@@ -276,18 +301,20 @@ impl Editor {
         (out, tip)
     }
 
+    /// The hover tooltip in the kinds the API names (a note reference's has none yet).
     pub fn hover_tooltip(&mut self) -> Option<(crate::api::services::TooltipKind, super::view::Tooltip)> {
-        use crate::api::services::TooltipKind;
-        let (x, y) = self.hover?;
-        let (page, hx, hy) = self.stack().page_at(x, y)?;
-        if let (_, Some(t)) = self.mark_views(page..page + 1) {
-            return Some((TooltipKind::Mark, t));
-        }
-        let link = self.hit_laid_out(x, y).and_then(|p| self.link_at(p))?;
-        let (a, b) = self.locate(ElementId::Field(link.field)).and_then(|w| self.element_range(&w))?;
-        let rect =
-            self.range_rects(a, b, page..page + 1).into_iter().map(|(_, r)| r).find(|r| r[0] <= hx && hx <= r[2] && r[1] <= hy && hy <= r[3])?;
-        Some((TooltipKind::Link, super::view::Tooltip { text: link.address, page, rect }))
+        use super::hover::HoverTip as H;
+        use crate::api::services::TooltipKind as K;
+        let (tip, t, _) = self.hover_tip()?;
+        let (tip, t) = (*tip, t.clone());
+        let kind = match tip {
+            H::Mark => K::Mark,
+            H::Link => K::Link,
+            H::Revision => K::Revision,
+            H::Comment => K::Comment,
+            H::Note | H::WhiteSpace => return None,
+        };
+        Some((kind, t))
     }
 
     pub fn select_element(&mut self, id: &crate::api::value::ElementId, reveal: bool, fonts: &Fonts) -> Outcome {
@@ -688,6 +715,7 @@ impl Editor {
 
     pub(super) fn set_hover(&mut self, x: f64, y: f64) {
         self.hover = Some((x, y));
+        self.hover_generation = self.generation;
         if self.mode == super::Mode::ReadOnly {
             self.hover_region = None;
             return;
@@ -1080,12 +1108,21 @@ impl Editor {
                 self.locks(&Position::text(story, para, x), &Position::text(story, para, y), deletes)
             }),
         };
+        self.refuse_if_locked(locked)
+    }
+
+    /// [`Editor::refuse_locked_content`] for `a..b` rather than the selection.
+    pub(super) fn refuse_locked_content_in(&mut self, a: &Position, b: &Position) -> bool {
+        let locked = self.locks(a, b, false);
+        self.refuse_if_locked(locked)
+    }
+
+    fn refuse_if_locked(&mut self, locked: bool) -> bool {
         if locked {
             self.refused = Some("locked");
             self.events.push(super::input::Notice::Refused { sub_template: None, element: None });
-            return true;
         }
-        false
+        locked
     }
 
     // Data parts
@@ -1217,6 +1254,42 @@ impl Editor {
         picked.into_iter().map(|f| (f.0, f.2)).collect()
     }
 
+    /// F11 and Shift+F11: selects the next (or previous) field in the story, the outermost of nested ones, from where
+    /// the selection starts. A walk from the caret's paragraph that stops at the first one: the model holds no field
+    /// across paragraphs (reading keeps such a field's result as text), so each paragraph's nesting starts at 0.
+    pub fn select_field(&mut self, order: crate::api::value::Order, fonts: &Fonts) -> Outcome {
+        let Some((a, _)) = self.selection.ordered(&self.index) else { return Outcome::Unchanged("no caret") };
+        let next = order == crate::api::value::Order::Next;
+        let nav = self.nav();
+        // A row end has no text: the walk starts in the paragraph beside it, whole.
+        let start = a.para_offset().map(|(p, u)| (p, Some(u.0))).or_else(|| {
+            let beside = if next { nav.right(a, false) } else { nav.left(a, false) };
+            beside.para_offset().map(|(p, _)| (p, None))
+        });
+        let Some((from, at)) = start else { return Outcome::Unchanged("no caret") };
+        let found = {
+            let mut para = from;
+            loop {
+                let Some(p) = nav.idx.para(nav.doc, para) else { break None };
+                if let Some((s, e)) = outer_field(&p.inlines, next, if para == from { at } else { None }) {
+                    break Some((para, s, e));
+                }
+                match nav.para_beside(para, next) {
+                    Some(q) => para = q,
+                    None => break None,
+                }
+            }
+        };
+        let Some((para, s, e)) = found else { return Outcome::Unchanged("no field there") };
+        self.history.break_typing();
+        self.set_selection(Selection::range(Position::text(a.story, para, s), Position::text(a.story, para, e), super::selection::Granularity::Char));
+        if let Some(p) = self.caret() {
+            self.ensure(&p, fonts);
+            self.scroll_to_caret(fonts);
+        }
+        Outcome::Moved
+    }
+
     fn set_views(&mut self, fields: &[(FieldId, ParaId)], view: FieldView) {
         let mut hints = Vec::new();
         for (f, para) in fields {
@@ -1263,7 +1336,7 @@ impl Editor {
         self.field_views(targets, if show { FieldView::Code } else { FieldView::Result })
     }
 
-    pub(super) fn field_codes_toggle(&self, all: bool) -> Option<crate::api::command::ShowFieldCodes> {
+    pub fn field_codes_toggle(&self, all: bool) -> Option<crate::api::command::ShowFieldCodes> {
         let targets: Vec<(FieldId, ParaId)> =
             if all { self.all_fields().iter().map(|f| (f.0, f.2)).collect() } else { self.fields_here(None, false) };
         let &(f, para) = targets.first()?;

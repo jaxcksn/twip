@@ -217,6 +217,7 @@ fn map_line(l: &super::fragment::PlacedLine, f: &ItemMap, ox: f64, oy: f64) -> s
         pitch: line.pitch,
         baseline: line.baseline,
         below: line.below,
+        after: line.after,
         atoms: line.atoms.clone(),
         changed: line.changed,
         mark: line.mark,

@@ -25,6 +25,7 @@ fn rebreak_does_not_reshape() {
         let space = ParaSpace {
             width,
             start: 0,
+            part: 0,
             borders: neighbour_borders(&p.style, None, None),
             x0: 0.0,
             env: env.text.clone(),

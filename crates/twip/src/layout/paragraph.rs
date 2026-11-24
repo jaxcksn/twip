@@ -30,8 +30,8 @@ pub fn gap(env: &TextEnv, prev: &ParaStyle, prev_after: f64, next: &ParaStyle, b
     (if prev.contextual && same { 0.0 } else { prev_after }) + (if next.contextual && same { 0.0 } else { extra })
 }
 
-pub fn drops_at_edge(p: &ParaStyle, other: Option<&Option<String>>) -> bool {
-    p.contextual && other.is_some_and(|o| *o == p.style_id)
+pub fn drops_at_edge(p: &ParaStyle, other: Option<Option<&str>>) -> bool {
+    p.contextual && other.is_some_and(|o| o == p.style_id.as_deref())
 }
 
 pub fn contextual_in(env: &TextEnv, in_cell: bool) -> bool {
@@ -53,9 +53,11 @@ pub fn lines_to_take(n: usize, fit: usize, hard: bool, first_part: bool, keep_li
     take
 }
 
-pub fn vanished(p: &crate::docx::Paragraph) -> bool {
+/// Whether `p` is all hidden text, its mark too, so it isn't laid out (unless hidden text shows).
+pub fn vanished(p: &crate::docx::Paragraph, show_hidden: bool) -> bool {
     use crate::docx::Inline;
-    p.mark.hidden
+    !show_hidden
+        && p.mark.hidden
         && p.list.is_none()
         && p.inlines.iter().all(|i| match i {
             Inline::Text(t, r) => t.is_empty() || r.hidden,
@@ -73,15 +75,17 @@ pub fn vanished(p: &crate::docx::Paragraph) -> bool {
         })
 }
 
-/// Whether `p` shows nothing in `view`: every run hidden or a hidden revision (bookmarks and the like don't count).
-pub fn shows_nothing(p: &crate::docx::Paragraph, view: crate::docx::review::MarkupView) -> bool {
+/// Whether `p` shows nothing in `view`: every run hidden (unless hidden text shows) or a hidden revision (bookmarks
+/// and the like don't count).
+pub fn shows_nothing(p: &crate::docx::Paragraph, view: crate::docx::review::MarkupView, show_hidden: bool) -> bool {
     use crate::docx::Inline;
+    let hidden = |r: &crate::docx::Run| (r.hidden && !show_hidden) || view.hides(&r.rev);
     p.inlines.iter().all(|i| match i {
-        Inline::Text(t, r) => t.is_empty() || r.hidden || view.hides(&r.rev),
+        Inline::Text(t, r) => t.is_empty() || hidden(r),
         Inline::Bookmark(_) | Inline::Opaque(_) | Inline::Range(_) | Inline::ControlStart(_) | Inline::ControlEnd(_) | Inline::CommentRef { .. } => {
             true
         }
-        i => i.run().is_some_and(|r| r.hidden || view.hides(&r.rev)),
+        i => i.run().is_some_and(hidden),
     })
 }
 

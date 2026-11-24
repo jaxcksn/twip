@@ -393,12 +393,17 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
             out.extend(caret(end, q));
         }
         let changed = o.review.view.change_bars() && line_changed(o, line, src);
-        let mark = (line.start == line.end && o.shaped.join.is_none()).then(|| Unit(src.inlines.iter().map(Inline::units).sum::<usize>() as u32));
+        let mark = (line.start == line.end && o.shaped.join.is_none()).then(|| match o.shaped.parts.as_ref().and_then(|p| p.get(line.part + 1)) {
+            // Empty shown part
+            Some(next) => Unit(next.start),
+            None => Unit(src.inlines.iter().map(Inline::units).sum::<usize>() as u32),
+        });
         LineFragment {
             items: out.into_boxed_slice(),
             pitch: line.pitch,
             baseline: line.baseline,
             below: line.below,
+            after: line.after,
             atoms: atoms.into_boxed_slice(),
             changed,
             mark,

@@ -89,6 +89,9 @@ impl Editor {
     }
 
     pub(super) fn escape(&mut self) -> Outcome {
+        if self.end_wrap_points() {
+            return Outcome::Moved;
+        }
         if self.text_drag.take().is_some() {
             self.requests.push(super::input::Request::ReleasePointer);
             return Outcome::Moved;
@@ -96,11 +99,18 @@ impl Editor {
         if self.end_modes() {
             return Outcome::Moved;
         }
-        if self.object_cancel() || self.shape_cancel() || self.shape_insert.take().is_some() {
+        // A drag in progress ends before an idle tool does.
+        if self.object_cancel() || self.shape_cancel() {
             return Outcome::Moved;
         }
-        if self.border_drag.take().is_some() || self.table_drag.take().is_some() {
+        if self.border_cancel() || self.table_drag.take().is_some() {
             self.requests.push(super::input::Request::ReleasePointer);
+            return Outcome::Moved;
+        }
+        if self.drop_menu.take().is_some() || self.highlighter.take().is_some() {
+            return Outcome::Moved;
+        }
+        if self.shape_insert.take().is_some() {
             return Outcome::Moved;
         }
         if self.selected_child().is_some() {
@@ -395,15 +405,23 @@ impl Editor {
     }
 
     pub(super) fn note_jump(&mut self, p: Position) -> bool {
-        let Some((para, u)) = p.para_offset() else { return false };
-        let Some(q) = self.index.para(&self.doc, para) else { return false };
+        let Some(t) = self.note_pair(p) else { return false };
+        self.drag = None;
+        self.set_selection(Selection::Caret(t));
+        true
+    }
+
+    /// Where a double-click at `p` on a note reference, or on a note's own mark, goes: the other one.
+    pub(super) fn note_pair(&mut self, p: Position) -> Option<Position> {
+        let (para, u) = p.para_offset()?;
+        let q = self.index.para(&self.doc, para)?;
         let near = [Some(u), u.0.checked_sub(1).map(Unit)];
         let found = near.into_iter().flatten().find_map(|v| match inline_at(q, v) {
             Some(Inline::NoteRef { kind, id, .. }) if !is_note(p.story) => Some((true, *kind, *id)),
             Some(Inline::NoteMark(kind, id, _)) if is_note(p.story) => Some((false, *kind, *id)),
             _ => None,
         });
-        let target = match found {
+        match found {
             Some((true, kind, id)) => {
                 let story = match kind {
                     NoteKind::Foot => StoryId::Footnote(id),
@@ -413,11 +431,7 @@ impl Editor {
             }
             Some((false, kind, id)) => self.note_reference(kind, id).map(|(at, _)| at),
             None => self.custom_mark_reference(p.story, q, near),
-        };
-        let Some(t) = target else { return false };
-        self.drag = None;
-        self.set_selection(Selection::Caret(t));
-        true
+        }
     }
 
     /// The reference of the note whose custom mark (the text leading its first paragraph `q`) is at one of `near`.

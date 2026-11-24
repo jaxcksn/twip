@@ -47,7 +47,7 @@ impl Editor {
             if let Some((para, mut u)) = p.para_offset()
                 && let Some(q) = self.index.para(&self.doc, para)
             {
-                let t = super::text::UnitText::in_view(q, self.doc.review.view);
+                let t = super::text::UnitText::in_review(q, &self.doc.review);
                 while u < t.len() {
                     let v = t.next_grapheme(u);
                     if v <= u {
@@ -144,13 +144,12 @@ impl Editor {
     /// paragraph is read once.
     pub(super) fn block_text(&mut self, limit: usize) -> (String, bool) {
         let pieces = self.block_pieces();
-        let view = self.doc.review.view;
         let (mut out, mut chars, mut first) = (String::new(), 0usize, true);
         let mut cur: Option<(crate::layout::ParaId, super::text::Seen)> = None;
         for &(_, _, para, a, b) in &pieces {
             if !matches!(&cur, Some((p, _)) if *p == para) {
                 let Some(p) = self.index.para(&self.doc, para) else { continue };
-                cur = Some((para, crate::prof::time("block:paragraph", || super::seen_text(p, view))));
+                cur = Some((para, crate::prof::time("block:paragraph", || super::seen_text(p, &self.doc.review))));
             }
             let Some((_, seen)) = &cur else { continue };
             let (lo, hi) = (seen.units.partition_point(|&u| u < a.0), seen.units.partition_point(|&u| u < b.0));

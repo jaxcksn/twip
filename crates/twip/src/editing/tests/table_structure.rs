@@ -584,6 +584,7 @@ fn distribute_rows_in_a_header_table_measures_each_row_once() {
         e.execute(Command::InsertParagraph, fonts());
     }
     let id = e.index().table_ids().next().expect("the header table");
+    e.complete(fonts());
     let geos = e.page_geometries();
     assert!(geos.len() >= 3, "three pages");
     let heights: Vec<f64> = geos[0].1.rows.iter().filter(|r| r.table == id && !r.repeat).map(|r| r.rect[3] - r.rect[1]).collect();

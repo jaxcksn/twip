@@ -184,3 +184,152 @@ fn a_body_page_count_added_incrementally_stays_current_on_later_edits() {
         assert_matches_full(&dl, &d);
     }
 }
+
+#[test]
+fn text_box_chains_an_edit_puts_in_are_laid_out() {
+    use super::shapes::{anchor, sp};
+    let fonts = fonts();
+    let story: String =
+        (1..=6).map(|i| format!("<w:p><w:r><w:t>P{i} words to fill the boxes in turn, one after another.</w:t></w:r></w:p>")).collect();
+    let rect = sp(0, 0, 150, 60, "rect", "", "FFFFFF");
+    let head = rect.replace("<wps:bodyPr/>", &format!(r#"<wps:txbx id="1"><w:txbxContent>{story}</w:txbxContent></wps:txbx><wps:bodyPr/>"#));
+    let link = rect.replace("<wps:bodyPr/>", r#"<wps:linkedTxbx id="1" seq="1"/><wps:bodyPr/>"#);
+    let boxes = format!(
+        "<w:p><w:r><w:t>Text</w:t></w:r>{}{}</w:p>",
+        anchor(72, 300, 150, 60, 1, false, 1, &head),
+        anchor(250, 300, 150, 60, 2, false, 2, &link)
+    );
+    let full =
+        crate::docx::read(&super::shapes::bytes(&format!("<w:p><w:r><w:t>Before</w:t></w:r></w:p>{boxes}")).expect("a package")).expect("reads");
+    let mut d = full.clone();
+    let kept = d.sections[0].blocks.split_off(1);
+    let mut dl = DocumentLayout::new();
+    dl.edit(Revision(1), None);
+    dl.complete(&d, &fonts);
+    // A chain-free edit keeps the (empty) chains; one putting a chain in finds it.
+    let Some(Block::Para(p)) = d.sections[0].blocks.first_mut() else { panic!("a paragraph") };
+    p.inlines.push(Inline::Text("more".into(), p.inlines.iter().find_map(|i| i.run().cloned()).expect("a run")));
+    dl.edit(Revision(2), Some(Change { section: 0, first: 0, old_end: 1, new_end: 1, row: None }));
+    dl.complete(&d, &fonts);
+    assert_matches_full(&dl, &d);
+    d.sections[0].blocks.extend(kept);
+    dl.edit(Revision(3), Some(Change { section: 0, first: 1, old_end: 1, new_end: 2, row: None }));
+    dl.complete(&d, &fonts);
+    assert_matches_full(&dl, &d);
+    assert!(dump::page_text(&dl.snapshot(), &d).contains("P2"), "the second box shows the story");
+}
+
+#[test]
+fn a_section_setting_changed_outside_steps_lays_out_again() {
+    let fonts = fonts();
+    let mut d = docx(&format!("<w:p><w:r><w:t>Text</w:t></w:r></w:p>{}", sect()));
+    let mut dl = DocumentLayout::new();
+    dl.edit(Revision(1), None);
+    dl.complete(&d, &fonts);
+    d.sections[0].left += 72.0;
+    d.sections[0].v_align = "center".into();
+    dl.edit(Revision(2), Some(Change { section: 0, first: 0, old_end: 1, new_end: 1, row: None }));
+    dl.complete(&d, &fonts);
+    assert_matches_full(&dl, &d);
+}
+
+#[test]
+fn laying_out_to_a_block_stops_where_laying_out_to_its_paragraph_does() {
+    let fonts = fonts();
+    let body: String = (0..120).map(|i| format!("<w:p><w:r><w:t>Paragraph {i} {}</w:t></w:r></w:p>", super::words(40))).collect();
+    let plain = docx(&format!("{body}{}", sect()));
+    let table = table_doc(60, true);
+    let id = |b: &Block| match b {
+        Block::Para(p) => p.id,
+        Block::Table(_) => panic!("a paragraph"),
+    };
+    let shown = |d: &Document, t: Target| {
+        let mut dl = DocumentLayout::new();
+        dl.edit(Revision(1), None);
+        dl.through(d, &fonts, t);
+        dl.snapshot().pages().len()
+    };
+    for k in [0, 7, 60, 119] {
+        let para = crate::layout::ParaId(id(&plain.sections[0].blocks[k]));
+        let by_para = shown(&plain, Target::Position { para, unit: crate::layout::Unit(0) });
+        assert_eq!(shown(&plain, Target::Block { section: 0, block: k, row: None }), by_para, "paragraph {k}");
+    }
+    let Block::Table(t) = &table.sections[0].blocks[0] else { panic!("a table") };
+    for row in [0, 30, 59] {
+        let Block::Para(p) = &t.rows[row].cells[0].blocks[0] else { panic!("a paragraph") };
+        let by_para = shown(&table, Target::Position { para: crate::layout::ParaId(p.id), unit: crate::layout::Unit(0) });
+        assert_eq!(shown(&table, Target::Block { section: 0, block: 0, row: Some(row) }), by_para, "row {row}");
+    }
+}
+
+/// Six pages under a header that shows its page number.
+fn headed() -> Document {
+    let ct = r#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/></Types>"#;
+    let rels = r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/></Relationships>"#;
+    let header = r#"<w:p><w:r><w:t xml:space="preserve">Head </w:t></w:r><w:fldSimple w:instr=" PAGE "><w:r><w:t>1</w:t></w:r></w:fldSimple></w:p>"#;
+    let body: String =
+        (0..6).map(|i| format!(r#"<w:p><w:r><w:t>Page {i} {}</w:t></w:r><w:r><w:br w:type="page"/></w:r></w:p>"#, super::words(30))).collect();
+    let sect = format!(r#"<w:sectPr><w:headerReference w:type="default" r:id="rId3"/>{PAGE}</w:sectPr>"#);
+    package(&[
+        ("[Content_Types].xml", ct),
+        ("_rels/.rels", RELS),
+        ("word/_rels/document.xml.rels", rels),
+        (
+            "word/document.xml",
+            &format!(r#"<w:document {W} xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body>{body}{sect}</w:body></w:document>"#),
+        ),
+        ("word/header1.xml", &format!("<w:hdr {W}>{header}</w:hdr>")),
+    ])
+    .expect("document")
+}
+
+fn header_blocks(d: &mut Document) -> &mut Vec<Block> {
+    d.stories.values_mut().next().expect("the header")
+}
+
+#[test]
+fn a_header_edit_lays_out_again_reusing_the_bodies() {
+    use crate::layout::incremental::REUSED_PAGES;
+    let fonts = fonts();
+    let mut d = headed();
+    let mut dl = DocumentLayout::new();
+    dl.edit(Revision(1), None);
+    dl.complete(&d, &fonts);
+    let pages = dl.snapshot().pages().len();
+    assert!(pages >= 6, "{pages} pages");
+    let Block::Para(p) = &mut header_blocks(&mut d)[0] else { panic!("a paragraph") };
+    let Some(Inline::Text(s, _)) = p.inlines.iter_mut().find(|i| matches!(i, Inline::Text(..))) else { panic!("text") };
+    *s = "Heading ".into();
+    let (full, reused) = (FULL_JOBS.get(), REUSED_PAGES.get());
+    dl.edit_parts(Revision(2));
+    dl.complete(&d, &fonts);
+    assert_eq!(FULL_JOBS.get(), full, "no full layout");
+    assert!(REUSED_PAGES.get() - reused >= pages as u64 - 1, "every page after the first keeps its body");
+    assert_matches_full(&dl, &d);
+    // A taller header moves every body down.
+    let more = fresh_copy(&header_blocks(&mut d)[0]);
+    header_blocks(&mut d).push(more);
+    dl.edit_parts(Revision(3));
+    dl.complete(&d, &fonts);
+    assert_matches_full(&dl, &d);
+}
+
+#[test]
+fn laying_out_to_a_page_after_a_header_edit_stops_there() {
+    let fonts = fonts();
+    let mut d = headed();
+    let mut dl = DocumentLayout::new();
+    dl.edit(Revision(1), None);
+    dl.complete(&d, &fonts);
+    let more = fresh_copy(&header_blocks(&mut d)[0]);
+    header_blocks(&mut d).push(more);
+    dl.edit_parts(Revision(2));
+    dl.through(&d, &fonts, Target::Page(1));
+    assert!(
+        matches!(dl.snapshot().status(), crate::layout::LayoutStatus::Pending { stale_from } if *stale_from <= 3),
+        "{:?}",
+        dl.snapshot().status()
+    );
+    dl.complete(&d, &fonts);
+    assert_matches_full(&dl, &d);
+}

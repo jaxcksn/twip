@@ -2260,10 +2260,21 @@ fn tab_changes_the_level_of_list_items() {
     let at = |e: &super::super::Editor, i: usize| Position::text(StoryId::Body, super::super::tests::para_id(e, i), Unit(0));
     assert_eq!((level(&e, 2), level(&e, 3)), (Some(0), Some(0)), "1. and 2.");
     e.set_caret_for_benchmark(Selection::Caret(at(&e, 2)));
+    let left = |e: &super::super::Editor, i: usize| match &e.document().sections[0].blocks[i] {
+        crate::docx::Block::Para(p) => p.style.ind_left,
+        _ => 0.0,
+    };
+    let was = left(&e, 3);
     let tab = e.key_command("Tab", Mods::default()).unwrap();
     assert!(matches!(e.execute(tab, fonts()), super::super::Outcome::Changed(_)), "the first item");
-    assert_eq!(level(&e, 2), Some(1));
+    assert_eq!((level(&e, 2), left(&e, 3) > was), (Some(0), true), "the first item takes the whole list along");
     e.execute(Command::Undo, fonts());
+    e.indent_keys = false;
+    let tab = e.key_command("Tab", Mods::default()).unwrap();
+    e.execute(tab, fonts());
+    assert_eq!(level(&e, 2), Some(1), "with the AutoFormat option off, a level down");
+    e.execute(Command::Undo, fonts());
+    e.indent_keys = true;
     let before = texts(&e);
     e.set_caret_for_benchmark(Selection::Text {
         anchor: at(&e, 3),
@@ -2295,7 +2306,9 @@ fn tab_in_a_cells_list_item_changes_its_level() {
     let para = found.expect("a level-two item in a cell");
     e.set_caret_for_benchmark(Selection::Caret(super::super::position::Position::text(StoryId::Body, para, Unit(0))));
     let tab = e.key_command("Tab", Mods::default()).unwrap();
-    assert!(matches!(tab, Command::SetListLevel(_)), "{tab:?}");
+    assert!(matches!(tab, Command::IncreaseIndent), "the list's Tab, not the next cell: {tab:?}");
+    e.execute(tab, fonts());
+    assert_eq!(e.index().para(e.document(), para).and_then(|p| p.style.num).map(|(_, l)| l), Some(2));
 }
 
 #[test]
@@ -2782,4 +2795,157 @@ fn a_heavy_tab_leader_is_kept() {
     assert_eq!(saved(&e).matches("w:leader=\"heavy\"").count(), 2, "{}", saved(&e));
     let p = e.index().para(e.document(), p).expect("the paragraph");
     assert!(p.style.tabs.iter().any(|t| t.pos == 200.0 && t.leader == crate::docx::props::Leader::Heavy), "{:?}", p.style.tabs);
+}
+
+#[test]
+fn typing_before_a_combining_mark_puts_the_caret_after_the_cluster() {
+    use super::super::position::Position;
+    let body = "<w:p><w:r><w:t>e\u{301}x</w:t></w:r></w:p>";
+    let mut e = super::super::Editor::open(&crate::layout::tests::shapes::bytes(body).expect("a package"), fonts()).expect("opens");
+    let para = super::para_id(&e, 0);
+    let at = |e: &mut super::super::Editor, u: u32| e.set_caret_for_benchmark(Selection::Caret(Position::text(StoryId::Body, para, Unit(u))));
+    let caret = |e: &super::super::Editor| e.selection().focus().and_then(|p| p.para_offset()).map(|p| p.1.0);
+    at(&mut e, 1);
+    e.execute(Command::InsertText("a".into()), fonts());
+    assert_eq!(caret(&e), Some(3), "a joins the accent's cluster");
+    at(&mut e, 0);
+    e.execute(Command::InsertText("b".into()), fonts());
+    assert_eq!(caret(&e), Some(1), "before a plain letter");
+    at(&mut e, 5);
+    e.execute(Command::InsertText("c".into()), fonts());
+    assert_eq!(caret(&e), Some(6), "at the end");
+}
+
+#[test]
+fn dragging_the_selection_out_carries_it_and_a_move_deletes_it() {
+    use super::super::position::Position;
+    use crate::layout::{ParaId, Unit};
+    use serde_json::json;
+    let doc = blank_with("The quick brown fox.\nJumps over.");
+    let mut r = super::scenarios::Run::from_bytes(&doc, "drag-out");
+    r.step(&json!({ "click": { "para": 0, "offset": 4 } }));
+    for _ in 0..5 {
+        r.step(&json!({ "key": "ArrowRight", "mods": { "shift": true } }));
+    }
+    let out = r.e.drag_out().expect("a selection");
+    assert_eq!((out.text.as_str(), out.can_move), ("quick", true));
+    assert!(matches!(r.e.drag_out_end(false, fonts()), super::super::commands::Outcome::Unchanged(_)), "a copy leaves it");
+    assert_eq!(texts(&r.e)[0], "The quick brown fox.");
+    r.e.drag_out().expect("a selection");
+    r.e.drag_out_end(true, fonts());
+    assert_eq!(texts(&r.e)[0], "The brown fox.");
+    r.e.execute(Command::Undo, fonts());
+    assert_eq!(texts(&r.e)[0], "The quick brown fox.");
+    r.e.drag_out().expect("a selection");
+    let para = r.e.document().sections[0].blocks.iter().filter_map(|b| if let crate::docx::Block::Para(p) = b { Some(p.id) } else { None }).nth(1);
+    let c = r.e.caret_at(Position::text(StoryId::Body, ParaId(para.expect("two paragraphs")), Unit(0))).expect("laid out");
+    let (x, y) = r.e.stack().to_doc(c.page, c.x, (c.top + c.bottom) / 2.0).expect("on the stack");
+    r.e.drag_out_drop(x, y, false, fonts());
+    let t = texts(&r.e);
+    assert!(!t[0].contains("quick") && t[1].starts_with("quick"), "{t:?}");
+    assert!(r.e.drag_out().is_some_and(|o| o.text.trim() == "quick"), "the moved text stays selected");
+    let p = crate::api::command::DocumentProtection {
+        kind: Some(crate::api::command::ProtectionKind::ReadOnly),
+        enforce: Some(true),
+        ..Default::default()
+    };
+    r.e.execute(Command::SetDocumentProtection(p), fonts());
+    assert!(r.e.drag_out().is_some_and(|o| !o.can_move));
+}
+
+/// Document coordinates of the caret at unit `u` of the `n`th paragraph.
+fn caret_point(e: &mut super::super::Editor, n: usize, u: u32) -> (f64, f64) {
+    use super::super::position::Position;
+    let c = e.caret_at(Position::text(StoryId::Body, super::para_id(e, n), crate::layout::Unit(u))).expect("laid out");
+    e.stack().to_doc(c.page, c.x, (c.top + c.bottom) / 2.0).expect("on the stack")
+}
+
+#[test]
+fn selected_cells_dragged_out_and_back_are_copied_not_moved() {
+    use super::super::selection::{CellRef, CellShape};
+    let cell = |t: &str| format!("<w:tc><w:tcPr><w:tcW w:w=\"2000\" w:type=\"dxa\"/></w:tcPr><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:tc>");
+    let body = format!(
+        "<w:tbl><w:tblGrid><w:gridCol w:w=\"2000\"/><w:gridCol w:w=\"2000\"/></w:tblGrid><w:tr>{}{}</w:tr></w:tbl><w:p><w:r><w:t>after</w:t></w:r></w:p>",
+        cell("a"),
+        cell("b")
+    );
+    let mut e = super::super::Editor::open(&super::blank_body(&body), fonts()).expect("opens");
+    e.complete(fonts());
+    let table = e.index().table_ids().next().expect("a table");
+    let cells = Selection::Cells { table, anchor: CellRef { row: 0, col: 0 }, focus: CellRef { row: 0, col: 1 }, shape: CellShape::Rect };
+    e.set_selection(cells);
+    assert!(e.drag_out().is_some_and(|o| !o.can_move), "cells are copied");
+    let (x, y) = caret_point(&mut e, 2, 5);
+    let out = e.drag_out_drop(x, y, false, fonts());
+    assert!(matches!(out, super::super::commands::Outcome::Unchanged(_)), "no move: {out:?}");
+    assert_eq!(texts(&e), ["a", "b", "after"]);
+    e.set_selection(cells);
+    e.drag_out().expect("the cells");
+    let (x, y) = caret_point(&mut e, 0, 0);
+    assert!(matches!(e.drag_out_drop(x, y, true, fonts()), super::super::commands::Outcome::Unchanged(_)), "dropped on the cells");
+    e.drag_out().expect("the cells");
+    let (x, y) = caret_point(&mut e, 2, 5);
+    let out = e.drag_out_drop(x, y, true, fonts());
+    assert!(matches!(out, super::super::commands::Outcome::Changed(_)), "{out:?}");
+    let t = texts(&e);
+    assert!(["a", "b"].iter().all(|c| t.iter().filter(|s| s == c).count() == 2), "both cells copied: {t:?}");
+    e.execute(Command::Undo, fonts());
+    assert_eq!(texts(&e), ["a", "b", "after"], "one undo step");
+}
+
+#[test]
+fn a_block_dragged_out_and_back_is_copied() {
+    use crate::editing::commands::{Dir, MoveBy};
+    let mut e = super::super::Editor::open(&super::blank_in("abcdefgh\nijklmnop\nqrstuvwx\nyz", "Courier New"), fonts()).unwrap();
+    e.complete(fonts());
+    let mv = |e: &mut super::super::Editor, by, dir| {
+        e.execute(crate::editing::tests::mv(by, dir, false), fonts());
+    };
+    mv(&mut e, MoveBy::Story, Dir::Back);
+    mv(&mut e, MoveBy::Char, Dir::Forward);
+    mv(&mut e, MoveBy::Char, Dir::Forward);
+    e.execute(Command::SetSelectionMode(crate::api::command::SelectionMode::Block), fonts());
+    mv(&mut e, MoveBy::Line, Dir::Forward);
+    mv(&mut e, MoveBy::Char, Dir::Forward);
+    mv(&mut e, MoveBy::Char, Dir::Forward);
+    let block = e.selection();
+    assert!(matches!(block, Selection::Block { .. }), "{block:?}");
+    assert!(e.drag_out().is_some_and(|o| !o.can_move && o.text == "cd\nkl"));
+    let (x, y) = caret_point(&mut e, 3, 2);
+    assert!(matches!(e.drag_out_drop(x, y, false, fonts()), super::super::commands::Outcome::Unchanged(_)), "no move");
+    e.set_selection(block);
+    e.drag_out().expect("the block");
+    let (x, y) = caret_point(&mut e, 3, 2);
+    let out = e.drag_out_drop(x, y, true, fonts());
+    assert!(matches!(out, super::super::commands::Outcome::Changed(_)), "{out:?}");
+    let t = texts(&e);
+    assert!(t[..3] == ["abcdefgh", "ijklmnop", "qrstuvwx"], "{t:?}");
+    assert!(["cd", "kl"].iter().all(|c| t.concat().matches(c).count() == 2), "both lines copied: {t:?}");
+}
+
+#[test]
+fn with_text_drag_and_drop_off_a_press_in_the_selection_places_the_caret() {
+    use super::super::input::{Cursor, PointerKind};
+    use super::super::keymap::Mods;
+    use super::super::position::Position;
+    use crate::layout::{ParaId, Unit};
+    use serde_json::json;
+    let doc = blank_with("The quick brown fox.\nJumps over.");
+    let mut r = super::scenarios::Run::from_bytes(&doc, "no-drag");
+    r.step(&json!({ "click": { "para": 0, "offset": 4 } }));
+    for _ in 0..5 {
+        r.step(&json!({ "key": "ArrowRight", "mods": { "shift": true } }));
+    }
+    let para = r.e.document().sections[0].blocks.iter().find_map(|b| if let crate::docx::Block::Para(p) = b { Some(p.id) } else { None });
+    let c = r.e.caret_at(Position::text(StoryId::Body, ParaId(para.expect("a paragraph")), Unit(6))).expect("laid out");
+    let (x, y) = r.e.stack().to_doc(c.page, c.x + 0.5, (c.top + c.bottom) / 2.0).expect("on the stack");
+    assert_eq!(r.e.hover(x, y, Mods::default(), fonts()), Cursor::Default, "the arrow over the selection");
+    r.e.set_text_drag_and_drop(false);
+    assert!(!r.e.text_drag_and_drop());
+    assert_eq!(r.e.hover(x, y, Mods::default(), fonts()), Cursor::Text, "the I-beam");
+    assert!(!r.e.right_press(x, y, fonts()));
+    assert!(r.e.drag_out().is_none());
+    r.e.pointer_input(PointerKind::Down, x, y, 1, Mods::default(), fonts());
+    r.e.pointer_input(PointerKind::Up, x, y, 1, Mods::default(), fonts());
+    assert!(r.e.selection().is_collapsed(), "the caret: {:?}", r.e.selection());
 }

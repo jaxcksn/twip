@@ -17,7 +17,22 @@ impl Editor {
         shape
     }
 
+    /// Where a double-click shows or hides the white space between pages: `Some(true)` hides it (between pages),
+    /// `Some(false)` shows it (on the hidden pages' meeting line), as Word's hide and show white space pointers say; at
+    /// any `x` across the stack.
+    pub fn white_space_toggle_at(&self, y: f64) -> Option<bool> {
+        self.stack().toggles_white_space(y, 3.0 / self.viewport.zoom.max(0.1)).then_some(!self.white_space_hidden)
+    }
+
     fn shape_at(&mut self, x: f64, y: f64, mods: Mods, fonts: &Fonts) -> Cursor {
+        if !mods.shift
+            && let Some((.., hit, _)) = self.wrap_point_at(x, y)
+        {
+            return match hit {
+                super::wrap_points::PolyHit::Vertex(_) => Cursor::Move,
+                super::wrap_points::PolyHit::Edge(_) => Cursor::Crosshair,
+            };
+        }
         if !mods.shift {
             if !mods.ctrl
                 && let Some((_, h, _)) = self.shape_handle_at(x, y)
@@ -57,6 +72,10 @@ impl Editor {
         if self.bar_hit(x, y, fonts).is_some() {
             return Cursor::RowSelect;
         }
+        // Selection drag handle
+        if !mods.shift && self.text_drags() && self.hit(x, y, fonts).is_some_and(|p| self.inside_selection(&p)) {
+            return Cursor::Default;
+        }
         Cursor::Text
     }
 
@@ -64,7 +83,10 @@ impl Editor {
         if self.shape_insert.is_some() {
             return Some(Cursor::Crosshair);
         }
-        if let Some(d) = self.border_drag {
+        if self.wrap_point_dragging() {
+            return Some(Cursor::Move);
+        }
+        if let Some(d) = &self.border_drag {
             return Some(match d.border {
                 Border::Column(_) => Cursor::ResizeHorizontal,
                 Border::Row(_) => Cursor::ResizeVertical,
@@ -88,7 +110,13 @@ impl Editor {
             });
         }
         let t = self.text_drag.filter(|d| d.moved)?;
-        Some(if t.copy { Cursor::Copy } else { Cursor::Default })
+        Some(if self.drop_refused(&t) {
+            Cursor::NotAllowed
+        } else if t.copy {
+            Cursor::Copy
+        } else {
+            Cursor::Default
+        })
     }
 }
 

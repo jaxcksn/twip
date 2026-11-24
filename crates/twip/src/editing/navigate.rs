@@ -27,7 +27,7 @@ pub struct LineAt {
 
 impl Nav<'_> {
     fn text(&self, para: ParaId) -> Option<UnitText> {
-        self.idx.para(self.doc, para).map(|p| UnitText::in_view(p, self.doc.review.view))
+        self.idx.para(self.doc, para).map(|p| UnitText::in_review(p, &self.doc.review))
     }
 
     fn story_of_container(&self, c: Container) -> StoryId {
@@ -179,6 +179,21 @@ impl Nav<'_> {
                 self.before(s.container, s.block).unwrap_or(pos)
             }
             Place::RowEnd { table, row } => self.before_row_end(pos.story, table, row).unwrap_or(pos),
+        }
+    }
+
+    /// The paragraph after (or before) `para` in its story, in text order, into and out of tables.
+    pub fn para_beside(&self, para: ParaId, forward: bool) -> Option<ParaId> {
+        let s = self.idx.para_slot(para)?;
+        let mut at = if forward { self.after(s.container, s.block) } else { self.before(s.container, s.block) }?;
+        // Each row end passed is a row further on.
+        loop {
+            match at.place {
+                Place::Text { para, .. } => return Some(para),
+                Place::RowEnd { table, row } => {
+                    at = if forward { self.after_row(at.story, table, row) } else { self.before_row_end(at.story, table, row) }?;
+                }
+            }
         }
     }
 

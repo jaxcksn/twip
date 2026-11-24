@@ -137,6 +137,22 @@ fn change_case_and_formatting_are_refused_in_a_locked_control() {
 }
 
 #[test]
+fn change_case_at_a_caret_is_refused_when_its_word_runs_into_a_locked_control() {
+    let sdt = r#"<w:p><w:r><w:t>hel</w:t></w:r><w:sdt><w:sdtPr><w:id w:val="5"/><w:lock w:val="contentLocked"/></w:sdtPr><w:sdtContent><w:r><w:t>lo</w:t></w:r></w:sdtContent></w:sdt><w:r><w:t xml:space="preserve"> world</w:t></w:r></w:p>"#;
+    let mut e = Editor::open(&blank_body(sdt), fonts()).expect("opens");
+    select(&mut e, 0, 1, 1);
+    let rev = e.revision();
+    let out = e.execute(Command::ChangeCase(CaseChange::Upper), fonts());
+    assert!(matches!(&out, Outcome::Refused(err) if err.message == "locked"), "{out:?}");
+    assert_eq!((texts(&e)[0].as_str(), e.revision()), ("hello world", rev));
+    // A word clear of the control still changes.
+    select(&mut e, 0, 8, 8);
+    let out = e.execute(Command::ChangeCase(CaseChange::Upper), fonts());
+    assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
+    assert_eq!(texts(&e)[0], "hello WORLD");
+}
+
+#[test]
 fn replace_all_skips_content_locked_controls_and_keeps_markers() {
     let locked = format!(
         r#"<w:sdt><w:sdtPr><w:id w:val="5"/><w:lock w:val="sdtContentLocked"/><w:richText/></w:sdtPr><w:sdtContent>{}</w:sdtContent></w:sdt>"#,
@@ -402,4 +418,43 @@ fn formatting_selected_cells_is_refused_over_a_locked_control() {
         assert!(matches!(&out, Outcome::Refused(err) if err.message == "locked"), "{cmd:?}: {out:?}");
         assert_eq!(e.revision(), rev, "{cmd:?}");
     }
+}
+
+#[test]
+fn a_delete_beside_shown_hidden_text_is_checked_where_it_deletes() {
+    use super::super::view::MarkOptions;
+    use crate::api::command::{DeleteOptions, DeleteUnit};
+    use crate::api::value::Direction;
+    let hidden = r#"<w:r><w:rPr><w:vanish/></w:rPr><w:t>secret</w:t></w:r>"#;
+    let back = |unit| Command::Delete(DeleteOptions { direction: Direction::Backward, unit });
+    // Document protection: "Shown " is read-only, the hidden text an editable range.
+    let body = format!(r#"<w:p>{}<w:permStart w:id="1" w:edGrp="everyone"/>{hidden}<w:permEnd w:id="1"/></w:p>"#, run("Shown "));
+    let mut e = lay(&body);
+    let p = DocumentProtection { kind: Some(ProtectionKind::ReadOnly), enforce: Some(true), ..Default::default() };
+    e.execute(Command::SetDocumentProtection(p), fonts());
+    e.set_mark_options(MarkOptions { hidden: true, ..MarkOptions::default() });
+    e.complete(fonts());
+    select(&mut e, 0, 12, 12);
+    assert!(matches!(e.execute(back(None), fonts()), Outcome::Changed(_)), "the hidden 't' is deleted");
+    assert_eq!(texts(&e)[0], "Shown secre");
+    assert!(matches!(e.execute(back(Some(DeleteUnit::Word)), fonts()), Outcome::Changed(_)), "and the hidden word");
+    assert_eq!(texts(&e)[0], "Shown ");
+    let before = texts(&e);
+    assert!(refused(&e.execute(back(None), fonts())), "the read-only space isn't");
+    assert_eq!(texts(&e), before);
+    // A locked control around "Shown ".
+    let sdt = r#"<w:sdt><w:sdtPr><w:id w:val="5"/><w:lock w:val="sdtContentLocked"/><w:text/></w:sdtPr><w:sdtContent><w:r><w:t xml:space="preserve">Shown </w:t></w:r></w:sdtContent></w:sdt>"#;
+    let mut e = lay(&format!("<w:p>{sdt}{hidden}</w:p>"));
+    e.set_mark_options(MarkOptions { hidden: true, ..MarkOptions::default() });
+    e.complete(fonts());
+    let len = |e: &Editor| texts(e)[0].chars().count();
+    let end = len(&e) as u32;
+    select(&mut e, 0, end, end);
+    assert!(matches!(e.execute(back(None), fonts()), Outcome::Changed(_)), "the unlocked hidden 't' is deleted");
+    assert_eq!(texts(&e)[0], "Shown secre");
+    let start = end - 6;
+    select(&mut e, 0, start, start);
+    let before = texts(&e);
+    assert!(refused(&e.execute(back(None), fonts())), "the locked space isn't");
+    assert_eq!(texts(&e), before);
 }

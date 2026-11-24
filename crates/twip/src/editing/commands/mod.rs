@@ -113,7 +113,10 @@ impl Editor {
         if self.mode == super::Mode::ReadOnly && cmd.mutates() {
             return self.refuse_read_only();
         }
+        // F2's Enter is checked where it drops the text, not at the selection.
+        let move_to_enter = self.move_to.is_some() && matches!(cmd, Command::InsertParagraph);
         if cmd.mutates()
+            && !move_to_enter
             && let Some(e) = self.protection_refusal(&cmd)
         {
             return Outcome::Refused(e);
@@ -135,6 +138,9 @@ impl Editor {
     }
 
     fn execute_editable(&mut self, cmd: Command, fonts: &Fonts) -> Outcome {
+        if let Some(out) = self.move_to_command(&cmd, fonts) {
+            return out;
+        }
         // A built-in style the document doesn't define yet joins it first, in the same undo step.
         if let Some(b) = self.built_in_named(&cmd) {
             if matches!(cmd, Command::SetTableStyle(_)) && self.table_target().is_none() {

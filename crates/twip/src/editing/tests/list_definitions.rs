@@ -505,3 +505,51 @@ fn numbering_a_bullet_into_a_list_without_its_level_takes_the_lists_level() {
     assert_eq!(para(&e, 1).style.num, Some((1, 0)), "the list's own level");
     assert_eq!(label(&e, 1), "2.");
 }
+
+/// The paragraph `n` in reading order, tables too.
+fn para_at(e: &Editor, n: usize) -> &Paragraph {
+    e.index().para(e.document(), super::para_id(e, n)).expect("para")
+}
+
+#[test]
+fn increase_indent_moves_the_whole_list_only_from_its_first_item() {
+    let nums = numbering(&(abstract_of(0, &levels("decimal", |i| format!("%{}.", i + 1))) + &num(1, 0)));
+    let cell = |text: &str| format!("<w:tc><w:tcPr><w:tcW w:w=\"4000\" w:type=\"dxa\"/></w:tcPr>{}</w:tc>", np(text, 1, 0));
+    let table = format!(
+        "<w:tbl><w:tblPr><w:tblW w:w=\"0\" w:type=\"auto\"/></w:tblPr><w:tblGrid><w:gridCol w:w=\"4000\"/><w:gridCol w:w=\"4000\"/></w:tblGrid><w:tr>{}{}</w:tr></w:tbl><w:p/>",
+        cell("one"),
+        cell("two")
+    );
+    // The list runs on into the next cell, and over a section break.
+    let section = p("one", "<w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"1\"/></w:numPr><w:sectPr><w:type w:val=\"continuous\"/></w:sectPr>")
+        + &np("two", 1, 0);
+    for body in [table, section] {
+        let mut e = editor(&pkg(&body, Some(&nums), ""));
+        let left = |e: &Editor| para_at(e, 0).style.ind_left;
+        let was = left(&e);
+        caret_in(&mut e, 1);
+        e.execute(Command::IncreaseIndent, fonts());
+        assert_eq!(para_at(&e, 1).style.num, Some((1, 1)), "a later item goes a level down: {body}");
+        assert_eq!(left(&e), was, "the list stays");
+        caret_in(&mut e, 0);
+        e.execute(Command::IncreaseIndent, fonts());
+        assert_eq!((para_at(&e, 0).style.num, left(&e)), (Some((1, 0)), was + 36.0), "the first item moves the list");
+    }
+}
+
+#[test]
+fn moving_a_list_keeps_its_levels_other_tab_stops() {
+    let tabs = "<w:tabs><w:tab w:val=\"left\" w:pos=\"720\"/><w:tab w:val=\"right\" w:leader=\"dot\" w:pos=\"9000\"/></w:tabs>";
+    let lvls =
+        levels("decimal", |i| format!("%{}.", i + 1)).replacen("<w:pPr><w:ind w:left=\"720\"", &format!("<w:pPr>{tabs}<w:ind w:left=\"720\""), 1);
+    let nums = numbering(&(abstract_of(0, &lvls) + &num(1, 0)));
+    let mut e = editor(&pkg(&np("one", 1, 0), Some(&nums), ""));
+    assert_eq!(levels_of(&mut e, 0)[0].tab, Some(Points(36.0)), "setup");
+    caret_in(&mut e, 0);
+    e.execute(Command::IncreaseIndent, fonts());
+    assert_eq!(levels_of(&mut e, 0)[0].tab, Some(Points(72.0)), "the level's tab moves with it");
+    let xml = part(&saved(&e), "word/numbering.xml");
+    let level = &xml[..xml.find("w:ilvl=\"1\"").expect("level 1")];
+    assert!(level.contains("<w:tab w:val=\"left\" w:pos=\"1440\"/>"), "its kind kept: {level}");
+    assert!(level.contains("<w:tab w:val=\"right\" w:leader=\"dot\" w:pos=\"9000\"/>"), "the other stop stays: {level}");
+}

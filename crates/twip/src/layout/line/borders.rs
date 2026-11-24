@@ -189,7 +189,7 @@ pub fn apply_borders(
     }
     if let (Some(b), false) = (&s.border_bottom, same_next) {
         let l = &mut lines[n - 1];
-        let y = l.pitch + border_space(b);
+        let y = l.pitch - l.after + border_space(b);
         edge(&mut *l, b, true, true, y, x0, x1, 0.0);
         cast(&mut *l, b, true, [x0, y, x1, y + thick(b)], s.border_left.is_some(), s.border_right.is_some());
         shade_bottom = Some(y);
@@ -203,12 +203,12 @@ pub fn apply_borders(
         let l = &mut lines[n - 1];
         for (k, d) in s.div_boxes.iter().enumerate().rev() {
             if let (true, Some(b)) = (d.ends, &d.borders[2]) {
-                let y = l.pitch + border_space(b);
+                let y = l.pitch - l.after + border_space(b);
                 let (a, c) = div_x(d);
                 edge(&mut *l, b, true, true, y, a, c, 0.0);
                 cast(&mut *l, b, true, [a, y, c, y + thick(b)], d.borders[1].is_some(), d.borders[3].is_some());
-                l.pitch = y + thick(b) + shadowed(b);
-                div_bottom[k] = Some(l.pitch);
+                l.pitch = y + thick(b) + shadowed(b) + l.after;
+                div_bottom[k] = Some(l.pitch - l.after);
             }
         }
     }
@@ -216,7 +216,8 @@ pub fn apply_borders(
     // a side goes on from one line to the next, and a hatch's tiles start at the part's top.
     let mut stacked = 0.0;
     for (i, l) in lines.iter_mut().enumerate() {
-        let h = l.pitch;
+        // Part spacing outside the box
+        let h = l.pitch - if i + 1 == n { l.after } else { 0.0 };
         let along = tops.get(i).map_or(stacked, |t| t - tops[0]);
         let shade_from = shade_top - along;
         for (k, d) in s.div_boxes.iter().enumerate() {

@@ -2,48 +2,117 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::docx::review::MarkupView;
-use crate::docx::{Block, Inline, NoteKind, ParaStyle, Section};
+use crate::docx::review::ReviewView;
+use std::rc::Rc;
 
+use crate::docx::{Block, Inline, NoteKind, ParaStyle, Paragraph, Section};
+
+/// A section's blocks, then the stories laid out after them (endnotes), as one run of blocks.
 pub struct Blocks<'a> {
-    pub blocks: Vec<&'a Block>,
+    /// The section's own blocks, borrowed.
+    body: &'a [Block],
+    /// The stories' blocks after them.
+    tail: Vec<&'a Block>,
+    /// Where each story starts.
     pub stories: Vec<usize>,
 }
 
 impl<'a> Blocks<'a> {
     pub fn of(blocks: &'a [Block]) -> Blocks<'a> {
-        Blocks { blocks: blocks.iter().collect(), stories: Vec::new() }
+        Blocks { body: blocks, tail: Vec::new(), stories: Vec::new() }
     }
 
     pub fn append(&mut self, story: impl IntoIterator<Item = &'a Block>) {
-        self.stories.push(self.blocks.len());
-        self.blocks.extend(story);
+        self.stories.push(self.len());
+        self.tail.extend(story);
     }
 
-    pub fn chain_end(&self, i: usize, view: MarkupView) -> usize {
-        let story_end = self.stories.iter().copied().find(|&s| s > i).unwrap_or(self.blocks.len()).min(self.blocks.len());
-        super::join::chain_end(&self.blocks[..story_end], i, view)
+    /// The first `n` blocks, without the stories.
+    pub fn first(&self, n: usize) -> Blocks<'a> {
+        let b = self.body.len();
+        Blocks { body: &self.body[..n.min(b)], tail: self.tail[..n.saturating_sub(b).min(self.tail.len())].to_vec(), stories: Vec::new() }
+    }
+
+    pub fn chain_end(&self, i: usize, review: &ReviewView) -> usize {
+        let (b, story_end) = (self.body.len(), self.story_end(i));
+        match i < b {
+            true => super::join::chain_end(&self.body[..story_end.min(b)], i, review),
+            false => b + super::join::chain_end(&self.tail[..story_end.saturating_sub(b)], i - b, review),
+        }
     }
 
     pub fn len(&self) -> usize {
-        self.blocks.len()
+        self.body.len() + self.tail.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.blocks.is_empty()
+        self.body.is_empty() && self.tail.is_empty()
     }
 
     pub fn get(&self, i: usize) -> Option<&'a Block> {
-        self.blocks.get(i).copied()
+        match self.body.get(i) {
+            Some(b) => Some(b),
+            None => self.tail.get(i - self.body.len()).copied(),
+        }
     }
 
-    pub fn neighbours(&self, first: usize, last: usize, view: MarkupView) -> (Option<&'a ParaStyle>, Option<&'a ParaStyle>) {
-        let style = |b: Option<&&'a Block>| match b {
-            Some(Block::Para(p)) => Some(&**p.para_style_in(view)),
+    /// Every block, in order.
+    pub fn iter(&self) -> impl Iterator<Item = &'a Block> + '_ {
+        self.body.iter().chain(self.tail.iter().copied())
+    }
+
+    /// Blocks `range`, as many as there are.
+    pub fn range(&self, range: std::ops::Range<usize>) -> impl Iterator<Item = &'a Block> + '_ {
+        let (b, t) = (self.body.len(), self.tail.len());
+        let body = &self.body[range.start.min(b)..range.end.clamp(range.start.min(b), b)];
+        let (s, e) = (range.start.saturating_sub(b).min(t), range.end.saturating_sub(b).min(t));
+        body.iter().chain(self.tail[s..e.max(s)].iter().copied())
+    }
+
+    /// Blocks `first..=last` of one story laid out as one paragraph (see [`super::join::laid_para`]).
+    pub fn laid_para(&self, first: usize, last: usize, legacy: bool) -> Option<super::join::LaidPara<'_>> {
+        let b = self.body.len();
+        match last < b {
+            true => super::join::laid_para(self.body.get(first..=last)?, legacy),
+            false => super::join::laid_para(self.tail.get(first.checked_sub(b)?..=last - b)?, legacy),
+        }
+    }
+
+    /// The end of the story holding block `i`.
+    fn story_end(&self, i: usize) -> usize {
+        self.stories.iter().copied().find(|&s| s > i).unwrap_or(self.len()).min(self.len())
+    }
+
+    /// [`super::join::next_shown_mark`] from block `from` in the story holding block `from - 1`.
+    pub fn next_shown_mark(&self, from: usize, review: &crate::docx::review::ReviewView) -> Option<&Paragraph> {
+        let (b, end) = (self.body.len(), self.story_end(from.saturating_sub(1)));
+        match from <= b {
+            true => super::join::next_shown_mark(&self.body[..end.min(b)], from, review),
+            false => super::join::next_shown_mark(&self.tail[..end - b], from - b, review),
+        }
+    }
+
+    /// [`super::join::joined_target`] of a chain ending at block `end`, in its story.
+    pub fn joined_target<'s>(
+        &'s self,
+        end: usize,
+        review: &crate::docx::review::ReviewView,
+        last: Option<&'s Rc<ParaStyle>>,
+    ) -> Option<&'s Rc<ParaStyle>> {
+        let (b, story_end) = (self.body.len(), self.story_end(end));
+        match end < b {
+            true => super::join::joined_target(&self.body[..story_end.min(b)], end, review, last),
+            false => super::join::joined_target(&self.tail[..story_end - b], end - b, review, last),
+        }
+    }
+
+    pub fn neighbours(&self, first: usize, last: usize, review: &ReviewView) -> (Option<&'a ParaStyle>, Option<&'a ParaStyle>) {
+        let style = |b: Option<&'a Block>| match b {
+            Some(Block::Para(p)) => Some(&**p.para_style_in(review.view)),
             _ => None,
         };
-        let prev = if first > 0 { style(self.blocks.get(first - 1)) } else { None };
-        (prev, style(self.blocks.get(self.chain_end(last + 1, view))))
+        let prev = if first > 0 { style(self.get(first - 1)) } else { None };
+        (prev, style(self.get(self.chain_end(last + 1, review))))
     }
 }
 

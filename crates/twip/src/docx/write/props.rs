@@ -1,6 +1,8 @@
 //! Property elements as written (`w:rPr`, `w:pPr`, ...): children kept as their XML, set and removed in schema order, so
 //! saving changes only what an edit changed.
 
+use std::fmt::Write as _;
+
 pub const W_NS: &str = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 
 /// CT_RPr's children in schema order (change tracking marks first: a paragraph mark's properties).
@@ -216,14 +218,15 @@ impl Cx {
         let mut ns = String::new();
         for (name, value, _) in crate::docx::binding::tag_attrs(tag.trim_end_matches('/')) {
             let Some(prefix) = name.strip_prefix("xmlns").filter(|p| p.is_empty() || p.starts_with(':')) else { continue };
-            if crate::docx::binding::unescape(value) == W_NS && w.is_none() {
+            let is_w = if value.contains('&') { crate::docx::binding::unescape(value) == W_NS } else { value == W_NS };
+            if is_w && w.is_none() {
                 w = Some(prefix.strip_prefix(':').map_or(String::new(), |p| format!("{p}:")));
             }
             let q = if value.contains('"') { '\'' } else { '"' };
             if !ns.is_empty() {
                 ns.push(' ');
             }
-            ns.push_str(&format!("{name}={q}{value}{q}"));
+            let _ = write!(ns, "{name}={q}{value}{q}");
         }
         Cx { w: w.unwrap_or_else(|| "w:".into()), ns }
     }
@@ -407,6 +410,16 @@ impl Props {
 /// WordprocessingML's), unescaped. `None` too for an element with other prefixes its part's root declares: a
 /// `w:shd`'s attributes are WordprocessingML's.
 pub fn attr_of(xml: &str, name: &str) -> Option<String> {
+    in_w(xml, |el| crate::docx::xml::attr(el, name).map(str::to_string))?
+}
+
+/// Whether on/off child `local` of the properties element `xml` (as [`attr_of`] takes it) is present and on.
+pub fn flag_of(xml: &str, local: &str) -> bool {
+    in_w(xml, |el| crate::docx::xml::flag(el, local)).flatten().unwrap_or(false)
+}
+
+/// `f` on the element `xml`, its own prefix declared as WordprocessingML's.
+fn in_w<T>(xml: &str, f: impl FnOnce(roxmltree::Node) -> T) -> Option<T> {
     let tag = xml.trim_start().strip_prefix('<')?;
     let qname = tag.split(|c: char| c.is_whitespace() || c == '/' || c == '>').next()?;
     let decl = match qname.split_once(':') {
@@ -415,7 +428,7 @@ pub fn attr_of(xml: &str, name: &str) -> Option<String> {
     };
     let text = format!("<x {decl}>{xml}</x>");
     let doc = roxmltree::Document::parse(&text).ok()?;
-    crate::docx::xml::attr(doc.root_element().first_element_child()?, name).map(str::to_string)
+    Some(f(doc.root_element().first_element_child()?))
 }
 
 /// `name="value"` pairs of a start tag as written: each value with its quotes, still escaped.

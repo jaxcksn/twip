@@ -27,6 +27,8 @@ pub struct Fragment {
     pub origin: Option<Rc<super::import::Origin>>,
     /// A drag's move: its bookmarks go with it, though the document still has them until the drag deletes them.
     pub moved: bool,
+    /// Its plain text keeps hidden text, which showed where it was copied.
+    pub hidden_text: bool,
 }
 
 /// The notes and comments a fragment refers to, as they were when it was copied: pasting brings them back (a cut's
@@ -330,11 +332,11 @@ pub(super) fn fresh(b: &Block) -> Block {
     }
 }
 
-fn plain(blocks: &[Block], out: &mut String) {
+fn plain(blocks: &[Block], hidden: bool, out: &mut String) {
     for b in blocks {
         match b {
             Block::Para(p) => {
-                out.extend(super::text::Seen::of(p, |r| !r.hidden, true).chars.into_iter().map(super::plain_char));
+                out.extend(super::text::Seen::of(p, |r| hidden || !r.hidden, true).chars.into_iter().map(super::plain_char));
                 out.push('\n');
             }
             Block::Table(t) => {
@@ -344,7 +346,7 @@ fn plain(blocks: &[Block], out: &mut String) {
                             out.push('\t');
                         }
                         let mut s = String::new();
-                        plain(&c.blocks, &mut s);
+                        plain(&c.blocks, hidden, &mut s);
                         out.push_str(s.trim_end_matches('\n').replace('\n', " ").as_str());
                     }
                     out.push('\n');
@@ -533,7 +535,7 @@ impl Fragment {
 
     pub fn text(&self) -> String {
         let mut s = String::new();
-        plain(&self.blocks, &mut s);
+        plain(&self.blocks, self.hidden_text, &mut s);
         if self.open_end && s.ends_with('\n') {
             s.pop();
         }
@@ -560,17 +562,35 @@ impl Editor {
     }
 
     pub fn copy_fragment(&mut self) -> Option<Fragment> {
-        let mut f = self.copy_content()?;
+        let f = self.copy_content()?;
+        Some(self.completed(f))
+    }
+
+    fn completed(&mut self, mut f: Fragment) -> Fragment {
+        f.hidden_text = self.doc.review.show_hidden;
         strip_partial_comments(&mut f.blocks);
         f.refs = self.refs_of(&f.blocks);
-        Some(f)
+        f
+    }
+
+    /// `blocks`, whole paragraphs of this document, as [`Self::clip`] takes content: for a paragraph with no text,
+    /// which no selection of text holds.
+    pub(super) fn clip_blocks(&mut self, blocks: Vec<Block>) -> Fragment {
+        let id = self.clipboard.as_ref().map_or(1, |f| f.id + 1);
+        let f = self.completed(Fragment { id, blocks, open_end: true, ..Default::default() });
+        self.clipped(f)
     }
 
     /// The selection as content to paste, as Copy and dragging take it: revisions accepted, markers whose partner it
     /// doesn't hold and move ranges left out, block controls it holds only part of left out, and the definitions of
     /// the controls in it (and in the notes and comments it refers to) and where it was copied from kept with it.
     pub(super) fn clip(&mut self) -> Option<Fragment> {
-        let mut f = self.copy_fragment()?.accepted();
+        let f = self.copy_fragment()?;
+        Some(self.clipped(f))
+    }
+
+    fn clipped(&mut self, f: Fragment) -> Fragment {
+        let mut f = f.accepted();
         drop_unpaired(&mut f.blocks);
         drop_partial(&mut f.blocks, &self.index);
         f.controls = controls_of(&f.blocks, &self.doc);
@@ -578,7 +598,7 @@ impl Editor {
             f.controls.extend(controls_of(body, &self.doc));
         }
         f.origin = Some(self.origin_of(&mut f));
-        Some(f)
+        f
     }
 
     /// Pasted `blocks` (fresh copies) made this document's, in `tx`: their controls' definitions, the notes and comments
@@ -937,6 +957,43 @@ impl Editor {
                 None => i.clone(),
             })
             .collect()
+    }
+
+    /// `f`'s blocks, whole, in `container` before block `at` (no paragraph split), inside the block controls `dest`, as
+    /// one step: what moving paragraphs puts between blocks. The copies' first and last paragraphs.
+    pub(super) fn paste_blocks(
+        &mut self,
+        f: &Fragment,
+        container: super::index::Container,
+        at: usize,
+        dest: &[crate::docx::ControlId],
+        fonts: &Fonts,
+    ) -> Option<(ParaId, ParaId)> {
+        if self.refuse_expanded() || self.refuse_locked() {
+            return None;
+        }
+        let mut tx = self.begin("Paste");
+        let mut blocks: Vec<Block> = f.blocks.iter().map(fresh).collect();
+        self.take_in(&mut tx, &mut blocks, f, &mut Taken::default());
+        for b in &mut blocks {
+            match b {
+                Block::Para(p) => p.controls.splice(0..0, dest.iter().copied()),
+                Block::Table(t) => t.controls.splice(0..0, dest.iter().copied()),
+            };
+        }
+        let ids: Vec<ParaId> = blocks.iter().filter_map(|b| if let Block::Para(p) = b { Some(ParaId(p.id)) } else { None }).collect();
+        let (&a, &b) = (ids.first()?, ids.last()?);
+        if self.step(&mut tx, Step::Blocks { container, range: at..at, with: blocks }).is_err() {
+            self.abort(tx);
+            return None;
+        }
+        for p in ids {
+            if let Some(q) = self.index.para(&self.doc, p).cloned() {
+                let with = self.fit_inlines(p, &q.inlines);
+                let _ = self.step(&mut tx, Step::Restyle { para: p, inlines: with });
+            }
+        }
+        matches!(self.commit(tx, None, fonts), Outcome::Changed(_)).then_some((a, b))
     }
 
     pub fn paste_fragment(&mut self, f: &Fragment, fonts: &Fonts) -> Outcome {

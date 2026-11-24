@@ -367,10 +367,15 @@ impl Graphics {
         let k = f.px_per_pt;
         // The desk: the viewport outside the papers, which cover the rest. Each paper is taken a device pixel smaller
         // than it is drawn, so however its edges round, no pixel is left unwritten: the paper draws over the overlap.
-        let papers = view.pages_visible.clone().filter(|&i| view.snapshot.pages().get(i).is_some()).map(|i| {
-            let [x, y, w, h] = view.stack.pages[i];
+        let papers = view.pages_visible.clone().filter(|&i| view.snapshot.pages().get(i).is_some()).filter_map(|i| {
+            let [x, y, w, h] = view.stack.shown(i)?;
             let d = |v: f64, o: f64| (v * k + o) * f.dpr;
-            [d(x, f.origin_x).floor() + 1.0, d(y, f.origin_y).floor() + 1.0, d(x + w, f.origin_x).ceil() - 1.0, d(y + h, f.origin_y).ceil() - 1.0]
+            Some([
+                d(x, f.origin_x).floor() + 1.0,
+                d(y, f.origin_y).floor() + 1.0,
+                d(x + w, f.origin_x).ceil() - 1.0,
+                d(y + h, f.origin_y).ceil() - 1.0,
+            ])
         });
         desk(&mut rec, papers, f.width, f.height, r.background.unwrap_or(r.theme.tokens.desk));
         self.clear = None;
@@ -380,12 +385,18 @@ impl Graphics {
         let mut kept = std::mem::take(&mut self.retained);
         for i in view.pages_visible.clone() {
             let Some(page) = view.snapshot.pages().get(i) else { continue };
-            let [x, y, w, h] = view.stack.pages[i];
-            let p = kurbo::Rect::new(x * k, y * k, x * k + w * k, y * k + h * k);
-            shadow(&mut rec, device.transform_rect_bbox(p), f.dpr, shadow_k);
+            let [x, y, ..] = view.stack.pages[i];
+            let Some([sx, sy, sw, sh]) = view.stack.shown(i) else { continue };
+            // Hidden white space clip
+            let s = kurbo::Rect::new(sx * k, sy * k, (sx + sw) * k, (sy + sh) * k);
+            let clipped = !view.stack.bands.is_empty();
+            shadow(&mut rec, device.transform_rect_bbox(s), f.dpr, shadow_k);
             rec.push_transform(device);
-            rec.fill_rect(p, paper);
-            rec.push_transform(Affine::translate((p.x0, p.y0)) * Affine::scale(k));
+            rec.fill_rect(s, paper);
+            if clipped {
+                rec.push_clip(Clip::Rect { rect: s, aa: false });
+            }
+            rec.push_transform(Affine::translate((x * k, y * k)) * Affine::scale(k));
             if r.retain && !r.direct {
                 let inputs = retained::Inputs { gridlines: r.gridlines, appearance: r.appearance, page_fill: r.page_fill_generation() };
                 let picture = kept.picture(page, inputs, |content| {
@@ -399,6 +410,13 @@ impl Graphics {
             }
             self.overlays(&mut rec, r, view, images, i, f);
             rec.pop();
+            if clipped {
+                rec.pop();
+                if i > 0 {
+                    let line = kurbo::Rect::new(s.x0, s.y0, s.x1, s.y0 + 1.0 / f.dpr);
+                    rec.fill_rect(line, aliased(r.background.unwrap_or(r.theme.tokens.desk)));
+                }
+            }
             rec.pop();
         }
         if r.retain {

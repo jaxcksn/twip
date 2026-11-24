@@ -1,11 +1,14 @@
 //! Table border drags
 
+use std::rc::Rc;
+
 use crate::docx::props::Width;
 use crate::font::Fonts;
 use crate::layout::TableId;
 
 use super::Editor;
 use super::commands::Outcome;
+use super::index::Container;
 use super::input::Request;
 use super::selection::Selection;
 use super::step::Step;
@@ -22,7 +25,7 @@ pub(super) enum Border {
     Handle,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub(super) struct BorderDrag {
     pub table: TableId,
     pub border: Border,
@@ -36,6 +39,31 @@ pub(super) struct BorderDrag {
     pub row: usize,
     pub span: [f64; 2],
     pub snapping: super::snap::Snapping,
+    pub base: Rc<BorderBase>,
+    /// A step changed the document since `base` was measured.
+    pub stale: bool,
+}
+
+/// The table as drawn when a border drag starts: what the drag resizes from, however the table is laid out as it goes.
+#[derive(Clone, Debug, Default)]
+pub(super) struct BorderBase {
+    /// The table's columns.
+    grid: Vec<f64>,
+    /// The columns of the table holding it.
+    outer: Vec<f64>,
+    /// The table's rows on the drag's page, each with its height.
+    rows: Vec<(usize, f64)>,
+    /// The dragged row's height on the pages before.
+    before: f64,
+}
+
+/// A table laid out as a live drag would leave it, in place of the model's: see [`Editor::set_table_preview`].
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct Provisional {
+    pub id: TableId,
+    /// The one row that changes, when only one does.
+    pub row: Option<usize>,
+    pub table: crate::docx::Table,
 }
 
 impl BorderDrag {
@@ -77,8 +105,19 @@ impl Editor {
             return false;
         }
         self.drag = None;
+        self.border_cancel();
         let snapping = super::snap::Snapping::On;
-        self.border_drag = Some(BorderDrag { table, border, start: (x, y), now: (x, y), page, shift, ctrl, at, row_top, span, row, snapping });
+        let base = Rc::new(self.border_base(
+            table,
+            match border {
+                Border::Row(r) => Some(r),
+                _ => None,
+            },
+            page,
+            fonts,
+        ));
+        self.border_drag =
+            Some(BorderDrag { table, border, start: (x, y), now: (x, y), page, shift, ctrl, at, row_top, span, row, snapping, base, stale: false });
         self.requests.push(Request::CapturePointer);
         true
     }
@@ -194,6 +233,7 @@ impl Editor {
         let geo = self.pages.page(edges.page, &self.index);
         let first = drawn_grid(t, edges.table, geo.as_deref(), g.cols).first().copied().unwrap_or(0.0);
         let (dx, indent) = (to - at, t.ind);
+        let base = Rc::new(self.border_base(edges.table, None, edges.page, fonts));
         let drag = |border, dx: f64| BorderDrag {
             table: edges.table,
             border,
@@ -207,17 +247,19 @@ impl Editor {
             row: edges.row,
             span: [0.0, 0.0],
             snapping: super::snap::Snapping::default(),
+            base: base.clone(),
+            stale: false,
         };
         if dx.abs() < 1e-9 {
             return Outcome::Unchanged("already there");
         }
         if k > 0 {
             let shift = k == g.cols;
-            return self.apply_border_drag(BorderDrag { shift, ..drag(Border::Column(k), dx) }, fonts).unwrap_or(Outcome::Unchanged("stale table"));
+            return self.apply_border_drag(&BorderDrag { shift, ..drag(Border::Column(k), dx) }, fonts);
         }
         // The left edge: the first column takes the change, the table's indent the move.
         self.joined("Column Width", fonts, |e| {
-            let out = e.apply_border_drag(drag(Border::Column(1), -dx), fonts).unwrap_or(Outcome::Unchanged("stale table"));
+            let out = e.apply_border_drag(&drag(Border::Column(1), -dx), fonts);
             let now = e.index.table(&e.doc, edges.table).and_then(|t| t.grid.first().copied()).unwrap_or(first);
             if (now - first).abs() < 1e-9 {
                 return out;
@@ -235,6 +277,7 @@ impl Editor {
         if (to - at).abs() < 1e-9 {
             return Outcome::Unchanged("already there");
         }
+        let base = Rc::new(self.border_base(edges.table, Some(row), edges.page, fonts));
         let d = BorderDrag {
             table: edges.table,
             border: Border::Row(row),
@@ -248,34 +291,155 @@ impl Editor {
             row,
             span: [0.0, 0.0],
             snapping: super::snap::Snapping::default(),
+            base,
+            stale: false,
         };
-        self.apply_border_drag(d, fonts).unwrap_or(Outcome::Unchanged("stale table"))
+        self.apply_border_drag(&d, fonts)
     }
 
     pub(super) fn border_release(&mut self, fonts: &Fonts) -> Option<Outcome> {
+        self.border_remeasure(fonts);
         let d = self.border_drag.take()?;
         self.requests.push(Request::ReleasePointer);
+        self.set_table_preview(Vec::new());
         if d.now == d.start {
             return Some(Outcome::Unchanged("no drag"));
         }
-        self.apply_border_drag(d, fonts)
+        Some(self.apply_border_drag(&d, fonts))
+    }
+
+    /// A step changed the document during a border drag: one that changed the dragged table's rows or properties, or
+    /// those of the table holding it, ends the drag; after any other, the drag resizes from the table as drawn next.
+    pub(super) fn border_stepped(&mut self, s: &Step) {
+        let Some(d) = self.border_drag.as_mut() else { return };
+        d.stale = true;
+        let table = d.table;
+        let (Step::Rows { table: changed, .. } | Step::TableProps { table: changed, .. }) = s else { return };
+        let holder = self.index.table_slot(table).and_then(|slot| match slot.container {
+            Container::Cell { table, .. } => Some(table),
+            _ => None,
+        });
+        if *changed == table || Some(*changed) == holder {
+            self.border_cancel();
+            self.requests.push(Request::ReleasePointer);
+        }
+    }
+
+    /// Measures a border drag's table again after a step changed the document.
+    fn border_remeasure(&mut self, fonts: &Fonts) {
+        let Some((table, border, page)) = self.border_drag.as_ref().filter(|d| d.stale).map(|d| (d.table, d.border, d.page)) else { return };
+        self.ensure_page(page, fonts);
+        let base = Rc::new(self.border_base(
+            table,
+            match border {
+                Border::Row(r) => Some(r),
+                _ => None,
+            },
+            page,
+            fonts,
+        ));
+        if let Some(d) = self.border_drag.as_mut() {
+            (d.base, d.stale) = (base, false);
+        }
+    }
+
+    /// Ends a border drag where it started: its live layout goes.
+    pub(super) fn border_cancel(&mut self) -> bool {
+        let Some(_) = self.border_drag.take() else { return false };
+        self.set_table_preview(Vec::new());
+        true
+    }
+
+    /// A border drag moved: with live layout, the tables are laid out as the drag would leave them.
+    pub(super) fn border_moved(&mut self, fonts: &Fonts) {
+        if !self.live_layout {
+            self.set_table_preview(Vec::new());
+            return;
+        }
+        self.border_remeasure(fonts);
+        let Some(d) = self.border_drag.as_ref().filter(|d| d.border != Border::Handle) else { return };
+        let tables = if d.now == d.start { Ok(Vec::new()) } else { self.border_steps(d).map(|(_, steps)| self.provisional(steps)) };
+        self.set_table_preview(tables.unwrap_or_default());
+    }
+
+    /// What a drag of `table`'s borders resizes from on `page`: its columns as drawn and those of the table holding
+    /// it, its rows' heights there, and for row `row`'s border, that row's height on the pages before.
+    fn border_base(&mut self, table: TableId, row: Option<usize>, page: usize, fonts: &Fonts) -> BorderBase {
+        let mut base = BorderBase::default();
+        if let Some(r) = row {
+            for p in 0..page {
+                self.ensure_page(p, fonts);
+                if let Some(geo) = self.pages.page(p, &self.index) {
+                    base.before +=
+                        geo.rows.iter().filter(|x| x.table == table && x.row == r && !x.repeat).map(|x| x.rect[3] - x.rect[1]).sum::<f64>();
+                }
+            }
+            return base;
+        }
+        let geo = self.pages.page(page, &self.index);
+        let Some(t) = self.index.table(&self.doc, table) else { return base };
+        base.grid = drawn_grid(t, table, geo.as_deref(), Grid::of(t).cols);
+        if let Some(geo) = &geo {
+            base.rows = geo.rows.iter().filter(|r| r.table == table && !r.repeat).map(|r| (r.row, r.rect[3] - r.rect[1])).collect();
+        }
+        if let Some(slot) = self.index.table_slot(table)
+            && let Container::Cell { table: outer, .. } = slot.container
+            && let Some(o) = self.index.table(&self.doc, outer)
+        {
+            base.outer = drawn_grid(o, outer, geo.as_deref(), Grid::of(o).cols);
+        }
+        base
     }
 
     /// Resizes as a border drag ending where `d` is.
-    fn apply_border_drag(&mut self, d: BorderDrag, fonts: &Fonts) -> Option<Outcome> {
-        if let Border::Row(r) = d.border {
-            return self.apply_row_drag(d, r, fonts);
+    fn apply_border_drag(&mut self, d: &BorderDrag, fonts: &Fonts) -> Outcome {
+        let (label, steps) = match self.border_steps(d) {
+            Ok(edit) => edit,
+            Err(why) => return why,
+        };
+        let mut tx = self.begin(label);
+        for (i, mut s) in steps.into_iter().enumerate() {
+            // Table holding the resized one
+            if let Step::Rows { table, with, .. } = &mut s
+                && *table != d.table
+            {
+                self.put_held(d.table, with);
+            }
+            if self.step(&mut tx, s).is_err() && i == 0 {
+                self.abort(tx);
+                return STALE;
+            }
         }
-        let t = self.index.table(&self.doc, d.table)?;
+        self.commit(tx, None, fonts)
+    }
+
+    /// Puts the model's table `inner` into the cell of `rows` (a copy of the rows holding it) that holds it, so a step
+    /// with `rows` keeps what the steps before did to `inner`, tracked changes included.
+    fn put_held(&self, inner: TableId, rows: &mut [crate::docx::Row]) {
+        let Some(slot) = self.index.table_slot(inner) else { return };
+        let Container::Cell { row, cell, .. } = slot.container else { return };
+        let Some(t) = self.index.table(&self.doc, inner) else { return };
+        if let Some(b) = rows.get_mut(row).and_then(|r| r.cells.get_mut(cell)).and_then(|c| c.blocks.get_mut(slot.block)) {
+            *b = crate::docx::Block::Table(t.clone());
+        }
+    }
+
+    /// The steps a border drag ending where `d` is makes, and their transaction's label.
+    fn border_steps(&self, d: &BorderDrag) -> Result<(&'static str, Vec<Step>), Outcome> {
+        if let Border::Row(r) = d.border {
+            return self.row_drag_steps(d, r);
+        }
+        let t = self.index.table(&self.doc, d.table).ok_or(STALE)?;
         let old_sum: f64 = t.grid.iter().sum();
         let (n, sized) = (t.rows.len(), !matches!(t.width, Width::Auto | Width::Nil));
         let mut rows = t.rows.clone();
         let cx = self.cx();
         let grid_of = Grid::of(t);
         let g = &grid_of;
-        // Drawn column widths
-        let geo = self.pages.page(d.page, &self.index);
-        let mut grid = drawn_grid(t, d.table, geo.as_deref(), g.cols);
+        let mut grid = d.base.grid.clone();
+        if grid.is_empty() {
+            return Err(STALE);
+        }
         let selected = match self.selection {
             super::selection::Selection::Cells { table, anchor, focus, .. } if table == d.table => {
                 Some(anchor.row.min(focus.row)..=anchor.row.max(focus.row))
@@ -323,7 +487,7 @@ impl Editor {
             Border::Column(k) => {
                 let n = grid.len();
                 if k == 0 || k > n {
-                    return Some(Outcome::Unchanged("not a column border"));
+                    return Err(Outcome::Unchanged("not a column border"));
                 }
                 let min = |c: usize| {
                     t.rows
@@ -401,10 +565,7 @@ impl Editor {
                 let dy = d.now.1 - d.start.1;
                 if dy.abs() > 0.5 && height > 1.0 {
                     let sy = ((height + dy) / height).max(0.05);
-                    let measured: Vec<(usize, f64)> = self.pages.page(d.page, &self.index).map_or_else(Vec::new, |geo| {
-                        geo.rows.iter().filter(|r| r.table == d.table && !r.repeat).map(|r| (r.row, r.rect[3] - r.rect[1])).collect()
-                    });
-                    for (r, h) in measured {
+                    for &(r, h) in &d.base.rows {
                         let Some(row) = rows.get_mut(r) else { continue };
                         let rule = match &row.height {
                             Some((_, rule)) if rule == "exact" => "exact",
@@ -414,34 +575,27 @@ impl Editor {
                     }
                 }
             }
-            Border::Row(_) => {}
+            Border::Row(_) => return Err(STALE),
         }
         let new_sum: f64 = grid.iter().sum();
-        let mut tx = self.begin(if d.border == Border::Handle { "Resize Table" } else { "Column Width" });
-        let stepped =
-            crate::prof::time("edit:rows-step", || self.step(&mut tx, Step::Rows { table: d.table, range: 0..n, with: rows, grid: Some(grid) }));
-        if stepped.is_err() {
-            self.abort(tx);
-            return Some(Outcome::Unchanged("stale table"));
-        }
-        if (new_sum - old_sum).abs() > 1e-9
-            && sized
-            && let Some(t) = self.index.table(&self.doc, d.table)
-        {
+        let label = if d.border == Border::Handle { "Resize Table" } else { "Column Width" };
+        let mut steps = vec![Step::Rows { table: d.table, range: 0..n, with: rows, grid: Some(grid) }];
+        if (new_sum - old_sum).abs() > 1e-9 && sized {
             let mut props = super::step::TableProps::of(t);
             super::table_format::set_width(&mut props, Width::Dxa(new_sum), &cx);
-            let _ = self.step(&mut tx, Step::TableProps { table: d.table, props });
+            steps.push(Step::TableProps { table: d.table, props });
         }
         if new_sum > old_sum + 1e-9
             && let Some(slot) = self.index.table_slot(d.table)
             && let super::index::Container::Cell { table: outer, row, cell } = slot.container
-            && let Some(o) = self.index.table(&self.doc, outer).cloned()
+            && let Some(o) = self.index.table(&self.doc, outer)
             && !o.fixed
+            && !d.base.outer.is_empty()
         {
-            let g = Grid::of(&o);
+            let g = Grid::of(o);
             if let Some(&(col, span, _)) = g.rows.get(row).and_then(|r| r.get(cell)) {
                 let c = &o.rows[row].cells[cell];
-                let mut og = drawn_grid(&o, outer, geo.as_deref(), g.cols);
+                let mut og = d.base.outer.clone();
                 let last = (col + span.max(1) - 1).min(og.len().saturating_sub(1));
                 let have: f64 = og.get(col..=last).map_or(0.0, |w| w.iter().sum());
                 let need = new_sum + c.margins[1] + c.margins[3] + 0.5;
@@ -461,38 +615,71 @@ impl Editor {
                             }
                         }
                     }
+                    // The cell holds the table as the steps before leave it.
+                    let mut inner = t.clone();
+                    for s in &steps {
+                        match s.clone() {
+                            Step::Rows { range, with, grid, .. } => _ = super::step::put_rows(&mut inner, range, with, grid),
+                            Step::TableProps { props, .. } => _ = props.put(&mut inner),
+                            _ => {}
+                        }
+                    }
+                    if let Some(b) = orows.get_mut(row).and_then(|r| r.cells.get_mut(cell)).and_then(|c| c.blocks.get_mut(slot.block)) {
+                        *b = crate::docx::Block::Table(inner);
+                    }
                     let n = orows.len();
-                    let _ = self.step(&mut tx, Step::Rows { table: outer, range: 0..n, with: orows, grid: Some(og) });
+                    steps.push(Step::Rows { table: outer, range: 0..n, with: orows, grid: Some(og) });
                 }
             }
         }
-        Some(self.commit(tx, None, fonts))
+        Ok((label, steps))
     }
 
     /// A row border drag: row `r` alone takes the height, the table's columns and width as they are.
-    fn apply_row_drag(&mut self, d: BorderDrag, r: usize, fonts: &Fonts) -> Option<Outcome> {
-        let mut before = 0.0;
-        for p in 0..d.page {
-            self.ensure_page(p, fonts);
-            if let Some(geo) = self.pages.page(p, &self.index) {
-                before += geo.rows.iter().filter(|x| x.table == d.table && x.row == r && !x.repeat).map(|x| x.rect[3] - x.rect[1]).sum::<f64>();
-            }
-        }
-        let h = (before + d.guide()[1] - d.row_top).clamp(1.0, MAX);
-        let mut row = self.index.table(&self.doc, d.table)?.rows.get(r)?.clone();
+    fn row_drag_steps(&self, d: &BorderDrag, r: usize) -> Result<(&'static str, Vec<Step>), Outcome> {
+        let h = (d.base.before + d.guide()[1] - d.row_top).clamp(1.0, MAX);
+        let mut row = self.index.table(&self.doc, d.table).and_then(|t| t.rows.get(r)).ok_or(STALE)?.clone();
         let rule = match &row.height {
             Some((_, rule)) if rule == "exact" => "exact",
             _ => "atLeast",
         };
         super::table_format::set_height(&mut row, Some((h, rule.to_string())), &self.cx());
-        let mut tx = self.begin("Row Height");
-        if self.step(&mut tx, Step::Rows { table: d.table, range: r..r + 1, with: vec![row], grid: None }).is_err() {
-            self.abort(tx);
-            return Some(Outcome::Unchanged("stale table"));
+        Ok(("Row Height", vec![Step::Rows { table: d.table, range: r..r + 1, with: vec![row], grid: None }]))
+    }
+
+    /// The tables `steps` leave, outermost first, each a copy of the model's with the steps on it.
+    fn provisional(&self, steps: Vec<Step>) -> Vec<Provisional> {
+        let mut out: Vec<Provisional> = Vec::new();
+        for s in steps {
+            let (Step::Rows { table, .. } | Step::TableProps { table, .. }) = s else { continue };
+            let k = match out.iter().position(|p| p.id == table) {
+                Some(k) => k,
+                None => {
+                    let Some(t) = self.index.table(&self.doc, table) else { continue };
+                    out.push(Provisional { id: table, row: None, table: t.clone() });
+                    out.len() - 1
+                }
+            };
+            let p = &mut out[k];
+            match s {
+                Step::Rows { range, with, grid, .. } if range.end <= p.table.rows.len() => {
+                    p.row = (range.len() == 1 && with.len() == 1 && grid.is_none()).then_some(range.start);
+                    super::step::put_rows(&mut p.table, range, with, grid);
+                }
+                Step::TableProps { props, .. } => {
+                    p.row = None;
+                    props.put(&mut p.table);
+                }
+                _ => {}
+            }
         }
-        Some(self.commit(tx, None, fonts))
+        // A nested table goes into the copy of the one holding it.
+        out.reverse();
+        out
     }
 }
+
+const STALE: Outcome = Outcome::Unchanged("stale table");
 
 /// `t`'s grid widened to the `cols` columns its rows reach, each column as wide as `geo` draws it.
 fn drawn_grid(t: &crate::docx::Table, id: TableId, geo: Option<&super::geometry::PageGeometry>, cols: usize) -> Vec<f64> {

@@ -51,7 +51,12 @@ pub fn hf_layout(
     if env.ctx.env.text.compat == Compat::Legacy || !blocks.iter().any(|b| matches!(b, Block::Para(p) if !env.ctx.floats_of(p).is_empty())) {
         return Ok(l);
     }
-    let laid = crate::layout::join::laid_in(blocks, env.ctx.env.text.review.view, env.ctx.env.normal.as_ref());
+    let laid = crate::layout::join::laid_in(
+        blocks,
+        &env.ctx.env.text.review,
+        env.ctx.env.normal.as_ref(),
+        env.ctx.env.text.compat == crate::docx::model::Compat::Legacy,
+    );
     let children = child_ids(&laid, Some(width), env, None, memos)?;
     let mut seen: Option<Vec<[f64; 4]>> = None;
     let mut frozen = Vec::new();

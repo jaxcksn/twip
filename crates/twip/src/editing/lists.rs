@@ -1,6 +1,7 @@
 //! Lists
 
 use std::collections::HashSet;
+use std::ops::ControlFlow;
 use std::rc::Rc;
 
 use crate::docx::numbering::Counters;
@@ -74,12 +75,25 @@ impl Editor {
             })
         } else {
             let direct_ind = Props::parse(p.style.direct.0.as_deref(), "pPr", &self.cx()).get("ind").is_some();
-            if !(left > 0.0 && p.style.ind_first == 0.0 && direct_ind) {
+            let first = p.style.ind_first;
+            if !self.indent_keys || !direct_ind || !((left > 0.0 && first >= 0.0) || first > 0.0) {
                 self.abort(tx);
                 return None;
             }
-            let l = twips((((left - 0.01) / 18.0).floor() * 18.0).max(0.0));
-            self.repara(&mut tx, para, &|p, w| p.set("ind", format!("<{w}ind {w}left=\"{l}\" {w}firstLine=\"0\"/>")))
+            // Back the way Tab came: the left indent a tab stop back, then the first line's indent.
+            if first > 0.0 {
+                let cx = self.cx();
+                let ind = if left > 0.0 {
+                    let tab = self.tab_grid();
+                    vec![("left", Some(twips(super::format::grid_step(left, tab, false)).to_string())), ("start", None)]
+                } else {
+                    vec![("firstLine", Some("0".to_string()))]
+                };
+                self.repara(&mut tx, para, &|p, _| p.attrs("ind", &ind, &cx))
+            } else {
+                let l = twips((((left - 0.01) / 18.0).floor() * 18.0).max(0.0));
+                self.repara(&mut tx, para, &|p, w| p.set("ind", format!("<{w}ind {w}left=\"{l}\" {w}firstLine=\"0\"/>")))
+            }
         };
         if !ok {
             self.abort(tx);
@@ -88,7 +102,7 @@ impl Editor {
         Some(self.commit(tx, None, fonts))
     }
 
-    fn list_items(&self, paras: &[ParaId]) -> Vec<(ParaId, (i64, i64))> {
+    pub(super) fn list_items(&self, paras: &[ParaId]) -> Vec<(ParaId, (i64, i64))> {
         let num = |&para: &ParaId| Some((para, self.index.para(&self.doc, para)?.style.num.filter(|(id, _)| *id != 0)?));
         paras.iter().filter_map(num).collect()
     }
@@ -204,9 +218,6 @@ impl Editor {
     }
 
     pub(super) fn new_list(&mut self, tx: &mut Tx, bullet: bool) -> i64 {
-        let Some(res) = self.doc.resolver.clone() else { return 0 };
-        let abstract_id = res.numbering.abstracts.keys().copied().chain(self.doc.added_lists.iter().map(|l| l.abstract_id)).max().unwrap_or(-1) + 1;
-        let num_id = res.numbering.nums.keys().copied().chain(self.doc.added_lists.iter().map(|l| l.num_id)).max().unwrap_or(0) + 1;
         let mut levels = String::new();
         for k in 0..9 {
             let left = 720 * (k + 1);
@@ -228,8 +239,26 @@ impl Editor {
                 r#"<w:lvl w:ilvl="{k}"><w:start w:val="1"/><w:numFmt w:val="{fmt}"/><w:lvlText w:val="{text}"/><w:lvlJc w:val="{jc}"/><w:pPr><w:ind w:left="{left}" w:hanging="{hanging}"/></w:pPr>{rpr}</w:lvl>"#
             ));
         }
+        self.add_list_xml(tx, "hybridMultilevel", &levels)
+    }
+
+    /// The single-level bullet list Word gives the List Bullet style, linked to style `style`.
+    pub(super) fn new_style_bullets(&mut self, tx: &mut Tx, style: &str) -> i64 {
+        let level = format!(
+            r#"<w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="bullet"/><w:pStyle w:val="{}"/><w:lvlText w:val="{}"/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="360" w:hanging="360"/></w:pPr><w:rPr><w:rFonts w:ascii="Symbol" w:hAnsi="Symbol" w:hint="default"/></w:rPr></w:lvl>"#,
+            crate::docx::write::props::esc(style),
+            '\u{F0B7}'
+        );
+        self.add_list_xml(tx, "singleLevel", &level)
+    }
+
+    /// Adds a list of `levels` (`w:lvl` elements), returning its number id; 0 when it couldn't be added.
+    fn add_list_xml(&mut self, tx: &mut Tx, multi: &str, levels: &str) -> i64 {
+        let Some(res) = self.doc.resolver.clone() else { return 0 };
+        let abstract_id = res.numbering.abstracts.keys().copied().chain(self.doc.added_lists.iter().map(|l| l.abstract_id)).max().unwrap_or(-1) + 1;
+        let num_id = res.numbering.nums.keys().copied().chain(self.doc.added_lists.iter().map(|l| l.num_id)).max().unwrap_or(0) + 1;
         let abstract_xml = format!(
-            r#"<w:abstractNum xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" w:abstractNumId="{abstract_id}"><w:multiLevelType w:val="hybridMultilevel"/>{levels}</w:abstractNum>"#
+            r#"<w:abstractNum xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" w:abstractNumId="{abstract_id}"><w:multiLevelType w:val="{multi}"/>{levels}</w:abstractNum>"#
         );
         let part = format!(
             r#"<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">{abstract_xml}<w:num xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" w:numId="{num_id}"><w:abstractNumId w:val="{abstract_id}"/></w:num></w:numbering>"#
@@ -354,22 +383,41 @@ pub(super) fn direct_num(ppr: Option<&str>, cx: &Cx) -> bool {
 
 /// Each paragraph in `blocks` and the text boxes anchored in them, as the reader reaches them.
 fn walk<'d>(blocks: &'d [Block], out: &mut Vec<(&'d Paragraph, bool)>) {
+    let _ = visit(blocks, &mut |p| {
+        out.push((p, false));
+        ControlFlow::<()>::Continue(())
+    });
+}
+
+/// [`walk`] until `f` breaks.
+fn visit<'d, B>(blocks: &'d [Block], f: &mut impl FnMut(&'d Paragraph) -> ControlFlow<B>) -> ControlFlow<B> {
     for b in blocks {
         match b {
             Block::Para(p) => {
-                out.push((p, false));
+                f(p)?;
                 for i in &p.inlines {
                     match i {
-                        Inline::Float(f, _) => {
-                            f.text_box.iter().chain(f.parts.iter().filter_map(|g| g.text_box.as_ref())).for_each(|t| walk(&t.blocks, out))
+                        Inline::Float(fl, _) => {
+                            for t in fl.text_box.iter().chain(fl.parts.iter().filter_map(|g| g.text_box.as_ref())) {
+                                visit(&t.blocks, f)?;
+                            }
                         }
-                        _ => i.story().into_iter().for_each(|(_, t)| walk(&t.blocks, out)),
+                        _ => {
+                            if let Some((_, t)) = i.story() {
+                                visit(&t.blocks, f)?;
+                            }
+                        }
                     }
                 }
             }
-            Block::Table(t) => t.rows.iter().flat_map(|r| r.cells.iter()).for_each(|c| walk(&c.blocks, out)),
+            Block::Table(t) => {
+                for c in t.rows.iter().flat_map(|r| r.cells.iter()) {
+                    visit(&c.blocks, f)?;
+                }
+            }
         }
     }
+    ControlFlow::Continue(())
 }
 
 /// Whether a paragraph holds anything but marks: an empty one that ends a section is left out of its list.
@@ -394,19 +442,34 @@ fn has_content(p: &Paragraph) -> bool {
 /// whether the reader leaves it uncounted: an empty paragraph that ends a section after another paragraph.
 pub(super) fn numbered_paras<'d>(doc: &'d Document, idx: &DocIndex) -> Vec<(&'d Paragraph, bool)> {
     let mut out = Vec::new();
-    let ended = doc.sections.len().saturating_sub(1);
-    for (k, (_, blocks)) in super::elements::stories(doc, idx).into_iter().enumerate() {
+    for (ends, blocks) in numbered_stories(doc, idx) {
         walk(blocks, &mut out);
-        if k < ended
+        if ends
             && matches!(blocks, [.., Block::Para(_), Block::Para(p)] if !has_content(p))
             && let Some(last) = out.last_mut()
         {
             last.1 = true;
         }
     }
-    doc.comments.by_id.values().for_each(|c| walk(&c.body, &mut out));
-    for part in doc.glossary.iter().flat_map(|g| g.parts.iter()).filter(|p| p.state != crate::docx::PartState::Removed) {
-        walk(&part.body, &mut out);
-    }
     out
+}
+
+/// The first paragraph of list `num` in the order lists number through them.
+pub(super) fn first_numbered(doc: &Document, idx: &DocIndex, num: i64) -> Option<ParaId> {
+    numbered_stories(doc, idx).find_map(|(_, blocks)| {
+        visit(blocks, &mut |p| match p.style.num {
+            Some((id, _)) if id == num => ControlFlow::Break(ParaId(p.id)),
+            _ => ControlFlow::Continue(()),
+        })
+        .break_value()
+    })
+}
+
+/// The stories of [`numbered_paras`] in order, each with whether it is a section another follows.
+fn numbered_stories<'d>(doc: &'d Document, idx: &DocIndex) -> impl Iterator<Item = (bool, &'d [Block])> {
+    let ended = doc.sections.len().saturating_sub(1);
+    let comments = doc.comments.by_id.values().map(|c| c.body.as_slice());
+    let glossary = doc.glossary.iter().flat_map(|g| g.parts.iter()).filter(|p| p.state != crate::docx::PartState::Removed).map(|p| p.body.as_slice());
+    let stories = super::elements::stories(doc, idx).into_iter().enumerate().map(move |(k, (_, b))| (k < ended, b));
+    stories.chain(comments.chain(glossary).map(|b| (false, b)))
 }

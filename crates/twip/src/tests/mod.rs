@@ -4,6 +4,7 @@ mod boundaries;
 mod contract;
 mod decorations;
 mod fidelity;
+mod frames;
 mod ltb;
 mod merge_us1;
 mod merge_us5;
