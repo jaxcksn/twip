@@ -1108,12 +1108,21 @@ impl Editor {
                 self.locks(&Position::text(story, para, x), &Position::text(story, para, y), deletes)
             }),
         };
+        self.refuse_if_locked(locked)
+    }
+
+    /// [`Editor::refuse_locked_content`] for `a..b` rather than the selection.
+    pub(super) fn refuse_locked_content_in(&mut self, a: &Position, b: &Position) -> bool {
+        let locked = self.locks(a, b, false);
+        self.refuse_if_locked(locked)
+    }
+
+    fn refuse_if_locked(&mut self, locked: bool) -> bool {
         if locked {
             self.refused = Some("locked");
             self.events.push(super::input::Notice::Refused { sub_template: None, element: None });
-            return true;
         }
-        false
+        locked
     }
 
     // Data parts

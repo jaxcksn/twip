@@ -776,10 +776,14 @@ fn the_default_picture_wrap_inserts_in_line_in_a_note() {
     e.set_default_picture_wrap(ObjectWrap::Square);
     e.set_caret_for_benchmark(Selection::Caret(Position::text(StoryId::Body, super::para_id(&e, 0), Unit(2))));
     e.execute(Command::InsertFootnote, fonts());
-    assert_ne!(e.caret().map(|p| p.story), Some(StoryId::Body), "the caret is in the note");
+    let Some(StoryId::Footnote(note)) = e.caret().map(|p| p.story) else { panic!("the caret is in the note") };
     let out = e.execute(Command::InsertPicture(Picture { data: Bytes(data), alt_text: None }), fonts());
     assert!(changed(&out), "{out:?}");
-    assert!(all_floats(&e).is_empty(), "a note holds no floating object: the picture is in line");
+    let inlines: Vec<&Inline> =
+        e.document().footnotes[&note].iter().filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None }).flat_map(|p| &p.inlines).collect();
+    assert_eq!(inlines.iter().filter(|i| matches!(i, Inline::Picture(..))).count(), 1, "the picture is in line in the note");
+    assert!(!inlines.iter().any(|i| matches!(i, Inline::Float(..))), "a note holds no floating object");
+    assert!(all_floats(&e).is_empty());
 }
 
 #[test]

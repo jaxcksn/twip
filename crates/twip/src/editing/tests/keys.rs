@@ -1166,8 +1166,14 @@ fn ctrl_alt_enter_inserts_a_style_separator() {
     assert_eq!(texts(&e), ["Head body", "next"]);
     let ids = texts_ids(&e);
     assert_eq!(e.hidden_marks(ids[0]), [(Unit(9), true)]);
+    let after = Selection::Caret(Position::text(StoryId::Body, ids[1], Unit(0)));
+    assert_eq!(e.selection, after, "the caret after it, in the next paragraph");
     e.complete(fonts());
     assert!(one_line(&mut e, ids[0], ids[1]));
+    e.execute(C::Undo, fonts());
+    assert_eq!(e.selection, Selection::Caret(Position::text(StoryId::Body, ids[0], Unit(9))), "undo puts the caret back");
+    e.execute(C::Redo, fonts());
+    assert_eq!(e.selection, after, "redo puts it after the separator again");
 }
 
 #[test]
@@ -1300,6 +1306,22 @@ fn a_drag_out_move_leaves_text_that_replaced_the_dragged_content() {
     select(&mut e, 0, 4, 7);
     assert_eq!(texts(&e), ["one six three"]);
     let out = e.drag_out_end(true, fonts());
+    assert!(matches!(out, super::super::commands::Outcome::Unchanged(_)), "{out:?}");
+    assert_eq!(texts(&e), ["one six three"]);
+}
+
+#[test]
+fn a_drag_out_dropped_back_leaves_text_that_replaced_the_dragged_content() {
+    let mut e = edit("<w:p><w:r><w:t>one two three</w:t></w:r></w:p>");
+    select(&mut e, 0, 4, 7);
+    assert!(e.drag_out().is_some_and(|o| o.text == "two"));
+    // An edit that doesn't advance the revision, then the same offsets selected again.
+    e.begin_batch(None);
+    e.execute(C::InsertText("six".into()), fonts());
+    select(&mut e, 0, 4, 7);
+    let c = e.caret_at(Position::text(StoryId::Body, texts_ids(&e)[0], Unit(13))).expect("laid out");
+    let (x, y) = e.stack().to_doc(c.page, c.x, (c.top + c.bottom) / 2.0).expect("on the stack");
+    let out = e.drag_out_drop(x, y, false, fonts());
     assert!(matches!(out, super::super::commands::Outcome::Unchanged(_)), "{out:?}");
     assert_eq!(texts(&e), ["one six three"]);
 }

@@ -85,7 +85,7 @@ impl Editor {
     /// A drag out of the editor came back and dropped at (`x`, `y`): a move, or with `copy` a copy, as a drag inside
     /// the editor makes it.
     pub fn drag_out_drop(&mut self, x: f64, y: f64, copy: bool, fonts: &Fonts) -> Outcome {
-        if self.drag_out.take().is_none_or(|(s, r, _)| (s, r) != (self.selection, self.revision)) {
+        if !self.still_carried() {
             return Outcome::Unchanged("the selection or the document changed");
         }
         let drop = self.hit(x, y, fonts);
@@ -105,9 +105,7 @@ impl Editor {
     /// A drag out of the editor ended elsewhere: a move (`moved`) deletes the dragged selection as one undo step,
     /// unless the selection changed since it started.
     pub fn drag_out_end(&mut self, moved: bool, fonts: &Fonts) -> Outcome {
-        let carried = self.drag_out.take().filter(|(s, r, _)| (*s, *r) == (self.selection, self.revision));
-        // A batched edit leaves the revision alone: the selection must still hold what the drag carried.
-        let dragged = carried.is_some_and(|(.., blocks)| self.clip().is_some_and(|f| f.blocks == blocks));
+        let dragged = self.still_carried();
         if !moved || !dragged {
             return Outcome::Unchanged("nothing moved");
         }
@@ -124,6 +122,21 @@ impl Editor {
         }
         let delete = crate::api::command::DeleteOptions { direction: crate::api::value::Direction::Forward, unit: None };
         self.execute(crate::api::command::Command::Delete(delete), fonts)
+    }
+
+    /// Ends the drag out: whether the selection and the document are as it started, the selection still holding what
+    /// the drag carried (a batched edit leaves the revision alone).
+    fn still_carried(&mut self) -> bool {
+        let carried = self.drag_out.take().filter(|(s, r, _)| (*s, *r) == (self.selection, self.revision));
+        carried.is_some_and(|(.., blocks)| {
+            self.clip().is_some_and(|mut f| {
+                // Copied cells: a table with an id of its own each time
+                if let ([crate::docx::Block::Table(was)], [crate::docx::Block::Table(now)]) = (&blocks[..], &mut f.blocks[..]) {
+                    now.id = was.id;
+                }
+                f.blocks == blocks
+            })
+        })
     }
 
     pub(super) fn inside_selection(&self, p: &Position) -> bool {

@@ -2888,7 +2888,7 @@ fn selected_cells_dragged_out_and_back_are_copied_not_moved() {
     let out = e.drag_out_drop(x, y, true, fonts());
     assert!(matches!(out, super::super::commands::Outcome::Changed(_)), "{out:?}");
     let t = texts(&e);
-    assert_eq!(t.iter().filter(|s| *s == "a").count() + t.iter().filter(|s| *s == "b").count(), 4, "{t:?}");
+    assert!(["a", "b"].iter().all(|c| t.iter().filter(|s| s == c).count() == 2), "both cells copied: {t:?}");
     e.execute(Command::Undo, fonts());
     assert_eq!(texts(&e), ["a", "b", "after"], "one undo step");
 }
@@ -2919,7 +2919,8 @@ fn a_block_dragged_out_and_back_is_copied() {
     let out = e.drag_out_drop(x, y, true, fonts());
     assert!(matches!(out, super::super::commands::Outcome::Changed(_)), "{out:?}");
     let t = texts(&e);
-    assert!(t[..3] == ["abcdefgh", "ijklmnop", "qrstuvwx"] && t.concat().matches("cd").count() == 2, "{t:?}");
+    assert!(t[..3] == ["abcdefgh", "ijklmnop", "qrstuvwx"], "{t:?}");
+    assert!(["cd", "kl"].iter().all(|c| t.concat().matches(c).count() == 2), "both lines copied: {t:?}");
 }
 
 #[test]

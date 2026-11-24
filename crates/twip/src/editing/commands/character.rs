@@ -379,6 +379,13 @@ impl Editor {
             return Outcome::Unchanged("locked");
         }
         let Some(ranges) = self.case_ranges() else { return Outcome::unavailable("no word at the caret") };
+        // The word at a caret reaches past what the caret's own checks cover.
+        if let (crate::editing::selection::Selection::Caret(c), [(para, a, b)]) = (self.selection, &ranges[..]) {
+            let at = |u| crate::editing::position::Position::text(c.story, *para, u);
+            if self.refuse_expanded_in(&at(*a), &at(*b)) || self.refuse_locked_content_in(&at(*a), &at(*b)) {
+                return Outcome::Unchanged("locked");
+            }
+        }
         let mut tx = self.begin("Change Case");
         for &(para, a, b) in &ranges {
             let Some(p) = self.index.para(&self.doc, para) else { continue };

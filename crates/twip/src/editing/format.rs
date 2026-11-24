@@ -962,21 +962,29 @@ impl Editor {
         if self.refuse_expanded() || self.refuse_locked() {
             return Outcome::Unchanged("locked");
         }
-        let Some((para, at)) = self.selection.focus().and_then(|p| p.para_offset()) else { return Outcome::unavailable("no caret in text") };
+        let Some(focus) = self.selection.focus() else { return Outcome::unavailable("no caret in text") };
+        let Some((para, at)) = focus.para_offset() else { return Outcome::unavailable("no caret in text") };
         let Some(slot) = self.index.para_slot(para) else { return Outcome::Unchanged("no paragraph") };
-        let at_end = self.selection.is_collapsed()
-            && self.index.para(&self.doc, para).is_some_and(|p| super::step::para_len(p) == at)
-            && matches!(self.index.blocks(&self.doc, slot.container).and_then(|b| b.get(slot.block + 1)), Some(crate::docx::Block::Para(_)));
+        let next = match self.index.blocks(&self.doc, slot.container).and_then(|b| b.get(slot.block + 1)) {
+            Some(crate::docx::Block::Para(n))
+                if self.selection.is_collapsed() && self.index.para(&self.doc, para).is_some_and(|p| super::step::para_len(p) == at) =>
+            {
+                Some(ParaId(n.id))
+            }
+            _ => None,
+        };
         self.joined("Style Separator", fonts, |e| {
-            let target = if at_end {
-                para
-            } else {
-                match e.split_at_caret(false, fonts) {
-                    (Outcome::Changed(_), Some(first)) => first,
-                    (out, _) => return out,
-                }
+            let Some(next) = next else {
+                return match e.split_at_caret(false, fonts) {
+                    (Outcome::Changed(_), Some(first)) => e.separator_mark(first, fonts),
+                    (out, _) => out,
+                };
             };
-            e.separator_mark(target, fonts)
+            let out = e.separator_mark(para, fonts);
+            if matches!(out, Outcome::Changed(_)) {
+                e.selection = super::Selection::Caret(super::Position::text(focus.story, next, Unit(0)));
+            }
+            out
         })
     }
 

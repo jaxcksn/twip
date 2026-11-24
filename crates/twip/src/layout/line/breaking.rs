@@ -44,6 +44,7 @@ fn origin(sp: &ShapedPara, pieces: &[Piece]) -> usize {
     if bytes.is_multiple_of(std::mem::size_of::<Piece>()) && k.checked_add(pieces.len()).is_some_and(|e| e <= sp.pieces.len()) {
         k
     } else {
+        debug_assert!(pieces.is_empty(), "`pieces` is not a run of `sp.pieces`");
         sp.pieces.len().saturating_sub(pieces.len())
     }
 }
