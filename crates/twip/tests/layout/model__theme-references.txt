@@ -1,0 +1,43 @@
+page 0 12240 15840
+  1440 1784 Theme references
+  1440 2198 Text in accent 1 darker 25% (themeShade)
+  1440 2596 Text in accent 2 lighter 40% (themeTint)
+  1440 2993 Text in text 1 lighter 35%
+  1440 3390 Text in accent 6, no tint or shade
+  1440 3788 Underline in accent 2 darker 25%
+  1440 4185 Double underline in accent 1 lighter 40%
+  1440 4583 Run fill in accent 4 lighter 60%
+  1440 4980 Run 25% pattern in accent 1 darker 25% over accent 1 lighter 80%
+  1440 5378 Paragraph fill in accent 6 lighter 80%
+  1440 5775 Paragraph fill in accent 4 darker 25%
+  1450 6182 Run border in accent 1
+  1459 6610 Run border in accent 5 darker 50%
+  1440 7067 Paragraph borders: top accent 1, left accent 2 darker, bottom accent 6 lighter,
+  1440 7305 right text 1
+  1440 7742 Direct major fonts in all four slots, East Asian minor: 日本語のテキスト
+  1440 8139 Direct minor fonts in all four slots: 日本語のテキスト
+  1440 8537 Complex script run in the major bidi theme font
+  1440 8934 Character style with minor theme fonts and theme colours: styled 日本語のテキスト
+  1440 9380 Paragraph style with major theme fonts 日本語のテキスト
+  1440 9794 Empty major East Asian slot over a named family on the same run: 日本語のテキスト
+  1440 10191 Empty major East Asian slot over a style's named family: 日本語のテキスト
+  1440 10589 Table style with theme borders and fills
+  1563 11016 Header in background 1 on accent 1
+  6243 11016 From the table style
+  1563 11266 Band in accent 1 lighter 80%
+  6243 11266 Bottom in accent 1 darker 25%
+  1563 11516 Unbanded row
+  6243 11516 Borders in accent 1 lighter 40%
+  1440 11926 Direct cell borders and fill in theme colours
+  1563 12354 Cell borders in accent 2 darker 25%
+  6243 12354 Cell borders in accent 6 lighter 40%,
+  6243 12591 fill accent 4 lighter 60%
+  1440 13178 Page background in accent 5 lighter 80%
+  cell 1455 10810 6135 11060
+  cell 6135 10810 10815 11060
+  cell 1455 11060 6135 11310
+  cell 6135 11060 10815 11310
+  cell 1455 11310 6135 11560
+  cell 6135 11310 10815 11560
+  cell 1455 12148 6135 12812
+  cell 6135 12148 10815 12812

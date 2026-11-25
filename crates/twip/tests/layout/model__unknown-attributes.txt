@@ -1,0 +1,16 @@
+page 0 12240 15840
+  1440 1616 Language with a bidi attribute the reader skips
+  3562 2013 Colour and centring with extension attributes
+  1440 2491 Run with webHidden, effect and props3d children
+  1440 2888 Paragraph with adjustRightInd and cnfStyle children
+  1553 3296 Cell with a cnfStyle child
+  6228 3296 Table with caption and description
+  1440 3703 Content control with web extension children
+  1440 4101 Justification sideways, not a schema value
+  1440 4498 Run with an ignorable extension element
+  1440 4895 Paragraph with an ignorable element between its runs
+  1440 5293 Fallback text Word shows
+  1440 5706 Bold run whose unread children and attributes sit beside read ones
+  1440 6109 Section with paperSrc and bidi children
+  cell 1445 3110 6120 3517
+  cell 6120 3110 10795 3517

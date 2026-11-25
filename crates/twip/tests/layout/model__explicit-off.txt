@@ -1,0 +1,30 @@
+page 0 12240 15840
+  1440 1616 Bold paragraph style, nothing direct
+  1440 2013 Bold off (val="0") over a bold paragraph style
+  1440 2411 Bold off (val="false") over a bold paragraph style
+  1440 2808 Bold character style, nothing direct
+  1440 3206 Bold off (val="0") over a bold character style
+  1440 3603 Bold off (val="false") over a bold character style
+  1440 4001 Underlined character style, nothing direct
+  1440 4398 Underline none over an underlined style
+  1440 4795 Coloured character style, nothing direct
+  1440 5193 Colour auto over a coloured style
+  1440 5590 Highlight unset, nothing direct
+  1440 5988 Highlight yellow, direct
+  1440 6385 Highlight none, direct
+  1440 6782 Shaded character style, nothing direct
+  1440 7180 Run shading nil over a shaded style
+  1440 7577 Run shading clear, fill auto, over a shaded style
+  1440 7975 Shaded paragraph style, nothing direct
+  1440 8372 Paragraph shading nil over a shaded style
+  1440 8770 Paragraph shading clear, fill auto, over a shaded style
+  1800 9167 1.List paragraph style, nothing direct
+  1440 9564 Numbering id 0 over a list paragraph style
+  1440 9962 Style tab, nothing directafter
+  1440 10359 Style tab clearedafter
+  3600 10757 Indented paragraph style, nothing direct
+  1440 11154 Indent left 0, first line 0, over an indented style
+  1440 11551 Hidden character style, nothing direct:
+  1440 11949 Hidden off over a hidden character style: shown text
+  1440 12346 Keep-with-next style, nothing direct
+  1440 12744 Keep with next off over a keep-with-next style
