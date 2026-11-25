@@ -12,3 +12,18 @@ pub enum WrapText {
     /// The side with more room.
     Largest,
 }
+
+/// Where a float is aligned down its vertical reference.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VerticalAlign {
+    /// At the top.
+    Top,
+    /// Centred.
+    Center,
+    /// At the bottom.
+    Bottom,
+    /// At the inside edge.
+    Inside,
+    /// At the outside edge.
+    Outside,
+}

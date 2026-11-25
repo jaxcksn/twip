@@ -1,7 +1,7 @@
 //! Float positioning
 
 use crate::docx::Compat;
-use crate::docx::model::Float;
+use crate::docx::model::{Float, VerticalAlign};
 
 use super::Frames;
 
@@ -103,7 +103,7 @@ fn by_parity<'a>(align: Option<&'a str>, fr: &Frames, (min, max): (&'a str, &'a 
 /// The axes on which the box with its effect extents is placed: those with an alignment, a relative size or a
 /// percentage position. Compat ≤ 14: both, when either is.
 fn grown(f: &Float, fr: &Frames) -> [bool; 2] {
-    let own = |k: usize| [&f.h_align, &f.v_align][k].is_some() || f.relative.size[k].is_some() || f.relative.pos[k].is_some();
+    let own = |k: usize| [f.h_align.is_some(), f.v_align.is_some()][k] || f.relative.size[k].is_some() || f.relative.pos[k].is_some();
     match [own(0), own(1)] {
         [a, b] if fr.compat == Compat::Legacy => [a || b; 2],
         axes => axes,
@@ -195,9 +195,11 @@ pub fn v_pos(f: &Float, h: f64, fr: &Frames, para_top: f64, line_top: f64) -> f6
     let [_, t, _, b] = if f.poly.is_none() { f.effect } else { [0.0; 4] };
     y0 + snap(
         fr,
-        match by_parity(f.v_align.as_deref(), fr, ("top", "bottom")) {
-            Some("center") => (ht - h) / 2.0 + (t - b) / 2.0,
-            Some("bottom") => ht - h - b,
+        match f.v_align {
+            Some(VerticalAlign::Center) => (ht - h) / 2.0 + (t - b) / 2.0,
+            Some(VerticalAlign::Bottom) => ht - h - b,
+            Some(VerticalAlign::Inside) if !fr.odd => ht - h - b,
+            Some(VerticalAlign::Outside) if fr.odd => ht - h - b,
             Some(_) => t,
             None => f.v_offset + if grown(f, fr)[1] { t } else { 0.0 },
         },

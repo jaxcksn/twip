@@ -29,6 +29,7 @@ pub mod props;
 mod revisions;
 mod styles;
 
+use super::anchor;
 use super::props::{Border, Jc, Width};
 use props::{Cx, Props};
 
@@ -5562,7 +5563,7 @@ impl Saver<'_, '_> {
         self.ids.set(id + 1);
         let (cx, cy) = (emu(f.w), emu(f.h));
         const WP14: &str = "http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing";
-        let pos = |name: &str, rel: &str, align: &Option<String>, off: f64| {
+        let pos = |name: &str, rel: &str, align: Option<&str>, off: f64| {
             let (k, el) = if name == "positionH" { (0, "pctPosHOffset") } else { (1, "pctPosVOffset") };
             match (align, f.relative.pos[k]) {
                 (Some(a), _) => format!("<wp:{name} relativeFrom=\"{rel}\"><wp:align>{}</wp:align></wp:{name}>", props::esc(a)),
@@ -5679,8 +5680,8 @@ impl Saver<'_, '_> {
             locked = on(f.locked),
             cell = on(f.layout_in_cell),
             overlap = on(f.allow_overlap),
-            h = pos("positionH", &f.h_relative, &f.h_align, f.h_offset),
-            v = pos("positionV", &f.v_relative, &f.v_align, f.v_offset),
+            h = pos("positionH", &f.h_relative, f.h_align.as_deref(), f.h_offset),
+            v = pos("positionV", &f.v_relative, f.v_align.map(anchor::v_align_name), f.v_offset),
             cx = cx,
             cy = cy,
             wrap = wrap_xml("wp:", &f.wrap, f.wrap_text, f.poly.as_deref(), f.poly_edited),
@@ -6141,12 +6142,15 @@ impl Placement {
         let ne = |x: f64, y: f64| (x - y).abs() > 1e-6;
         let (a, b) = (&*unswapped(a), &*unswapped(b));
         // An aligned position that became an offset is written as one.
-        let pos = |(ra, aa, oa): (&String, &Option<String>, f64), (rb, ab, ob): (&String, &Option<String>, f64)| {
-            (ra != rb || aa != ab || ab.is_none() && ne(oa, ob)).then(|| (rb.clone(), ab.clone(), ob))
+        let pos = |(ra, aa, oa): (&String, Option<&str>, f64), (rb, ab, ob): (&String, Option<&str>, f64)| {
+            (ra != rb || aa != ab || ab.is_none() && ne(oa, ob)).then(|| (rb.clone(), ab.map(str::to_string), ob))
         };
         let p = Placement {
-            h: pos((&a.h_relative, &a.h_align, a.h_offset), (&b.h_relative, &b.h_align, b.h_offset)),
-            v: pos((&a.v_relative, &a.v_align, a.v_offset), (&b.v_relative, &b.v_align, b.v_offset)),
+            h: pos((&a.h_relative, a.h_align.as_deref(), a.h_offset), (&b.h_relative, b.h_align.as_deref(), b.h_offset)),
+            v: pos(
+                (&a.v_relative, a.v_align.map(anchor::v_align_name), a.v_offset),
+                (&b.v_relative, b.v_align.map(anchor::v_align_name), b.v_offset),
+            ),
             size: (ne(a.w, b.w) || ne(a.h, b.h)).then_some((b.w, b.h)),
             wrap: (a.wrap != b.wrap || a.wrap_text != b.wrap_text || a.behind != b.behind || a.poly != b.poly || a.poly_edited != b.poly_edited)
                 .then(|| (b.wrap.clone(), b.wrap_text, b.behind, b.poly.clone(), b.poly_edited)),
@@ -6482,7 +6486,7 @@ fn find_tag(s: &str, local: &str, from: usize) -> Option<(usize, usize)> {
 /// A drawing's wrap element (`p`: the drawing prefix with its colon): a tight or through wrap's polygon is `poly` (box
 /// fractions), or the object's box; `edited` marks one the user changed.
 fn wrap_xml(p: &str, wrap: &str, text: WrapText, poly: Option<&[(f64, f64)]>, edited: bool) -> String {
-    let text = crate::docx::anchor::wrap_text_name(text);
+    let text = anchor::wrap_text_name(text);
     match wrap {
         "square" => format!("<{p}wrapSquare wrapText=\"{text}\"/>"),
         "tight" | "through" => {

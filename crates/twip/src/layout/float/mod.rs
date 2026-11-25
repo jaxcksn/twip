@@ -372,6 +372,7 @@ pub fn table_float(id: u64, w: f64, h: f64, dist: [f64; 4], allow_overlap: bool)
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::docx::VerticalAlign;
 
     fn fl(x0: f64, x1: f64, side: Side) -> Placed {
         let float = Rc::new(Float {
@@ -631,7 +632,7 @@ mod tests {
         f.effect = [5.0, 10.0, 5.0, 10.0];
         assert_eq!(v_pos(&f, 30.0, &fr(Compat::Legacy), 84.65, 84.65), 134.65);
         assert_eq!(v_pos(&f, 30.0, &fr(Compat::Generic), 84.65, 84.65), 124.65);
-        (f.h_align, f.v_align, f.v_relative) = (None, Some("top".into()), "margin".into());
+        (f.h_align, f.v_align, f.v_relative) = (None, Some(VerticalAlign::Top), "margin".into());
         assert_eq!(h_pos(&f, &fr(Compat::Legacy)), 72.0 + 5.0);
         assert_eq!((h_pos(&f, &fr(Compat::Generic)), v_pos(&f, 30.0, &fr(Compat::Generic), 0.0, 0.0)), (72.0, 82.0));
     }
@@ -681,17 +682,17 @@ mod tests {
     fn positions() {
         let fr =
             |compat| Frames { page_w: 612.0, page_h: 792.0, margin: [72.0, 72.0, 72.0, 72.0], column: (72.0, 468.0), compat, cell: false, odd: true };
-        let f = |h: &str, ha: Option<&str>, v: &str, va: Option<&str>| Float {
+        let f = |h: &str, ha: Option<&str>, v: &str, va: Option<VerticalAlign>| Float {
             h_relative: h.into(),
             h_align: ha.map(Into::into),
             v_relative: v.into(),
-            v_align: va.map(Into::into),
+            v_align: va,
             ..(*fl(0.0, 40.0, Side::Both).float).clone()
         };
         let x = |ha, c| h_pos(&f("page", Some(ha), "page", None), &fr(c));
         assert_eq!((x("left", Compat::Legacy), x("right", Compat::Legacy)), (32.0, 540.0));
         assert_eq!((x("left", Compat::Generic), x("right", Compat::Generic)), (0.0, 572.0));
-        for va in ["top", "center", "bottom"] {
+        for va in [VerticalAlign::Top, VerticalAlign::Center, VerticalAlign::Bottom] {
             assert_eq!(v_pos(&f("column", None, "paragraph", Some(va)), 40.0, &fr(Compat::Generic), 200.0, 220.0), 200.0);
         }
     }

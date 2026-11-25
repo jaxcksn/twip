@@ -2,7 +2,7 @@
 
 use std::rc::Rc;
 
-use super::model::{Block, Compat, Document, Float, Inline, Paragraph, TextBox};
+use super::model::{Block, Compat, Document, Float, Inline, Paragraph, TextBox, VerticalAlign};
 
 pub fn convert(doc: &mut Document) {
     let legacy = doc.settings.compat() == Compat::Legacy;
@@ -200,11 +200,11 @@ pub fn place(f: &mut Float, fr: &super::props::FramePr, sides: [f64; 2], legacy:
     let text_y = fr.v_anchor.as_deref().is_some_and(|a| a != "margin" && a != "page");
     let (y_code, y_at) = fr.y.map_or((None, None), |y| match (y * 20.0).round() as i64 {
         0 => (None, Some(0.0)),
-        -4 => (Some("top"), None),
-        -8 => (Some("center"), None),
-        -12 => (Some("bottom"), None),
-        -16 => (Some("inside"), None),
-        -20 => (Some("outside"), None),
+        -4 => (Some(VerticalAlign::Top), None),
+        -8 => (Some(VerticalAlign::Center), None),
+        -12 => (Some(VerticalAlign::Bottom), None),
+        -16 => (Some(VerticalAlign::Inside), None),
+        -20 => (Some(VerticalAlign::Outside), None),
         _ if text_y => (None, Some(y)),
         _ => (None, Some(y - 0.05)),
     });
@@ -221,7 +221,7 @@ pub fn place(f: &mut Float, fr: &super::props::FramePr, sides: [f64; 2], legacy:
     if legacy && in_line(fr) {
         f.v_relative = "paragraph".into();
     }
-    f.v_align = if fr.y.is_some() { y_code.map(str::to_string) } else { fr.y_align.clone().filter(|a| a != "inline") };
+    f.v_align = if fr.y.is_some() { y_code } else { fr.y_align.as_deref().filter(|a| *a != "inline").map(super::anchor::v_align) };
     f.v_offset = y_at.unwrap_or(0.0);
     f.wrap = match fr.wrap.as_deref() {
         Some("notBeside") => "topAndBottom",

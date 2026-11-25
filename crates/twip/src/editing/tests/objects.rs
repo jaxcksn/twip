@@ -1699,7 +1699,7 @@ fn a_frame_dragged_to_a_twip_that_reads_as_an_alignment_keeps_its_place() {
         assert!(changed(&e.commit_frame(f, &moved, "Move Object", fonts())), "{at}");
         let again = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
         let n = again.float_of(FloatId(all_floats(&again)[0])).cloned().expect("the frame");
-        assert_eq!((n.h_align.as_deref(), n.v_align.as_deref()), (None, None), "{at}: a place, not an alignment");
+        assert_eq!((n.h_align.as_deref(), n.v_align), (None, None), "{at}: a place, not an alignment");
         assert!((n.h_offset - at).abs() <= 0.06 && (n.v_offset - at).abs() <= 0.06, "{at}: ({}, {})", n.h_offset, n.v_offset);
     }
 }

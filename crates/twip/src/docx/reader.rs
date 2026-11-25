@@ -2987,7 +2987,6 @@ impl Reader {
             Some("outer-margin-area") => "outsideMargin",
             _ => "paragraph",
         };
-        let align = |a: &Option<String>| a.as_deref().filter(|a| *a != "absolute").map(str::to_string);
         let (wrap, side) = v.wrap.unwrap_or_default();
         let wrap = match wrap.as_str() {
             "square" | "tight" | "through" | "topAndBottom" => wrap,
@@ -3004,7 +3003,8 @@ impl Reader {
         let poly = v.wrap_coords.filter(|_| matches!(wrap.as_str(), "tight" | "through")).map(|p| Rc::from(super::bounded_polygon(p)));
         let line = shape.sp().and_then(|s| s.line.as_ref()).or_else(|| shape.pic().and_then(|p| p.line.as_ref()));
         let pen = line.filter(|l| !matches!(l.fill, Some(crate::drawing::paint::Fill::None))).map(|l| l.width.map_or(15.0, |w| w.0 as f64 / 635.0));
-        let (h_align, v_align) = (align(&st.h_align), align(&st.v_align));
+        let (h_align, v_align) =
+            (st.h_align.clone().filter(|a| a != "absolute"), st.v_align.as_deref().filter(|a| *a != "absolute").map(super::anchor::v_align));
         // A line grows the stored box to its pixel bounds, aligned or not. Without one, a shape aligned on one axis
         // grows only at its right and bottom, one aligned on both not at all.
         let aligned = (h_align.is_some(), v_align.is_some());
@@ -3108,6 +3108,7 @@ impl Reader {
         let pos = |name: &str| item.children().find(|c| is(*c, WP, name));
         let (mut h_rel, h_align, mut h_off) = position(pos("positionH"));
         let (mut v_rel, v_align, mut v_off) = position(pos("positionV"));
+        let (h_align, v_align) = (h_align.map(str::to_string), v_align.map(super::anchor::v_align));
         if item.attribute("simplePos").is_some_and(|v| on_off_str(Some(v))) {
             let sp = pos("simplePos");
             let at = |n: &str| sp.and_then(|p| emu(p.attribute(n))).unwrap_or(0.0);
@@ -3766,10 +3767,10 @@ fn cell_margins(tcp: &TcProps, tm: &Margins, unset: f64) -> [f64; 4] {
     [m(tcp.margins.top, tm.top), side(tcp.margins.left, tm.left), m(tcp.margins.bottom, tm.bottom), side(tcp.margins.right, tm.right)]
 }
 
-fn position(p: Option<Node>) -> (String, Option<String>, f64) {
+fn position<'a>(p: Option<Node<'a, '_>>) -> (String, Option<&'a str>, f64) {
     let Some(p) = p else { return ("column".into(), None, 0.0) };
     let rel = p.attribute("relativeFrom").unwrap_or("column").to_string();
-    let align = p.children().find(|c| is(*c, WP, "align")).and_then(|a| a.text()).map(|s| s.trim().to_string());
+    let align = p.children().find(|c| is(*c, WP, "align")).and_then(|a| a.text()).map(str::trim);
     // F6: offsets are truncated to whole twips.
     let off = p
         .children()

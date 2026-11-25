@@ -273,7 +273,7 @@ pub fn float(m: &Watermark, size: [f64; 2], spid: u32, image: Option<usize>) -> 
         h_align: Some("center".into()),
         h_offset: 0.0,
         v_relative: "margin".into(),
-        v_align: Some("center".into()),
+        v_align: Some(crate::docx::VerticalAlign::Center),
         v_offset: 0.0,
         wrap: "none".into(),
         wrap_text: crate::docx::WrapText::BothSides,

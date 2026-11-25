@@ -1,7 +1,7 @@
 //! Object selection
 
-use crate::api::value::WrapSide;
-use crate::docx::{Inline, WrapText};
+use crate::api::value::{ObjectVerticalAlignment, WrapSide};
+use crate::docx::{Inline, VerticalAlign, WrapText};
 use crate::font::Fonts;
 use crate::layout::{FloatId, Unit};
 
@@ -1063,7 +1063,16 @@ impl Editor {
             n.v_relative = ooxml(v.relative_to);
             n.relative.pos[1] = v.percent.map(|p| (p * 10.0).round() as i64);
             (n.v_align, n.v_offset) = match (v.align, v.offset) {
-                (Some(a), _) => (Some(ooxml(a)), n.v_offset),
+                (Some(a), _) => (
+                    Some(match a {
+                        ObjectVerticalAlignment::Top => VerticalAlign::Top,
+                        ObjectVerticalAlignment::Center => VerticalAlign::Center,
+                        ObjectVerticalAlignment::Bottom => VerticalAlign::Bottom,
+                        ObjectVerticalAlignment::Inside => VerticalAlign::Inside,
+                        ObjectVerticalAlignment::Outside => VerticalAlign::Outside,
+                    }),
+                    n.v_offset,
+                ),
                 (None, Some(o)) => (None, twips(o.0)),
                 (None, None) if v.percent.is_some() => (None, n.v_offset),
                 (None, None) => {
@@ -1121,7 +1130,13 @@ impl Editor {
             },
             vertical: VerticalPosition {
                 relative_to: from_ooxml(&fl.v_relative),
-                align: fl.v_align.as_deref().map(from_ooxml),
+                align: fl.v_align.map(|a| match a {
+                    VerticalAlign::Top => ObjectVerticalAlignment::Top,
+                    VerticalAlign::Center => ObjectVerticalAlignment::Center,
+                    VerticalAlign::Bottom => ObjectVerticalAlignment::Bottom,
+                    VerticalAlign::Inside => ObjectVerticalAlignment::Inside,
+                    VerticalAlign::Outside => ObjectVerticalAlignment::Outside,
+                }),
                 offset: (fl.v_align.is_none() && fl.relative.pos[1].is_none()).then_some(Points(fl.v_offset)),
                 percent: fl.relative.pos[1].map(|t| t as f64 / 10.0),
             },
@@ -1530,7 +1545,7 @@ impl Editor {
         let by_size = |a: &Option<String>, start: &str| a.as_deref().is_some_and(|a| a != start);
         let moved = [
             unplace[0] || (new[0] - old[0]).abs() > 1e-9 || sized[0] && by_size(&fl.h_align, "left"),
-            unplace[1] || (new[1] - old[1]).abs() > 1e-9 || sized[1] && by_size(&fl.v_align, "top"),
+            unplace[1] || (new[1] - old[1]).abs() > 1e-9 || sized[1] && fl.v_align.is_some_and(|a| a != VerticalAlign::Top),
         ];
         // An aligned or percentage place goes to an offset from its reference where the float now is.
         let placed = [fl.h_align.is_some() || fl.relative.pos[0].is_some(), fl.v_align.is_some() || fl.relative.pos[1].is_some()];
