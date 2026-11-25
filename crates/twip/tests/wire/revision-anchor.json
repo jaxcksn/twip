@@ -1,0 +1,16 @@
+[
+  {
+    "author": "Ada Lovelace",
+    "kind": "deletion",
+    "lineBottom": 304.5,
+    "lineTop": 288.5,
+    "page": 2,
+    "pageEdge": 856.5,
+    "pageLeft": 40.5,
+    "revision": "r7",
+    "start": {
+      "x": 120.5,
+      "y": 300.5
+    }
+  }
+]

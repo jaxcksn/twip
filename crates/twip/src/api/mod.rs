@@ -21,6 +21,7 @@ pub mod review;
 pub mod services;
 pub mod session;
 pub mod state;
+pub mod styles;
 pub mod value;
 pub mod warning;
 pub mod wire;

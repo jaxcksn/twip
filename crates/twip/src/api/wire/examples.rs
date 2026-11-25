@@ -17,7 +17,7 @@ use crate::api::event::{Event, FieldRequest, HostCommand, KeyOutcome, LinkVia, R
 use crate::api::fonts::{
     Alias, AliasTarget, FaceInfo, FontAnswer, FontClass, FontDescription, FontPitch, FontRequest, FontRule, GenericDefaults, GenericFamily,
 };
-use crate::api::input::{ClipboardData, CompositionPhase, Key, Modifiers, Point, PointerButton, PointerKind};
+use crate::api::input::{ClipboardData, ClipboardImage, CompositionPhase, Key, Modifiers, Point, PointerButton, PointerKind};
 use crate::api::record::{Author, ChangeSummary, Identity, Origin, Timestamp, TransactionRecord};
 use crate::api::review::*;
 use crate::api::services::*;
@@ -25,6 +25,7 @@ use crate::api::session::{
     CaretBlink, Commit, Cursor, Export, ExportFormat, ExportOptions, FrameInfo, FrameStats, HostRequest, OverlayPalette, PaintBudget, PdfOptions,
 };
 use crate::api::state::*;
+use crate::api::styles::*;
 use crate::api::value::*;
 use crate::api::warning::{Location, Warning, WarningCode};
 
@@ -141,6 +142,7 @@ pub fn fixtures() -> Vec<Fixture> {
         "host-command": HostCommand,
         "key": Key,
         "level-change": LevelChange,
+        "line-direction": LineDirection,
         "link-via": LinkVia,
         "list-kind": ListKind,
         "list-state": ListState,
@@ -157,8 +159,12 @@ pub fn fixtures() -> Vec<Fixture> {
         "orientation": Orientation,
         "origin": Origin,
         "page-number-format": PageNumberFormat,
+        "page-number-align": PageNumberAlign,
+        "margin-side": MarginSide,
+        "break-clear": BreakClear,
+        "theme-font": ThemeFont,
+        "style-category": StyleCategory,
         "font-pitch": FontPitch,
-        "page-number-place": PageNumberPlace,
         "paste-as": PasteAs,
         "pointer-button": PointerButton,
         "pointer-kind": PointerKind,
@@ -190,6 +196,18 @@ pub fn fixtures() -> Vec<Fixture> {
         "warning-code": WarningCode,
         "wrap-side": WrapSide,
         "zoom-fit": ZoomFit,
+        "calendar-type": CalendarType,
+        "date-storage": DateStorage,
+        "note-separator-part": NoteSeparatorPart,
+        "column-preset": ColumnPreset,
+        "columns-apply-to": ColumnsApplyTo,
+        "heading-side": HeadingSide,
+        "balloon-mode": BalloonMode,
+        "text-mark": TextMark,
+        "bar-side": BarSide,
+        "field-category": FieldCategory,
+        "field-arg-kind": FieldArgKind,
+        "switch-arg-kind": SwitchArgKind,
         "theme-colour": dr::ThemeColour,
         "transform-kind": dr::TransformKind,
         "gradient-shape": dr::GradientShape,
@@ -219,6 +237,10 @@ pub fn fixtures() -> Vec<Fixture> {
         fixture!("heading-id", HeadingId, vec![HeadingId("h2".into())]),
         fixture!("match-id", MatchId, vec![MatchId("m1".into())]),
         fixture!("style-id", StyleId, vec![style("Heading1")]),
+        fixture!("paragraph-id", ParagraphId, vec![ParagraphId("17".into())]),
+        fixture!("text-point", TextPoint, vec![text_point(17, 4)]),
+        fixture!("text-range", TextRange, vec![text_range()]),
+        fixture!("cell-block", CellBlock, vec![cell_block()]),
         fixture!("line-spacing", LineSpacing, line_spacings()),
         fixture!("table-width", TableWidth, vec![TableWidth::Auto, TableWidth::Points { value: Points(432.5) }, TableWidth::Percent { value: 80.5 }]),
         fixture!("row-height", RowHeight, vec![row_height()]),
@@ -278,6 +300,13 @@ pub fn fixtures() -> Vec<Fixture> {
         fixture!("change-summary", ChangeSummary, vec![summary()]),
         // commands and the catalog
         fixture!("command", Command, commands()),
+        fixture!(
+            "page-number-place",
+            PageNumberPlace,
+            vec![PageNumberPlace::Caret, PageNumberPlace::Header, PageNumberPlace::Footer, PageNumberPlace::Margin { side: MarginSide::Inside }]
+        ),
+        fixture!("number-format", NumberFormat, NumberFormat::NAMED.into_iter().chain([NumberFormat::Other("aiueoFullWidth".into())]).collect()),
+        fixture!("list-level", ListLevel, vec![list_level(), ListLevel::default()]),
         fixture!("command-result", CommandResult, command_results()),
         fixture!("zoom", Zoom, vec![Zoom::Percent(125.5), Zoom::Fit(ZoomFit::PageWidth)]),
         fixture!("body", Body, vec![Body::Text("Check this".into()), Body::Rich(rich())]),
@@ -328,6 +357,8 @@ pub fn fixtures() -> Vec<Fixture> {
         fixture!("popover-tab-type", Popover, vec![popovers()[0].clone()]),
         fixture!("popover-tab-stop", Popover, vec![popovers()[1].clone()]),
         fixture!("popover-autocorrect", Popover, vec![popovers()[2].clone()]),
+        fixture!("popover-autoformat", Popover, vec![popovers()[3].clone()]),
+        fixture!("popover-paste-options", Popover, vec![popovers()[4].clone()]),
         fixture!(
             "key-outcome",
             KeyOutcome,
@@ -344,6 +375,12 @@ pub fn fixtures() -> Vec<Fixture> {
         fixture!("person", Person, vec![person()]),
         fixture!("rich-text", RichText, vec![rich()]),
         fixture!("comment-anchor", CommentAnchor, vec![anchor()]),
+        fixture!("revision-anchor", RevisionAnchor, vec![revision_anchor()]),
+        fixture!("mark-color", MarkColor, vec![MarkColor::ByAuthor, MarkColor::Auto, MarkColor::Fixed(Color(0x99CCFF))]),
+        fixture!("markup-style", MarkupStyle, vec![MarkupStyle::default()]),
+        fixture!("show-markup", ShowMarkup, vec![ShowMarkup::default()]),
+        fixture!("review-counts", ReviewCounts, vec![ReviewCounts::default()]),
+        fixture!("range-editor-ref", RangeEditorRef, vec![RangeEditorRef::Group("editors".into()), RangeEditorRef::User("ada@example.com".into())]),
         fixture!("balloon-placement", BalloonPlacement, vec![balloon()]),
         // services
         fixture!("client-point", ClientPoint, vec![at()]),
@@ -357,9 +394,124 @@ pub fn fixtures() -> Vec<Fixture> {
         fixture!("dialog-model", DialogModel, vec![dialog_model()]),
         fixture!("dialog-values", DialogValues, dialog_values()),
         fixture!("field-info", FieldInfo, vec![field_info()]),
-        fixture!("find-query", FindQuery, vec![FindQuery { text: "total".into(), match_case: Some(true), whole_words: Some(false) }]),
-        fixture!("find-result", FindResult, vec![FindResult { found: true, wrapped: true }]),
-        fixture!("find-match", FindMatch, vec![find_match()]),
+        fixture!("find-query", FindQuery, find_queries()),
+        fixture!("find-format", FindFormat, vec![find_format()]),
+        fixture!("table-of-contents-options", TableOfContentsOptions, vec![toc_options(), TableOfContentsOptions::default()]),
+        fixture!(
+            "toc-page-numbers",
+            TocPageNumbers,
+            vec![TocPageNumbers::All, TocPageNumbers::None, TocPageNumbers::OmitLevels(TocLevels { from: 1, to: 1 })]
+        ),
+        fixture!(
+            "cross-reference-kind",
+            CrossReferenceKind,
+            vec![
+                CrossReferenceKind::NumberedItem,
+                CrossReferenceKind::Heading,
+                CrossReferenceKind::Bookmark,
+                CrossReferenceKind::Footnote,
+                CrossReferenceKind::Endnote,
+                CrossReferenceKind::Caption("Figure".into()),
+            ]
+        ),
+        fixture!(
+            "cross-reference-target",
+            CrossReferenceTarget,
+            vec![
+                CrossReferenceTarget { text: "1.2 Scope".into(), number: Some("1.2".into()), level: Some(2), bookmark: None, note: None },
+                CrossReferenceTarget { text: "Summary".into(), number: None, level: None, bookmark: Some("Summary".into()), note: None },
+                CrossReferenceTarget { text: "See the appendix.".into(), number: Some("1".into()), level: None, bookmark: None, note: Some(1) },
+            ]
+        ),
+        fixture!(
+            "tables-of-contents",
+            TablesOfContents,
+            vec![
+                TablesOfContents {
+                    tables: vec![TableOfContentsInfo {
+                        index: 0,
+                        figures: false,
+                        options: toc_options(),
+                        locked: false,
+                        first_paragraph: ParagraphId("12".into()),
+                        last_paragraph: ParagraphId("19".into()),
+                    }],
+                    here: Some(0),
+                },
+                TablesOfContents::default(),
+            ]
+        ),
+        fixture!("toc-entry-preview", TocEntryPreview, vec![TocEntryPreview { level: 1, text: "Introduction".into(), page_number: true }]),
+        fixture!(
+            "find-result",
+            FindResult,
+            vec![FindResult { found: true, wrapped: true, truncated: false }, FindResult { found: false, wrapped: false, truncated: true }]
+        ),
+        fixture!("find-match", FindMatch, vec![find_match(), FindMatch { id: MatchId("4:6:5:3".into()), ..find_match() }]),
+        fixture!(
+            "find-matches",
+            FindMatches,
+            vec![FindMatches { matches: vec![find_match()], truncated: false }, FindMatches { matches: Vec::new(), truncated: true }]
+        ),
+        fixture!("find-count", FindCount, vec![FindCount { count: 3, truncated: false }, FindCount { count: 0, truncated: true }]),
+        fixture!(
+            "note-info",
+            NoteInfo,
+            vec![
+                NoteInfo { kind: NoteType::Footnote, id: 2, mark: "1".into(), custom_mark: false, text: "First".into(), page: Some(1) },
+                NoteInfo { kind: NoteType::Endnote, id: 5, mark: "*".into(), custom_mark: true, text: String::new(), page: None },
+            ]
+        ),
+        fixture!(
+            "note-separators",
+            NoteSeparators,
+            vec![NoteSeparators {
+                separator: NoteSeparatorState { text: String::new(), builtin: true },
+                continuation_separator: NoteSeparatorState { text: String::new(), builtin: true },
+                continuation_notice: Some(NoteSeparatorState { text: "Continued".into(), builtin: false }),
+            }]
+        ),
+        fixture!(
+            "editable-range-info",
+            EditableRangeInfo,
+            vec![EditableRangeInfo {
+                ids: vec!["1".into(), "2".into()],
+                editors: vec![RangeEditorRef::Group("editors".into()), RangeEditorRef::User("ada@example.com".into())],
+                page: Some(1),
+            }]
+        ),
+        fixture!("field-description", FieldDescription, vec![field_description()]),
+        fixture!(
+            "field-formats",
+            FieldFormats,
+            vec![FieldFormats {
+                text_formats: vec![FieldFormatOption { value: "Upper".into(), label: "Uppercase".into() }],
+                number_formats: vec![FieldFormatOption { value: "Roman".into(), label: "I, II, III, ...".into() }],
+                numeric_pictures: vec!["0.00".into()],
+                date_pictures: vec!["d MMMM yyyy".into()],
+            }]
+        ),
+        fixture!("field-choice", FieldChoice, vec![field_choice()]),
+        fixture!(
+            "field-problem",
+            FieldProblem,
+            vec![
+                FieldProblem::Empty,
+                FieldProblem::UnknownField { name: "FOO".into() },
+                FieldProblem::MissingArgument { name: "Bookmark".into() },
+                FieldProblem::UnknownSwitch { flag: "q".into() },
+                FieldProblem::MissingSwitchValue { flag: "l".into() },
+                FieldProblem::NotANumber { flag: "c".into() },
+                FieldProblem::FormatNotTaken { flag: "@".into() },
+            ]
+        ),
+        fixture!(
+            "composed-field",
+            ComposedField,
+            vec![ComposedField { code: " REF Intro \\h ".into(), problems: vec![FieldProblem::MissingArgument { name: "Bookmark".into() }] }]
+        ),
+        fixture!("field-here", FieldHere, vec![FieldHere { id: id("field-1"), choice: field_choice() }]),
+        fixture!("thumbnail-size", ThumbnailSize, vec![ThumbnailSize { width: 77, height: 100 }]),
         fixture!("misspelling", Misspelling, vec![Misspelling { word: "teh".into(), suggestions: vec!["the".into(), "ten".into()] }]),
         fixture!("heading", Heading, vec![Heading { id: HeadingId("h2".into()), level: 2, text: "Terms".into(), page: 3 }]),
         fixture!(
@@ -424,13 +576,79 @@ pub fn fixtures() -> Vec<Fixture> {
             vec![GestureTarget::Menu(MenuTarget::Link { address: "https://example.com".into() }), GestureTarget::Area { kind: AreaKind::HeaderArea }]
         ),
         fixture!("gesture-event", GestureEvent, vec![gesture_event()]),
-        fixture!("ruler-model", RulerModel, vec![ruler()]),
+        fixture!("ruler-model", RulerModel, vec![ruler(), vertical_ruler()]),
         fixture!("ruler-view", RulerView, vec![ruler_view()]),
         fixture!("tab-stop-info", TabStopInfo, vec![tab_stop()]),
         fixture!("page-rect", PageRect, vec![PageRect { page: 2, rect: rect() }]),
         fixture!("hit-result", HitResult, vec![HitResult { element: Some(id("field-1")), editable: true }]),
         fixture!("tooltip", Tooltip, vec![tooltip()]),
         fixture!("word-count", WordCount, vec![word_count()]),
+        fixture!(
+            "theme-column",
+            ThemeColumn,
+            vec![ThemeColumn {
+                theme: dr::ThemeColour::Accent1,
+                swatches: vec![
+                    ThemeSwatch { colour: dr::ColourValue::theme(dr::ThemeColour::Accent1), rgb: Color(0x4472C4), label: "Accent 1".into() },
+                    ThemeSwatch {
+                        colour: dr::ColourValue {
+                            transforms: vec![dr::ColourTransform { kind: dr::TransformKind::Tint, value: 0.2 }],
+                            ..dr::ColourValue::theme(dr::ThemeColour::Accent1)
+                        },
+                        rgb: Color(0xDAE3F3),
+                        label: "Accent 1, Lighter 80%".into(),
+                    },
+                ],
+            }]
+        ),
+        fixture!(
+            "word-count-options",
+            WordCountOptions,
+            vec![WordCountOptions::default(), WordCountOptions { selection: true, include_textboxes_and_notes: false }]
+        ),
+        fixture!(
+            "history-labels",
+            HistoryLabels,
+            vec![HistoryLabels { undo: vec!["Bold".into(), "Typing".into()], redo: vec!["Font Color".into()], more_undo: true, more_redo: false }]
+        ),
+        fixture!("style-definition", StyleDefinition, vec![style_definition()]),
+        fixture!(
+            "built-in-style",
+            BuiltInStyle,
+            vec![BuiltInStyle {
+                id: style("Heading5"),
+                name: "Heading 5".into(),
+                category: StyleCategory::Linked,
+                defined: false,
+                priority: 9,
+                visibility: StyleVisibility::HideUntilUsed,
+                quick: true,
+                locked: false,
+            }]
+        ),
+        fixture!(
+            "defaults-definition",
+            DefaultsDefinition,
+            vec![DefaultsDefinition {
+                character: character(),
+                paragraph: paragraph(),
+                tabs: vec![tab_stop()],
+                own_character: CharacterFormatting { size: Tri::Uniform(Points(11.0)), ..Default::default() },
+                own_paragraph: ParagraphFormatting::default(),
+            }]
+        ),
+        fixture!(
+            "list-definition",
+            ListDefinition,
+            vec![ListDefinition {
+                id: 3,
+                name: Some("Legal".into()),
+                style: Some(style("LegalList")),
+                bullet: false,
+                level: 1,
+                levels: vec![list_level()]
+            }]
+        ),
         // fonts, engine, input, documents
         fixture!("face-info", FaceInfo, vec![FaceInfo { family: "Carlito".into(), bold: true, italic: false }]),
         fixture!(
@@ -514,18 +732,47 @@ pub fn fixtures() -> Vec<Fixture> {
         fixture!("session-options", SessionOptions, vec![session_options(), SessionOptions::default()]),
         fixture!("modifiers", Modifiers, vec![Modifiers { ctrl: true, shift: true, alt: false, meta: false }]),
         fixture!("point", Point, vec![Point { x: 120.5, y: 48.5 }]),
-        fixture!("clipboard-data", ClipboardData, vec![clipboard(), ClipboardData { text: "plain".into(), html: None, internal: None }]),
+        fixture!(
+            "clipboard-data",
+            ClipboardData,
+            vec![
+                clipboard(),
+                ClipboardData { text: "plain".into(), html: None, internal: None, image: None },
+                ClipboardData {
+                    text: String::new(),
+                    html: None,
+                    internal: None,
+                    image: Some(ClipboardImage { mime: "image/png".into(), data: Bytes(vec![0x89, b'P', b'N', b'G']) })
+                }
+            ]
+        ),
+        fixture!(
+            "paste-choices",
+            PasteChoices,
+            vec![
+                PasteChoices {
+                    choices: vec![PasteAs::KeepSource, PasteAs::Merge, PasteAs::TextOnly, PasteAs::Html, PasteAs::Text, PasteAs::Picture],
+                    default: Some(PasteAs::KeepSource)
+                },
+                PasteChoices::default()
+            ]
+        ),
+        fixture!("paste-settings", PasteSettings, vec![PasteSettings::default()]),
         fixture!(
             "export-options",
             ExportOptions,
             vec![
                 ExportOptions::Docx,
                 ExportOptions::Pdf(PdfOptions::default()),
-                ExportOptions::Pdf(PdfOptions { open_password: Some("secret".into()), keywords: vec!["a".into(), "b".into()] }),
+                ExportOptions::Pdf(PdfOptions {
+                    open_password: Some("secret".into()),
+                    keywords: vec!["a".into(), "b".into()],
+                    hidden_text: Some(true)
+                }),
             ]
         ),
         fixture!("export", Export, vec![Export { bytes: Bytes(b"PK".to_vec()), revision: 7, warnings: vec![warning()] }]),
-        fixture!("frame-info", FrameInfo, vec![frame_info()]),
+        fixture!("frame-info", FrameInfo, vec![frame_info(), vertical_frame_info()]),
         fixture!("frame-stats", FrameStats, vec![frame_stats()]),
         fixture!("overlay-palette", OverlayPalette, vec![OverlayPalette::default()]),
         fixture!("paint-budget", PaintBudget, vec![PaintBudget::default()]),
@@ -546,7 +793,17 @@ pub fn fixtures() -> Vec<Fixture> {
                 HostRequest::Capture,
                 HostRequest::Release,
                 HostRequest::Clipboard { data: clipboard() },
-                HostRequest::Caret { x: 96.5, y: 120.0, height: 18.5, visible: true },
+                HostRequest::Caret { x: 96.5, y: 120.0, width: 0.0, height: 18.5, line: LineDirection::Horizontal, ends: None, visible: true },
+                HostRequest::Caret { x: 520.5, y: 96.0, width: 18.5, height: 0.0, line: LineDirection::Down, ends: None, visible: true },
+                HostRequest::Caret {
+                    x: 200.5,
+                    y: 300.5,
+                    width: 9.25,
+                    height: 16.0,
+                    line: LineDirection::Horizontal,
+                    ends: Some([[209.75, 300.5], [200.5, 316.5]]),
+                    visible: true,
+                },
                 HostRequest::Scroll { x: -12.0, y: 1180.5 },
                 HostRequest::ScrollTo { x: 96.5, y: 1240.0, width: 1.5, height: 18.5 },
             ]
@@ -619,7 +876,13 @@ fn control_options() -> Vec<ControlOptions> {
     vec![
         ControlOptions::Checkbox(CheckboxOptions { checked: Some(true), ..Default::default() }),
         ControlOptions::RepeatingSection(RepeatingSectionOptions { section_title: Some("Line".into()), allow_insert_delete: Some(false) }),
-        ControlOptions::Date(DateOptions { format: Some("yyyy-MM-dd".into()), locale: Some("en-GB".into()) }),
+        ControlOptions::Date(DateOptions {
+            format: Some("yyyy-MM-dd".into()),
+            locale: Some("en-GB".into()),
+            calendar: Some(CalendarType::Hijri),
+            store_as: Some(DateStorage::Text),
+        }),
+        ControlOptions::Gallery(GalleryOptions { gallery: Some("Quick Parts".into()), category: Some("General".into()) }),
         ControlOptions::List(ListOptions { items: vec![ListItem { text: "Yes".into(), value: "y".into() }] }),
         ControlOptions::PlainText(PlainTextOptions { multiline: Some(true) }),
         ControlOptions::Picture(PictureOptions { width: Some(Points(216.0)), height: Some(Points(54.0)) }),
@@ -654,19 +917,35 @@ fn commands() -> Vec<Command> {
     vec![
         Command::InsertText("Hello".into()),
         Command::InsertParagraph,
-        Command::InsertLineBreak,
+        Command::InsertLineBreak(Default::default()),
+        Command::InsertLineBreak(LineBreak { clear: Some(BreakClear::Both) }),
         Command::InsertPageBreak,
         Command::InsertColumnBreak,
         Command::InsertSectionBreak(SectionBreakKind::NextPage),
+        Command::InsertStyleSeparator,
         Command::InsertTab,
         Command::InsertSymbol(InsertSymbol { char: '§', font: Some("Symbol".into()) }),
+        Command::ToggleCharacterCode,
         Command::Delete(DeleteOptions { direction: Direction::Backward, unit: Some(DeleteUnit::Word) }),
         Command::Cut,
         Command::Copy,
         Command::Paste(PasteOptions { as_: Some(PasteAs::Text) }),
+        Command::Paste(PasteOptions { as_: Some(PasteAs::OverwriteCells) }),
         Command::PasteText("pasted".into()),
-        Command::Undo,
-        Command::Redo,
+        Command::Repaste(PasteAs::TextOnly),
+        Command::DismissPasteOptions,
+        Command::SetPasteOptions(PasteOptionsChange {
+            other: Some(PasteAs::TextOnly),
+            show_button: Some(false),
+            smart: Some(SmartPasteChange { tables: Some(false), merge_lists: Some(false), ..SmartPasteChange::default() }),
+            ..PasteOptionsChange::default()
+        }),
+        Command::InsertFile(InsertFile { from: Bytes(b"PK".to_vec()) }),
+        Command::MoveText,
+        Command::CopyText,
+        Command::Undo(Default::default()),
+        Command::Undo(HistorySteps { count: Some(3) }),
+        Command::Redo(HistorySteps { count: Some(2) }),
         Command::Repeat,
         Command::SelectAll,
         Command::Select(SelectUnit::Sentence),
@@ -676,8 +955,18 @@ fn commands() -> Vec<Command> {
         Command::GoBack,
         Command::Escape,
         Command::SelectNextObject(Order::Previous),
+        Command::SelectField(Order::Previous),
+        Command::SetSelection(SetSelection { ranges: vec![text_range()], cells: Vec::new(), active_cells: None }),
+        Command::SetSelection(SetSelection { ranges: vec![text_range()], cells: vec![cell_block()], active_cells: Some(0) }),
+        Command::ShrinkSelection,
+        Command::SelectSimilarFormatting,
+        Command::SelectStyleInstances(style("Heading1")),
         Command::GoToPage(3),
         Command::GoToBookmark("Summary".into()),
+        Command::GoTo(GoTo { what: GoToWhat::Page, target: GoToTarget::Absolute(2), name: None }),
+        Command::GoTo(GoTo { what: GoToWhat::Line, target: GoToTarget::Relative(-3), name: None }),
+        Command::GoTo(GoTo { what: GoToWhat::Comment, target: GoToTarget::Next, name: Some("Ann".into()) }),
+        Command::GoTo(GoTo { what: GoToWhat::Heading, target: GoToTarget::Previous, name: None }),
         Command::SetBold(true),
         Command::SetItalic(false),
         Command::SetUnderline(UnderlineStyle::Double),
@@ -689,10 +978,17 @@ fn commands() -> Vec<Command> {
         Command::SetAllCaps(false),
         Command::SetHidden(true),
         Command::SetFont("Carlito".into()),
+        Command::SetFont(FontChoice::Theme { theme: ThemeFont::Headings }),
         Command::SetFontSize(Points(10.5)),
         Command::GrowFont,
         Command::ShrinkFont,
-        Command::SetFontColor(AutoOr::Value(Color(0xC00000))),
+        Command::GrowFontOnePoint,
+        Command::ShrinkFontOnePoint,
+        Command::SetFontColor(AutoOr::Value(dr::ColourValue::rgb(Color(0xC00000)))),
+        Command::SetFontColor(AutoOr::Value(dr::ColourValue {
+            transforms: vec![dr::ColourTransform { kind: dr::TransformKind::Tint, value: 0.4 }],
+            ..dr::ColourValue::theme(dr::ThemeColour::Accent1)
+        })),
         Command::SetHighlight(Some(HighlightColor::BrightGreen)),
         Command::SetCharacterSpacing(Points(0.5)),
         Command::SetCharacterPosition(Points(-2.5)),
@@ -705,12 +1001,16 @@ fn commands() -> Vec<Command> {
             number_form: Some(NumberForm::OldStyle),
             stylistic_set: Some(2),
             contextual_alternates: Some(true),
+            ligature_flags: Some(LigatureFlags { standard: true, contextual: false, historical: true, discretionary: false }),
+            stylistic_sets: Some(vec![2, 7]),
         }),
+        Command::SetFitText(Some(Points(72.5))),
         Command::SetLanguage(Language { language: Some("en-GB".into()), no_proof: Some(true) }),
         Command::SetCharacterEffects(CharacterEffects { emboss: Some(true), engrave: None, outline: Some(false), shadow: None }),
         Command::SetTextEffects(text_effects_change()),
-        Command::SetUnderlineColor(AutoOr::Value(Color(0xC00000))),
+        Command::SetUnderlineColor(AutoOr::Value(dr::ColourValue::rgb(Color(0xC00000)))),
         Command::ClearFormatting,
+        Command::ClearAllFormatting,
         Command::ChangeCase(CaseChange::Title),
         Command::CopyFormatting,
         Command::PasteFormatting,
@@ -730,6 +1030,10 @@ fn commands() -> Vec<Command> {
         }),
         Command::IncreaseIndent,
         Command::DecreaseIndent,
+        Command::IncreaseHangingIndent,
+        Command::DecreaseHangingIndent,
+        Command::ClearParagraphFormatting,
+        Command::MoveParagraphs(VerticalDirection::Up),
         Command::SetParagraphStyle(style("Heading1")),
         Command::UpdateStyleToSelection(style("Heading1")),
         Command::DeleteStyle(style("Callout")),
@@ -748,6 +1052,20 @@ fn commands() -> Vec<Command> {
             line_spacing: Some(LineSpacing::Multiple { lines: 1.08 }),
             indents: None,
         }),
+        Command::SetDocumentDefaults(DocumentDefaults {
+            font: Some(FontChoice::Theme { theme: ThemeFont::Body }),
+            color: Some(AutoOr::Value(theme_text())),
+            ..Default::default()
+        }),
+        Command::SetDefaultFormatting(vec![
+            Command::SetBold(true),
+            Command::SetParagraphFlow(ParagraphFlow { widow_control: Some(false), ..Default::default() }),
+        ]),
+        Command::CreateStyle(new_style()),
+        Command::ModifyStyle(StyleModification {
+            id: style("Heading1"),
+            change: StyleChange { name: Some("Big".into()), based_on: Some(None), ..Default::default() },
+        }),
         Command::SetList(Some(ListKind::Numbered)),
         Command::SetListLevel(LevelChange::Increase),
         Command::SetListDefinition(ListDefinitionChange {
@@ -765,6 +1083,7 @@ fn commands() -> Vec<Command> {
                 linked_style: Some(style("Heading1")),
                 font: Some("Wingdings".into()),
                 picture: Some(Bytes(vec![0x89, 0x50, 0x4E, 0x47])),
+                ..list_level()
             }],
             apply_to: ListApplyTo::ThisPointForward,
             name: Some("Legal".into()),
@@ -784,11 +1103,34 @@ fn commands() -> Vec<Command> {
             textbox_tight_wrap: Some(TightWrap::FirstAndLastLine),
         }),
         Command::SetOutline(Outline { level: Some(2), collapsed: Some(true) }),
+        Command::PromoteOutline(OutlineOptions { subtopics: Some(true) }),
+        Command::DemoteOutline(OutlineOptions::default()),
+        Command::PromoteToHeading1(OutlineOptions { subtopics: Some(false) }),
+        Command::DemoteToBodyText,
+        Command::PromoteHeading(HeadingOutline { heading: HeadingId("12".into()), subtopics: None }),
+        Command::DemoteHeading(HeadingOutline { heading: HeadingId("12".into()), subtopics: Some(false) }),
+        Command::MoveHeading(MoveHeading {
+            heading: HeadingId("12".into()),
+            target: HeadingId("3".into()),
+            side: HeadingSide::After,
+            level: Some(2),
+        }),
+        Command::DeleteHeading(HeadingId("12".into())),
+        Command::InsertHeadingBefore(HeadingId("12".into())),
+        Command::InsertHeadingAfter(HeadingId("12".into())),
+        Command::InsertSubheading(HeadingId("12".into())),
+        Command::SelectHeadingContent(HeadingId("12".into())),
         Command::SetParagraphTextDirection(TextFlow::TbRl),
         Command::SetParagraphBorders(BorderPreset::Box),
-        Command::SetParagraphShading(Some(Color(0xD9E2F3))),
+        Command::SetParagraphShading(Some(dr::ColourValue::rgb(Color(0xD9E2F3)))),
         Command::SetParagraphBorderLines(ParagraphBorderLines {
-            top: Some(Some(Border { style: BorderStyle::ThinThickSmallGap, width: Points(1.5), color: AutoOr::Value(Color(0x1F3864)) })),
+            top: Some(Some(Border {
+                style: BorderStyle::ThinThickSmallGap,
+                width: Points(1.5),
+                color: AutoOr::Value(theme_text()),
+                space: Some(Points(4.0)),
+                shadow: Some(true),
+            })),
             bottom: Some(None),
             left: Some(None),
             right: Some(None),
@@ -797,22 +1139,34 @@ fn commands() -> Vec<Command> {
         }),
         Command::SetShading(ShadingChange {
             target: ShadingTarget::Table,
-            fill: NoneOr::Value(Color(0xFFF2CC)),
+            fill: NoneOr::Value(dr::ColourValue::rgb(Color(0xFFF2CC))),
             pattern: ShadingPattern::ThinDiagCross,
-            color: AutoOr::Value(Color(0x2E75B6)),
+            color: AutoOr::Value(dr::ColourValue::rgb(Color(0x2E75B6))),
         }),
         Command::SetShading(ShadingChange {
             target: ShadingTarget::Text,
-            fill: NoneOr::Value(Color(0xFFF2CC)),
+            fill: NoneOr::Value(theme_text()),
             pattern: ShadingPattern::Pct20,
             color: AutoOr::Auto,
         }),
         Command::SetTextBorder(TextBorderChange {
-            border: Some(Border { style: BorderStyle::Double, width: Points(0.75), color: AutoOr::Value(Color(0xC00000)) }),
+            border: Some(Border {
+                style: BorderStyle::Double,
+                width: Points(0.75),
+                color: AutoOr::Value(dr::ColourValue::rgb(Color(0xC00000))),
+                space: None,
+                shadow: None,
+            }),
             shadow: true,
         }),
         Command::SetPageBorders(PageBordersChange {
-            top: Some(Some(Border { style: BorderStyle::Wave, width: Points(0.75), color: AutoOr::Value(Color(0x7030A0)) })),
+            top: Some(Some(Border {
+                style: BorderStyle::Wave,
+                width: Points(0.75),
+                color: AutoOr::Value(dr::ColourValue::rgb(Color(0x7030A0))),
+                space: Some(Points(24.0)),
+                shadow: None,
+            })),
             bottom: Some(None),
             left: Some(None),
             right: Some(None),
@@ -822,6 +1176,7 @@ fn commands() -> Vec<Command> {
             apply_to: PageBorderScope::WholeDocument,
             surround_header: Some(false),
             surround_footer: Some(true),
+            behind_text: Some(true),
         }),
         Command::SetFrame(FrameProperties {
             wrap: FrameWrap::None,
@@ -838,6 +1193,7 @@ fn commands() -> Vec<Command> {
             vertical_relative: FrameVerticalRelative::Margin,
             vertical_distance: Points(0.5),
             lock_anchor: true,
+            allow_overlap: Some(false),
         }),
         Command::RemoveFrame,
         Command::SetDropCap(crate::api::command::DropCap {
@@ -861,9 +1217,11 @@ fn commands() -> Vec<Command> {
             left: Some(Points(90.5)),
             right: Some(Points(90.5)),
             gutter: Some(Points(0.5)),
+            apply_to: Some(ApplyTo::WholeDocument),
         }),
-        Command::SetOrientation(Orientation::Landscape),
-        Command::SetPaperSize(PaperSize { width: Points(595.5), height: Points(841.5) }),
+        Command::SetOrientation(SectionValue::here(Orientation::Landscape)),
+        Command::SetOrientation(SectionValue { value: Orientation::Portrait, apply_to: Some(ApplyTo::ThisPointForward) }),
+        Command::SetPaperSize(PaperSize { width: Points(595.5), height: Points(841.5), apply_to: None }),
         Command::SetColumns(Columns {
             count: 2,
             spacing: Some(Points(36.5)),
@@ -872,24 +1230,33 @@ fn commands() -> Vec<Command> {
                 ColumnWidth { width: Points(144.5), spacing: Points(36.5) },
                 ColumnWidth { width: Points(288.5), spacing: Points(0.5) },
             ]),
+            apply_to: Some(ColumnsApplyTo::Section),
+            start_new_column: None,
         }),
-        Command::SetHeaderFooterDistance(HeaderFooterDistance { header: Some(Points(36.5)), footer: Some(Points(30.5)) }),
+        Command::SetColumns(Columns {
+            count: 2,
+            spacing: None,
+            separator: None,
+            widths: None,
+            apply_to: Some(ColumnsApplyTo::ThisPointForward),
+            start_new_column: Some(true),
+        }),
+        Command::SetHeaderFooterDistance(HeaderFooterDistance { header: Some(Points(36.5)), footer: Some(Points(30.5)), apply_to: None }),
         Command::SetDifferentFirstPage(true),
         Command::SetDifferentOddEvenPages(false),
         Command::SetPageNumbering(PageNumbering {
             format: Some(NumberFormat::LowerRoman),
             start: Some(None),
             chapter: Some(Some(ChapterNumbers { level: 1, separator: ChapterSeparator::EnDash })),
+            apply_to: Some(ApplyTo::WholeDocument),
         }),
-        Command::SetPageVerticalAlignment(PageVerticalAlignment::Center),
-        Command::SetLineNumbering(Some(LineNumbers {
-            start: Some(1),
-            count_by: Some(5),
-            distance: None,
-            restart: Some(LineNumberRestart::EachSection),
-        })),
-        Command::SetSectionBreakType(SectionBreakKind::OddPage),
-        Command::SetSectionTextDirection(TextFlow::TbRl),
+        Command::SetPageVerticalAlignment(SectionValue::here(PageVerticalAlignment::Center)),
+        Command::SetLineNumbering(SectionValue {
+            value: Some(LineNumbers { start: Some(1), count_by: Some(5), distance: None, restart: Some(LineNumberRestart::EachSection) }),
+            apply_to: Some(ApplyTo::WholeDocument),
+        }),
+        Command::SetSectionBreakType(SectionValue::here(SectionBreakKind::OddPage)),
+        Command::SetSectionTextDirection(SectionValue::here(TextFlow::TbRl)),
         Command::SetMultiplePages(MultiplePages { mode: Some(MultiplePagesMode::MirrorMargins), gutter_at_top: Some(false) }),
         Command::MoveColumnBoundary(ColumnBoundaryMove { column: 0, to: Points(250.5) }),
         Command::EditHeader,
@@ -898,7 +1265,14 @@ fn commands() -> Vec<Command> {
         Command::InsertPageNumber(PageNumber {
             format: PageNumberFormat::PageOfTotal,
             place: Some(PageNumberPlace::Footer),
-            alignment: Some(HorizontalAlignment::Center),
+            alignment: Some(PageNumberAlign::Center),
+            show_on_first_page: Some(false),
+        }),
+        Command::InsertPageNumber(PageNumber {
+            format: PageNumberFormat::Page,
+            place: Some(PageNumberPlace::Margin { side: MarginSide::Outside }),
+            alignment: Some(PageNumberAlign::Outside),
+            show_on_first_page: None,
         }),
         Command::SetHeaderFooterLinked(HeaderFooterLink { kind: HeaderFooterKind::Footer, pages: HeaderFooterType::First, linked: false }),
         Command::RemoveHeaderFooter(HeaderFooterSlot { kind: HeaderFooterKind::Header, pages: HeaderFooterType::Default }),
@@ -931,8 +1305,25 @@ fn commands() -> Vec<Command> {
             columns: Some(0),
         }),
         Command::ConvertNotes(NoteConversion::Swap),
-        Command::InsertHyperlink(Hyperlink { address: "https://example.com".into(), text: Some("Example".into()) }),
-        Command::EditHyperlink(HyperlinkEdit { address: Some("https://example.org".into()), text: None }),
+        Command::SetNoteSeparator(NoteSeparatorChange {
+            kind: NoteType::Footnote,
+            part: NoteSeparatorPart::ContinuationNotice,
+            text: Some("Continued".into()),
+        }),
+        Command::SetNoteSeparator(NoteSeparatorChange { kind: NoteType::Endnote, part: NoteSeparatorPart::Separator, text: None }),
+        Command::InsertHyperlink(Hyperlink {
+            address: "https://example.com".into(),
+            text: Some("Example".into()),
+            bookmark: Some("Prices".into()),
+            screen_tip: Some("Go".into()),
+            frame: Some("_blank".into()),
+        }),
+        Command::EditHyperlink(HyperlinkEdit {
+            address: Some("https://example.org".into()),
+            text: None,
+            screen_tip: Some(String::new()),
+            frame: None,
+        }),
         Command::RemoveHyperlink,
         Command::InsertBookmark("Summary".into()),
         Command::DeleteBookmark("Summary".into()),
@@ -941,10 +1332,19 @@ fn commands() -> Vec<Command> {
             formatting: Some(false),
             enforce: Some(true),
             password: Some("secret".into()),
+            confirm_password: Some("secret".into()),
             unprotected_sections: Some(vec![1]),
+            auto_format_override: Some(true),
+            block_theme_switching: Some(true),
+            block_style_set_switching: Some(false),
         }),
-        Command::AddEditableRange(EditableRange { editor: None }),
+        Command::AddEditableRange(EditableRange { editor: None, group: Some("editors".into()) }),
         Command::RemoveEditableRanges,
+        Command::SetEditableRangeEditor(EditableRangeEditor { editor: RangeEditorRef::Group("editors".into()), allowed: true }),
+        Command::SetEditableRangeEditor(EditableRangeEditor { editor: RangeEditorRef::User("ada@example.com".into()), allowed: false }),
+        Command::SelectNextEditableRange(Order::Next),
+        Command::SelectEditableRanges,
+        Command::SetEditingGroups(vec!["editors".into(), "owners".into()]),
         Command::InsertFormField(FormFieldType::CheckBox),
         Command::SetFormField(FormFieldChange {
             id: Some(id("field-1")),
@@ -954,6 +1354,7 @@ fn commands() -> Vec<Command> {
             ..Default::default()
         }),
         Command::FillFormField(FormFieldFill { id: None, text: None, checked: Some(true), entry: None }),
+        Command::SelectNextFormField(Order::Previous),
         Command::SetFormFieldShading(false),
         Command::SetDocumentProperties(DocumentPropertiesChange {
             title: Some("Annual report".into()),
@@ -974,17 +1375,24 @@ fn commands() -> Vec<Command> {
         Command::MergeCells,
         Command::SplitCells(SplitCells { columns: 2, rows: Some(1) }),
         Command::SplitTable,
-        Command::ConvertTextToTable(TextToTable { separator: TextSeparator::Other, character: Some(";".into()), columns: Some(3) }),
-        Command::ConvertTableToText(TableToText { separator: TextSeparator::Tabs, character: None }),
+        Command::ConvertTextToTable(TextToTable {
+            separator: TextSeparator::Other,
+            character: Some(";".into()),
+            columns: Some(3),
+            autofit: Some(TableFit::Fixed),
+            column_width: Some(Points(72.5)),
+        }),
+        Command::ConvertTableToText(TableToText { separator: TextSeparator::Tabs, character: None, convert_nested: Some(true) }),
         Command::DistributeRows,
         Command::DistributeColumns,
         Command::MoveRows(VerticalDirection::Down),
         Command::AutoFitColumns(AutoFit::Contents),
         Command::SetCellAlignment(CellAlignment::Center),
         Command::SetCellShading(None),
+        Command::SetCellShading(Some(theme_text())),
         Command::SetCellBorders(CellBorders {
             edges: BorderEdges::Outside,
-            border: Some(Border { style: BorderStyle::Double, width: Points(1.5), color: AutoOr::Auto }),
+            border: Some(Border { style: BorderStyle::Double, width: Points(1.5), color: AutoOr::Auto, space: None, shadow: None }),
         }),
         Command::SetCellMargins(CellMargins { top: Some(Points(2.5)), bottom: Some(Points(2.5)), left: Some(Points(5.5)), right: Some(Points(5.5)) }),
         Command::SetCellProperties(CellProperties {
@@ -1000,10 +1408,16 @@ fn commands() -> Vec<Command> {
                 reset: Some(true),
                 alignment: Some(HorizontalAlignment::Center),
                 cell_spacing: Some(Points(1.5)),
-                shading: Some(Color(0xD9E2F3)),
+                indent: Some(Points(-5.5)),
+                shading: Some(Shading {
+                    fill: NoneOr::Value(dr::ColourValue::rgb(Color(0xD9E2F3))),
+                    pattern: ShadingPattern::Pct10,
+                    color: AutoOr::Value(dr::ColourValue::rgb(Color(0x000000))),
+                }),
                 borders: Some(CellBorders { edges: BorderEdges::Outside, border: None }),
             }),
         }),
+        Command::SetTableBandSizes(TableBandSizes { rows: Some(Some(2)), columns: Some(None) }),
         Command::SetTableCellSpacing(Some(Points(1.5))),
         Command::SetTableAltText(TableAltText { title: Some("Totals".into()), description: Some("Yearly totals by region".into()) }),
         Command::SetHeaderRow(true),
@@ -1026,6 +1440,15 @@ fn commands() -> Vec<Command> {
         }),
         Command::SetDefaultTableStyle(Some(style("GridTable4"))),
         Command::SetTablePosition(Some(table_position())),
+        Command::SetTableCellMargins(TableCellMargins { top: Some(Points(1.5)), left: Some(Points(5.4)), bottom: None, right: None }),
+        Command::InsertCells(InsertCellShift::Right),
+        Command::InsertCells(InsertCellShift::Down),
+        Command::SetTableTool(TableTool::Pen),
+        Command::SetTableTool(TableTool::Eraser),
+        Command::SetTableTool(TableTool::None),
+        Command::SetTablePen(table_border()),
+        Command::DrawTableStroke(TableStroke { page: 0, from: [Points(72.5), Points(100.0)], to: [Points(300.5), Points(102.5)] }),
+        Command::EraseTableBorder(TableBorderPoint { page: 1, at: [Points(144.5), Points(200.0)] }),
         Command::SetObjectSize(ObjectSize {
             width: Some(Points(144.5)),
             height: Some(Points(72.5)),
@@ -1066,7 +1489,31 @@ fn commands() -> Vec<Command> {
         Command::AlignObjects(AlignObjects { align: ObjectAlign::DistributeHorizontally, relative_to: Some(AlignReference::Margin) }),
         Command::GroupObjects,
         Command::UngroupObjects,
+        Command::RegroupObjects,
+        Command::EditWrapPoints,
         Command::SelectGroupChild(Order::Next),
+        Command::SetObjectName("Gold star".into()),
+        Command::SetObjectTitle("Logo".into()),
+        Command::SetObjectHidden(ObjectHidden { object: object_id(), hidden: true }),
+        Command::SelectObject(SelectObject { object: ObjectId { float: FloatId("7".into()), path: vec![0, 2] }, extend: Some(true) }),
+        Command::RestackObject(RestackObject { object: object_id(), in_front_of: Some(ObjectId { float: FloatId("9".into()), path: Vec::new() }) }),
+        Command::RestackObject(RestackObject { object: object_id(), in_front_of: None }),
+        Command::SetLockAspectRatio(false),
+        Command::SetPictureRecolor(dr::Recolor::Grayscale),
+        Command::SetPictureRecolor(dr::Recolor::BlackAndWhite { threshold: 0.5 }),
+        Command::SetPictureRecolor(dr::Recolor::Duotone { dark: dr::ColourValue::rgb(Color(0x000000)), light: theme_colour() }),
+        Command::SetPictureRecolor(dr::Recolor::None),
+        Command::ResetPicture(ResetPicture { size: Some(true) }),
+        Command::SetWrapPoints(vec![
+            dr::BoxPoint { x: 0.0, y: 0.0 },
+            dr::BoxPoint { x: 1.0, y: 0.0 },
+            dr::BoxPoint { x: 1.0, y: 1.0 },
+            dr::BoxPoint { x: -0.25, y: 1.0 },
+        ]),
+        Command::ResetWrapPoints,
+        Command::LinkTextBox(object_id()),
+        Command::BeginTextBoxLink,
+        Command::UnlinkTextBox,
         Command::SetField(SetField { id: id("field-1"), code: Some("MERGEFIELD Total".into()), display: Some(Body::Text("«Total»".into())) }),
         Command::SetFieldResults(FieldResults { results: vec![FieldResult { id: id("field-1"), display: Body::Rich(rich()) }], token: Some(4) }),
         Command::UpdateFields(ElementIds { ids: ids() }),
@@ -1100,6 +1547,53 @@ fn commands() -> Vec<Command> {
         }),
         Command::RemoveSubTemplate(SubTemplateName { name: "Cycle-B".into(), category: None }),
         Command::ReplaceBody(ReplaceBody { from: Bytes(b"PK".to_vec()) }),
+        Command::InsertTableOfContents(InsertTableOfContents::default()),
+        Command::InsertTableOfContents(InsertTableOfContents {
+            options: Some(toc_options()),
+            layout: Some(TocLayout { right_align_page_numbers: Some(true), tab_leader: Some(TabLeader::Dots) }),
+            frame: Some(TocFrame { title: Some("Contents".into()), building_block: Some(true) }),
+        }),
+        Command::InsertTableOfFigures(InsertTableOfFigures {
+            label: "Figure".into(),
+            include_label_and_number: Some(false),
+            options: None,
+            layout: None,
+            frame: None,
+        }),
+        Command::InsertManualTableOfContents,
+        Command::UpdateTableOfContents(UpdateTableOfContents { mode: TocUpdateMode::PageNumbers, index: None }),
+        Command::UpdateTableOfContents(UpdateTableOfContents { mode: TocUpdateMode::EntireTable, index: Some(1) }),
+        Command::UpdateAllTablesOfContents(TocUpdateMode::PageNumbers),
+        Command::RemoveTableOfContents(TableOfContentsIndex::default()),
+        Command::RemoveTableOfContents(TableOfContentsIndex { index: Some(0) }),
+        Command::MarkTableOfContentsEntry(MarkTableOfContentsEntry {
+            text: "Results".into(),
+            level: 2,
+            identifier: Some("F".into()),
+            page_number: Some(false),
+        }),
+        Command::InsertCaption(InsertCaption {
+            label: "Table".into(),
+            text: Some(": Totals".into()),
+            position: Some(CaptionPosition::Above),
+            exclude_label: Some(false),
+            format: Some(NumberFormat::UpperRoman),
+            chapter: Some(CaptionChapter { level: 1, separator: ChapterSeparator::EnDash }),
+        }),
+        Command::SetAutoCaption(Some(AutoCaption { label: "Table".into(), position: None, exclude_label: None, format: None, chapter: None })),
+        Command::SetAutoCaption(None),
+        Command::InsertCrossReference(InsertCrossReference {
+            target: CrossReferenceTargetRef { kind: CrossReferenceKind::Caption("Figure".into()), index: 0 },
+            content: CrossReferenceContent::LabelAndNumber,
+            hyperlink: Some(true),
+            above_below: Some(true),
+        }),
+        Command::InsertCrossReference(InsertCrossReference {
+            target: CrossReferenceTargetRef { kind: CrossReferenceKind::Heading, index: 2 },
+            content: CrossReferenceContent::PageNumber,
+            hyperlink: None,
+            above_below: None,
+        }),
         Command::InsertControl(InsertControl {
             kind: ControlKind::DropDown,
             tag: Some("status".into()),
@@ -1131,9 +1625,17 @@ fn commands() -> Vec<Command> {
             style: Some(NoneOr::Value(style("Strong"))),
         }),
         Command::RemoveControl(RemoveControl { id: id("control-3"), keep_content: Some(true) }),
-        Command::FillControl(FillControl { id: id("control-4"), text: None, image: Some(picture_bytes()), docx: None, building_block: None }),
+        Command::FillControl(FillControl {
+            id: id("control-4"),
+            text: None,
+            image: Some(picture_bytes()),
+            docx: None,
+            building_block: None,
+            date: None,
+        }),
         Command::SetCheckbox(SetCheckbox { id: id("control-5"), checked: true }),
         Command::WrapInRepeatingSection(RepeatingSection { tag: Some("lines".into()), title: Some("Invoice lines".into()) }),
+        Command::AddRepeatingItem(RepeatingItemAdd { id: id("control-2"), item: Some(id("control-5")), before: Some(true) }),
         Command::RemoveElement(id("field-2")),
         Command::ReplaceInElements(ReplaceInElements {
             find: "Name".into(),
@@ -1159,17 +1661,31 @@ fn commands() -> Vec<Command> {
         Command::RemoveDataPart(DataPartRef { namespace: "urn:invoice".into(), item_id: None }),
         Command::SetTrackChanges(true),
         Command::SetMarkupView(MarkupView::Simple),
+        Command::SetShowMarkup(ShowMarkupChange { insertions_deletions: None, formatting: Some(false), comments: Some(true) }),
+        Command::SetHiddenReviewers(ReviewerFilter { hidden: vec!["Ada Lovelace".into()] }),
+        Command::SetBalloonMode(BalloonMode::Balloons),
+        Command::SetMarkupStyle(MarkupStyleChange {
+            insertions: Some(MarkLookChange { mark: Some(TextMark::Bold), color: None }),
+            deletions: Some(MarkLookChange { mark: Some(TextMark::Caret), color: Some(MarkColor::Fixed(Color(0xC00000))) }),
+            change_bars: Some(BarSide::Right),
+            change_bar_color: Some(AutoOr::Auto),
+            merged_cells: Some(MarkColor::ByAuthor),
+            ..MarkupStyleChange::default()
+        }),
+        Command::SetTrackOptions(TrackOptions { moves: Some(false), formatting: None }),
         Command::AcceptRevision(RevisionId("r7".into())),
         Command::RejectRevision(RevisionId("r8".into())),
         Command::AcceptRevisionsInSelection,
         Command::RejectRevisionsInSelection,
-        Command::AcceptAllRevisions(AuthorFilter { author: Some("Ada Lovelace".into()) }),
-        Command::RejectAllRevisions(AuthorFilter { author: None }),
+        Command::AcceptAllRevisions(AuthorFilter { author: Some("Ada Lovelace".into()), shown: None }),
+        Command::RejectAllRevisions(AuthorFilter { author: None, shown: Some(true) }),
+        Command::AcceptAllAndStopTracking,
         Command::SelectRevision(Order::Next),
         Command::AddComment(Body::Text("Check this".into())),
         Command::ReplyToComment(CommentReply { to: CommentId("c4".into()), body: Body::Rich(rich()) }),
         Command::EditComment(CommentEdit { id: CommentId("c5".into()), body: Body::Text("Fixed".into()) }),
         Command::DeleteComment(CommentId("c5".into())),
+        Command::DeleteAllComments(CommentFilter { shown_only: Some(true) }),
         Command::ResolveComment(CommentResolve { id: CommentId("c4".into()), done: true }),
         Command::SetActiveComment(Some(CommentId("c4".into()))),
         Command::SelectComment(CommentId("c4".into())),
@@ -1201,8 +1717,19 @@ fn commands() -> Vec<Command> {
                 CursorOverride { on: CursorTarget::Action(PressAction::Toggle), cursor: Cursor::Pointer },
                 CursorOverride { on: CursorTarget::Kind(ElementKind::DropDown), cursor: Cursor::Default },
             ]),
+            tab_characters: Some(true),
+            spaces: Some(false),
+            paragraph_marks: Some(true),
+            hidden_text: Some(true),
+            optional_hyphens: Some(false),
+            object_anchors: Some(true),
+            click_and_type: Some(false),
+            text_drag_and_drop: Some(true),
+            hide_white_space: Some(true),
+            show_editable_regions: Some(false),
         }),
         Command::SetMode(Mode::Design),
+        Command::SetSelectObjects(true),
         Command::SetRulerTabType(TabSelector::Decimal),
         Command::ShowTabTypes,
         Command::ShowTabStop,
@@ -1219,7 +1746,7 @@ fn commands() -> Vec<Command> {
     ]
 }
 
-fn popovers() -> [Popover; 3] {
+fn popovers() -> [Popover; 5] {
     let anchor = ClientRect { left: 120.5, top: 10.0, width: 14.0, height: 14.0 };
     let choice = |value, name: &str, description: &str| TabTypeChoice { value, name: name.into(), description: description.into() };
     [
@@ -1233,6 +1760,13 @@ fn popovers() -> [Popover; 3] {
         },
         Popover::TabStop { anchor, position: Points(198.5), alignment: TabAlignment::Right, leader: TabLeader::Dots },
         Popover::AutoCorrect { anchor, from: "(c)".into(), to: "©".into() },
+        Popover::AutoFormat { anchor, change: crate::api::services::AutoFormatKind::Hyperlink, text: "www.example.com".into() },
+        Popover::PasteOptions {
+            anchor,
+            end: anchor,
+            choices: vec![PasteAs::KeepSource, PasteAs::Merge, PasteAs::TextOnly],
+            current: PasteAs::KeepSource,
+        },
     ]
 }
 
@@ -1240,6 +1774,7 @@ fn command_results() -> Vec<CommandResult> {
     vec![
         CommandResult::Element { id: id("field-1") },
         CommandResult::DataPart { item_id: "{6A9C}".into() },
+        CommandResult::Style { style_id: style("Callout") },
         CommandResult::Changed { changed: 4 },
         CommandResult::FontReplaced { changed: 12, skipped: 1 },
     ]
@@ -1272,16 +1807,38 @@ fn command_values() -> Vec<CommandValue> {
     ]
 }
 
+fn object_id() -> ObjectId {
+    ObjectId { float: FloatId("7".into()), path: Vec::new() }
+}
+
 fn table_position() -> TablePosition {
     TablePosition {
         horizontal: Some(HorizontalPosition { relative_to: HorizontalReference::Margin, align: None, offset: Some(Points(72.5)), percent: None }),
         vertical: Some(VerticalPosition { relative_to: VerticalReference::Paragraph, align: None, offset: Some(Points(36.5)), percent: None }),
         wrap_distance: Some(TextDistance { top: Points(0.0), bottom: Points(0.0), left: Points(9.0), right: Points(9.0) }),
+        allow_overlap: Some(false),
     }
+}
+
+fn text_point(paragraph: u64, offset: u32) -> TextPoint {
+    TextPoint { paragraph: ParagraphId(paragraph.to_string()), offset }
+}
+
+fn text_range() -> TextRange {
+    TextRange { start: text_point(17, 4), end: text_point(18, 2) }
+}
+
+fn cell_block() -> CellBlock {
+    CellBlock { start: text_point(31, 0), first_row: 1, first_column: 0, last_row: 2, last_column: 1 }
 }
 
 fn selection() -> SelectionSummary {
     SelectionSummary {
+        ranges: vec![text_range(), TextRange { start: text_point(20, 0), end: text_point(20, 5) }],
+        ranges_truncated: false,
+        cell_blocks: vec![cell_block()],
+        pending_move: Some(crate::api::state::PendingMove { copy: true, placed: false }),
+        list_numbers: Some(ListNumbers { list: 3, level: 1 }),
         kind: SelectionKind::Cells,
         story: Story::Header,
         page: 2,
@@ -1320,6 +1877,40 @@ fn selection() -> SelectionSummary {
             cell_spacing: Some(Points(1.5)),
             title: "Totals".into(),
             description: "Yearly totals by region".into(),
+            bands: TableBands { rows: 2, columns: 1, own_rows: Some(2), own_columns: None },
+            cell_borders: CellBorderLines {
+                top: Tri::Uniform(NoneOr::Value(table_border())),
+                left: Tri::Mixed,
+                bottom: Tri::Uniform(NoneOr::None),
+                inside_horizontal: Tri::Unavailable,
+                ..Default::default()
+            },
+            table_borders: TableBorderLines { top: Some(table_border()), inside_vertical: Some(table_border()), ..Default::default() },
+            cell_shading_value: Tri::Uniform(NoneOr::Value(Shading {
+                fill: NoneOr::Value(crate::api::drawing::ColourValue::rgb(Color(0xFFFF00))),
+                pattern: ShadingPattern::Pct10,
+                color: AutoOr::Auto,
+            })),
+            table_shading: None,
+            cell_margins: CellMarginsState {
+                top: Tri::Uniform(Points(0.0)),
+                left: Tri::Uniform(Points(5.4)),
+                bottom: Tri::Uniform(Points(0.0)),
+                right: Tri::Mixed,
+            },
+            default_cell_margins: TableCellMarginsState { top: Points(0.0), left: Points(5.4), bottom: Points(0.0), right: Points(5.4) },
+            hide_mark: Tri::Uniform(false),
+            row_exceptions: RowExceptionsState {
+                any: Tri::Uniform(true),
+                alignment: Tri::Uniform(NoneOr::Value(HorizontalAlignment::Center)),
+                indent: Tri::Uniform(NoneOr::None),
+                cell_spacing: Tri::Mixed,
+                shading: Tri::Uniform(NoneOr::None),
+                borders: Tri::Uniform(NoneOr::None),
+            },
+            fit: TableFit::Window,
+            column_span: 2,
+            row_span: 1,
         }),
         object: Some(ObjectSelection {
             kind: ObjectKind::TextBox,
@@ -1352,11 +1943,42 @@ fn selection() -> SelectionSummary {
             transparent_color: Some(Color(0xFFFFFF)),
             relative_width: Some(RelativeSize { percent: 50.0, relative_to: RelativeSizeReference::Page }),
             relative_height: None,
+            id: Some(ObjectId { float: FloatId("7".into()), path: vec![1] }),
+            name: "Text Box 3".into(),
+            title: "Note".into(),
+            hidden: false,
+            lock_aspect: true,
+            original_size: Some(Size { width: Points(320.0), height: Points(240.0) }),
+            stack_index: Some(0),
+            picture_adjust: Some(crate::api::drawing::PictureAdjustState {
+                brightness: 0.25,
+                contrast: -0.5,
+                transparency: 0.0,
+                recolor: crate::api::drawing::Recolor::BlackAndWhite { threshold: 0.5 },
+            }),
+            text_box_link: Some(TextBoxLinkState {
+                index: 0,
+                count: 2,
+                previous: None,
+                next: Some(ObjectId { float: FloatId("9".into()), path: Vec::new() }),
+            }),
+            wrap_polygon: Some(WrapPolygonState {
+                points: vec![
+                    crate::api::drawing::BoxPoint { x: 0.0, y: 0.0 },
+                    crate::api::drawing::BoxPoint { x: 1.0, y: 0.0 },
+                    crate::api::drawing::BoxPoint { x: 0.5, y: 1.0 },
+                ],
+                edited: true,
+            }),
+            frame: None,
         }),
         context: vec![ElementContext {
             id: id("field-1"),
             kind: ElementKind::Field,
             exact: true,
+            locked: false,
+            showing_code: true,
+            dirty: true,
             code: Some("MERGEFIELD Name".into()),
             tag: Some("name".into()),
             title: Some("Name".into()),
@@ -1368,12 +1990,20 @@ fn selection() -> SelectionSummary {
                 calculate_on_exit: false,
                 help_text: String::new(),
                 status_text: "Pick one".into(),
+                help_is_auto_text: false,
+                status_is_auto_text: true,
+                entry_macro: "Entered".into(),
+                exit_macro: String::new(),
                 input_type: None,
                 default_text: None,
                 max_length: None,
+                format: None,
                 checked: None,
+                size: None,
+                checked_by_default: None,
                 entries: vec!["Yes".into(), "No".into()],
                 entry: Some(1),
+                default_entry: Some(0),
             })),
             control: Some(Box::new(ControlInfo {
                 appearance: ControlAppearance::Tags,
@@ -1385,9 +2015,21 @@ fn selection() -> SelectionSummary {
                 section_title: None,
                 allow_insert_delete: None,
                 building_blocks: vec!["Signature".into()],
+                gallery: Some("Quick Parts".into()),
+                category: Some("General".into()),
+                date: Some("2027-02-03T00:00:00Z".into()),
+                calendar: Some(CalendarType::Gregorian),
+                store_as: Some(DateStorage::DateTime),
             })),
         }],
-        link: Some(LinkInfo { address: "https://example.com".into(), text: "Example".into() }),
+        link: Some(LinkInfo {
+            address: "https://example.com#Prices".into(),
+            text: "Example".into(),
+            target: "https://example.com".into(),
+            bookmark: Some("Prices".into()),
+            screen_tip: Some("Go".into()),
+            frame: Some("_blank".into()),
+        }),
         comment: Some(CommentId("c4".into())),
         revision: Some(RevisionId("r7".into())),
         header_footer: Some(HeaderFooterInfo {
@@ -1434,6 +2076,20 @@ fn character() -> CharacterFormatting {
         shadow: Tri::Uniform(false),
         underline_color: Tri::Uniform(AutoOr::Auto),
         text_effects: Tri::Uniform(Default::default()),
+        font_theme: Tri::Uniform(NoneOr::Value(ThemeFont::Body)),
+        color_value: Tri::Uniform(AutoOr::Value(theme_text())),
+        underline_color_value: Tri::Uniform(AutoOr::Auto),
+        text_border: Tri::Uniform(NoneOr::Value(Border {
+            style: BorderStyle::Single,
+            width: Points(0.5),
+            color: AutoOr::Auto,
+            space: Some(Points(1.0)),
+            shadow: Some(false),
+        })),
+        text_shading: Tri::Uniform(NoneOr::Value(Shading { fill: NoneOr::Value(theme_text()), pattern: ShadingPattern::Pct10, color: AutoOr::Auto })),
+        fit_text: Tri::Uniform(NoneOr::Value(Points(72.5))),
+        ligature_flags: Tri::Uniform(LigatureFlags { standard: true, ..Default::default() }),
+        stylistic_sets: Tri::Uniform(vec![1, 3]),
     }
 }
 
@@ -1474,6 +2130,23 @@ fn paragraph() -> ParagraphFormatting {
             lines: Some(3),
             distance: Some(Points(0.0)),
         }),
+        border_top: Tri::Uniform(NoneOr::Value(Border {
+            style: BorderStyle::Double,
+            width: Points(0.75),
+            color: AutoOr::Value(theme_text()),
+            space: Some(Points(1.0)),
+            shadow: Some(false),
+        })),
+        border_left: Tri::Uniform(NoneOr::None),
+        border_bottom: Tri::Mixed,
+        border_right: Tri::Uniform(NoneOr::None),
+        border_between: Tri::Unavailable,
+        shading_value: Tri::Uniform(NoneOr::Value(Shading {
+            fill: NoneOr::Value(dr::ColourValue::rgb(Color(0xD9E2F3))),
+            pattern: ShadingPattern::Clear,
+            color: AutoOr::Auto,
+        })),
+        tabs: Tri::Uniform(vec![tab_stop()]),
     }
 }
 
@@ -1482,7 +2155,7 @@ fn page() -> PageFormatting {
         size: PageSize { width: Points(612.5), height: Points(792.5) },
         orientation: Orientation::Portrait,
         margins: PageMargins { top: Points(72.5), bottom: Points(72.5), left: Points(72.5), right: Points(72.5), gutter: Points(0.5) },
-        columns: ColumnLayout { count: 1, spacing: Points(36.5), separator: false, widths: Vec::new() },
+        columns: ColumnLayout { count: 1, spacing: Points(36.5), separator: false, widths: Vec::new(), equal: true },
         header_distance: Points(36.5),
         footer_distance: Points(36.5),
         different_first_page: true,
@@ -1508,6 +2181,23 @@ fn page() -> PageFormatting {
         footnote_columns: 2,
         background: None,
         watermark: None,
+        page_borders: PageBorders {
+            top: Some(Border {
+                style: BorderStyle::Single,
+                width: Points(0.5),
+                color: AutoOr::Value(theme_text()),
+                space: Some(Points(24.0)),
+                shadow: Some(false),
+            }),
+            left: None,
+            bottom: None,
+            right: None,
+            offset_from: PageBorderOffset::Page,
+            display: PageBorderDisplay::AllPages,
+            surround_header: true,
+            surround_footer: true,
+            behind_text: false,
+        },
     }
 }
 
@@ -1545,11 +2235,27 @@ fn review_state() -> ReviewState {
             password: true,
             in_editable_range: true,
             unprotected_sections: vec![1],
+            exceptions_allowed: true,
+            sections_allowed: false,
+            auto_format_override: false,
+            block_theme_switching: true,
+            block_style_set_switching: false,
+            editors_here: vec![RangeEditorRef::Group("everyone".into()), RangeEditorRef::User("ada@example.com".into())],
+            range_count: 2,
         }),
         markup_view: MarkupView::All,
         revisions: 3,
         comments: 2,
         active_comment: Some(CommentId("c4".into())),
+        show_markup: ShowMarkup { insertions_deletions: true, formatting: false, comments: true, hidden_reviewers: vec!["Grace Hopper".into()] },
+        balloon_mode: BalloonMode::CommentsAndFormatting,
+        markup_style: MarkupStyle::default(),
+        track_moves: true,
+        track_formatting: false,
+        counts: ReviewCounts {
+            all: MarkupCounts { insertions: 2, deletions: 1, moves: 0, formatting: 0, comments: 2 },
+            shown: MarkupCounts { insertions: 2, deletions: 1, moves: 0, formatting: 0, comments: 1 },
+        },
     }
 }
 
@@ -1581,6 +2287,15 @@ fn state() -> State {
         format_painter: false,
         theme_colours: vec![Color(0x000000), Color(0xFFFFFF)],
         auto_correct: AutoCorrectOptions { never: vec!["teh".into()], ..AutoCorrectOptions::default() },
+        paste_options: PasteSettings { other: PasteAs::TextOnly, ..PasteSettings::default() },
+        auto_caption: Some(AutoCaption {
+            label: "Table".into(),
+            position: Some(CaptionPosition::Above),
+            exclude_label: None,
+            format: None,
+            chapter: None,
+        }),
+        theme_fonts: ThemeFonts { heading: "Calibri Light".into(), body: "Calibri".into() },
     }
 }
 
@@ -1593,7 +2308,7 @@ fn rect() -> ClientRect {
 }
 
 fn person() -> Person {
-    Person { name: "Ada Lovelace".into(), initials: Some("AL".into()), identity: Some(identity()), color: Color(0x7030A0) }
+    Person { name: "Ada Lovelace".into(), initials: Some("AL".into()), identity: Some(identity()), color: Color(0x7030A0), visible: true }
 }
 
 fn revision() -> RevisionInfo {
@@ -1607,6 +2322,7 @@ fn revision() -> RevisionInfo {
         page: 2,
         story: Story::Body,
         pair: Some(RevisionId("r8".into())),
+        shown: true,
     }
 }
 
@@ -1616,7 +2332,15 @@ fn thread() -> CommentThread {
         done: false,
         anchor_text: "clause 4".into(),
         page: 3,
-        comments: vec![Comment { id: CommentId("c4".into()), author: person(), time: None, body: rich(), plain_text: "See clause 4".into() }],
+        comments: vec![Comment {
+            id: CommentId("c4".into()),
+            author: person(),
+            time: None,
+            body: rich(),
+            plain_text: "See clause 4".into(),
+            shown: false,
+        }],
+        shown: false,
     }
 }
 
@@ -1631,6 +2355,46 @@ fn anchor() -> CommentAnchor {
         line_top: 288.5,
         line_bottom: 304.5,
         page_edge: 856.5,
+        page_left: 40.5,
+    }
+}
+
+fn revision_anchor() -> RevisionAnchor {
+    RevisionAnchor {
+        revision: RevisionId("r7".into()),
+        kind: RevisionKind::Deletion,
+        author: "Ada Lovelace".into(),
+        page: 2,
+        start: ContentPoint { x: 120.5, y: 300.5 },
+        line_top: 288.5,
+        line_bottom: 304.5,
+        page_edge: 856.5,
+        page_left: 40.5,
+    }
+}
+
+fn field_choice() -> FieldChoice {
+    FieldChoice {
+        name: "REF".into(),
+        args: vec!["Intro".into()],
+        switches: vec![FieldSwitchChoice { flag: "h".into(), value: None }, FieldSwitchChoice { flag: "d".into(), value: Some("-".into()) }],
+        formats: vec!["Upper".into()],
+        numeric_picture: Some("0.00".into()),
+        date_picture: Some("d MMMM yyyy".into()),
+        preserve_formatting: true,
+    }
+}
+
+fn field_description() -> FieldDescription {
+    FieldDescription {
+        name: "REF".into(),
+        categories: vec![FieldCategory::LinksAndReferences],
+        description: "Insert the text marked by a bookmark".into(),
+        syntax: "REF Bookmark [Switches]".into(),
+        args: vec![FieldArgInfo { name: "Bookmark".into(), kind: FieldArgKind::Bookmark, required: true }],
+        switches: vec![FieldSwitchInfo { flag: "h".into(), arg: SwitchArgKind::None, description: "Link to the bookmark".into() }],
+        formats: FieldGeneralSwitches { text: true, numeric: false, date: false },
+        evaluated: true,
     }
 }
 
@@ -1655,6 +2419,7 @@ fn menu_targets() -> Vec<MenuTarget> {
         MenuTarget::Revision { id: RevisionId("r7".into()) },
         MenuTarget::Comment { id: CommentId("c4".into()) },
         MenuTarget::HeaderFooter,
+        MenuTarget::Drop,
     ]
 }
 
@@ -1664,6 +2429,14 @@ fn menu_actions() -> Vec<MenuAction> {
         MenuAction::ReplaceWord { with: "the".into() },
         MenuAction::IgnoreWord { word: "teh".into() },
         MenuAction::AddWord { word: "Twip".into(), language: "en-US".into() },
+        MenuAction::OpenLink { address: "https://example.com".into() },
+        MenuAction::CopyLink { address: "#Intro".into() },
+        MenuAction::Commands {
+            commands: vec![Command::SetAlignment(Alignment::Center), Command::SetCellAlignment(CellAlignment::Center)],
+            label: "Cell Alignment".into(),
+        },
+        MenuAction::SetDefaultPictureWrap { wrap: ObjectWrap::Square },
+        MenuAction::Drop { what: crate::api::services::DropChoice::Copy },
     ]
 }
 
@@ -1681,6 +2454,13 @@ fn menu_items() -> Vec<MenuItem> {
         MenuItem::Submenu {
             label: "Paste Options".into(),
             items: vec![MenuItem::Suggestion { label: "Ignore".into(), action: MenuAction::IgnoreWord { word: "teh".into() } }],
+            inline: true,
+        },
+        MenuItem::Action {
+            label: "Open Hyperlink".into(),
+            enabled: true,
+            checked: None,
+            action: MenuAction::OpenLink { address: "https://example.com".into() },
         },
         MenuItem::Separator,
     ]
@@ -1731,7 +2511,7 @@ fn dialog_values() -> Vec<DialogValues> {
             table_part: TableStylePart::HeaderRow,
             fill: Some(Color(0xD9E2F3)),
             cell_alignment: CellAlignment::Center,
-            border: Some(Border { style: BorderStyle::Single, width: Points(0.5), color: AutoOr::Auto }),
+            border: Some(Border { style: BorderStyle::Single, width: Points(0.5), color: AutoOr::Auto, space: None, shadow: None }),
             row_band: 1,
             column_band: 2,
             list_levels: Vec::new(),
@@ -1740,13 +2520,19 @@ fn dialog_values() -> Vec<DialogValues> {
             pending: "<w:style w:type=\"paragraph\" w:styleId=\"Heading1\"><w:name w:val=\"heading 1\"/></w:style>".into(),
         }),
         DialogValues::Style(StyleDialog { open: StyleOpen::Create, short_form: true, name: "Style1".into(), ..StyleDialog::default() }),
-        DialogValues::BordersShading(BordersShadingDialog {
+        DialogValues::BordersShading(Box::new(BordersShadingDialog {
             tab: BordersTab::Shading,
             setting: BorderSetting::Shadow,
             style: BorderStyle::Double,
             color: AutoOr::Value(Color(0x2F5496)),
             width: Points(0.75),
-            top: Some(Border { style: BorderStyle::Double, width: Points(0.75), color: AutoOr::Value(Color(0x2F5496)) }),
+            top: Some(Border {
+                style: BorderStyle::Double,
+                width: Points(0.75),
+                color: AutoOr::Value(dr::ColourValue::rgb(Color(0x2F5496))),
+                space: None,
+                shadow: None,
+            }),
             bottom: None,
             left: None,
             right: None,
@@ -1759,21 +2545,27 @@ fn dialog_values() -> Vec<DialogValues> {
             pattern: ShadingPattern::DiagStripe,
             pattern_color: AutoOr::Auto,
             page_setting: BorderSetting::Box,
-            page_top: Some(Border { style: BorderStyle::DashDotStroked, width: Points(0.5), color: AutoOr::Auto }),
+            page_top: Some(Border { style: BorderStyle::DashDotStroked, width: Points(0.5), color: AutoOr::Auto, space: None, shadow: None }),
             page_bottom: None,
             page_left: None,
             page_right: None,
             page_offset_from: PageBorderOffset::Text,
             page_display: PageBorderDisplay::FirstPage,
             page_apply_to: PageBorderScope::ThisSection,
-        }),
-        DialogValues::BordersShading(BordersShadingDialog {
+        })),
+        DialogValues::BordersShading(Box::new(BordersShadingDialog {
             tab: BordersTab::Shading,
             setting: BorderSetting::Shadow,
             style: BorderStyle::Double,
             color: AutoOr::Value(Color(0x2F5496)),
             width: Points(0.75),
-            top: Some(Border { style: BorderStyle::Double, width: Points(0.75), color: AutoOr::Value(Color(0x2F5496)) }),
+            top: Some(Border {
+                style: BorderStyle::Double,
+                width: Points(0.75),
+                color: AutoOr::Value(dr::ColourValue::rgb(Color(0x2F5496))),
+                space: None,
+                shadow: None,
+            }),
             bottom: None,
             left: None,
             right: None,
@@ -1786,14 +2578,14 @@ fn dialog_values() -> Vec<DialogValues> {
             pattern: ShadingPattern::Solid,
             pattern_color: AutoOr::Auto,
             page_setting: BorderSetting::Box,
-            page_top: Some(Border { style: BorderStyle::Triple, width: Points(0.5), color: AutoOr::Auto }),
+            page_top: Some(Border { style: BorderStyle::Triple, width: Points(0.5), color: AutoOr::Auto, space: None, shadow: None }),
             page_bottom: None,
             page_left: None,
             page_right: None,
             page_offset_from: PageBorderOffset::Text,
             page_display: PageBorderDisplay::FirstPage,
             page_apply_to: PageBorderScope::ThisSection,
-        }),
+        })),
         DialogValues::DefineBullet(DefineBulletDialog {
             text: "\u{F0B7}".into(),
             font: Some("Symbol".into()),
@@ -1821,6 +2613,7 @@ fn dialog_values() -> Vec<DialogValues> {
                 linked_style: Some(style("Heading1")),
                 font: Some("Wingdings".into()),
                 picture: Some(Bytes(vec![0x89, 0x50, 0x4E, 0x47])),
+                ..list_level()
             }],
             level: 0,
             apply_to: ListApplyTo::CurrentParagraph,
@@ -2029,8 +2822,66 @@ fn dialog_model() -> DialogModel {
     }
 }
 
+fn toc_options() -> TableOfContentsOptions {
+    TableOfContentsOptions {
+        heading_levels: Some(TocLevels { from: 1, to: 3 }),
+        outline_levels: Some(true),
+        style_levels: vec![TocStyleLevel { style: style("Title"), level: 1 }],
+        entry_fields: Some(TocEntryFields { identifier: Some("F".into()), levels: Some(TocLevels { from: 1, to: 2 }) }),
+        captions: None,
+        bookmark: Some("Part1".into()),
+        hyperlinks: Some(true),
+        page_numbers: Some(TocPageNumbers::OmitLevels(TocLevels { from: 3, to: 3 })),
+        separator: Some(" ".into()),
+        chapter_numbers: Some(TocChapterNumbers { sequence: "Chapter".into(), separator: Some("-".into()) }),
+        hide_in_web_view: Some(true),
+        keep_tabs: None,
+        keep_line_breaks: None,
+    }
+}
+
+fn find_queries() -> Vec<FindQuery> {
+    vec![
+        FindQuery { text: "total".into(), match_case: Some(true), whole_words: Some(false), ..FindQuery::default() },
+        FindQuery {
+            text: "(\\d+) days".into(),
+            match_case: Some(false),
+            whole_words: Some(false),
+            regex: Some(true),
+            match_prefix: Some(true),
+            match_suffix: Some(false),
+            ignore_punctuation: Some(true),
+            ignore_white_space: Some(true),
+            wrap: Some(false),
+            in_selection: Some(true),
+            format: Some(find_format()),
+        },
+    ]
+}
+
+fn find_format() -> FindFormat {
+    FindFormat {
+        font: Some(FindFont { font: Some("Calibri".into()), style: Some(FontStyle::Bold), size: Some(Points(11.0)), ..FindFont::default() }),
+        paragraph: Some(FindParagraph { alignment: Some(Alignment::Center), keep_with_next: Some(true), ..FindParagraph::default() }),
+        style: Some(style("Heading1")),
+        highlight: Some(true),
+        highlight_color: Some(HighlightColor::Yellow),
+        language: Some("en-US".into()),
+        no_proof: Some(false),
+        tabs: Vec::new(),
+        frame: None,
+    }
+}
+
 fn find_match() -> FindMatch {
-    FindMatch { id: MatchId("m1".into()), before: "the ".into(), text: "total".into(), after: " due".into(), page: 2 }
+    FindMatch {
+        id: MatchId("m1".into()),
+        before: "the ".into(),
+        text: "total".into(),
+        after: " due".into(),
+        page: 2,
+        heading: Some(HeadingId("7".into())),
+    }
 }
 
 fn style_info() -> StyleInfo {
@@ -2048,6 +2899,7 @@ fn style_info() -> StyleInfo {
         link: Some(style("Heading1Char")),
         visibility: StyleVisibility::HideUntilUsed,
         locked: false,
+        uses: 3,
     }
 }
 
@@ -2089,6 +2941,9 @@ fn element_info() -> ElementInfo {
         sub_template: None,
         parent: Some(id("control-1")),
         locked: false,
+        showing_code: false,
+        dirty: false,
+        date: None,
         showing_placeholder: Some(true),
         reference: None,
         size: Some(Size { width: Points(216.0), height: Points(54.0) }),
@@ -2107,24 +2962,36 @@ fn element_detail() -> ElementDetail {
         sub_template: None,
         parent: None,
         locked: true,
+        showing_code: false,
+        dirty: false,
+        date: Some("2026-10-27T00:00:00Z".into()),
         lock: ControlLock::Both,
         placeholder: Some("Pick a date".into()),
         binding: Some(binding()),
-        options: Some(ControlOptions::Date(DateOptions { format: Some("yyyy-MM-dd".into()), locale: None })),
+        options: Some(ControlOptions::Date(DateOptions {
+            format: Some("yyyy-MM-dd".into()),
+            locale: None,
+            calendar: Some(CalendarType::Gregorian),
+            store_as: Some(DateStorage::DateTime),
+        })),
         children: vec![id("field-9")],
     }
 }
 
 fn blocks() -> Vec<Block> {
     vec![
-        Block::Paragraph { text_length: 42, elements: vec![id("field-1")] },
+        Block::Paragraph {
+            text_length: 42,
+            elements: vec![id("field-1")],
+            hidden_marks: vec![crate::api::services::HiddenMark { at: 12, style_separator: true }],
+        },
         Block::Table {
             rows: vec![BlockRow {
                 cells: vec![BlockCell {
                     span: 2,
                     vertical_merge: VerticalMerge::Start,
                     empty: false,
-                    blocks: vec![Block::Paragraph { text_length: 5, elements: Vec::new() }],
+                    blocks: vec![Block::Paragraph { text_length: 5, elements: Vec::new(), hidden_marks: Vec::new() }],
                 }],
             }],
         },
@@ -2266,13 +3133,29 @@ fn ruler() -> RulerModel {
             default_tab_stop: Points(36.5),
             columns: vec![Span { start: Points(72.5), end: Points(288.5) }, Span { start: Points(324.5), end: Points(540.5) }],
             table_columns: vec![Points(72.5), Points(200.5)],
+            gutter: Some(Span { start: Points(54.5), end: Points(72.5) }),
+            start_margin: MarginSide::Inside,
+            end_margin: MarginSide::Outside,
         },
         vertical: VerticalRuler {
             page_height: Points(792.5),
             text: Span { start: Points(72.5), end: Points(720.5) },
             table_rows: vec![Points(100.5)],
+            gutter: None,
+            ..VerticalRuler::default()
         },
+        lines: LineDirection::Horizontal,
     }
+}
+
+fn vertical_ruler() -> RulerModel {
+    let mut m = ruler();
+    m.lines = LineDirection::Down;
+    m.vertical.indents = std::mem::take(&mut m.horizontal.indents);
+    m.vertical.tabs = std::mem::take(&mut m.horizontal.tabs);
+    m.vertical.default_tab_stop = Points(36.5);
+    m.horizontal.columns.reverse();
+    m
 }
 
 fn ruler_view() -> RulerView {
@@ -2286,7 +3169,16 @@ fn ruler_view() -> RulerView {
 }
 
 fn tooltip() -> Tooltip {
-    Tooltip { kind: TooltipKind::Revision, text: "Ada Lovelace inserted".into(), at: at(), rect: rect() }
+    Tooltip {
+        kind: TooltipKind::Revision,
+        text: "Ada Lovelace, 3/14/2026 9:26:53 AM\nInserted".into(),
+        at: at(),
+        rect: rect(),
+        author: Some(person()),
+        time: Some(Timestamp(1_773_480_413)),
+        change: Some(RevisionKind::Insertion),
+        body: Some("Inserted".into()),
+    }
 }
 
 fn hovered() -> ElementContext {
@@ -2294,6 +3186,9 @@ fn hovered() -> ElementContext {
         id: id("control-3"),
         kind: ElementKind::Checkbox,
         exact: false,
+        locked: true,
+        showing_code: false,
+        dirty: false,
         code: None,
         tag: Some("agree".into()),
         title: Some("Agree".into()),
@@ -2377,15 +3272,38 @@ fn session_options() -> SessionOptions {
 }
 
 fn clipboard() -> ClipboardData {
-    ClipboardData { text: "copied".into(), html: Some("<b>copied</b>".into()), internal: Some("3.17".into()) }
+    ClipboardData { text: "copied".into(), html: Some("<b>copied</b>".into()), internal: Some("3.17".into()), image: None }
 }
 
 fn frame_stats() -> FrameStats {
     FrameStats { frames: 120, pages_recorded: 4, pages_reused: 1062, recording_bytes: 524_288, last_frame_ms: 1.5, p95_frame_ms: 2.5 }
 }
 
+fn vertical_frame_info() -> FrameInfo {
+    FrameInfo {
+        caret_x: 520.5,
+        caret_y: 96.0,
+        caret_width: 18.5,
+        caret_height: 0.0,
+        caret_line: LineDirection::Down,
+        caret_ends: Some([[539.0, 96.0], [520.5, 96.5]]),
+        ..frame_info()
+    }
+}
+
 fn frame_info() -> FrameInfo {
-    FrameInfo { content_width: 816.5, content_height: 2112.5, caret_x: 96.5, caret_y: 120.5, caret_height: 14.5, caret_visible: true, pages: 2 }
+    FrameInfo {
+        content_width: 816.5,
+        content_height: 2112.5,
+        caret_x: 96.5,
+        caret_y: 120.5,
+        caret_height: 14.5,
+        caret_width: 0.0,
+        caret_line: LineDirection::Horizontal,
+        caret_ends: None,
+        caret_visible: true,
+        pages: 2,
+    }
 }
 
 /// Every event.
@@ -2408,9 +3326,11 @@ fn events() -> Vec<Event> {
         Event::ElementActivated { id: id("field-1") },
         Event::ElementsChanged { added: vec![element_info()], removed: vec![id("field-2")], changed: Vec::new() },
         Event::FieldsUpdateRequested { token: 4, fields: vec![FieldRequest { id: id("field-1"), code: "DOCPROPERTY Client".into() }] },
+        Event::TableOfContentsUpdateRequested { index: 0 },
         Event::RevisionsChanged {},
         Event::CommentsChanged {},
         Event::CommentAnchors(vec![anchor()]),
+        Event::RevisionBalloons(vec![revision_anchor()]),
         Event::BalloonsLaidOut(vec![balloon()]),
         Event::RulerChanged(ruler_view()),
         Event::EditingTargetChanged(crate::api::state::EditingTarget::SubTemplate { name: "Violation".into(), category: "Sub-templates".into() }),
@@ -2437,6 +3357,98 @@ fn events() -> Vec<Event> {
 
 fn preset(name: &str) -> dr::ShapePreset {
     dr::ShapePreset::from_name(name).expect("a preset")
+}
+
+/// A theme colour as text and table colours take it: one tint or shade.
+fn theme_text() -> dr::ColourValue {
+    dr::ColourValue {
+        transforms: vec![dr::ColourTransform { kind: dr::TransformKind::Shade, value: 0.75 }],
+        ..dr::ColourValue::theme(dr::ThemeColour::Text2)
+    }
+}
+
+fn list_level() -> ListLevel {
+    ListLevel {
+        format: NumberFormat::Chicago,
+        text: "%1".into(),
+        start: 1,
+        bold: Some(true),
+        italic: Some(false),
+        underline: Some(UnderlineStyle::Single),
+        size: Some(Points(10.5)),
+        color: Some(AutoOr::Value(Color(0xC00000))),
+        highlight: Some(NoneOr::None),
+        ..ListLevel::default()
+    }
+}
+
+fn style_definition() -> StyleDefinition {
+    let border = Border { style: BorderStyle::Single, width: Points(0.5), color: AutoOr::Auto, space: Some(Points(0.0)), shadow: Some(false) };
+    StyleDefinition {
+        id: style("Ledger"),
+        name: "Ledger".into(),
+        aliases: vec!["Accounts".into()],
+        category: StyleCategory::Table,
+        built_in: false,
+        defined: true,
+        based_on: Some(style("TableGrid")),
+        next: None,
+        link: None,
+        auto_update: false,
+        quick: true,
+        visibility: StyleVisibility::Show,
+        priority: 99,
+        locked: false,
+        list: Some(StyleList { list: 3, level: 0 }),
+        character: character(),
+        paragraph: paragraph(),
+        tabs: vec![tab_stop()],
+        own_character: CharacterFormatting { bold: Tri::Uniform(true), ..Default::default() },
+        own_paragraph: ParagraphFormatting::default(),
+        description: "Font: Bold, Based on: Table Grid".into(),
+        table: Some(TableStyleDefinition {
+            alignment: HorizontalAlignment::Center,
+            indent: Points(5.5),
+            fill: Some(Color(0xF2F2F2)),
+            row_band: 2,
+            column_band: 1,
+            parts: vec![TablePartDefinition {
+                part: TableStylePart::HeaderRow,
+                defined: true,
+                character: CharacterFormatting { italic: Tri::Uniform(true), ..Default::default() },
+                paragraph: ParagraphFormatting::default(),
+                fill: Some(Color(0xD9E2F3)),
+                cell_alignment: CellAlignment::Bottom,
+                borders: TableBorders { top: Some(border.clone()), inside_vertical: Some(border), ..Default::default() },
+                cell_margins: CellMargins { top: Some(Points(1.5)), ..Default::default() },
+                row_can_break: false,
+            }],
+        }),
+        list_levels: vec![list_level()],
+    }
+}
+
+fn new_style() -> NewStyle {
+    NewStyle {
+        category: StyleCategory::Table,
+        from_selection: false,
+        apply: true,
+        change: StyleChange {
+            name: Some("Ledger".into()),
+            based_on: Some(Some(style("TableGrid"))),
+            next: None,
+            link: None,
+            auto_update: Some(false),
+            quick: Some(true),
+            list: Some(Some(StyleList { list: 3, level: 1 })),
+            list_levels: Some(vec![list_level()]),
+            clear: true,
+            formatting: vec![Command::SetBold(true), Command::SetCellShading(Some(theme_text()))],
+            parts: vec![TablePartFormatting { part: TableStylePart::HeaderRow, clear: false, formatting: vec![Command::SetItalic(true)] }],
+            row_band: Some(2),
+            column_band: Some(1),
+        },
+    }
 }
 
 fn theme_colour() -> dr::ColourValue {
@@ -2469,7 +3481,18 @@ fn fills() -> Vec<dr::FillValue> {
             focus: Some([1.0, 0.0, 0.0, 1.0]),
         },
         dr::FillValue::Pattern { preset: "dkDnDiag".into(), foreground: theme_colour(), background: dr::ColourValue::rgb(Color(0xFFFFFF)) },
-        dr::FillValue::Picture { image: picture_bytes(), tile: Some(true) },
+        dr::FillValue::Picture {
+            image: picture_bytes(),
+            stretch: None,
+            tile: Some(dr::Tile { scale_x: 0.5, mirror: dr::TileMirror::Both, ..Default::default() }),
+            rotate_with_shape: Some(true),
+        },
+        dr::FillValue::Picture {
+            image: picture_bytes(),
+            stretch: Some(dr::Insets { left: 0.1, top: 0.0, right: 0.1, bottom: -0.25 }),
+            tile: None,
+            rotate_with_shape: Some(false),
+        },
         dr::FillValue::FromStyle,
     ]
 }
@@ -2499,7 +3522,39 @@ fn line_change() -> dr::LineChange {
 }
 
 fn shadow() -> dr::Shadow {
-    dr::Shadow { colour: dr::ColourValue::rgb(Color(0x000000)), blur: Points(4.5), distance: Points(3.5), direction: 45.5 }
+    dr::Shadow {
+        colour: dr::ColourValue::rgb(Color(0x000000)),
+        blur: Points(4.5),
+        distance: Points(3.5),
+        direction: 45.5,
+        scale_x: 1.0,
+        scale_y: 0.5,
+        skew_x: -20.5,
+        skew_y: 0.0,
+        align: dr::RectAlign::BottomLeft,
+        rotate_with_shape: false,
+    }
+}
+
+fn table_border() -> crate::api::command::Border {
+    crate::api::command::Border { style: BorderStyle::Single, width: Points(0.5), color: AutoOr::Auto, space: Some(Points(0.0)), shadow: Some(false) }
+}
+
+fn reflection() -> dr::Reflection {
+    dr::Reflection {
+        size: 0.5,
+        transparency: 0.5,
+        blur: Points(0.5),
+        distance: Points(2.5),
+        direction: 90.0,
+        fade_direction: 90.0,
+        scale_x: 1.0,
+        scale_y: -1.0,
+        skew_x: 0.0,
+        skew_y: 0.0,
+        align: dr::RectAlign::BottomLeft,
+        rotate_with_shape: false,
+    }
 }
 
 fn glow() -> dr::Glow {
@@ -2507,7 +3562,13 @@ fn glow() -> dr::Glow {
 }
 
 fn effects() -> dr::EffectsValue {
-    dr::EffectsValue { outer_shadow: Some(shadow()), glow: Some(glow()), soft_edge: Some(Points(2.5)), ..Default::default() }
+    dr::EffectsValue {
+        outer_shadow: Some(shadow()),
+        glow: Some(glow()),
+        soft_edge: Some(Points(2.5)),
+        reflection: Some(reflection()),
+        ..Default::default()
+    }
 }
 
 fn text_effects_change() -> dr::TextEffectsChange {
@@ -2534,7 +3595,7 @@ fn text_effects_change() -> dr::TextEffectsChange {
 }
 
 fn effects_change() -> dr::EffectsChange {
-    dr::EffectsChange { outer_shadow: Some(Some(shadow())), glow: Some(None), ..Default::default() }
+    dr::EffectsChange { outer_shadow: Some(Some(shadow())), glow: Some(None), reflection: Some(Some(reflection())), ..Default::default() }
 }
 
 fn text_state() -> dr::ShapeTextState {
@@ -2545,6 +3606,7 @@ fn text_state() -> dr::ShapeTextState {
         wrap_text: true,
         direction: dr::TextDirection::Vertical270,
         columns: dr::TextColumns { count: 2, spacing: Points(18.5) },
+        upright: true,
     }
 }
 
@@ -2554,6 +3616,7 @@ fn text_change() -> dr::ShapeTextChange {
         wrap_text: Some(false),
         autofit: Some(dr::TextAutofit::ShrinkText),
         columns: Some(dr::TextColumns { count: 2, spacing: Points(18.5) }),
+        upright: Some(true),
         ..Default::default()
     }
 }

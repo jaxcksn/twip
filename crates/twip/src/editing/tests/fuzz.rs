@@ -441,7 +441,7 @@ fn fuzz_editing_long_tables() {
                 cmds.push(Command::InsertParagraph);
             }
             if k % 5 == 0 {
-                cmds.push(Command::Undo);
+                cmds.push(Command::Undo(Default::default()));
             }
             for (j, c) in cmds.into_iter().enumerate() {
                 let name = format!("{c:?}");

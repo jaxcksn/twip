@@ -1,0 +1,89 @@
+{
+  "name": "objects",
+  "steps": [
+    { "op": "command", "command": { "type": "insertText", "value": "Objects" } },
+    { "op": "command", "command": { "type": "insertShape", "preset": "star5" } },
+    { "op": "command", "command": { "type": "setObjectName", "value": "Star" } },
+    { "op": "expectState", "match": { "history": { "undoLabel": "Rename" }, "selection": { "object": { "name": "Star", "stackIndex": 0, "id": { "float": { "$type": "string" } } } } } },
+    { "op": "command", "command": { "type": "insertShape", "preset": "rect" } },
+    { "op": "command", "command": { "type": "setObjectName", "value": "Box" } },
+    { "op": "call", "method": "objectList", "args": [0], "result": [
+      { "object": { "float": { "$type": "string" } }, "name": "Box", "kind": "shape", "hidden": false },
+      { "object": { "float": { "$type": "string" } }, "name": "Star", "kind": "shape", "hidden": false }
+    ], "save": "list" },
+    { "op": "call", "method": "objectList", "args": [9], "result": { "$exact": [] } },
+
+    { "op": "command", "command": { "type": "setObjectHidden", "object": { "$saved": "list", "path": [1, "object"] }, "hidden": true } },
+    { "op": "expectState", "match": { "history": { "undoLabel": "Hide" } } },
+    { "op": "call", "method": "objectList", "args": [0], "result": [{ "name": "Box", "hidden": false }, { "name": "Star", "hidden": true }] },
+    { "op": "command", "command": { "type": "undo" } },
+    { "op": "call", "method": "objectList", "args": [0], "result": [{ "name": "Box", "hidden": false }, { "name": "Star", "hidden": false }] },
+    { "op": "command", "command": { "type": "setObjectHidden", "object": { "float": "999999" }, "hidden": true } },
+    { "op": "expectError", "code": "unavailable" },
+
+    { "op": "command", "command": { "type": "restackObject", "object": { "$saved": "list", "path": [1, "object"] }, "inFrontOf": { "$saved": "list", "path": [0, "object"] } } },
+    { "op": "expectState", "match": { "history": { "undoLabel": "Reorder" } } },
+    { "op": "call", "method": "objectList", "args": [0], "result": [{ "name": "Star" }, { "name": "Box" }] },
+    { "op": "command", "command": { "type": "restackObject", "object": { "$saved": "list", "path": [1, "object"] } } },
+    { "op": "call", "method": "objectList", "args": [0], "result": [{ "name": "Box" }, { "name": "Star" }] },
+
+    { "op": "command", "command": { "type": "selectObject", "object": { "$saved": "list", "path": [1, "object"] }, "extend": false } },
+    { "op": "expectState", "match": { "selection": { "object": { "name": "Star", "count": 1, "stackIndex": 1 } } } },
+    { "op": "command", "command": { "type": "selectObject", "object": { "$saved": "list", "path": [0, "object"] }, "extend": true } },
+    { "op": "expectState", "match": { "selection": { "object": { "count": 2 } } } },
+    { "op": "command", "command": { "type": "selectObject", "object": { "float": "999999" }, "extend": false } },
+    { "op": "expectError", "code": "unavailable" },
+
+    { "op": "command", "command": { "type": "selectObject", "object": { "$saved": "list", "path": [1, "object"] }, "extend": false } },
+    { "op": "command", "command": { "type": "setObjectWrap", "value": "tight" } },
+    { "op": "expectState", "match": { "selection": { "object": { "wrapPolygon": { "edited": false, "points": { "$type": "array" } } } } } },
+    { "op": "command", "command": { "type": "setWrapPoints", "value": [{ "x": 0, "y": 0 }, { "x": 1, "y": 0 }, { "x": 1, "y": 1 }, { "x": 0, "y": 1 }] } },
+    { "op": "expectState", "match": {
+      "history": { "undoLabel": "Edit Wrap Points" },
+      "selection": { "object": { "wrapPolygon": { "edited": true, "points": { "$exact": [{ "x": 0, "y": 0 }, { "x": 1, "y": 0 }, { "x": 1, "y": 1 }, { "x": 0, "y": 1 }] } } } }
+    } },
+    { "op": "command", "command": { "type": "setWrapPoints", "value": [{ "x": 0, "y": 0 }, { "x": 1, "y": 0 }] } },
+    { "op": "expectError", "code": "invalid-argument" },
+    { "op": "command", "command": { "type": "resetWrapPoints" } },
+    { "op": "expectState", "match": { "history": { "undoLabel": "Reset Wrap Points" }, "selection": { "object": { "wrapPolygon": { "edited": false } } } } },
+
+    { "op": "command", "command": { "type": "setShapeEffects", "reflection": { "size": 0.5, "transparency": 0.5, "blur": 0.5, "distance": 0, "direction": 90, "fadeDirection": 90, "scaleX": 1, "scaleY": -1, "skewX": 0, "skewY": 0, "align": "bottomLeft", "rotateWithShape": false } } },
+    { "op": "expectState", "match": { "selection": { "object": { "shape": { "effects": { "reflection": { "size": 0.5, "transparency": 0.5, "scaleY": -1, "align": "bottomLeft" } } } } } } },
+    { "op": "command", "command": { "type": "setShapeText", "upright": true } },
+    { "op": "expectState", "match": { "selection": { "object": { "shape": { "text": { "upright": true } } } } } },
+    { "op": "command", "command": { "type": "setShapeFill", "value": { "type": "picture", "image": { "$file": "images/pixel.png" }, "tile": { "offsetX": 0, "offsetY": 0, "scaleX": 0.5, "scaleY": 0.5, "align": "topLeft", "mirror": "horizontal" }, "rotateWithShape": true } } },
+    { "op": "expectState", "match": { "selection": { "object": { "shape": { "fill": { "explicit": { "type": "picture", "tile": { "scaleX": 0.5, "mirror": "horizontal" }, "rotateWithShape": true } } } } } } },
+    { "op": "call", "method": "shapeFillImage", "result": { "$file": "images/pixel.png" } },
+    { "op": "call", "method": "objectImage", "result": { "$exact": null } },
+
+    { "op": "export", "format": "docx" },
+    { "op": "reopen" },
+    { "op": "call", "method": "objectList", "args": [0], "result": [{ "name": "Box" }, { "name": "Star" }], "save": "list" },
+    { "op": "command", "command": { "type": "selectObject", "object": { "$saved": "list", "path": [1, "object"] }, "extend": false } },
+    { "op": "expectState", "match": { "selection": { "object": {
+      "name": "Star",
+      "wrap": "tight",
+      "shape": { "effects": { "reflection": { "size": 0.5 } }, "text": { "upright": true }, "fill": { "explicit": { "type": "picture", "tile": { "mirror": "horizontal" } } } }
+    } } } },
+    { "op": "call", "method": "shapeFillImage", "result": { "$file": "images/pixel.png" } },
+
+    { "op": "command", "command": { "type": "escape" } },
+    { "op": "command", "command": { "type": "insertPicture", "data": { "$file": "images/pixel.png" } } },
+    { "op": "expectState", "match": { "selection": { "object": { "kind": "picture", "originalSize": { "width": { "$type": "number" } }, "pictureAdjust": { "brightness": 0, "recolor": { "kind": "none" } } } } } },
+    { "op": "call", "method": "objectImage", "result": { "$file": "images/pixel.png" } },
+    { "op": "command", "command": { "type": "setPictureAdjust", "brightness": 0.3 } },
+    { "op": "expectState", "match": { "selection": { "object": { "pictureAdjust": { "brightness": 0.3 } } } } },
+    { "op": "command", "command": { "type": "resetPicture", "size": false } },
+    { "op": "expectState", "match": { "history": { "undoLabel": "Reset Picture" }, "selection": { "object": { "pictureAdjust": { "brightness": 0 } } } } },
+    { "op": "command", "command": { "type": "setPictureRecolor", "value": { "kind": "duotone", "dark": { "rgb": "#000080" }, "light": { "rgb": "#FFFFFF" } } } },
+    { "op": "expectState", "match": { "history": { "undoLabel": "Recolor" }, "selection": { "object": { "pictureAdjust": { "recolor": { "kind": "duotone", "dark": { "rgb": "#000080" } } } } } } },
+    { "op": "command", "command": { "type": "setLockAspectRatio", "value": false } },
+    { "op": "expectState", "match": { "history": { "undoLabel": "Lock Aspect Ratio" }, "selection": { "object": { "lockAspect": false } } } },
+
+    { "op": "command", "command": { "type": "setWatermark", "value": { "kind": "picture", "image": { "$file": "images/pixel.png" }, "scale": 100, "washout": false } } },
+    { "op": "call", "method": "watermarkImage", "args": [0], "result": { "$file": "images/pixel.png" } },
+    { "op": "call", "method": "pageFillImage", "result": { "$exact": null } },
+    { "op": "command", "command": { "type": "setPageColor", "value": { "type": "picture", "image": { "$file": "images/pixel.png" }, "tile": { "offsetX": 0, "offsetY": 0, "scaleX": 1, "scaleY": 1, "align": "topLeft", "mirror": "none" }, "rotateWithShape": false } } },
+    { "op": "call", "method": "pageFillImage", "result": { "$file": "images/pixel.png" } }
+  ]
+}

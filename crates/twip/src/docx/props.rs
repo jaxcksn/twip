@@ -1,5 +1,7 @@
 //! Formatting properties
 
+use std::rc::Rc;
+
 use roxmltree::Node;
 
 use super::xml::*;
@@ -614,7 +616,7 @@ pub enum LineRule {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Border {
     /// ST_Border value ("single", "double", "none", ...).
-    pub style: String,
+    pub style: Rc<str>,
     /// Line width in points (`w:sz` eighths).
     pub width: f64,
     pub space: f64,
@@ -626,7 +628,7 @@ pub struct Border {
 
 impl Border {
     pub fn parse(e: Node, tc: &ThemeColours) -> Border {
-        let style = val(e).unwrap_or("none").to_string();
+        let style = Rc::from(val(e).unwrap_or("none"));
         // Eighths of a point: a fraction of 1 is 1; 0 or none is a hairline that takes no space.
         let sz = match num(attr(e, "sz")) {
             Some(v) if v > 0.0 && v < 1.0 => 1.0,
@@ -644,7 +646,7 @@ impl Border {
     }
 
     pub fn visible(&self) -> bool {
-        !matches!(self.style.as_str(), "none" | "nil")
+        !matches!(&*self.style, "none" | "nil")
     }
 }
 

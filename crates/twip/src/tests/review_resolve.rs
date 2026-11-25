@@ -27,7 +27,7 @@ fn open(name: &str) -> Editor {
 
 fn resolve(e: &mut Editor, accept: bool, scope: Scope) -> Outcome {
     use crate::api::command::AuthorFilter;
-    let by = |author: Option<String>| AuthorFilter { author };
+    let by = |author: Option<String>| AuthorFilter { author, shown: None };
     let cmd = match (scope, accept) {
         (Scope::Selection, true) => Command::AcceptRevisionsInSelection,
         (Scope::Selection, false) => Command::RejectRevisionsInSelection,
@@ -126,7 +126,7 @@ fn accepting_or_rejecting_all_gives_the_twins() {
             let left: Vec<_> = revisions(e.document(), e.index()).into_iter().filter(|r| r.story == StoryId::Body).map(|r| r.kind.name()).collect();
             assert!(left.is_empty(), "{name} {twin}: left {left:?}");
             // One undo step puts everything back.
-            e.execute(Command::Undo, fonts());
+            e.execute(Command::Undo(Default::default()), fonts());
             assert_eq!(body(e.document()), before, "{name} {twin}: undo");
             assert!(e.document().sections[0].blocks == blocks, "{name} {twin}: undo restores the blocks exactly");
             let now: Vec<_> = e.document().sections.iter().map(|s| (s.page(), s.change.clone())).collect();
@@ -521,7 +521,7 @@ fn changes_shown_resolve_only_the_shown_kinds_and_reviewers() {
         let left = revisions(e.document(), e.index());
         assert_eq!(left.len(), before.iter().filter(|r| r.kind.is_formatting()).count(), "the formatting changes stay");
         assert!(left.iter().all(|r| r.kind.is_formatting()));
-        e.execute(Command::Undo, fonts());
+        e.execute(Command::Undo(Default::default()), fonts());
         assert_eq!(revisions(e.document(), e.index()), before, "one undo step");
         // Every reviewer hidden: nothing shown to take.
         e.set_show_markup(true, true, true);
@@ -548,7 +548,7 @@ fn accept_all_and_stop_tracking() {
     assert!(matches!(e.accept_all_and_stop_tracking(fonts()), Outcome::Changed(_)));
     assert!(revisions(e.document(), e.index()).is_empty() && !e.tracking());
     assert_eq!(e.history().undo_depth(), depth + 1);
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert!(!revisions(e.document(), e.index()).is_empty(), "undo brings the revisions back");
     // Nothing to accept: tracking still stops.
     let mut e = open("FX-REVIEW-RUNS-ACCEPTED.docx");

@@ -57,7 +57,7 @@ pub mod object_props;
 pub mod objects;
 pub mod paste;
 pub mod picture_controls;
-mod pictures;
+pub mod pictures;
 pub mod pointer;
 pub mod position;
 mod preview;
@@ -95,7 +95,7 @@ pub mod text;
 pub mod theme;
 mod touched;
 pub mod view;
-mod wrap_points;
+pub mod wrap_points;
 pub mod xref;
 
 #[cfg(test)]
@@ -231,6 +231,10 @@ pub struct Editor {
     border_drag: Option<resize::BorderDrag>,
     /// The line the Draw Table pen draws.
     table_pen: crate::docx::props::Border,
+    /// The pointer's table tool.
+    table_tool: crate::api::command::TableTool,
+    /// The table tool being dragged.
+    tool_drag: Option<table_draw::ToolDrag>,
     /// Tables laid out as a live drag would leave them, in place of the model's.
     table_preview: Vec<resize::Provisional>,
     table_drag: Option<table_handles::TableDrag>,
@@ -504,6 +508,8 @@ impl Editor {
             composition: None,
             border_drag: None,
             table_pen: table_draw::default_pen(),
+            table_tool: crate::api::command::TableTool::None,
+            tool_drag: None,
             table_preview: Vec::new(),
             table_drag: None,
             pointing: false,
@@ -1031,6 +1037,7 @@ impl Editor {
         self.sync_expansions(fonts);
         let snapshot = self.layout.snapshot();
         let stale = snapshot.revision() != self.layout.revision();
+        // Pages past the laid-out ones are pending too
         let pending = match snapshot.status() {
             _ if stale => Some(0),
             crate::layout::LayoutStatus::Pending { stale_from } => Some(*stale_from),
@@ -1049,7 +1056,7 @@ impl Editor {
         let step = self.with_flow(|l, d| l.run(d, fonts, Budget::Until(t + IDLE_BUDGET)));
         let snapshot = self.layout.snapshot();
         self.pages.sync(&snapshot);
-        step == LayoutStep::Yielded || snapshot.info().iter().any(|i| i.provisional)
+        step == LayoutStep::Yielded || snapshot.stale_from().is_some()
     }
 
     pub fn ensure_current(&mut self, fonts: &Fonts) {
@@ -1723,6 +1730,7 @@ impl Editor {
             return self.undo(undo, fonts);
         }
         let before = self.selection;
+        let first_commit = self.commits.len();
         self.deferring = true;
         let mut out = Outcome::Unchanged(if undo { "nothing to undo" } else { "nothing to redo" });
         for _ in 0..count {
@@ -1739,7 +1747,26 @@ impl Editor {
         // Scrolled to once, from where the caret was before the first
         self.deferring = false;
         self.after_edit(before, fonts);
+        // One record for the whole choice: the last revision, every target, the label of the action chosen.
+        self.join_commits(first_commit);
         out
+    }
+
+    /// The commits made since `first` as one record: the last's revision and label, every one's targets.
+    pub(super) fn join_commits(&mut self, first: usize) {
+        if self.commits.len() > first + 1 {
+            let mut taken = self.commits.split_off(first);
+            let mut last = taken.pop().expect("more than one commit");
+            for c in taken {
+                let t = c.targets;
+                last.targets.paras.extend(t.paras);
+                last.targets.tables.extend(t.tables);
+                last.targets.elements.extend(t.elements);
+                last.targets.revisions.extend(t.revisions);
+                last.targets.comments.extend(t.comments);
+            }
+            self.commits.push(last);
+        }
     }
 
     /// Takes back transaction `tx`, the last one, unrecorded: an edit that was only ever provisional, whatever the
@@ -1778,7 +1805,7 @@ impl Editor {
         let done = if undo { self.history.pop_undo() } else { self.history.pop_redo() };
         let Some(mut done) = done else { return Outcome::Unchanged(if undo { "nothing to undo" } else { "nothing to redo" }) };
         // The fields' starts followed through the edit's steps
-        let places = keys.map(|k| self.span_places(k));
+        let places = keys.map(|k| self.span_start_places(k));
         let maps = tx.maps.len();
         self.replay(&mut tx, std::mem::take(&mut done.undo));
         let keys = places.map(|p| self.span_keys_after(p, &tx.maps[maps..]));
@@ -3155,6 +3182,9 @@ impl Editor {
                 if self.linking_press(x, y, fonts) {
                     return;
                 }
+                if self.table_tool_press(x, y, fonts) {
+                    return;
+                }
                 if !mods.shift && self.anchor_press(x, y) {
                     return;
                 }
@@ -3370,7 +3400,7 @@ impl Editor {
                 self.requests.push(Request::CapturePointer);
             }
             PointerKind::Move => {
-                if self.wrap_point_move(x, y) || self.marquee_move(x, y) || self.anchor_move(x, y) {
+                if self.wrap_point_move(x, y) || self.marquee_move(x, y) || self.anchor_move(x, y) || self.table_tool_move(x, y, fonts) {
                     return;
                 }
                 if self.text_drag.is_some() {
@@ -3457,6 +3487,10 @@ impl Editor {
             }
             PointerKind::Cancel if self.wrap_point_cancel() => {}
             PointerKind::Cancel if self.marquee_cancel() => {}
+            PointerKind::Cancel if self.table_tool_cancel() => {}
+            PointerKind::Up if self.tool_drag.is_some() => {
+                self.table_tool_release(fonts);
+            }
             PointerKind::Up if self.marquee.is_some() => {
                 self.marquee_release(fonts);
             }

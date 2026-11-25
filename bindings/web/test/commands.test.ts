@@ -11,11 +11,11 @@ const fixture = (name: string) => JSON.parse(readFileSync(new URL(`../../../crat
 
 test('every fixture command has a method that encodes it as the fixture does', async () => {
   let sent: unknown;
-  const commands = createCommands(async (op) => (sent = toWire(op))) as unknown as Record<CommandId, (arg?: unknown) => Promise<unknown>>;
+  const commands = createCommands(async (op) => (sent = toWire(op))) as unknown as Record<CommandId, (...args: unknown[]) => Promise<unknown>>;
   for (const op of fixture('command') as Op[]) {
-    const [id, arg] = fromOp(op);
+    const [id, ...args] = fromOp(op);
     assert.equal(typeof commands[id], 'function', `no commands.${id}`);
-    await commands[id](arg);
+    await commands[id](...args);
     assert.deepEqual(sent, op, `commands.${id}`);
   }
 });

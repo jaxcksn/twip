@@ -14,7 +14,31 @@ export type ControlKind =
   | 'dropDown'
   | 'comboBox'
   | 'group'
-  | 'repeatingSection';
+  | 'repeatingSection'
+  | 'buildingBlockGallery'
+  | 'buildingBlock'
+  | 'citation'
+  | 'bibliography'
+  | 'equation';
+
+/** A date control's calendar. */
+export type CalendarType =
+  | 'gregorian'
+  | 'hijri'
+  | 'hebrew'
+  | 'taiwan'
+  | 'japan'
+  | 'thai'
+  | 'korea'
+  | 'saka'
+  | 'gregorianXlitEnglish'
+  | 'gregorianXlitFrench'
+  | 'gregorianUs'
+  | 'gregorianMeFrench'
+  | 'gregorianArabic';
+
+/** What a bound date control stores in its data: the text it shows, the date, or the date and time. */
+export type DateStorage = 'text' | 'date' | 'dateTime';
 
 /** The merge designer's elements: fields and content controls. Changing them is done with the commands. */
 export interface Elements {
@@ -40,7 +64,96 @@ export interface Elements {
    * view. Rejects with `unavailable` for an element the document doesn't have.
    */
   boxes(id: ElementId): Promise<ClientRect[]>;
+  /** Insert Field's fields, of one category or all, in its order. */
+  fieldCatalogue(category?: FieldCategory): Promise<FieldDescription[]>;
+  /** The formats and pictures Insert Field offers. */
+  fieldFormats(): Promise<FieldFormats>;
+  /** The field code Insert Field's choices make, and its problems (none when it takes it as it is). Cheap: call it per keystroke. */
+  composeField(choice: FieldChoice): Promise<{ code: string; problems: FieldProblem[] }>;
+  /** The choices a field code is made of, as Insert Field opens on it. */
+  parseField(code: string): Promise<FieldChoice>;
+  /** The field the selection is in, with its code's choices: Insert Field opened on it changes it (`setField`). */
+  fieldHere(): Promise<{ id: ElementId; choice: FieldChoice } | null>;
+  /** The display formats a date control offers for a locale (BCP 47). */
+  dateFormats(locale: string): Promise<string[]>;
 }
+
+/** Insert Field's categories. */
+export type FieldCategory =
+  | 'dateAndTime'
+  | 'documentAutomation'
+  | 'documentInformation'
+  | 'equationsAndFormulas'
+  | 'indexAndTables'
+  | 'linksAndReferences'
+  | 'mailMerge'
+  | 'numbering'
+  | 'userInformation';
+
+/** A field as Insert Field describes it. */
+export interface FieldDescription {
+  /** Its name as a code writes it (`PAGE`, `=`). */
+  name: string;
+  /** The categories it is listed under. */
+  categories: FieldCategory[];
+  /** What it does. */
+  description: string;
+  /** Its syntax, as Insert Field shows it under Field codes. */
+  syntax: string;
+  /** Its arguments, in order. */
+  args: {
+    name: string;
+    kind: 'text' | 'bookmark' | 'style' | 'property' | 'variable' | 'file' | 'name' | 'expression' | 'number';
+    required: boolean;
+  }[];
+  /** Its own switches: the flag after the backslash, what it takes, and what it does. */
+  switches: { flag: string; arg: 'none' | 'text' | 'number' | 'bookmark' | 'style' | 'name' | 'levels'; description: string }[];
+  /** The general switches it takes: `\*` text and number formats, `\#` a numeric picture, `\@` a date picture. */
+  formats: { text: boolean; numeric: boolean; date: boolean };
+  /** The engine computes its result (the others keep theirs, or the application's `setFieldResults` gives it). */
+  evaluated: boolean;
+}
+
+/** The formats Insert Field offers: `\*` text and number formats (value, then name), and pictures. */
+export interface FieldFormats {
+  /** `\*` text formats: as the code writes them, and their names. */
+  textFormats: { value: string; label: string }[];
+  /** `\*` number formats: as the code writes them, and their names. */
+  numberFormats: { value: string; label: string }[];
+  /** `\#` numeric pictures. */
+  numericPictures: string[];
+  /** `\@` date-time pictures. */
+  datePictures: string[];
+}
+
+/** What a field code is made of: Insert Field's choices. */
+export interface FieldChoice {
+  /** The field's name. */
+  name: string;
+  /** Its arguments, in order. */
+  args?: string[];
+  /** Its own switches, with what follows each. */
+  switches?: { flag: string; value?: string }[];
+  /** `\*` formats other than MERGEFORMAT. */
+  formats?: string[];
+  /** `\#`: a numeric picture. */
+  numericPicture?: string;
+  /** `\@`: a date-time picture. */
+  datePicture?: string;
+  /** `\* MERGEFORMAT`: the result keeps its formatting through updates. */
+  preserveFormatting?: boolean;
+}
+
+/** What is wrong with a field code, as Insert Field flags it. */
+export type FieldProblem =
+  | { kind: 'empty' }
+  | { kind: 'unknownField'; name: string }
+  | { kind: 'missingArgument'; name: string }
+  | { kind: 'unknownSwitch'; flag: string }
+  | { kind: 'missingSwitch'; flag: string }
+  | { kind: 'missingSwitchValue'; flag: string }
+  | { kind: 'notANumber'; flag: string }
+  | { kind: 'formatNotTaken'; flag: string };
 
 /** {@link Elements} on a mounted editor: adds drop targets and hit testing. */
 export interface MountedElements extends Elements {
@@ -76,6 +189,12 @@ export interface ElementInfo {
   parent: ElementId | null;
   /** Locked against editing. */
   locked: boolean;
+  /** A field shows its code rather than its result. */
+  showingCode: boolean;
+  /** A field's result is out of date: the next field update refreshes it. */
+  dirty: boolean;
+  /** A date control's date (`YYYY-MM-DDTHH:MM:SSZ`); absent while it shows its placeholder or no date. */
+  date?: string;
   /** A sub-template reference field's sub-template. */
   reference?: SubTemplateReference;
   /** A picture control's picture size (inline or floating). */
@@ -153,7 +272,8 @@ export interface PlaceholderImage {
 export type ControlOptions =
   | { checked?: boolean; checkedSymbol?: CheckboxSymbol; uncheckedSymbol?: CheckboxSymbol }
   | { sectionTitle?: string; allowInsertDelete?: boolean }
-  | { format?: string; locale?: string }
+  | { format?: string; locale?: string; calendar?: CalendarType; storeAs?: DateStorage }
+  | { gallery?: string; category?: string }
   | { items: { text: string; value: string }[] }
   | { multiline?: boolean }
   | { width?: Points; height?: Points };
@@ -168,7 +288,16 @@ export interface CheckboxSymbol {
 
 /** A block of the document structure. */
 export type Block =
-  | { kind: 'paragraph'; textLength: number; elements: ElementId[] }
+  | {
+      kind: 'paragraph';
+      textLength: number;
+      elements: ElementId[];
+      /**
+       * Its hidden paragraph marks: where each paragraph joined into it by one ends, and its own mark when that is hidden
+       * (it runs into the next paragraph). `at` is in characters; absent when there are none.
+       */
+      hiddenMarks?: { at: number; styleSeparator: boolean }[];
+    }
   | {
       kind: 'table';
       rows: {
@@ -262,6 +391,12 @@ export function createElements(s: Session): Elements {
       const boxes = await s.call<ClientRect[]>(Method.ElementBoxes, id);
       return s.clientRect ? boxes.map(s.clientRect) : boxes;
     },
+    fieldCatalogue: (category) => s.call(Method.FieldCatalogue, category ?? null),
+    fieldFormats: () => s.call(Method.FieldFormats),
+    composeField: (choice) => s.call(Method.ComposeField, choice),
+    parseField: (code) => s.call(Method.ParseField, code),
+    fieldHere: () => s.call(Method.FieldHere),
+    dateFormats: (locale) => s.call(Method.DateFormats, locale),
   };
 }
 

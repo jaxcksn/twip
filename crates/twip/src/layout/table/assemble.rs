@@ -51,14 +51,14 @@ fn part(own: Option<&Option<Border>>, table: &Option<Border>) -> f64 {
     };
     match b {
         None => 0.75,
-        Some(b) if b.style == "nil" => {
+        Some(b) if &*b.style == "nil" => {
             if cell {
                 0.75
             } else {
                 0.0
             }
         }
-        Some(b) if b.style == "none" => {
+        Some(b) if &*b.style == "none" => {
             if b.color.is_some() {
                 0.0
             } else {

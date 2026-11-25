@@ -94,6 +94,7 @@ pub fn list(doc: &Document, kind: Option<StyleType>, glossary: bool) -> Vec<Styl
                     (false, _) => StyleVisibility::Show,
                 },
                 locked: s.meta.locked,
+                uses: 0,
             })
         })
         .collect();
@@ -138,6 +139,7 @@ pub fn list(doc: &Document, kind: Option<StyleType>, glossary: bool) -> Vec<Styl
                 (false, _) => StyleVisibility::Show,
             },
             locked: false,
+            uses: 0,
         });
     }
     out.sort_by(|a, b| (a.priority, &a.name).cmp(&(b.priority, &b.name)));

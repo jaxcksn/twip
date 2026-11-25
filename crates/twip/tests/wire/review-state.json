@@ -1,19 +1,100 @@
 [
   {
     "activeComment": "c4",
+    "balloonMode": "commentsAndFormatting",
     "comments": 2,
+    "counts": {
+      "all": {
+        "comments": 2,
+        "deletions": 1,
+        "formatting": 0,
+        "insertions": 2,
+        "moves": 0
+      },
+      "shown": {
+        "comments": 1,
+        "deletions": 1,
+        "formatting": 0,
+        "insertions": 2,
+        "moves": 0
+      }
+    },
+    "markupStyle": {
+      "changeBarColor": "auto",
+      "changeBars": "outside",
+      "deletedCells": {
+        "fixed": "#FF99CC"
+      },
+      "deletions": {
+        "color": "byAuthor",
+        "mark": "strikethrough"
+      },
+      "formatting": {
+        "color": "byAuthor",
+        "mark": "none"
+      },
+      "insertedCells": {
+        "fixed": "#99CCFF"
+      },
+      "insertions": {
+        "color": "byAuthor",
+        "mark": "underline"
+      },
+      "mergedCells": {
+        "fixed": "#FFFF99"
+      },
+      "movedFrom": {
+        "color": {
+          "fixed": "#00A050"
+        },
+        "mark": "doubleStrikethrough"
+      },
+      "movedTo": {
+        "color": {
+          "fixed": "#00A050"
+        },
+        "mark": "doubleUnderline"
+      },
+      "splitCells": {
+        "fixed": "#FFCC99"
+      }
+    },
     "markupView": "all",
     "protection": {
+      "autoFormatOverride": false,
+      "blockStyleSetSwitching": false,
+      "blockThemeSwitching": true,
+      "editorsHere": [
+        {
+          "group": "everyone"
+        },
+        {
+          "user": "ada@example.com"
+        }
+      ],
       "enforced": true,
+      "exceptionsAllowed": true,
       "formatting": false,
       "inEditableRange": true,
       "kind": "readOnly",
       "password": true,
+      "rangeCount": 2,
+      "sectionsAllowed": false,
       "unprotectedSections": [
         1
       ]
     },
     "revisions": 3,
+    "showMarkup": {
+      "comments": true,
+      "formatting": false,
+      "hiddenReviewers": [
+        "Grace Hopper"
+      ],
+      "insertionsDeletions": true
+    },
+    "trackFormatting": false,
+    "trackMoves": true,
     "tracking": true,
     "trackingLocked": false
   }

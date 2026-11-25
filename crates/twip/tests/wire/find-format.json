@@ -1,0 +1,18 @@
+[
+  {
+    "font": {
+      "font": "Calibri",
+      "size": 11.0,
+      "style": "bold"
+    },
+    "highlight": true,
+    "highlightColor": "yellow",
+    "language": "en-US",
+    "noProof": false,
+    "paragraph": {
+      "alignment": "center",
+      "keepWithNext": true
+    },
+    "style": "Heading1"
+  }
+]

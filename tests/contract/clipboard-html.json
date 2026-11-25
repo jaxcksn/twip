@@ -1,0 +1,16 @@
+{
+  "name": "clipboard-html",
+  "fixture": "editor/FX-OBJ.docx",
+  "steps": [
+    { "op": "open" },
+    { "op": "call", "method": "find.next", "args": [{ "text": "Inline picture at the end of the line:" }], "result": { "found": true } },
+    { "op": "command", "command": { "type": "select", "value": "paragraph" } },
+    { "op": "call", "method": "copyContent", "save": "copy", "result": { "text": { "$type": "string" }, "html": { "$contains": "Inline picture at the end of the line:" }, "internal": { "$type": "string" } } },
+    { "op": "call", "method": "clipboardHtml", "args": [{ "$saved": "copy", "path": ["internal"] }], "result": { "$contains": "<img src=\"data:image/png;base64," } },
+    { "op": "call", "method": "clipboardHtml", "args": ["twip:99:99"] },
+    { "op": "expectError", "code": "unavailable" },
+    { "op": "command", "command": { "type": "moveSelection", "by": "document", "direction": "forward" } },
+    { "op": "call", "method": "pasteContent", "args": [{ "$saved": "copy" }] },
+    { "op": "call", "method": "find.all", "args": [{ "text": "Inline picture at the end of the line:" }], "result": { "matches": [{}, {}] } }
+  ]
+}

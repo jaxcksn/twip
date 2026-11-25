@@ -18,6 +18,7 @@ pub mod line;
 pub mod node;
 pub mod page;
 pub mod paragraph;
+pub mod pvec;
 pub mod record;
 pub mod shade;
 pub mod snapshot;

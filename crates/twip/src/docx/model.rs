@@ -1656,7 +1656,7 @@ pub struct SectionPage {
     pub gutter: f64,
     pub columns: Columns,
     pub title_pg: bool,
-    pub page_borders: Option<PageBorders>,
+    pub page_borders: Option<Rc<PageBorders>>,
     /// The `w:pgBorders` as written (what isn't modelled, art borders' ids, is kept), or as last set.
     pub page_borders_xml: Option<String>,
     pub break_kind: SectionBreak,
@@ -1675,6 +1675,37 @@ pub struct SectionPage {
     /// The parts of its headers and footers (default, first, even); `None`: the section before's.
     pub headers: HfRefs,
     pub footers: HfRefs,
+}
+
+/// A section's page size, margins, columns and different first page, borrowed from it or its tracked change: what
+/// layout reads per page.
+#[derive(Clone, Copy, Debug)]
+pub struct PageSetup<'a> {
+    pub page_w: f64,
+    pub page_h: f64,
+    pub top: f64,
+    pub bottom: f64,
+    pub left: f64,
+    pub right: f64,
+    pub header: f64,
+    pub footer: f64,
+    pub gutter: f64,
+    pub columns: &'a Columns,
+    pub title_pg: bool,
+}
+
+impl<'a> From<&'a SectionPage> for PageSetup<'a> {
+    fn from(p: &'a SectionPage) -> PageSetup<'a> {
+        let SectionPage { page_w, page_h, top, bottom, left, right, header, footer, gutter, title_pg, .. } = *p;
+        PageSetup { page_w, page_h, top, bottom, left, right, header, footer, gutter, columns: &p.columns, title_pg }
+    }
+}
+
+impl<'a> From<&'a Section> for PageSetup<'a> {
+    fn from(s: &'a Section) -> PageSetup<'a> {
+        let Section { page_w, page_h, top, bottom, left, right, header, footer, gutter, title_pg, .. } = *s;
+        PageSetup { page_w, page_h, top, bottom, left, right, header, footer, gutter, columns: &s.columns, title_pg }
+    }
 }
 
 impl Section {
@@ -1849,7 +1880,7 @@ pub struct Section {
     pub chapter: Option<(i64, String)>,
     pub line_numbers: Option<LineNumbering>,
     pub v_align: String,
-    pub page_borders: Option<PageBorders>,
+    pub page_borders: Option<Rc<PageBorders>>,
     /// The `w:pgBorders` as written, or as last set.
     pub page_borders_xml: Option<String>,
     pub line_grid: Option<i32>,

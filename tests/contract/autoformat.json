@@ -1,0 +1,24 @@
+{
+  "name": "autoformat",
+  "fixture": "editor/FX-EMPTY.docx",
+  "steps": [
+    { "op": "open" },
+    { "op": "expectState", "match": { "autoCorrect": { "borderLines": true, "internetPaths": true, "tabIndents": true } } },
+    { "op": "text", "text": "See www.example.com " },
+    { "op": "expectState", "match": { "commands": { "revertAutoCorrect": { "enabled": true } } } },
+    { "op": "command", "command": { "type": "showAutoCorrectOptions" } },
+    { "op": "expectEvents", "match": [{ "type": "popoverRequested", "kind": "autoFormat", "change": "hyperlink", "text": "www.example.com" }] },
+    { "op": "command", "command": { "type": "neverAutoCorrect" } },
+    { "op": "expectState", "match": { "autoCorrect": { "internetPaths": false }, "commands": { "revertAutoCorrect": { "enabled": false } } } },
+    { "op": "text", "text": "and www.example.org " },
+    { "op": "expectState", "match": { "commands": { "revertAutoCorrect": { "enabled": false } } } },
+    { "op": "key", "key": "Enter" },
+    { "op": "text", "text": "---" },
+    { "op": "key", "key": "Enter" },
+    { "op": "expectState", "match": { "commands": { "revertAutoCorrect": { "enabled": true } } } },
+    { "op": "command", "command": { "type": "revertAutoCorrect" } },
+    { "op": "call", "method": "find.next", "args": [{ "text": "---" }], "result": { "found": true } },
+    { "op": "command", "command": { "type": "setAutoCorrect", "borderLines": false, "tabIndents": false } },
+    { "op": "expectState", "match": { "autoCorrect": { "borderLines": false, "tabIndents": false } } }
+  ]
+}

@@ -311,15 +311,7 @@ impl Editor {
     pub(super) fn set_paragraph_border_lines(&mut self, b: crate::api::command::ParagraphBorderLines, fonts: &Fonts) -> Outcome {
         let shadow = b.shadow.unwrap_or(false);
         let line = |v: Option<Option<crate::api::command::Border>>, far: bool| {
-            v.map(|v| {
-                v.map(|v| super::readback::BorderLine {
-                    style: v.style,
-                    width: v.width,
-                    color: super::commands::rgb_value(v.color),
-                    space: crate::api::value::Points(1.0),
-                    shadow: shadow && far,
-                })
-            })
+            v.map(|v| v.map(|v| super::readback::BorderLine::of_api(&v, 1.0, shadow && far)))
         };
         let edges = super::readback::ParagraphBorderEdges {
             top: line(b.top, false),
@@ -367,13 +359,7 @@ impl Editor {
 
     /// Sets or removes the selected text's border (`w:bdr`).
     pub(super) fn set_text_border(&mut self, b: crate::api::command::TextBorderChange, fonts: &Fonts) -> Outcome {
-        let line = b.border.map(|l| super::readback::BorderLine {
-            style: l.style,
-            width: l.width,
-            color: super::commands::rgb_value(l.color),
-            space: crate::api::value::Points(0.0),
-            shadow: b.shadow,
-        });
+        let line = b.border.map(|l| super::readback::BorderLine::of_api(&l, 0.0, b.shadow));
         self.set_text_border_line(line.as_ref(), fonts)
     }
 
@@ -396,16 +382,7 @@ impl Editor {
 
     /// Sets the shading of the selected paragraphs, text, cells or tables.
     pub(super) fn set_shading(&mut self, s: crate::api::command::ShadingChange, fonts: &Fonts) -> Outcome {
-        use crate::api::drawing::ColourValue;
-        use crate::api::value::NoneOr;
-        let v = super::readback::ShadingValue {
-            fill: match s.fill {
-                NoneOr::Value(c) => NoneOr::Value(ColourValue::rgb(c)),
-                NoneOr::None => NoneOr::None,
-            },
-            pattern: s.pattern,
-            color: super::commands::rgb_value(s.color),
-        };
+        let v = super::readback::ShadingValue { fill: s.fill, pattern: s.pattern, color: s.color };
         self.set_shading_value(s.target, &v, fonts)
     }
 
@@ -647,20 +624,8 @@ impl Editor {
 
     /// Sets the document's default formatting: the formatting commands run on the defaults as if they were a style.
     pub(super) fn set_document_defaults(&mut self, d: crate::api::command::DocumentDefaults, fonts: &Fonts) -> Outcome {
-        self.set_document_defaults_with(d, None, None, fonts)
-    }
-
-    /// [`Editor::set_document_defaults`], the font a theme font (`theme_font`, over `d.font`) and the colour a theme
-    /// colour with a tint or shade (`colour`, over `d.color`).
-    pub fn set_document_defaults_with(
-        &mut self,
-        d: crate::api::command::DocumentDefaults,
-        theme_font: Option<crate::docx::ThemeFont>,
-        colour: Option<crate::api::value::AutoOr<crate::api::drawing::ColourValue>>,
-        fonts: &Fonts,
-    ) -> Outcome {
         let mut commands = Vec::new();
-        if let Some(f) = d.font.filter(|f| !f.trim().is_empty()) {
+        if let Some(f) = d.font.filter(|f| !matches!(f, crate::api::command::FontChoice::Name(n) if n.trim().is_empty())) {
             commands.push(Command::SetFont(f));
         }
         if let Some(s) = d.size {
@@ -678,7 +643,7 @@ impl Editor {
         if let Some(i) = d.indents {
             commands.push(Command::SetIndents(i));
         }
-        self.format_defaults(commands, theme_font, colour, fonts)
+        self.format_defaults(commands, fonts)
     }
 
     /// Sets the document's default formatting with any character and paragraph formatting commands but frames, run
@@ -688,17 +653,11 @@ impl Editor {
         if let Some(c) = commands.iter().find(|c| matches!(c.id(), C::SetFrame | C::RemoveFrame)) {
             return Outcome::invalid(&format!("{:?} doesn't set a default", c.id()));
         }
-        self.format_defaults(commands, None, None, fonts)
+        self.format_defaults(commands, fonts)
     }
 
-    /// Formats the defaults with `commands`, then a theme font and a theme colour, as one undo step.
-    fn format_defaults(
-        &mut self,
-        commands: Vec<Command>,
-        theme_font: Option<crate::docx::ThemeFont>,
-        colour: Option<crate::api::value::AutoOr<crate::api::drawing::ColourValue>>,
-        fonts: &Fonts,
-    ) -> Outcome {
+    /// Formats the defaults with `commands`, as one undo step.
+    fn format_defaults(&mut self, commands: Vec<Command>, fonts: &Fonts) -> Outcome {
         if let Some(out) = self.refuse_like(&Command::SetDocumentDefaults(Default::default())) {
             return out;
         }
@@ -712,18 +671,7 @@ impl Editor {
             parts.get(wrapper).and_then(|x| Props::parse(Some(x), wrapper, &cx).get(part).map(str::to_string)).unwrap_or_default()
         };
         self.defaults_target = true;
-        let mut edited = self.format_style(&stand_in, commands, fonts);
-        if let Ok(x) = &mut edited
-            && (theme_font.is_some() || colour.is_some())
-        {
-            self.style_target = Some(std::mem::take(x));
-            let font = theme_font.map(|f| self.set_theme_font(f, fonts));
-            let colour = colour.map(|c| self.set_font_colour(c, fonts));
-            *x = self.style_target.take().unwrap_or_default();
-            if let Some(Outcome::Refused(e)) = [font, colour].into_iter().flatten().find(|o| matches!(o, Outcome::Refused(_))) {
-                edited = Err(e);
-            }
-        }
+        let edited = self.format_style(&stand_in, commands, fonts);
         self.defaults_target = false;
         let edited = match edited {
             Ok(x) => x,

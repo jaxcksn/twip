@@ -684,17 +684,26 @@ fn fit_greedy(
     let classes = |k: usize| kinsoku(&sp.styles[pieces[k].style as usize].run.lang_east_asia).filter(|_| rules && !style.no_kinsoku);
     let first_char = |k: usize| text_of(sp, &pieces[k]).chars().next();
     let last_char = |k: usize| text_of(sp, &pieces[k]).chars().last();
-    // A break at `at` (after any spaces) is refused when the last character before it doesn't end a line or the
-    // next one doesn't start one.
-    let refused = |at: usize| {
+    // A break at `at` (after any spaces) is refused when the last character before it (`ink`, the last that isn't a
+    // space) doesn't end a line or the next one doesn't start one.
+    let kinsoku_on = rules && !style.no_kinsoku;
+    // Pieces `ahead.0..ahead.1` are spaces and `ahead.1` isn't one: each space's look ahead resumes the last.
+    let mut ahead = (start, start);
+    let mut refused = |at: usize, ink: Option<usize>| {
+        if !kinsoku_on {
+            return false;
+        }
         let no_start = |t: &Kinsoku| if frame.strict_kinsoku { t.no_start_strict } else { t.no_start };
-        (start..at)
-            .rev()
-            .find(|&k| pieces[k].kind != Kind::Space)
-            .is_some_and(|k| classes(k).is_some_and(|t| last_char(k).is_some_and(|c| t.no_end.contains(c))))
-            || (at..n)
-                .find(|&k| pieces[k].kind != Kind::Space)
-                .is_some_and(|k| classes(k).is_some_and(|t| first_char(k).is_some_and(|c| no_start(t).contains(c))))
+        if !(ahead.0..=ahead.1).contains(&at) {
+            ahead = (at, at);
+        }
+        while ahead.1 < n && pieces[ahead.1].kind == Kind::Space {
+            ahead.1 += 1;
+        }
+        ahead.0 = at;
+        let next = (ahead.1 < n).then_some(ahead.1);
+        ink.is_some_and(|k| classes(k).is_some_and(|t| last_char(k).is_some_and(|c| t.no_end.contains(c))))
+            || next.is_some_and(|k| classes(k).is_some_and(|t| first_char(k).is_some_and(|c| no_start(t).contains(c))))
     };
     // Under the breaking rules a line may break between two characters unless both wrap as words: Hangul and every
     // character of a Korean run with `w:wordWrap` on (its punctuation too: such a run breaks only at spaces), other
@@ -735,6 +744,9 @@ fn fit_greedy(
         if frame.compat == Compat::Legacy { lead_drift + pieces[start..k].iter().map(|q| q.break_extra).sum::<f64>() } else { 0.0 }
     };
     let mut i = start;
+    // Of the pieces from `start`: the last that isn't a space, the width of the spaces after it, whether one is a tab
+    // or a list number and whether all are anchors.
+    let (mut ink, mut trailing, mut tabbed, mut anchors) = (None, 0.0, false, true);
     while i < n {
         if let Some(le) = limit_end
             && i >= le
@@ -745,6 +757,14 @@ fn fit_greedy(
             pending = lead(pen, i);
         }
         let p = &pieces[i];
+        let (ink_before, trailing_before, tabbed_before) = (ink, trailing, tabbed);
+        if p.kind == Kind::Space {
+            trailing += p.width;
+        } else {
+            (ink, trailing) = (Some(i), 0.0);
+        }
+        tabbed |= matches!(p.kind, Kind::Tab | Kind::ListNumber);
+        anchors &= p.kind == Kind::Anchor;
         match p.kind {
             Kind::LineBreak | Kind::PageBreak | Kind::ColumnBreak => {
                 if let Some(pt) = pending.take() {
@@ -833,15 +853,14 @@ fn fit_greedy(
                 continue;
             }
             Kind::Space | Kind::Anchor => {
-                let ink = (start..i).rev().find(|&j| pieces[j].kind != Kind::Space);
                 if p.kind == Kind::Space
                     && !p.glued
                     && frame.compat == Compat::Legacy
-                    && ink.is_some_and(|j| pen - pieces[j + 1..i].iter().map(|q| q.width).sum::<f64>() > right + EPS)
+                    && ink_before.is_some_and(|_| pen - trailing_before > right + EPS)
                     && squeeze.is_none()
                     && pending.is_none()
                     && limit_end.is_none()
-                    && !pieces[start..i].iter().any(|q| matches!(q.kind, Kind::Tab | Kind::ListNumber))
+                    && !tabbed_before
                 {
                     return Fit { end: i, xs, widths: ws, hard: None, hyphen: false, leaders };
                 }
@@ -849,7 +868,7 @@ fn fit_greedy(
                 ws.push(p.width);
                 pen += p.width;
                 drift += p.break_extra;
-                if p.break_after && !pieces[start..=i].iter().all(|q| q.kind == Kind::Anchor) && !refused(i + 1) {
+                if p.break_after && !anchors && !refused(i + 1, ink) {
                     breaks.push((i + 1, false));
                 }
                 i += 1;
@@ -972,7 +991,7 @@ fn fit_greedy(
             breaks.push((i + 1, p.soft_hyphen));
         } else if points.at(pieces, i) {
             breaks.push((i + 1, true));
-        } else if between(i) && !refused(i + 1) {
+        } else if between(i) && !refused(i + 1, ink) {
             breaks.push((i + 1, false));
         }
         i += 1;

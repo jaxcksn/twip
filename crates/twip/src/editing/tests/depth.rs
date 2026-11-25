@@ -102,12 +102,12 @@ fn run() {
     assert!(r[..r.len() - 1].iter().all(|&n| n == 1), "no other table changed");
 
     while e.history().undo_depth() > 0 {
-        e.execute(Command::Undo, fonts());
+        e.execute(Command::Undo(Default::default()), fonts());
         state(&mut e);
     }
     assert_eq!(state(&mut e)["dump"], original, "undo-all restores the document");
     while e.history().redo_depth() > 0 {
-        e.execute(Command::Redo, fonts());
+        e.execute(Command::Redo(Default::default()), fonts());
     }
     assert_eq!(state(&mut e)["dump"], tabbed, "redo-all restores the edits");
 

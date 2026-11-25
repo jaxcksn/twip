@@ -1,4 +1,14 @@
 [
   "formatted",
-  "text"
+  "keepSource",
+  "merge",
+  "destinationStyles",
+  "textOnly",
+  "html",
+  "text",
+  "picture",
+  "nestTable",
+  "mergeTable",
+  "insertRows",
+  "overwriteCells"
 ]

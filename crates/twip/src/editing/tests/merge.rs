@@ -460,8 +460,10 @@ fn filling_a_control_keeps_its_paragraph() {
         let mut e = Editor::open(&bytes, fonts()).expect("opens");
         let (c, _) = e.document().controls.iter().find(|(_, k)| k.props.tag.as_deref() == Some("Name")).expect("the control");
         let id = crate::api::value::ElementId(crate::editing::elements::id_str(crate::docx::ElementId::Control(*c)));
-        let out =
-            e.execute(Command::FillControl(FillControl { id, text: Some("John".into()), image: None, docx: None, building_block: None }), fonts());
+        let out = e.execute(
+            Command::FillControl(FillControl { id, text: Some("John".into()), image: None, docx: None, building_block: None, date: None }),
+            fonts(),
+        );
         assert!(matches!(out, Outcome::Changed(_)), "{sdt}: {out:?}");
         let saved = crate::docx::write::save(e.document()).expect("saves");
         let xml = document_xml(&saved);

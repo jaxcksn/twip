@@ -1,6 +1,25 @@
 [
   {
     "alignment": "left",
+    "borderBetween": null,
+    "borderBottom": "mixed",
+    "borderLeft": "none",
+    "borderRight": "none",
+    "borderTop": {
+      "color": {
+        "theme": "text2",
+        "transforms": [
+          {
+            "kind": "shade",
+            "value": 0.75
+          }
+        ]
+      },
+      "shadow": false,
+      "space": 1.0,
+      "style": "double",
+      "width": 0.75
+    },
     "borders": "other",
     "collapsed": false,
     "contextualSpacing": true,
@@ -33,9 +52,24 @@
     "listLevel": 1,
     "outlineLevel": 2,
     "shading": "#D9E2F3",
+    "shadingValue": {
+      "color": "auto",
+      "fill": {
+        "rgb": "#D9E2F3"
+      },
+      "pattern": "clear"
+    },
     "spaceAfter": 8.5,
     "spaceBefore": "auto",
     "style": "Normal",
+    "tabs": [
+      {
+        "alignment": "right",
+        "inherited": true,
+        "leader": "dots",
+        "position": 72.5
+      }
+    ],
     "textDirection": "lrTb"
   }
 ]

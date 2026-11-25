@@ -527,4 +527,172 @@ public enum CommandId
     ConvertTextToTable,
     /// <summary>Converts the selected rows, or the whole table, to text.</summary>
     ConvertTableToText,
+    /// <summary>Inserts a style separator (Ctrl+Alt+Enter): a hidden paragraph mark that runs the paragraph before it into the one after, each keeping its own style. One undo step.</summary>
+    InsertStyleSeparator,
+    /// <summary>Alt+X: the hexadecimal code before the caret becomes its character, or the character before the caret (or the selected one) becomes its code. One undo step.</summary>
+    ToggleCharacterCode,
+    /// <summary>F2: the selected text moves to the place the next click or arrow keys choose, when Enter is pressed (<see cref="SelectionSummary.PendingMove"/> while it waits); Esc or any other command gives up.</summary>
+    MoveText,
+    /// <summary>Shift+F2: as MoveText, copying the text.</summary>
+    CopyText,
+    /// <summary>Selects the whole next or previous field in the story, outermost fields only (F11, Shift+F11). Not an edit: no undo step.</summary>
+    SelectField,
+    /// <summary>Each selected run's size a point larger, up to 1638 (Ctrl+]).</summary>
+    GrowFontOnePoint,
+    /// <summary>Each selected run's size a point smaller, down to 1 (Ctrl+[).</summary>
+    ShrinkFontOnePoint,
+    /// <summary>Clear All Formatting: the selected paragraphs take the default paragraph style and lose their direct paragraph and character formatting; highlight and revision marks stay.</summary>
+    ClearAllFormatting,
+    /// <summary>A hanging indent to the next default tab stop: the left indent moves, the first line stays (Ctrl+T).</summary>
+    IncreaseHangingIndent,
+    /// <summary>The hanging indent back to the previous default tab stop (Ctrl+Shift+T).</summary>
+    DecreaseHangingIndent,
+    /// <summary>Reset Paragraph: removes direct paragraph formatting, numbering included; the style stays (Ctrl+Q).</summary>
+    ClearParagraphFormatting,
+    /// <summary>Moves the selected paragraphs above the one before or below the one after (Alt+Shift+Up, Down); tracked, a move.</summary>
+    MoveParagraphs,
+    /// <summary>Groups again the objects the last UngroupObjects ungrouped, wherever they moved.</summary>
+    RegroupObjects,
+    /// <summary>Shows the selected floating object's wrap polygon for editing (<see cref="ViewState.EditingWrapPoints"/>): dragging a vertex moves it, dragging an edge adds one, Ctrl+click removes one, each one undo step that makes the wrap tight. Esc ends it. Not an edit: no undo step.</summary>
+    EditWrapPoints,
+    /// <summary>Fits the selected text to a width (Fit Text), or lets it take its own.</summary>
+    SetFitText,
+    /// <summary>Sets the document's default formatting with any character and paragraph formatting operations but frames, as one undo step.</summary>
+    SetDefaultFormatting,
+    /// <summary>Makes a style (New Style); its id is the command's result.</summary>
+    CreateStyle,
+    /// <summary>Changes a style (Modify Style); a built-in style the document lacks joins it.</summary>
+    ModifyStyle,
+    /// <summary>Sets the rows and columns in each of the table's bands.</summary>
+    SetTableBandSizes,
+    /// <summary>Selects ranges of text and blocks of cells of one story, a discontiguous selection when there are several. Not an edit: no undo step.</summary>
+    SetSelection,
+    /// <summary>Shrink Selection (Shift+F8), in extend mode: the selection one level smaller around where extending started. Not an edit: no undo step.</summary>
+    ShrinkSelection,
+    /// <summary>Select Text with Similar Formatting: every stretch of text in the story formatted as the selection's first character. Not an edit: no undo step.</summary>
+    SelectSimilarFormatting,
+    /// <summary>Selects every use of a paragraph or character style in the main document. Not an edit: no undo step.</summary>
+    SelectStyleInstances,
+    /// <summary>Sets the table's default cell margins (Table Options).</summary>
+    SetTableCellMargins,
+    /// <summary>Inserts blank cells beside the selected ones, shifting them right or down (Insert Cells).</summary>
+    InsertCells,
+    /// <summary>Sets the pointer's table tool: none, the Draw Table pen or the eraser. Not an edit: no undo step.</summary>
+    SetTableTool,
+    /// <summary>Sets the line the Draw Table pen draws. Not an edit: no undo step.</summary>
+    SetTablePen,
+    /// <summary>A Draw Table pen stroke on a page.</summary>
+    DrawTableStroke,
+    /// <summary>The table eraser on a page: merges the cells either side of a border.</summary>
+    EraseTableBorder,
+    /// <summary>Names the selected object.</summary>
+    SetObjectName,
+    /// <summary>Sets the selected object's alternative text title.</summary>
+    SetObjectTitle,
+    /// <summary>Hides or shows a floating object.</summary>
+    SetObjectHidden,
+    /// <summary>Selects a floating object or a group's object, as the Selection Pane does. Not an edit: no undo step.</summary>
+    SelectObject,
+    /// <summary>Moves a floating object in its page's stack.</summary>
+    RestackObject,
+    /// <summary>Whether resizing the selected object keeps its aspect ratio.</summary>
+    SetLockAspectRatio,
+    /// <summary>Sets the selected pictures' recolouring.</summary>
+    SetPictureRecolor,
+    /// <summary>Reset Picture, or Reset Picture and Size.</summary>
+    ResetPicture,
+    /// <summary>Sets the selected floating object's wrap polygon.</summary>
+    SetWrapPoints,
+    /// <summary>Makes the selected floating object's wrap polygon again from its outline.</summary>
+    ResetWrapPoints,
+    /// <summary>Links the selected text box to an empty one (Create Link).</summary>
+    LinkTextBox,
+    /// <summary>Starts linking the selected text box with the pointer. Not an edit: no undo step.</summary>
+    BeginTextBoxLink,
+    /// <summary>Breaks the link from the selected text box to the next (Break Link).</summary>
+    UnlinkTextBox,
+    /// <summary>Turns Select Objects on or off. Not an edit: no undo step.</summary>
+    SetSelectObjects,
+    /// <summary>Promote (Alt+Shift+Left): each selected paragraph a level up; body text takes the level of the heading before it (Heading 1 when none).</summary>
+    PromoteOutline,
+    /// <summary>Demote (Alt+Shift+Right): each selected heading a level down; Heading 9 and body text stay.</summary>
+    DemoteOutline,
+    /// <summary>Promote to Heading 1: the selected paragraphs take Heading 1, their direct outline level removed.</summary>
+    PromoteToHeading1,
+    /// <summary>Demote to Body Text: the selected paragraphs take the default paragraph style, their direct outline level removed.</summary>
+    DemoteToBodyText,
+    /// <summary>A navigation pane's Promote on one heading.</summary>
+    PromoteHeading,
+    /// <summary>A navigation pane's Demote on one heading.</summary>
+    DemoteHeading,
+    /// <summary>Moves a heading with its content before another heading, or after that heading's content, optionally at a new level; the caret goes to its start.</summary>
+    MoveHeading,
+    /// <summary>Deletes a heading and its content.</summary>
+    DeleteHeading,
+    /// <summary>An empty heading at a heading's level just before it, the caret in it.</summary>
+    InsertHeadingBefore,
+    /// <summary>An empty heading at a heading's level after its content, the caret in it.</summary>
+    InsertHeadingAfter,
+    /// <summary>An empty heading a level below a heading, after its content, the caret in it.</summary>
+    InsertSubheading,
+    /// <summary>Selects a heading and its content. Not an edit: no undo step.</summary>
+    SelectHeadingContent,
+    /// <summary>Sets the separator, continuation separator or continuation notice of footnotes or endnotes, or back to the built-in one.</summary>
+    SetNoteSeparator,
+    /// <summary>Lets an editor edit the selection, or stops them editing the editable ranges reaching it.</summary>
+    SetEditableRangeEditor,
+    /// <summary>Selects the next or previous editable range the author may edit (Find Next Region I Can Edit). Not an edit: no undo step.</summary>
+    SelectNextEditableRange,
+    /// <summary>Selects every editable range the author may edit (Show All Regions I Can Edit). Not an edit: no undo step.</summary>
+    SelectEditableRanges,
+    /// <summary>The groups the author is in; editable ranges for them let the author edit. Kept for the documents opened after.</summary>
+    SetEditingGroups,
+    /// <summary>Selects the next or previous legacy form field (Tab and Shift+Tab where forms are filled in). Not an edit: no undo step.</summary>
+    SelectNextFormField,
+    /// <summary>Adds an item to a repeating section: a copy of one of its items, with its content; the caret goes to the copy's start.</summary>
+    AddRepeatingItem,
+    /// <summary>Which kinds of markup show (Show Markup); unset values are kept. Not an edit: no undo step.</summary>
+    SetShowMarkup,
+    /// <summary>The reviewers whose revisions and comments don't show, by name; empty: all reviewers show. Not an edit: no undo step.</summary>
+    SetHiddenReviewers,
+    /// <summary>Where revisions show in All Markup. Not an edit: no undo step.</summary>
+    SetBalloonMode,
+    /// <summary>How revisions draw (Track Changes Options); unset values are kept. Not an edit: no undo step.</summary>
+    SetMarkupStyle,
+    /// <summary>Whether tracking records moves as moves and formatting changes; unset values are kept. Saved.</summary>
+    SetTrackOptions,
+    /// <summary>Accepts every revision and turns tracking off (Accept All Changes and Stop Tracking).</summary>
+    AcceptAllAndStopTracking,
+    /// <summary>Deletes every comment, resolved ones too, or the threads Show Markup shows.</summary>
+    DeleteAllComments,
+    /// <summary>Pastes the paste just made again another way, in place of it (the Paste Options button).</summary>
+    Repaste,
+    /// <summary>Hides the Paste Options button of the paste just made. Not an edit: no undo step.</summary>
+    DismissPasteOptions,
+    /// <summary>Changes the cut, copy and paste options. A session setting, never saved.</summary>
+    SetPasteOptions,
+    /// <summary>Inserts a document's content in place of the selection (Insert Text from File).</summary>
+    InsertFile,
+    /// <summary>Go To: a page, section, line, bookmark, comment, note, field, table, graphic, equation, object or heading. Not an edit: no undo step.</summary>
+    GoTo,
+    /// <summary>A table of contents in place of the selection.</summary>
+    InsertTableOfContents,
+    /// <summary>A table of figures of a caption label's captions, in place of the selection.</summary>
+    InsertTableOfFigures,
+    /// <summary>Word's Manual Table: typed entries in a building block control.</summary>
+    InsertManualTableOfContents,
+    /// <summary>Updates a table of contents or figures: its page numbers, or every entry again.</summary>
+    UpdateTableOfContents,
+    /// <summary>Updates every table of contents and of figures but the locked ones.</summary>
+    UpdateAllTablesOfContents,
+    /// <summary>Removes a table of contents, with its building block control and title.</summary>
+    RemoveTableOfContents,
+    /// <summary>Marks a table of contents entry after the selection (Mark Entry).</summary>
+    MarkTableOfContentsEntry,
+    /// <summary>A caption for the selected table, picture or object (or the caret's paragraph).</summary>
+    InsertCaption,
+    /// <summary>The caption every table inserted from now on gets (AutoCaption). A session setting, never saved.</summary>
+    SetAutoCaption,
+    /// <summary>A cross-reference to an item the cross-reference targets list.</summary>
+    InsertCrossReference,
 }

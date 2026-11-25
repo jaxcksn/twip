@@ -1,0 +1,33 @@
+{
+  "name": "table-draw",
+  "steps": [
+    { "op": "command", "command": { "type": "insertTable", "rows": 2, "columns": 2 } },
+    { "op": "command", "command": { "type": "moveToCell", "value": "next" } },
+    { "op": "command", "command": { "type": "moveToCell", "value": "next" } },
+    { "op": "command", "command": { "type": "moveToCell", "value": "next" } },
+    { "op": "command", "command": { "type": "insertText", "value": "Corner" } },
+    { "op": "command", "command": { "type": "select", "value": "table" } },
+    { "op": "command", "command": { "type": "setRowHeight", "value": { "height": 72, "rule": "exact" } } },
+    { "op": "expectState", "match": { "selection": { "table": { "rows": 2, "columns": 2 } } } },
+    { "op": "command", "command": { "type": "drawTableStroke", "page": 0, "from": [40, 108], "to": [580, 108] } },
+    { "op": "expectState", "match": { "history": { "undoLabel": "Draw Table" }, "selection": { "table": { "rows": 3 } } } },
+    { "op": "call", "method": "getState", "save": "before" },
+    { "op": "command", "command": { "type": "drawTableStroke", "page": 0, "from": [200, 180], "to": [200, 180] } },
+    { "op": "expectState", "match": { "revision": { "$saved": "before", "path": ["revision"] } } },
+    { "op": "command", "command": { "type": "eraseTableBorder", "page": 0, "at": [250, 108] } },
+    { "op": "expectState", "match": { "history": { "undoLabel": "Merge Cells" } } },
+    { "op": "command", "command": { "type": "eraseTableBorder", "page": 0, "at": [400, 108] } },
+    { "op": "expectState", "match": { "selection": { "table": { "rows": 3, "rowSpan": 2, "columnSpan": 1 } } } },
+    { "op": "command", "command": { "type": "eraseTableBorder", "page": 0, "at": [300, 400] } },
+    { "op": "expectError", "code": "unavailable" },
+    { "op": "command", "command": { "type": "drawTableStroke", "page": 0, "from": [150, 50], "to": [150, 240] } },
+    { "op": "expectState", "match": { "selection": { "table": { "columns": 3 } } } },
+    { "op": "command", "command": { "type": "drawTableStroke", "page": 0, "from": [305, 148], "to": [530, 212] } },
+    { "op": "call", "method": "find.next", "args": [{ "text": "Corner" }], "result": { "found": true } },
+    { "op": "expectState", "match": { "history": { "undoLabel": "Draw Table" }, "selection": { "table": { "row": 2, "column": 2, "cellBorders": { "diagonalDown": { "style": "single", "width": 0.5 }, "diagonalUp": "none" } } } } },
+    { "op": "command", "command": { "type": "setTablePen", "value": { "style": "double", "width": 1.5, "color": "auto" } } },
+    { "op": "command", "command": { "type": "drawTableStroke", "page": 0, "from": [530, 148], "to": [305, 212] } },
+    { "op": "call", "method": "find.next", "args": [{ "text": "Corner" }], "result": { "found": true } },
+    { "op": "expectState", "match": { "selection": { "table": { "cellBorders": { "diagonalUp": { "style": "double", "width": 1.5 } } } } } }
+  ]
+}

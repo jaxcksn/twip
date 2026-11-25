@@ -81,7 +81,7 @@ fn a_paragraph_mark_matches_across_paragraphs_of_one_story() {
     assert_eq!(texts(&e), ["one a", "b", "three"], "a ^p in the replacement splits the paragraph");
     assert_eq!(replace_all(&mut e, spec("^p"), " "), 2);
     assert_eq!(texts(&e), ["one a b three"]);
-    assert!(matches!(e.execute(Command::Undo, fonts()), Outcome::Changed(_)));
+    assert!(matches!(e.execute(Command::Undo(Default::default()), fonts()), Outcome::Changed(_)));
     assert_eq!(texts(&e), ["one a", "b", "three"], "one undo step");
 }
 
@@ -227,7 +227,7 @@ fn formatting_alone_and_with_text() {
     assert_eq!(texts(&e)[0], "plain apple bold apple end", "the text kept");
     let is_italic = FindSpec { format: Some(italic.clone()), ..spec("") };
     assert_eq!(found(&e, is_italic.clone()), ["apple", "apple", "apple"]);
-    assert!(matches!(e.execute(Command::Undo, fonts()), Outcome::Changed(_)));
+    assert!(matches!(e.execute(Command::Undo(Default::default()), fonts()), Outcome::Changed(_)));
     assert!(found(&e, is_italic).is_empty(), "one undo step");
     let s = search(with_format("apple"));
     let hits = s.all(&e);
@@ -286,7 +286,7 @@ fn replace_all_with_tracking_records_each_replacement() {
     assert_eq!(mine_del.matches("apple").count(), 3, "deleted as mine, the other author's insertion too: {runs:?}");
     assert_eq!(mine_ins.matches("pear").count(), 3, "each replacement inserted as mine: {runs:?}");
     assert!(runs.iter().any(|r| r.0.contains("apple deleted")), "the other author's deletion stays");
-    assert!(matches!(e.execute(Command::Undo, fonts()), Outcome::Changed(_)));
+    assert!(matches!(e.execute(Command::Undo(Default::default()), fonts()), Outcome::Changed(_)));
     assert_eq!(search(spec("pear")).all(&e).len(), 0, "one undo step");
 }
 
@@ -367,7 +367,7 @@ fn comment_marks_find_the_commented_text_and_replacing_them_deletes_the_comments
     assert_eq!(replace_all(&mut e, spec("^a"), ""), 2);
     assert!(e.document().comments.by_id.is_empty(), "the comments deleted");
     assert_eq!(texts(&e), ["ann's and bob's"], "their text kept");
-    assert!(matches!(e.execute(Command::Undo, fonts()), Outcome::Changed(_)));
+    assert!(matches!(e.execute(Command::Undo(Default::default()), fonts()), Outcome::Changed(_)));
     assert_eq!(e.document().comments.by_id.len(), 2, "one undo step");
 }
 
@@ -585,7 +585,7 @@ fn replacing_many_comment_marks_stays_linear() {
     assert!(started.elapsed() < std::time::Duration::from_secs(30), "one pass, one transaction");
     assert!(e.document().comments.by_id.is_empty());
     assert_eq!(texts(&e)[N - 1], "x!");
-    assert!(matches!(e.execute(Command::Undo, fonts()), Outcome::Changed(_)));
+    assert!(matches!(e.execute(Command::Undo(Default::default()), fonts()), Outcome::Changed(_)));
     assert_eq!(e.document().comments.by_id.len(), N, "one undo step");
 }
 
@@ -727,7 +727,7 @@ fn formatted_replacements_are_tracked_and_undo_in_one_step() {
             assert_eq!(del, "appleapple", "{with:?}: each found text deleted as mine");
             assert_eq!(ins, "[apple][apple]", "{with:?}: each replacement inserted as mine");
         }
-        assert!(matches!(e.execute(Command::Undo, fonts()), Outcome::Changed(_)));
+        assert!(matches!(e.execute(Command::Undo(Default::default()), fonts()), Outcome::Changed(_)));
         assert_eq!(texts(&e), ["one apple", "two apple"], "{with:?}: one undo step");
         assert!(found(&e, FindSpec { format: Some(italic.clone()), ..spec("") }).is_empty(), "{with:?}");
         let tracked = e.document().sections[0].blocks.iter().any(|b| match b {

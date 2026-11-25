@@ -274,7 +274,7 @@ fn a_protected_pdf_keeps_its_keywords_and_warns() {
     use super::encrypt::{Tok, aes_cbc_decrypt, file_key, parse};
     let fonts = FontSet::system();
     let (_, bytes) = fixtures().into_iter().find(|f| f.0 == "text-basics.docx").expect("the fixture");
-    let options = PdfOptions { open_password: Some("secret".into()), keywords: vec!["sealed".into()] };
+    let options = PdfOptions { open_password: Some("secret".into()), keywords: vec!["sealed".into()], hidden_text: None };
     let conversion = convert(&bytes, &fonts, &options).expect("converts");
     assert!(conversion.warnings.iter().any(|w| w.code == crate::api::warning::WarningCode::PdfArchivalClaimDropped));
     let parsed = parse(&conversion.bytes).expect("parses");

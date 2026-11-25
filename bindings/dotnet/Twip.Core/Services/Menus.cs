@@ -15,7 +15,19 @@ public sealed class EditorMenus
     /// <summary>The menu for the selection, as the context-menu key would open it.</summary>
     /// <param name="ct">Cancels the request.</param>
     /// <returns>The menu model.</returns>
-    public Task<ContextMenu> GetContextMenuAsync(CancellationToken ct = default) => _session.CallAsync<ContextMenu>(Method.ContextMenu, [], ct);
+    public Task<ContextMenu> GetContextMenuAsync(CancellationToken ct = default) => GetContextMenuAsync(null, ct);
+
+    /// <summary>The menu for the selection, with a Synonyms submenu.</summary>
+    /// <param name="synonyms">Your thesaurus's words for <see cref="WordAtSelectionAsync"/>: a Synonyms submenu (at most 8 show; an empty list is an empty submenu). Null shows none.</param>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>The menu model.</returns>
+    public Task<ContextMenu> GetContextMenuAsync(IReadOnlyList<string>? synonyms, CancellationToken ct = default) =>
+        _session.CallAsync<ContextMenu>(Method.ContextMenu, synonyms is null ? [] : WireJson.ToUtf8(new JsonObject { ["synonyms"] = new JsonArray([.. synonyms.Select(w => (JsonNode)w)]) }), ct);
+
+    /// <summary>The word the selection is in or selects, for your thesaurus; null unless it is within one word in one paragraph.</summary>
+    /// <param name="ct">Cancels the request.</param>
+    /// <returns>The word and its language.</returns>
+    public Task<WordAt?> WordAtSelectionAsync(CancellationToken ct = default) => _session.CallAsync<WordAt?>(Method.WordAtSelection, [], ct);
 
     /// <summary>Runs a menu item's action as one transaction.</summary>
     /// <param name="action">The item's action.</param>
@@ -26,10 +38,15 @@ public sealed class EditorMenus
         ArgumentNullException.ThrowIfNull(action);
         // An attached host's Paste reads the system clipboard, as Ctrl+V does.
         if (_session.Host is { } host && action.Wire?["command"] is JsonObject command && (string?)command["type"] == "paste")
-            return host.PasteAsync((string?)command["as"] == "text", ct);
+            return host.PasteAsync(command["as"] is { } mode ? System.Text.Json.JsonSerializer.Deserialize(mode, TwipJsonContext.Default.PasteMode) : null, ct);
         return _session.CallAsync(Method.Invoke, WireJson.ToUtf8(action), ct);
     }
 }
+
+/// <summary>The word at the selection, for a thesaurus.</summary>
+/// <param name="Word">The word.</param>
+/// <param name="Language">Its language tag.</param>
+public sealed record WordAt(string Word, string Language);
 
 /// <summary>A context menu: what it is for, and its items.</summary>
 /// <param name="Target">What the menu is for.</param>
@@ -42,6 +59,7 @@ public sealed record ContextMenu(MenuTarget Target, IReadOnlyList<MenuItem> Item
 [JsonDerivedType(typeof(SuggestionItem), "suggestion")]
 [JsonDerivedType(typeof(SubmenuItem), "submenu")]
 [JsonDerivedType(typeof(SeparatorItem), "separator")]
+[JsonDerivedType(typeof(ActionItem), "action")]
 public abstract record MenuItem
 {
     private protected MenuItem() { }
@@ -68,7 +86,15 @@ public sealed record SuggestionItem(string Label, MenuAction Action) : MenuItem;
 /// <summary>A submenu.</summary>
 /// <param name="Label">The label.</param>
 /// <param name="Items">Its items.</param>
-public sealed record SubmenuItem(string Label, IReadOnlyList<MenuItem> Items) : MenuItem;
+/// <param name="Inline">Shown as a row of icons in the menu itself (Paste Options).</param>
+public sealed record SubmenuItem(string Label, IReadOnlyList<MenuItem> Items, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool Inline = false) : MenuItem;
+
+/// <summary>An action that is not one command: opening or copying a link, a drop menu choice, several commands at once, a setting.</summary>
+/// <param name="Label">The label.</param>
+/// <param name="Enabled">Whether it can run.</param>
+/// <param name="Checked">Whether it is the current choice.</param>
+/// <param name="Action">What to pass to <see cref="EditorMenus.InvokeAsync"/>.</param>
+public sealed record ActionItem(string Label, bool Enabled, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Checked, MenuAction Action) : MenuItem;
 
 /// <summary>A separator.</summary>
 public sealed record SeparatorItem : MenuItem;
@@ -94,6 +120,7 @@ public sealed class MenuAction
 [JsonDerivedType(typeof(MenuTarget.Revision), "revision")]
 [JsonDerivedType(typeof(MenuTarget.Comment), "comment")]
 [JsonDerivedType(typeof(MenuTarget.HeaderFooter), "headerFooter")]
+[JsonDerivedType(typeof(MenuTarget.Drop), "drop")]
 public abstract record MenuTarget
 {
     private protected MenuTarget() { }
@@ -133,4 +160,7 @@ public abstract record MenuTarget
 
     /// <summary>A header or footer.</summary>
     public sealed record HeaderFooter : MenuTarget;
+
+    /// <summary>Where a right-button drag of text dropped it: Move Here, Copy Here, Link Here, Create Hyperlink Here, Cancel.</summary>
+    public sealed record Drop : MenuTarget;
 }

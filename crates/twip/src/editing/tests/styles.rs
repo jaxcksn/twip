@@ -54,9 +54,9 @@ fn a_style_edit_formats_its_users_as_a_fresh_read_does_and_undoes_in_one_step() 
         changed.iter().all(|&i| ["FX-STYLES", "Heading two", "Heading three"].iter().any(|t| after[i].starts_with(t))),
         "only Heading 1 and its descendants: {changed:?}"
     );
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(formatting(&e), before, "one undo step restores it");
-    e.execute(Command::Redo, fonts());
+    e.execute(Command::Redo(Default::default()), fonts());
     assert_eq!(formatting(&e), after);
 }
 

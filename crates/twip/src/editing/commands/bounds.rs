@@ -89,6 +89,9 @@ pub(crate) fn bounds(command: &Command) -> Result<(), Error> {
         C::SetDocumentProperties(p) => p.custom.iter().flatten().filter(|c| c.kind == CustomPropertyKind::Number).try_for_each(|c| {
             if c.value.trim().parse::<f64>().is_ok_and(f64::is_finite) { Ok(()) } else { Err(Error::invalid(format!("{} isn't a number", c.value))) }
         }),
+        C::SetSelection(s) if s.ranges.len().saturating_add(s.cells.len()) > crate::api::command::SET_SELECTION_PIECES_LIMIT => {
+            Err(Error::invalid(format!("at most {} ranges and blocks of cells", crate::api::command::SET_SELECTION_PIECES_LIMIT)))
+        }
         _ => Ok(()),
     }
 }

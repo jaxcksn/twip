@@ -64,6 +64,16 @@
     {"op": "expectState", "match": {"ruler": {"horizontal": {"tableColumns": {"$exact": [72, 200, 384, 540]}}}}},
     {"op": "call", "method": "find.next", "args": [{"text": "Two columns."}], "result": {"found": true}},
     {"op": "command", "command": {"type": "moveColumnBoundary", "column": 0, "to": 252}},
-    {"op": "expectState", "match": {"ruler": {"horizontal": {"columns": {"$exact": [{"start": 72, "end": 252}, {"start": 288, "end": 540}]}}}}}
+    {"op": "expectState", "match": {"ruler": {"horizontal": {"columns": {"$exact": [{"start": 72, "end": 252}, {"start": 288, "end": 540}]}}}}},
+    {"op": "command", "command": {"type": "undo"}},
+    {"op": "call", "method": "find.next", "args": [{"text": "Two columns."}], "result": {"found": true}},
+    {"op": "command", "command": {"type": "setSectionTextDirection", "value": "tbRl"}},
+    {"op": "expectState", "match": {"ruler": {"lines": "down", "vertical": {"text": {"start": 72, "end": 720}, "indents": {"left": 0, "right": 0, "firstLine": 0}}, "horizontal": {"columns": {"$exact": [{"start": 324, "end": 540}, {"start": 72, "end": 288}]}, "tabs": {"$exact": []}}}}},
+    {"op": "command", "command": {"type": "setSectionTextDirection", "value": "tbLrV"}},
+    {"op": "expectState", "match": {"ruler": {"lines": "down", "horizontal": {"columns": {"$exact": [{"start": 72, "end": 288}, {"start": 324, "end": 540}]}}}}},
+    {"op": "command", "command": {"type": "setSectionTextDirection", "value": "btLr"}},
+    {"op": "expectState", "match": {"ruler": {"lines": "down", "horizontal": {"columns": {"$exact": [{"start": 324, "end": 540}, {"start": 72, "end": 288}]}}}}},
+    {"op": "command", "command": {"type": "setSectionTextDirection", "value": "lrTb"}},
+    {"op": "expectState", "match": {"ruler": {"lines": "horizontal", "horizontal": {"text": {"start": 72, "end": 288}, "columns": {"$exact": [{"start": 72, "end": 288}, {"start": 324, "end": 540}]}}, "vertical": {"tabs": {"$exact": []}}}}}
   ]
 }

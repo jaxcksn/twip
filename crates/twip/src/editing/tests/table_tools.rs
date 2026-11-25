@@ -159,7 +159,7 @@ fn table_default_margins_set_save_and_undo() {
     cells(&mut again, (0, 0), (0, 0));
     assert_eq!(again.table_readback().map(|r| r.default_cell_margins.left), Some(Points(9.0)));
     assert!(matches!(e.set_table_cell_margins([Some(Points(-1.0)), None, None, None], fonts()), Outcome::Refused(_)));
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(table(&e).rows[1].cells[1].margins, [0.0, 0.5, 0.0, 0.5]);
 }
 
@@ -228,8 +228,8 @@ fn insert_cells_shift_right_grows_the_rows_at_the_selected_widths() {
     assert_eq!((t.rows[1].grid_after, t.rows[0].grid_after), (1, 0), "the other row keeps its width");
     let mut again = reopened(&e);
     assert_eq!(texts(&again), [vec!["a", "", "b"], vec!["c", "d"]]);
-    again.execute(Command::Undo, fonts());
-    e.execute(Command::Undo, fonts());
+    again.execute(Command::Undo(Default::default()), fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(texts(&e), [vec!["a", "b"], vec!["c", "d"]]);
     assert_eq!(table(&e).grid, [72.0, 72.0]);
 }
@@ -241,7 +241,7 @@ fn insert_cells_shift_down_moves_the_column_over_a_new_row() {
     cells(&mut e, (0, 0), (0, 0));
     assert!(matches!(e.insert_cells(InsertShift::Down, fonts()), Outcome::Changed(_)));
     assert_eq!(texts(&e), [vec!["", "b"], vec!["a", "d"], vec!["c", ""]]);
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(texts(&e), [vec!["a", "b"], vec!["c", "d"]]);
 }
 
@@ -289,7 +289,7 @@ fn the_pen_splits_a_cell_where_it_draws() {
     let left = cell_rect(&mut e, 0, 0);
     assert!((left[2] - x).abs() < 0.5, "the line where it was drawn: {left:?} {x}");
     assert_eq!(table(&e).rows[1].cells.len(), 2, "the other row keeps its cells");
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(table(&e).rows[0].cells.len(), 2, "one undo step");
     let r = cell_rect(&mut e, 1, 1);
     let y = (r[1] + r[3]) / 2.0;
@@ -315,7 +315,7 @@ fn the_pen_splits_every_cell_its_line_crosses() {
     assert!(matches!(e.draw_table_stroke(Stroke { page: 0, from: [a[0] + 1.0, y], to: [b[2] - 1.0, y] }, fonts()), Outcome::Changed(_)));
     assert_eq!(shape(&e), [vec![(1, N), (1, N)], vec![(1, N), (1, N)], vec![(1, N), (1, N)]], "a row line everywhere");
     assert_eq!(texts(&e), [vec!["a", "b"], vec!["", ""], vec!["c", "d"]]);
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     let (a, c) = (cell_rect(&mut e, 0, 0), cell_rect(&mut e, 1, 0));
     let x = a[0] + 30.0;
     assert!(matches!(e.draw_table_stroke(Stroke { page: 0, from: [x, a[1] + 1.0], to: [x, c[3] - 1.0] }, fonts()), Outcome::Changed(_)));
@@ -390,9 +390,9 @@ fn the_pen_redraws_a_border_it_follows() {
     assert!(matches!(e.draw_table_stroke(Stroke { page: 0, from: [r[0] + 2.0, r[3]], to: [r[2] - 2.0, r[3]] }, fonts()), Outcome::Changed(_)));
     let t = table(&e);
     assert_eq!(t.rows.len(), 2, "no split");
-    assert_eq!(t.rows[0].cells[0].bottom.as_ref().map(|b| b.style.as_str()), Some("double"));
-    assert_eq!(t.rows[1].cells[0].top.as_ref().map(|b| b.style.as_str()), Some("double"));
-    assert_ne!(t.rows[0].cells[1].bottom.as_ref().map(|b| b.style.as_str()), Some("double"), "only where it was drawn");
+    assert_eq!(t.rows[0].cells[0].bottom.as_ref().map(|b| &*b.style), Some("double"));
+    assert_eq!(t.rows[1].cells[0].top.as_ref().map(|b| &*b.style), Some("double"));
+    assert_ne!(t.rows[0].cells[1].bottom.as_ref().map(|b| &*b.style), Some("double"), "only where it was drawn");
 }
 
 #[test]
@@ -438,7 +438,7 @@ fn the_eraser_merges_the_cells_either_side_of_a_border() {
     let r = cell_rect(&mut e, 0, 0);
     assert!(matches!(e.erase_table_border(0, [r[2], (r[1] + r[3]) / 2.0], fonts()), Outcome::Changed(_)));
     assert_eq!((table(&e).rows[0].cells.len(), table(&e).rows[0].cells[0].span), (1, 2));
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     let r = cell_rect(&mut e, 0, 1);
     assert!(matches!(e.erase_table_border(0, [(r[0] + r[2]) / 2.0, r[3]], fonts()), Outcome::Changed(_)));
     assert_eq!(table(&e).rows[1].cells[1].v_merge, crate::docx::VMerge::Continue, "merged down");
@@ -455,7 +455,7 @@ fn the_pen_draws_a_new_table_outside_one() {
     assert_eq!((t.grid.clone(), t.rows[0].height.clone()), (vec![150.0], Some((60.0, "atLeast".to_string()))));
     let pos = t.floating.expect("positioned where it was drawn");
     assert_eq!((pos.x, pos.y, pos.h_page, pos.v_anchor), (100.0, 300.0, true, crate::docx::props::TableAnchor::Page));
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert!(!e.document().sections[0].blocks.iter().any(|b| matches!(b, Block::Table(_))), "one undo step");
 }
 
@@ -567,7 +567,7 @@ fn the_pen_splits_a_vertically_merged_cell_whole() {
     let x = top[0] - 36.0;
     assert!(matches!(e.draw_table_stroke(Stroke { page: 0, from: [x, top[1] + 1.0], to: [x, top[3] - 1.0] }, fonts()), Outcome::Changed(_)));
     assert_eq!(shape(&e), [vec![(1, R), (1, R), (1, N)], vec![(1, C), (1, C), (1, N)]], "down the whole merged cell");
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     // Across the merged cell where its rows meet: two cells again.
     let below = cell_rect(&mut e, 1, 1);
     let y = below[1];
@@ -816,7 +816,7 @@ fn the_pen_draws_down_a_rows_own_borders_where_it_is_indented() {
     let out = e.draw_table_stroke(Stroke { page: 0, from: [x, d[1] + 1.0], to: [x, d[3] - 1.0] }, fonts());
     assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
     assert_eq!((table(&e).grid.len(), table(&e).rows[1].cells.len(), table(&e).rows[0].cells.len()), (2, 2, 2));
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     // Across its first cell where the row above has a border: split there in this row.
     let x = cell_rect(&mut e, 0, 0)[2];
     assert!(x > c[0] + 4.0 && x < c[2] - 4.0);

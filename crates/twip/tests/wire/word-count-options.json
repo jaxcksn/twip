@@ -1,0 +1,10 @@
+[
+  {
+    "includeTextboxesAndNotes": true,
+    "selection": false
+  },
+  {
+    "includeTextboxesAndNotes": false,
+    "selection": true
+  }
+]

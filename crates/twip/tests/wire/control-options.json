@@ -7,8 +7,14 @@
     "sectionTitle": "Line"
   },
   {
+    "calendar": "hijri",
     "format": "yyyy-MM-dd",
-    "locale": "en-GB"
+    "locale": "en-GB",
+    "storeAs": "text"
+  },
+  {
+    "category": "General",
+    "gallery": "Quick Parts"
   },
   {
     "items": [

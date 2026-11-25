@@ -1,0 +1,29 @@
+[
+  {
+    "kind": "empty"
+  },
+  {
+    "kind": "unknownField",
+    "name": "FOO"
+  },
+  {
+    "kind": "missingArgument",
+    "name": "Bookmark"
+  },
+  {
+    "flag": "q",
+    "kind": "unknownSwitch"
+  },
+  {
+    "flag": "l",
+    "kind": "missingSwitchValue"
+  },
+  {
+    "flag": "c",
+    "kind": "notANumber"
+  },
+  {
+    "flag": "@",
+    "kind": "formatNotTaken"
+  }
+]

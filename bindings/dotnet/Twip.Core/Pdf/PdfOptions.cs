@@ -17,10 +17,13 @@ public sealed class PdfOptions
     /// <summary>Written to the PDF's keywords metadata, in order. Blank entries are dropped.</summary>
     public IReadOnlyList<string> Keywords { get; init; } = [];
 
+    /// <summary>Prints hidden text (Word's Print hidden text). Default: off, whatever the view shows.</summary>
+    public bool HiddenText { get; init; }
+
     /// <summary>The options, with the password hidden.</summary>
     /// <returns>A description that never contains the password.</returns>
     public override string ToString() =>
-        $"PdfOptions {{ OpenPassword = {(OpenPassword is null ? "null" : "***")}, Keywords = [{string.Join(", ", Keywords)}] }}";
+        $"PdfOptions {{ OpenPassword = {(OpenPassword is null ? "null" : "***")}, Keywords = [{string.Join(", ", Keywords)}], HiddenText = {HiddenText} }}";
 
     /// <summary>Throws for an empty password, which would write a PDF that looks protected and isn't.</summary>
     internal void Validate()

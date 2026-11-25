@@ -167,7 +167,7 @@ impl Editor {
         self.set_selection(Selection::range(source.0, source.1, super::selection::Granularity::Char));
         let mut ok = matches!(self.execute(super::commands::Command::InsertBookmark(name.clone()), fonts), Outcome::Changed(_));
         self.set_selection(Selection::Caret(drop));
-        let link = Hyperlink { address: format!("#{name}"), text: Some(text) };
+        let link = Hyperlink { address: format!("#{name}"), text: Some(text), ..Default::default() };
         ok &= matches!(self.execute(super::commands::Command::InsertHyperlink(link), fonts), Outcome::Changed(_));
         self.end_batch(ok, fonts)
     }

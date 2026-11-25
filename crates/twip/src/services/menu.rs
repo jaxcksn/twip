@@ -44,7 +44,8 @@ fn target(state: &State, misspelled: Option<&Misspelled>) -> MenuTarget {
         // A shape, line or group takes the object menu a picture does.
         Some(ObjectKind::Picture | ObjectKind::Shape | ObjectKind::Line | ObjectKind::Group) => return MenuTarget::Picture,
         Some(ObjectKind::TextBox) => return MenuTarget::TextBox,
-        None => {}
+        // A frame holds text: the text's menu.
+        Some(ObjectKind::Frame) | None => {}
     }
     if s.table.is_some() {
         return MenuTarget::Table;
@@ -84,7 +85,11 @@ impl MenuFacts {
 }
 
 fn submenu(label: &str, items: Vec<MenuItem>) -> MenuItem {
-    MenuItem::Submenu { label: label.into(), items }
+    MenuItem::Submenu { label: label.into(), items, inline: false }
+}
+
+fn action(label: &str, enabled: bool, action: MenuAction) -> MenuItem {
+    MenuItem::Action { label: label.into(), enabled, checked: None, action }
 }
 
 fn checked(mut i: MenuItem, on: bool) -> MenuItem {
@@ -129,7 +134,11 @@ pub fn build_with(state: &State, misspelled: Option<&Misspelled>, facts: &MenuFa
     items.push(item(state, "Cut", Command::Cut, true));
     items.push(item(state, "Copy", Command::Copy, true));
     let paste = |label, as_| item(state, label, Command::Paste(PasteOptions { as_: Some(as_) }), false);
-    items.push(submenu("Paste Options", vec![paste("Keep Source Formatting", PasteAs::Formatted), paste("Keep Text Only", PasteAs::Text)]));
+    items.push(MenuItem::Submenu {
+        label: "Paste Options".into(),
+        items: vec![paste("Keep Source Formatting", PasteAs::Formatted), paste("Keep Text Only", PasteAs::Text)],
+        inline: true,
+    });
     let s = &state.selection;
     let group = |list: Vec<MenuItem>, items: &mut Vec<MenuItem>| {
         if !list.is_empty() {
@@ -145,8 +154,16 @@ pub fn build_with(state: &State, misspelled: Option<&Misspelled>, facts: &MenuFa
         }
         group(list, &mut items);
     }
-    if s.link.is_some() {
-        group(vec![item(state, "Remove Hyperlink", Command::RemoveHyperlink, false)], &mut items);
+    if let Some(l) = &s.link {
+        let address = l.address.clone();
+        group(
+            vec![
+                action("Open Hyperlink", true, MenuAction::OpenLink { address: address.clone() }),
+                action("Copy Hyperlink", true, MenuAction::CopyLink { address }),
+                item(state, "Remove Hyperlink", Command::RemoveHyperlink, false),
+            ],
+            &mut items,
+        );
     }
     if s.object.is_none() && state.paragraph.list == Tri::Uniform(ListState::Numbered) {
         group(
@@ -222,12 +239,56 @@ fn table(state: &State, can_merge: bool) -> Vec<MenuItem> {
         items.push(item(state, "Distribute Rows Evenly", Command::DistributeRows, false));
         items.push(item(state, "Distribute Columns Evenly", Command::DistributeColumns, false));
     }
+    items.push(submenu("Cell Alignment", cell_alignment(state)));
     let fit = |label, a| item(state, label, Command::AutoFitColumns(a), false);
     items.push(submenu(
         "AutoFit",
         vec![fit("AutoFit to Contents", AutoFit::Contents), fit("AutoFit to Window", AutoFit::Window), fit("Fixed Column Width", AutoFit::Fixed)],
     ));
     items
+}
+
+/// Word's 3×3 Cell Alignment: each sets the paragraphs' alignment and the cells' vertical alignment, as one step.
+fn cell_alignment(state: &State) -> Vec<MenuItem> {
+    use crate::api::value::{Alignment as A, CellAlignment as V};
+    let enabled = state.commands.get(&crate::api::command::CommandId::SetCellAlignment).is_none_or(|c| c.enabled) && !state.read_only;
+    let now = (state.paragraph.alignment, state.selection.table.as_ref().map(|t| t.cell_alignment));
+    let mut out = Vec::with_capacity(9);
+    for (v, row) in [(V::Top, "Top"), (V::Center, "Center"), (V::Bottom, "Bottom")] {
+        for (a, column) in [(A::Left, "Left"), (A::Center, "Center"), (A::Right, "Right")] {
+            let label = match (row, column) {
+                ("Center", "Center") => "Align Center".to_string(),
+                _ => format!("Align {row} {column}"),
+            };
+            let on = now.0 == Tri::Uniform(a) && now.1 == Some(Tri::Uniform(v));
+            out.push(MenuItem::Action {
+                label,
+                enabled,
+                checked: Some(on),
+                action: MenuAction::Commands {
+                    commands: vec![Command::SetAlignment(a), Command::SetCellAlignment(v)],
+                    label: "Cell Alignment".into(),
+                },
+            });
+        }
+    }
+    out
+}
+
+/// The menu a right-button drag of text opens where it dropped: Move Here, Copy Here, Link Here (with a file name to
+/// link to), Create Hyperlink Here, Cancel.
+pub fn drop_menu(link: bool) -> ContextMenu {
+    use crate::api::services::DropChoice as D;
+    let choice = |label, enabled, what| action(label, enabled, MenuAction::Drop { what });
+    let items = vec![
+        choice("Move Here", true, D::Move),
+        choice("Copy Here", true, D::Copy),
+        choice("Link Here", link, D::Link),
+        choice("Create Hyperlink Here", true, D::Hyperlink),
+        MenuItem::Separator,
+        choice("Cancel", true, D::Cancel),
+    ];
+    ContextMenu { target: MenuTarget::Drop, items }
 }
 
 /// A picture's or shape's Group, Bring to Front, Send to Back and Wrap Text submenus.
@@ -238,6 +299,7 @@ fn object(state: &State, o: &ObjectSelection) -> Vec<MenuItem> {
     if o.kind == ObjectKind::Group {
         group.push(item(state, "Ungroup", Command::UngroupObjects, false));
     }
+    group.push(item(state, "Regroup", Command::RegroupObjects, false));
     let wrap = |label, w| checked(item(state, label, Command::SetObjectWrap(w), false), o.wrap == w);
     let vertical = |relative_to| {
         let v = VerticalPosition { relative_to, align: None, offset: None, percent: None };
@@ -257,7 +319,10 @@ fn object(state: &State, o: &ObjectSelection) -> Vec<MenuItem> {
         wraps.push(MenuItem::Separator);
         wraps.push(checked(item(state, "Move with Text", vertical(VerticalReference::Paragraph), false), moves));
         wraps.push(checked(item(state, "Fix Position on Page", vertical(VerticalReference::Page), false), !moves));
+        wraps.push(item(state, "Edit Wrap Points", Command::EditWrapPoints, false));
     }
+    wraps.push(MenuItem::Separator);
+    wraps.push(action("Set as Default Layout", true, MenuAction::SetDefaultPictureWrap { wrap: o.wrap }));
     let front = vec![
         arrange("Bring to Front", Arrange::ToFront),
         arrange("Bring Forward", Arrange::Forward),
@@ -319,7 +384,7 @@ mod tests {
         fn state_of(items: &[MenuItem], want: CommandId) -> Option<bool> {
             items.iter().find_map(|i| match i {
                 MenuItem::Command { command, enabled, .. } if *command == want => Some(*enabled),
-                MenuItem::Submenu { items, label } if label != "Paste Options" => state_of(items, want),
+                MenuItem::Submenu { items, label, .. } if label != "Paste Options" => state_of(items, want),
                 _ => None,
             })
         }
@@ -328,7 +393,7 @@ mod tests {
         assert_eq!(state_of(CommandId::Cut), Some(false), "nothing selected");
         assert_eq!(state_of(CommandId::MergeCells), None, "one cell");
         assert_eq!(state_of(CommandId::Paste), None, "in Paste Options");
-        assert!(menu.items.iter().any(|i| matches!(i, MenuItem::Submenu { label, items } if label == "Paste Options" && items.len() == 2)));
+        assert!(menu.items.iter().any(|i| matches!(i, MenuItem::Submenu { label, items, .. } if label == "Paste Options" && items.len() == 2)));
     }
 
     #[test]
@@ -344,7 +409,7 @@ mod tests {
         assert!(at(CommandId::MergeCells) < at(CommandId::DistributeRows) && at(CommandId::DistributeRows) < at(CommandId::DistributeColumns));
         assert!(at(CommandId::DistributeColumns) < at(CommandId::AutoFitColumns));
         let fit = menu.items.iter().find_map(|i| match i {
-            MenuItem::Submenu { label, items } if label == "AutoFit" => Some(items.len()),
+            MenuItem::Submenu { label, items, .. } if label == "AutoFit" => Some(items.len()),
             _ => None,
         });
         assert_eq!(fit, Some(3), "contents, window, fixed");
@@ -356,7 +421,7 @@ mod tests {
         let facts = MenuFacts { synonyms: Some(vec!["fast".into(), "rapid".into()]), ..MenuFacts::default() };
         let menu = build_with(&state, None, &facts);
         let n = menu.items.len();
-        let MenuItem::Submenu { label, items } = &menu.items[n - 3] else { panic!("{:?}", menu.items) };
+        let MenuItem::Submenu { label, items, .. } = &menu.items[n - 3] else { panic!("{:?}", menu.items) };
         assert_eq!(label, "Synonyms");
         assert_eq!(items[1], MenuItem::Suggestion { label: "rapid".into(), action: MenuAction::ReplaceWord { with: "rapid".into() } });
         assert!(matches!(menu.items[n - 1], MenuItem::Command { command: CommandId::AddComment, .. }));
@@ -382,7 +447,7 @@ mod tests {
         assert_eq!(menu.target, MenuTarget::Picture);
         let sub = |label: &str| {
             menu.items.iter().find_map(|i| match i {
-                MenuItem::Submenu { label: l, items } if l == label => Some(items.clone()),
+                MenuItem::Submenu { label: l, items, .. } if l == label => Some(items.clone()),
                 _ => None,
             })
         };
@@ -396,11 +461,14 @@ mod tests {
                 .collect::<Vec<_>>()
         };
         let wrap = labels(sub("Wrap Text").expect("wrap text"));
-        assert_eq!(wrap.len(), 9);
+        assert_eq!(wrap.len(), 10, "seven wraps, Move with Text, Fix Position on Page, Edit Wrap Points");
         assert_eq!(wrap.iter().filter(|w| w.1 == Some(true)).map(|w| w.0.as_str()).collect::<Vec<_>>(), ["Square", "Fix Position on Page"]);
         assert_eq!(labels(sub("Bring to Front").expect("front"))[2].0, "Bring in Front of Text");
         assert_eq!(labels(sub("Send to Back").expect("back"))[2].0, "Send Behind Text");
-        assert_eq!(labels(sub("Group").expect("group")), [("Group".to_string(), None, false)], "one object");
+        let group = labels(sub("Group").expect("group"));
+        assert_eq!((group[0].0.as_str(), group[0].2), ("Group", false), "one object");
+        assert_eq!(group[1].0, "Regroup");
+        assert!(sub("Wrap Text").expect("wrap text").iter().any(|i| matches!(i, MenuItem::Action { label, .. } if label == "Set as Default Layout")));
         assert!(matches!(menu.items.last(), Some(MenuItem::Command { command: CommandId::AddComment, .. })), "New Comment last on an object");
     }
 

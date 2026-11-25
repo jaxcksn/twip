@@ -34,7 +34,7 @@ fn text_of(p: &crate::docx::Paragraph) -> String {
 }
 
 fn query(text: &str, whole: bool) -> FindQuery {
-    FindQuery { text: text.into(), match_case: None, whole_words: whole.then_some(true) }
+    FindQuery { text: text.into(), match_case: None, whole_words: whole.then_some(true), ..FindQuery::default() }
 }
 
 fn link(text: &str) -> String {
@@ -52,7 +52,7 @@ fn fields(s: &super::Session) -> usize {
 fn whole_word_replace_all_changes_a_links_text_and_keeps_the_link() {
     let (mut engine, id) = engine_with(&format!("<w:p>{}{}{}</w:p>", t("Click "), link("here and here"), t(" for help")));
     let s = engine.session(id).expect("a session");
-    assert_eq!(s.replace_all(&query("here", true), "there").expect("replaces"), 2);
+    assert_eq!(s.replace_all(&query("here", true), "there", None).map(|c| c.count).expect("replaces"), 2);
     assert_eq!(fields(s), 1, "the link stays: {:?}", paras(s)[0].inlines);
     assert_eq!(text_of(&paras(s)[0]), "Click there and there for help");
 }
@@ -62,11 +62,11 @@ fn replace_changes_a_match_in_a_links_text_and_goes_to_the_next() {
     let (mut engine, id) = engine_with(&format!("<w:p>{}{}{}</w:p>", t("Click "), link("here and here"), t(" for help")));
     let s = engine.session(id).expect("a session");
     let q = query("here", false);
-    assert!(s.find(&q, Order::Next).found);
-    let next = s.replace(&q, "there").expect("replaces");
+    assert!(s.find(&q, Order::Next).expect("finds").found);
+    let next = s.replace(&q, "there", None).expect("replaces");
     assert_eq!(text_of(&paras(s)[0]), "Click there and here for help");
     assert!(next.found, "the second match in the link is next");
-    s.replace(&q, "there").expect("replaces");
+    s.replace(&q, "there", None).expect("replaces");
     assert_eq!(text_of(&paras(s)[0]), "Click there and there for help");
     assert_eq!(fields(s), 1, "the link stays");
 }
@@ -117,9 +117,9 @@ fn find_and_replace_leave_a_links_address_alone() {
     let before = all(s);
     for whole in [true, false] {
         let q = query("long", whole);
-        assert!(!s.find(&q, Order::Next).found, "the address is not searched");
-        assert_eq!(s.replace_all(&q, "short").expect("replaces"), 0);
-        s.replace(&q, "short").expect("replaces");
+        assert!(!s.find(&q, Order::Next).expect("finds").found, "the address is not searched");
+        assert_eq!(s.replace_all(&q, "short", None).map(|c| c.count).expect("replaces"), 0);
+        s.replace(&q, "short", None).expect("replaces");
     }
     assert_eq!(all(s), before, "the link's address is unchanged");
     assert_eq!(fields(s), 1);

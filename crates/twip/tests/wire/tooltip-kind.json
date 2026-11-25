@@ -3,5 +3,7 @@
   "mark",
   "revision",
   "comment",
-  "ruler"
+  "ruler",
+  "note",
+  "whiteSpace"
 ]

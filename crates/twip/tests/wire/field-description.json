@@ -1,0 +1,30 @@
+[
+  {
+    "args": [
+      {
+        "kind": "bookmark",
+        "name": "Bookmark",
+        "required": true
+      }
+    ],
+    "categories": [
+      "linksAndReferences"
+    ],
+    "description": "Insert the text marked by a bookmark",
+    "evaluated": true,
+    "formats": {
+      "date": false,
+      "numeric": false,
+      "text": true
+    },
+    "name": "REF",
+    "switches": [
+      {
+        "arg": "none",
+        "description": "Link to the bookmark",
+        "flag": "h"
+      }
+    ],
+    "syntax": "REF Bookmark [Switches]"
+  }
+]

@@ -82,18 +82,7 @@ const LIGATURES: [&str; 16] = [
     "all",
 ];
 
-/// OpenType ligatures, each kind on or off.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub struct LigatureFlags {
-    /// Standard ligatures (`liga`).
-    pub standard: bool,
-    /// Contextual ligatures (`clig`).
-    pub contextual: bool,
-    /// Historical ligatures (`hlig`).
-    pub historical: bool,
-    /// Discretionary ligatures (`dlig`).
-    pub discretionary: bool,
-}
+pub use crate::api::command::LigatureFlags;
 
 impl LigatureFlags {
     /// As `w14:ligatures` bits.
@@ -162,6 +151,30 @@ pub(crate) fn underline_value(style: UnderlineStyle) -> &'static str {
     }
 }
 
+/// The highlight colour named `name` (`w:highlight`'s value).
+pub(crate) fn highlight_color(name: &str) -> Option<HighlightColor> {
+    use HighlightColor as H;
+    [
+        H::Yellow,
+        H::BrightGreen,
+        H::Turquoise,
+        H::Pink,
+        H::Blue,
+        H::Red,
+        H::DarkBlue,
+        H::Teal,
+        H::Green,
+        H::Violet,
+        H::DarkRed,
+        H::DarkYellow,
+        H::Gray50,
+        H::Gray25,
+        H::Black,
+    ]
+    .into_iter()
+    .find(|&h| highlight_value(h) == name)
+}
+
 pub(crate) fn highlight_value(c: HighlightColor) -> &'static str {
     match c {
         HighlightColor::Yellow => "yellow",
@@ -202,10 +215,6 @@ impl Editor {
     pub(in crate::editing) fn set_underline(&mut self, style: UnderlineStyle, fonts: &Fonts) -> Outcome {
         let v = underline_value(style);
         self.format_runs("Underline", &|p, w, _| p.set("u", format!("<{w}u {w}val=\"{v}\"/>")), fonts)
-    }
-
-    pub(in crate::editing) fn set_font_color(&mut self, c: AutoOr<Color>, fonts: &Fonts) -> Outcome {
-        self.set_font_colour(rgb_value(c), fonts)
     }
 
     /// Sets the text's colour: an RGB colour, a theme colour with a tint or shade, or automatic.
@@ -259,10 +268,6 @@ impl Editor {
             None => return Outcome::invalid("no such style"),
         };
         self.format(&Format::CharStyle(id), fonts)
-    }
-
-    pub(in crate::editing) fn set_typography(&mut self, t: Typography, fonts: &Fonts) -> Outcome {
-        self.set_typography_with(t, &OpenTypeChange::default(), fonts)
     }
 
     /// Sets the text's typography and, in the same step, its OpenType ligature flags and stylistic sets (each set, or
@@ -503,10 +508,6 @@ impl Editor {
             },
             fonts,
         )
-    }
-
-    pub(in crate::editing) fn set_underline_color(&mut self, c: AutoOr<Color>, fonts: &Fonts) -> Outcome {
-        self.set_underline_colour(rgb_value(c), fonts)
     }
 
     /// Sets the underline's colour: an RGB colour, a theme colour with a tint or shade, or automatic (the text's).

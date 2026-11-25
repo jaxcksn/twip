@@ -170,7 +170,7 @@ fn the_rotate_handle_turns_a_shape_and_shift_snaps_it() {
     drag(&mut e, frame.rotate, [350.0, 345.0], Mods { shift: true, ..Mods::default() });
     assert_eq!(shape_of(&e).xfrm.rot.0, 90 * 60000);
     same_as_full(&mut e);
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(shape_of(&e).xfrm.rot.0, 0, "one undo step");
 }
 
@@ -189,7 +189,7 @@ fn an_adjust_handle_drags_within_its_limits() {
     let h = e.view(0..1).shapes.first().cloned().expect("a shape frame").adjust[0];
     drag(&mut e, h, [290.0, h[1]], Mods::default());
     assert_eq!(adj(&e), 50000);
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert!((adj(&e) - 30000).abs() <= 100, "one undo step");
 }
 
@@ -262,7 +262,7 @@ fn a_click_or_a_drag_inserts_a_shape_there() {
     click(&mut e, 150.0, 500.0);
     assert!(near(selected_box(&mut e), [150.0, 500.0, 222.0, 572.0]), "{:?}", selected_box(&mut e));
     assert_eq!(floats(&e).len(), 3);
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(floats(&e).len(), 2, "one undo step");
     let bytes = crate::docx::write::save(e.document()).expect("saves");
     let again = Editor::open(&bytes, fonts()).expect("reopens");
@@ -317,7 +317,7 @@ fn format_operations_change_the_selected_shapes_in_one_step_each() {
     let blue = |e: &Editor, f| matches!(&shape_by_id(e, f).shape.unwrap().sp().unwrap().fill, Some(Fill::Solid(c)) if *c == Colour::srgb(0x0000FF));
     assert!(blue(&e, a) && blue(&e, b));
     assert_eq!(e.selected_floats().len(), 2, "the selection stays");
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert!(!blue(&e, a) && !blue(&e, b), "one undo step");
     same_as_full(&mut e);
     // Flip and rotate
@@ -412,9 +412,9 @@ fn group_and_ungroup_keep_every_shape_where_it_is() {
     let mut again = Editor::open(&bytes, fonts()).expect("reopens");
     assert_eq!(floats(&again).len(), 1);
     assert_eq!(drawn_boxes(&mut again), was);
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(floats(&e).len(), 2, "one undo step");
-    e.execute(Command::Redo, fonts());
+    e.execute(Command::Redo(Default::default()), fonts());
     // Ungroup
     click(&mut e, 150.0, 350.0);
     let out = e.ungroup_objects(fonts());
@@ -423,7 +423,7 @@ fn group_and_ungroup_keep_every_shape_where_it_is() {
     assert_eq!(e.selected_floats().len(), 2);
     assert_eq!(drawn_boxes(&mut e), was, "ungrouped, every shape where it was");
     same_as_full(&mut e);
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(floats(&e).len(), 1, "one undo step");
 }
 
@@ -470,7 +470,7 @@ fn dragging_a_group_child_moves_it_alone_and_grows_the_group() {
     let bytes = crate::docx::write::save(e.document()).expect("saves");
     let mut again = Editor::open(&bytes, fonts()).expect("reopens");
     assert_eq!(drawn_boxes(&mut again), drawn_boxes(&mut e));
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     let boxes = drawn_boxes(&mut e);
     assert!(boxes.contains(&[920, 3100, 1720, 3900]), "{boxes:?}");
     assert_eq!(shape_of(&e).xfrm.ext[1].0, 100 * crate::layout::tests::shapes::PT);
@@ -837,7 +837,7 @@ fn break_link_leaves_the_boxes_after_it_a_chain_of_their_own_and_saves() {
     // One undo joins them again; redo breaks them again.
     e.undo(true, fonts());
     assert_eq!(e.text_box_link().map(|l| l.count), Some(3));
-    let _ = e.execute(super::super::commands::Command::Redo, fonts());
+    let _ = e.execute(super::super::commands::Command::Redo(Default::default()), fonts());
     assert_eq!(e.text_box_link(), None);
 }
 
@@ -857,7 +857,7 @@ fn create_link_takes_a_click_on_an_empty_text_box_and_the_text_flows_into_it() {
     e.set_selection(Selection::Object(ObjectRef::Floating(FloatId(ids[0]))));
     assert!(!e.can_link_to(FloatId(ids[0])), "not to itself");
     assert!(e.begin_linking() == super::super::Outcome::Moved);
-    assert_eq!(hover(&mut e, [300.0, 330.0]), super::super::input::Cursor::Pointer, "the pouring pointer over the empty box");
+    assert_eq!(hover(&mut e, [300.0, 330.0]), super::super::input::Cursor::LinkReady, "the pouring pointer over the empty box");
     click(&mut e, 300.0, 330.0);
     assert!(!e.linking());
     let link = e.text_box_link().expect("linked");
@@ -873,7 +873,7 @@ fn create_link_takes_a_click_on_an_empty_text_box_and_the_text_flows_into_it() {
     assert_eq!(again.text_box_link().map(|l| l.count), Some(2));
     e.undo(true, fonts());
     assert_eq!(e.text_box_link(), None);
-    let _ = e.execute(super::super::commands::Command::Redo, fonts());
+    let _ = e.execute(super::super::commands::Command::Redo(Default::default()), fonts());
     assert_eq!(e.text_box_link().map(|l| l.count), Some(2), "redone");
 }
 

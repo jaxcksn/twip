@@ -1,5 +1,17 @@
 [
   {
+    "cellBlocks": [
+      {
+        "firstColumn": 0,
+        "firstRow": 1,
+        "lastColumn": 1,
+        "lastRow": 2,
+        "start": {
+          "offset": 0,
+          "paragraph": "31"
+        }
+      }
+    ],
     "comment": "c4",
     "context": [
       {
@@ -9,27 +21,39 @@
           "buildingBlocks": [
             "Signature"
           ],
+          "calendar": "gregorian",
+          "category": "General",
           "checkedSymbol": "☒",
           "color": "#2E74B5",
+          "date": "2027-02-03T00:00:00Z",
+          "gallery": "Quick Parts",
+          "storeAs": "dateTime",
           "style": "Strong",
           "temporary": false,
           "uncheckedSymbol": "☐"
         },
+        "dirty": true,
         "exact": true,
         "form": {
           "calculateOnExit": false,
+          "defaultEntry": 0,
           "enabled": true,
           "entries": [
             "Yes",
             "No"
           ],
           "entry": 1,
+          "entryMacro": "Entered",
+          "helpIsAutoText": false,
           "kind": "dropDown",
           "name": "Dropdown1",
+          "statusIsAutoText": true,
           "statusText": "Pick one"
         },
         "id": "field-1",
         "kind": "field",
+        "locked": false,
+        "showingCode": true,
         "size": {
           "height": 54.0,
           "width": 216.0
@@ -48,8 +72,16 @@
     },
     "kind": "cells",
     "link": {
-      "address": "https://example.com",
+      "address": "https://example.com#Prices",
+      "bookmark": "Prices",
+      "frame": "_blank",
+      "screenTip": "Go",
+      "target": "https://example.com",
       "text": "Example"
+    },
+    "listNumbers": {
+      "level": 1,
+      "list": 3
     },
     "mode": "block",
     "object": {
@@ -69,7 +101,29 @@
       "flipH": true,
       "flipV": false,
       "height": 72.5,
+      "hidden": false,
+      "id": {
+        "float": "7",
+        "path": [
+          1
+        ]
+      },
       "kind": "textBox",
+      "lockAspect": true,
+      "name": "Text Box 3",
+      "originalSize": {
+        "height": 240.0,
+        "width": 320.0
+      },
+      "pictureAdjust": {
+        "brightness": 0.25,
+        "contrast": -0.5,
+        "recolor": {
+          "kind": "blackAndWhite",
+          "threshold": 0.5
+        },
+        "transparency": 0.0
+      },
       "placement": {
         "allowOverlap": true,
         "distance": {
@@ -113,12 +167,32 @@
             "radius": 5.5
           },
           "outerShadow": {
+            "align": "bottomLeft",
             "blur": 4.5,
             "colour": {
               "rgb": "#000000"
             },
             "direction": 45.5,
-            "distance": 3.5
+            "distance": 3.5,
+            "rotateWithShape": false,
+            "scaleX": 1.0,
+            "scaleY": 0.5,
+            "skewX": -20.5,
+            "skewY": 0.0
+          },
+          "reflection": {
+            "align": "bottomLeft",
+            "blur": 0.5,
+            "direction": 90.0,
+            "distance": 2.5,
+            "fadeDirection": 90.0,
+            "rotateWithShape": false,
+            "scaleX": 1.0,
+            "scaleY": -1.0,
+            "size": 0.5,
+            "skewX": 0.0,
+            "skewY": 0.0,
+            "transparency": 0.5
           },
           "softEdge": 2.5
         },
@@ -179,40 +253,146 @@
             7.2,
             3.6
           ],
+          "upright": true,
           "wrapText": true
         }
       },
+      "stackIndex": 0,
+      "textBoxLink": {
+        "count": 2,
+        "index": 0,
+        "next": {
+          "float": "9"
+        }
+      },
+      "title": "Note",
       "transparentColor": "#FFFFFF",
       "width": 144.5,
-      "wrap": "inFrontOfText"
+      "wrap": "inFrontOfText",
+      "wrapPolygon": {
+        "edited": true,
+        "points": [
+          {
+            "x": 0.0,
+            "y": 0.0
+          },
+          {
+            "x": 1.0,
+            "y": 0.0
+          },
+          {
+            "x": 0.5,
+            "y": 1.0
+          }
+        ]
+      }
     },
     "page": 2,
+    "pendingMove": {
+      "copy": true,
+      "placed": false
+    },
+    "ranges": [
+      {
+        "end": {
+          "offset": 2,
+          "paragraph": "18"
+        },
+        "start": {
+          "offset": 4,
+          "paragraph": "17"
+        }
+      },
+      {
+        "end": {
+          "offset": 5,
+          "paragraph": "20"
+        },
+        "start": {
+          "offset": 0,
+          "paragraph": "20"
+        }
+      }
+    ],
+    "rangesTruncated": false,
     "revision": "r7",
     "story": "header",
     "table": {
       "alignment": "center",
+      "bands": {
+        "columns": 1,
+        "ownRows": 2,
+        "rows": 2
+      },
       "canMerge": true,
       "cellAlignment": "bottom",
+      "cellBorders": {
+        "bottom": "none",
+        "diagonalDown": null,
+        "diagonalUp": null,
+        "insideHorizontal": null,
+        "insideVertical": null,
+        "left": "mixed",
+        "right": null,
+        "top": {
+          "color": "auto",
+          "shadow": false,
+          "space": 0.0,
+          "style": "single",
+          "width": 0.5
+        }
+      },
+      "cellMargins": {
+        "bottom": 0.0,
+        "left": 5.4,
+        "right": "mixed",
+        "top": 0.0
+      },
       "cellShading": "none",
+      "cellShadingValue": {
+        "color": "auto",
+        "fill": {
+          "rgb": "#FFFF00"
+        },
+        "pattern": "pct10"
+      },
       "cellSpacing": 1.5,
       "cellWidth": {
         "kind": "percent",
         "value": 25.0
       },
       "column": 2,
+      "columnSpan": 2,
       "columnWidth": "mixed",
       "columns": 3,
+      "defaultCellMargins": {
+        "bottom": 0.0,
+        "left": 5.4,
+        "right": 5.4,
+        "top": 0.0
+      },
       "description": "Yearly totals by region",
+      "fit": "window",
       "fitText": "mixed",
       "headerRow": true,
+      "hideMark": false,
       "indent": 0.5,
       "row": 1,
       "rowCanBreak": "mixed",
+      "rowExceptions": {
+        "alignment": "center",
+        "any": true,
+        "borders": "none",
+        "cellSpacing": "mixed",
+        "indent": "none",
+        "shading": "none"
+      },
       "rowHeight": {
         "height": 20.5,
         "rule": "exact"
       },
       "rowHidden": false,
+      "rowSpan": 1,
       "rows": 4,
       "style": "TableGrid",
       "styleOptions": {
@@ -222,6 +402,22 @@
         "headerRow": true,
         "lastColumn": false,
         "totalRow": false
+      },
+      "tableBorders": {
+        "insideVertical": {
+          "color": "auto",
+          "shadow": false,
+          "space": 0.0,
+          "style": "single",
+          "width": 0.5
+        },
+        "top": {
+          "color": "auto",
+          "shadow": false,
+          "space": 0.0,
+          "style": "single",
+          "width": 0.5
+        }
       },
       "textDirection": "btLr",
       "title": "Totals",

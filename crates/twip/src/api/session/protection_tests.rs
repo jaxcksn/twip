@@ -78,7 +78,7 @@ fn editable_survey(engine: &mut Engine) -> &mut Session {
     s.run(Command::InsertText("Hello survey world".into())).expect("types");
     s.run(Command::InsertParagraph).expect("splits");
     s.run(Command::InsertText("Locked second".into())).expect("types");
-    s.find(&query("survey"), Order::Next);
+    s.find(&query("survey"), Order::Next).expect("finds");
     s.run(Command::AddEditableRange(EditableRange::default())).expect("a range");
     protect(s, ProtectionKind::ReadOnly, None);
     s
@@ -111,10 +111,10 @@ fn replace_all_and_replace_honour_read_only_protection() {
     assert_eq!(code(s.run(Command::InsertText("x".into()))), Some(ErrorCode::NotAllowed), "typing is refused");
     let revision = s.state().revision;
     for q in [query("the"), whole("the")] {
-        assert_eq!(code(s.replace_all(&q, "X")), Some(ErrorCode::NotAllowed), "{q:?}");
+        assert_eq!(code(s.replace_all(&q, "X", None).map(|c| c.count)), Some(ErrorCode::NotAllowed), "{q:?}");
     }
-    s.find(&query("cat"), Order::Next);
-    assert_eq!(code(s.replace(&query("cat"), "X")), Some(ErrorCode::NotAllowed));
+    s.find(&query("cat"), Order::Next).expect("finds");
+    assert_eq!(code(s.replace(&query("cat"), "X", None)), Some(ErrorCode::NotAllowed));
     assert_eq!((all_text(s)[0].as_str(), s.state().revision), ("the cat and the dog", revision));
 }
 
@@ -123,13 +123,13 @@ fn replace_all_honours_forms_protection_and_replaces_only_in_editable_ranges() {
     let mut engine = engine();
     let s = opened(&mut engine, &blank_body(&format!("<w:p>{}</w:p>", run("the cat the dog"))));
     protect(s, ProtectionKind::Forms, None);
-    assert_eq!(code(s.replace_all(&whole("the"), "X")), Some(ErrorCode::NotAllowed));
+    assert_eq!(code(s.replace_all(&whole("the"), "X", None).map(|c| c.count)), Some(ErrorCode::NotAllowed));
     assert_eq!(all_text(s)[0], "the cat the dog");
 
     let mut engine = self::engine();
     let s = editable_survey(&mut engine);
     s.run(Command::SelectAll).expect("selects");
-    assert_eq!(s.replace_all(&query("e"), "E").expect("replaces in the range"), 1);
+    assert_eq!(s.replace_all(&query("e"), "E", None).map(|c| c.count).expect("replaces in the range"), 1);
     assert_eq!(all_text(s), ["Hello survEy world", "Locked second"]);
 }
 
@@ -140,8 +140,8 @@ fn replace_all_skips_locked_content_whatever_the_query() {
     for q in [query("apple"), whole("apple")] {
         let mut engine = engine();
         let s = opened(&mut engine, &blank_body(locked));
-        assert_eq!(s.replace_all(&q, "plum").expect("nothing to refuse"), 0, "{q:?}");
-        assert_eq!(s.find_all(&query("apple")).len(), 1, "{q:?}: locked text was rewritten");
+        assert_eq!(s.replace_all(&q, "plum", None).map(|c| c.count).expect("nothing to refuse"), 0, "{q:?}");
+        assert_eq!(s.find_all(&query("apple")).expect("finds").matches.len(), 1, "{q:?}: locked text was rewritten");
     }
 }
 
@@ -150,8 +150,8 @@ fn replace_all_types_the_replacement_whatever_the_query() {
     let count = |q: FindQuery| {
         let mut engine = engine();
         let s = opened(&mut engine, &blank_body(&format!("<w:p>{}</w:p>", run("apple"))));
-        s.replace_all(&q, "x\ny").expect("replaces");
-        s.word_count().paragraphs
+        s.replace_all(&q, "x\ny", None).map(|c| c.count).expect("replaces");
+        s.word_count(Default::default()).paragraphs
     };
     assert_eq!(count(query("apple")), 2);
     assert_eq!(count(whole("apple")), 2);
@@ -195,7 +195,7 @@ fn a_pointer_drag_of_text_in_a_read_only_document_moves_nothing() {
     s.run(Command::InsertText("hello world and more words here".into())).expect("types");
     protect(s, ProtectionKind::ReadOnly, None);
     hosted(s, 900, 700);
-    s.find(&query("world"), Order::Next);
+    s.find(&query("world"), Order::Next).expect("finds");
     let f = s.host().frame_info();
     let y = f.caret_y + f.caret_height / 2.0;
     let (inside, away) = (Point { x: f.caret_x - 8.0, y }, Point { x: f.caret_x + 120.0, y });
@@ -264,10 +264,10 @@ fn a_batch_checks_protection_where_each_command_runs() {
     let mut engine = engine();
     let s = editable_survey(&mut engine);
     let before = all_text(s);
-    s.find(&query("survey"), Order::Next);
+    s.find(&query("survey"), Order::Next).expect("finds");
     let delete = Command::Delete(DeleteOptions { direction: Direction::Forward, unit: None });
     assert_eq!(code(s.batch(vec![mv(MoveUnit::Paragraph, Direction::Forward), Command::InsertText("x".into())], None)), Some(ErrorCode::NotAllowed));
-    s.find(&query("survey"), Order::Next);
+    s.find(&query("survey"), Order::Next).expect("finds");
     assert_eq!(code(s.batch(vec![Command::SelectAll, delete], None)), Some(ErrorCode::NotAllowed));
     assert_eq!(all_text(s), before);
 }
@@ -286,7 +286,7 @@ fn a_delete_at_an_editable_range_edge_is_refused() {
         let mut engine = engine();
         let s = editable_survey(&mut engine);
         let before = all_text(s);
-        s.find(&query("survey"), Order::Next);
+        s.find(&query("survey"), Order::Next).expect("finds");
         let direction = if end { Direction::Forward } else { Direction::Backward };
         s.run(mv(MoveUnit::Character, direction)).expect("collapses onto the edge");
         for unit in [None, Some(crate::api::command::DeleteUnit::Word)] {
@@ -305,7 +305,7 @@ fn undo_cannot_take_back_protection() {
     let s = session(&mut engine);
     s.run(Command::InsertText("a".into())).expect("types");
     protect(s, ProtectionKind::ReadOnly, Some("pw"));
-    assert!(s.run(Command::Undo).is_err(), "undo accepted under enforced protection");
+    assert!(s.run(Command::Undo(Default::default())).is_err(), "undo accepted under enforced protection");
     assert!(s.state().review.protection.as_ref().is_some_and(|p| p.enforced));
     assert_eq!(all_text(s), ["a"]);
     assert!(s.state().modified, "the document stays modified");
@@ -378,7 +378,7 @@ fn a_new_author_rebuilds_the_state() {
     let s = session(&mut engine);
     s.run(Command::InsertText("ab".into())).expect("types");
     s.run(Command::SelectAll).expect("selects");
-    s.run(Command::AddEditableRange(EditableRange { editor: Some("alice".into()) })).expect("a range");
+    s.run(Command::AddEditableRange(EditableRange { editor: Some("alice".into()), group: None })).expect("a range");
     s.set_author(Author { name: "alice".into(), ..Author::default() });
     protect(s, ProtectionKind::ReadOnly, None);
     let in_range = |s: &Session| s.state().review.protection.as_ref().is_some_and(|p| p.in_editable_range);

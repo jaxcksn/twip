@@ -55,18 +55,31 @@ pub struct Session {
     records: u64,
     /// Table gridlines show where cells have no borders.
     gridlines: bool,
-    /// Formatting marks (paragraph ends, spaces, tabs, breaks, hidden text) show.
-    formatting_marks: bool,
+    /// Which formatting marks show (paragraph ends, spaces, tabs, breaks, hidden text, optional hyphens, anchors).
+    marks: crate::editing::view::MarkOptions,
+    /// Click and Type is on.
+    click_and_type: bool,
+    /// Selected text can be dragged and dropped.
+    text_drags: bool,
+    /// The wrap inserted pictures take.
+    picture_wrap: crate::api::value::ObjectWrap,
+    /// The style Click and Type's paragraphs take; `None` is the default paragraph style.
+    click_style: Option<String>,
     /// The text areas' and cells' boundaries show.
     text_boundaries: bool,
     /// When fields are shaded.
     field_shading: crate::api::services::FieldShading,
     /// Bookmarks show.
     show_bookmarks: bool,
+    /// Under enforced protection, the regions the author may edit are highlighted.
+    show_editable_regions: bool,
     /// Pointer shapes over elements instead of the editor's own.
     cursor_overrides: Vec<crate::api::services::CursorOverride>,
     /// The modifier keys of the last pointer input.
     pointer_mods: crate::editing::keymap::Mods,
+    /// The secondary button went down in the selected text: its release opens the drop menu (or, not dragged, the
+    /// context menu).
+    right_drag: bool,
     /// The element the primary button went down on, for the click that ends the press.
     pressed: Option<crate::docx::ElementId>,
     presentation: host::Presentation,
@@ -76,6 +89,12 @@ pub struct Session {
     bindings: input::Bindings,
     /// What typing corrects.
     autocorrect: crate::editing::autocorrect::AutoCorrect,
+    /// Tab and Backspace at a paragraph's start set its indents (AutoFormat).
+    tab_indents: bool,
+    /// The cut, copy and paste options.
+    paste_defaults: crate::editing::paste::PasteDefaults,
+    /// The caption inserted tables get.
+    auto_caption: Option<crate::editing::captions::CaptionOptions>,
 }
 
 /// The commands that apply `options`' field settings: rules and types first, as labels depend on them.
@@ -103,6 +122,7 @@ pub(super) fn setup_rank(c: &super::command::Command) -> Option<u8> {
         Command::SetApplicationFieldTypes(_) => Some(1),
         Command::SetFieldLabels(_) => Some(2),
         Command::SetProtectedPictureControls(_) => Some(3),
+        Command::SetEditingGroups(_) => Some(4),
         _ => None,
     }
 }
@@ -145,18 +165,27 @@ impl Session {
             control_labels: true,
             records: 0,
             gridlines: false,
-            formatting_marks: false,
+            marks: Default::default(),
+            click_and_type: true,
+            text_drags: true,
+            picture_wrap: crate::api::value::ObjectWrap::Inline,
+            click_style: None,
             text_boundaries: false,
             field_shading: Default::default(),
             show_bookmarks: false,
+            show_editable_regions: true,
             cursor_overrides: Vec::new(),
             pointer_mods: Default::default(),
             pressed: None,
+            right_drag: false,
             presentation: host::Presentation::default(),
             watch: fonts::Watch::default(),
             services: crate::services::Services::default(),
             bindings: input::Bindings::default(),
             autocorrect: Default::default(),
+            tab_indents: true,
+            paste_defaults: Default::default(),
+            auto_caption: None,
         };
         for d in &options.dictionaries {
             // shortcut: a dictionary that doesn't parse is left out silently; report it as a warning event if hosts
@@ -196,6 +225,14 @@ impl Session {
         self.editor.set_hyphenation(self.services.hyphenation.clone());
         (self.editor.live_layout, self.editor.control_labels) = (self.live_layout, self.control_labels);
         self.editor.set_mac(self.mac);
+        let _ = self.editor.set_mark_options(self.marks);
+        self.editor.indent_keys = self.tab_indents;
+        self.editor.set_click_and_type(self.click_and_type);
+        self.editor.set_text_drag_and_drop(self.text_drags);
+        self.editor.set_default_picture_wrap(self.picture_wrap);
+        self.editor.set_click_and_type_style(self.click_style.clone());
+        self.editor.set_paste_defaults(self.paste_defaults);
+        self.editor.set_auto_caption(self.auto_caption.clone());
         let fonts = self.fonts.fonts();
         for c in &self.field_setup {
             self.editor.execute(c.clone(), &fonts);
@@ -289,6 +326,7 @@ impl Session {
         drop(fonts);
         state.fonts = self.watch.state.clone();
         state.theme_colours = self.editor.theme_colours();
+        state.theme_fonts = self.editor.theme_fonts();
         services::fill_state(self, &mut state);
         review::fill_state(self, &mut state);
         host::fill_state(self, &mut state);

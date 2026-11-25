@@ -28,10 +28,10 @@ fn replay(fixture: &str, cmds: &[Value]) -> Editor {
         Editor::open(&saved, fonts()).unwrap_or_else(|err| panic!("reopens after #{k} {c}: {err}"));
     }
     while e.history().undo_depth() > 0 {
-        e.execute(Command::Undo, fonts());
+        e.execute(Command::Undo(Default::default()), fonts());
     }
     while e.history().redo_depth() > 0 {
-        e.execute(Command::Redo, fonts());
+        e.execute(Command::Redo(Default::default()), fonts());
     }
     e
 }

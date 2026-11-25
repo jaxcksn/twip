@@ -26,7 +26,7 @@ use body::{BodyEnv, layout_body};
 #[derive(Clone, Default, PartialEq, Debug)]
 pub struct PassInfo {
     pub num_pages: Option<String>,
-    pub section_pages: Vec<String>,
+    pub section_pages: Rc<Vec<String>>,
     pub page_refs: Rc<HashMap<String, crate::layout::text::PageRef>>,
     /// The page and place on it of each paragraph on the pages holding reference fields with `\p`.
     pub para_at: Rc<HashMap<super::ids::ParaId, (usize, usize)>>,
@@ -51,7 +51,7 @@ pub struct Facing {
 
 /// Whether page `page_number` of section `s` shows the section's left margin on its right: a mirrored even page, or
 /// a landscape book fold's page on the other side.
-pub fn swaps_margins(s: &crate::docx::SectionPage, facing: Facing, page_number: i64) -> bool {
+pub fn swaps_margins(s: &crate::docx::PageSetup, facing: Facing, page_number: i64) -> bool {
     let odd = page_number % 2 == 1;
     match facing.book_fold {
         Some(rev) => s.page_w > s.page_h && odd != rev,
@@ -111,15 +111,64 @@ pub fn story_ref_in(
     page_number: i64,
     footer: bool,
 ) -> (usize, Option<&String>) {
-    let variant = if sections[si].section_in(view).title_pg && page_in_section == 0 {
+    let variant = story_variant(sections, view, even_and_odd, si, page_in_section, page_number);
+    let part = (0..=si).rev().find_map(|k| hf_refs(&sections[k], footer)[variant].as_ref());
+    (variant, part)
+}
+
+fn story_variant(sections: &[Section], view: MarkupView, even_and_odd: bool, si: usize, page_in_section: usize, page_number: i64) -> usize {
+    if sections[si].section_in(view).title_pg && page_in_section == 0 {
         1
     } else if even_and_odd && page_number % 2 == 0 {
         2
     } else {
         0
-    };
-    let part = (0..=si).rev().find_map(|k| (if footer { &sections[k].footers } else { &sections[k].headers })[variant].as_ref());
-    (variant, part)
+    }
+}
+
+fn hf_refs(s: &Section, footer: bool) -> &crate::docx::model::HfRefs {
+    if footer { &s.footers } else { &s.headers }
+}
+
+/// For each section, header (0) or footer and variant: the section whose part it shows, its own or the last one's
+/// before it that has one.
+pub struct HfSources(Vec<[[Option<usize>; 3]; 2]>);
+
+impl HfSources {
+    pub fn new(sections: &[Section]) -> HfSources {
+        let mut last = [[None; 3]; 2];
+        let table = sections
+            .iter()
+            .enumerate()
+            .map(|(k, s)| {
+                for (footer, from) in last.iter_mut().enumerate() {
+                    for (v, r) in from.iter_mut().zip(hf_refs(s, footer == 1)) {
+                        if r.is_some() {
+                            *v = Some(k);
+                        }
+                    }
+                }
+                last
+            })
+            .collect();
+        HfSources(table)
+    }
+
+    /// [`story_ref_in`] of the sections the table was made from.
+    pub fn story_ref<'s>(
+        &self,
+        sections: &'s [Section],
+        view: MarkupView,
+        even_and_odd: bool,
+        si: usize,
+        page_in_section: usize,
+        page_number: i64,
+        footer: bool,
+    ) -> (usize, Option<&'s String>) {
+        let variant = story_variant(sections, view, even_and_odd, si, page_in_section, page_number);
+        let part = self.0[si][usize::from(footer)][variant].and_then(|k| hf_refs(&sections[k], footer)[variant].as_ref());
+        (variant, part)
+    }
 }
 
 pub fn columns(c: &Columns, geo: &BodyArea, top: f64) -> Vec<ColumnSpace> {
@@ -206,6 +255,12 @@ pub struct PassRun {
     pub memo: PassMemo,
     pub cursor: Cursor,
     pub info: Option<PassInfo>,
+    /// The pages found holding what each header and footer field looks for.
+    pub found: std::cell::RefCell<crate::layout::document::Found>,
+    /// What the headers and footers composed before the pass ends see of its pages.
+    pub provisional: crate::layout::document::Provisional,
+    /// The pages before it are composed or blank.
+    pub composed_to: usize,
 }
 
 impl PassRun {
@@ -220,6 +275,9 @@ impl PassRun {
             memo: PassMemo::default(),
             cursor: Cursor::Section { si: 0, carry: FlowState::default(), y: None },
             info: None,
+            found: Default::default(),
+            provisional: Default::default(),
+            composed_to: 0,
         }
     }
 }
@@ -237,6 +295,7 @@ pub struct Paginator<'d, 'p> {
     pub note_numbers: &'p HashMap<(NoteKind, i64), String>,
     /// Each body paragraph's chapter number for its page numbers.
     pub chapters: Option<Rc<HashMap<super::ids::ParaId, String>>>,
+    pub hf_sources: &'p HfSources,
     pub run: &'p mut PassRun,
 }
 
@@ -258,13 +317,15 @@ impl<'d> Paginator<'d, '_> {
         }
     }
 
+    /// The section's pages so far that aren't blank: a pass lays its sections out in order, each one's pages together.
     fn page_in_section(&self, si: usize) -> usize {
-        self.run.pages.iter().filter(|p| p.section == si && !p.blank).count()
+        self.run.pages.last().filter(|p| p.section == si).map_or(0, |p| p.in_section)
     }
 
     pub fn new_page(&mut self, si: usize, blank: bool) {
         self.run.page_number += 1;
-        let first = self.page_in_section(si) == 0;
+        let before = self.page_in_section(si);
+        let first = before == 0;
         let s = self.sections[si].section_in(self.ctx.env.text.review.view);
         let page_borders = self.sections[si].page_borders.as_ref().filter(|b| match b.display.as_str() {
             "firstPage" => first,
@@ -302,6 +363,7 @@ impl<'d> Paginator<'d, '_> {
             reused: None,
             number: self.run.page_number,
             blank,
+            in_section: before + usize::from(!blank),
             page_borders,
         });
     }
@@ -322,7 +384,9 @@ impl<'d> Paginator<'d, '_> {
         let env = StoryEnv { ctx: self.ctx, fields: &fields, notes: self.note_numbers };
         let mut out = [None, None];
         for (k, footer) in [false, true].into_iter().enumerate() {
-            let Some(blocks) = story_ref_in(self.sections, view, self.ctx.env.even_and_odd, si, pis, self.run.page_number, footer)
+            let Some(blocks) = self
+                .hf_sources
+                .story_ref(self.sections, view, self.ctx.env.even_and_odd, si, pis, self.run.page_number, footer)
                 .1
                 .and_then(|p| self.stories.get(p))
             else {
@@ -369,7 +433,9 @@ impl<'d> Paginator<'d, '_> {
         let env = StoryEnv { ctx: self.ctx, fields: &fields, notes: self.note_numbers };
         let mut out = Vec::new();
         for (k, footer) in [false, true].into_iter().enumerate() {
-            let Some(blocks) = story_ref_in(self.sections, view, self.ctx.env.even_and_odd, si, pis, self.run.page_number, footer)
+            let Some(blocks) = self
+                .hf_sources
+                .story_ref(self.sections, view, self.ctx.env.even_and_odd, si, pis, self.run.page_number, footer)
                 .1
                 .and_then(|p| self.stories.get(p))
             else {
@@ -453,7 +519,7 @@ impl<'d> Paginator<'d, '_> {
                 page_h: s.page_w,
                 margins: (top, s.bottom, first),
                 area,
-                columns: columns(&s.columns, &area, start.unwrap_or(area.top.to_pt())),
+                columns: columns(s.columns, &area, start.unwrap_or(area.top.to_pt())),
                 mid_page: start.is_some(),
                 balance,
                 next_continuous: self.sections.get(si + 1).is_some_and(|n| super::vertical::same_page(sec, n)),
@@ -492,7 +558,7 @@ impl<'d> Paginator<'d, '_> {
             page_h: s.page_h,
             margins: (left, right, top),
             area,
-            columns: columns(&s.columns, &area, start.unwrap_or(area.top.to_pt())),
+            columns: columns(s.columns, &area, start.unwrap_or(area.top.to_pt())),
             mid_page: start.is_some(),
             balance,
             next_continuous: self.sections.get(si + 1).is_some_and(|n| super::vertical::same_page(sec, n)),

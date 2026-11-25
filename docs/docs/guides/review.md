@@ -30,6 +30,30 @@ the selection, or all of them, optionally by one author (`acceptAllRevisions({ a
 moves through them. `setMarkupView` chooses what the document shows: `'all'`, `'simple'`, `'noMarkup'` or
 `'original'`. `revisionsChanged` says when to refresh the pane.
 
+### Show Markup
+
+`setShowMarkup({ insertionsDeletions?, formatting?, comments? })` chooses which kinds of markup show, and
+`setHiddenReviewers({ hidden: [names] })` hides some reviewers' revisions and comments (Show Markup, Specific People;
+an empty list shows all reviewers). A revision left out draws as if accepted. `state.review.showMarkup` reads it back,
+`review.revisions()` marks each revision `shown`, `review.comments()` each thread and comment `shown`, and
+`review.people()` each person `visible`. `state.review.counts` counts the revisions by kind (insertions, deletions,
+moves, formatting) and the comment threads twice: `all` of them, and those `shown`.
+
+`acceptAllRevisions({ shown: true })` and `rejectAllRevisions({ shown: true })` resolve only what Show Markup shows
+(Accept All Changes Shown); `deleteAllComments({ shownOnly: true })` deletes the threads it shows, whole, by their
+first comment (Delete All Comments Shown), and `deleteAllComments()` every comment, resolved ones too.
+`acceptAllAndStopTracking()` accepts every revision and turns tracking off, the acceptance one undo step.
+
+### Track Changes Options
+
+`setTrackOptions({ moves?, formatting? })` sets whether tracking records moves as moves and formatting changes: saved
+document settings outside the undo history, read back as `state.review.trackMoves` and `trackFormatting`; protection
+that forces tracking refuses turning either off. `setMarkupStyle` sets how revisions draw: each kind's `mark`
+(`underline`, `bold`, `strikethrough`, ...; `hidden`, `caret` and `pound` for deleted and moved-away text only) and
+`color` (`'byAuthor'`, `'auto'` or `{ fixed }`), the change bars' side and colour, and the inserted, deleted, merged
+and split cells' fills. What isn't given is kept; `state.review.markupStyle` reads the whole style. It is a view
+setting, not saved.
+
 ## Comments
 
 `addComment(body)` comments on the selection. A body is plain text or rich text (paragraphs of runs with bold,
@@ -55,3 +79,14 @@ Then either:
   scrolling content, so whatever you put there scrolls and zooms with the document. `review.stackBalloons(anchors,
   heights)` computes card tops that don't overlap. The layer has `pointer-events: none`, so clicks reach the page
   through it: give each card `pointer-events: auto` to make it clickable (`attachBalloon` does this for its cards).
+
+`setBalloonMode` chooses where revisions show in All Markup: `'balloons'` (deletions and formatting changes beside
+the page), `'commentsAndFormatting'` (the default: formatting changes only) or `'inline'`. The revisions in balloons
+come as `revisionBalloons` (`RevisionBalloonsChanged`), anchored as comments are (`pageLeft` and `pageEdge` are the
+page's edges); `review.revisions()` gives each one's text and description. One column ordered by page and line top
+stacks them with the comment cards.
+
+`review.setBalloonOptions({ side, width, connectingLines, commentColor })` (in .NET, `Review.BalloonOptions`) sets
+Track Changes Options' balloon settings for the cards the SDK places: the margin they go in, their preferred width (in
+points, or a percent of the page), whether leader lines join them to their text, and the colour comment cards take.
+They are the SDK's view settings, not saved; Word's are the default (right, 3.7 in, lines on, by author).

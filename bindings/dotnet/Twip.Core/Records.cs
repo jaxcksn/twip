@@ -369,6 +369,8 @@ public enum CommandGroup
     Review,
     /// <summary>View settings.</summary>
     View,
+    /// <summary>Tables of contents and of figures, captions and cross-references.</summary>
+    References,
 }
 
 /// <summary>How a command groups into undo steps.</summary>
@@ -380,4 +382,32 @@ public enum UndoGrouping
     Typing,
     /// <summary>Not an edit: no undo step and no revision.</summary>
     View,
+}
+
+/// <summary>Where the selection is on screen.</summary>
+/// <param name="Rects">Each selected line's or cell's box; empty for a caret.</param>
+/// <param name="Frames">Each selected object's frame.</param>
+/// <param name="Bounds">The box around every rect and frame; null when nothing selected is in view.</param>
+public sealed record SelectionBounds(IReadOnlyList<System.Drawing.RectangleF> Rects, IReadOnlyList<ObjectFrame> Frames, System.Drawing.RectangleF? Bounds = null);
+
+/// <summary>A selected object's frame as drawn.</summary>
+/// <param name="Rect">Its box before rotation.</param>
+/// <param name="Rotation">Its rotation, degrees clockwise about the box's centre.</param>
+/// <param name="Bounds">The upright box around it as turned.</param>
+public sealed record ObjectFrame(System.Drawing.RectangleF Rect, double Rotation, System.Drawing.RectangleF Bounds);
+
+/// <summary>What a drag of the selection out of the editor carries.</summary>
+/// <param name="Data">The content, as a copy puts it on the clipboard.</param>
+/// <param name="CanMove">The drop may move the text: the selection can be deleted.</param>
+public sealed record DragSource(Twip.Hosting.ClipboardContent Data, bool CanMove);
+
+/// <summary>How a drag out of the editor ended.</summary>
+public enum DropEffect
+{
+    /// <summary>Not dropped, or refused.</summary>
+    None,
+    /// <summary>Copied: the text stays.</summary>
+    Copy,
+    /// <summary>Moved: the text is deleted, as one undo step.</summary>
+    Move,
 }

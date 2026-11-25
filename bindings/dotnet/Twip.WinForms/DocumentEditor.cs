@@ -658,7 +658,7 @@ public class DocumentEditor : Control
     internal void MoveCaret(CaretInfo caret)
     {
         _caret.Move(caret);
-        _ime.Move(caret.Bounds);
+        _ime.Move(caret);
     }
 
     internal void ShowTooltip(TooltipInfo? tooltip)
@@ -713,14 +713,21 @@ public class DocumentEditor : Control
         var gap = 8 * DeviceDpi / 96.0;
         var tops = Session.Review.StackBalloons(anchors, [.. anchors.Select(a => (double)_balloons[a.Thread].Height)], gap);
         var placements = new List<BalloonPlacement>(anchors.Count);
+        var review = Session.Review;
+        var options = review.BalloonOptions;
         for (var i = 0; i < anchors.Count; i++)
         {
             var (a, card) = (anchors[i], _balloons[anchors[i].Thread]);
-            var (left, top) = ((int)Math.Round(a.PageEdge + gap), (int)Math.Round(tops[i]));
+            var width = (int)Math.Round(review.BalloonWidth(a.PageLeft, a.PageEdge, DeviceDpi / 72.0 * Session.State.View.Zoom / 100));
+            if (width > 0) card.Width = width;
+            var (left, top) = ((int)Math.Round(review.BalloonLeft(a.PageLeft, a.PageEdge, card.Width, gap)), (int)Math.Round(tops[i]));
             card.Location = new Point(left, top);
             card.Visible = true;
-            var line = new Point((int)Math.Round(a.PageEdge), (int)Math.Round(a.End.Y));
-            placements.Add(new BalloonPlacement(a.Thread, top, left, [new Point((int)Math.Round(a.End.X), line.Y), line, new Point(left, top + Math.Min(card.Height / 2, 12))]));
+            var left_ = options.Side == BalloonSide.Left;
+            var line = new Point((int)Math.Round(left_ ? a.PageLeft : a.PageEdge), (int)Math.Round(a.End.Y));
+            var near = left_ ? left + card.Width : left;
+            IReadOnlyList<Point> leader = options.ConnectingLines ? [new Point((int)Math.Round(a.End.X), line.Y), line, new Point(near, top + Math.Min(card.Height / 2, 12))] : [];
+            placements.Add(new BalloonPlacement(a.Thread, top, left, leader));
         }
         foreach (var (thread, card) in _balloons)
         {
@@ -736,7 +743,7 @@ public class DocumentEditor : Control
     private void SendLeaders(IReadOnlyList<BalloonPlacement> placements)
     {
         if (_host is null) return;
-        var lines = _paintMarkupPane is null ? placements.Select(p => (IReadOnlyList<PointF>)[.. p.Leader.Select(q => (PointF)q)]).ToList() : [];
+        var lines = _paintMarkupPane is null ? placements.Where(p => p.Leader.Count > 0).Select(p => (IReadOnlyList<PointF>)[.. p.Leader.Select(q => (PointF)q)]).ToList() : [];
         if (lines.Count == 0 && !_leadersSent) return;
         _leadersSent = lines.Count > 0;
         _host.SetLeaders(lines);
@@ -762,8 +769,10 @@ public class DocumentEditor : Control
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
     {
         // Ctrl and Alt chords reach the engine before the form's menus and accelerators: a key the engine owns (Ctrl+B)
-        // stays here, and an application key (Ctrl+S) raises HostCommandRequested instead.
-        if (_host is not null && (msg.Msg is WmKeyDown or WmSysKeyDown) && (keyData & (Keys.Control | Keys.Alt)) != 0)
+        // stays here, and an application key (Ctrl+S) raises HostCommandRequested instead. AltGr (Ctrl+Alt) typing a
+        // character on this keyboard layout types it, as Word does.
+        if (_host is not null && (msg.Msg is WmKeyDown or WmSysKeyDown) && (keyData & (Keys.Control | Keys.Alt)) != 0
+            && !((keyData & (Keys.Control | Keys.Alt)) == (Keys.Control | Keys.Alt) && LayoutKeys.TypesCharacter(msg)))
         {
             var key = KeyMap.ToEditorKey(keyData & Keys.KeyCode);
             if (key != EditorKey.None)

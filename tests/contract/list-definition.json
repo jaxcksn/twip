@@ -1,0 +1,23 @@
+{
+  "name": "list-definition",
+  "fixture": "editor/FX-EMPTY.docx",
+  "steps": [
+    {"op": "open"},
+    {"op": "command", "command": {"type": "insertText", "value": "Intro"}},
+    {"op": "call", "method": "lists.definition", "result": {"$exact": null}},
+    {"op": "command", "command": {"type": "insertParagraph"}},
+    {"op": "command", "command": {"type": "setList", "value": "numbered"}},
+    {"op": "command", "command": {"type": "insertText", "value": "One"}},
+    {"op": "command", "command": {"type": "insertParagraph"}},
+    {"op": "command", "command": {"type": "insertText", "value": "Two"}},
+    {"op": "call", "method": "lists.definition", "save": "list", "result": {"level": 0, "bullet": false, "levels": [{}, {}, {}, {}, {}, {}, {}, {}, {}]}},
+    {"op": "command", "command": {"type": "setListDefinition", "levels": [{"format": "chicago", "text": "%1", "start": 1, "alignment": "left", "follow": "tab", "numberPosition": 18, "textIndent": 36, "legal": false, "bold": true}]}},
+    {"op": "call", "method": "lists.definition", "result": {"id": {"$saved": "list", "path": ["id"]}, "levels": [{"format": "chicago", "text": "%1", "bold": true, "italic": {"$exact": null}}]}},
+    {"op": "command", "command": {"type": "setListDefinition", "levels": [{"format": {"other": "aiueoFullWidth"}, "text": "%1.", "start": 1, "alignment": "left", "follow": "tab", "numberPosition": 18, "textIndent": 36, "legal": false}]}},
+    {"op": "call", "method": "lists.definition", "result": {"levels": [{"format": {"other": "aiueoFullWidth"}, "bold": {"$exact": null}}]}},
+    {"op": "command", "command": {"type": "setListDefinition", "levels": [{"format": {"other": "not a name"}, "text": "%1.", "start": 1, "alignment": "left", "follow": "tab", "numberPosition": 18, "textIndent": 36, "legal": false}]}},
+    {"op": "expectError", "code": "invalid-argument"},
+    {"op": "command", "command": {"type": "undo", "count": 2}},
+    {"op": "call", "method": "lists.definition", "result": {"levels": [{"format": "decimal"}]}}
+  ]
+}

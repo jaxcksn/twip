@@ -89,7 +89,7 @@ fn spelling_count_after_an_edit_checks_only_the_edited_paragraph() {
     e.execute(Command::SelectAll, fonts());
     e.execute(del(Dir::Forward, false), fonts());
     assert_eq!(sp.count(&e, "en-US"), fresh(&e), "what the deletion leaves");
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!((sp.count(&e, "en-US"), fresh(&e)), (before + 2, before + 2), "undo brings the paragraphs back");
 }
 
@@ -215,9 +215,9 @@ fn removing_tables_does_not_scan_every_element() {
     e.execute(Command::SelectAll, fonts());
     e.execute(del(Dir::Forward, false), fonts());
     assert_eq!(tables(&e), 0);
-    e.execute(Command::Undo, fonts());
-    e.execute(Command::Redo, fonts());
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
+    e.execute(Command::Redo(Default::default()), fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(tables(&e), 2);
 }
 
@@ -315,7 +315,7 @@ fn keystrokes_do_not_compare_every_comment() {
 #[test]
 fn state_build_after_a_keystroke_does_not_walk_the_document() {
     let (mut engine, id) = session(&paras(2000));
-    let [(walks, _)] = keystrokes(engine.session(id).expect("a session"), ["review:revisions"]);
+    let [(walks, _)] = keystrokes(engine.session(id).expect("a session"), ["review:marks"]);
     assert_eq!(walks, 0, "no revisions to count");
 
     // The revision count follows the edits that make or join revisions.
@@ -336,7 +336,8 @@ fn state_build_after_a_keystroke_does_not_walk_the_document() {
     s.run(Command::InsertText("two".into())).expect("types");
     assert_eq!((count(s), fresh(s)), (2, 2), "two insertions with untracked text between");
     s.run(Command::SetTrackChanges(false)).expect("stops");
-    assert_eq!(calls("review:revisions", || _ = s.run(Command::InsertText("x".into())).expect("types")), 1, "with revisions, counted again");
+    assert_eq!(calls("review:marks", || _ = s.run(Command::InsertText("x".into())).expect("types")), 0, "the marks follow the typing");
+    assert_eq!(count(s), fresh(s));
     s.run(del(Dir::Back, false)).expect("deletes");
     for _ in 0..3 {
         s.run(mv(MoveBy::Char, Dir::Back, false)).expect("moves");
@@ -345,9 +346,9 @@ fn state_build_after_a_keystroke_does_not_walk_the_document() {
         s.run(del(Dir::Back, false)).expect("deletes");
     }
     assert_eq!((count(s), fresh(s)), (1, 1), "deleting the untracked text between them joins them");
-    s.run(Command::Undo).expect("undoes");
+    s.run(Command::Undo(Default::default())).expect("undoes");
     assert_eq!(count(s), fresh(s));
     s.run(mv(MoveBy::Story, Dir::Forward, false)).expect("moves");
-    let typed = calls("review:revisions", || _ = s.run(Command::InsertText("x".into())).expect("types"));
+    let typed = calls("review:marks", || _ = s.run(Command::InsertText("x".into())).expect("types"));
     assert_eq!((typed, count(s), fresh(s)), (0, 2, 2), "typing in a paragraph without marks keeps the count");
 }

@@ -1,0 +1,393 @@
+[
+  {
+    "aliases": [
+      "Accounts"
+    ],
+    "autoUpdate": false,
+    "basedOn": "TableGrid",
+    "builtIn": false,
+    "category": "table",
+    "character": {
+      "allCaps": false,
+      "bold": "mixed",
+      "characterSpacing": 0.5,
+      "characterStyle": "Emphasis",
+      "color": "auto",
+      "colorValue": {
+        "theme": "text2",
+        "transforms": [
+          {
+            "kind": "shade",
+            "value": 0.75
+          }
+        ]
+      },
+      "contextualAlternates": false,
+      "doubleStrikethrough": false,
+      "emboss": false,
+      "engrave": false,
+      "fitText": 72.5,
+      "font": "Calibri",
+      "fontTheme": "body",
+      "hidden": false,
+      "highlight": "yellow",
+      "italic": false,
+      "kerning": 0.0,
+      "language": "en-US",
+      "ligatureFlags": {
+        "contextual": false,
+        "discretionary": false,
+        "historical": false,
+        "standard": true
+      },
+      "ligatures": "mixed",
+      "noProof": false,
+      "numberForm": "lining",
+      "numberSpacing": "default",
+      "outline": true,
+      "position": null,
+      "scale": 100.0,
+      "shadow": false,
+      "size": 11.5,
+      "smallCaps": false,
+      "strikethrough": false,
+      "stylisticSet": 0,
+      "stylisticSets": [
+        1,
+        3
+      ],
+      "subscript": false,
+      "superscript": false,
+      "textBorder": {
+        "color": "auto",
+        "shadow": false,
+        "space": 1.0,
+        "style": "single",
+        "width": 0.5
+      },
+      "textEffects": {},
+      "textShading": {
+        "color": "auto",
+        "fill": {
+          "theme": "text2",
+          "transforms": [
+            {
+              "kind": "shade",
+              "value": 0.75
+            }
+          ]
+        },
+        "pattern": "pct10"
+      },
+      "underline": "none",
+      "underlineColor": "auto",
+      "underlineColorValue": "auto"
+    },
+    "defined": true,
+    "description": "Font: Bold, Based on: Table Grid",
+    "id": "Ledger",
+    "list": {
+      "level": 0,
+      "list": 3
+    },
+    "listLevels": [
+      {
+        "alignment": "left",
+        "bold": true,
+        "color": "#C00000",
+        "follow": "tab",
+        "format": "chicago",
+        "highlight": "none",
+        "italic": false,
+        "legal": false,
+        "numberPosition": 0.0,
+        "size": 10.5,
+        "start": 1,
+        "text": "%1",
+        "textIndent": 0.0,
+        "underline": "single"
+      }
+    ],
+    "locked": false,
+    "name": "Ledger",
+    "ownCharacter": {
+      "allCaps": null,
+      "bold": true,
+      "characterSpacing": null,
+      "characterStyle": null,
+      "color": null,
+      "colorValue": null,
+      "contextualAlternates": null,
+      "doubleStrikethrough": null,
+      "emboss": null,
+      "engrave": null,
+      "fitText": null,
+      "font": null,
+      "fontTheme": null,
+      "hidden": null,
+      "highlight": null,
+      "italic": null,
+      "kerning": null,
+      "language": null,
+      "ligatureFlags": null,
+      "ligatures": null,
+      "noProof": null,
+      "numberForm": null,
+      "numberSpacing": null,
+      "outline": null,
+      "position": null,
+      "scale": null,
+      "shadow": null,
+      "size": null,
+      "smallCaps": null,
+      "strikethrough": null,
+      "stylisticSet": null,
+      "stylisticSets": null,
+      "subscript": null,
+      "superscript": null,
+      "textBorder": null,
+      "textEffects": null,
+      "textShading": null,
+      "underline": null,
+      "underlineColor": null,
+      "underlineColorValue": null
+    },
+    "ownParagraph": {
+      "alignment": null,
+      "borderBetween": null,
+      "borderBottom": null,
+      "borderLeft": null,
+      "borderRight": null,
+      "borderTop": null,
+      "borders": null,
+      "collapsed": null,
+      "contextualSpacing": null,
+      "flow": {
+        "dontHyphenate": null,
+        "keepLinesTogether": null,
+        "keepWithNext": null,
+        "pageBreakBefore": null,
+        "suppressLineNumbers": null,
+        "textboxTightWrap": null,
+        "widowControl": null
+      },
+      "indents": {
+        "firstLine": null,
+        "hanging": null,
+        "left": null,
+        "mirror": null,
+        "right": null
+      },
+      "lineSpacing": null,
+      "list": null,
+      "listLevel": null,
+      "outlineLevel": null,
+      "shading": null,
+      "shadingValue": null,
+      "spaceAfter": null,
+      "spaceBefore": null,
+      "style": null,
+      "tabs": null,
+      "textDirection": null
+    },
+    "paragraph": {
+      "alignment": "left",
+      "borderBetween": null,
+      "borderBottom": "mixed",
+      "borderLeft": "none",
+      "borderRight": "none",
+      "borderTop": {
+        "color": {
+          "theme": "text2",
+          "transforms": [
+            {
+              "kind": "shade",
+              "value": 0.75
+            }
+          ]
+        },
+        "shadow": false,
+        "space": 1.0,
+        "style": "double",
+        "width": 0.75
+      },
+      "borders": "other",
+      "collapsed": false,
+      "contextualSpacing": true,
+      "dropCap": {
+        "distance": 0.0,
+        "lines": 3,
+        "position": "dropped"
+      },
+      "flow": {
+        "dontHyphenate": false,
+        "keepLinesTogether": false,
+        "keepWithNext": true,
+        "pageBreakBefore": "mixed",
+        "suppressLineNumbers": "mixed",
+        "textboxTightWrap": "none",
+        "widowControl": true
+      },
+      "indents": {
+        "firstLine": "mixed",
+        "hanging": null,
+        "left": 0.5,
+        "mirror": false,
+        "right": 0.5
+      },
+      "lineSpacing": {
+        "lines": 1.5,
+        "rule": "multiple"
+      },
+      "list": "bullet",
+      "listLevel": 1,
+      "outlineLevel": 2,
+      "shading": "#D9E2F3",
+      "shadingValue": {
+        "color": "auto",
+        "fill": {
+          "rgb": "#D9E2F3"
+        },
+        "pattern": "clear"
+      },
+      "spaceAfter": 8.5,
+      "spaceBefore": "auto",
+      "style": "Normal",
+      "tabs": [
+        {
+          "alignment": "right",
+          "inherited": true,
+          "leader": "dots",
+          "position": 72.5
+        }
+      ],
+      "textDirection": "lrTb"
+    },
+    "priority": 99,
+    "quick": true,
+    "table": {
+      "alignment": "center",
+      "columnBand": 1,
+      "fill": "#F2F2F2",
+      "indent": 5.5,
+      "parts": [
+        {
+          "borders": {
+            "insideVertical": {
+              "color": "auto",
+              "shadow": false,
+              "space": 0.0,
+              "style": "single",
+              "width": 0.5
+            },
+            "top": {
+              "color": "auto",
+              "shadow": false,
+              "space": 0.0,
+              "style": "single",
+              "width": 0.5
+            }
+          },
+          "cellAlignment": "bottom",
+          "cellMargins": {
+            "top": 1.5
+          },
+          "character": {
+            "allCaps": null,
+            "bold": null,
+            "characterSpacing": null,
+            "characterStyle": null,
+            "color": null,
+            "colorValue": null,
+            "contextualAlternates": null,
+            "doubleStrikethrough": null,
+            "emboss": null,
+            "engrave": null,
+            "fitText": null,
+            "font": null,
+            "fontTheme": null,
+            "hidden": null,
+            "highlight": null,
+            "italic": true,
+            "kerning": null,
+            "language": null,
+            "ligatureFlags": null,
+            "ligatures": null,
+            "noProof": null,
+            "numberForm": null,
+            "numberSpacing": null,
+            "outline": null,
+            "position": null,
+            "scale": null,
+            "shadow": null,
+            "size": null,
+            "smallCaps": null,
+            "strikethrough": null,
+            "stylisticSet": null,
+            "stylisticSets": null,
+            "subscript": null,
+            "superscript": null,
+            "textBorder": null,
+            "textEffects": null,
+            "textShading": null,
+            "underline": null,
+            "underlineColor": null,
+            "underlineColorValue": null
+          },
+          "defined": true,
+          "fill": "#D9E2F3",
+          "paragraph": {
+            "alignment": null,
+            "borderBetween": null,
+            "borderBottom": null,
+            "borderLeft": null,
+            "borderRight": null,
+            "borderTop": null,
+            "borders": null,
+            "collapsed": null,
+            "contextualSpacing": null,
+            "flow": {
+              "dontHyphenate": null,
+              "keepLinesTogether": null,
+              "keepWithNext": null,
+              "pageBreakBefore": null,
+              "suppressLineNumbers": null,
+              "textboxTightWrap": null,
+              "widowControl": null
+            },
+            "indents": {
+              "firstLine": null,
+              "hanging": null,
+              "left": null,
+              "mirror": null,
+              "right": null
+            },
+            "lineSpacing": null,
+            "list": null,
+            "listLevel": null,
+            "outlineLevel": null,
+            "shading": null,
+            "shadingValue": null,
+            "spaceAfter": null,
+            "spaceBefore": null,
+            "style": null,
+            "tabs": null,
+            "textDirection": null
+          },
+          "part": "headerRow",
+          "rowCanBreak": false
+        }
+      ],
+      "rowBand": 2
+    },
+    "tabs": [
+      {
+        "alignment": "right",
+        "inherited": true,
+        "leader": "dots",
+        "position": 72.5
+      }
+    ],
+    "visibility": "show"
+  }
+]

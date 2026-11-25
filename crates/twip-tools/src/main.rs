@@ -73,6 +73,7 @@ fn main() {
             let options = twip::api::session::PdfOptions {
                 open_password: flag("--password"),
                 keywords: flag("--keywords").map(|k| k.split(',').map(str::to_string).collect()).unwrap_or_default(),
+                hidden_text: None,
             };
             return exit_on_error(cli::pdf::run(std::path::Path::new(docx), std::path::Path::new(out), &options));
         }
@@ -185,7 +186,7 @@ fn main() {
         let zoom = a.get(2).and_then(|z| z.parse::<f64>().ok()).unwrap_or(1.0);
         e.run(twip::api::command::Command::SetZoom(twip::api::command::Zoom::Percent(zoom * 100.0))).expect("zoom");
         // Every page, not only the first ones laid out at open: counting lines lays out the rest.
-        e.word_count();
+        e.word_count(Default::default());
         if let Some(text) = a.get(3) {
             e.key(Key::Home, Modifiers { ctrl: true, ..Modifiers::default() });
             e.text(text);

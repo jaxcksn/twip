@@ -240,7 +240,7 @@ fn editing_a_link_address_keeps_its_screen_tip() {
     let mut e = linked();
     let (at, ..) = in_field(&mut e, 0, 1);
     e.selection = crate::editing::selection::Selection::Caret(at);
-    let edit = crate::api::command::HyperlinkEdit { address: Some("https://b.test/".into()), text: None };
+    let edit = crate::api::command::HyperlinkEdit { address: Some("https://b.test/".into()), text: None, ..Default::default() };
     assert!(matches!(e.edit_hyperlink(edit, fonts()), crate::editing::Outcome::Changed(_)));
     let link = e.link_here().expect("still a link");
     assert_eq!((link.address.as_str(), link.bookmark, link.tip.as_deref()), ("https://b.test/", None, Some("Read the guide")));

@@ -124,7 +124,7 @@ fn checkbox_undo_reverts_one_toggle() {
     click(&mut e, at, 1);
     click(&mut e, at, 1);
     assert_eq!(face(&e, " Unchecked item"), '☒');
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(face(&e, " Unchecked item"), '☐', "one undo, one toggle");
 }
 

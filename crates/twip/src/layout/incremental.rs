@@ -602,6 +602,8 @@ struct Running {
     incremental: bool,
     relaid: Option<LatestTable>,
     seeded: bool,
+    /// The pass the published pages are of, and how many of its pages they hold.
+    shown: (usize, usize),
 }
 
 pub struct DocumentLayout {
@@ -657,6 +659,9 @@ impl DocumentLayout {
     /// The document changed: its environment is read again, though nothing needs laying out again.
     pub fn document_changed(&mut self) {
         self.env = None;
+        if let Some(r) = &mut self.job {
+            r.job.document_changed();
+        }
     }
 
     fn env(&mut self, doc: &Document) -> Rc<LayoutEnv> {
@@ -799,7 +804,7 @@ impl DocumentLayout {
             crate::prof::time(why, || ());
             #[cfg(test)]
             FULL_JOBS.set(FULL_JOBS.get() + 1);
-            Running { job, reuse: None, span: None, incremental: false, relaid: None, seeded: false }
+            Running { job, reuse: None, span: None, incremental: false, relaid: None, seeded: false, shown: (0, 0) }
         };
         let Some(b) = &self.baseline else { return full(new_job(), "full:no-baseline") };
         if self.acc.full {
@@ -927,7 +932,7 @@ impl DocumentLayout {
         }
         let renumbered = job.note_numbers().iter().filter(|(k, n)| b.note_numbers.get(*k) != Some(*n)).map(|(k, _)| *k).collect();
         let reuse = Reuse { base: b.finished.clone(), span: closed, restart: r, parts, keys, renumbered };
-        Running { job, reuse: Some(reuse), span, incremental: true, relaid, seeded }
+        Running { job, reuse: Some(reuse), span, incremental: true, relaid, seeded, shown: (0, 0) }
     }
 
     pub fn run(&mut self, doc: &Document, fonts: &Fonts, budget: Budget) -> Step {
@@ -955,8 +960,15 @@ impl DocumentLayout {
             crate::prof::time("full:seed-missed", || ());
             #[cfg(test)]
             FULL_JOBS.set(FULL_JOBS.get() + 1);
-            self.job =
-                Some(Running { job: LayoutJob::new(doc, self.revision), reuse: None, span: None, incremental: false, relaid: None, seeded: false });
+            self.job = Some(Running {
+                job: LayoutJob::new(doc, self.revision),
+                reuse: None,
+                span: None,
+                incremental: false,
+                relaid: None,
+                seeded: false,
+                shown: (0, 0),
+            });
             return (Step::Yielded, false);
         }
         (step, running.job.committed().len() > before)
@@ -1065,18 +1077,44 @@ impl DocumentLayout {
     }
 
     fn publish_pending(&mut self) {
-        let Some(r) = self.job.take() else { return };
+        let Some(mut r) = self.job.take() else { return };
         let prev = self.published.clone();
-        let committed: Vec<&PageRecord> = r.job.committed().iter().filter(|p| p.blank || !p.bodies.is_empty()).collect();
-        let n = committed.len();
-        let mut pages = self.fragments(&committed);
-        for (page, info) in prev.pages().iter().zip(prev.info()).skip(n) {
-            pages.push((page.clone(), PageMeta { section: info.section, number: info.number, section_page: info.section_page, blank: info.blank }));
+        let records = r.job.committed();
+        // The pages laid out: blank or with a body. Only the last page can be neither, just started.
+        let mut n = records.len();
+        while n > 0 && !records[n - 1].blank && records[n - 1].bodies.is_empty() {
+            n -= 1;
         }
-        let excluded = super::document::excluded(r.job.committed()).into_iter().filter(|e| e.0 < n).collect();
+        // What this pass published is as it was, but for its last page, which can have taken more bodies since.
+        let pass = r.job.run.k;
+        let from = if r.shown.0 == pass { r.shown.1.saturating_sub(1).min(n).min(prev.pages().len()) } else { 0 };
+        #[cfg(test)]
+        {
+            let committed = records.iter().filter(|p| p.blank || !p.bodies.is_empty()).count();
+            assert_eq!(committed, n, "only the last page is without a body and not blank");
+            for (i, pg) in records[..from].iter().enumerate() {
+                let section_page = if pg.blank { 0 } else { pg.in_section - 1 };
+                let (f, m) = self.fragment(pg, section_page);
+                // A blank page is made again each time, the same.
+                let was = &prev.info()[i];
+                let same = if pg.blank { was.blank && (was.section, was.number) == (m.section, m.number) } else { Rc::ptr_eq(&f, &prev.pages()[i]) };
+                assert!(same, "page {i} published before is as it was");
+            }
+        }
+        let mut fresh = Vec::with_capacity(n - from);
+        for pg in &records[from..n] {
+            let section_page = if pg.blank { 0 } else { pg.in_section - 1 };
+            fresh.push(self.fragment(pg, section_page));
+        }
+        let excluded = super::document::excluded(&records[from..n]).into_iter().map(|(i, p, u)| (i + from, p, u)).collect();
+        if self.frames.len() > 4 * n + 64 {
+            let keep: std::collections::HashSet<FragmentId> = records[..n].iter().filter_map(|p| p.bodies.first().and_then(|b| b.body.id)).collect();
+            self.frames.retain(|k, _| keep.contains(k));
+        }
+        r.shown = (pass, n);
         self.job = Some(r);
         let lrev = self.next_layout_revision();
-        self.published = Rc::new(Snapshot::new(self.revision, lrev, LayoutStatus::Pending { stale_from: n }, pages, excluded));
+        self.published = Rc::new(Snapshot::pending_after(&prev, self.revision, lrev, from, fresh, excluded));
     }
 
     fn complete_job(&mut self, doc: &Document, fonts: &Fonts) {

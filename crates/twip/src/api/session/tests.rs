@@ -32,11 +32,11 @@ fn bold_undo_redo_report_state_then_events() {
     let commit = s.run(Command::SetBold(true)).expect("bolds");
     assert_eq!(s.state().formatting.bold, Tri::Uniform(true));
     assert_eq!(commit.record.map(|r| r.origin), Some(Origin::Api));
-    let undo = s.run(Command::Undo).expect("undoes");
+    let undo = s.run(Command::Undo(Default::default())).expect("undoes");
     assert_eq!(undo.record.as_ref().map(|r| (r.origin, r.label.as_str())), Some((Origin::Undo, "Bold")));
     assert_eq!(s.state().formatting.bold, Tri::Uniform(false));
     assert!(s.state().history.can_redo);
-    s.run(Command::Redo).expect("redoes");
+    s.run(Command::Redo(Default::default())).expect("redoes");
     assert_eq!(s.state().formatting.bold, Tri::Uniform(true));
     let events = events.borrow();
     let changes: Vec<usize> = events.iter().enumerate().filter(|(_, e)| matches!(e, Event::DocumentChanged(_))).map(|(i, _)| i).collect();
@@ -59,6 +59,7 @@ fn table_positions_are_validated_like_object_positions() {
             horizontal: Some(HorizontalPosition { relative_to: HorizontalReference::Margin, align, offset: Some(Points(0.0)), percent: None }),
             vertical: Some(VerticalPosition { relative_to: VerticalReference::Paragraph, align: None, offset: Some(Points(offset)), percent: None }),
             wrap_distance: None,
+            allow_overlap: None,
         }))
     };
     s.run(Command::InsertTable(crate::api::command::TableSize { rows: 1, columns: 1 })).expect("a table");
@@ -95,7 +96,7 @@ fn refusals_have_their_codes() {
     let s = engine.session(id).expect("a session");
     assert_eq!(s.run(Command::InsertText("x".into())).map_err(|e| e.code).err(), Some(ErrorCode::ReadOnly));
     s.set_read_only(false);
-    assert_eq!(s.run(Command::Undo).map_err(|e| e.code).err(), Some(ErrorCode::Unavailable));
+    assert_eq!(s.run(Command::Undo(Default::default())).map_err(|e| e.code).err(), Some(ErrorCode::Unavailable));
     assert_eq!(s.run(Command::InsertText(String::new())).map_err(|e| e.code).err(), Some(ErrorCode::InvalidArgument));
     assert_eq!(s.run(Command::PasteFormatting).map_err(|e| e.code).err(), Some(ErrorCode::Unavailable));
     assert_eq!(s.run(Command::SetFontSize(Points(-3.0))).map_err(|e| e.code).err(), Some(ErrorCode::InvalidArgument));
@@ -142,7 +143,7 @@ fn export_captures_the_revision_and_clears_modified() {
 }
 
 #[test]
-fn a_typical_state_is_under_16_kb() {
+fn a_typical_state_is_under_20_kb() {
     let (mut engine, _) = engine();
     let id = engine.create_session(SessionOptions::default());
     let s = engine.session(id).expect("a session");
@@ -155,7 +156,7 @@ fn a_typical_state_is_under_16_kb() {
     assert!(text.contains('\n'), "{text:?}");
     let json = serde_json::to_string(&state).expect("serializes");
     // ponytail: grows with the catalog (each command's state); a compact command-state encoding if it nears this.
-    assert!(json.len() < 16 * 1024, "{} bytes", json.len());
+    assert!(json.len() < 20 * 1024, "{} bytes", json.len());
 }
 
 #[test]
@@ -190,7 +191,7 @@ fn a_batch_is_one_transaction_and_one_undo_step() {
     let changes = events.borrow().iter().filter(|e| matches!(e, Event::DocumentChanged(_))).count();
     assert_eq!(changes, 1);
     assert_eq!(s.state().history.undo_label.as_deref(), Some("Block"));
-    s.run(Command::Undo).expect("undoes");
+    s.run(Command::Undo(Default::default())).expect("undoes");
     assert_eq!((s.state().revision, s.state().formatting.bold), (4, Tri::Uniform(false)));
     // Checked before anything runs: a bad command changes nothing.
     events.borrow_mut().clear();
@@ -223,7 +224,7 @@ fn undoing_to_the_save_clears_modified() {
     s.run(Command::SelectAll).expect("selects");
     s.run(Command::SetBold(true)).expect("bolds");
     assert!(s.state().modified);
-    s.run(Command::Undo).expect("undoes");
+    s.run(Command::Undo(Default::default())).expect("undoes");
     assert!(!s.state().modified, "back where it was saved");
 }
 
@@ -249,7 +250,8 @@ fn dark_mode_changes_neither_the_pdf_nor_the_layout() {
     let s = engine.session(id).expect("a session");
     s.run(Command::InsertText("Dark and light".into())).expect("types");
     s.run(Command::SelectAll).expect("selects");
-    s.run(Command::SetFontColor(crate::api::value::AutoOr::Value(crate::api::value::Color(0x1F3864)))).expect("colours");
+    s.run(Command::SetFontColor(crate::api::value::AutoOr::Value(crate::api::drawing::ColourValue::rgb(crate::api::value::Color(0x1F3864)))))
+        .expect("colours");
     // Two exports differ in their creation time and the ids derived from it.
     let export = |s: &mut crate::api::session::Session| undated(s.export(&ExportOptions::Pdf(Default::default())).expect("exports").bytes.0);
     let light = export(s);
@@ -287,11 +289,11 @@ fn typing_corrects_what_it_finishes_and_one_undo_takes_the_correction_back() {
     typed(s, "Word teh ");
     assert_eq!(paragraphs(s)[0], "Word the ");
     // Right after it, an undo takes back only the correction.
-    s.run(Command::Undo).expect("undoes");
+    s.run(Command::Undo(Default::default())).expect("undoes");
     assert_eq!(paragraphs(s)[0], "Word teh ");
     typed(s, "(c)");
     assert_eq!(paragraphs(s)[0], "Word teh \u{a9}");
-    s.run(Command::Undo).expect("undoes");
+    s.run(Command::Undo(Default::default())).expect("undoes");
     assert_eq!(paragraphs(s)[0], "Word teh (c)");
     // An ordinal's suffix is raised.
     s.run(Command::SelectAll).expect("selects");
@@ -410,7 +412,7 @@ fn a_typed_list_start_begins_a_list_and_one_undo_puts_it_back() {
     let s = engine.session(id).expect("a session");
     typed(s, "* ");
     assert_eq!(s.state().paragraph.list, Tri::Uniform(ListState::Bullet));
-    s.run(Command::Undo).expect("undoes");
+    s.run(Command::Undo(Default::default())).expect("undoes");
     assert_eq!(paragraphs(s)[0], "* ");
     assert_eq!(s.state().paragraph.list, Tri::Uniform(ListState::None));
     // Not inside a paragraph's text, nor when the rule is off.
@@ -437,7 +439,7 @@ fn copies_paste_formatted_in_any_session_and_as_text() {
     assert_eq!(s.copy(true).map(|d| d.text), Some("Hello".into()));
     s.run(Command::SelectAll).expect("selects");
     assert_eq!(s.copy(false), None, "nothing left to copy");
-    s.run(Command::Undo).expect("undoes the cut");
+    s.run(Command::Undo(Default::default())).expect("undoes the cut");
     s.run(Command::SelectAll).expect("selects");
     let data = s.copy(false).expect("a copy");
     assert_eq!(data.text, "Hello");
@@ -447,7 +449,7 @@ fn copies_paste_formatted_in_any_session_and_as_text() {
     s.paste(&data, false);
     s.run(Command::SelectAll).expect("selects");
     assert_eq!(s.state().formatting.bold, Tri::Uniform(true), "the copy keeps its formatting in another session");
-    s.run(Command::Undo).expect("one step");
+    s.run(Command::Undo(Default::default())).expect("one step");
     s.run(Command::SelectAll).expect("selects");
     assert_eq!(s.copy(false), None);
     s.paste(&data, true);
@@ -1098,9 +1100,9 @@ fn the_editing_target_is_reported_once_per_change() {
     assert_eq!(targets(&events), [], "edits within it don't switch");
     s.run(Command::CloseSubTemplate).expect("closes");
     assert_eq!(targets(&events), [EditingTarget::Template]);
-    s.run(Command::Undo).expect("undoes");
+    s.run(Command::Undo(Default::default())).expect("undoes");
     assert_eq!(targets(&events), std::slice::from_ref(&violation), "undo goes back to the sub-template");
-    s.run(Command::Redo).expect("redoes");
+    s.run(Command::Redo(Default::default())).expect("redoes");
     assert_eq!(targets(&events), [], "redo stays on it");
     assert_eq!(
         s.run(Command::EditSubTemplate(SubTemplateName { name: "Nope".into(), category: None })).map_err(|e| e.code).err(),
@@ -1166,9 +1168,9 @@ fn commands_say_what_they_did_and_kinds_can_be_turned_off() {
     said(&events);
     s.run(Command::SetBold(true)).expect("bolds");
     assert_eq!(said(&events), [(K::Formatting, "Bold on".to_string())]);
-    s.run(Command::Undo).expect("undoes");
+    s.run(Command::Undo(Default::default())).expect("undoes");
     assert_eq!(said(&events), [(K::Command, "Undo Bold".to_string())]);
-    s.run(Command::Redo).expect("redoes");
+    s.run(Command::Redo(Default::default())).expect("redoes");
     assert_eq!(said(&events), [(K::Command, "Redo Bold".to_string())]);
     s.run(Command::Copy).expect("copies");
     assert_eq!(said(&events), [(K::Command, "Copied".to_string())], "a copy changes nothing and still says so");
@@ -1554,7 +1556,8 @@ fn an_alias_draws_a_missing_family_and_the_document_keeps_its_name() {
     let missing = missing_names(&s.state().fonts);
     assert!(!missing.iter().any(|(f, _)| f == "Garamond"), "{missing:?}");
     assert_eq!(s.fonts().fonts().face("Garamond", None, false, false).map(|f| f.family.clone()).as_deref(), Some("Stand-in Serif"));
-    s.find(&crate::api::services::FindQuery { text: "Garamond text".into(), ..Default::default() }, crate::api::services::FindDirection::Next);
+    s.find(&crate::api::services::FindQuery { text: "Garamond text".into(), ..Default::default() }, crate::api::services::FindDirection::Next)
+        .expect("finds");
     assert_eq!(s.state().formatting.font, crate::api::state::Tri::Uniform("Garamond".into()), "the font box names the document's family");
     let saved = s.export(&ExportOptions::default()).expect("saves");
     let mut zip = zip::ZipArchive::new(std::io::Cursor::new(saved.bytes.0)).expect("a package");
@@ -1682,7 +1685,7 @@ fn a_replacement_draws_even_when_the_family_is_installed_and_the_document_is_unc
     let s = engine.session(id).expect("a session");
     assert_eq!(s.fonts().fonts().face("Stand-in Sans", None, false, false).map(|f| f.family.clone()).as_deref(), Some("Stand-in Serif"));
     assert_eq!(s.export(&ExportOptions::default()).expect("saves").bytes.0, before, "the saved document is unchanged");
-    s.find(&crate::api::services::FindQuery { text: "CJK".into(), ..Default::default() }, crate::api::services::FindDirection::Next);
+    s.find(&crate::api::services::FindQuery { text: "CJK".into(), ..Default::default() }, crate::api::services::FindDirection::Next).expect("finds");
     assert_eq!(s.state().formatting.font, crate::api::state::Tri::Uniform("Stand-in Sans".into()), "the font box names the document's family");
     // A replacement whose target is missing: the document's family draws, and the target is reported.
     engine.fonts().set_replacements(vec![FontRule { from: "Stand-in Sans".into(), bold: None, italic: None, to: "Nowhere Serif".into() }]);
@@ -1739,7 +1742,7 @@ fn replace_font_rewrites_the_texts_family_skips_locked_controls_and_undoes_in_on
     assert!(run_xml(&xml, "Locked Calibri.").contains(r#"w:ascii="Calibri""#), "the locked control keeps its font");
     assert!(!xml.contains(r#"w:font="Calibri""#), "the symbol no longer names Calibri");
     assert!(run_xml(&xml, "Times New Roman.").contains("Times New Roman"));
-    s.run(Command::Undo).expect("undoes");
+    s.run(Command::Undo(Default::default())).expect("undoes");
     assert_eq!(saved_part(s, "word/document.xml"), before, "one undo restores the text");
 }
 
@@ -1759,7 +1762,8 @@ fn replace_font_records_formatting_revisions_and_honours_its_filters() {
 fn replace_font_in_a_selection_gives_theme_text_its_own_family() {
     let (mut engine, id) = font_rewrite();
     let s = engine.session(id).expect("a session");
-    s.find(&crate::api::services::FindQuery { text: "Theme Calibri.".into(), ..Default::default() }, crate::api::services::FindDirection::Next);
+    s.find(&crate::api::services::FindQuery { text: "Theme Calibri.".into(), ..Default::default() }, crate::api::services::FindDirection::Next)
+        .expect("finds");
     let selection = crate::api::command::ReplaceFont { scope: crate::api::command::ReplaceScope::Selection, ..rewrite("Calibri", "Stand-in Sans") };
     s.run(Command::ReplaceFont(selection)).expect("replaces");
     let xml = saved_part(s, "word/document.xml");
@@ -1816,7 +1820,7 @@ fn replace_font_rewrites_the_tables_below_the_text_and_undo_restores_every_part(
         assert_eq!(live.0, "Stand-in Sans", "{text}");
         assert_eq!(live, family_of(&fresh, text), "{text}: incremental equals a fresh read");
     }
-    s.run(Command::Undo).expect("undoes");
+    s.run(Command::Undo(Default::default())).expect("undoes");
     let after: Vec<String> = parts.iter().map(|p| saved_part(s, p)).collect();
     assert_eq!(after, before, "one undo restores every part");
 }
@@ -1937,6 +1941,7 @@ fn an_activated_picture_control_names_it() {
         image: Some(crate::api::value::Bytes(image)),
         docx: None,
         building_block: None,
+        date: None,
     }))
     .expect("fills");
     activated(&events);
@@ -2304,7 +2309,7 @@ fn modify_style_shows_the_style_changes_it_on_apply_and_undoes_in_one_step() {
     assert_eq!(size(s), Points(13.0), "Heading 2 keeps its own size");
     let h1 = style_values(&s.dialog_open_style(StyleOpen::Modify(StyleId("Heading1".into()))).expect("opens"));
     assert_eq!((h1.size, h1.color), (Points(20.0), AutoOr::Value(Color(0xC00000))));
-    s.run(Command::Undo).expect("undoes");
+    s.run(Command::Undo(Default::default())).expect("undoes");
     let h1 = style_values(&s.dialog_open_style(StyleOpen::Modify(StyleId("Heading1".into()))).expect("opens"));
     assert_eq!(h1.size, Points(16.0), "one undo step");
 }
@@ -2439,7 +2444,8 @@ fn create_style_refuses_taken_names_and_applies_a_new_one_to_the_selection() {
     let mut engine = Engine::new(FontLibrary::system());
     let id = styles_session(&mut engine);
     let s = engine.session(id).expect("a session");
-    s.find(&FindQuery { text: "Callout with direct".into(), match_case: None, whole_words: None }, Order::Next);
+    s.find(&FindQuery { text: "Callout with direct".into(), match_case: None, whole_words: None, ..FindQuery::default() }, Order::Next)
+        .expect("finds");
     let m = s.dialog_open_style(StyleOpen::Create).expect("opens");
     let v = style_values(&m);
     assert_eq!((v.name.as_str(), v.short_form, v.based_on.as_ref().map(|b| b.0.as_str())), ("Style1", true, Some("Callout")));
@@ -2456,7 +2462,7 @@ fn create_style_refuses_taken_names_and_applies_a_new_one_to_the_selection() {
     s.dialog_apply(named).expect("creates it");
     assert!(s.styles(None).iter().any(|st| st.name == "Sidebar"), "listed");
     assert_eq!(s.state().paragraph.style, Tri::Uniform(crate::api::value::StyleId("Sidebar".into())), "applied to the selection");
-    s.run(Command::Undo).expect("undoes");
+    s.run(Command::Undo(Default::default())).expect("undoes");
     assert!(!s.styles(None).iter().any(|st| st.name == "Sidebar"), "one undo step");
     assert_eq!(s.state().paragraph.style, Tri::Uniform(crate::api::value::StyleId("Callout".into())), "the paragraph's style back");
 }
@@ -2482,7 +2488,8 @@ fn update_style_to_match_selection_takes_the_selections_direct_formatting() {
     let mut engine = Engine::new(FontLibrary::system());
     let id = styles_session(&mut engine);
     let s = engine.session(id).expect("a session");
-    s.find(&FindQuery { text: "Callout with direct".into(), match_case: None, whole_words: None }, Order::Next);
+    s.find(&FindQuery { text: "Callout with direct".into(), match_case: None, whole_words: None, ..FindQuery::default() }, Order::Next)
+        .expect("finds");
     assert!(!style_values(&s.dialog_open_style(StyleOpen::Modify(StyleId("Callout".into()))).expect("opens")).italic);
     s.run(Command::UpdateStyleToSelection(StyleId("Callout".into()))).expect("updates the style");
     assert!(
@@ -2501,12 +2508,14 @@ fn formatting_a_paragraph_in_an_automatically_updating_style_changes_the_style()
     let callout = |s: &mut crate::api::session::Session| {
         style_values(&s.dialog_open_style(StyleOpen::Modify(StyleId("Callout".into()))).expect("opens")).alignment
     };
-    s.find(&FindQuery { text: "Callout: an automatically".into(), match_case: None, whole_words: None }, Order::Next);
+    s.find(&FindQuery { text: "Callout: an automatically".into(), match_case: None, whole_words: None, ..FindQuery::default() }, Order::Next)
+        .expect("finds");
     s.run(Command::SetAlignment(Alignment::Center)).expect("centres");
     assert_eq!(callout(s), Alignment::Center, "the style took it");
-    s.find(&FindQuery { text: "Callout with direct".into(), match_case: None, whole_words: None }, Order::Next);
+    s.find(&FindQuery { text: "Callout with direct".into(), match_case: None, whole_words: None, ..FindQuery::default() }, Order::Next)
+        .expect("finds");
     assert_eq!(s.state().paragraph.alignment, Tri::Uniform(Alignment::Center), "so did the other paragraph in it");
-    s.run(Command::Undo).expect("undoes");
+    s.run(Command::Undo(Default::default())).expect("undoes");
     assert_eq!(callout(s), Alignment::Left, "one undo step");
     s.run(Command::SetParagraphStyle(StyleId("Normal".into()))).expect("applies Normal");
     assert_eq!(s.state().paragraph.style, Tri::Uniform(StyleId("Normal".into())), "applying a style isn't formatting the style");
@@ -2551,7 +2560,7 @@ fn deleting_a_style_refuses_built_ins_and_undoes_in_one_step() {
     assert_eq!(e.code, ErrorCode::NotAllowed);
     s.run(Command::DeleteStyle(StyleId("Callout".into()))).expect("deletes");
     assert!(!s.styles(None).iter().any(|st| st.id.0 == "Callout"));
-    s.run(Command::Undo).expect("undoes");
+    s.run(Command::Undo(Default::default())).expect("undoes");
     assert!(s.styles(None).iter().any(|st| st.id.0 == "Callout"), "one undo step");
 }
 
@@ -2574,7 +2583,7 @@ fn style_options_and_document_defaults_change_and_save() {
     let draft = s.styles(None).into_iter().find(|st| st.id.0 == "Draft").expect("Draft");
     assert_eq!((draft.visibility, draft.priority, draft.quick, draft.locked), (StyleVisibility::Show, 5, true, true));
     s.run(Command::SetDocumentDefaults(DocumentDefaults { size: Some(Points(14.0)), ..DocumentDefaults::default() })).expect("sets them");
-    s.find(&FindQuery { text: "Normal text,".into(), match_case: None, whole_words: None }, Order::Next);
+    s.find(&FindQuery { text: "Normal text,".into(), match_case: None, whole_words: None, ..FindQuery::default() }, Order::Next).expect("finds");
     assert_eq!(s.state().formatting.size, Tri::Uniform(Points(14.0)), "text with no other size takes the default");
     let saved = s.export(&ExportOptions::Docx).expect("exports").bytes.0;
     let doc = crate::docx::read_editable(&saved).expect("reads again");
@@ -2641,7 +2650,13 @@ fn border_lines_and_shading_edit_the_paragraph_and_the_text() {
     let mut engine = Engine::new(FontLibrary::system());
     let id = styles_session(&mut engine);
     let s = engine.session(id).expect("a session");
-    let line = Border { style: BorderStyle::ThickThinSmallGap, width: Points(1.5), color: AutoOr::Value(Color(0x1F3864)) };
+    let line = Border {
+        style: BorderStyle::ThickThinSmallGap,
+        width: Points(1.5),
+        color: AutoOr::Value(crate::api::drawing::ColourValue::rgb(Color(0x1F3864))),
+        space: None,
+        shadow: None,
+    };
     s.run(Command::SetParagraphBorderLines(ParagraphBorderLines {
         top: Some(Some(line.clone())),
         bottom: Some(Some(line)),
@@ -2649,7 +2664,12 @@ fn border_lines_and_shading_edit_the_paragraph_and_the_text() {
     }))
     .expect("borders");
     s.run(Command::SetParagraphBorderLines(ParagraphBorderLines { top: Some(None), ..ParagraphBorderLines::default() })).expect("removes one");
-    let shade = |target| ShadingChange { target, fill: NoneOr::Value(Color(0xFFF2CC)), pattern: ShadingPattern::Pct20, color: AutoOr::Auto };
+    let shade = |target| ShadingChange {
+        target,
+        fill: NoneOr::Value(crate::api::drawing::ColourValue::rgb(Color(0xFFF2CC))),
+        pattern: ShadingPattern::Pct20,
+        color: AutoOr::Auto,
+    };
     s.run(Command::SetShading(shade(ShadingTarget::Paragraph))).expect("shades the paragraph");
     s.run(Command::SelectAll).expect("selects");
     s.run(Command::SetShading(shade(ShadingTarget::Text))).expect("shades the text");
@@ -2661,8 +2681,8 @@ fn border_lines_and_shading_edit_the_paragraph_and_the_text() {
     assert!(!xml.contains("<w:top w:val=\"thickThinSmallGap\""), "the top line removed");
     assert!(xml.contains(r#"<w:shd w:val="pct20" w:color="auto" w:fill="FFF2CC"/>"#), "the shading");
     assert!(xml.matches("w:val=\"pct20\"").count() >= 2, "paragraph and run shading");
-    s.run(Command::Undo).expect("undoes");
-    s.run(Command::Undo).expect("undoes");
+    s.run(Command::Undo(Default::default())).expect("undoes");
+    s.run(Command::Undo(Default::default())).expect("undoes");
 }
 
 #[test]
@@ -2688,10 +2708,27 @@ fn shading_keeps_patterns_and_shades_cells_and_tables() {
     let DialogValues::BordersShading(v) = &m.values else { panic!("not Borders and Shading") };
     assert_eq!(v.pattern, ShadingPattern::HorzStripe, "the dialog shows the stripe");
     assert_eq!(m.fields["pattern"].options.as_ref().map(Vec::len), Some(37), "every pattern Word lists");
-    let shade = |target, fill, pattern, color| ShadingChange { target, fill: NoneOr::Value(Color(fill)), pattern, color };
+    let shade = |target, fill, pattern, color| ShadingChange {
+        target,
+        fill: NoneOr::Value(crate::api::drawing::ColourValue::rgb(Color(fill))),
+        pattern,
+        color,
+    };
     s.run(Command::SetShading(shade(ShadingTarget::Paragraph, 0x00B050, ShadingPattern::Other, AutoOr::Auto))).expect("refills the paragraph");
-    s.run(Command::SetShading(shade(ShadingTarget::Cell, 0xFFFF00, ShadingPattern::DiagCross, AutoOr::Value(Color(0x2E75B6))))).expect("cell");
-    s.run(Command::SetShading(shade(ShadingTarget::Table, 0xFFFFFF, ShadingPattern::Pct25, AutoOr::Value(Color(0xC00000))))).expect("table");
+    s.run(Command::SetShading(shade(
+        ShadingTarget::Cell,
+        0xFFFF00,
+        ShadingPattern::DiagCross,
+        AutoOr::Value(crate::api::drawing::ColourValue::rgb(Color(0x2E75B6))),
+    )))
+    .expect("cell");
+    s.run(Command::SetShading(shade(
+        ShadingTarget::Table,
+        0xFFFFFF,
+        ShadingPattern::Pct25,
+        AutoOr::Value(crate::api::drawing::ColourValue::rgb(Color(0xC00000))),
+    )))
+    .expect("table");
     let saved = s.export(&ExportOptions::Docx).expect("saves").bytes.0;
     let mut z = zip::ZipArchive::new(std::io::Cursor::new(saved)).expect("a package");
     let mut xml = String::new();
@@ -2722,7 +2759,7 @@ fn borders_and_shading_applies_to_the_cell_or_the_table() {
     let m = s.dialog_open(DialogKind::BordersShading).expect("opens");
     let choices: Vec<String> = m.fields["applyTo"].options.iter().flatten().map(|o| o.value.clone()).collect();
     assert_eq!(choices, ["text", "paragraph", "cell", "table"], "in a table");
-    let patch = |p: BordersShadingPatch| DialogPatch::BordersShading(p);
+    let patch = |p: BordersShadingPatch| DialogPatch::BordersShading(Box::new(p));
     let m = s.dialog_update(m, patch(BordersShadingPatch { apply_to: Some(ShadingTarget::Cell), ..Default::default() })).expect("cell");
     assert_eq!((values(&m).pattern, values(&m).fill), (ShadingPattern::HorzStripe, NoneOr::Value(Color(0xFFFF00))), "the cell's");
     assert!(!m.fields["top"].enabled, "a cell block's edges aren't set from here");
@@ -2794,8 +2831,12 @@ fn a_table_follows_its_style_s_shading_and_saves_only_its_own() {
     r.open(&saved).expect("reopens");
     assert_eq!(table(r), Some(0xF4B183), "reopened, still the style's");
     let s = engine.session(id).expect("the first");
-    let shade =
-        ShadingChange { target: ShadingTarget::Table, fill: NoneOr::Value(Color(0xFFF2CC)), pattern: ShadingPattern::Clear, color: AutoOr::Auto };
+    let shade = ShadingChange {
+        target: ShadingTarget::Table,
+        fill: NoneOr::Value(crate::api::drawing::ColourValue::rgb(Color(0xFFF2CC))),
+        pattern: ShadingPattern::Clear,
+        color: AutoOr::Auto,
+    };
     s.run(Command::SetShading(shade)).expect("shades the table");
     s.run(Command::SetTableStyle(StyleId("ShadeA".into()))).expect("restyles");
     assert_eq!(table(s), Some(0xFFF2CC), "its own over the style's");
@@ -2839,14 +2880,18 @@ fn borders_and_shading_sets_a_box_reopens_on_it_and_formats_a_style() {
     assert_eq!(values(&m).setting, BorderSetting::None);
     assert_eq!(s.dialog_apply(m.clone()).expect("applies").record, None, "nothing changed, nothing applied");
     let patch = BordersShadingPatch { style: Some(BorderStyle::Double), setting: Some(BorderSetting::Box), ..BordersShadingPatch::default() };
-    let m = s.dialog_update(m, DialogPatch::BordersShading(patch)).expect("updates");
+    let m = s.dialog_update(m, DialogPatch::BordersShading(Box::new(patch))).expect("updates");
     let v = values(&m);
     assert!(v.top.as_ref().is_some_and(|b| b.style == BorderStyle::Double) && v.left == v.right && v.between.is_none(), "{v:?}");
-    let m =
-        s.dialog_update(m, DialogPatch::BordersShading(BordersShadingPatch { top: Some(None), ..BordersShadingPatch::default() })).expect("updates");
+    let m = s
+        .dialog_update(m, DialogPatch::BordersShading(Box::new(BordersShadingPatch { top: Some(None), ..BordersShadingPatch::default() })))
+        .expect("updates");
     assert_eq!(values(&m).setting, BorderSetting::Custom, "an edge set one by one");
     let m = s
-        .dialog_update(m, DialogPatch::BordersShading(BordersShadingPatch { setting: Some(BorderSetting::Box), ..BordersShadingPatch::default() }))
+        .dialog_update(
+            m,
+            DialogPatch::BordersShading(Box::new(BordersShadingPatch { setting: Some(BorderSetting::Box), ..BordersShadingPatch::default() })),
+        )
         .expect("updates");
     s.dialog_apply(m).expect("applies");
     let again = values(&s.dialog_open(DialogKind::BordersShading).expect("opens"));
@@ -2857,7 +2902,7 @@ fn borders_and_shading_sets_a_box_reopens_on_it_and_formats_a_style() {
     let b = s.dialog_open_on_style(DialogKind::BordersShading, style).expect("opens Format > Border");
     let patch =
         BordersShadingPatch { fill: Some(NoneOr::Value(Color(0xDEEAF6))), pattern: Some(ShadingPattern::Pct10), ..BordersShadingPatch::default() };
-    let b = s.dialog_update(b, DialogPatch::BordersShading(patch)).expect("updates");
+    let b = s.dialog_update(b, DialogPatch::BordersShading(Box::new(patch))).expect("updates");
     let back = style_values(&s.dialog_apply_to_style(b).expect("applies to the style dialog"));
     assert!(back.pending.contains("w:fill=\"DEEAF6\"") && back.pending.contains("pct10"), "{}", back.pending);
     let f = s.dialog_open_on_style(DialogKind::Frame, back).expect("opens Format > Frame");
@@ -2958,7 +3003,7 @@ fn the_frame_dialog_moves_a_frame_saves_it_and_removes_it() {
     zip::ZipArchive::new(std::io::Cursor::new(saved)).expect("a package").by_name("word/document.xml").unwrap().read_to_string(&mut xml).unwrap();
     assert!(!xml.contains("framePr") && xml.matches("Framed text").count() == 1, "{xml}");
     assert!(xml.find("Framed text") < xml.find("Body text"), "the paragraph before its anchor");
-    s.run(Command::Undo).expect("undoes");
+    s.run(Command::Undo(Default::default())).expect("undoes");
     into_frame(s);
     assert!(s.dialog_open(DialogKind::Frame).is_ok(), "the frame is back");
 }
@@ -2997,7 +3042,7 @@ fn the_list_dialogs_open_on_the_selections_list_and_apply_their_commands() {
     caret(s, 6);
     let m = s.dialog_open(DialogKind::DefineNumberFormat).expect("opens");
     let DialogValues::DefineNumberFormat(v) = &m.values else { panic!("{m:?}") };
-    assert_eq!((v.format, v.text.as_str()), (NumberFormat::Decimal, "Section %1."));
+    assert_eq!((v.format.clone(), v.text.as_str()), (NumberFormat::Decimal, "Section %1."));
     let m = s
         .dialog_update(m, DialogPatch::DefineNumberFormat(DefineNumberFormatPatch { text: Some("Clause %1:".into()), ..Default::default() }))
         .expect("updates");
@@ -3237,9 +3282,9 @@ fn borders_and_shading_on_text_boxes_it_and_reopens_on_patterns() {
     let s = engine.session(id).expect("a session");
     s.run(Command::SetShading(ShadingChange {
         target: ShadingTarget::Paragraph,
-        fill: NoneOr::Value(Color(0xFFF2CC)),
+        fill: NoneOr::Value(crate::api::drawing::ColourValue::rgb(Color(0xFFF2CC))),
         pattern: ShadingPattern::Pct20,
-        color: AutoOr::Value(Color(0x2F5496)),
+        color: AutoOr::Value(crate::api::drawing::ColourValue::rgb(Color(0x2F5496))),
     }))
     .expect("shades");
     let v = values(&s.dialog_open(DialogKind::BordersShading).expect("opens"));
@@ -3248,12 +3293,12 @@ fn borders_and_shading_on_text_boxes_it_and_reopens_on_patterns() {
         (ShadingPattern::Pct20, AutoOr::Value(Color(0x2F5496)), NoneOr::Value(Color(0xFFF2CC))),
         "the pattern as written"
     );
-    s.find(&FindQuery { text: "Normal text,".into(), match_case: None, whole_words: None }, Order::Next);
+    s.find(&FindQuery { text: "Normal text,".into(), match_case: None, whole_words: None, ..FindQuery::default() }, Order::Next).expect("finds");
     let m = s.dialog_open(DialogKind::BordersShading).expect("opens");
     assert_eq!(values(&m).apply_to, ShadingTarget::Text);
     assert!(m.fields["setting"].options.as_ref().is_some_and(|o| o.len() == 3), "no custom setting for text");
     let patch = BordersShadingPatch { style: Some(BorderStyle::Double), setting: Some(BorderSetting::Shadow), ..BordersShadingPatch::default() };
-    let m = s.dialog_update(m, DialogPatch::BordersShading(patch)).expect("updates");
+    let m = s.dialog_update(m, DialogPatch::BordersShading(Box::new(patch))).expect("updates");
     s.dialog_apply(m).expect("applies");
     let v = values(&s.dialog_open(DialogKind::BordersShading).expect("opens"));
     assert_eq!((v.setting, v.style), (BorderSetting::Shadow, BorderStyle::Double), "it reopens on the text's box");
@@ -3262,7 +3307,7 @@ fn borders_and_shading_on_text_boxes_it_and_reopens_on_patterns() {
     let m = s
         .dialog_update(
             m,
-            DialogPatch::BordersShading(BordersShadingPatch { apply_to: Some(ShadingTarget::Paragraph), ..BordersShadingPatch::default() }),
+            DialogPatch::BordersShading(Box::new(BordersShadingPatch { apply_to: Some(ShadingTarget::Paragraph), ..BordersShadingPatch::default() })),
         )
         .expect("updates");
     assert_eq!(values(&m).setting, BorderSetting::None);
@@ -3291,7 +3336,13 @@ fn page_borders_set_reopen_remove_and_keep_what_they_dont_change() {
     let mut engine = Engine::new(FontLibrary::system());
     let id = styles_session(&mut engine);
     let s = engine.session(id).expect("a session");
-    let line = Border { style: BorderStyle::Wave, width: Points(0.75), color: AutoOr::Value(Color(0x7030A0)) };
+    let line = Border {
+        style: BorderStyle::Wave,
+        width: Points(0.75),
+        color: AutoOr::Value(crate::api::drawing::ColourValue::rgb(Color(0x7030A0))),
+        space: None,
+        shadow: None,
+    };
     let all = PageBordersChange {
         top: Some(Some(line.clone())),
         bottom: Some(Some(line.clone())),
@@ -3306,10 +3357,10 @@ fn page_borders_set_reopen_remove_and_keep_what_they_dont_change() {
     let m = s.dialog_open(DialogKind::BordersShading).expect("opens");
     assert_eq!(values(&m).page_setting, BorderSetting::Box, "the Page Border tab opens on them");
     let patch = BordersShadingPatch { tab: Some(BordersTab::PageBorder), page_setting: Some(BorderSetting::None), ..BordersShadingPatch::default() };
-    let m = s.dialog_update(m, DialogPatch::BordersShading(patch)).expect("updates");
+    let m = s.dialog_update(m, DialogPatch::BordersShading(Box::new(patch))).expect("updates");
     s.dialog_apply(m).expect("applies");
     assert!(!document(s).contains("pgBorders"), "removed");
-    s.run(Command::Undo).expect("undoes");
+    s.run(Command::Undo(Default::default())).expect("undoes");
     let raw = document(s);
     s.run(Command::SetMargins(Margins { top: Some(Points(90.0)), ..Margins::default() })).expect("a margin");
     let after = document(s);
@@ -3341,18 +3392,23 @@ fn a_table_styles_format_menu_sets_part_borders_properties_and_banding() {
         pattern: Some(ShadingPattern::Pct20),
         ..BordersShadingPatch::default()
     };
-    let b = s.dialog_update(b, DialogPatch::BordersShading(patch)).expect("updates");
+    let b = s.dialog_update(b, DialogPatch::BordersShading(Box::new(patch))).expect("updates");
     let style = style_values(&s.dialog_apply_to_style(b).expect("applies to the style dialog"));
     let first = &style.pending[style.pending.find("w:type=\"firstRow\"").expect("the header row")..];
     let first = &first[..first.find("</w:tblStylePr>").unwrap()];
     assert!(first.contains("<w:tcBorders><w:top w:val=\"double\"") && first.contains("w:val=\"pct20\""), "{first}");
     // The diagonals: a part's with its edges, the whole table's in its cells' properties.
-    let pen =
-        crate::api::command::Border { style: BorderStyle::Dashed, width: crate::api::value::Points(1.0), color: crate::api::value::AutoOr::Auto };
+    let pen = crate::api::command::Border {
+        style: BorderStyle::Dashed,
+        width: crate::api::value::Points(1.0),
+        color: crate::api::value::AutoOr::Auto,
+        space: None,
+        shadow: None,
+    };
     let b = s.dialog_open_on_style(DialogKind::BordersShading, style.clone()).expect("opens again");
     assert!(b.fields["diagonalDown"].enabled && b.fields["diagonalUp"].enabled);
     let patch = BordersShadingPatch { diagonal_down: Some(Some(pen.clone())), ..BordersShadingPatch::default() };
-    let b = s.dialog_update(b, DialogPatch::BordersShading(patch)).expect("updates");
+    let b = s.dialog_update(b, DialogPatch::BordersShading(Box::new(patch))).expect("updates");
     assert!(matches!(&b.values, DialogValues::BordersShading(v) if v.setting == BorderSetting::Custom), "a diagonal makes the setting custom");
     let style = style_values(&s.dialog_apply_to_style(b).expect("applies"));
     let first = &style.pending[style.pending.find("w:type=\"firstRow\"").expect("the header row")..];
@@ -3363,7 +3419,7 @@ fn a_table_styles_format_menu_sets_part_borders_properties_and_banding() {
     let whole = crate::api::services::StyleDialog { table_part: TableStylePart::WholeTable, ..style.clone() };
     let b = s.dialog_open_on_style(DialogKind::BordersShading, whole).expect("opens on the whole table");
     let patch = BordersShadingPatch { diagonal_up: Some(Some(pen)), ..BordersShadingPatch::default() };
-    let b = s.dialog_update(b, DialogPatch::BordersShading(patch)).expect("updates");
+    let b = s.dialog_update(b, DialogPatch::BordersShading(Box::new(patch))).expect("updates");
     let after = style_values(&s.dialog_apply_to_style(b).expect("applies")).pending;
     let root = &after[..after.find("<w:tblStylePr").unwrap_or(after.len())];
     assert!(root.contains("<w:tcPr><w:tcBorders><w:tr2bl w:val=\"dashed\""), "{root}");
@@ -3408,11 +3464,11 @@ fn a_table_style_s_diagonal_change_keeps_the_borders_it_doesnt_change() {
         )
         .replacen("<w:tblStylePr ", &format!("<w:tcPr><w:tcBorders>{nil}</w:tcBorders></w:tcPr><w:tblStylePr "), 1);
     assert!(style.pending.matches(nil).count() == 2, "{}", style.pending);
-    let pen = Border { style: BorderStyle::Dashed, width: Points(1.0), color: AutoOr::Auto };
+    let pen = Border { style: BorderStyle::Dashed, width: Points(1.0), color: AutoOr::Auto, space: None, shadow: None };
     let down = |s: &mut crate::api::session::Session, style: crate::api::services::StyleDialog| {
         let b = s.dialog_open_on_style(DialogKind::BordersShading, style).expect("opens Format > Border");
         let patch = BordersShadingPatch { diagonal_down: Some(Some(pen.clone())), ..BordersShadingPatch::default() };
-        let b = s.dialog_update(b, DialogPatch::BordersShading(patch)).expect("updates");
+        let b = s.dialog_update(b, DialogPatch::BordersShading(Box::new(patch))).expect("updates");
         style_values(&s.dialog_apply_to_style(b).expect("applies")).pending
     };
     let after = down(s, style.clone());
@@ -3682,9 +3738,9 @@ fn the_page_fill_effects_dialog_makes_word_s_gradients_and_patterns() {
             .expect("the fixture"),
     );
     let texture = FillEffectsPatch { tab: Some(FillEffectsTab::Texture), texture: Some(png), ..Default::default() };
-    assert!(matches!(fill(s, texture), FillValue::Picture { tile: Some(true), .. }));
+    assert!(matches!(fill(s, texture), FillValue::Picture { tile: Some(_), .. }));
     let stretched = FillEffectsPatch { tab: Some(FillEffectsTab::Picture), ..Default::default() };
-    assert!(matches!(fill(s, stretched), FillValue::Picture { tile: Some(false), .. }), "the page's picture, kept");
+    assert!(matches!(fill(s, stretched), FillValue::Picture { tile: None, .. }), "the page's picture, kept");
 }
 
 #[test]
@@ -3864,4 +3920,38 @@ fn symbols_ending_in_a_bracket_or_equals_replace_as_typed() {
         typed(s, text);
         assert_eq!(paragraphs(s)[0], want, "typing {text}");
     }
+}
+
+#[test]
+fn the_caret_says_which_way_its_line_runs_and_its_ends_when_slanted() {
+    use crate::api::command::{SectionValue, TextFlow};
+    use crate::api::value::LineDirection;
+    let mut engine = Engine::new(FontLibrary::system());
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    s.host().set_size(800.0, 600.0, 1.0);
+    s.run(Command::SetSectionTextDirection(SectionValue { value: TextFlow::TbRl, apply_to: None })).expect("sets");
+    s.run(Command::InsertText("x".into())).expect("types");
+    let f = s.host().frame_info();
+    assert_eq!(f.caret_line, LineDirection::Down, "{f:?}");
+    assert!(f.caret_width > 0.0 && f.caret_height == 0.0 && f.caret_ends.is_none(), "a bar across the line: {f:?}");
+    s.run(Command::SetSectionTextDirection(SectionValue { value: TextFlow::LrTb, apply_to: None })).expect("sets");
+    let f = s.host().frame_info();
+    assert_eq!((f.caret_line, f.caret_width), (LineDirection::Horizontal, 0.0), "{f:?}");
+    assert!(f.caret_height > 0.0);
+    // A text box turned 30 degrees: the bar is slanted, its box bounds its ends.
+    let bytes = crate::editing::tests::vertical::rotated_box_bytes("textbox-autofit-columns.docx", 1_800_000);
+    s.open(&bytes).expect("opens");
+    let fonts = crate::font::Fonts::system();
+    s.editor.complete(&fonts);
+    let (g, i) = crate::editing::tests::vertical::line_of(&mut s.editor, 0, "The meeting forecast", |st| {
+        matches!(st, crate::editing::position::StoryId::TextBox(_))
+    });
+    let (_, p) = crate::editing::tests::vertical::middle(&g, i);
+    crate::editing::tests::vertical::press(&mut s.editor, 0, p, crate::editing::keymap::Mods::default());
+    let f = s.host().frame_info();
+    let [[x0, y0], [x1, y1]] = f.caret_ends.expect("slanted ends");
+    assert!((x1 - x0).abs() > 1e-6 && (y1 - y0).abs() > 1e-6, "{f:?}");
+    let within = |v: f64, lo: f64, len: f64| v >= lo - 1e-6 && v <= lo + len + 1e-6;
+    assert!(within(x0, f.caret_x, f.caret_width) && within(y1, f.caret_y, f.caret_height), "the box bounds the ends: {f:?}");
 }

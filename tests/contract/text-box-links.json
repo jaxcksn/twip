@@ -1,0 +1,42 @@
+{
+  "name": "text-box-links",
+  "steps": [
+    { "op": "command", "command": { "type": "insertText", "value": "Links" } },
+    { "op": "command", "command": { "type": "insertTextBox" } },
+    { "op": "command", "command": { "type": "insertText", "value": "Poured text" } },
+    { "op": "command", "command": { "type": "escape" } },
+    { "op": "expectState", "match": { "selection": { "object": { "kind": "textBox" } } } },
+    { "op": "command", "command": { "type": "escape" } },
+    { "op": "command", "command": { "type": "insertTextBox" } },
+    { "op": "command", "command": { "type": "escape" } },
+    { "op": "call", "method": "objectList", "args": [0], "result": [{ "kind": "textBox" }, { "kind": "textBox" }], "save": "list" },
+    { "op": "command", "command": { "type": "selectObject", "object": { "$saved": "list", "path": [1, "object"] }, "extend": false } },
+    { "op": "expectState", "match": { "selection": { "object": { "kind": "textBox", "textBoxLink": { "$exact": null } } }, "commands": { "linkTextBox": { "enabled": true }, "unlinkTextBox": { "enabled": false } } } },
+    { "op": "command", "command": { "type": "linkTextBox", "value": { "$saved": "list", "path": [1, "object"] } } },
+    { "op": "expectError", "code": "unavailable" },
+    { "op": "command", "command": { "type": "beginTextBoxLink" } },
+    { "op": "expectState", "match": { "view": { "linkingTextBox": true } } },
+    { "op": "command", "command": { "type": "escape" } },
+    { "op": "expectState", "match": { "view": { "linkingTextBox": false } } },
+    { "op": "command", "command": { "type": "selectObject", "object": { "$saved": "list", "path": [1, "object"] }, "extend": false } },
+    { "op": "command", "command": { "type": "linkTextBox", "value": { "$saved": "list", "path": [0, "object"] } } },
+    { "op": "expectState", "match": {
+      "history": { "undoLabel": "Create Link" },
+      "selection": { "object": { "textBoxLink": { "index": 0, "count": 2, "previous": { "$exact": null }, "next": { "$saved": "list", "path": [0, "object"] } } } },
+      "commands": { "unlinkTextBox": { "enabled": true } }
+    } },
+    { "op": "command", "command": { "type": "selectObject", "object": { "$saved": "list", "path": [0, "object"] }, "extend": false } },
+    { "op": "expectState", "match": { "selection": { "object": { "textBoxLink": { "index": 1, "count": 2, "previous": { "$saved": "list", "path": [1, "object"] } } } } } },
+    { "op": "export", "format": "docx" },
+    { "op": "reopen" },
+    { "op": "call", "method": "objectList", "args": [0], "result": [{ "kind": "textBox" }, { "kind": "textBox" }], "save": "list" },
+    { "op": "command", "command": { "type": "selectObject", "object": { "$saved": "list", "path": [1, "object"] }, "extend": false } },
+    { "op": "expectState", "match": { "selection": { "object": { "textBoxLink": { "index": 0, "count": 2 } } } } },
+    { "op": "command", "command": { "type": "unlinkTextBox" } },
+    { "op": "expectState", "match": { "history": { "undoLabel": "Break Link" }, "selection": { "object": { "textBoxLink": { "$exact": null } } } } },
+    { "op": "command", "command": { "type": "unlinkTextBox" } },
+    { "op": "expectError", "code": "unavailable" },
+    { "op": "command", "command": { "type": "undo" } },
+    { "op": "expectState", "match": { "selection": { "object": { "textBoxLink": { "count": 2 } } } } }
+  ]
+}

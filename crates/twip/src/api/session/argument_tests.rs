@@ -30,13 +30,27 @@ fn set_columns_checks_its_widths() {
     ] {
         let (mut engine, id) = setup();
         let s = engine.session(id).unwrap();
-        let r = s.run(Command::SetColumns(Columns { count, spacing: None, separator: None, widths: Some(widths.clone()) }));
+        let r = s.run(Command::SetColumns(Columns {
+            count,
+            spacing: None,
+            separator: None,
+            widths: Some(widths.clone()),
+            apply_to: None,
+            start_new_column: None,
+        }));
         assert_eq!(code(r), Some(ErrorCode::InvalidArgument), "{count} {widths:?}");
     }
     let (mut engine, id) = setup();
     let s = engine.session(id).unwrap();
-    s.run(Command::SetColumns(Columns { count: 2, spacing: None, separator: None, widths: Some(vec![w(200.0, 20.0), w(200.0, 0.0)]) }))
-        .expect("widths that fit");
+    s.run(Command::SetColumns(Columns {
+        count: 2,
+        spacing: None,
+        separator: None,
+        widths: Some(vec![w(200.0, 20.0), w(200.0, 0.0)]),
+        apply_to: None,
+        start_new_column: None,
+    }))
+    .expect("widths that fit");
     assert_eq!(s.state().page.columns.count, 2);
 }
 
@@ -44,7 +58,16 @@ fn set_columns_checks_its_widths() {
 fn set_columns_fits_the_text_where_it_runs() {
     use crate::api::command::{Margins, MultiplePages};
     let w = |width| ColumnWidth { width: Points(width), spacing: Points(0.0) };
-    let cols = |width| Command::SetColumns(Columns { count: 2, spacing: None, separator: None, widths: Some(vec![w(width), w(width)]) });
+    let cols = |width| {
+        Command::SetColumns(Columns {
+            count: 2,
+            spacing: None,
+            separator: None,
+            widths: Some(vec![w(width), w(width)]),
+            apply_to: None,
+            start_new_column: None,
+        })
+    };
     let (mut engine, id) = setup();
     let s = engine.session(id).unwrap();
     let clear = Margins { left: Some(Points(0.0)), right: Some(Points(0.0)), ..Default::default() };
@@ -120,7 +143,15 @@ fn a_table_column_boundary_moves() {
 fn a_text_column_boundary_moves() {
     let (mut engine, id) = setup();
     let s = engine.session(id).unwrap();
-    s.run(Command::SetColumns(Columns { count: 2, spacing: Some(Points(36.0)), separator: None, widths: None })).unwrap();
+    s.run(Command::SetColumns(Columns {
+        count: 2,
+        spacing: Some(Points(36.0)),
+        separator: None,
+        widths: None,
+        apply_to: None,
+        start_new_column: None,
+    }))
+    .unwrap();
     let before = s.state().ruler.horizontal.columns.clone();
     assert_eq!(before.len(), 2);
     let to = before[0].end.0 - 40.0;

@@ -1,0 +1,10 @@
+[
+  "all",
+  "none",
+  {
+    "omitLevels": {
+      "from": 1,
+      "to": 1
+    }
+  }
+]

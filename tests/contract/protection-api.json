@@ -1,0 +1,41 @@
+{
+  "name": "protection-api",
+  "fixture": "editor/FX-outline.docx",
+  "steps": [
+    { "op": "open" },
+    { "op": "command", "command": { "type": "setDocumentProtection", "enforce": true } },
+    { "op": "expectError", "code": "unavailable" },
+    { "op": "command", "command": { "type": "setDocumentProtection", "kind": "readOnly" } },
+    { "op": "expectState", "match": { "review": { "protection": { "kind": "readOnly", "enforced": false, "exceptionsAllowed": true, "sectionsAllowed": false, "rangeCount": 0 } } } },
+    { "op": "command", "command": { "type": "setDocumentProtection", "enforce": true, "password": "a", "confirmPassword": "b" } },
+    { "op": "expectError", "code": "invalid-argument" },
+    { "op": "command", "command": { "type": "setDocumentProtection", "formatting": true, "autoFormatOverride": true, "blockThemeSwitching": true } },
+    { "op": "expectState", "match": { "review": { "protection": { "formatting": true, "autoFormatOverride": true, "blockThemeSwitching": true, "blockStyleSetSwitching": false } } } },
+    { "op": "call", "method": "recommendedMinimumStyles", "result": { "$has": ["Normal", "Heading1"] } },
+
+    { "op": "command", "command": { "type": "select", "value": "word" } },
+    { "op": "command", "command": { "type": "setEditableRangeEditor", "editor": { "group": "editors" }, "allowed": true } },
+    { "op": "call", "method": "editableRanges", "result": [{ "ids": [{ "$type": "string" }], "editors": [{ "group": "editors" }], "page": 1 }] },
+    { "op": "expectState", "match": { "review": { "protection": { "rangeCount": 1, "editorsHere": [{ "group": "editors" }] } } } },
+    { "op": "command", "command": { "type": "setEditableRangeEditor", "editor": { "group": "editors" }, "allowed": true } },
+    { "op": "expectState", "match": { "history": { "undoLabel": "Editable Range" } } },
+    { "op": "command", "command": { "type": "setEditableRangeEditor", "editor": { "user": "ann@example.com" }, "allowed": true } },
+    { "op": "expectState", "match": { "review": { "protection": { "rangeCount": 1, "editorsHere": { "$has": [{ "group": "editors" }, { "user": "ann@example.com" }] } } } } },
+    { "op": "command", "command": { "type": "setEditableRangeEditor", "editor": { "user": "ann@example.com" }, "allowed": false } },
+    { "op": "expectState", "match": { "review": { "protection": { "editorsHere": { "$exact": [{ "group": "editors" }] } } } } },
+
+    { "op": "command", "command": { "type": "setDocumentProtection", "enforce": true, "password": "a", "confirmPassword": "a" } },
+    { "op": "expectState", "match": { "review": { "protection": { "enforced": true, "password": true } } } },
+    { "op": "command", "command": { "type": "setDocumentProtection", "autoFormatOverride": false } },
+    { "op": "expectError", "code": "not-allowed" },
+    { "op": "command", "command": { "type": "moveSelection", "by": "document", "direction": "forward" } },
+    { "op": "expectState", "match": { "review": { "protection": { "inEditableRange": false } } } },
+    { "op": "command", "command": { "type": "setEditingGroups", "value": ["editors"] } },
+    { "op": "command", "command": { "type": "selectNextEditableRange", "value": "next" } },
+    { "op": "expectState", "match": { "selection": { "empty": false }, "review": { "protection": { "inEditableRange": true } } } },
+    { "op": "command", "command": { "type": "selectEditableRanges" } },
+    { "op": "expectState", "match": { "review": { "protection": { "inEditableRange": true } } } },
+    { "op": "command", "command": { "type": "setDocumentProtection", "enforce": false, "password": "a" } },
+    { "op": "expectState", "match": { "review": { "protection": { "enforced": false } } } }
+  ]
+}

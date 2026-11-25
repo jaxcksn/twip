@@ -105,7 +105,7 @@ fn defining_a_list_changes_the_whole_list_from_a_point_or_a_paragraph_and_saves(
     let before = labels(&e);
     // The whole list: "Section 1." becomes "Chapter I:".
     let mut levels = levels_of(&mut e, 6);
-    assert_eq!((levels[0].format, levels[0].text.as_str()), (NumberFormat::Decimal, "Section %1."));
+    assert_eq!((levels[0].format.clone(), levels[0].text.as_str()), (NumberFormat::Decimal, "Section %1."));
     (levels[0].format, levels[0].text) = (NumberFormat::UpperRoman, "Chapter %1:".into());
     e.execute(
         Command::SetListDefinition(ListDefinitionChange { levels: levels[..1].to_vec(), apply_to: ListApplyTo::WholeList, name: None }),
@@ -137,7 +137,7 @@ fn defining_a_list_changes_the_whole_list_from_a_point_or_a_paragraph_and_saves(
     let now = labels(&e);
     assert_eq!(labels(&read_again(&e)), now, "the saved lists number the same read again");
     for _ in 0..3 {
-        e.execute(Command::Undo, fonts());
+        e.execute(Command::Undo(Default::default()), fonts());
     }
     assert_eq!(labels(&e), before, "each is one undo step");
 }
@@ -153,7 +153,7 @@ fn a_list_defined_outside_a_list_is_new_and_takes_the_selection() {
     e.execute(Command::SetListDefinition(ListDefinitionChange { levels: vec![bullet], apply_to: Default::default(), name: None }), fonts());
     assert_eq!(label(&e, "FX-CUSTOM-LISTS"), "\u{F0D8}");
     assert_eq!(labels(&read_again(&e)), labels(&e));
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(label(&e, "FX-CUSTOM-LISTS"), "", "one undo step");
 }
 

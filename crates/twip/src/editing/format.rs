@@ -874,7 +874,10 @@ impl Editor {
                 self.format_paras(
                     "Shading",
                     &|p, cx, _| match c {
-                        Some(c) => p.set("shd", format!("<{w}shd {w}val=\"clear\" {w}color=\"auto\" {w}fill=\"{c:06X}\"/>", w = cx.w)),
+                        Some(c) => {
+                            let tag = format!("<{w}shd {w}val=\"clear\" {w}color=\"auto\"/>", w = cx.w);
+                            p.set("shd", super::commands::colour_attrs(&tag, &cx.w, "fill", super::commands::THEME_FILL, Some(c)))
+                        }
                         None => p.remove("shd"),
                     },
                     fonts,
@@ -973,15 +976,21 @@ impl Editor {
     /// own mark at its end when that is hidden (made since reading: it joins the next paragraph), each with whether it
     /// is a style separator (`specVanish`).
     pub fn hidden_marks(&self, para: ParaId) -> Vec<(Unit, bool)> {
-        let Some(p) = self.index.para(&self.doc, para) else { return Vec::new() };
-        let parts = p.src.as_ref().filter(|s| s.joined.len() + 1 == s.ranges.len()).map_or(&[][..], |s| &s.joined[..]);
-        let own = p
-            .mark
-            .hidden
-            .then(|| (super::step::para_len(p), p.mark.direct.0.as_deref().is_some_and(|x| crate::docx::write::props::flag_of(x, "specVanish"))));
-        parts.iter().map(|j| (Unit(j.end), j.spec_vanish)).chain(own).collect()
+        self.index.para(&self.doc, para).map_or_else(Vec::new, hidden_marks_of)
     }
+}
 
+/// The hidden paragraph marks of `p`, as [`Editor::hidden_marks`] gives them.
+pub fn hidden_marks_of(p: &crate::docx::Paragraph) -> Vec<(Unit, bool)> {
+    let parts = p.src.as_ref().filter(|s| s.joined.len() + 1 == s.ranges.len()).map_or(&[][..], |s| &s.joined[..]);
+    let own = p
+        .mark
+        .hidden
+        .then(|| (super::step::para_len(p), p.mark.direct.0.as_deref().is_some_and(|x| crate::docx::write::props::flag_of(x, "specVanish"))));
+    parts.iter().map(|j| (Unit(j.end), j.spec_vanish)).chain(own).collect()
+}
+
+impl Editor {
     /// Ctrl+Alt+Enter: a style separator, a hidden paragraph mark (`w:vanish`, `w:specVanish`) that runs the paragraph
     /// before it into the one after, each keeping its own properties. At a paragraph's end with a paragraph after it,
     /// that paragraph's mark becomes one; elsewhere the paragraph splits at the caret as Enter splits it (a selection
@@ -1096,7 +1105,7 @@ pub enum Format {
     ParaStyle(String),
     CharStyle(String),
     ParaBorders(String),
-    ParaShading(Option<u32>),
+    ParaShading(Option<super::theme::WordColour>),
 }
 
 /// `left` moved to the next (or last) multiple of `tab`, within 0 to 1584 points.

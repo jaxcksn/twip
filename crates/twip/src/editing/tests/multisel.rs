@@ -57,10 +57,10 @@ fn formatting_applies_to_every_range() {
     assert!(r.e.is_discontiguous(), "formatting keeps the selection");
     assert_eq!(r.e.format_state().map(|f| f.character.bold), Some(crate::api::state::Tri::Uniform(true)));
     r.e.execute(Command::SetItalic(true), fonts());
-    r.e.execute(Command::Undo, fonts());
+    r.e.execute(Command::Undo(Default::default()), fonts());
     assert!(r.e.is_discontiguous(), "undo puts the selection back");
     assert_eq!(bold_text(&r.e, 0), "quickfox");
-    r.e.execute(Command::Undo, fonts());
+    r.e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(bold_text(&r.e, 0), "");
 }
 
@@ -71,7 +71,7 @@ fn delete_removes_every_range_in_one_step() {
     r.e.execute(super::del(crate::editing::commands::Dir::Forward, false), fonts());
     assert_eq!(texts(&r.e)[0], "The  brown  jumps.");
     assert_eq!(r.e.selection(), Selection::Caret(at(&r.e, 0, 11)), "where the range made last was");
-    r.e.execute(Command::Undo, fonts());
+    r.e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(texts(&r.e), before);
 }
 
@@ -436,9 +436,9 @@ fn cut_takes_every_range_in_one_step_and_redoes() {
     assert_eq!(texts(&r.e)[0], "The  brown  jumps.");
     let after = texts(&r.e);
     assert_ne!(after, before, "the cut took the text out");
-    r.e.execute(Command::Undo, fonts());
+    r.e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(texts(&r.e), before, "one step");
-    r.e.execute(Command::Redo, fonts());
+    r.e.execute(Command::Redo(Default::default()), fonts());
     assert_eq!(texts(&r.e), after);
 }
 
@@ -449,9 +449,9 @@ fn delete_of_several_ranges_redoes() {
     r.e.execute(super::del(crate::editing::commands::Dir::Back, false), fonts());
     let after = (texts(&r.e), r.e.selection());
     assert_eq!(after.0[0], "The  brown  jumps.", "both ranges went");
-    r.e.execute(Command::Undo, fonts());
+    r.e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(texts(&r.e), before, "undo brought both back");
-    r.e.execute(Command::Redo, fonts());
+    r.e.execute(Command::Redo(Default::default()), fonts());
     assert_eq!((texts(&r.e), r.e.selection()), after);
 }
 
@@ -597,7 +597,7 @@ fn dragging_a_discontiguous_selection_moves_every_range() {
         assert_eq!(texts(&r.e)[0], want, "dropped at {to}, with smart paste's spaces");
         assert!(!r.e.is_discontiguous());
         assert_eq!(r.e.selected_text(), "quickfox", "the text dropped is selected");
-        r.e.execute(Command::Undo, fonts());
+        r.e.execute(Command::Undo(Default::default()), fonts());
         assert_eq!(texts(&r.e)[0], "The quick brown fox jumps.", "one step");
     }
 }
@@ -772,7 +772,7 @@ fn bounds_of(s: Selection) -> Option<(usize, usize, usize, usize)> {
 }
 
 fn red() -> Command {
-    Command::SetCellShading(Some(crate::api::value::Color(0xFF0000)))
+    Command::SetCellShading(Some(crate::api::drawing::ColourValue::rgb(crate::api::value::Color(0xFF0000))))
 }
 
 #[test]
@@ -793,7 +793,7 @@ fn ctrl_drag_across_cells_adds_a_block_of_cells() {
     assert!(matches!(r.e.execute(red(), fonts()), crate::editing::commands::Outcome::Changed(_)));
     assert_eq!(shaded(&r.e), [(0, 0), (0, 1), (1, 0), (1, 1)], "cell shading goes on every selected cell");
     assert!(r.e.is_discontiguous());
-    r.e.execute(Command::Undo, fonts());
+    r.e.execute(Command::Undo(Default::default()), fonts());
     assert!(shaded(&r.e).is_empty(), "in one undo step");
 }
 
@@ -864,7 +864,7 @@ fn delete_and_copy_take_cells_and_ranges() {
     let now = texts(&r.e);
     assert_eq!(now[0], "Intro here.");
     assert_eq!((now[3].as_str(), now[6].as_str(), now[2].as_str()), ("", "", "b1"), "the cells cleared, the others kept");
-    r.e.execute(Command::Undo, fonts());
+    r.e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(texts(&r.e), before, "in one undo step");
     // Cut with the block of cells made last: every piece, not the block's rows.
     sel(&mut r, 0, 6, 11);

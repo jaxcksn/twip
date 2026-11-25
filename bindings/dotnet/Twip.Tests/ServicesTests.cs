@@ -21,7 +21,9 @@ public sealed class ServicesTests
     public static TheoryData<string> Members() =>
     [
         "menus.contextMenu", "menus.invoke", "dialogs.open", "dialogs.update", "dialogs.apply", "dialogs.accessibility",
-        "find.next", "find.previous", "find.all", "find.select", "find.replace", "find.replaceAll",
+        "find.next", "find.previous", "find.all", "find.select", "find.replace", "find.replaceAll", "find.replaceFormatted",
+        "find.highlightAll", "find.clearHighlights", "references.targets", "references.captionLabels",
+        "references.tablesOfContents", "references.tocEntries", "copyContent", "clipboardHtml", "pasteContent", "pasteChoices",
         "spelling.addDictionary", "spelling.setEnabled", "spelling.setLanguage", "spelling.ignore", "spelling.add",
         "spelling.loadUserWords", "spelling.suggestions", "spelling.next", "navigation.headings", "navigation.bookmarks", "navigation.select",
         "styles.list", "styles.listOne", "review.revisions", "review.comments", "review.people", "elements.list",
@@ -45,6 +47,22 @@ public sealed class ServicesTests
         {
             // The engine read the request; its answer is the service's business.
         }
+    }
+
+    [Fact]
+    public async Task BalloonOptionsPlaceCardsAndKeepTheWidthInRange()
+    {
+        await using var session = Kit.Session();
+        var review = session.Review;
+        Assert.Equal(BalloonOptions.Default, review.BalloonOptions);
+        Assert.Equal(864, review.BalloonLeft(40, 856, 200));
+        review.BalloonOptions = review.BalloonOptions with { Side = BalloonSide.Left };
+        Assert.Equal(40 - 8 - 200, review.BalloonLeft(40, 856, 200));
+        review.BalloonOptions = review.BalloonOptions with { Width = 140, WidthIsPercent = true };
+        Assert.Equal(100, review.BalloonOptions.Width);
+        Assert.Equal(816, review.BalloonWidth(40, 856, 1));
+        review.BalloonOptions = review.BalloonOptions with { Width = -3, WidthIsPercent = false };
+        Assert.Equal(0, review.BalloonOptions.Width);
     }
 
     [Fact]
@@ -82,8 +100,19 @@ public sealed class ServicesTests
             case "find.previous": await s.Find.PreviousAsync(query, Ct); break;
             case "find.all": await s.Find.FindAllAsync(query, Ct); break;
             case "find.select": await s.Find.SelectAsync(Wire<MatchId>("match-id"), Ct); break;
-            case "find.replace": await s.Find.ReplaceAsync(query, "sum", Ct); break;
-            case "find.replaceAll": await s.Find.ReplaceAllAsync(query, "sum", Ct); break;
+            case "find.replace": await s.Find.ReplaceAsync(query, "sum", ct: Ct); break;
+            case "find.replaceAll": await s.Find.ReplaceAllAsync(query, "sum", ct: Ct); break;
+            case "find.replaceFormatted": await s.Find.ReplaceAllAsync(Wire<FindQuery>("find-query"), "^&", Wire<FindFormat>("find-format"), Ct); break;
+            case "find.highlightAll": await s.Find.HighlightAllAsync(query, Ct); break;
+            case "find.clearHighlights": await s.Find.ClearHighlightsAsync(Ct); break;
+            case "references.targets": await s.References.GetCrossReferenceTargetsAsync(CrossReferenceKind.Caption("Figure"), Ct); break;
+            case "references.captionLabels": await s.References.GetCaptionLabelsAsync(["Plate"], Ct); break;
+            case "references.tablesOfContents": await s.References.GetTablesOfContentsAsync(Ct); break;
+            case "references.tocEntries": await s.References.GetTocEntriesAsync(Wire<TableOfContentsOptions>("table-of-contents-options"), Ct); break;
+            case "copyContent": await s.CopyContentAsync(ct: Ct); break;
+            case "clipboardHtml": await s.GetClipboardHtmlAsync("twip:0:1", Ct); break;
+            case "pasteContent": await s.PasteContentAsync(new Hosting.ClipboardContent("pasted"), PasteMode.TextOnly, Ct); break;
+            case "pasteChoices": await s.GetPasteChoicesAsync(new Hosting.ClipboardContent("pasted"), Ct); break;
             case "spelling.addDictionary": await s.Spelling.AddDictionaryAsync(Wire<Dictionary>("dictionary"), Ct); break;
             case "spelling.setEnabled": await s.Spelling.SetEnabledAsync(true); break;
             case "spelling.setLanguage": await s.Spelling.SetLanguageAsync("en-GB"); break;
@@ -113,7 +142,7 @@ public sealed class ServicesTests
             case "gestures.reset": await s.Gestures.ResetAsync(GestureId.HeaderAreaDoubleClick); await s.Gestures.ResetAsync(); break;
             case "shortcuts.register": s.Shortcuts.Register("lock", "Ctrl+Shift+L", "Cmd+Shift+L").Dispose(); break;
             case "shortcuts.lookup": _ = s.Shortcuts.Lookup("Ctrl+B"); break;
-            case "wordCount": await s.GetWordCountAsync(Ct); break;
+            case "wordCount": await s.GetWordCountAsync(ct: Ct); break;
             case "documentProperties": await s.GetDocumentPropertiesAsync(Ct); break;
             default: throw new Xunit.Sdk.XunitException($"no call for {member}");
         }

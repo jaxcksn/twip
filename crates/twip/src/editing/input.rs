@@ -27,6 +27,18 @@ pub enum Cursor {
     ColumnSelect,
     RowSelect,
     Rotate,
+    ClickAndTypeLeft,
+    ClickAndTypeLeftIndent,
+    ClickAndTypeCenter,
+    ClickAndTypeRight,
+    HideWhiteSpace,
+    ShowWhiteSpace,
+    Highlighter,
+    VerticalText,
+    LinkReady,
+    Linking,
+    Pencil,
+    Eraser,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

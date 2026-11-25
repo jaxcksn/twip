@@ -2,7 +2,15 @@
 // background, the view (reveal, visible pages), and hit testing and external drops at client points.
 import type { Op } from '../commands.js';
 import type { Session } from '../editor.js';
-import { stackBalloons, type BalloonPlacement, type CommentAnchor } from '../review.js';
+import {
+  balloonLeft,
+  balloonOptions,
+  defaultBalloonOptions,
+  stackBalloons,
+  type BalloonOptions,
+  type BalloonPlacement,
+  type CommentAnchor,
+} from '../review.js';
 import type { ChromeTheme, DocumentAppearance, View, ViewOptions } from '../services/view.js';
 import { type FrameInfo, Method } from '../transport/protocol.js';
 import type { ClientPoint, ClientRect, Color, CommentId, ElementId, FrameStats, OverlayColors } from '../types.js';
@@ -16,6 +24,8 @@ export interface Chrome {
   view: View;
   balloonLayer: HTMLElement;
   attachBalloon(thread: CommentId, card: HTMLElement): () => void;
+  setBalloonOptions(options: Partial<BalloonOptions>): void;
+  balloonOptions(): BalloonOptions;
   setMarkupPaneWidth(width: number): Promise<void>;
   hitTest(at: ClientPoint): Promise<{ element: ElementId | null; editable: boolean }>;
   dragOver(at: ClientPoint): void;
@@ -44,22 +54,34 @@ export function startChrome(
   let anchors: CommentAnchor[] = [];
   let pane = 0;
   let leaders = false;
+  let options = defaultBalloonOptions;
+  // A balloon's width, CSS px: points at the zoom, or a share of the page.
+  const widthOf = (a: CommentAnchor) =>
+    'percent' in options.width ? ((a.pageEdge - a.pageLeft) * options.width.percent) / 100 : (options.width.points * 96 * s.state.view.zoom) / 72;
   const place = () => {
     const shown = anchors.filter((a) => cards.has(a.thread));
     for (const [thread, card] of cards) card.style.display = shown.some((a) => a.thread === thread) ? '' : 'none';
     if (!shown.length && !cards.size) return;
+    for (const a of shown) cards.get(a.thread)!.style.width = `${widthOf(a)}px`;
     const heights = shown.map((a) => cards.get(a.thread)!.offsetHeight);
     const tops = stackBalloons(shown, heights, GAP);
     const placements: BalloonPlacement[] = shown.map((a, i) => {
-      const left = pane > 0 ? frames.info.contentWidth - pane + GAP : a.pageEdge + GAP;
+      const width = widthOf(a);
+      const paneLeft = pane > 0 ? frames.info.contentWidth - pane + GAP : undefined;
+      const left = balloonLeft(a, width, options.side, GAP, paneLeft);
       const top = tops[i]!;
       const card = cards.get(a.thread)!;
       card.style.left = `${left}px`;
       card.style.top = `${top}px`;
-      return { thread: a.thread, top, left, leader: [a.start, { x: a.pageEdge, y: a.start.y }, { x: left, y: top + Math.min(heights[i]!, a.lineBottom - a.lineTop) / 2 }] };
+      const edge = options.side === 'left' ? a.pageLeft : a.pageEdge;
+      const near = options.side === 'left' ? left + width : left;
+      const leader = options.connectingLines
+        ? [a.start, { x: edge, y: a.start.y }, { x: near, y: top + Math.min(heights[i]!, a.lineBottom - a.lineTop) / 2 }]
+        : [];
+      return { thread: a.thread, top, left, leader };
     });
     s.emit('balloonsLaidOut', placements);
-    if (leaders) s.call(Method.HostSetLeaders, placements.map((p) => p.leader)).then(() => frames.request(), report);
+    if (leaders) s.call(Method.HostSetLeaders, placements.filter((p) => p.leader.length).map((p) => p.leader)).then(() => frames.request(), report);
   };
   s.disposers.push(
     s.on('commentAnchors', (a) => {
@@ -166,6 +188,11 @@ export function startChrome(
       if (on) place();
       else s.call(Method.HostSetLeaders, []).then(() => frames.request(), report);
     },
+    setBalloonOptions: (o) => {
+      options = balloonOptions(options, o);
+      place();
+    },
+    balloonOptions: () => options,
     attachBalloon: (thread, card) => {
       cards.get(thread)?.remove();
       card.style.position = 'absolute';

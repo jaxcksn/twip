@@ -783,3 +783,70 @@ fn compat_12_places_a_vertical_table_after_lines_that_jumped_an_earlier_one_by_t
     let (s0, runs) = fill("", 4000, 3000).unwrap();
     assert!(s0.is_some() && runs.iter().any(|r| r.0.starts_with("pc") && r.1[1] > 170.0), "{s0:?} {runs:?}");
 }
+
+/// The first page's text in semantic order, whitespace dropped, and each of its paragraphs' text in spatial order.
+pub(super) fn reading(doc: &crate::docx::Document) -> (String, Vec<String>) {
+    use crate::layout::traverse::{Spatial, semantic_chars, spatial};
+    use std::collections::HashMap;
+    let snap = crate::layout::layout(doc, &fonts());
+    let page = &snap.pages()[0];
+    let mut chars = Vec::new();
+    semantic_chars(page, &mut chars);
+    let mut text: HashMap<_, String> = HashMap::new();
+    for &(para, _, c) in &chars {
+        text.entry(para).or_default().extend(Some(c).filter(|c| !c.is_whitespace()));
+    }
+    let Spatial::Page { lines, .. } = spatial(page, false) else { unreachable!("not provisional") };
+    let mut order: Vec<String> = Vec::new();
+    for t in lines.iter().filter_map(|l| text.get(&l.para?)) {
+        if order.last() != Some(t) {
+            order.push(t.clone());
+        }
+    }
+    (chars.iter().map(|c| c.2).filter(|c| !c.is_whitespace()).collect(), order)
+}
+
+#[test]
+fn a_vertical_cells_text_is_read_in_its_cells_place_in_both_traversals() {
+    for dir in ["tbRl", "btLr"] {
+        let body = format!("{}{}{}", para("before", ""), table(dir, "", "VCELL"), para("after", ""));
+        let Some(doc) = doc(&body) else { return };
+        let (semantic, spatial) = reading(&doc);
+        assert_eq!(semantic, "beforeVCELLsidecellafter", "{dir}");
+        assert_eq!(spatial, ["before", "VCELL", "sidecell", "after"], "{dir}");
+    }
+}
+
+#[test]
+fn a_vertical_sections_text_is_read_in_both_traversals() {
+    let Some(doc) = section("tbRl", "0", &(para("first", "") + &para("second", ""))) else { return };
+    let (semantic, spatial) = reading(&doc);
+    assert_eq!(semantic, "firstsecond");
+    assert_eq!(spatial, ["first", "second"]);
+}
+
+#[test]
+fn a_multi_line_vertical_cells_lines_read_in_order_beside_its_neighbour() {
+    use crate::layout::traverse::{Spatial, semantic_chars, spatial};
+    for dir in ["tbRl", "btLr"] {
+        let row = r#"<w:trPr><w:trHeight w:val="2000" w:hRule="exact"/></w:trPr>"#;
+        let Some(doc) = doc(&format!("{}{}", table(dir, row, WORDS), para("after", ""))) else { return };
+        let snap = crate::layout::layout(&doc, &fonts());
+        let page = &snap.pages()[0];
+        let mut chars = Vec::new();
+        semantic_chars(page, &mut chars);
+        let cell = chars.iter().find(|c| c.2 == 'v').expect("the cell's text").0;
+        let units: Vec<_> = chars.iter().filter(|c| c.0 == cell).map(|c| c.1).collect();
+        assert!(units.windows(2).all(|w| w[0] < w[1]), "{dir}: semantic units ascend");
+        let Spatial::Page { lines, .. } = spatial(page, false) else { unreachable!("not provisional") };
+        let order: Vec<_> = lines.iter().filter(|l| l.para == Some(cell)).filter_map(|l| l.units).collect();
+        assert!(order.len() >= 3 && order.windows(2).all(|w| w[0].1 < w[1].0), "{dir}: spatial lines ascend {order:?}");
+        let para_at = |p| lines.iter().position(|l| l.para == Some(p)).unwrap();
+        let mut paras: Vec<_> = chars.iter().map(|c| c.0).collect();
+        paras.dedup();
+        assert_eq!(paras.len(), 3, "{dir}: the cell, its neighbour, the paragraph after");
+        assert_eq!(paras[0], cell, "{dir}: the cell is read first");
+        let side = paras[1];
+        assert!(para_at(cell) < para_at(side), "{dir}: the cell before its neighbour");
+    }
+}

@@ -1154,11 +1154,11 @@ mod tests {
         let after = body(&e);
         assert_eq!(texts(&e), ["Alpha new beta gamma."], "the deletion stays");
         assert!(e.set_tracking(false));
-        e.execute(Command::Undo, fonts());
-        e.execute(Command::Undo, fonts());
+        e.execute(Command::Undo(Default::default()), fonts());
+        e.execute(Command::Undo(Default::default()), fonts());
         assert_eq!(body(&e), before);
-        e.execute(Command::Redo, fonts());
-        e.execute(Command::Redo, fonts());
+        e.execute(Command::Redo(Default::default()), fonts());
+        e.execute(Command::Redo(Default::default()), fonts());
         assert_eq!(body(&e), after);
     }
 
@@ -1179,7 +1179,7 @@ mod tests {
     fn a_recorded_page_change_saves_with_the_section_before_it() {
         let mut e = tracked(&blank_with("Alpha beta."));
         let before = e.document().sections[0].page();
-        e.execute(Command::SetOrientation(crate::api::value::Orientation::Landscape), fonts());
+        e.execute(Command::SetOrientation(crate::api::command::SectionValue::here(crate::api::value::Orientation::Landscape)), fonts());
         let saved = crate::docx::write::save(e.document()).expect("saves");
         let read = crate::docx::read(&saved).expect("reads back");
         let c = read.sections[0].change.as_ref().expect("the change is saved");
@@ -1404,7 +1404,10 @@ mod tests {
         let mut e = tracked(&table(&[row.clone(), row]));
         let was = first_table(&e).rows[0].cells[0].clone();
         select(&mut e, 0, 0);
-        assert!(matches!(e.execute(Command::SetCellShading(crate::api::value::Color::parse("#D9D9D9")), fonts()), Outcome::Changed(_)));
+        assert!(matches!(
+            e.execute(Command::SetCellShading(crate::api::value::Color::parse("#D9D9D9").map(crate::api::drawing::ColourValue::rgb)), fonts()),
+            Outcome::Changed(_)
+        ));
         assert!(first_table(&e).rows[0].cells[0].shading.is_some());
         assert_eq!(kinds(&e), ["TableProperty"]);
         e.execute(Command::RejectAllRevisions(Default::default()), fonts());

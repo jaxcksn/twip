@@ -51,8 +51,8 @@ impl Session {
             // A batch is edits: undo, redo and view settings aren't part of a transaction.
             if matches!(
                 c,
-                Command::Undo
-                    | Command::Redo
+                Command::Undo(_)
+                    | Command::Redo(_)
                     | Command::SetZoom(_)
                     | Command::SetViewOptions(_)
                     | Command::SetMode(_)
@@ -64,6 +64,9 @@ impl Session {
                     | Command::NeverAutoCorrect
                     | Command::ShowAutoCorrectOptions
                     | Command::ClosePopover
+                    | Command::SetPasteOptions(_)
+                    | Command::DismissPasteOptions
+                    | Command::SetAutoCaption(_)
             ) {
                 return Err(Error::invalid(format!("a batch can't hold {}", id_name(c.id()))));
             }
@@ -89,6 +92,13 @@ impl Session {
 
     /// Runs a command, then rebuilds the state and reports the change. Input runs here with [`Origin::User`].
     pub(super) fn apply(&mut self, command: Command, origin: Origin) -> Result<Commit, Error> {
+        // F9 in a table of contents: the host asks how to update it
+        if let Command::UpdateFields(crate::api::command::ElementIds { ids: None }) = &command
+            && let Some(index) = self.editor.toc_holding_selection()
+        {
+            self.emit(crate::api::event::Event::TableOfContentsUpdateRequested { index: u32::try_from(index).unwrap_or(u32::MAX) });
+            return Ok(Commit { record: None, value: None });
+        }
         self.services.said = self.command_said(&command);
         // A copy and Describe Formatting never change anything, and still say their part; a paste that pasted nothing
         // (an empty clipboard) says nothing.
@@ -118,8 +128,8 @@ impl Session {
         let h = self.editor.history();
         let on = |name: &str, on: bool| (AnnouncementKind::Formatting, format!("{name} {}", if on { "on" } else { "off" }));
         match c {
-            Command::Undo => h.next_undo().map(|l| (AnnouncementKind::Command, format!("Undo {l}"))).into_iter().collect(),
-            Command::Redo => h.next_redo().map(|l| (AnnouncementKind::Command, format!("Redo {l}"))).into_iter().collect(),
+            Command::Undo(_) => h.next_undo().map(|l| (AnnouncementKind::Command, format!("Undo {l}"))).into_iter().collect(),
+            Command::Redo(_) => h.next_redo().map(|l| (AnnouncementKind::Command, format!("Redo {l}"))).into_iter().collect(),
             Command::Cut => vec![(AnnouncementKind::Command, "Cut".into())],
             Command::Copy => vec![(AnnouncementKind::Command, "Copied".into())],
             Command::Paste(_) | Command::PasteText(_) => vec![(AnnouncementKind::Command, "Pasted".into())],
@@ -128,6 +138,8 @@ impl Session {
             Command::SetUnderline(s) => vec![on("Underline", *s != crate::api::value::UnderlineStyle::None)],
             Command::SetStrikethrough(v) => vec![on("Strikethrough", *v)],
             Command::DescribeFormatting => vec![(AnnouncementKind::Formatting, self.describe_formatting())],
+            Command::MoveText => vec![(AnnouncementKind::Command, "Move to where?".into())],
+            Command::CopyText => vec![(AnnouncementKind::Command, "Copy to where?".into())],
             _ => Vec::new(),
         }
     }
@@ -221,6 +233,25 @@ impl Session {
         self.editor.set_author(&author.name, author.identity.clone());
         self.author = author;
         self.changed(Vec::new());
+    }
+
+    /// The wrap pictures inserted from now on take (Word's Set as Default Layout, "Insert/paste pictures as"); pasted
+    /// content keeps its own. A session setting, never saved: inline by default.
+    pub fn set_default_picture_wrap(&mut self, wrap: crate::api::value::ObjectWrap) {
+        self.picture_wrap = wrap;
+        self.editor.set_default_picture_wrap(wrap);
+    }
+
+    /// The wrap inserted pictures take.
+    pub fn default_picture_wrap(&self) -> crate::api::value::ObjectWrap {
+        self.editor.default_picture_wrap()
+    }
+
+    /// The paragraph style Click and Type gives the paragraphs it adds below the document's end; `None` is the
+    /// default paragraph style. A session setting, never saved.
+    pub fn set_click_and_type_style(&mut self, style: Option<crate::api::value::StyleId>) {
+        self.click_style = style.map(|s| s.0);
+        self.editor.set_click_and_type_style(self.click_style.clone());
     }
 
     /// Read only on or off, with no reopen: a read-only session refuses every command that changes the document.

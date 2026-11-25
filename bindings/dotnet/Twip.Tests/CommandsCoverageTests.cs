@@ -21,6 +21,11 @@ public sealed class CommandsCoverageTests
         ["InsertSymbol.character"] = "char",
         ["Paste.mode"] = "as",
         ["SetCheckbox.isChecked"] = "checked",
+        ["SetOrientation.orientation"] = "value",
+        ["SetPageVerticalAlignment.alignment"] = "value",
+        ["SetLineNumbering.numbers"] = "value",
+        ["SetSectionBreakType.kind"] = "value",
+        ["SetSectionTextDirection.direction"] = "value",
     };
 
     private static JsonArray Fixture() =>

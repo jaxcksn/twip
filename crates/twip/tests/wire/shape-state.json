@@ -18,12 +18,32 @@
         "radius": 5.5
       },
       "outerShadow": {
+        "align": "bottomLeft",
         "blur": 4.5,
         "colour": {
           "rgb": "#000000"
         },
         "direction": 45.5,
-        "distance": 3.5
+        "distance": 3.5,
+        "rotateWithShape": false,
+        "scaleX": 1.0,
+        "scaleY": 0.5,
+        "skewX": -20.5,
+        "skewY": 0.0
+      },
+      "reflection": {
+        "align": "bottomLeft",
+        "blur": 0.5,
+        "direction": 90.0,
+        "distance": 2.5,
+        "fadeDirection": 90.0,
+        "rotateWithShape": false,
+        "scaleX": 1.0,
+        "scaleY": -1.0,
+        "size": 0.5,
+        "skewX": 0.0,
+        "skewY": 0.0,
+        "transparency": 0.5
       },
       "softEdge": 2.5
     },
@@ -84,6 +104,7 @@
         7.2,
         3.6
       ],
+      "upright": true,
       "wrapText": true
     }
   }

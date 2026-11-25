@@ -1,0 +1,1214 @@
+{
+  "name": "selection-ranges",
+  "steps": [
+    {
+      "op": "command",
+      "command": {
+        "type": "insertText",
+        "value": "Alpha beta gamma. Delta epsilon."
+      }
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "insertParagraph"
+      }
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "insertText",
+        "value": "Zeta eta theta."
+      }
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "insertParagraph"
+      }
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "insertText",
+        "value": "Iota kappa."
+      }
+    },
+    {
+      "op": "call",
+      "method": "find.next",
+      "args": [
+        {
+          "text": "Alpha"
+        }
+      ],
+      "result": {
+        "found": true
+      }
+    },
+    {
+      "op": "call",
+      "method": "getState",
+      "save": "alpha"
+    },
+    {
+      "op": "call",
+      "method": "find.next",
+      "args": [
+        {
+          "text": "theta"
+        }
+      ],
+      "result": {
+        "found": true
+      }
+    },
+    {
+      "op": "call",
+      "method": "getState",
+      "save": "theta"
+    },
+    {
+      "op": "call",
+      "method": "find.next",
+      "args": [
+        {
+          "text": "Iota"
+        }
+      ],
+      "result": {
+        "found": true
+      }
+    },
+    {
+      "op": "call",
+      "method": "getState",
+      "save": "iota"
+    },
+    {
+      "op": "expectState",
+      "match": {
+        "selection": {
+          "kind": "text",
+          "ranges": {
+            "$exact": [
+              {
+                "start": {
+                  "paragraph": {
+                    "$saved": "iota",
+                    "path": [
+                      "selection",
+                      "ranges",
+                      0,
+                      "start",
+                      "paragraph"
+                    ]
+                  },
+                  "offset": 0
+                },
+                "end": {
+                  "paragraph": {
+                    "$saved": "iota",
+                    "path": [
+                      "selection",
+                      "ranges",
+                      0,
+                      "start",
+                      "paragraph"
+                    ]
+                  },
+                  "offset": 4
+                }
+              }
+            ]
+          },
+          "rangesTruncated": false,
+          "cellBlocks": {
+            "$exact": []
+          }
+        }
+      }
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "setSelection",
+        "ranges": [
+          {
+            "$saved": "alpha",
+            "path": [
+              "selection",
+              "ranges",
+              0
+            ]
+          },
+          {
+            "$saved": "theta",
+            "path": [
+              "selection",
+              "ranges",
+              0
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "op": "expectState",
+      "match": {
+        "selection": {
+          "kind": "text",
+          "text": "Alphatheta",
+          "ranges": {
+            "$exact": [
+              {
+                "start": {
+                  "paragraph": {
+                    "$saved": "alpha",
+                    "path": [
+                      "selection",
+                      "ranges",
+                      0,
+                      "start",
+                      "paragraph"
+                    ]
+                  },
+                  "offset": 0
+                },
+                "end": {
+                  "paragraph": {
+                    "$saved": "alpha",
+                    "path": [
+                      "selection",
+                      "ranges",
+                      0,
+                      "start",
+                      "paragraph"
+                    ]
+                  },
+                  "offset": 5
+                }
+              },
+              {
+                "start": {
+                  "paragraph": {
+                    "$saved": "theta",
+                    "path": [
+                      "selection",
+                      "ranges",
+                      0,
+                      "start",
+                      "paragraph"
+                    ]
+                  },
+                  "offset": 9
+                },
+                "end": {
+                  "paragraph": {
+                    "$saved": "theta",
+                    "path": [
+                      "selection",
+                      "ranges",
+                      0,
+                      "start",
+                      "paragraph"
+                    ]
+                  },
+                  "offset": 14
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "setBold",
+        "value": true
+      }
+    },
+    {
+      "op": "expectState",
+      "match": {
+        "formatting": {
+          "bold": true
+        },
+        "selection": {
+          "ranges": {
+            "$exact": [
+              {
+                "start": {
+                  "paragraph": {
+                    "$saved": "alpha",
+                    "path": [
+                      "selection",
+                      "ranges",
+                      0,
+                      "start",
+                      "paragraph"
+                    ]
+                  },
+                  "offset": 0
+                },
+                "end": {
+                  "paragraph": {
+                    "$saved": "alpha",
+                    "path": [
+                      "selection",
+                      "ranges",
+                      0,
+                      "start",
+                      "paragraph"
+                    ]
+                  },
+                  "offset": 5
+                }
+              },
+              {
+                "start": {
+                  "paragraph": {
+                    "$saved": "theta",
+                    "path": [
+                      "selection",
+                      "ranges",
+                      0,
+                      "start",
+                      "paragraph"
+                    ]
+                  },
+                  "offset": 9
+                },
+                "end": {
+                  "paragraph": {
+                    "$saved": "theta",
+                    "path": [
+                      "selection",
+                      "ranges",
+                      0,
+                      "start",
+                      "paragraph"
+                    ]
+                  },
+                  "offset": 14
+                }
+              }
+            ]
+          }
+        },
+        "commands": {
+          "addComment": {
+            "enabled": false
+          }
+        }
+      }
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "addComment",
+        "value": "Not on two"
+      }
+    },
+    {
+      "op": "expectError",
+      "code": "unavailable"
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "setSelection",
+        "ranges": []
+      }
+    },
+    {
+      "op": "expectState",
+      "match": {
+        "selection": {
+          "text": "Alphatheta"
+        }
+      }
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "setSelection",
+        "ranges": [
+          {
+            "start": {
+              "paragraph": {
+                "$saved": "alpha",
+                "path": [
+                  "selection",
+                  "ranges",
+                  0,
+                  "start",
+                  "paragraph"
+                ]
+              },
+              "offset": 10
+            },
+            "end": {
+              "paragraph": {
+                "$saved": "alpha",
+                "path": [
+                  "selection",
+                  "ranges",
+                  0,
+                  "start",
+                  "paragraph"
+                ]
+              },
+              "offset": 6
+            }
+          },
+          {
+            "start": {
+              "paragraph": {
+                "$saved": "alpha",
+                "path": [
+                  "selection",
+                  "ranges",
+                  0,
+                  "start",
+                  "paragraph"
+                ]
+              },
+              "offset": 8
+            },
+            "end": {
+              "paragraph": {
+                "$saved": "alpha",
+                "path": [
+                  "selection",
+                  "ranges",
+                  0,
+                  "start",
+                  "paragraph"
+                ]
+              },
+              "offset": 16
+            }
+          }
+        ]
+      }
+    },
+    {
+      "op": "expectState",
+      "match": {
+        "selection": {
+          "text": "beta gamma",
+          "ranges": {
+            "$exact": [
+              {
+                "start": {
+                  "paragraph": {
+                    "$saved": "alpha",
+                    "path": [
+                      "selection",
+                      "ranges",
+                      0,
+                      "start",
+                      "paragraph"
+                    ]
+                  },
+                  "offset": 6
+                },
+                "end": {
+                  "paragraph": {
+                    "$saved": "alpha",
+                    "path": [
+                      "selection",
+                      "ranges",
+                      0,
+                      "start",
+                      "paragraph"
+                    ]
+                  },
+                  "offset": 16
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "setSelection",
+        "ranges": [
+          {
+            "start": {
+              "paragraph": {
+                "$saved": "theta",
+                "path": [
+                  "selection",
+                  "ranges",
+                  0,
+                  "start",
+                  "paragraph"
+                ]
+              },
+              "offset": 3
+            },
+            "end": {
+              "paragraph": {
+                "$saved": "theta",
+                "path": [
+                  "selection",
+                  "ranges",
+                  0,
+                  "start",
+                  "paragraph"
+                ]
+              },
+              "offset": 3
+            }
+          }
+        ]
+      }
+    },
+    {
+      "op": "expectState",
+      "match": {
+        "selection": {
+          "kind": "caret",
+          "empty": true,
+          "ranges": {
+            "$exact": []
+          }
+        }
+      }
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "setSelection",
+        "ranges": [
+          {
+            "start": {
+              "paragraph": "999999",
+              "offset": 0
+            },
+            "end": {
+              "paragraph": "999999",
+              "offset": 1
+            }
+          }
+        ]
+      }
+    },
+    {
+      "op": "expectError",
+      "code": "invalid-argument"
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "setSelection",
+        "ranges": [
+          {
+            "start": {
+              "paragraph": {
+                "$saved": "alpha",
+                "path": [
+                  "selection",
+                  "ranges",
+                  0,
+                  "start",
+                  "paragraph"
+                ]
+              },
+              "offset": 2
+            },
+            "end": {
+              "paragraph": {
+                "$saved": "alpha",
+                "path": [
+                  "selection",
+                  "ranges",
+                  0,
+                  "start",
+                  "paragraph"
+                ]
+              },
+              "offset": 2
+            }
+          }
+        ]
+      }
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "selectSimilarFormatting"
+      }
+    },
+    {
+      "op": "expectState",
+      "match": {
+        "selection": {
+          "ranges": {
+            "$exact": [
+              {
+                "start": {
+                  "paragraph": {
+                    "$saved": "alpha",
+                    "path": [
+                      "selection",
+                      "ranges",
+                      0,
+                      "start",
+                      "paragraph"
+                    ]
+                  },
+                  "offset": 0
+                },
+                "end": {
+                  "paragraph": {
+                    "$saved": "alpha",
+                    "path": [
+                      "selection",
+                      "ranges",
+                      0,
+                      "start",
+                      "paragraph"
+                    ]
+                  },
+                  "offset": 5
+                }
+              },
+              {
+                "start": {
+                  "paragraph": {
+                    "$saved": "theta",
+                    "path": [
+                      "selection",
+                      "ranges",
+                      0,
+                      "start",
+                      "paragraph"
+                    ]
+                  },
+                  "offset": 9
+                },
+                "end": {
+                  "paragraph": {
+                    "$saved": "theta",
+                    "path": [
+                      "selection",
+                      "ranges",
+                      0,
+                      "start",
+                      "paragraph"
+                    ]
+                  },
+                  "offset": 14
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "setSelection",
+        "ranges": [
+          {
+            "start": {
+              "paragraph": {
+                "$saved": "alpha",
+                "path": [
+                  "selection",
+                  "ranges",
+                  0,
+                  "start",
+                  "paragraph"
+                ]
+              },
+              "offset": 0
+            },
+            "end": {
+              "paragraph": {
+                "$saved": "alpha",
+                "path": [
+                  "selection",
+                  "ranges",
+                  0,
+                  "start",
+                  "paragraph"
+                ]
+              },
+              "offset": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "setParagraphStyle",
+        "value": "Heading1"
+      }
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "setSelection",
+        "ranges": [
+          {
+            "start": {
+              "paragraph": {
+                "$saved": "iota",
+                "path": [
+                  "selection",
+                  "ranges",
+                  0,
+                  "start",
+                  "paragraph"
+                ]
+              },
+              "offset": 0
+            },
+            "end": {
+              "paragraph": {
+                "$saved": "iota",
+                "path": [
+                  "selection",
+                  "ranges",
+                  0,
+                  "start",
+                  "paragraph"
+                ]
+              },
+              "offset": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "setParagraphStyle",
+        "value": "Heading1"
+      }
+    },
+    {
+      "op": "call",
+      "method": "styles.list",
+      "args": [
+        {
+          "type": "paragraph"
+        }
+      ],
+      "result": {
+        "$has": [
+          {
+            "id": "Heading1",
+            "uses": 2
+          }
+        ]
+      }
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "selectStyleInstances",
+        "value": "Heading1"
+      }
+    },
+    {
+      "op": "expectState",
+      "match": {
+        "selection": {
+          "ranges": [
+            {
+              "start": {
+                "paragraph": {
+                  "$saved": "alpha",
+                  "path": [
+                    "selection",
+                    "ranges",
+                    0,
+                    "start",
+                    "paragraph"
+                  ]
+                },
+                "offset": 0
+              }
+            },
+            {
+              "start": {
+                "paragraph": {
+                  "$saved": "iota",
+                  "path": [
+                    "selection",
+                    "ranges",
+                    0,
+                    "start",
+                    "paragraph"
+                  ]
+                },
+                "offset": 0
+              }
+            }
+          ],
+          "text": "Alpha beta gamma. Delta epsilon.\nIota kappa."
+        }
+      }
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "selectStyleInstances",
+        "value": "NoSuchStyle"
+      }
+    },
+    {
+      "op": "expectError",
+      "code": "invalid-argument"
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "setSelection",
+        "ranges": [
+          {
+            "start": {
+              "paragraph": {
+                "$saved": "alpha",
+                "path": [
+                  "selection",
+                  "ranges",
+                  0,
+                  "start",
+                  "paragraph"
+                ]
+              },
+              "offset": 7
+            },
+            "end": {
+              "paragraph": {
+                "$saved": "alpha",
+                "path": [
+                  "selection",
+                  "ranges",
+                  0,
+                  "start",
+                  "paragraph"
+                ]
+              },
+              "offset": 7
+            }
+          }
+        ]
+      }
+    },
+    {
+      "op": "expectState",
+      "match": {
+        "commands": {
+          "shrinkSelection": {
+            "enabled": false
+          }
+        }
+      }
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "setSelectionMode",
+        "value": "extend"
+      }
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "setSelectionMode",
+        "value": "extend"
+      }
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "setSelectionMode",
+        "value": "extend"
+      }
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "setSelectionMode",
+        "value": "extend"
+      }
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "setSelectionMode",
+        "value": "extend"
+      }
+    },
+    {
+      "op": "expectState",
+      "match": {
+        "commands": {
+          "shrinkSelection": {
+            "enabled": true
+          }
+        }
+      }
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "shrinkSelection"
+      }
+    },
+    {
+      "op": "expectState",
+      "match": {
+        "selection": {
+          "mode": "extend",
+          "text": "Alpha beta gamma. Delta epsilon.\n"
+        }
+      }
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "shrinkSelection"
+      }
+    },
+    {
+      "op": "expectState",
+      "match": {
+        "selection": {
+          "mode": "extend",
+          "text": "Alpha beta gamma. "
+        }
+      }
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "escape"
+      }
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "moveSelection",
+        "by": "document",
+        "direction": "backward"
+      }
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "moveSelection",
+        "by": "windowEdge",
+        "direction": "forward",
+        "extend": true
+      }
+    },
+    {
+      "op": "expectState",
+      "match": {
+        "selection": {
+          "kind": "text",
+          "empty": false
+        }
+      }
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "moveSelection",
+        "by": "document",
+        "direction": "forward"
+      }
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "insertParagraph"
+      }
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "insertTable",
+        "rows": 2,
+        "columns": 2
+      }
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "insertText",
+        "value": "c1"
+      }
+    },
+    {
+      "op": "call",
+      "method": "find.next",
+      "args": [
+        {
+          "text": "c1"
+        }
+      ],
+      "result": {
+        "found": true
+      }
+    },
+    {
+      "op": "call",
+      "method": "getState",
+      "save": "cell"
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "setSelection",
+        "ranges": [
+          {
+            "$saved": "alpha",
+            "path": [
+              "selection",
+              "ranges",
+              0
+            ]
+          }
+        ],
+        "cells": [
+          {
+            "start": {
+              "paragraph": {
+                "$saved": "cell",
+                "path": [
+                  "selection",
+                  "ranges",
+                  0,
+                  "start",
+                  "paragraph"
+                ]
+              },
+              "offset": 0
+            },
+            "firstRow": 0,
+            "firstColumn": 0,
+            "lastRow": 0,
+            "lastColumn": 1
+          }
+        ]
+      }
+    },
+    {
+      "op": "expectState",
+      "match": {
+        "selection": {
+          "kind": "text",
+          "ranges": {
+            "$exact": [
+              {
+                "start": {
+                  "paragraph": {
+                    "$saved": "alpha",
+                    "path": [
+                      "selection",
+                      "ranges",
+                      0,
+                      "start",
+                      "paragraph"
+                    ]
+                  },
+                  "offset": 0
+                },
+                "end": {
+                  "paragraph": {
+                    "$saved": "alpha",
+                    "path": [
+                      "selection",
+                      "ranges",
+                      0,
+                      "start",
+                      "paragraph"
+                    ]
+                  },
+                  "offset": 5
+                }
+              }
+            ]
+          },
+          "cellBlocks": {
+            "$exact": [
+              {
+                "start": {
+                  "paragraph": {
+                    "$saved": "cell",
+                    "path": [
+                      "selection",
+                      "ranges",
+                      0,
+                      "start",
+                      "paragraph"
+                    ]
+                  },
+                  "offset": 0
+                },
+                "firstRow": 0,
+                "firstColumn": 0,
+                "lastRow": 0,
+                "lastColumn": 1
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "setSelection",
+        "ranges": [
+          {
+            "$saved": "alpha",
+            "path": [
+              "selection",
+              "ranges",
+              0
+            ]
+          }
+        ],
+        "cells": [
+          {
+            "start": {
+              "paragraph": {
+                "$saved": "cell",
+                "path": [
+                  "selection",
+                  "ranges",
+                  0,
+                  "start",
+                  "paragraph"
+                ]
+              },
+              "offset": 0
+            },
+            "firstRow": 0,
+            "firstColumn": 0,
+            "lastRow": 0,
+            "lastColumn": 1
+          }
+        ],
+        "activeCells": 0
+      }
+    },
+    {
+      "op": "expectState",
+      "match": {
+        "selection": {
+          "kind": "cells",
+          "ranges": {
+            "$exact": [
+              {
+                "start": {
+                  "paragraph": {
+                    "$saved": "alpha",
+                    "path": [
+                      "selection",
+                      "ranges",
+                      0,
+                      "start",
+                      "paragraph"
+                    ]
+                  },
+                  "offset": 0
+                },
+                "end": {
+                  "paragraph": {
+                    "$saved": "alpha",
+                    "path": [
+                      "selection",
+                      "ranges",
+                      0,
+                      "start",
+                      "paragraph"
+                    ]
+                  },
+                  "offset": 5
+                }
+              }
+            ]
+          },
+          "cellBlocks": [
+            {
+              "firstRow": 0,
+              "lastColumn": 1
+            }
+          ]
+        }
+      }
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "setCellShading",
+        "value": "#FFFF00"
+      }
+    },
+    {
+      "op": "expectState",
+      "match": {
+        "selection": {
+          "kind": "cells",
+          "cellBlocks": [
+            {
+              "firstRow": 0,
+              "lastColumn": 1
+            }
+          ]
+        }
+      }
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "setSelection",
+        "ranges": [],
+        "cells": [
+          {
+            "start": {
+              "paragraph": {
+                "$saved": "cell",
+                "path": [
+                  "selection",
+                  "ranges",
+                  0,
+                  "start",
+                  "paragraph"
+                ]
+              },
+              "offset": 0
+            },
+            "firstRow": 0,
+            "firstColumn": 0,
+            "lastRow": 5,
+            "lastColumn": 0
+          }
+        ]
+      }
+    },
+    {
+      "op": "expectError",
+      "code": "invalid-argument"
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "name": "table-bands",
+  "fixture": "editor/FX-EMPTY.docx",
+  "steps": [
+    {"op": "open"},
+    {"op": "command", "command": {"type": "setTableBandSizes", "rows": 2}},
+    {"op": "expectError", "code": "unavailable"},
+    {"op": "command", "command": {"type": "insertTable", "rows": 4, "columns": 2}},
+    {"op": "expectState", "match": {"selection": {"table": {"bands": {"rows": 1, "columns": 1, "ownRows": {"$exact": null}}}}}},
+    {"op": "command", "command": {"type": "setTableBandSizes", "rows": 2}},
+    {"op": "expectState", "match": {"selection": {"table": {"bands": {"rows": 2, "ownRows": 2}}}, "history": {"undoLabel": "Table Properties"}}},
+    {"op": "command", "command": {"type": "setTableBandSizes", "columns": 40000}},
+    {"op": "expectError", "code": "invalid-argument"},
+    {"op": "command", "command": {"type": "setTableBandSizes", "rows": null}},
+    {"op": "expectState", "match": {"selection": {"table": {"bands": {"rows": 1, "ownRows": {"$exact": null}}}}}}
+  ]
+}

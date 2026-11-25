@@ -7,7 +7,7 @@ use crate::docx::model::*;
 use crate::layout::fragment::{BoxFragment, BoxKind, PageChild, PageFragment};
 use crate::layout::ids::{FragmentId, ParaId};
 use crate::layout::job::{Memos, Yield};
-use crate::layout::page::{PassRun, margins, story_ref_in};
+use crate::layout::page::{PassRun, margins};
 use crate::layout::record::{HfRecord, PageRecord};
 use crate::layout::snapshot::PageMeta;
 use crate::layout::space::HfHeights;
@@ -21,19 +21,58 @@ pub(crate) fn hf_fields(run: &PassRun, cx: &PassCx, i: usize) -> FieldValues {
     let pg = &run.pages[i];
     let si = pg.section;
     let info = run.info.as_ref().expect("composition started");
+    #[cfg(test)]
+    {
+        let found = "the pages found holding a header field's text are those a scan finds";
+        assert_eq!(style_refs(cx, run, i), scanned::style_refs(cx, &run.pages, i), "{found}");
+        assert_eq!(page_chapter(cx, run, i), scanned::page_chapter(cx, &run.pages, i), "{found}");
+    }
     FieldValues {
         page: Some(pg.number.to_string()),
         num_pages: info.num_pages.clone(),
         section: Some((si + 1).to_string()),
         section_pages: info.section_pages.get(si).cloned(),
         page_refs: Some(info.page_refs.clone()),
-        style_refs: style_refs(cx, &run.pages, i),
+        style_refs: style_refs(cx, run, i),
         page_fmt: cx.doc.sections[si].pg_fmt.clone(),
-        chapter: page_chapter(cx, &run.pages, i),
-        section_chapter: cx.chapters.sections.get(si).cloned().flatten(),
+        chapter: page_chapter(cx, run, i),
+        section_chapter: cx.facts.chapters.sections.get(si).cloned().flatten(),
         chapters: None,
         here: Some(i),
         para_at: Some(info.para_at.clone()),
+    }
+}
+
+/// The header fields' texts found by looking through every page, which the tests check the found pages against.
+#[cfg(test)]
+mod scanned {
+    use super::*;
+
+    pub(super) fn page_chapter(cx: &PassCx, pages: &[PageRecord], i: usize) -> Option<String> {
+        let (level, sep) = cx.doc.sections.get(pages[i].section)?.chapter.as_ref()?;
+        let heads = &cx.facts.chapters.heads;
+        let head = |id: &ParaId| heads.iter().find(|h| h.0 == *id && h.1 == *level);
+        let h = (0..=i).rev().find_map(|k| pages[k].effects.paras.iter().rev().find_map(head)).or_else(|| heads.iter().find(|h| h.1 == *level))?;
+        Some(format!("{}{sep}", h.2))
+    }
+
+    pub(super) fn style_refs(cx: &PassCx, pages: &[PageRecord], i: usize) -> Vec<(String, String)> {
+        let on = |k: usize| pages.get(k).map(|p| &p.effects.paras[..]).unwrap_or(&[]);
+        let resolver = cx.doc.resolver.as_deref();
+        cx.facts
+            .wanted
+            .iter()
+            .filter_map(|(code, q)| {
+                let hit = |list: &[ParaId], rev: bool| {
+                    let find = |r: &ParaId| Some(q.shown(q.find(cx.facts.paras.get(r)?, rev)?, cx.facts.numbers.get(&r.0), resolver));
+                    if rev { list.iter().rev().find_map(find) } else { list.iter().find_map(find) }
+                };
+                hit(on(i), q.last)
+                    .or_else(|| (0..i).rev().find_map(|k| hit(on(k), true)))
+                    .or_else(|| (i + 1..pages.len()).find_map(|k| hit(on(k), false)))
+                    .map(|t| (code.clone(), t))
+            })
+            .collect()
     }
 }
 
@@ -44,6 +83,38 @@ pub(super) struct Chapters {
     pub(super) body: Option<Rc<HashMap<ParaId, String>>>,
     heads: Vec<(ParaId, i64, String)>,
     sections: Vec<Option<String>>,
+    /// Each heading paragraph's place in `heads`.
+    by_para: HashMap<ParaId, usize>,
+    /// Each level's first heading in `heads`.
+    first: HashMap<i64, usize>,
+}
+
+/// What a header or footer field looks for on the pages: a `STYLEREF` (by its place among the codes) or a chapter
+/// heading of a level.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum Sought {
+    StyleRef(usize),
+    Chapter(i64),
+}
+
+/// The pages a pass has found holding what each header and footer field looks for, in order. A pass only adds pages,
+/// and only its last page still changes: the pages before it are each looked through once.
+#[derive(Default)]
+pub struct Found(HashMap<Sought, (usize, Vec<usize>)>);
+
+impl Found {
+    /// The pages before the last that `holds`, `sought`'s.
+    fn before_last(&mut self, sought: Sought, pages: &[PageRecord], holds: impl Fn(&PageRecord) -> bool) -> &[usize] {
+        let settled = pages.len().saturating_sub(1);
+        let (seen, found) = self.0.entry(sought).or_default();
+        if *seen > settled {
+            *seen = 0;
+            found.clear();
+        }
+        found.extend((*seen..settled).filter(|&k| holds(&pages[k])));
+        *seen = settled;
+        found
+    }
 }
 
 /// A heading's level and chapter number: a "heading N" paragraph numbered through its style, its label without the
@@ -79,10 +150,15 @@ pub(super) fn chapters(doc: &Document) -> Chapters {
     });
     let heads: Vec<(usize, i64, String)> = paras.iter().enumerate().filter_map(|(k, (_, p))| chapter_of(r, p).map(|(l, t)| (k, l, t))).collect();
     // The last heading of the section's level at or before paragraph `k`; before the first, the first.
+    let mut levels: HashMap<i64, Vec<&(usize, i64, String)>> = HashMap::new();
+    for h in &heads {
+        levels.entry(h.1).or_default().push(h);
+    }
     let at = |si: usize, k: usize| {
         let (level, sep) = doc.sections[si].chapter.as_ref()?;
-        let mut of_level = heads.iter().filter(|h| h.1 == *level);
-        of_level.clone().take_while(|h| h.0 <= k).last().or_else(|| of_level.next()).map(|h| format!("{}{sep}", h.2))
+        let of_level = levels.get(level)?;
+        let h = of_level[of_level.partition_point(|h| h.0 <= k).saturating_sub(1)];
+        Some(format!("{}{sep}", h.2))
     };
     let mut body = HashMap::new();
     for (k, (si, p)) in paras.iter().enumerate() {
@@ -92,16 +168,28 @@ pub(super) fn chapters(doc: &Document) -> Chapters {
     }
     // A header's or footer's `w:pgNum`: the heading in force at the section's first paragraph, on every page of it.
     let sections = starts.iter().enumerate().map(|(si, &k)| at(si, k)).collect();
-    let heads = heads.into_iter().map(|(k, l, t)| (ParaId(paras[k].1.id), l, t)).collect();
-    Chapters { body: Some(Rc::new(body)), heads, sections }
+    let heads: Vec<(ParaId, i64, String)> = heads.into_iter().map(|(k, l, t)| (ParaId(paras[k].1.id), l, t)).collect();
+    let (mut by_para, mut first) = (HashMap::new(), HashMap::new());
+    for (k, h) in heads.iter().enumerate() {
+        by_para.entry(h.0).or_insert(k);
+        first.entry(h.1).or_insert(k);
+    }
+    Chapters { body: Some(Rc::new(body)), heads, sections, by_para, first }
 }
 
 /// The chapter prefix of page `i`'s headers and footers: from the last heading at or before the page's end.
-fn page_chapter(cx: &PassCx, pages: &[PageRecord], i: usize) -> Option<String> {
+fn page_chapter(cx: &PassCx, run: &PassRun, i: usize) -> Option<String> {
+    let pages = &run.pages;
     let (level, sep) = cx.doc.sections.get(pages[i].section)?.chapter.as_ref()?;
-    let heads = &cx.chapters.heads;
-    let head = |id: &ParaId| heads.iter().find(|h| h.0 == *id && h.1 == *level);
-    let h = (0..=i).rev().find_map(|k| pages[k].effects.paras.iter().rev().find_map(head)).or_else(|| heads.iter().find(|h| h.1 == *level))?;
+    let ch = &cx.facts.chapters;
+    let head = |id: &ParaId| ch.by_para.get(id).map(|&k| &ch.heads[k]).filter(|h| h.1 == *level);
+    let on = |k: usize| pages[k].effects.paras.iter().rev().find_map(head);
+    let earlier = || {
+        let mut found = run.found.borrow_mut();
+        let found = found.before_last(Sought::Chapter(*level), pages, |pg| pg.effects.paras.iter().any(|p| head(p).is_some()));
+        found.partition_point(|&k| k < i).checked_sub(1).map(|j| found[j])
+    };
+    let h = on(i).or_else(|| earlier().and_then(on)).or_else(|| ch.first.get(level).map(|&k| &ch.heads[k]))?;
     Some(format!("{}{sep}", h.2))
 }
 
@@ -110,9 +198,11 @@ pub(crate) fn hf_parts<'d>(run: &PassRun, cx: &PassCx<'d>, i: usize) -> [Option<
     if pg.blank {
         return [None, None];
     }
-    let pis = run.pages[..i].iter().filter(|p| p.section == pg.section && !p.blank).count();
+    let pis = pg.in_section - 1;
     let part = |footer| {
-        story_ref_in(&cx.doc.sections, cx.ctx.env.text.review.view, cx.ctx.env.even_and_odd, pg.section, pis, pg.number, footer)
+        cx.facts
+            .hf_sources
+            .story_ref(&cx.doc.sections, cx.ctx.env.text.review.view, cx.ctx.env.even_and_odd, pg.section, pis, pg.number, footer)
             .1
             .filter(|p| cx.doc.stories.contains_key(*p))
     };
@@ -258,19 +348,33 @@ pub(crate) fn finish_page(pg: &PageRecord, section_page: usize) -> (Rc<PageFragm
 /// last), else the last on an earlier page, else the first on a later one.
 // ponytail: a page's paragraphs whole; a character style's runs on the part of a split paragraph another page holds
 // count on this one too.
-fn style_refs(cx: &PassCx, pages: &[PageRecord], i: usize) -> Vec<(String, String)> {
+fn style_refs(cx: &PassCx, run: &PassRun, i: usize) -> Vec<(String, String)> {
+    let pages = &run.pages;
     let on = |k: usize| pages.get(k).map(|p| &p.effects.paras[..]).unwrap_or(&[]);
     let resolver = cx.doc.resolver.as_deref();
-    cx.wanted
+    cx.facts
+        .wanted
         .iter()
-        .filter_map(|(code, q)| {
+        .enumerate()
+        .filter_map(|(j, (code, q))| {
             let hit = |list: &[ParaId], rev: bool| {
-                let find = |r: &ParaId| Some(q.shown(q.find(cx.paras.get(r)?, rev)?, cx.numbers.get(&r.0), resolver));
+                let find = |r: &ParaId| Some(q.shown(q.find(cx.facts.paras.get(r)?, rev)?, cx.facts.numbers.get(&r.0), resolver));
                 if rev { list.iter().rev().find_map(find) } else { list.iter().find_map(find) }
             };
+            // The nearest page before it holding a hit, and the nearest after it.
+            let near = || {
+                let holds = |pg: &PageRecord| pg.effects.paras.iter().any(|r| cx.facts.paras.get(r).is_some_and(|h| q.find(h, false).is_some()));
+                let mut found = run.found.borrow_mut();
+                let found = found.before_last(Sought::StyleRef(j), pages, holds);
+                let before = found.partition_point(|&k| k < i).checked_sub(1).map(|j| found[j]);
+                let last = pages.len().checked_sub(1).filter(|&k| k > i);
+                (before, found.get(found.partition_point(|&k| k <= i)).copied().or(last))
+            };
             hit(on(i), q.last)
-                .or_else(|| (0..i).rev().find_map(|k| hit(on(k), true)))
-                .or_else(|| (i + 1..pages.len()).find_map(|k| hit(on(k), false)))
+                .or_else(|| {
+                    let (before, after) = near();
+                    before.and_then(|k| hit(on(k), true)).or_else(|| after.and_then(|k| hit(on(k), false)))
+                })
                 .map(|t| (code.clone(), t))
         })
         .collect()

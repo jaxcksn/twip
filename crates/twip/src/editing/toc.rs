@@ -722,6 +722,16 @@ impl Editor {
         let styles = self.doc.resolver.as_ref().map(|r| &r.styles);
         let name_of = |p: &Paragraph| -> Option<String> { styles?.by_id.get(p.style.style_id.as_deref()?).map(|s| s.name.clone()) };
         let review = crate::docx::review::ReviewView { view: self.doc.review.view, ..Default::default() };
+        // `\t`'s levels by style id, its names and aliases mapped as the readback maps them; a style's first pair wins.
+        let mut style_levels: HashMap<String, u8> = HashMap::with_capacity(o.styles.len());
+        if !o.styles.is_empty() {
+            let ids = self.style_ids_by_name();
+            for (name, level) in &o.styles {
+                if let Some(id) = ids.get(&name.to_ascii_lowercase()) {
+                    style_levels.entry(id.0.clone()).or_insert(*level);
+                }
+            }
+        }
         let mut out = Vec::new();
         // The bookmark's range, in paragraph order (`\b`).
         let scope: Option<(ParaId, ParaId)> = o.bookmark.as_deref().and_then(|b| {
@@ -785,7 +795,7 @@ impl Editor {
             }
             // The paragraph's own level
             let name = name_of(p);
-            let styled = name.as_deref().and_then(|n| o.styles.iter().find(|(s, _)| s.eq_ignore_ascii_case(n)).map(|s| s.1));
+            let styled = p.style.style_id.as_deref().filter(|_| !style_levels.is_empty()).and_then(|id| style_levels.get(id).copied());
             let heading = name.as_deref().and_then(|n| {
                 let (word, l) = n.split_once(' ')?;
                 let l: u8 = l.trim().parse().ok()?;
@@ -834,6 +844,14 @@ impl Editor {
         Some((k, all[k].clone()))
     }
 
+    /// Whether Update All updates table `t`: it isn't locked, and document protection lets it change.
+    fn toc_updatable(&self, t: &TocField) -> bool {
+        !self.toc_locked(t)
+            && self
+                .toc_range(t, false)
+                .is_none_or(|(a, b)| self.protection_refuses_at(crate::api::command::CommandId::UpdateTableOfContents, &a, &b).is_none())
+    }
+
     /// Whether updating table `t` is refused: its field is locked, or a control around it locks its content.
     pub fn toc_locked(&self, t: &TocField) -> bool {
         t.lock
@@ -854,14 +872,14 @@ impl Editor {
     /// Updates every table of contents and of figures as `mode` says (Word's update before printing), the locked ones
     /// left. One undo step; returns how many were updated. An entire update takes the first [`MAX_REBUILT`] tables.
     pub fn update_all_tables(&mut self, mode: TocUpdate, fonts: &Fonts) -> usize {
-        let all: Vec<TocField> = self.tables_of_contents().into_iter().filter(|t| !self.toc_locked(t)).collect();
+        let all: Vec<TocField> = self.tables_of_contents().into_iter().filter(|t| self.toc_updatable(t)).collect();
         if all.is_empty() {
             return 0;
         }
         self.begin_batch(Some("Update Table".into()));
         let spans: Vec<_> = all.iter().filter_map(|t| self.toc_span(t)).collect();
         self.set_span_views(&spans, false, fonts);
-        let all: Vec<TocField> = self.tables_of_contents().into_iter().filter(|t| !self.toc_locked(t)).collect();
+        let all: Vec<TocField> = self.tables_of_contents().into_iter().filter(|t| self.toc_updatable(t)).collect();
         let n = match mode {
             TocUpdate::Pages => all.len(),
             // Last first: a table's rebuild moves only the blocks after it.
@@ -869,7 +887,7 @@ impl Editor {
                 all[..all.len().min(MAX_REBUILT)].iter().rev().filter(|t| matches!(self.rebuild_toc(t, fonts), Outcome::Changed(_))).count()
             }
         };
-        let again: Vec<TocField> = self.tables_of_contents().into_iter().filter(|t| !self.toc_locked(t)).collect();
+        let again: Vec<TocField> = self.tables_of_contents().into_iter().filter(|t| self.toc_updatable(t)).collect();
         self.fill_pages(&again, fonts);
         for t in &again {
             self.undirty(t, fonts);
@@ -890,6 +908,24 @@ impl Editor {
         Some(super::span_codes::SpanField { container: t.container, start: (t.first, start), end: (t.last, end) })
     }
 
+    /// Where table `t`'s edits fall, for document protection: from its first paragraph's start (`whole`: its
+    /// building block control's first block, as a removal takes) to its end edge.
+    pub(super) fn toc_range(&self, t: &TocField, whole: bool) -> Option<(Position, Position)> {
+        let blocks = self.index.blocks(&self.doc, t.container)?;
+        let story = self.index.story(t.container);
+        let from = if whole { self.toc_blocks_from(t) } else { t.first };
+        let a = (from..=t.last).find_map(|k| match blocks.get(k) {
+            Some(Block::Para(p)) => Some(Position::text(story, ParaId(p.id), Unit(0))),
+            _ => None,
+        })?;
+        let Some(Block::Para(last)) = blocks.get(t.last) else { return Some((a, a)) };
+        let end = match t.shape {
+            Shape::Spanning { end, .. } => last.inlines[..end.min(last.inlines.len())].iter().map(|i| i.units() as u32).sum(),
+            Shape::Inline { end, .. } => last.inlines[..(end + 1).min(last.inlines.len())].iter().map(|i| i.units() as u32).sum(),
+        };
+        Some((a, Position::text(story, ParaId(last.id), Unit(end))))
+    }
+
     /// Table `t` showing its result (a table showing its code shows its result first: an update or removal works on
     /// the result).
     fn toc_result_shown(&mut self, t: &TocField, fonts: &Fonts) -> TocField {
@@ -905,7 +941,20 @@ impl Editor {
 
     /// Which of `all` the selection is in: its result's paragraphs, or a building block control's title above them.
     fn toc_at(&self, all: &[TocField]) -> Option<usize> {
-        let (para, _) = self.selection.focus().and_then(|p| p.para_offset())?;
+        self.toc_holding(all, self.selection.focus()?)
+    }
+
+    /// The table of contents the whole selection is in (its place in [`Editor::tables_of_contents`]): what F9 asks
+    /// the host about instead of updating the fields in it.
+    pub fn toc_holding_selection(&self) -> Option<usize> {
+        let all = self.tables_of_contents();
+        let (a, b) = self.selection.ordered(&self.index)?;
+        let k = self.toc_holding(&all, a)?;
+        (self.toc_holding(&all, b) == Some(k)).then_some(k)
+    }
+
+    fn toc_holding(&self, all: &[TocField], at: Position) -> Option<usize> {
+        let (para, _) = at.para_offset()?;
         let slot = self.index.para_slot(para)?;
         let blocks = self.index.blocks(&self.doc, slot.container)?;
         all.iter().position(|t| {
@@ -923,7 +972,7 @@ impl Editor {
 
     /// The first block a table's removal takes: its first paragraph, or the first of a building block control (Word's
     /// built-in tables) it is in.
-    fn toc_blocks_from(&self, t: &TocField) -> usize {
+    pub(super) fn toc_blocks_from(&self, t: &TocField) -> usize {
         let Some(blocks) = self.index.blocks(&self.doc, t.container) else { return t.first };
         let Some(c) = blocks.get(t.first).and_then(|b| super::merge::block_controls(b).last()).filter(|c| self.is_toc_control(c)) else {
             return t.first;
@@ -1773,7 +1822,8 @@ impl Editor {
         let res = self.doc.resolver.clone();
         // Word marks entries as hidden text: the run at the caret, hidden.
         let base = self.selection.focus().and_then(|c| c.para_offset()).and_then(|(para, at)| self.run_base(para, at, res.as_ref()?, &cx));
-        self.insert_inlines(
+        let id = FieldId::next();
+        let out = self.insert_inlines(
             |run| {
                 let hidden = match (&res, &base) {
                     (Some(r), Some(b)) => {
@@ -1783,11 +1833,15 @@ impl Editor {
                     }
                     _ => run.clone(),
                 };
-                fields::field_inlines(&code, "", &hidden)
+                fields::field_inlines_with(id, &code, "", &hidden)
             },
             "Mark Table of Contents Entry",
             fonts,
-        )
+        );
+        if matches!(out, Outcome::Changed(_)) {
+            self.made = Some(crate::api::command::CommandResult::Element { id: super::merge::api_id(crate::docx::ElementId::Field(id)) });
+        }
+        out
     }
 }
 

@@ -1,0 +1,27 @@
+[
+  {
+    "swatches": [
+      {
+        "colour": {
+          "theme": "accent1"
+        },
+        "label": "Accent 1",
+        "rgb": "#4472C4"
+      },
+      {
+        "colour": {
+          "theme": "accent1",
+          "transforms": [
+            {
+              "kind": "tint",
+              "value": 0.2
+            }
+          ]
+        },
+        "label": "Accent 1, Lighter 80%",
+        "rgb": "#DAE3F3"
+      }
+    ],
+    "theme": "accent1"
+  }
+]

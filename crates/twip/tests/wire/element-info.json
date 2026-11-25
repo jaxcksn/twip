@@ -1,10 +1,12 @@
 [
   {
+    "dirty": false,
     "display": "Ada",
     "id": "control-3",
     "kind": "plainText",
     "locked": false,
     "parent": "control-1",
+    "showingCode": false,
     "showingPlaceholder": true,
     "size": {
       "height": 54.0,
@@ -16,6 +18,7 @@
   },
   {
     "code": "SUBTEMPLATE Violation",
+    "dirty": false,
     "display": "",
     "id": "field-7",
     "kind": "field",
@@ -27,6 +30,7 @@
       "nearMatch": "Violation",
       "resolution": "nearMatch"
     },
+    "showingCode": false,
     "story": "subTemplate",
     "subTemplate": "Notice"
   }

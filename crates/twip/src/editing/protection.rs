@@ -38,12 +38,37 @@ impl RangeEditor {
         }
     }
 
+    /// The editor as it is written: a group by its `w:edGrp` value, which Word writes in lower case; `None` for a
+    /// group `w:edGrp` doesn't take.
+    fn canonical(self) -> Option<RangeEditor> {
+        match self {
+            Self::Group(g) => GROUPS.iter().find(|n| n.eq_ignore_ascii_case(&g)).map(|n| Self::Group((*n).to_string())),
+            user => Some(user),
+        }
+    }
+
     /// This editor lets `author`, a member of `groups`, edit: `everyone` lets all, a group its members, a person
     /// themselves.
     fn lets(&self, author: &str, groups: &[String]) -> bool {
         match self {
             Self::Group(g) => g.eq_ignore_ascii_case("everyone") || groups.iter().any(|x| x.eq_ignore_ascii_case(g)),
             Self::User(u) => u.eq_ignore_ascii_case(author),
+        }
+    }
+
+    /// The API's reference to this editor.
+    pub fn to_api(self) -> crate::api::value::RangeEditorRef {
+        match self {
+            RangeEditor::Group(g) => crate::api::value::RangeEditorRef::Group(g),
+            RangeEditor::User(u) => crate::api::value::RangeEditorRef::User(u),
+        }
+    }
+
+    /// The editor an API reference names.
+    pub fn of_api(r: crate::api::value::RangeEditorRef) -> RangeEditor {
+        match r {
+            crate::api::value::RangeEditorRef::Group(g) => RangeEditor::Group(g),
+            crate::api::value::RangeEditorRef::User(u) => RangeEditor::User(u),
         }
     }
 }
@@ -435,6 +460,25 @@ impl Editor {
         {
             return Some(Error::new(ErrorCode::NotAllowed, "the style is restricted"));
         }
+        // The table tools' edits are refused where they land, not at the selection; Update All skips the tables it
+        // may not change
+        if matches!(command, Command::DrawTableStroke(_) | Command::EraseTableBorder(_) | Command::UpdateAllTablesOfContents(_)) {
+            return None;
+        }
+        if p.formatting
+            && references_styles(command).iter().any(|s| self.doc.resolver.as_ref().and_then(|r| r.styles.get(s)).is_some_and(|st| st.meta.locked))
+        {
+            return Some(Error::new(ErrorCode::NotAllowed, "the style is restricted"));
+        }
+        // A table of contents' update or removal changes the table, wherever the selection is
+        let table = match command {
+            Command::UpdateTableOfContents(u) => self.toc_by_index(u.index).ok().map(|t| (t, false)),
+            Command::RemoveTableOfContents(r) => self.toc_by_index(r.index).ok().map(|t| (t, true)),
+            _ => None,
+        };
+        if let Some((t, whole)) = table {
+            return refusal(p, command.id(), || [self.toc_range(&t, whole).map_or_else(Openings::default, |(a, b)| self.openings(&a, &b))]);
+        }
         // Space or X on a selected legacy check box fills it in
         let id = match command {
             Command::InsertText(t) if matches!(t.as_str(), " " | "x" | "X") && self.selected_form_check_box().is_some() => CommandId::FillFormField,
@@ -471,7 +515,18 @@ impl Editor {
         let p = self.enforced_protection()?;
         let all = self.selection_openings(CommandId::Delete);
         let own = if self.is_discontiguous() { self.selection_openings(CommandId::InsertText) } else { all.clone() };
-        Some(move |id| refusal(p, id, || if replaces_primary(id) { &own[..] } else { &all[..] }).is_some())
+        // The table tools, and the tables of contents' updates and removal, are refused where they land (finding the
+        // table is a walk of the body, too much for each state)
+        Some(move |id| {
+            !matches!(
+                id,
+                CommandId::DrawTableStroke
+                    | CommandId::EraseTableBorder
+                    | CommandId::UpdateTableOfContents
+                    | CommandId::UpdateAllTablesOfContents
+                    | CommandId::RemoveTableOfContents
+            ) && refusal(p, id, || if replaces_primary(id) { &own[..] } else { &all[..] }).is_some()
+        })
     }
 
     /// What a delete at the caret removes, as [`Editor::delete`] finds it: the grapheme or word beside it in the
@@ -524,6 +579,13 @@ impl Editor {
             password: p.password.is_some(),
             in_editable_range: self.in_editable_range(author),
             unprotected_sections: self.unprotected_sections().collect(),
+            exceptions_allowed: restriction_options(api_kind(p.edit)).exceptions,
+            sections_allowed: restriction_options(api_kind(p.edit)).sections,
+            auto_format_override: self.doc.settings.auto_format_override,
+            block_theme_switching: self.doc.settings.style_lock_theme,
+            block_style_set_switching: self.doc.settings.style_lock_style_set,
+            editors_here: self.editors_here().into_iter().map(RangeEditor::to_api).collect(),
+            range_count: self.editable_ranges().list.len() as u32,
         })
     }
 
@@ -702,8 +764,57 @@ impl Editor {
 
     /// An editable range on each range of the selection, each with an id of its own, in one step.
     pub(in crate::editing) fn add_editable_range(&mut self, r: EditableRange, fonts: &Fonts) -> Outcome {
+        let who = match (r.editor, r.group) {
+            (Some(_), Some(_)) => return Outcome::invalid("an editor or a group"),
+            (Some(u), None) => RangeEditor::User(u),
+            (None, g) => RangeEditor::Group(g.unwrap_or_else(|| "everyone".into())),
+        };
+        let Some(who) = who.canonical() else { return Outcome::invalid("not a group Word's editable ranges know") };
         let ranges = self.text_ranges();
-        self.add_permission(r.editor.map_or_else(|| RangeEditor::Group("everyone".into()), RangeEditor::User), &ranges, fonts)
+        self.add_permission(who, &ranges, fonts)
+    }
+
+    /// `setDocumentProtection`: the formatting restrictions' settings and the protection, in one step; starting
+    /// enforcement checks the password typed twice and that something is restricted.
+    pub(in crate::editing) fn document_protection(&mut self, mut d: DocumentProtection, fonts: &Fonts) -> Outcome {
+        let confirm = d.confirm_password.take();
+        let restrictions = (d.auto_format_override.take(), d.block_theme_switching.take(), d.block_style_set_switching.take());
+        let was = self.doc.settings.protection.as_ref();
+        let enforced = was.is_some_and(|p| p.enforced);
+        if d.enforce == Some(true) && !enforced {
+            if confirm.as_ref().is_some_and(|c| *c != d.password.clone().unwrap_or_default()) {
+                return Outcome::invalid("the passwords don't match");
+            }
+            let edits = d.kind.map_or_else(|| was.is_some_and(|p| p.edit != ProtectionKind::None), |k| k != Kind::None);
+            if !edits && !d.formatting.unwrap_or_else(|| was.is_some_and(|p| p.formatting)) {
+                return Outcome::unavailable("no editing or formatting restriction to enforce");
+            }
+        }
+        if restrictions == (None, None, None) {
+            return self.set_document_protection(d, fonts);
+        }
+        let rest = d != DocumentProtection::default();
+        let stopping = d.enforce == Some(false) && enforced;
+        self.joined("Restrict Editing", fonts, |e| {
+            let protect = |e: &mut Editor| if rest { e.set_document_protection(d, fonts) } else { Outcome::Unchanged("already so") };
+            let (first, second) = if stopping {
+                let p = protect(e);
+                if matches!(p, Outcome::Refused(_)) {
+                    return p;
+                }
+                (p, e.set_formatting_restrictions(restrictions.0, restrictions.1, restrictions.2, fonts))
+            } else {
+                let r = e.set_formatting_restrictions(restrictions.0, restrictions.1, restrictions.2, fonts);
+                if matches!(r, Outcome::Refused(_)) {
+                    return r;
+                }
+                (r, protect(e))
+            };
+            match (first, second) {
+                (_, o @ Outcome::Refused(_)) => o,
+                (o @ Outcome::Changed(_), _) | (_, o) => o,
+            }
+        })
     }
 
     /// Adds a permission for `who` over each of `ranges`.
@@ -874,14 +985,7 @@ impl Editor {
         }
         let ranges = self.text_ranges();
         if allowed {
-            // `w:edGrp` takes only its enumerated values, which Word writes in lower case.
-            let editor = match editor {
-                RangeEditor::Group(g) => match GROUPS.iter().find(|n| n.eq_ignore_ascii_case(&g)) {
-                    Some(n) => RangeEditor::Group((*n).to_string()),
-                    None => return Outcome::invalid("not a group Word's editable ranges know"),
-                },
-                user => user,
-            };
+            let Some(editor) = editor.canonical() else { return Outcome::invalid("not a group Word's editable ranges know") };
             // Only the spans this editor can't edit yet get a permission.
             let missing: Vec<(Position, Position)> =
                 ranges.iter().filter(|(a, b)| !self.editors_over(a, b).iter().any(|e| e.same(&editor))).copied().collect();
@@ -961,6 +1065,9 @@ pub fn edits_selection(id: crate::api::command::CommandId, section: bool) -> boo
         C::InsertSectionBreak
             | C::ReplaceFont
             | C::SetDocumentDefaults
+            | C::SetDefaultFormatting
+            | C::CreateStyle
+            | C::ModifyStyle
             | C::DeleteStyle
             | C::SetStyleMeta
             | C::UpdateStyleToSelection
@@ -970,7 +1077,22 @@ pub fn edits_selection(id: crate::api::command::CommandId, section: bool) -> boo
             | C::SetDefaultTableStyle
     );
     let here = matches!(info.group, G::Text | G::Clipboard | G::Character | G::Paragraph | G::Tabs)
-        || matches!(id, C::InsertHyperlink | C::EditHyperlink | C::RemoveHyperlink | C::InsertPicture | C::InsertField | C::InsertSymbol)
+        || matches!(
+            id,
+            C::InsertHyperlink | C::EditHyperlink | C::RemoveHyperlink | C::InsertPicture | C::InsertField | C::InsertSymbol | C::InsertFile
+        )
+        || matches!(
+            id,
+            C::InsertTableOfContents
+                | C::InsertTableOfFigures
+                | C::InsertManualTableOfContents
+                | C::UpdateTableOfContents
+                | C::UpdateAllTablesOfContents
+                | C::RemoveTableOfContents
+                | C::MarkTableOfContentsEntry
+                | C::InsertCaption
+                | C::InsertCrossReference
+        )
         || (section && matches!(info.group, G::Table | G::Object));
     here && !document
 }
@@ -1003,6 +1125,12 @@ pub(super) fn replaces_primary(id: CommandId) -> bool {
             | C::InsertTable
             | C::Paste
             | C::PasteText
+            | C::Repaste
+            | C::InsertFile
+            | C::InsertTableOfContents
+            | C::InsertTableOfFigures
+            | C::InsertManualTableOfContents
+            | C::InsertCrossReference
     )
 }
 
@@ -1016,9 +1144,24 @@ pub fn allows(p: &Protection, id: crate::api::command::CommandId) -> bool {
         ProtectionKind::None | ProtectionKind::TrackedChanges => true,
         ProtectionKind::ReadOnly => false,
         ProtectionKind::Comments => {
-            matches!(id, C::AddComment | C::ReplyToComment | C::EditComment | C::DeleteComment | C::ResolveComment)
+            matches!(id, C::AddComment | C::ReplyToComment | C::EditComment | C::DeleteComment | C::DeleteAllComments | C::ResolveComment)
         }
         ProtectionKind::Forms => matches!(id, C::FillFormField | C::FillControl | C::SetCheckbox),
+    }
+}
+
+/// The styles a table of contents or caption command gives what it inserts, which formatting protection allows only
+/// when none is locked.
+fn references_styles(c: &Command) -> Vec<String> {
+    let tocs = || (1..=9).map(|n| format!("TOC{n}")).chain(["TOCHeading".to_string()]);
+    match c {
+        Command::InsertTableOfContents(t) if t.options.as_ref().is_some_and(|o| o.captions.is_some()) => {
+            vec!["TableofFigures".into(), "TOCHeading".into()]
+        }
+        Command::InsertTableOfContents(_) | Command::InsertManualTableOfContents => tocs().collect(),
+        Command::InsertTableOfFigures(_) => vec!["TableofFigures".into(), "TOCHeading".into()],
+        Command::InsertCaption(_) => vec!["Caption".into()],
+        _ => Vec::new(),
     }
 }
 
@@ -1042,6 +1185,11 @@ pub fn restricts_formatting(id: CommandId) -> bool {
             id,
             C::ReplaceFont
                 | C::SetDocumentDefaults
+                | C::SetDefaultFormatting
+                | C::CreateStyle
+                | C::ModifyStyle
+                | C::SetFitText
+                | C::SetTableBandSizes
                 | C::DeleteStyle
                 | C::UpdateStyleToSelection
                 | C::SetList
@@ -1074,6 +1222,7 @@ fn refusal<P: AsRef<[Openings]>>(p: &Protection, id: CommandId, at: impl FnOnce(
             | C::RejectAllRevisions
             | C::AcceptRevisionsInSelection
             | C::RejectRevisionsInSelection
+            | C::AcceptAllAndStopTracking
     );
     if p.forces_tracking() && resolves {
         return Some(Error::unavailable("unavailable"));

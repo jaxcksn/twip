@@ -261,6 +261,40 @@ impl Editor {
         Some(ObjectProps { name, title, hidden, lock_aspect, original_size: self.original_object_size(), stack_index, frame })
     }
 
+    /// Adds the selected object's properties to its state: id, name, title, hidden, aspect lock, original size,
+    /// stacking, picture adjustments, text box link, wrap polygon, and a frame's placement.
+    pub fn add_object_props(&mut self, o: &mut crate::api::state::ObjectSelection, fonts: &Fonts) {
+        use crate::api::value::{ObjectId, Points, Size};
+        let Some(p) = self.object_props(fonts) else { return };
+        o.name = p.name;
+        o.title = p.title;
+        o.hidden = p.hidden;
+        o.lock_aspect = p.lock_aspect;
+        o.original_size = p.original_size.map(|(w, h)| Size { width: Points(w), height: Points(h) });
+        o.stack_index = p.stack_index.map(|i| u32::try_from(i).unwrap_or(u32::MAX));
+        if p.frame {
+            o.kind = ObjectKind::Frame;
+            o.frame = self
+                .frame_properties(None)
+                .map(|properties| crate::api::state::FrameState { properties, allow_overlap: self.frame_allow_overlap().unwrap_or(true) });
+            return;
+        }
+        if let Selection::Object(ObjectRef::Floating(f)) = self.selection {
+            o.id = Some(ObjectId { path: self.selected_child().map(<[u16]>::to_vec).unwrap_or_default(), ..ObjectId::of(f) });
+        }
+        o.picture_adjust = self.picture_adjust().map(|a| crate::api::drawing::PictureAdjustState::of(&a));
+        o.text_box_link = self.text_box_link().map(|l| crate::api::state::TextBoxLinkState {
+            index: u32::try_from(l.index).unwrap_or(u32::MAX),
+            count: u32::try_from(l.count).unwrap_or(u32::MAX),
+            previous: l.previous.map(ObjectId::of),
+            next: l.next.map(ObjectId::of),
+        });
+        o.wrap_polygon = self.selected_wrap_polygon().map(|w| crate::api::state::WrapPolygonState {
+            points: w.points.iter().map(|&(x, y)| crate::api::drawing::BoxPoint { x, y }).collect(),
+            edited: w.edited,
+        });
+    }
+
     /// The selected picture's image bytes (a group child's when one is selected), as the document holds them.
     pub fn object_image(&self) -> Option<&[u8]> {
         self.doc.images.get(self.selected_image()?).map(Vec::as_slice)

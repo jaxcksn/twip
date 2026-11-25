@@ -1473,7 +1473,7 @@ impl Editor {
                 top: crate::layout::units::Lu::round_half_up(top),
                 bottom: crate::layout::units::Lu::round_half_up(s.page_h - s.bottom),
             };
-            let cols = columns(&s.columns, &area, top);
+            let cols = columns(s.columns, &area, top);
             let distance = |c: &crate::layout::space::ColumnSpace| x.map_or(0.0, |x| (c.x - x).max(x - c.x - c.width).max(0.0));
             if let Some(c) = cols.iter().min_by(|a, b| distance(a).total_cmp(&distance(b))) {
                 fr.column = (c.x, c.width);

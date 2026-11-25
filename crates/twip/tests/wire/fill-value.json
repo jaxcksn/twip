@@ -87,7 +87,26 @@
   },
   {
     "image": "iVBORw==",
-    "tile": true,
+    "rotateWithShape": true,
+    "tile": {
+      "align": "topLeft",
+      "mirror": "both",
+      "offsetX": 0.0,
+      "offsetY": 0.0,
+      "scaleX": 0.5,
+      "scaleY": 1.0
+    },
+    "type": "picture"
+  },
+  {
+    "image": "iVBORw==",
+    "rotateWithShape": false,
+    "stretch": {
+      "bottom": -0.25,
+      "left": 0.1,
+      "right": 0.1,
+      "top": 0.0
+    },
     "type": "picture"
   },
   {

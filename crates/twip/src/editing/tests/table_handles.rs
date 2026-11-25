@@ -171,7 +171,7 @@ fn a_plus_inserts_a_column_selected_in_one_step() {
     };
     assert_eq!(e.selection(), col(1), "the new column");
     assert_eq!(e.history.next_undo(), Some("Insert Columns"));
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!((grid(&e, d.table), e.history.next_undo()), (before.clone(), None), "one step");
     hover(&mut e, d.edges[1], d.rows[1][1] + 2.0);
     click(&mut e, d.edges[0] + 3.0 * PX, d.top() - 12.0 * PX);
@@ -189,7 +189,7 @@ fn a_plus_inserts_a_row_selected_in_one_step() {
     let sel = Selection::Cells { table: d.table, anchor: CellRef { row: 2, col: 0 }, focus: CellRef { row: 2, col: 2 }, shape: CellShape::Rows };
     assert_eq!(e.selection(), sel, "the new row, below row 2");
     assert_eq!(e.history.next_undo(), Some("Insert Rows"));
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!((rows(&e), e.history.next_undo()), (4, None), "one step");
 }
 
@@ -320,6 +320,7 @@ fn position(x: f64, y: f64) -> TablePosition {
         horizontal: Some(HorizontalPosition { relative_to: HorizontalReference::Margin, align: None, offset: Some(Points(x)), percent: None }),
         vertical: Some(VerticalPosition { relative_to: VerticalReference::Paragraph, align: None, offset: Some(Points(y)), percent: None }),
         wrap_distance: None,
+        allow_overlap: None,
     }
 }
 
@@ -338,6 +339,7 @@ fn set_table_position_saves_reopens_and_undoes() {
     assert_eq!((p.x, p.y, p.v_anchor, p.h_page, p.h_text, p.dist), (72.0, 36.0, TableAnchor::Text, false, false, [0.0, 0.0, 9.0, 9.0]));
     let mut want = position(72.0, 36.0);
     want.wrap_distance = Some(crate::api::state::TextDistance { top: Points(0.0), bottom: Points(0.0), left: Points(9.0), right: Points(9.0) });
+    want.allow_overlap = Some(true);
     assert_eq!(e.table_position(), Some(want), "the state's value");
     let bytes = crate::docx::write::save(e.document()).expect("saves");
     let mut xml = String::new();
@@ -351,7 +353,7 @@ fn set_table_position_saves_reopens_and_undoes() {
     again.complete(fonts());
     let t = Drawn::of(&mut again).table;
     assert_eq!(floating(&again, t), Some(p), "read back");
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!((floating(&e, d.table), e.history.next_undo()), (None, None), "one step");
     let mut bad = position(0.0, 0.0);
     bad.horizontal = Some(HorizontalPosition { relative_to: HorizontalReference::Character, align: None, offset: None, percent: None });
@@ -367,6 +369,7 @@ fn a_reference_given_alone_keeps_the_table_where_it_is() {
         horizontal: Some(HorizontalPosition { relative_to: HorizontalReference::Page, align: None, offset: None, percent: None }),
         vertical: Some(VerticalPosition { relative_to: VerticalReference::Page, align: None, offset: None, percent: None }),
         wrap_distance: None,
+        allow_overlap: None,
     };
     assert!(matches!(e.execute(Command::SetTablePosition(Some(stay)), fonts()), Outcome::Changed(_)));
     e.complete(fonts());
@@ -375,7 +378,7 @@ fn a_reference_given_alone_keeps_the_table_where_it_is() {
     let now = Drawn::of(&mut e);
     assert!((now.left() - d.left()).abs() < 0.1 && (now.top() - d.top()).abs() < 0.1, "{:?} → {:?}", d.rows[0], now.rows[0]);
     assert_eq!(e.history.next_undo(), Some("Table Position"));
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!((floating(&e, d.table), e.history.next_undo()), (None, None), "one step");
 }
 
@@ -405,7 +408,7 @@ fn the_move_handle_drags_the_table_to_the_snapped_point() {
     assert_eq!((p.v_anchor, p.h_page, p.h_text, p.dist), (TableAnchor::Text, false, false, [0.0, 0.0, 9.0, 9.0]));
     assert!(matches!(e.selection(), Selection::Cells { shape: CellShape::Table, .. }), "still selected");
     assert_eq!(e.history.next_undo(), Some("Move Table"));
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!((floating(&e, d.table), e.history.next_undo()), (None, None), "one step");
 }
 
@@ -504,7 +507,7 @@ fn an_indent_set_on_a_table_read_without_one_moves_it_at_once() {
     assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
     e.complete(fonts());
     assert!((Drawn::of(&mut e).left() - before - 36.0).abs() <= 1.0, "the table moves by the indent");
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     e.complete(fonts());
     assert!((Drawn::of(&mut e).left() - before).abs() < 0.5, "and back on undo");
 }
@@ -610,7 +613,7 @@ fn a_column_border_drag_lays_the_table_out_live_and_commits_once() {
     assert_eq!(laid_widths(&mut off), widths, "without live layout only the guide moves");
     at(&mut off, PointerKind::Up, from.0 + 36.0, from.1, NONE);
     assert_eq!(first_table(&off).grid, grid(&e, d.table), "live or not, the same resize");
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!((grid(&e, d.table), laid_widths(&mut e)), (was, widths), "undone in one step");
 }
 
@@ -714,7 +717,7 @@ fn a_nested_tables_live_drag_widens_the_cell_holding_it() {
     assert_eq!(first_table(&e), &model, "the model waits for the release");
     at(&mut e, PointerKind::Up, from.0 + 60.0, from.1, NONE);
     assert_eq!(rows(&mut e), live, "the release lays out what the drag showed");
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(first_table(&e).grid, model.grid);
     assert_eq!(rows(&mut e), was);
 }
@@ -747,7 +750,7 @@ fn a_tracked_nested_tables_drag_keeps_its_revisions() {
         || t.grid_change.is_some()
         || t.rows.iter().any(|r| r.rev.change.is_some() || r.cells.iter().any(|c| c.rev.change.is_some()));
     assert!(marked, "the nested table's change is tracked: {t:?}");
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(first_table(&e), &model, "undo restores both tables");
 }
 
@@ -765,7 +768,7 @@ fn a_column_inserted_during_a_border_drag_ends_it() {
     at(&mut e, PointerKind::Move, from.0 + 30.0, from.1, NONE);
     at(&mut e, PointerKind::Up, from.0 + 30.0, from.1, NONE);
     assert_eq!((grid(&e, d.table), e.history.undo_depth()), (inserted, depth), "the drag ended with the insert");
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(grid(&e, d.table).len(), 3, "the insert undoes alone");
 }
 
@@ -785,7 +788,7 @@ fn live_drags_one_transaction(e: &mut Editor) {
     assert_eq!((e.history.undo_depth(), e.history.next_undo()), (depth + 1, Some("Column Width")), "one transaction");
     assert_eq!(laid_widths(e), live, "the release lays out what the drag showed");
     assert_eq!(crate::layout::incremental::FULL_JOBS.get(), full, "no move or release lays the whole document out");
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!((grid(e, d.table), laid_widths(e)), (was, widths), "undone in one step");
 }
 
@@ -853,7 +856,7 @@ fn the_left_outer_border_drags_the_first_column_and_the_indent() {
     );
     let after = Drawn::of(&mut e);
     assert!((after.edges[0] - (d.edges[0] + 36.0)).abs() < 0.1 && (after.edges[1] - d.edges[1]).abs() < 0.1, "{:?} {:?}", d.edges, after.edges);
-    e.execute(crate::editing::commands::Command::Undo, fonts());
+    e.execute(crate::editing::commands::Command::Undo(Default::default()), fonts());
     let t = e.index().table(e.document(), d.table).expect("the table");
     assert_eq!((t.grid.clone(), t.ind), (vec![72.0, 90.0, 108.0], 0.0), "one undo step");
 }

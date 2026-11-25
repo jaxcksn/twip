@@ -37,9 +37,9 @@ fn a_building_block_body_is_a_story_that_edits_undoes_and_redoes() {
     assert_eq!(e.selection().focus().map(|f| f.story), Some(StoryId::BuildingBlock(0)));
     type_text(&mut e, "New ");
     assert_eq!(text_of(&e, p), "New Violation notice");
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(text_of(&e, p), "Violation notice");
-    e.execute(Command::Redo, fonts());
+    e.execute(Command::Redo(Default::default()), fonts());
     assert_eq!(text_of(&e, p), "New Violation notice");
     let saved = crate::docx::write::save(e.document()).expect("saves");
     let again = crate::docx::read_editable(&saved).expect("reads");
@@ -118,7 +118,7 @@ fn typing_beside_a_reference_makes_it_not_alone() {
     type_text(&mut e, "x");
     let r = e.references().by_field.values().find(|r| r.at == para).expect("the reference");
     assert_eq!(r.resolution, R::NotAlone);
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     let r = e.references().by_field.values().find(|r| r.at == para).expect("the reference");
     assert_eq!(r.resolution, R::Resolved);
 }
@@ -280,7 +280,7 @@ fn a_click_on_a_shown_body_selects_its_reference_and_typing_is_refused() {
     assert!(text.contains("FieldBegin") && !text.contains("Violation notice"));
     e.execute(Command::Delete(crate::api::command::DeleteOptions { direction: crate::api::value::Direction::Backward, unit: None }), fonts());
     assert!(!has_field(&e, reference));
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert!(has_field(&e, reference));
 }
 
@@ -381,7 +381,7 @@ fn a_double_click_edits_the_sub_template_in_the_same_editor() {
     e.complete(fonts());
     let shown_after = e.expansions.as_ref().expect("expansions").paras[&reference].clone();
     assert!(!std::rc::Rc::ptr_eq(&shown_before.content, &shown_after.content), "the body was laid out again");
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(e.editing_sub_template(), Some(0));
     assert_eq!(text_of(&e, first), "Violation notice");
     e.execute(Command::CloseSubTemplate, fonts());
@@ -457,7 +457,7 @@ fn sub_templates_are_created_renamed_and_removed_each_as_one_step() {
     assert!(matches!(create(&mut e, "Imported again", Some(docx)), Outcome::Changed(_)));
     assert!(matches!(create(&mut e, "Payment", None), Outcome::Refused(_)), "a duplicate name");
     assert!(part_names(&e).ends_with(&["Payment".into(), "Imported".into(), "Imported again".into()]));
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert!(!part_names(&e).contains(&"Imported again".into()));
     let rename =
         crate::api::command::RenameSubTemplate { name: "Violation".into(), to: "Citation".into(), category: None, update_references: Some(true) };
@@ -467,13 +467,13 @@ fn sub_templates_are_created_renamed_and_removed_each_as_one_step() {
     assert!(!codes(&e).iter().any(|c| c.contains("SUBTEMPLATE Violation")));
     let resolved = e.references().by_field.values().filter(|r| r.name == "Citation" && r.resolution == R::Resolved).count();
     assert!(resolved >= 2);
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert!(part_names(&e).contains(&"Violation".into()) && codes(&e).iter().any(|c| c.contains("SUBTEMPLATE Violation")));
     let remove = |n: &str| Command::RemoveSubTemplate(crate::api::command::SubTemplateName { name: n.into(), category: None });
     e.execute(remove("Cycle-B"), fonts());
     assert!(!part_names(&e).contains(&"Cycle-B".into()));
     assert!(e.references().by_field.values().any(|r| r.name == "Cycle-B" && r.resolution == R::Missing));
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert!(e.references().by_field.values().any(|r| r.name == "Cycle-B" && r.resolution == R::Resolved));
     e.execute(Command::EditSubTemplate(crate::api::command::SubTemplateName { name: "Appeals notice".into(), category: None }), fonts());
     e.execute(remove("Appeals notice"), fonts());
@@ -673,9 +673,9 @@ fn the_body_is_replaced_from_a_docx_keeping_the_sub_templates() {
     assert_eq!(e.history().undo_depth(), depth + 1, "one undo step");
     assert_eq!((body_texts(e.document()), e.document().sections.len()), (want.clone(), 1));
     assert_eq!((part_names(&e), format!("{:?}", e.document().settings)), (names.clone(), settings));
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!((body_texts(e.document()), e.document().sections.len()), (before, 2));
-    e.execute(Command::Redo, fonts());
+    e.execute(Command::Redo(Default::default()), fonts());
     assert_eq!(body_texts(e.document()), want);
     let saved = crate::docx::write::save(e.document()).expect("saves");
     let again = Editor::open(&saved, fonts()).expect("reopens");
@@ -726,7 +726,7 @@ fn renaming_a_sub_template_rewrites_only_its_references_name_quoted() {
     assert!(codes(&e).iter().any(|c| c.contains("SUBTEMPLATE \"Violation notice\"")), "{:?}", codes(&e));
     let after = e.references().by_field.values().filter(|r| r.name == "Violation notice" && r.resolution == R::Resolved).count();
     assert_eq!(after, before);
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     // A backslash before the closing quote is escaped.
     assert!(matches!(e.execute(rename("ends in \\"), fonts()), Outcome::Changed(_)));
     assert!(codes(&e).iter().any(|c| c.contains("SUBTEMPLATE \"ends in \\\\\"")), "{:?}", codes(&e));
@@ -1043,7 +1043,7 @@ fn a_shown_body_is_checked_when_a_cell_block_is_the_selection() {
 #[test]
 fn a_shown_body_in_a_tbrl_section_is_hit_and_outlined_where_it_is_drawn() {
     let (mut e, reference) = expanded();
-    e.execute(Command::SetSectionTextDirection(crate::api::command::TextFlow::TbRl), fonts());
+    e.execute(Command::SetSectionTextDirection(crate::api::command::SectionValue::here(crate::api::command::TextFlow::TbRl)), fonts());
     e.complete(fonts());
     let field = e.expansions.as_ref().and_then(|x| x.paras.get(&reference)).map(|x| x.field).expect("shown");
     let (pg, g) = e.page_geometries().into_iter().find(|(_, g)| g.lines.iter().any(|l| l.shows(reference))).expect("a page");

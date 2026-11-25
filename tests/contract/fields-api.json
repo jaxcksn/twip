@@ -1,0 +1,64 @@
+{
+  "name": "fields-api",
+  "steps": [
+    { "op": "call", "method": "elements.composeField", "args": [{ "name": "REF", "args": ["Intro"], "switches": [{ "flag": "h" }], "preserveFormatting": true }],
+      "result": { "code": " REF Intro \\h \\* MERGEFORMAT ", "problems": { "$exact": [] } } },
+    { "op": "call", "method": "elements.composeField", "args": [{ "name": "REF" }],
+      "result": { "problems": [{ "kind": "missingArgument", "name": "Bookmark" }] } },
+    { "op": "call", "method": "elements.parseField", "args": [" DATE \\@ \"d MMMM yyyy\" \\* MERGEFORMAT "],
+      "result": { "name": "DATE", "datePicture": "d MMMM yyyy", "preserveFormatting": true } },
+    { "op": "call", "method": "elements.fieldCatalogue", "args": ["dateAndTime"], "result": [
+      { "name": "CREATEDATE" }, { "name": "DATE" }, { "name": "EDITTIME" }, { "name": "PRINTDATE" }, { "name": "SAVEDATE" }, { "name": "TIME" }
+    ] },
+    { "op": "call", "method": "elements.fieldFormats", "result": { "textFormats": [{ "value": "Upper", "label": "Uppercase" }] } },
+    { "op": "call", "method": "elements.fieldHere", "result": null },
+    { "op": "call", "method": "elements.dateFormats", "args": ["en-US"], "result": [{ "$type": "string" }] },
+
+    { "op": "command", "command": { "type": "insertField", "code": "DATE \\@ \"yyyy\"" } },
+    { "op": "command", "command": { "type": "selectField", "value": "previous" } },
+    { "op": "call", "method": "elements.fieldHere", "result": { "id": { "$type": "string" }, "choice": { "name": "DATE", "datePicture": "yyyy" } } },
+    { "op": "call", "method": "elements.list", "save": "els", "result": [{ "kind": "field", "showingCode": false, "dirty": false }] },
+    { "op": "command", "command": { "type": "showFieldCodes", "show": true } },
+    { "op": "call", "method": "elements.list", "result": [{ "showingCode": true }] },
+    { "op": "command", "command": { "type": "showFieldCodes", "show": false } },
+    { "op": "command", "command": { "type": "selectAll" } },
+    { "op": "command", "command": { "type": "delete", "direction": "backward" } },
+
+    { "op": "command", "command": { "type": "insertHyperlink", "address": "https://a.test/", "screenTip": "Go", "frame": "_blank", "text": "link" } },
+    { "op": "command", "command": { "type": "moveSelection", "by": "character", "direction": "backward" } },
+    { "op": "expectState", "match": { "selection": { "link": { "address": "https://a.test/", "target": "https://a.test/", "screenTip": "Go", "frame": "_blank", "text": "link" } } } },
+    { "op": "command", "command": { "type": "editHyperlink", "address": "https://b.test/#Part" } },
+    { "op": "expectState", "match": { "selection": { "link": { "address": "https://b.test/#Part", "target": "https://b.test/", "bookmark": "Part", "screenTip": "Go" } } } },
+    { "op": "command", "command": { "type": "editHyperlink", "screenTip": "" } },
+    { "op": "expectState", "match": { "selection": { "link": { "screenTip": null, "frame": "_blank" } } } },
+    { "op": "command", "command": { "type": "selectAll" } },
+    { "op": "command", "command": { "type": "delete", "direction": "backward" } },
+
+    { "op": "command", "command": { "type": "insertText", "value": "Body" } },
+    { "op": "command", "command": { "type": "insertFootnote" } },
+    { "op": "command", "command": { "type": "insertText", "value": "First" } },
+    { "op": "call", "method": "notes", "result": [{ "kind": "footnote", "id": { "$type": "number" }, "mark": "1", "customMark": false, "text": "First", "page": 1 }] },
+    { "op": "call", "method": "noteSeparators", "args": ["footnote"], "result": { "separator": { "builtin": true }, "continuationSeparator": { "builtin": true } } },
+    { "op": "command", "command": { "type": "setNoteSeparator", "kind": "footnote", "part": "continuationNotice", "text": "Continued" } },
+    { "op": "call", "method": "noteSeparators", "args": ["footnote"], "result": { "continuationNotice": { "text": "Continued", "builtin": false } } },
+    { "op": "command", "command": { "type": "setNoteSeparator", "kind": "footnote", "part": "continuationNotice" } },
+    { "op": "call", "method": "noteSeparators", "args": ["footnote"], "result": { "continuationNotice": null } },
+    { "op": "command", "command": { "type": "setNoteProperties", "kind": "footnote", "format": "chicago" } },
+    { "op": "expectState", "match": { "page": { "footnotes": { "format": "chicago" } } } },
+    { "op": "command", "command": { "type": "setNoteProperties", "kind": "endnote", "restart": "eachPage" } },
+    { "op": "expectError", "code": "invalid-argument" },
+
+    { "op": "command", "command": { "type": "setPageNumbering", "format": "numberInDash" } },
+    { "op": "expectState", "match": { "page": { "pageNumberFormat": "numberInDash" } } },
+    { "op": "call", "method": "pageNumberSample", "args": ["upperRoman", "hyphen"], "result": "1-I" },
+    { "op": "call", "method": "pageNumberSample", "args": ["lowerLetter"], "result": "a" },
+    { "op": "command", "command": { "type": "insertPageNumber", "format": "page", "where": "footer", "alignment": "center", "showOnFirstPage": false } },
+    { "op": "expectState", "match": { "page": { "differentFirstPage": true } } },
+
+    { "op": "call", "method": "columnPreset", "args": ["two"], "result": { "count": 2, "spacing": 36 } },
+    { "op": "command", "command": { "type": "setColumns", "count": 2, "applyTo": "wholeDocument" } },
+    { "op": "expectState", "match": { "page": { "columns": { "count": 2, "equal": true } } } },
+    { "op": "command", "command": { "type": "setColumns", "count": 2, "applyTo": "section", "startNewColumn": true } },
+    { "op": "expectError", "code": "invalid-argument" }
+  ]
+}

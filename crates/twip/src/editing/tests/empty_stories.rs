@@ -284,6 +284,6 @@ fn deleting_a_text_box_drops_the_notes_referenced_inside_it() {
     let out = e.execute(Command::Delete(DeleteOptions { direction: Direction::Forward, unit: None }), fonts());
     assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
     assert!(!e.document().footnotes.contains_key(&2), "the note outlives its only reference");
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert!(e.document().footnotes.contains_key(&2), "undo restores the note");
 }

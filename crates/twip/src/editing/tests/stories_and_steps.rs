@@ -74,7 +74,7 @@ fn a_style_edit_and_its_undo_restyle_the_line_numbers() {
     let out = e.edit_styles("Set Defaults", |s| s.set_defaults_xml(raw), fonts());
     assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
     assert_eq!(e.document().line_number_run, want(&e), "after the edit");
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(e.document().line_number_run, want(&e), "after undo");
 }
 
@@ -105,11 +105,11 @@ fn a_bookmark_in_a_new_paragraph_keeps_its_empty_run() {
     assert_eq!(x_bold(&e), Some(true), "typed after the bookmark");
     let done = e.document().sections[0].blocks.len();
     for _ in &edits {
-        e.execute(Command::Undo, fonts());
+        e.execute(Command::Undo(Default::default()), fonts());
     }
     assert_eq!(e.document().sections[0].blocks.len(), 1, "undone");
     for _ in &edits {
-        e.execute(Command::Redo, fonts());
+        e.execute(Command::Redo(Default::default()), fonts());
     }
     assert_eq!(e.document().sections[0].blocks.len(), done);
     assert_eq!(x_bold(&e), Some(true), "after undo and redo");

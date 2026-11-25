@@ -9,16 +9,18 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use super::drawing::{
-    Arrange, Degrees, EffectsChange, FillValue, FlipAxis, LineChange, PictureAdjustChange, ShapeAdjust, ShapeInsert, ShapePreset, ShapeTextChange,
-    TextEffectsChange,
+    Arrange, BoxPoint, ColourValue, Degrees, EffectsChange, FillValue, FlipAxis, LineChange, PictureAdjustChange, Recolor, ShapeAdjust, ShapeInsert,
+    ShapePreset, ShapeTextChange, TextEffectsChange,
 };
-use super::review::{Body, MarkupView};
-use super::services::TabSelector;
+use super::review::{BalloonMode, Body, MarkColor, MarkupView, TextMark};
+use super::services::{ApplyTo, TabSelector};
 use super::state::{Mode, TextDistance};
+use super::styles::{NewStyle, StyleModification};
 use super::value::{
-    Alignment, AutoOr, Bytes, CellAlignment, Color, CommentId, ControlKind, ControlLock, ControlOptions, DataBinding, Direction, ElementId,
-    HighlightColor, HorizontalAlignment, HorizontalPosition, LineSpacing, NoneOr, ObjectWrap, Order, Orientation, PlaceholderImage, Points,
-    RevisionId, RowHeight, StyleId, TabAlignment, TabLeader, TableWidth, UnderlineStyle, VerticalPosition, WrapSide,
+    Alignment, AutoOr, Bytes, CellAlignment, CellBlock, Color, CommentId, ControlKind, ControlLock, ControlOptions, DataBinding, Direction,
+    ElementId, HeadingId, HighlightColor, HorizontalAlignment, HorizontalPosition, LineSpacing, NoneOr, NoteSeparatorPart, ObjectId, ObjectWrap,
+    Order, Orientation, PlaceholderImage, Points, RangeEditorRef, RevisionId, RowHeight, StyleId, TabAlignment, TabLeader, TableWidth, TextRange,
+    UnderlineStyle, VerticalPosition, WrapSide,
 };
 use super::wire::value;
 
@@ -64,18 +66,26 @@ commands! {
     InsertText(#[serde(with = "value")] String),
     /// Starts a new paragraph (Enter). Undo: one step.
     InsertParagraph,
-    /// A line break (Shift+Enter). Undo: one step.
-    InsertLineBreak,
+    /// A line break (Shift+Enter), or with `clear` a text wrapping break: the text after it goes below the floating
+    /// objects on that side. Undo: one step.
+    InsertLineBreak(LineBreak),
     /// A page break, in the body outside tables. Undo: one step.
     InsertPageBreak,
     /// A column break, in the body outside tables. Undo: one step.
     InsertColumnBreak,
     /// A section break of the given kind, in the body outside tables. Undo: one step.
     InsertSectionBreak(#[serde(with = "value")] SectionBreakKind),
+    /// A style separator (Ctrl+Alt+Enter): a hidden paragraph mark that runs the paragraph before it into the one after,
+    /// each keeping its own style. At a paragraph's end with a paragraph after it, that paragraph's mark becomes one;
+    /// elsewhere the paragraph splits at the caret and the first part's mark becomes one. Undo: one step.
+    InsertStyleSeparator,
     /// A tab character. Undo: typing.
     InsertTab,
     /// One character, optionally in a symbol font. Undo: one step.
     InsertSymbol(InsertSymbol),
+    /// Alt+X: the hexadecimal code before the caret (up to six digits, `U+` taken too) becomes its character, or the
+    /// character before the caret (or the selected one) becomes its code. Undo: one step.
+    ToggleCharacterCode,
     /// Deletes backward or forward by a character or a word, or the selection. Undo: typing.
     Delete(DeleteOptions),
 
@@ -88,10 +98,28 @@ commands! {
     Paste(PasteOptions),
     /// Pastes `value` as plain text. Undo: one step.
     PasteText(#[serde(with = "value")] String),
-    /// Undoes the last step. State value: the undo label.
-    Undo,
-    /// Redoes the last undone step. State value: the redo label.
-    Redo,
+    /// Pastes the paste just made again as `value` takes it, in place of it (the Paste Options button's choices,
+    /// `popoverRequested` kind `pasteOptions`): refused when there is no paste to change or it can't be pasted that
+    /// way. Undo: one step (it takes the document back to before the first paste).
+    Repaste(#[serde(with = "value")] PasteAs),
+    /// Hides the Paste Options button of the paste just made (`popoverClosed`). Undo: view.
+    DismissPasteOptions,
+    /// What a paste does when it isn't told, and what goes with it (Word's cut, copy and paste options): the state's
+    /// `pasteOptions`. Undo: none (a session setting).
+    SetPasteOptions(PasteOptionsChange),
+    /// Inserts a document's content in place of the selection (Insert Text from File): its paragraphs, tables, styles
+    /// and sections. Undo: one step.
+    InsertFile(InsertFile),
+    /// F2: the selected text moves to the place the next click or arrow keys choose, when Enter is pressed; Esc or
+    /// any other command gives up (`selection.pendingMove` while it waits). Undo: view (the move is one step).
+    MoveText,
+    /// Shift+F2: as `moveText`, copying the text. Undo: view (the copy is one step).
+    CopyText,
+    /// Undoes the last `count` steps (default 1; more than there are undoes them all). State value: the undo label.
+    Undo(HistorySteps),
+    /// Redoes the last `count` undone steps (default 1; more than there are redoes them all). State value: the redo
+    /// label.
+    Redo(HistorySteps),
     /// Redoes, or repeats the last repeatable action (F4). Undo: one step.
     Repeat,
 
@@ -112,10 +140,30 @@ commands! {
     Escape,
     /// Selects the next or previous floating object. Undo: view.
     SelectNextObject(#[serde(with = "value")] Order),
+    /// Selects the whole next or previous field in the story, outermost fields only (F11, Shift+F11); nothing
+    /// changes when there is none. Undo: view.
+    SelectField(#[serde(with = "value")] Order),
+    /// Selects ranges of text and blocks of cells of one story, a discontiguous selection when there are several:
+    /// overlapping and touching ranges join, empty ones go. The last range (or `activeCells`' block) is the selection
+    /// the next command or gesture goes on from; when every range is empty, the caret goes to the last one's end.
+    /// Undo: view.
+    SetSelection(SetSelection),
+    /// Shrink Selection (Shift+F8), in extend mode: the selection one level smaller around where extending started,
+    /// the story to the paragraph, the sentence, the word, then the caret, still extending. Undo: view.
+    ShrinkSelection,
+    /// Select Text with Similar Formatting: every stretch of text in the story with the same character formatting as
+    /// the selection's first character (or the caret's), as a discontiguous selection. Undo: view.
+    SelectSimilarFormatting,
+    /// Selects every use of a paragraph or character style in the main document: its paragraphs (marks included,
+    /// consecutive ones as one range) or its stretches of runs. Undo: view.
+    SelectStyleInstances(#[serde(with = "value")] StyleId),
     /// Moves the caret to the start of page `value` (1…count). Undo: view.
     GoToPage(#[serde(with = "value")] u32),
     /// Selects bookmark `value`'s text, or puts the caret at it when it holds none (Go To). Undo: view.
     GoToBookmark(#[serde(with = "value")] String),
+    /// Go To: a page, section, line, bookmark, comment, note, field, table, graphic, equation, embedded object or
+    /// heading: the n-th (numbers past the last go to the last), n on or back, or the next or previous. Undo: view.
+    GoTo(GoTo),
 
     // Character formatting
     /// Bold on or off. Undo: one step.
@@ -138,16 +186,22 @@ commands! {
     SetAllCaps(#[serde(with = "value")] bool),
     /// Hidden text on or off. Undo: one step.
     SetHidden(#[serde(with = "value")] bool),
-    /// The font family (non-empty). Undo: one step.
-    SetFont(#[serde(with = "value")] String),
+    /// The font family (non-empty), or the theme's heading or body font (`{ theme }`), which follows the theme. Undo:
+    /// one step.
+    SetFont(#[serde(with = "value")] FontChoice),
     /// The font size (1…1638 pt, in 0.5 steps). Undo: one step.
     SetFontSize(#[serde(with = "value")] Points),
     /// The next size up in the standard list. Undo: one step.
     GrowFont,
     /// The next size down in the standard list. Undo: one step.
     ShrinkFont,
-    /// The font colour, or automatic. Undo: one step.
-    SetFontColor(#[serde(with = "value")] AutoOr<Color>),
+    /// Each selected run's size a point larger, up to 1638 pt (Ctrl+]). Undo: one step.
+    GrowFontOnePoint,
+    /// Each selected run's size a point smaller, down to 1 pt (Ctrl+[). Undo: one step.
+    ShrinkFontOnePoint,
+    /// The font colour: an RGB colour (`#RRGGBB`), a theme colour with at most one tint or shade, or automatic. Undo:
+    /// one step.
+    SetFontColor(#[serde(with = "value")] AutoOr<ColourValue>),
     /// The highlight colour, or none (`null`). Undo: one step.
     SetHighlight(#[serde(with = "value")] Option<HighlightColor>),
     /// Character spacing, expanded when positive (−1584…1584 pt). Undo: one step.
@@ -160,6 +214,9 @@ commands! {
     /// The scale, kerning and OpenType features (the Font dialog's Advanced tab); what isn't given is kept. Undo: one
     /// step.
     SetTypography(Typography),
+    /// Fits the selected text to `value` (more than 0, at most 1584 pt; Fit Text), or lets it take its own width
+    /// (`null`). A caret in fitted text acts on its whole region. Undo: one step.
+    SetFitText(#[serde(with = "value")] Option<Points>),
     /// The text's language and whether spelling is checked; what isn't given is kept. Undo: one step.
     SetLanguage(Language),
     /// Emboss, engrave, outline and shadow; what isn't given is kept. Undo: one step.
@@ -168,10 +225,13 @@ commands! {
     /// `null` turns it off (over a style's too; a fill is only removed, so a style's fill shows), what isn't given is
     /// kept. Undo: one step.
     SetTextEffects(TextEffectsChange),
-    /// The underline's colour, or the text's (`auto`); underlined text only. Undo: one step.
-    SetUnderlineColor(#[serde(with = "value")] AutoOr<Color>),
+    /// The underline's colour (as `setFontColor`'s), or the text's (`auto`); underlined text only. Undo: one step.
+    SetUnderlineColor(#[serde(with = "value")] AutoOr<ColourValue>),
     /// Removes direct character formatting. Undo: one step.
     ClearFormatting,
+    /// Clear All Formatting: the selected paragraphs take the default paragraph style and lose their direct
+    /// paragraph and character formatting; highlight and revision marks stay. Undo: one step.
+    ClearAllFormatting,
     /// Changes the case of the selected text. Undo: one step.
     ChangeCase(#[serde(with = "value")] CaseChange),
     /// Holds the selection's formatting for `pasteFormatting` (the format painter). Undo: view.
@@ -192,6 +252,17 @@ commands! {
     IncreaseIndent,
     /// Outdents the selected paragraphs to the previous stop. Undo: one step.
     DecreaseIndent,
+    /// A hanging indent to the next default tab stop: the left indent moves, the first line stays where it is
+    /// (Ctrl+T). Undo: one step.
+    IncreaseHangingIndent,
+    /// The hanging indent back to the previous default tab stop (Ctrl+Shift+T). Undo: one step.
+    DecreaseHangingIndent,
+    /// Reset Paragraph: removes the selected paragraphs' direct paragraph formatting, numbering included; their
+    /// style stays (Ctrl+Q). Undo: one step.
+    ClearParagraphFormatting,
+    /// Moves the selected paragraphs above the paragraph before them or below the one after (Alt+Shift+Up and Down);
+    /// tracked, a move. Undo: one step.
+    MoveParagraphs(#[serde(with = "value")] VerticalDirection),
     /// An existing paragraph style. Undo: one step.
     SetParagraphStyle(#[serde(with = "value")] StyleId),
     /// Changes a style to the selection's formatting: its paragraph's and its first run's direct formatting become the
@@ -200,10 +271,22 @@ commands! {
     /// Deletes a style the document made: its paragraphs take the default paragraph style, its runs lose it, and the
     /// styles based on it take its base. Built-in styles can't be deleted. Undo: one step.
     DeleteStyle(#[serde(with = "value")] StyleId),
-    /// Sets a style's list flags: visibility, priority, gallery, lock. Undo: one step.
+    /// Sets a style's list flags: visibility, priority, gallery, lock. A built-in style the document doesn't define keeps
+    /// them as its latent settings (`builtInStyles` reads them). Undo: one step.
     SetStyleMeta(StyleMetaChange),
     /// Sets the document's default formatting (Manage Styles' Set Defaults). Undo: one step.
     SetDocumentDefaults(DocumentDefaults),
+    /// Sets the document's default formatting with any character and paragraph formatting commands but frames, run on
+    /// the defaults as on a style; every style's text lays out again. Undo: one step for all of them.
+    SetDefaultFormatting(#[serde(with = "value")] Vec<Command>),
+    /// Makes a style (New Style): its type, name, base, following style, link, list and formatting, from the
+    /// selection's formatting or not, applied to the selection or not. The command's result is its id
+    /// (`{ styleId }`). Undo: one step, applying it included.
+    CreateStyle(NewStyle),
+    /// Changes a style (Modify Style); a built-in style the document lacks joins it. Renaming a built-in style adds an
+    /// alias; linking sets both sides and unlinks their old partners; a linked style's character formatting goes to
+    /// its other half too. Undo: one step.
+    ModifyStyle(StyleModification),
     /// Bullets, numbering, or no list (`null`). Undo: one step.
     SetList(#[serde(with = "value")] Option<ListKind>),
     /// One list level deeper or shallower, in a list. Undo: one step.
@@ -230,12 +313,44 @@ commands! {
     /// The selected paragraphs' outline level and whether they open collapsed; what isn't given is kept. Undo: one
     /// step.
     SetOutline(Outline),
+    /// Promote (Alt+Shift+Left): each selected paragraph a level up; body text takes the level of the heading before
+    /// it (Heading 1 when none), Heading 1 stays. A direct outline level changes in place, else the paragraph takes
+    /// built-in Heading N. Undo: one step.
+    PromoteOutline(OutlineOptions),
+    /// Demote (Alt+Shift+Right): each selected heading a level down; Heading 9 and body text stay. Undo: one step.
+    DemoteOutline(OutlineOptions),
+    /// Promote to Heading 1: the selected paragraphs take Heading 1, their direct outline level removed. Undo: one
+    /// step.
+    PromoteToHeading1(OutlineOptions),
+    /// Demote to Body Text: the selected paragraphs take the default paragraph style, their direct outline level
+    /// removed. Undo: one step.
+    DemoteToBodyText,
+    /// A navigation pane's Promote on one heading; its subheadings move with it unless `subtopics` is false. Undo:
+    /// one step.
+    PromoteHeading(HeadingOutline),
+    /// A navigation pane's Demote on one heading; its subheadings move with it unless `subtopics` is false. Undo: one
+    /// step.
+    DemoteHeading(HeadingOutline),
+    /// Moves a heading with its content before another heading, or after that heading's content, optionally at a
+    /// new level (its subheadings follow by as many levels); tracked as a move while tracking. The caret goes to the
+    /// moved heading's start. Undo: one step.
+    MoveHeading(MoveHeading),
+    /// Deletes a heading and its content. Undo: one step.
+    DeleteHeading(#[serde(with = "value")] HeadingId),
+    /// An empty heading at a heading's level just before it, the caret in it. Undo: one step.
+    InsertHeadingBefore(#[serde(with = "value")] HeadingId),
+    /// An empty heading at a heading's level after its content, the caret in it. Undo: one step.
+    InsertHeadingAfter(#[serde(with = "value")] HeadingId),
+    /// An empty heading a level below a heading after its content, the caret in it. Undo: one step.
+    InsertSubheading(#[serde(with = "value")] HeadingId),
+    /// Selects a heading and its content. Undo: view.
+    SelectHeadingContent(#[serde(with = "value")] HeadingId),
     /// The selected paragraphs' text direction. Undo: one step.
     SetParagraphTextDirection(#[serde(with = "value")] TextFlow),
     /// A box, a bottom border or none (a ½ pt single line). Undo: one step.
     SetParagraphBorders(#[serde(with = "value")] BorderPreset),
-    /// Paragraph shading, or none (`null`). Undo: one step.
-    SetParagraphShading(#[serde(with = "value")] Option<Color>),
+    /// Paragraph shading (a clear fill, as `setFontColor`'s colours), or none (`null`). Undo: one step.
+    SetParagraphShading(#[serde(with = "value")] Option<ColourValue>),
     /// The selected paragraphs' border lines: each edge set, removed (`null`) or kept (absent). Undo: one step.
     SetParagraphBorderLines(ParagraphBorderLines),
     /// Shading of the selected paragraphs or text: its fill, pattern and pattern color. Undo: one step.
@@ -278,10 +393,13 @@ commands! {
     SetHyphenateCaps(#[serde(with = "value")] bool),
 
     // Page layout
-    /// The selection's sections' margins (0…1584 pt; left + right + gutter < page width). Undo: one step.
+    /// The selection's sections' margins (0…1584 pt; left + right + gutter < page width). Undo: one step. This and
+    /// the other page setup commands that take `applyTo` set the selection's sections (`section`, the default), every
+    /// section, or the sections from the selection on (`thisPointForward`: a new-page section break goes at the
+    /// selection's start, selected text kept; unavailable for a cell, block or object selection), as one step.
     SetMargins(Margins),
     /// Portrait or landscape. Undo: one step.
-    SetOrientation(#[serde(with = "value")] Orientation),
+    SetOrientation(SectionValue<Orientation>),
     /// The paper size, in portrait (36…1584 pt). Undo: one step.
     SetPaperSize(PaperSize),
     /// Text columns (1…45), their spacing and separator. Undo: one step.
@@ -295,13 +413,13 @@ commands! {
     /// The section's page number format, first number and chapter numbers; what isn't given is kept. Undo: one step.
     SetPageNumbering(PageNumbering),
     /// Where text sits between the section's top and bottom margins. Undo: one step.
-    SetPageVerticalAlignment(#[serde(with = "value")] PageVerticalAlignment),
+    SetPageVerticalAlignment(SectionValue<PageVerticalAlignment>),
     /// Numbers the section's lines, or stops (`null`). Undo: one step.
-    SetLineNumbering(#[serde(with = "value")] Option<LineNumbers>),
+    SetLineNumbering(SectionValue<Option<LineNumbers>>),
     /// Where the section starts: the break before it. Undo: one step.
-    SetSectionBreakType(#[serde(with = "value")] SectionBreakKind),
+    SetSectionBreakType(SectionValue<SectionBreakKind>),
     /// The section's text direction. Undo: one step.
-    SetSectionTextDirection(#[serde(with = "value")] TextFlow),
+    SetSectionTextDirection(SectionValue<TextFlow>),
     /// How the document's pages pair (mirror margins, book fold) and where the gutter is; what isn't given is kept.
     /// Undo: one step.
     SetMultiplePages(MultiplePages),
@@ -315,7 +433,7 @@ commands! {
     EditFooter,
     /// Back to the body. Undo: view.
     CloseHeaderFooter,
-    /// A page number field at the caret, or in the header or footer. Undo: one step.
+    /// A page number field at the caret, in the header or footer, or in a page margin. Undo: one step.
     InsertPageNumber(PageNumber),
     /// The caret section's header or footer takes the section before's (Link to Previous), or gets its own copy of it.
     /// Undo: one step.
@@ -357,6 +475,9 @@ commands! {
     SetNoteProperties(NoteProperties),
     /// Turns every footnote into an endnote, every endnote into a footnote, or both. Undo: one step.
     ConvertNotes(#[serde(with = "value")] NoteConversion),
+    /// Sets the separator, continuation separator or continuation notice of footnotes or endnotes to text, or back to
+    /// the built-in one (`text` absent: a line; no notice). Undo: one step.
+    SetNoteSeparator(NoteSeparatorChange),
     /// A hyperlink to `address`; `text` replaces the selection (default: the selection, or the address). Undo: one step.
     InsertHyperlink(Hyperlink),
     /// Changes the link at the selection. Undo: one step.
@@ -375,12 +496,27 @@ commands! {
     AddEditableRange(EditableRange),
     /// Removes the editable ranges at the selection. Undo: one step.
     RemoveEditableRanges,
+    /// Lets an editor (a group or a person) edit the selection, or stops them editing the editable ranges reaching
+    /// it, as ticking or clearing them in Restrict Editing's exceptions does. Undo: one step.
+    SetEditableRangeEditor(EditableRangeEditor),
+    /// Selects the next or previous editable range the author may edit, round to the first or last (Find Next Region
+    /// I Can Edit). Undo: view.
+    SelectNextEditableRange(#[serde(with = "value")] Order),
+    /// Selects every editable range the author may edit in the selection's story (Show All Regions I Can Edit).
+    /// Undo: view.
+    SelectEditableRanges,
+    /// The groups the author is in (`editors`, `owners`, ...; everyone always): editable ranges for them let the
+    /// author edit. Kept for the documents opened after. Undo: none (a session setting).
+    SetEditingGroups(#[serde(with = "value")] Vec<String>),
     /// A legacy form field (FORMTEXT, FORMCHECKBOX, FORMDROPDOWN) at the selection; result `{ id }`. Undo: one step.
     InsertFormField(#[serde(with = "value")] FormFieldType),
     /// Sets a legacy form field's options (Form Field Options); default: the one at the selection. Undo: one step.
     SetFormField(FormFieldChange),
     /// Fills in a legacy form field: a text field's text, a check box's state, a drop-down's entry. Undo: one step.
     FillFormField(FormFieldFill),
+    /// Selects the next or previous legacy form field, round to the first or last (Tab and Shift+Tab where forms are
+    /// filled in). Undo: view.
+    SelectNextFormField(#[serde(with = "value")] Order),
     /// Shades legacy form fields (Form Field Shading; `w:doNotShadeFormData` when off). Undo: one step.
     SetFormFieldShading(#[serde(with = "value")] bool),
     /// Sets the document's properties (File > Info, Advanced Properties); what isn't given is kept, an empty text removes
@@ -429,8 +565,8 @@ commands! {
     AutoFitColumns(#[serde(with = "value")] AutoFit),
     /// The selected cells' vertical alignment. Undo: one step.
     SetCellAlignment(#[serde(with = "value")] CellAlignment),
-    /// Cell shading, or none (`null`). Undo: one step.
-    SetCellShading(#[serde(with = "value")] Option<Color>),
+    /// Cell shading (a clear fill, as `setFontColor`'s colours), or none (`null`). Undo: one step.
+    SetCellShading(#[serde(with = "value")] Option<ColourValue>),
     /// Borders on the selected cells' edges. Undo: one step.
     SetCellBorders(CellBorders),
     /// The selected cells' margins (0…1584 pt). Undo: one step.
@@ -441,6 +577,9 @@ commands! {
     /// Hides the selected rows' end marks (a row hides when its text is hidden too), and sets the table properties
     /// they override (row exceptions). Undo: one step.
     SetRowProperties(RowProperties),
+    /// The rows and columns in each of the table's bands (1…32767), each set, left to the table's style (`null`) or
+    /// kept (absent); unavailable outside a table. Undo: one step.
+    SetTableBandSizes(TableBandSizes),
     /// Space between the table's cells (0…1584 pt), or none (`null`). Undo: one step.
     SetTableCellSpacing(#[serde(with = "value")] Option<Points>),
     /// The table's alternative text: its title and description (Table Properties' Alt Text tab). Undo: one step.
@@ -472,6 +611,25 @@ commands! {
     /// Where the table is placed, and what it is measured from: a table without a position becomes positioned (text
     /// wraps around it); none (`null`) puts it back in the text. Undo: one step.
     SetTablePosition(#[serde(with = "value")] Option<TablePosition>),
+    /// The table's default cell margins (Table Options), 0…1584 pt each; what isn't given is kept. Cells with margins
+    /// of their own keep them. Undo: one step.
+    SetTableCellMargins(TableCellMargins),
+    /// Inserts blank cells the size of the selected ones beside them, shifting the selected cells right or down (Word's
+    /// Insert Cells; a whole row or column is `insertRows` or `insertColumns`). Tracked when tracking changes. Undo: one
+    /// step.
+    InsertCells(#[serde(with = "value")] InsertCellShift),
+    /// The pointer's table tool: none, the Draw Table pen or the eraser. While a tool is on, a press and drag on a
+    /// page draws (`drawTableStroke`) or erases (`eraseTableBorder`) instead of selecting; Escape, a change of
+    /// document and an edit by any other command turn it off. Undo: view.
+    SetTableTool(#[serde(with = "value")] TableTool),
+    /// The line the Draw Table pen draws (0.25…6 pt; default a ½ pt single automatic line). Not saved. Undo: view.
+    SetTablePen(#[serde(with = "value")] Border),
+    /// A Draw Table pen stroke on a page: across or down a table it splits the cells it crosses (or redraws the
+    /// border it follows), corner to corner in a cell it draws that cell's diagonal, and off any table its rectangle
+    /// becomes a new one-cell table placed there. Untracked. Undo: one step.
+    DrawTableStroke(TableStroke),
+    /// The table eraser on a page: merges the two cells either side of the border at `at`. Undo: one step.
+    EraseTableBorder(TableBorderPoint),
 
     // Objects
     /// The selected object's size (1…1584 pt). Undo: one step.
@@ -525,8 +683,49 @@ commands! {
     GroupObjects,
     /// Ungroups the selected group. Undo: one step.
     UngroupObjects,
+    /// Groups again the objects the last `ungroupObjects` ungrouped, wherever they moved. Undo: one step.
+    RegroupObjects,
+    /// Shows the selected floating object's wrap polygon for editing (`view.editingWrapPoints`); dragging a vertex
+    /// moves it, dragging an edge adds one, Ctrl+click removes one, each one step that makes the wrap tight. Esc ends
+    /// it. Undo: view.
+    EditWrapPoints,
     /// Selects the next or previous child of the selected group. Undo: view.
     SelectGroupChild(#[serde(with = "value")] Order),
+    /// The selected object's name (1…255 characters after trimming), as the Selection Pane lists it. Undo: one step.
+    SetObjectName(#[serde(with = "value")] String),
+    /// The selected object's alternative text title (at most 255 characters; empty clears it). Undo: one step.
+    SetObjectTitle(#[serde(with = "value")] String),
+    /// Hides or shows a floating object (the Selection Pane's eye): hidden, it isn't drawn and text doesn't wrap
+    /// around it. Hiding the selected object puts the caret at its anchor. Undo: one step.
+    SetObjectHidden(ObjectHidden),
+    /// Selects a floating object or a group's child, as a click in the Selection Pane does; `extend` adds it to (or
+    /// takes it from) the selected objects. Undo: view.
+    SelectObject(SelectObject),
+    /// Moves a floating object in its page's stack: just in front of `inFrontOf`, or behind every other object when
+    /// absent. It keeps its layer (in front of or behind the text). Undo: one step.
+    RestackObject(RestackObject),
+    /// Whether resizing the selected object keeps its aspect ratio (Lock aspect ratio), saved with it. Undo: one step.
+    SetLockAspectRatio(#[serde(with = "value")] bool),
+    /// The selected pictures' recolouring (Picture Color > Recolor). Undo: one step.
+    SetPictureRecolor(#[serde(with = "value")] Recolor),
+    /// Clears the selected picture's adjustments, colour, transparency, effects, outline, shape, rotation and flips,
+    /// keeping its crop (Reset Picture); with `size`, also its crop and size: the image at its own size (Reset Picture
+    /// & Size). Undo: one step.
+    ResetPicture(ResetPicture),
+    /// The selected floating object's wrap polygon (3…1024 points, fractions of its box from −16 to 17), marked
+    /// edited; a wrap that is neither tight nor through becomes tight. Undo: one step.
+    SetWrapPoints(#[serde(with = "value")] Vec<BoxPoint>),
+    /// The selected floating object's wrap polygon made again from its outline, no longer edited. Undo: one step.
+    ResetWrapPoints,
+    /// Links the selected text box to an empty text box in no chain, in the same story (Create Link): its text flows
+    /// on into it. The selected box must be the last in its chain. Undo: one step.
+    LinkTextBox(#[serde(with = "value")] ObjectId),
+    /// Starts linking the selected text box with the pointer (Create Link): the next click on an empty text box
+    /// links it, a click elsewhere or Escape cancels (`view.linkingTextBox`). Undo: view.
+    BeginTextBoxLink,
+    /// Breaks the link from the selected text box to the next (Break Link): the boxes after it are a chain of their
+    /// own, empty. Undo: one step.
+    UnlinkTextBox,
 
     // Fields
     /// Changes a field's code or result. Undo: one step.
@@ -535,9 +734,11 @@ commands! {
     SetFieldResults(FieldResults),
     /// Updates fields (default: the selection's), asking the application for the ones it computes. Undo: one step.
     UpdateFields(ElementIds),
-    /// Locks or unlocks fields. Undo: one step.
+    /// Locks or unlocks fields (default: the selection's, with a table of contents or other field across paragraphs
+    /// the selection touches, or the one at the caret when no other field is there). Undo: one step.
     SetFieldsLocked(FieldsLocked),
-    /// Replaces fields with their results. Undo: one step.
+    /// Replaces fields with their results (default as `SetFieldsLocked`; a field across paragraphs takes the fields in
+    /// it too, and a locked one stays with every field in it). Undo: one step.
     UnlinkFields(ElementIds),
     /// Shows field codes or results. Undo: view.
     ShowFieldCodes(ShowFieldCodes),
@@ -565,6 +766,39 @@ commands! {
     /// settings, styles, headers and footers stay. Closes a sub-template being edited first. Undo: one step.
     ReplaceBody(ReplaceBody),
 
+    // References
+    /// A table of contents in place of the selection (in place of the table the selection is in, Word's "replace
+    /// the table of contents"): `{}` is Word's (`headingLevels` 1–3, outline levels, hyperlinks, hidden in a web
+    /// view). Its entries' styles (TOC 1–9) are added when missing; its page numbers are the finished layout's. Body
+    /// only. Undo: one step.
+    InsertTableOfContents(InsertTableOfContents),
+    /// A table of figures of the captions labelled `label`, in place of the selection (or of the table it is in).
+    /// Undo: one step.
+    InsertTableOfFigures(InsertTableOfFigures),
+    /// Word's Manual Table: a table of contents whose entries are typed, in a building block control, at the start of
+    /// a body paragraph. Undo: one step.
+    InsertManualTableOfContents,
+    /// Updates the table of contents or figures the selection is in (else the first; `index`: that one of
+    /// `tablesOfContents`): its page numbers, or every entry again. Undo: one step.
+    UpdateTableOfContents(UpdateTableOfContents),
+    /// Updates every table of contents and of figures but the locked ones (as before printing); result
+    /// `{ changed }`, how many. Undo: one step.
+    UpdateAllTablesOfContents(#[serde(with = "value")] TocUpdateMode),
+    /// Removes the table of contents the selection is in (else the first; `index`: that one of
+    /// `tablesOfContents`), with its building block control and title. Undo: one step.
+    RemoveTableOfContents(TableOfContentsIndex),
+    /// Marks a table of contents entry after the selection (Mark Entry): a hidden table entry field; result `{ id }`.
+    /// Undo: one step.
+    MarkTableOfContentsEntry(MarkTableOfContentsEntry),
+    /// A caption for the selected table, picture or object (or the caret's paragraph): its label, number and text,
+    /// the label's other captions renumbered. Undo: one step.
+    InsertCaption(InsertCaption),
+    /// Captions every table inserted from now on (`null`: off): a session setting, never saved. Undo: none.
+    SetAutoCaption(#[serde(with = "value")] Option<AutoCaption>),
+    /// A cross-reference to an item `crossReferenceTargets` lists, at the selection; result `{ id }` of its (first)
+    /// field. Undo: one step.
+    InsertCrossReference(InsertCrossReference),
+
     // Content controls and regions
     /// A content control at the selection; result `{ id }`. Undo: one step.
     InsertControl(InsertControl),
@@ -572,12 +806,16 @@ commands! {
     SetControl(SetControl),
     /// Removes a content control, keeping or deleting its content. Undo: one step.
     RemoveControl(RemoveControl),
-    /// Fills a control with exactly one of text, an image or a document. Undo: one step.
+    /// Fills a control with exactly one of text, an image, a document, a building block or a date. Undo: one step.
     FillControl(FillControl),
     /// Checks or clears a checkbox. Undo: one step.
     SetCheckbox(SetCheckbox),
     /// Wraps the selection in a repeating section; result `{ id }`. Undo: one step.
     WrapInRepeatingSection(RepeatingSection),
+    /// Adds an item to a repeating section: a copy of one of its items (the last by default), with its content,
+    /// after it or before it; nested fields, controls, bookmarks and notes get their own ids. The caret goes to the
+    /// copy's start; result `{ id }` of the new item. Undo: one step.
+    AddRepeatingItem(RepeatingItemAdd),
     /// Removes a field, or a control with its content. Undo: one step.
     RemoveElement(#[serde(with = "value")] ElementId),
     /// Replaces text in element codes, tags or titles, case-sensitive; result `{ changed }`. Undo: one step.
@@ -605,6 +843,20 @@ commands! {
     SetTrackChanges(#[serde(with = "value")] bool),
     /// How revisions show. Undo: view.
     SetMarkupView(#[serde(with = "value")] MarkupView),
+    /// Which kinds of markup show (Show Markup); what isn't given is kept. Revisions and comments of a kind left out
+    /// show as if accepted. Undo: view.
+    SetShowMarkup(ShowMarkupChange),
+    /// The reviewers whose revisions and comments don't show (Show Markup, Specific People), by name; empty: all
+    /// reviewers show. Undo: view.
+    SetHiddenReviewers(ReviewerFilter),
+    /// Where revisions show in All Markup: balloons, inline, or only comments and formatting in balloons. Undo: view.
+    SetBalloonMode(#[serde(with = "value")] BalloonMode),
+    /// How revisions draw (Track Changes Options): each kind's mark and colour, change bars and cell highlights;
+    /// what isn't given is kept. Undo: view.
+    SetMarkupStyle(MarkupStyleChange),
+    /// Whether tracking records moves as moves and formatting changes; what isn't given is kept. A document
+    /// setting, saved. Undo: none.
+    SetTrackOptions(TrackOptions),
     /// Accepts a revision (a move as a pair). Undo: one step.
     AcceptRevision(#[serde(with = "value")] RevisionId),
     /// Rejects a revision (a move as a pair). Undo: one step.
@@ -613,10 +865,13 @@ commands! {
     AcceptRevisionsInSelection,
     /// Rejects the revisions in the selection. Undo: one step.
     RejectRevisionsInSelection,
-    /// Accepts every revision, or one author's. Undo: one step.
+    /// Accepts every revision, one author's, or those Show Markup shows. Undo: one step.
     AcceptAllRevisions(AuthorFilter),
-    /// Rejects every revision, or one author's. Undo: one step.
+    /// Rejects every revision, one author's, or those Show Markup shows. Undo: one step.
     RejectAllRevisions(AuthorFilter),
+    /// Accepts every revision and turns tracking off (Accept All Changes and Stop Tracking). Undo: one step (the
+    /// acceptance; tracking stays off).
+    AcceptAllAndStopTracking,
     /// Selects the next or previous revision. Undo: view.
     SelectRevision(#[serde(with = "value")] Order),
     /// A comment on the selection, or the word at the caret; result `{ id }`. Undo: one step.
@@ -627,6 +882,9 @@ commands! {
     EditComment(CommentEdit),
     /// Deletes a reply, or the whole thread when it's the first comment. Undo: one step.
     DeleteComment(#[serde(with = "value")] CommentId),
+    /// Deletes every comment (resolved ones too), or those Show Markup shows: whole threads, by their first comment.
+    /// Undo: one step.
+    DeleteAllComments(CommentFilter),
     /// Marks a thread done or open. Undo: one step.
     ResolveComment(CommentResolve),
     /// The thread the application shows as active, or none. Undo: view.
@@ -643,6 +901,9 @@ commands! {
     SetViewOptions(ViewOptions),
     /// Editing or design mode. Undo: view.
     SetMode(#[serde(with = "value")] Mode),
+    /// Select Objects: while on, a drag off every object draws a rectangle that selects the objects wholly inside it
+    /// (`view.selectingObjects`, the rectangle in the frame's chrome). Escape ends it. Undo: view.
+    SetSelectObjects(#[serde(with = "value")] bool),
     /// What a click on the ruler adds; answers the tab type picker. Undo: view.
     SetRulerTabType(#[serde(with = "value")] TabSelector),
     /// Asks for the tab type picker (`popoverRequested`). Undo: view.
@@ -891,7 +1152,7 @@ pub enum NoteScope {
     /// Every section.
     #[default]
     WholeDocument,
-    /// The caret section.
+    /// The caret section, or the selected sections when the selection spans several.
     ThisSection,
 }
 
@@ -920,6 +1181,9 @@ pub struct PageNumbering {
     /// Chapter numbers before the page number, or none (`null`).
     #[serde(default, skip_serializing_if = "Option::is_none", with = "super::wire::nullable")]
     pub chapter: Option<Option<ChapterNumbers>>,
+    /// The sections it applies to; default: the selection's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub apply_to: Option<ApplyTo>,
 }
 
 /// Chapter numbers in page numbers: the number of the last heading of a level, then a separator.
@@ -1052,14 +1316,591 @@ pub struct DeleteOptions {
     pub unit: Option<DeleteUnit>,
 }
 
-/// How `paste` takes the clipboard.
+/// How a paste takes the clipboard: Word's Paste Options, Paste Special's formats and the table choices.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum PasteAs {
-    /// With its formatting.
+    /// With its formatting, as the paste options (`setPasteOptions`) say for where it came from.
     Formatted,
-    /// As plain text, taking the formatting at the selection.
+    /// Its own look: formatting, and where a style of the same name differs here, that style's formatting (Keep
+    /// Source Formatting).
+    KeepSource,
+    /// The look of the text it lands in, keeping bold, italic and underline applied to part of it (Merge
+    /// Formatting).
+    Merge,
+    /// This document's styles where it has one of the same name; formatting applied directly kept (Use Destination
+    /// Styles).
+    DestinationStyles,
+    /// Its text only, formatted as where it lands; list numbers and bullets as text when `keepBullets` (Keep Text
+    /// Only).
+    TextOnly,
+    /// The clipboard's HTML, read as HTML even when it holds the engine's own copy.
+    Html,
+    /// The clipboard's plain text as it is, taking the formatting at the selection.
     Text,
+    /// The clipboard's picture, in line.
+    Picture,
+    /// Copied cells as a table nested in the cell at the caret.
+    NestTable,
+    /// Copied cells as rows above the caret's row, made like the rows of this table.
+    MergeTable,
+    /// Copied cells as rows above the caret's row, as they were copied.
+    InsertRows,
+    /// Copied cells over the cells from the caret's (or the selected block), adding rows the table lacks.
+    OverwriteCells,
+}
+
+/// `setPasteOptions`: the cut, copy and paste options that change. `within`, `between` and `other` take
+/// `keepSource`, `merge` or `textOnly`; `conflict` also `destinationStyles`.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PasteOptionsChange {
+    /// Pasting within the same document.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub within: Option<PasteAs>,
+    /// Pasting between documents.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub between: Option<PasteAs>,
+    /// Pasting between documents when style definitions conflict.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub conflict: Option<PasteAs>,
+    /// Pasting from other programs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub other: Option<PasteAs>,
+    /// Keep bullets and numbers when pasting with Keep Text Only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keep_bullets: Option<bool>,
+    /// Show the Paste Options button when content is pasted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub show_button: Option<bool>,
+    /// Use smart cut and paste: the `smart` adjustments are made only while it is on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub smart_cut_paste: Option<bool>,
+    /// The smart cut and paste adjustments that change.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub smart: Option<SmartPasteChange>,
+}
+
+/// The smart cut and paste adjustments that change.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SmartPasteChange {
+    /// Adjust sentence and word spacing: a space added or taken away to keep words apart.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub word_spacing: Option<bool>,
+    /// Adjust paragraph spacing on paste.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub paragraph_spacing: Option<bool>,
+    /// Adjust table formatting and alignment: copied cells landing in a table go into it as the selection suggests,
+    /// rather than as a nested table.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tables: Option<bool>,
+    /// Smart style behavior.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub styles: Option<bool>,
+    /// Merge pasted lists with surrounding lists.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub merge_lists: Option<bool>,
+    /// Merge formatting when pasting from PowerPoint.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_power_point: Option<bool>,
+    /// Adjust formatting when pasting from Excel.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_excel: Option<bool>,
+}
+
+/// The cut, copy and paste options (the state's `pasteOptions`): what a paste does when it isn't told, and what goes
+/// with it. Word's defaults until `setPasteOptions` changes them; a session setting, never saved.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PasteSettings {
+    /// Pasting within the same document.
+    pub within: PasteAs,
+    /// Pasting between documents.
+    pub between: PasteAs,
+    /// Pasting between documents when style definitions conflict.
+    pub conflict: PasteAs,
+    /// Pasting from other programs.
+    pub other: PasteAs,
+    /// Keep bullets and numbers when pasting with Keep Text Only.
+    pub keep_bullets: bool,
+    /// Show the Paste Options button when content is pasted.
+    pub show_button: bool,
+    /// Use smart cut and paste: the `smart` adjustments are made only while it is on.
+    pub smart_cut_paste: bool,
+    /// The smart cut and paste adjustments.
+    pub smart: SmartPasteSettings,
+}
+
+impl Default for PasteSettings {
+    fn default() -> PasteSettings {
+        PasteSettings::of(&crate::editing::paste::PasteDefaults::default())
+    }
+}
+
+impl PasteSettings {
+    /// The engine's options as the state reads them.
+    pub(crate) fn of(d: &crate::editing::paste::PasteDefaults) -> PasteSettings {
+        PasteSettings {
+            within: d.within.to_api(),
+            between: d.between.to_api(),
+            conflict: d.conflict.to_api(),
+            other: d.other.to_api(),
+            keep_bullets: d.keep_bullets,
+            show_button: d.show_button,
+            smart_cut_paste: d.smart,
+            smart: SmartPasteSettings {
+                word_spacing: d.smart_spacing,
+                paragraph_spacing: d.smart_paragraphs,
+                tables: d.smart_tables,
+                styles: d.smart_styles,
+                merge_lists: d.merge_lists,
+                from_power_point: d.from_powerpoint,
+                from_excel: d.from_excel,
+            },
+        }
+    }
+}
+
+/// The smart cut and paste adjustments.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SmartPasteSettings {
+    /// Adjust sentence and word spacing: a space added or taken away to keep words apart.
+    pub word_spacing: bool,
+    /// Adjust paragraph spacing on paste.
+    pub paragraph_spacing: bool,
+    /// Adjust table formatting and alignment: copied cells landing in a table go into it as the selection suggests.
+    pub tables: bool,
+    /// Smart style behavior.
+    pub styles: bool,
+    /// Merge pasted lists with surrounding lists.
+    pub merge_lists: bool,
+    /// Merge formatting when pasting from PowerPoint.
+    pub from_power_point: bool,
+    /// Adjust formatting when pasting from Excel.
+    pub from_excel: bool,
+}
+
+/// A range of heading or entry levels, 1 to 9.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TocLevels {
+    /// The first level.
+    pub from: u8,
+    /// The last level, `from` or more.
+    pub to: u8,
+}
+
+/// A style whose paragraphs a table of contents collects, as entries of a level.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TocStyleLevel {
+    /// The style.
+    pub style: StyleId,
+    /// The entries' level, 1 to 9.
+    pub level: u8,
+}
+
+/// The table entry fields a table of contents collects.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TocEntryFields {
+    /// Those of this identifier (`C` when unset: Mark Entry's).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identifier: Option<String>,
+    /// Those of these levels (every level when unset).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub levels: Option<TocLevels>,
+}
+
+/// The captions a table of figures collects.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TocCaptions {
+    /// Their label.
+    pub label: String,
+    /// Entries keep the label and number ("Figure 1 Sales"), or have the caption's text alone.
+    pub include_label_and_number: bool,
+}
+
+/// Which entries show a page number.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TocPageNumbers {
+    /// Every entry.
+    All,
+    /// No entry.
+    None,
+    /// Every entry but those of these levels.
+    OmitLevels(TocLevels),
+}
+
+/// Page numbers led by a chapter number.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TocChapterNumbers {
+    /// The sequence whose number leads.
+    pub sequence: String,
+    /// What goes between it and the page number (`-` when unset).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub separator: Option<String>,
+}
+
+/// What a table of contents collects and how its entries read; each one left out is off. `{}` inserts Word's default.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TableOfContentsOptions {
+    /// Paragraphs in the built-in heading styles of these levels.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub heading_levels: Option<TocLevels>,
+    /// Paragraphs with an outline level, as their level (within `headingLevels` when set).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outline_levels: Option<bool>,
+    /// Paragraphs in these styles, at these levels. A style the document doesn't define reads back left out.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub style_levels: Vec<TocStyleLevel>,
+    /// Table entry fields (Mark Entry's).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entry_fields: Option<TocEntryFields>,
+    /// Captions of a label: a table of figures.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub captions: Option<TocCaptions>,
+    /// Only what this bookmark marks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bookmark: Option<String>,
+    /// Entries link to their source.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hyperlinks: Option<bool>,
+    /// Which entries show a page number (all when unset).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page_numbers: Option<TocPageNumbers>,
+    /// What goes between an entry and its page number in place of a tab.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub separator: Option<String>,
+    /// Page numbers led by a chapter number.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chapter_numbers: Option<TocChapterNumbers>,
+    /// Tab leaders and page numbers hidden in a web view.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hide_in_web_view: Option<bool>,
+    /// Tabs in entries kept (else spaces).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keep_tabs: Option<bool>,
+    /// Line breaks in entries kept (else spaces).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keep_line_breaks: Option<bool>,
+}
+
+/// How a new table's entries are laid out.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TocLayout {
+    /// Page numbers at a right tab stop at the right margin (on when unset).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub right_align_page_numbers: Option<bool>,
+    /// That tab stop's leader (dots when unset).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tab_leader: Option<TabLeader>,
+}
+
+/// What a new table goes in beside its field: Word's gallery tables have a title and a building block control
+/// (Automatic Table 1: `{ title: "Contents", buildingBlock: true }`).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TocFrame {
+    /// A title paragraph before it, in the TOC Heading style.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// A building block content control around the title and the table.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub building_block: Option<bool>,
+}
+
+/// `insertTableOfContents`'s options.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct InsertTableOfContents {
+    /// What it collects (Word's default when unset).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub options: Option<TableOfContentsOptions>,
+    /// How its entries are laid out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layout: Option<TocLayout>,
+    /// Its title and building block control.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frame: Option<TocFrame>,
+}
+
+/// `insertTableOfFigures`'s options.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct InsertTableOfFigures {
+    /// The captions' label.
+    pub label: String,
+    /// Entries keep the label and number (on when unset).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include_label_and_number: Option<bool>,
+    /// Its other options (hyperlinks and hidden in a web view when unset); their `captions` is this command's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub options: Option<TableOfContentsOptions>,
+    /// How its entries are laid out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layout: Option<TocLayout>,
+    /// Its title and building block control.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frame: Option<TocFrame>,
+}
+
+/// What updating a table of contents rewrites.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TocUpdateMode {
+    /// The page numbers only: edits of the entries stay.
+    PageNumbers,
+    /// Every entry, collected again.
+    EntireTable,
+}
+
+/// `updateTableOfContents`'s options.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UpdateTableOfContents {
+    /// What it rewrites.
+    pub mode: TocUpdateMode,
+    /// Which table, by its place in `tablesOfContents`; the one the selection is in (else the first) when unset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub index: Option<u32>,
+}
+
+/// Which table of contents: by its place in `tablesOfContents`; the one the selection is in (else the first) when
+/// unset.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TableOfContentsIndex {
+    /// Its place in `tablesOfContents`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub index: Option<u32>,
+}
+
+/// `markTableOfContentsEntry`'s options.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MarkTableOfContentsEntry {
+    /// The entry's text (not empty).
+    pub text: String,
+    /// Its level, 1 to 9.
+    pub level: u8,
+    /// The tables that collect it: those taking entry fields of this identifier (`C` when unset).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identifier: Option<String>,
+    /// It shows a page number (on when unset).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page_number: Option<bool>,
+}
+
+/// Where a caption goes beside its item.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CaptionPosition {
+    /// Above it.
+    Above,
+    /// Below it.
+    Below,
+}
+
+/// A chapter number before a caption's number: the number of the last heading of `level` before it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CaptionChapter {
+    /// The heading level, 1 to 9.
+    pub level: u8,
+    /// What goes between it and the caption's number.
+    pub separator: ChapterSeparator,
+}
+
+/// `insertCaption`'s options.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct InsertCaption {
+    /// The label (`Figure`), which is also the sequence it numbers in: a letter, then letters, digits, spaces and
+    /// underscores.
+    pub label: String,
+    /// What follows the number, as it is (the host puts its own separator, `": "`, first).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    /// Above or below the item (above a table, below anything else, when unset).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub position: Option<CaptionPosition>,
+    /// The number without the label before it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exclude_label: Option<bool>,
+    /// The number's format: decimal (when unset), letters or roman numerals.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub format: Option<NumberFormat>,
+    /// A chapter number before it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chapter: Option<CaptionChapter>,
+}
+
+/// The caption every inserted table gets (AutoCaption): `insertCaption`'s options but the text.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AutoCaption {
+    /// The label.
+    pub label: String,
+    /// Above or below the table (above when unset).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub position: Option<CaptionPosition>,
+    /// The number without the label before it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exclude_label: Option<bool>,
+    /// The number's format.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub format: Option<NumberFormat>,
+    /// A chapter number before it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chapter: Option<CaptionChapter>,
+}
+
+/// What a cross-reference can point to.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CrossReferenceKind {
+    /// Numbered list paragraphs (not bullets).
+    NumberedItem,
+    /// Headings: paragraphs with an outline level.
+    Heading,
+    /// Bookmarks, hidden ones left out.
+    Bookmark,
+    /// Footnotes.
+    Footnote,
+    /// Endnotes.
+    Endnote,
+    /// Captions of this label.
+    Caption(String),
+}
+
+/// What a cross-reference shows of its target.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CrossReferenceContent {
+    /// Its text: a heading's or numbered item's, a bookmark's, the whole caption.
+    Text,
+    /// The page it is on.
+    PageNumber,
+    /// Its paragraph number, relative to where the reference is.
+    Number,
+    /// Its paragraph number without the levels above.
+    NumberNoContext,
+    /// Its paragraph number with every level.
+    NumberFullContext,
+    /// "above" or "below".
+    AboveBelow,
+    /// A note's number.
+    NoteNumber,
+    /// A note's number formatted as its reference mark.
+    NoteNumberFormatted,
+    /// A caption's label and number.
+    LabelAndNumber,
+    /// A caption's text after its number.
+    CaptionText,
+}
+
+/// A cross-reference's target: the `index`-th item `crossReferenceTargets(kind)` lists now.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CrossReferenceTargetRef {
+    /// The kind listed.
+    pub kind: CrossReferenceKind,
+    /// The item's place in that list, from 0.
+    pub index: u32,
+}
+
+/// `insertCrossReference`'s options.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct InsertCrossReference {
+    /// What it points to.
+    pub target: CrossReferenceTargetRef,
+    /// What it shows.
+    pub content: CrossReferenceContent,
+    /// It links to its target (on when unset).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hyperlink: Option<bool>,
+    /// "above" or "below" follows it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub above_below: Option<bool>,
+}
+
+/// `insertFile`'s options.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct InsertFile {
+    /// The document's bytes (DOCX).
+    pub from: Bytes,
+}
+
+/// What Go To goes to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum GoToWhat {
+    /// A page's first line.
+    Page,
+    /// A section's first paragraph.
+    Section,
+    /// A line of the body.
+    Line,
+    /// A bookmark (selected), by name or in order.
+    Bookmark,
+    /// A comment thread (its text selected), by its reviewer when named.
+    Comment,
+    /// A footnote's reference (the caret before it).
+    Footnote,
+    /// An endnote's reference (the caret before it).
+    Endnote,
+    /// A field (selected), of a kind when named: its code's first word (`PAGE`), ignoring case.
+    Field,
+    /// A table's first cell.
+    Table,
+    /// An inline picture or a floating object (selected).
+    Graphic,
+    /// An equation.
+    Equation,
+    /// An embedded object (selected), of a kind when named: its program id (`Excel.Sheet`) or the start of one.
+    Object,
+    /// A paragraph with an outline level.
+    Heading,
+}
+
+/// Which one Go To goes to: `{ "absolute": n }` the n-th (from 1), `{ "relative": n }` n on (back, negative) from
+/// the current one, `"next"` or `"previous"`. Pages and sections count from the selection's page and section, the
+/// others by position from the selection's start.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum GoToTarget {
+    /// The n-th, from 1.
+    Absolute(u32),
+    /// n on (or back, negative) from the current one; not 0.
+    Relative(i32),
+    /// The next.
+    Next,
+    /// The previous.
+    Previous,
+}
+
+/// `goTo`'s options.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct GoTo {
+    /// What to go to.
+    pub what: GoToWhat,
+    /// Which one.
+    pub target: GoToTarget,
+    /// A bookmark's name (with `absolute`: that bookmark), a comment's reviewer, a field's kind, an object's program
+    /// id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
 }
 
 /// `paste`'s options.
@@ -1115,6 +1956,26 @@ pub enum MoveUnit {
     RowEdge,
     /// The first or last cell of the table column.
     ColumnEdge,
+    /// The top or bottom line of the window (Ctrl+Alt+Page Up, Page Down).
+    WindowEdge,
+}
+
+/// The most ranges and blocks of cells `setSelection` takes.
+pub const SET_SELECTION_PIECES_LIMIT: usize = 100_000;
+
+/// `setSelection`'s options.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SetSelection {
+    /// The ranges, in any order and either way round; the last is the active one (its start is the anchor, its end
+    /// the focus).
+    pub ranges: Vec<TextRange>,
+    /// Blocks of cells selected beside the ranges. Default: none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cells: Vec<CellBlock>,
+    /// The index in `cells` of the block that is the active selection, in place of the last range. Default: none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_cells: Option<u32>,
 }
 
 /// `moveSelection`'s options.
@@ -1178,7 +2039,7 @@ pub struct ParagraphBorderLines {
     /// The line between paragraphs with the same borders.
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "super::services::present")]
     pub between: Option<Option<Border>>,
-    /// A shadow on the bottom and right edges (Shadow setting).
+    /// A shadow on the bottom and right edges (Shadow setting), for the edges whose line gives none of its own.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shadow: Option<bool>,
 }
@@ -1234,7 +2095,7 @@ pub struct PageBordersChange {
     /// The right edge.
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "super::services::present")]
     pub right: Option<Option<Border>>,
-    /// A shadow on the bottom and right edges.
+    /// A shadow on the bottom and right edges, for the edges whose line gives none of its own.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shadow: Option<bool>,
     /// What the borders are measured from.
@@ -1252,6 +2113,9 @@ pub struct PageBordersChange {
     /// The borders go around the footer (every section's).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub surround_footer: Option<bool>,
+    /// The borders are behind the text and objects they meet (Word's Always display in front, off).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub behind_text: Option<bool>,
 }
 
 /// `setTextBorder`'s options: the box's line, or none to remove it.
@@ -1260,7 +2124,7 @@ pub struct PageBordersChange {
 pub struct TextBorderChange {
     /// The line, or none.
     pub border: Option<Border>,
-    /// A shadow.
+    /// A shadow, when the line gives none of its own.
     #[serde(default)]
     pub shadow: bool,
 }
@@ -1425,14 +2289,14 @@ impl ShadingPattern {
 pub struct ShadingChange {
     /// The paragraphs or the text.
     pub target: ShadingTarget,
-    /// The fill, or none (no shading at all, with a clear pattern).
-    pub fill: NoneOr<Color>,
+    /// The fill (as `setFontColor`'s colours), or none (no shading at all, with a clear pattern).
+    pub fill: NoneOr<ColourValue>,
     /// The pattern.
     #[serde(default)]
     pub pattern: ShadingPattern,
     /// The pattern's color.
     #[serde(default)]
-    pub color: AutoOr<Color>,
+    pub color: AutoOr<ColourValue>,
 }
 
 /// Where a drop cap goes.
@@ -1590,6 +2454,9 @@ pub struct FrameProperties {
     pub vertical_distance: Points,
     /// The anchor stays with its paragraph.
     pub lock_anchor: bool,
+    /// Other frames and floating objects may overlap it (`false`: kept apart); absent keeps it. `setFrame` only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allow_overlap: Option<bool>,
 }
 
 /// `setStyleMeta`'s options: what isn't given is kept.
@@ -1616,15 +2483,15 @@ pub struct StyleMetaChange {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DocumentDefaults {
-    /// The font.
+    /// The font: a family, or the theme's heading or body font.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub font: Option<String>,
+    pub font: Option<FontChoice>,
     /// The size.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub size: Option<Points>,
-    /// The font color.
+    /// The font colour, as `setFontColor`'s.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub color: Option<AutoOr<Color>>,
+    pub color: Option<AutoOr<ColourValue>>,
     /// The space before and after paragraphs.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spacing: Option<ParagraphSpacing>,
@@ -1672,8 +2539,8 @@ pub struct Indents {
     pub mirror: Option<bool>,
 }
 
-/// A list level's number style.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// A list level's number style: the named ones, and any other by the name the document gives it (`{ other }`).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum NumberFormat {
     /// 1, 2, 3.
@@ -1699,10 +2566,33 @@ pub enum NumberFormat {
     Bullet,
     /// No number.
     None,
+    /// - 1 -, - 2 -, - 3 -.
+    NumberInDash,
+    /// 1, …, 9, A, B: hexadecimal.
+    Hex,
+    /// *, †, ‡, §, then doubled.
+    Chicago,
+    /// а, б, в.
+    RussianLower,
+    /// А, Б, В.
+    RussianUpper,
+    /// क, ख, ग.
+    HindiVowels,
+    /// अ, आ, इ.
+    HindiConsonants,
+    /// १, २, ३.
+    HindiNumbers,
+    /// ก, ข, ค.
+    ThaiLetters,
+    /// ๑, ๒, ๓.
+    ThaiNumbers,
+    /// Another style by its WordprocessingML name (1 to 64 ASCII letters and digits), numbered in decimal.
+    Other(String),
 }
 
 impl NumberFormat {
-    const ALL: [NumberFormat; 11] = [
+    /// Every style but [`NumberFormat::Other`].
+    pub const NAMED: [NumberFormat; 21] = [
         NumberFormat::Decimal,
         NumberFormat::UpperRoman,
         NumberFormat::LowerRoman,
@@ -1714,10 +2604,20 @@ impl NumberFormat {
         NumberFormat::DecimalZero,
         NumberFormat::Bullet,
         NumberFormat::None,
+        NumberFormat::NumberInDash,
+        NumberFormat::Hex,
+        NumberFormat::Chicago,
+        NumberFormat::RussianLower,
+        NumberFormat::RussianUpper,
+        NumberFormat::HindiVowels,
+        NumberFormat::HindiConsonants,
+        NumberFormat::HindiNumbers,
+        NumberFormat::ThaiLetters,
+        NumberFormat::ThaiNumbers,
     ];
 
     /// The `w:numFmt` it is written as.
-    pub fn val(self) -> &'static str {
+    pub fn val(&self) -> &str {
         match self {
             NumberFormat::Decimal => "decimal",
             NumberFormat::UpperRoman => "upperRoman",
@@ -1730,12 +2630,34 @@ impl NumberFormat {
             NumberFormat::DecimalZero => "decimalZero",
             NumberFormat::Bullet => "bullet",
             NumberFormat::None => "none",
+            NumberFormat::NumberInDash => "numberInDash",
+            NumberFormat::Hex => "hex",
+            NumberFormat::Chicago => "chicago",
+            NumberFormat::RussianLower => "russianLower",
+            NumberFormat::RussianUpper => "russianUpper",
+            NumberFormat::HindiVowels => "hindiVowels",
+            NumberFormat::HindiConsonants => "hindiConsonants",
+            NumberFormat::HindiNumbers => "hindiNumbers",
+            NumberFormat::ThaiLetters => "thaiLetters",
+            NumberFormat::ThaiNumbers => "thaiNumbers",
+            NumberFormat::Other(v) => v,
         }
     }
 
-    /// The style a `w:numFmt` names; decimal for those not offered.
+    /// The style a `w:numFmt` names: decimal when it names none.
     pub fn of_val(v: &str) -> NumberFormat {
-        NumberFormat::ALL.into_iter().find(|f| f.val() == v).unwrap_or_default()
+        if v.is_empty() {
+            return NumberFormat::Decimal;
+        }
+        NumberFormat::NAMED.into_iter().find(|f| f.val() == v).unwrap_or_else(|| NumberFormat::Other(v.to_string()))
+    }
+
+    /// Whether it can be written: an [`NumberFormat::Other`] name is 1 to 64 ASCII letters and digits.
+    pub fn writable(&self) -> bool {
+        match self {
+            NumberFormat::Other(v) => (1..=64).contains(&v.len()) && v.bytes().all(|b| b.is_ascii_alphanumeric()),
+            _ => true,
+        }
     }
 }
 
@@ -1801,6 +2723,24 @@ pub struct ListLevel {
     /// A picture bullet's image (PNG, JPEG or GIF).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub picture: Option<super::value::Bytes>,
+    /// The number's own bold (absent: the paragraph's). Setting a level, an absent one is cleared, as the others below.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bold: Option<bool>,
+    /// The number's own italic.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub italic: Option<bool>,
+    /// The number's own underline.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub underline: Option<UnderlineStyle>,
+    /// The number's own size (1…1638 pt).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<Points>,
+    /// The number's own colour, or automatic.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<AutoOr<Color>>,
+    /// The number's own highlight, or none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub highlight: Option<NoneOr<HighlightColor>>,
 }
 
 /// What a list definition applies to.
@@ -1914,6 +2854,30 @@ pub struct Typography {
     /// The font's contextual alternates.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub contextual_alternates: Option<bool>,
+    /// Each kind of ligature on or off, over `ligatures`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ligature_flags: Option<LigatureFlags>,
+    /// The stylistic sets on (each 1…20; empty: none), over `stylisticSet`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stylistic_sets: Option<Vec<u8>>,
+}
+
+/// OpenType ligatures, each kind on or off.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct LigatureFlags {
+    /// Standard ligatures (`liga`).
+    #[serde(default)]
+    pub standard: bool,
+    /// Contextual ligatures (`clig`).
+    #[serde(default)]
+    pub contextual: bool,
+    /// Historical ligatures (`hlig`).
+    #[serde(default)]
+    pub historical: bool,
+    /// Discretionary ligatures (`dlig`).
+    #[serde(default)]
+    pub discretionary: bool,
 }
 
 /// The ligatures text may use (Word's choices).
@@ -2130,6 +3094,9 @@ pub struct Margins {
     /// The gutter, added on the binding side.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gutter: Option<Points>,
+    /// The sections it applies to; default: the selection's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub apply_to: Option<ApplyTo>,
 }
 
 /// `setPaperSize`'s options.
@@ -2140,6 +3107,9 @@ pub struct PaperSize {
     pub width: Points,
     /// The paper height.
     pub height: Points,
+    /// The sections it applies to; default: the selection's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub apply_to: Option<ApplyTo>,
 }
 
 /// `setColumns`'s options.
@@ -2157,6 +3127,29 @@ pub struct Columns {
     /// Columns of their own widths (`count` of them), each with the space after it; equal columns when not given.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub widths: Option<Vec<ColumnWidth>>,
+    /// Where it applies; default: the selection's sections.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub apply_to: Option<ColumnsApplyTo>,
+    /// With `thisPointForward`: the text from the selection on starts a new column (a column break rather than a
+    /// continuous section break).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_new_column: Option<bool>,
+}
+
+/// Where `setColumns` applies, as Word's Columns dialog offers it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ColumnsApplyTo {
+    /// The selection's sections.
+    #[default]
+    Section,
+    /// Every section.
+    WholeDocument,
+    /// From the selection's start on: a continuous section break goes there (a column break with `startNewColumn`)
+    /// and the sections after it take the columns.
+    ThisPointForward,
+    /// The selected text alone: continuous section breaks around it (none at its section's edges).
+    SelectedText,
 }
 
 /// A column's width and the space after it.
@@ -2179,6 +3172,9 @@ pub struct HeaderFooterDistance {
     /// The footer's distance from the bottom edge.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub footer: Option<Points>,
+    /// The sections it applies to; default: the selection's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub apply_to: Option<ApplyTo>,
 }
 
 /// `moveColumnBoundary`'s options: the boundary after text column `column` (from 0) moves to `to`.
@@ -2223,6 +3219,43 @@ pub enum PageNumberPlace {
     Header,
     /// In the section's footer.
     Footer,
+    /// In a page margin (Page Margins): in a frame anchored in the header, as wide as the margin.
+    #[serde(rename_all = "camelCase")]
+    Margin {
+        /// Which margin.
+        side: MarginSide,
+    },
+}
+
+/// A page margin, or a facing page's inside or outside one.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum MarginSide {
+    /// The left side of every page, as wide as the section's left margin (and gutter).
+    #[default]
+    Left,
+    /// The right side of every page.
+    Right,
+    /// The margin by the binding: the left on odd pages, the right on even ones.
+    Inside,
+    /// The margin away from the binding.
+    Outside,
+}
+
+/// How a page number in the header or footer is aligned.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PageNumberAlign {
+    /// On the left.
+    Left,
+    /// Centred.
+    Center,
+    /// On the right.
+    Right,
+    /// On the inside edge: the left on odd pages, the right on even ones (in a frame).
+    Inside,
+    /// On the outside edge (in a frame).
+    Outside,
 }
 
 /// `insertPageNumber`'s options.
@@ -2236,7 +3269,10 @@ pub struct PageNumber {
     pub place: Option<PageNumberPlace>,
     /// The alignment in the header or footer; `None` keeps the paragraph's.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub alignment: Option<HorizontalAlignment>,
+    pub alignment: Option<PageNumberAlign>,
+    /// The number shows on the section's first page (default true); false gives the section a different first page.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub show_on_first_page: Option<bool>,
 }
 
 /// `insertTable`'s options.
@@ -2293,6 +3329,18 @@ pub struct DocumentProtection {
     /// Starting: the password stopping will need (none when absent or empty). Stopping: the password.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub password: Option<String>,
+    /// Starting with a password: the password again; it must match.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub confirm_password: Option<String>,
+    /// AutoFormat as you type may make formatting the formatting restriction otherwise refuses. Not while enforced.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auto_format_override: Option<bool>,
+    /// The formatting restriction keeps the theme from changing. Not while enforced.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub block_theme_switching: Option<bool>,
+    /// The formatting restriction keeps the style set from changing. Not while enforced.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub block_style_set_switching: Option<bool>,
     /// Filling in forms: the sections (by index) anyone may edit; the others are protected. Not while enforced.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub unprotected_sections: Option<Vec<u32>>,
@@ -2302,9 +3350,96 @@ pub struct DocumentProtection {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct EditableRange {
-    /// Who may edit it (an author's name or email, `w:ed`). Default: everyone.
+    /// A person who may edit it (an author's name or email). Default: everyone.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub editor: Option<String>,
+    /// A group who may edit it (`everyone`, `administrators`, `contributors`, `editors`, `owners`, `current`), in place
+    /// of `editor`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<String>,
+}
+
+/// `setEditableRangeEditor`'s options.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct EditableRangeEditor {
+    /// The group or person.
+    pub editor: RangeEditorRef,
+    /// They may edit the selection (`true`), or no longer the editable ranges reaching it.
+    pub allowed: bool,
+}
+
+/// `setNoteSeparator`'s options.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct NoteSeparatorChange {
+    /// Footnotes' or endnotes'.
+    pub kind: NoteType,
+    /// Which separator.
+    pub part: NoteSeparatorPart,
+    /// Its text, paragraphs `\n` apart (`""`: an empty line, no rule); absent: the built-in one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+}
+
+/// `addRepeatingItem`'s options.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RepeatingItemAdd {
+    /// The repeating section.
+    pub id: ElementId,
+    /// The item copied; default: the last.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub item: Option<ElementId>,
+    /// The copy goes before the item (default: after it).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub before: Option<bool>,
+}
+
+/// The outline commands' options.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct OutlineOptions {
+    /// The headings under each heading changed move by as many levels (each kept to 1…9). Default: false.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subtopics: Option<bool>,
+}
+
+/// `promoteHeading`'s and `demoteHeading`'s options.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct HeadingOutline {
+    /// The heading.
+    pub heading: HeadingId,
+    /// Its subheadings move by as many levels. Default: true.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subtopics: Option<bool>,
+}
+
+/// Which side of a heading another goes.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum HeadingSide {
+    /// Just before the heading.
+    #[default]
+    Before,
+    /// After the heading's whole content.
+    After,
+}
+
+/// `moveHeading`'s options.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MoveHeading {
+    /// The heading moved, with its content.
+    pub heading: HeadingId,
+    /// The heading it goes beside.
+    pub target: HeadingId,
+    /// Before the target, or after its content.
+    pub side: HeadingSide,
+    /// Its new level (1…9); default: kept.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub level: Option<u32>,
 }
 
 /// A legacy form field's kind.
@@ -2366,6 +3501,12 @@ pub struct FormFieldChange {
     /// The help the status bar shows.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status_text: Option<String>,
+    /// `helpText` names an AutoText entry whose text is the help, rather than being the help itself.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub help_is_auto_text: Option<bool>,
+    /// `statusText` names an AutoText entry whose text is the help, rather than being the help itself.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status_is_auto_text: Option<bool>,
     /// A text form field's options.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<TextFormOptions>,
@@ -2580,14 +3721,24 @@ pub struct PictureCrop {
 }
 
 /// `insertHyperlink`'s options.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Hyperlink {
-    /// The link's address (a URL or `#bookmark`).
+    /// The link's address (a URL, a file, or `#bookmark` for a place in this document); a `#bookmark` after it is
+    /// the place in the target.
     pub address: String,
     /// The text to show; `None` uses the selection, or the address when collapsed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
+    /// The place in the target (a bookmark name); it wins over a `#bookmark` in `address`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bookmark: Option<String>,
+    /// The ScreenTip shown when the link is hovered.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub screen_tip: Option<String>,
+    /// The window or frame the link opens in (`_blank`: a new window).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frame: Option<String>,
 }
 
 /// `editHyperlink`'s options.
@@ -2600,6 +3751,12 @@ pub struct HyperlinkEdit {
     /// The new display text.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
+    /// The new ScreenTip; `""` removes it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub screen_tip: Option<String>,
+    /// The new window or frame it opens in; `""` removes it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frame: Option<String>,
 }
 
 /// `insertField`'s options.
@@ -2694,6 +3851,12 @@ pub struct TextToTable {
     /// filled with empty cells. Default: the most pieces a paragraph has (one, splitting at paragraphs).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub columns: Option<u32>,
+    /// How the new table's columns are sized. Default: fixed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub autofit: Option<crate::api::state::TableFit>,
+    /// With fixed columns, every column this wide (1…1584 pt). Default: the text's width shared equally.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub column_width: Option<Points>,
 }
 
 /// `convertTableToText`'s options.
@@ -2705,6 +3868,9 @@ pub struct TableToText {
     /// The one character between cells, with `other`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub character: Option<String>,
+    /// Tables nested in the cells become text too (at most 32 levels deep). Default: they stay tables.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub convert_nested: Option<bool>,
 }
 
 /// What separates a table's cells in text.
@@ -2903,8 +4069,16 @@ pub struct Border {
     pub style: BorderStyle,
     /// 0.25…6 pt.
     pub width: Points,
-    /// The line color, or automatic.
-    pub color: AutoOr<Color>,
+    /// The line colour: an RGB colour, a theme colour with at most one tint or shade, or automatic.
+    pub color: AutoOr<ColourValue>,
+    /// The distance from what it borders, 0…31 pt (a page border measured from the page, from the page's edge). Default:
+    /// 0 for text and cells, 1 for paragraphs, and for a page border 24 from the page's edge, 1 (top and bottom) or 4
+    /// (left and right) from the text; a page border's edge that is kept keeps its own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub space: Option<Points>,
+    /// A shadow. Default: none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shadow: Option<bool>,
 }
 
 /// `setCellBorders`'s options.
@@ -2964,12 +4138,27 @@ pub struct RowExceptions {
     /// The space between the rows' cells (0…1584 pt).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cell_spacing: Option<Points>,
-    /// The rows' shading.
+    /// The rows' indent from the table's left edge (−1584…1584 pt); not in a fixed-width table.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub shading: Option<Color>,
+    pub indent: Option<Points>,
+    /// The rows' shading: a fill, and a pattern in the pattern colour over it; a colour alone is a clear fill of it.
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "shading_or_colour")]
+    pub shading: Option<crate::api::state::Shading>,
     /// The table borders on the rows' edges (the diagonals don't apply).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub borders: Option<CellBorders>,
+}
+
+/// A shading, or a colour as a clear fill of it.
+fn shading_or_colour<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<crate::api::state::Shading>, D::Error> {
+    use serde::de::Error as _;
+    let v = serde_json::Value::deserialize(d)?;
+    let shading = v.as_object().is_some_and(|o| o.contains_key("fill") || o.contains_key("pattern"));
+    if shading {
+        return serde_json::from_value(v).map(Some).map_err(D::Error::custom);
+    }
+    let colour: ColourValue = serde_json::from_value(v).map_err(D::Error::custom)?;
+    Ok(Some(crate::api::state::Shading { fill: NoneOr::Value(colour), pattern: ShadingPattern::Clear, color: AutoOr::Auto }))
 }
 
 /// `setTableAltText`'s options.
@@ -3113,6 +4302,113 @@ pub struct TablePosition {
     /// How far the text around it keeps (0…1584 pt).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wrap_distance: Option<TextDistance>,
+    /// Other positioned tables may overlap it (`false`: Word's Allow overlap off).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allow_overlap: Option<bool>,
+}
+
+/// `setTableCellMargins`' options: each given margin set, the others kept.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TableCellMargins {
+    /// The top margin.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub top: Option<Points>,
+    /// The left margin.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub left: Option<Points>,
+    /// The bottom margin.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bottom: Option<Points>,
+    /// The right margin.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub right: Option<Points>,
+}
+
+/// Where `insertCells` shifts the selected cells.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum InsertCellShift {
+    /// Right: the rows grow by the inserted cells.
+    Right,
+    /// Down: the selected columns' cells move down, rows added at the table's end.
+    Down,
+}
+
+/// The pointer's table tool.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TableTool {
+    /// No tool: the pointer selects.
+    #[default]
+    None,
+    /// Draw Table: a drag draws a line, a diagonal or a new table.
+    Pen,
+    /// Eraser: a press, or a drag, over a border merges the cells either side.
+    Eraser,
+}
+
+/// `drawTableStroke`'s stroke: from the press to the release, in points from the page's top left corner.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TableStroke {
+    /// The page, from 0.
+    pub page: u32,
+    /// Where the stroke starts: across and down.
+    pub from: [Points; 2],
+    /// Where it ends.
+    pub to: [Points; 2],
+}
+
+/// `eraseTableBorder`'s point, in points from the page's top left corner.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TableBorderPoint {
+    /// The page, from 0.
+    pub page: u32,
+    /// The point: across and down.
+    pub at: [Points; 2],
+}
+
+/// `setObjectHidden`'s options.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ObjectHidden {
+    /// The floating object.
+    pub object: ObjectId,
+    /// Hidden, or shown.
+    pub hidden: bool,
+}
+
+/// `selectObject`'s options.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SelectObject {
+    /// The floating object or group child.
+    pub object: ObjectId,
+    /// Adds it to, or takes it from, the selected floating objects of the same story. Default: off.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extend: Option<bool>,
+}
+
+/// `restackObject`'s options.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RestackObject {
+    /// The floating object (not a group child).
+    pub object: ObjectId,
+    /// The floating object it goes just in front of; absent: behind every other.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub in_front_of: Option<ObjectId>,
+}
+
+/// `resetPicture`'s options.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ResetPicture {
+    /// Also clears the crop and sizes the picture at its image's own size. Default: off.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<bool>,
 }
 
 /// `setObjectWrapOptions`'s options; what isn't given is kept. Distances are 0…1584 pt.
@@ -3208,7 +4504,8 @@ pub struct FieldsLocked {
 pub struct ShowFieldCodes {
     /// Shows codes (`true`) or results.
     pub show: bool,
-    /// The fields; `None` means the selection's.
+    /// The fields; `None` means every field, tables of contents included (Alt+F9); an empty list the table of
+    /// contents (or other field across paragraphs) at the selection, which has no id (Shift+F9 there).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ids: Option<Vec<ElementId>>,
 }
@@ -3422,7 +4719,7 @@ pub struct RemoveControl {
     pub keep_content: Option<bool>,
 }
 
-/// `fillControl`'s options: exactly one of `text`, `image`, `docx` and `buildingBlock`.
+/// `fillControl`'s options: exactly one of `text`, `image`, `docx`, `buildingBlock` and `date`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FillControl {
@@ -3440,6 +4737,10 @@ pub struct FillControl {
     /// A building block gallery's entry (`buildingBlocks` in its state): that building block's content.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub building_block: Option<String>,
+    /// A date control's date (ISO 8601: `YYYY-MM-DD`, with a time and zone or without): its text that date in its
+    /// format, its stored date that date (so a format without the day keeps it).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub date: Option<String>,
 }
 
 /// `setCheckbox`'s options.
@@ -3628,6 +4929,104 @@ pub struct AuthorFilter {
     /// The author; `None` means every author.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub author: Option<String>,
+    /// Only the revisions Show Markup shows (the kinds and reviewers shown); not with `author`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shown: Option<bool>,
+}
+
+/// `deleteAllComments`'s options.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CommentFilter {
+    /// Only the threads Show Markup shows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shown_only: Option<bool>,
+}
+
+/// `setShowMarkup`'s options; what isn't given is kept.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ShowMarkupChange {
+    /// Insertions and deletions: of text, moves, rows and cells.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub insertions_deletions: Option<bool>,
+    /// Formatting changes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub formatting: Option<bool>,
+    /// Comments.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub comments: Option<bool>,
+}
+
+/// `setHiddenReviewers`'s options.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ReviewerFilter {
+    /// The reviewers hidden, by name (each a person of the document); empty: all reviewers show.
+    pub hidden: Vec<String>,
+}
+
+/// `setTrackOptions`'s options; what isn't given is kept.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TrackOptions {
+    /// Moves are tracked as moves (else as a deletion and an insertion).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub moves: Option<bool>,
+    /// Formatting changes are tracked.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub formatting: Option<bool>,
+}
+
+/// A change of how one kind of revision draws; what isn't given is kept.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MarkLookChange {
+    /// How the text is marked.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mark: Option<TextMark>,
+    /// The mark's colour.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<MarkColor>,
+}
+
+/// `setMarkupStyle`'s options; what isn't given is kept.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MarkupStyleChange {
+    /// Inserted text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub insertions: Option<MarkLookChange>,
+    /// Deleted text (`hidden`, `caret` and `pound` marks too).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deletions: Option<MarkLookChange>,
+    /// Text with formatting changes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub formatting: Option<MarkLookChange>,
+    /// Text moved away (`hidden`, `caret` and `pound` marks too).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub moved_from: Option<MarkLookChange>,
+    /// Text moved here.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub moved_to: Option<MarkLookChange>,
+    /// Where change bars go.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub change_bars: Option<super::review::BarSide>,
+    /// The change bars' colour, or `auto` (red in Simple Markup, grey in All Markup).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub change_bar_color: Option<AutoOr<Color>>,
+    /// Inserted cells' fill.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inserted_cells: Option<MarkColor>,
+    /// Deleted cells' fill.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deleted_cells: Option<MarkColor>,
+    /// Merged cells' fill.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub merged_cells: Option<MarkColor>,
+    /// Split cells' fill.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub split_cells: Option<MarkColor>,
 }
 
 /// `replyToComment`'s options.
@@ -3738,6 +5137,117 @@ pub struct ViewOptions {
     /// the hovered element wins, and `[]` clears them.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cursor_overrides: Option<Vec<super::services::CursorOverride>>,
+    /// Shows tab characters as arrows, whatever `formattingMarks` says.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tab_characters: Option<bool>,
+    /// Shows spaces as dots and non-breaking spaces as degree signs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spaces: Option<bool>,
+    /// Shows paragraph marks, line, page, column and section breaks, and end-of-cell and end-of-row marks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub paragraph_marks: Option<bool>,
+    /// Shows hidden text, laid out and dotted underneath (the document lays out again; printing leaves it out).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hidden_text: Option<bool>,
+    /// Shows optional hyphens, laid out as not signs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub optional_hyphens: Option<bool>,
+    /// Shows the selected floating object's anchor. Default: on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub object_anchors: Option<bool>,
+    /// Click and Type: a double-click in blank space puts the caret there, adding paragraphs, a tab stop or the
+    /// alignment it needs. Default: on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub click_and_type: Option<bool>,
+    /// Selected text can be dragged and dropped (with either button, and out of the view). Default: on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text_drag_and_drop: Option<bool>,
+    /// Hides the white space between pages: each page shows only its body, the pages meeting at a line. A
+    /// double-click between pages toggles it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hide_white_space: Option<bool>,
+    /// Under enforced protection, highlights the regions the author may edit and brackets their ends. Default: on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub show_editable_regions: Option<bool>,
+}
+
+/// `insertLineBreak`'s options.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct LineBreak {
+    /// A text wrapping break: the floating objects the text after it goes below. Default: a plain line break.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clear: Option<BreakClear>,
+}
+
+/// Which floating objects a text wrapping break moves the text below.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum BreakClear {
+    /// Those on the left.
+    Left,
+    /// Those on the right.
+    Right,
+    /// Those on either side (Layout > Breaks > Text Wrapping).
+    Both,
+}
+
+/// `undo`'s and `redo`'s options.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct HistorySteps {
+    /// How many steps (at least 1). Default: 1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub count: Option<u32>,
+}
+
+/// A font: a family by name, or the theme's heading or body font (which follows the theme).
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum FontChoice {
+    /// A family.
+    Name(String),
+    /// The theme's font: `{ theme }`.
+    Theme {
+        /// Which of the theme's fonts.
+        theme: super::value::ThemeFont,
+    },
+}
+
+impl From<&str> for FontChoice {
+    fn from(name: &str) -> FontChoice {
+        FontChoice::Name(name.to_string())
+    }
+}
+
+/// A page setup command's value and the sections it applies to: `{ value, applyTo? }`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SectionValue<T> {
+    /// The value.
+    pub value: T,
+    /// The sections it applies to; default: the selection's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub apply_to: Option<ApplyTo>,
+}
+
+impl<T> SectionValue<T> {
+    /// `value` for the selection's sections.
+    pub fn here(value: T) -> SectionValue<T> {
+        SectionValue { value, apply_to: None }
+    }
+}
+
+/// `setTableBandSizes`' options: each set, left to the table's style (`null`) or kept (absent).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TableBandSizes {
+    /// Rows in each band (1…32767).
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "super::wire::nullable")]
+    pub rows: Option<Option<u32>>,
+    /// Columns in each band (1…32767).
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "super::wire::nullable")]
+    pub columns: Option<Option<u32>>,
 }
 
 /// What a command returns besides its commit, for the commands that create something.
@@ -3760,6 +5270,12 @@ pub enum CommandResult {
         /// The data part's item id.
         item_id: String,
     },
+    /// A style made: `{ styleId }`.
+    #[serde(rename_all = "camelCase")]
+    Style {
+        /// The style's id.
+        style_id: StyleId,
+    },
     // Before `Changed`: untagged, the variant with more fields reads first.
     /// What `replaceFont` rewrote: `{ changed, skipped }`.
     FontReplaced {
@@ -3769,14 +5285,30 @@ pub enum CommandResult {
         /// The places inside locked content controls, left as they were.
         skipped: u32,
     },
-    /// Elements changed by `replaceInElements`: `{ changed }`.
+    /// How many changed: elements by `replaceInElements`, tables by `updateAllTablesOfContents`: `{ changed }`.
     Changed {
-        /// How many elements changed.
+        /// How many changed.
         changed: u32,
     },
 }
 
 impl Command {
+    /// A page setup command's `applyTo`, taken out of it: the command then applies to the selection's sections.
+    pub fn take_apply_to(&mut self) -> Option<ApplyTo> {
+        match self {
+            Command::SetMargins(Margins { apply_to, .. })
+            | Command::SetPaperSize(PaperSize { apply_to, .. })
+            | Command::SetHeaderFooterDistance(HeaderFooterDistance { apply_to, .. })
+            | Command::SetPageNumbering(PageNumbering { apply_to, .. })
+            | Command::SetOrientation(SectionValue { apply_to, .. })
+            | Command::SetPageVerticalAlignment(SectionValue { apply_to, .. })
+            | Command::SetSectionBreakType(SectionValue { apply_to, .. })
+            | Command::SetSectionTextDirection(SectionValue { apply_to, .. })
+            | Command::SetLineNumbering(SectionValue { apply_to, .. }) => apply_to.take(),
+            _ => None,
+        }
+    }
+
     /// Whether the command changes the document: it fails `read-only` in a read-only session (the catalog's
     /// `mutates`).
     pub fn mutates(&self) -> bool {
@@ -3790,7 +5322,7 @@ mod tests {
 
     #[test]
     fn ids_and_types_are_one_spelling() {
-        for c in [Command::SetBold(true), Command::Undo, Command::InsertTable(TableSize { rows: 3, columns: 2 })] {
+        for c in [Command::SetBold(true), Command::Undo(HistorySteps::default()), Command::InsertTable(TableSize { rows: 3, columns: 2 })] {
             let wire = serde_json::to_value(&c).expect("serializes");
             assert_eq!(wire["type"], serde_json::to_value(c.id()).expect("serializes"));
         }

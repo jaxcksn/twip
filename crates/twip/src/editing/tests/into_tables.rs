@@ -33,7 +33,7 @@ fn delete_at_the_end_moves_the_paragraphs_bookmark_into_the_first_cell() {
     assert!(texts(&e).iter().any(|t| t == "Hellocell"), "{:?}", texts(&e));
     let xml = saved_body(&e);
     assert!(xml.contains("w:name=\"mark\"") && xml.contains("bookmarkEnd"), "{xml}");
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert!(texts(&e).iter().any(|t| t == "Hello"), "{:?}", texts(&e));
     assert!(saved_body(&e).contains("w:name=\"mark\""));
 }

@@ -1,0 +1,33 @@
+{
+  "name": "move-text",
+  "fixture": "editor/FX-EMPTY.docx",
+  "steps": [
+    { "op": "open" },
+    { "op": "text", "text": "Alpha beta gamma" },
+    { "op": "call", "method": "find.next", "args": [{ "text": "beta " }], "result": { "found": true } },
+    { "op": "key", "key": "F2" },
+    { "op": "expectState", "match": { "selection": { "pendingMove": { "copy": false, "placed": false } } } },
+    { "op": "key", "key": "End" },
+    { "op": "expectState", "match": { "selection": { "pendingMove": { "placed": true }, "text": "beta " } } },
+    { "op": "key", "key": "Enter" },
+    { "op": "expectState", "match": { "selection": { "pendingMove": null } } },
+    { "op": "command", "command": { "type": "selectAll" } },
+    { "op": "expectState", "match": { "selection": { "text": "Alpha gamma beta " } } },
+    { "op": "command", "command": { "type": "undo" } },
+
+    { "op": "call", "method": "find.next", "args": [{ "text": "Alpha" }], "result": { "found": true } },
+    { "op": "drag", "button": "secondary", "from": { "text": "Alpha", "select": true }, "to": { "text": "gamma" } },
+    { "op": "expectEvents", "match": [{ "type": "contextMenu", "menu": { "target": { "kind": "drop" }, "items": [{ "label": "Move Here" }, { "label": "Copy Here" }] } }] },
+    { "op": "call", "method": "menus.invoke", "args": [{ "type": "drop", "what": "copy" }] },
+    { "op": "expectState", "match": { "history": { "canUndo": true } } },
+    { "op": "call", "method": "find.all", "args": [{ "text": "Alpha" }], "result": { "matches": { "$has": [{ "$type": "object" }, { "$type": "object" }] } } },
+    { "op": "call", "method": "menus.invoke", "args": [{ "type": "drop", "what": "move" }] },
+    { "op": "expectError", "code": "unavailable" },
+
+    { "op": "key", "key": "End", "mods": ["ctrl"] },
+    { "op": "command", "command": { "type": "setHighlight", "value": "yellow" } },
+    { "op": "expectState", "match": { "view": { "highlighter": "yellow" } } },
+    { "op": "key", "key": "Escape" },
+    { "op": "expectState", "match": { "view": { "highlighter": null } } }
+  ]
+}

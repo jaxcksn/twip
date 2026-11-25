@@ -602,7 +602,14 @@ fn a_control_filled_from_a_docx_shows_its_pictures() {
     let mut b = ed(&sdt);
     let c = b.document().controls.iter().find(|(_, k)| k.props.alias.as_deref() == Some("Box")).map(|(k, _)| *k).expect("the control");
     let id = super::super::merge::api_id(crate::docx::ElementId::Control(c));
-    let fill = crate::api::command::FillControl { id, text: None, image: None, docx: Some(crate::api::value::Bytes(docx)), building_block: None };
+    let fill = crate::api::command::FillControl {
+        id,
+        text: None,
+        image: None,
+        docx: Some(crate::api::value::Bytes(docx)),
+        building_block: None,
+        date: None,
+    };
     let out = b.execute(Command::FillControl(fill), fonts());
     assert!(matches!(out, crate::editing::commands::Outcome::Changed(_)), "{out:?}");
     let shown: Vec<usize> =

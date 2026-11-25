@@ -17,5 +17,35 @@
     "language": "en-US",
     "type": "addWord",
     "word": "Twip"
+  },
+  {
+    "address": "https://example.com",
+    "type": "openLink"
+  },
+  {
+    "address": "#Intro",
+    "type": "copyLink"
+  },
+  {
+    "commands": [
+      {
+        "type": "setAlignment",
+        "value": "center"
+      },
+      {
+        "type": "setCellAlignment",
+        "value": "center"
+      }
+    ],
+    "label": "Cell Alignment",
+    "type": "commands"
+  },
+  {
+    "type": "setDefaultPictureWrap",
+    "wrap": "square"
+  },
+  {
+    "type": "drop",
+    "what": "copy"
   }
 ]

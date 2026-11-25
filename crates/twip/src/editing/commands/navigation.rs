@@ -50,6 +50,7 @@ impl Editor {
             MoveUnit::Page => MoveBy::Page,
             MoveUnit::RowEdge => MoveBy::RowEdge,
             MoveUnit::ColumnEdge => MoveBy::ColumnEdge,
+            MoveUnit::WindowEdge => MoveBy::ScreenEdge,
         };
         if extend && matches!(by, MoveBy::RowEdge | MoveBy::ColumnEdge) {
             return self.select_to_edge(by == MoveBy::RowEdge, dir == Dir::Forward);

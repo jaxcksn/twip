@@ -6,7 +6,7 @@ use crate::api::catalog::ruler as words;
 use crate::api::services::{
     ClientRect, HorizontalRuler, MeasureDetail, RulerIndents, RulerModel, RulerUnit, RulerView, Span, TabSelector, VerticalRuler,
 };
-use crate::api::value::{Points, TabAlignment};
+use crate::api::value::{LineDirection, Points, TabAlignment};
 use crate::docx::Section;
 use crate::editing::Editor;
 use crate::editing::position::StoryId;
@@ -81,15 +81,18 @@ pub fn vertical_text(s: &Section, gutter_at_top: bool) -> Option<VerticalText> {
 /// The ruler model for the selection, in `section`: its page, the text area around the caret (the margins, its
 /// text column, or its cell), the first selected paragraph's indents and stops, and the caret's table on its page.
 pub fn model(e: &mut Editor, section: usize) -> RulerModel {
+    let Some(m) = margins(e, section) else { return RulerModel::default() };
     let Some(s) = e.document().sections.get(section) else { return RulerModel::default() };
-    // shortcut: mirrored margins show an odd page's, and right-to-left sections the left-to-right margins.
-    let set = &e.document().settings;
-    let facing = crate::layout::page::Facing { mirror: set.mirror_margins, gutter_at_top: set.gutter_at_top, book_fold: set.book_fold };
-    let (left, right, top) = crate::layout::page::margins_in(s, e.document().review.view, facing, 1);
+    let (left, right) = (m.text.start.0, m.text.end.0);
     let s = s.section_in(e.document().review.view);
-    let right = s.page_w - right;
-    let columns = columns(&s.columns, left, right);
-    let (page_w, page_h, bottom) = (s.page_w, s.page_h, s.page_h - s.bottom);
+    let columns = columns(s.columns, left, right);
+    let (page_w, page_h, top, bottom) = (s.page_w, s.page_h, m.top, s.page_h - s.bottom);
+    let side = |edge: MarginEdge| match (edge, m.mirrored) {
+        (MarginEdge::Left, false) => crate::api::command::MarginSide::Left,
+        (MarginEdge::Right, false) => crate::api::command::MarginSide::Right,
+        (MarginEdge::Left, true) => crate::api::command::MarginSide::Inside,
+        (MarginEdge::Right, true) => crate::api::command::MarginSide::Outside,
+    };
     let paras = e.ruler_paras();
     let (doc, index) = (e.document(), e.index());
     let mut styles = paras.iter().filter_map(|&p| index.para(doc, p)).map(|p| &p.style);
@@ -129,19 +132,114 @@ pub fn model(e: &mut Editor, section: usize) -> RulerModel {
         }
         _ => {}
     }
-    RulerModel {
+    let default_tab_stop = Points(e.document().settings.default_tab);
+    let mut model = RulerModel {
         mixed,
+        lines: LineDirection::Horizontal,
         horizontal: HorizontalRuler {
             page_width: Points(page_w),
             text,
             indents,
             tabs,
-            default_tab_stop: Points(e.document().settings.default_tab),
+            default_tab_stop,
             columns,
             table_columns,
+            gutter: m.gutter,
+            start_margin: side(m.start),
+            end_margin: side(m.end),
         },
-        vertical: VerticalRuler { page_height: Points(page_h), text: Span { start: Points(top), end: Points(bottom) }, table_rows },
+        vertical: VerticalRuler {
+            page_height: Points(page_h),
+            text: Span { start: Points(top), end: Points(bottom) },
+            table_rows,
+            gutter: m.gutter_top,
+            ..VerticalRuler::default()
+        },
+    };
+    // Lines down or up the page: the indents and stops go on the vertical ruler, along where the lines run.
+    model.lines = match e.caret_arrows().map(|a| a.along) {
+        Some([0, 1]) => LineDirection::Down,
+        Some([0, -1]) => LineDirection::Up,
+        _ => return model,
+    };
+    let (h, v) = (&mut model.horizontal, &mut model.vertical);
+    v.indents = std::mem::take(&mut h.indents);
+    v.tabs = std::mem::take(&mut h.tabs);
+    v.default_tab_stop = default_tab_stop;
+    if level.is_some() {
+        if let Some([l, t, r, b]) = e.caret_cell_text() {
+            v.text = Span { start: Points(t), end: Points(b) };
+            h.text = Span { start: Points(l), end: Points(r) };
+        }
+    } else if let Some(vt) = e.document().sections.get(section).and_then(|s| vertical_text(s, e.document().settings.gutter_at_top)) {
+        v.text = vt.lines;
+        if let Some(x) = caret.map(|c| Points(c.x))
+            && let Some(col) = vt.columns.iter().min_by(|a, b| dist(a, x).total_cmp(&dist(b, x)))
+        {
+            h.text = *col;
+        }
+        h.columns = vt.columns;
     }
+    model
+}
+
+/// Where the line markers of a model are: the line start and end along their ruler (page points), the way the
+/// lines run along it (1 or -1), and the indents and stops.
+#[derive(Clone, Copy, Debug)]
+pub struct Along<'a> {
+    /// Where the lines start: what the indents and stops are counted from.
+    pub start: f64,
+    /// Where they end.
+    pub end: f64,
+    /// 1 when the lines run along the ruler's points, -1 when against them (up the page).
+    pub sign: f64,
+    /// The paragraph's indents.
+    pub indents: &'a RulerIndents,
+    /// The paragraph's stops.
+    pub tabs: &'a [crate::api::services::TabStopInfo],
+}
+
+impl Along<'_> {
+    /// The place `d` from the line start.
+    pub fn at(&self, d: f64) -> f64 {
+        self.start + self.sign * d
+    }
+
+    /// The place `d` before the line end.
+    pub fn before_end(&self, d: f64) -> f64 {
+        self.end - self.sign * d
+    }
+
+    /// How far `p` is from the line start.
+    pub fn from_start(&self, p: f64) -> f64 {
+        (p - self.start) * self.sign
+    }
+
+    /// How far `p` is from the line end.
+    pub fn from_end(&self, p: f64) -> f64 {
+        (self.end - p) * self.sign
+    }
+}
+
+/// The line markers of `m`: on the horizontal ruler, or on the vertical one when the lines run down or up the page.
+pub fn along(m: &RulerModel) -> Along<'_> {
+    let (h, v) = (&m.horizontal, &m.vertical);
+    match m.lines {
+        LineDirection::Horizontal => Along { start: h.text.start.0, end: h.text.end.0, sign: 1.0, indents: &h.indents, tabs: &h.tabs },
+        LineDirection::Down => Along { start: v.text.start.0, end: v.text.end.0, sign: 1.0, indents: &v.indents, tabs: &v.tabs },
+        LineDirection::Up => Along { start: v.text.end.0, end: v.text.start.0, sign: -1.0, indents: &v.indents, tabs: &v.tabs },
+    }
+}
+
+/// Whether the text columns stack right to left on the horizontal ruler (vertical text stacked from the right).
+fn columns_leftward(h: &HorizontalRuler) -> bool {
+    matches!(h.columns.as_slice(), [a, b, ..] if b.start.0 < a.start.0)
+}
+
+/// The boundary after text column `k` on the horizontal ruler: the edge facing the next column.
+fn column_edge(h: &HorizontalRuler, k: usize) -> Option<f64> {
+    let c = h.columns.get(k)?;
+    Some(if columns_leftward(h) { c.start.0 } else { c.end.0 })
 }
 
 /// Which of a section's margins a ruler's edge is.
@@ -333,9 +431,18 @@ pub enum Marker {
 }
 
 impl Marker {
-    /// Whether it moves along the horizontal ruler.
-    pub fn horizontal(self) -> bool {
-        !matches!(self, Marker::Top | Marker::Bottom | Marker::TableRow(_))
+    /// Whether it moves along the horizontal ruler of `m`: the line markers do while the lines run across the page.
+    pub fn horizontal(self, m: &RulerModel) -> bool {
+        match self {
+            Marker::Top | Marker::Bottom | Marker::TableRow(_) => false,
+            m2 if m2.on_lines() => m.lines == LineDirection::Horizontal,
+            _ => true,
+        }
+    }
+
+    /// Whether it is one of the line's: an indent or a tab stop.
+    pub fn on_lines(self) -> bool {
+        matches!(self, Marker::Tab(_) | Marker::FirstLine | Marker::Hanging | Marker::Left | Marker::Right)
     }
 }
 
@@ -343,15 +450,16 @@ impl Marker {
     /// Where it is now along its ruler, page points (none: the model has no such marker).
     pub fn position(self, m: &RulerModel) -> Option<f64> {
         let (h, v) = (&m.horizontal, &m.vertical);
-        let (start, left) = (h.text.start.0, h.indents.left.0);
+        let a = along(m);
+        let left = a.indents.left.0;
         Some(match self {
-            Marker::Tab(p) => start + p,
-            Marker::FirstLine => start + left + h.indents.first_line.0,
-            Marker::Hanging | Marker::Left => start + left,
-            Marker::Right => h.text.end.0 - h.indents.right.0,
-            Marker::TextStart => start,
+            Marker::Tab(p) => a.at(p),
+            Marker::FirstLine => a.at(left + a.indents.first_line.0),
+            Marker::Hanging | Marker::Left => a.at(left),
+            Marker::Right => a.before_end(a.indents.right.0),
+            Marker::TextStart => h.text.start.0,
             Marker::TextEnd => h.text.end.0,
-            Marker::Column(k) => h.columns.get(k as usize)?.end.0,
+            Marker::Column(k) => column_edge(h, k as usize)?,
             Marker::TableColumn(k) => h.table_columns.get(k as usize)?.0,
             Marker::Top => v.text.start.0,
             Marker::Bottom => v.text.end.0,
@@ -362,22 +470,27 @@ impl Marker {
     /// What it's called, what it measures with it at `at` (page points along its ruler), and the span measured.
     fn reading(self, m: &RulerModel, at: f64) -> Option<(String, f64, (f64, f64))> {
         let (h, v) = (&m.horizontal, &m.vertical);
-        let (start, end) = (h.text.start.0, h.text.end.0);
+        let a = along(m);
+        let (start, end) = (a.start, a.end);
         let name = |n: &str| n.to_string();
         Some(match self {
             Marker::Tab(p) => {
-                let stop = h.tabs.iter().find(|t| (t.position.0 - p).abs() < 0.5)?;
-                (format!("{} {}", tab_name(stop.alignment), words::TAB), at - start, (start, at))
+                let stop = a.tabs.iter().find(|t| (t.position.0 - p).abs() < 0.5)?;
+                (format!("{} {}", tab_name(stop.alignment), words::TAB), a.from_start(at), (start, at))
             }
-            Marker::FirstLine => (name(words::FIRST_LINE), at - start, (start, at)),
-            Marker::Hanging => (name(words::HANGING), at - start, (start, at)),
-            Marker::Left => (name(words::LEFT_INDENT), at - start, (start, at)),
-            Marker::Right => (name(words::RIGHT_INDENT), end - at, (at, end)),
+            Marker::FirstLine => (name(words::FIRST_LINE), a.from_start(at), (start, at)),
+            Marker::Hanging => (name(words::HANGING), a.from_start(at), (start, at)),
+            Marker::Left => (name(words::LEFT_INDENT), a.from_start(at), (start, at)),
+            Marker::Right => (name(words::RIGHT_INDENT), a.from_end(at), (at, end)),
             Marker::TextStart => (name(words::LEFT_MARGIN), at, (0.0, at)),
             Marker::TextEnd => (name(words::RIGHT_MARGIN), h.page_width.0 - at, (at, h.page_width.0)),
             Marker::Column(k) => {
-                let from = h.columns.get(k as usize)?.start.0;
-                (name(words::COLUMN_WIDTH), at - from, (from, at))
+                let c = h.columns.get(k as usize)?;
+                if columns_leftward(h) {
+                    (name(words::COLUMN_WIDTH), c.end.0 - at, (at, c.end.0))
+                } else {
+                    (name(words::COLUMN_WIDTH), at - c.start.0, (c.start.0, at))
+                }
             }
             Marker::TableColumn(k) => {
                 let from = h.table_columns.get((k as usize).checked_sub(1)?)?.0;
@@ -405,24 +518,29 @@ fn tab_name(a: TabAlignment) -> &'static str {
     .0
 }
 
-/// Whether a tab stop dragged to viewport `y` (CSS px) is removed on release: more than the removal distance below
-/// the band.
-pub fn removing(y: f64) -> bool {
-    y > BAND + REMOVE_BELOW
+/// Whether a tab stop dragged `d` CSS px from the viewport edge its ruler is on (`y` for the horizontal ruler, `x`
+/// for the vertical one) is removed on release: more than the removal distance past the band.
+pub fn removing(d: f64) -> bool {
+    d > BAND + REMOVE_BELOW
 }
 
-/// Where a click on the empty ruler at `pt` (page points) adds a stop: snapped unless `free`, and inside the text
-/// area (none at or past its edges).
+/// Where a click on the empty ruler at `pt` (page points along the ruler the indents are on) adds a stop: snapped
+/// from the line start unless `free`, and inside the lines (none at or past their ends).
 pub fn ghost(view: &RulerView, pt: f64, free: bool) -> Option<f64> {
-    let (start, end) = (view.model.horizontal.text.start.0, view.model.horizontal.text.end.0);
-    let at = if free { pt } else { snap(pt, start, view.unit) };
-    (at > start && at < end).then_some(at)
+    let a = along(&view.model);
+    let at = if free { pt } else { snap(pt, a.start, view.unit) };
+    (at > a.start.min(a.end) && at < a.start.max(a.end)).then_some(at)
 }
 
-/// A tab stop's mark on the horizontal ruler, CSS px.
+/// A tab stop's mark on the ruler the stops are on, CSS px.
 pub fn tab_anchor(view: &RulerView, position: f64) -> ClientRect {
-    let x = view.horizontal.origin + (view.model.horizontal.text.start.0 + position) * view.horizontal.scale;
-    ClientRect { left: x - 7.0, top: 10.0, width: 14.0, height: 14.0 }
+    let at = along(&view.model).at(position);
+    if view.model.lines == LineDirection::Horizontal {
+        let x = view.horizontal.origin + at * view.horizontal.scale;
+        ClientRect { left: x - 7.0, top: 10.0, width: 14.0, height: 14.0 }
+    } else {
+        ClientRect { left: INSET, top: view.vertical.origin + at * view.vertical.scale - 7.0, width: 14.0, height: 14.0 }
+    }
 }
 
 /// What a drag of `marker` to `at` (page points along its ruler) measures: a dimension line from where the value is
@@ -452,7 +570,7 @@ pub fn drag_measures(view: &RulerView, marker: Marker, at: f64, removing: bool, 
     }
     let Some((name, value, (a, z))) = marker.reading(m, at) else { return Vec::new() };
     let was = marker.position(m).and_then(|p| marker.reading(m, p)).map_or(value, |r| r.1);
-    let horizontal = marker.horizontal();
+    let horizontal = marker.horizontal(m);
     let guide = if horizontal { h.origin + at * h.scale } else { v.origin + at * v.scale };
     if quiet {
         let label = if removing { words::REMOVE.to_string() } else { format!("{name} {}", length(value.abs(), unit)) };
@@ -483,12 +601,14 @@ pub fn drag_measures(view: &RulerView, marker: Marker, at: f64, removing: bool, 
 pub fn hint(view: &RulerView, on: Hit, selector: TabSelector, free: bool) -> Option<(ClientRect, String)> {
     let (m, unit) = (&view.model, view.unit);
     let (h, v) = (view.horizontal, view.vertical);
-    let along = |x: f64| ClientRect { left: x - 7.0, top: 0.0, width: 14.0, height: BAND };
+    let across = |x: f64| ClientRect { left: x - 7.0, top: 0.0, width: 14.0, height: BAND };
+    let down = |y: f64| ClientRect { left: 0.0, top: y - 7.0, width: BAND, height: 14.0 };
     match on {
         Hit::Ruler => None,
         Hit::Selector => Some((SELECTOR, format!("{} {} — {}", words::TAB_TYPE, words::tab_type(selector).0, words::TAB_TYPE_DOES))),
         Hit::Text(pt) => {
             let at = ghost(view, pt, free)?;
+            let a = along(m);
             let name = words::tab_type(selector).0.to_lowercase();
             let what = match selector {
                 TabSelector::FirstLineIndent | TabSelector::HangingIndent => format!("{} {name}", words::CLICK_TO_SET),
@@ -496,7 +616,8 @@ pub fn hint(view: &RulerView, on: Hit, selector: TabSelector, free: bool) -> Opt
                     format!("{} {name} {}", words::CLICK_TO_ADD, words::TAB)
                 }
             };
-            Some((along(h.origin + at * h.scale), format!("{what} · {}", length(at - m.horizontal.text.start.0, unit))))
+            let rect = if m.lines == LineDirection::Horizontal { across(h.origin + at * h.scale) } else { down(v.origin + at * v.scale) };
+            Some((rect, format!("{what} · {}", length(a.from_start(at), unit))))
         }
         Hit::Marker(marker) => {
             let at = marker.position(m)?;
@@ -512,11 +633,7 @@ pub fn hint(view: &RulerView, on: Hit, selector: TabSelector, free: bool) -> Opt
                 Marker::TableColumn(_) => words::COLUMN_BORDER.to_string(),
                 Marker::TableRow(_) => words::ROW_BORDER.to_string(),
             };
-            let rect = if marker.horizontal() {
-                along(h.origin + at * h.scale)
-            } else {
-                ClientRect { left: 0.0, top: v.origin + at * v.scale - 7.0, width: BAND, height: 14.0 }
-            };
+            let rect = if marker.horizontal(m) { across(h.origin + at * h.scale) } else { down(v.origin + at * v.scale) };
             Some((rect, label))
         }
     }
@@ -528,7 +645,7 @@ pub enum Hit {
     /// The tab selector box in the corner.
     Selector,
     Marker(Marker),
-    /// An empty spot of the horizontal ruler's text area, at this page x.
+    /// An empty spot where the lines run on the ruler the indents are on, at this page point along that ruler.
     Text(f64),
     /// Elsewhere on a ruler.
     Ruler,
@@ -543,27 +660,19 @@ pub fn hit(view: &RulerView, bands: Bands, x: f64, y: f64) -> Option<Hit> {
         return Some(Hit::Selector);
     }
     let near = |px: f64, pt: f64, by: f64| (px - (h.origin + pt * h.scale)).abs() <= by;
+    let lines = m.lines == LineDirection::Horizontal;
     if on_h {
         let r = &m.horizontal;
         let (start, end) = (r.text.start.0, r.text.end.0);
-        let left = start + r.indents.left.0;
-        let f = y / BAND;
-        if f < 0.5 && near(x, left + r.indents.first_line.0, 6.0) {
-            return Some(Hit::Marker(Marker::FirstLine));
-        }
-        if f >= 0.5 && near(x, left, 6.0) {
-            return Some(Hit::Marker(if f < 0.75 { Marker::Hanging } else { Marker::Left }));
-        }
-        if f >= 0.5 && near(x, end - r.indents.right.0, 6.0) {
-            return Some(Hit::Marker(Marker::Right));
-        }
-        if let Some(t) = r.tabs.iter().find(|t| near(x, start + t.position.0, 4.0)) {
-            return Some(Hit::Marker(Marker::Tab(t.position.0)));
+        if lines && let Some(hit) = line_hit(m, y / BAND, &|pt, by| near(x, pt, by)) {
+            return Some(hit);
         }
         if let Some(k) = r.table_columns.iter().position(|b| near(x, b.0, 4.0)) {
             return Some(Hit::Marker(Marker::TableColumn(k as u32)));
         }
-        if let Some(k) = r.columns.windows(2).position(|c| near(x, c[0].end.0, 3.0) || near(x, c[1].start.0, 3.0)) {
+        let leftward = columns_leftward(r);
+        let facing = |c: &[Span]| if leftward { (c[0].start.0, c[1].end.0) } else { (c[0].end.0, c[1].start.0) };
+        if let Some(k) = r.columns.windows(2).position(|c| near(x, facing(c).0, 3.0) || near(x, facing(c).1, 3.0)) {
             return Some(Hit::Marker(Marker::Column(k as u32)));
         }
         if r.table_columns.is_empty() {
@@ -575,10 +684,17 @@ pub fn hit(view: &RulerView, bands: Bands, x: f64, y: f64) -> Option<Hit> {
             }
         }
         let pt = (x - h.origin) / h.scale;
-        return Some(if (start..=end).contains(&pt) { Hit::Text(pt) } else { Hit::Ruler });
+        return Some(if lines && (start..=end).contains(&pt) { Hit::Text(pt) } else { Hit::Ruler });
     }
     if on_v {
-        let near = |px: f64, pt: f64| (px - (v.origin + pt * v.scale)).abs() <= 3.0;
+        let near_by = |py: f64, pt: f64, by: f64| (py - (v.origin + pt * v.scale)).abs() <= by;
+        let near = |py: f64, pt: f64| near_by(py, pt, 3.0);
+        // The vertical band read as the horizontal one turned with the text: its top edge at the right for lines
+        // running down, at the left for lines running up.
+        let across = if m.lines == LineDirection::Down { 1.0 - x / BAND } else { x / BAND };
+        if !lines && let Some(hit) = line_hit(m, across, &|pt, by| near_by(y, pt, by)) {
+            return Some(hit);
+        }
         let r = &m.vertical;
         if let Some(k) = r.table_rows.iter().skip(1).position(|b| near(y, b.0)) {
             return Some(Hit::Marker(Marker::TableRow(k as u32 + 1)));
@@ -591,9 +707,27 @@ pub fn hit(view: &RulerView, bands: Bands, x: f64, y: f64) -> Option<Hit> {
                 return Some(Hit::Marker(Marker::Bottom));
             }
         }
-        return Some(Hit::Ruler);
+        let pt = (y - v.origin) / v.scale;
+        return Some(if !lines && (r.text.start.0..=r.text.end.0).contains(&pt) { Hit::Text(pt) } else { Hit::Ruler });
     }
     None
+}
+
+/// The indent or stop at `across` (0 at the band's top edge as the horizontal ruler has it, 1 at its bottom) where
+/// `near(pt, by)` says the pointer is within `by` CSS px of page point `pt` along the ruler.
+fn line_hit(m: &RulerModel, across: f64, near: &dyn Fn(f64, f64) -> bool) -> Option<Hit> {
+    let a = along(m);
+    let left = a.at(a.indents.left.0);
+    if across < 0.5 && near(a.at(a.indents.left.0 + a.indents.first_line.0), 6.0) {
+        return Some(Hit::Marker(Marker::FirstLine));
+    }
+    if across >= 0.5 && near(left, 6.0) {
+        return Some(Hit::Marker(if across < 0.75 { Marker::Hanging } else { Marker::Left }));
+    }
+    if across >= 0.5 && near(a.before_end(a.indents.right.0), 6.0) {
+        return Some(Hit::Marker(Marker::Right));
+    }
+    a.tabs.iter().find(|t| near(a.at(t.position.0), 4.0)).map(|t| Hit::Marker(Marker::Tab(t.position.0)))
 }
 
 #[cfg(test)]
@@ -615,6 +749,52 @@ mod tests {
             vertical: RulerAxis { origin: 30.0, scale: 1.0 },
             ..RulerView::default()
         }
+    }
+
+    /// A model of lines running `lines` along 72..720 pt down the page: left indent 36, first line 18, right 20, a
+    /// stop at 144.
+    fn turned(lines: LineDirection) -> RulerView {
+        let mut v = view();
+        let m = &mut v.model;
+        m.lines = lines;
+        m.vertical.indents = RulerIndents { left: Points(36.0), right: Points(20.0), first_line: Points(18.0) };
+        m.vertical.tabs = std::mem::take(&mut m.horizontal.tabs);
+        m.horizontal.indents = RulerIndents::default();
+        v
+    }
+
+    #[test]
+    fn the_indents_of_lines_down_or_up_the_page_are_on_the_vertical_ruler() {
+        let b = Bands { horizontal: true, vertical: true };
+        // Down: from the top margin, the band's right edge as the horizontal band's top.
+        let v = turned(LineDirection::Down);
+        assert_eq!(hit(&v, b, 15.0, 30.0 + 126.0), Some(Hit::Marker(Marker::FirstLine)));
+        assert_eq!(hit(&v, b, 6.0, 30.0 + 108.0), Some(Hit::Marker(Marker::Hanging)));
+        assert_eq!(hit(&v, b, 2.0, 30.0 + 108.0), Some(Hit::Marker(Marker::Left)));
+        assert_eq!(hit(&v, b, 4.0, 30.0 + 700.0), Some(Hit::Marker(Marker::Right)));
+        assert_eq!(hit(&v, b, 9.0, 30.0 + 216.0), Some(Hit::Marker(Marker::Tab(144.0))));
+        assert_eq!(hit(&v, b, 9.0, 30.0 + 400.0), Some(Hit::Text(400.0)));
+        assert_eq!(hit(&v, b, 30.0 + 300.0, 10.0), Some(Hit::Ruler), "the horizontal ruler has no text area to click");
+        assert_eq!(ghost(&v, 100.3, false), Some(99.0), "snapped from the line start");
+        assert_eq!(ghost(&v, 720.0, false), None);
+        assert_eq!(tab_anchor(&v, 144.0), ClientRect { left: INSET, top: 30.0 + 216.0 - 7.0, width: 14.0, height: 14.0 });
+        let x = BAND + DIMENSION_Y - 30.0;
+        let d = drag_measures(&v, Marker::FirstLine, 130.0, false, MeasureDetail::Standard, false);
+        assert!(
+            matches!(&d[..], [RulerMeasure::Dimension { from, to, .. }] if *from == [x, 72.0] && *to == [x, 130.0]),
+            "down the page from the line start: {d:?}"
+        );
+        // Up: from the bottom margin, the band's left edge as the horizontal band's top.
+        let v = turned(LineDirection::Up);
+        assert_eq!(Marker::FirstLine.position(&v.model), Some(720.0 - 54.0));
+        assert_eq!(hit(&v, b, 3.0, 30.0 + 666.0), Some(Hit::Marker(Marker::FirstLine)));
+        assert_eq!(hit(&v, b, 16.0, 30.0 + 684.0), Some(Hit::Marker(Marker::Left)));
+        assert_eq!(hit(&v, b, 14.0, 30.0 + 92.0), Some(Hit::Marker(Marker::Right)));
+        assert_eq!(hit(&v, b, 9.0, 30.0 + 576.0), Some(Hit::Marker(Marker::Tab(144.0))));
+        assert_eq!(ghost(&v, 100.3, false), Some(99.0), "snapped from the line end");
+        assert_eq!(tab_anchor(&v, 144.0).top, 30.0 + 576.0 - 7.0);
+        let d = drag_measures(&v, Marker::FirstLine, 600.0, false, MeasureDetail::Quiet, false);
+        assert!(matches!(&d[..], [RulerMeasure::Chip { label, .. }] if label == "First line 1.67″"), "{d:?}");
     }
 
     #[test]
@@ -716,7 +896,13 @@ mod tests {
         let even = margins(&mut e, 0).expect("a section");
         assert_eq!((even.text, even.start, even.end), (span(36.0, 486.0), MarginEdge::Right, MarginEdge::Left));
         assert_eq!(even.gutter, Some(span(486.0, 504.0)), "the gutter is inside: on the right");
-        assert_eq!(model(&mut e, 0).horizontal.text, span(126.0, 576.0), "the model stays left to right, as drags set it");
+        let m = model(&mut e, 0);
+        assert_eq!((m.horizontal.text, m.horizontal.gutter), (even.text, even.gutter), "the model is the page's margins");
+        assert_eq!(
+            (m.horizontal.start_margin, m.horizontal.end_margin),
+            (crate::api::command::MarginSide::Outside, crate::api::command::MarginSide::Inside),
+            "facing pages: the even page starts at its outside margin"
+        );
         let at = |m, x| even.margins_at(m, x, 612.0, 792.0).expect("a margin");
         assert_eq!(at(Marker::TextStart, 50.0), Margins { right: pt(50.0), ..Margins::default() }, "the left edge is the outside margin");
         assert_eq!(
@@ -737,6 +923,8 @@ mod tests {
         e.execute(C::SetMultiplePages(MultiplePages { mode: None, gutter_at_top: Some(true) }), fonts());
         let f = margins(&mut e, 0).expect("a section");
         assert_eq!((f.gutter, f.gutter_top, f.top), (None, Some(span(72.0, 90.0)), 90.0));
+        let m = model(&mut e, 0);
+        assert_eq!((m.vertical.text.start, m.vertical.gutter), (Points(90.0), f.gutter_top), "the vertical ruler's text starts below the gutter");
         assert_eq!(f.margins_at(Marker::Top, 100.0, 612.0, 792.0).and_then(|m| m.top), Some(Points(82.0)));
     }
 

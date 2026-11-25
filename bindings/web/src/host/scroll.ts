@@ -54,6 +54,10 @@ export function startScroll(s: Session, dom: Dom, ledger: Ledger, frames: Frames
 
   // `scroll_to`: the least scrolling that shows the rectangle (content px).
   const scrollTo = (r: { x: number; y: number; width: number; height: number }) => {
+    // The content is sized by frames, which trail the document: grown to hold the rectangle, so the scroller can reach
+    // it now rather than clamp to the last frame's size (the next frame sets the exact size).
+    if (r.y + r.height > size.height) content.style.height = `${(size.height = Math.ceil(r.y + r.height))}px`;
+    if (r.x + r.width > size.width) content.style.width = `${(size.width = Math.ceil(r.x + r.width))}px`;
     const left = r.x + offset;
     const { clientWidth: w, clientHeight: h } = scroller;
     if (r.y < scroller.scrollTop) scroller.scrollTop = r.y;

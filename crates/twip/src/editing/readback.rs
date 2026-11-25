@@ -7,9 +7,9 @@ use crate::api::value::{AutoOr, NoneOr, Points};
 use crate::docx::props::{Border, Shd};
 use crate::docx::{ParaStyle, RunStyle, ThemeFont};
 
-use super::commands::LigatureFlags;
 use super::state::fold;
 use super::theme::{WordColour, colour_value};
+use crate::api::command::LigatureFlags;
 
 /// The most a border line's distance from the text is: Word's 31 pt (`ST_PointMeasure` allows no more).
 pub const MAX_BORDER_SPACE: f64 = 31.0;
@@ -29,7 +29,24 @@ pub struct BorderLine {
     pub shadow: bool,
 }
 
+impl From<BorderLine> for crate::api::command::Border {
+    fn from(b: BorderLine) -> crate::api::command::Border {
+        crate::api::command::Border { style: b.style, width: b.width, color: b.color, space: Some(b.space), shadow: Some(b.shadow) }
+    }
+}
+
 impl BorderLine {
+    /// An API border line: its distance `space` and shadow `shadow` where it gives none.
+    pub fn of_api(b: &crate::api::command::Border, space: f64, shadow: bool) -> BorderLine {
+        BorderLine {
+            style: b.style,
+            width: b.width,
+            color: b.color.clone(),
+            space: b.space.unwrap_or(Points(space)),
+            shadow: b.shadow.unwrap_or(shadow),
+        }
+    }
+
     /// Within Word's ranges: the width 0.25 to 6 pt, the distance 0 to 31 pt.
     pub fn check(&self) -> Result<(), String> {
         let ok = |v: f64, lo: f64, hi: f64| v.is_finite() && (lo..=hi).contains(&v);
@@ -92,15 +109,7 @@ pub struct ParagraphBorderEdges {
 }
 
 /// Shading: a fill, a pattern of the pattern colour over it, and that colour.
-#[derive(Clone, Debug, PartialEq)]
-pub struct ShadingValue {
-    /// The fill, or none (automatic).
-    pub fill: NoneOr<ColourValue>,
-    /// The pattern.
-    pub pattern: ShadingPattern,
-    /// The pattern's colour.
-    pub color: AutoOr<ColourValue>,
-}
+pub use crate::api::state::Shading as ShadingValue;
 
 impl ShadingValue {
     /// A model shading as read back; none for no shading (`nil`, or a clear pattern without a fill).
@@ -114,6 +123,14 @@ impl ShadingValue {
             pattern,
             color: s.color.map_or(AutoOr::Auto, |c| AutoOr::Value(colour_value(c, s.color_theme))),
         })
+    }
+}
+
+/// A colour given as RGB, as RGB; any other is automatic.
+pub fn rgb_only(c: &AutoOr<ColourValue>) -> AutoOr<crate::api::value::Color> {
+    match c {
+        AutoOr::Value(ColourValue { rgb: Some(c), .. }) => AutoOr::Value(*c),
+        _ => AutoOr::Auto,
     }
 }
 
@@ -166,6 +183,45 @@ impl StylisticSets {
     /// The sets on, in order.
     pub fn ids(self) -> impl Iterator<Item = u8> {
         (1..=20u8).filter(move |n| self.0 & 1 << (n - 1) != 0)
+    }
+}
+
+impl CharacterReadback {
+    /// Into the formatting state's fields.
+    pub fn fill(self, f: &mut crate::api::state::CharacterFormatting) {
+        f.font_theme = self.font_theme.map(|t| match t {
+            NoneOr::None => NoneOr::None,
+            NoneOr::Value(ThemeFont::Major) => NoneOr::Value(crate::api::value::ThemeFont::Headings),
+            NoneOr::Value(ThemeFont::Minor) => NoneOr::Value(crate::api::value::ThemeFont::Body),
+        });
+        f.color_value = self.color;
+        f.underline_color_value = self.underline_color;
+        f.text_border = self.border.map(api_border);
+        f.text_shading = self.shading;
+        f.fit_text = self.fit_text;
+        f.ligature_flags = self.ligatures;
+        f.stylistic_sets = self.stylistic_sets.map(|s| s.ids().collect());
+    }
+}
+
+/// A border as the API reads it back.
+fn api_border(b: NoneOr<BorderLine>) -> NoneOr<crate::api::command::Border> {
+    match b {
+        NoneOr::None => NoneOr::None,
+        NoneOr::Value(b) => NoneOr::Value(b.into()),
+    }
+}
+
+impl ParagraphReadback {
+    /// Into the formatting state's fields.
+    pub fn fill(self, f: &mut crate::api::state::ParagraphFormatting) {
+        f.border_top = self.border_top.map(api_border);
+        f.border_left = self.border_left.map(api_border);
+        f.border_bottom = self.border_bottom.map(api_border);
+        f.border_right = self.border_right.map(api_border);
+        f.border_between = self.border_between.map(api_border);
+        f.shading_value = self.shading;
+        f.tabs = self.tabs;
     }
 }
 

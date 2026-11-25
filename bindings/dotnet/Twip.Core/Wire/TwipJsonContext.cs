@@ -40,6 +40,18 @@ namespace Twip.Wire;
         typeof(CamelEnum<CommandId>),
         typeof(CamelEnum<CompositionPhase>),
         typeof(CamelEnum<ControlKind>),
+        typeof(CamelEnum<CalendarType>),
+        typeof(CamelEnum<DateStorage>),
+        typeof(CamelEnum<ColumnsApplyTo>),
+        typeof(CamelEnum<ColumnPreset>),
+        typeof(CamelEnum<HeadingSide>),
+        typeof(CamelEnum<NoteSeparatorPart>),
+        typeof(CamelEnum<BalloonMode>),
+        typeof(CamelEnum<TextMark>),
+        typeof(CamelEnum<BarSide>),
+        typeof(CamelEnum<FieldCategory>),
+        typeof(CamelEnum<FieldArgKind>),
+        typeof(CamelEnum<SwitchArgKind>),
         typeof(CamelEnum<ControlLock>),
         typeof(CamelEnum<DeleteUnit>),
         typeof(CamelEnum<DialogKind>),
@@ -55,7 +67,6 @@ namespace Twip.Wire;
         typeof(CamelEnum<PageBorderDisplay>),
         typeof(CamelEnum<PageBorderScope>),
         typeof(CamelEnum<TableStylePart>),
-        typeof(CamelEnum<NumberFormat>),
         typeof(CamelEnum<LevelAlignment>),
         typeof(CamelEnum<FollowNumber>),
         typeof(CamelEnum<ListApplyTo>),
@@ -82,6 +93,8 @@ namespace Twip.Wire;
         typeof(CamelEnum<StyleVisibility>),
         typeof(CamelEnum<Direction>),
         typeof(CamelEnum<EditorCursor>),
+        typeof(CamelEnum<AutoFormatKind>),
+        typeof(CamelEnum<DropEffect>),
         typeof(CamelEnum<EditorMode>),
         typeof(CamelEnum<ElementCategory>),
         typeof(CamelEnum<ElementKind>),
@@ -120,12 +133,15 @@ namespace Twip.Wire;
         typeof(CamelEnum<Origin>),
         typeof(CamelEnum<PageNumberAlignment>),
         typeof(CamelEnum<PageNumberFormat>),
-        typeof(CamelEnum<PageNumberPlacement>),
         typeof(CamelEnum<PageOrientation>),
         typeof(CamelEnum<PageSetupScope>),
         typeof(CamelEnum<ParagraphAlignment>),
         typeof(CamelEnum<ParagraphBorders>),
         typeof(CamelEnum<PasteMode>),
+        typeof(CamelEnum<GoToWhat>),
+        typeof(CamelEnum<TocUpdateMode>),
+        typeof(CamelEnum<CaptionPosition>),
+        typeof(CamelEnum<CrossReferenceContent>),
         typeof(CamelEnum<PointerKind>),
         typeof(CamelEnum<PointerButton>),
         typeof(CamelEnum<RevisionKind>),
@@ -174,6 +190,7 @@ namespace Twip.Wire;
         typeof(EffectChangeConverter<TextOutline>),
         typeof(EffectChangeConverter<TextShadow>),
         typeof(EffectChangeConverter<TextReflection>),
+        typeof(EffectChangeConverter<Reflection>),
         typeof(NoneOrConverter<FillValue>),
         typeof(NoneOrConverter<TextOutline>),
         typeof(NoneOrConverter<TextShadow>),
@@ -207,6 +224,32 @@ namespace Twip.Wire;
         typeof(FormatValueConverter<RowHeight>),
         typeof(FormatValueConverter<TableWidth>),
         typeof(FormatValueConverter<TightWrap>),
+        typeof(CamelEnum<MarginSide>),
+        typeof(CamelEnum<LineDirection>),
+        typeof(CamelEnum<BreakClear>),
+        typeof(CamelEnum<ThemeFont>),
+        typeof(CamelEnum<StyleCategory>),
+        typeof(NoneOrConverter<CellBorder>),
+        typeof(NoneOrConverter<ShadingValue>),
+        typeof(NoneOrConverter<Length>),
+        typeof(NoneOrConverter<ThemeFont>),
+        typeof(NoneOrConverter<TableAlignment>),
+        typeof(NoneOrConverter<TableBorderLines>),
+        typeof(FormatValueConverter<NoneOr<TableAlignment>>),
+        typeof(FormatValueConverter<NoneOr<TableBorderLines>>),
+        typeof(CamelEnum<TableFit>),
+        typeof(CamelEnum<RectAlign>),
+        typeof(CamelEnum<TileMirror>),
+        typeof(CamelEnum<TableTool>),
+        typeof(CamelEnum<InsertCellShift>),
+        typeof(CamelEnum<TableStrokeKind>),
+        typeof(FormatValueConverter<NoneOr<CellBorder>>),
+        typeof(FormatValueConverter<NoneOr<ShadingValue>>),
+        typeof(FormatValueConverter<NoneOr<Length>>),
+        typeof(FormatValueConverter<NoneOr<ThemeFont>>),
+        typeof(FormatValueConverter<LigatureFlags>),
+        typeof(FormatValueConverter<IReadOnlyList<int>>),
+        typeof(FormatValueConverter<IReadOnlyList<TabStop>>),
         typeof(CamelEnum<TightWrap>),
         typeof(CamelEnum<RelativeSizeReference>),
         typeof(CamelEnum<ObjectAlign>),
@@ -300,6 +343,52 @@ namespace Twip.Wire;
 [JsonSerializable(typeof(Comment))]
 [JsonSerializable(typeof(CommentAnchor))]
 [JsonSerializable(typeof(CommentAnchorsPayload))]
+[JsonSerializable(typeof(CalendarType))]
+[JsonSerializable(typeof(DateStorage))]
+[JsonSerializable(typeof(ColumnsApplyTo))]
+[JsonSerializable(typeof(ColumnPreset))]
+[JsonSerializable(typeof(HeadingSide))]
+[JsonSerializable(typeof(NoteSeparatorPart))]
+[JsonSerializable(typeof(RangeEditorRef))]
+[JsonSerializable(typeof(BalloonMode))]
+[JsonSerializable(typeof(ShowMarkup))]
+[JsonSerializable(typeof(TextMark))]
+[JsonSerializable(typeof(MarkColor))]
+[JsonSerializable(typeof(MarkLook))]
+[JsonSerializable(typeof(MarkLookChange))]
+[JsonSerializable(typeof(BarSide))]
+[JsonSerializable(typeof(MarkupStyle))]
+[JsonSerializable(typeof(MarkupStyleChange))]
+[JsonSerializable(typeof(MarkupCounts))]
+[JsonSerializable(typeof(ReviewCounts))]
+[JsonSerializable(typeof(RevisionAnchor))]
+[JsonSerializable(typeof(RevisionBalloonsPayload))]
+[JsonSerializable(typeof(PageNumberSampleRequest))]
+[JsonSerializable(typeof(NoteInfo))]
+[JsonSerializable(typeof(IReadOnlyList<NoteInfo>))]
+[JsonSerializable(typeof(NoteSeparatorState))]
+[JsonSerializable(typeof(NoteSeparators))]
+[JsonSerializable(typeof(EditableRangeInfo))]
+[JsonSerializable(typeof(IReadOnlyList<EditableRangeInfo>))]
+[JsonSerializable(typeof(ColumnSettings))]
+[JsonSerializable(typeof(FieldCategory))]
+[JsonSerializable(typeof(FieldArgKind))]
+[JsonSerializable(typeof(SwitchArgKind))]
+[JsonSerializable(typeof(FieldArgInfo))]
+[JsonSerializable(typeof(FieldSwitchInfo))]
+[JsonSerializable(typeof(FieldGeneralSwitches))]
+[JsonSerializable(typeof(FieldDescription))]
+[JsonSerializable(typeof(IReadOnlyList<FieldDescription>))]
+[JsonSerializable(typeof(FieldFormatOption))]
+[JsonSerializable(typeof(FieldFormats))]
+[JsonSerializable(typeof(FieldSwitchChoice))]
+[JsonSerializable(typeof(FieldChoice))]
+[JsonSerializable(typeof(FieldProblem))]
+[JsonSerializable(typeof(ComposedField))]
+[JsonSerializable(typeof(FieldHere))]
+[JsonSerializable(typeof(ThumbnailSize))]
+[JsonSerializable(typeof(IReadOnlyList<ulong>))]
+[JsonSerializable(typeof(IReadOnlyList<StyleId>))]
 [JsonSerializable(typeof(CommentId))]
 [JsonSerializable(typeof(CommentThread))]
 [JsonSerializable(typeof(Commit))]
@@ -363,6 +452,45 @@ namespace Twip.Wire;
 [JsonSerializable(typeof(FieldOptions))]
 [JsonSerializable(typeof(FieldResult))]
 [JsonSerializable(typeof(FieldsUpdateRequestedPayload))]
+[JsonSerializable(typeof(TableOfContentsUpdateRequestedPayload))]
+[JsonSerializable(typeof(CopyContentRequest))]
+[JsonSerializable(typeof(PasteContentRequest))]
+[JsonSerializable(typeof(GoToWhat))]
+[JsonSerializable(typeof(GoToTarget))]
+[JsonSerializable(typeof(TocLevels))]
+[JsonSerializable(typeof(TocStyleLevel))]
+[JsonSerializable(typeof(TocEntryFields))]
+[JsonSerializable(typeof(TocCaptions))]
+[JsonSerializable(typeof(TocPageNumbers))]
+[JsonSerializable(typeof(TocChapterNumbers))]
+[JsonSerializable(typeof(TableOfContentsOptions))]
+[JsonSerializable(typeof(TocLayout))]
+[JsonSerializable(typeof(TocFrame))]
+[JsonSerializable(typeof(TocUpdateMode))]
+[JsonSerializable(typeof(CaptionPosition))]
+[JsonSerializable(typeof(CaptionChapter))]
+[JsonSerializable(typeof(AutoCaption))]
+[JsonSerializable(typeof(CrossReferenceKind))]
+[JsonSerializable(typeof(CrossReferenceContent))]
+[JsonSerializable(typeof(CrossReferenceTargetRef))]
+[JsonSerializable(typeof(CrossReferenceTarget))]
+[JsonSerializable(typeof(IReadOnlyList<CrossReferenceTarget>))]
+[JsonSerializable(typeof(TableOfContentsInfo))]
+[JsonSerializable(typeof(TablesOfContents))]
+[JsonSerializable(typeof(TocEntryPreview))]
+[JsonSerializable(typeof(IReadOnlyList<TocEntryPreview>))]
+[JsonSerializable(typeof(PasteSettings))]
+[JsonSerializable(typeof(SmartPasteSettings))]
+[JsonSerializable(typeof(PasteOptionsChange))]
+[JsonSerializable(typeof(SmartPasteChange))]
+[JsonSerializable(typeof(PasteChoices))]
+[JsonSerializable(typeof(ClipboardImage))]
+[JsonSerializable(typeof(FindFormat))]
+[JsonSerializable(typeof(FindFont))]
+[JsonSerializable(typeof(FindParagraph))]
+[JsonSerializable(typeof(TabStopSpec))]
+[JsonSerializable(typeof(FindMatches))]
+[JsonSerializable(typeof(FindCount))]
 [JsonSerializable(typeof(FieldUpdateRequest))]
 [JsonSerializable(typeof(FindMatch))]
 [JsonSerializable(typeof(FindQuery))]
@@ -402,6 +530,13 @@ namespace Twip.Wire;
 [JsonSerializable(typeof(Heading))]
 [JsonSerializable(typeof(BookmarkInfo))]
 [JsonSerializable(typeof(HeadingId))]
+[JsonSerializable(typeof(ParagraphId))]
+[JsonSerializable(typeof(TextPoint))]
+[JsonSerializable(typeof(TextRange))]
+[JsonSerializable(typeof(CellBlock))]
+[JsonSerializable(typeof(LineDirection))]
+[JsonSerializable(typeof(IReadOnlyList<TextRange>))]
+[JsonSerializable(typeof(IReadOnlyList<CellBlock>))]
 [JsonSerializable(typeof(HighlightColor))]
 [JsonSerializable(typeof(HistoryState))]
 [JsonSerializable(typeof(HitResult))]
@@ -674,6 +809,10 @@ namespace Twip.Wire;
 [JsonSerializable(typeof(ControlAppearance))]
 [JsonSerializable(typeof(CheckboxSymbol))]
 [JsonSerializable(typeof(DocumentProperties))]
+[JsonSerializable(typeof(SelectionBounds))]
+[JsonSerializable(typeof(DragSource))]
+[JsonSerializable(typeof(DropEffect))]
+[JsonSerializable(typeof(WordAt))]
 [JsonSerializable(typeof(CustomProperty))]
 [JsonSerializable(typeof(CustomPropertyKind))]
 [JsonSerializable(typeof(DocumentVariable))]
@@ -756,4 +895,51 @@ namespace Twip.Wire;
 [JsonSerializable(typeof(FillValue.Pattern), TypeInfoPropertyName = "FillValue_Pattern")]
 [JsonSerializable(typeof(FillValue.Picture), TypeInfoPropertyName = "FillValue_Picture")]
 [JsonSerializable(typeof(FillValue.FromStyle), TypeInfoPropertyName = "FillValue_FromStyle")]
+[JsonSerializable(typeof(StyleList))]
+[JsonSerializable(typeof(IReadOnlyList<ListLevel>))]
+[JsonSerializable(typeof(IReadOnlyList<EditorOperation>))]
+[JsonSerializable(typeof(IReadOnlyList<TablePartFormatting>))]
+[JsonSerializable(typeof(TablePartFormatting))]
+[JsonSerializable(typeof(StyleChange))]
+[JsonSerializable(typeof(NewStyle))]
+[JsonSerializable(typeof(StyleDefinition))]
+[JsonSerializable(typeof(BuiltInStyle))]
+[JsonSerializable(typeof(IReadOnlyList<BuiltInStyle>))]
+[JsonSerializable(typeof(DefaultsDefinition))]
+[JsonSerializable(typeof(ListDefinitionInfo))]
+[JsonSerializable(typeof(HistoryLabels))]
+[JsonSerializable(typeof(HistoryLabelsRequest))]
+[JsonSerializable(typeof(WordCountOptions))]
+[JsonSerializable(typeof(ThemeColumn))]
+[JsonSerializable(typeof(IReadOnlyList<ThemeColumn>))]
+[JsonSerializable(typeof(ThemeSwatch))]
+[JsonSerializable(typeof(ThemeFonts))]
+[JsonSerializable(typeof(MarginSide))]
+[JsonSerializable(typeof(BreakClear))]
+[JsonSerializable(typeof(ThemeFont))]
+[JsonSerializable(typeof(StyleCategory))]
+[JsonSerializable(typeof(FontChoice))]
+[JsonSerializable(typeof(TableBandSizes))]
+[JsonSerializable(typeof(TableCellMargins))]
+[JsonSerializable(typeof(TableSize))]
+[JsonSerializable(typeof(TextToTableRequest))]
+[JsonSerializable(typeof(IReadOnlyList<ObjectListEntry>))]
+[JsonSerializable(typeof(ObjectId))]
+[JsonSerializable(typeof(Recolor))]
+[JsonSerializable(typeof(IReadOnlyList<BoxPoint>))]
+[JsonSerializable(typeof(PagePoint))]
+[JsonSerializable(typeof(InsertCellShift))]
+[JsonSerializable(typeof(TableTool))]
+[JsonSerializable(typeof(TableFit))]
+[JsonSerializable(typeof(byte[]))]
+[JsonSerializable(typeof(LigatureFlags))]
+[JsonSerializable(typeof(ShadingValue))]
+[JsonSerializable(typeof(PageBorders))]
+[JsonSerializable(typeof(TableBands))]
+[JsonSerializable(typeof(ListNumbers))]
+[JsonSerializable(typeof(TableStyleDefinition))]
+[JsonSerializable(typeof(TablePartDefinition))]
+[JsonSerializable(typeof(TableBorders))]
+[JsonSerializable(typeof(IReadOnlyList<int>))]
+[JsonSerializable(typeof(IReadOnlyList<TabStop>))]
 internal sealed partial class TwipJsonContext : JsonSerializerContext;

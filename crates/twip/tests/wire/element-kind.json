@@ -9,5 +9,10 @@
   "comboBox",
   "group",
   "repeatingSection",
-  "repeatingItem"
+  "repeatingItem",
+  "buildingBlockGallery",
+  "buildingBlock",
+  "citation",
+  "bibliography",
+  "equation"
 ]

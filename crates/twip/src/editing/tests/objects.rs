@@ -270,7 +270,7 @@ fn delete_removes_every_selected_float_in_one_step() {
     select_both(&mut e);
     e.execute(Command::DeleteObject, fonts());
     assert_eq!(all_floats(&e).len(), 0);
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(all_floats(&e).len(), 2, "one undo restores both");
 }
 
@@ -296,7 +296,7 @@ fn deleting_selected_floats_needs_each_anchor_editable() {
             assert_eq!(changed(&out), deletes, "{command:?}: {out:?}");
             assert_eq!(all_floats(&e).len(), if deletes { 0 } else { 2 }, "{command:?}");
             if deletes {
-                e.execute(Command::Undo, fonts());
+                e.execute(Command::Undo(Default::default()), fonts());
                 assert_eq!(all_floats(&e).len(), 2, "one undo restores both");
             }
         }
@@ -706,9 +706,9 @@ fn wrap_points_drag_add_and_remove_as_one_step_each_and_save() {
     let saved = crate::docx::write::save(e.document()).expect("saves");
     let again = Editor::open(&saved, fonts()).expect("opens");
     assert_eq!(poly(&again), poly(&e));
-    e.execute(Command::Undo, fonts());
-    e.execute(Command::Undo, fonts());
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(poly(&e), None, "undone");
     // A press elsewhere ends it
     assert!(matches!(e.edit_wrap_points(), Outcome::Moved));
@@ -786,7 +786,7 @@ fn regroup_groups_again_what_ungroup_made_until_one_is_gone() {
     assert_eq!((all_floats(&e).len(), e.history.undo_depth()), (1, depth + 1), "one group, one step");
     assert!(e.regroupable().is_none());
     assert!(changed(&e.ungroup_objects(fonts())));
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert!(e.regroupable().is_none(), "an undone ungroup leaves nothing to regroup");
     assert!(matches!(e.regroup_objects(fonts()), Outcome::Refused(_)));
 }
@@ -823,7 +823,7 @@ fn the_default_picture_wrap_floats_an_inserted_picture_in_one_step() {
     assert_eq!(f.len(), 1, "floating");
     let fl = e.float_of(FloatId(f[0])).expect("the float");
     assert_eq!((fl.wrap.as_str(), &*fl.alt), ("square", "A"));
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert!(all_floats(&e).is_empty());
 }
 
@@ -1320,9 +1320,9 @@ fn restack_and_hide_undo_and_redo_one_step_each() {
     assert_eq!(order(&mut e), restacked);
     e.undo(true, fonts());
     assert_eq!(order(&mut e), first);
-    let _ = e.execute(Command::Redo, fonts());
+    let _ = e.execute(Command::Redo(Default::default()), fonts());
     assert_eq!(order(&mut e), restacked);
-    let _ = e.execute(Command::Redo, fonts());
+    let _ = e.execute(Command::Redo(Default::default()), fonts());
     assert_eq!(order(&mut e), hidden);
 }
 
@@ -1726,7 +1726,7 @@ fn a_live_drag_to_the_next_page_of_a_vertical_section_drops_as_a_plain_one() {
     let body = format!("<w:p><w:r><w:t>Text</w:t></w:r>{}</w:p>{filler}", anchor(100, 200, 60, 40, 1, false, 1, &shape));
     let run = |live: bool| {
         let mut e = editor(&body);
-        e.execute(Command::SetSectionTextDirection(TextFlow::TbRl), fonts());
+        e.execute(Command::SetSectionTextDirection(crate::api::command::SectionValue::here(TextFlow::TbRl)), fonts());
         e.complete(fonts());
         e.live_layout = live;
         let f = FloatId(all_floats(&e)[0]);

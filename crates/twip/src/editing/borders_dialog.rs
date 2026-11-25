@@ -9,7 +9,13 @@ use crate::api::value::{AutoOr, Color, NoneOr, Points};
 /// An edge's line, or none.
 pub(super) fn line(b: &Option<crate::docx::props::Border>) -> Option<Border> {
     let b = b.as_ref().filter(|b| b.visible())?;
-    Some(Border { style: BorderStyle::of_val(&b.style), width: Points(b.width), color: b.color.map_or(AutoOr::Auto, |c| AutoOr::Value(Color(c))) })
+    Some(Border {
+        style: BorderStyle::of_val(&b.style),
+        width: Points(b.width),
+        color: b.color.map_or(AutoOr::Auto, |c| AutoOr::Value(crate::api::drawing::ColourValue::rgb(Color(c)))),
+        space: None,
+        shadow: None,
+    })
 }
 
 impl Editor {
@@ -37,7 +43,7 @@ impl Editor {
         if let Some(l) =
             [&v.top, &v.left, &v.bottom, &v.right, &v.between, &v.inside_vertical, &v.diagonal_down, &v.diagonal_up].into_iter().flatten().next()
         {
-            (v.style, v.color, v.width) = (l.style, l.color, l.width);
+            (v.style, v.color, v.width) = (l.style, super::readback::rgb_only(&l.color), l.width);
         }
         (v.page_top, v.page_bottom, v.page_left, v.page_right, v.page_setting) = (None, None, None, None, BorderSetting::None);
         Some(v)
@@ -96,7 +102,7 @@ impl Editor {
         if let Some(l) =
             [&v.top, &v.left, &v.bottom, &v.right, &v.between, &v.inside_vertical, &v.diagonal_down, &v.diagonal_up].into_iter().flatten().next()
         {
-            (v.style, v.color, v.width) = (l.style, l.color, l.width);
+            (v.style, v.color, v.width) = (l.style, super::readback::rgb_only(&l.color), l.width);
         } else {
             (v.style, v.color, v.width) = (BorderStyle::Single, AutoOr::Auto, Points(0.5));
         }
@@ -218,7 +224,7 @@ impl Editor {
         v.setting = crate::services::dialogs::border_setting(&v, shadow);
         // The line new edges take: the first edge's.
         if let Some(b) = [&v.top, &v.left, &v.bottom, &v.right, &v.between, &v.page_top, &v.page_left].into_iter().flatten().next() {
-            (v.style, v.color, v.width) = (b.style, b.color, b.width);
+            (v.style, v.color, v.width) = (b.style, super::readback::rgb_only(&b.color), b.width);
         }
         Some(v)
     }

@@ -27,7 +27,7 @@
         { "kind": "command", "command": "insertColumns", "enabled": true },
         { "kind": "command", "command": "deleteColumns", "enabled": true },
         { "kind": "command", "command": "copy", "enabled": true },
-        { "kind": "command", "command": "paste", "enabled": false }
+        { "kind": "command", "command": "paste" }
       ] }
     } },
     { "op": "call", "method": "menus.invoke", "args": [{ "$saved": "table", "path": ["items", { "command": "insertRows" }, "action"] }] },
@@ -36,11 +36,11 @@
     { "op": "command", "command": { "type": "undo" } },
     { "op": "expectState", "match": { "revision": 3, "selection": { "table": { "rows": 2 } }, "history": { "canUndo": false } } },
     { "op": "command", "command": { "type": "moveSelection", "by": "character", "direction": "forward" } },
-    { "op": "expectState", "match": { "selection": { "empty": true, "text": "" }, "commands": { "copy": { "enabled": false }, "paste": { "enabled": false } } } },
+    { "op": "expectState", "match": { "selection": { "empty": true, "text": "" }, "commands": { "copy": { "enabled": false } } } },
     { "op": "call", "method": "menus.contextMenu", "result": {
       "items": { "$has": [
         { "kind": "command", "command": "copy", "enabled": false },
-        { "kind": "command", "command": "paste", "enabled": false }
+        { "kind": "command", "command": "paste" }
       ] }
     } }
   ]

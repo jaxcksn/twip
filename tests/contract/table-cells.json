@@ -1,0 +1,29 @@
+{
+  "name": "table-cells",
+  "steps": [
+    { "op": "command", "command": { "type": "insertTable", "rows": 2, "columns": 2 } },
+    { "op": "expectState", "match": { "selection": { "table": { "defaultCellMargins": { "top": 0, "left": 5.4, "bottom": 0, "right": 5.4 }, "cellMargins": { "left": 5.4 }, "hideMark": false, "fit": { "$type": "string" }, "columnSpan": 1, "rowSpan": 1 } }, "commands": { "insertCells": { "enabled": true } } } },
+    { "op": "command", "command": { "type": "insertCells", "value": "right" } },
+    { "op": "expectState", "match": { "history": { "undoLabel": "Insert Cells" }, "selection": { "table": { "rows": 2, "columns": 3 } } } },
+    { "op": "command", "command": { "type": "undo" } },
+    { "op": "command", "command": { "type": "insertCells", "value": "down" } },
+    { "op": "expectState", "match": { "history": { "undoLabel": "Insert Cells" }, "selection": { "table": { "rows": 3, "columns": 2 } } } },
+    { "op": "command", "command": { "type": "setTableCellMargins", "top": 2, "left": 7.5 } },
+    { "op": "expectState", "match": { "history": { "undoLabel": "Table Properties" }, "selection": { "table": { "defaultCellMargins": { "top": 2, "left": 7.5, "bottom": 0, "right": 5.4 } } } } },
+    { "op": "command", "command": { "type": "setTableCellMargins", "right": 2000 } },
+    { "op": "expectError", "code": "invalid-argument" },
+    { "op": "command", "command": { "type": "setRowProperties", "exceptions": { "indent": 10, "shading": { "fill": { "rgb": "#D9E2F3" }, "pattern": "pct10", "color": { "rgb": "#000000" } } } } },
+    { "op": "expectState", "match": { "selection": { "table": { "rowExceptions": { "any": true, "indent": 10, "shading": { "fill": { "rgb": "#D9E2F3" }, "pattern": "pct10" } } } } } },
+    { "op": "command", "command": { "type": "setRowProperties", "exceptions": { "indent": 5000 } } },
+    { "op": "expectError", "code": "invalid-argument" },
+    { "op": "export", "format": "docx" },
+    { "op": "reopen" },
+    { "op": "expectState", "match": { "selection": { "table": { "rows": 3, "defaultCellMargins": { "top": 2, "left": 7.5 }, "rowExceptions": { "indent": 10 } } } } },
+    { "op": "command", "command": { "type": "escape" } },
+    { "op": "command", "command": { "type": "select", "value": "table" } },
+    { "op": "command", "command": { "type": "convertTableToText", "separator": "tabs" } },
+    { "op": "expectState", "match": { "selection": { "table": { "$exact": null } } } },
+    { "op": "command", "command": { "type": "insertCells", "value": "right" } },
+    { "op": "expectError", "code": "unavailable" }
+  ]
+}

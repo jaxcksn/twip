@@ -351,7 +351,7 @@ pub fn fill_effects_values(state: &State) -> FillEffectsDialog {
         Some(FillValue::Pattern { preset, foreground, background }) => {
             (v.tab, v.pattern, v.foreground, v.background) = (FillEffectsTab::Pattern, preset.clone(), foreground.clone(), background.clone());
         }
-        Some(FillValue::Picture { tile, .. }) => v.tab = if tile.unwrap_or(false) { FillEffectsTab::Texture } else { FillEffectsTab::Picture },
+        Some(FillValue::Picture { tile, .. }) => v.tab = if tile.is_some() { FillEffectsTab::Texture } else { FillEffectsTab::Picture },
         Some(FillValue::Gradient { kind, angle, stops, focus }) if stops.len() >= 2 => {
             // Two colours as Word blends them (how they read) are the two.
             let stops = &two_stops(stops).unwrap_or_else(|| stops.clone());
@@ -471,7 +471,7 @@ pub fn fill_effects_commands(v: &FillEffectsDialog, was: &FillEffectsDialog) -> 
     let has_picture = matches!(was.tab, FillEffectsTab::Texture | FillEffectsTab::Picture);
     let picture = |b: &Bytes, tile: bool| match b.0.is_empty() && !has_picture {
         true => Err(Error::invalid("select a picture")),
-        false => Ok(FillValue::Picture { image: b.clone(), tile: Some(tile) }),
+        false => Ok(FillValue::Picture { image: b.clone(), stretch: None, tile: tile.then(Default::default), rotate_with_shape: None }),
     };
     let fill = match v.tab {
         FillEffectsTab::Gradient => gradient(v)?,

@@ -6,7 +6,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::rc::Rc;
 
-use super::model::{Block, Cell, ParaStyle, Paragraph, Raw, Row, Run, RunStyle, Section, SectionPage, Table, VMerge};
+use super::model::{Block, Cell, PageSetup, ParaStyle, Paragraph, Raw, Row, Run, RunStyle, Section, SectionPage, Table, VMerge};
 use super::props::{Border, Jc, Look, Width};
 
 /// The people who made revisions and comments, in order of first appearance: an [`AuthorId`] is an index here.
@@ -998,10 +998,10 @@ impl Paragraph {
 }
 
 impl Section {
-    pub fn section_in(&self, view: MarkupView) -> SectionPage {
+    pub fn section_in(&self, view: MarkupView) -> PageSetup<'_> {
         match (&self.change, view) {
-            (Some(c), MarkupView::Original) => c.previous.clone(),
-            _ => self.page(),
+            (Some(c), MarkupView::Original) => PageSetup::from(&c.previous),
+            _ => PageSetup::from(self),
         }
     }
 }

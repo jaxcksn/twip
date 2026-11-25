@@ -117,7 +117,7 @@ fn page_setup_on_selected_cells_changes_their_section() {
     let mut e = three_sections(&format!("{}{}", table("Cell"), p("Three")));
     let t = table_id(&e, 2);
     e.set_caret_for_benchmark(cells(t));
-    e.execute(Command::SetOrientation(Orientation::Landscape), fonts());
+    e.execute(Command::SetOrientation(crate::api::command::SectionValue::here(Orientation::Landscape)), fonts());
     assert!(!landscape(&e, 0), "the first section stays");
     assert!(landscape(&e, 2), "the cells' section turns");
 }
@@ -127,7 +127,7 @@ fn page_setup_on_a_selected_picture_changes_its_section() {
     let mut e = three_sections(&p("Three"));
     let three = para_of(&e, "Three");
     e.set_caret_for_benchmark(Selection::Object(ObjectRef::Inline { para: three, offset: Unit(0) }));
-    e.execute(Command::SetOrientation(Orientation::Landscape), fonts());
+    e.execute(Command::SetOrientation(crate::api::command::SectionValue::here(Orientation::Landscape)), fonts());
     assert!(!landscape(&e, 0), "the first section stays");
     assert!(landscape(&e, 2), "the object's section turns");
 }
@@ -139,7 +139,7 @@ fn page_setup_from_a_footnote_changes_its_reference_section() {
     caret(&mut e, StoryId::Body, three, 2);
     e.execute(Command::InsertFootnote, fonts());
     assert!(matches!(story(&e), Some(StoryId::Footnote(_))));
-    e.execute(Command::SetOrientation(Orientation::Landscape), fonts());
+    e.execute(Command::SetOrientation(crate::api::command::SectionValue::here(Orientation::Landscape)), fonts());
     assert!(!landscape(&e, 0), "the first section stays");
     assert!(landscape(&e, 2), "the note's reference is in the third section");
 }
@@ -229,7 +229,7 @@ fn edit_header_replaces_a_reference_to_a_missing_part() {
     assert!(in_header(&e), "{out:?}");
     let name = e.document().sections[0].headers[0].clone().expect("a header");
     assert!(e.document().stories.contains_key(&name), "the reference names the new part");
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(e.document().sections[0].headers[0].as_deref(), Some("word/header1.xml"), "undo brings the reference back");
 }
 
@@ -254,7 +254,7 @@ fn remove_header_over_a_missing_part_gives_an_empty_one() {
     assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
     let name = e.document().sections[0].headers[0].clone().expect("a header");
     assert!(e.document().stories.contains_key(&name));
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(e.document().sections[0].headers, before);
 }
 

@@ -1,0 +1,21 @@
+{
+  "name": "table-tools",
+  "steps": [
+    { "op": "command", "command": { "type": "insertTable", "rows": 2, "columns": 2 } },
+    { "op": "command", "command": { "type": "insertText", "value": "Pen" } },
+    { "op": "command", "command": { "type": "select", "value": "table" } },
+    { "op": "command", "command": { "type": "setRowHeight", "value": { "height": 72, "rule": "exact" } } },
+    { "op": "command", "command": { "type": "setTableTool", "value": "pen" } },
+    { "op": "expectState", "match": { "view": { "tableTool": "pen", "tableToolFeedback": { "$exact": null } }, "commands": { "setTableTool": { "enabled": true } } } },
+    { "op": "drag", "from": { "text": "Pen" }, "by": { "dx": 400 }, "release": false },
+    { "op": "expectState", "match": { "view": { "tableToolFeedback": { "page": 0, "kind": "line" } } } },
+    { "op": "release" },
+    { "op": "expectState", "match": { "history": { "undoLabel": "Draw Table" }, "view": { "tableTool": "pen", "tableToolFeedback": { "$exact": null } } } },
+    { "op": "command", "command": { "type": "undo" } },
+    { "op": "expectState", "match": { "view": { "tableTool": "pen" } } },
+    { "op": "command", "command": { "type": "setTableTool", "value": "eraser" } },
+    { "op": "expectState", "match": { "view": { "tableTool": "eraser", "tableEraserTarget": { "$exact": null } } } },
+    { "op": "key", "key": "Escape" },
+    { "op": "expectState", "match": { "view": { "tableTool": "none" } } }
+  ]
+}

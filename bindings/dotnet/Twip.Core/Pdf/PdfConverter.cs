@@ -118,7 +118,7 @@ public static class PdfConverter
     private static unsafe PdfConversion Run(ReadOnlySpan<byte> docx, PdfFontSet fonts, PdfOptions? options, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
-        var json = WireJson.ToUtf8(new PdfOptionsWire(options?.OpenPassword, options?.Keywords is { Count: > 0 } k ? k : null));
+        var json = WireJson.ToUtf8(new PdfOptionsWire(options?.OpenPassword, options?.Keywords is { Count: > 0 } k ? k : null, options?.HiddenText == true ? true : null));
         using var set = fonts.Use();
         var cancel = ct.CanBeCanceled ? TwipNative.PdfCancelNew() : 0;
         TwipBuf pdf = default, meta = default;

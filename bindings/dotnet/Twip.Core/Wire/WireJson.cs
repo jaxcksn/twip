@@ -70,4 +70,6 @@ internal static class CommitValue
     public static FontReplaceResult FontReplaced(JsonElement? commit) => new(Field(commit, "changed").GetInt32(), Field(commit, "skipped").GetInt32());
 
     public static string ItemId(JsonElement? commit) => Field(commit, "itemId").GetString()!;
+
+    public static StyleId StyleId(JsonElement? commit) => new(Field(commit, "styleId").GetString()!);
 }

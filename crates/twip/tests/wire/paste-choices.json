@@ -1,0 +1,16 @@
+[
+  {
+    "choices": [
+      "keepSource",
+      "merge",
+      "textOnly",
+      "html",
+      "text",
+      "picture"
+    ],
+    "default": "keepSource"
+  },
+  {
+    "choices": []
+  }
+]

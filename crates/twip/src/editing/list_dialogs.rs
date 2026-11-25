@@ -124,7 +124,7 @@ impl Editor {
                     (NumberFormat::Bullet, v.text.clone(), v.font.clone(), v.picture.clone(), v.alignment);
             }),
             DialogValues::DefineNumberFormat(v) => one(lists::NUMBERING[0], &|l| {
-                (l.format, l.text, l.font, l.picture, l.alignment) = (v.format, v.text.clone(), v.font.clone(), None, v.alignment);
+                (l.format, l.text, l.font, l.picture, l.alignment) = (v.format.clone(), v.text.clone(), v.font.clone(), None, v.alignment);
             }),
             DialogValues::DefineMultilevelList(v) => {
                 Command::SetListDefinition(ListDefinitionChange { levels: v.levels.clone(), apply_to: v.apply_to, name: Some(v.list_name.clone()) })

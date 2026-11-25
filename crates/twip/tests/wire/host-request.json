@@ -19,10 +19,40 @@
   },
   {
     "height": 18.5,
+    "line": "horizontal",
     "type": "caret",
     "visible": true,
+    "width": 0.0,
     "x": 96.5,
     "y": 120.0
+  },
+  {
+    "height": 0.0,
+    "line": "down",
+    "type": "caret",
+    "visible": true,
+    "width": 18.5,
+    "x": 520.5,
+    "y": 96.0
+  },
+  {
+    "ends": [
+      [
+        209.75,
+        300.5
+      ],
+      [
+        200.5,
+        316.5
+      ]
+    ],
+    "height": 16.0,
+    "line": "horizontal",
+    "type": "caret",
+    "visible": true,
+    "width": 9.25,
+    "x": 200.5,
+    "y": 300.5
   },
   {
     "type": "scroll",

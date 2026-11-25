@@ -7,7 +7,7 @@ use crate::api::command::{
 use crate::api::error::Error;
 use crate::api::review::Body;
 use crate::api::value::{ControlKind as KindArg, ControlLock, ControlOptions, DataBinding};
-use crate::docx::{Block, Control, ControlId, ControlKind, ControlProps, ElementId, FieldId, FieldKind, FieldView, Inline, Lock};
+use crate::docx::{Block, Control, ControlId, ControlKind, ControlProps, ElementId, FieldEdge, FieldId, FieldKind, FieldView, Inline, Lock};
 use crate::font::Fonts;
 use crate::layout::{ParaId, Unit};
 
@@ -298,7 +298,7 @@ impl Editor {
         (out, tip)
     }
 
-    /// The hover tooltip in the kinds the API names (a note reference's has none yet).
+    /// The hover tooltip in the kinds the API names.
     pub fn hover_tooltip(&mut self) -> Option<(crate::api::services::TooltipKind, super::view::Tooltip)> {
         use super::hover::HoverTip as H;
         use crate::api::services::TooltipKind as K;
@@ -309,7 +309,8 @@ impl Editor {
             H::Link => K::Link,
             H::Revision => K::Revision,
             H::Comment => K::Comment,
-            H::Note | H::WhiteSpace => return None,
+            H::Note => K::Note,
+            H::WhiteSpace => K::WhiteSpace,
         };
         Some((kind, t))
     }
@@ -992,6 +993,9 @@ impl Editor {
 
     // Control fill
     pub(super) fn fill_control(&mut self, f: FillControl, fonts: &Fonts) -> Outcome {
+        if let Some(date) = &f.date {
+            return self.fill_control_date(&f.id, date, fonts);
+        }
         self.begin_batch(None);
         self.picture_writes = true;
         let r = self.control_fill(f, fonts);
@@ -1051,7 +1055,7 @@ impl Editor {
             }
             self.commit(tx, None, fonts);
         }
-        self.control_fill(FillControl { id: id.clone(), text: Some(text), image: None, docx: None, building_block: None }, fonts)
+        self.control_fill(FillControl { id: id.clone(), text: Some(text), image: None, docx: None, building_block: None, date: None }, fonts)
     }
 
     fn control_fill(&mut self, f: FillControl, fonts: &Fonts) -> Result<Outcome, Refused> {
@@ -2040,23 +2044,44 @@ impl Editor {
         true
     }
 
+    /// The fields across paragraphs (tables of contents) a field command with no ids takes beside `fields`: the
+    /// selection's, or the caret's where no other field is.
+    fn spans_with(&self, ids: Option<&[crate::api::value::ElementId]>, fields: &[(FieldId, ParaId)]) -> Vec<super::span_codes::SpanField> {
+        if ids.is_none() && (fields.is_empty() || !matches!(self.selection, Selection::Caret(_))) { self.span_fields_selected() } else { Vec::new() }
+    }
+
     pub(super) fn lock_fields(&mut self, lock: bool, ids: Option<&[crate::api::value::ElementId]>, fonts: &Fonts) -> Outcome {
         let fields = self.fields_here(ids, true);
-        let mut paras: Vec<ParaId> = fields.iter().map(|(_, p)| *p).collect();
+        let spans: Vec<(ParaId, usize)> = self
+            .spans_with(ids, &fields)
+            .into_iter()
+            .filter_map(|f| match self.index.blocks(&self.doc, f.container)?.get(f.start.0)? {
+                Block::Para(p) => Some((ParaId(p.id), f.start.1)),
+                _ => None,
+            })
+            .collect();
+        let mut paras: Vec<ParaId> = fields.iter().map(|(_, p)| *p).chain(spans.iter().map(|s| s.0)).collect();
+        paras.sort_unstable_by_key(|p| p.0);
         paras.dedup();
         let mut tx = self.begin(if lock { "Lock Fields" } else { "Unlock Fields" });
         for para in paras {
             let Some(p) = self.index.para(&self.doc, para) else { continue };
             let mut inlines = p.inlines.clone();
             let mut changed = false;
-            for i in inlines.iter_mut() {
-                if let Inline::FieldBegin { id, lock: l, .. } = i
-                    && fields.iter().any(|(f, _)| f == id)
-                    && *l != lock
-                {
-                    *l = lock;
-                    changed = true;
+            for (k, i) in inlines.iter_mut().enumerate() {
+                match i {
+                    Inline::FieldBegin { id, lock: l, .. } if *l != lock && fields.iter().any(|(f, _)| f == id) => *l = lock,
+                    Inline::Opaque(o) if spans.contains(&(para, k)) => {
+                        let Some(FieldEdge::Start { code, lock: l, dirty, view }) = &o.field else { continue };
+                        if *l == lock {
+                            continue;
+                        }
+                        let edge = FieldEdge::Start { code: code.clone(), lock, dirty: *dirty, view: *view };
+                        *i = edge.inline(&self.cx().w, o.run.clone().unwrap_or_else(|| p.mark.clone()));
+                    }
+                    _ => continue,
                 }
+                changed = true;
             }
             if changed {
                 let _ = self.step(&mut tx, Step::Restyle { para, inlines });
@@ -2070,21 +2095,53 @@ impl Editor {
     }
 
     pub(super) fn unlink_fields(&mut self, ids: Option<&[crate::api::value::ElementId]>, fonts: &Fonts) -> Outcome {
-        let mut fields = self.fields_here(ids, false);
+        let fields = self.fields_here(ids, false);
         let all = self.all_fields();
-        let span = |f: &FieldId| all.iter().find(|g| g.0 == *f).map(|g| (g.2, g.4, g.5));
-        let keep: Vec<(FieldId, ParaId)> = fields
-            .iter()
-            .filter(|(f, _)| {
-                let Some((p, s, e)) = span(f) else { return false };
-                !fields.iter().any(|(g, _)| g != f && span(g).is_some_and(|(q, gs, ge)| q == p && gs <= s && e <= ge))
+        let range = |g: &(FieldId, StoryId, ParaId, usize, Unit, Unit)| (Position::text(g.1, g.2, g.4), Position::text(g.1, g.2, g.5));
+        // Fields across paragraphs, with every field inside them: their results become text.
+        let selected = self.span_fields_within(&self.spans_with(ids, &fields));
+        let mut outer: Vec<(Position, Position)> = selected.iter().filter_map(|f| self.span_places(f)).collect();
+        outermost(&self.index, &mut outer);
+        let chosen: std::collections::HashSet<FieldId> = fields.iter().map(|f| f.0).collect();
+        let candidates: Vec<usize> = (0..all.len())
+            .filter(|&i| {
+                let (s, e) = range(&all[i]);
+                chosen.contains(&all[i].0) || within(&self.index, &outer, s, e)
             })
-            .cloned()
             .collect();
-        fields = keep;
-        fields.sort_by_key(|(f, _)| std::cmp::Reverse(all.iter().position(|g| g.0 == *f)));
+        // A locked field and every field inside it stay.
+        let containers = candidates.iter().filter_map(|&i| self.index.para_slot(all[i].2)).map(|s| s.container);
+        let mut locked = self.locked_span_places(containers.chain(selected.iter().map(|f| f.container)));
+        let locked_inline = |g: &&(FieldId, StoryId, ParaId, usize, Unit, Unit)| {
+            self.index.para(&self.doc, g.2).and_then(|p| p.inlines.get(g.3)).is_some_and(|i| matches!(i, Inline::FieldBegin { lock: true, .. }))
+        };
+        locked.extend(all.iter().filter(locked_inline).map(range));
+        outermost(&self.index, &mut locked);
+        let any = !candidates.is_empty() || !selected.is_empty();
+        let spans: Vec<_> = selected.into_iter().filter(|f| self.span_places(f).is_some_and(|(s, e)| !within(&self.index, &locked, s, e))).collect();
+        outer = spans.iter().filter_map(|f| self.span_places(f)).collect();
+        outermost(&self.index, &mut outer);
+        // The outermost of nested ones, last first
+        let mut picked: Vec<(usize, ParaId, Unit, Unit)> = candidates
+            .iter()
+            .map(|&i| (i, &all[i]))
+            .filter(|(_, g)| {
+                let (s, e) = range(g);
+                (chosen.contains(&g.0) || within(&self.index, &outer, s, e)) && !within(&self.index, &locked, s, e)
+            })
+            .map(|(i, g)| (i, g.2, g.4, g.5))
+            .collect();
+        let refused = any && picked.is_empty() && spans.is_empty();
+        picked.sort_by_key(|&(_, p, s, e)| (p, s, std::cmp::Reverse(e)));
+        picked.dedup_by(|f, g| f.1 == g.1 && g.2 <= f.2 && f.3 <= g.3);
+        picked.sort_by_key(|f| std::cmp::Reverse(f.0));
         let mut tx = self.begin("Unlink Fields");
-        for (f, para) in fields {
+        if !self.unlink_spans(&mut tx, &spans) {
+            self.abort(tx);
+            return Outcome::Unchanged("the field changed");
+        }
+        for (i, para, ..) in picked {
+            let f = all[i].0;
             let Some(Where::Inline { first, last, start, end, .. }) = self.locate(ElementId::Field(f)) else { continue };
             let Some(p) = self.index.para(&self.doc, para).cloned() else { continue };
             let Some(s) = crate::docx::fields::span_at(&p.inlines, first).filter(|s| s.end == last) else { continue };
@@ -2095,7 +2152,7 @@ impl Editor {
         }
         if tx.undo.is_empty() {
             self.abort(tx);
-            return Outcome::Unchanged("no field here");
+            return Outcome::Unchanged(if refused { "the field is locked" } else { "no field here" });
         }
         self.follow(&tx);
         self.commit(tx, None, fonts)
@@ -2543,7 +2600,12 @@ impl Editor {
                 ControlKind::Checkbox { checked: '\u{2612}', unchecked: '\u{2610}' }
             }
             (KindArg::Date, Some(ControlOptions::Date(o))) => {
-                ControlKind::Date { format: o.format.clone().unwrap_or_else(|| "M/d/yyyy".into()), lid: o.locale.clone() }
+                let format = o.format.clone().unwrap_or_else(|| "M/d/yyyy".into());
+                if o.calendar.is_some() || o.store_as.is_some() {
+                    let calendar = o.calendar.map(crate::api::value::CalendarType::val);
+                    kind_xml = Some(date_storage_xml(None, &format, o.locale.as_deref(), calendar, o.store_as.map(DateStorage::of_api), &w));
+                }
+                ControlKind::Date { format, lid: o.locale.clone() }
             }
             (KindArg::Date, _) => ControlKind::Date { format: "M/d/yyyy".into(), lid: None },
             (k @ (KindArg::DropDown | KindArg::ComboBox), o) => {
@@ -2559,6 +2621,18 @@ impl Editor {
             }
             (KindArg::Group, _) => ControlKind::Group,
             (KindArg::RepeatingSection, _) => return Err(Error::invalid("repeating sections are made by wrapInRepeatingSection")),
+            (KindArg::BuildingBlockGallery, o) => {
+                let (gallery, category) = match o {
+                    Some(ControlOptions::Gallery(g)) => (g.gallery.clone(), g.category.clone()),
+                    _ => (None, None),
+                };
+                let some = |v: Option<String>| v.filter(|v| !v.is_empty());
+                kind_xml = crate::docx::KeptKind::Gallery { gallery: some(gallery), category: some(category) }.part_xml(&w);
+                ControlKind::Other
+            }
+            (KindArg::BuildingBlock | KindArg::Citation | KindArg::Bibliography | KindArg::Equation, _) => {
+                return Err(Error::invalid("read-only kind"));
+            }
         };
         let wrap = c.wrap_selection.unwrap_or(false);
         if wrap && !matches!(kind, ControlKind::RichText | ControlKind::Group) {
@@ -2571,6 +2645,7 @@ impl Editor {
                 ControlKind::PlainText { .. } | ControlKind::RichText => Some("Click or tap here to enter text.".into()),
                 ControlKind::Date { .. } => Some("Click or tap to enter a date.".into()),
                 ControlKind::DropDown => Some("Choose an item.".into()),
+                ControlKind::Other => Some("Choose a building block.".into()),
                 _ => None,
             },
         };
@@ -2583,8 +2658,10 @@ impl Editor {
             kind_xml,
             ..Default::default()
         };
-        if matches!(kind, ControlKind::PlainText { .. } | ControlKind::RichText | ControlKind::Date { .. } | ControlKind::DropDown)
-            && placeholder.is_some()
+        if matches!(
+            kind,
+            ControlKind::PlainText { .. } | ControlKind::RichText | ControlKind::Date { .. } | ControlKind::DropDown | ControlKind::Other
+        ) && placeholder.is_some()
         {
             props.showing_placeholder = true;
         }
@@ -2879,19 +2956,7 @@ impl Editor {
             let ElementId::Control(c) = e else { return Err(bad("id")) };
             let mut control = self.doc.controls.get(&c).cloned().ok_or_else(no_element)?;
             let ControlKind::Date { format, lid } = &control.props.kind else { return Err(bad("id")) };
-            let w = self.cx().w;
-            let esc = crate::docx::write::props::esc;
-            let lid = lid.as_deref().map(|l| format!("<{w}lid {w}val=\"{}\"/>", esc(l))).unwrap_or_default();
-            let mut x =
-                control.props.kind_xml.clone().unwrap_or_else(|| format!("<{w}date><{w}dateFormat {w}val=\"{}\"/>{lid}</{w}date>", esc(format)));
-            let after_lid = if x.contains("lid") { "lid" } else { "dateFormat" };
-            if let Some(s) = storage {
-                x = with_child_val(&x, "storeMappedDataAs", s.xml(), &w, Some(after_lid));
-            }
-            if let Some(cal) = calendar {
-                let after = if x.contains("storeMappedDataAs") { "storeMappedDataAs" } else { after_lid };
-                x = with_child_val(&x, "calendar", cal, &w, Some(after));
-            }
+            let x = date_storage_xml(control.props.kind_xml.as_deref(), format, lid.as_deref(), calendar, storage, &self.cx().w);
             if control.props.kind_xml.as_deref() == Some(x.as_str()) {
                 return Ok(Outcome::Unchanged("already so"));
             }
@@ -2956,6 +3021,11 @@ impl Editor {
                         if let Some(l) = &o.locale {
                             *x = with_child_val(x, "lid", l, &prefix, Some("dateFormat"));
                         }
+                    }
+                    if o.calendar.is_some() || o.store_as.is_some() {
+                        let calendar = o.calendar.map(crate::api::value::CalendarType::val);
+                        let storage = o.store_as.map(DateStorage::of_api);
+                        p.kind_xml = Some(date_storage_xml(p.kind_xml.as_deref(), format, lid.as_deref(), calendar, storage, &prefix));
                     }
                 }
                 (ControlKind::DropDown, ControlOptions::List(l)) => {
@@ -3040,6 +3110,14 @@ impl Editor {
                     p.kind_xml = Some(format!(r#"<w15:repeatingSection xmlns:w15="{w15}">{title}{fixed}</w15:repeatingSection>"#));
                 }
                 (ControlKind::Picture, ControlOptions::Picture(o)) => resize = Some(o.clone()),
+                (ControlKind::Other, ControlOptions::Gallery(o)) => {
+                    let Some(crate::docx::KeptKind::Gallery { gallery, category }) = p.kept_kind() else {
+                        return Err(Error::invalid("options for another kind of control"));
+                    };
+                    let pick = |set: &Option<String>, was: Option<String>| set.as_ref().map_or(was, |v| Some(v.clone()).filter(|v| !v.is_empty()));
+                    let kind = crate::docx::KeptKind::Gallery { gallery: pick(&o.gallery, gallery), category: pick(&o.category, category) };
+                    p.kind_xml = kind.part_xml(&prefix);
+                }
                 _ => return Err(Error::invalid("options for another kind of control")),
             }
             if !matches!(
@@ -3049,6 +3127,7 @@ impl Editor {
                     | ControlKind::Picture
                     | ControlKind::RepeatingSection
                     | ControlKind::Date { .. }
+                    | ControlKind::Other
             ) {
                 p.kind_xml = None;
             }
@@ -3310,6 +3389,18 @@ fn nest(lists: &[&Vec<ControlId>], outside: &[&Vec<ControlId>]) -> Result<Vec<us
     Ok(out)
 }
 
+/// Sorts `ranges` by start and keeps the outermost of nested ones.
+fn outermost(idx: &super::index::DocIndex, ranges: &mut Vec<(Position, Position)>) {
+    ranges.sort_by(|x, y| idx.cmp(&x.0, &y.0).then(idx.cmp(&y.1, &x.1)));
+    ranges.dedup_by(|f, g| idx.cmp(&f.1, &g.1).is_le());
+}
+
+/// Whether `s..e` is inside one of `ranges`, as [`outermost`] leaves them.
+fn within(idx: &super::index::DocIndex, ranges: &[(Position, Position)], s: Position, e: Position) -> bool {
+    let k = ranges.partition_point(|o| idx.cmp(&o.0, &s).is_le());
+    k > 0 && idx.cmp(&e, &ranges[k - 1].1).is_le()
+}
+
 /// How many fields deep unlinking goes into results: below that, a field's result is its text. A document nests
 /// fields with flat begin and end marks, so the depth is the file's to choose.
 const MAX_UNLINK_DEPTH: usize = 32;
@@ -3341,7 +3432,11 @@ fn unlinked(inlines: &[Inline], spans: &[crate::docx::fields::FieldSpan], s: cra
             continue;
         }
         out.extend_from_slice(&inlines[k..t.begin]);
-        unlinked(inlines, spans, *t, depth + 1, out);
+        if matches!(inlines[t.begin], Inline::FieldBegin { lock: true, .. }) {
+            out.extend_from_slice(&inlines[t.begin..=t.end]);
+        } else {
+            unlinked(inlines, spans, *t, depth + 1, out);
+        }
         k = t.end + 1;
     }
     out.extend_from_slice(&inlines[k..s.end]);
@@ -3575,6 +3670,54 @@ pub struct DateSettings {
     pub calendar: String,
     /// What it stores in its data (`w:storeMappedDataAs`); [`DateStorage::DateTime`] when the control doesn't say.
     pub storage: DateStorage,
+}
+
+/// A date control's `w:date` (`kind_xml` as kept, or one of `format`) with its calendar and storage set where given.
+fn date_storage_xml(
+    kind_xml: Option<&str>,
+    format: &str,
+    lid: Option<&str>,
+    calendar: Option<&str>,
+    storage: Option<DateStorage>,
+    w: &str,
+) -> String {
+    let esc = crate::docx::write::props::esc;
+    let mut x = kind_xml.map_or_else(
+        || {
+            let lid = lid.map(|l| format!("<{w}lid {w}val=\"{}\"/>", esc(l))).unwrap_or_default();
+            format!("<{w}date><{w}dateFormat {w}val=\"{}\"/>{lid}</{w}date>", esc(format))
+        },
+        str::to_string,
+    );
+    let after_lid = if x.contains("lid") { "lid" } else { "dateFormat" };
+    if let Some(s) = storage {
+        x = with_child_val(&x, "storeMappedDataAs", s.xml(), w, Some(after_lid));
+    }
+    if let Some(cal) = calendar {
+        let after = if x.contains("storeMappedDataAs") { "storeMappedDataAs" } else { after_lid };
+        x = with_child_val(&x, "calendar", cal, w, Some(after));
+    }
+    x
+}
+
+impl DateStorage {
+    /// The engine's storage for the API's.
+    pub fn of_api(s: crate::api::value::DateStorage) -> DateStorage {
+        match s {
+            crate::api::value::DateStorage::Text => DateStorage::Text,
+            crate::api::value::DateStorage::Date => DateStorage::Date,
+            crate::api::value::DateStorage::DateTime => DateStorage::DateTime,
+        }
+    }
+
+    /// The API's storage for this one.
+    pub fn to_api(self) -> crate::api::value::DateStorage {
+        match self {
+            DateStorage::Text => crate::api::value::DateStorage::Text,
+            DateStorage::Date => crate::api::value::DateStorage::Date,
+            DateStorage::DateTime => crate::api::value::DateStorage::DateTime,
+        }
+    }
 }
 
 /// Date control `props`' settings; `None` for another kind.

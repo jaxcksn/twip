@@ -34,22 +34,36 @@ pub(super) fn info(d: &FormData) -> crate::api::state::FormFieldInfo {
         calculate_on_exit: d.calc_on_exit,
         help_text: d.help.1.clone(),
         status_text: d.status.1.clone(),
+        help_is_auto_text: d.help.0,
+        status_is_auto_text: d.status.0,
+        entry_macro: d.entry_macro.clone(),
+        exit_macro: d.exit_macro.clone(),
         input_type: None,
         default_text: None,
         max_length: None,
+        format: None,
         checked: d.checked(),
+        size: None,
+        checked_by_default: None,
         entries: Vec::new(),
         entry: None,
+        default_entry: None,
     };
     match &d.kind {
-        FormKind::Text { input, default, max_length, .. } => {
+        FormKind::Text { input, default, max_length, format } => {
             i.input_type =
                 serde_json::from_value(serde_json::Value::String(if input == "calculated" { "calculation".into() } else { input.clone() })).ok();
             (i.default_text, i.max_length) = (Some(default.clone()), Some(*max_length));
+            i.format = Some(format.clone()).filter(|f| !f.is_empty());
         }
-        FormKind::CheckBox { .. } => i.kind = FormFieldType::CheckBox,
+        FormKind::CheckBox { size, default, .. } => {
+            i.kind = FormFieldType::CheckBox;
+            i.size = Some(size.map_or(crate::api::value::AutoOr::Auto, |s| crate::api::value::AutoOr::Value(crate::api::value::Points(s))));
+            i.checked_by_default = Some(*default);
+        }
         FormKind::DropDown { entries, default, result } => {
             (i.kind, i.entries, i.entry) = (FormFieldType::DropDown, entries.clone(), Some(result.unwrap_or(*default)));
+            i.default_entry = Some(*default);
         }
     }
     i
@@ -258,6 +272,12 @@ impl Editor {
                 }
                 if let Some(v) = c.status_text {
                     d.status = (false, v);
+                }
+                if let Some(a) = c.help_is_auto_text {
+                    d.help.0 = a;
+                }
+                if let Some(a) = c.status_is_auto_text {
+                    d.status.0 = a;
                 }
                 match &mut d.kind {
                     FormKind::Text { input, default, max_length, format } => {
@@ -548,7 +568,8 @@ impl Editor {
 
     /// The legacy check box the selection is on where forms are filled in: the whole field selected, as clicking or
     /// Tab leaves it.
-    pub(super) fn selected_form_check_box(&self) -> Option<crate::editing::position::Position> {
+    /// Where the legacy check box the selection is exactly starts, where forms are filled in.
+    pub fn selected_form_check_box(&self) -> Option<crate::editing::position::Position> {
         let (a, b) = self.selection.ordered(&self.index)?;
         let ((pa, ua), (pb, ub)) = (a.para_offset()?, b.para_offset()?);
         if pa != pb {

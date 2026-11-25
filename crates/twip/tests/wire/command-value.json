@@ -12,6 +12,7 @@
   null,
   "decimal",
   {
+    "allowOverlap": false,
     "horizontal": {
       "offset": 72.5,
       "relativeTo": "margin"

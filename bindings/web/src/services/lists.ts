@@ -1,4 +1,5 @@
 import type { ListEntryId, ListLevel } from '../commands.js';
+import type { StyleId } from '../types.js';
 import type { Session } from '../editor.js';
 import { Method } from '../transport/protocol.js';
 import { type PreviewPicture, type PreviewSize, toPicture } from './navigation.js';
@@ -39,6 +40,27 @@ export interface Lists {
   fontCharacters(family: string): Promise<CharRange[]>;
   /** A character in a font as PNG, drawn to fit. */
   characterPicture(family: string, character: string, size: PreviewSize): Promise<PreviewPicture>;
+  /**
+   * The list of the paragraph the selection's focus is in, its nine levels in full (`setListDefinition` sets them);
+   * `null` outside a list.
+   */
+  definition(): Promise<ListDefinition | null>;
+}
+
+/** A list as `lists.definition` reads it. */
+export interface ListDefinition {
+  /** The list instance. Paragraphs number together when their lists share a definition, whatever their ids. */
+  id: number;
+  /** Its name, which ListNum fields name it by. */
+  name?: string;
+  /** The list style it is defined by. */
+  style?: StyleId;
+  /** Whether the current level is a bullet. */
+  bullet: boolean;
+  /** The current level, 0 to 8. */
+  level: number;
+  /** Its nine levels. */
+  levels: ListLevel[];
 }
 
 /** The lists over a session. */
@@ -49,5 +71,6 @@ export function createLists(s: Session): Lists {
     fontCharacters: (family) => s.call(Method.FontCharacters, family),
     characterPicture: async (family, character, size) =>
       toPicture(await s.call(Method.CharacterPicture, { family, character, size: { scale: 1, ...size } })),
+    definition: () => s.call(Method.ListDefinition),
   };
 }

@@ -104,6 +104,11 @@ fn end_from(blocks: &[Block], (b, k): (usize, usize)) -> Option<(usize, usize)> 
     None
 }
 
+/// Whether the start at `at` of `blocks` is locked.
+fn locked_at(blocks: &[Block], (b, k): (usize, usize)) -> bool {
+    matches!(para_of(blocks, b).and_then(|p| span_edge(p.inlines.get(k)?)), Some(FieldEdge::Start { lock: true, .. }))
+}
+
 /// The place before inline `k` of block `b`.
 fn place(blocks: &[Block], story: super::position::StoryId, (b, k): (usize, usize)) -> Option<Position> {
     let p = para_of(blocks, b)?;
@@ -389,6 +394,91 @@ impl Editor {
         }
     }
 
+    /// `fields` and every field across paragraphs nested in one of them, outermost first.
+    pub(super) fn span_fields_within(&self, fields: &[SpanField]) -> Vec<SpanField> {
+        let mut containers: Vec<Container> = Vec::new();
+        for f in fields {
+            if !containers.contains(&f.container) {
+                containers.push(f.container);
+            }
+        }
+        let mut out = Vec::new();
+        for c in containers {
+            let Some(blocks) = self.index.blocks(&self.doc, c) else { continue };
+            // The outermost ones, in order
+            let mut mine: Vec<SpanField> = fields.iter().filter(|f| f.container == c).copied().collect();
+            mine.sort_by_key(|f| (f.start, std::cmp::Reverse(f.end)));
+            mine.dedup_by(|f, g| g.start <= f.start && f.end <= g.end);
+            for (start, end) in edge_pairs(blocks) {
+                let k = mine.partition_point(|f| f.start <= start);
+                if k > 0 && end <= mine[k - 1].end {
+                    out.push(SpanField { container: c, start, end });
+                }
+            }
+        }
+        out
+    }
+
+    /// The places before field `f`'s start and end edges.
+    pub(super) fn span_places(&self, f: &SpanField) -> Option<(Position, Position)> {
+        let blocks = self.index.blocks(&self.doc, f.container)?;
+        let story = self.index.story(f.container);
+        Some((place(blocks, story, f.start)?, place(blocks, story, f.end)?))
+    }
+
+    /// Unlinks `fields` (Ctrl+Shift+F9): each one's result stays as text and its start and end edges go; one
+    /// showing its code shows its result first. A locked one stays.
+    pub(super) fn unlink_spans(&mut self, tx: &mut super::Tx, fields: &[SpanField]) -> bool {
+        let mut fields = fields.to_vec();
+        // Last first: taking a start away leaves the keys of the starts before it.
+        fields.sort_by_key(|f| std::cmp::Reverse(f.start));
+        let keys: Vec<SpanKey> = fields.iter().filter_map(|f| self.span_key(f)).collect();
+        for k in keys {
+            let Some(mut f) = self.span_field_of(k) else { continue };
+            if self.index.blocks(&self.doc, f.container).is_some_and(|b| locked_at(b, f.start)) {
+                continue;
+            }
+            if self.span_shows_code(&f) {
+                if !self.show_result(tx, &f) {
+                    return false;
+                }
+                let Some(g) = self.span_field_of(k) else { return false };
+                f = g;
+            }
+            for at in [f.end, f.start] {
+                let Some(p) = self.span_para(&f, at.0) else { return false };
+                let step = swap(p, at.1, Vec::new());
+                if self.step(tx, step).is_err() {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
+    /// The places before the start and end edges of every locked field across paragraphs in `containers` and in the
+    /// containers their tables are in.
+    pub(super) fn locked_span_places(&self, containers: impl IntoIterator<Item = Container>) -> Vec<(Position, Position)> {
+        let mut seen = HashSet::new();
+        let mut out = Vec::new();
+        for mut c in containers {
+            while seen.insert(c) {
+                if let Some(blocks) = self.index.blocks(&self.doc, c) {
+                    let story = self.index.story(c);
+                    for (start, end) in edge_pairs(blocks).into_iter().filter(|f| locked_at(blocks, f.0)) {
+                        if let (Some(a), Some(b)) = (place(blocks, story, start), place(blocks, story, end)) {
+                            out.push((a, b));
+                        }
+                    }
+                }
+                let Container::Cell { table, .. } = c else { break };
+                let Some(slot) = self.index.table_slot(table) else { break };
+                c = slot.container;
+            }
+        }
+        out
+    }
+
     /// Whether field `f` shows its code.
     pub fn span_shows_code(&self, f: &SpanField) -> bool {
         self.index.blocks(&self.doc, f.container).is_some_and(|b| shows_code(b, f.start))
@@ -473,7 +563,7 @@ impl Editor {
     }
 
     /// Each of `keys` with the place of its field's start and which start there is its, to follow through steps.
-    pub(super) fn span_places(&self, keys: Vec<(SpanKey, bool)>) -> Vec<(SpanKey, Option<(Position, usize)>, bool)> {
+    pub(super) fn span_start_places(&self, keys: Vec<(SpanKey, bool)>) -> Vec<(SpanKey, Option<(Position, usize)>, bool)> {
         keys.into_iter()
             .map(|(k, code)| {
                 let place = self.span_field_of(k).and_then(|f| {
@@ -487,7 +577,7 @@ impl Editor {
             .collect()
     }
 
-    /// The keys of [`Editor::span_places`]'s fields once `maps` moved their starts (a key whose start isn't found
+    /// The keys of [`Editor::span_start_places`]' fields once `maps` moved their starts (a key whose start isn't found
     /// stays).
     pub(super) fn span_keys_after(&self, places: Vec<(SpanKey, Option<(Position, usize)>, bool)>, maps: &[super::step::Map]) -> Vec<(SpanKey, bool)> {
         places

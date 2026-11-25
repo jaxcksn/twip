@@ -58,7 +58,7 @@ fn label(levels: &[ListLevel], k: ListGalleryKind) -> String {
             while let Some(c) = chars.next() {
                 if c == '%' && chars.peek().is_some_and(|d| d.is_ascii_digit()) {
                     let d = chars.next().and_then(|d| d.to_digit(10)).unwrap_or(1) as usize;
-                    let fmt = levels.get(d.saturating_sub(1)).map_or(NumberFormat::Decimal, |x| x.format);
+                    let fmt = levels.get(d.saturating_sub(1)).map_or(NumberFormat::Decimal, |x| x.format.clone());
                     let fmt = if l.legal && fmt != NumberFormat::DecimalZero { NumberFormat::Decimal } else { fmt };
                     out.push_str(&crate::docx::numbering::format_number(1, fmt.val()));
                 } else {

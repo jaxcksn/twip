@@ -1,0 +1,35 @@
+{
+  "name": "canvas",
+  "fixture": "editor/FX-EMPTY.docx",
+  "steps": [
+    { "op": "open" },
+    { "op": "expectState", "match": { "view": { "clickAndType": true, "textDragAndDrop": true, "objectAnchors": true, "hiddenText": false, "hideWhiteSpace": false } } },
+    { "op": "command", "command": { "type": "setViewOptions", "hiddenText": true, "tabCharacters": true, "clickAndType": false, "textDragAndDrop": false, "hideWhiteSpace": true } },
+    { "op": "expectState", "match": { "view": { "hiddenText": true, "tabCharacters": true, "clickAndType": false, "textDragAndDrop": false, "hideWhiteSpace": true, "formattingMarks": false } } },
+    { "op": "command", "command": { "type": "setViewOptions", "hiddenText": false, "tabCharacters": false, "clickAndType": true, "textDragAndDrop": true, "hideWhiteSpace": false } },
+
+    { "op": "text", "text": "Quick brown fox" },
+    { "op": "call", "method": "find.next", "args": [{ "text": "brown" }], "result": { "found": true } },
+    { "op": "call", "method": "selectionBounds", "result": { "rects": [{ "width": { "$type": "number" } }], "bounds": { "$type": "object" } } },
+    { "op": "call", "method": "menus.wordAtSelection", "result": { "word": "brown", "language": { "$type": "string" } } },
+    { "op": "call", "method": "menus.contextMenu", "args": [{ "synonyms": ["tan"] }], "result": { "items": { "$has": [{ "kind": "submenu", "label": "Synonyms", "items": [{ "label": "tan" }] }] } } },
+    { "op": "call", "method": "menus.invoke", "args": [{ "type": "replaceWord", "with": "tan" }] },
+    { "op": "call", "method": "find.next", "args": [{ "text": "Quick tan fox" }], "result": { "found": true } },
+    { "op": "key", "key": "End" },
+    { "op": "call", "method": "selectionBounds", "result": { "rects": { "$exact": [] } } },
+
+    { "op": "call", "method": "find.next", "args": [{ "text": "fox" }], "result": { "found": true } },
+    { "op": "call", "method": "dragOut", "result": { "data": { "text": "fox" }, "canMove": true } },
+    { "op": "call", "method": "dragEnd", "args": ["move"] },
+    { "op": "call", "method": "find.next", "args": [{ "text": "fox" }], "result": { "found": false } },
+    { "op": "command", "command": { "type": "undo" } },
+    { "op": "call", "method": "find.next", "args": [{ "text": "fox" }], "result": { "found": true } },
+
+    { "op": "call", "method": "setDefaultPictureWrap", "args": ["square"] },
+    { "op": "call", "method": "defaultPictureWrap", "result": "square" },
+    { "op": "call", "method": "find.next", "args": [{ "text": "fox" }], "result": { "found": true } },
+    { "op": "drag", "from": { "text": "fox", "select": true }, "to": { "text": "Quick" } },
+    { "op": "command", "command": { "type": "selectAll" } },
+    { "op": "expectState", "match": { "selection": { "text": "Quick fox tan" } } }
+  ]
+}

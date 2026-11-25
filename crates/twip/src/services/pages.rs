@@ -21,7 +21,7 @@ pub struct PageVersions {
 impl PageVersions {
     /// The versions of `pages` (a layout's pages in order), one per page: each page laid out since the last call has
     /// a new one. One pass over the pages; no allocation once warm.
-    pub fn update(&mut self, pages: &[Rc<PageFragment>]) -> &[u64] {
+    pub fn update(&mut self, pages: &crate::layout::pvec::Pvec<Rc<PageFragment>>) -> &[u64] {
         self.spare.clear();
         self.versions.clear();
         for page in pages {
@@ -70,7 +70,7 @@ mod tests {
         let after = v.update(e.snapshot().pages()).to_vec();
         assert_ne!(after[0], first[0], "the page typed on");
         assert_eq!(after[1..], first[1..], "the pages layout kept");
-        e.execute(C::Undo, fonts());
+        e.execute(C::Undo(Default::default()), fonts());
         e.complete(fonts());
         let undone = v.update(e.snapshot().pages()).to_vec();
         assert!(undone[0] != first[0] && undone[0] != after[0], "a page laid out again never takes an old version");
@@ -81,7 +81,7 @@ mod tests {
         let mut e = Editor::open(&crate::editing::tests::blank_with("a"), fonts()).expect("opens");
         e.complete(fonts());
         let page = e.snapshot().pages()[0].clone();
-        let twice = [page.clone(), page];
+        let twice: crate::layout::pvec::Pvec<_> = [page.clone(), page].into_iter().collect();
         let mut v = PageVersions::default();
         let first = v.update(&twice).to_vec();
         assert_eq!(first[0], first[1], "one fragment, one version");

@@ -1,0 +1,21 @@
+{
+  "name": "select-objects",
+  "steps": [
+    { "op": "command", "command": { "type": "insertText", "value": "Objects" } },
+    { "op": "command", "command": { "type": "insertParagraph" } },
+    { "op": "command", "command": { "type": "insertText", "value": "Press here for the marquee" } },
+    { "op": "call", "method": "find.next", "args": [{ "text": "Objects" }], "result": { "found": true } },
+    { "op": "command", "command": { "type": "insertShape", "preset": "rect", "width": 10, "height": 10 } },
+    { "op": "command", "command": { "type": "escape" } },
+    { "op": "command", "command": { "type": "insertShape", "preset": "star5", "width": 10, "height": 10 } },
+    { "op": "command", "command": { "type": "escape" } },
+    { "op": "expectState", "match": { "selection": { "object": { "$exact": null } } } },
+    { "op": "command", "command": { "type": "setSelectObjects", "value": true } },
+    { "op": "drag", "from": { "text": "Press here for the marquee" }, "by": { "dx": -130, "dy": -60 }, "release": false },
+    { "op": "expectState", "match": { "view": { "selectingObjects": true, "objectMarquee": { "page": 0 } } } },
+    { "op": "release" },
+    { "op": "expectState", "match": { "view": { "objectMarquee": { "$exact": null } }, "selection": { "object": { "count": 2 } } } },
+    { "op": "key", "key": "Escape" },
+    { "op": "expectState", "match": { "view": { "selectingObjects": false } } }
+  ]
+}

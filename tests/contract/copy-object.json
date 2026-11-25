@@ -1,0 +1,20 @@
+{
+  "name": "copy-object",
+  "fixture": "editor/FX-OBJ.docx",
+  "steps": [
+    { "op": "open" },
+    { "op": "call", "method": "find.all", "args": [{ "text": "^g" }] },
+    { "op": "call", "method": "objectList", "args": [0], "result": [{ "name": "Picture 6" }, { "name": "Picture 5" }] },
+    { "op": "command", "command": { "type": "selectNextObject", "value": "next" } },
+    { "op": "call", "method": "copyContent", "save": "copy", "result": { "text": "", "image": { "mime": "image/png" }, "html": { "$type": "string" }, "internal": { "$type": "string" } } },
+    { "op": "call", "method": "clipboardHtml", "args": [{ "$saved": "copy", "path": ["internal"] }], "result": { "$contains": "src=\"data:image/png;base64," } },
+    { "op": "call", "method": "copyContent", "args": [{ "cut": true }], "save": "cut", "result": { "image": { "mime": "image/png" } } },
+    { "op": "call", "method": "clipboardHtml", "args": [{ "$saved": "copy", "path": ["internal"] }] },
+    { "op": "expectError", "code": "unavailable" },
+    { "op": "call", "method": "objectList", "args": [0], "result": [{ "name": "Picture 6" }] },
+    { "op": "expectState", "match": { "selection": { "kind": "caret" } } },
+    { "op": "call", "method": "pasteContent", "args": [{ "$saved": "cut" }] },
+    { "op": "expectState", "match": { "history": { "undoLabel": "Paste" } } },
+    { "op": "call", "method": "objectList", "args": [0], "result": [{ "name": "Picture 6" }, { "name": "Picture 5", "kind": "picture" }] }
+  ]
+}

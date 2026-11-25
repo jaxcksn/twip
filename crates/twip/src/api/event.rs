@@ -92,12 +92,22 @@ pub enum Event {
         /// The fields to compute.
         fields: Vec<FieldRequest>,
     },
+    /// F9 (`updateFields` of the selection) with the selection in a table of contents: the host asks whether to update
+    /// its page numbers only or the entire table, and answers with `updateTableOfContents` and this index. Nothing
+    /// was updated.
+    TableOfContentsUpdateRequested {
+        /// The table's place in `tablesOfContents`.
+        index: u32,
+    },
     /// Revisions came, went or changed.
     RevisionsChanged {},
     /// Comments came, went or changed.
     CommentsChanged {},
     /// The visible comments' anchors, after layout, zoom or scroll.
     CommentAnchors(#[serde(with = "value")] Vec<CommentAnchor>),
+    /// Where the revision balloons go (All Markup with balloons): the shown revisions in balloons beside the visible
+    /// pages, in document order. Emitted when they change.
+    RevisionBalloons(#[serde(with = "value")] Vec<crate::api::review::RevisionAnchor>),
     /// Where the SDK placed the attached balloons.
     BalloonsLaidOut(#[serde(with = "value")] Vec<BalloonPlacement>),
     /// The ruler view changed (coalesced per frame).
@@ -167,6 +177,8 @@ pub enum LinkVia {
     CtrlClick,
     /// A plain click, in a read-only document.
     Click,
+    /// The context menu's Open Hyperlink.
+    Menu,
 }
 
 /// A field whose result the application computes.
@@ -202,7 +214,7 @@ pub enum HostCommand {
     GoTo,
     /// Ctrl+K.
     InsertHyperlink,
-    /// F7.
+    /// Alt+F7: the next misspelling.
     NextMisspelling,
     /// Ctrl+Shift+F.
     FocusFont,
@@ -210,11 +222,35 @@ pub enum HostCommand {
     FocusFontSize,
     /// F1.
     Help,
+    /// Ctrl+Shift+S: the Apply Styles box.
+    ApplyStyles,
+    /// Ctrl+Alt+Shift+S: the Styles pane.
+    StylesPane,
+    /// Ctrl+Shift+G: the Word Count dialog.
+    WordCount,
+    /// Ctrl+Shift+F5: the Bookmark dialog.
+    Bookmark,
+    /// Ctrl+Alt+V: the Paste Special dialog.
+    PasteSpecial,
+    /// Shift+F7: the thesaurus, for the word at the selection.
+    Thesaurus,
+    /// F7: the spelling and grammar pane.
+    Spelling,
+    /// Ctrl+W: closes the document.
+    Close,
+    /// Ctrl+F2: print preview.
+    PrintPreview,
+    /// F4 or Alt+Down on a drop-down form field where forms are filled in: the host opens its list (the field is the
+    /// selection's element context); `fillFormField` picks an entry.
+    OpenFormFieldList,
+    /// Alt+Shift+O: the Mark Table of Contents Entry dialog, for the selection's text; `markTableOfContentsEntry`
+    /// marks it.
+    MarkTableOfContentsEntry,
 }
 
 impl HostCommand {
     /// Every host command, in declaration order (the C ABI numbers them from 0 in this order).
-    pub const ALL: [HostCommand; 13] = [
+    pub const ALL: [HostCommand; 24] = [
         HostCommand::Save,
         HostCommand::SaveAs,
         HostCommand::Print,
@@ -228,6 +264,17 @@ impl HostCommand {
         HostCommand::FocusFont,
         HostCommand::FocusFontSize,
         HostCommand::Help,
+        HostCommand::ApplyStyles,
+        HostCommand::StylesPane,
+        HostCommand::WordCount,
+        HostCommand::Bookmark,
+        HostCommand::PasteSpecial,
+        HostCommand::Thesaurus,
+        HostCommand::Spelling,
+        HostCommand::Close,
+        HostCommand::PrintPreview,
+        HostCommand::OpenFormFieldList,
+        HostCommand::MarkTableOfContentsEntry,
     ];
 }
 

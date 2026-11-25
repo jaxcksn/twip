@@ -72,6 +72,8 @@ every SDK.
   `pdf-archival-claim-dropped`. Owner passwords and permission restrictions aren't supported.
 - **Keywords.** They go to the document properties readers show (the Info dictionary) and to the XMP metadata, in
   order, joined with commas. Blank entries are dropped.
+- **Hidden text.** Off by default, as Word's *Print hidden text*: the PDF leaves hidden text out even when the editor
+  shows it. `hiddenText: true` prints it.
 
 ## Pictures
 

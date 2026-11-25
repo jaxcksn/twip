@@ -1,0 +1,34 @@
+{
+  "name": "selection-stories",
+  "fixture": "editor/FX-HDR-TABLE.docx",
+  "steps": [
+    { "op": "open" },
+    { "op": "command", "command": { "type": "editHeader" } },
+    { "op": "call", "method": "find.next", "args": [{ "text": "H R1 C1" }], "result": { "found": true } },
+    { "op": "call", "method": "getState", "result": { "selection": { "story": "header" } }, "save": "cell" },
+    { "op": "command", "command": { "type": "closeHeaderFooter" } },
+    { "op": "call", "method": "find.next", "args": [{ "text": "Inventory" }], "result": { "found": true } },
+    { "op": "call", "method": "getState", "result": { "selection": { "story": "body", "text": "Inventory" } }, "save": "body" },
+    { "op": "command", "command": {
+      "type": "setSelection",
+      "ranges": [{ "$saved": "body", "path": ["selection", "ranges", 0] }],
+      "cells": [{ "start": { "paragraph": { "$saved": "cell", "path": ["selection", "ranges", 0, "start", "paragraph"] }, "offset": 0 }, "firstRow": 0, "firstColumn": 0, "lastRow": 0, "lastColumn": 1 }]
+    } },
+    { "op": "expectError", "code": "invalid-argument" },
+    { "op": "command", "command": {
+      "type": "setSelection",
+      "ranges": [{ "$saved": "body", "path": ["selection", "ranges", 0] }],
+      "cells": [{ "start": { "paragraph": { "$saved": "cell", "path": ["selection", "ranges", 0, "start", "paragraph"] }, "offset": 0 }, "firstRow": 0, "firstColumn": 0, "lastRow": 1, "lastColumn": 0 }],
+      "activeCells": 0
+    } },
+    { "op": "expectError", "code": "invalid-argument" },
+    { "op": "expectState", "match": { "selection": { "story": "body", "text": "Inventory", "cellBlocks": { "$exact": [] } } } },
+    { "op": "command", "command": { "type": "editHeader" } },
+    { "op": "command", "command": {
+      "type": "setSelection",
+      "ranges": [],
+      "cells": [{ "start": { "paragraph": { "$saved": "cell", "path": ["selection", "ranges", 0, "start", "paragraph"] }, "offset": 0 }, "firstRow": 0, "firstColumn": 0, "lastRow": 1, "lastColumn": 1 }]
+    } },
+    { "op": "expectState", "match": { "selection": { "story": "header", "kind": "cells" } } }
+  ]
+}

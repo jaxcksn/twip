@@ -81,6 +81,10 @@ pub struct TwipFrameInfo {
     /// 1 when a caret shows.
     pub caret_visible: u32,
     pub pages: u32,
+    /// The caret's width: the line's thickness across a vertical line, else 0 (its height is 0 then).
+    pub caret_width: f64,
+    /// The way the caret's line runs: 0 across the page, 1 down, 2 up.
+    pub caret_line: u32,
 }
 
 impl From<FrameInfo> for TwipFrameInfo {
@@ -93,6 +97,12 @@ impl From<FrameInfo> for TwipFrameInfo {
             caret_height: f.caret_height,
             caret_visible: u32::from(f.caret_visible),
             pages: f.pages,
+            caret_width: f.caret_width,
+            caret_line: match f.caret_line {
+                engine::api::value::LineDirection::Horizontal => 0,
+                engine::api::value::LineDirection::Down => 1,
+                engine::api::value::LineDirection::Up => 2,
+            },
         }
     }
 }
@@ -559,7 +569,8 @@ pub unsafe extern "C" fn twip_font_symbol_fallback(engine: *mut TwipEngine, byte
 
 /// A key press: `key` from the key table (`KeyboardEvent.code`), `mods` Ctrl 1, Shift 2, Alt 4, Meta 8. Returns 0
 /// unhandled (the platform keeps it), 1 handled, or 2 + n for host command n (`HostCommand` order: save, saveAs,
-/// print, open, new, find, replace, goTo, insertHyperlink, nextMisspelling, focusFont, focusFontSize, help).
+/// print, open, new, find, replace, goTo, insertHyperlink, nextMisspelling, focusFont, focusFontSize, help, and on in
+/// `HostCommand::ALL`'s order).
 ///
 /// # Safety
 /// `engine` is from twip_engine_new.
@@ -749,6 +760,47 @@ pub unsafe extern "C" fn twip_frame_rgba(
         Ok(frame) => {
             // SAFETY: the caller's promise.
             unsafe { put_info(info, frame) };
+            0
+        }
+        Err(e) => status(e.code),
+    }
+}
+
+/// Draws page `page` (from 0) whole into `pixels`, `width` x `height` RGBA (premultiplied, rows packed), as large as
+/// fits, centred, over the view's background: a thumbnail. Writes the size the page is drawn at to `out_width` and
+/// `out_height`.
+///
+/// # Safety
+/// `engine` is from twip_engine_new; `pixels` is valid for `len` bytes; `out_width` and `out_height` are null or valid
+/// for a write.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn twip_page_thumbnail(
+    engine: *mut TwipEngine,
+    session: u32,
+    page: u32,
+    pixels: *mut u8,
+    len: usize,
+    width: u32,
+    height: u32,
+    out_width: *mut u32,
+    out_height: *mut u32,
+) -> i32 {
+    if pixels.is_null() {
+        return status(ErrorCode::InvalidArgument);
+    }
+    // SAFETY: the caller's promise.
+    let pixels = unsafe { std::slice::from_raw_parts_mut(pixels, len) };
+    match guard(engine, session, |e| e.session(session)?.host().page_thumbnail(page, pixels, width, height)) {
+        Ok(size) => {
+            // SAFETY: the caller's promise.
+            unsafe {
+                if !out_width.is_null() {
+                    *out_width = size.width;
+                }
+                if !out_height.is_null() {
+                    *out_height = size.height;
+                }
+            }
             0
         }
         Err(e) => status(e.code),

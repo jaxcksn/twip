@@ -47,6 +47,8 @@ public enum LinkActivation
     CtrlClick,
     /// <summary>A click while read only.</summary>
     Click,
+    /// <summary>The context menu's Open Hyperlink.</summary>
+    Menu,
 }
 
 /// <summary>The user activated a hyperlink. The application decides whether to open it.</summary>
@@ -203,6 +205,28 @@ public enum HostCommand
     FocusFontSize,
     /// <summary>Help (F1).</summary>
     Help,
+    /// <summary>The Apply Styles box (Ctrl+Shift+S).</summary>
+    ApplyStyles,
+    /// <summary>The Styles pane (Ctrl+Alt+Shift+S).</summary>
+    StylesPane,
+    /// <summary>Word Count (Ctrl+Shift+G).</summary>
+    WordCount,
+    /// <summary>The Bookmark dialog (Ctrl+Shift+F5).</summary>
+    Bookmark,
+    /// <summary>Paste Special (Ctrl+Alt+V).</summary>
+    PasteSpecial,
+    /// <summary>The thesaurus, for <see cref="EditorMenus.WordAtSelectionAsync"/> (Shift+F7).</summary>
+    Thesaurus,
+    /// <summary>The spelling and grammar pane (F7; Alt+F7 is <see cref="NextMisspelling"/>).</summary>
+    Spelling,
+    /// <summary>Closes the document (Ctrl+W).</summary>
+    Close,
+    /// <summary>Print preview (Ctrl+F2).</summary>
+    PrintPreview,
+    /// <summary>F4 or Alt+Down on a drop-down form field where forms are filled in: open its list (the field is the selection's element context).</summary>
+    OpenFormFieldList,
+    /// <summary>Alt+Shift+O: the Mark Table of Contents Entry dialog, for the selection's text; <see cref="EditorCommands.MarkTableOfContentsEntryAsync"/> marks it.</summary>
+    MarkTableOfContentsEntry,
 }
 
 /// <summary>The user pressed a key the application owns.</summary>
@@ -355,6 +379,19 @@ public sealed class FieldsUpdateRequestedEventArgs : EditorEventArgs
     public IReadOnlyList<FieldUpdateRequest> Fields { get; }
 }
 
+/// <summary>
+/// F9 (updating the selection's fields) with the selection in a table of contents: ask whether to update its page
+/// numbers only or the entire table, then call <see cref="EditorCommands.UpdateTableOfContentsAsync"/> with
+/// <see cref="Index"/>. Nothing was updated.
+/// </summary>
+public sealed class TableOfContentsUpdateRequestedEventArgs : EditorEventArgs
+{
+    internal TableOfContentsUpdateRequestedEventArgs(int index, EditorState snapshot) : base(snapshot) => Index = index;
+
+    /// <summary>The table's place in <see cref="EditorReferences.GetTablesOfContentsAsync"/>.</summary>
+    public int Index { get; }
+}
+
 /// <summary>The visible comment anchors moved (layout, zoom or scroll). Attached only.</summary>
 public sealed class CommentAnchorsChangedEventArgs : EditorEventArgs
 {
@@ -362,6 +399,15 @@ public sealed class CommentAnchorsChangedEventArgs : EditorEventArgs
 
     /// <summary>The anchors, in control client pixels.</summary>
     public IReadOnlyList<CommentAnchor> Anchors { get; }
+}
+
+/// <summary>The revision balloons' anchors changed (All Markup with balloons). Attached only.</summary>
+public sealed class RevisionBalloonsChangedEventArgs : EditorEventArgs
+{
+    internal RevisionBalloonsChangedEventArgs(IReadOnlyList<RevisionAnchor> anchors, EditorState snapshot) : base(snapshot) => Anchors = anchors;
+
+    /// <summary>The anchors, in control client pixels.</summary>
+    public IReadOnlyList<RevisionAnchor> Anchors { get; }
 }
 
 /// <summary>The ruler view changed. Attached only.</summary>

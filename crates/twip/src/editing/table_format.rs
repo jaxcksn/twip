@@ -9,17 +9,7 @@ use super::step::{Step, TableProps};
 use super::table::Grid;
 
 /// A table's band sizes ([`Editor::table_band_sizes`]).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct TableBands {
-    /// Rows in each band, as it lays out.
-    pub rows: u32,
-    /// Columns in each band, as it lays out.
-    pub columns: u32,
-    /// Its own rows in each band, over its style's.
-    pub own_rows: Option<u32>,
-    /// Its own columns in each band, over its style's.
-    pub own_columns: Option<u32>,
-}
+pub use crate::api::state::TableBands;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum TableFormat {
@@ -410,11 +400,8 @@ impl Editor {
                 return Outcome::Refused(e);
             }
         }
-        if let Some(out) = self.refuse_like(&crate::api::command::Command::SetTableAlignment(Default::default())) {
+        if let Some(out) = self.refuse_like(&crate::api::command::Command::SetTableBandSizes(Default::default())) {
             return out;
-        }
-        if self.enforced_protection().is_some_and(|p| p.formatting) {
-            return Outcome::Refused(crate::api::error::Error::new(crate::api::error::ErrorCode::NotAllowed, "formatting is restricted"));
         }
         self.table_format(&TableFormat::Bands(rows, columns), fonts)
     }

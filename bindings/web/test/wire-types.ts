@@ -5,7 +5,7 @@ import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import type * as T from '../dist/index.js';
 import type * as P from '../dist/transport/protocol.js';
 
-type Id = T.ElementId | T.CommentId | T.RevisionId | T.HeadingId | T.MatchId | T.StyleId;
+type Id = T.ElementId | T.CommentId | T.RevisionId | T.HeadingId | T.MatchId | T.StyleId | T.ParagraphId | T.FloatId;
 
 /** A public type as JSON: ids are plain strings, bytes are base64, and a menu action is whatever the engine sent. */
 export type Wire<V> = V extends Id
@@ -72,6 +72,7 @@ const types: Record<string, string> = {
   'auto-fit': "Arg<'autoFitColumns'>",
   'auto-or': "Arg<'setFontColor'>",
   body: "Arg<'addComment'>",
+  'break-clear': "NonNullable<Arg<'insertLineBreak'>['clear']>",
   'border-edges': "Arg<'setCellBorders'>['edges']",
   'border-preset': "Arg<'setParagraphBorders'>",
   'border-state': "Known<T.ParagraphFormatting['borders']>",
@@ -136,11 +137,15 @@ const types: Record<string, string> = {
   'outline-level': "Known<T.DialogValues['paragraph']['outlineLevel']>",
   'page-number-format': "Arg<'insertPageNumber'>['format']",
   'page-number-place': "NonNullable<Arg<'insertPageNumber'>['where']>",
+  'page-number-align': "NonNullable<Arg<'insertPageNumber'>['alignment']>",
   'page-rect': "ReturnType<T.View['visiblePages']>[number]",
   'paste-as': "NonNullable<Arg<'paste'>['as']>",
   'picture-control-activation': "T.TwipEvents['pictureControlActivated']",
   'popover-autocorrect': "Extract<T.Popover, { kind: 'autoCorrect' }>",
+  'popover-autoformat': "Extract<T.Popover, { kind: 'autoFormat' }>",
+  'popover-paste-options': "Extract<T.Popover, { kind: 'pasteOptions' }>",
   'popover-tab-stop': "Extract<T.Popover, { kind: 'tabStop' }>",
+  'toc-page-numbers': "NonNullable<T.TableOfContentsOptions['pageNumbers']>",
   'popover-tab-type': "Extract<T.Popover, { kind: 'tabType' }>",
   'reference-resolution': "T.ReferenceResolution",
   'sub-template-info': "T.SubTemplateInfo",
@@ -166,8 +171,16 @@ const types: Record<string, string> = {
   'vertical-merge': "Extract<T.Block, { kind: 'table' }>['rows'][number]['cells'][number]['verticalMerge']",
   'vertical-side': "Arg<'insertRows'>['where']",
   'warning-code': "T.Warning['code']",
+  'word-count-options': "NonNullable<Parameters<T.HeadlessEditor['wordCount']>[0]>",
   'zoom-fit': "Exclude<Arg<'setZoom'>, number>",
   zoom: "Arg<'setZoom'>",
+  'column-preset': "Parameters<T.HeadlessEditor['columnPreset']>[0]",
+  'composed-field': "Result<T.Elements['composeField']>",
+  'field-arg-kind': "T.FieldDescription['args'][number]['kind']",
+  'field-here': "NonNullable<Result<T.Elements['fieldHere']>>",
+  'heading-side': "Arg<'moveHeading'>['side']",
+  'switch-arg-kind': "T.FieldDescription['switches'][number]['arg']",
+  'thumbnail-size': "Omit<T.PageThumbnail, 'pixels'>",
 };
 
 /** Fixtures with no public type: the C ABI's own shapes, and input the SDK forwards. */

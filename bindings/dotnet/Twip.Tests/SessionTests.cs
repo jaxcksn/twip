@@ -130,7 +130,7 @@ public sealed class SessionTests : IDisposable
         Assert.True(saved.Revision < session.State.DocumentRevision);
 
         Assert.True(session.State.Modified, "the edit after the save isn't modified");
-        await session.Commands.UndoAsync(Ct);
+        await session.Commands.UndoAsync(ct: Ct);
         Assert.False(session.State.Modified, "undoing to the saved revision leaves it modified");
     }
 
@@ -186,7 +186,7 @@ public sealed class SessionTests : IDisposable
         await session.WhenIdleAsync();
         var record = Assert.Single(records);
         Assert.Equal("Bold a", record.Label);
-        await session.Commands.UndoAsync(Ct);
+        await session.Commands.UndoAsync(ct: Ct);
         Assert.False(session.State.History.CanUndo);
     }
 

@@ -166,9 +166,10 @@ pub struct ColourTransform {
     pub value: f64,
 }
 
-/// A colour: exactly one base (a theme colour, an RGB value or a preset colour name), then its transforms in order.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+/// A colour: exactly one base (a theme colour, an RGB value or a preset colour name), then its transforms in order. An
+/// input may also be a `#RRGGBB` string, the RGB colour.
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ColourValue {
     /// A theme colour.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -182,6 +183,32 @@ pub struct ColourValue {
     /// The transforms, applied in order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub transforms: Vec<ColourTransform>,
+}
+
+/// [`ColourValue`]'s object form.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ColourFields {
+    #[serde(default)]
+    theme: Option<ThemeColour>,
+    #[serde(default)]
+    rgb: Option<Color>,
+    #[serde(default)]
+    preset: Option<String>,
+    #[serde(default)]
+    transforms: Vec<ColourTransform>,
+}
+
+impl<'de> Deserialize<'de> for ColourValue {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<ColourValue, D::Error> {
+        use serde::de::Error as _;
+        let v = serde_json::Value::deserialize(d)?;
+        if let Some(s) = v.as_str() {
+            return Color::parse(s).map(ColourValue::rgb).ok_or_else(|| D::Error::custom(format!("`{s}` is not a #RRGGBB colour")));
+        }
+        let f = ColourFields::deserialize(v).map_err(D::Error::custom)?;
+        Ok(ColourValue { theme: f.theme, rgb: f.rgb, preset: f.preset, transforms: f.transforms })
+    }
 }
 
 impl ColourValue {
@@ -325,11 +352,19 @@ pub enum FillValue {
     },
     /// A picture.
     Picture {
-        /// The image (PNG, JPEG, GIF, BMP); empty in the state (the selection reports the fill, not its bytes).
+        /// The image (PNG, JPEG, GIF, BMP); empty in the state (the selection reports the fill, not its bytes: read
+        /// them with the shape fill image query).
         image: Bytes,
-        /// Tiled at its own size instead of stretched.
+        /// Stretched over the box inset by these fractions of it from each edge (negative: beyond it); absent: the
+        /// whole box. Ignored when tiled.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        tile: Option<bool>,
+        stretch: Option<Insets>,
+        /// Tiled instead of stretched.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tile: Option<Tile>,
+        /// Turns with the shape (absent: it does).
+        #[serde(default, skip_serializing_if = "Option::is_none", rename = "rotateWithShape")]
+        rotate_with_shape: Option<bool>,
     },
     /// The style reference's fill (no explicit fill).
     FromStyle,
@@ -364,21 +399,41 @@ impl FillValue {
                 fg: foreground.to_model()?,
                 bg: background.to_model()?,
             },
-            FillValue::Picture { image: bytes, tile } => {
+            FillValue::Picture { image: bytes, stretch, tile, rotate_with_shape } => {
                 let index = image(&bytes.0).ok_or("the picture isn't an image the engine reads")?;
-                let mode = if tile.unwrap_or(false) {
-                    paint::BlipMode::Tile {
-                        tx: Emu(0),
-                        ty: Emu(0),
-                        sx: Pct(100000),
-                        sy: Pct(100000),
-                        flip: paint::TileFlip::None,
-                        align: paint::RectAlign::Tl,
+                let mode = match tile {
+                    Some(t) => {
+                        for v in [t.scale_x, t.scale_y] {
+                            within(v, 0.01, 100.0, "a tile's scale")?;
+                        }
+                        for v in [t.offset_x.0, t.offset_y.0] {
+                            within(v, -1584.0, 1584.0, "a tile's offset (pt)")?;
+                        }
+                        paint::BlipMode::Tile {
+                            tx: emu(t.offset_x),
+                            ty: emu(t.offset_y),
+                            sx: pct(t.scale_x),
+                            sy: pct(t.scale_y),
+                            flip: match t.mirror {
+                                TileMirror::None => paint::TileFlip::None,
+                                TileMirror::Horizontal => paint::TileFlip::X,
+                                TileMirror::Vertical => paint::TileFlip::Y,
+                                TileMirror::Both => paint::TileFlip::Xy,
+                            },
+                            align: t.align.to_model(),
+                        }
                     }
-                } else {
-                    paint::BlipMode::Stretch([Pct(0); 4])
+                    None => {
+                        let i = stretch.unwrap_or_default();
+                        let sides = [i.left, i.top, i.right, i.bottom];
+                        for v in sides {
+                            within(v, -10.0, 10.0, "a stretch inset")?;
+                        }
+                        paint::BlipMode::Stretch(sides.map(pct))
+                    }
                 };
-                Fill::Blip(paint::BlipFill { image: Some(index), src: [Pct(0); 4], mode, adjust: Vec::new(), rot_with_shape: true })
+                let rot_with_shape = rotate_with_shape.unwrap_or(true);
+                Fill::Blip(paint::BlipFill { image: Some(index), src: [Pct(0); 4], mode, adjust: Vec::new(), rot_with_shape })
             }
             FillValue::FromStyle => return Ok(None),
         }))
@@ -405,14 +460,162 @@ impl FillValue {
                 FillValue::Gradient { kind, angle, stops, focus }
             }
             Fill::Pattern { preset, fg, bg } => FillValue::Pattern { preset: preset.name().into(), foreground: c(fg), background: c(bg) },
-            Fill::Blip(b) => FillValue::Picture {
-                image: Bytes(b.image.and_then(|i| images.get(i)).cloned().unwrap_or_default()),
-                tile: Some(matches!(b.mode, paint::BlipMode::Tile { .. })),
-            },
+            Fill::Blip(b) => {
+                let (stretch, tile) = match b.mode {
+                    paint::BlipMode::Stretch(r) if r == [Pct(0); 4] => (None, None),
+                    paint::BlipMode::Stretch(r) => {
+                        let [left, top, right, bottom] = r.map(|p| p.fraction());
+                        (Some(Insets { left, top, right, bottom }), None)
+                    }
+                    paint::BlipMode::Tile { tx, ty, sx, sy, flip, align } => {
+                        let mirror = match flip {
+                            paint::TileFlip::None => TileMirror::None,
+                            paint::TileFlip::X => TileMirror::Horizontal,
+                            paint::TileFlip::Y => TileMirror::Vertical,
+                            paint::TileFlip::Xy => TileMirror::Both,
+                        };
+                        let t = Tile {
+                            offset_x: points(tx),
+                            offset_y: points(ty),
+                            scale_x: sx.fraction(),
+                            scale_y: sy.fraction(),
+                            align: RectAlign::of(align),
+                            mirror,
+                        };
+                        (None, Some(t))
+                    }
+                };
+                FillValue::Picture {
+                    image: Bytes(b.image.and_then(|i| images.get(i)).cloned().unwrap_or_default()),
+                    stretch,
+                    tile,
+                    rotate_with_shape: Some(b.rot_with_shape),
+                }
+            }
             // The group's fill: reported as the style's (the shape has none of its own).
             Fill::Group => FillValue::FromStyle,
         }
     }
+}
+
+/// Fractions of a box from each edge.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Insets {
+    /// From the left edge.
+    pub left: f64,
+    /// From the top edge.
+    pub top: f64,
+    /// From the right edge.
+    pub right: f64,
+    /// From the bottom edge.
+    pub bottom: f64,
+}
+
+/// A place in a rectangle: a corner, an edge's middle or its centre.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum RectAlign {
+    /// The top left corner (the default).
+    #[default]
+    TopLeft,
+    /// The top edge's middle.
+    Top,
+    /// The top right corner.
+    TopRight,
+    /// The left edge's middle.
+    Left,
+    /// The centre.
+    Center,
+    /// The right edge's middle.
+    Right,
+    /// The bottom left corner.
+    BottomLeft,
+    /// The bottom edge's middle.
+    Bottom,
+    /// The bottom right corner.
+    BottomRight,
+}
+
+impl RectAlign {
+    pub(crate) fn to_model(self) -> paint::RectAlign {
+        use paint::RectAlign as A;
+        match self {
+            RectAlign::TopLeft => A::Tl,
+            RectAlign::Top => A::T,
+            RectAlign::TopRight => A::Tr,
+            RectAlign::Left => A::L,
+            RectAlign::Center => A::Ctr,
+            RectAlign::Right => A::R,
+            RectAlign::BottomLeft => A::Bl,
+            RectAlign::Bottom => A::B,
+            RectAlign::BottomRight => A::Br,
+        }
+    }
+
+    pub(crate) fn of(a: paint::RectAlign) -> RectAlign {
+        use paint::RectAlign as A;
+        match a {
+            A::Tl => RectAlign::TopLeft,
+            A::T => RectAlign::Top,
+            A::Tr => RectAlign::TopRight,
+            A::L => RectAlign::Left,
+            A::Ctr => RectAlign::Center,
+            A::R => RectAlign::Right,
+            A::Bl => RectAlign::BottomLeft,
+            A::B => RectAlign::Bottom,
+            A::Br => RectAlign::BottomRight,
+        }
+    }
+}
+
+/// How tiles mirror their neighbours.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TileMirror {
+    /// Every tile the same way round.
+    #[default]
+    None,
+    /// Every other tile flipped left to right.
+    Horizontal,
+    /// Every other tile flipped top to bottom.
+    Vertical,
+    /// Both.
+    Both,
+}
+
+/// A picture fill's tiling: what isn't given is the default.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Tile {
+    /// The tiles' offset across (−1584…1584 pt).
+    #[serde(default)]
+    pub offset_x: Points,
+    /// The tiles' offset down.
+    #[serde(default)]
+    pub offset_y: Points,
+    /// The tile's width as a share of the image's own (0.01…100; 1 its own size).
+    #[serde(default = "one")]
+    pub scale_x: f64,
+    /// The tile's height as a share of the image's own.
+    #[serde(default = "one")]
+    pub scale_y: f64,
+    /// Where the first tile is placed in the box.
+    #[serde(default)]
+    pub align: RectAlign,
+    /// How tiles mirror their neighbours.
+    #[serde(default)]
+    pub mirror: TileMirror,
+}
+
+impl Default for Tile {
+    fn default() -> Tile {
+        Tile { offset_x: Points(0.0), offset_y: Points(0.0), scale_x: 1.0, scale_y: 1.0, align: RectAlign::TopLeft, mirror: TileMirror::None }
+    }
+}
+
+fn one() -> f64 {
+    1.0
 }
 
 /// How a line is drawn along its length.
@@ -699,6 +902,138 @@ pub struct Shadow {
     pub distance: Points,
     /// Which way, clockwise from the right.
     pub direction: Degrees,
+    /// An outer shadow's width as a share of the shape's (1 the same; negative flips it). An inner shadow ignores it.
+    #[serde(default = "one")]
+    pub scale_x: f64,
+    /// An outer shadow's height as a share of the shape's.
+    #[serde(default = "one")]
+    pub scale_y: f64,
+    /// An outer shadow's slant across.
+    #[serde(default)]
+    pub skew_x: Degrees,
+    /// An outer shadow's slant down.
+    #[serde(default)]
+    pub skew_y: Degrees,
+    /// The point of the shape an outer shadow's scale and skew are about.
+    #[serde(default = "bottom")]
+    pub align: RectAlign,
+    /// An outer shadow turns with the shape.
+    #[serde(default)]
+    pub rotate_with_shape: bool,
+}
+
+fn bottom() -> RectAlign {
+    RectAlign::Bottom
+}
+
+/// A reflection: the shape mirrored beside itself, fading away from it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Reflection {
+    /// How much of the shape shows before it has faded away (0…1).
+    pub size: f64,
+    /// How see-through it is where it starts (0…1).
+    pub transparency: f64,
+    /// How far it blurs (0…100 pt).
+    #[serde(default)]
+    pub blur: Points,
+    /// How far from the shape (0…1584 pt).
+    #[serde(default)]
+    pub distance: Points,
+    /// Which way it is offset, clockwise from the right (90: below).
+    #[serde(default = "down")]
+    pub direction: Degrees,
+    /// Which way it fades, clockwise from the right.
+    #[serde(default = "down")]
+    pub fade_direction: Degrees,
+    /// Its width as a share of the shape's (negative flips it).
+    #[serde(default = "one")]
+    pub scale_x: f64,
+    /// Its height as a share of the shape's (−1: flipped top to bottom, Word's).
+    #[serde(default = "minus_one")]
+    pub scale_y: f64,
+    /// Its slant across.
+    #[serde(default)]
+    pub skew_x: Degrees,
+    /// Its slant down.
+    #[serde(default)]
+    pub skew_y: Degrees,
+    /// The point of the shape its scale and skew are about.
+    #[serde(default = "bottom_left")]
+    pub align: RectAlign,
+    /// It turns with the shape.
+    #[serde(default)]
+    pub rotate_with_shape: bool,
+}
+
+fn down() -> Degrees {
+    90.0
+}
+
+fn minus_one() -> f64 {
+    -1.0
+}
+
+fn bottom_left() -> RectAlign {
+    RectAlign::BottomLeft
+}
+
+impl Reflection {
+    fn to_model(&self) -> Result<paint::Reflection, String> {
+        within(self.size, 0.0, 1.0, "a reflection's size")?;
+        within(self.transparency, 0.0, 1.0, "a reflection's transparency")?;
+        within(self.blur.0, 0.0, 100.0, "a reflection's blur (pt)")?;
+        within(self.distance.0, 0.0, 1584.0, "a reflection's distance (pt)")?;
+        for v in [self.scale_x, self.scale_y] {
+            within(v, -100.0, 100.0, "a reflection's scale")?;
+        }
+        for v in [self.skew_x, self.skew_y] {
+            within(v, -90.0, 90.0, "a reflection's skew")?;
+        }
+        let pct = |v: f64| Pct((v * 100000.0).round() as i32);
+        Ok(paint::Reflection {
+            blur: emu(self.blur),
+            dist: emu(self.distance),
+            dir: angle(self.direction),
+            fade_dir: angle(self.fade_direction),
+            sx: pct(self.scale_x),
+            sy: pct(self.scale_y),
+            kx: skew(self.skew_x),
+            ky: skew(self.skew_y),
+            align: self.align.to_model(),
+            start_alpha: pct(1.0 - self.transparency),
+            start_pos: Pct(0),
+            end_alpha: Pct(300),
+            end_pos: pct(self.size),
+            rot_with_shape: self.rotate_with_shape,
+        })
+    }
+
+    fn of(r: &paint::Reflection) -> Reflection {
+        Reflection {
+            size: r.end_pos.fraction(),
+            transparency: 1.0 - r.start_alpha.fraction(),
+            blur: points(r.blur),
+            distance: points(r.dist),
+            direction: r.dir.degrees(),
+            fade_direction: r.fade_dir.degrees(),
+            scale_x: r.sx.fraction(),
+            scale_y: r.sy.fraction(),
+            skew_x: skew_degrees(r.kx),
+            skew_y: skew_degrees(r.ky),
+            align: RectAlign::of(r.align),
+            rotate_with_shape: r.rot_with_shape,
+        }
+    }
+}
+
+/// A skew angle (−90…90°) in the model's 60000ths.
+fn skew(d: Degrees) -> Angle {
+    Angle((d.clamp(-90.0, 90.0) * 60000.0).round() as i32)
+}
+
+fn skew_degrees(a: Angle) -> Degrees {
+    f64::from(a.0) / 60000.0
 }
 
 /// A glow.
@@ -730,6 +1065,9 @@ pub struct EffectsValue {
     /// The whole shape blurred by this radius.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub blur: Option<Points>,
+    /// A reflection.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reflection: Option<Reflection>,
 }
 
 /// `setShapeEffects`'s change: each effect given replaces that effect, `null` removes it, what isn't given is kept.
@@ -751,6 +1089,9 @@ pub struct EffectsChange {
     /// The whole shape blurred by this radius.
     #[serde(default, skip_serializing_if = "Option::is_none", with = "crate::api::wire::nullable")]
     pub blur: Option<Option<Points>>,
+    /// A reflection.
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "crate::api::wire::nullable")]
+    pub reflection: Option<Option<Reflection>>,
 }
 
 fn emu(p: Points) -> Emu {
@@ -775,16 +1116,29 @@ impl EffectsValue {
                 blur: points(s.blur),
                 distance: points(s.dist),
                 direction: s.dir.degrees(),
+                scale_x: s.sx.fraction(),
+                scale_y: s.sy.fraction(),
+                skew_x: skew_degrees(s.kx),
+                skew_y: skew_degrees(s.ky),
+                align: RectAlign::of(s.align),
+                rotate_with_shape: s.rot_with_shape,
             }),
             inner_shadow: e.inner.as_ref().map(|s| Shadow {
                 colour: c(&s.colour),
                 blur: points(s.blur),
                 distance: points(s.dist),
                 direction: s.dir.degrees(),
+                scale_x: 1.0,
+                scale_y: 1.0,
+                skew_x: 0.0,
+                skew_y: 0.0,
+                align: RectAlign::Bottom,
+                rotate_with_shape: false,
             }),
             glow: e.glow.as_ref().map(|g| Glow { colour: c(&g.colour), radius: points(g.radius) }),
             soft_edge: e.soft_edge.map(points),
             blur: e.blur.map(points),
+            reflection: e.reflection.as_ref().map(Reflection::of),
         }
     }
 }
@@ -795,18 +1149,26 @@ impl EffectsChange {
         let mut e = effects.cloned().unwrap_or_default();
         if let Some(s) = &self.outer_shadow {
             e.outer = match s {
-                Some(s) => Some(paint::OuterShadow {
-                    blur: emu(s.blur),
-                    dist: emu(s.distance),
-                    dir: angle(s.direction),
-                    sx: Pct(100000),
-                    sy: Pct(100000),
-                    kx: Angle(0),
-                    ky: Angle(0),
-                    align: paint::RectAlign::B,
-                    colour: s.colour.to_model()?,
-                    rot_with_shape: false,
-                }),
+                Some(s) => {
+                    for v in [s.scale_x, s.scale_y] {
+                        within(v, -100.0, 100.0, "a shadow's scale")?;
+                    }
+                    for v in [s.skew_x, s.skew_y] {
+                        within(v, -90.0, 90.0, "a shadow's skew")?;
+                    }
+                    Some(paint::OuterShadow {
+                        blur: emu(s.blur),
+                        dist: emu(s.distance),
+                        dir: angle(s.direction),
+                        sx: Pct((s.scale_x * 100000.0).round() as i32),
+                        sy: Pct((s.scale_y * 100000.0).round() as i32),
+                        kx: skew(s.skew_x),
+                        ky: skew(s.skew_y),
+                        align: s.align.to_model(),
+                        colour: s.colour.to_model()?,
+                        rot_with_shape: s.rotate_with_shape,
+                    })
+                }
                 None => None,
             };
             e.preset = None;
@@ -830,6 +1192,9 @@ impl EffectsChange {
         }
         if let Some(v) = self.blur {
             e.blur = v.map(emu);
+        }
+        if let Some(r) = &self.reflection {
+            e.reflection = r.as_ref().map(Reflection::to_model).transpose()?;
         }
         Ok(e)
     }
@@ -908,6 +1273,9 @@ pub struct ShapeTextState {
     pub direction: TextDirection,
     /// Its columns.
     pub columns: TextColumns,
+    /// The text stays upright when the shape turns ("Do not rotate text within shape").
+    #[serde(default)]
+    pub upright: bool,
 }
 
 /// `setShapeText`'s change; what isn't given is kept.
@@ -932,6 +1300,9 @@ pub struct ShapeTextChange {
     /// Its columns.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub columns: Option<TextColumns>,
+    /// The text stays upright when the shape turns.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub upright: Option<bool>,
 }
 
 impl ShapeTextState {
@@ -960,6 +1331,7 @@ impl ShapeTextState {
                 t::TextDirection::WordArtVertRtl => TextDirection::StackedRightToLeft,
             },
             columns: TextColumns { count: u32::from(b.columns.0), spacing: points(b.columns.1) },
+            upright: b.upright,
         }
     }
 }
@@ -999,6 +1371,9 @@ impl ShapeTextChange {
         if let Some(w) = self.wrap_text {
             b.no_wrap = !w;
         }
+        if let Some(u) = self.upright {
+            b.upright = u;
+        }
         if let Some(d) = self.direction {
             b.direction = match d {
                 TextDirection::Horizontal => t::TextDirection::Horizontal,
@@ -1012,6 +1387,84 @@ impl ShapeTextChange {
         }
         Ok(b)
     }
+}
+
+/// A picture's recolouring (Picture Color > Recolor).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
+pub enum Recolor {
+    /// Its own colours.
+    #[default]
+    None,
+    /// Shades of grey.
+    Grayscale,
+    /// Black and white: pixels lighter than the threshold white, the rest black.
+    BlackAndWhite {
+        /// The threshold, 0…1.
+        threshold: f64,
+    },
+    /// Two colours: its darkest drawn in `dark`, its lightest in `light` (Sepia, the accent variations).
+    Duotone {
+        /// The colour its darkest pixels take.
+        dark: ColourValue,
+        /// The colour its lightest pixels take.
+        light: ColourValue,
+    },
+}
+
+impl Recolor {
+    pub(crate) fn to_model(&self) -> Result<crate::editing::pictures::Recolor, String> {
+        use crate::editing::pictures::Recolor as R;
+        Ok(match self {
+            Recolor::None => R::None,
+            Recolor::Grayscale => R::Grayscale,
+            Recolor::BlackAndWhite { threshold } => {
+                within(*threshold, 0.0, 1.0, "the black and white threshold")?;
+                R::BlackAndWhite(*threshold)
+            }
+            Recolor::Duotone { dark, light } => R::Duotone(dark.to_model()?, light.to_model()?),
+        })
+    }
+
+    pub(crate) fn of(r: &crate::editing::pictures::Recolor) -> Recolor {
+        use crate::editing::pictures::Recolor as R;
+        match r {
+            R::None => Recolor::None,
+            R::Grayscale => Recolor::Grayscale,
+            R::BlackAndWhite(t) => Recolor::BlackAndWhite { threshold: *t },
+            R::Duotone(a, b) => Recolor::Duotone { dark: ColourValue::of(a, None), light: ColourValue::of(b, None) },
+        }
+    }
+}
+
+/// A picture's adjustments as they read: corrections, colour and transparency.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PictureAdjustState {
+    /// Lighter (positive, to 1) or darker (to −1).
+    pub brightness: f64,
+    /// More (positive, to 1) or less contrast (to −1).
+    pub contrast: f64,
+    /// How see-through it is (0 opaque, 1 invisible).
+    pub transparency: f64,
+    /// Its recolouring.
+    pub recolor: Recolor,
+}
+
+impl PictureAdjustState {
+    pub(crate) fn of(a: &crate::editing::pictures::PictureAdjust) -> PictureAdjustState {
+        PictureAdjustState { brightness: a.brightness, contrast: a.contrast, transparency: a.transparency, recolor: Recolor::of(&a.recolor) }
+    }
+}
+
+/// A point in an object's box, as fractions of its width and height from its top left corner (beyond 0…1 outside it).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct BoxPoint {
+    /// Across, from its left edge.
+    pub x: f64,
+    /// Down, from its top edge.
+    pub y: f64,
 }
 
 /// `setPictureAdjust`'s change; what isn't given is kept. Fractions are −1…1 (transparency 0…1).

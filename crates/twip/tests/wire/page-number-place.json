@@ -1,5 +1,10 @@
 [
   "caret",
   "header",
-  "footer"
+  "footer",
+  {
+    "margin": {
+      "side": "inside"
+    }
+  }
 ]

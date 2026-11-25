@@ -8,5 +8,6 @@
   "screen",
   "page",
   "rowEdge",
-  "columnEdge"
+  "columnEdge",
+  "windowEdge"
 ]

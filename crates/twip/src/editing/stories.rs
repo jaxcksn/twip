@@ -100,6 +100,10 @@ impl Editor {
         if self.marquee_cancel() || self.end_linking() {
             return Outcome::Moved;
         }
+        if self.table_tool != crate::api::command::TableTool::None {
+            self.set_table_tool(crate::api::command::TableTool::None);
+            return Outcome::Moved;
+        }
         if self.select_objects {
             self.object_cancel();
             self.shape_cancel();

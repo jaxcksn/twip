@@ -11,5 +11,16 @@
   "nextMisspelling",
   "focusFont",
   "focusFontSize",
-  "help"
+  "help",
+  "applyStyles",
+  "stylesPane",
+  "wordCount",
+  "bookmark",
+  "pasteSpecial",
+  "thesaurus",
+  "spelling",
+  "close",
+  "printPreview",
+  "openFormFieldList",
+  "markTableOfContentsEntry"
 ]

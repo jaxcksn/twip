@@ -1,0 +1,24 @@
+{
+  "name": "reference-keys",
+  "fixture": "editor/FX-outline.docx",
+  "steps": [
+    { "op": "open" },
+    { "op": "command", "command": { "type": "insertTableOfContents" } },
+    { "op": "command", "command": { "type": "moveSelection", "by": "document", "direction": "backward" } },
+    { "op": "expectEvents", "match": [] },
+    { "op": "key", "key": "F9" },
+    { "op": "expectEvents", "match": [{ "type": "tableOfContentsUpdateRequested", "index": 0 }] },
+    { "op": "expectState", "match": { "history": { "undoLabel": "Insert Table of Contents" } } },
+    { "op": "command", "command": { "type": "moveSelection", "by": "document", "direction": "forward" } },
+    { "op": "call", "method": "pasteContent", "args": [{ "text": " pasted" }] },
+    { "op": "expectEvents", "match": [{ "type": "popoverRequested", "kind": "pasteOptions" }] },
+    { "op": "key", "key": "Escape" },
+    { "op": "expectEvents", "match": [{ "type": "popoverClosed" }] },
+    { "op": "command", "command": { "type": "repaste", "value": "textOnly" } },
+    { "op": "expectError", "code": "unavailable" },
+    { "op": "call", "method": "pasteContent", "args": [{ "text": " again" }] },
+    { "op": "expectEvents", "match": [{ "type": "popoverRequested", "kind": "pasteOptions" }] },
+    { "op": "text", "text": "x" },
+    { "op": "expectEvents", "match": [{ "type": "popoverClosed" }] }
+  ]
+}

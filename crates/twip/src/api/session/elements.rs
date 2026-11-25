@@ -17,19 +17,7 @@ use crate::editing::elements::{self, Element};
 
 /// An element's public kind.
 fn kind(e: &Element) -> ElementKind {
-    let Some(p) = &e.props else { return ElementKind::Field };
-    match &p.kind {
-        ControlKind::PlainText { .. } => ElementKind::PlainText,
-        ControlKind::RichText | ControlKind::Other => ElementKind::RichText,
-        ControlKind::Picture => ElementKind::Picture,
-        ControlKind::Checkbox { .. } => ElementKind::Checkbox,
-        ControlKind::Date { .. } => ElementKind::Date,
-        ControlKind::DropDown if p.combo_box() => ElementKind::ComboBox,
-        ControlKind::DropDown => ElementKind::DropDown,
-        ControlKind::Group => ElementKind::Group,
-        ControlKind::RepeatingSection => ElementKind::RepeatingSection,
-        ControlKind::RepeatingItem => ElementKind::RepeatingItem,
-    }
+    e.props.as_ref().map_or(ElementKind::Field, crate::editing::state::control_kind)
 }
 
 fn info(s: &Session, e: &Element) -> ElementInfo {
@@ -50,6 +38,9 @@ fn info(s: &Session, e: &Element) -> ElementInfo {
         },
         parent: e.parent.map(|p| ElementId(elements::id_str(p))),
         locked: e.locked,
+        showing_code: e.showing_code,
+        dirty: e.dirty,
+        date: e.date.clone(),
         showing_placeholder: p.map(|p| p.showing_placeholder),
         reference: match e.id {
             crate::docx::ElementId::Field(f) => s.editor.references().by_field.get(&f).map(|r| reference(s, f, r)),
@@ -92,8 +83,18 @@ fn options(s: &Session, e: &Element) -> Option<ControlOptions> {
             ControlOptions::Checkbox(CheckboxOptions { checked: Some(e.display == checked.to_string()), ..Default::default() })
         }
         ControlKind::Date { format, lid } => {
-            ControlOptions::Date(DateOptions { format: Some(format.clone()).filter(|f| !f.is_empty()), locale: lid.clone() })
+            let d = crate::editing::date_settings(p);
+            ControlOptions::Date(DateOptions {
+                format: Some(format.clone()).filter(|f| !f.is_empty()),
+                locale: lid.clone(),
+                calendar: d.as_ref().map(|d| crate::api::value::CalendarType::of_val(&d.calendar).unwrap_or_default()),
+                store_as: d.map(|d| d.storage.to_api()),
+            })
         }
+        ControlKind::Other => match p.kept_kind()? {
+            crate::docx::KeptKind::Gallery { gallery, category } => ControlOptions::Gallery(crate::api::value::GalleryOptions { gallery, category }),
+            _ => return None,
+        },
         ControlKind::DropDown => {
             let xml = p.kind_xml.as_deref().unwrap_or("");
             let items = xml
@@ -132,6 +133,10 @@ fn blocks(list: &[crate::docx::Block], depth: u32) -> Vec<Block> {
                         _ => None,
                     })
                     .map(|id| ElementId(elements::id_str(id)))
+                    .collect(),
+                hidden_marks: crate::editing::format::hidden_marks_of(p)
+                    .into_iter()
+                    .map(|(at, style_separator)| crate::api::services::HiddenMark { at: at.0, style_separator })
                     .collect(),
             },
             B::Table(t) => Block::Table {
@@ -270,6 +275,9 @@ impl Session {
             sub_template: i.sub_template,
             parent: i.parent,
             locked: i.locked,
+            showing_code: i.showing_code,
+            dirty: i.dirty,
+            date: i.date,
             lock: match p.map_or(Lock::None, |p| p.lock) {
                 Lock::None => ControlLock::None,
                 Lock::ControlLocked => ControlLock::Control,
@@ -424,6 +432,7 @@ mod tests {
             image: Some(crate::api::value::Bytes(png)),
             docx: None,
             building_block: None,
+            date: None,
         };
         s.run(crate::api::command::Command::FillControl(fill)).expect("fills");
         assert!(unfilled(s).iter().all(|e| e.id != all[0].id), "filled ones go");

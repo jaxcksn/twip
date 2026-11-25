@@ -46,7 +46,7 @@ pub fn levels(entry: &[L]) -> Vec<ListLevel> {
             legal: l.legal,
             linked_style: l.style.and_then(crate::services::styles::builtin::built_in).map(|b| StyleId(b.id.to_string())),
             font: l.font.map(str::to_string),
-            picture: None,
+            ..ListLevel::default()
         })
         .collect()
 }

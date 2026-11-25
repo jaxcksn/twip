@@ -1432,6 +1432,7 @@ impl Editor {
             horizontal: Some(horizontal),
             vertical: Some(vertical),
             wrap_distance: Some(crate::api::state::TextDistance { top, bottom, left, right }),
+            allow_overlap: Some(!p.never_overlap),
         })
     }
 
@@ -1492,6 +1493,9 @@ impl Editor {
         }
         if let Some(d) = p.wrap_distance {
             n.dist = [d.top, d.bottom, d.left, d.right].map(|v| twips(v.0.clamp(0.0, 1584.0)));
+        }
+        if let Some(a) = p.allow_overlap {
+            n.never_overlap = !a;
         }
         let table = tg.table;
         match self.table_box(table, fonts) {

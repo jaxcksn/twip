@@ -137,4 +137,18 @@ pub struct ClipboardData {
     /// A token naming the engine's internal fragment: a paste in any session of the engine keeps its formatting.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub internal: Option<String>,
+    /// A picture: what a copy of an object puts on the clipboard (`image/png`), or what the clipboard holds for a
+    /// paste (PNG, JPEG, GIF, BMP, TIFF, SVG, EMF or WMF; the engine reads the bytes, whatever `mime` says).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image: Option<ClipboardImage>,
+}
+
+/// A picture on the clipboard.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ClipboardImage {
+    /// Its media type as the clipboard names it (`image/png`).
+    pub mime: String,
+    /// Its bytes.
+    pub data: crate::api::value::Bytes,
 }

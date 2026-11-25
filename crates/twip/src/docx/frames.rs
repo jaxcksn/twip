@@ -140,7 +140,7 @@ pub(crate) fn float(group: Vec<Paragraph>, legacy: bool) -> Float {
 pub fn bleed(blocks: &[Block]) -> [f64; 2] {
     let paras: Vec<&Paragraph> = blocks.iter().filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None }).collect();
     let reach = |b: &Option<super::props::Border>, indent: f64| {
-        b.as_ref().filter(|b| b.visible()).map(|b| (1.5 + b.width * if b.style == "double" { 3.0 } else { 1.0 } + b.space - indent).max(0.0))
+        b.as_ref().filter(|b| b.visible()).map(|b| (1.5 + b.width * if &*b.style == "double" { 3.0 } else { 1.0 } + b.space - indent).max(0.0))
     };
     let side = |left: bool| {
         let first = paras.first().map(|p| if left { &p.style.border_left } else { &p.style.border_right });

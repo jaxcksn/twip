@@ -178,8 +178,8 @@ fn a_section_break_splits_its_section_and_saves_a_sectpr_of_its_own() {
     let xml = crate::docx::package::read(&saved, &[], "word/document.xml").expect("reads").expect("the main part");
     assert_eq!(xml.matches("<w:sectPr").count(), before.len() + 2, "{xml}");
     // Undone, the document saves as it was read.
-    e.execute(Command::Undo, fonts());
-    e.execute(Command::Undo, fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
+    e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(starts(&e), before);
     let back = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
     assert_eq!(starts(&back), before);
@@ -296,19 +296,19 @@ mod page_setup {
         let mut e = blank();
         assert!(changed(&run(&mut e, Command::SetMargins(uneven()))));
         let before = margins(&e, 0);
-        run(&mut e, Command::SetOrientation(Orientation::Landscape));
+        run(&mut e, Command::SetOrientation(crate::api::command::SectionValue::here(Orientation::Landscape)));
         assert_eq!(margins(&e, 0), (72.0, 90.0, 36.0, 54.0), "the margins turn with the page");
-        run(&mut e, Command::SetOrientation(Orientation::Portrait));
+        run(&mut e, Command::SetOrientation(crate::api::command::SectionValue::here(Orientation::Portrait)));
         assert_eq!(margins(&e, 0), before);
     }
 
     #[test]
     fn orientation_leaves_a_square_page_alone() {
         let mut e = blank();
-        run(&mut e, Command::SetPaperSize(PaperSize { width: Points(600.0), height: Points(600.0) }));
+        run(&mut e, Command::SetPaperSize(PaperSize { width: Points(600.0), height: Points(600.0), apply_to: None }));
         run(&mut e, Command::SetMargins(uneven()));
         for o in [Orientation::Landscape, Orientation::Landscape, Orientation::Portrait] {
-            let out = run(&mut e, Command::SetOrientation(o));
+            let out = run(&mut e, Command::SetOrientation(crate::api::command::SectionValue::here(o)));
             assert!(!changed(&out), "{o:?}: {out:?}");
         }
     }
@@ -323,9 +323,9 @@ mod page_setup {
         assert!(changed(&run(&mut e, Command::SetMargins(Margins { left: Some(Points(100.0)), ..Default::default() }))));
         let lefts: Vec<f64> = (0..n).map(|i| margins(&e, i).3).collect();
         assert!(lefts.iter().all(|&l| l == 100.0), "{lefts:?}");
-        run(&mut e, Command::SetOrientation(Orientation::Landscape));
+        run(&mut e, Command::SetOrientation(crate::api::command::SectionValue::here(Orientation::Landscape)));
         assert!(e.document().sections.iter().all(|s| s.page_w > s.page_h), "every section turns");
-        run(&mut e, Command::Undo);
+        run(&mut e, Command::Undo(Default::default()));
         assert!(e.document().sections.iter().all(|s| s.page_w < s.page_h), "in one undo step");
     }
 
@@ -334,7 +334,7 @@ mod page_setup {
         let mut e = open("FX-SECTIONS.docx");
         e.complete(fonts());
         run(&mut e, Command::SelectAll);
-        run(&mut e, Command::SetColumns(Columns { count: 2, spacing: None, separator: None, widths: None }));
+        run(&mut e, Command::SetColumns(Columns { count: 2, spacing: None, separator: None, widths: None, apply_to: None, start_new_column: None }));
         let focus = e.focus_section();
         let s = &e.document().sections[focus];
         let to = s.left + s.gutter + 120.0;
@@ -348,7 +348,9 @@ mod page_setup {
     fn columns_take_one_width_each() {
         let mut e = blank();
         let w = |width| ColumnWidth { width: Points(width), spacing: Points(10.0) };
-        let cols = |count, widths| Command::SetColumns(Columns { count, spacing: None, separator: None, widths: Some(widths) });
+        let cols = |count, widths| {
+            Command::SetColumns(Columns { count, spacing: None, separator: None, widths: Some(widths), apply_to: None, start_new_column: None })
+        };
         assert!(!changed(&run(&mut e, cols(3, vec![w(100.0), w(100.0)]))), "three columns, two widths");
         assert!(!changed(&run(&mut e, cols(2, vec![w(-5.0), w(100.0)]))), "a negative width");
         assert!(!changed(&run(&mut e, cols(2, vec![w(400.0), w(400.0)]))), "wider than the text");
@@ -363,7 +365,7 @@ mod page_setup {
         let tall = Margins { top: Some(Points(700.0)), bottom: Some(Points(700.0)), ..Default::default() };
         assert!(!changed(&run(&mut e, Command::SetMargins(tall))), "taller than the page");
         run(&mut e, Command::SetMargins(Margins { left: Some(Points(72.0)), right: Some(Points(72.0)), ..Default::default() }));
-        let out = run(&mut e, Command::SetPaperSize(PaperSize { width: Points(140.0), height: Points(792.0) }));
+        let out = run(&mut e, Command::SetPaperSize(PaperSize { width: Points(140.0), height: Points(792.0), apply_to: None }));
         assert!(!changed(&out), "a page narrower than its margins: {out:?}");
         let s = &e.document().sections[0];
         assert!(s.page_w - s.left - s.right - s.gutter > 0.0, "{} wide, margins {} {}", s.page_w, s.left, s.right);
@@ -373,8 +375,9 @@ mod page_setup {
     fn a_top_gutter_takes_from_the_page_height() {
         use crate::api::command::MultiplePages;
         let pt = |v| Some(Points(v));
-        let margins = |side, ends, gutter| Margins { left: pt(side), right: pt(side), top: pt(ends), bottom: pt(ends), gutter: pt(gutter) };
-        let small = Command::SetPaperSize(PaperSize { width: Points(200.0), height: Points(300.0) });
+        let margins =
+            |side, ends, gutter| Margins { left: pt(side), right: pt(side), top: pt(ends), bottom: pt(ends), gutter: pt(gutter), apply_to: None };
+        let small = Command::SetPaperSize(PaperSize { width: Points(200.0), height: Points(300.0), apply_to: None });
         for (m, fits) in [(margins(60.0, 100.0, 90.0), true), (margins(50.0, 120.0, 70.0), false)] {
             let mut e = blank();
             assert!(changed(&run(&mut e, Command::SetMultiplePages(MultiplePages { mode: None, gutter_at_top: Some(true) }))));
@@ -409,7 +412,7 @@ fn columns_apply_to_the_selected_text_or_from_this_point_on() {
     use crate::editing::section::{ColumnPreset, ColumnsScope};
     let body = "<w:p><w:r><w:t>One</w:t></w:r></w:p><w:p><w:r><w:t>Two</w:t></w:r></w:p><w:p><w:r><w:t>Three</w:t></w:r></w:p>";
     let mut e = Editor::open(&super::blank_body(body), super::fonts()).expect("opens");
-    let two = Columns { count: 2, spacing: None, separator: None, widths: None };
+    let two = Columns { count: 2, spacing: None, separator: None, widths: None, apply_to: None, start_new_column: None };
     let para = |e: &Editor, k: usize| super::para_id(e, k);
     e.selection = Selection::range(
         Position::text(StoryId::Body, para(&e, 1), Unit(0)),
@@ -459,7 +462,7 @@ fn columns_on_selected_text_reach_every_section_it_spans() {
     use crate::api::command::Columns;
     use crate::editing::commands::Outcome;
     use crate::editing::section::ColumnsScope;
-    let two = Columns { count: 2, spacing: None, separator: None, widths: None };
+    let two = Columns { count: 2, spacing: None, separator: None, widths: None, apply_to: None, start_new_column: None };
     let cols = |e: &Editor| e.document().sections.iter().map(|s| s.columns.num).collect::<Vec<_>>();
     // From the outer edges: no breaks, both sections change.
     let mut e = two_sections();
@@ -515,7 +518,7 @@ fn columns_on_selected_text_are_refused_outside_the_body() {
         crate::editing::selection::Granularity::Char,
     );
     let before = (e.document().sections.len(), e.history().undo_depth());
-    let two = Columns { count: 2, spacing: None, separator: None, widths: None };
+    let two = Columns { count: 2, spacing: None, separator: None, widths: None, apply_to: None, start_new_column: None };
     assert!(!matches!(e.set_columns_in(two, ColumnsScope::SelectedText, false, super::fonts()), Outcome::Changed(_)));
     assert_eq!((e.document().sections.len(), e.history().undo_depth()), before);
     assert_eq!(e.document().sections[0].columns.num, 1, "the body's section is untouched");
@@ -538,7 +541,7 @@ fn columns_on_selected_text_ending_inside_a_table_are_refused() {
     let start = Position::text(StoryId::Body, super::para_id(&e, 0), Unit(1));
     e.selection = Selection::range(start, Position::row_end(StoryId::Body, table, 0), crate::editing::selection::Granularity::Char);
     let before = e.document().sections.clone();
-    let two = Columns { count: 2, spacing: None, separator: None, widths: None };
+    let two = Columns { count: 2, spacing: None, separator: None, widths: None, apply_to: None, start_new_column: None };
     let out = e.set_columns_in(two, ColumnsScope::SelectedText, false, super::fonts());
     assert!(matches!(out, Outcome::Refused(_)), "{out:?}");
     assert_eq!(e.document().sections, before, "nothing split or set");

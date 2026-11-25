@@ -5,16 +5,33 @@
     "characterSpacing": 0.5,
     "characterStyle": "Emphasis",
     "color": "auto",
+    "colorValue": {
+      "theme": "text2",
+      "transforms": [
+        {
+          "kind": "shade",
+          "value": 0.75
+        }
+      ]
+    },
     "contextualAlternates": false,
     "doubleStrikethrough": false,
     "emboss": false,
     "engrave": false,
+    "fitText": 72.5,
     "font": "Calibri",
+    "fontTheme": "body",
     "hidden": false,
     "highlight": "yellow",
     "italic": false,
     "kerning": 0.0,
     "language": "en-US",
+    "ligatureFlags": {
+      "contextual": false,
+      "discretionary": false,
+      "historical": false,
+      "standard": true
+    },
     "ligatures": "mixed",
     "noProof": false,
     "numberForm": "lining",
@@ -27,10 +44,35 @@
     "smallCaps": false,
     "strikethrough": false,
     "stylisticSet": 0,
+    "stylisticSets": [
+      1,
+      3
+    ],
     "subscript": false,
     "superscript": false,
+    "textBorder": {
+      "color": "auto",
+      "shadow": false,
+      "space": 1.0,
+      "style": "single",
+      "width": 0.5
+    },
     "textEffects": {},
+    "textShading": {
+      "color": "auto",
+      "fill": {
+        "theme": "text2",
+        "transforms": [
+          {
+            "kind": "shade",
+            "value": 0.75
+          }
+        ]
+      },
+      "pattern": "pct10"
+    },
     "underline": "none",
-    "underlineColor": "auto"
+    "underlineColor": "auto",
+    "underlineColorValue": "auto"
   }
 ]

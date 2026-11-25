@@ -1,0 +1,154 @@
+{
+  "name": "multi-selection",
+  "steps": [
+    {
+      "op": "command",
+      "command": {
+        "type": "insertText",
+        "value": "Alpha beta gamma. Delta epsilon zeta. Eta theta."
+      }
+    },
+    {
+      "op": "click",
+      "text": "beta",
+      "clicks": 2
+    },
+    {
+      "op": "expectState",
+      "match": {
+        "selection": {
+          "text": "beta ",
+          "ranges": [
+            {
+              "start": {
+                "offset": 6
+              },
+              "end": {
+                "offset": 11
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "op": "drag",
+      "from": {
+        "text": "Delta"
+      },
+      "to": {
+        "text": "epsilon"
+      },
+      "mods": [
+        "ctrl"
+      ]
+    },
+    {
+      "op": "expectState",
+      "match": {
+        "selection": {
+          "kind": "text",
+          "text": "beta Delta epsilon ",
+          "ranges": [
+            {
+              "start": {
+                "offset": 6
+              },
+              "end": {
+                "offset": 11
+              }
+            },
+            {
+              "start": {
+                "offset": 18
+              },
+              "end": {
+                "offset": 32
+              }
+            }
+          ]
+        },
+        "commands": {
+          "addComment": {
+            "enabled": false
+          }
+        }
+      }
+    },
+    {
+      "op": "command",
+      "command": {
+        "type": "addComment",
+        "value": "Not on two"
+      }
+    },
+    {
+      "op": "expectError",
+      "code": "unavailable"
+    },
+    {
+      "op": "click",
+      "text": "theta",
+      "clicks": 3
+    },
+    {
+      "op": "expectState",
+      "match": {
+        "selection": {
+          "ranges": [
+            {
+              "start": {
+                "offset": 0
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "op": "click",
+      "text": "epsilon",
+      "mods": [
+        "ctrl"
+      ]
+    },
+    {
+      "op": "expectState",
+      "match": {
+        "selection": {
+          "ranges": [
+            {
+              "start": {
+                "offset": 0
+              },
+              "end": {
+                "offset": 18
+              }
+            },
+            {
+              "start": {
+                "offset": 38
+              }
+            }
+          ],
+          "text": "Alpha beta gamma. Eta theta."
+        }
+      }
+    },
+    {
+      "op": "key",
+      "key": "F8",
+      "mods": [
+        "shift"
+      ]
+    },
+    {
+      "op": "expectState",
+      "match": {
+        "selection": {
+          "mode": "normal"
+        }
+      }
+    }
+  ]
+}

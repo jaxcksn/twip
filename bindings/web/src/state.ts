@@ -1,8 +1,13 @@
 import type {
+  BorderLine,
+  CaptionOptions,
   ChapterNumbers,
   ColumnWidth,
   CommandId,
   DropCap,
+  FrameProperties,
+  TableTool,
+  LigatureFlags,
   Ligatures,
   LineNumbers,
   MultiplePagesMode,
@@ -10,16 +15,39 @@ import type {
   NumberForm,
   NumberFormat,
   NumberSpacing,
+  PasteSettings,
+  RangeEditorRef,
   SectionBreakKind,
+  ShadingPattern,
   TextFlow,
   TextInputType,
+  ThemeFont,
 } from './commands.js';
 import type { FontsState } from './fonts/library.js';
+import type { BalloonMode, MarkupStyle, ReviewCounts, ShowMarkup } from './review.js';
 import type { DialogKind } from './services/dialogs.js';
-import type { ControlKind, ReferenceRule } from './services/elements.js';
-import type { RulerModel, RulerUnit, TabSelector } from './services/ruler.js';
+import type { CalendarType, ControlKind, DateStorage, ReferenceRule } from './services/elements.js';
+import type { RulerModel, RulerUnit, TabSelector, TabStopInfo } from './services/ruler.js';
 import type { ChromeTheme, CursorOverride, DocumentAppearance, FieldShading, MeasureDetail, ObjectGrid, ThemeColors } from './services/view.js';
-import type { Color, CommentId, Degrees, ElementId, FillValue, Points, RevisionId, ShapeState, StyleId, TextEffects, Watermark } from './types.js';
+import type {
+  BoxPoint,
+  CellBlock,
+  Color,
+  ColourValue,
+  CommentId,
+  Degrees,
+  ElementId,
+  FillValue,
+  ObjectId,
+  PictureAdjustState,
+  Points,
+  RevisionId,
+  ShapeState,
+  StyleId,
+  TextEffects,
+  TextRange,
+  Watermark,
+} from './types.js';
 
 /** An on/off value over the selection: `'mixed'` where it differs, `null` where it doesn't apply. */
 export type Tri = boolean | 'mixed' | null;
@@ -39,6 +67,10 @@ export interface EditorState {
   mode: 'editing' | 'design';
   /** What typing corrects (`setAutoCorrect`). */
   autoCorrect: AutoCorrectOptions;
+  /** The cut, copy and paste options (`setPasteOptions`). */
+  pasteOptions: PasteSettings;
+  /** The caption inserted tables get (`setAutoCaption`); absent when off. */
+  autoCaption?: CaptionOptions;
   /** The sub-template being edited; absent while the template is. */
   editing?: EditingTarget;
   /** Whether edits are refused. */
@@ -81,6 +113,21 @@ export interface EditorState {
    * accent6, hyperlink, followedHyperlink), for an application's colour picker.
    */
   themeColours: Color[];
+  /** The theme's heading (`+Headings`) and body (`+Body`) font families. */
+  themeFonts: { heading: string; body: string };
+}
+
+/** A border line as the editor reads it back: its colour as written, its distance and its shadow. */
+export type BorderReadback = BorderLine & { color: ColourValue | 'auto'; space: Points; shadow: boolean };
+
+/** Shading as the editor reads it back: a fill, and a pattern in the pattern colour over it. */
+export interface Shading {
+  /** The fill, or none. */
+  fill: ColourValue | 'none';
+  /** The pattern. */
+  pattern: ShadingPattern;
+  /** The pattern's colour, or automatic. */
+  color: ColourValue | 'auto';
 }
 
 /** The value each command reports in state, for the commands that report one. */
@@ -214,6 +261,18 @@ export interface SelectionSummary {
    * 10,000 characters.
    */
   text: string | null;
+  /**
+   * Every selected range of text in document order: one for a text selection, one per line for a column block,
+   * several for a discontiguous selection (`ranges.length > 1`); empty for a caret, cells or an object. At most 1,000.
+   */
+  ranges: TextRange[];
+  /** The selection has more ranges than `ranges` lists. */
+  rangesTruncated: boolean;
+  /**
+   * The selected blocks of cells of a discontiguous selection, in the order they were added; the selection's own block
+   * is the last when `kind` is `'cells'`. Empty when at most one block is selected (`table` describes it).
+   */
+  cellBlocks: CellBlock[];
   /** The table around the selection, if any. */
   table: TableSelection | null;
   /** The selected object, if any. */
@@ -221,7 +280,7 @@ export interface SelectionSummary {
   /** Innermost first: the element the selection is in or covers, then its parents. */
   context: ElementContext[];
   /** The link at the selection, if any. */
-  link: { address: string; text: string } | null;
+  link: LinkInfo | null;
   /** The comment thread at the caret. */
   comment: CommentId | null;
   /** The revision at the caret. */
@@ -235,6 +294,16 @@ export interface SelectionSummary {
     /** For example `'First Page Header -Section 2-'`. */
     label: string;
   } | null;
+  /**
+   * Set while F2 (`moveText`) or Shift+F2 (`copyText`) waits for its place: a click or the arrow keys choose it
+   * (`placed`), Enter moves the text there, Esc gives up.
+   */
+  pendingMove?: { copy: boolean; placed: boolean };
+  /**
+   * Set while a list's numbers are selected (a click on a number): character formatting commands then format that
+   * list level's numbers, and any selection move ends it.
+   */
+  listNumbers?: { list: number; level: number };
 }
 
 /** The table around the selection. */
@@ -287,6 +356,76 @@ export interface TableSelection {
   title?: string;
   /** The table's alternative text description; absent when empty. */
   description?: string;
+  /** The rows and columns in each band, as it lays out, and the table's own (absent: its style's). */
+  bands: { rows: number; columns: number; ownRows?: number; ownColumns?: number };
+  /** The selected cells' borders, edge by edge: each cell's own line, else its row's or table's for that edge. */
+  cellBorders: CellBorderLines;
+  /** The table's own borders. */
+  tableBorders: TableBorderLines;
+  /** The selected cells' shading with its pattern (`cellShading` is its fill alone). */
+  cellShadingValue: Mixed<Shading | 'none'>;
+  /** The table's shading (behind spaced cells); absent for none. */
+  tableShading?: Shading;
+  /** The selected cells' margins on each side. */
+  cellMargins: { top: Mixed<Points>; left: Mixed<Points>; bottom: Mixed<Points>; right: Mixed<Points> };
+  /** The table's default cell margins (Table Options). */
+  defaultCellMargins: { top: Points; left: Points; bottom: Points; right: Points };
+  /** The selected cells' end marks take no height. */
+  hideMark: Tri;
+  /** The selected rows' exceptions to the table's properties; `'none'` where a row takes the table's. */
+  rowExceptions: {
+    any: Tri;
+    alignment: Mixed<'left' | 'center' | 'right' | 'none'>;
+    indent: Mixed<Points | 'none'>;
+    cellSpacing: Mixed<Points | 'none'>;
+    shading: Mixed<Shading | 'none'>;
+    borders: Mixed<TableBorderLines | 'none'>;
+  };
+  /** How the table's columns are sized. */
+  fit: TableFit;
+  /** The columns the current cell spans. */
+  columnSpan: number;
+  /** The rows the current cell spans (more than one: merged down). */
+  rowSpan: number;
+}
+
+/** How a table's columns are sized: fixed widths, fitted to their contents, or filling the width it is in. */
+export type TableFit = 'fixed' | 'contents' | 'window';
+
+/** The selected cells' edges, each the same line over them, `'mixed'`, `'none'`, or `null` where it doesn't apply. */
+export interface CellBorderLines {
+  /** The selection's top edge. */
+  top: Mixed<BorderReadback | 'none'>;
+  /** Its left edge. */
+  left: Mixed<BorderReadback | 'none'>;
+  /** Its bottom edge. */
+  bottom: Mixed<BorderReadback | 'none'>;
+  /** Its right edge. */
+  right: Mixed<BorderReadback | 'none'>;
+  /** The lines between the selected rows (`null` with one row). */
+  insideHorizontal: Mixed<BorderReadback | 'none'>;
+  /** The lines between the selected columns (`null` with one column). */
+  insideVertical: Mixed<BorderReadback | 'none'>;
+  /** The diagonal from top left to bottom right. */
+  diagonalDown: Mixed<BorderReadback | 'none'>;
+  /** The diagonal from bottom left to top right. */
+  diagonalUp: Mixed<BorderReadback | 'none'>;
+}
+
+/** A table's own borders; absent for none. */
+export interface TableBorderLines {
+  /** The top edge. */
+  top?: BorderReadback;
+  /** The left edge. */
+  left?: BorderReadback;
+  /** The bottom edge. */
+  bottom?: BorderReadback;
+  /** The right edge. */
+  right?: BorderReadback;
+  /** The lines between rows. */
+  insideHorizontal?: BorderReadback;
+  /** The lines between columns. */
+  insideVertical?: BorderReadback;
 }
 
 /** A row height. */
@@ -316,8 +455,8 @@ export type TightWrap = 'none' | 'allLines' | 'firstAndLastLine' | 'firstLineOnl
 
 /** The selected object. */
 export interface ObjectSelection {
-  /** A picture, a text box, a shape, a line or connector (a shape with no filled path), or a group. */
-  kind: 'picture' | 'textBox' | 'shape' | 'line' | 'group';
+  /** A picture, a text box, a shape, a line or connector (a shape with no filled path), a group, or a frame. */
+  kind: ObjectKind;
   /** How text wraps around it. */
   wrap: ObjectWrap;
   /** The width. */
@@ -352,6 +491,48 @@ export interface ObjectSelection {
   relativeWidth?: RelativeSize;
   /** Its height as a share of a box on the page; absent for an absolute height. */
   relativeHeight?: RelativeSize;
+  /** A floating object's id (a group child's when one is selected); absent for inline objects and frames. */
+  id?: ObjectId;
+  /** Its name, as the Selection Pane lists it. */
+  name: string;
+  /** Its alternative text's title; absent when empty. */
+  title?: string;
+  /** Hidden: not drawn, and text doesn't wrap around it. */
+  hidden: boolean;
+  /** Resizing it keeps its aspect ratio (Lock aspect ratio). */
+  lockAspect: boolean;
+  /** A picture's image at its own size; absent for other objects. */
+  originalSize?: { width: Points; height: Points };
+  /** Its place in the stack of its page's floating objects, 0 at the front; absent for inline objects and frames. */
+  stackIndex?: number;
+  /** A picture's adjustments; absent for other objects. */
+  pictureAdjust?: PictureAdjustState;
+  /** A text box's place in a chain of linked text boxes; absent when it is in none. */
+  textBoxLink?: { index: number; count: number; previous?: ObjectId; next?: ObjectId };
+  /**
+   * A floating object's wrap polygon, unclosed, and whether it was edited by hand (kept when the object changes);
+   * absent when it has none and its wrapping is neither tight nor through.
+   */
+  wrapPolygon?: { points: BoxPoint[]; edited: boolean };
+  /** A frame's placement and whether other frames and objects may overlap it; absent for other objects. */
+  frame?: { properties: FrameProperties; allowOverlap: boolean };
+}
+
+/** The kinds of selectable object. */
+export type ObjectKind = 'picture' | 'textBox' | 'shape' | 'line' | 'group' | 'frame';
+
+/** A floating object as the Selection Pane lists it (`objectList`). */
+export interface ObjectListEntry {
+  /** The object. */
+  object: ObjectId;
+  /** Its name. */
+  name: string;
+  /** What it is. */
+  kind: ObjectKind;
+  /** Hidden. */
+  hidden: boolean;
+  /** A group's objects, front first; absent for other objects. */
+  children?: ObjectListEntry[];
 }
 
 /** A floating object's size as a share of a box on the page: 1 to 1000 percent. */
@@ -467,6 +648,8 @@ export interface TablePosition {
   vertical?: VerticalPosition;
   /** How far the text around it keeps, 0 to 1584. */
   wrapDistance?: TextDistance;
+  /** Other positioned tables may overlap it. */
+  allowOverlap?: boolean;
 }
 
 /** An element the selection is in or covers. */
@@ -477,6 +660,12 @@ export interface ElementContext {
   kind: 'field' | ControlKind | 'repeatingItem';
   /** The selection covers exactly this element. */
   exact: boolean;
+  /** Locked against editing: a locked field, or a control whose content can't be edited. */
+  locked: boolean;
+  /** A field shows its code rather than its result. */
+  showingCode: boolean;
+  /** A field's result is out of date: the next field update refreshes it. */
+  dirty: boolean;
   /** A field's code. */
   code?: string;
   /** A control's tag. */
@@ -489,6 +678,22 @@ export interface ElementContext {
   form?: FormFieldInfo;
   /** A content control's look and options. */
   control?: ControlInfo;
+}
+
+/** The link at the selection. */
+export interface LinkInfo {
+  /** Where it goes: its target, then `#` and the bookmark when it names one. */
+  address: string;
+  /** Its display text. */
+  text: string;
+  /** The target without its bookmark: empty for a place in this document. */
+  target: string;
+  /** The place in the target it goes to (a bookmark name). */
+  bookmark?: string;
+  /** The ScreenTip shown when it is hovered. */
+  screenTip?: string;
+  /** The window or frame it opens in. */
+  frame?: string;
 }
 
 /** A content control's look and options; what doesn't apply to its kind is absent. */
@@ -509,8 +714,18 @@ export interface ControlInfo {
   sectionTitle?: string;
   /** A repeating section's items can be added and removed. */
   allowInsertDelete?: boolean;
-  /** A building block gallery's entries: the package's building blocks in its category, by name. */
+  /** A building block gallery's entries: the package's building blocks in its gallery and category, by name. */
   buildingBlocks?: string[];
+  /** A building block gallery's (or building block's) gallery, by Word's name for it; absent: any. */
+  gallery?: string;
+  /** A building block gallery's (or building block's) category; absent: any. */
+  category?: string;
+  /** A date control's date (`YYYY-MM-DDTHH:MM:SSZ`); absent while it shows its placeholder or no date. */
+  date?: string;
+  /** A date control's calendar. */
+  calendar?: CalendarType;
+  /** What a date control stores in its data. */
+  storeAs?: DateStorage;
 }
 
 /** A legacy form field's options and value; what doesn't apply to its kind is absent. */
@@ -527,18 +742,34 @@ export interface FormFieldInfo {
   helpText?: string;
   /** The help the status bar shows. */
   statusText?: string;
+  /** `helpText` names an AutoText entry whose text is the help. */
+  helpIsAutoText: boolean;
+  /** `statusText` names an AutoText entry whose text is the help. */
+  statusIsAutoText: boolean;
+  /** The macro run on entry. */
+  entryMacro?: string;
+  /** The macro run on exit. */
+  exitMacro?: string;
   /** What a text field takes. */
   inputType?: TextInputType;
   /** A text field's default text. */
   defaultText?: string;
   /** The most characters a text field takes (0: any). */
   maxLength?: number;
+  /** A text field's text format (`Uppercase`, a number or date picture). */
+  format?: string;
   /** A check box is checked. */
   checked?: boolean;
+  /** A check box's size, or its text's (`'auto'`). */
+  size?: Points | 'auto';
+  /** A check box is checked by default. */
+  checkedByDefault?: boolean;
   /** A drop-down's entries. */
   entries?: string[];
   /** The entry a drop-down shows. */
   entry?: number;
+  /** The entry a drop-down shows by default, from 0. */
+  defaultEntry?: number;
 }
 
 /** The selection's character formatting. */
@@ -607,6 +838,22 @@ export interface CharacterFormatting {
   underlineColor: Mixed<Color | 'auto'>;
   /** The text effects (fill, outline, shadow, glow and reflection), through the character style. */
   textEffects: Mixed<TextEffects>;
+  /** The theme font the font is, or `'none'` (a family by name). */
+  fontTheme: Mixed<ThemeFont | 'none'>;
+  /** The colour as written: RGB, or a theme colour with its tint or shade (`color` is what it shows). */
+  colorValue: Mixed<ColourValue | 'auto'>;
+  /** The underline's colour as written, or the text's (`'auto'`). */
+  underlineColorValue: Mixed<ColourValue | 'auto'>;
+  /** The text's border, or `'none'`. */
+  textBorder: Mixed<BorderReadback | 'none'>;
+  /** The text's shading, or `'none'`. */
+  textShading: Mixed<Shading | 'none'>;
+  /** The width the text is fitted to (Fit Text), or `'none'`. */
+  fitText: Mixed<Points | 'none'>;
+  /** Each kind of OpenType ligature on or off. */
+  ligatureFlags: Mixed<Required<LigatureFlags>>;
+  /** The OpenType stylistic sets on (1 to 20), in order. */
+  stylisticSets: Mixed<number[]>;
 }
 
 /** The selection's paragraph formatting. */
@@ -651,6 +898,20 @@ export interface ParagraphFormatting {
   textDirection: Mixed<TextFlow>;
   /** The selection's paragraph's drop cap, when it has one. */
   dropCap?: DropCap;
+  /** The top border, or `'none'`. */
+  borderTop: Mixed<BorderReadback | 'none'>;
+  /** The left border. */
+  borderLeft: Mixed<BorderReadback | 'none'>;
+  /** The bottom border. */
+  borderBottom: Mixed<BorderReadback | 'none'>;
+  /** The right border. */
+  borderRight: Mixed<BorderReadback | 'none'>;
+  /** The line between paragraphs with the same borders. */
+  borderBetween: Mixed<BorderReadback | 'none'>;
+  /** The shading in full (`shading` is its fill as shown), or `'none'`. */
+  shadingValue: Mixed<Shading | 'none'>;
+  /** The tab stops, own and inherited, in position order: the same for every selected paragraph, or mixed. */
+  tabs: Mixed<TabStopInfo[]>;
 }
 
 /** The selection's section. */
@@ -662,7 +923,8 @@ export interface PageFormatting {
   /** The margins. */
   margins: { top: Points; bottom: Points; left: Points; right: Points; gutter: Points };
   /** The text columns. */
-  columns: { count: number; spacing: Points; separator: boolean; widths: ColumnWidth[] };
+  /** The text columns; `widths` is empty when they are `equal`. */
+  columns: { count: number; spacing: Points; separator: boolean; widths: ColumnWidth[]; equal: boolean };
   /** The header distance from the page edge. */
   headerDistance: Points;
   /** The footer distance from the page edge. */
@@ -703,6 +965,18 @@ export interface PageFormatting {
   background?: FillValue;
   /** The watermark the pages show (a picture's image empty), or absent. */
   watermark?: Watermark;
+  /** The section's page borders: each edge's line (absent: none), what the distances are measured from, and more. */
+  pageBorders: {
+    top?: BorderReadback;
+    left?: BorderReadback;
+    bottom?: BorderReadback;
+    right?: BorderReadback;
+    offsetFrom: 'page' | 'text';
+    display: 'allPages' | 'firstPage' | 'notFirstPage';
+    surroundHeader: boolean;
+    surroundFooter: boolean;
+    behindText: boolean;
+  };
 }
 
 /** View settings. */
@@ -749,10 +1023,54 @@ export interface ViewState {
   fieldShading: FieldShading;
   /** Bookmarks are shown. */
   bookmarks: boolean;
+  /** Tab characters are shown (or every mark is). */
+  tabCharacters: boolean;
+  /** Spaces are shown. */
+  spaces: boolean;
+  /** Paragraph marks and breaks are shown. */
+  paragraphMarks: boolean;
+  /** Hidden text is shown. */
+  hiddenText: boolean;
+  /** Optional hyphens are shown. */
+  optionalHyphens: boolean;
+  /** The selected floating object's anchor is shown. */
+  objectAnchors: boolean;
+  /** Click and Type is on. */
+  clickAndType: boolean;
+  /** Selected text can be dragged and dropped. */
+  textDragAndDrop: boolean;
+  /** The white space between pages is hidden. It opens as the document was saved. */
+  hideWhiteSpace: boolean;
+  /** Under enforced protection, the regions the author may edit are highlighted. */
+  showEditableRegions: boolean;
+  /** The selected floating object's wrap points are being edited. */
+  editingWrapPoints: boolean;
+  /** Highlight All's highlights show (`find.highlightAll`); they go when the document changes. */
+  findHighlights: boolean;
+  /** The highlighter's colour while Highlight with nothing selected made the pointer one; absent when off. */
+  highlighter?: HighlightColor;
   /** The pointer shapes shown over elements instead of the editor's own; absent when none are set. */
   cursorOverrides?: CursorOverride[];
   /** Which fields are sub-template references (`setSubTemplateRules`); absent when none are. */
   subTemplateRules?: ReferenceRule[];
+  /** Create Link's pointer is on: the next click on an empty text box links the selected one to it. */
+  linkingTextBox: boolean;
+  /** Select Objects is on. */
+  selectingObjects: boolean;
+  /** The Select Objects rectangle being dragged: its page and box (left, top, right, bottom, points); absent when none. */
+  objectMarquee?: { page: number; rect: [Points, Points, Points, Points] };
+  /** The pointer's table tool. */
+  tableTool: TableTool;
+  /** The line the Draw Table pen draws. */
+  tablePen: BorderReadback;
+  /**
+   * What the Draw Table pen's stroke being dragged would draw, in page points, for the host to show dashed in the pen's
+   * colour: a line or diagonal from `from` to `to`, or a new table's outline (`from` its top left, `to` its bottom
+   * right). Absent when no stroke is dragged.
+   */
+  tableToolFeedback?: { page: number; kind: 'line' | 'diagonal' | 'outline'; from: [Points, Points]; to: [Points, Points] };
+  /** The border under the pointer the eraser would remove, in page points, for the host to highlight; absent when none. */
+  tableEraserTarget?: { page: number; from: [Points, Points]; to: [Points, Points] };
 }
 
 /** What the editor is on: the template, or one of its sub-templates. */
@@ -775,6 +1093,20 @@ export interface ReviewState {
     inEditableRange: boolean;
     /** Filling in forms: the sections (by index) anyone may edit. */
     unprotectedSections: number[];
+    /** The editing restriction takes exceptions: editable ranges and who may edit them (read only, comments). */
+    exceptionsAllowed: boolean;
+    /** The editing restriction leaves chosen sections open (filling in forms). */
+    sectionsAllowed: boolean;
+    /** AutoFormat as you type may override the formatting restriction. */
+    autoFormatOverride: boolean;
+    /** The formatting restriction keeps the theme from changing. */
+    blockThemeSwitching: boolean;
+    /** The formatting restriction keeps the style set from changing. */
+    blockStyleSetSwitching: boolean;
+    /** Who may edit the editable ranges holding the selection. */
+    editorsHere: RangeEditorRef[];
+    /** The number of editable ranges. */
+    rangeCount: number;
   };
   /** The markup view. */
   markupView: MarkupView;
@@ -784,6 +1116,18 @@ export interface ReviewState {
   comments: number;
   /** The active comment thread. */
   activeComment: CommentId | null;
+  /** Which kinds of markup show, and whose. It opens as the document was saved. */
+  showMarkup: ShowMarkup;
+  /** Where revisions show in All Markup. */
+  balloonMode: BalloonMode;
+  /** How revisions draw. */
+  markupStyle: MarkupStyle;
+  /** Tracking records moves as moves. */
+  trackMoves: boolean;
+  /** Tracking records formatting changes. */
+  trackFormatting: boolean;
+  /** The revisions and threads by kind: all, and those Show Markup shows. */
+  counts: ReviewCounts;
 }
 
 /** What typing corrects (AutoCorrect): each rule on or off, and the texts never corrected again. All on by default. */
@@ -810,6 +1154,12 @@ export interface AutoCorrectOptions {
   numberedLists: boolean;
   /** `*` or `-` then a space or tab at a paragraph's start makes it a bulleted list. */
   bulletedLists: boolean;
+  /** AutoFormat: three or more `-`, `_`, `=`, `*`, `~` or `#` then Enter make the paragraph a bottom border line. */
+  borderLines: boolean;
+  /** AutoFormat: an Internet or network path (`www.example.com`, `name@example.com`) then a space or Enter becomes a link. */
+  internetPaths: boolean;
+  /** AutoFormat: Tab and Backspace at a paragraph's start set its indents (and Tab at a list's first item moves the list). */
+  tabIndents: boolean;
   /** The texts Never correct added (or `setAutoCorrect` set): never corrected again. Absent when empty. */
   never?: string[];
 }

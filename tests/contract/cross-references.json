@@ -1,0 +1,44 @@
+{
+  "name": "cross-references",
+  "fixture": "editor/FX-outline.docx",
+  "steps": [
+    { "op": "open" },
+    { "op": "call", "method": "references.crossReferenceTargets", "args": ["heading"], "result": { "$exact": [
+      { "level": 1, "text": "Overview" }, { "level": 2, "text": "Background" }, { "level": 3, "text": "Earlier work" },
+      { "level": 1, "text": "Method" }, { "level": 2, "text": "Data" }, { "level": 3, "text": "Sources" }
+    ] } },
+    { "op": "call", "method": "references.crossReferenceTargets", "args": ["bookmark"], "result": { "$exact": [] } },
+    { "op": "call", "method": "references.crossReferenceTargets", "args": ["footnote"], "result": { "$exact": [] } },
+    { "op": "call", "method": "find.next", "args": [{ "text": "survey data" }] },
+    { "op": "command", "command": { "type": "insertBookmark", "value": "Data" } },
+    { "op": "call", "method": "references.crossReferenceTargets", "args": ["bookmark"], "result": { "$exact": [{ "bookmark": "Data", "text": "Data" }] } },
+    { "op": "command", "command": { "type": "moveSelection", "by": "document", "direction": "forward" } },
+    { "op": "command", "command": { "type": "insertText", "value": " See " } },
+    { "op": "call", "method": "commands.insertCrossReference", "args": [{ "target": { "kind": "heading", "index": 1 }, "content": "text" }], "result": { "id": { "$type": "string" } }, "save": "text" },
+    { "op": "expectState", "match": { "history": { "undoLabel": "Insert Cross-reference" } } },
+    { "op": "call", "method": "elements.get", "args": [{ "$saved": "text", "path": ["id"] }], "result": { "code": { "$contains": "REF _Ref" }, "display": "Background" } },
+    { "op": "command", "command": { "type": "insertText", "value": " on " } },
+    { "op": "call", "method": "commands.insertCrossReference", "args": [{ "target": { "kind": "heading", "index": 1 }, "content": "pageNumber", "aboveBelow": true }], "save": "page" },
+    { "op": "call", "method": "elements.get", "args": [{ "$saved": "page", "path": ["id"] }], "result": { "code": { "$contains": "PAGEREF _Ref" }, "display": "on page 1" } },
+    { "op": "command", "command": { "type": "insertText", "value": " and " } },
+    { "op": "call", "method": "commands.insertCrossReference", "args": [{ "target": { "kind": "bookmark", "index": 0 }, "content": "text", "hyperlink": false }], "save": "mark" },
+    { "op": "call", "method": "elements.get", "args": [{ "$saved": "mark", "path": ["id"] }], "result": { "code": " REF Data ", "display": "survey data" } },
+    { "op": "command", "command": { "type": "insertCrossReference", "target": { "kind": "heading", "index": 99 }, "content": "text" } },
+    { "op": "expectError", "code": "unavailable" },
+    { "op": "command", "command": { "type": "insertCrossReference", "target": { "kind": "heading", "index": 0 }, "content": "noteNumber" } },
+    { "op": "expectError", "code": "invalid-argument" },
+
+    { "op": "call", "method": "find.next", "args": [{ "text": "ground" }] },
+    { "op": "command", "command": { "type": "moveSelection", "by": "character", "direction": "backward" } },
+    { "op": "command", "command": { "type": "insertText", "value": "Fore" } },
+    { "op": "expectEvents", "match": [] },
+    { "op": "command", "command": { "type": "updateFields", "ids": [{ "$saved": "text", "path": ["id"] }] } },
+    { "op": "call", "method": "elements.get", "args": [{ "$saved": "text", "path": ["id"] }], "result": { "display": "BackForeground" } },
+    { "op": "expectEvents", "match": [{ "type": "documentChanged" }] },
+    { "op": "call", "method": "find.next", "args": [{ "text": "Overview" }] },
+    { "op": "command", "command": { "type": "moveSelection", "by": "lineEdge", "direction": "forward" } },
+    { "op": "command", "command": { "type": "insertFootnote" } },
+    { "op": "command", "command": { "type": "insertText", "value": "A note." } },
+    { "op": "call", "method": "references.crossReferenceTargets", "args": ["footnote"], "result": [{ "text": "A note.", "note": { "$type": "number" } }] }
+  ]
+}

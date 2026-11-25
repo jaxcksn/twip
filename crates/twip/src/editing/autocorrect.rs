@@ -711,7 +711,7 @@ impl Editor {
         // One step that undoes to the typing caret and redoes to the caret after the link.
         self.begin_batch(Some("AutoFormat".into()));
         self.selection = Selection::range(pa, pb, super::selection::Granularity::Char);
-        let out = self.insert_hyperlink(crate::api::command::Hyperlink { address, text: None }, fonts);
+        let out = self.insert_hyperlink(crate::api::command::Hyperlink { address, ..Default::default() }, fonts);
         let linked = matches!(out, Outcome::Changed(_));
         let field_end = linked.then(|| self.index.para(&self.doc, para).and_then(|p| field_end_at(&p.inlines, a.0))).flatten();
         self.selection = match (self.selection, caret.para_offset()) {
@@ -850,7 +850,7 @@ impl Editor {
     fn revert_taken(&mut self, c: &super::Correction, fonts: &Fonts) -> Outcome {
         let label = if c.kind == super::CorrectionKind::Text { "AutoCorrect" } else { "AutoFormat" };
         if self.history.next_undo() == Some(label) && c.typed == 0 {
-            return self.execute(super::commands::Command::Undo, fonts);
+            return self.execute(super::commands::Command::Undo(Default::default()), fonts);
         }
         if c.kind != super::CorrectionKind::Text {
             return self.revert_auto_format(c, fonts);

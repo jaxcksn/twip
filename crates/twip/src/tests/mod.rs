@@ -1,5 +1,6 @@
 //! Crate-wide tests: subsystem boundaries.
 
+mod allocations;
 mod boundaries;
 mod contract;
 mod decorations;

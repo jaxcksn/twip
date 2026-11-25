@@ -1,0 +1,13 @@
+{
+  "name": "outline-keys",
+  "fixture": "editor/FX-outline.docx",
+  "steps": [
+    { "op": "open" },
+    { "op": "call", "method": "navigation.headings", "save": "h" },
+    { "op": "call", "method": "navigation.select", "args": [{ "$saved": "h", "path": [{ "text": "Background" }, "id"] }] },
+    { "op": "key", "key": "ArrowRight", "mods": ["alt", "shift"] },
+    { "op": "expectState", "match": { "paragraph": { "style": "Heading3" }, "history": { "undoLabel": "Demote" } } },
+    { "op": "key", "key": "ArrowLeft", "mods": ["alt", "shift"] },
+    { "op": "expectState", "match": { "paragraph": { "style": "Heading2" } } }
+  ]
+}
