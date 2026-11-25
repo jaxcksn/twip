@@ -55,6 +55,12 @@ fn editing_stays_below_rendering_and_host() {
 }
 
 #[test]
+fn the_document_reader_and_writer_know_neither_layout_nor_the_api() {
+    let v = violations("docx", &["layout", "api"], &[]);
+    assert!(v.is_empty(), "docx imports layout or the API:\n{}", v.join("\n"));
+}
+
+#[test]
 fn layout_doesnt_know_the_editor() {
     let v = violations("layout", &["editing", "editor", "legacy", "render", "pdf", "host"], &[]);
     assert!(v.is_empty(), "layout imports a consumer:\n{}", v.join("\n"));
