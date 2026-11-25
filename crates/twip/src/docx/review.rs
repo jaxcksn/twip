@@ -546,13 +546,13 @@ impl Password {
         let spin = 100_000;
         let key = legacy_key(password, true);
         let hash = hash("SHA-512", &salt, &key, spin).unwrap_or_default();
-        Password { algorithm: "SHA-512".into(), hash: crate::api::value::base64(&hash), salt: crate::api::value::base64(&salt), spin }
+        Password { algorithm: "SHA-512".into(), hash: crate::base64::base64(&hash), salt: crate::base64::base64(&salt), spin }
     }
 
     /// `password` is this one: hashed from Word's legacy key for it (its hex digits padded or not) or, as ECMA-376
     /// describes, from the password itself. An algorithm this doesn't compute never matches.
     pub fn matches(&self, password: &str) -> bool {
-        let Some(salt) = crate::api::value::from_base64(&self.salt) else { return false };
+        let Some(salt) = crate::base64::from_base64(&self.salt) else { return false };
         // shortcut: the spin count is capped, so a document can't make a check take minutes; Word writes 100 000.
         let spin = self.spin.min(10_000_000);
         let tries = [legacy_key(password, true), legacy_key(password, false), password.to_string()];
@@ -562,7 +562,7 @@ impl Password {
                 return false;
             }
             seen.push(t);
-            hash(&self.algorithm, &salt, t, spin).is_some_and(|h| crate::api::value::base64(&h) == self.hash)
+            hash(&self.algorithm, &salt, t, spin).is_some_and(|h| crate::base64::base64(&h) == self.hash)
         })
     }
 }
@@ -1172,12 +1172,8 @@ mod tests {
         // A hash of the password itself, and Word 2007's SHA-1 (`w:cryptAlgorithmSid="4"`).
         for algorithm in ["SHA-256", "SHA-1"] {
             let h = hash(algorithm, b"0123456789abcdef", "Example", 10).expect("computed");
-            let p = Password {
-                algorithm: algorithm.into(),
-                hash: crate::api::value::base64(&h),
-                salt: crate::api::value::base64(b"0123456789abcdef"),
-                spin: 10,
-            };
+            let p =
+                Password { algorithm: algorithm.into(), hash: crate::base64::base64(&h), salt: crate::base64::base64(b"0123456789abcdef"), spin: 10 };
             assert!(p.matches("Example") && !p.matches("Other"), "{algorithm}");
         }
         // Word 16.112 protecting a document with "Example" (`w:cryptAlgorithmSid="14"`).
@@ -1188,9 +1184,9 @@ mod tests {
             spin: 100_000,
         };
         assert!(word.matches("Example") && !word.matches("example"));
-        let salt = crate::api::value::from_base64(&word.salt).expect("base64");
+        let salt = crate::base64::from_base64(&word.salt).expect("base64");
         let h = hash("SHA-512", &salt, &legacy_key("Example", true), word.spin).expect("computed");
-        assert_eq!(crate::api::value::base64(&h), word.hash, "Password::new's form");
+        assert_eq!(crate::base64::base64(&h), word.hash, "Password::new's form");
     }
 
     #[test]

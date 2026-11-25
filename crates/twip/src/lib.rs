@@ -2,6 +2,7 @@
 //! sessions, the commands, state, events, services, errors and warnings.
 
 pub mod api;
+pub(crate) mod base64;
 pub(crate) mod clock;
 pub(crate) mod docx;
 pub(crate) use twip_document as document;
