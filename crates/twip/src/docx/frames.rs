@@ -2,7 +2,7 @@
 
 use std::rc::Rc;
 
-use super::model::{Block, Compat, Document, Float, FloatWrap, Inline, Paragraph, TextBox, VerticalAlign};
+use super::model::{Block, Compat, Document, Float, FloatWrap, HorizontalRelation, Inline, Paragraph, TextBox, VerticalAlign};
 
 pub fn convert(doc: &mut Document) {
     let legacy = doc.settings.compat() == Compat::Legacy;
@@ -103,7 +103,7 @@ pub(crate) fn float(group: Vec<Paragraph>, legacy: bool) -> Float {
         alt: "".into(),
         lock_aspect: false,
         text_box: Some(TextBox { blocks, insets: [0.0; 4], outline: 0.0, auto_fit: true, v_anchor: 0, flow }),
-        h_relative: String::new(),
+        h_relative: HorizontalRelation::Column,
         h_align: None,
         h_offset: 0.0,
         v_relative: String::new(),
@@ -187,7 +187,12 @@ pub fn place(f: &mut Float, fr: &super::props::FramePr, sides: [f64; 2], legacy:
     if let Some(tb) = &mut f.text_box {
         tb.auto_fit = fr.h_rule.as_deref() != Some("exact");
     }
-    f.h_relative = if margin_cap { "leftMargin".into() } else { anchor(fr.h_anchor.as_deref(), "column", "column") };
+    f.h_relative = match fr.h_anchor.as_deref() {
+        _ if margin_cap => HorizontalRelation::LeftMargin,
+        Some("margin") => HorizontalRelation::Margin,
+        Some("page") => HorizontalRelation::Page,
+        _ => HorizontalRelation::Column,
+    };
     // An explicit `w:x` / `w:y` beats the alignment. It holds the position plus one twip; 0 and a few negative values
     // are alignment codes.
     let (x_code, x_at) = fr.x.map_or((None, None), |x| match (x * 20.0).round() as i64 {

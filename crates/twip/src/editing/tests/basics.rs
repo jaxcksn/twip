@@ -1116,8 +1116,8 @@ fn an_inline_picture_floats_where_it_is_and_goes_back_in_line() {
     assert!(was.iter().zip(&now).all(|(a, b)| (a - b).abs() < 0.3), "stays where it was: {was:?} -> {now:?}");
     let f = body_floats(&r.e).into_iter().find(|f| f.src.is_none()).expect("the new float");
     assert_eq!(
-        (f.wrap, f.h_relative.as_str(), f.v_relative.as_str(), f.image.is_some()),
-        (crate::docx::FloatWrap::Square, "column", "paragraph", true)
+        (f.wrap, f.h_relative, f.v_relative.as_str(), f.image.is_some()),
+        (crate::docx::FloatWrap::Square, crate::docx::HorizontalRelation::Column, "paragraph", true)
     );
     let bytes = crate::docx::write::save(r.e.document()).expect("saves");
     if let Some(d) = std::env::var_os("RT_KEEP") {

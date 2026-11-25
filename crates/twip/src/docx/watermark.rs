@@ -269,7 +269,7 @@ pub fn float(m: &Watermark, size: [f64; 2], spid: u32, image: Option<usize>) -> 
         alt: "".into(),
         lock_aspect: false,
         text_box: None,
-        h_relative: "margin".into(),
+        h_relative: crate::docx::HorizontalRelation::Margin,
         h_align: Some("center".into()),
         h_offset: 0.0,
         v_relative: "margin".into(),

@@ -614,7 +614,7 @@ impl Editor {
             alt: "".into(),
             lock_aspect: false,
             text_box: None,
-            h_relative: "column".into(),
+            h_relative: crate::docx::HorizontalRelation::Column,
             h_align: None,
             h_offset: twips(rect[0]),
             v_relative: "paragraph".into(),

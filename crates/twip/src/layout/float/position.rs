@@ -1,7 +1,7 @@
 //! Float positioning
 
 use crate::docx::Compat;
-use crate::docx::model::{Float, FloatWrap, VerticalAlign};
+use crate::docx::model::{Float, FloatWrap, HorizontalRelation, VerticalAlign};
 
 use super::Frames;
 
@@ -67,11 +67,11 @@ fn snap(fr: &Frames, offset: f64) -> f64 {
 }
 
 // Inside and outside
-fn h_ref<'a>(f: &'a Float, fr: &Frames) -> &'a str {
-    match f.h_relative.as_str() {
-        r @ ("insideMargin" | "outsideMargin") => {
+fn h_ref(f: &Float, fr: &Frames) -> HorizontalRelation {
+    match f.h_relative {
+        r @ (HorizontalRelation::InsideMargin | HorizontalRelation::OutsideMargin) => {
             let inside_left = if fr.compat == Compat::Generic { fr.odd } else { !fr.odd };
-            if (r == "insideMargin") == inside_left { "leftMargin" } else { "rightMargin" }
+            if (r == HorizontalRelation::InsideMargin) == inside_left { HorizontalRelation::LeftMargin } else { HorizontalRelation::RightMargin }
         }
         r => r,
     }
@@ -111,12 +111,12 @@ fn grown(f: &Float, fr: &Frames) -> [bool; 2] {
 }
 
 /// The left edge of horizontal reference `href`'s box and its width.
-fn h_box(href: &str, fr: &Frames) -> (f64, f64) {
+fn h_box(href: HorizontalRelation, fr: &Frames) -> (f64, f64) {
     match href {
-        "page" => (0.0, fr.page_w),
-        "margin" => (fr.margin[0], fr.page_w - fr.margin[0] - fr.margin[1]),
-        "leftMargin" => (0.0, fr.margin[0]),
-        "rightMargin" => (fr.page_w - fr.margin[1], fr.margin[1]),
+        HorizontalRelation::Page => (0.0, fr.page_w),
+        HorizontalRelation::Margin => (fr.margin[0], fr.page_w - fr.margin[0] - fr.margin[1]),
+        HorizontalRelation::LeftMargin => (0.0, fr.margin[0]),
+        HorizontalRelation::RightMargin => (fr.page_w - fr.margin[1], fr.margin[1]),
         _ => fr.column,
     }
 }
@@ -149,10 +149,17 @@ pub fn h_pos(f: &Float, fr: &Frames) -> f64 {
     let href = h_ref(f, fr);
     let (x0, w) = h_box(href, fr);
     if let Some(p) = f.relative.pos[0] {
-        let base = if matches!(href, "page" | "margin" | "leftMargin" | "rightMargin") { w } else { fr.page_w - fr.margin[0] - fr.margin[1] };
+        let base = if matches!(
+            href,
+            HorizontalRelation::Page | HorizontalRelation::Margin | HorizontalRelation::LeftMargin | HorizontalRelation::RightMargin
+        ) {
+            w
+        } else {
+            fr.page_w - fr.margin[0] - fr.margin[1]
+        };
         return x0 + if f.poly.is_none() { f.effect[0] } else { 0.0 } + share(base, p);
     }
-    if fr.compat == Compat::Legacy && f.h_relative == "page" {
+    if fr.compat == Compat::Legacy && f.h_relative == HorizontalRelation::Page {
         match f.h_align.as_deref() {
             Some("left") if fr.margin[0] >= f.w => return fr.margin[0] - f.w,
             Some("right") if fr.margin[1] >= f.w => return fr.page_w - fr.margin[1],
@@ -214,7 +221,11 @@ pub fn page_clamp(f: &Float, (x, y): (f64, f64), h: f64, fr: &Frames) -> (f64, f
         let [l, _, r, _] = f.effect;
         return ((x - (x + f.w + r - fr.page_w).max(0.0)).max(l), y);
     }
-    if fr.compat != Compat::Legacy || fr.cell || f.wrap == FloatWrap::None || !(f.h_relative == "column" || f.v_relative == "paragraph") {
+    if fr.compat != Compat::Legacy
+        || fr.cell
+        || f.wrap == FloatWrap::None
+        || !(f.h_relative == HorizontalRelation::Column || f.v_relative == "paragraph")
+    {
         return (x, y);
     }
     let [l, t, r, b] = f.effect;

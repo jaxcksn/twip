@@ -2976,14 +2976,14 @@ impl Reader {
             return;
         }
         let h_relative = match st.h_relative.as_deref() {
-            Some("margin") => "margin",
-            Some("page") => "page",
-            Some("char") => "character",
-            Some("left-margin-area") => "leftMargin",
-            Some("right-margin-area") => "rightMargin",
-            Some("inner-margin-area") => "insideMargin",
-            Some("outer-margin-area") => "outsideMargin",
-            _ => "column",
+            Some("margin") => HorizontalRelation::Margin,
+            Some("page") => HorizontalRelation::Page,
+            Some("char") => HorizontalRelation::Character,
+            Some("left-margin-area") => HorizontalRelation::LeftMargin,
+            Some("right-margin-area") => HorizontalRelation::RightMargin,
+            Some("inner-margin-area") => HorizontalRelation::InsideMargin,
+            Some("outer-margin-area") => HorizontalRelation::OutsideMargin,
+            _ => HorizontalRelation::Column,
         };
         let v_relative = match st.v_relative.as_deref() {
             Some("margin") => "margin",
@@ -3029,7 +3029,7 @@ impl Reader {
                 alt,
                 lock_aspect: false,
                 text_box,
-                h_relative: h_relative.into(),
+                h_relative,
                 h_align,
                 h_offset: twips(st.x),
                 v_relative: v_relative.into(),
@@ -3111,14 +3111,16 @@ impl Reader {
             return;
         }
         let pos = |name: &str| item.children().find(|c| is(*c, WP, name));
-        let (mut h_rel, h_align, mut h_off) = position(pos("positionH"));
-        let (mut v_rel, v_align, mut v_off) = position(pos("positionV"));
+        let (h_rel, h_align, mut h_off) = position(pos("positionH"));
+        let (v_rel, v_align, mut v_off) = position(pos("positionV"));
+        let mut h_rel = h_rel.map_or(HorizontalRelation::Column, super::anchor::h_relative);
+        let mut v_rel = v_rel.unwrap_or("column").to_string();
         let (h_align, v_align) = (h_align.map(str::to_string), v_align.map(super::anchor::v_align));
         if item.attribute("simplePos").is_some_and(|v| on_off_str(Some(v))) {
             let sp = pos("simplePos");
             let at = |n: &str| sp.and_then(|p| emu(p.attribute(n))).unwrap_or(0.0);
             if h_align.is_none() {
-                (h_rel, h_off) = ("page".into(), at("x"));
+                (h_rel, h_off) = (HorizontalRelation::Page, at("x"));
             }
             if v_align.is_none() {
                 (v_rel, v_off) = ("page".into(), at("y"));
@@ -3772,9 +3774,9 @@ fn cell_margins(tcp: &TcProps, tm: &Margins, unset: f64) -> [f64; 4] {
     [m(tcp.margins.top, tm.top), side(tcp.margins.left, tm.left), m(tcp.margins.bottom, tm.bottom), side(tcp.margins.right, tm.right)]
 }
 
-fn position<'a>(p: Option<Node<'a, '_>>) -> (String, Option<&'a str>, f64) {
-    let Some(p) = p else { return ("column".into(), None, 0.0) };
-    let rel = p.attribute("relativeFrom").unwrap_or("column").to_string();
+fn position<'a>(p: Option<Node<'a, '_>>) -> (Option<&'a str>, Option<&'a str>, f64) {
+    let Some(p) = p else { return (None, None, 0.0) };
+    let rel = p.attribute("relativeFrom");
     let align = p.children().find(|c| is(*c, WP, "align")).and_then(|a| a.text()).map(str::trim);
     // F6: offsets are truncated to whole twips.
     let off = p

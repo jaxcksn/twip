@@ -1298,7 +1298,7 @@ mod round_trip {
     fn vml_reads_as_a_float_and_saves_its_edits_as_vml() {
         let mut d = vml_doc();
         let f = vml_float(&mut d);
-        assert_eq!((f.h_relative.as_str(), f.h_offset, f.v_offset, f.w, f.h, f.z), ("page", 72.0, 144.0, 90.0, 60.0, 3));
+        assert_eq!((f.h_relative, f.h_offset, f.v_offset, f.w, f.h, f.z), (crate::docx::HorizontalRelation::Page, 72.0, 144.0, 90.0, 60.0, 3));
         assert!(matches!(f.shape.as_deref().and_then(|s| s.sp()).and_then(|s| s.fill.clone()), Some(Fill::Solid(c)) if c == Colour::srgb(0x4472C4)));
         let original = document_xml(&crate::docx::write::save(&vml_doc()).expect("saves"));
         assert!(original.contains(r##"fillcolor="#4472c4""##), "unedited VML is copied");

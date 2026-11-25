@@ -273,9 +273,9 @@ impl Editor {
             p.horizontal_align = None;
             // `w:x` holds the place plus one twip.
             p.horizontal = Points(off_codes(moved.h_offset + 0.05, &[0, -4, -8, -12, -16]));
-            p.horizontal_relative = match moved.h_relative.as_str() {
-                "margin" => FrameHorizontalRelative::Margin,
-                "page" => FrameHorizontalRelative::Page,
+            p.horizontal_relative = match moved.h_relative {
+                crate::docx::HorizontalRelation::Margin => FrameHorizontalRelative::Margin,
+                crate::docx::HorizontalRelation::Page => FrameHorizontalRelative::Page,
                 _ => FrameHorizontalRelative::Column,
             };
         }

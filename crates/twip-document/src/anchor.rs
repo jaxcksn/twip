@@ -42,3 +42,27 @@ pub enum FloatWrap {
     /// Not at all.
     None,
 }
+
+/// What a float's horizontal position is measured from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HorizontalRelation {
+    /// The area between the left and right margins.
+    Margin,
+    /// The page's edges.
+    Page,
+    /// The column it is anchored in.
+    Column,
+    /// The character its anchor is at.
+    Character,
+    /// The left margin's area.
+    LeftMargin,
+    /// The right margin's area.
+    RightMargin,
+    /// The inside margin's area.
+    InsideMargin,
+    /// The outside margin's area.
+    OutsideMargin,
+    /// A value the file gave that is not in the schema; behaves as today's fallback: measured across the column, but
+    /// none of the rules for a float placed from the column apply.
+    Unrecognised,
+}

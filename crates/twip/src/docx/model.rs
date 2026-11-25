@@ -1,6 +1,6 @@
 //! The layout engine's input: a document with every style resolved (the STYLE rules). Lengths are points.
 
-pub use crate::document::anchor::{FloatWrap, VerticalAlign, WrapText};
+pub use crate::document::anchor::{FloatWrap, HorizontalRelation, VerticalAlign, WrapText};
 pub use crate::document::content::{BreakKind, NoteKind};
 pub use crate::document::ident::{ControlId, FieldId, next_para_id};
 pub use crate::document::line::Underline;
@@ -742,7 +742,7 @@ pub struct Float {
     pub lock_aspect: bool,
     /// Text box content, laid out at the box's content width.
     pub text_box: Option<TextBox>,
-    pub h_relative: String,
+    pub h_relative: HorizontalRelation,
     pub h_align: Option<String>,
     pub h_offset: f64,
     pub v_relative: String,
@@ -836,7 +836,7 @@ impl Float {
     }
 
     pub fn in_cell(&self, compat: Compat) -> bool {
-        compat == Compat::Generic || self.layout_in_cell || self.h_relative == "character" || self.v_relative == "line"
+        compat == Compat::Generic || self.layout_in_cell || self.h_relative == HorizontalRelation::Character || self.v_relative == "line"
     }
 }
 

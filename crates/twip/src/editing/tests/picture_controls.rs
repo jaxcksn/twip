@@ -272,7 +272,7 @@ fn floating_picture_control_round_trip() {
     let out = insert(&mut r, json!({ "kind": "picture", "tag": "Placeholder:Float.Z", "float": float }));
     assert!(matches!(out, super::super::Outcome::Changed(_)), "{out:?}");
     let f = body_floats(&r.e).into_iter().find(|f| f.picture_control(&r.e.document().controls).is_some()).expect("a floating picture control");
-    assert!((f.h_offset - 72.0).abs() < 0.5 && f.h_relative == "margin", "placed: {} {}", f.h_relative, f.h_offset);
+    assert!((f.h_offset - 72.0).abs() < 0.5 && f.h_relative == crate::docx::HorizontalRelation::Margin, "placed: {:?} {}", f.h_relative, f.h_offset);
     let bytes = crate::docx::write::save(r.e.document()).expect("saves");
     let xml = document_xml(&bytes);
     assert!(xml.contains("wps:txbx") && xml.contains(r#"lIns="0""#) && xml.contains("<a:noFill/>"), "the box");

@@ -209,7 +209,7 @@ impl Editor {
         // character) from the new paragraph's column. Both alignments go first: either changes where effect extents
         // fall on the other axis.
         let v = matches!(fl.v_relative.as_str(), "paragraph" | "line");
-        let h = matches!(fl.h_relative.as_str(), "column" | "character") && frames.is_some();
+        let h = matches!(fl.h_relative, crate::docx::HorizontalRelation::Column | crate::docx::HorizontalRelation::Character) && frames.is_some();
         if v {
             (fl.v_align, fl.relative.pos[1]) = (None, None);
         }

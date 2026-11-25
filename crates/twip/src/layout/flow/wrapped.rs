@@ -909,11 +909,11 @@ impl<'d> PageFill<'d, '_> {
             // From the line laid out before the float: placed again once the line wraps it, it keeps that x, as the
             // first fill of the page that placed it found it (each fill takes the one before's), wherever later fills
             // put the paragraph.
-            if f.h_relative == "character" {
+            if f.h_relative == HorizontalRelation::Character {
                 let before = self.at.known.iter().find(|o| o.key == (si, bi, pb.from + k) && o.wrap != Wrap::None).map(|o| o.rect[0]);
                 x = before.unwrap_or_else(|| float::h_pos(f, &Frames { column: (char_x(k, b), 0.0), ..*frames }));
             }
-            if compat == Compat::Legacy && f.h_relative == "column" {
+            if compat == Compat::Legacy && f.h_relative == HorizontalRelation::Column {
                 match f.h_align.as_deref() {
                     Some("left") => x += style.ind_left,
                     Some("right") => x -= style.ind_right,
@@ -1130,10 +1130,10 @@ impl<'d> PageFill<'d, '_> {
         }
         // Its area: a frame's anchor boxes; a drawing's the page across, down the page when placed from it and
         // the column otherwise.
-        let across = match a.float.h_relative.as_str() {
+        let across = match a.float.h_relative {
             _ if in_flow && compat == Compat::Generic => (f64::INFINITY, f64::NEG_INFINITY),
-            "margin" if frame(&a) => (frames.margin[0], frames.page_w - frames.margin[1]),
-            "column" if frame(&a) => (col.x, col.x + col.width),
+            HorizontalRelation::Margin if frame(&a) => (frames.margin[0], frames.page_w - frames.margin[1]),
+            HorizontalRelation::Column if frame(&a) => (col.x, col.x + col.width),
             _ => (0.0, frames.page_w),
         };
         let others: Vec<Placed> = self.at.found.iter().filter(|o| !under.contains(&o.key)).cloned().collect();

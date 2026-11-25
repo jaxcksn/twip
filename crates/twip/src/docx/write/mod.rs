@@ -5681,7 +5681,7 @@ impl Saver<'_, '_> {
             locked = on(f.locked),
             cell = on(f.layout_in_cell),
             overlap = on(f.allow_overlap),
-            h = pos("positionH", &f.h_relative, f.h_align.as_deref(), f.h_offset),
+            h = pos("positionH", anchor::h_relative_name(f.h_relative), f.h_align.as_deref(), f.h_offset),
             v = pos("positionV", &f.v_relative, f.v_align.map(anchor::v_align_name), f.v_offset),
             cx = cx,
             cy = cy,
@@ -6086,7 +6086,7 @@ fn object_xml(w: &str, i: &Inline) -> Option<String> {
 #[derive(Clone, Debug, Default)]
 struct Placement {
     /// A position's reference, alignment (or else offset), when any of them changed.
-    h: Option<(String, Option<String>, f64)>,
+    h: Option<(&'static str, Option<String>, f64)>,
     v: Option<(String, Option<String>, f64)>,
     size: Option<(f64, f64)>,
     /// Wrapping (`wrap`, `wrap_text`, behind the text, the wrap polygon and whether it was edited), when changed.
@@ -6147,7 +6147,8 @@ impl Placement {
             (ra != rb || aa != ab || ab.is_none() && ne(oa, ob)).then(|| (rb.clone(), ab.map(str::to_string), ob))
         };
         let p = Placement {
-            h: pos((&a.h_relative, a.h_align.as_deref(), a.h_offset), (&b.h_relative, b.h_align.as_deref(), b.h_offset)),
+            h: (a.h_relative != b.h_relative || a.h_align != b.h_align || b.h_align.is_none() && ne(a.h_offset, b.h_offset))
+                .then(|| (anchor::h_relative_name(b.h_relative), b.h_align.clone(), b.h_offset)),
             v: pos(
                 (&a.v_relative, a.v_align.map(anchor::v_align_name), a.v_offset),
                 (&b.v_relative, b.v_align.map(anchor::v_align_name), b.v_offset),
@@ -6198,7 +6199,9 @@ impl Placement {
             Some(e) => drawing::apply(d, e.clone()),
             None => d.to_string(),
         };
-        for (name, pos) in [("positionH", &self.h), ("positionV", &self.v)] {
+        let h = self.h.as_ref().map(|(r, a, o)| (*r, a.as_deref(), *o));
+        let v = self.v.as_ref().map(|(r, a, o)| (r.as_str(), a.as_deref(), *o));
+        for (name, pos) in [("positionH", h), ("positionV", v)] {
             let Some((rel, align, off)) = pos else { continue };
             if let Some((start, end)) = find_tag(&s, name, 0) {
                 let tag = set_attr(&s[start..end], "relativeFrom", &props::esc(rel));
@@ -6206,7 +6209,7 @@ impl Placement {
             }
             set_content(&mut s, name, |p| match align {
                 Some(a) => format!("<{p}align>{}</{p}align>", props::esc(a)),
-                None => format!("<{p}posOffset>{}</{p}posOffset>", emu(*off)),
+                None => format!("<{p}posOffset>{}</{p}posOffset>", emu(off)),
             });
         }
         if let Some((r, offsets)) = &self.relative {

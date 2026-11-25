@@ -1,7 +1,7 @@
 //! Object selection
 
-use crate::api::value::{ObjectVerticalAlignment, ObjectWrap, WrapSide};
-use crate::docx::{FloatWrap, Inline, VerticalAlign, WrapText};
+use crate::api::value::{HorizontalReference, ObjectVerticalAlignment, ObjectWrap, WrapSide};
+use crate::docx::{FloatWrap, HorizontalRelation, Inline, VerticalAlign, WrapText};
 use crate::font::Fonts;
 use crate::layout::{FloatId, Unit};
 
@@ -856,7 +856,7 @@ impl Editor {
                 v_anchor: 0,
                 flow: 0,
             }),
-            h_relative: "column".into(),
+            h_relative: HorizontalRelation::Column,
             h_align: None,
             h_offset: 0.0,
             v_relative: "paragraph".into(),
@@ -1055,7 +1055,16 @@ impl Editor {
         let twips = |v: f64| (v * 20.0).trunc() / 20.0;
         let mut stay = [false; 2];
         if let Some(h) = p.horizontal {
-            n.h_relative = ooxml(h.relative_to);
+            n.h_relative = match h.relative_to {
+                HorizontalReference::Column => HorizontalRelation::Column,
+                HorizontalReference::Margin => HorizontalRelation::Margin,
+                HorizontalReference::Page => HorizontalRelation::Page,
+                HorizontalReference::Character => HorizontalRelation::Character,
+                HorizontalReference::LeftMargin => HorizontalRelation::LeftMargin,
+                HorizontalReference::RightMargin => HorizontalRelation::RightMargin,
+                HorizontalReference::InsideMargin => HorizontalRelation::InsideMargin,
+                HorizontalReference::OutsideMargin => HorizontalRelation::OutsideMargin,
+            };
             n.relative.pos[0] = h.percent.map(|v| (v * 10.0).round() as i64);
             (n.h_align, n.h_offset) = match (h.align, h.offset) {
                 (Some(a), _) => (Some(ooxml(a)), n.h_offset),
@@ -1131,7 +1140,16 @@ impl Editor {
         let [top, bottom, left, right] = fl.dist.map(Points);
         Some(crate::api::state::ObjectPlacement {
             horizontal: HorizontalPosition {
-                relative_to: from_ooxml(&fl.h_relative),
+                relative_to: match fl.h_relative {
+                    HorizontalRelation::Column | HorizontalRelation::Unrecognised => HorizontalReference::Column,
+                    HorizontalRelation::Margin => HorizontalReference::Margin,
+                    HorizontalRelation::Page => HorizontalReference::Page,
+                    HorizontalRelation::Character => HorizontalReference::Character,
+                    HorizontalRelation::LeftMargin => HorizontalReference::LeftMargin,
+                    HorizontalRelation::RightMargin => HorizontalReference::RightMargin,
+                    HorizontalRelation::InsideMargin => HorizontalReference::InsideMargin,
+                    HorizontalRelation::OutsideMargin => HorizontalReference::OutsideMargin,
+                },
                 align: fl.h_align.as_deref().map(from_ooxml),
                 offset: (fl.h_align.is_none() && fl.relative.pos[0].is_none()).then_some(Points(fl.h_offset)),
                 percent: fl.relative.pos[0].map(|t| t as f64 / 10.0),
@@ -1223,7 +1241,7 @@ impl Editor {
             alt: pic.alt.clone(),
             lock_aspect: pic.lock_aspect || boxed.is_some(),
             text_box: boxed.clone().or_else(|| pic.text.clone().map(|t| t.text_box)),
-            h_relative: "column".into(),
+            h_relative: HorizontalRelation::Column,
             h_align: None,
             h_offset: 0.0,
             v_relative: "paragraph".into(),
@@ -1559,7 +1577,7 @@ impl Editor {
             None
         };
         // A character's x is only known to layout: the float keeps its place from it, moved by the drag.
-        let from_char = frames.as_ref().filter(|_| moved[0] && placed[0] && fl.h_relative == "character").map(|(fr, _)| {
+        let from_char = frames.as_ref().filter(|_| moved[0] && placed[0] && fl.h_relative == HorizontalRelation::Character).map(|(fr, _)| {
             let x = |f: &crate::docx::Float| crate::layout::float::h_pos(f, fr);
             crate::layout::float::sized(&fl, fr).as_ref().map_or_else(|| x(&fl), x) + new[0] - old[0]
         });

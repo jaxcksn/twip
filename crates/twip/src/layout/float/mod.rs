@@ -340,7 +340,7 @@ pub fn table_float(id: u64, w: f64, h: f64, dist: [f64; 4], allow_overlap: bool)
         alt: "".into(),
         lock_aspect: false,
         text_box: None,
-        h_relative: "column".into(),
+        h_relative: crate::docx::HorizontalRelation::Column,
         h_align: None,
         h_offset: 0.0,
         v_relative: "paragraph".into(),
@@ -384,7 +384,7 @@ mod tests {
             alt: "".into(),
             lock_aspect: false,
             text_box: None,
-            h_relative: "column".into(),
+            h_relative: crate::docx::HorizontalRelation::Column,
             h_align: None,
             h_offset: 0.0,
             v_relative: "paragraph".into(),
@@ -563,7 +563,7 @@ mod tests {
         let fr = Frames { page_w: 612.0, page_h: 792.0, margin: [72.0; 4], column: (72.0, 468.0), compat: Compat::Generic, cell: false, odd: true };
         let at = |h: &str, pct: i64| {
             let mut f = (*fl(0.0, 40.0, Side::Both).float).clone();
-            f.h_relative = h.into();
+            f.h_relative = crate::docx::anchor::h_relative(h);
             f.relative.pos = [Some(pct), None];
             h_pos(&f, &fr)
         };
@@ -654,7 +654,7 @@ mod tests {
         let fr = |compat, odd| Frames { page_w: 612.0, page_h: 792.0, margin: [72.0; 4], column: (72.0, 468.0), compat, cell: false, odd };
         let x = |rel: &str, align: &str, compat, odd| {
             let mut f = (*fl(0.0, 40.0, Side::Both).float).clone();
-            f.h_relative = rel.into();
+            f.h_relative = crate::docx::anchor::h_relative(rel);
             f.h_align = Some(align.into());
             h_pos(&f, &fr(compat, odd))
         };
@@ -672,7 +672,7 @@ mod tests {
     fn compat_14_snaps_an_aligned_offset_to_whole_twips() {
         let fr = |compat| Frames { page_w: 612.0, page_h: 792.0, margin: [72.0; 4], column: (72.0, 468.0), compat, cell: false, odd: true };
         let mut f = (*fl(0.0, 40.03, Side::Both).float).clone();
-        f.h_relative = "margin".into();
+        f.h_relative = crate::docx::HorizontalRelation::Margin;
         f.h_align = Some("center".into());
         assert_eq!(h_pos(&f, &fr(Compat::Legacy)), 286.0);
         assert!((h_pos(&f, &fr(Compat::Generic)) - 285.985).abs() < 1e-9);
@@ -683,7 +683,7 @@ mod tests {
         let fr =
             |compat| Frames { page_w: 612.0, page_h: 792.0, margin: [72.0, 72.0, 72.0, 72.0], column: (72.0, 468.0), compat, cell: false, odd: true };
         let f = |h: &str, ha: Option<&str>, v: &str, va: Option<VerticalAlign>| Float {
-            h_relative: h.into(),
+            h_relative: crate::docx::anchor::h_relative(h),
             h_align: ha.map(Into::into),
             v_relative: v.into(),
             v_align: va,

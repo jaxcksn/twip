@@ -1,6 +1,6 @@
 //! Float anchoring and wrapping: the DOCX literals of the model's values
 
-use super::model::{FloatWrap, VerticalAlign, WrapText};
+use super::model::{FloatWrap, HorizontalRelation, VerticalAlign, WrapText};
 
 /// `wrapText`, or a VML wrap's `side`; anything else wraps both sides.
 pub fn wrap_text(s: &str) -> WrapText {
@@ -63,5 +63,34 @@ pub fn wrap_name(w: FloatWrap) -> &'static str {
         FloatWrap::Through => "through",
         FloatWrap::TopAndBottom => "topAndBottom",
         FloatWrap::None => "none",
+    }
+}
+
+/// `relativeFrom` in `wp:positionH`.
+pub fn h_relative(s: &str) -> HorizontalRelation {
+    match s {
+        "margin" => HorizontalRelation::Margin,
+        "page" => HorizontalRelation::Page,
+        "column" => HorizontalRelation::Column,
+        "character" => HorizontalRelation::Character,
+        "leftMargin" => HorizontalRelation::LeftMargin,
+        "rightMargin" => HorizontalRelation::RightMargin,
+        "insideMargin" => HorizontalRelation::InsideMargin,
+        "outsideMargin" => HorizontalRelation::OutsideMargin,
+        _ => HorizontalRelation::Unrecognised,
+    }
+}
+
+/// The `relativeFrom` literal of `r`; an unrecognised one is written as the column it is measured across.
+pub fn h_relative_name(r: HorizontalRelation) -> &'static str {
+    match r {
+        HorizontalRelation::Margin => "margin",
+        HorizontalRelation::Page => "page",
+        HorizontalRelation::Column | HorizontalRelation::Unrecognised => "column",
+        HorizontalRelation::Character => "character",
+        HorizontalRelation::LeftMargin => "leftMargin",
+        HorizontalRelation::RightMargin => "rightMargin",
+        HorizontalRelation::InsideMargin => "insideMargin",
+        HorizontalRelation::OutsideMargin => "outsideMargin",
     }
 }
