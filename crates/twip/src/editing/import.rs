@@ -5,9 +5,9 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::docx::resolve::Resolver;
-use crate::docx::review::{AuthorId, FormatChange, People, RevisionMark};
+use crate::docx::review::{AuthorId, FormatChange, People, RevisionMark, TableChange};
 use crate::docx::write::props::Cx;
-use crate::docx::{Block, Inline, Paragraph, Run, RunStyle};
+use crate::docx::{Block, Inline, Opaque, Paragraph, Raw, Run, RunStyle};
 use crate::drawing::paint::Fill;
 use crate::drawing::{Shape, ShapeKind};
 use crate::layout::{ParaId, TableId};
@@ -231,6 +231,138 @@ pub(super) fn write_runs_here(blocks: &mut [Block], refs: &mut Refs, cx: &Cx) {
             }
         }
     });
+}
+
+/// What another document's stored XML (written under its main part's root) needs to read the same under this one's:
+/// the bindings that root gives and this one's doesn't, as prefix (empty: the default namespace) and URI.
+pub(super) struct Rebind(Vec<(String, String)>);
+
+impl Rebind {
+    pub(super) fn between(from: &Cx, to: &Cx) -> Rebind {
+        let bindings = |cx: &Cx| {
+            cx.parse("<y/>", |_, el| {
+                el.namespaces().filter(|n| n.name() != Some("xml")).map(|n| (n.name().unwrap_or_default().to_string(), n.uri().to_string())).collect()
+            })
+            .unwrap_or_default()
+        };
+        let have: Vec<(String, String)> = bindings(to);
+        Rebind(bindings(from).into_iter().filter(|b| !have.contains(b)).collect())
+    }
+
+    /// Whether no stored XML needs a binding.
+    pub(super) fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// `raw`, one element, declaring on itself each binding its names (or a markup compatibility attribute's value)
+    /// use that it doesn't declare there; `None` when it needs none.
+    fn element(&self, raw: &str) -> Option<String> {
+        let at = raw.find(|c: char| c.is_whitespace() || c == '/' || c == '>')?;
+        let head = &raw[..raw.find('>').unwrap_or(raw.len())];
+        let mut decls = String::new();
+        for (p, uri) in &self.0 {
+            let (used, decl) = if p.is_empty() { (unprefixed(raw), "xmlns".to_string()) } else { (names(raw, p), format!("xmlns:{p}")) };
+            if used && !head.match_indices(&decl).any(|(i, m)| head[i + m.len()..].trim_start().starts_with('=')) {
+                decls.push_str(&format!(" {decl}=\"{}\"", crate::docx::write::props::esc(uri)));
+            }
+        }
+        (!decls.is_empty()).then(|| format!("{}{decls}{}", &raw[..at], &raw[at..]))
+    }
+
+    fn raw(&self, r: &mut Raw) {
+        if let Some(x) = r.0.as_deref().and_then(|x| self.element(x)) {
+            r.0 = Some(x.into());
+        }
+    }
+
+    fn string(&self, s: &mut String) {
+        if let Some(x) = self.element(s) {
+            *s = x;
+        }
+    }
+
+    /// A pasted content control's properties.
+    pub(super) fn control(&self, p: &mut crate::docx::ControlProps) {
+        let strings = p.placeholder.iter_mut().chain(&mut p.binding).chain(&mut p.kind_xml).chain(p.rest.iter_mut().map(|(_, x)| x));
+        strings.for_each(|x| self.string(x));
+    }
+
+    /// Pasted `blocks` and the bodies of the notes and comments they refer to: their paragraphs', tables', rows' and
+    /// cells' properties and their tracked changes, and the elements kept as read (rubies, form fields' data, others).
+    pub(super) fn blocks(&self, blocks: &mut [Block], refs: &mut Refs) {
+        let change = |c: &mut Option<Rc<TableChange>>| {
+            if let Some(c) = c
+                && c.previous_raw.0.as_deref().is_some_and(|x| self.element(x).is_some())
+            {
+                self.raw(&mut Rc::make_mut(c).previous_raw);
+            }
+        };
+        each_block_of(blocks, refs, &mut |b| match b {
+            Block::Para(p) => {
+                let needs = |r: &Raw| r.0.as_deref().is_some_and(|x| self.element(x).is_some());
+                let change = p.style.change.as_ref().is_some_and(|c| needs(&c.previous_raw) || needs(&c.numbering_change));
+                if needs(&p.style.direct) || change {
+                    let s = Rc::make_mut(&mut p.style);
+                    self.raw(&mut s.direct);
+                    if let Some(c) = &mut s.change {
+                        let c = Rc::make_mut(c);
+                        self.raw(&mut c.previous_raw);
+                        self.raw(&mut c.numbering_change);
+                    }
+                }
+                for i in &mut p.inlines {
+                    match i {
+                        Inline::Opaque(o) => {
+                            if let Some(xml) = o.xml.0.as_deref().and_then(|x| self.element(x)) {
+                                *o = Rc::new(Opaque { xml: Raw(Some(xml.into())), field: o.field.clone(), src: o.src.clone(), run: o.run.clone() });
+                            }
+                        }
+                        Inline::Ruby(r, _) if needs(&r.xml) => self.raw(&mut Rc::make_mut(r).xml),
+                        Inline::FieldBegin { form: Some(f), .. } if needs(&f.xml) => self.raw(&mut Rc::make_mut(f).xml),
+                        _ => {}
+                    }
+                }
+            }
+            Block::Table(t) => {
+                self.raw(&mut t.direct);
+                change(&mut t.change);
+                for r in &mut t.rows {
+                    self.raw(&mut r.direct);
+                    self.raw(&mut r.exceptions);
+                    change(&mut r.rev.change);
+                    change(&mut r.rev.ex_change);
+                    for c in &mut r.cells {
+                        self.raw(&mut c.direct);
+                        change(&mut c.rev.change);
+                    }
+                }
+            }
+        });
+    }
+}
+
+/// Whether `raw` has a start tag whose name has no prefix.
+fn unprefixed(raw: &str) -> bool {
+    raw.match_indices('<').any(|(i, _)| {
+        let name = &raw[i + 1..];
+        let end = name.find(|c: char| c.is_whitespace() || c == '/' || c == '>').unwrap_or(name.len());
+        name.starts_with(|c: char| c.is_alphabetic()) && !name[..end].contains(':')
+    })
+}
+
+/// Whether `raw` names prefix `p`: in an element or attribute name, or as a word of an attribute value (as markup
+/// compatibility's `Ignorable` and `Requires` do).
+fn names(raw: &str, p: &str) -> bool {
+    let word = |i: usize, len: usize| {
+        let before = raw[..i].chars().next_back();
+        let after = raw[i + len..].chars().next();
+        matches!(before, Some('"' | '\'' | ' ')) && matches!(after, Some('"' | '\'' | ' '))
+    };
+    raw.match_indices(p).any(|(i, m)| {
+        let after = &raw[i + m.len()..];
+        let before = raw[..i].chars().next_back();
+        (after.starts_with(':') && matches!(before, Some('<' | '/' | ' ' | '\t' | '\n' | '\r'))) || word(i, m.len())
+    })
 }
 
 /// `run` as written in the part `cx` describes: the `w:rPr` it and its format change's earlier formatting were read
@@ -568,5 +700,26 @@ fn renumber_para(p: &mut Paragraph, cx: &Cx, map: &HashMap<i64, i64>) {
     }
     if let Some(raw) = renumber(x, cx, map) {
         Rc::make_mut(&mut p.style).direct = crate::docx::Raw(Some(raw.into()));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Stored XML declares the bindings it uses that the destination's root lacks, once, and only those.
+    #[test]
+    fn stored_xml_declares_what_it_uses() {
+        let w = crate::docx::xml::W;
+        let w14 = "http://schemas.microsoft.com/office/word/2010/wordml";
+        let mc = "http://schemas.openxmlformats.org/markup-compatibility/2006";
+        let from = Cx::of_xml(&format!(r#"<w:document xmlns:w="{w}" xmlns:w14="{w14}" xmlns:mc="{mc}" xmlns:v="urn:v">"#));
+        let to = Cx::of_xml(&format!(r#"<x:document xmlns:x="{w}" xmlns:mc="{mc}">"#));
+        let r = Rebind::between(&from, &to);
+        let got = r.element(r#"<w:ruby><w:rt mc:Ignorable="w14"/></w:ruby>"#);
+        assert_eq!(got.as_deref(), Some(format!(r#"<w:ruby xmlns:w="{w}" xmlns:w14="{w14}"><w:rt mc:Ignorable="w14"/></w:ruby>"#).as_str()));
+        let got = r.element(&format!(r#"<w:permEnd xmlns:w="{w}" w:id="1"/>"#));
+        assert_eq!(got, None, "declared on itself");
+        assert_eq!(Rebind::between(&from, &from).element("<w:pPr/>"), None, "the same root");
     }
 }

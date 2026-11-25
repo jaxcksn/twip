@@ -759,8 +759,18 @@ impl Editor {
         // Only those these blocks refer to: a cell block pastes its cells' content piece by piece.
         let mut refs = taken.refs.get_or_insert_with(|| RefIndex::of(&f.refs)).held(&f.refs, blocks);
         // From another document: its paragraphs show as this document's styles have them, or keep their own look.
+        let mut controls = std::borrow::Cow::Borrowed(&f.controls);
         if let Some(o) = f.origin.as_deref().filter(|o| o.key != self.key) {
-            super::import::write_runs_here(blocks, &mut refs, &self.cx());
+            let here = self.cx();
+            super::import::write_runs_here(blocks, &mut refs, &here);
+            // Its stored XML read under this document's root
+            let from =
+                if o.main.is_empty() { o.resolver.as_deref().map(|r| r.styles.cx()) } else { Some(crate::docx::write::props::Cx::of_xml(&o.main)) };
+            let rebind = from.map(|from| super::import::Rebind::between(&from, &here)).filter(|r| !r.is_empty());
+            if let Some(r) = rebind {
+                r.blocks(blocks, &mut refs);
+                controls.to_mut().values_mut().for_each(|c| r.control(&mut c.props));
+            }
             if f.look == Look::Source
                 && let Some(from) = o.resolver.as_deref()
             {
@@ -771,10 +781,10 @@ impl Editor {
         if let Some(o) = f.origin.as_deref().filter(|o| o.key != self.key || !o.images.is_empty()) {
             self.import(tx, blocks, &mut refs, o, &mut taken.lists);
         }
-        for (id, c) in adopt(blocks, &f.controls) {
+        for (id, c) in adopt(blocks, &controls) {
             let _ = self.step(tx, Step::Control { id, control: Some(c) });
         }
-        self.paste_refs(tx, blocks, &refs, Some(&f.controls));
+        self.paste_refs(tx, blocks, &refs, Some(&controls));
         self.unique_markers(blocks, f.moved, taken);
     }
 

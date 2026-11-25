@@ -480,6 +480,14 @@ fn runs_pasted_from_another_prefix_are_written_in_this_ones() {
         }
     }
     assert!(styled > 0, "the pasted run keeps its character style");
+    let quote = |d: &Document| {
+        let paras = d.sections.iter().flat_map(|s| &s.blocks).filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None });
+        paras.filter(|p| p.style.style_id.as_deref() == Some("SourceQuote")).count()
+    };
+    assert_eq!(quote(d), 1, "the pasted paragraph keeps its style");
+    let saved = crate::docx::write::save(d).expect("saves");
+    let again = crate::docx::read_editable(&saved).expect("reads back");
+    assert_eq!(quote(&again), 1, "the pasted paragraph keeps its style, saved");
 }
 
 #[test]
