@@ -3,6 +3,11 @@
 ## [0.3.0](https://github.com/jaxcksn/twip/compare/v0.2.1...v0.3.0) (2026-11-25)
 
 
+### Layout changes
+
+* rendering fidelity ([#35](https://github.com/jaxcksn/twip/pull/35))
+
+
 ### ⚠ BREAKING CHANGES
 
 * **editing:** public API for phase 4 editing ([#62](https://github.com/jaxcksn/twip/issues/62))
