@@ -105,10 +105,16 @@ fn frame_3_an_explicit_position_is_one_twip_less_and_beats_the_alignment() {
         .filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None })
         .flat_map(|p| p.inlines.iter())
         .filter_map(|i| if let Inline::Float(f, _) = i { Some(f) } else { None })
-        .map(|f| (f.h_align.clone(), (f.h_offset * 20.0).round(), f.v_align, (f.v_offset * 20.0).round()))
+        .map(|f| (f.h_align, (f.h_offset * 20.0).round(), f.v_align, (f.v_offset * 20.0).round()))
         .collect();
-    let s = |a: &str| Some(a.to_string());
-    assert_eq!(got, [(None, 2879.0, None, 5999.0), (s("right"), 0.0, Some(crate::docx::VerticalAlign::Bottom), 0.0), (None, 0.0, None, 0.0)]);
+    assert_eq!(
+        got,
+        [
+            (None, 2879.0, None, 5999.0),
+            (Some(crate::docx::HorizontalAlign::Right), 0.0, Some(crate::docx::VerticalAlign::Bottom), 0.0),
+            (None, 0.0, None, 0.0)
+        ]
+    );
 }
 
 fn header_float(wrap: &str, y: i64, head: &str, compat: u32) -> Option<crate::docx::Document> {

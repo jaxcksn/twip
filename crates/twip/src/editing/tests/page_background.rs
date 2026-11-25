@@ -121,7 +121,7 @@ fn a_watermark_goes_in_every_header_of_every_section_and_undoes_whole() {
             _ => None,
         })
         .expect("a watermark float");
-    assert!(f.behind && f.h_align.as_deref() == Some("center") && f.v_relative == crate::docx::VerticalRelation::Margin, "{f:?}");
+    assert!(f.behind && f.h_align == Some(crate::docx::HorizontalAlign::Center) && f.v_relative == crate::docx::VerticalRelation::Margin, "{f:?}");
 
     run(&mut e, Command::Undo(Default::default()));
     assert!(e.document().sections[0].headers.iter().all(Option::is_none), "the made headers go");

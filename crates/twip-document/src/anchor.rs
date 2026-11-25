@@ -90,3 +90,21 @@ pub enum VerticalRelation {
     /// from the paragraph, but none of the rules for a float placed from the paragraph apply.
     Unrecognised,
 }
+
+/// Where a float is aligned across its horizontal reference.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HorizontalAlign {
+    /// At the left edge.
+    Left,
+    /// Centred.
+    Center,
+    /// At the right edge.
+    Right,
+    /// At the inside edge.
+    Inside,
+    /// At the outside edge.
+    Outside,
+    /// A value the file gave that is not in the schema; behaves as today's fallback: aligned at the left edge, but
+    /// none of the rules for a left-aligned float apply.
+    Unrecognised,
+}

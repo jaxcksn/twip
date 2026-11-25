@@ -5681,7 +5681,7 @@ impl Saver<'_, '_> {
             locked = on(f.locked),
             cell = on(f.layout_in_cell),
             overlap = on(f.allow_overlap),
-            h = pos("positionH", anchor::h_relative_name(f.h_relative), f.h_align.as_deref(), f.h_offset),
+            h = pos("positionH", anchor::h_relative_name(f.h_relative), f.h_align.map(anchor::h_align_name), f.h_offset),
             v = pos("positionV", anchor::v_relative_name(f.v_relative), f.v_align.map(anchor::v_align_name), f.v_offset),
             cx = cx,
             cy = cy,
@@ -6086,7 +6086,7 @@ fn object_xml(w: &str, i: &Inline) -> Option<String> {
 #[derive(Clone, Debug, Default)]
 struct Placement {
     /// A position's reference, alignment (or else offset), when any of them changed.
-    h: Option<(&'static str, Option<String>, f64)>,
+    h: Option<(&'static str, Option<&'static str>, f64)>,
     v: Option<(&'static str, Option<&'static str>, f64)>,
     size: Option<(f64, f64)>,
     /// Wrapping (`wrap`, `wrap_text`, behind the text, the wrap polygon and whether it was edited), when changed.
@@ -6145,7 +6145,7 @@ impl Placement {
         // An aligned position that became an offset is written as one.
         let p = Placement {
             h: (a.h_relative != b.h_relative || a.h_align != b.h_align || b.h_align.is_none() && ne(a.h_offset, b.h_offset))
-                .then(|| (anchor::h_relative_name(b.h_relative), b.h_align.clone(), b.h_offset)),
+                .then(|| (anchor::h_relative_name(b.h_relative), b.h_align.map(anchor::h_align_name), b.h_offset)),
             v: (a.v_relative != b.v_relative || a.v_align != b.v_align || b.v_align.is_none() && ne(a.v_offset, b.v_offset))
                 .then(|| (anchor::v_relative_name(b.v_relative), b.v_align.map(anchor::v_align_name), b.v_offset)),
             size: (ne(a.w, b.w) || ne(a.h, b.h)).then_some((b.w, b.h)),
@@ -6194,9 +6194,7 @@ impl Placement {
             Some(e) => drawing::apply(d, e.clone()),
             None => d.to_string(),
         };
-        let h = self.h.as_ref().map(|(r, a, o)| (*r, a.as_deref(), *o));
-        let v = self.v;
-        for (name, pos) in [("positionH", h), ("positionV", v)] {
+        for (name, pos) in [("positionH", self.h), ("positionV", self.v)] {
             let Some((rel, align, off)) = pos else { continue };
             if let Some((start, end)) = find_tag(&s, name, 0) {
                 let tag = set_attr(&s[start..end], "relativeFrom", &props::esc(rel));

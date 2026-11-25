@@ -1,6 +1,6 @@
 //! The layout engine's input: a document with every style resolved (the STYLE rules). Lengths are points.
 
-pub use crate::document::anchor::{FloatWrap, HorizontalRelation, VerticalAlign, VerticalRelation, WrapText};
+pub use crate::document::anchor::{FloatWrap, HorizontalAlign, HorizontalRelation, VerticalAlign, VerticalRelation, WrapText};
 pub use crate::document::content::{BreakKind, NoteKind};
 pub use crate::document::ident::{ControlId, FieldId, next_para_id};
 pub use crate::document::line::Underline;
@@ -743,7 +743,7 @@ pub struct Float {
     /// Text box content, laid out at the box's content width.
     pub text_box: Option<TextBox>,
     pub h_relative: HorizontalRelation,
-    pub h_align: Option<String>,
+    pub h_align: Option<HorizontalAlign>,
     pub h_offset: f64,
     pub v_relative: VerticalRelation,
     pub v_align: Option<VerticalAlign>,

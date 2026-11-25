@@ -1,7 +1,7 @@
 //! Object selection
 
-use crate::api::value::{HorizontalReference, ObjectVerticalAlignment, ObjectWrap, VerticalReference, WrapSide};
-use crate::docx::{FloatWrap, HorizontalRelation, Inline, VerticalAlign, VerticalRelation, WrapText};
+use crate::api::value::{HorizontalReference, ObjectHorizontalAlignment, ObjectVerticalAlignment, ObjectWrap, VerticalReference, WrapSide};
+use crate::docx::{FloatWrap, HorizontalAlign, HorizontalRelation, Inline, VerticalAlign, VerticalRelation, WrapText};
 use crate::font::Fonts;
 use crate::layout::{FloatId, Unit};
 
@@ -326,14 +326,6 @@ fn float_wrap(w: ObjectWrap) -> (FloatWrap, bool) {
         ObjectWrap::BehindText => (FloatWrap::None, true),
         ObjectWrap::Inline | ObjectWrap::InFrontOfText => (FloatWrap::None, false),
     }
-}
-
-fn ooxml<T: serde::Serialize>(v: T) -> String {
-    serde_json::to_value(v).ok().and_then(|v| v.as_str().map(str::to_owned)).unwrap_or_default()
-}
-
-fn from_ooxml<T: serde::de::DeserializeOwned + Default>(s: &str) -> T {
-    serde_json::from_value(serde_json::Value::String(s.into())).unwrap_or_default()
 }
 
 /// How far below its paragraph's top a picture floated from the paragraph's first line goes, pt (Word's 3175 EMU).
@@ -1067,7 +1059,16 @@ impl Editor {
             };
             n.relative.pos[0] = h.percent.map(|v| (v * 10.0).round() as i64);
             (n.h_align, n.h_offset) = match (h.align, h.offset) {
-                (Some(a), _) => (Some(ooxml(a)), n.h_offset),
+                (Some(a), _) => (
+                    Some(match a {
+                        ObjectHorizontalAlignment::Left => HorizontalAlign::Left,
+                        ObjectHorizontalAlignment::Center => HorizontalAlign::Center,
+                        ObjectHorizontalAlignment::Right => HorizontalAlign::Right,
+                        ObjectHorizontalAlignment::Inside => HorizontalAlign::Inside,
+                        ObjectHorizontalAlignment::Outside => HorizontalAlign::Outside,
+                    }),
+                    n.h_offset,
+                ),
                 (None, Some(o)) => (None, twips(o.0)),
                 (None, None) if h.percent.is_some() => (None, n.h_offset),
                 (None, None) => {
@@ -1159,7 +1160,13 @@ impl Editor {
                     HorizontalRelation::InsideMargin => HorizontalReference::InsideMargin,
                     HorizontalRelation::OutsideMargin => HorizontalReference::OutsideMargin,
                 },
-                align: fl.h_align.as_deref().map(from_ooxml),
+                align: fl.h_align.map(|a| match a {
+                    HorizontalAlign::Left | HorizontalAlign::Unrecognised => ObjectHorizontalAlignment::Left,
+                    HorizontalAlign::Center => ObjectHorizontalAlignment::Center,
+                    HorizontalAlign::Right => ObjectHorizontalAlignment::Right,
+                    HorizontalAlign::Inside => ObjectHorizontalAlignment::Inside,
+                    HorizontalAlign::Outside => ObjectHorizontalAlignment::Outside,
+                }),
                 offset: (fl.h_align.is_none() && fl.relative.pos[0].is_none()).then_some(Points(fl.h_offset)),
                 percent: fl.relative.pos[0].map(|t| t as f64 / 10.0),
             },
@@ -1582,9 +1589,8 @@ impl Editor {
         let (w, h) = (new[2] - new[0], new[3] - new[1]);
         let sized = [(w - (old[2] - old[0])).abs() > 1e-9, (h - (old[3] - old[1])).abs() > 1e-9];
         // An alignment its size moves (right, centre, inside, outside) goes to an offset when the size changes
-        let by_size = |a: &Option<String>, start: &str| a.as_deref().is_some_and(|a| a != start);
         let moved = [
-            unplace[0] || (new[0] - old[0]).abs() > 1e-9 || sized[0] && by_size(&fl.h_align, "left"),
+            unplace[0] || (new[0] - old[0]).abs() > 1e-9 || sized[0] && fl.h_align.is_some_and(|a| a != HorizontalAlign::Left),
             unplace[1] || (new[1] - old[1]).abs() > 1e-9 || sized[1] && fl.v_align.is_some_and(|a| a != VerticalAlign::Top),
         ];
         // An aligned or percentage place goes to an offset from its reference where the float now is.

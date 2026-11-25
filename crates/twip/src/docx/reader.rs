@@ -3008,8 +3008,10 @@ impl Reader {
         let poly = v.wrap_coords.filter(|_| matches!(wrap, FloatWrap::Tight | FloatWrap::Through)).map(|p| Rc::from(super::bounded_polygon(p)));
         let line = shape.sp().and_then(|s| s.line.as_ref()).or_else(|| shape.pic().and_then(|p| p.line.as_ref()));
         let pen = line.filter(|l| !matches!(l.fill, Some(crate::drawing::paint::Fill::None))).map(|l| l.width.map_or(15.0, |w| w.0 as f64 / 635.0));
-        let (h_align, v_align) =
-            (st.h_align.clone().filter(|a| a != "absolute"), st.v_align.as_deref().filter(|a| *a != "absolute").map(super::anchor::v_align));
+        let (h_align, v_align) = (
+            st.h_align.as_deref().filter(|a| *a != "absolute").map(super::anchor::h_align),
+            st.v_align.as_deref().filter(|a| *a != "absolute").map(super::anchor::v_align),
+        );
         // A line grows the stored box to its pixel bounds, aligned or not. Without one, a shape aligned on one axis
         // grows only at its right and bottom, one aligned on both not at all.
         let aligned = (h_align.is_some(), v_align.is_some());
@@ -3116,7 +3118,7 @@ impl Reader {
         let mut h_rel = h_rel.map_or(HorizontalRelation::Column, super::anchor::h_relative);
         // No vertical `relativeFrom` is as an unrecognised one.
         let mut v_rel = v_rel.map_or(VerticalRelation::Unrecognised, super::anchor::v_relative);
-        let (h_align, v_align) = (h_align.map(str::to_string), v_align.map(super::anchor::v_align));
+        let (h_align, v_align) = (h_align.map(super::anchor::h_align), v_align.map(super::anchor::v_align));
         if item.attribute("simplePos").is_some_and(|v| on_off_str(Some(v))) {
             let sp = pos("simplePos");
             let at = |n: &str| sp.and_then(|p| emu(p.attribute(n))).unwrap_or(0.0);

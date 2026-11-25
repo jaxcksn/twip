@@ -2,7 +2,9 @@
 
 use std::rc::Rc;
 
-use super::model::{Block, Compat, Document, Float, FloatWrap, HorizontalRelation, Inline, Paragraph, TextBox, VerticalAlign, VerticalRelation};
+use super::model::{
+    Block, Compat, Document, Float, FloatWrap, HorizontalAlign, HorizontalRelation, Inline, Paragraph, TextBox, VerticalAlign, VerticalRelation,
+};
 
 pub fn convert(doc: &mut Document) {
     let legacy = doc.settings.compat() == Compat::Legacy;
@@ -192,10 +194,10 @@ pub fn place(f: &mut Float, fr: &super::props::FramePr, sides: [f64; 2], legacy:
     // are alignment codes.
     let (x_code, x_at) = fr.x.map_or((None, None), |x| match (x * 20.0).round() as i64 {
         0 => (None, None),
-        -4 => (Some("center"), None),
-        -8 => (Some("right"), None),
-        -12 => (Some("inside"), None),
-        -16 => (Some("outside"), None),
+        -4 => (Some(HorizontalAlign::Center), None),
+        -8 => (Some(HorizontalAlign::Right), None),
+        -12 => (Some(HorizontalAlign::Inside), None),
+        -16 => (Some(HorizontalAlign::Outside), None),
         _ => (None, Some(x - 0.05)),
     });
     // From the text, `w:y` is the position itself.
@@ -211,11 +213,11 @@ pub fn place(f: &mut Float, fr: &super::props::FramePr, sides: [f64; 2], legacy:
         _ => (None, Some(y - 0.05)),
     });
     f.h_align = if margin_cap {
-        Some("right".into())
+        Some(HorizontalAlign::Right)
     } else if fr.x.is_some() {
-        x_code.map(str::to_string)
+        x_code
     } else {
-        fr.x_align.clone()
+        fr.x_align.as_deref().map(super::anchor::h_align)
     };
     f.h_offset = x_at.unwrap_or(0.0);
     f.v_relative = match fr.v_anchor.as_deref() {

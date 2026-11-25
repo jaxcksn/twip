@@ -915,9 +915,9 @@ impl<'d> PageFill<'d, '_> {
                 x = before.unwrap_or_else(|| float::h_pos(f, &Frames { column: (char_x(k, b), 0.0), ..*frames }));
             }
             if compat == Compat::Legacy && f.h_relative == HorizontalRelation::Column {
-                match f.h_align.as_deref() {
-                    Some("left") => x += style.ind_left,
-                    Some("right") => x -= style.ind_right,
+                match f.h_align {
+                    Some(HorizontalAlign::Left) => x += style.ind_left,
+                    Some(HorizontalAlign::Right) => x -= style.ind_right,
                     // From a line that starts beside another paragraph's float (for a drawing, a frame before the
                     // paragraph included): from where its piece starts. One that doesn't wrap also counts from the
                     // piece its line was laid out again in beside the line's own wrapping floats.

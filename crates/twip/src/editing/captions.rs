@@ -421,7 +421,7 @@ impl Editor {
                 flow: 0,
             }),
             h_relative: obj.h_relative,
-            h_align: obj.h_align.clone(),
+            h_align: obj.h_align,
             h_offset: obj.h_offset,
             v_relative: obj.v_relative,
             v_align: None,

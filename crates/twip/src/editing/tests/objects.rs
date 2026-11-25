@@ -1468,7 +1468,7 @@ fn a_column_float_dragged_to_the_other_column_keeps_its_place() {
     assert_eq!(e.index().float_anchor(f), Some(target), "anchored in the right column");
     assert_eq!(drawn(&mut e), before, "drawn where it was");
     let fl = e.float_of(f).expect("the float");
-    assert_eq!((fl.h_align.as_deref(), fl.relative.pos[0]), (None, None), "placed by an offset");
+    assert_eq!((fl.h_align, fl.relative.pos[0]), (None, None), "placed by an offset");
     // 130 from the page's edge is 194 left of the right column (324).
     assert!((fl.h_offset + 194.0).abs() < 0.1, "from the right column: {}", fl.h_offset);
 }
@@ -1699,7 +1699,7 @@ fn a_frame_dragged_to_a_twip_that_reads_as_an_alignment_keeps_its_place() {
         assert!(changed(&e.commit_frame(f, &moved, "Move Object", fonts())), "{at}");
         let again = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
         let n = again.float_of(FloatId(all_floats(&again)[0])).cloned().expect("the frame");
-        assert_eq!((n.h_align.as_deref(), n.v_align), (None, None), "{at}: a place, not an alignment");
+        assert_eq!((n.h_align, n.v_align), (None, None), "{at}: a place, not an alignment");
         assert!((n.h_offset - at).abs() <= 0.06 && (n.v_offset - at).abs() <= 0.06, "{at}: ({}, {})", n.h_offset, n.v_offset);
     }
 }

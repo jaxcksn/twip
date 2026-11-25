@@ -1,7 +1,7 @@
 //! Float positioning
 
 use crate::docx::Compat;
-use crate::docx::model::{Float, FloatWrap, HorizontalRelation, VerticalAlign, VerticalRelation};
+use crate::docx::model::{Float, FloatWrap, HorizontalAlign, HorizontalRelation, VerticalAlign, VerticalRelation};
 
 use super::Frames;
 
@@ -92,10 +92,11 @@ fn v_ref(f: &Float, fr: &Frames) -> VerticalRelation {
     }
 }
 
-fn by_parity<'a>(align: Option<&'a str>, fr: &Frames, (min, max): (&'a str, &'a str)) -> Option<&'a str> {
+fn by_parity(align: Option<HorizontalAlign>, fr: &Frames) -> Option<HorizontalAlign> {
+    let (min, max) = (HorizontalAlign::Left, HorizontalAlign::Right);
     match align {
-        Some("inside") => Some(if fr.odd { min } else { max }),
-        Some("outside") => Some(if fr.odd { max } else { min }),
+        Some(HorizontalAlign::Inside) => Some(if fr.odd { min } else { max }),
+        Some(HorizontalAlign::Outside) => Some(if fr.odd { max } else { min }),
         a => a,
     }
 }
@@ -160,18 +161,18 @@ pub fn h_pos(f: &Float, fr: &Frames) -> f64 {
         return x0 + if f.poly.is_none() { f.effect[0] } else { 0.0 } + share(base, p);
     }
     if fr.compat == Compat::Legacy && f.h_relative == HorizontalRelation::Page {
-        match f.h_align.as_deref() {
-            Some("left") if fr.margin[0] >= f.w => return fr.margin[0] - f.w,
-            Some("right") if fr.margin[1] >= f.w => return fr.page_w - fr.margin[1],
+        match f.h_align {
+            Some(HorizontalAlign::Left) if fr.margin[0] >= f.w => return fr.margin[0] - f.w,
+            Some(HorizontalAlign::Right) if fr.margin[1] >= f.w => return fr.page_w - fr.margin[1],
             _ => {}
         }
     }
     let [l, _, r, _] = if f.poly.is_none() { f.effect } else { [0.0; 4] };
     x0 + snap(
         fr,
-        match by_parity(f.h_align.as_deref(), fr, ("left", "right")) {
-            Some("center") => (w - f.w) / 2.0 + (l - r) / 2.0,
-            Some("right") => w - f.w - r,
+        match by_parity(f.h_align, fr) {
+            Some(HorizontalAlign::Center) => (w - f.w) / 2.0 + (l - r) / 2.0,
+            Some(HorizontalAlign::Right) => w - f.w - r,
             Some(_) => l,
             None => f.h_offset + if grown(f, fr)[0] { l } else { 0.0 },
         },

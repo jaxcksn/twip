@@ -280,7 +280,7 @@ pub fn avoid(f: &mut Placed, placed: &[Placed], (lo, hi): (f64, f64), (top, bott
         f.moved_to(original.0, original.1);
         return false;
     }
-    let leftward = f.float.h_align.as_deref() == Some("right");
+    let leftward = f.float.h_align == Some(crate::docx::HorizontalAlign::Right);
     let frame = |o: &Placed| o.float.text_box.is_some() && o.float.shape.is_none() && o.key.2 != TABLE_PIECE;
     for _ in 0..32 {
         // A table leaves under 9 twips of overlap down as it is, and moves to a twip short of the bottom.
@@ -507,7 +507,7 @@ mod tests {
         assert!(avoid(&mut f, &[apart(80.0, 612.0, 0)], across, (0.0, 720.0), Compat::Legacy));
         assert_eq!((f.rect[0], f.rect[1]), (532.0, 100.0));
         let mut f = apart(390.0, 540.0, 1);
-        Rc::make_mut(&mut f.float).h_align = Some("right".into());
+        Rc::make_mut(&mut f.float).h_align = Some(crate::docx::HorizontalAlign::Right);
         assert!(avoid(&mut f, &[apart(472.0, 572.0, 0)], across, down, Compat::Legacy));
         assert_eq!((f.rect[0], f.rect[1]), (322.0, 0.0));
     }
@@ -627,7 +627,7 @@ mod tests {
     fn compat_14_grows_both_axes_by_the_effect_extents_when_one_is_aligned() {
         let fr = |compat| Frames { page_w: 612.0, page_h: 792.0, margin: [72.0; 4], column: (72.0, 468.0), compat, cell: false, odd: true };
         let mut f = (*fl(0.0, 100.0, Side::Both).float).clone();
-        f.h_align = Some("left".into());
+        f.h_align = Some(crate::docx::HorizontalAlign::Left);
         f.v_offset = 40.0;
         f.effect = [5.0, 10.0, 5.0, 10.0];
         assert_eq!(v_pos(&f, 30.0, &fr(Compat::Legacy), 84.65, 84.65), 134.65);
@@ -655,7 +655,7 @@ mod tests {
         let x = |rel: &str, align: &str, compat, odd| {
             let mut f = (*fl(0.0, 40.0, Side::Both).float).clone();
             f.h_relative = crate::docx::anchor::h_relative(rel);
-            f.h_align = Some(align.into());
+            f.h_align = Some(crate::docx::anchor::h_align(align));
             h_pos(&f, &fr(compat, odd))
         };
         assert_eq!((x("insideMargin", "left", Compat::Generic, true), x("insideMargin", "left", Compat::Generic, false)), (0.0, 540.0));
@@ -673,7 +673,7 @@ mod tests {
         let fr = |compat| Frames { page_w: 612.0, page_h: 792.0, margin: [72.0; 4], column: (72.0, 468.0), compat, cell: false, odd: true };
         let mut f = (*fl(0.0, 40.03, Side::Both).float).clone();
         f.h_relative = crate::docx::HorizontalRelation::Margin;
-        f.h_align = Some("center".into());
+        f.h_align = Some(crate::docx::HorizontalAlign::Center);
         assert_eq!(h_pos(&f, &fr(Compat::Legacy)), 286.0);
         assert!((h_pos(&f, &fr(Compat::Generic)) - 285.985).abs() < 1e-9);
     }
@@ -684,7 +684,7 @@ mod tests {
             |compat| Frames { page_w: 612.0, page_h: 792.0, margin: [72.0, 72.0, 72.0, 72.0], column: (72.0, 468.0), compat, cell: false, odd: true };
         let f = |h: &str, ha: Option<&str>, v: &str, va: Option<VerticalAlign>| Float {
             h_relative: crate::docx::anchor::h_relative(h),
-            h_align: ha.map(Into::into),
+            h_align: ha.map(crate::docx::anchor::h_align),
             v_relative: crate::docx::anchor::v_relative(v),
             v_align: va,
             ..(*fl(0.0, 40.0, Side::Both).float).clone()

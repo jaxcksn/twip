@@ -1,6 +1,6 @@
 //! Float anchoring and wrapping: the DOCX literals of the model's values
 
-use super::model::{FloatWrap, HorizontalRelation, VerticalAlign, VerticalRelation, WrapText};
+use super::model::{FloatWrap, HorizontalAlign, HorizontalRelation, VerticalAlign, VerticalRelation, WrapText};
 
 /// `wrapText`, or a VML wrap's `side`; anything else wraps both sides.
 pub fn wrap_text(s: &str) -> WrapText {
@@ -121,5 +121,28 @@ pub fn v_relative_name(r: VerticalRelation) -> &'static str {
         VerticalRelation::BottomMargin => "bottomMargin",
         VerticalRelation::InsideMargin => "insideMargin",
         VerticalRelation::OutsideMargin => "outsideMargin",
+    }
+}
+
+/// `wp:align` in `wp:positionH`, a frame's `w:xAlign` or VML `mso-position-horizontal`.
+pub fn h_align(s: &str) -> HorizontalAlign {
+    match s {
+        "left" => HorizontalAlign::Left,
+        "center" => HorizontalAlign::Center,
+        "right" => HorizontalAlign::Right,
+        "inside" => HorizontalAlign::Inside,
+        "outside" => HorizontalAlign::Outside,
+        _ => HorizontalAlign::Unrecognised,
+    }
+}
+
+/// The `wp:align` literal of `a`; an unrecognised one is written as the left alignment it is placed by.
+pub fn h_align_name(a: HorizontalAlign) -> &'static str {
+    match a {
+        HorizontalAlign::Left | HorizontalAlign::Unrecognised => "left",
+        HorizontalAlign::Center => "center",
+        HorizontalAlign::Right => "right",
+        HorizontalAlign::Inside => "inside",
+        HorizontalAlign::Outside => "outside",
     }
 }
