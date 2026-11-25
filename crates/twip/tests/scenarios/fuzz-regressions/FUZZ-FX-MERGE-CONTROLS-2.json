@@ -1,0 +1,288 @@
+{
+  "fixture": "FX-MERGE-CONTROLS.docx",
+  "id": "FUZZ-FX-MERGE-CONTROLS-2",
+  "methods": [
+    "K",
+    "M"
+  ],
+  "steps": [
+    {
+      "expect": {},
+      "type": "x"
+    },
+    {
+      "expect": {},
+      "type": "Ünï"
+    },
+    {
+      "click": {
+        "offset": 3,
+        "para": 9
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "drag": {
+        "from": {
+          "border": "bottom",
+          "dx": 0.0,
+          "dy": 0.0,
+          "row": 1,
+          "table": 0
+        },
+        "to": {
+          "border": "bottom",
+          "dx": 3.0,
+          "dy": -28.0,
+          "row": 1,
+          "table": 0
+        }
+      },
+      "expect": {},
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "Enter",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "type": "word."
+    },
+    {
+      "expect": {},
+      "key": "KeyZ",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "command": {
+        "type": "insertColumns",
+        "where": "left"
+      },
+      "expect": {}
+    },
+    {
+      "click": {
+        "offset": 0,
+        "para": 5
+      },
+      "clicks": 3,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "click": {
+        "offset": 0,
+        "para": 16
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": true
+    },
+    {
+      "expect": {},
+      "type": "Ünï"
+    },
+    {
+      "click": {
+        "offset": 10,
+        "para": 8
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "command": {
+        "columns": 2,
+        "rows": 2,
+        "type": "insertTable"
+      },
+      "expect": {}
+    },
+    {
+      "click": {
+        "offset": 0,
+        "para": 10
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "key": "KeyE",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 0,
+        "para": 10
+      },
+      "clicks": 2,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "click": {
+        "offset": 19,
+        "para": 15
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": true
+    },
+    {
+      "clipboard": "copy",
+      "expect": {}
+    },
+    {
+      "click": {
+        "offset": 8,
+        "para": 3
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "clipboard": "paste",
+      "expect": {}
+    },
+    {
+      "click": {
+        "offset": 7,
+        "para": 3
+      },
+      "clicks": 3,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "key": "Backspace",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 20,
+        "para": 2
+      },
+      "clicks": 1,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "key": "ArrowDown",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "command": {
+        "columns": 2,
+        "rows": 2,
+        "type": "insertTable"
+      },
+      "expect": {}
+    },
+    {
+      "expect": {},
+      "key": "ArrowLeft",
+      "mods": {
+        "ctrl": true,
+        "shift": true
+      }
+    },
+    {
+      "expect": {},
+      "type": "x"
+    },
+    {
+      "expect": {},
+      "key": "ArrowRight",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "ArrowUp",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "Enter",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "expect": {},
+      "key": "Backspace",
+      "mods": {
+        "ctrl": true,
+        "shift": false
+      }
+    },
+    {
+      "click": {
+        "offset": 2,
+        "para": 5
+      },
+      "clicks": 2,
+      "expect": {},
+      "shift": false
+    },
+    {
+      "expect": {},
+      "key": "F4",
+      "mods": {
+        "ctrl": false,
+        "shift": false
+      }
+    },
+    {
+      "command": {
+        "columns": 2,
+        "rows": 2,
+        "type": "insertTable"
+      },
+      "expect": {}
+    }
+  ],
+  "title": "Fuzz regression: integrity: [Violation { invariant: \"C2 contiguous\", detail: \"control ControlId(6937) wraps blocks [2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] of section 0\" }] (Caret(Position { story: Body, place: Text { para: ParaId(7037), offset: Unit(0), affinity: Downstream } }) in Some(\"\"))"
+}

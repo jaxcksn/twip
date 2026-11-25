@@ -1102,13 +1102,15 @@ impl Editor {
             }
             slot.block + 1
         };
+        // A paragraph keeping the table apart is in the content controls the table is in.
+        let apart = || Block::Para(Paragraph { controls: p.controls.clone(), ..blank_para(&p) });
         let mut with = Vec::with_capacity(3);
         if before {
-            with.push(Block::Para(blank_para(&p)));
+            with.push(apart());
         }
         with.push(Block::Table(table));
         if after {
-            with.push(Block::Para(blank_para(&p)));
+            with.push(apart());
         }
         if self.step(&mut tx, Step::Blocks { container: slot.container, range: place..place, with }).is_err() {
             self.abort(tx);
