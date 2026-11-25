@@ -19,6 +19,7 @@ pub mod model;
 pub mod numbering;
 pub mod package;
 pub mod paragraph;
+mod prop_xml;
 pub mod properties;
 pub mod props;
 mod reader;
