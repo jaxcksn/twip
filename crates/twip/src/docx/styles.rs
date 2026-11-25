@@ -281,7 +281,7 @@ pub enum StyleEditError {
 pub const REGION_ORDER: [&str; 12] =
     ["band1Horz", "band2Horz", "band1Vert", "band2Vert", "lastCol", "firstCol", "lastRow", "firstRow", "seCell", "swCell", "neCell", "nwCell"];
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct ThemeFonts {
     pub major: String,
     pub minor: String,

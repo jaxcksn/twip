@@ -23,6 +23,7 @@ use super::*;
 mod comments;
 pub(crate) mod drawing;
 mod fonts;
+mod generate;
 mod glossary;
 mod numbering;
 pub mod props;
@@ -32,6 +33,8 @@ mod styles;
 use super::anchor;
 use super::props::{Border, Jc, ThemeColours, Width};
 use props::{Cx, Props};
+
+pub use generate::{GenerateError, generate};
 
 /// The edited document as package bytes: the original package when nothing changed.
 pub fn save(doc: &Document) -> Result<Vec<u8>, String> {

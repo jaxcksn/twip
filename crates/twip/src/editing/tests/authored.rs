@@ -1,5 +1,6 @@
-//! Authored formatting: a document built from typed properties with no XML or package, layout reuse after an edit
-//! that changes no effective value, and explicit formatting equal to the inherited value through later edits
+//! Authored formatting: a document built from typed properties with no XML or package, the package generated from it,
+//! layout reuse after an edit that changes no effective value, and explicit formatting equal to the inherited value
+//! through later edits
 
 use std::io::{Read, Write};
 use std::rc::Rc;
@@ -8,13 +9,18 @@ use super::fonts;
 use crate::api::command::{Command as C, Indents};
 use crate::api::styles::{StyleChange, StyleModification};
 use crate::api::value::{Alignment, Points};
+use crate::docx::char_props::RunDirect;
+use crate::docx::model::ThemeColourRef;
 use crate::docx::numbering::Numbering;
 use crate::docx::props::{Jc, ParaProps, RunProps, ThemeColours, toggle};
 use crate::docx::resolve::Resolver;
 use crate::docx::styles::{Styles, ThemeFonts};
-use crate::docx::{Block, Columns, Document, Inline, Paragraph, Run, Section, SectionBreak, next_para_id};
+use crate::docx::write::GenerateError;
+use crate::docx::{Block, BreakKind, Columns, Document, Inline, Paragraph, Run, Section, SectionBreak, next_para_id};
+use crate::drawing::colour::SchemeSlot;
 use crate::editing::Editor;
 use crate::editing::commands::{Command, Outcome};
+use crate::format::{CharProps, Color, FontRef, ScriptClass, ScriptFonts, ThemeFace, Toggle};
 use crate::layout::{ParaId, Unit};
 
 fn section(blocks: Vec<Block>) -> Section {
@@ -482,4 +488,171 @@ fn an_autocorrection_keeps_each_characters_authored_formatting() {
     assert_eq!(runs.iter().map(|r| r.0.as_str()).collect::<String>(), "the ");
     let last_e = runs.iter().find(|(t, _)| t.contains('e')).expect("the e");
     assert!(!last_e.1.contains("<w:b/>"), "the e takes the plain h's formatting, not the direct bold: {runs:?}");
+}
+
+// A package generated from the model alone
+
+/// A paragraph's content, as the editor holds it.
+enum Piece {
+    Text(&'static str),
+    Tab,
+    Break(BreakKind),
+}
+
+/// A paragraph in paragraph style `style` whose runs carry typed authored properties alone, resolved over its base.
+fn typed(res: &Resolver, style: Option<&str>, pieces: Vec<(Piece, CharProps)>) -> Paragraph {
+    let p = res.paragraph(&ParaProps { style: style.map(str::to_string), ..Default::default() }, None);
+    let run = |props: CharProps| {
+        let own = (props != CharProps::default()).then(|| Rc::new(props));
+        crate::docx::run_xml::run_of(res, &p.base, RunDirect::typed(own))
+    };
+    let inlines = pieces
+        .into_iter()
+        .map(|(piece, props)| match piece {
+            Piece::Text(t) => Inline::Text(t.into(), run(props)),
+            Piece::Tab => Inline::Tab(run(props)),
+            Piece::Break(k) => Inline::Break(k, run(props)),
+        })
+        .collect();
+    Paragraph {
+        mark: crate::docx::run_xml::plain(res, &p.base),
+        style: Rc::new(p.style),
+        list: None,
+        inlines,
+        src: None,
+        id: next_para_id(),
+        controls: Vec::new(),
+        div: None,
+    }
+}
+
+fn on(t: Toggle) -> CharProps {
+    let mut p = CharProps::default();
+    p.toggles.put(t, true);
+    p
+}
+
+/// Styled text built from typed properties, in a new document's styles (with "Strong") and settings: bold, italic,
+/// a size, an RGB colour, a theme colour and a theme font, tabs, a line break and a page break.
+fn built() -> Document {
+    let new = crate::docx::read(&with_strong_style("<w:p/>")).expect("reads");
+    let res = new.resolver.clone().expect("styles");
+    let accent = Color::Theme(ThemeColourRef { slot: SchemeSlot::Accent(1), tint: None, shade: None });
+    let heading = FontRef::Theme { face: ThemeFace::Major, script: ScriptClass::Latin };
+    let paras = vec![
+        typed(&res, Some("Strong"), vec![(Piece::Text("A styled heading"), CharProps::default())]),
+        typed(
+            &res,
+            None,
+            vec![
+                (Piece::Text("Bold"), on(Toggle::BOLD)),
+                (Piece::Tab, CharProps::default()),
+                (Piece::Text("italic at 16pt"), CharProps { size: Some(16.0), ..on(Toggle::ITALIC) }),
+                (Piece::Break(BreakKind::Line), CharProps::default()),
+                (Piece::Text("in red, "), CharProps { color: Some(Color::Rgb(0xC0_0000)), ..Default::default() }),
+                (Piece::Text("in the accent colour"), CharProps { color: Some(accent), ..Default::default() }),
+                (Piece::Tab, CharProps::default()),
+                (
+                    Piece::Text("in the heading font"),
+                    CharProps { fonts: ScriptFonts { latin: Some(heading), ..Default::default() }, ..Default::default() },
+                ),
+                (Piece::Break(BreakKind::Page), CharProps::default()),
+                (Piece::Text("After the page break"), CharProps::default()),
+            ],
+        ),
+    ];
+    Document {
+        sections: vec![section(paras.into_iter().map(Block::Para).collect())],
+        resolver: Some(res),
+        settings: new.settings,
+        ..Default::default()
+    }
+}
+
+/// The document dump, then every laid-out page.
+fn dump(e: &mut Editor) -> String {
+    let v = crate::editing::inspect::inspect(e, "dump", true);
+    let pages = crate::layout::dump::page_text(&crate::layout::layout(e.document(), fonts()), e.document());
+    format!("{}\n{pages}", serde_json::to_string_pretty(&v["dump"]).expect("a dump"))
+}
+
+/// Generates `e`'s document, reads it back and compares the dumps, and each run's authored properties (but what the
+/// reader keeps of the written form, such as a theme colour's RGB value) and resolved formatting, which show what the
+/// dumps don't (theme colours and fonts). The runs read back.
+fn reads_back_as_built(e: &mut Editor) -> Vec<Run> {
+    let bytes = crate::docx::write::generate(e.document()).expect("generates");
+    let mut back = Editor::open(&bytes, fonts()).expect("reads back");
+    assert_eq!(dump(e), dump(&mut back));
+    let runs = |d: &Document| -> Vec<Run> {
+        let paras = d.sections[0].blocks.iter().filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None });
+        paras.flat_map(|p| p.inlines.iter().filter_map(Inline::run).chain([&p.mark]).cloned()).collect()
+    };
+    let authored = |r: &Run| r.direct.props().map(|p| CharProps { foreign: None, ..(**p).clone() });
+    let (built, read) = (runs(e.document()), runs(back.document()));
+    assert_eq!(built.len(), read.len(), "as many runs");
+    for (a, b) in built.iter().zip(&read) {
+        assert!(authored(a) == authored(b) && a.layout_eq(b), "{a:?}\nreads back as\n{b:?}");
+    }
+    read
+}
+
+/// The built document, generated: the schema check validates it.
+pub(crate) fn generated_package() -> Vec<u8> {
+    crate::docx::write::generate(&built()).expect("generates")
+}
+
+#[test]
+fn a_document_built_from_typed_properties_generates_a_package_that_reads_back_the_same() {
+    let fonts = fonts();
+    let doc = built();
+    assert!(doc.source.is_none(), "no package");
+    let mut e = Editor::with_document(doc, fonts);
+    e.complete(fonts);
+    let read = reads_back_as_built(&mut e);
+    assert!(read.iter().any(|r| r.color_theme.is_some()) && read.iter().any(|r| r.font_theme.is_some()), "a theme colour and a theme font");
+
+    let p = ParaId(para(e.document(), 1).id);
+    e.select_range(p, Unit(2), Unit(8), fonts);
+    assert!(matches!(e.execute(C::SetUnderline(crate::api::value::UnderlineStyle::Single), fonts), Outcome::Changed(_)));
+    e.complete(fonts);
+    assert!(para(e.document(), 1).inlines.iter().filter_map(Inline::run).any(|r| r.underline.is_some()), "underlined");
+    reads_back_as_built(&mut e);
+}
+
+#[test]
+fn generating_names_what_it_cannot_write() {
+    let unsupported = |d: &Document| crate::docx::write::generate(d).expect_err("not generated");
+    let table = r#"<w:tbl><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:tc><w:p/></w:tc></w:tr></w:tbl><w:p/>"#;
+    let mut doc = crate::docx::read(&with_strong_style(table)).expect("reads");
+    doc.source = None;
+    assert_eq!(unsupported(&doc), GenerateError::Unsupported("a table"));
+
+    let mut doc = built();
+    doc.sections[0].headers[0] = Some("word/header1.xml".into());
+    assert_eq!(unsupported(&doc), GenerateError::Unsupported("a header or footer"));
+
+    // Formatting with nothing authored behind it: a centred paragraph, a bold run.
+    let res = doc.resolver.clone().expect("styles");
+    let centred = paragraph(&res, &ParaProps { jc: Some(Jc::Center), ..Default::default() }, &[("centred", RunProps::default())], next_para_id());
+    let doc = Document { sections: vec![section(vec![Block::Para(centred)])], ..built() };
+    assert_eq!(unsupported(&doc), GenerateError::Unsupported("direct paragraph formatting"));
+    let bold = RunProps { toggles_set: toggle::B, toggles: toggle::B, ..Default::default() };
+    let bold = paragraph(&res, &ParaProps::default(), &[("bold", bold)], next_para_id());
+    let doc = Document { sections: vec![section(vec![Block::Para(bold)])], ..built() };
+    assert_eq!(unsupported(&doc), GenerateError::Unsupported("character formatting that is not its own"));
+}
+
+#[test]
+fn a_document_with_no_styles_generates_the_application_defaults() {
+    let fonts = fonts();
+    let new = built();
+    let mut res = bare_resolver();
+    let rules = &new.resolver.as_ref().expect("styles").styles;
+    (res.styles.compat, res.styles.word2002_rules, res.styles.cell_size_rules, res.styles.open_type) =
+        (rules.compat, rules.word2002_rules, rules.cell_size_rules, rules.open_type);
+    let mut doc = sourceless(vec![typed(&res, None, vec![(Piece::Text("Bold at the defaults"), on(Toggle::BOLD))])], &res);
+    doc.settings = new.settings;
+    let mut e = Editor::with_document(doc, fonts);
+    e.complete(fonts);
+    reads_back_as_built(&mut e);
 }

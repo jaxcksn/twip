@@ -1,6 +1,6 @@
 //! Native editing tests
 
-mod authored;
+pub(crate) mod authored;
 mod backgrounds;
 mod baseline;
 mod basics;

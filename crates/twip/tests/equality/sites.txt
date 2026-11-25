@@ -7,6 +7,7 @@ L	crates/twip/src/docx/resolve.rs	check	RunStyle	assert_eq!(**run, *res.rerun(&r
 L	crates/twip/src/docx/resolve.rs	check	RunStyle	assert_eq!(*p.mark, mark, "{what}: the mark of {:?}", p.id);
 L	crates/twip/src/docx/resolve.rs	para_again	ParaStyle	if previous == *c.previous { c.clone() } else { Rc::new(ParaChange { previous: Rc::new(previous), ..(**c).clone() }) }
 L	crates/twip/src/docx/resolve.rs	rerun_xml	Rc<RunStyle>	if previous == f.previous { f.clone() } else { Rc::new(FormatChange { previous, ..(**f).clone() }) }
+L	crates/twip/src/docx/write/generate.rs	paragraph	ParaStyle	if style != again.style {
 derive	crates/twip/src/docx/write/mod.rs	-	Marker	#[derive(PartialEq)]
 A	crates/twip/src/docx/write/mod.rs	group_as	Marker	a.eq(b) && now_ids.iter().all(|id| s.controls.get(id).is_some_and(|k| k.as_read() || sdt_of(id).is_some()))
 A	crates/twip/src/docx/write/mod.rs	headers	CellRevisions	if a.rev != b.rev {

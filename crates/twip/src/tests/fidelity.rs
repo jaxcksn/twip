@@ -573,6 +573,7 @@ fn every_edit_keeps_every_construct() {
         let (pictures, boxes) = picture_tools_packages();
         std::fs::write(d.join("picture-tools.docx"), pictures).expect("writes");
         std::fs::write(d.join("text-box-columns.docx"), boxes).expect("writes");
+        std::fs::write(d.join("generated.docx"), crate::editing::tests::authored::generated_package()).expect("writes");
     }
     let cases: Vec<(&Construct, &str, fn(&mut Editor, &Spot) -> Outcome)> = CONSTRUCTS
         .iter()
