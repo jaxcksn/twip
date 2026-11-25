@@ -96,6 +96,21 @@ const TBL_STYLE_PR: &[&str] = &["pPr", "rPr", "tblPr", "trPr", "tcPr"];
 
 /// A table style's XML with `child` of its part `region` (a `w:tblStylePr`) edited, made when it has none.
 pub(super) fn edit_table_part(raw: &str, region: &str, child: &str, cx: &Cx, edit: impl FnOnce(&mut Props)) -> String {
+    with_table_part_child(raw, region, child, cx, |x| {
+        let mut props = Props::parse(x, child, cx);
+        match child {
+            "tcPr" => props.reorder(crate::docx::write::props::TCPR),
+            "tblPr" => props.reorder(crate::docx::write::props::TBLPR),
+            _ => {}
+        }
+        edit(&mut props);
+        props.xml()
+    })
+}
+
+/// A table style's XML with `child` of its part `region` (a `w:tblStylePr`) as `edit` writes it from what it is,
+/// made when it has none; `None` takes it out.
+fn with_table_part_child(raw: &str, region: &str, child: &str, cx: &Cx, edit: impl FnOnce(Option<&str>) -> Option<String>) -> String {
     let w = &cx.w;
     let mut el = Props::parse(Some(raw), "style", cx);
     let at =
@@ -106,14 +121,7 @@ pub(super) fn edit_table_part(raw: &str, region: &str, child: &str, cx: &Cx, edi
     if at.is_none() {
         part.remove("pPr");
     }
-    let mut props = Props::parse(part.get(child), child, cx);
-    match child {
-        "tcPr" => props.reorder(crate::docx::write::props::TCPR),
-        "tblPr" => props.reorder(crate::docx::write::props::TBLPR),
-        _ => {}
-    }
-    edit(&mut props);
-    match props.xml() {
+    match edit(part.get(child)) {
         Some(x) => part.set(child, x),
         None => part.remove(child),
     }
@@ -127,10 +135,17 @@ pub(super) fn edit_table_part(raw: &str, region: &str, child: &str, cx: &Cx, edi
 }
 
 pub(super) fn edit_child(raw: &str, child: &str, cx: &Cx, edit: impl FnOnce(&mut Props)) -> String {
+    with_child(raw, child, cx, |x| {
+        let mut props = Props::parse(x, child, cx);
+        edit(&mut props);
+        props.xml()
+    })
+}
+
+/// `raw` with its `child` as `edit` writes it from what it is; `None` takes it out.
+fn with_child(raw: &str, child: &str, cx: &Cx, edit: impl FnOnce(Option<&str>) -> Option<String>) -> String {
     let mut el = Props::parse(Some(raw), "style", cx);
-    let mut props = Props::parse(el.get(child), child, cx);
-    edit(&mut props);
-    match props.xml() {
+    match edit(el.get(child)) {
         Some(x) => el.set(child, x),
         None => el.remove(child),
     }
@@ -208,6 +223,25 @@ impl Editor {
         self.style_target = Some(match self.style_part {
             Some(region) => edit_table_part(&raw, region, part, &cx, |p| edit(p, &cx, &para, &run)),
             None => edit_child(&raw, part, &cx, |p| edit(p, &cx, &para, &run)),
+        });
+        Outcome::Moved
+    }
+
+    /// Runs a character formatting command's typed edit on the target style's `w:rPr`: the style's own, or its table
+    /// part's (`style_part`).
+    pub(super) fn format_style_rpr(&mut self, edit: &dyn Fn(&mut CharEdit, &RunStyle)) -> Outcome {
+        let Some((_, run, cx)) = self.style_target_formatting() else { return Outcome::Unchanged("no style") };
+        let Some(raw) = self.style_target.take() else { return Outcome::Unchanged("no style") };
+        let colours = self.doc.resolver.as_deref().map_or_else(Default::default, |r| r.styles.colours);
+        let typed = |x: Option<&str>| {
+            super::format::edit_rpr_xml(x, &colours, &cx, |e| {
+                edit(e, &run);
+                true
+            })
+        };
+        self.style_target = Some(match self.style_part {
+            Some(region) => with_table_part_child(&raw, region, "rPr", &cx, typed),
+            None => with_child(&raw, "rPr", &cx, typed),
         });
         Outcome::Moved
     }
@@ -545,7 +579,7 @@ impl Editor {
             unstyle(&mut e).then(|| Rc::new(RunStyle { direct: r.direct.edit(e), ..(**r).clone() }))
         };
         let in_ruby = |i: &Inline| matches!(i, Inline::Ruby(r, _) if r.base.iter().chain(&r.text).any(|x| named(&x.1)));
-        let ruby_rpr = |xml: Option<&str>, _: &RunStyle| super::format::edit_rpr_xml(xml, &res.styles.colours, &cx, unstyle);
+        let ruby_rpr = super::format::ruby_edit(|e, _| unstyle(e));
         let paras: Vec<_> = self.index.para_ids().collect();
         for para in paras {
             let Some(p) = self.index.para(&self.doc, para) else { continue };

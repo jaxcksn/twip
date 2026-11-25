@@ -185,8 +185,9 @@ pub struct Editor {
     /// The page point line moves keep to: each line reads its place along it from the point.
     goal: Option<[f64; 2]>,
     pending: Option<Run>,
-    /// The format painter's formatting: a run's `w:rPr`, and a paragraph's `w:pPr` when it took the paragraph's too.
-    painter: Option<(Option<String>, Option<Option<String>>)>,
+    /// The format painter's formatting: a run's authored properties, and a paragraph's `w:pPr` when it took the
+    /// paragraph's too.
+    painter: Option<(Rc<crate::format::CharProps>, Option<Option<String>>)>,
     /// Ctrl+Shift+V pastes the painter's formatting: since Copy Formatting, with the clipboard it first saw then (its
     /// fingerprint), until the clipboard changes.
     painter_claim: Option<Option<u64>>,

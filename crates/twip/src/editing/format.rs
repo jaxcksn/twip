@@ -143,14 +143,26 @@ pub(super) fn with_run(i: &Inline, run: &Run) -> Inline {
     }
 }
 
-/// A new `w:rPr` for a run from its own and its formatting.
-pub(super) type RubyEdit<'a> = dyn Fn(Option<&str>, &RunStyle) -> Option<String> + 'a;
+/// `p` with its highlight alone, and what it keeps beside it.
+fn highlight_alone(p: &CharProps) -> CharProps {
+    let highlight = |q: &crate::format::QName| &*q.ns == crate::docx::xml::W && &*q.local == "highlight";
+    let foreign = p.foreign.as_deref().map(|f| crate::format::ForeignProps {
+        children: Vec::new(),
+        attributes: f.attributes.iter().filter(|a| a.on.as_ref().is_none_or(highlight)).cloned().collect(),
+        kept: f.kept.iter().filter(|c| highlight(&c.name)).cloned().collect(),
+    });
+    CharProps { highlight: p.highlight, foreign: foreign.filter(|f| *f != Default::default()).map(Rc::new), ..Default::default() }
+}
 
-/// How a formatting command edits each run's authored properties: as their XML (an unconverted command's), or typed.
-#[derive(Clone, Copy)]
-enum RunEdit<'a> {
-    Xml(&'a dyn Fn(&mut Props, &str, &RunStyle), &'a dyn Fn(&mut Props, &str, &RunStyle) -> bool),
-    Typed(&'a dyn Fn(&mut CharEdit, &RunStyle), &'a dyn Fn(&mut CharEdit, &RunStyle) -> bool),
+/// A run's new authored properties from its own and its formatting; `None` leaves them.
+pub(super) type RubyEdit<'a> = dyn Fn(&RunDirect, &RunStyle) -> Option<RunDirect> + 'a;
+
+/// A [`RubyEdit`] that edits each run's authored properties with `edit`, which says whether it changed them.
+pub(super) fn ruby_edit(edit: impl Fn(&mut CharEdit, &RunStyle) -> bool) -> impl Fn(&RunDirect, &RunStyle) -> Option<RunDirect> {
+    move |d, run| {
+        let mut e = CharEdit::new(d.props().map_or_else(CharProps::default, |p| (**p).clone()));
+        edit(&mut e, run).then(|| d.edit(e))
+    }
 }
 
 /// A style separator mark's flags (hidden, and the separator's), which formatting keeps.
@@ -174,7 +186,7 @@ impl Separator {
     }
 }
 
-/// `xml`, a `w:rPr` (a style's, a list level's, a ruby's run's) in the part `cx` describes, with a typed edit of its
+/// `xml`, a definition's `w:rPr` (a style's, a list level's) in the part `cx` describes, with a typed edit of its
 /// properties, written again as an edit of it; as it is when `edit` changes nothing.
 pub(super) fn edit_rpr_xml(
     xml: Option<&str>,
@@ -191,26 +203,12 @@ pub(super) fn edit_rpr_xml(
 }
 
 /// A part whose root gives WordprocessingML prefix `w` (with its colon).
-fn cx_in(w: &str) -> Cx {
+pub(super) fn cx_in(w: &str) -> Cx {
     let (p, colon) = match w.strip_suffix(':') {
         Some(p) => (p, ":"),
         None => ("", ""),
     };
     Cx::of_xml(&format!("<{w}x xmlns{colon}{p}=\"{}\">", crate::docx::xml::W))
-}
-
-/// `p`, a `w:rPr` as XML, with a typed edit of its properties. Returns what `edit` does.
-fn as_typed(p: &mut Props, colours: &crate::docx::props::ThemeColours, cx: &Cx, edit: impl FnOnce(&mut CharEdit) -> bool) -> bool {
-    let x = p.xml();
-    let mut changed = false;
-    let out = edit_rpr_xml(x.as_deref(), colours, cx, |q| {
-        changed = edit(q);
-        changed
-    });
-    if changed {
-        *p = Props::parse(out.as_deref(), "rPr", cx);
-    }
-    changed
 }
 
 /// A paragraph's formatting resolved again from its direct XML, with what reading gave it beyond that
@@ -327,52 +325,56 @@ fn table_again(t: &Table, res: &Resolver, cx: &Cx) -> Option<(TableProps, Option
     Some((props, rows))
 }
 
-/// A ruby's base and annotation text resolved again over `base` from its XML, `edit` first giving the base text's runs
-/// new direct formatting (from their `w:rPr` and formatting), the annotation's too when it says so. `None` when it stays
-/// as it is.
+/// A ruby's base and annotation text resolved again over `base` from the authored properties its XML holds, `edit`
+/// first giving the base text's runs new ones (from their own and their formatting), the annotation's too when it says
+/// so, written into the XML. `None` when it stays as it is.
 pub(super) fn ruby_again(r: &Ruby, base: &RunProps, edit: Option<(&RubyEdit, bool)>, res: &Resolver, cx: &Cx) -> Option<Rc<Ruby>> {
     use crate::docx::xml::is_w;
     let raw = r.xml.0.as_deref()?;
     let (mut splices, parts) = cx.parse(raw, |text, el| {
         let off = text.len() - raw.len() - "</x>".len();
         let mut splices: Vec<(std::ops::Range<usize>, String)> = Vec::new();
-        let mut parts: [Vec<(String, Option<String>)>; 2] = [Vec::new(), Vec::new()];
+        let mut parts: [Vec<(String, RunDirect)>; 2] = [Vec::new(), Vec::new()];
         for (k, name) in ["rubyBase", "rt"].into_iter().enumerate() {
             let Some(part) = el.children().find(|c| is_w(*c, name)) else { continue };
             for run in part.descendants().filter(|d| is_w(*d, "r")) {
                 let rpr = run.children().find(|c| is_w(*c, "rPr"));
-                let mut xml = rpr.map(|n| text[n.range()].to_string());
+                let xml = rpr.map(|n| &text[n.range()]);
+                let mut direct = RunDirect::from_xml(xml, cx);
                 let old = if k == 0 { &r.base } else { &r.text };
                 // Runs with text, new properties going before their first child
                 let first = run.children().find(|c| is_w(*c, "t")).and_then(|_| run.first_child());
                 if let Some((edit, _)) = edit.filter(|e| k == 0 || e.1)
                     && let Some(first) = first
                     && let Some((_, old)) = old.get(parts[k].len()).or(old.last())
+                    && let Some(d) = edit(&direct, old)
                 {
-                    let now = edit(xml.as_deref(), old);
-                    if now != xml {
+                    let now = d.xml(&res.styles.colours, cx);
+                    if now.as_deref() != xml {
                         let at = match rpr {
                             Some(n) => n.range().start - off..n.range().end - off,
                             None => first.range().start - off..first.range().start - off,
                         };
-                        splices.push((at, now.clone().unwrap_or_default()));
-                        xml = now;
+                        let now = now.map(std::borrow::Cow::into_owned);
+                        direct = RunDirect::from_xml(now.as_deref(), cx);
+                        splices.push((at, now.unwrap_or_default()));
                     }
                 }
                 for t in run.children().filter(|c| is_w(*c, "t")) {
-                    parts[k].push((t.text().unwrap_or_default().to_string(), xml.clone()));
+                    parts[k].push((t.text().unwrap_or_default().to_string(), direct.clone()));
                 }
             }
         }
         (splices, parts)
     })?;
-    let again = |old: &[(String, Run)], new: Vec<(String, Option<String>)>| -> Vec<(String, Run)> {
+    let typed = run_xml::base(base);
+    let again = |old: &[(String, Run)], new: Vec<(String, RunDirect)>| -> Vec<(String, Run)> {
         new.into_iter()
             .enumerate()
-            .map(|(k, (t, rpr))| {
+            .map(|(k, (t, direct))| {
                 let run = match old.get(k) {
-                    Some((_, o)) => run_xml::rerun_xml(res, base, o, rpr.as_deref(), cx),
-                    None => run_xml::run_from_xml(res, base, rpr.as_deref(), cx),
+                    Some((_, o)) => run_xml::again(res, &typed, o, direct),
+                    None => Rc::new(run_xml::resolve(res, &typed, direct, false)),
                 };
                 (t, run)
             })
@@ -666,29 +668,13 @@ impl Editor {
         out
     }
 
-    pub(super) fn format_runs(&mut self, label: &'static str, edit: &dyn Fn(&mut Props, &str, &RunStyle), fonts: &Fonts) -> Outcome {
-        self.format_runs_settled(label, edit, &|_, _, _| false, fonts)
-    }
-
-    /// [`Editor::format_runs`], then `settle` sees each run as `edit` leaves it (its styles under it) and may change
-    /// its properties again, returning whether it did. A style being formatted is edited alone.
-    pub(super) fn format_runs_settled(
-        &mut self,
-        label: &'static str,
-        edit: &dyn Fn(&mut Props, &str, &RunStyle),
-        settle: &dyn Fn(&mut Props, &str, &RunStyle) -> bool,
-        fonts: &Fonts,
-    ) -> Outcome {
-        self.format_runs_by(label, RunEdit::Xml(edit, settle), fonts)
-    }
-
     /// Formats the selected runs with a typed edit of their authored properties.
     pub(super) fn format_runs_typed(&mut self, label: &'static str, edit: &dyn Fn(&mut CharEdit, &RunStyle), fonts: &Fonts) -> Outcome {
-        self.format_runs_by(label, RunEdit::Typed(edit, &|_, _| false), fonts)
+        self.format_runs_typed_settled(label, edit, &|_, _| false, fonts)
     }
 
-    /// [`Editor::format_runs_typed`], then `settle` sees each run as `edit` leaves it and may change its properties
-    /// again, returning whether it did, as [`Editor::format_runs_settled`] does.
+    /// [`Editor::format_runs_typed`], then `settle` sees each run as `edit` leaves it (its styles under it) and may
+    /// change its properties again, returning whether it did. A style being formatted is edited alone.
     pub(super) fn format_runs_typed_settled(
         &mut self,
         label: &'static str,
@@ -696,61 +682,19 @@ impl Editor {
         settle: &dyn Fn(&mut CharEdit, &RunStyle) -> bool,
         fonts: &Fonts,
     ) -> Outcome {
-        self.format_runs_by(label, RunEdit::Typed(edit, settle), fonts)
-    }
-
-    fn format_runs_by(&mut self, label: &'static str, how: RunEdit, fonts: &Fonts) -> Outcome {
-        if self.label_target.is_some() || self.style_target.is_some() {
-            let label = self.label_target.is_some();
-            return match how {
-                RunEdit::Xml(edit, settle) if label => self.format_label_part(edit, settle),
-                RunEdit::Xml(edit, _) => self.format_style_part("rPr", &|p, cx, _, run| edit(p, &cx.w, run)),
-                RunEdit::Typed(edit, settle) => {
-                    let colours = self.doc.resolver.as_deref().map_or_else(Default::default, |r| r.styles.colours);
-                    if label {
-                        let edit = |p: &mut Props, w: &str, run: &RunStyle| {
-                            as_typed(p, &colours, &cx_in(w), |q| {
-                                edit(q, run);
-                                true
-                            });
-                        };
-                        let settle = |p: &mut Props, w: &str, run: &RunStyle| as_typed(p, &colours, &cx_in(w), |q| settle(q, run));
-                        self.format_label_part(&edit, &settle)
-                    } else {
-                        self.format_style_part("rPr", &|p, cx, _, run| {
-                            as_typed(p, &colours, cx, |q| {
-                                edit(q, run);
-                                true
-                            });
-                        })
-                    }
-                }
-            };
+        if self.label_target.is_some() {
+            return self.format_label_part(edit, settle);
+        }
+        if self.style_target.is_some() {
+            return self.format_style_rpr(edit);
         }
         if self.refuse_expanded() || self.refuse_locked_content() {
             return Outcome::Unchanged("locked");
         }
         let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
         let cx = self.cx();
-        let w = cx.w.clone();
         // A style separator mark keeps its flags
-        let rpr = |xml: Option<&str>, run: &RunStyle, base: &RunProps, mark: bool| -> Option<String> {
-            let RunEdit::Xml(edit, settle) = how else { return None };
-            let mut p = Props::parse(xml, "rPr", &cx);
-            let sep = mark && p.get("specVanish").is_some() && xml.is_some_and(|x| crate::docx::write::props::flag_of(x, "specVanish"));
-            let flags = sep.then(|| ["vanish", "specVanish"].map(|k| p.get(k).map(str::to_string)));
-            edit(&mut p, &w, run);
-            for (k, x) in ["vanish", "specVanish"].into_iter().zip(flags.into_iter().flatten()) {
-                if let Some(x) = x {
-                    p.set(k, x);
-                }
-            }
-            let new = run_xml::rerun_xml(&res, base, run, p.xml().as_deref(), &cx);
-            settle(&mut p, &w, &new);
-            p.xml()
-        };
         let typed = |direct: &RunDirect, run: &RunStyle, base: &CharProps, mark: bool| -> RunDirect {
-            let RunEdit::Typed(edit, settle) = how else { return direct.clone() };
             let mut e = CharEdit::new(direct.props().map_or_else(CharProps::default, |p| (**p).clone()));
             let sep = (mark && direct.spec_vanish()).then(|| separator(&e));
             edit(&mut e, run);
@@ -762,24 +706,8 @@ impl Editor {
             direct.edit(e)
         };
         let patch_as = |run: &RunStyle, base: &RunProps, mark: bool| -> Run {
-            match how {
-                RunEdit::Xml(..) => {
-                    run_xml::rerun_xml(&res, base, run, rpr(run_xml::rpr(&res, run, &cx).as_deref(), run, base, mark).as_deref(), &cx)
-                }
-                RunEdit::Typed(..) => {
-                    let base = run_xml::base(base);
-                    run_xml::again(&res, &base, run, typed(&run.direct, run, &base, mark))
-                }
-            }
-        };
-        let ruby_rpr = |xml: Option<&str>, run: &RunStyle, base: &RunProps| -> Option<String> {
-            match how {
-                RunEdit::Xml(..) => rpr(xml, run, base, false),
-                RunEdit::Typed(..) => {
-                    let direct = RunDirect::from_xml(xml, &cx);
-                    typed(&direct, run, &run_xml::base(base), false).xml(&res.styles.colours, &cx).map(std::borrow::Cow::into_owned)
-                }
-            }
+            let base = run_xml::base(base);
+            run_xml::again(&res, &base, run, typed(&run.direct, run, &base, mark))
         };
         let patch = |run: &RunStyle, base: &RunProps| patch_as(run, base, false);
         let mut ranges: Vec<(ParaId, Unit, Unit)> = Vec::new();
@@ -845,7 +773,8 @@ impl Editor {
                         with.push(Inline::Text(part, new));
                     }
                     Inline::Ruby(r, _) => {
-                        let edit = |xml: Option<&str>, run: &RunStyle| ruby_rpr(xml, run, base);
+                        let typed_base = run_xml::base(base);
+                        let edit = |d: &RunDirect, run: &RunStyle| Some(typed(d, run, &typed_base, false));
                         with.push(Inline::Ruby(ruby_again(r, base, Some((&edit, false)), &res, &cx).unwrap_or_else(|| r.clone()), new));
                     }
                     other => with.push(with_run(other, &new)),
@@ -1225,11 +1154,7 @@ impl Editor {
     /// removed, and its paragraphs' direct formatting, the paragraphs in the default paragraph style. One undo step.
     pub fn clear_all_formatting(&mut self, fonts: &Fonts) -> Outcome {
         self.joined("Clear Formatting", fonts, |e| {
-            let runs = e.format_runs(
-                "Clear Formatting",
-                &|p, _, _| p.kids.retain(|(n, _)| matches!(n.as_str(), "highlight" | "ins" | "del" | "moveFrom" | "moveTo" | "rPrChange")),
-                fonts,
-            );
+            let runs = e.format_runs_typed("Clear Formatting", &|p, _| p.props = highlight_alone(&p.props), fonts);
             if matches!(runs, Outcome::Refused(_)) {
                 return runs;
             }

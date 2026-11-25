@@ -340,6 +340,33 @@ fn the_format_painter_takes_part_of_a_paragraphs_style_formatting() {
 }
 
 #[test]
+fn the_format_painter_writes_what_it_took_as_it_was_written() {
+    let styles = concat!(
+        r#"<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>"#,
+        r#"<w:style w:type="paragraph" w:styleId="Odd"><w:name w:val="Odd"/><w:basedOn w:val="Normal"/><w:rPr><w:b w:val="1"/><w:eastAsianLayout w:id="7"/></w:rPr></w:style>"#,
+    );
+    let own = r#"<w:rPr><w:b w:val="true"/><w:snapToGrid w:val="0"/><w:color w:val="c00000"/></w:rPr>"#;
+    let body = format!(
+        r#"<w:p><w:r>{own}<w:t>source</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Odd"/></w:pPr><w:r><w:rPr><w:color w:val="00b050"/></w:rPr><w:t>styled</w:t></w:r></w:p><w:p><w:r><w:rPr><w:i/><w:color w:val="0000FF"/></w:rPr><w:t>target</w:t></w:r></w:p>"#
+    );
+    let mut e = super::style_model::open_pkg(&super::style_model::pkg(styles, &body));
+    let ids = texts_ids(&e);
+    let paint = |e: &mut Editor, from: usize| {
+        let at = |u| Position::text(StoryId::Body, ids[from], Unit(u));
+        e.selection = Selection::range(at(0), at(2), Default::default());
+        e.execute(C::CopyFormatting, fonts());
+        let at = |u| Position::text(StoryId::Body, ids[2], Unit(u));
+        e.selection = Selection::range(at(0), at(6), Default::default());
+        e.execute(C::PasteFormatting, fonts());
+        let xml = doc_xml(e);
+        let at = xml.rfind("<w:rPr>").expect("the target's properties");
+        xml[at..at + xml[at..].find("</w:rPr>").expect("closed") + 8].to_string()
+    };
+    assert_eq!(paint(&mut e, 0), own, "a run's own as written");
+    assert_eq!(paint(&mut e, 1), r#"<w:rPr><w:b w:val="1"/><w:color w:val="00b050"/><w:eastAsianLayout w:id="7"/></w:rPr>"#, "with its style's");
+}
+
+#[test]
 fn the_format_painter_takes_a_whole_paragraphs_formatting_too() {
     let mut e = edit(
         r#"<w:p><w:pPr><w:jc w:val="center"/><w:spacing w:after="480"/></w:pPr><w:r><w:t>one</w:t></w:r></w:p><w:p><w:r><w:t>two</w:t></w:r></w:p><w:p><w:r><w:t>three</w:t></w:r></w:p>"#,

@@ -7,11 +7,10 @@ use crate::docx::Inline;
 use crate::docx::write::props::Props;
 use crate::docx::{RunStyle, ThemeFont, Underline};
 use crate::font::Fonts;
-use crate::format::{CharEdit, FontRef, Prop, ScriptClass, ThemeFace, UnderlineProps};
+use crate::format::{CharEdit, CharProps, FontRef, Prop, ScriptClass, ThemeFace, UnderlineProps};
 use crate::layout::Unit;
 
 use super::Outcome;
-use crate::docx::run_xml;
 use crate::editing::format::{Format, Toggle};
 use crate::editing::step::Step;
 use crate::editing::{Editor, Tx};
@@ -678,18 +677,16 @@ impl Editor {
         let whole = collapsed || !self.selected_marks(&ranges).is_empty();
         let Some(p) = self.index.para(&self.doc, para) else { return Outcome::unavailable("no paragraph") };
         // Formatting, not what the text is: its revisions, section and mark
-        let strip = |x: Option<&str>, part: &str, drop: &[&str]| {
-            let mut props = Props::parse(x, part, &cx);
-            props.kids.retain(|(n, _)| !drop.contains(&n.as_str()));
-            props
-        };
-        let own = run.as_ref().and_then(|r| run_xml::rpr(&res, r, &cx));
-        let mut rpr = strip(own.as_deref(), "rPr", &["ins", "del", "moveFrom", "moveTo", "rPrChange"]);
-        if !whole && rpr.get("rStyle").is_none() {
-            paragraph_style_rpr(&res.styles, p.style.style_id.as_deref(), &mut rpr, &cx);
+        let mut own = run.as_ref().and_then(|r| r.direct.props()).map_or_else(CharProps::default, |p| (**p).clone());
+        if !whole && own.style.is_none() {
+            own = paragraph_style_props(&res.styles, p.style.style_id.as_deref(), own, &cx);
         }
-        let ppr = whole.then(|| strip(p.style.direct.0.as_deref(), "pPr", &["sectPr", "rPr", "pPrChange"]).xml());
-        self.painter = Some((rpr.xml(), ppr));
+        let ppr = whole.then(|| {
+            let mut props = Props::parse(p.style.direct.0.as_deref(), "pPr", &cx);
+            props.kids.retain(|(n, _)| !["sectPr", "rPr", "pPrChange"].contains(&n.as_str()));
+            props.xml()
+        });
+        self.painter = Some((std::rc::Rc::new(own), ppr));
         self.painter_claim = Some(None);
         Outcome::Moved
     }
@@ -740,24 +737,13 @@ impl Editor {
     /// Gives the selection the held formatting in place of its own: its runs' (the word at a collapsed caret), and its
     /// paragraphs' when the painter took a paragraph's. One undo step.
     pub(in crate::editing) fn paste_formatting(&mut self, fonts: &Fonts) -> Outcome {
-        use crate::docx::write::props::{PPR, RPR};
-        let Some((rpr, ppr)) = self.painter.clone() else { return Outcome::unavailable("no formatting held") };
+        use crate::docx::write::props::PPR;
+        let Some((held, ppr)) = self.painter.clone() else { return Outcome::unavailable("no formatting held") };
         let Some(res) = self.doc.resolver.clone() else { return Outcome::unavailable("no styles") };
         let cx = res.styles.cx();
-        let held = Props::parse(rpr.as_deref(), "rPr", &cx);
         let held_ppr = ppr.map(|x| Props::parse(x.as_deref(), "pPr", &cx));
         self.joined("Paste Formatting", fonts, |e| {
-            let runs = e.format_runs(
-                "Paste Formatting",
-                &|p, _, _| {
-                    p.kids.retain(|(n, _)| matches!(n.as_str(), "ins" | "del" | "moveFrom" | "moveTo" | "rPrChange"));
-                    for (n, x) in &held.kids {
-                        p.set(n, x.clone());
-                    }
-                    p.reorder(RPR);
-                },
-                fonts,
-            );
+            let runs = e.format_runs_typed("Paste Formatting", &|p, _| p.props = (*held).clone(), fonts);
             let Some(held) = &held_ppr else { return runs };
             if matches!(runs, Outcome::Refused(_)) {
                 return runs;
@@ -777,26 +763,24 @@ impl Editor {
     }
 }
 
-/// Paragraph style `style`'s character formatting under the direct formatting `rpr`: its linked character style, else
+/// Paragraph style `style`'s character formatting under the direct formatting `own`: its linked character style, else
 /// the run properties of it and its bases.
-fn paragraph_style_rpr(styles: &crate::docx::styles::Styles, style: Option<&str>, rpr: &mut Props, cx: &crate::docx::write::props::Cx) {
+fn paragraph_style_props(styles: &crate::docx::styles::Styles, style: Option<&str>, own: CharProps, cx: &crate::docx::write::props::Cx) -> CharProps {
     use crate::docx::styles::StyleKind;
     let style = styles.paragraph_style(style);
     let linked = style.and_then(|id| styles.get(id)?.link.as_deref()).filter(|l| styles.get(l).is_some_and(|c| c.kind == StyleKind::Character));
     if let Some(l) = linked {
-        let w = &cx.w;
-        rpr.set("rStyle", format!("<{w}rStyle {w}val=\"{}\"/>", crate::docx::write::props::esc(l)));
-        return;
+        return CharProps { style: Some(l.into()), ..own };
     }
-    let direct: Vec<String> = rpr.kids.iter().map(|(n, _)| n.clone()).collect();
+    // Nearer styles over their bases
+    let mut under = CharProps::default();
     for s in styles.chain(style) {
-        let Some(own) = Props::parse(Some(&s.raw), "style", cx).get("rPr").map(str::to_string) else { continue };
-        for (n, x) in Props::parse(Some(&own), "rPr", cx).kids {
-            if !direct.contains(&n) && !matches!(n.as_str(), "rStyle" | "rPrChange") {
-                rpr.set(&n, x);
-            }
+        let rpr = cx.parse(&s.raw, |_, el| crate::docx::xml::child(el, "rPr").map(|r| crate::docx::char_props::parse(r).0));
+        if let Some(q) = rpr.flatten() {
+            under = crate::docx::char_props::over(&q, &under);
         }
     }
+    crate::docx::char_props::over(&own, &under)
 }
 
 fn recase(text: &str, to: CaseChange, word: &mut bool, sentence: &mut bool) -> String {

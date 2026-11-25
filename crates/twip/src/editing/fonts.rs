@@ -9,7 +9,7 @@ use crate::layout::{ParaId, Unit};
 
 use super::Editor;
 use super::commands::Outcome;
-use super::format::{edit_rpr_xml, with_run};
+use super::format::with_run;
 use super::step::Step;
 use crate::docx::run_xml;
 
@@ -147,9 +147,7 @@ impl Editor {
                 let symbol = matches!(i, Inline::Sym { font, .. } if own && font.eq_ignore_ascii_case(&r.from));
                 let ruby = match i {
                     Inline::Ruby(ruby, _) => {
-                        let edit = |xml: Option<&str>, run: &RunStyle| {
-                            edit_rpr_xml(xml, &res.styles.colours, &cx, |p| styled(run, r) && patch(p, run, r, filtered))
-                        };
+                        let edit = super::format::ruby_edit(|p, run| styled(run, r) && patch(p, run, r, filtered));
                         super::format::ruby_again(ruby, base, Some((&edit, true)), &res, &cx)
                     }
                     _ => None,

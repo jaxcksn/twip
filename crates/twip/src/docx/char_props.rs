@@ -1309,6 +1309,43 @@ fn drop_replaced(was: &CharProps, p: &mut CharProps, set: &[Set]) {
     }
 }
 
+/// `p` over `q` a child at a time, as a source format writes them: each child `q` writes and `p` doesn't, with what `q`
+/// keeps beside it; `q`'s character style aside.
+pub fn over(p: &CharProps, q: &CharProps) -> CharProps {
+    let cx = Cx::of_xml(&format!("<w:document xmlns:w=\"{W}\" xmlns:w14=\"{W14}\">"));
+    let colours = ThemeColours::default();
+    let mut out = Out { s: String::new(), cx: &cx, colours: &colours, w14: "w14:".into(), w14_decl: "", declared: Vec::new(), renamed: Vec::new() };
+    let mut writes = |x: &CharProps, key: &'static str| {
+        out.modelled(x, key);
+        !std::mem::take(&mut out.s).is_empty()
+    };
+    let mut r = CharProps { style: None, foreign: None, ..q.clone() };
+    r.merge(p);
+    // Fonts and languages: one child each
+    if writes(p, "rFonts") {
+        (r.fonts, r.hint) = (p.fonts.clone(), p.hint);
+    }
+    if writes(p, "lang") {
+        r.lang = p.lang.clone();
+    }
+    (r.east_asian_below, r.east_asian_theme) = (None, None);
+    let theirs: Vec<&'static str> = RPR.iter().copied().filter(|k| !is_revision(k) && *k != "rStyle" && !writes(p, k) && writes(q, k)).collect();
+    let of_theirs = |n: &QName| rank_of(&n.ns, &n.local).is_some_and(|k| theirs.contains(&RPR[k]));
+    let (mine, other) = (p.foreign.as_deref(), q.foreign.as_deref());
+    if let Some(o) = other {
+        let mut f = mine.cloned().unwrap_or_default();
+        let named = |c: &ForeignChild| f.children.iter().any(|m| m.name == c.name);
+        let children: Vec<ForeignChild> = o.children.iter().filter(|c| !named(c)).cloned().collect();
+        f.children.extend(children);
+        f.attributes.extend(o.attributes.iter().filter(|a| a.on.as_ref().is_some_and(of_theirs)).cloned());
+        f.kept.extend(o.kept.iter().filter(|c| of_theirs(&c.name)).cloned());
+        r.foreign = (f != ForeignProps::default()).then(|| Rc::new(f));
+    } else {
+        r.foreign = p.foreign.clone();
+    }
+    r
+}
+
 /// A child's key among a properties element's ([`super::write::props::Props`]): its local name in WordprocessingML,
 /// Word 2010's and 2012's with their prefix, any other with its namespace.
 fn props_key(name: &QName) -> String {

@@ -3,10 +3,12 @@
 use crate::api::command::Command;
 use crate::docx::char_props::RunDirect;
 use crate::docx::resolve::Resolver;
-use crate::docx::write::props::{Cx, Props, RPR};
+use crate::docx::write::props::{Cx, Props};
 use crate::docx::{Run, RunStyle};
 use crate::font::Fonts;
-use crate::format::CharProps;
+use crate::format::{CharEdit, CharProps};
+
+use super::format::edit_rpr_xml;
 use crate::layout::{ParaId, Unit};
 
 use super::Editor;
@@ -228,18 +230,19 @@ impl Editor {
     /// Runs a character formatting command's edit on the number formatting being formatted ([`LabelTarget`]).
     pub(super) fn format_label_part(
         &mut self,
-        edit: &dyn Fn(&mut Props, &str, &RunStyle),
-        settle: &dyn Fn(&mut Props, &str, &RunStyle) -> bool,
+        edit: &dyn Fn(&mut CharEdit, &RunStyle),
+        settle: &dyn Fn(&mut CharEdit, &RunStyle) -> bool,
     ) -> Outcome {
         let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
         let Some(t) = self.label_target.as_deref_mut() else { return Outcome::Unchanged("no list number") };
-        let w = t.cx.w.clone();
-        let mut p = Props::parse(t.rpr.as_deref(), "rPr", &t.cx);
-        edit(&mut p, &w, &t.run(&res, t.rpr.as_deref()));
-        let new = t.run(&res, p.xml().as_deref());
-        settle(&mut p, &w, &new);
-        p.reorder(RPR);
-        t.rpr = p.xml();
+        let (colours, cx) = (res.styles.colours, super::format::cx_in(&t.cx.w));
+        let run = t.run(&res, t.rpr.as_deref());
+        let edited = edit_rpr_xml(t.rpr.as_deref(), &colours, &cx, |e| {
+            edit(e, &run);
+            true
+        });
+        let new = t.run(&res, edited.as_deref());
+        t.rpr = edit_rpr_xml(edited.as_deref(), &colours, &cx, |e| settle(e, &new));
         Outcome::Moved
     }
 }
