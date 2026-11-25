@@ -2986,14 +2986,14 @@ impl Reader {
             _ => HorizontalRelation::Column,
         };
         let v_relative = match st.v_relative.as_deref() {
-            Some("margin") => "margin",
-            Some("page") => "page",
-            Some("line") => "line",
-            Some("top-margin-area") => "topMargin",
-            Some("bottom-margin-area") => "bottomMargin",
-            Some("inner-margin-area") => "insideMargin",
-            Some("outer-margin-area") => "outsideMargin",
-            _ => "paragraph",
+            Some("margin") => VerticalRelation::Margin,
+            Some("page") => VerticalRelation::Page,
+            Some("line") => VerticalRelation::Line,
+            Some("top-margin-area") => VerticalRelation::TopMargin,
+            Some("bottom-margin-area") => VerticalRelation::BottomMargin,
+            Some("inner-margin-area") => VerticalRelation::InsideMargin,
+            Some("outer-margin-area") => VerticalRelation::OutsideMargin,
+            _ => VerticalRelation::Paragraph,
         };
         let (wrap, side) = v.wrap.unwrap_or_default();
         let wrap = super::anchor::wrap(&wrap);
@@ -3032,7 +3032,7 @@ impl Reader {
                 h_relative,
                 h_align,
                 h_offset: twips(st.x),
-                v_relative: v_relative.into(),
+                v_relative,
                 v_align,
                 v_offset: twips(st.y),
                 wrap,
@@ -3114,7 +3114,8 @@ impl Reader {
         let (h_rel, h_align, mut h_off) = position(pos("positionH"));
         let (v_rel, v_align, mut v_off) = position(pos("positionV"));
         let mut h_rel = h_rel.map_or(HorizontalRelation::Column, super::anchor::h_relative);
-        let mut v_rel = v_rel.unwrap_or("column").to_string();
+        // No vertical `relativeFrom` is as an unrecognised one.
+        let mut v_rel = v_rel.map_or(VerticalRelation::Unrecognised, super::anchor::v_relative);
         let (h_align, v_align) = (h_align.map(str::to_string), v_align.map(super::anchor::v_align));
         if item.attribute("simplePos").is_some_and(|v| on_off_str(Some(v))) {
             let sp = pos("simplePos");
@@ -3123,7 +3124,7 @@ impl Reader {
                 (h_rel, h_off) = (HorizontalRelation::Page, at("x"));
             }
             if v_align.is_none() {
-                (v_rel, v_off) = ("page".into(), at("y"));
+                (v_rel, v_off) = (VerticalRelation::Page, at("y"));
             }
         }
         let wrap_el = item.children().find(|c| {

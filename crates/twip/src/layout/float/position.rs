@@ -1,7 +1,7 @@
 //! Float positioning
 
 use crate::docx::Compat;
-use crate::docx::model::{Float, FloatWrap, HorizontalRelation, VerticalAlign};
+use crate::docx::model::{Float, FloatWrap, HorizontalRelation, VerticalAlign, VerticalRelation};
 
 use super::Frames;
 
@@ -77,15 +77,15 @@ fn h_ref(f: &Float, fr: &Frames) -> HorizontalRelation {
     }
 }
 
-fn v_ref<'a>(f: &'a Float, fr: &Frames) -> &'a str {
-    match (f.v_relative.as_str(), fr.odd) {
-        ("insideMargin", true) => "topMargin",
-        ("insideMargin", false) => "bottomMargin",
-        ("outsideMargin", odd) => {
+fn v_ref(f: &Float, fr: &Frames) -> VerticalRelation {
+    match (f.v_relative, fr.odd) {
+        (VerticalRelation::InsideMargin, true) => VerticalRelation::TopMargin,
+        (VerticalRelation::InsideMargin, false) => VerticalRelation::BottomMargin,
+        (VerticalRelation::OutsideMargin, odd) => {
             if odd == (fr.compat == Compat::Generic) {
-                "bottomMargin"
+                VerticalRelation::BottomMargin
             } else {
-                "topMargin"
+                VerticalRelation::TopMargin
             }
         }
         (r, _) => r,
@@ -122,13 +122,13 @@ fn h_box(href: HorizontalRelation, fr: &Frames) -> (f64, f64) {
 }
 
 /// The top of vertical reference `vref`'s box and its height (none for the paragraph and the line).
-fn v_box(vref: &str, fr: &Frames, para_top: f64, line_top: f64) -> (f64, f64) {
+fn v_box(vref: VerticalRelation, fr: &Frames, para_top: f64, line_top: f64) -> (f64, f64) {
     match vref {
-        "page" => (0.0, fr.page_h),
-        "margin" => (fr.margin[2], fr.page_h - fr.margin[2] - fr.margin[3]),
-        "topMargin" => (0.0, fr.margin[2]),
-        "bottomMargin" => (fr.page_h - fr.margin[3], fr.margin[3]),
-        "line" => (line_top, 0.0),
+        VerticalRelation::Page => (0.0, fr.page_h),
+        VerticalRelation::Margin => (fr.margin[2], fr.page_h - fr.margin[2] - fr.margin[3]),
+        VerticalRelation::TopMargin => (0.0, fr.margin[2]),
+        VerticalRelation::BottomMargin => (fr.page_h - fr.margin[3], fr.margin[3]),
+        VerticalRelation::Line => (line_top, 0.0),
         _ => (para_top, 0.0),
     }
 }
@@ -184,18 +184,24 @@ pub fn v_pos(f: &Float, h: f64, fr: &Frames, para_top: f64, line_top: f64) -> f6
     // reference but the line and the paragraph.
     if fr.cell && f.v_align.is_some() {
         return match vref {
-            "line" => line_top,
-            "paragraph" => para_top,
+            VerticalRelation::Line => line_top,
+            VerticalRelation::Paragraph => para_top,
             _ => fr.margin[2],
         };
     }
     let (y0, ht) = v_box(vref, fr, para_top, line_top);
     if let Some(p) = f.relative.pos[1].filter(|_| !fr.cell) {
-        let base = if matches!(vref, "page" | "margin" | "topMargin" | "bottomMargin") { ht } else { fr.page_h - fr.margin[2] - fr.margin[3] };
+        let base = if matches!(vref, VerticalRelation::Page | VerticalRelation::Margin | VerticalRelation::TopMargin | VerticalRelation::BottomMargin)
+        {
+            ht
+        } else {
+            fr.page_h - fr.margin[2] - fr.margin[3]
+        };
         return y0 + if f.poly.is_none() { f.effect[1] } else { 0.0 } + share(base, p);
     }
     match vref {
-        "page" | "margin" | "topMargin" | "bottomMargin" | "line" => {}
+        VerticalRelation::Page | VerticalRelation::Margin | VerticalRelation::TopMargin | VerticalRelation::BottomMargin | VerticalRelation::Line => {
+        }
         _ if f.v_align.is_some() => return para_top,
         _ => return para_top + f.v_offset + if grown(f, fr)[1] && f.poly.is_none() { f.effect[1] } else { 0.0 },
     }
@@ -224,7 +230,7 @@ pub fn page_clamp(f: &Float, (x, y): (f64, f64), h: f64, fr: &Frames) -> (f64, f
     if fr.compat != Compat::Legacy
         || fr.cell
         || f.wrap == FloatWrap::None
-        || !(f.h_relative == HorizontalRelation::Column || f.v_relative == "paragraph")
+        || !(f.h_relative == HorizontalRelation::Column || f.v_relative == VerticalRelation::Paragraph)
     {
         return (x, y);
     }

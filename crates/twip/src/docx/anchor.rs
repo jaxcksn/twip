@@ -1,6 +1,6 @@
 //! Float anchoring and wrapping: the DOCX literals of the model's values
 
-use super::model::{FloatWrap, HorizontalRelation, VerticalAlign, WrapText};
+use super::model::{FloatWrap, HorizontalRelation, VerticalAlign, VerticalRelation, WrapText};
 
 /// `wrapText`, or a VML wrap's `side`; anything else wraps both sides.
 pub fn wrap_text(s: &str) -> WrapText {
@@ -92,5 +92,34 @@ pub fn h_relative_name(r: HorizontalRelation) -> &'static str {
         HorizontalRelation::RightMargin => "rightMargin",
         HorizontalRelation::InsideMargin => "insideMargin",
         HorizontalRelation::OutsideMargin => "outsideMargin",
+    }
+}
+
+/// `relativeFrom` in `wp:positionV`.
+pub fn v_relative(s: &str) -> VerticalRelation {
+    match s {
+        "margin" => VerticalRelation::Margin,
+        "page" => VerticalRelation::Page,
+        "paragraph" => VerticalRelation::Paragraph,
+        "line" => VerticalRelation::Line,
+        "topMargin" => VerticalRelation::TopMargin,
+        "bottomMargin" => VerticalRelation::BottomMargin,
+        "insideMargin" => VerticalRelation::InsideMargin,
+        "outsideMargin" => VerticalRelation::OutsideMargin,
+        _ => VerticalRelation::Unrecognised,
+    }
+}
+
+/// The `relativeFrom` literal of `r`; an unrecognised one is written as the paragraph it is measured down from.
+pub fn v_relative_name(r: VerticalRelation) -> &'static str {
+    match r {
+        VerticalRelation::Margin => "margin",
+        VerticalRelation::Page => "page",
+        VerticalRelation::Paragraph | VerticalRelation::Unrecognised => "paragraph",
+        VerticalRelation::Line => "line",
+        VerticalRelation::TopMargin => "topMargin",
+        VerticalRelation::BottomMargin => "bottomMargin",
+        VerticalRelation::InsideMargin => "insideMargin",
+        VerticalRelation::OutsideMargin => "outsideMargin",
     }
 }

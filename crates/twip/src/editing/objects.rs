@@ -1,7 +1,7 @@
 //! Object selection
 
-use crate::api::value::{HorizontalReference, ObjectVerticalAlignment, ObjectWrap, WrapSide};
-use crate::docx::{FloatWrap, HorizontalRelation, Inline, VerticalAlign, WrapText};
+use crate::api::value::{HorizontalReference, ObjectVerticalAlignment, ObjectWrap, VerticalReference, WrapSide};
+use crate::docx::{FloatWrap, HorizontalRelation, Inline, VerticalAlign, VerticalRelation, WrapText};
 use crate::font::Fonts;
 use crate::layout::{FloatId, Unit};
 
@@ -859,7 +859,7 @@ impl Editor {
             h_relative: HorizontalRelation::Column,
             h_align: None,
             h_offset: 0.0,
-            v_relative: "paragraph".into(),
+            v_relative: VerticalRelation::Paragraph,
             v_align: None,
             v_offset: 0.0,
             wrap: FloatWrap::None,
@@ -1077,7 +1077,16 @@ impl Editor {
             };
         }
         if let Some(v) = p.vertical {
-            n.v_relative = ooxml(v.relative_to);
+            n.v_relative = match v.relative_to {
+                VerticalReference::Paragraph => VerticalRelation::Paragraph,
+                VerticalReference::Line => VerticalRelation::Line,
+                VerticalReference::Margin => VerticalRelation::Margin,
+                VerticalReference::Page => VerticalRelation::Page,
+                VerticalReference::TopMargin => VerticalRelation::TopMargin,
+                VerticalReference::BottomMargin => VerticalRelation::BottomMargin,
+                VerticalReference::InsideMargin => VerticalRelation::InsideMargin,
+                VerticalReference::OutsideMargin => VerticalRelation::OutsideMargin,
+            };
             n.relative.pos[1] = v.percent.map(|p| (p * 10.0).round() as i64);
             (n.v_align, n.v_offset) = match (v.align, v.offset) {
                 (Some(a), _) => (
@@ -1155,7 +1164,16 @@ impl Editor {
                 percent: fl.relative.pos[0].map(|t| t as f64 / 10.0),
             },
             vertical: VerticalPosition {
-                relative_to: from_ooxml(&fl.v_relative),
+                relative_to: match fl.v_relative {
+                    VerticalRelation::Paragraph | VerticalRelation::Unrecognised => VerticalReference::Paragraph,
+                    VerticalRelation::Line => VerticalReference::Line,
+                    VerticalRelation::Margin => VerticalReference::Margin,
+                    VerticalRelation::Page => VerticalReference::Page,
+                    VerticalRelation::TopMargin => VerticalReference::TopMargin,
+                    VerticalRelation::BottomMargin => VerticalReference::BottomMargin,
+                    VerticalRelation::InsideMargin => VerticalReference::InsideMargin,
+                    VerticalRelation::OutsideMargin => VerticalReference::OutsideMargin,
+                },
                 align: fl.v_align.map(|a| match a {
                     VerticalAlign::Top => ObjectVerticalAlignment::Top,
                     VerticalAlign::Center => ObjectVerticalAlignment::Center,
@@ -1244,7 +1262,7 @@ impl Editor {
             h_relative: HorizontalRelation::Column,
             h_align: None,
             h_offset: 0.0,
-            v_relative: "paragraph".into(),
+            v_relative: VerticalRelation::Paragraph,
             v_align: None,
             v_offset: 0.0,
             wrap,
@@ -1385,7 +1403,7 @@ impl Editor {
             let twips = |v: f64| (v * 20.0).trunc() / 20.0;
             let offset = d.region.inverse().along(d.offset);
             fl.h_offset = twips(fl.h_offset + offset[0]);
-            if !matches!(fl.v_relative.as_str(), "paragraph" | "line") {
+            if !matches!(fl.v_relative, VerticalRelation::Paragraph | VerticalRelation::Line) {
                 fl.v_offset = twips(fl.v_offset + offset[1]);
             }
         }
@@ -1453,7 +1471,7 @@ impl Editor {
             return None;
         }
         let (dest, top, region) = self.anchor_at(page, anchor, new).filter(|&(p, ..)| p != anchor)?;
-        if matches!(fl.v_relative.as_str(), "paragraph" | "line") {
+        if matches!(fl.v_relative, VerticalRelation::Paragraph | VerticalRelation::Line) {
             fl.v_offset = ((region.inverse().rect(new)[1] - top) * 20.0).trunc() / 20.0;
             fl.v_align = None;
         }

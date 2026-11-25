@@ -281,9 +281,9 @@ impl Editor {
         }
         if !drop_cap && (moved.v_align != was.v_align || ne(moved.v_offset, was.v_offset) || moved.v_relative != was.v_relative) {
             p.vertical_align = None;
-            p.vertical_relative = match moved.v_relative.as_str() {
-                "margin" => FrameVerticalRelative::Margin,
-                "page" => FrameVerticalRelative::Page,
+            p.vertical_relative = match moved.v_relative {
+                crate::docx::VerticalRelation::Margin => FrameVerticalRelative::Margin,
+                crate::docx::VerticalRelation::Page => FrameVerticalRelative::Page,
                 _ => FrameVerticalRelative::Paragraph,
             };
             // From the text `w:y` is the place itself; from the page or margin it is one twip more.

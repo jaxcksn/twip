@@ -354,7 +354,8 @@ impl<'d> PageFill<'d, '_> {
         let stays = |a: &Placed| {
             leading(a)
                 && a.key.2 < lead_end
-                && (matches!(a.float.v_relative.as_str(), "page" | "margin") || col.bottom.holds(origin + a.rect[3] - a.rect[1]))
+                && (matches!(a.float.v_relative, VerticalRelation::Page | VerticalRelation::Margin)
+                    || col.bottom.holds(origin + a.rect[3] - a.rect[1]))
         };
         let placed_end = if lead_only { 0 } else { bands[take - 1].1.last().map_or(0, |l| l.end) };
         if !lead_only {
@@ -945,7 +946,7 @@ impl<'d> PageFill<'d, '_> {
             }
             let mut fy = float::v_pos(f, h, frames, para_top, line_top);
             // A frame from the text that would start above the page starts at its top.
-            if f.text_box.is_some() && f.shape.is_none() && f.v_relative == "paragraph" {
+            if f.text_box.is_some() && f.shape.is_none() && f.v_relative == VerticalRelation::Paragraph {
                 fy = fy.max(0.0);
             }
             // Compat ≤ 14: a drawing's page position in whole twips, for the collision with the lines above and the
@@ -971,7 +972,7 @@ impl<'d> PageFill<'d, '_> {
             // Compat 15 keeps the box with its effect extents (a VML shape's outline allowance too, not its
             // distances) on the page, its top no higher than the top margin.
             let mut clamped = None;
-            if compat == Compat::Generic && matches!(f.v_relative.as_str(), "paragraph" | "line") {
+            if compat == Compat::Generic && matches!(f.v_relative, VerticalRelation::Paragraph | VerticalRelation::Line) {
                 let top = frames.margin[2] + f.effect[1];
                 // A VML shape moved down by it reaches no further below its box than above it.
                 // ponytail: read off one shape moved by its top extent only; a shape from far above may differ.
@@ -988,7 +989,8 @@ impl<'d> PageFill<'d, '_> {
                     x -= (r - frames.page_w).min(l);
                 }
             }
-            if compat == Compat::Generic && matches!(f.v_relative.as_str(), "paragraph" | "line") && !col.bottom.holds(fy + h) {
+            if compat == Compat::Generic && matches!(f.v_relative, VerticalRelation::Paragraph | VerticalRelation::Line) && !col.bottom.holds(fy + h)
+            {
                 let up = col.bottom.to_pt() - h;
                 let anchor_bottom = line_top + bands[b].1[0].pitch;
                 if up >= anchor_bottom - EPS {
@@ -1063,7 +1065,7 @@ impl<'d> PageFill<'d, '_> {
         // A frame placed in the flow: compat ≤ 14 lays it out below an earlier frame whose box with its
         // distances it meets, from the nearest twip; compat 15 moves one that may not overlap only down.
         let frame = |o: &Placed| o.float.text_box.is_some() && o.float.shape.is_none();
-        let in_flow = frame(&a) && a.float.v_relative == "paragraph" && a.float.v_offset == 0.0;
+        let in_flow = frame(&a) && a.float.v_relative == VerticalRelation::Paragraph && a.float.v_offset == 0.0;
         let mut under = Vec::new();
         // Compat ≤ 14 places a frame that may not overlap, or any frame once the page holds one, at the nearest
         // twip, its height kept.
@@ -1116,7 +1118,7 @@ impl<'d> PageFill<'d, '_> {
                     // overlap: then it goes a twip above that frame's bottom, in whole twips. So does one that
                     // may not overlap a frame with its own offset from the text; below a frame in the flow it
                     // goes to its bottom at the nearest twip.
-                    let fixed = matches!(o.float.v_relative.as_str(), "page" | "margin");
+                    let fixed = matches!(o.float.v_relative, VerticalRelation::Page | VerticalRelation::Margin);
                     let offset = fixed || o.float.v_offset != 0.0 && !(a.allow_overlap && o.allow_overlap);
                     let y = match offset {
                         false => (o.rect[3] * 20.0).round() / 20.0,
@@ -1148,9 +1150,9 @@ impl<'d> PageFill<'d, '_> {
                     .known
                     .iter()
                     .any(|k| k.restarts && !frame(k) && k.wrap != Wrap::None && k.key.0 == a.key.0 && (k.key.1, k.key.2) > (a.key.1, a.key.2));
-        let down = match a.float.v_relative.as_str() {
-            "page" => (0.0, frames.page_h),
-            "margin" if frame(&a) => (frames.margin[2], frames.page_h - frames.margin[3]),
+        let down = match a.float.v_relative {
+            VerticalRelation::Page => (0.0, frames.page_h),
+            VerticalRelation::Margin if frame(&a) => (frames.margin[2], frames.page_h - frames.margin[3]),
             _ => (col.top.to_pt(), col.bottom.to_pt()),
         };
         if !restarted && !kept_at.contains(&a.key) && !float::avoid(&mut a, &others, across, down, compat) {

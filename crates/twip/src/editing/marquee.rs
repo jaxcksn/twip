@@ -208,7 +208,7 @@ impl Editor {
         // A place down from the paragraph (or its line) is from the new paragraph; one across from the column (or its
         // character) from the new paragraph's column. Both alignments go first: either changes where effect extents
         // fall on the other axis.
-        let v = matches!(fl.v_relative.as_str(), "paragraph" | "line");
+        let v = matches!(fl.v_relative, crate::docx::VerticalRelation::Paragraph | crate::docx::VerticalRelation::Line);
         let h = matches!(fl.h_relative, crate::docx::HorizontalRelation::Column | crate::docx::HorizontalRelation::Character) && frames.is_some();
         if v {
             (fl.v_align, fl.relative.pos[1]) = (None, None);

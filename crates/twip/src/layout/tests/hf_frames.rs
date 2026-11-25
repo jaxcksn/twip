@@ -66,14 +66,15 @@ fn frame_2_a_frame_without_v_anchor_is_relative_to_the_margin() {
     ]) else {
         return;
     };
-    let v: Vec<&str> = doc.sections[0]
+    let v: Vec<_> = doc.sections[0]
         .blocks
         .iter()
         .filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None })
         .flat_map(|p| p.inlines.iter())
-        .filter_map(|i| if let Inline::Float(f, _) = i { Some(f.v_relative.as_str()) } else { None })
+        .filter_map(|i| if let Inline::Float(f, _) = i { Some(f.v_relative) } else { None })
         .collect();
-    assert_eq!(v, ["margin", "paragraph", "paragraph"]);
+    use crate::docx::VerticalRelation as R;
+    assert_eq!(v, [R::Margin, R::Paragraph, R::Paragraph]);
 }
 
 #[test]

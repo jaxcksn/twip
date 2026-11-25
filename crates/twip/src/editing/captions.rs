@@ -423,7 +423,7 @@ impl Editor {
             h_relative: obj.h_relative,
             h_align: obj.h_align.clone(),
             h_offset: obj.h_offset,
-            v_relative: obj.v_relative.clone(),
+            v_relative: obj.v_relative,
             v_align: None,
             v_offset,
             wrap: obj.wrap,

@@ -350,9 +350,11 @@ fn move_floats(
                             let x = float::h_pos(f, fr) - offset.0;
                             // `paragraph` counts from the row's top (its top border included), whichever paragraph of the
                             // cell holds the anchor.
-                            let y = match f.v_relative.as_str() {
+                            let y = match f.v_relative {
                                 _ if pinned.contains_key(&float.0) => pinned[&float.0] - offset.1,
-                                "paragraph" | "line" => (if f.v_align.is_some() { 0.0 } else { f.v_offset }) - (offset.1 - top) - up,
+                                VerticalRelation::Paragraph | VerticalRelation::Line => {
+                                    (if f.v_align.is_some() { 0.0 } else { f.v_offset }) - (offset.1 - top) - up
+                                }
                                 _ => float::v_pos(f, rect[3] - rect[1], fr, 0.0, 0.0) - offset.1,
                             };
                             let d = (x - rect[0], y - rect[1]);
@@ -545,7 +547,7 @@ impl<'d> PageFill<'d, '_> {
             row_floats
                 .iter()
                 .filter(|(f, _, row, top, _)| {
-                    *row == 0 && f.v_relative == "paragraph" && *top >= first_h && {
+                    *row == 0 && f.v_relative == VerticalRelation::Paragraph && *top >= first_h && {
                         let x = float::h_pos(f, &frames);
                         x < r && x + f.w > l
                     }
@@ -815,7 +817,7 @@ impl<'d> PageFill<'d, '_> {
                 .filter_map(|(r, id, i)| if let Inline::Float(f, _) = i { page_floats.get(&f.id).map(|f| (*f, id, r)) } else { None })
                 .filter(|(f, ..)| {
                     f.wrap != crate::docx::FloatWrap::None
-                        && matches!(f.v_relative.as_str(), "paragraph" | "margin" | "page")
+                        && matches!(f.v_relative, VerticalRelation::Paragraph | VerticalRelation::Margin | VerticalRelation::Page)
                         && f.h_align.is_none()
                         && f.v_align.is_none()
                 })
@@ -831,7 +833,7 @@ impl<'d> PageFill<'d, '_> {
             .enumerate()
             .map(|(k, (f, id, r, _, _))| {
                 let key = (self.sec.index, bi, k);
-                let y = if f.v_relative == "paragraph" { row_top(*r) + f.v_offset } else { float::v_pos(f, f.h, frames, 0.0, 0.0) };
+                let y = if f.v_relative == VerticalRelation::Paragraph { row_top(*r) + f.v_offset } else { float::v_pos(f, f.h, frames, 0.0, 0.0) };
                 let at = (float::h_pos(f, frames), y);
                 let mut a = Placed::new(key, *id, &Rc::new((*f).clone()), at.0, at.1, f.h);
                 a.collided = a.excl[1] < y0 - EPS;

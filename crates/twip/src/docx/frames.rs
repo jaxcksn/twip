@@ -2,7 +2,7 @@
 
 use std::rc::Rc;
 
-use super::model::{Block, Compat, Document, Float, FloatWrap, HorizontalRelation, Inline, Paragraph, TextBox, VerticalAlign};
+use super::model::{Block, Compat, Document, Float, FloatWrap, HorizontalRelation, Inline, Paragraph, TextBox, VerticalAlign, VerticalRelation};
 
 pub fn convert(doc: &mut Document) {
     let legacy = doc.settings.compat() == Compat::Legacy;
@@ -106,7 +106,7 @@ pub(crate) fn float(group: Vec<Paragraph>, legacy: bool) -> Float {
         h_relative: HorizontalRelation::Column,
         h_align: None,
         h_offset: 0.0,
-        v_relative: String::new(),
+        v_relative: VerticalRelation::Paragraph,
         v_align: None,
         v_offset: 0.0,
         wrap: FloatWrap::None,
@@ -173,11 +173,6 @@ fn in_line(fr: &super::props::FramePr) -> bool {
 /// `legacy`: the document is in compat ≤ 14.
 pub fn place(f: &mut Float, fr: &super::props::FramePr, sides: [f64; 2], legacy: bool) {
     let margin_cap = fr.drop_cap.as_deref() == Some("margin");
-    let anchor = |a: Option<&str>, text: &str, missing: &str| match a {
-        Some(a @ ("margin" | "page")) => a.to_string(),
-        Some(_) => text.to_string(),
-        None => missing.to_string(),
-    };
     // A frame without vAnchor is margin-relative; a drop cap sits in its paragraph whatever it says.
     let drop_cap = fr.drop_cap.as_deref().is_some_and(|d| d != "none");
     f.w = fr.w.unwrap_or(0.0);
@@ -223,10 +218,16 @@ pub fn place(f: &mut Float, fr: &super::props::FramePr, sides: [f64; 2], legacy:
         fr.x_align.clone()
     };
     f.h_offset = x_at.unwrap_or(0.0);
-    f.v_relative = anchor(fr.v_anchor.as_deref(), "paragraph", if drop_cap { "paragraph" } else { "margin" });
+    f.v_relative = match fr.v_anchor.as_deref() {
+        Some("margin") => VerticalRelation::Margin,
+        Some("page") => VerticalRelation::Page,
+        Some(_) => VerticalRelation::Paragraph,
+        None if drop_cap => VerticalRelation::Paragraph,
+        None => VerticalRelation::Margin,
+    };
     // Compat ≤ 14: a frame without a vertical position stays in the flow, from the page or the margin too.
     if legacy && in_line(fr) {
-        f.v_relative = "paragraph".into();
+        f.v_relative = VerticalRelation::Paragraph;
     }
     f.v_align = if fr.y.is_some() { y_code } else { fr.y_align.as_deref().filter(|a| *a != "inline").map(super::anchor::v_align) };
     f.v_offset = y_at.unwrap_or(0.0);

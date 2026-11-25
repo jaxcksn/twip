@@ -343,7 +343,7 @@ pub fn table_float(id: u64, w: f64, h: f64, dist: [f64; 4], allow_overlap: bool)
         h_relative: crate::docx::HorizontalRelation::Column,
         h_align: None,
         h_offset: 0.0,
-        v_relative: "paragraph".into(),
+        v_relative: crate::docx::VerticalRelation::Paragraph,
         v_align: None,
         v_offset: 0.0,
         wrap: FloatWrap::Square,
@@ -387,7 +387,7 @@ mod tests {
             h_relative: crate::docx::HorizontalRelation::Column,
             h_align: None,
             h_offset: 0.0,
-            v_relative: "paragraph".into(),
+            v_relative: crate::docx::VerticalRelation::Paragraph,
             v_align: None,
             v_offset: 0.0,
             wrap: FloatWrap::Square,
@@ -572,7 +572,7 @@ mod tests {
         let mut f = (*fl(0.0, 40.0, Side::Both).float).clone();
         f.relative.pos = [Some(500), None];
         assert_eq!(h_pos(&f, &two_columns), 306.0);
-        f.v_relative = "page".into();
+        f.v_relative = crate::docx::VerticalRelation::Page;
         f.relative.pos = [None, Some(123)];
         assert!((v_pos(&f, 20.0, &fr, 0.0, 0.0) - 97.42).abs() < 0.05);
     }
@@ -632,7 +632,7 @@ mod tests {
         f.effect = [5.0, 10.0, 5.0, 10.0];
         assert_eq!(v_pos(&f, 30.0, &fr(Compat::Legacy), 84.65, 84.65), 134.65);
         assert_eq!(v_pos(&f, 30.0, &fr(Compat::Generic), 84.65, 84.65), 124.65);
-        (f.h_align, f.v_align, f.v_relative) = (None, Some(VerticalAlign::Top), "margin".into());
+        (f.h_align, f.v_align, f.v_relative) = (None, Some(VerticalAlign::Top), crate::docx::VerticalRelation::Margin);
         assert_eq!(h_pos(&f, &fr(Compat::Legacy)), 72.0 + 5.0);
         assert_eq!((h_pos(&f, &fr(Compat::Generic)), v_pos(&f, 30.0, &fr(Compat::Generic), 0.0, 0.0)), (72.0, 82.0));
     }
@@ -685,7 +685,7 @@ mod tests {
         let f = |h: &str, ha: Option<&str>, v: &str, va: Option<VerticalAlign>| Float {
             h_relative: crate::docx::anchor::h_relative(h),
             h_align: ha.map(Into::into),
-            v_relative: v.into(),
+            v_relative: crate::docx::anchor::v_relative(v),
             v_align: va,
             ..(*fl(0.0, 40.0, Side::Both).float).clone()
         };

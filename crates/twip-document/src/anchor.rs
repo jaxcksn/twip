@@ -66,3 +66,27 @@ pub enum HorizontalRelation {
     /// none of the rules for a float placed from the column apply.
     Unrecognised,
 }
+
+/// What a float's vertical position is measured from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VerticalRelation {
+    /// The area between the top and bottom margins.
+    Margin,
+    /// The page's edges.
+    Page,
+    /// Its anchor paragraph's top.
+    Paragraph,
+    /// Its anchor line's top.
+    Line,
+    /// The top margin's area.
+    TopMargin,
+    /// The bottom margin's area.
+    BottomMargin,
+    /// The inside margin's area.
+    InsideMargin,
+    /// The outside margin's area.
+    OutsideMargin,
+    /// A value the file gave that is not in the schema, or none given; behaves as today's fallback: measured down
+    /// from the paragraph, but none of the rules for a float placed from the paragraph apply.
+    Unrecognised,
+}

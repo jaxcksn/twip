@@ -5682,7 +5682,7 @@ impl Saver<'_, '_> {
             cell = on(f.layout_in_cell),
             overlap = on(f.allow_overlap),
             h = pos("positionH", anchor::h_relative_name(f.h_relative), f.h_align.as_deref(), f.h_offset),
-            v = pos("positionV", &f.v_relative, f.v_align.map(anchor::v_align_name), f.v_offset),
+            v = pos("positionV", anchor::v_relative_name(f.v_relative), f.v_align.map(anchor::v_align_name), f.v_offset),
             cx = cx,
             cy = cy,
             wrap = wrap_xml("wp:", f.wrap, f.wrap_text, f.poly.as_deref(), f.poly_edited),
@@ -6087,7 +6087,7 @@ fn object_xml(w: &str, i: &Inline) -> Option<String> {
 struct Placement {
     /// A position's reference, alignment (or else offset), when any of them changed.
     h: Option<(&'static str, Option<String>, f64)>,
-    v: Option<(String, Option<String>, f64)>,
+    v: Option<(&'static str, Option<&'static str>, f64)>,
     size: Option<(f64, f64)>,
     /// Wrapping (`wrap`, `wrap_text`, behind the text, the wrap polygon and whether it was edited), when changed.
     wrap: Option<(FloatWrap, WrapText, bool, Option<Rc<[(f64, f64)]>>, bool)>,
@@ -6143,16 +6143,11 @@ impl Placement {
         let ne = |x: f64, y: f64| (x - y).abs() > 1e-6;
         let (a, b) = (&*unswapped(a), &*unswapped(b));
         // An aligned position that became an offset is written as one.
-        let pos = |(ra, aa, oa): (&String, Option<&str>, f64), (rb, ab, ob): (&String, Option<&str>, f64)| {
-            (ra != rb || aa != ab || ab.is_none() && ne(oa, ob)).then(|| (rb.clone(), ab.map(str::to_string), ob))
-        };
         let p = Placement {
             h: (a.h_relative != b.h_relative || a.h_align != b.h_align || b.h_align.is_none() && ne(a.h_offset, b.h_offset))
                 .then(|| (anchor::h_relative_name(b.h_relative), b.h_align.clone(), b.h_offset)),
-            v: pos(
-                (&a.v_relative, a.v_align.map(anchor::v_align_name), a.v_offset),
-                (&b.v_relative, b.v_align.map(anchor::v_align_name), b.v_offset),
-            ),
+            v: (a.v_relative != b.v_relative || a.v_align != b.v_align || b.v_align.is_none() && ne(a.v_offset, b.v_offset))
+                .then(|| (anchor::v_relative_name(b.v_relative), b.v_align.map(anchor::v_align_name), b.v_offset)),
             size: (ne(a.w, b.w) || ne(a.h, b.h)).then_some((b.w, b.h)),
             wrap: (a.wrap != b.wrap || a.wrap_text != b.wrap_text || a.behind != b.behind || a.poly != b.poly || a.poly_edited != b.poly_edited)
                 .then(|| (b.wrap, b.wrap_text, b.behind, b.poly.clone(), b.poly_edited)),
@@ -6200,7 +6195,7 @@ impl Placement {
             None => d.to_string(),
         };
         let h = self.h.as_ref().map(|(r, a, o)| (*r, a.as_deref(), *o));
-        let v = self.v.as_ref().map(|(r, a, o)| (r.as_str(), a.as_deref(), *o));
+        let v = self.v;
         for (name, pos) in [("positionH", h), ("positionV", v)] {
             let Some((rel, align, off)) = pos else { continue };
             if let Some((start, end)) = find_tag(&s, name, 0) {

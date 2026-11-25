@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::docx::review::MarkupView;
-use crate::docx::{Block, Float, FloatWrap, HorizontalRelation, Inline, NoteKind, ParaStyle, Paragraph, Table};
+use crate::docx::{Block, Float, FloatWrap, HorizontalRelation, Inline, NoteKind, ParaStyle, Paragraph, Table, VerticalRelation};
 use crate::font::Fonts;
 
 use super::LayoutCtx;
@@ -388,7 +388,8 @@ fn stack_para<'b>(w: &StoryIn<'b, '_>, st: &mut Stack<'b>, bi: usize, laid: &'b 
             let (Kind::Anchor, Some(Object::Float(f))) = (q.kind, lines.shaped.object(lines.from + k)) else { continue };
             if !f.in_cell(text.compat)
                 || f.wrap == FloatWrap::None
-                || !matches!(f.v_relative.as_str(), "paragraph" | "line" | "margin" | "page") && f.v_align.is_none()
+                || !matches!(f.v_relative, VerticalRelation::Paragraph | VerticalRelation::Line | VerticalRelation::Margin | VerticalRelation::Page)
+                    && f.v_align.is_none()
             {
                 continue;
             }
