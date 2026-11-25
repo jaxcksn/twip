@@ -33,7 +33,12 @@ fn sweeps() -> Vec<Sweep> {
                 d.sections.iter().flat_map(|s| &s.blocks).find_map(|b| if let crate::docx::Block::Para(p) = b { Some(p.mark.clone()) } else { None });
             d.line_number_run = run.map(|r| std::rc::Rc::new(crate::docx::model::RunStyle { size: r.size + 3.0, ..(*r).clone() }));
             d.sections.iter_mut().for_each(|s| {
-                s.line_numbers = Some(crate::docx::model::LineNumbering { count_by: 1, start: 1, distance: 18.0, restart: "newPage".into() })
+                s.line_numbers = Some(crate::docx::model::LineNumbering {
+                    count_by: 1,
+                    start: 1,
+                    distance: 18.0,
+                    restart: crate::docx::LineNumberingRestart::NewPage,
+                })
             });
         }),
     ]

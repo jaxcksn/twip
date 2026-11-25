@@ -487,7 +487,7 @@ pub fn layout_body(
         change_bars(space, &env.ctx.env.text.review, env.ctx.env.mirror_margins, &mut body);
     }
     if section_end.is_none() {
-        if s.line_numbers.as_ref().is_some_and(|l| l.restart == "newPage") {
+        if s.line_numbers.as_ref().is_some_and(|l| l.restart == crate::docx::LineNumberingRestart::NewPage) {
             carry.line_no = 0;
         }
         if stop == Stop::Full {

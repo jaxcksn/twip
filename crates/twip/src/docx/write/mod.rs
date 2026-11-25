@@ -1179,7 +1179,12 @@ fn sect_with_page(sect: &str, w: &str, p: &SectionPage, was: Option<&SectionPage
         if was.line_numbers != p.line_numbers {
             let tag = p.line_numbers.as_ref().map(|l| {
                 let distance = if l.distance > 0.0 { format!(" {w}distance=\"{}\"", twips(l.distance)) } else { String::new() };
-                format!("<{w}lnNumType {w}countBy=\"{}\" {w}start=\"{}\"{distance} {w}restart=\"{}\"/>", l.count_by, l.start, props::esc(&l.restart))
+                format!(
+                    "<{w}lnNumType {w}countBy=\"{}\" {w}start=\"{}\"{distance} {w}restart=\"{}\"/>",
+                    l.count_by,
+                    l.start,
+                    super::section::line_numbering_restart_literal(l.restart)
+                )
             });
             put(&mut s, "lnNumType", tag);
         }

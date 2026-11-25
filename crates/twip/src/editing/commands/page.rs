@@ -218,11 +218,10 @@ impl Editor {
             start: i64::from(l.start.unwrap_or(1)) - 1,
             distance: l.distance.map_or(0.0, |d| d.0.max(0.0)),
             restart: match l.restart.unwrap_or(LineNumberRestart::EachPage) {
-                LineNumberRestart::EachPage => "newPage",
-                LineNumberRestart::EachSection => "newSection",
-                LineNumberRestart::Continuous => "continuous",
-            }
-            .into(),
+                LineNumberRestart::EachPage => crate::docx::LineNumberingRestart::NewPage,
+                LineNumberRestart::EachSection => crate::docx::LineNumberingRestart::NewSection,
+                LineNumberRestart::Continuous => crate::docx::LineNumberingRestart::Continuous,
+            },
         });
         self.set_page("Line Numbers", |p| p.line_numbers = numbering.clone(), fonts)
     }

@@ -315,12 +315,12 @@ pub fn step(run: &mut PassRun, cx: &PassCx, reuse: Option<&mut Reuse>, memos: &m
                     }
                 }
                 carry.keep_top = true;
-                if sec.line_numbers.as_ref().is_some_and(|l| l.restart != "continuous") {
+                if sec.line_numbers.as_ref().is_some_and(|l| l.restart != crate::docx::LineNumberingRestart::Continuous) {
                     carry.line_no = 0;
                 }
                 carry.prev = None;
                 top = None;
-            } else if sec.line_numbers.as_ref().is_some_and(|l| l.restart == "newSection") {
+            } else if sec.line_numbers.as_ref().is_some_and(|l| l.restart == crate::docx::LineNumberingRestart::NewSection) {
                 carry.line_no = 0;
             }
             run.cursor = Cursor::Body { si, token: PageToken { section: si, flow: FlowToken::default(), state: carry }, top };

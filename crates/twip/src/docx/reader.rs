@@ -2010,7 +2010,7 @@ impl Reader {
                 count_by: int(attr(l, "countBy")).unwrap_or(1).max(1),
                 start: int(attr(l, "start")).unwrap_or(0),
                 distance: attr_twips(l, "distance").unwrap_or(0.0),
-                restart: attr(l, "restart").unwrap_or("newPage").to_string(),
+                restart: attr(l, "restart").map_or(LineNumberingRestart::NewPage, super::section::line_numbering_restart),
             });
         }
         for (k, name) in [(0, "footnotePr"), (1, "endnotePr")] {

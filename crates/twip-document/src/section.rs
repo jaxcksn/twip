@@ -36,3 +36,17 @@ pub enum HeightRule {
     /// At least the given height.
     AtLeast,
 }
+
+/// Where a section's line numbers start again.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum LineNumberingRestart {
+    /// On each page.
+    NewPage,
+    /// At each section.
+    NewSection,
+    /// Never: they run on from the section before.
+    Continuous,
+    /// A value the file gave that is not in the schema; behaves as today's fallback: numbers start again where a
+    /// section starts a page, and nowhere else.
+    Unrecognised,
+}

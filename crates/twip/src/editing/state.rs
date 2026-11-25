@@ -1059,10 +1059,12 @@ impl Editor {
                 start: u32::try_from(l.start + 1).ok(),
                 count_by: u32::try_from(l.count_by).ok(),
                 distance: (l.distance > 0.0).then_some(Points(l.distance)),
-                restart: Some(match l.restart.as_str() {
-                    "newSection" => crate::api::command::LineNumberRestart::EachSection,
-                    "continuous" => crate::api::command::LineNumberRestart::Continuous,
-                    _ => crate::api::command::LineNumberRestart::EachPage,
+                restart: Some(match l.restart {
+                    crate::docx::LineNumberingRestart::NewSection => crate::api::command::LineNumberRestart::EachSection,
+                    crate::docx::LineNumberingRestart::Continuous => crate::api::command::LineNumberRestart::Continuous,
+                    crate::docx::LineNumberingRestart::NewPage | crate::docx::LineNumberingRestart::Unrecognised => {
+                        crate::api::command::LineNumberRestart::EachPage
+                    }
                 }),
             }),
             break_type: match s.break_kind {

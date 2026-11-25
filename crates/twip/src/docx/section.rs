@@ -1,6 +1,6 @@
 //! Section and table values as OOXML literals
 
-use super::model::{HeightRule, PageBorderDisplay, VerticalAlignment};
+use super::model::{HeightRule, LineNumberingRestart, PageBorderDisplay, VerticalAlignment};
 
 /// A `w:vAlign` value.
 pub fn v_align_literal(v: VerticalAlignment) -> &'static str {
@@ -65,5 +65,24 @@ pub fn height_rule(s: &str) -> HeightRule {
         "auto" => HeightRule::Auto,
         "exact" => HeightRule::Exact,
         _ => HeightRule::AtLeast,
+    }
+}
+
+/// A `w:lnNumType/@w:restart` value; an unrecognised one is written as the schema's default, `newPage`.
+pub fn line_numbering_restart_literal(r: LineNumberingRestart) -> &'static str {
+    match r {
+        LineNumberingRestart::NewPage | LineNumberingRestart::Unrecognised => "newPage",
+        LineNumberingRestart::NewSection => "newSection",
+        LineNumberingRestart::Continuous => "continuous",
+    }
+}
+
+/// A `w:lnNumType/@w:restart`.
+pub fn line_numbering_restart(s: &str) -> LineNumberingRestart {
+    match s {
+        "newPage" => LineNumberingRestart::NewPage,
+        "newSection" => LineNumberingRestart::NewSection,
+        "continuous" => LineNumberingRestart::Continuous,
+        _ => LineNumberingRestart::Unrecognised,
     }
 }

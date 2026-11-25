@@ -6,7 +6,7 @@ pub use crate::document::ident::{ControlId, FieldId, next_para_id};
 pub use crate::document::line::Underline;
 pub use crate::document::paragraph::{ListJc, ListSuffix, TextAlignment};
 pub use crate::document::policy::{Compat, LayoutPolicy};
-pub use crate::document::section::{HeightRule, PageBorderDisplay, VerticalAlignment};
+pub use crate::document::section::{HeightRule, LineNumberingRestart, PageBorderDisplay, VerticalAlignment};
 
 use super::font_table::GenericFamily;
 use std::collections::HashMap;
@@ -1882,12 +1882,12 @@ impl Columns {
     pub const MAX: usize = 45;
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct LineNumbering {
     pub count_by: i64,
     pub start: i64,
     pub distance: f64,
-    pub restart: String,
+    pub restart: LineNumberingRestart,
 }
 
 /// A section's `w:footnotePr` / `w:endnotePr`: number format, start and restart; for footnotes, `w:pos beneathText`.
