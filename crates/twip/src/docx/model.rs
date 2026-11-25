@@ -3,6 +3,7 @@
 pub use crate::document::anchor::{FloatWrap, VerticalAlign, WrapText};
 pub use crate::document::content::{BreakKind, NoteKind};
 pub use crate::document::ident::{ControlId, FieldId, next_para_id};
+pub use crate::document::paragraph::TextAlignment;
 pub use crate::document::policy::{Compat, LayoutPolicy};
 
 use super::font_table::GenericFamily;
@@ -326,7 +327,7 @@ pub struct ParaStyle {
     pub text_flow: u8,
     /// The paragraph is in a frame: its `frame` made the float that holds it.
     pub in_frame: bool,
-    pub text_alignment: String,
+    pub text_alignment: TextAlignment,
     pub outline_lvl: Option<i64>,
     /// `w15:collapsed`: the heading opens collapsed.
     pub collapsed: bool,

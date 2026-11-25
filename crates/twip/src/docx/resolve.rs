@@ -262,7 +262,7 @@ impl Resolver {
             frame: p.frame.clone(),
             text_flow: p.text_flow.unwrap_or(0),
             in_frame: false,
-            text_alignment: p.text_alignment.clone().unwrap_or_else(|| "auto".into()),
+            text_alignment: p.text_alignment.unwrap_or(TextAlignment::Auto),
             outline_lvl: p.outline_lvl,
             collapsed: p.collapsed.unwrap_or(false),
             list_jc: "left".into(),

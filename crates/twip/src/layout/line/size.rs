@@ -60,12 +60,12 @@ pub(super) fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &P
     // The deepest descent an at-least line keeps below its baseline (a turned ruby annotation's lower half).
     let mut at_least_desc = 0.0f64;
     // `auto` centres the runs in flows that keep East Asian text upright, else aligns them to the baseline.
-    line.align = match style.text_alignment.as_str() {
-        "top" => Align::Top,
-        "center" => Align::Center,
-        "bottom" => Align::Bottom,
-        "auto" | "" if frame.vertical && frame.centred => Align::Center,
-        _ => Align::Baseline,
+    line.align = match style.text_alignment {
+        TextAlignment::Top => Align::Top,
+        TextAlignment::Center => Align::Center,
+        TextAlignment::Bottom => Align::Bottom,
+        TextAlignment::Auto if frame.vertical && frame.centred => Align::Center,
+        TextAlignment::Auto | TextAlignment::Baseline => Align::Baseline,
     };
     line.vertical = frame.vertical;
     for p in &pieces[line.start..line.end.min(pieces.len())] {

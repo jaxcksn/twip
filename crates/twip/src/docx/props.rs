@@ -704,7 +704,7 @@ pub struct ParaProps {
     pub shd: Option<Shd>,
     pub frame: Option<FramePr>,
     pub text_flow: Option<u8>,
-    pub text_alignment: Option<String>,
+    pub text_alignment: Option<super::paragraph::TextAlignment>,
     pub outline_lvl: Option<i64>,
     /// `w15:collapsed`: the heading opens collapsed.
     pub collapsed: Option<bool>,
@@ -837,7 +837,7 @@ impl ParaProps {
                         key: key.join(" "),
                     });
                 }
-                "textAlignment" => p.text_alignment = val(e).map(str::to_string),
+                "textAlignment" => p.text_alignment = val(e).map(super::paragraph::text_alignment),
                 "textDirection" => p.text_flow = val(e).map(super::model::text_flow),
                 "outlineLvl" => p.outline_lvl = int(val(e)),
                 "rPr" => p.mark_size = child(e, "sz").and_then(|s| half_points(val(s))),
