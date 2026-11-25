@@ -1194,9 +1194,9 @@ impl<'a> Builder<'a> {
                 let width = lu((-para.para_style_in(space.view).ind_first).max(indent));
                 let (w, gap) = ((width - num_w).max(0), lu(legacy_space));
                 let r = (w - gap).max(0);
-                let (shift, gap) = match l.jc.as_str() {
-                    "center" if w >> 1 >= gap => (w >> 1, w >> 1),
-                    "center" | "right" => (r, gap),
+                let (shift, gap) = match l.jc {
+                    ListJc::Center if w >> 1 >= gap => (w >> 1, w >> 1),
+                    ListJc::Center | ListJc::Right => (r, gap),
                     _ => (0, gap.max(w)),
                 };
                 let at = |b: &Self, w: i64| {

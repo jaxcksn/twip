@@ -342,7 +342,7 @@ impl Editor {
                     let label = ListLabel {
                         text: text.clone(),
                         run: res.run_style(&lp),
-                        jc: level.jc.clone(),
+                        jc: crate::docx::paragraph::list_jc(&level.jc),
                         suff: level.suff.clone(),
                         picture,
                         legacy: level.legacy,

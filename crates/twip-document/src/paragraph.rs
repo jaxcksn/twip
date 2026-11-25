@@ -14,3 +14,32 @@ pub enum TextAlignment {
     /// To the bottom.
     Bottom,
 }
+
+/// A list level's alignment of its label at the number position.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ListJc {
+    /// Left.
+    Left,
+    /// Centred.
+    Center,
+    /// Right.
+    Right,
+    /// The start side.
+    Start,
+    /// The end side.
+    End,
+    /// Justified.
+    Both,
+    /// Justified with medium kashida.
+    MediumKashida,
+    /// Distributed.
+    Distribute,
+    /// At a numbering tab.
+    NumTab,
+    /// Justified with high kashida.
+    HighKashida,
+    /// Justified with low kashida.
+    LowKashida,
+    /// Thai distributed.
+    ThaiDistribute,
+}

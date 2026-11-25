@@ -265,7 +265,7 @@ impl Resolver {
             text_alignment: p.text_alignment.unwrap_or(TextAlignment::Auto),
             outline_lvl: p.outline_lvl,
             collapsed: p.collapsed.unwrap_or(false),
-            list_jc: "left".into(),
+            list_jc: ListJc::Left,
             num: None,
             list_fmt: None,
             list: None,
@@ -323,7 +323,7 @@ impl Resolver {
         let mut style = self.para_style(&ppr);
         if let Some(l) = &level {
             // A legacy level places its number itself, in the label.
-            style.list_jc = if l.legacy.is_some() { "left".into() } else { l.jc.clone() };
+            style.list_jc = if l.legacy.is_some() { ListJc::Left } else { super::paragraph::list_jc(&l.jc) };
             style.num = num_id.map(|id| (id, ilvl));
             style.list_fmt = Some(l.fmt.clone());
             style.list = num_id.and_then(|id| self.numbering.abstract_of(id, &self.styles));

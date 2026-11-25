@@ -3,7 +3,7 @@
 pub use crate::document::anchor::{FloatWrap, VerticalAlign, WrapText};
 pub use crate::document::content::{BreakKind, NoteKind};
 pub use crate::document::ident::{ControlId, FieldId, next_para_id};
-pub use crate::document::paragraph::TextAlignment;
+pub use crate::document::paragraph::{ListJc, TextAlignment};
 pub use crate::document::policy::{Compat, LayoutPolicy};
 
 use super::font_table::GenericFamily;
@@ -331,7 +331,7 @@ pub struct ParaStyle {
     pub outline_lvl: Option<i64>,
     /// `w15:collapsed`: the heading opens collapsed.
     pub collapsed: bool,
-    pub list_jc: String,
+    pub list_jc: ListJc,
     /// The list the paragraph is in (numId, ilvl; direct or from its style), and that level's `w:numFmt`.
     pub num: Option<(i64, i64)>,
     pub list_fmt: Option<String>,
@@ -937,7 +937,7 @@ pub struct Ruby {
 pub struct ListLabel {
     pub text: String,
     pub run: Run,
-    pub jc: String,
+    pub jc: ListJc,
     pub suff: String,
     /// A picture bullet's image (an index into [`Document::images`]), drawn instead of the text.
     pub picture: Option<usize>,

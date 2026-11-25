@@ -647,9 +647,9 @@ fn fit_greedy(
     // How much wider the pieces so far count for breaking than they are drawn.
     let lead_drift = lead.0 - lead.1;
     let mut drift = lead_drift;
-    if start == 0 && style.list_jc != "left" {
+    if start == 0 && style.list_jc != ListJc::Left {
         let w: f64 = pieces.iter().take_while(|p| p.kind == Kind::ListNumber).map(|p| p.width).sum();
-        pen -= if style.list_jc == "right" { w } else { w / 2.0 };
+        pen -= if style.list_jc == ListJc::Right { w } else { w / 2.0 };
     }
     // A cell paragraph whose only stop is a decimal one: each line starts as if with a tab to it, the first after its
     // list number and the number's suffix, when the stop lies past them.

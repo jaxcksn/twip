@@ -2113,7 +2113,14 @@ impl Reader {
                         let mut lp = mark_props.clone();
                         lp.merge(&l.rpr);
                         let picture = self.res.numbering.bullet_image(l);
-                        ListLabel { text, run: self.res.run_style(&lp), jc: l.jc.clone(), suff: l.suff.clone(), picture, legacy: l.legacy }
+                        ListLabel {
+                            text,
+                            run: self.res.run_style(&lp),
+                            jc: super::paragraph::list_jc(&l.jc),
+                            suff: l.suff.clone(),
+                            picture,
+                            legacy: l.legacy,
+                        }
                     })
                 } else {
                     None
