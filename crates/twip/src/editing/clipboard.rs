@@ -1027,6 +1027,8 @@ impl Editor {
             let mut out = Vec::new();
             for (k, blk) in blocks.iter().enumerate().take(sb.block + 1).skip(sa.block) {
                 match blk {
+                    // Paragraphs between the ends, whole
+                    Block::Para(p) if k != sa.block && k != sb.block => out.push(Block::Para(p.clone())),
                     Block::Para(p) => {
                         let from = if k == sa.block { oa } else { Unit(0) };
                         let to = if k == sb.block { ob } else { para_len(p) };

@@ -488,6 +488,8 @@ fn runs_pasted_from_another_prefix_are_written_in_this_ones() {
     let saved = crate::docx::write::save(d).expect("saves");
     let again = crate::docx::read_editable(&saved).expect("reads back");
     assert_eq!(quote(&again), 1, "the pasted paragraph keeps its style, saved");
+    let main = crate::docx::package::read(&saved, &[], "word/document.xml").expect("reads").expect("the main part");
+    assert!(main.contains("<m:oMath xmlns:m="), "the equation comes, its namespace declared");
 }
 
 #[test]

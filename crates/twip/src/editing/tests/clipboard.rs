@@ -801,3 +801,21 @@ fn html_skips_a_merged_cells_drawings_with_it() {
     let src = |b: u8| format!("data:image/png;base64,{}", crate::api::value::base64(&[b; 3]));
     assert!(html.contains(&src(2)) && !html.contains(&src(1)), "the later cell's own drawing: {html}");
 }
+
+/// An element kept as read at the end of a paragraph the selection holds whole (an equation) is copied with it, and
+/// cutting and pasting the paragraphs gives it back.
+#[test]
+fn a_whole_paragraph_copies_what_ends_it() {
+    let math = r#"<m:oMath xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"><m:r><m:t>x</m:t></m:r></m:oMath>"#;
+    let count = |blocks: &[Block]| {
+        let inlines = blocks.iter().filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None }).flat_map(|p| &p.inlines);
+        inlines.filter(|i| matches!(i, Inline::Opaque(o) if o.xml.0.as_deref().is_some_and(|x| x.contains("oMath")))).count()
+    };
+    let mut e = ed(&format!("<w:p>{}</w:p><w:p>{}{math}</w:p><w:p>{}</w:p>", t("z"), t("a"), t("b")));
+    e.execute(Command::SelectAll, fonts());
+    assert_eq!(count(&e.copy().expect("copies").blocks), 1, "copied");
+    e.execute(Command::Cut, fonts());
+    assert_eq!(count(&e.document().sections[0].blocks), 0, "cut");
+    e.execute(Command::Paste(Default::default()), fonts());
+    assert_eq!(count(&e.document().sections[0].blocks), 1, "pasted back");
+}
