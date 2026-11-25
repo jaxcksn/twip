@@ -336,10 +336,10 @@ impl Editor {
             bottom: edge(b.map(|b| &b.bottom)),
             right: edge(b.map(|b| &b.right)),
             offset_from: if b.is_none_or(|b| b.offset_from_page) { PageBorderOffset::Page } else { PageBorderOffset::Text },
-            display: match b.map(|b| b.display.as_str()) {
-                Some("firstPage") => PageBorderDisplay::FirstPage,
-                Some("notFirstPage") => PageBorderDisplay::NotFirstPage,
-                _ => PageBorderDisplay::AllPages,
+            display: match b.map(|b| b.display) {
+                Some(crate::docx::PageBorderDisplay::FirstPage) => PageBorderDisplay::FirstPage,
+                Some(crate::docx::PageBorderDisplay::NotFirstPage) => PageBorderDisplay::NotFirstPage,
+                Some(crate::docx::PageBorderDisplay::AllPages) | None => PageBorderDisplay::AllPages,
             },
             surround_header: !self.doc.settings.borders_do_not_surround_header,
             surround_footer: !self.doc.settings.borders_do_not_surround_footer,
@@ -389,7 +389,6 @@ impl Editor {
                 continue;
             }
             let mut b = page.page_borders.as_deref().cloned().unwrap_or(crate::docx::PageBorders {
-                display: "allPages".into(),
                 offset_from_page: true,
                 surround_header: !self.doc.settings.borders_do_not_surround_header,
                 surround_footer: !self.doc.settings.borders_do_not_surround_footer,
@@ -400,11 +399,10 @@ impl Editor {
             }
             if let Some(d) = c.display {
                 b.display = match d {
-                    PageBorderDisplay::AllPages => "allPages",
-                    PageBorderDisplay::FirstPage => "firstPage",
-                    PageBorderDisplay::NotFirstPage => "notFirstPage",
-                }
-                .into();
+                    PageBorderDisplay::AllPages => crate::docx::PageBorderDisplay::AllPages,
+                    PageBorderDisplay::FirstPage => crate::docx::PageBorderDisplay::FirstPage,
+                    PageBorderDisplay::NotFirstPage => crate::docx::PageBorderDisplay::NotFirstPage,
+                };
             }
             if let Some(on) = c.surround_header {
                 b.surround_header = on;
@@ -464,7 +462,10 @@ impl Editor {
             let xml = any.then(|| {
                 let z = if b.behind_text { format!(" {w}zOrder=\"back\"") } else { String::new() };
                 let offset = if b.offset_from_page { format!(" {w}offsetFrom=\"page\"") } else { String::new() };
-                let display = if b.display == "allPages" { String::new() } else { format!(" {w}display=\"{}\"", b.display) };
+                let display = match b.display {
+                    crate::docx::PageBorderDisplay::AllPages => String::new(),
+                    d => format!(" {w}display=\"{}\"", crate::docx::section::page_border_display_literal(d)),
+                };
                 format!(
                     "<{w}pgBorders{offset}{display}{z}>{}{}{}{}</{w}pgBorders>",
                     line("top", &b.top),

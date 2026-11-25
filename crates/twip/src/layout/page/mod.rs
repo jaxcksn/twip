@@ -327,10 +327,10 @@ impl<'d> Paginator<'d, '_> {
         let before = self.page_in_section(si);
         let first = before == 0;
         let s = self.sections[si].section_in(self.ctx.env.text.review.view);
-        let page_borders = self.sections[si].page_borders.as_ref().filter(|b| match b.display.as_str() {
-            "firstPage" => first,
-            "notFirstPage" => !first,
-            _ => true,
+        let page_borders = self.sections[si].page_borders.as_ref().filter(|b| match b.display {
+            crate::docx::PageBorderDisplay::FirstPage => first,
+            crate::docx::PageBorderDisplay::NotFirstPage => !first,
+            crate::docx::PageBorderDisplay::AllPages => true,
         });
         let page_borders = page_borders.filter(|_| !blank).map(|b| {
             let (left, right, _) = margins(&self.sections[si], &self.ctx, self.run.page_number);

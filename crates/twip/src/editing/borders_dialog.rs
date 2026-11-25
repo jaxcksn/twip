@@ -213,10 +213,10 @@ impl Editor {
             (v.page_top, v.page_bottom, v.page_left, v.page_right) = (line(&b.top), line(&b.bottom), line(&b.left), line(&b.right));
             v.page_offset_from =
                 if b.offset_from_page { crate::api::command::PageBorderOffset::Page } else { crate::api::command::PageBorderOffset::Text };
-            v.page_display = match b.display.as_str() {
-                "firstPage" => crate::api::command::PageBorderDisplay::FirstPage,
-                "notFirstPage" => crate::api::command::PageBorderDisplay::NotFirstPage,
-                _ => crate::api::command::PageBorderDisplay::AllPages,
+            v.page_display = match b.display {
+                crate::docx::PageBorderDisplay::FirstPage => crate::api::command::PageBorderDisplay::FirstPage,
+                crate::docx::PageBorderDisplay::NotFirstPage => crate::api::command::PageBorderDisplay::NotFirstPage,
+                crate::docx::PageBorderDisplay::AllPages => crate::api::command::PageBorderDisplay::AllPages,
             };
             v.page_setting = crate::services::dialogs::page_border_setting(&v, b.bottom.as_ref().is_some_and(|x| x.shadow));
         }

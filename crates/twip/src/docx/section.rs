@@ -1,6 +1,6 @@
 //! Section and table values as OOXML literals
 
-use super::model::VerticalAlignment;
+use super::model::{PageBorderDisplay, VerticalAlignment};
 
 /// A `w:vAlign` value.
 pub fn v_align_literal(v: VerticalAlignment) -> &'static str {
@@ -29,5 +29,23 @@ pub fn cell_v_align(s: &str) -> VerticalAlignment {
         "center" => VerticalAlignment::Center,
         "bottom" => VerticalAlignment::Bottom,
         _ => VerticalAlignment::Both,
+    }
+}
+
+/// A `w:pgBorders/@w:display` value.
+pub fn page_border_display_literal(d: PageBorderDisplay) -> &'static str {
+    match d {
+        PageBorderDisplay::AllPages => "allPages",
+        PageBorderDisplay::FirstPage => "firstPage",
+        PageBorderDisplay::NotFirstPage => "notFirstPage",
+    }
+}
+
+/// A `w:pgBorders/@w:display`; an unknown value is every page.
+pub fn page_border_display(s: &str) -> PageBorderDisplay {
+    match s {
+        "firstPage" => PageBorderDisplay::FirstPage,
+        "notFirstPage" => PageBorderDisplay::NotFirstPage,
+        _ => PageBorderDisplay::AllPages,
     }
 }

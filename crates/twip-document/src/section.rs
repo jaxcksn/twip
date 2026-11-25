@@ -13,3 +13,15 @@ pub enum VerticalAlignment {
     /// At the bottom.
     Bottom,
 }
+
+/// The pages of a section that show its page borders.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum PageBorderDisplay {
+    /// Every page.
+    #[default]
+    AllPages,
+    /// The first page only.
+    FirstPage,
+    /// Every page but the first.
+    NotFirstPage,
+}

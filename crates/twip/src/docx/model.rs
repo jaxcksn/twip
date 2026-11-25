@@ -5,7 +5,7 @@ pub use crate::document::content::{BreakKind, NoteKind};
 pub use crate::document::ident::{ControlId, FieldId, next_para_id};
 pub use crate::document::paragraph::{ListJc, ListSuffix, TextAlignment};
 pub use crate::document::policy::{Compat, LayoutPolicy};
-pub use crate::document::section::VerticalAlignment;
+pub use crate::document::section::{PageBorderDisplay, VerticalAlignment};
 
 use super::font_table::GenericFamily;
 use std::collections::HashMap;
@@ -1787,7 +1787,7 @@ pub struct PageBorders {
     pub bottom: Option<Border>,
     pub right: Option<Border>,
     pub offset_from_page: bool,
-    pub display: String,
+    pub display: PageBorderDisplay,
     pub surround_header: bool,
     pub surround_footer: bool,
     /// Behind the text and objects they meet (`w:zOrder="back"`); else in front of them.

@@ -2041,7 +2041,7 @@ impl Reader {
                 bottom: side("bottom"),
                 right: side("right"),
                 offset_from_page: attr(b, "offsetFrom") == Some("page"),
-                display: attr(b, "display").unwrap_or("allPages").to_string(),
+                display: attr(b, "display").map_or(PageBorderDisplay::AllPages, super::section::page_border_display),
                 surround_header: !self.settings.borders_do_not_surround_header,
                 surround_footer: !self.settings.borders_do_not_surround_footer,
                 behind_text: attr(b, "zOrder") == Some("back"),
