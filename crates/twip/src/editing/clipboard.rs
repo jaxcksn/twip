@@ -1020,7 +1020,8 @@ impl Editor {
             };
         }
         let ids: Vec<ParaId> = blocks.iter().filter_map(|b| if let Block::Para(p) = b { Some(ParaId(p.id)) } else { None }).collect();
-        let (&a, &b) = (ids.first()?, ids.last()?);
+        let a = *ids.first()?;
+        let b = blocks.last().and_then(|b| super::move_paras::edge_para_ref(b, true)).map(|p| ParaId(p.id))?;
         if self.step(&mut tx, Step::Blocks { container, range: at..at, with: blocks }).is_err() {
             self.abort(tx);
             return None;

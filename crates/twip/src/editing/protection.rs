@@ -209,7 +209,23 @@ impl Editor {
             return false;
         }
         let (ka, kb) = (self.index.order_key(a), self.index.order_key(b));
-        ranges.ranges.iter().zip(&ranges.keys).any(|(r, (s, e))| may(&r.editor, author, &self.editing_groups) && *s <= ka && kb <= *e)
+        let own = || ranges.ranges.iter().zip(&ranges.keys).filter(|(r, _)| may(&r.editor, author, &self.editing_groups)).map(|(_, k)| k);
+        if own().any(|(s, e)| *s <= ka && kb <= *e) {
+            return true;
+        }
+        // Ranges that touch or overlap cover what is between them together
+        let mut spans: Vec<&(Vec<usize>, Vec<usize>)> = own().collect();
+        spans.sort_unstable_by(|x, y| x.0.cmp(&y.0));
+        let (mut reach, mut covered) = (&ka, false);
+        for (s, e) in spans {
+            if s > reach {
+                break;
+            }
+            if e >= reach {
+                (reach, covered) = (e, true);
+            }
+        }
+        covered && *reach >= kb
     }
 
     /// The selection is in a range `author` may edit.
@@ -312,15 +328,26 @@ impl Editor {
     /// range alone for command `id` when that replaces only it), the table of each block of cells, each float selected
     /// together.
     fn selection_openings(&self, id: CommandId) -> Vec<Openings> {
-        let mut out = vec![self.selection_span().map_or_else(Openings::default, |(a, b)| self.openings(&a, &b))];
+        // A block of cells: each paragraph of each cell in it
+        let cells = |s: &super::selection::Selection, out: &mut Vec<Openings>| {
+            let super::selection::Selection::Cells { table, anchor, focus, .. } = *s else { return };
+            let story = self.index.table_slot(table).map_or(super::position::StoryId::Body, |t| self.index.story(t.container));
+            let pieces = self.cell_ranges(table, anchor, focus);
+            if pieces.is_empty() {
+                out.push(self.table_point(table).map_or_else(Openings::default, |p| self.openings(&p, &p)));
+            }
+            out.extend(pieces.into_iter().map(|(para, a, b)| self.openings(&Position::text(story, para, a), &Position::text(story, para, b))));
+        };
+        let mut out = Vec::new();
+        match self.selection {
+            s @ super::selection::Selection::Cells { .. } => cells(&s, &mut out),
+            _ => out.push(self.selection_span().map_or_else(Openings::default, |(a, b)| self.openings(&a, &b))),
+        }
         if !replaces_primary(id) {
             out.extend(self.other_ranges().iter().map(|(a, b)| self.openings(a, b)));
-            out.extend(self.other_cells().iter().filter_map(|c| match c {
-                super::selection::Selection::Cells { table, .. } => {
-                    Some(self.table_point(*table).map_or_else(Openings::default, |p| self.openings(&p, &p)))
-                }
-                _ => None,
-            }));
+            for c in self.other_cells() {
+                cells(c, &mut out);
+            }
         }
         out.extend(self.selected_floats().into_iter().skip(1).map(|f| self.float_point(f).map_or_else(Openings::default, |p| self.openings(&p, &p))));
         out
@@ -808,15 +835,22 @@ impl Editor {
     pub fn editable_region_views(&mut self, pages: std::ops::Range<usize>) -> (Vec<(usize, super::view::Band)>, Vec<super::view::FormattingMark>) {
         use super::view::{FormattingMark, MarkKind};
         let (mut bands, mut marks) = (Vec::new(), Vec::new());
+        let near = self.near;
         for (a, b) in self.own_ranges() {
             let rects = self.range_rects(a, b, pages.clone());
-            if let (Some(first), Some(last)) = (rects.first(), rects.last()) {
-                let (s, e) = (first.1.rect, last.1.rect);
+            // A bracket where the range's end is: not at the edge of the pages asked for
+            let (first, last) = (rects.first(), rects.last());
+            let (start_page, end_page) = (first.and_then(|_| self.page_showing(a)), last.and_then(|_| self.page_showing(b)));
+            if let Some(first) = first.filter(|f| start_page == Some(f.0)) {
+                let s = first.1.rect;
                 marks.push(FormattingMark {
                     page: first.0,
                     kind: MarkKind::BookmarkStart,
                     at: super::view::Band { rect: [s[0], s[1], s[0], s[3]], turn: first.1.turn },
                 });
+            }
+            if let Some(last) = last.filter(|l| end_page == Some(l.0)) {
+                let e = last.1.rect;
                 marks.push(FormattingMark {
                     page: last.0,
                     kind: MarkKind::BookmarkEnd,
@@ -825,12 +859,18 @@ impl Editor {
             }
             bands.extend(rects);
         }
+        self.near = near;
         (bands, marks)
     }
 
     /// Lets `editor` edit the selection (`allowed`), adding a permission for them over it, or stops them editing the
     /// editable ranges over it, as ticking or clearing them in the Restrict Editing pane does. One undo step.
     pub fn set_range_editor(&mut self, editor: RangeEditor, allowed: bool, fonts: &Fonts) -> Outcome {
+        // The gates of the commands it stands for: enforced protection keeps its exceptions as they are
+        let like = if allowed { Command::AddEditableRange(EditableRange::default()) } else { Command::RemoveEditableRanges };
+        if let Some(out) = self.refuse_like(&like) {
+            return out;
+        }
         let ranges = self.text_ranges();
         if allowed {
             // `w:edGrp` takes only its enumerated values, which Word writes in lower case.

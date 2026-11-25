@@ -176,6 +176,12 @@ fn a_linked_style_makes_its_character_half_and_shares_its_character_formatting()
     assert_eq!(colors(&e), [Tri::Unavailable, Tri::Unavailable], "undone");
     e.execute(Command::Redo, fonts());
     assert_eq!(colors(&e), [red, red], "redone");
+    // Linked to nothing: refused, nothing written.
+    let (depth, styles) = (e.history().undo_depth(), e.document().resolver.as_ref().expect("styles").styles.by_id.len());
+    let change = StyleChange { name: Some("Loose".into()), link: Some(None), ..Default::default() };
+    let (out, made) = e.create_style(NewStyle { category: StyleCategory::Linked, change, ..Default::default() }, fonts());
+    assert!(refused(&out) && made.is_none(), "{out:?}");
+    assert_eq!((e.history().undo_depth(), e.document().resolver.as_ref().expect("styles").styles.by_id.len()), (depth, styles));
 }
 
 #[test]
@@ -187,7 +193,9 @@ fn a_paragraph_style_numbers_with_a_list() {
     let o = e.modify_style(&id("Body"), StyleChange { list: Some(Some(StyleList { list, level: 1 })), ..Default::default() }, fonts());
     assert!(!refused(&o), "{o:?}");
     assert!(paras(&e)[1].list.is_some(), "Body's paragraph is numbered");
-    assert_eq!(e.style_definition(&id("Body")).expect("Body").list, Some(StyleList { list, level: 1 }));
+    let d = e.style_definition(&id("Body")).expect("Body");
+    assert_eq!(d.list, Some(StyleList { list, level: 1 }));
+    assert_eq!((d.paragraph.list, d.paragraph.list_level), (Tri::Uniform(crate::api::state::ListState::Numbered), Tri::Uniform(1)));
     assert!(refused(&e.modify_style(
         &id("Body"),
         StyleChange { list: Some(Some(StyleList { list: 999, level: 0 })), ..Default::default() },
@@ -199,6 +207,23 @@ fn a_paragraph_style_numbers_with_a_list() {
     let normal = StyleChange { list: Some(Some(StyleList { list, level: 0 })), ..Default::default() };
     assert!(!refused(&e.modify_style(&id("Normal"), normal, fonts())));
     assert!(paras(&e)[1].list.is_none() && e.style_definition(&id("Body")).expect("Body").list.is_none(), "Body's own no list");
+}
+
+#[test]
+fn a_new_base_reformats_the_styles_numbers() {
+    let mut e = plain();
+    caret_in(&mut e, 0);
+    e.execute(Command::SetList(Some(ListKind::Numbered)), fonts());
+    let (list, _) = paras(&e)[0].style.num.expect("a list");
+    let own = StyleChange { list: Some(Some(StyleList { list, level: 0 })), ..Default::default() };
+    assert!(!refused(&e.modify_style(&id("Body"), own, fonts())));
+    let label = |e: &Editor| paras(e)[1].list.as_ref().map(|l| (l.text.clone(), l.run.bold)).expect("a number");
+    let (text, bold) = label(&e);
+    assert!(!bold);
+    // A bold base: its number bold, its text the same
+    let rebase = StyleChange { based_on: Some(Some(id("Heading1"))), ..Default::default() };
+    assert!(!refused(&e.modify_style(&id("Body"), rebase, fonts())));
+    assert_eq!(label(&e), (text, true));
 }
 
 #[test]
@@ -277,6 +302,10 @@ fn a_list_style_is_made_with_its_levels() {
         StyleChange { formatting: vec![Command::SetBold(true)], ..Default::default() },
         fonts()
     )));
+    // Applied without levels: refused for that
+    let change = StyleChange { name: Some("Bare List".into()), ..Default::default() };
+    let (out, _) = e.create_style(NewStyle { category: StyleCategory::List, change, apply: true, ..Default::default() }, fonts());
+    assert!(matches!(&out, Outcome::Refused(err) if err.message.contains("list_levels")), "{out:?}");
 }
 
 #[test]

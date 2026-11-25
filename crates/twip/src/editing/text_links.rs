@@ -64,7 +64,7 @@ impl Editor {
     }
 
     /// Whether the selected text box's text can go on in `target` (Word's Create Link): the selected box has no box
-    /// after it, and `target` is another empty text box in no chain, in the same story.
+    /// after it, and `target` is another empty text box in no chain, in the same story. Neither runs vertically.
     pub fn can_link_to(&self, target: FloatId) -> bool {
         let Selection::Object(ObjectRef::Floating(f)) = self.selection else { return false };
         if f == target || self.selected_floats().len() != 1 || self.selected_child().is_some() {
@@ -79,17 +79,26 @@ impl Editor {
         if !owned || !boxes.iter().all(|&g| self.float_changeable(g)) || !self.float_changeable(target) {
             return false;
         }
+        // A chain's text is laid out horizontally: a vertical box's text would turn
+        let vertical = |g: FloatId| {
+            self.float_of(g)
+                .and_then(|n| n.shape.as_deref()?.sp())
+                .is_some_and(|sp| crate::layout::vertical::of_text_box(sp.body.direction).is_some())
+        };
+        if boxes.iter().chain([&target]).any(|&g| vertical(g)) {
+            return false;
+        }
         let story = |g: FloatId| self.index.float_anchor(g).and_then(|a| self.index.para_slot(a)).map(|s| self.index.story(s.container));
         let empty = self.float_of(target).is_some_and(|t| {
             let sp = t.shape.as_deref().and_then(|s| s.sp());
             let free = sp.is_some_and(|sp| sp.text_box && sp.text == ShapeText::Story && sp.chain.is_none());
             // Its story is dropped: only empty paragraphs, no markers (bookmarks, comments, controls), tracked paragraph
-            // marks or anchored objects.
+            // marks or formatting, or anchored objects.
             let empty_text = |i: &Inline| matches!(i, Inline::Text(s, _) if s.is_empty());
             let blank = t.text_box.as_ref().is_none_or(|tb| {
                 tb.blocks
                     .iter()
-                    .all(|b| matches!(b, Block::Para(p) if p.controls.is_empty() && p.mark.rev.is_empty() && p.inlines.iter().all(empty_text)))
+                    .all(|b| matches!(b, Block::Para(p) if p.controls.is_empty() && p.mark.rev.is_empty() && p.style.change.is_none() && p.inlines.iter().all(empty_text)))
             });
             free && blank && !t.is_frame()
         });

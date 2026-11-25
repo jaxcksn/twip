@@ -396,6 +396,9 @@ fn a_date_control_fills_from_a_date_and_reads_it_back() {
     assert_eq!(read(&e).as_deref(), Some("2026-01-01T00:00:00Z"), "the control as it was");
     assert!(matches!(e.fill_control_date(&id, "2028-02-29", fonts()), Outcome::Changed(_)), "a leap day");
     e.undo_many(true, 1, fonts());
+    assert!(matches!(e.fill_control_date(&id, "2027-02-28T23:00:00-05:00", fonts()), Outcome::Changed(_)));
+    assert_eq!((texts(&e)[0].as_str(), read(&e).as_deref()), ("Before February 2027", Some("2027-02-28T23:00:00Z")), "the day given");
+    e.undo_many(true, 1, fonts());
     assert!(matches!(e.fill_control_date(&id, "2027-02-03", fonts()), Outcome::Changed(_)));
     std::mem::take(&mut e.changes);
     assert!(matches!(e.fill_control_date(&id, "2027-02-05", fonts()), Outcome::Changed(_)));
@@ -447,6 +450,24 @@ fn a_repeating_section_adds_a_copy_of_its_item() {
     assert!(matches!(e.add_repeating_item(&s, None, false, fonts()), Outcome::Refused(_)), "on");
     flag(&mut e, "false");
     assert!(matches!(e.add_repeating_item(&s, None, false, fonts()), Outcome::Changed(_)), "off");
+}
+
+#[test]
+fn a_repeating_section_in_a_locked_control_adds_no_item() {
+    let name = r#"<w:p><w:r><w:t>Ada</w:t></w:r></w:p><w:p><w:r><w:t>After</w:t></w:r></w:p>"#;
+    let mut e = Editor::open(&blank_body(name), fonts()).expect("opens");
+    send(&mut e, json!({ "type": "key", "code": "Home", "mods": { "ctrl": true } }));
+    send(&mut e, json!({ "type": "key", "code": "End", "mods": { "shift": true } }));
+    ok(&cmd(&mut e, json!({ "type": "wrapInRepeatingSection", "tag": "People" })));
+    let s = crate::api::value::ElementId(api(ctl(&e, |c| c.props.kind == ControlKind::RepeatingSection)));
+    let outer = ControlId::next();
+    let props = crate::docx::ControlProps { lock: crate::docx::Lock::ContentLocked, ..Default::default() };
+    e.doc.controls.insert(outer, crate::docx::Control::new(props));
+    let Block::Para(p) = &mut e.doc.sections[0].blocks[0] else { panic!("a paragraph") };
+    p.controls.insert(0, outer);
+    let before = texts(&e);
+    assert!(matches!(e.add_repeating_item(&s, None, false, fonts()), Outcome::Refused(_)), "the control around it is locked");
+    assert_eq!(texts(&e), before);
 }
 
 #[test]

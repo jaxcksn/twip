@@ -501,7 +501,40 @@ fn typing_over_the_free_last_range_beside_a_locked_one() {
     e.select_ranges(&[(at(&e, 0, len - 4), at(&e, 0, len - 2)), (at(&e, 0, 0), at(&e, 0, 4))]);
     assert!(e.is_discontiguous());
     e.execute(Command::InsertText("X".into()), fonts());
-    assert!(texts(&e)[0].starts_with("X text"), "{:?}", texts(&e));
+    assert_eq!(texts(&e)[0], "X text locked");
+}
+
+#[test]
+fn dragging_ranges_out_moves_every_range() {
+    let mut e = Editor::open(&blank_with("one two three four"), fonts()).unwrap();
+    e.select_ranges(&[(at(&e, 0, 4), at(&e, 0, 7)), (at(&e, 0, 14), at(&e, 0, 18))]);
+    assert!(e.drag_out().is_some_and(|o| o.can_move));
+    e.drag_out_end(true, fonts());
+    let t = &texts(&e)[0];
+    assert!(!t.contains("two") && !t.contains("four"), "{t:?}");
+    let body = r#"<w:p><w:r><w:t xml:space="preserve">free text </w:t></w:r><w:sdt><w:sdtPr><w:lock w:val="contentLocked"/></w:sdtPr><w:sdtContent><w:r><w:t>locked</w:t></w:r></w:sdtContent></w:sdt></w:p>"#;
+    let mut e = Editor::open(&super::blank_body(body), fonts()).unwrap();
+    let len = crate::editing::step::para_len(e.index().para(e.document(), para(&e, 0)).unwrap()).0;
+    e.select_ranges(&[(at(&e, 0, len - 4), at(&e, 0, len - 2)), (at(&e, 0, 0), at(&e, 0, 4))]);
+    assert!(e.drag_out().is_some_and(|o| !o.can_move), "a locked range can't be taken");
+}
+
+#[test]
+fn changing_another_range_gives_up_a_pending_move() {
+    let mut e = Editor::open(&blank_with("one two three four"), fonts()).unwrap();
+    e.select_ranges(&[(at(&e, 0, 14), at(&e, 0, 18)), (at(&e, 0, 0), at(&e, 0, 3))]);
+    e.begin_move_to(false);
+    let right = crate::api::command::MoveSelection {
+        by: crate::api::command::MoveUnit::Character,
+        direction: crate::api::value::Direction::Forward,
+        extend: None,
+    };
+    e.execute(Command::MoveSelection(right), fonts());
+    assert!(e.move_to_pending().and_then(|m| m.target).is_some());
+    let primary = e.selection;
+    e.select_ranges(&[(at(&e, 0, 8), at(&e, 0, 13)), (at(&e, 0, 0), at(&e, 0, 3))]);
+    assert_eq!(e.selection, primary, "the selection itself is the same");
+    assert!(e.move_to_pending().is_none(), "the other range changed");
 }
 
 #[test]
@@ -1284,6 +1317,17 @@ fn clear_puts_the_caret_in_the_first_cell_it_emptied() {
 }
 
 #[test]
+fn a_drag_across_cells_takes_a_merged_cell_whole_as_it_goes() {
+    let rows: [&[(&str, &str)]; 2] = [&[("a", "<w:gridSpan w:val=\"2\"/>"), ("b", "")], &[("c", ""), ("d", ""), ("e", "")]];
+    let mut r = table_doc(&rows, &[]);
+    // From d up to b: the block goes over half of the merged cell
+    r.step(&json!({ "press": { "para": 4, "offset": 1 } }));
+    r.step(&json!({ "move_to": { "para": 2, "offset": 1 } }));
+    assert_eq!(block(&r.e), Some((0, 0, 1, 2)), "the merged cell whole, mid-drag: {:?}", r.e.selection());
+    r.step(&json!({ "release": { "para": 2, "offset": 1 } }));
+}
+
+#[test]
 fn removing_a_cell_leaves_the_merged_cell_beside_it_whole() {
     let rows: [&[(&str, &str)]; 2] = [&[("a", "<w:vMerge w:val=\"restart\"/>"), ("b", "")], &[("", "<w:vMerge/>"), ("d", "")]];
     let mut r = table_doc(&rows, &[]);
@@ -1299,11 +1343,14 @@ fn removing_a_cell_leaves_the_merged_cell_beside_it_whole() {
 fn the_view_of_many_ranges_is_that_of_each_range_alone() {
     let text = (0..60).map(|k| format!("word{k}")).collect::<Vec<_>>().join(" ");
     let mut e = Editor::open(&blank_with(&text), fonts()).unwrap();
-    let ranges: Vec<_> = (0..40).map(|k| (at(&e, 0, k * 14 + 1), at(&e, 0, k * 14 + 5))).collect();
+    // Inside each of the first 40 words
+    let ranges: Vec<_> = text.match_indices("word").take(40).map(|(k, _)| (at(&e, 0, k as u32 + 1), at(&e, 0, k as u32 + 4))).collect();
     e.select_ranges(&ranges);
     let all = e.selection_ranges();
     assert_eq!(all.len(), 40);
-    let mut one_by_one: Vec<String> = all.iter().flat_map(|&(a, b)| e.range_rects(a, b, 0..1)).map(|r| format!("{r:?}")).collect();
+    let each: Vec<Vec<_>> = all.iter().map(|&(a, b)| e.range_rects(a, b, 0..1)).collect();
+    assert!(each.iter().all(|r| !r.is_empty()), "every range is highlighted on the page");
+    let mut one_by_one: Vec<String> = each.into_iter().flatten().map(|r| format!("{r:?}")).collect();
     let mut together: Vec<String> = e.multi_rects(0..1).into_iter().map(|r| format!("{r:?}")).collect();
     one_by_one.sort();
     together.sort();

@@ -402,7 +402,8 @@ impl Editor {
             },
             fonts,
         );
-        let selected = self.selected_floats().contains(&id) && self.selected_child().is_none_or(|c| c.starts_with(path));
+        // The whole object selected is its empty path
+        let selected = self.selected_floats().contains(&id) && self.selected_child().unwrap_or_default().starts_with(path);
         if hidden && selected && matches!(out, Outcome::Changed(_)) {
             self.object_to_caret();
         }

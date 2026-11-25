@@ -3949,3 +3949,22 @@ fn compat_14_a_picture_that_meets_its_own_paragraphs_lines_keeps_its_place_when_
     // C's first line (baseline 10.86pt below its top) moved down by A's extra lines; the picture didn't.
     assert!(r[1] < c0 - 10.86 + 30.0 - 10.0, "{r:?} {c0}");
 }
+
+#[test]
+fn a_cells_number_cut_by_its_edge_keeps_what_shows_of_it() {
+    // The number hangs 6 pt before the text, which starts at the cell's edge: its start is cut off.
+    let numbering = r#"<w:abstractNum w:abstractNumId="1"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="0" w:hanging="120"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="1"/></w:num>"#;
+    let cell = r#"<w:tc><w:tcPr><w:tcW w:w="2880" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr><w:r><w:t>Item</w:t></w:r></w:p></w:tc>"#;
+    let body = format!(
+        r#"<w:tbl><w:tblPr><w:tblW w:w="2880" w:type="dxa"/><w:tblInd w:w="720" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="2880"/></w:tblGrid><w:tr>{cell}</w:tr></w:tbl><w:p/>"#
+    );
+    let Some(doc) = test_doc("", "", &body, numbering) else { return };
+    let snap = crate::layout::layout(&doc, &fonts());
+    let mut labels = Vec::new();
+    crate::layout::traverse::paint_lines(&snap.pages()[0], &mut |_| {}, &mut |_, _, l, dx, _| {
+        labels.extend(l.line.label.map(|(a, b)| (a + dx, b + dx)));
+    });
+    // The cell's edge: the table's indent less its cell margin, 0.5 pt in compat 12
+    let edge = 72.0 + 36.0 - 0.5;
+    assert!(matches!(labels[..], [(a, b)] if (a - edge).abs() < 0.5 && b > a), "the number's visible part: {labels:?}");
+}

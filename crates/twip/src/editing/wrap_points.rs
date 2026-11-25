@@ -302,6 +302,8 @@ impl Editor {
         if self.wrap_kept(f) {
             return Outcome::unavailable("the object can't be changed");
         }
+        // A point drag of the polygon replaced would land on the new one
+        self.wrap_point_cancel();
         let Some(mut n) = self.float_of(f).cloned() else { return Outcome::Unchanged("no float") };
         if let Some(&first) = poly.first() {
             poly.push(first);
@@ -456,6 +458,7 @@ impl Editor {
         if self.wrap_kept(f) {
             return Outcome::unavailable("the object can't be changed");
         }
+        self.wrap_point_cancel();
         let Some(mut n) = self.float_of(f).cloned() else { return Outcome::Unchanged("no float") };
         let mut poly = outline_polygon(&|k| self.image_bytes(k), &n);
         if let Some(&first) = poly.first() {

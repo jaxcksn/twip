@@ -280,8 +280,12 @@ impl Editor {
         if self.tracking_locked() {
             return Outcome::unavailable("protection forces tracking");
         }
+        if self.mode == super::super::Mode::ReadOnly {
+            return self.refuse_read_only();
+        }
         let out = self.resolve_revisions(true, &Scope::All, fonts);
-        if matches!(out, Outcome::Refused(_)) {
+        // Tracking stops once every revision is accepted, or there was none
+        if !matches!(out, Outcome::Changed(_) | Outcome::Unchanged("no revision")) {
             return out;
         }
         let stopped = self.doc.settings.track_revisions && self.set_tracking(false);

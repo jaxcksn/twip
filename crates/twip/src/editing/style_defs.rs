@@ -94,7 +94,8 @@ pub struct StyleChange {
     pub list: Option<Option<StyleList>>,
     /// A list style's levels, from the first (the rest defaulted). List styles only.
     pub list_levels: Option<Vec<ListLevel>>,
-    /// Its own character and paragraph formatting goes first, so `formatting` gives all of it.
+    /// Its own character and paragraph formatting goes first (a table style's table, row and cell properties too), so
+    /// `formatting` gives all of it.
     pub clear: bool,
     /// Character and paragraph formatting commands, run on the style as on text (a character style takes character
     /// formatting only; a list style none). A table style's whole table takes table commands too, as
@@ -556,7 +557,10 @@ impl Editor {
         let (para, run, _) = self.style_formatting(raw)?;
         let tabs =
             para.style.tabs.iter().filter(|t| t.kind != crate::docx::props::TabKind::Clear).map(|t| super::commands::tabs::info(t, false)).collect();
-        Some((super::state::character(&[&run]), super::state::paragraph(&[(&para.style, None)]), tabs))
+        // Its list, its own or a base style's: bulleted or numbered
+        let res = self.doc.resolver.as_ref()?;
+        let list = para.style.num.filter(|(n, _)| *n != 0).and_then(|(n, l)| res.numbering.level(n, l, &res.styles)).map(|l| l.fmt == "bullet");
+        Some((super::state::character(&[&run]), super::state::paragraph(&[(&para.style, list)]), tabs))
     }
 
     /// Why the command gates refuse `cmd`, for an entry point that backs it: read-only mode, then document protection.
@@ -921,6 +925,9 @@ impl Editor {
         };
         let mut change = new.change.clone();
         change.name = None;
+        if new.category == StyleCategory::Linked && change.link == Some(None) {
+            return (Outcome::Refused(Error::invalid("a linked style is linked to a character style")), None);
+        }
         // A linked style: its character half, made with it.
         let mut half = None;
         if new.category == StyleCategory::Linked && change.link.is_none() {
@@ -962,7 +969,14 @@ impl Editor {
                     Some(_) => e.execute(Command::SetTableStyle(StyleId(id.clone())), fonts),
                     None => written,
                 },
-                StyleCategory::List => e.apply_list_entry(&crate::api::services::ListEntryId(format!("style:{id}")), fonts),
+                StyleCategory::List => {
+                    // Its numbering its own or a base's (a list style's chain)
+                    let entry = crate::api::services::ListEntryId(format!("style:{id}"));
+                    if e.list_entry(&entry).is_none() {
+                        return Outcome::Refused(Error::invalid("the list style has no numbering to apply: give it list_levels"));
+                    }
+                    e.apply_list_entry(&entry, fonts)
+                }
                 StyleCategory::Character => e.format(&super::format::Format::CharStyle(id.clone()), fonts),
                 _ => e.format(&super::format::Format::ParaStyle(id.clone()), fonts),
             }

@@ -632,7 +632,15 @@ pub struct NoteSeparatorInfo {
 fn paragraphs_text(blocks: &[Block], out: &mut Vec<String>) {
     for b in blocks {
         match b {
-            Block::Para(p) => out.push(super::text::UnitText::of(p).text.chars().filter(|c| *c != '\u{FFFC}').collect()),
+            // Without the stand-ins for objects; a character written as text stays
+            Block::Para(p) => out.push(
+                p.inlines
+                    .iter()
+                    .flat_map(|i| {
+                        super::text::inline_chars(i).filter(move |&c| c != super::text::OBJECT || matches!(i, Inline::Text(..) | Inline::Sym { .. }))
+                    })
+                    .collect(),
+            ),
             Block::Table(t) => t.rows.iter().flat_map(|r| &r.cells).for_each(|c| paragraphs_text(&c.blocks, out)),
         }
     }

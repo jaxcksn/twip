@@ -1626,8 +1626,7 @@ impl Editor {
         let before = self.selection;
         self.deferring = true;
         let mut out = Outcome::Unchanged(if undo { "nothing to undo" } else { "nothing to redo" });
-        for k in 0..count {
-            self.deferring = k + 1 < count;
+        for _ in 0..count {
             match self.undo(undo, fonts) {
                 o @ Outcome::Changed(_) => out = o,
                 o => {
@@ -1638,10 +1637,9 @@ impl Editor {
                 }
             }
         }
-        if self.deferring {
-            self.deferring = false;
-            self.after_edit(before, fonts);
-        }
+        // Scrolled to once, from where the caret was before the first
+        self.deferring = false;
+        self.after_edit(before, fonts);
         out
     }
 
@@ -3261,7 +3259,8 @@ impl Editor {
                     dd.block = true;
                 }
                 let s = match crossed {
-                    Some((s, _)) => s,
+                    // Over whole merged cells, as a plain drag's selection is
+                    Some((s, _)) => self.normalize(s),
                     None => self.dragged_selection(d, p),
                 };
                 if d.adding && self.removing() && !self.sweeps_anew(&s) {
@@ -3869,8 +3868,18 @@ impl Editor {
                                 _ => None,
                             }
                         };
+                        // A deletion's stand-in (`^`, `#`) is blanked in the text, not a space
+                        let stand_in = |u: Unit| {
+                            text.is_hidden(u)
+                                && self
+                                    .index
+                                    .para(&self.doc, para)
+                                    .and_then(|q| stories::inline_at(q, u))
+                                    .and_then(crate::docx::Inline::run)
+                                    .is_some_and(|r| self.doc.review.hides(&r.rev))
+                        };
                         match text.char_at(a.unit) {
-                            Some(' ') if spaces => mark(MarkKind::Space, a.x, b.x),
+                            Some(' ') if spaces && !stand_in(a.unit) => mark(MarkKind::Space, a.x, b.x),
                             Some('\u{a0}') if spaces => mark(MarkKind::NonBreakingSpace, a.x, b.x),
                             Some('\u{2011}') if o.all => mark(MarkKind::NonBreakingHyphen, a.x, b.x),
                             Some('\t') if tabs => mark(MarkKind::Tab, a.x, b.x),

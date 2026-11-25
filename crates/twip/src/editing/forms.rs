@@ -515,19 +515,19 @@ impl Editor {
         if stops.is_empty() {
             return Outcome::Unchanged("no form fields");
         }
-        // The stop holding the selection counts as passed
+        // The stop holding the selection's near end counts as passed; one starting at its far end doesn't
         let key = |s: &(usize, ParaId, Unit, Stop)| (s.0, s.2);
+        let near = a.para_offset();
+        let holds = |s: &(usize, ParaId, Unit, Stop)| match &s.3 {
+            Stop::Form(f, _) => near.is_some_and(|(p, u)| p == s.1 && self.form_field_range(*f, s.1).is_some_and(|(x, y, ..)| x <= u && u < y)),
+            Stop::Control(c) => self
+                .locate(ElementId::Control(*c))
+                .and_then(|w| self.element_range(&w))
+                .is_some_and(|(x, y)| self.index.cmp(&x, &a) != std::cmp::Ordering::Greater && self.index.cmp(&a, &y) != std::cmp::Ordering::Greater),
+        };
         let pick = if forward {
-            stops.iter().find(|s| key(s) > (mine, start)).or(stops.first())
+            stops.iter().find(|s| key(s) >= (mine, start) && !holds(s)).or(stops.first())
         } else {
-            // Not the one the selection is in
-            let at = crate::editing::position::Position::text(story, here, start);
-            let holds = |s: &(usize, ParaId, Unit, Stop)| match &s.3 {
-                Stop::Form(f, _) => s.0 == mine && self.form_field_range(*f, s.1).is_some_and(|(a, b, ..)| a <= start && start < b),
-                Stop::Control(c) => self.locate(ElementId::Control(*c)).and_then(|w| self.element_range(&w)).is_some_and(|(a, b)| {
-                    self.index.cmp(&a, &at) != std::cmp::Ordering::Greater && self.index.cmp(&at, &b) != std::cmp::Ordering::Greater
-                }),
-            };
             stops.iter().rev().find(|s| key(s) < (mine, start) && !holds(s)).or(stops.last())
         };
         let Some((_, para, _, stop)) = pick else { return Outcome::Unchanged("no form fields") };

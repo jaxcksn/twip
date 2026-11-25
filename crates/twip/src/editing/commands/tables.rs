@@ -34,8 +34,10 @@ impl Editor {
         if to != AutoFit::Contents {
             let Some(t) = self.index.table(&self.doc, tg.table) else { return Outcome::unavailable("not in a table") };
             let mut grid = crate::editing::tables::full_grid(t, Grid::of(t).cols);
-            if let Some(geo) = self.measured_pages(tg.table).first() {
-                crate::editing::tables::drawn_grid(geo, tg.table, &mut grid);
+            if let Some(geo) = self.measured_pages(tg.table).first()
+                && let Some(t) = self.index.table(&self.doc, tg.table)
+            {
+                crate::editing::tables::drawn_grid(geo, tg.table, t, &mut grid);
             }
             let fit = if to == AutoFit::Fixed {
                 TableFormat::Fit { fixed: true, width: Width::Auto, grid }

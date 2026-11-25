@@ -108,8 +108,9 @@ pub fn word_count_in(e: &mut crate::editing::Editor, scope: WordCountScope) -> c
         MarkupView::All => MarkupView::Simple,
         v => v,
     };
-    let ranges = if scope.selection && !e.selection().is_collapsed() { e.selected_ranges() } else { Vec::new() };
-    let whole = ranges.is_empty();
+    // A caret counts the document; a selection its text, none for a selected object
+    let whole = !scope.selection || e.selection().is_collapsed();
+    let ranges = if whole { Vec::new() } else { e.selected_ranges() };
     let stories = crate::editing::find::Stories { boxes: scope.boxes_and_notes, notes: scope.boxes_and_notes, headers: false };
     let paras: Vec<(crate::layout::ParaId, u32, u32)> = if whole {
         e.story_paras(stories).into_iter().map(|p| (p, 0, u32::MAX)).collect()

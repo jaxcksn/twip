@@ -1238,6 +1238,23 @@ fn live_layout_lays_the_dragged_float_out_where_the_pointer_is() {
 }
 
 #[test]
+fn escape_from_select_objects_ends_an_object_drag() {
+    use serde_json::json;
+    let mut r = super::scenarios::Run::open("FX-OBJ.docx", "select-objects-escape");
+    r.e.live_layout = false;
+    let was = body_floats(&r.e);
+    r.step(&json!({ "click": { "float": 1 } }));
+    r.e.set_select_objects(true);
+    r.step(&json!({ "press": { "float": 1 } }));
+    r.step(&json!({ "move_to": { "float": 1, "dy": -150 } }));
+    assert!(r.e.view(0..3).ghost.is_some(), "mid-drag");
+    r.e.execute(Command::Escape, fonts());
+    assert!(!r.e.selecting_objects() && r.e.view(0..3).ghost.is_none(), "the drag ended with the mode");
+    r.step(&json!({ "release": { "float": 1 } }));
+    assert_eq!(body_floats(&r.e), was, "the release moves nothing");
+}
+
+#[test]
 fn a_live_drags_outline_stays_on_the_float_where_layout_keeps_it() {
     use serde_json::json;
     let mut r = super::scenarios::Run::open("FX-OBJ.docx", "live-clamp");
@@ -2177,6 +2194,24 @@ fn double_click_auto_fits_a_column() {
     let g2 = grid(&e);
     assert!(g2[0] > g[0], "the long text widens its column: {g2:?}");
     assert!(g2.iter().sum::<f64>() <= 468.0 + 12.0, "at most the text width and the padding: {g2:?}");
+}
+
+#[test]
+fn fitting_columns_together_gives_the_room_one_frees_to_another() {
+    let mut e = typed_table(&[
+        &["A longer piece of text in column one that wraps onto a second line here.", "short", "x"],
+        &["A longer piece of text in column one that wraps onto a second line here.", "short", "x"],
+    ]);
+    let grid = |e: &super::super::Editor| {
+        e.document().sections[0].blocks.iter().find_map(|b| if let crate::docx::Block::Table(t) = b { Some(t.grid.clone()) } else { None }).unwrap()
+    };
+    let table = e.index().table_ids().next().expect("the table");
+    let before = grid(&e);
+    e.auto_fit_columns_to_contents(table, (0, 2), fonts());
+    let g = grid(&e);
+    assert!(g[1] < before[1] && g[2] < before[2], "the short ones narrow: {before:?} → {g:?}");
+    assert!(g[0] > before[0] + 50.0, "the long one takes the room they left: {before:?} → {g:?}");
+    assert!(g.iter().sum::<f64>() <= 468.0 + 12.0, "at most the text width and the padding: {g:?}");
 }
 
 #[test]

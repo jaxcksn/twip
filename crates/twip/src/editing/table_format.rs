@@ -85,7 +85,7 @@ fn width_xml(w: &str, name: &str, v: &Width) -> String {
 }
 
 /// `xml` as the table's own `name` in its `w:tblPr` (empty: none).
-fn set_own(props: &mut TableProps, name: &str, xml: String, cx: &crate::docx::write::props::Cx) {
+pub(super) fn set_own(props: &mut TableProps, name: &str, xml: String, cx: &crate::docx::write::props::Cx) {
     use crate::docx::write::props::{Props, TBLPR};
     let mut p = Props::parse(props.direct.0.as_deref(), "tblPr", cx);
     p.reorder(TBLPR);

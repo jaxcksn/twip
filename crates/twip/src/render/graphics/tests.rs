@@ -1026,11 +1026,10 @@ fn a_page_thumbnail_fits_its_page_into_the_pixels() {
     assert_eq!(g.page_thumbnail(&Renderer::default(), &snap.pages()[0], &d.images, &mut px, (101, 100), grey), None, "pixels of another size");
     let mut big = vec![0u8; 100 * 100 * 4 + 4];
     assert_eq!(g.page_thumbnail(&Renderer::default(), &snap.pages()[0], &d.images, &mut big, (100, 100), grey), None, "more pixels than the size");
-    let mut empty = vec![0u8; 0x100];
+    // As many pixels as the size has, none: the size itself is refused.
     for size in [(0, 100), (100, 0), (0, 0)] {
-        assert_eq!(g.page_thumbnail(&Renderer::default(), &snap.pages()[0], &d.images, &mut empty, size, grey), None, "an empty size");
+        assert_eq!(g.page_thumbnail(&Renderer::default(), &snap.pages()[0], &d.images, &mut [], size, grey), None, "an empty size {size:?}");
     }
-    assert_eq!(g.page_thumbnail(&Renderer::default(), &snap.pages()[0], &d.images, &mut [], (0, 0), grey), None, "no pixels");
 }
 
 #[test]

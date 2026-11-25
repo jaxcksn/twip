@@ -708,7 +708,15 @@ impl Editor {
         if props.kind != ControlKind::RepeatingSection {
             return Err(bad("id"));
         }
-        if props.kind_xml.as_deref().is_some_and(items_fixed) || !props.lock.editable() {
+        // The section's own lock and those of the controls around it
+        let around_locked = self.element_range(&w).is_some_and(|(start, _)| {
+            elements::context(&self.doc, &self.index, &Selection::Caret(start))
+                .iter()
+                .skip_while(|(x, _)| *x != ElementId::Control(s))
+                .skip(1)
+                .any(|(x, _)| matches!(x, ElementId::Control(c) if self.doc.controls.get(c).is_some_and(|k| !k.props.lock.editable())))
+        });
+        if props.kind_xml.as_deref().is_some_and(items_fixed) || !props.lock.editable() || around_locked {
             return Err(locked());
         }
         if props.binding.is_some() || props.rest.iter().any(|(n, _)| n == "dataBinding") {
@@ -1013,7 +1021,13 @@ impl Editor {
             return Err(locked());
         }
         let date = date.trim();
-        let secs = crate::docx::review::Timestamp::parse(date).utc.ok_or_else(|| bad("date"))?;
+        crate::docx::review::Timestamp::parse(date).utc.ok_or_else(|| bad("date"))?;
+        // The day and time as written, its zone dropped: a full date is a day, as Word's date picker stores it
+        let wall = match date.find('T') {
+            Some(t) => &date[..date[t..].find(['Z', '+', '-']).map_or(date.len(), |z| t + z)],
+            None => date,
+        };
+        let secs = crate::docx::review::Timestamp::parse(wall).utc.ok_or_else(|| bad("date"))?;
         // A day the month has
         let ymd = (date.get(0..4), date.get(5..7), date.get(8..10));
         let (Some(y), Some(m), Some(d)) =
@@ -2997,7 +3011,14 @@ fn with_child_val(xml: &str, local: &str, val: &str, w: &str, after: Option<&str
         return format!("{}{new}{}", &xml[..start], &xml[end..]);
     }
     let child = format!("<{w}{local} {w}val=\"{}\"/>", esc(val));
-    if let Some((_, at)) = after.and_then(find) {
+    if let Some((k, end)) = after.and_then(find) {
+        // After the whole sibling, its end tag too
+        let at = if xml[..end].ends_with("/>") {
+            end
+        } else {
+            let close = format!("</{}>", &xml[k + 1..k + name_end(&xml[k..])]);
+            xml[end..].find(&close).map_or(end, |c| end + c + close.len())
+        };
         return format!("{}{child}{}", &xml[..at], &xml[at..]);
     }
     let Some(at) = crate::docx::binding::tag_end(xml).map(|e| e + 1) else { return format!("{xml}{child}") };
@@ -3264,6 +3285,31 @@ mod tests {
         );
         assert_eq!(with_child_val("<w:date/>", "lid", "en-GB", "w:", Some("dateFormat")), r#"<w:date><w:lid w:val="en-GB"/></w:date>"#);
     }
+
+    #[test]
+    fn items_are_fixed_by_the_element_not_its_name_in_text() {
+        use super::items_fixed;
+        assert!(items_fixed(r#"<w15:repeatingSection><w15:doNotAllowInsertDeleteSection/></w15:repeatingSection>"#));
+        assert!(items_fixed(r#"<w15:repeatingSection><w15:doNotAllowInsertDeleteSection w15:val="1"/></w15:repeatingSection>"#));
+        assert!(!items_fixed(r#"<w15:repeatingSection><w15:doNotAllowInsertDeleteSection w15:val="0"/></w15:repeatingSection>"#));
+        assert!(!items_fixed(r#"<w15:repeatingSection><w15:sectionTitle w15:val="doNotAllowInsertDeleteSection"/></w15:repeatingSection>"#));
+    }
+
+    #[test]
+    fn an_underscored_us_locale_lists_us_formats() {
+        assert_eq!(super::date_formats("en_US"), super::date_formats("en-US"));
+        assert_eq!(super::date_formats("en_GB")[0], "dd/MM/yyyy");
+        assert_ne!(super::date_formats("en"), super::date_formats("en-GB"));
+    }
+
+    #[test]
+    fn a_child_goes_after_a_siblings_end_tag() {
+        let x = r#"<w:date><w:lid w:val="en-US"></w:lid></w:date>"#;
+        assert_eq!(
+            with_child_val(x, "storeMappedDataAs", "date", "w:", Some("lid")),
+            r#"<w:date><w:lid w:val="en-US"></w:lid><w:storeMappedDataAs w:val="date"/></w:date>"#
+        );
+    }
 }
 
 /// What a date control stores in its data (`w:storeMappedDataAs`).
@@ -3291,9 +3337,13 @@ impl DateStorage {
 /// it stores (Word's defaults where the control doesn't say).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DateSettings {
+    /// The display format (`w:dateFormat`); `M/d/yyyy` when the control has none.
     pub format: String,
+    /// The locale its dates are shown in (`w:lid`); `None` when the control doesn't set one.
     pub locale: Option<String>,
+    /// The calendar (`w:calendar`); `gregorian` when the control doesn't say.
     pub calendar: String,
+    /// What it stores in its data (`w:storeMappedDataAs`); [`DateStorage::DateTime`] when the control doesn't say.
     pub storage: DateStorage,
 }
 
@@ -3410,8 +3460,10 @@ pub fn date_formats(locale: &str) -> &'static [&'static str] {
         "H:mm",
         "H:mm:ss",
     ];
-    match locale.split(['-', '_']).next().unwrap_or_default().to_ascii_lowercase().as_str() {
-        "en" if !locale.eq_ignore_ascii_case("en-US") && !locale.eq_ignore_ascii_case("en") => EN_GB,
+    let mut parts = locale.split(['-', '_']);
+    let (language, region) = (parts.next().unwrap_or_default(), parts.next());
+    match language.to_ascii_lowercase().as_str() {
+        "en" if region.is_some_and(|r| !r.eq_ignore_ascii_case("US")) => EN_GB,
         "de" => DE,
         "fr" => FR,
         "es" => ES,
@@ -3423,11 +3475,15 @@ pub fn date_formats(locale: &str) -> &'static [&'static str] {
 
 /// Whether a repeating section's `w15:doNotAllowInsertDeleteSection` is on: present, and not given a false value.
 pub(super) fn items_fixed(kind_xml: &str) -> bool {
-    let Some(at) = kind_xml.find("doNotAllowInsertDeleteSection") else { return false };
-    let rest = &kind_xml[at..];
-    let tag = &rest[..rest.find('>').unwrap_or(rest.len())];
-    let Some(v) = tag.find("val=").map(|i| tag[i + 4..].trim_start_matches(['"', '\'']).split(['"', '\'']).next().unwrap_or("")) else {
-        return true;
-    };
-    !matches!(v, "0" | "false" | "off")
+    let mut from = 0;
+    while let Some(k) = kind_xml[from..].find('<').map(|k| from + k) {
+        let Some(end) = crate::docx::binding::tag_end(&kind_xml[k..]).map(|e| k + e) else { return false };
+        let tag = &kind_xml[k..end];
+        let name = tag[1..].split(|c: char| c.is_whitespace() || c == '/').next().unwrap_or_default();
+        if name.rsplit(':').next() == Some("doNotAllowInsertDeleteSection") {
+            return attr_value(tag, "val").is_none_or(|r| !matches!(&tag[r], "0" | "false" | "off"));
+        }
+        from = end + 1;
+    }
+    false
 }

@@ -496,16 +496,62 @@ fn without_main_rels() -> Vec<u8> {
 fn a_first_footnote_is_saved_without_main_part_relationships() {
     let mut e = Editor::open(&without_main_rels(), fonts()).unwrap();
     assert!(matches!(e.execute(Command::InsertFootnote, fonts()), Outcome::Changed(_)));
-    e.execute(Command::InsertText("Note".into()), fonts());
+    assert!(matches!(e.execute(Command::InsertText("Note".into()), fonts()), Outcome::Changed(_)));
     let saved = crate::docx::write::save(e.document()).expect("saves");
     assert!(part(&saved, "word/_rels/document.xml.rels").contains("relationships/footnotes"));
     let again = Editor::open(&saved, fonts()).unwrap();
-    assert!(again.document().footnotes.values().any(|b| !b.is_empty()));
+    let id = again
+        .document()
+        .sections
+        .iter()
+        .flat_map(|s| &s.blocks)
+        .filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None })
+        .flat_map(|p| &p.inlines)
+        .find_map(|i| if let crate::docx::Inline::NoteRef { kind: crate::docx::NoteKind::Foot, id, .. } = i { Some(*id) } else { None })
+        .expect("the body's reference");
+    let text: String = again.document().footnotes[&id]
+        .iter()
+        .filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None })
+        .flat_map(|p| &p.inlines)
+        .filter_map(|i| if let crate::docx::Inline::Text(t, _) = i { Some(t.as_str()) } else { None })
+        .collect();
+    assert!(text.contains("Note"), "{text:?}");
+}
+
+#[test]
+fn a_deleted_note_goes_from_a_default_namespace_notes_part() {
+    const W: &str = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+    let notes = format!(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><footnotes xmlns="{W}"><footnote type="separator" id="-1"><p><r><separator/></r></p></footnote><footnote id="1"><p><r><t>Gone</t></r></p></footnote></footnotes>"#
+    );
+    let rel =
+        r#"<Relationship Id="rId9" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/>"#;
+    let ty =
+        r#"<Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/>"#;
+    let body = r#"<w:p><w:r><w:t>A</w:t></w:r><w:r><w:footnoteReference w:id="1"/></w:r></w:p>"#;
+    let mut e = Editor::open(&pkg(body, rel, ty, vec![("word/footnotes.xml".into(), notes.into_bytes())]), fonts()).unwrap();
+    assert!(e.document().footnotes.contains_key(&1), "the note is read");
+    let p = texts_ids(&e)[0];
+    e.select_range(p, Unit(0), Unit(2), fonts());
+    assert!(matches!(e.execute(super::del(super::super::commands::Dir::Forward, false), fonts()), Outcome::Changed(_)));
+    let xml = part(&crate::docx::write::save(e.document()).expect("saves"), "word/footnotes.xml");
+    assert!(!xml.contains("Gone") && xml.contains("separator"), "{xml}");
 }
 
 #[test]
 fn defaults_set_without_a_styles_part_are_saved() {
-    let mut e = Editor::open(&without_main_rels(), fonts()).unwrap();
+    let blank = crate::docx::blank::blank_docx();
+    let types = crate::docx::package::read(&blank, &[], "[Content_Types].xml").expect("reads").expect("its content types");
+    let styles = r#"<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>"#;
+    assert!(types.contains(styles), "{types}");
+    let no_styles = crate::docx::write::repackage_without(
+        &blank,
+        &[("[Content_Types].xml".into(), types.replace(styles, "").into_bytes())],
+        &["word/_rels/document.xml.rels".into(), "word/styles.xml".into()],
+        zip::CompressionMethod::Deflated,
+    )
+    .expect("repackages");
+    let mut e = Editor::open(&no_styles, fonts()).unwrap();
     let d = crate::api::command::DocumentDefaults { size: Some(crate::api::value::Points(13.0)), ..Default::default() };
     assert!(matches!(e.execute(Command::SetDocumentDefaults(d), fonts()), Outcome::Changed(_)));
     let saved = crate::docx::write::save(e.document()).expect("saves");
@@ -513,6 +559,12 @@ fn defaults_set_without_a_styles_part_are_saved() {
     assert!(rels.contains("relationships/styles"), "{rels}");
     let target = rels.split("relationships/styles\" Target=\"").nth(1).and_then(|s| s.split('"').next()).expect("a target");
     assert!(part(&saved, &format!("word/{target}")).contains("docDefaults"));
+    let declared =
+        format!(r#"<Override PartName="/word/{target}" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>"#);
+    assert!(part(&saved, "[Content_Types].xml").contains(&declared), "{}", part(&saved, "[Content_Types].xml"));
+    let again = Editor::open(&saved, fonts()).unwrap();
+    let size = again.document_defaults().map(|d| d.character.size);
+    assert_eq!(size, Some(crate::api::state::Tri::Uniform(crate::api::value::Points(13.0))));
 }
 
 #[test]

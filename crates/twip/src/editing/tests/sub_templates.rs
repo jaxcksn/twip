@@ -144,6 +144,28 @@ fn a_reference_typed_by_hand_is_a_reference() {
     assert!(para.inlines.iter().any(|i| matches!(i, Inline::FieldBegin { kind: Some(crate::docx::FieldKind::SubTemplate), .. })));
 }
 
+#[test]
+fn a_reference_to_the_sub_template_being_edited_can_be_edited_over() {
+    use super::super::sub_templates::Resolution as R;
+    let (mut e, _) = expanded();
+    let name = Command::EditSubTemplate(crate::api::command::SubTemplateName { name: "Appeals notice".into(), category: None });
+    e.execute(name, fonts());
+    assert_eq!(e.editing_sub_template(), Some(2));
+    let p = body_para(&e, 2, 0);
+    let len = super::super::step::para_len(e.index().para(e.document(), p).expect("the paragraph"));
+    e.select_range(p, Unit(0), len, fonts());
+    e.execute(Command::Delete(crate::api::command::DeleteOptions { direction: crate::api::value::Direction::Backward, unit: None }), fonts());
+    e.execute(
+        Command::InsertField(crate::api::command::InsertField { code: "SUBTEMPLATE \"Appeals notice\"".into(), display: None, show_code: None }),
+        fonts(),
+    );
+    let r = e.references().by_field.values().find(|r| r.at == p).expect("a reference");
+    assert_eq!(r.resolution, R::Resolved, "nothing in the body leads to it");
+    let len = super::super::step::para_len(e.index().para(e.document(), p).expect("the paragraph"));
+    let at = |u| super::super::position::Position::text(StoryId::BuildingBlock(2), p, u);
+    assert_eq!(e.expanded_in(&at(Unit(0)), &at(len)), None, "it doesn't expand in itself");
+}
+
 fn body_block(e: &Editor, s: usize, i: usize) -> ParaId {
     match &e.document().sections[s].blocks[i] {
         Block::Para(p) => ParaId(p.id),

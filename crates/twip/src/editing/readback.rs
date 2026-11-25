@@ -223,7 +223,15 @@ impl super::Editor {
     /// The selection's character formatting beyond the formatting state's ([`CharacterReadback`]).
     pub fn character_readback(&mut self) -> Option<CharacterReadback> {
         let s = self.selection_sources()?;
-        Some(character(&s.runs.iter().map(|r| &**r).collect::<Vec<_>>()))
+        Some(self.character_of(&s))
+    }
+
+    /// [`character`] of the selection's runs; with list numbers selected, of the number, as the formatting state reads it.
+    fn character_of(&self, s: &super::state::SelectionSources) -> CharacterReadback {
+        match self.list_label_selection().and_then(|l| self.index.para(&self.doc, l.para)).and_then(|p| p.list.as_ref()) {
+            Some(l) => character(&[&*l.run]),
+            None => character(&s.runs.iter().map(|r| &**r).collect::<Vec<_>>()),
+        }
     }
 
     /// The selected paragraphs' formatting beyond the formatting state's ([`ParagraphReadback`]). The tab stops are
@@ -238,14 +246,16 @@ impl super::Editor {
         let s = self.selection_sources()?;
         let state = self.format_state_of(&s)?;
         let paragraph = self.paragraph_readback_of(&s)?;
-        Some((state, character(&s.runs.iter().map(|r| &**r).collect::<Vec<_>>()), paragraph))
+        Some((state, self.character_of(&s), paragraph))
     }
 
     fn paragraph_readback_of(&mut self, s: &super::state::SelectionSources) -> Option<ParagraphReadback> {
-        let mut styles: Vec<std::rc::Rc<ParaStyle>> = s.paras.iter().filter_map(|&p| Some(self.index.para(&self.doc, p)?.style.clone())).collect();
-        styles.dedup_by(|a, b| std::rc::Rc::ptr_eq(a, b));
-        let first = styles.first()?;
-        let tabs = if styles.iter().all(|p| p.tabs == first.tabs) { Tri::Uniform(self.tab_stops(s.paras[0])) } else { Tri::Mixed };
-        Some(paragraph(&styles.iter().map(|p| &**p).collect::<Vec<_>>(), tabs))
+        let mut styles: Vec<(std::rc::Rc<ParaStyle>, crate::layout::ParaId)> =
+            s.paras.iter().filter_map(|&p| Some((self.index.para(&self.doc, p)?.style.clone(), p))).collect();
+        styles.dedup_by(|a, b| std::rc::Rc::ptr_eq(&a.0, &b.0));
+        // The stops as they read, which they inherit included
+        let first = self.tab_stops(styles.first()?.1);
+        let tabs = if styles[1..].iter().all(|(_, p)| self.tab_stops(*p) == first) { Tri::Uniform(first) } else { Tri::Mixed };
+        Some(paragraph(&styles.iter().map(|(p, _)| &**p).collect::<Vec<_>>(), tabs))
     }
 }

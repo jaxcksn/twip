@@ -658,10 +658,22 @@ fn in_its_header_a_watermark_is_selected_resized_and_deleted() {
     assert!(w1 > w0 + 20.0, "{w0} to {w1}");
     assert!(crate::docx::watermark::of(e.float_of(f).expect("the watermark")).is_some(), "still a watermark");
     // Deleted from the header edited (the first page's and even pages' keep theirs, as in Word), so the pages show none.
+    let sorted = |e: &Editor| {
+        let mut m = marks(e);
+        m.sort();
+        m
+    };
+    let before = sorted(&e);
+    assert!(before.len() == 3 && before.iter().all(|(_, n)| *n == 1), "default, first and even headers: {before:?}");
+    let default = e.document().sections[0].headers[0].clone().expect("a default header");
     run(&mut e, Command::DeleteObject);
-    assert_eq!(marks(&e).iter().filter(|(_, n)| *n == 0).count(), 1, "{:?}", marks(&e));
+    let after = sorted(&e);
+    let names = |m: &[(String, usize)]| m.iter().map(|(n, _)| n.clone()).collect::<Vec<_>>();
+    assert_eq!(names(&after), names(&before), "every header stays");
+    assert!(after.iter().all(|(n, k)| *k == usize::from(*n != default)), "only the default header lost its watermark: {after:?}");
     assert_eq!(e.page_formatting(0).watermark, None);
     run(&mut e, Command::Undo);
+    assert_eq!(sorted(&e), before, "undo puts it back");
     assert!(e.page_formatting(0).watermark.is_some());
 }
 

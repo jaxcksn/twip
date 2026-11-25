@@ -416,6 +416,9 @@ impl Editor {
             }
             story = s;
         }
+        // A pending F2 move or drop menu holds the old pieces
+        self.move_to = None;
+        self.drop_menu = None;
         let normal = |e: &Self, (a, b): (Position, Position)| {
             let (a, b) = if e.index.cmp(&a, &b) == Ordering::Greater { (b, a) } else { (a, b) };
             e.normalize(Selection::range(a, b, Granularity::Char)).ordered(&e.index).unwrap_or((a, b))

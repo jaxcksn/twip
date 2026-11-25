@@ -76,8 +76,9 @@ impl Editor {
         }
         let fragment = self.clip()?;
         let source = self.selection.ordered(&self.index);
-        let can_move = self.mode != super::Mode::ReadOnly
-            && source.is_some_and(|(a, b)| !self.kept(crate::api::command::CommandId::Delete, &a, &b) && self.editable(&a));
+        let kept = |(a, b): &(Position, Position)| self.kept(crate::api::command::CommandId::Delete, a, b);
+        let can_move =
+            self.mode != super::Mode::ReadOnly && source.is_some_and(|r| !kept(&r) && self.editable(&r.0)) && !self.other_ranges().iter().any(kept);
         self.drag_out = Some((self.selection, self.revision, fragment.blocks.clone()));
         Some(DragOut { text: fragment.text(), html: fragment.html(), fragment, can_move })
     }
@@ -110,7 +111,10 @@ impl Editor {
             return Outcome::Unchanged("nothing moved");
         }
         // Smart cut
-        if !matches!(self.selection, Selection::Object(_) | Selection::Cells { .. }) && !(self.tracking() && self.moves_whole()) {
+        if !matches!(self.selection, Selection::Object(_) | Selection::Cells { .. })
+            && !self.is_discontiguous()
+            && !(self.tracking() && self.moves_whole())
+        {
             let dragged = self.selection;
             self.smart_cut();
             // The space it takes along may be out of reach where the dragged text is not.
@@ -142,12 +146,14 @@ impl Editor {
     pub(super) fn inside_selection(&self, p: &Position) -> bool {
         let Selection::Text { .. } = self.selection else { return false };
         let Some((a, b)) = self.selection.ordered(&self.index) else { return false };
-        self.index.cmp(&a, p) == std::cmp::Ordering::Less && self.index.cmp(p, &b) == std::cmp::Ordering::Less
+        // Order keys compare within a story only
+        a.story == p.story && self.index.cmp(&a, p) == std::cmp::Ordering::Less && self.index.cmp(p, &b) == std::cmp::Ordering::Less
     }
 
     /// Whether `p` is strictly inside the selection's own range or another range of a discontiguous selection.
     pub(super) fn inside_any_range(&self, p: &Position) -> bool {
-        self.inside_selection(p) || self.other_ranges().iter().any(|(a, b)| self.index.cmp(a, p).is_lt() && self.index.cmp(p, b).is_lt())
+        self.inside_selection(p)
+            || self.other_ranges().iter().any(|(a, b)| a.story == p.story && self.index.cmp(a, p).is_lt() && self.index.cmp(p, b).is_lt())
     }
 
     pub(super) fn text_drag_move(&mut self, x: f64, y: f64, ctrl: bool, fonts: &Fonts) {
@@ -260,8 +266,9 @@ impl Editor {
             None => Vec::new(),
         };
         let inside = |p: &Position| {
-            ranges.iter().any(|(a, b)| self.index.cmp(a, p) != std::cmp::Ordering::Greater && self.index.cmp(p, b) != std::cmp::Ordering::Greater)
-                || p.para_offset().is_some_and(|(q, u)| pieces.iter().any(|&(r, s, t)| r == q && s <= u && u <= t))
+            ranges.iter().any(|(a, b)| {
+                a.story == p.story && self.index.cmp(a, p) != std::cmp::Ordering::Greater && self.index.cmp(p, b) != std::cmp::Ordering::Greater
+            }) || p.para_offset().is_some_and(|(q, u)| pieces.iter().any(|&(r, s, t)| r == q && s <= u && u <= t))
         };
         if inside(&drop) || in_box.is_some_and(|p| inside(&p)) {
             restore(self);

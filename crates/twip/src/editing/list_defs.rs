@@ -261,10 +261,15 @@ impl LevelDefinition {
 
     /// Refused: an unwritable number style, a size out of 1 to 1638 pt.
     pub fn check(&self) -> Result<(), crate::api::error::Error> {
-        if !self.format.writable() {
+        self.check_changed(None)
+    }
+
+    /// [`LevelDefinition::check`] of what differs from `was`: a number style or size it was read with stays.
+    fn check_changed(&self, was: Option<&LevelDefinition>) -> Result<(), crate::api::error::Error> {
+        if was.is_none_or(|w| w.format != self.format) && !self.format.writable() {
             return Err(crate::api::error::Error::invalid("a number style is 1 to 64 ASCII letters and digits"));
         }
-        match self.label.size {
+        match self.label.size.filter(|_| was.is_none_or(|w| w.label.size != self.label.size)) {
             Some(s) => super::commands::bounds::within("the size", s.0, 1.0, 1638.0),
             None => Ok(()),
         }
@@ -743,8 +748,7 @@ impl Editor {
     pub fn set_list_levels(&mut self, change: ListLevelsChange, fonts: &Fonts) -> Outcome {
         // What the edit sets is checked: a number style or size the list was read with stays as it is.
         let was = self.selection_list().and_then(|(_, n, _)| self.list_level_definitions(n)).unwrap_or_default();
-        let set = |k: usize, l: &LevelDefinition| was.get(k).is_none_or(|w| (&w.format, w.label.size) != (&l.format, l.label.size));
-        if let Some(e) = change.levels.iter().enumerate().filter(|(k, l)| set(*k, l)).find_map(|(_, l)| l.check().err()) {
+        if let Some(e) = change.levels.iter().enumerate().find_map(|(k, l)| l.check_changed(was.get(k)).err()) {
             return Outcome::Refused(e);
         }
         if let Some(out) = self.refuse_like(&crate::api::command::Command::SetListDefinition(Default::default())) {

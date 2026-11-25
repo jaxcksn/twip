@@ -579,6 +579,8 @@ fn a_new_heading_after_goes_in_an_editable_range_ending_with_the_content() {
     let a = id(&e, "A");
     assert!(changed(&e.insert_heading(a, NewHeading::After, fonts())));
     assert_eq!(texts(&e), ["A", "a1", "", "B"]);
+    assert!(changed(&e.execute(C::InsertText("New".into()), fonts())), "typed at its caret, in the range");
+    assert_eq!(texts(&e), ["A", "a1", "New", "B"]);
     assert!(!changed(&e.insert_heading(id(&e, "B"), NewHeading::After, fonts())), "outside the range");
 }
 
@@ -700,4 +702,64 @@ fn a_selected_child_takes_heading_1_when_its_parent_already_has_it() {
     e.selection = Selection::range(Position::text(StoryId::Body, a, Unit(0)), Position::text(StoryId::Body, b, Unit(1)), Default::default());
     assert!(changed(&e.change_outline(OutlineChange::Heading1, true, fonts())));
     assert_eq!([level(&e, "A"), level(&e, "B"), level(&e, "C"), level(&e, "D")], [1, 1, 2, 2].map(Some), "B, and C under it by as many");
+}
+
+/// A one-row table of two cells, the first holding `first`.
+fn table_of(first: &str) -> String {
+    format!(
+        r#"<w:tbl><w:tblPr><w:tblW w:w="2000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="1000"/><w:gridCol w:w="1000"/></w:tblGrid><w:tr><w:tc>{first}</w:tc><w:tc><w:p><w:r><w:t>c2</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#
+    )
+}
+
+#[test]
+fn a_heading_s_trailing_table_is_selected_and_copied_whole() {
+    let body = format!("{}{}{}{}", p("Heading1", "A"), p("", "a1"), table_of(&p("", "c1")), p("Heading1", "B"));
+    let mut e = open_pkg(&pkg(&styles(), &body));
+    assert!(matches!(e.select_heading_content(id(&e, "A")), Outcome::Moved));
+    let (_, end) = e.selection().ordered(e.index()).expect("a range");
+    assert_eq!(end.para_offset(), Some((id(&e, "B"), Unit(0))), "up to the next heading, none of its text");
+    let f = e.copy_fragment().expect("a copy");
+    assert!(f.blocks.iter().any(|b| matches!(b, crate::docx::Block::Table(_))), "the table copied as a table");
+    let shown: Vec<String> =
+        f.blocks.iter().filter_map(|b| if let crate::docx::Block::Para(p) = b { Some(UnitText::of(p).text) } else { None }).collect();
+    assert_eq!(shown, ["A", "a1", ""], "no text of B");
+}
+
+#[test]
+fn selecting_a_heading_drops_the_other_ranges() {
+    let mut e = outline();
+    let (b, e1) = (id(&e, "B"), id(&e, "e1"));
+    assert!(matches!(e.select_heading_content(b), Outcome::Moved));
+    let was = e.selection;
+    e.multi = super::super::multi::Multi {
+        primary: Some(was),
+        others: vec![(Position::text(StoryId::Body, e1, Unit(0)), Position::text(StoryId::Body, e1, Unit(1)))],
+        cells: Vec::new(),
+    };
+    assert!(matches!(e.select_heading_content(b), Outcome::Moved), "one range now");
+    assert!(e.multi.others.is_empty());
+}
+
+#[test]
+fn a_tracked_move_relevels_the_headings_in_its_trailing_table() {
+    let body = format!("{}{}{}{}", p("Heading1", "A"), p("Heading2", "B"), table_of(&p("Heading3", "T")), p("Heading1", "E"));
+    for (side, order) in [(Beside::Before, ["B", "T", "c2", "A", "E"]), (Beside::After, ["A", "E", "B", "T", "c2"])] {
+        let mut e = open_pkg(&pkg(&styles(), &body));
+        e.execute(C::SetTrackChanges(true), fonts());
+        let target = id(&e, if side == Beside::Before { "A" } else { "E" });
+        assert!(changed(&e.move_heading(id(&e, "B"), target, side, Some(1), fonts())));
+        e.execute(C::AcceptAllRevisions(AuthorFilter::default()), fonts());
+        assert_eq!(texts(&e)[..5], order, "{side:?}");
+        assert_eq!((level(&e, "B"), level(&e, "T")), (Some(1), Some(2)), "{side:?}: the table's heading moved a level with it");
+    }
+}
+
+#[test]
+fn a_move_to_level_9_leaves_a_subtopic_at_9_a_peer() {
+    let styles = format!("{}{}{}", styles(), heading_style(8), heading_style(9));
+    let body: String = [("Heading1", "A"), ("Heading8", "H"), ("Heading9", "h9"), ("Heading1", "E")].iter().map(|(s, t)| p(s, t)).collect();
+    let mut e = open_pkg(&pkg(&styles, &body));
+    let h = id(&e, "H");
+    assert!(changed(&e.move_heading(h, h, Beside::Before, Some(9), fonts())));
+    assert_eq!((level(&e, "H"), level(&e, "h9")), (Some(9), Some(9)), "kept within 9");
 }

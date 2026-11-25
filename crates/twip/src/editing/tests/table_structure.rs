@@ -1007,6 +1007,13 @@ fn text_to_table_sizes_its_columns_as_its_autofit_says() {
     assert_eq!(e.text_to_table_size(&text_to_table("tabs")), Some((1, 2)));
     assert!(matches!(e.convert_text_to_table_fit(&text_to_table("tabs"), ConvertFit::Fixed(Some(90.0)), fonts()), Outcome::Changed(_)));
     assert_eq!((table(&e).grid.clone(), table(&e).width), (vec![90.0, 90.0], Width::Auto));
+    assert!(table(&e).fixed, "a fixed layout");
+    assert_eq!(e.table_readback().map(|r| r.fit), Some(crate::editing::table_readback::TableFit::Fixed));
+    let saved = crate::docx::write::save(e.document()).expect("saves");
+    assert!(
+        crate::docx::read(&saved).expect("reads").sections[0].blocks.iter().any(|b| matches!(b, crate::docx::Block::Table(t) if t.fixed)),
+        "saved fixed"
+    );
     e.execute(Command::Undo, fonts());
     select_paras(&mut e, 0, 0);
     assert!(matches!(e.convert_text_to_table_fit(&text_to_table("tabs"), ConvertFit::Window, fonts()), Outcome::Changed(_)));

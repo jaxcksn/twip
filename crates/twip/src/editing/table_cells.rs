@@ -81,6 +81,14 @@ impl Editor {
     /// down in their columns.
     pub fn insert_cells(&mut self, shift: InsertShift, fonts: &Fonts) -> Outcome {
         let Some(tg) = self.table_target() else { return Outcome::unavailable("not in a table") };
+        // No command of its own: protection takes it as inserting the columns or rows it shifts the cells by
+        let id = match shift {
+            InsertShift::Right => crate::api::command::CommandId::InsertColumns,
+            InsertShift::Down => crate::api::command::CommandId::InsertRows,
+        };
+        if let Some(e) = self.table_edit_refusal(tg.table, id) {
+            return Outcome::Refused(e);
+        }
         let Some(t) = self.index.table(&self.doc, tg.table) else { return Outcome::unavailable("not in a table") };
         if super::tables::cuts_region(t, tg.rows.0, t.rows.len() - 1, false) {
             return self.region_boundary();
@@ -139,18 +147,24 @@ impl Editor {
                 if grid.len() > super::tables::MAX_COLUMNS.max(g.cols) {
                     return Outcome::unavailable("too many columns");
                 }
-                // Every merge whole before stays whole
+                // Every merge whole before stays whole, on the cell it continued; each new cell's merge is whole
                 let ng = Grid::of_rows(&rows, grid.len());
-                let was = (0..g.rows.len()).map(|r| (0..g.rows[r].len()).filter(|&k| continues_whole(&g, r, k)).count()).sum::<usize>();
-                let added = (r0..=r1)
-                    .map(|r| {
-                        let n = rows[r].cells.len() - t.rows[r].cells.len();
-                        let k = moving(&g, r, (c0, c1)).unwrap_or(0);
-                        rows[r].cells[k..k + n].iter().filter(|c| c.v_merge == VMerge::Continue).count()
+                let added = |r: usize| rows[r].cells.len() - t.rows[r].cells.len();
+                let at = |r: usize, k: usize| match moving(&g, r, (c0, c1)) {
+                    Some(m) if k >= m => k + added(r),
+                    _ => k,
+                };
+                let kept = (1..g.rows.len()).all(|r| {
+                    (0..g.rows[r].len()).filter(|&k| continues_whole(&g, r, k)).all(|k| {
+                        let (above, now) = (g.cell_at(r - 1, g.rows[r][k].0), at(r, k));
+                        continues_whole(&ng, r, now) && ng.cell_at(r - 1, ng.rows[r][now].0) == above.map(|a| at(r - 1, a))
                     })
-                    .sum::<usize>();
-                let now = (0..ng.rows.len()).map(|r| (0..ng.rows[r].len()).filter(|&k| continues_whole(&ng, r, k)).count()).sum::<usize>();
-                if now < was + added {
+                });
+                let new_whole = (r0..=r1).all(|r| {
+                    let m = moving(&g, r, (c0, c1)).unwrap_or(0);
+                    (m..m + added(r)).all(|j| rows[r].cells[j].v_merge != VMerge::Continue || continues_whole(&ng, r, j))
+                });
+                if !kept || !new_whole {
                     return Outcome::unavailable("merged cells in the rows");
                 }
                 // The caret in the first new cell, at its column in the grid as rebuilt

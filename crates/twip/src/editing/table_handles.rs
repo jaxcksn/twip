@@ -7,6 +7,7 @@ use crate::api::catalog::table as words;
 use crate::api::services::MeasureDetail;
 use crate::font::Fonts;
 use crate::layout::TableId;
+use crate::layout::vertical::Turn;
 use crate::services::ruler::{change, length, number};
 
 use super::Editor;
@@ -27,15 +28,29 @@ pub(super) struct TableDrag {
     pub page: usize,
     pub start: (f64, f64),
     pub now: (f64, f64),
+    /// The table as laid out, unturned.
     pub rect: [f64; 4],
+    pub turn: Turn,
     pub snap: [f64; 2],
     pub snapped: [Option<SnapLine>; 2],
 }
 
 impl TableDrag {
+    fn moved(&self) -> [f64; 2] {
+        [self.now.0 - self.start.0 + self.snap[0], self.now.1 - self.start.1 + self.snap[1]]
+    }
+
+    /// Where the drag puts the table, as laid out.
     pub fn to(&self) -> [f64; 4] {
-        let (dx, dy) = (self.now.0 - self.start.0 + self.snap[0], self.now.1 - self.start.1 + self.snap[1]);
+        let [dx, dy] = self.turn.inverse().along(self.moved());
         let [x0, y0, x1, y1] = self.rect;
+        [x0 + dx, y0 + dy, x1 + dx, y1 + dy]
+    }
+
+    /// [`TableDrag::to`] on the page.
+    pub fn page_to(&self) -> [f64; 4] {
+        let [dx, dy] = self.moved();
+        let [x0, y0, x1, y1] = self.turn.rect(self.rect);
         [x0 + dx, y0 + dy, x1 + dx, y1 + dy]
     }
 }
@@ -87,8 +102,10 @@ impl Editor {
 
     pub(super) fn table_press(&mut self, table: TableId, x: f64, y: f64) {
         let Some((page, ..)) = self.stack().page_at(x, y) else { return };
-        let Some(rect) = self.pages.page(page, &self.index).and_then(|g| table_on(&g, table)) else { return };
-        self.table_drag = Some(TableDrag { table, page, start: (x, y), now: (x, y), rect, snap: [0.0; 2], snapped: [None; 2] });
+        let Some(geo) = self.pages.page(page, &self.index) else { return };
+        let Some(rect) = table_on(&geo, table) else { return };
+        let turn = geo.rows.iter().find(|r| r.table == table && !r.repeat).map_or(Turn::NONE, |r| r.turn);
+        self.table_drag = Some(TableDrag { table, page, start: (x, y), now: (x, y), rect, turn, snap: [0.0; 2], snapped: [None; 2] });
         self.build_snaps(page, Dragged::Table(table));
         self.requests.push(Request::CapturePointer);
     }
@@ -98,7 +115,7 @@ impl Editor {
         d.now = (x, y);
         (d.snap, d.snapped) = ([0.0; 2], [None; 2]);
         if !mods.alt {
-            (d.snap, d.snapped) = super::snap::snap(d.to(), &self.snaps, self.snap_threshold());
+            (d.snap, d.snapped) = super::snap::snap(d.page_to(), &self.snaps, self.snap_threshold());
         }
         self.table_drag = Some(d);
     }
@@ -183,7 +200,7 @@ impl Editor {
             }
         }
         if let Some(d) = self.table_drag.filter(|d| d.now != d.start) {
-            preview = Some((d.page, d.to()));
+            preview = Some((d.page, d.page_to()));
             let [w, h] = self.snaps.size;
             let lines = d
                 .snapped

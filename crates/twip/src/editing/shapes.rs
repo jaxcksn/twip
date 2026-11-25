@@ -960,13 +960,13 @@ impl Editor {
 // Stacking order
 impl Editor {
     /// Each float's z and id, in document order.
-    fn each_float(&self, f: &mut dyn FnMut(u32, FloatId)) {
-        fn walk(blocks: &[crate::docx::Block], f: &mut dyn FnMut(u32, FloatId)) {
+    fn each_float(&self, f: &mut dyn FnMut(&crate::docx::Float)) {
+        fn walk(blocks: &[crate::docx::Block], f: &mut dyn FnMut(&crate::docx::Float)) {
             for b in blocks {
                 match b {
                     crate::docx::Block::Para(p) => p.inlines.iter().for_each(|i| {
                         if let crate::docx::Inline::Float(fl, _) = i {
-                            f(fl.z, FloatId(fl.id));
+                            f(fl);
                         }
                     }),
                     crate::docx::Block::Table(t) => t.rows.iter().flat_map(|r| &r.cells).for_each(|c| walk(&c.blocks, f)),
@@ -977,18 +977,18 @@ impl Editor {
         self.doc.stories.values().for_each(|b| walk(b, f));
     }
 
-    /// Every float's z and id, back to front.
+    /// Every float's z and id, back to front: equal z in document order, as they are drawn.
     pub(super) fn stacking(&self) -> Vec<(u32, FloatId)> {
         let mut all = Vec::new();
-        self.each_float(&mut |z, id| all.push((z, id)));
-        all.sort();
-        all
+        self.each_float(&mut |fl| all.push((fl.z, fl.order, FloatId(fl.id))));
+        all.sort_unstable();
+        all.into_iter().map(|(z, _, id)| (z, id)).collect()
     }
 
     /// The z a new float takes: in front of every other.
     pub(super) fn front_z(&self) -> u32 {
         let mut front = None;
-        self.each_float(&mut |z, _| front = front.max(Some(z)));
+        self.each_float(&mut |fl| front = front.max(Some(fl.z)));
         front.map_or(0, |z: u32| z.saturating_add(1))
     }
 }

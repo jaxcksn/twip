@@ -345,6 +345,27 @@ fn tab_visits_fields_over_paragraphs_and_table_cells_in_document_order() {
 }
 
 #[test]
+fn tab_goes_from_a_check_box_to_the_one_right_after_it() {
+    let box_xml = |n: &str| form_field_xml(&format!(r#"<w:name w:val="{n}"/><w:checkBox><w:sizeAuto/></w:checkBox>"#), "FORMCHECKBOX", "");
+    let body = format!(r#"<w:p><w:r><w:t xml:space="preserve">A </w:t></w:r>{}{}</w:p>"#, box_xml("K1"), box_xml("K2"));
+    let mut e = Editor::open(&blank_body(&body), fonts()).expect("opens");
+    e.complete(fonts());
+    protect(&mut e);
+    let Some(Block::Para(p)) = e.document().sections[0].blocks.first() else { panic!("a paragraph") };
+    let spans = crate::docx::fields::spans(&p.inlines);
+    let units = |k: usize| p.inlines[..k].iter().map(|i| i.units() as u32).sum::<u32>();
+    let ((a0, a1), (b0, b1)) = ((units(spans[0].begin), units(spans[0].end + 1)), (units(spans[1].begin), units(spans[1].end + 1)));
+    assert_eq!(a1, b0, "the boxes touch");
+    let para = para_id(&e, 0);
+    let at = |u| Position::text(StoryId::Body, para, Unit(u));
+    e.selection = Selection::range(at(a0), at(a1), super::super::selection::Granularity::Char);
+    e.select_next_form_field(true);
+    assert_eq!(e.selection.ordered(e.index()), Some((at(b0), at(b1))), "the second box");
+    e.select_next_form_field(false);
+    assert_eq!(e.selection.ordered(e.index()), Some((at(a0), at(a1))), "back to the first");
+}
+
+#[test]
 fn unprotected_typing_over_a_selected_check_box_replaces_it() {
     for typed in ["x", " "] {
         let body = format!(

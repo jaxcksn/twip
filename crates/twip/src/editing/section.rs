@@ -25,7 +25,10 @@ impl Editor {
             Selection::Cells { table, .. } => self.index.table_slot(table),
             Selection::Object(ObjectRef::Inline { para, .. }) => self.index.para_slot(para),
             Selection::Object(ObjectRef::Floating(f)) => self.index.float_anchor(f).and_then(|p| self.index.para_slot(p)),
-            _ => self.selection.focus().and_then(|p| p.para_offset()).and_then(|(p, _)| self.index.para_slot(p)),
+            _ => self.selection.focus().and_then(|p| match p.place {
+                super::position::Place::RowEnd { table, .. } => self.index.table_slot(table),
+                _ => p.para_offset().and_then(|(p, _)| self.index.para_slot(p)),
+            }),
         };
         slot.and_then(|s| self.slot_section(s)).unwrap_or(0)
     }
@@ -160,9 +163,9 @@ impl Editor {
                 }
             }
             let first = if scope == ApplyTo::WholeDocument { 0 } else { e.focus_section() };
-            e.section_scope = Some(first..=e.doc.sections.len().saturating_sub(1));
+            let outer = e.section_scope.replace(first..=e.doc.sections.len().saturating_sub(1));
             let out = f(e);
-            e.section_scope = None;
+            e.section_scope = outer;
             out
         })
     }
@@ -188,9 +191,9 @@ impl Editor {
                 if !matches!(out, Outcome::Changed(_)) {
                     return out;
                 }
-                e.section_scope = Some(e.focus_section()..=e.doc.sections.len().saturating_sub(1));
+                let outer = e.section_scope.replace(e.focus_section()..=e.doc.sections.len().saturating_sub(1));
                 let out = columns(e);
-                e.section_scope = None;
+                e.section_scope = outer;
                 out
             }),
             ColumnsScope::SelectedText => self.joined("Columns", fonts, |e| {
@@ -220,7 +223,9 @@ impl Editor {
                         }
                     }
                 };
-                let (at_start, at_end) = (edge(e, &a, false), edge(e, &b, true));
+                let at_start = edge(e, &a, false);
+                // An end at a later section's very start is the end of the section before it
+                let (at_end, kb) = if kb > ka && edge(e, &b, false) { (true, kb - 1) } else { (edge(e, &b, true), kb) };
                 // A break can't go inside a table
                 if (!at_start && a.para_offset().is_none()) || (!at_end && b.para_offset().is_none()) {
                     return Outcome::unavailable("a section break can't split a table");
@@ -243,9 +248,9 @@ impl Editor {
                 // The sections the text is in: a break at its start moved it one section on, and its end's section is
                 // the one before a break there.
                 let shift = usize::from(!at_start);
-                e.section_scope = Some(ka + shift..=kb + shift);
+                let outer = e.section_scope.replace(ka + shift..=kb + shift);
                 let out = columns(e);
-                e.section_scope = None;
+                e.section_scope = outer;
                 out
             }),
         }
@@ -301,7 +306,7 @@ impl Editor {
             apply_to: c.apply_to,
         };
         // The line's own distance and shadow aren't given: an edge keeps its distance (a new one takes Word's), and
-        // the shadow is the far edges', as given or as it was.
+        // the shadow is the far edges', as given, else each edge's as it was.
         self.edit_page_borders(&edit, Some(shadow), fonts)
     }
 
@@ -408,7 +413,9 @@ impl Editor {
             if let Some(on) = c.behind_text {
                 b.behind_text = on;
             }
-            let shadow = legacy.map(|given| given.unwrap_or_else(|| b.bottom.as_ref().is_some_and(|x| x.shadow)));
+            // A shadow given goes on the far edges; none given, each edge keeps its own (a new one the page's)
+            let given = legacy.flatten();
+            let page_shadow = b.bottom.as_ref().is_some_and(|x| x.shadow);
             // A new edge's space: 24 pt from the page's edge, or 1 pt (top, bottom) and 4 pt (sides) from the text.
             let space = |side: &str, page: bool| {
                 if page {
@@ -421,7 +428,7 @@ impl Editor {
             };
             let set = |old: &Option<crate::docx::props::Border>, new: &Option<Option<BorderLine>>, k: usize, side: &str, far: bool| match new {
                 None => old.clone().map(|mut o| {
-                    if let Some(shadow) = shadow {
+                    if let Some(shadow) = given {
                         o.shadow = shadow && far;
                     }
                     o
@@ -430,11 +437,15 @@ impl Editor {
                 Some(Some(l)) => Some(crate::docx::props::Border {
                     style: l.style.val().into(),
                     width: l.width.0,
-                    space: match shadow {
+                    space: match legacy {
                         Some(_) => old.as_ref().map_or_else(|| space(side, b.offset_from_page), |o| o.space),
                         None => l.space.0,
                     },
-                    shadow: shadow.map_or(l.shadow, |s| s && far),
+                    shadow: match legacy {
+                        None => l.shadow,
+                        Some(Some(s)) => s && far,
+                        Some(None) => old.as_ref().map_or(page_shadow && far, |o| o.shadow),
+                    },
                     color: colours[k].map(|c| c.rgb),
                     color_theme: colours[k].and_then(|c| c.theme),
                 }),

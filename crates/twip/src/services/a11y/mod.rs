@@ -117,11 +117,16 @@ pub(super) fn para_marks(doc: &Document, p: &Paragraph, review: &ReviewView, ope
     spans
 }
 
-/// Whether a run with `rev` isn't read: as [`ReviewView::hides`], but a deletion in a balloon is read where it was.
+/// Whether a run with `rev` isn't read: as [`ReviewView::hides`], but a deletion in a balloon is read where it was,
+/// whatever mark an inline one would take.
 pub(super) fn unread(review: &ReviewView, rev: &RunRevisions) -> bool {
     let m = &review.markup;
+    let inline = m.balloons != crate::docx::review::BalloonMode::Balloons;
     review.view.hides(rev)
-        || rev.del.as_ref().is_some_and(|d| review.view == MarkupView::All && (!m.show.shows(d) || m.style.look(d.kind).mark.hides_text()))
+        || rev
+            .del
+            .as_ref()
+            .is_some_and(|d| review.view == MarkupView::All && (!m.show.shows(d) || (inline && m.style.look(d.kind).mark.hides_text())))
 }
 
 /// The review marks of the body paragraph `para`, with the comments open before it followed from the start.

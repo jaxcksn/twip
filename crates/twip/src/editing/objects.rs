@@ -295,6 +295,8 @@ pub(super) struct ObjectDrag {
     /// The page under the pointer while moving, and the offset from `page`'s coordinates to its own.
     pub over: usize,
     pub offset: [f64; 2],
+    /// Where the float's region is drawn as the drag began, before the live preview moves it.
+    pub region: Turn,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -346,6 +348,7 @@ impl ObjectDrag {
             swap: false,
             over: page,
             offset: [0.0; 2],
+            region: Turn::NONE,
         }
     }
 
@@ -462,7 +465,11 @@ impl Editor {
     pub(super) fn object_press(&mut self, x: f64, y: f64, ctrl: bool, fonts: &Fonts) -> bool {
         if let Some((obj, rect, rot, page, k)) = self.handle_at(x, y, fonts) {
             let swap = matches!(obj, ObjectRef::Floating(f) if self.float_of(f).is_some_and(|fl| fl.rot_swap));
-            self.object_drag = Some(ObjectDrag { rot, swap, ..ObjectDrag::new(obj, Some(k), (x, y), rect, page, ctrl) });
+            let region = match obj {
+                ObjectRef::Floating(f) => self.float_region(f, page),
+                ObjectRef::Inline { .. } => Turn::NONE,
+            };
+            self.object_drag = Some(ObjectDrag { rot, swap, region, ..ObjectDrag::new(obj, Some(k), (x, y), rect, page, ctrl) });
             self.requests.push(Request::CapturePointer);
             return true;
         }
@@ -501,7 +508,8 @@ impl Editor {
             && let Some((rect, rot)) = self.float_frame(f, page)
         {
             let swap = self.float_of(f).is_some_and(|fl| fl.rot_swap);
-            self.object_drag = Some(ObjectDrag { rot, swap, ..ObjectDrag::new(obj, None, (x, y), rect, page, ctrl) });
+            let region = self.float_region(f, page);
+            self.object_drag = Some(ObjectDrag { rot, swap, region, ..ObjectDrag::new(obj, None, (x, y), rect, page, ctrl) });
             self.build_snaps(page, Dragged::Float(f));
             self.requests.push(Request::CapturePointer);
         }
@@ -1319,7 +1327,7 @@ impl Editor {
     /// Where a drag puts float `f`: moved on its own page, then onto the page under the pointer and re-anchored there.
     fn dropped_float(&mut self, f: FloatId, d: &ObjectDrag) -> Option<(crate::docx::Float, Option<crate::layout::ParaId>)> {
         let new = d.placed(d.rect(self.float_locked(f)));
-        let mut fl = self.moved_float(f, d.page, d.placed(d.rect), new)?;
+        let mut fl = self.moved_float_in(f, d.page, d.region, d.placed(d.rect), new)?;
         if d.handle.is_some() {
             return Some((fl, None));
         }
@@ -1327,7 +1335,7 @@ impl Editor {
         // Off its anchor's page, an offset from the page or its margins is from the new page's.
         if d.over != d.page && !fl.locked {
             let twips = |v: f64| (v * 20.0).trunc() / 20.0;
-            let offset = self.float_region(f, d.page).inverse().along(d.offset);
+            let offset = d.region.inverse().along(d.offset);
             fl.h_offset = twips(fl.h_offset + offset[0]);
             if !matches!(fl.v_relative.as_str(), "paragraph" | "line") {
                 fl.v_offset = twips(fl.v_offset + offset[1]);
@@ -1480,7 +1488,13 @@ impl Editor {
     }
 
     pub(super) fn moved_float(&mut self, f: FloatId, page: usize, old: [f64; 4], new: [f64; 4]) -> Option<crate::docx::Float> {
-        let back = self.float_region(f, page).inverse();
+        let region = self.float_region(f, page);
+        self.moved_float_in(f, page, region, old, new)
+    }
+
+    /// [`Self::moved_float`] with the float's region drawn turned by `region`.
+    fn moved_float_in(&mut self, f: FloatId, page: usize, region: Turn, old: [f64; 4], new: [f64; 4]) -> Option<crate::docx::Float> {
+        let back = region.inverse();
         let (old, new) = (back.rect(old), back.rect(new));
         let anchor = self.index.float_anchor(f)?;
         let anchor_top = self.pages.page(page, &self.index).and_then(|g| g.lines_of(anchor).map(|(_, l)| l.top).reduce(f64::min));

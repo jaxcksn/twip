@@ -101,7 +101,7 @@ pub fn unit_chars(p: &Paragraph) -> impl Iterator<Item = char> + '_ {
     p.inlines.iter().flat_map(inline_chars)
 }
 
-fn inline_chars(i: &Inline) -> impl Iterator<Item = char> + '_ {
+pub(super) fn inline_chars(i: &Inline) -> impl Iterator<Item = char> + '_ {
     let (text, one) = match i {
         Inline::Text(s, _) => (s.as_str(), None),
         Inline::Tab(_) | Inline::PTab(..) => ("", Some('\t')),

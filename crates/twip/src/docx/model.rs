@@ -611,13 +611,18 @@ pub struct InlineText {
 /// The most vertices a wrap polygon keeps: a longer one read or made is thinned to about this many.
 pub const MAX_WRAP_POINTS: usize = 1024;
 
-/// `pts` thinned to at most [`MAX_WRAP_POINTS`] vertices by keeping every n-th, closed again when it was closed.
+/// `pts` thinned to at most [`MAX_WRAP_POINTS`] vertices, the closing copy of the first aside, by keeping every n-th;
+/// closed again when it was closed.
 pub fn bounded_polygon(mut pts: Vec<(f64, f64)>) -> Vec<(f64, f64)> {
-    if pts.len() <= MAX_WRAP_POINTS {
+    let closed = pts.len() > 1 && pts.first() == pts.last();
+    let distinct = pts.len() - usize::from(closed);
+    if distinct <= MAX_WRAP_POINTS {
         return pts;
     }
-    let closed = pts.first() == pts.last();
-    let step = pts.len().div_ceil(MAX_WRAP_POINTS - 1);
+    if closed {
+        pts.pop();
+    }
+    let step = distinct.div_ceil(MAX_WRAP_POINTS);
     let mut k = 0;
     pts.retain(|_| {
         k += 1;

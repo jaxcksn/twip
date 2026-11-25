@@ -104,7 +104,14 @@ fn a_theme_underline_colour_is_written_on_the_underline() {
     let mut e = all(r#"<w:p><w:r><w:rPr><w:u w:val="single"/></w:rPr><w:t>x</w:t></w:r></w:p>"#);
     let c = accent(ThemeColour::Accent6, TransformKind::Shade, 191.0 / 255.0);
     e.set_underline_colour(AutoOr::Value(c.clone()), fonts());
-    assert!(doc_xml(&e).contains(r#"w:themeColor="accent6" w:themeShade="BF""#) || doc_xml(&e).contains(r#"w:themeShade="BF""#));
+    let xml = doc_xml(&e);
+    let saved = roxmltree::Document::parse(&xml).expect("parses");
+    const W: &str = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+    let u = saved.descendants().filter(|n| n.has_tag_name((W, "u"))).collect::<Vec<_>>();
+    assert!(
+        u.iter().any(|n| n.attribute((W, "themeColor")) == Some("accent6") && n.attribute((W, "themeShade")) == Some("BF")),
+        "one underline with both: {xml}"
+    );
     assert_eq!(e.character_readback().expect("a readback").underline_color, Tri::Uniform(AutoOr::Value(c)));
     e.set_underline_colour(AutoOr::Auto, fonts());
     assert_eq!(e.character_readback().expect("a readback").underline_color, Tri::Uniform(AutoOr::Auto));
@@ -123,7 +130,13 @@ fn text_shading_takes_theme_fill_and_pattern_colours_and_reads_back() {
     let xml = doc_xml(&e);
     assert!(xml.contains(r#"w:themeFill="accent2""#) && xml.contains(r#"w:themeFillTint="33""#) && xml.contains(r#"w:themeColor="text1""#), "{xml}");
     assert_eq!(e.character_readback().expect("a readback").shading, Tri::Uniform(NoneOr::Value(s.clone())));
-    assert_eq!(reopened(&e).character_readback().expect("a readback").shading, Tri::Uniform(NoneOr::Value(s)));
+    assert_eq!(reopened(&e).character_readback().expect("a readback").shading, Tri::Uniform(NoneOr::Value(s.clone())));
+    // Formatting protection refuses it as it does the command, for cells and tables too
+    let protect = crate::api::command::DocumentProtection { formatting: Some(true), enforce: Some(true), ..Default::default() };
+    assert!(matches!(e.execute(C::SetDocumentProtection(protect), fonts()), Outcome::Changed(_)));
+    for target in [ShadingTarget::Text, ShadingTarget::Cell, ShadingTarget::Table] {
+        assert!(matches!(e.set_shading_value(target, &s, fonts()), Outcome::Refused(_)), "{target:?}");
+    }
 }
 
 #[test]
@@ -194,6 +207,12 @@ fn ligatures_are_four_flags_and_stylistic_sets_a_set() {
     assert_eq!(StylisticSets(0b101).ids().collect::<Vec<_>>(), [1, 3]);
     let bad = OpenTypeChange { stylistic_sets: Some(vec![21]), ..OpenTypeChange::default() };
     assert!(matches!(e.set_typography_with(Typography::default(), &bad, fonts()), Outcome::Refused(_)));
+    // None: an empty set of its own, over any its style gives
+    let none = OpenTypeChange { stylistic_sets: Some(Vec::new()), ..OpenTypeChange::default() };
+    assert!(matches!(e.set_typography_with(Typography::default(), &none, fonts()), Outcome::Changed(_)));
+    let xml = doc_xml(&e);
+    assert!(xml.contains("w14:stylisticSets") && !xml.contains("w14:styleSet "), "{xml}");
+    assert_eq!(e.character_readback().expect("a readback").stylistic_sets, Tri::Uniform(StylisticSets(0)));
 }
 
 #[test]
@@ -490,6 +509,16 @@ fn this_point_forward_over_selected_text_keeps_the_text() {
     let wide = |e: &Editor| e.document().sections.iter().map(|s| s.page_w > s.page_h).collect::<Vec<_>>();
     assert_eq!(wide(&e), [false, true], "from the selection's start on");
     assert_eq!(super::texts(&e).concat(), "onetwo", "the selected text is kept");
+    let text = |k: usize| {
+        let mut out = String::new();
+        e.document().sections[k].blocks.iter().for_each(|b| {
+            if let crate::docx::Block::Para(p) = b {
+                out.push_str(&crate::editing::text::UnitText::of(p).text);
+            }
+        });
+        out
+    };
+    assert_eq!((text(0), text(1)), ("onet".to_string(), "wo".to_string()), "the break falls in \"two\", at the selection's start");
     assert_eq!(e.history().undo_labels().next(), Some("Page Setup"));
     e.execute(Command::Undo, fonts());
     assert_eq!((wide(&e), super::texts(&e).concat()), (vec![false], "onetwo".to_string()), "one action");
@@ -572,4 +601,64 @@ fn a_page_number_in_the_first_pages_own_header_can_t_be_left_off_the_first_page(
     let out = e.insert_page_number_shown(PageNumberFormat::Page, PageNumberSpot::Caret, None, false, fonts());
     assert!(matches!(out, Outcome::Changed(_)), "the other pages' header takes it: {out:?}");
     assert!(e.document().sections[0].title_pg, "the first page still its own");
+    // The first page's header numbered too: a header number left off the first page is refused, that one kept
+    caret_in(&mut e, 1);
+    let out = e.insert_page_number_shown(PageNumberFormat::Page, PageNumberSpot::Caret, None, true, fonts());
+    assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
+    let first = e.document().sections[0].headers[1].clone().expect("the first page's header");
+    let (depth, kept) = (e.history().undo_depth(), e.document().stories[&first].clone());
+    let out = e.insert_page_number_shown(PageNumberFormat::Page, PageNumberSpot::Header, None, false, fonts());
+    assert!(matches!(out, Outcome::Refused(_)), "{out:?}");
+    assert_eq!((e.history().undo_depth(), &e.document().stories[&first]), (depth, &kept), "nothing changed");
+}
+
+#[test]
+fn selected_list_numbers_read_back_as_the_formatting_state_does() {
+    use crate::editing::input::PointerKind;
+    use crate::editing::keymap::Mods;
+    let mut e = super::open("FX-A11Y-STRUCTURE.docx");
+    e.complete(fonts());
+    let g = e.page_geometries().into_iter().find(|(p, _)| *p == 0).map(|(_, g)| g).expect("page 0");
+    let l = g.lines.iter().find(|l| l.label.is_some()).expect("a numbered line");
+    let (a, b) = l.label.expect("the number's extent");
+    let (x, y) = e.stack().to_doc(0, (a + b) / 2.0, (l.top + l.bottom) / 2.0).expect("on the stack");
+    e.pointer_input(PointerKind::Down, x, y, 1, Mods::default(), fonts());
+    e.pointer_input(PointerKind::Up, x, y, 1, Mods::default(), fonts());
+    assert!(e.list_label_selection().is_some(), "the numbers are selected");
+    e.execute(C::SetFontColor(AutoOr::Value(Color(0x0000FF))), fonts());
+    let blue = Tri::Uniform(AutoOr::Value(ColourValue::rgb(Color(0x0000FF))));
+    assert_eq!(e.character_readback().expect("a readback").color, blue, "the numbers' colour, not the text's");
+    let (_, character, _) = e.format_readback().expect("read backs");
+    assert_eq!(character.color, blue);
+}
+
+#[test]
+fn tab_stops_differing_only_in_where_they_come_from_read_as_mixed() {
+    let styles = r#"<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style><w:style w:type="paragraph" w:styleId="Tabbed"><w:name w:val="Tabbed"/><w:basedOn w:val="Normal"/><w:pPr><w:tabs><w:tab w:val="left" w:pos="1440"/></w:tabs></w:pPr></w:style>"#;
+    let body = r#"<w:p><w:pPr><w:pStyle w:val="Tabbed"/></w:pPr><w:r><w:t>one</w:t></w:r></w:p><w:p><w:pPr><w:tabs><w:tab w:val="left" w:pos="1440"/></w:tabs></w:pPr><w:r><w:t>two</w:t></w:r></w:p>"#;
+    let mut e = super::style_model::open_pkg(&super::style_model::pkg(styles, body));
+    e.execute(Command::SelectAll, fonts());
+    let stops = |e: &Editor, k: usize| e.tab_stops(super::texts_ids(e)[k]);
+    assert_eq!(stops(&e, 0).iter().map(|t| (t.position, t.inherited)).collect::<Vec<_>>(), [(Points(72.0), true)]);
+    assert_eq!(stops(&e, 1).iter().map(|t| (t.position, t.inherited)).collect::<Vec<_>>(), [(Points(72.0), false)]);
+    assert_eq!(e.paragraph_readback().expect("a readback").tabs, Tri::Mixed, "one the style's, the other its own");
+}
+
+#[test]
+fn a_header_place_is_never_inside_a_body_selection() {
+    use super::empty_stories::{NS, build};
+    let hdr = format!(r#"<w:hdr {NS}><w:p><w:r><w:t>Header</w:t></w:r></w:p></w:hdr>"#);
+    let sect = r#"<w:headerReference w:type="default" r:id="rIdP0"/>"#;
+    let body = "<w:p><w:r><w:t>one</w:t></w:r></w:p><w:p><w:r><w:t>two</w:t></w:r></w:p><w:p><w:r><w:t>three</w:t></w:r></w:p>";
+    let mut e = Editor::open(&build(body, sect, &[("header1.xml", "header", "header", hdr.as_str())]), fonts()).expect("opens");
+    e.complete(fonts());
+    let paras = super::texts_ids(&e);
+    let at = |k: usize, u: u32| Position::text(StoryId::Body, paras[k], crate::layout::Unit(u));
+    e.selection = Selection::range(at(0, 0), at(2, 2), crate::editing::selection::Granularity::Char);
+    let name = e.document().sections[0].headers[0].clone().expect("a header");
+    let story = e.index().header_footer(&name).expect("its story");
+    let Some(crate::docx::Block::Para(p)) = e.document().stories[&name].first() else { panic!("a paragraph") };
+    let there = Position::text(story, crate::layout::ParaId(p.id), crate::layout::Unit(1));
+    assert!(e.inside_selection(&at(1, 1)), "the body's middle");
+    assert!(!e.inside_selection(&there) && !e.inside_any_range(&there), "another story");
 }

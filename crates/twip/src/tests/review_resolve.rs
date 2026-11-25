@@ -560,6 +560,12 @@ fn accept_all_and_stop_tracking() {
     assert!(e.document().settings.protection.as_ref().is_some_and(|p| p.forces_tracking()), "setup: protected for tracked changes");
     assert!(!matches!(e.accept_all_and_stop_tracking(fonts()), Outcome::Changed(_)));
     assert!(e.tracking());
+    // Read only: nothing accepted, tracking stays on.
+    let mut e = open("FX-REVIEW-RUNS.docx");
+    e.set_tracking(true);
+    e.set_mode(crate::editing::Mode::ReadOnly);
+    assert!(!matches!(e.accept_all_and_stop_tracking(fonts()), Outcome::Changed(_) | Outcome::Moved));
+    assert!(e.tracking() && !revisions(e.document(), e.index()).is_empty());
 }
 
 /// Protection that forces tracking keeps Track moves and Track formatting on: turning either off is refused, and

@@ -154,7 +154,10 @@ fn clip_cut(children: &Rc<[Child]>, lo: f64, hi: f64, top: f64, bottom: f64, bor
                 mark: placed.line.mark,
                 texts: placed.line.texts.clone(),
                 expansions: placed.line.expansions.clone(),
-                label: placed.line.label.filter(|&(a, _)| (lo..hi).contains(&(dx + a))),
+                label: placed.line.label.and_then(|(a, b)| {
+                    let (a, b) = (a.max(lo - dx), b.min(hi - dx));
+                    (b > a).then_some((a, b))
+                }),
             });
             Child::Line { para: *para, placed: PlacedLine { line, ..placed.clone() } }
         }

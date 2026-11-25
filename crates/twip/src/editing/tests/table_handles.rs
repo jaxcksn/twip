@@ -907,6 +907,28 @@ fn the_left_border_drag_moves_only_the_selected_rows() {
 }
 
 #[test]
+fn a_selected_rows_left_edge_drag_keeps_its_cell_within_the_widest() {
+    let tc = |w: u32| format!(r#"<w:tc><w:tcPr><w:tcW w:w="{w}" w:type="dxa"/></w:tcPr><w:p/></w:tc>"#);
+    let row = format!("<w:tr>{}{}</w:tr>", tc(31600), tc(1440));
+    let mut e = open(&format!(
+        r#"<w:tbl><w:tblPr><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="31600"/><w:gridCol w:w="1440"/></w:tblGrid>{row}{row}</w:tbl>"#
+    ));
+    let d = Drawn::of(&mut e);
+    e.set_selection(Selection::Cells {
+        table: d.table,
+        anchor: CellRef { row: 1, col: 0 },
+        focus: CellRef { row: 1, col: 0 },
+        shape: CellShape::Rect,
+    });
+    drag(&mut e, (d.edges[0], (d.rows[1][1] + d.rows[1][3]) / 2.0), (-18.0, 0.0), ALT, true);
+    let t = e.index().table(e.document(), d.table).expect("the table");
+    let g = crate::docx::grid::Grid::of(t);
+    let (c, s, _) = g.rows[1][0];
+    let width: f64 = t.grid[c..c + s.max(1)].iter().sum();
+    assert!((width - 1584.0).abs() < 0.06, "the moved cell widened to 22 inches, no more: {width} over {:?}", t.grid);
+}
+
+#[test]
 fn the_left_edge_goes_in_by_each_cells_whole_width_and_never_out() {
     let tc = |w: u32, span: u32| {
         let span = if span > 1 { format!(r#"<w:gridSpan w:val="{span}"/>"#) } else { String::new() };

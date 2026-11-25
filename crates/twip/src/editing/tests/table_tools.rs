@@ -359,6 +359,18 @@ fn the_pen_draws_a_cells_diagonal_corner_to_corner() {
 }
 
 #[test]
+fn a_pen_line_along_a_short_row_draws_no_diagonal() {
+    use crate::editing::table_draw::Stroke;
+    let short = r#"<w:trPr><w:trHeight w:val="100" w:hRule="exact"/></w:trPr>"#;
+    let mut e = open(&grid2(["", "", "", ""], "", [short, ""]));
+    let r = cell_rect(&mut e, 0, 1);
+    assert!(r[3] - r[1] < 4.0 * 3.0, "a short row: {r:?}");
+    let y = (r[1] + r[3]) / 2.0;
+    e.draw_table_stroke(Stroke { page: 0, from: [r[0] + 1.0, y], to: [r[2] - 1.0, y] }, fonts());
+    assert!(table(&e).rows.iter().flat_map(|r| &r.cells).all(|c| c.diagonals.is_none()), "a line across, not corner to corner");
+}
+
+#[test]
 fn a_pen_click_draws_nothing() {
     use crate::editing::table_draw::Stroke;
     let mut e = open(&grid2(["", "", "", ""], "", ["", ""]));
@@ -498,6 +510,18 @@ fn insert_cells_shift_right_keeps_vertical_merges_whole() {
     let g = crate::docx::grid::Grid::of(t);
     assert_eq!((g.rows[0][2].0, g.rows[1][2].0), (2, 2), "the merge's cells stay over each other");
     assert_eq!(t.rows[1].cells[2].v_merge, crate::docx::VMerge::Continue);
+}
+
+#[test]
+fn insert_cells_shift_right_refuses_a_merge_continuing_another_cell() {
+    use crate::editing::table_cells::InsertShift;
+    let (restart, cont) = (r#"<w:vMerge w:val="restart"/>"#, "<w:vMerge/>");
+    // The rows shift by 1 and 2: M' would leave M to continue Q.
+    let mut e = open(&table_of(4, &[&[("", "A"), ("", "B"), (restart, "M"), (restart, "Q")], &[(SPAN2, "C"), (cont, ""), ("", "q")]]));
+    let before = texts(&e);
+    cells(&mut e, (0, 0), (0, 0));
+    assert!(matches!(e.insert_cells(InsertShift::Right, fonts()), Outcome::Refused(_)));
+    assert_eq!(texts(&e), before, "nothing changed");
 }
 
 #[test]
@@ -960,4 +984,38 @@ fn a_legacy_tables_unset_indent_takes_its_first_rows_left_border() {
     assert!(!t.ind_set);
     let ind = crate::layout::table::placed_indent(t, crate::docx::Compat::Legacy);
     assert!((ind - 3.0).abs() < 0.05, "half the row's 6 pt border: {ind}");
+}
+
+#[test]
+fn fixing_the_columns_keeps_those_a_shifted_row_shares_with_no_other() {
+    use crate::api::command::AutoFit;
+    // Row 1 has an indent of its own and starts past row 0's last edge: its edges are in another frame.
+    let rows = format!(
+        r#"<w:tr><w:trPr><w:gridAfter w:val="3"/></w:trPr>{}</w:tr><w:tr><w:tblPrEx><w:tblLayout w:type="fixed"/><w:tblInd w:w="720" w:type="dxa"/></w:tblPrEx><w:trPr><w:gridBefore w:val="2"/></w:trPr>{}{}</w:tr>"#,
+        tc("", "a"),
+        tc("", "b"),
+        tc("", "c")
+    );
+    let grid = "<w:gridCol w:w=\"1440\"/>".repeat(4);
+    let mut e = open(&format!(r#"<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr><w:tblGrid>{grid}</w:tblGrid>{rows}</w:tbl><w:p/>"#));
+    cells(&mut e, (0, 0), (0, 0));
+    assert_eq!(table(&e).rows[1].ind, Some(36.0), "a layout run of its own");
+    assert!(matches!(e.execute(Command::AutoFitColumns(AutoFit::Fixed), fonts()), Outcome::Changed(_)));
+    let g = table(&e).grid.clone();
+    assert!(g.iter().all(|w| (w - 72.0).abs() < 0.1), "no column takes the row's indent: {g:?}");
+}
+
+#[test]
+fn insert_cells_is_refused_under_protection() {
+    use crate::api::command::{DocumentProtection, ProtectionKind};
+    use crate::editing::table_cells::InsertShift;
+    for shift in [InsertShift::Right, InsertShift::Down] {
+        let mut e = open(&grid2(["", "", "", ""], "", ["", ""]));
+        let lock = DocumentProtection { kind: Some(ProtectionKind::ReadOnly), enforce: Some(true), ..Default::default() };
+        assert!(matches!(e.execute(Command::SetDocumentProtection(lock), fonts()), Outcome::Changed(_)));
+        cells(&mut e, (0, 0), (0, 0));
+        let before = texts(&e);
+        assert!(matches!(e.insert_cells(shift, fonts()), Outcome::Refused(_)), "{shift:?}");
+        assert_eq!(texts(&e), before, "{shift:?}: nothing moved");
+    }
 }

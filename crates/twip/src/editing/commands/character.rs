@@ -54,6 +54,8 @@ fn strip(tag: &str, name: &str) -> String {
 pub(crate) fn with_attr(tag: &str, name: &str, value: &str) -> String {
     let v = crate::docx::write::props::esc(value);
     if let Some((_, from, to)) = attr_span(tag, name) {
+        // Its own quotes kept: a single-quoted value's apostrophes escaped
+        let v = if tag[..from].ends_with('\'') { v.replace('\'', "&apos;") } else { v };
         return format!("{}{v}{}", &tag[..from], &tag[to..]);
     }
     let at = tag.rfind("/>").or_else(|| tag.rfind('>')).unwrap_or(tag.len());
@@ -312,12 +314,9 @@ impl Editor {
                 if let Some(mut sets) = sets {
                     sets.sort_unstable();
                     sets.dedup();
-                    if sets.is_empty() {
-                        p.remove("w14:stylisticSets");
-                    } else {
-                        let inner: String = sets.iter().map(|n| format!("<{{w14}}styleSet {{w14}}id=\"{n}\"/>")).collect();
-                        p.set("w14:stylisticSets", cx.w14("stylisticSets", &[], &inner));
-                    }
+                    // None: an empty element, so a style's sets don't apply
+                    let inner: String = sets.iter().map(|n| format!("<{{w14}}styleSet {{w14}}id=\"{n}\"/>")).collect();
+                    p.set("w14:stylisticSets", cx.w14("stylisticSets", &[], &inner));
                 }
                 if let Some(on) = t.contextual_alternates {
                     p.set("w14:cntxtAlts", cx.w14("cntxtAlts", &[("val", if on { "1" } else { "0" })], ""));
@@ -864,5 +863,12 @@ mod tests {
         assert_eq!(super::with_attr(tag, "w:val", "en-US"), r#"<w:lang w:eastAsia='x w:val="ja-JP"' w:val = "en-US"/>"#);
         assert_eq!(super::strip(tag, "w:val"), r#"<w:lang w:eastAsia='x w:val="ja-JP"'/>"#);
         assert_eq!(super::with_attr("<w:lang/>", "w:val", "en-US"), r#"<w:lang w:val="en-US"/>"#);
+    }
+
+    #[test]
+    fn a_single_quoted_value_keeps_its_quotes_closed() {
+        let tag = super::with_attr("<w:x w:name='a'/>", "w:name", "O'Brien");
+        assert_eq!(tag, "<w:x w:name='O&apos;Brien'/>");
+        assert!(roxmltree::Document::parse(&tag.replace("w:", "")).is_ok(), "{tag}");
     }
 }

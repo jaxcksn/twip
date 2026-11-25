@@ -323,13 +323,25 @@ fn dragging_down_a_tbrl_line_selects_along_it() {
     drag(&mut e, 0, at(1), at(5), Mods::default());
     let (a, b) = e.selection().ordered(&e.index).expect("a range");
     assert_eq!((a.para_offset().map(|p| p.1), b.para_offset().map(|p| p.1)), (Some(l.stops[1].unit), Some(l.stops[5].unit)));
-    // Across to the next line's band, the drag ends on that line, as far down it as the pointer.
+    // Across to the next line's band, the drag ends on that line, as far down it as the pointer. It starts outside the
+    // selection, which a press inside would drag and drop.
     let next = &g.lines[i + 1];
-    let to = next.page(l.stops[9].x, (next.top + next.bottom) / 2.0);
-    drag(&mut e, 0, at(2), to, Mods::default());
-    let (_, b) = e.selection().ordered(&e.index).expect("a range");
-    let (_, u) = b.para_offset().expect("text");
-    assert!(next.first_of(l.para().expect("para")).is_some_and(|f| u >= f), "the drag reached the next line");
+    // An interior stop before a space: past the first word a drag takes words whole, so it ends past the space
+    let text = crate::editing::text::UnitText::of(e.index().para(e.document(), next.para().expect("para")).expect("its paragraph")).text;
+    let stop = next.stops[1..next.stops.len() - 1]
+        .iter()
+        .copied()
+        .find(|s| s.unit.0 > next.stops[0].unit.0 + 2 && text.chars().nth(s.unit.0 as usize) == Some(' '))
+        .expect("an interior stop before a space");
+    let to = next.page(stop.x, (next.top + next.bottom) / 2.0);
+    drag(&mut e, 0, at(7), to, Mods::default());
+    let (a, b) = e.selection().ordered(&e.index).expect("a range");
+    assert_eq!(a.para_offset().map(|p| p.1), Some(l.stops[7].unit), "from where it was pressed");
+    assert_eq!(
+        b.para_offset(),
+        Some((stop.para, crate::layout::Unit(stop.unit.0 + 1))),
+        "the drag ends on the next line, at the word under the pointer"
+    );
 }
 
 #[test]
@@ -454,6 +466,28 @@ fn a_table_turned_in_a_vertical_cell_turns_its_borders_and_handles() {
 }
 
 #[test]
+fn moving_a_turned_table_previews_it_on_the_page_and_moves_it_as_laid_out() {
+    let mut e = turned_table();
+    let g = pages(&mut e).into_iter().next().map(|(_, g)| g).expect("a page");
+    let row = g.rows.iter().find(|r| r.turn != crate::layout::vertical::Turn::NONE).expect("the inner table's row, turned");
+    let (table, rect, turn) = (row.table, row.rect, row.turn);
+    let on = turn.at([rect[0], rect[1]]);
+    let (x, y) = e.stack().to_doc(0, on[0], on[1]).expect("on the stack");
+    e.table_press(table, x, y);
+    let alt = Mods { alt: true, ..Mods::default() };
+    let (x, y) = e.stack().to_doc(0, on[0], on[1] + 18.0).expect("on the stack");
+    e.table_drag_move(x, y, alt);
+    let page = turn.rect(rect);
+    let preview = e.view(0..1).table_preview.expect("a preview").1;
+    let want = [page[0], page[1] + 18.0, page[2], page[3] + 18.0];
+    assert!(preview.iter().zip(want).all(|(a, b)| (a - b).abs() < 1e-6), "drawn where the pointer took it: {preview:?} {want:?}");
+    let d = e.table_drag.expect("dragging");
+    let [dx, dy] = turn.inverse().along([0.0, 18.0]);
+    let local = d.to();
+    assert!((local[0] - rect[0] - dx).abs() < 1e-6 && (local[1] - rect[1] - dy).abs() < 1e-6, "moved as laid out: {local:?} {rect:?}");
+}
+
+#[test]
 fn spelling_and_marks_over_vertical_text_turn_with_it() {
     let mut e = layout_fixture("vertical-directions.docx");
     let (g, i) = line_of(&mut e, 0, "Section 1", is_body);
@@ -561,6 +595,22 @@ fn the_text_under_the_pointer_says_which_way_it_runs() {
         let (x, y) = e.stack().to_doc(pg, p[0], p[1]).expect("on the stack");
         assert_eq!(e.text_dir_at(x, y, fonts()), Some(dir));
     }
+}
+
+#[test]
+fn a_repeated_header_s_vertical_text_says_it_runs_down() {
+    let cell =
+        |pr: &str, t: &str| format!("<w:tc><w:tcPr><w:tcW w:w=\"2000\" w:type=\"dxa\"/>{pr}</w:tcPr><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:tc>");
+    let header = format!("<w:tr><w:trPr><w:tblHeader/></w:trPr>{}{}</w:tr>", cell("<w:textDirection w:val=\"tbRl\"/>", "Head"), cell("", "h"));
+    let rows: String = (0..80).map(|r| format!("<w:tr>{}{}</w:tr>", cell("", &format!("a{r}")), cell("", "b"))).collect();
+    let grid = "<w:gridCol w:w=\"2000\"/>".repeat(2);
+    let mut e =
+        editor(&format!("<w:tbl><w:tblPr><w:tblW w:w=\"4000\" w:type=\"dxa\"/></w:tblPr><w:tblGrid>{grid}</w:tblGrid>{header}{rows}</w:tbl><w:p/>"));
+    let g = pages(&mut e).into_iter().find(|(p, _)| *p == 1).map(|(_, g)| g).expect("a second page");
+    let i = g.lines.iter().position(|l| l.repeat && l.dir() == LineDir::Down).expect("the header's vertical line, repeated");
+    let (_, p) = middle(&g, i);
+    let (x, y) = e.stack().to_doc(1, p[0], p[1]).expect("on the stack");
+    assert_eq!(e.text_dir_at(x, y, fonts()), Some(LineDir::Down));
 }
 
 #[test]

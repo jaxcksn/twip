@@ -168,7 +168,8 @@ impl Marks {
         let first = &e.items[i];
         let (ch, mut end, mut last) = (first.channel, first.end, first.run_no);
         let (mut e, mut from, mut para) = (e, i + 1, s.para);
-        for _ in 0..REACH {
+        // Each step goes on to a later paragraph with marks: as many as have them, the whole revision
+        for _ in 0..self.paras.len() {
             for (it, &st) in e.items.iter().zip(&e.starts).skip(from) {
                 if it.channel != ch || !it.listed {
                     continue;

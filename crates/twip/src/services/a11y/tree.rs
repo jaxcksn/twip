@@ -480,7 +480,10 @@ impl Builder<'_> {
             match inline {
                 Inline::NoteRef { kind, id, .. } => {
                     flush(&mut run, &mut out);
-                    out.push(self.note_ref(*kind, *id, p.id, k));
+                    let node = self.note_ref(*kind, *id, p.id, k);
+                    if !r.hidden(starts[k]) {
+                        out.push(node);
+                    }
                 }
                 Inline::Picture(pic, _) => {
                     flush(&mut run, &mut out);
@@ -855,6 +858,33 @@ mod tests {
     }
 
     #[test]
+    fn a_hidden_note_reference_is_not_read_but_keeps_its_number() {
+        use std::io::{Read, Write};
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-A11Y-STRUCTURE.docx");
+        let mut z = zip::ZipArchive::new(std::io::Cursor::new(std::fs::read(path).expect("fixture"))).expect("a zip");
+        let mut out = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        for i in 0..z.len() {
+            let mut f = z.by_index(i).expect("an entry");
+            let name = f.name().expect("a name").to_string();
+            let mut data = Vec::new();
+            f.read_to_end(&mut data).expect("reads");
+            if name == "word/document.xml" {
+                let xml = String::from_utf8(data).expect("utf-8");
+                let k = xml.find(r#"<w:footnoteReference w:id="1"/>"#).expect("the first reference");
+                let pr = xml[..k].rfind("</w:rPr>").expect("its run properties");
+                data = format!("{}<w:vanish/>{}", &xml[..pr], &xml[pr..]).into_bytes();
+            }
+            out.start_file(name, zip::write::SimpleFileOptions::default()).expect("writes");
+            out.write_all(&data).expect("writes");
+        }
+        let fonts = Fonts::system_recommended();
+        let e = Editor::open(&out.finish().expect("a zip").into_inner(), &fonts).expect("opens");
+        let t = tree(&e, &Spellers::default(), "en-US");
+        let names: Vec<String> = with(&t, AccessibleRole::NoteRef).iter().map(|r| r.name.clone().unwrap_or_default()).collect();
+        assert_eq!(names, ["Footnote 2", "Endnote 1"], "the hidden reference isn't read; the next keeps its number");
+    }
+
+    #[test]
     fn hidden_comments_are_not_read() {
         let (mut e, _) = open("FX-A11Y-STRUCTURE.docx");
         let read = |e: &Editor| {
@@ -915,6 +945,16 @@ mod tests {
         };
         e.set_balloon_mode(crate::docx::review::BalloonMode::Balloons);
         assert_eq!(deleted(&e), ["for next year "], "read where it was");
+        // A caret is how an inline deletion draws: one in a balloon is still read.
+        let caret = crate::docx::review::MarkupStyle {
+            deletions: crate::docx::review::MarkLook {
+                mark: crate::docx::review::TextMark::Caret,
+                ..crate::docx::review::MarkupStyle::default().deletions
+            },
+            ..crate::docx::review::MarkupStyle::default()
+        };
+        e.set_markup_style(caret);
+        assert_eq!(deleted(&e), ["for next year "], "in a balloon, whatever its inline mark");
         e.set_hidden_reviewers(&["Grace"]);
         assert!(deleted(&e).is_empty(), "the hidden reviewer's deletion");
     }

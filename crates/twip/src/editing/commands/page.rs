@@ -397,18 +397,21 @@ impl Editor {
         }
         use crate::editing::commands::Command;
         // Text's own number shows on its page; only a header or footer's first-page version can leave it out.
+        // The first page's own header or footer, its section's or one before it goes on from
+        let si = self.focus_section();
+        let first = |footer: bool| {
+            (0..=si).rev().find_map(|j| self.doc.sections.get(j).and_then(|s| (if footer { &s.footers } else { &s.headers })[1].as_deref()))
+        };
         if place == PageNumberSpot::Caret {
             let Some(crate::editing::position::StoryId::HeaderFooter(k)) = self.selection.focus().map(|p| p.story) else {
                 return Outcome::unavailable("a number in the text shows on the first page too");
             };
-            // The first page's own header or footer, which the number would show on
-            let si = self.focus_section();
-            let first = |footer: bool| {
-                (0..=si).rev().find_map(|j| self.doc.sections.get(j).and_then(|s| (if footer { &s.footers } else { &s.headers })[1].as_deref()))
-            };
             if self.index.part_name(k).is_some_and(|n| first(false) == Some(n) || first(true) == Some(n)) {
                 return Outcome::unavailable("a number in the first page's header or footer shows on the first page");
             }
+        } else if first(place == PageNumberSpot::Footer).and_then(|n| self.doc.stories.get(n)).is_some_and(|b| shows_page(b)) {
+            // Its number would show there, the first page's header or footer kept
+            return Outcome::unavailable("the first page's header or footer already shows a number");
         }
         self.begin_batch(Some("Page Number".into()));
         let out = (|e: &mut Editor| {
@@ -517,6 +520,14 @@ pub enum PageNumberSpot {
     Footer,
     /// In a page margin (Word's Page Margins), in a frame anchored in the header.
     Margin(MarginSide),
+}
+
+/// Whether `blocks` (a header or footer, its tables' cells too) hold a `PAGE` field. Table nesting is bounded when read.
+fn shows_page(blocks: &[crate::docx::Block]) -> bool {
+    blocks.iter().any(|b| match b {
+        crate::docx::Block::Para(p) => p.inlines.iter().any(|i| matches!(i, Inline::FieldBegin { kind: Some(crate::docx::FieldKind::Page), .. })),
+        crate::docx::Block::Table(t) => t.rows.iter().flat_map(|r| &r.cells).any(|c| shows_page(&c.blocks)),
+    })
 }
 
 /// A page margin, or a facing page's inside or outside one.

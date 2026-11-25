@@ -29,8 +29,7 @@ const REMOVE_BELOW: f64 = 30.0;
 pub const SELECTOR: ClientRect = ClientRect { left: INSET, top: INSET, width: BAND - 2.0 * INSET, height: BAND - 2.0 * INSET };
 
 /// A section's text columns between `left` and `right` (page points).
-fn columns(s: &Section, left: f64, right: f64) -> Vec<Span> {
-    let c = &s.columns;
+fn columns(c: &crate::docx::Columns, left: f64, right: f64) -> Vec<Span> {
     let n = c.num.clamp(1, crate::docx::Columns::MAX);
     let widths: Vec<(f64, f64)> = if c.equal || c.cols.len() < n {
         let w = ((right - left) - c.space * (n - 1) as f64) / n as f64;
@@ -69,9 +68,9 @@ pub fn vertical_text(s: &Section, gutter_at_top: bool) -> Option<VerticalText> {
     let (right, top) = if gutter_at_top { (s.right, s.top + s.gutter) } else { (s.right + s.gutter, s.top) };
     let lines = Span { start: Points(top), end: Points(s.page_h - s.bottom) };
     let columns = match v.flow {
-        crate::layout::vertical::Flow::DownEast => columns(s, s.left, s.page_w - right),
+        crate::layout::vertical::Flow::DownEast => columns(&s.columns, s.left, s.page_w - right),
         // Columns from the right margin
-        _ => columns(s, right, s.page_w - s.left)
+        _ => columns(&s.columns, right, s.page_w - s.left)
             .into_iter()
             .map(|c| Span { start: Points(s.page_w - c.end.0), end: Points(s.page_w - c.start.0) })
             .collect(),
@@ -87,8 +86,9 @@ pub fn model(e: &mut Editor, section: usize) -> RulerModel {
     let set = &e.document().settings;
     let facing = crate::layout::page::Facing { mirror: set.mirror_margins, gutter_at_top: set.gutter_at_top, book_fold: set.book_fold };
     let (left, right, top) = crate::layout::page::margins_in(s, e.document().review.view, facing, 1);
+    let s = s.section_in(e.document().review.view);
     let right = s.page_w - right;
-    let columns = columns(s, left, right);
+    let columns = columns(&s.columns, left, right);
     let (page_w, page_h, bottom) = (s.page_w, s.page_h, s.page_h - s.bottom);
     let paras = e.ruler_paras();
     let (doc, index) = (e.document(), e.index());
@@ -680,6 +680,25 @@ mod tests {
         let section = e.format_state().map_or(0, |f| f.section);
         let m = model(&mut e, section);
         (e, m)
+    }
+
+    #[test]
+    fn the_model_shows_the_page_of_the_markup_view() {
+        use crate::docx::review::MarkupView;
+        use crate::editing::tests::{blank_body, fonts};
+        let mar = r#"<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>"#;
+        let body = format!(
+            r#"<w:p><w:pPr><w:sectPr><w:pgSz w:w="15840" w:h="12240"/>{mar}<w:sectPrChange w:id="1" w:author="A"><w:sectPr><w:pgSz w:w="12240" w:h="15840"/>{mar}</w:sectPr></w:sectPrChange></w:sectPr></w:pPr><w:r><w:t>one</w:t></w:r></w:p>"#
+        );
+        let mut e = Editor::open(&blank_body(&body), fonts()).expect("opens");
+        e.complete(fonts());
+        let page = |e: &mut Editor| {
+            let m = model(e, 0);
+            (m.horizontal.page_width.0, m.vertical.page_height.0, m.vertical.text.end.0, m.horizontal.columns[0].end.0)
+        };
+        assert_eq!(page(&mut e), (792.0, 612.0, 540.0, 720.0), "landscape, as changed");
+        e.set_markup_view(MarkupView::Original);
+        assert_eq!(page(&mut e), (612.0, 792.0, 720.0, 540.0), "portrait, as it was");
     }
 
     #[test]

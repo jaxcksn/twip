@@ -415,6 +415,16 @@ impl Editor {
         use super::table_format::{Shading, TableFormat};
         use crate::api::command::{ShadingPattern, ShadingTarget};
         use crate::api::value::{AutoOr, NoneOr};
+        // The command's gates: a call without it is refused alike
+        let gate = Command::SetShading(crate::api::command::ShadingChange {
+            target,
+            fill: NoneOr::None,
+            pattern: ShadingPattern::Clear,
+            color: AutoOr::Auto,
+        });
+        if let Some(out) = self.refuse_like(&gate) {
+            return out;
+        }
         let colour = |c: &crate::api::drawing::ColourValue| self.word_colour(c);
         let fill = match &s.fill {
             NoneOr::Value(c) => match colour(c) {

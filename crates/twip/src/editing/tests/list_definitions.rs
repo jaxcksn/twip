@@ -648,6 +648,19 @@ fn a_level_in_full_sets_its_style_and_its_numbers_formatting() {
 }
 
 #[test]
+fn a_size_changes_beside_a_style_read_that_cant_be_written() {
+    use crate::editing::list_defs::{ListLevelsChange, NumberStyle};
+    let mut e = list_of("odd-style", "");
+    caret_in(&mut e, 0);
+    let mut levels = e.list_definition().expect("a list").levels;
+    assert_eq!(levels[0].format, NumberStyle::Other("odd-style".into()));
+    levels[0].label.size = Some(Points(14.0));
+    let out = e.set_list_levels(ListLevelsChange { levels: levels[..1].to_vec(), ..Default::default() }, fonts());
+    assert!(matches!(out, crate::editing::commands::Outcome::Changed(_)), "{out:?}");
+    assert_eq!(e.list_definition().expect("a list").levels[0].label.size, Some(Points(14.0)));
+}
+
+#[test]
 fn the_api_level_keeps_a_style_and_number_formatting_it_cant_show() {
     use crate::editing::list_defs::NumberStyle;
     let mut e = list_of("hex", "<w:rPr><w:b/></w:rPr>");
@@ -914,6 +927,38 @@ fn formatting_a_number_of_a_shared_definition_stays_with_its_list() {
     assert!(!part[..at].contains("<w:b/>"), "the shared definition does not: {part}");
     let at6 = part.find("<w:num w:numId=\"6\"").expect("list 6");
     assert!(!part[at6..].contains("lvlOverride"), "{part}");
+}
+
+#[test]
+fn a_locked_paragraphs_number_isnt_formatted() {
+    let abs = abstract_of(2, &levels("decimal", |i| format!("%{}.", i + 1)));
+    let nums = numbering(&(abs + &num(5, 2)));
+    let locked = format!(r#"<w:sdt><w:sdtPr><w:lock w:val="contentLocked"/></w:sdtPr><w:sdtContent>{}</w:sdtContent></w:sdt>"#, np("B", 5, 0));
+    let mut e = editor(&pkg(&(np("A", 5, 0) + &locked), Some(&nums), ""));
+    caret_in(&mut e, 0);
+    let para = super::para_id(&e, 1);
+    let o = e.format_list_label(para, vec![Command::SetBold(true)], fonts());
+    assert!(matches!(o, crate::editing::commands::Outcome::Unchanged(_)), "{o:?}");
+    assert!(!part(&saved(&e), "word/numbering.xml").contains("<w:b/>"));
+}
+
+#[test]
+fn a_style_numbered_through_a_new_base_counts_in_its_list() {
+    use crate::editing::style_defs::StyleChange;
+    let abs = abstract_of(2, &levels("decimal", |i| format!("%{}.", i + 1)));
+    let nums = numbering(&(abs + &num(5, 2)));
+    let styles = concat!(
+        r#"<w:style w:type="paragraph" w:customStyle="1" w:styleId="Num"><w:name w:val="Num"/><w:pPr><w:numPr><w:numId w:val="5"/></w:numPr></w:pPr></w:style>"#,
+        r#"<w:style w:type="paragraph" w:customStyle="1" w:styleId="Body"><w:name w:val="Body"/></w:style>"#,
+    );
+    let body = format!("{}{}{}", np("A", 5, 0), p("B", r#"<w:pStyle w:val="Body"/>"#), np("C", 5, 0));
+    let mut e = editor(&pkg(&body, Some(&nums), styles));
+    e.complete(fonts());
+    assert_eq!(label(&e, 2), "2.", "setup");
+    let rebase = StyleChange { based_on: Some(Some(crate::api::value::StyleId("Num".into()))), ..Default::default() };
+    let o = e.modify_style(&crate::api::value::StyleId("Body".into()), rebase, fonts());
+    assert!(matches!(o, crate::editing::commands::Outcome::Changed(_)), "{o:?}");
+    assert_eq!((label(&e, 1), label(&e, 2)), ("2.".to_string(), "3.".to_string()), "the paragraph after counts it");
 }
 
 #[test]

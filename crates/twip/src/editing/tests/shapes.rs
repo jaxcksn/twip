@@ -933,16 +933,26 @@ fn boxes_editor(boxes: &[String]) -> Editor {
 }
 
 #[test]
-fn create_link_refuses_a_box_holding_a_bookmark() {
+fn create_link_refuses_a_box_holding_a_bookmark_tracked_formatting_or_vertical_text() {
     let full = text_box(Some("<w:p><w:r><w:t>Story</w:t></w:r></w:p>"), None, 0);
     let marked = text_box(Some(r#"<w:p><w:bookmarkStart w:id="0" w:name="Here"/><w:bookmarkEnd w:id="0"/></w:p>"#), None, 0);
     let empty = text_box(Some("<w:p/><w:p/>"), None, 0);
-    let mut e = boxes_editor(&[full, marked, empty]);
+    let tracked = text_box(
+        Some(
+            r#"<w:p><w:pPr><w:jc w:val="center"/><w:pPrChange w:id="9" w:author="A" w:date="2024-01-01T00:00:00Z"><w:pPr/></w:pPrChange></w:pPr></w:p>"#,
+        ),
+        None,
+        0,
+    );
+    let vertical = text_box(Some("<w:p/>"), None, 0).replace("<wps:bodyPr/>", r#"<wps:bodyPr vert="vert"/>"#);
+    let mut e = boxes_editor(&[full, marked, empty, tracked, vertical]);
     let ids = floats(&e);
     e.set_selection(Selection::Object(ObjectRef::Floating(FloatId(ids[0]))));
     assert!(!e.can_link_to(FloatId(ids[1])), "its bookmark would be lost");
     assert!(!matches!(e.link_text_box(FloatId(ids[1]), fonts()), super::super::Outcome::Changed(_)));
     assert!(e.can_link_to(FloatId(ids[2])), "empty paragraphs only");
+    assert!(!e.can_link_to(FloatId(ids[3])), "its tracked formatting would be lost");
+    assert!(!e.can_link_to(FloatId(ids[4])), "a vertical box: the chain's text would turn");
 }
 
 #[test]

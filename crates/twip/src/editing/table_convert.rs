@@ -342,7 +342,13 @@ impl Editor {
         match fit {
             ConvertFit::Window => self.fit_to_window(&mut table),
             ConvertFit::Contents => table.width = crate::docx::props::Width::Auto,
-            ConvertFit::Fixed(_) => {}
+            ConvertFit::Fixed(Some(_)) => {
+                let cx = self.cx();
+                let mut props = super::step::TableProps::of(&table);
+                super::table_format::set_own(&mut props, "tblLayout", format!("<{w}tblLayout {w}type=\"fixed\"/>", w = cx.w), &cx);
+                (table.fixed, table.direct) = (true, props.direct);
+            }
+            ConvertFit::Fixed(None) => {}
         }
         let cell = table.rows.first().and_then(|r| r.cells.first()).and_then(|c| c.blocks.first()).map(|b| match b {
             Block::Para(p) => p.id,

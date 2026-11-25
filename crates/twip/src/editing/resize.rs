@@ -511,7 +511,7 @@ impl Editor {
                         && let Some(j) = inner.into_iter().find(|&j| (b[j] - x).abs() < 0.01)
                     {
                         let m = |i: usize| row.cells.get(i).map_or(4.5, |c| c.margins[1] + c.margins[3] + 4.5);
-                        let lo = if j == 0 { b[0] - MAX } else { b[j - 1] + m(j - 1) };
+                        let lo = if j == 0 { b[1] - MAX.max(b[1] - b[0]) } else { b[j - 1] + m(j - 1) };
                         let hi = b[j + 1] - m(j);
                         if lo <= hi {
                             b[j] = (b[j] + dx).clamp(lo, hi);
@@ -798,7 +798,7 @@ const STALE: Outcome = Outcome::Unchanged("stale table");
 fn drawn_grid(t: &crate::docx::Table, id: TableId, geo: Option<&super::geometry::PageGeometry>, cols: usize) -> Vec<f64> {
     let mut grid = super::tables::full_grid(t, cols);
     if let Some(geo) = geo {
-        super::tables::drawn_grid(geo, id, &mut grid);
+        super::tables::drawn_grid(geo, id, t, &mut grid);
     }
     grid
 }

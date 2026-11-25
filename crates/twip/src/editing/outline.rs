@@ -5,7 +5,7 @@ use std::rc::Rc;
 
 use crate::api::command::CommandId;
 use crate::docx::write::props::Props;
-use crate::docx::{Block, ControlId, Paragraph};
+use crate::docx::{Block, ControlId, Inline, Paragraph};
 use crate::font::Fonts;
 use crate::layout::{ParaId, Unit};
 use crate::services::a11y::roles::heading_level;
@@ -300,12 +300,19 @@ impl Editor {
             Err(o) => return o,
         };
         let story = self.index.story(c.parts[c.first.part]);
-        let Some((last, len)) = self.part_block(&c.parts, c.last).and_then(|b| edge_para_ref(b, true)).map(|p| (ParaId(p.id), para_len(p))) else {
+        let next = At { part: c.last.part, block: c.last.block + 1 };
+        // A trailing table ends at the next paragraph's start, which copies it whole
+        let end = match (self.part_block(&c.parts, c.last), self.part_block(&c.parts, next)) {
+            (Some(Block::Table(_)), Some(Block::Para(p))) => Some((ParaId(p.id), Unit(0))),
+            (b, _) => b.and_then(|b| edge_para_ref(b, true)).map(|p| (ParaId(p.id), para_len(p))),
+        };
+        let Some((last, len)) = end else {
             return Outcome::Unchanged("no paragraph");
         };
-        let was = self.selection;
+        let was = (self.selection, !self.multi.others.is_empty() || !self.multi.cells.is_empty());
+        self.multi = super::multi::Multi::default();
         self.selection = Selection::range(Position::text(story, heading, Unit(0)), Position::text(story, last, len), Default::default());
-        if self.selection == was { Outcome::Unchanged("selected already") } else { Outcome::Moved }
+        if (self.selection, false) == was { Outcome::Unchanged("selected already") } else { Outcome::Moved }
     }
 
     // Levels
@@ -507,7 +514,8 @@ impl Editor {
     }
 
     /// Moves a heading with its content before `target` or after its content (a navigation pane's drag), as one undo
-    /// step; `level`: the heading then takes that level, the headings under it moving by as many. Tracked as a move
+    /// step; `level`: the heading then takes that level, the headings under it moving by as many, each kept within 1
+    /// to 9 (a subtopic pressed against 9 becomes the heading's peer, as Word's Demote leaves it). Tracked as a move
     /// when changes are tracked. Bookmarks and comments go with the text, as cutting and pasting it would; a field
     /// running from it into the text it passes refuses.
     pub fn move_heading(&mut self, heading: ParaId, target: ParaId, side: Beside, level: Option<u32>, fonts: &Fonts) -> Outcome {
@@ -1049,6 +1057,19 @@ impl Editor {
         let Some(mut new) = self.split_template(heading) else { return Outcome::Unchanged("no paragraph") };
         let id = ParaId(new.id);
         new.controls = self.controls_at(&parts, dest);
+        // The editable ranges the content's last paragraph ends go on through the new one
+        let ends: Vec<Inline> = match (place, self.part_block(&parts, c.last)) {
+            (NewHeading::After | NewHeading::Subheading, Some(Block::Para(p))) => {
+                let n =
+                    p.inlines.iter().rev().take_while(|i| matches!(i, Inline::Opaque(o) if o.permission().is_some_and(|(start, _)| !start))).count();
+                p.inlines[p.inlines.len() - n..].to_vec()
+            }
+            _ => Vec::new(),
+        };
+        let split = match (dest, self.part_block(&parts, c.last)) {
+            (Dest::Before(next), Some(Block::Para(p))) if !ends.is_empty() && next.part == c.last.part => Some((ParaId(p.id), para_len(p))),
+            _ => None,
+        };
         self.begin_batch(Some(match place {
             NewHeading::Before => "New Heading Before".into(),
             NewHeading::After => "New Heading After".into(),
@@ -1056,9 +1077,18 @@ impl Editor {
         }));
         let mut tx = self.begin("New Heading");
         let step = match (dest, at.and_then(|a| a.para_offset())) {
+            (Dest::Before(_), _) if let Some((last, len)) = split => {
+                new.inlines = ends;
+                Step::Split { para: last, at: len, second: new, kept: Vec::new() }
+            }
             (Dest::Before(at), _) => Step::Blocks { container: parts[at.part], range: at.block..at.block, with: vec![Block::Para(new)] },
             // A split of the story's last paragraph
-            (Dest::End, Some((last, len))) => Step::Split { para: last, at: len, second: new, kept: Vec::new() },
+            (Dest::End, Some((last, len))) => {
+                if self.part_block(&parts, c.last).and_then(|b| edge_para_ref(b, true)).is_some_and(|p| p.id == last.0) {
+                    new.inlines = ends;
+                }
+                Step::Split { para: last, at: len, second: new, kept: Vec::new() }
+            }
             (Dest::End, None) => {
                 self.abort(tx);
                 self.end_batch(false, fonts);

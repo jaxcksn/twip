@@ -649,7 +649,12 @@ impl Editor {
                 (C::ChangePicture, _) => (editable && matches!(object, Some(ObjectKind::Picture | ObjectKind::Float)), (None, None)),
                 (C::ResetObjectSize, _) => (editable && matches!(object, Some(ObjectKind::Picture | ObjectKind::Float)), (None, None)),
                 (C::SetAnchorLocked | C::SetObjectPosition | C::SetObjectWrapOptions, _) => (editable && floating, (None, None)),
-                (C::SetShapePreset | C::SetShapeAdjust | C::SetShapeText, _) => (editable && shape.as_ref().is_some_and(|s| s.sp), (None, None)),
+                (C::SetShapePreset | C::SetShapeText, _) => (editable && shape.as_ref().is_some_and(|s| s.sp), (None, None)),
+                // A picture's geometry has adjustments too (a rounded rectangle's corners)
+                (C::SetShapeAdjust, _) => (
+                    editable && shape.as_ref().is_some_and(|s| s.sp || (s.pic && s.state.as_ref().is_some_and(|st| !st.adjust.is_empty()))),
+                    (None, None),
+                ),
                 (C::SetShapeFill | C::SetShapeEffects, _) => (editable && shape.is_some(), (None, None)),
                 (C::SetShapeLine, _) => (editable && shape.as_ref().is_some_and(|s| s.sp || s.pic), (None, None)),
                 (C::SetPictureAdjust, _) => (editable && shape.as_ref().is_some_and(|s| s.pic), (None, None)),

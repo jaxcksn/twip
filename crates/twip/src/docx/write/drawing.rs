@@ -1008,6 +1008,7 @@ fn shape_xml(s: &Shape, path: &mut Vec<u16>, txbx: Stories, w: &str, ns: Option<
     let name = esc(&s.nv.name);
     let hidden = if s.nv.hidden { r#" hidden="1""# } else { "" };
     let descr = if s.nv.descr.is_empty() { String::new() } else { format!(r#" descr="{}""#, esc(&s.nv.descr)) };
+    let descr = if s.nv.title.is_empty() { descr } else { format!(r#"{descr} title="{}""#, esc(&s.nv.title)) };
     let opt = |v: Option<String>| v.unwrap_or_default();
     match &s.kind {
         ShapeKind::Sp(sp) => {
@@ -1186,6 +1187,14 @@ mod round_trip {
 
     fn anchored(graphic: &str) -> String {
         DRAWING.replace(&DRAWING[DRAWING.find("<a:graphic>").expect("a graphic")..DRAWING.find("</wp:anchor>").expect("an anchor")], graphic)
+    }
+
+    #[test]
+    fn a_floats_new_effect_extents_are_saved() {
+        let mut d = doc_of(&format!("<w:r>{DRAWING}</w:r>"));
+        first_float(&mut d).effect = [1.0, 2.0, 0.0, 0.0];
+        let xml = document_xml(&crate::docx::write::save(&d).expect("saves"));
+        assert!(xml.contains(r#"<wp:effectExtent l="12700" t="25400" r="0" b="0"/>"#), "{xml}");
     }
 
     #[test]
@@ -1427,6 +1436,15 @@ mod round_trip {
     }
 
     #[test]
+    fn a_new_groups_children_keep_their_titles() {
+        let group = r#"<a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup"><wpg:wgp xmlns:wpg="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup"><wpg:cNvGrpSpPr/><wpg:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="1143000" cy="762000"/><a:chOff x="0" y="0"/><a:chExt cx="1143000" cy="762000"/></a:xfrm></wpg:grpSpPr><wps:wsp><wps:cNvPr id="2" name="Box" title="A &amp; B"/><wps:cNvSpPr/><wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="1143000" cy="762000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></wps:spPr><wps:bodyPr/></wps:wsp></wpg:wgp></a:graphicData></a:graphic>"#;
+        let mut d = doc_of(&format!("<w:r>{}</w:r>", anchored(group)));
+        let s = first_float(&mut d).shape.as_deref().cloned().expect("a group");
+        let xml = super::graphic_data(&s, &|_| None, "w:");
+        assert!(xml.contains(r#"<wps:cNvPr id="2" name="Box""#) && xml.contains(r#" title="A &amp; B"/>"#), "{xml}");
+    }
+
+    #[test]
     fn an_unlocked_group_keeps_its_pictures_locks() {
         let pic = PIC.replace("<pic:cNvPicPr/>", r#"<pic:cNvPicPr><a:picLocks noChangeAspect="1"/></pic:cNvPicPr>"#);
         let body = &pic[pic.find("<pic:pic ").expect("a picture")..pic.find("</a:graphicData>").expect("its end")];
@@ -1555,6 +1573,40 @@ mod round_trip {
         let mut again = crate::docx::reader::read_editable(&bytes).expect("reads");
         let src = first_picture(&mut again).shape.as_deref().and_then(|s| s.pic()).map(|p| p.blip.src);
         assert_eq!(src, Some([Pct(10000), Pct(0), Pct(0), Pct(0)]));
+    }
+
+    #[test]
+    fn a_picture_controls_picture_keeps_its_rename_and_resize_when_restyled() {
+        let sdt =
+            format!(r#"<w:sdt><w:sdtPr><w:id w:val="5"/><w:picture/></w:sdtPr><w:sdtContent><w:r>{}</w:r></w:sdtContent></w:sdt>"#, inline_pic(""));
+        let mut d = doc_of(&sdt);
+        let p = first_picture(&mut d);
+        p.shape.as_deref_mut().expect("a shape").nv.name = "New".into();
+        let xml = document_xml(&crate::docx::write::save(&d).expect("saves"));
+        assert!(xml.contains(r#"name="New""#), "{xml}");
+        let Block::Para(para) = &mut d.sections[0].blocks[0] else { panic!() };
+        let Some((p, run)) = para.inlines.iter_mut().find_map(|i| if let Inline::Picture(p, r) = i { Some((p, r)) } else { None }) else {
+            panic!("a picture")
+        };
+        p.w = 100.0;
+        let direct = crate::docx::model::Raw(Some("<w:rPr><w:b/></w:rPr>".into()));
+        *run = std::rc::Rc::new(crate::docx::RunStyle { bold: true, direct, ..(**run).clone() });
+        let xml = document_xml(&crate::docx::write::save(&d).expect("saves"));
+        parses(&xml);
+        assert!(xml.contains("<w:b/>") && xml.contains(r#"<wp:extent cx="1270000""#) && xml.contains(r#"name="New""#), "{xml}");
+    }
+
+    #[test]
+    fn a_vml_pictures_aspect_lock_is_saved() {
+        let vml = r#"<w:pict><v:shape id="P" style="width:90pt;height:60pt"><v:imagedata xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="rId9" o:title=""/></v:shape></w:pict>"#;
+        let mut d = doc_of(&format!("<w:r>{vml}</w:r>"));
+        let p = first_picture(&mut d);
+        assert!(!p.lock_aspect);
+        p.lock_aspect = true;
+        let bytes = crate::docx::write::save(&d).expect("saves");
+        parses(&document_xml(&bytes));
+        let mut again = crate::docx::reader::read_editable(&bytes).expect("reads");
+        assert!(first_picture(&mut again).lock_aspect, "{}", document_xml(&bytes));
     }
 
     #[test]

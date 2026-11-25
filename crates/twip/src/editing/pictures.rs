@@ -18,6 +18,8 @@ pub(super) struct PicEdit<'a> {
     /// Its effect extents (`wp:effectExtent`).
     pub effect: &'a mut [f64; 4],
     pub shape: Option<&'a mut crate::drawing::Shape>,
+    /// A float's width and height relative to a box.
+    pub relative: Option<&'a mut [Option<(String, i64)>; 2]>,
 }
 
 impl Editor {
@@ -105,6 +107,7 @@ impl Editor {
                         image: &mut pic.image,
                         effect: &mut pic.effect,
                         shape: pic.shape.as_deref_mut(),
+                        relative: None,
                     }) {
                         return false;
                     }
@@ -127,7 +130,8 @@ impl Editor {
                 // A quarter-turned float's box is the picture's own width and height swapped.
                 let (w, h) = if n.rot_swap { (&mut n.h, &mut n.w) } else { (&mut n.w, &mut n.h) };
                 let rot = n.shape.as_deref().map(|s| s.xfrm.rot);
-                let mut e = PicEdit { w, h, image: &mut n.image, effect: &mut n.effect, shape: n.shape.as_deref_mut() };
+                let mut e =
+                    PicEdit { w, h, image: &mut n.image, effect: &mut n.effect, shape: n.shape.as_deref_mut(), relative: Some(&mut n.relative.size) };
                 if !edit(&mut e) {
                     return Outcome::Unchanged("already so");
                 }
@@ -327,6 +331,9 @@ impl Editor {
                     p.blip.src = [Pct(0); 4];
                     *e.w = (w.max(1.0) * 20.0).round() / 20.0;
                     *e.h = (h.max(1.0) * 20.0).round() / 20.0;
+                    if let Some(r) = e.relative.as_deref_mut() {
+                        *r = [None, None];
+                    }
                 }
                 true
             },

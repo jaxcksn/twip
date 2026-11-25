@@ -95,9 +95,16 @@ impl Editor {
         let geo = self.pages.page(page, &self.index)?;
         let ctx = self.editing();
         let hit = geo.hit_text(px, py, &|s| super::stories::reachable(ctx, s))?;
-        let i = geo.line_at(hit.para, hit.unit, hit.affinity)?;
+        let holds =
+            |l: &&super::geometry::GLine| l.first_of(hit.para).is_some_and(|a| a <= hit.unit) && l.last_of(hit.para).is_some_and(|b| hit.unit <= b);
+        // A repeated header's line isn't one the caret goes to: it is looked for among the repeated lines
+        let line = match hit.repeat {
+            true => geo.lines.iter().filter(|l| l.repeat && l.shows(hit.para)).find(holds),
+            false => geo.line_at(hit.para, hit.unit, hit.affinity).map(|i| &geo.lines[i]),
+        };
+        let dir = line?.dir();
         self.near = near;
-        Some(geo.lines[i].dir())
+        Some(dir)
     }
 
     pub(super) fn drag_cursor(&self) -> Option<Cursor> {

@@ -474,7 +474,7 @@ impl Editor {
     }
 
     /// Every paragraph of the cells from `anchor` to `focus` (nested tables' too), whole.
-    fn cell_ranges(
+    pub(super) fn cell_ranges(
         &self,
         table: crate::layout::TableId,
         anchor: super::selection::CellRef,

@@ -177,6 +177,12 @@ impl Editor {
         let Some((list, level)) = p.style.num.filter(|(n, _)| *n != 0 && p.list.is_some()) else {
             return Outcome::unavailable("the paragraph isn't numbered");
         };
+        let story = self.index.para_slot(para).map_or(super::position::StoryId::Body, |s| self.index.story(s.container));
+        let at = super::position::Position::text(story, para, crate::layout::Unit(0));
+        if self.refuse_locked_content_in(&at, &at) {
+            return Outcome::Unchanged("locked");
+        }
+        let Some(p) = self.index.para(&self.doc, para) else { return Outcome::unavailable("no such paragraph") };
         let base = self.label_base(para, p, &res, &self.cx());
         let ncx = res.numbering.cx();
         let level = level.clamp(0, 8);

@@ -256,6 +256,12 @@ fn editable_ranges_list_their_editors_and_take_groups() {
     assert!(matches!(e.execute(Command::SetDocumentProtection(protect), fonts()), Outcome::Changed(_)));
     e.selection = Selection::Caret(at(&e, 0, 0));
     assert!(!e.in_editable_range("Author"));
+    let before = markers(&e);
+    e.selection = Selection::range(at(&e, 0, 0), at(&e, 0, 3), Granularity::Char);
+    assert!(matches!(e.set_range_editor(RangeEditor::User("Bob".into()), true, fonts()), Outcome::Refused(_)), "protection keeps its exceptions");
+    assert!(matches!(e.set_range_editor(RangeEditor::User("Ada".into()), false, fonts()), Outcome::Refused(_)));
+    assert_eq!(markers(&e), before);
+    e.selection = Selection::Caret(at(&e, 0, 0));
     assert!(matches!(e.select_next_editable_range(true), Outcome::Unchanged(_)), "not one the author may edit");
     e.set_editing_groups(vec!["Editors".into()]);
     assert!(matches!(e.select_next_editable_range(true), Outcome::Moved), "a member of its group");
@@ -357,6 +363,13 @@ fn a_new_permission_takes_an_id_word_reads() {
     ids.sort_unstable();
     ids.dedup();
     assert_eq!(ids, [1, 2, i64::from(i32::MAX), i64::MAX], "the free ids from the first, past none Word reads");
+    let ada = RangeEditor::User("Ada".into());
+    let spans: Vec<_> = e.editable_range_list().into_iter().filter(|r| r.editors == [ada.clone()]).map(|r| (r.start, r.end, r.ids)).collect();
+    assert_eq!(
+        spans,
+        [(at(&e, 0, 3), at(&e, 0, 6), vec!["1".to_string()]), (at(&e, 0, 7), at(&e, 0, 10), vec!["2".to_string()])],
+        "each span Ada's, under an id of its own"
+    );
 }
 
 #[test]
@@ -367,4 +380,55 @@ fn permissions_for_one_person_named_in_two_cases_list_them_once() {
     let list = e.editable_range_list();
     let [r] = &list[..] else { panic!("one range: {list:?}") };
     assert_eq!((r.ids.len(), r.editors.len()), (2, 1), "both permissions, one editor: {r:?}");
+}
+
+#[test]
+fn every_selected_cell_needs_an_editable_range() {
+    use super::super::selection::{CellRef, CellShape};
+    use crate::api::command::CommandId;
+    let body = format!(
+        r#"<w:tbl><w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:tc>{}</w:tc><w:tc><w:p><w:r><w:t>B</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#,
+        perm(1, "A")
+    );
+    let mut e = protected(&body);
+    let table = e.index().table_ids().next().expect("a table");
+    let cells = |a: usize, b: usize| Selection::Cells {
+        table,
+        anchor: CellRef { row: 0, col: a },
+        focus: CellRef { row: 0, col: b },
+        shape: CellShape::Rect,
+    };
+    e.selection = cells(0, 0);
+    assert!(e.protection_refuses(CommandId::Delete).is_none(), "the editable cell");
+    e.selection = cells(0, 1);
+    assert!(e.protection_refuses(CommandId::Delete).is_some(), "the second cell isn't editable");
+}
+
+#[test]
+fn touching_editable_ranges_cover_what_spans_both() {
+    let grant = |id: u32, t: &str| format!(r#"<w:permStart w:id="{id}" w:edGrp="everyone"/><w:r><w:t>{t}</w:t></w:r><w:permEnd w:id="{id}"/>"#);
+    let body = format!("<w:p>{}{}<w:r><w:t>ef</w:t></w:r></w:p>", grant(1, "ab"), grant(2, "cd"));
+    let mut e = protected(&body);
+    e.selection = Selection::range(at(&e, 0, 0), at(&e, 0, 4), Granularity::Char);
+    assert!(e.in_editable_range("someone"), "both ranges together");
+    e.execute(Command::InsertText("x".into()), fonts());
+    assert_eq!(texts(&e)[0], "xef");
+    let mut e = protected(&body);
+    e.selection = Selection::range(at(&e, 0, 1), at(&e, 0, 5), Granularity::Char);
+    assert!(!e.in_editable_range("someone"), "past their end");
+}
+
+#[test]
+fn a_range_over_three_pages_is_bracketed_only_at_its_ends() {
+    let para = "<w:p><w:r><w:t>line</w:t></w:r></w:p>";
+    let body = format!(
+        r#"<w:p><w:permStart w:id="1" w:edGrp="everyone"/><w:r><w:t>first</w:t></w:r></w:p>{}<w:p><w:r><w:t>last</w:t></w:r><w:permEnd w:id="1"/></w:p>"#,
+        para.repeat(120)
+    );
+    let mut e = protected(&body);
+    assert!(e.snapshot().pages().len() >= 3, "three pages at least");
+    let (bands, marks) = e.editable_region_views(1..2);
+    assert!(!bands.is_empty() && marks.is_empty(), "an inside page: {marks:?}");
+    let (_, marks) = e.editable_region_views(0..1);
+    assert_eq!(marks.len(), 1, "the first page: its start");
 }

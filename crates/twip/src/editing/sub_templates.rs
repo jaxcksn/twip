@@ -1073,7 +1073,13 @@ impl Editor {
         if pa == pb && ua == ub {
             return None;
         }
-        let mut shown = self.references.by_field.iter().filter(|(f, r)| r.resolution == Resolution::Resolved && !self.collapsed.contains(f));
+        // A reference to the sub-template being edited doesn't expand in it
+        let active = self.editing_sub_template();
+        let mut shown = self
+            .references
+            .by_field
+            .iter()
+            .filter(|(f, r)| r.resolution == Resolution::Resolved && !self.collapsed.contains(f) && (active.is_none() || r.part != active));
         shown.find_map(|(&field, r)| {
             let alone = pa == pb && r.at == pa;
             if !alone && (pa == pb || self.index.para_slot(r.at).map(|s| self.index.story(s.container)) != Some(a.story)) {

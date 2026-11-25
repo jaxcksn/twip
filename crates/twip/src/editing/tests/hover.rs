@@ -305,6 +305,14 @@ fn a_note_separator_set_in_a_document_without_notes_is_saved() {
 }
 
 #[test]
+fn a_note_separators_text_keeps_an_object_replacement_character() {
+    use crate::docx::{NoteKind, NoteSeparator as S};
+    let mut e = Editor::open(&super::blank_body("<w:p><w:r><w:t>Text</w:t></w:r></w:p>"), fonts()).expect("opens");
+    assert!(matches!(e.set_note_separator(NoteKind::Foot, S::Notice, Some("a\u{FFFC}b"), fonts()), crate::editing::Outcome::Changed(_)));
+    assert_eq!(e.note_separator(NoteKind::Foot, S::Notice).map(|s| s.text), Some("a\u{FFFC}b".into()));
+}
+
+#[test]
 fn note_separators_are_set_read_back_saved_and_reset() {
     use crate::docx::{NoteKind, NoteSeparator as S};
     let mut e = open("FX-STORIES.docx");

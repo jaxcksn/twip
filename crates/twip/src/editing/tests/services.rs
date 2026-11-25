@@ -452,6 +452,18 @@ fn a_selection_counts_its_own_text_and_text_boxes_count_when_asked() {
     let n = word_count_in(&mut e, WordCountScope { selection: true, ..all });
     assert_eq!((n.words, n.characters, n.paragraphs, n.lines), (1, 3, 1, 1));
     assert_eq!(word_count_in(&mut e, all).words, 7, "the document's, the selection or not");
+    // A selected object holds no text of the selection's
+    let float = e.document().sections[0]
+        .blocks
+        .iter()
+        .find_map(|b| match b {
+            crate::docx::Block::Para(p) => p.inlines.iter().find_map(|i| if let crate::docx::Inline::Float(f, _) = i { Some(f.id) } else { None }),
+            crate::docx::Block::Table(_) => None,
+        })
+        .expect("the text box");
+    e.selection = Selection::Object(crate::editing::selection::ObjectRef::Floating(crate::layout::FloatId(float)));
+    let n = word_count_in(&mut e, WordCountScope { selection: true, ..all });
+    assert_eq!((n.words, n.characters, n.paragraphs, n.lines), (0, 0, 0, 0), "not the document's");
 }
 
 #[test]

@@ -26,6 +26,11 @@ impl PageVersions {
         self.versions.clear();
         for page in pages {
             let key = Rc::as_ptr(page);
+            // A fragment the layout shows twice is one page drawn twice: one version
+            if let Some(e) = self.spare.get(&key) {
+                self.versions.push(e.1);
+                continue;
+            }
             let entry = match self.by_page.remove(&key) {
                 Some(e) => e,
                 None => {
@@ -69,5 +74,17 @@ mod tests {
         e.complete(fonts());
         let undone = v.update(e.snapshot().pages()).to_vec();
         assert!(undone[0] != first[0] && undone[0] != after[0], "a page laid out again never takes an old version");
+    }
+
+    #[test]
+    fn a_fragment_shown_twice_keeps_one_version() {
+        let mut e = Editor::open(&crate::editing::tests::blank_with("a"), fonts()).expect("opens");
+        e.complete(fonts());
+        let page = e.snapshot().pages()[0].clone();
+        let twice = [page.clone(), page];
+        let mut v = PageVersions::default();
+        let first = v.update(&twice).to_vec();
+        assert_eq!(first[0], first[1], "one fragment, one version");
+        assert_eq!(v.update(&twice), first, "and the same next time");
     }
 }

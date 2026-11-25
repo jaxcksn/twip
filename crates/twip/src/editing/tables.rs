@@ -202,18 +202,44 @@ pub(super) fn remove_cells(rows: &mut Vec<Row>, gone: &[(usize, usize)], grid: &
     any
 }
 
-/// `grid` with the widths its columns are drawn at on `geo`.
-pub(super) fn drawn_grid(geo: &super::geometry::PageGeometry, table: TableId, grid: &mut [f64]) {
+/// `grid` with the widths its columns are drawn at on `geo`, `t` the table drawn there.
+pub(super) fn drawn_grid(geo: &super::geometry::PageGeometry, table: TableId, t: &Table, grid: &mut [f64]) {
     let mut xs: Vec<Option<f64>> = vec![None; grid.len() + 1];
-    for r in geo.rows.iter().filter(|r| r.table == table && !r.repeat) {
-        // A row with an indent of its own is drawn shifted: its edges are taken where the rows before put theirs.
-        let shift = r.edges.iter().find_map(|&(x, k)| xs.get(k).copied().flatten().map(|known| known - x)).unwrap_or(0.0);
+    let take = |r: &super::geometry::GRow, shift: f64, xs: &mut [Option<f64>]| {
         for &(x, k) in &r.edges {
             if let Some(slot) = xs.get_mut(k)
                 && slot.is_none()
             {
                 *slot = Some(x + shift);
             }
+        }
+    };
+    let shared =
+        |r: &super::geometry::GRow, xs: &[Option<f64>]| r.edges.iter().find_map(|&(x, k)| xs.get(k).copied().flatten().map(|known| known - x));
+    // The rows placed by the table's indent first; a row with an indent or alignment of its own is drawn shifted, its
+    // edges taken where the others put theirs, and left out while it shares none of them.
+    let own = |r: &&super::geometry::GRow| t.rows.get(r.row).is_some_and(|m| m.ind.is_some() || m.jc.is_some());
+    let rows = geo.rows.iter().filter(|r| r.table == table && !r.repeat);
+    let mut shifted: Vec<&super::geometry::GRow> = Vec::new();
+    for r in rows {
+        if own(&r) {
+            shifted.push(r);
+        } else {
+            take(r, shared(r, &xs).unwrap_or(0.0), &mut xs);
+        }
+    }
+    // Each pass places the rows that share an edge with those placed; at most one pass per row.
+    while !shifted.is_empty() {
+        let before = shifted.len();
+        shifted.retain(|r| match shared(r, &xs) {
+            Some(shift) => {
+                take(r, shift, &mut xs);
+                false
+            }
+            None => true,
+        });
+        if shifted.len() == before {
+            break;
         }
     }
     for (k, w) in grid.iter_mut().enumerate() {
@@ -410,25 +436,38 @@ impl Editor {
             }
         }
         let text_width = self.index.table_slot(table).map_or(468.0, |s| self.text_width(s.container));
+        // Each column's width for its contents, with its margins
+        let wants: Vec<(usize, f64, f64)> = (c0..)
+            .zip(&paras)
+            .filter(|(_, p)| !p.is_empty())
+            .map(|(col, paras)| {
+                let margins = paras.iter().map(|(_, m)| *m).fold(0.0, f64::max);
+                let content = paras.iter().map(|(p, m)| lines.get(p).copied().unwrap_or(0.0) + m).fold(0.0, f64::max);
+                (col, content.max(margins + 4.5), margins)
+            })
+            .collect();
         let mut widths: Vec<(usize, f64)> = Vec::new();
-        for (col, paras) in (c0..).zip(&paras).filter(|(_, p)| !p.is_empty()) {
-            let margins = paras.iter().map(|(_, m)| *m).fold(0.0, f64::max);
-            let content = paras.iter().map(|(p, m)| lines.get(p).copied().unwrap_or(0.0) + m).fold(0.0, f64::max);
-            let mut w = content.max(margins + 4.5);
-            let old = grid.get(col).copied().unwrap_or(w);
-            let total: f64 = grid.iter().sum();
-            if w > old {
-                w = w.min(old + (text_width + margins + 1.0 - total).max(0.0));
+        // The columns that shrink first: the room they leave is there for those that grow, in column order.
+        for shrinking in [true, false] {
+            for &(col, mut w, margins) in &wants {
+                let old = grid.get(col).copied().unwrap_or(w);
+                if (w < old) != shrinking {
+                    continue;
+                }
+                if w > old {
+                    let total: f64 = grid.iter().sum();
+                    w = w.min(old + (text_width + margins + 1.0 - total).max(0.0));
+                }
+                let w = (w * 10.0).round() / 10.0;
+                if (w - old).abs() < 0.05 {
+                    continue;
+                }
+                // As the column width edit stores it
+                if let Some(x) = grid.get_mut(col) {
+                    *x = (w.max(1.0) * 20.0).round() / 20.0;
+                }
+                widths.push((col, w));
             }
-            let w = (w * 10.0).round() / 10.0;
-            if (w - old).abs() < 0.05 {
-                continue;
-            }
-            // As the column width edit stores it
-            if let Some(x) = grid.get_mut(col) {
-                *x = (w.max(1.0) * 20.0).round() / 20.0;
-            }
-            widths.push((col, w));
         }
         let mut out = Outcome::Unchanged("already fits");
         for (col, w) in widths {

@@ -480,6 +480,11 @@ fn columns_on_selected_text_reach_every_section_it_spans() {
         })
         .collect();
     assert_eq!(texts, [vec!["O"], vec!["ne", "Two"], vec!["Th"], vec!["ree", "Four"]], "the selected text alone in two columns");
+    // Whole paragraphs of the first, up to the second's start: the first alone, split from its own start.
+    let mut e = two_sections();
+    select_across(&mut e, (0, 1), (2, 0));
+    assert!(matches!(e.set_columns_in(two.clone(), ColumnsScope::SelectedText, false, super::fonts()), Outcome::Changed(_)));
+    assert_eq!(cols(&e), [1, 2, 1], "no section split off at the second's start");
     // One section keeps to itself.
     let mut e = two_sections();
     select_across(&mut e, (2, 1), (2, 3));
@@ -537,4 +542,33 @@ fn columns_on_selected_text_ending_inside_a_table_are_refused() {
     let out = e.set_columns_in(two, ColumnsScope::SelectedText, false, super::fonts());
     assert!(matches!(out, Outcome::Refused(_)), "{out:?}");
     assert_eq!(e.document().sections, before, "nothing split or set");
+}
+
+#[test]
+fn a_row_end_caret_is_in_its_tables_section() {
+    let body = r#"<w:p><w:pPr><w:sectPr/></w:pPr><w:r><w:t>One</w:t></w:r></w:p><w:tbl><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>A</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p><w:r><w:t>After</w:t></w:r></w:p>"#;
+    let mut e = Editor::open(&super::blank_body(body), super::fonts()).expect("opens");
+    assert_eq!(e.document().sections.len(), 2);
+    let table = e.index().table_ids().next().expect("a table");
+    e.selection = Selection::Caret(Position::row_end(StoryId::Body, table, 0));
+    assert_eq!(e.focus_section(), 1);
+}
+
+#[test]
+fn a_nested_section_scope_leaves_the_outer_one() {
+    use crate::api::services::ApplyTo;
+    let body = r#"<w:p><w:pPr><w:sectPr/></w:pPr><w:r><w:t>One</w:t></w:r></w:p><w:p><w:r><w:t>Two</w:t></w:r></w:p>"#;
+    let mut e = Editor::open(&super::blank_body(body), super::fonts()).expect("opens");
+    let out = e.in_section_scope(
+        ApplyTo::WholeDocument,
+        "Outer",
+        |e| {
+            e.in_section_scope(ApplyTo::WholeDocument, "Inner", |_| crate::editing::commands::Outcome::Moved, super::fonts());
+            assert_eq!(e.selected_sections(), [0, 1], "still every section");
+            crate::editing::commands::Outcome::Moved
+        },
+        super::fonts(),
+    );
+    assert!(matches!(out, crate::editing::commands::Outcome::Moved), "{out:?}");
+    assert_eq!(e.section_scope, None);
 }

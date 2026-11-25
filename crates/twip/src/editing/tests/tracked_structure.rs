@@ -335,6 +335,13 @@ fn accepting_a_selection_that_ends_at_a_bookmark_keeps_the_rest() {
     assert_eq!(super::texts(&e), ["abcd"]);
     let left = crate::editing::revisions::index::revisions(e.document(), e.index());
     assert_eq!(left.len(), 1, "the insertion after the bookmark stays: {left:?}");
+    let at = |u| Position::text(StoryId::Body, para, Unit(u));
+    let r = &left[0];
+    assert_eq!(
+        (r.kind, r.start.para_offset(), r.end.para_offset(), r.ids.as_slice()),
+        (crate::editing::revisions::index::RevisionKind::Insert, at(2).para_offset(), at(4).para_offset(), &[crate::docx::review::RevisionId(2)][..]),
+        "\"cd\", insertion 2"
+    );
 }
 
 #[test]
@@ -353,4 +360,23 @@ fn a_paragraph_property_change_over_two_paragraphs_ends_in_the_second() {
     let end = marks.end_of(e.document(), e.index(), &s);
     assert_eq!(end.para_offset().map(|p| p.0), Some(super::para_id(&e, 1)), "the second paragraph's: {end:?}");
     assert_eq!(end, list[0].end, "where the revision list ends it");
+}
+
+#[test]
+fn a_revision_over_many_paragraphs_ends_in_its_last() {
+    use crate::editing::revisions::index::{RevisionKind, revisions};
+    let d = r#"w:author="a" w:date="2020-01-01T00:00:00Z""#;
+    let p = |id: usize| {
+        format!(r#"<w:p><w:pPr><w:jc w:val="center"/><w:pPrChange w:id="{id}" {d}><w:pPr/></w:pPrChange></w:pPr><w:r><w:t>p</w:t></w:r></w:p>"#)
+    };
+    let n = 70;
+    let body = format!("{}<w:p><w:r><w:t>after</w:t></w:r></w:p>", (0..n).map(p).collect::<String>());
+    let e = super::Editor::open(&super::blank_body(&body), fonts()).expect("opens");
+    let list: Vec<_> = revisions(e.document(), e.index()).into_iter().filter(|r| r.kind == RevisionKind::ParagraphProperty).collect();
+    assert_eq!(list.len(), 1, "one revision over them all");
+    let marks = crate::editing::revisions::marks::Marks::build(e.document(), e.index());
+    let s = marks.starts_in(super::para_id(&e, 0)).find(|s| s.kind == RevisionKind::ParagraphProperty).expect("its start");
+    let end = marks.end_of(e.document(), e.index(), &s);
+    assert_eq!(end.para_offset().map(|p| p.0), Some(super::para_id(&e, n - 1)), "the last paragraph's");
+    assert_eq!(end, list[0].end);
 }

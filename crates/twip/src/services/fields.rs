@@ -1189,7 +1189,8 @@ impl FieldChoice {
         let mut out = format!(" {}", self.name);
         for a in &self.args {
             out.push(' ');
-            out.push_str(&value(a));
+            // A formula is an expression, not text
+            out.push_str(&if self.name == "=" { a.clone() } else { value(a) });
         }
         for (flag, a) in &self.switches {
             out.push_str(&format!(" \\{flag}"));
@@ -1218,6 +1219,12 @@ impl FieldChoice {
     pub fn of_code(code: &str) -> FieldChoice {
         let c: FieldCode = parse(code);
         let mut out = FieldChoice { name: c.name.clone(), args: c.args.clone(), ..FieldChoice::default() };
+        // A formula: `=`, and its expression as written, up to the switches
+        if let Some(rest) = code.trim_start().strip_prefix('=') {
+            let expr = rest[..rest.find('\\').unwrap_or(rest.len())].trim();
+            out.name = "=".into();
+            out.args = if expr.is_empty() { Vec::new() } else { vec![expr.to_string()] };
+        }
         for s in &c.switches {
             match s.flag {
                 '*' => match s.arg.as_deref() {
@@ -1281,7 +1288,9 @@ pub fn check(code: &str) -> Vec<FieldProblem> {
         out.push(FieldProblem::MissingSwitch("c"));
     }
     let given = if name == "=" { usize::from(c.name.len() > 1) + c.args.len() } else { c.args.len() };
-    if let Some(a) = spec.args.iter().take_while(|a| a.required).nth(given) {
+    // A required bookmark given as "" is left out
+    let blank = spec.args.iter().zip(&c.args).take_while(|(a, _)| a.required).find(|(a, v)| a.kind == ArgKind::Bookmark && v.is_empty());
+    if let Some(a) = blank.map(|(a, _)| a).or_else(|| spec.args.iter().take_while(|a| a.required).nth(given)) {
         out.push(FieldProblem::MissingArgument(a.name));
     }
     for s in &c.switches {
@@ -1385,5 +1394,16 @@ mod tests {
         assert_eq!(check(" TOA \\c "), [FieldProblem::MissingSwitchValue("c".into())], "its category left empty");
         assert!(check(" TOA \\c 2 ").is_empty());
         assert!(check(" =2+2 ").is_empty() && check(" = ").contains(&FieldProblem::MissingArgument("Formula")));
+        assert_eq!(check(r#" REF "" "#), [FieldProblem::MissingArgument("Bookmark")], "an empty bookmark");
+        assert!(check(r#" IF 1 = 1 "" "no" "#).is_empty(), "empty text where text may be empty");
+    }
+
+    #[test]
+    fn a_formula_is_written_and_read_as_an_expression() {
+        let c = FieldChoice { name: "=".into(), args: vec!["SUM(ABOVE) * 2".into()], numeric: Some("0.00".into()), ..FieldChoice::default() };
+        assert_eq!(c.code(), " = SUM(ABOVE) * 2 \\# 0.00 ");
+        assert_eq!(FieldChoice::of_code(&c.code()), c);
+        assert_eq!(FieldChoice::of_code(" =a1+b1 ").args, ["a1+b1"], "attached to its = and as written");
+        assert!(check(&c.code()).is_empty());
     }
 }

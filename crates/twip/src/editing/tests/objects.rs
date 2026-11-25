@@ -366,6 +366,20 @@ fn an_inserted_picture_can_be_cropped() {
 }
 
 #[test]
+fn a_pictures_adjustable_geometry_is_offered_for_adjusting() {
+    use crate::api::command::CommandId;
+    let enabled = |e: &mut Editor| {
+        let f = e.format_state();
+        e.command_states(f.as_ref(), super::super::state::StateFlags { read_only: false })[&CommandId::SetShapeAdjust].enabled
+    };
+    let mut e = inline_picture(200, 100, "", "", "roundRect", "");
+    assert!(enabled(&mut e), "a rounded picture's corners adjust");
+    assert!(changed(&e.set_shape_adjust(0, 30000, fonts())));
+    let mut e = inline_picture(200, 100, "", "", "rect", "");
+    assert!(!enabled(&mut e), "a plain picture has nothing to adjust");
+}
+
+#[test]
 fn crop_is_offered_for_pictures_only() {
     use crate::api::command::CommandId;
     let enabled = |e: &mut Editor| {
@@ -838,10 +852,20 @@ fn an_inline_picture_takes_shape_formatting_and_saves_it() {
 
 #[test]
 fn a_turned_inline_picture_takes_its_turned_bounds_in_the_line() {
-    let mut e = with_inserted_picture();
+    let mut e = inline_picture(200, 100, "", "", "rect", "");
     let (w, h) = first_inline_picture(&e).map(|p| (p.w, p.h)).expect("the picture");
+    assert!((w - h).abs() > 50.0, "not square: {w} x {h}");
+    let line = |e: &mut Editor| {
+        e.complete(fonts());
+        let g = e.page_geometries().into_iter().find(|(p, _)| *p == 0).map(|(_, g)| g).expect("page 0");
+        let l = g.lines.first().expect("the picture's line");
+        l.bottom - l.top
+    };
+    let tall = line(&mut e);
     let out = e.execute(Command::SetObjectRotation(90.0), fonts());
     assert!(changed(&out), "{out:?}");
+    let now = line(&mut e);
+    assert!((now - tall - (w - h)).abs() < 1.0, "the line as tall as the turned picture: {tall} → {now}");
     let p = first_inline_picture(&e).expect("the picture");
     let (dx, dy) = ((h - w) / 2.0, (w - h) / 2.0);
     assert!((p.effect[0] - dx).abs() < 0.01 && (p.effect[1] - dy).abs() < 0.01, "{:?} for {w} x {h}", p.effect);
@@ -935,6 +959,32 @@ fn the_selection_pane_lists_renames_hides_and_restacks() {
 }
 
 #[test]
+fn restacking_takes_equal_z_floats_as_they_are_drawn() {
+    let shape = |c: &str| sp(0, 0, 60, 60, "rect", "", c);
+    let mut e = editor(&format!(
+        "<w:p><w:r><w:t>Text</w:t></w:r>{}{}{}</w:p>",
+        anchor(100, 300, 60, 60, 1, false, 5, &shape("FF0000")),
+        anchor(200, 300, 60, 60, 2, false, 5, &shape("00FF00")),
+        anchor(300, 300, 60, 60, 3, false, 1, &shape("0000FF"))
+    ));
+    let ids = all_floats(&e).into_iter().map(FloatId).collect::<Vec<_>>();
+    let [a, b, x] = ids[..] else { panic!("three floats: {ids:?}") };
+    // The first one drawn last among equal z: in front of the second.
+    let Block::Para(p) = &mut e.doc.sections[0].blocks[0] else { panic!("a paragraph") };
+    for i in &mut p.inlines {
+        if let Inline::Float(f, _) = i
+            && FloatId(f.id) == a
+        {
+            f.order = 99;
+        }
+    }
+    let front_first = |e: &mut Editor| e.object_list(0, fonts()).iter().map(|o| o.id).collect::<Vec<_>>();
+    assert_eq!(front_first(&mut e), [a, b, x]);
+    assert!(changed(&e.restack_object(x, Some(b), fonts())));
+    assert_eq!(front_first(&mut e), [a, x, b], "just in front of the one behind, still behind the other");
+}
+
+#[test]
 fn a_group_child_is_listed_renamed_and_hidden_in_its_group() {
     let mut e = two_shapes();
     select_both(&mut e);
@@ -951,6 +1001,13 @@ fn a_group_child_is_listed_renamed_and_hidden_in_its_group() {
     let tree = again.float_of(g.id).or_else(|| again.float_of(FloatId(all_floats(&again)[0]))).and_then(|f| f.shape.clone()).expect("the group");
     let c = tree.at(&child).expect("the child");
     assert_eq!((c.nv.name.as_str(), c.nv.hidden), ("Inner", true));
+    // The group selected: hiding a child keeps it; hiding the group leaves it.
+    let other = g.children[1].path.clone();
+    assert!(e.select_listed(g.id, &[], false) == Outcome::Moved);
+    assert!(changed(&e.set_object_hidden(g.id, &other, true, fonts())));
+    assert!(matches!(e.selection(), Selection::Object(_)), "the group stays selected");
+    assert!(changed(&e.set_object_hidden(g.id, &[], true, fonts())));
+    assert!(!matches!(e.selection(), Selection::Object(_)), "the hidden group is left");
 }
 
 #[test]
@@ -994,6 +1051,49 @@ fn a_tight_wrap_takes_the_shapes_outline_until_its_points_are_edited() {
 }
 
 #[test]
+fn a_wrap_polygon_of_up_to_1024_points_is_saved_and_read_whole() {
+    for n in [1023usize, 1024] {
+        let star = sp(0, 0, 100, 100, "star5", "", "FF0000");
+        let mut e = editor(&format!("<w:p><w:r><w:t>Text</w:t></w:r>{}</w:p>", anchor(100, 300, 100, 100, 1, false, 5, &star)));
+        let f = all_floats(&e)[0];
+        select(&mut e, f);
+        // Round a circle: every vertex its own
+        let pts: Vec<(f64, f64)> = (0..n)
+            .map(|k| {
+                let a = k as f64 / n as f64 * std::f64::consts::TAU;
+                (0.5 + 0.5 * a.cos(), 0.5 + 0.5 * a.sin())
+            })
+            .collect();
+        assert!(changed(&e.set_wrap_points(&pts, fonts())), "{n}");
+        let mut again = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
+        again.complete(fonts());
+        let g = FloatId(all_floats(&again)[0]);
+        again.set_selection(Selection::Object(ObjectRef::Floating(g)));
+        let read = again.selected_wrap_polygon().expect("a polygon");
+        assert_eq!(read.points.len(), n, "every vertex kept");
+    }
+}
+
+#[test]
+fn replacing_the_wrap_polygon_ends_a_point_drag() {
+    let star = sp(0, 0, 100, 100, "star5", "", "FF0000");
+    let mut e = editor(&format!("<w:p><w:r><w:t>Text</w:t></w:r>{}</w:p>", anchor(100, 300, 100, 100, 1, false, 5, &star)));
+    let f = all_floats(&e)[0];
+    select(&mut e, f);
+    assert!(changed(&e.set_wrap_points(&[(0.0, 0.0), (0.0, 1.0), (1.0, 1.0), (1.0, 0.0)], fonts())));
+    assert!(e.edit_wrap_points() == Outcome::Moved);
+    let w = e.wrap_points(0..1).expect("the points");
+    let v = w.points[0];
+    let (x, y) = e.stack().to_doc(w.page, v[0], v[1]).expect("on the stack");
+    e.pointer_input(PointerKind::Down, x, y, 1, NONE, fonts());
+    e.pointer_input(PointerKind::Move, x + 30.0, y + 30.0, 0, NONE, fonts());
+    assert!(changed(&e.reset_wrap_points(fonts())));
+    let reset = e.selected_wrap_polygon().expect("a polygon");
+    e.pointer_input(PointerKind::Up, x + 30.0, y + 30.0, 0, NONE, fonts());
+    assert_eq!(e.selected_wrap_polygon(), Some(reset), "the drag of the old polygon isn't applied to the new");
+}
+
+#[test]
 fn select_objects_takes_the_floats_wholly_inside_its_rectangle() {
     let mut e = two_shapes();
     let ids = all_floats(&e);
@@ -1015,8 +1115,8 @@ fn select_objects_takes_the_floats_wholly_inside_its_rectangle() {
 #[test]
 fn the_anchor_drags_to_another_paragraph_and_the_object_stays() {
     let star = sp(0, 0, 100, 100, "star5", "", "FF0000");
-    let float = anchor(300, 300, 100, 100, 1, false, 5, &star)
-        .replace(r#"relativeFrom="page"><wp:posOffset>3810000"#, r#"relativeFrom="paragraph"><wp:posOffset>3810000"#);
+    let float =
+        anchor(300, 300, 100, 100, 1, false, 5, &star).replace(r#"<wp:positionV relativeFrom="page">"#, r#"<wp:positionV relativeFrom="paragraph">"#);
     let paras: String =
         (0..12).map(|k| format!("<w:p><w:r><w:t>Paragraph {k}</w:t></w:r>{}</w:p>", if k == 0 { float.as_str() } else { "" })).collect();
     let mut e = editor(&paras);
@@ -1041,6 +1141,29 @@ fn brighter(e: &mut Editor) {
     use crate::drawing::paint::BlipAdjust;
     use crate::drawing::units::Pct;
     assert!(changed(&e.set_picture_adjust(&[BlipAdjust::Lum { bright: Pct(30_000), contrast: Pct(0) }], fonts())));
+}
+
+#[test]
+fn reset_picture_and_size_drops_a_relative_size() {
+    for and_size in [false, true] {
+        let (mut e, f) = float_picture();
+        for s in &mut e.doc.sections {
+            for b in &mut s.blocks {
+                let Block::Para(p) = b else { continue };
+                for i in &mut p.inlines {
+                    if let Inline::Float(fl, _) = i
+                        && FloatId(fl.id) == f
+                    {
+                        fl.relative.size = [Some(("page".into(), 500)), None];
+                    }
+                }
+            }
+        }
+        brighter(&mut e);
+        assert!(changed(&e.reset_picture(and_size, fonts())));
+        let size = e.float_of(f).map(|n| n.relative.size.clone()).expect("float");
+        assert_eq!(size[0].is_none(), and_size, "and_size {and_size}: {size:?}");
+    }
 }
 
 #[test]
@@ -1592,4 +1715,37 @@ fn allowing_overlap_overrides_a_styles_suppress_overlap() {
     assert!(changed(&e.set_frame_with_overlap(props, Some(true), fonts())));
     let again = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
     assert!(again.float_of(FloatId(all_floats(&again)[0])).is_some_and(|n| n.allow_overlap), "saved as allowed");
+}
+
+#[test]
+fn a_live_drag_to_the_next_page_of_a_vertical_section_drops_as_a_plain_one() {
+    use crate::api::command::TextFlow;
+    let words = crate::layout::tests::words(300);
+    let filler: String = (0..12).map(|_| format!("<w:p><w:r><w:t>{words}</w:t></w:r></w:p>")).collect();
+    let shape = sp(0, 0, 60, 40, "rect", "", "FF0000");
+    let body = format!("<w:p><w:r><w:t>Text</w:t></w:r>{}</w:p>{filler}", anchor(100, 200, 60, 40, 1, false, 1, &shape));
+    let run = |live: bool| {
+        let mut e = editor(&body);
+        e.execute(Command::SetSectionTextDirection(TextFlow::TbRl), fonts());
+        e.complete(fonts());
+        e.live_layout = live;
+        let f = FloatId(all_floats(&e)[0]);
+        let pages = e.page_geometries();
+        assert!(pages.len() > 1, "two pages");
+        let s = pages[0].1.stories.iter().find(|s| s.float == Some(f)).expect("drawn on the first page");
+        assert_ne!(s.region, crate::layout::vertical::Turn::NONE, "its region is turned");
+        let c = [(s.rect[0] + s.rect[2]) / 2.0, (s.rect[1] + s.rect[3]) / 2.0];
+        let region = s.region;
+        e.set_selection(Selection::Object(ObjectRef::Floating(f)));
+        let (x, y) = e.stack().to_doc(0, c[0], c[1]).expect("on the stack");
+        let alt = Mods { alt: true, ..NONE };
+        e.pointer_input(PointerKind::Down, x, y, 1, alt, fonts());
+        let (x, y) = e.stack().to_doc(1, c[0], c[1] + 30.0).expect("on the stack");
+        e.pointer_input(PointerKind::Move, x, y, 0, alt, fonts());
+        e.pointer_input(PointerKind::Move, x, y, 0, alt, fonts());
+        e.pointer_input(PointerKind::Up, x, y, 0, alt, fonts());
+        let fl = e.float_of(f).cloned().expect("the float");
+        (region, fl.h_offset, fl.v_offset)
+    };
+    assert_eq!(run(true), run(false), "live layout offsets it as a plain drag does");
 }

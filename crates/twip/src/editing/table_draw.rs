@@ -82,7 +82,7 @@ struct Drawn {
 impl Drawn {
     fn of(geo: &PageGeometry, table: TableId, t: &crate::docx::Table, cols: usize) -> Option<Drawn> {
         let mut widths = super::tables::full_grid(t, cols);
-        super::tables::drawn_grid(geo, table, &mut widths);
+        super::tables::drawn_grid(geo, table, t, &mut widths);
         let offsets: Vec<f64> = std::iter::once(0.0)
             .chain(widths.iter().scan(0.0, |x, w| {
                 *x += w;
@@ -203,7 +203,9 @@ impl Editor {
             let (tx, ty) = (REACH.max(0.25 * (r[2] - r[0])), REACH.max(0.25 * (r[3] - r[1])));
             let near = |p: [f64; 2], x: f64, y: f64| (p[0] - x).abs() <= tx && (p[1] - y).abs() <= ty;
             let opposite = |p: [f64; 2], q: [f64; 2]| (near(p, r[0], r[1]) && near(q, r[2], r[3])) || (near(p, r[2], r[1]) && near(q, r[0], r[3]));
-            opposite(a, b) || opposite(b, a)
+            // Across and down the cell both, not along a short row or a narrow column
+            let slanted = dx.abs() >= 0.5 * (r[2] - r[0]) && dy.abs() >= 0.5 * (r[3] - r[1]);
+            slanted && (opposite(a, b) || opposite(b, a))
         });
         if let Some(&(_, row, k)) = diagonal.and_then(|c| c.chain.last()) {
             return self.draw_diagonal(table, (row, k), (dx > 0.0) == (dy > 0.0), fonts);
@@ -516,10 +518,12 @@ impl Editor {
                             || (near(a.rect[3], p[1]) && near(b.rect[1], p[1]) && within(p[0], a.rect[0].max(b.rect[0]), a.rect[2].min(b.rect[2]))))
                 })?;
                 let across = near(a.rect[2], p[0]) && near(b.rect[0], p[0]);
-                Some((a.chain.len(), key, *b.chain.last()?, across))
+                let off = if across { (a.rect[2] - p[0]).abs() } else { (a.rect[3] - p[1]).abs() };
+                Some((a.chain.len(), off, key, *b.chain.last()?, across))
             })
-            .max_by_key(|x| x.0);
-        let Some((_, (table, ra, ka), (_, rb, kb), across)) = pair else { return Outcome::unavailable("no border between two cells there") };
+            // The deepest, then the nearest edge
+            .max_by(|x, y| x.0.cmp(&y.0).then(y.1.total_cmp(&x.1)));
+        let Some((_, _, (table, ra, ka), (_, rb, kb), across)) = pair else { return Outcome::unavailable("no border between two cells there") };
         if let Some(e) = self.table_edit_refusal(table, CommandId::MergeCells) {
             return Outcome::Refused(e);
         }

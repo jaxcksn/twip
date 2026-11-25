@@ -1606,7 +1606,7 @@ fn notes_xml(
         _ => String::new(),
     };
     let mut splices: Vec<Splice> = Vec::new();
-    let id_of = |n: roxmltree::Node| n.attribute((W, "id")).and_then(|v| v.parse::<i64>().ok());
+    let id_of = |n: roxmltree::Node| attr(n, "id").and_then(|v| v.parse::<i64>().ok());
     for n in root.children().filter(|n| is_w(*n, tag)) {
         if id_of(n).is_some_and(|id| e.removed.contains(&id)) {
             splices.push((n.range(), String::new()));
@@ -1628,7 +1628,7 @@ fn notes_xml(
         id
     };
     for (t, blocks) in e.separators {
-        let same: Vec<roxmltree::Node> = root.children().filter(|n| is_w(*n, tag) && n.attribute((W, "type")) == Some(*t)).collect();
+        let same: Vec<roxmltree::Node> = root.children().filter(|n| is_w(*n, tag) && attr(*n, "type") == Some(*t)).collect();
         // The reader keeps the last listed story of a type: that one is the active story.
         let listed = |n: &roxmltree::Node| id_of(*n).is_some_and(|id| doc.settings.listed_notes.iter().any(|l| *l == format!("{tag}:{id}")));
         let had = same.iter().rev().find(|n| listed(n)).or(same.first()).copied();
@@ -4682,7 +4682,7 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                     // A content control around a resized picture: its drawing with the new extents.
                     if let Some(size) = resized(self, i).filter(|_| Rc::as_ptr(&run) == self.orig[i].run) {
                         let was = self.orig[i].size.as_ref();
-                        let p = Placement { decorative: None, nv: None, ..size.placement(was) };
+                        let p = Placement { decorative: None, ..size.placement(was) };
                         let edits = self.contained_shape_edits(range.clone(), was, &size);
                         let src = self.src_with(range.clone(), edits);
                         let x = self.s.picture_patched(&src, p, was, &size);
@@ -4694,7 +4694,27 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                         self.verbatim(range.clone());
                         self.fmt_run = None;
                     } else {
+                        // A restyled content control around a resized picture: its drawing patched in the runs.
+                        let patch = resized(self, i).and_then(|size| {
+                            let was = self.orig[i].size.as_ref();
+                            let d = std::iter::successors(Some(node), |n| n.next_sibling())
+                                .take_while(|n| n.range().start < range.end)
+                                .flat_map(|n| n.descendants())
+                                .find(|c| {
+                                    c.parent().is_some_and(|p| is_w(p, "r"))
+                                        && matches!(c.tag_name().name(), "drawing" | "pict" | "object" | "AlternateContent")
+                                })?
+                                .range();
+                            let p = Placement { decorative: None, ..size.placement(was) };
+                            let edits = self.contained_shape_edits(d.clone(), was, &size);
+                            Some((d.clone(), self.s.picture_patched(&self.src_with(d, edits), p, was, &size)))
+                        });
+                        let patched = patch.is_some();
+                        self.prs.extend(patch);
                         self.restyled(node, range.end, &run);
+                        if patched {
+                            self.prs.pop();
+                        }
                     }
                 } else {
                     let to = self.target(ctx(self, i), &self.cur[j]);
@@ -5321,7 +5341,9 @@ impl Saver<'_, '_> {
     fn picture_patched(&self, src: &str, p: Placement, was: Option<&PicState>, now: &PicState) -> String {
         if drawing::is_vml(src) {
             let a = was.and_then(|w| w.0.shape.as_deref());
-            match drawing::vml_picture_patch(src, a, now.0.shape.as_deref(), now.0.w, now.0.h) {
+            // A lock change isn't VML's to say: it is read from DrawingML only
+            let vml = p.lock.is_none().then(|| drawing::vml_picture_patch(src, a, now.0.shape.as_deref(), now.0.w, now.0.h)).flatten();
+            match vml {
                 Some(x) => return picture_relinked(x, was.and_then(|w| w.0.image), now.0.image),
                 None => {
                     // In place of its run child only: `src` may be a content control around its run.
@@ -6018,7 +6040,7 @@ impl Placement {
             lock: (a.lock_aspect != b.lock_aspect).then_some(b.lock_aspect),
             blip: b.image.filter(|_| a.image != b.image),
             dist: a.dist.iter().zip(&b.dist).any(|(x, y)| ne(*x, *y)).then_some(b.dist),
-            effect: None,
+            effect: a.effect.iter().zip(&b.effect).any(|(x, y)| ne(*x, *y)).then_some(b.effect),
             overlap: (a.allow_overlap != b.allow_overlap).then_some(b.allow_overlap),
             in_cell: (a.layout_in_cell != b.layout_in_cell).then_some(b.layout_in_cell),
             shape: None,
@@ -6038,6 +6060,7 @@ impl Placement {
             || p.nv.is_some()
             || p.lock.is_some()
             || p.blip.is_some()
+            || p.effect.is_some()
             || p.z.is_some();
         (any || p.dist.is_some() || p.overlap.is_some() || p.in_cell.is_some()).then_some(p)
     }
@@ -6330,7 +6353,7 @@ fn find_tag(s: &str, local: &str, from: usize) -> Option<(usize, usize)> {
         let name_end = s[start + 1..].find(|c: char| c.is_whitespace() || c == '>' || c == '/').map(|e| start + 1 + e)?;
         let name = &s[start + 1..name_end];
         if name.rsplit(':').next() == Some(local) && !name.starts_with('/') {
-            let end = s[start..].find('>').map(|e| start + e + 1)?;
+            let end = crate::docx::binding::tag_end(&s[start..]).map(|e| start + e + 1)?;
             return Some((start, end));
         }
         at = start + 1;
@@ -6374,7 +6397,27 @@ fn element(s: &str, local: &str) -> Option<Range<usize>> {
     }
     let name = s[start + 1..].split(|c: char| c.is_whitespace() || c == '>').next()?;
     let close = format!("</{name}>");
-    s[end..].find(&close).map(|k| start..end + k + close.len())
+    // Nested elements of the same name (a text box in a text box's story)
+    let mut depth = 0usize;
+    let mut at = end;
+    while let Some(k) = s[at..].find('<') {
+        let lt = at + k;
+        let rest = &s[lt..];
+        if rest.starts_with(&close) {
+            if depth == 0 {
+                return Some(start..lt + close.len());
+            }
+            depth -= 1;
+            at = lt + close.len();
+        } else if rest[1..].strip_prefix(name).is_some_and(|r| r.starts_with(|c: char| c.is_whitespace() || c == '>' || c == '/')) {
+            let e = crate::docx::binding::tag_end(rest)?;
+            depth += usize::from(!rest[..e].ends_with('/'));
+            at = lt + e + 1;
+        } else {
+            at = lt + 1;
+        }
+    }
+    None
 }
 
 /// Replaces the content of the first element named `local` with `with(prefix)` (its prefix, with the colon).
@@ -6850,6 +6893,20 @@ mod tests {
         assert_eq!(diff(&k("abc"), &k("")), vec![None; 3]);
         assert_eq!(strip_attr(r#"<w:p w14:paraId="1A" w:rsidR="00"><"#, "paraId"), r#"<w:p w:rsidR="00"><"#);
         assert_eq!(strip_attr(r#"<w:p w14:paraId='1"A' w:rsidR="00"><"#, "paraId"), r#"<w:p w:rsidR="00"><"#);
+    }
+
+    #[test]
+    fn an_element_holds_nested_ones_of_its_name() {
+        let xml = r#"<x/><wps:txbx><w:p/><wps:txbx id="2"><w:p/></wps:txbx><wps:txbx/></wps:txbx><wps:txbx>after</wps:txbx>"#;
+        let r = element(xml, "txbx").expect("the element");
+        assert_eq!(&xml[r], r#"<wps:txbx><w:p/><wps:txbx id="2"><w:p/></wps:txbx><wps:txbx/></wps:txbx>"#);
+    }
+
+    #[test]
+    fn a_tag_ends_past_a_quoted_angle_bracket() {
+        let xml = r#"<wp:extent/><wp:docPr id="1" descr="a > b" name="n"/><x/>"#;
+        let (start, end) = find_tag(xml, "docPr", 0).expect("the tag");
+        assert_eq!(&xml[start..end], r#"<wp:docPr id="1" descr="a > b" name="n"/>"#);
     }
 
     #[test]

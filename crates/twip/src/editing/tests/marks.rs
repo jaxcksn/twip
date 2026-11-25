@@ -191,3 +191,17 @@ fn a_chain_of_joins_longer_than_the_parts_bound_stops_adding_parts_and_shows_joi
     let lines = e.page_geometries().into_iter().map(|(_, g)| g.lines.len()).sum::<usize>();
     assert!(lines < 10, "shown joined: {lines} lines");
 }
+
+#[test]
+fn a_deletions_stand_in_is_no_space() {
+    use crate::docx::review::TextMark;
+    let del = r#"w:id="1" w:author="A" w:date="2026-01-01T00:00:00Z""#;
+    let mut e =
+        lay(&format!(r#"<w:p><w:r><w:t>ab</w:t></w:r><w:del {del}><w:r><w:delText>g</w:delText></w:r></w:del><w:r><w:t>cd</w:t></w:r></w:p>"#));
+    let mut style = e.document().review.markup.style.clone();
+    style.deletions.mark = TextMark::Caret;
+    e.set_markup_style(style);
+    e.complete(fonts());
+    assert!(stops(&mut e, 0).iter().any(|(u, _)| u.0 == 2), "the caret stands in for the deletion");
+    assert!(!kinds(&mut e, MarkOptions::ALL).contains(&MarkKind::Space));
+}
