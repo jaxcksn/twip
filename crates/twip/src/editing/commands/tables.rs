@@ -224,7 +224,13 @@ impl Editor {
     pub(in crate::editing) fn set_row_height(&mut self, h: AutoOr<RowHeight>, fonts: &Fonts) -> Outcome {
         let h = match h {
             AutoOr::Auto => None,
-            AutoOr::Value(h) => Some((h.height.0, if h.rule == HeightRule::Exact { "exact" } else { "atLeast" }.to_string())),
+            AutoOr::Value(h) => Some((
+                h.height.0,
+                match h.rule {
+                    HeightRule::Exact => crate::docx::HeightRule::Exact,
+                    HeightRule::AtLeast => crate::docx::HeightRule::AtLeast,
+                },
+            )),
         };
         self.table_format(&TableFormat::RowHeight(h), fonts)
     }

@@ -561,8 +561,8 @@ pub(super) fn assemble(
         let content = content.max(min_margins);
         let bottom = cells.iter().map(|c| c.margins[2]).fold(0.0, f64::max);
         let (height, exact, min_h) = match &r.height {
-            Some((h, rule)) if rule == "exact" && *h > 0.0 => (*h + bottom, true, 0.0),
-            Some((h, rule)) if rule != "auto" => (top_border + content.max(*h + min_margins), false, top_border + *h + min_margins),
+            Some((h, HeightRule::Exact)) if *h > 0.0 => (*h + bottom, true, 0.0),
+            Some((h, HeightRule::Exact | HeightRule::AtLeast)) => (top_border + content.max(*h + min_margins), false, top_border + *h + min_margins),
             _ => (top_border + content, false, 0.0),
         };
         // Vertical cells: lines as long as the row's content is high, stacked across the cell. A merged region's first

@@ -458,13 +458,16 @@ fn a_resized_float_saves_its_new_size() {
 #[test]
 fn resized_columns_and_rows_save_and_reopen() {
     use serde_json::json;
-    let tables = |e: &super::super::Editor| -> Vec<(Vec<f64>, Vec<Option<(f64, String)>>, Vec<Option<crate::docx::props::Width>>)> {
-        fn walk(b: &[crate::docx::Block], out: &mut Vec<(Vec<f64>, Vec<Option<(f64, String)>>, Vec<Option<crate::docx::props::Width>>)>) {
+    let tables = |e: &super::super::Editor| -> Vec<(Vec<f64>, Vec<Option<(f64, crate::docx::HeightRule)>>, Vec<Option<crate::docx::props::Width>>)> {
+        fn walk(
+            b: &[crate::docx::Block],
+            out: &mut Vec<(Vec<f64>, Vec<Option<(f64, crate::docx::HeightRule)>>, Vec<Option<crate::docx::props::Width>>)>,
+        ) {
             for b in b {
                 if let crate::docx::Block::Table(t) = b {
                     out.push((
                         t.grid.clone(),
-                        t.rows.iter().map(|r| r.height.clone()).collect(),
+                        t.rows.iter().map(|r| r.height).collect(),
                         t.rows.iter().flat_map(|r| r.cells.iter().map(|c| c.width)).collect(),
                     ));
                 }
@@ -481,7 +484,7 @@ fn resized_columns_and_rows_save_and_reopen() {
     );
     let edited = tables(&r.e);
     assert_eq!(edited[1].0, vec![186.0, 126.0, 156.0]);
-    assert!(edited[1].1[1].as_ref().is_some_and(|(_, rule)| rule == "atLeast"), "{:?}", edited[1].1);
+    assert!(edited[1].1[1].as_ref().is_some_and(|(_, rule)| *rule == crate::docx::HeightRule::AtLeast), "{:?}", edited[1].1);
     let bytes = crate::docx::write::save(r.e.document()).expect("saves");
     if let Some(d) = std::env::var_os("RT_KEEP") {
         std::fs::write(std::path::Path::new(&d).join("FX-TBL-BASIC.resize.docx"), &bytes).expect("writes");
@@ -489,7 +492,7 @@ fn resized_columns_and_rows_save_and_reopen() {
     let again = super::super::Editor::open(&bytes, fonts()).expect("reopens");
     let back = tables(&again);
     assert_eq!(back[1].0, edited[1].0);
-    let h = |v: &Option<(f64, String)>| v.as_ref().map(|(h, r)| ((h * 20.0).round(), r.clone()));
+    let h = |v: &Option<(f64, crate::docx::HeightRule)>| v.as_ref().map(|(h, r)| ((h * 20.0).round(), *r));
     assert_eq!(back[1].1.iter().map(h).collect::<Vec<_>>(), edited[1].1.iter().map(h).collect::<Vec<_>>());
     assert_eq!(back[1].2, edited[1].2);
     assert_eq!(texts(&again), texts(&r.e));
@@ -1511,7 +1514,7 @@ fn table_properties_save_and_reopen() {
     assert_ne!(edited, before);
     let t =
         r.e.document().sections[0].blocks.iter().filter_map(|b| if let crate::docx::Block::Table(t) = b { Some(t) } else { None }).nth(1).unwrap();
-    let top = t.rows.iter().position(|row| row.height.as_ref().is_some_and(|h| h.1 == "exact")).expect("a row made exact");
+    let top = t.rows.iter().position(|row| row.height.as_ref().is_some_and(|h| h.1 == crate::docx::HeightRule::Exact)).expect("a row made exact");
     if top > 0 {
         let above = &t.rows[top - 1].cells[1];
         assert_eq!(above.bottom.as_ref().map(|b| &*b.style), Some("double"), "{above:?}");

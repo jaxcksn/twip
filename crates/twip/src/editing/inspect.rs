@@ -278,7 +278,7 @@ pub fn inspect(e: &mut Editor, what: &str, settled: bool) -> Value {
                         tables.push(json!({
                             "rows": t.rows.len(), "cells": t.rows.iter().map(|r| r.cells.len()).collect::<Vec<_>>(), "depth": depth + 1,
                             "grid": t.grid.iter().map(|w| r2(*w)).collect::<Vec<_>>(),
-                            "heights": t.rows.iter().map(|r| r.height.as_ref().map(|(h, rule)| json!([r2(*h), rule]))).collect::<Vec<_>>(),
+                            "heights": t.rows.iter().map(|r| r.height.as_ref().map(|(h, rule)| json!([r2(*h), crate::docx::section::height_rule_literal(*rule)]))).collect::<Vec<_>>(),
                             "header_rows": t.rows.iter().take_while(|r| r.header).count(),
                             "cell_fmt": t.rows.iter().map(|r| r.cells.iter().map(|c| format!("{}:{}", crate::docx::section::v_align_literal(c.v_align), c.shading.map_or("-".to_string(), |f| format!("{f:06X}")))).collect::<Vec<_>>()).collect::<Vec<_>>(),
                         }));

@@ -332,7 +332,7 @@ impl Editor {
         let mut rows = t.rows.clone();
         let cx = self.cx();
         for row in &mut rows[r0..=r1] {
-            super::table_format::set_height(row, Some((avg, "atLeast".into())), &cx);
+            super::table_format::set_height(row, Some((avg, crate::docx::HeightRule::AtLeast)), &cx);
         }
         let grid = t.grid.clone();
         self.rebuild("Distribute Rows", tg.table, rows, grid, (tg.rows.0, tg.cols.0), fonts)

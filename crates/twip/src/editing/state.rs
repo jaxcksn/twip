@@ -820,9 +820,10 @@ impl Editor {
             cell_shading: fold(cells.iter().map(|c| c.shading.map_or(NoneOr::None, |s| NoneOr::Value(Color(s))))),
             row_height: fold(rows.iter().map(|r| match &r.height {
                 None => AutoOr::Auto,
-                Some((h, rule)) => {
-                    AutoOr::Value(RowHeight { height: Points(*h), rule: if rule == "exact" { HeightRule::Exact } else { HeightRule::AtLeast } })
-                }
+                Some((h, rule)) => AutoOr::Value(RowHeight {
+                    height: Points(*h),
+                    rule: if *rule == crate::docx::HeightRule::Exact { HeightRule::Exact } else { HeightRule::AtLeast },
+                }),
             })),
             column_width: fold((tg.cols.0..=tg.cols.1).filter_map(|c| t.grid.get(c)).map(|w| Points(*w))),
             style: t.style_id.clone().map(StyleId),

@@ -200,7 +200,7 @@ fn table_again(t: &Table, res: &Resolver, cx: &Cx) -> Option<(TableProps, Option
     for (ri, row) in rows.iter_mut().enumerate() {
         let mut trp = style_region.tr.clone();
         trp.merge(&parse_tr(&row.direct));
-        (row.height, row.cant_split, row.header) = (trp.height.clone(), trp.cant_split.unwrap_or(false), trp.header.unwrap_or(false));
+        (row.height, row.cant_split, row.header) = (trp.height, trp.cant_split.unwrap_or(false), trp.header.unwrap_or(false));
         let ex = parse_tbl(&row.exceptions);
         let mut row_tbl = tbl.clone();
         row_tbl.borders.merge(&ex.borders);

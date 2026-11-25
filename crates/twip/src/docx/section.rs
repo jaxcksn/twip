@@ -1,6 +1,6 @@
 //! Section and table values as OOXML literals
 
-use super::model::{PageBorderDisplay, VerticalAlignment};
+use super::model::{HeightRule, PageBorderDisplay, VerticalAlignment};
 
 /// A `w:vAlign` value.
 pub fn v_align_literal(v: VerticalAlignment) -> &'static str {
@@ -47,5 +47,23 @@ pub fn page_border_display(s: &str) -> PageBorderDisplay {
         "firstPage" => PageBorderDisplay::FirstPage,
         "notFirstPage" => PageBorderDisplay::NotFirstPage,
         _ => PageBorderDisplay::AllPages,
+    }
+}
+
+/// A `w:trHeight/@w:hRule` value.
+pub fn height_rule_literal(r: HeightRule) -> &'static str {
+    match r {
+        HeightRule::Auto => "auto",
+        HeightRule::Exact => "exact",
+        HeightRule::AtLeast => "atLeast",
+    }
+}
+
+/// A `w:trHeight/@w:hRule`; an unknown value is at least.
+pub fn height_rule(s: &str) -> HeightRule {
+    match s {
+        "auto" => HeightRule::Auto,
+        "exact" => HeightRule::Exact,
+        _ => HeightRule::AtLeast,
     }
 }

@@ -499,14 +499,14 @@ fn a_table_style_edit_keeps_the_tables_own_alignment_and_row_heights() {
     let mut e = open_pkg(&pkg(&style, body));
     let look = |e: &Editor| {
         let t = e.index().table_ids().next().and_then(|t| e.index().table(e.document(), t)).expect("a table");
-        (t.jc, t.rows[0].height.clone(), t.rows[0].cant_split)
+        (t.jc, t.rows[0].height, t.rows[0].cant_split)
     };
     assert_eq!(look(&e), (crate::docx::props::Jc::Right, None, true), "the style's");
     e.execute(Command::SetTableAlignment(HorizontalAlignment::Center), fonts());
     e.execute(Command::SetRowHeight(AutoOr::Value(RowHeight { height: Points(30.0), rule: HeightRule::Exact })), fonts());
     e.execute(Command::SetRowCanBreak(true), fonts());
     let own = look(&e);
-    assert_eq!(own, (crate::docx::props::Jc::Center, Some((30.0, "exact".to_string())), false));
+    assert_eq!(own, (crate::docx::props::Jc::Center, Some((30.0, crate::docx::HeightRule::Exact)), false));
     let raw = styles(&e).get("TableGrid").expect("TableGrid").raw.replace("w:sz=\"4\"", "w:sz=\"12\"");
     e.edit_styles("Modify Style", |s| s.set_xml(raw), fonts());
     assert_eq!(look(&e), own, "the table's own stay");

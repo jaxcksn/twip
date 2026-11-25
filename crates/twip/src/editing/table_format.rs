@@ -19,7 +19,7 @@ pub enum TableFormat {
     CellBorders(Edges, Border),
     CellMargins([f64; 4]),
     HeaderRow(bool),
-    RowHeight(Option<(f64, String)>),
+    RowHeight(Option<(f64, crate::docx::HeightRule)>),
     RowCantSplit(bool),
     ColumnWidth(f64),
     TableWidth(Width),
@@ -74,7 +74,7 @@ pub(super) fn v_align_xml(w: &str, v: crate::docx::VerticalAlignment) -> String 
 }
 
 /// Sets `row`'s height (`None`: auto) on the model and in its `w:trPr`.
-pub(super) fn set_height(row: &mut crate::docx::Row, h: Option<(f64, String)>, cx: &crate::docx::write::props::Cx) {
+pub(super) fn set_height(row: &mut crate::docx::Row, h: Option<(f64, crate::docx::HeightRule)>, cx: &crate::docx::write::props::Cx) {
     use crate::docx::write::props::Props;
     let w = &cx.w;
     let mut p = Props::parse(row.direct.0.as_deref(), "trPr", cx);
@@ -82,7 +82,7 @@ pub(super) fn set_height(row: &mut crate::docx::Row, h: Option<(f64, String)>, c
     match &h {
         Some((v, rule)) => p.set(
             "trHeight",
-            format!("<{w}trHeight {w}val=\"{}\" {w}hRule=\"{}\"/>", (v * 20.0).round() as i64, crate::docx::write::props::esc(rule)),
+            format!("<{w}trHeight {w}val=\"{}\" {w}hRule=\"{}\"/>", (v * 20.0).round() as i64, crate::docx::section::height_rule_literal(*rule)),
         ),
         None => p.remove("trHeight"),
     }
@@ -752,8 +752,8 @@ impl Editor {
                 }
             }
             TableFormat::RowHeight(h) => {
-                let h = h.as_ref().map(|(v, rule)| ((v * 20.0).round() / 20.0, rule.clone()));
-                rows[r0..=r1].iter_mut().for_each(|r| set_height(r, h.clone(), &cx));
+                let h = h.as_ref().map(|(v, rule)| ((v * 20.0).round() / 20.0, *rule));
+                rows[r0..=r1].iter_mut().for_each(|r| set_height(r, h, &cx));
             }
             &TableFormat::RowCantSplit(on) => {
                 rows[r0..=r1].iter_mut().for_each(|r| r.cant_split = on);

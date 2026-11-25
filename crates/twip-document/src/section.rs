@@ -25,3 +25,14 @@ pub enum PageBorderDisplay {
     /// Every page but the first.
     NotFirstPage,
 }
+
+/// How a table row's height is measured.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum HeightRule {
+    /// The content's height; the given height is ignored.
+    Auto,
+    /// Exactly the given height.
+    Exact,
+    /// At least the given height.
+    AtLeast,
+}

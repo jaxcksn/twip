@@ -382,8 +382,9 @@ fn ltb_24_table_properties_read_and_change_the_caret_row_in_a_repeating_section(
     let (mut en, id) = engine("FX-REPEAT-REGION.docx");
     let en = en.session(id).expect("a session");
     let undo = |en: &mut Session| en.with_editor(|e| e.history().undo_depth());
-    let heights =
-        |en: &mut Session| -> Vec<Option<(f64, String)>> { en.with_editor(|e| top_tables(e)[0].rows.iter().map(|r| r.height.clone()).collect()) };
+    let heights = |en: &mut Session| -> Vec<Option<(f64, crate::docx::HeightRule)>> {
+        en.with_editor(|e| top_tables(e)[0].rows.iter().map(|r| r.height).collect())
+    };
     // "Item 3" is row 3 (the header row, then Items 1-3, then the picture row).
     caret_in(en, 11, 2);
     let f = en.with_editor(|e| e.format_state()).expect("a state");
@@ -391,7 +392,7 @@ fn ltb_24_table_properties_read_and_change_the_caret_row_in_a_repeating_section(
     let before = undo(en);
     en.run(step_command("table.row-height")).expect("sets the height");
     assert_eq!(undo(en), before + 1, "a row height is one step");
-    assert_eq!(heights(en), vec![None, None, None, Some((30.0, "exact".to_string())), None], "only the caret's row");
+    assert_eq!(heights(en), vec![None, None, None, Some((30.0, crate::docx::HeightRule::Exact)), None], "only the caret's row");
     let exact = Tri::Uniform(AutoOr::Value(RowHeight { height: Points(30.0), rule: HeightRule::Exact }));
     assert_eq!(table_properties(en).1.row_height, exact, "the dialog reads the caret's row");
     // "Item 2" is row 2, with no height.
@@ -411,7 +412,7 @@ fn ltb_24_table_properties_read_and_change_the_caret_row_in_a_repeating_section(
     en.run(Command::SetColumnWidth(Points(100.0))).expect("sets the width");
     assert_eq!(undo(en), before + 1, "a column width is one step");
     let heights = heights(en);
-    assert_eq!(heights[3], Some((30.0, "exact".to_string())), "row 3 keeps its height");
+    assert_eq!(heights[3], Some((30.0, crate::docx::HeightRule::Exact)), "row 3 keeps its height");
     assert_eq!(heights[2], None, "row 2 still has none");
 }
 

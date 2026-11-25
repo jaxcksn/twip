@@ -419,9 +419,9 @@ fn a_line_in_a_drawn_outline_keeps_the_rows_where_drawn() {
     let r = cell_rect(&mut e, 0, 0);
     let y = r[1] + 20.0;
     assert!(matches!(e.draw_table_stroke(Stroke { page: 0, from: [r[0] + 1.0, y], to: [r[2] - 1.0, y] }, fonts()), Outcome::Changed(_)));
-    let h: Vec<(f64, String)> = table(&e).rows.iter().map(|r| r.height.clone().expect("a height")).collect();
+    let h: Vec<(f64, crate::docx::HeightRule)> = table(&e).rows.iter().map(|r| r.height.expect("a height")).collect();
     assert!((h[0].0 - 20.0).abs() < 0.6 && (h[1].0 - 40.0).abs() < 0.6, "{h:?}");
-    assert!(h.iter().all(|x| x.1 == "atLeast"));
+    assert!(h.iter().all(|x| x.1 == crate::docx::HeightRule::AtLeast));
 }
 
 #[test]
@@ -452,7 +452,7 @@ fn the_pen_draws_a_new_table_outside_one() {
     let mut e = open("<w:p><w:r><w:t>text</w:t></w:r></w:p>");
     assert!(matches!(e.draw_table_stroke(Stroke { page: 0, from: [250.0, 300.0], to: [100.0, 360.0] }, fonts()), Outcome::Changed(_)));
     let t = table(&e);
-    assert_eq!((t.grid.clone(), t.rows[0].height.clone()), (vec![150.0], Some((60.0, "atLeast".to_string()))));
+    assert_eq!((t.grid.clone(), t.rows[0].height), (vec![150.0], Some((60.0, crate::docx::HeightRule::AtLeast))));
     let pos = t.floating.expect("positioned where it was drawn");
     assert_eq!((pos.x, pos.y, pos.h_page, pos.v_anchor), (100.0, 300.0, true, crate::docx::props::TableAnchor::Page));
     e.execute(Command::Undo(Default::default()), fonts());

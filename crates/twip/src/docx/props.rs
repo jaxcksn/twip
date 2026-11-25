@@ -1253,8 +1253,8 @@ impl TcProps {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct TrProps {
-    /// Height and rule ("atLeast" default, "exact", "auto").
-    pub height: Option<(f64, String)>,
+    /// Height and rule (at least by default).
+    pub height: Option<(f64, super::HeightRule)>,
     pub cant_split: Option<bool>,
     pub header: Option<bool>,
     pub jc: Option<Jc>,
@@ -1272,7 +1272,9 @@ impl TrProps {
         let Some(e) = e else { return p };
         for c in e.children().filter(|c| c.is_element() && c.tag_name().namespace() == Some(W)) {
             match c.tag_name().name() {
-                "trHeight" => p.height = Some((twips(val(c)).unwrap_or(0.0), attr(c, "hRule").unwrap_or("atLeast").to_string())),
+                "trHeight" => {
+                    p.height = Some((twips(val(c)).unwrap_or(0.0), attr(c, "hRule").map_or(super::HeightRule::AtLeast, super::section::height_rule)))
+                }
                 "cantSplit" => p.cant_split = Some(on_off(c)),
                 "tblHeader" => p.header = Some(on_off(c)),
                 "jc" => {

@@ -548,8 +548,8 @@ fn the_resize_handle_stops_a_row_at_the_longest_height() {
     let d = Drawn::of(&mut e);
     let r = d.rows[0];
     drag(&mut e, (r[2] + 2.25, r[3] + 2.25), (0.0, 2000.0), NONE, true);
-    let (h, rule) = first_table(&e).rows[0].height.clone().expect("a height");
-    assert_eq!(rule, "exact");
+    let (h, rule) = first_table(&e).rows[0].height.expect("a height");
+    assert_eq!(rule, crate::docx::HeightRule::Exact);
     assert!(h > 300.0 && h <= 1584.0, "{h}");
 }
 

@@ -3582,7 +3582,7 @@ impl Reader {
             ex_change: self.table_change(child(rn, "tblPrEx"), "tblPrExChange", |_, _| None),
         };
         Row {
-            height: trp.height.clone(),
+            height: trp.height,
             cant_split: trp.cant_split.unwrap_or(false),
             header: trp.header.unwrap_or(false),
             grid_before: trp.grid_before.unwrap_or(0).max(0) as usize,

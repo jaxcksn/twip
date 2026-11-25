@@ -6738,6 +6738,14 @@ fn alt_xml(w: &str, alt: Option<&crate::docx::TableAlt>) -> String {
 }
 
 /// A row's `w:trPr` from the model, in CT_TrPr order; empty when it has nothing to say.
+/// A row height's `w:hRule` attribute, none for at least.
+fn row_height_rule(w: &str, rule: HeightRule) -> String {
+    match rule {
+        HeightRule::AtLeast => String::new(),
+        r => format!(" {w}hRule=\"{}\"", super::section::height_rule_literal(r)),
+    }
+}
+
 fn tr_pr(w: &str, r: &Row, people: &People) -> String {
     let mut s = String::new();
     if r.grid_before > 0 {
@@ -6750,7 +6758,7 @@ fn tr_pr(w: &str, r: &Row, people: &People) -> String {
         s.push_str(&format!("<{w}cantSplit/>"));
     }
     if let Some((h, rule)) = &r.height {
-        let rule = if rule == "atLeast" { String::new() } else { format!(" {w}hRule=\"{rule}\"") };
+        let rule = row_height_rule(w, *rule);
         s.push_str(&format!("<{w}trHeight {w}val=\"{}\"{rule}/>", twips(*h)));
     }
     if r.header {
@@ -6811,7 +6819,7 @@ fn tr_changes(w: &str, gaps: Option<[usize; 2]>, was: Option<&Row>, now: &Row) -
     if was.is_none_or(|x| x.height != now.height) {
         let tag = match &now.height {
             Some((h, rule)) => {
-                let rule = if rule == "atLeast" { String::new() } else { format!(" {w}hRule=\"{rule}\"") };
+                let rule = row_height_rule(w, *rule);
                 format!("<{w}trHeight {w}val=\"{}\"{rule}/>", twips(*h))
             }
             None => String::new(),

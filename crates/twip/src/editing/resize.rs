@@ -2,6 +2,7 @@
 
 use std::rc::Rc;
 
+use crate::docx::HeightRule;
 use crate::docx::props::Width;
 use crate::font::Fonts;
 use crate::layout::TableId;
@@ -663,10 +664,10 @@ impl Editor {
                     for &(r, h) in &d.base.rows {
                         let Some(row) = rows.get_mut(r) else { continue };
                         let rule = match &row.height {
-                            Some((_, rule)) if rule == "exact" => "exact",
-                            _ => "atLeast",
+                            Some((_, HeightRule::Exact)) => HeightRule::Exact,
+                            _ => HeightRule::AtLeast,
                         };
-                        super::table_format::set_height(row, Some(((h * sy).min(MAX.max(h)).max(1.0), rule.to_string())), &cx);
+                        super::table_format::set_height(row, Some(((h * sy).min(MAX.max(h)).max(1.0), rule)), &cx);
                     }
                 }
             }
@@ -764,10 +765,10 @@ impl Editor {
         let h = (d.base.before + d.guide()[1] - d.row_top).clamp(1.0, MAX);
         let mut row = self.index.table(&self.doc, d.table).and_then(|t| t.rows.get(r)).ok_or(STALE)?.clone();
         let rule = match &row.height {
-            Some((_, rule)) if rule == "exact" => "exact",
-            _ => "atLeast",
+            Some((_, HeightRule::Exact)) => HeightRule::Exact,
+            _ => HeightRule::AtLeast,
         };
-        super::table_format::set_height(&mut row, Some((h, rule.to_string())), &self.cx());
+        super::table_format::set_height(&mut row, Some((h, rule)), &self.cx());
         Ok(("Row Height", vec![Step::Rows { table: d.table, range: r..r + 1, with: vec![row], grid: None }]))
     }
 

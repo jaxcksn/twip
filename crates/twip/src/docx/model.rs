@@ -5,7 +5,7 @@ pub use crate::document::content::{BreakKind, NoteKind};
 pub use crate::document::ident::{ControlId, FieldId, next_para_id};
 pub use crate::document::paragraph::{ListJc, ListSuffix, TextAlignment};
 pub use crate::document::policy::{Compat, LayoutPolicy};
-pub use crate::document::section::{PageBorderDisplay, VerticalAlignment};
+pub use crate::document::section::{HeightRule, PageBorderDisplay, VerticalAlignment};
 
 use super::font_table::GenericFamily;
 use std::collections::HashMap;
@@ -1475,7 +1475,7 @@ pub struct CellIds {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Row {
-    pub height: Option<(f64, String)>,
+    pub height: Option<(f64, HeightRule)>,
     pub cant_split: bool,
     pub header: bool,
     pub grid_before: usize,

@@ -241,7 +241,7 @@ fn shell(t: &Table) -> Table {
                 })
                 .collect();
             Row {
-                height: height.clone(),
+                height: *height,
                 cant_split: *cant_split,
                 header: *header,
                 grid_before: *grid_before,

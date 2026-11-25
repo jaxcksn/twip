@@ -367,9 +367,9 @@ impl Editor {
             return Outcome::unavailable("too many rows");
         }
         // The rows' heights either side of the line, where the row has one
-        let heights = rows[r].height.clone().map(|(_, rule)| {
+        let heights = rows[r].height.map(|(_, rule)| {
             let (before, after) = self.row_beyond(table, r, page, fonts);
-            ((before + y - top, rule.clone()), (bottom - y + after, rule))
+            ((before + y - top, rule), (bottom - y + after, rule))
         });
         let mut lower = rows[r].clone();
         lower.rev = Default::default();
@@ -562,7 +562,7 @@ impl Editor {
             let Some(tg) = e.table_target() else { return out };
             use super::table_format::{Edges, TableFormat};
             e.table_format(&TableFormat::ColumnWidth(w.min(1584.0)), fonts);
-            e.table_format(&TableFormat::RowHeight(Some((h.min(1584.0), "atLeast".into()))), fonts);
+            e.table_format(&TableFormat::RowHeight(Some((h.min(1584.0), crate::docx::HeightRule::AtLeast))), fonts);
             e.table_format(&TableFormat::CellBorders(Edges::Outside, pen.clone()), fonts);
             let pos = crate::docx::props::TablePos {
                 v_anchor: crate::docx::props::TableAnchor::Page,

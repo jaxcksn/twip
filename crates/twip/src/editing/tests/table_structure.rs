@@ -594,8 +594,8 @@ fn distribute_rows_in_a_header_table_measures_each_row_once() {
     let t = e.index().table(e.document(), id).expect("the header table");
     let want = (heights[0] + heights[1]) / 2.0;
     for r in &t.rows {
-        let (h, rule) = r.height.clone().expect("a height");
-        assert!((h - want).abs() < 0.5 && rule == "atLeast", "{h} vs {want}");
+        let (h, rule) = r.height.expect("a height");
+        assert!((h - want).abs() < 0.5 && rule == crate::docx::HeightRule::AtLeast, "{h} vs {want}");
     }
 }
 

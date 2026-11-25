@@ -289,7 +289,7 @@ pub enum PreviousProps {
         bands: (i64, i64),
     },
     /// `w:trPrChange`.
-    Row { height: Option<(f64, String)>, cant_split: bool, header: bool },
+    Row { height: Option<(f64, super::HeightRule)>, cant_split: bool, header: bool },
     /// `w:tcPrChange`: borders and margins top, left, bottom, right.
     Cell {
         width: Option<Width>,
@@ -329,7 +329,7 @@ impl PreviousProps {
     /// Gives `r` these properties, when they are a row's.
     pub fn restore_row(&self, r: &mut Row) {
         if let PreviousProps::Row { height, cant_split, header } = self {
-            (r.height, r.cant_split, r.header) = (height.clone(), *cant_split, *header);
+            (r.height, r.cant_split, r.header) = (*height, *cant_split, *header);
         }
     }
 

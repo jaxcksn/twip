@@ -797,9 +797,9 @@ impl Recording {
         if retain {
             (r.grid_before, r.grid_after, r.w_before, r.w_after) = (o.grid_before, o.grid_after, o.w_before, o.w_after);
         }
-        let props = (o.height.clone(), o.cant_split, o.header) != (r.height.clone(), r.cant_split, r.header);
+        let props = (o.height, o.cant_split, o.header) != (r.height, r.cant_split, r.header);
         if props && self.track_formatting && r.rev.change.is_none() && !self.new_here_row(o) {
-            let previous = PreviousProps::Row { height: o.height.clone(), cant_split: o.cant_split, header: o.header };
+            let previous = PreviousProps::Row { height: o.height, cant_split: o.cant_split, header: o.header };
             r.rev.change = Some(Rc::new(TableChange { mark: self.fmt_mark(ids), previous_raw: o.direct.clone(), previous: Some(previous) }));
         }
         let skips = (o.grid_before, o.grid_after, o.w_before, o.w_after) != (r.grid_before, r.grid_after, r.w_before, r.w_after);
