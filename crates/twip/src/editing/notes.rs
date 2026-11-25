@@ -2,11 +2,13 @@
 
 use std::rc::Rc;
 
+use crate::docx::char_props::RunDirect;
 use crate::docx::props::RunProps;
 use crate::docx::resolve::Resolver;
 use crate::docx::write::props::{Cx, Props};
 use crate::docx::{Block, Inline, NoteKind, Paragraph, Run};
 use crate::font::Fonts;
+use crate::format::{CharEdit, Prop};
 use crate::layout::{ParaId, Unit};
 
 use super::commands::Outcome;
@@ -41,20 +43,21 @@ fn note_styles(kind: NoteKind) -> (&'static str, &'static str) {
 }
 
 /// `run` in `to`'s reference style (superscript where the document has none), when it is in `from`'s.
-fn restyled_ref(res: &Resolver, cx: &Cx, base: &RunProps, run: &Run, from: NoteKind, to: NoteKind) -> Option<Run> {
+fn restyled_ref(res: &Resolver, base: &RunProps, run: &Run, from: NoteKind, to: NoteKind) -> Option<Run> {
     let (old, new) = (note_styles(from).0, note_styles(to).0);
-    let mut p = Props::parse(run_xml::rpr(res, run, cx).as_deref(), "rPr", cx);
-    if p.get("rStyle").and_then(|s| crate::docx::write::props::attr_of(s, "val")).as_deref() != Some(old) {
+    let mut e = run_xml::edit_of(run);
+    if e.style.as_deref() != Some(old) {
         return None;
     }
-    let w = &cx.w;
     if res.styles.by_id.contains_key(new) {
-        p.set("rStyle", format!("<{w}rStyle {w}val=\"{new}\"/>"));
+        e.style = Some(new.into());
     } else {
-        p.remove("rStyle");
-        p.set("vertAlign", format!("<{w}vertAlign {w}val=\"superscript\"/>"));
+        e.style = None;
+        e.vertical = Some(crate::docx::props::VertAlign::Superscript);
+        e.whole(Prop::Vertical);
     }
-    Some(run_xml::run_from_xml(res, base, p.xml().as_deref(), cx))
+    e.whole(Prop::Style);
+    Some(run_xml::run_of(res, base, run.direct.edit(e)))
 }
 
 /// A converted note's paragraph in `to`'s text style when it is in `from`'s, and its marks in `to`'s reference
@@ -74,7 +77,7 @@ fn restyle_note_para(res: &Resolver, cx: &Cx, p: &mut Paragraph, from: NoteKind,
     }
     let base = res.para_from_xml(p.style.direct.0.as_deref(), None, cx).base;
     for i in &mut p.inlines {
-        if let Some(run) = i.run().and_then(|r| restyled_ref(res, cx, &base, r, from, to)) {
+        if let Some(run) = i.run().and_then(|r| restyled_ref(res, &base, r, from, to)) {
             *i = super::format::with_run(i, &run);
             changed = true;
         }
@@ -148,11 +151,13 @@ impl Editor {
         let w = cx.w.clone();
         let (ref_style, text_style) = note_styles(kind);
         let has = |s: &str| res.styles.by_id.contains_key(s);
-        let mark_prop = |p: &mut Props| {
+        let mark_prop = |e: &mut CharEdit| {
             if has(ref_style) {
-                p.set("rStyle", format!("<{w}rStyle {w}val=\"{ref_style}\"/>"));
+                e.style = Some(ref_style.into());
+                e.whole(Prop::Style);
             } else {
-                p.set("vertAlign", format!("<{w}vertAlign {w}val=\"superscript\"/>"));
+                e.vertical = Some(crate::docx::props::VertAlign::Superscript);
+                e.whole(Prop::Vertical);
             }
         };
         let refs = self.note_refs(kind);
@@ -178,9 +183,9 @@ impl Editor {
             self.abort(tx);
             return Outcome::Unchanged("no paragraph");
         };
-        let mut p = Props::parse(run_xml::rpr(&res, &run, &cx).as_deref(), "rPr", &cx);
-        mark_prop(&mut p);
-        let ref_run = run_xml::run_from_xml(&res, &base, p.xml().as_deref(), &cx);
+        let mut e = run_xml::edit_of(&run);
+        mark_prop(&mut e);
+        let ref_run = run_xml::run_of(&res, &base, run.direct.edit(e));
         // A custom mark follows its reference, in its run.
         let mut with = vec![Inline::NoteRef { kind, id, custom: custom.is_some(), run: ref_run.clone() }];
         with.extend(custom.map(|m| Inline::Text(m.to_string(), ref_run)));
@@ -193,10 +198,10 @@ impl Editor {
             pp.set("pStyle", format!("<{w}pStyle {w}val=\"{text_style}\"/>"));
         }
         let r = res.para_from_xml(pp.xml().as_deref(), None, &cx);
-        let text_run = run_xml::run_from_xml(&res, &r.base, None, &cx);
-        let mut mp = Props::parse(None, "rPr", &cx);
-        mark_prop(&mut mp);
-        let mark_run = run_xml::run_from_xml(&res, &r.base, mp.xml().as_deref(), &cx);
+        let text_run = run_xml::plain(&res, &r.base);
+        let mut e = CharEdit::default();
+        mark_prop(&mut e);
+        let mark_run = run_xml::run_of(&res, &r.base, RunDirect::default().edit(e));
         let pid = crate::docx::next_para_id();
         let note = Paragraph {
             style: Rc::new(r.style),
@@ -471,7 +476,7 @@ impl Editor {
             let restyled = |run: &Run, from: NoteKind, at: u32| {
                 res.as_ref()
                     .zip(again.as_ref())
-                    .and_then(|(res, again)| restyled_ref(res, &cx, again.base(at), run, from, other(from)))
+                    .and_then(|(res, again)| restyled_ref(res, again.base(at), run, from, other(from)))
                     .unwrap_or_else(|| run.clone())
             };
             // Custom marks: the text after their reference

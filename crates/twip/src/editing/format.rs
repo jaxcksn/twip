@@ -153,14 +153,14 @@ enum RunEdit<'a> {
     Typed(&'a dyn Fn(&mut CharEdit, &RunStyle), &'a dyn Fn(&mut CharEdit, &RunStyle) -> bool),
 }
 
-/// A style separator mark's flags (hidden, and `w:specVanish`), which formatting it keeps.
+/// A style separator mark's flags (hidden, and the separator's), which formatting keeps.
 struct Separator {
     hidden: Option<bool>,
-    spec: Option<Rc<crate::format::ForeignProps>>,
+    spec: Option<bool>,
 }
 
 fn separator(p: &CharProps) -> Separator {
-    Separator { hidden: p.toggles.get(crate::format::Toggle::HIDDEN), spec: p.foreign.clone() }
+    Separator { hidden: p.toggles.get(crate::format::Toggle::HIDDEN), spec: p.spec_vanish }
 }
 
 impl Separator {
@@ -168,15 +168,9 @@ impl Separator {
         if let Some(on) = self.hidden {
             p.toggles.put(crate::format::Toggle::HIDDEN, on);
         }
-        let Some(was) = &self.spec else { return };
-        let spec = |f: &crate::format::ForeignProps| f.children.iter().filter(|c| &*c.name.local == "specVanish").cloned().collect::<Vec<_>>();
-        let kept = spec(was);
-        if kept.is_empty() && p.foreign.is_none() {
-            return;
+        if self.spec.is_some() {
+            p.spec_vanish = self.spec;
         }
-        let f = Rc::make_mut(p.foreign.get_or_insert_with(Default::default));
-        f.children.retain(|c| &*c.name.local != "specVanish");
-        f.children.extend(kept);
     }
 }
 
@@ -638,17 +632,6 @@ impl Editor {
         v
     }
 
-    pub(super) fn pending_props(&mut self, edit: &dyn Fn(&mut Props, &str)) {
-        let Some(res) = self.doc.resolver.clone() else { return };
-        let cx = self.cx();
-        let Some(caret) = self.caret() else { return };
-        let (Some((para, at)), Some(run)) = (caret.para_offset(), self.run_at(&caret)) else { return };
-        let Some(base) = self.run_base(para, at, &res, &cx) else { return };
-        let mut p = Props::parse(run_xml::rpr(&res, &run, &cx).as_deref(), "rPr", &cx);
-        edit(&mut p, &cx.w);
-        self.pending = Some(run_xml::rerun_xml(&res, &base, &run, p.xml().as_deref(), &cx));
-    }
-
     pub(super) fn pending_font(&mut self, font: &str) {
         self.pending_typed(&|e| family(e, font, PENDING_FONT_ORDER));
     }
@@ -704,6 +687,18 @@ impl Editor {
         self.format_runs_by(label, RunEdit::Typed(edit, &|_, _| false), fonts)
     }
 
+    /// [`Editor::format_runs_typed`], then `settle` sees each run as `edit` leaves it and may change its properties
+    /// again, returning whether it did, as [`Editor::format_runs_settled`] does.
+    pub(super) fn format_runs_typed_settled(
+        &mut self,
+        label: &'static str,
+        edit: &dyn Fn(&mut CharEdit, &RunStyle),
+        settle: &dyn Fn(&mut CharEdit, &RunStyle) -> bool,
+        fonts: &Fonts,
+    ) -> Outcome {
+        self.format_runs_by(label, RunEdit::Typed(edit, settle), fonts)
+    }
+
     fn format_runs_by(&mut self, label: &'static str, how: RunEdit, fonts: &Fonts) -> Outcome {
         if self.label_target.is_some() || self.style_target.is_some() {
             let label = self.label_target.is_some();
@@ -757,7 +752,7 @@ impl Editor {
         let typed = |direct: &RunDirect, run: &RunStyle, base: &CharProps, mark: bool| -> RunDirect {
             let RunEdit::Typed(edit, settle) = how else { return direct.clone() };
             let mut e = CharEdit::new(direct.props().map_or_else(CharProps::default, |p| (**p).clone()));
-            let sep = (mark && direct.unmodelled_flag("specVanish")).then(|| separator(&e));
+            let sep = (mark && direct.spec_vanish()).then(|| separator(&e));
             edit(&mut e, run);
             if let Some(flags) = &sep {
                 flags.restore(&mut e);
@@ -1149,7 +1144,7 @@ impl Editor {
 /// The hidden paragraph marks of `p`, as [`Editor::hidden_marks`] gives them.
 pub fn hidden_marks_of(p: &crate::docx::Paragraph) -> Vec<(Unit, bool)> {
     let parts = p.src.as_ref().filter(|s| s.joined.len() + 1 == s.ranges.len()).map_or(&[][..], |s| &s.joined[..]);
-    let own = p.mark.hidden.then(|| (super::step::para_len(p), p.mark.direct.unmodelled_flag("specVanish")));
+    let own = p.mark.hidden.then(|| (super::step::para_len(p), p.mark.direct.spec_vanish()));
     parts.iter().map(|j| (Unit(j.end), j.spec_vanish)).chain(own).collect()
 }
 
@@ -1195,11 +1190,11 @@ impl Editor {
         let (Some(again), Some(p)) = (self.para_again(para, None, &res, &cx), self.index.para(&self.doc, para)) else {
             return Outcome::Unchanged("no paragraph");
         };
-        let mut props = Props::parse(run_xml::rpr(&res, &p.mark, &cx).as_deref(), "rPr", &cx);
-        let w = &cx.w;
-        props.set("vanish", format!("<{w}vanish/>"));
-        props.set("specVanish", format!("<{w}specVanish/>"));
-        let mark = run_xml::rerun_xml(&res, again.mark_base(), &p.mark, props.xml().as_deref(), &cx);
+        let mut e = run_xml::edit_of(&p.mark);
+        e.toggle(crate::format::Toggle::HIDDEN, true);
+        e.spec_vanish = Some(true);
+        e.whole(Prop::SpecVanish);
+        let mark = run_xml::again(&res, &run_xml::base(again.mark_base()), &p.mark, p.mark.direct.edit(e));
         let (style, list) = (p.style.clone(), p.list.clone());
         let mut tx = self.begin("Style Separator");
         if self.step(&mut tx, Step::Para { para, style, mark, list }).is_err() {

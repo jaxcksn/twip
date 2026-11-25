@@ -160,7 +160,7 @@ fn each_para(blocks: &mut [Block], f: &mut dyn FnMut(&mut Paragraph)) {
 fn empty_para(doc: &Document, cx: &crate::docx::write::props::Cx) -> Option<Paragraph> {
     let res = doc.resolver.as_ref()?;
     let r = res.para_from_xml(None, None, cx);
-    let mark = run_xml::run_from_xml(res, &r.base, None, cx);
+    let mark = run_xml::plain(res, &r.base);
     Some(Paragraph {
         style: Rc::new(r.style),
         mark,

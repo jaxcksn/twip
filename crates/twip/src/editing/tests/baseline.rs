@@ -530,7 +530,7 @@ fn typed_round_trip(rpr: roxmltree::Node, cx: &Cx, colours: &ThemeColours, what:
     let read = RunProps::parse(Some(rpr), colours);
     assert_eq!(cx.parse(&xml, |_, el| RunProps::parse(Some(el), colours)), Some(read.clone()), "{what}: on the XML path, written as {xml}");
     let mut typed = typed.0;
-    (typed.foreign, typed.lang.complex) = (None, None);
+    (typed.foreign, typed.lang.complex, typed.spec_vanish) = (None, None, None);
     let auto = |c: &mut Option<Color>| *c = c.filter(|c| *c != Color::Auto);
     if let Some(u) = &mut typed.underline {
         auto(&mut u.color);

@@ -65,6 +65,21 @@ pub fn run_from_xml(res: &Resolver, base: &RunProps, rpr: Option<&str>, cx: &Cx)
     Rc::new(resolve(res, &self::base(base), direct, false))
 }
 
+/// A run with no authored properties of its own over `base`.
+pub fn plain(res: &Resolver, base: &RunProps) -> Run {
+    Rc::new(resolve(res, &self::base(base), RunDirect::default(), false))
+}
+
+/// A run with authored properties `direct` over `base`.
+pub fn run_of(res: &Resolver, base: &RunProps, direct: RunDirect) -> Run {
+    Rc::new(resolve(res, &self::base(base), direct, false))
+}
+
+/// `run`'s authored properties, to edit.
+pub fn edit_of(run: &RunStyle) -> crate::format::CharEdit {
+    crate::format::CharEdit::new(run.direct.props().map_or_else(CharProps::default, |p| (**p).clone()))
+}
+
 /// `run` resolved again from its authored properties over `base`, where it is: in a table of contents' result
 /// without the Hyperlink character style, as the reader resolved it, its review marks kept.
 pub fn rerun(res: &Resolver, base: &RunProps, run: &RunStyle) -> Run {

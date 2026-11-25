@@ -9,7 +9,7 @@ use super::step::{Edges, Step};
 use crate::api::command::{DropCap, DropCapPosition};
 use crate::api::value::Points;
 use crate::docx::run_xml;
-use crate::docx::write::props::{Props, esc};
+use crate::docx::write::props::esc;
 use crate::docx::{Block, Inline, Paragraph};
 use crate::font::Fonts;
 use crate::layout::{FloatId, ParaId, Unit};
@@ -177,16 +177,24 @@ impl Editor {
             twips(drop)
         );
         let frame = res.para_from_xml(Some(&ppr), None, &cx).style;
-        let mut rpr = Props::parse(run_xml::rpr(&res, run, &cx).as_deref(), "rPr", &cx);
+        use crate::format::{FontRef, Prop, ScriptClass, ScriptFonts};
+        let mut e = run_xml::edit_of(run);
         if let Some(font) = d.font.as_deref().filter(|f| !f.is_empty()) {
-            rpr.set("rFonts", format!("<{w}rFonts {w}ascii=\"{0}\" {w}hAnsi=\"{0}\" {w}cs=\"{0}\"/>", esc(font)));
+            let f = Some(FontRef::Family(font.into()));
+            (e.fonts, e.hint) = (ScriptFonts { latin: f.clone(), latin_extended: f.clone(), east_asian: None, complex: f }, None);
+            for c in [ScriptClass::Latin, ScriptClass::LatinExtended, ScriptClass::Complex] {
+                e.whole(Prop::Font(c));
+            }
         }
-        rpr.set("position", format!("<{w}position {w}val=\"-{lower}\"/>"));
-        rpr.set("sz", format!("<{w}sz {w}val=\"{}\"/>", (size * 2.0) as i64));
-        rpr.set("szCs", format!("<{w}szCs {w}val=\"{}\"/>", (size * 2.0) as i64));
+        e.position = Some(-lower / 2.0);
+        e.whole(Prop::Position);
+        let half = ((size * 2.0) as i64) as f64 / 2.0;
+        (e.size, e.complex_size) = (Some(half), Some(half));
+        e.whole(Prop::Size);
+        e.whole(Prop::ComplexSize);
         let mut base = res.styles.doc_rpr.clone();
         base.merge_level(&res.styles.chain_rpr(res.styles.paragraph_style(p.style.style_id.as_deref())));
-        let big = run_xml::run_from_xml(&res, &base, rpr.xml().as_deref(), &cx);
+        let big = run_xml::run_of(&res, &base, run.direct.edit(e));
         let para = Paragraph {
             style: Rc::new(frame),
             mark: big.clone(),

@@ -80,7 +80,7 @@ impl Editor {
                     .map(|(ci, t)| {
                         let region = next.cell_region(Some(&id), look, bands, (ri, ci), (5, 5), 1);
                         let para = next.para_from_xml(None, Some(&region), &cx);
-                        let run = run_xml::run_from_xml(&next, &para.base, None, &cx);
+                        let run = run_xml::plain(&next, &para.base);
                         let tc = &region.tc;
                         Cell {
                             width: Some(crate::docx::props::Width::Dxa(width)),
@@ -142,7 +142,7 @@ impl Editor {
             grid_change: None,
         };
         let plain = next.para_from_xml(None, None, &cx);
-        let base = run_xml::run_from_xml(&next, &plain.base, None, &cx);
+        let base = run_xml::plain(&next, &plain.base);
         // A table is followed by a paragraph.
         Some(vec![Block::Table(table), paragraph(Rc::new(plain.style), base, String::new())])
     }
@@ -152,7 +152,7 @@ impl Editor {
         let res = self.doc.resolver.as_ref()?;
         let cx = res.styles.cx();
         let para = res.para_from_xml(None, None, &cx);
-        let base = run_xml::run_from_xml(res, &para.base, None, &cx);
+        let base = run_xml::plain(res, &para.base);
         let run = Rc::new(RunStyle { ascii: family.to_string(), h_ansi: family.to_string(), cs: family.to_string(), ..(*base).clone() });
         Some(vec![paragraph(Rc::new(para.style), run, c.to_string())])
     }
@@ -167,12 +167,16 @@ impl Editor {
         let cx = next.styles.cx();
         let w = &cx.w;
         let id = esc(&style.id);
-        let (ppr, rpr) = match style.kind {
-            StyleKind::Character => (None, Some(format!("<{w}rPr><{w}rStyle {w}val=\"{id}\"/></{w}rPr>"))),
-            _ => (Some(format!("<{w}pPr><{w}pStyle {w}val=\"{id}\"/></{w}pPr>")), None),
+        let (ppr, direct) = match style.kind {
+            StyleKind::Character => {
+                let mut e = crate::format::CharEdit::new(crate::format::CharProps { style: Some(style.id.as_str().into()), ..Default::default() });
+                e.whole(crate::format::Prop::Style);
+                (None, crate::docx::char_props::RunDirect::default().edit(e))
+            }
+            _ => (Some(format!("<{w}pPr><{w}pStyle {w}val=\"{id}\"/></{w}pPr>")), Default::default()),
         };
         let para = next.para_from_xml(ppr.as_deref(), None, &cx);
-        let run = run_xml::run_from_xml(&next, &para.base, rpr.as_deref(), &cx);
+        let run = run_xml::run_of(&next, &para.base, direct);
         if tile {
             // A tile shows the character formatting on a plain paragraph.
             let plain = next.para_from_xml(None, None, &cx);
@@ -180,7 +184,7 @@ impl Editor {
         }
         let around = next.para_from_xml(None, None, &cx);
         let grey = {
-            let base = run_xml::run_from_xml(&next, &around.base, None, &cx);
+            let base = run_xml::plain(&next, &around.base);
             Rc::new(RunStyle { color: Some(0x80_8080), ..(*base).clone() })
         };
         let around = Rc::new(around.style);

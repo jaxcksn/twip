@@ -171,7 +171,7 @@ impl Editor {
             pp.set("pStyle", format!("<{w}pStyle {w}val=\"{style}\"/>"));
         }
         let r = res.para_from_xml(pp.xml().as_deref(), None, &cx);
-        let run = run_xml::run_from_xml(&res, &r.base, None, &cx);
+        let run = run_xml::plain(&res, &r.base);
         Some(crate::docx::Paragraph {
             style: std::rc::Rc::new(r.style),
             mark: run,

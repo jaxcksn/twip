@@ -48,7 +48,7 @@ fn hides_mark(b: &Block, review: &ReviewView) -> bool {
 
 /// Whether mark `r` is a style separator (`w:specVanish`).
 fn spec_vanish(r: &crate::docx::Run) -> bool {
-    r.direct.unmodelled_flag("specVanish")
+    r.direct.spec_vanish()
 }
 
 /// The last paragraph of the chain from `blocks[i]`; a fold's chain runs on past the tables inside it

@@ -820,7 +820,7 @@ impl Editor {
         let name = self.new_object_name("Text Box");
         let Some(p) = self.index.para(&self.doc, para) else { return Outcome::Unchanged("no paragraph") };
         let r = res.para_from_xml(None, None, &cx);
-        let text_run = run_xml::run_from_xml(&res, &r.base, None, &cx);
+        let text_run = run_xml::plain(&res, &r.base);
         let pid = crate::docx::next_para_id();
         let inner = crate::docx::Paragraph {
             style: std::rc::Rc::new(r.style),

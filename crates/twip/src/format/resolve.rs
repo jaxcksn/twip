@@ -82,6 +82,7 @@ impl CharProps {
         take!(lang.complex);
         take!(style);
         take!(rtl);
+        take!(spec_vanish);
         take!(emphasis);
         take!(fit_text);
         match (&mut self.effects, &o.effects) {

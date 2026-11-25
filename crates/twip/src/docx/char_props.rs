@@ -176,11 +176,9 @@ impl RunDirect {
         Some((self.props.as_ref()?, xml))
     }
 
-    /// Whether WordprocessingML on/off child `local`, which the typed properties don't model, is there and on.
-    pub fn unmodelled_flag(&self, local: &str) -> bool {
-        let f = self.props.as_ref().and_then(|p| p.foreign.as_ref());
-        let c = f.and_then(|f| f.children.iter().find(|c| &*c.name.ns == W && &*c.name.local == local));
-        c.is_some_and(|c| super::xml::on_off_str(super::write::props::attr_of(&c.payload, "val").as_deref()))
+    /// Whether a paragraph mark with these properties is a style separator (its `w:specVanish` on).
+    pub fn spec_vanish(&self) -> bool {
+        self.props.as_ref().is_some_and(|p| p.spec_vanish == Some(true))
     }
 
     /// Authored equality: the typed properties.
@@ -366,6 +364,7 @@ fn wml(p: &mut CharProps, e: Node, name: &str) -> bool {
         "dstrike" => p.double_strike = Some(on_off(e)),
         "noProof" => p.no_proof = Some(on_off(e)),
         "rtl" => p.rtl = Some(on_off(e)),
+        "specVanish" => p.spec_vanish = Some(on_off(e)),
         "u" => p.underline = Some(UnderlineProps { style: val(e).map_or(super::model::Underline::Single, underline), color: colour(e, LINE_COLOUR) }),
         "color" => p.color = Some(colour(e, COLOUR).unwrap_or(Color::Auto)),
         "highlight" => p.highlight = Some(val(e).and_then(|v| HIGHLIGHTS.iter().find(|(n, _)| *n == v)).map(|(_, h)| *h)),
@@ -643,6 +642,7 @@ pub fn from_run_props(r: &RunProps) -> CharProps {
         emphasis: r.em,
         lang: LangProps { latin: r.lang.as_deref().map(Rc::from), east_asian: r.lang_east_asia.as_deref().map(Rc::from), complex: None },
         rtl: r.rtl,
+        spec_vanish: None,
         fit_text: r.fit_text,
         foreign: None,
     }
@@ -705,6 +705,7 @@ fn emit(p: &CharProps, key: &str, s: &mut dyn Sink) -> bool {
         "dstrike" => toggle(s, p.double_strike),
         "noProof" => toggle(s, p.no_proof),
         "rtl" => toggle(s, p.rtl),
+        "specVanish" => toggle(s, p.spec_vanish),
         "cs" => toggle(s, p.complex),
         "color" => p.color.map(|c| colour_attrs(s, c, COLOUR)).is_some(),
         "spacing" => p.spacing.map(|v| val(s, &Twips(v))).is_some(),
@@ -1033,6 +1034,7 @@ fn key_of(p: Prop) -> &'static str {
         Prop::NoProof => "noProof",
         Prop::Complex => "cs",
         Prop::Rtl => "rtl",
+        Prop::SpecVanish => "specVanish",
         Prop::Size => "sz",
         Prop::ComplexSize => "szCs",
         Prop::Underline | Prop::UnderlineColor => "u",
@@ -1262,8 +1264,11 @@ fn drop_replaced(was: &CharProps, p: &mut CharProps, set: &[Set]) {
             None => &*q.ns == W && &*q.local == *k,
         })
     };
-    f.attributes.retain(|a| !a.on.as_ref().is_some_and(|q| of(q) || in_part(q) && a.stands_for.is_some()));
-    f.kept.retain(|c| !of(&c.name));
+    // What it held as read goes; what the edit gave it stays
+    let had = was.foreign.as_deref();
+    f.attributes
+        .retain(|a| !a.on.as_ref().is_some_and(|q| of(q) || in_part(q) && a.stands_for.is_some()) || !had.is_some_and(|h| h.attributes.contains(a)));
+    f.kept.retain(|c| !of(&c.name) || !had.is_some_and(|h| h.kept.contains(c)));
     if *f == ForeignProps::default() {
         p.foreign = None;
     }
@@ -1632,6 +1637,56 @@ impl Sink for Attrs<'_, '_, '_> {
         let rgb = format!("{:06X}", self.out.colours.resolve(r));
         self.write(None, local, &rgb);
         self.written.push((W, local));
+    }
+}
+
+/// Turns text effect `which` off at this level, over a style's, in Word's own form of no effect (a glow of no
+/// radius, a shadow or reflection of no size, an outline with no fill), written in the part `cx` describes.
+pub fn effect_off(e: &mut CharEdit, which: Effect, cx: &Cx) {
+    let zeros = |names: &[&'static str]| names.iter().map(|&n| (n, "0")).chain([("algn", "none")]).collect::<Vec<_>>();
+    let black = "<{w14}srgbClr {w14}val=\"000000\"/>";
+    let payload = match which {
+        Effect::Glow => cx.w14("glow", &[("rad", "0")], black),
+        Effect::Shadow => cx.w14("shadow", &zeros(&["blurRad", "dist", "dir", "sx", "sy", "kx", "ky"]), black),
+        Effect::Reflection => {
+            cx.w14("reflection", &zeros(&["blurRad", "stA", "stPos", "endA", "endPos", "dist", "dir", "fadeDir", "sx", "sy", "kx", "ky"]), "")
+        }
+        Effect::Outline | Effect::Fill => cx.w14("textOutline", &[], "<{w14}noFill/>"),
+    };
+    let prefix = cx.prefix_of(W14).map_or_else(|| "w14".to_string(), |p| p.trim_end_matches(':').to_string());
+    let wrapper = format!("<x xmlns:{prefix}=\"{W14}\">{payload}</x>");
+    let Ok(doc) = roxmltree::Document::parse(&wrapper) else { return };
+    let read = read(doc.root_element(), None);
+    let (Some(now), Some(kept)) = (read.effects.as_deref(), read.foreign.as_ref().and_then(|f| f.kept.first())) else { return };
+    let t = Rc::make_mut(e.effects.get_or_insert_with(Default::default));
+    match which {
+        Effect::Glow => t.glow = now.glow.clone(),
+        Effect::Shadow => t.shadow = now.shadow.clone(),
+        Effect::Reflection => t.reflection = now.reflection.clone(),
+        Effect::Outline | Effect::Fill => t.outline = now.outline.clone(),
+    }
+    let f = Rc::make_mut(e.foreign.get_or_insert_with(Default::default));
+    f.kept.retain(|c| c.name != kept.name);
+    f.kept.push(kept.clone());
+    e.whole(Prop::Effect(which));
+}
+
+/// A text outline as the outline command writes it: each of its settings given, a dash only when it is a preset.
+pub fn outline_as_set(l: &crate::drawing::paint::Line) -> crate::drawing::paint::Line {
+    use crate::drawing::paint::{Cap, Dash, Fill, Join, Line};
+    Line {
+        width: Some(l.width.unwrap_or(crate::drawing::units::Emu(9525))),
+        fill: Some(l.fill.clone().unwrap_or(Fill::None)),
+        dash: l.dash.clone().filter(|d| matches!(d, Dash::Preset(_))),
+        compound: Some(l.compound.unwrap_or_default()),
+        cap: Some(l.cap.unwrap_or(Cap::Flat)),
+        join: Some(match l.join {
+            Some(j @ (Join::Bevel | Join::Miter(_))) => j,
+            _ => Join::Round,
+        }),
+        inset: Some(l.inset == Some(true)),
+        head: None,
+        tail: None,
     }
 }
 

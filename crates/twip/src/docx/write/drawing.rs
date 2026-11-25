@@ -886,38 +886,6 @@ pub(crate) fn text_fill_xml(cx: &super::props::Cx, f: &Fill) -> String {
     w14_el(cx, "textFill", &[], &w14_fill_xml(f))
 }
 
-/// `w14:textOutline`, in the part's prefix.
-pub(crate) fn text_outline_xml(cx: &super::props::Cx, l: &Line) -> String {
-    let cap = match l.cap.unwrap_or(Cap::Flat) {
-        Cap::Round => "rnd",
-        Cap::Square => "sq",
-        Cap::Flat => "flat",
-    };
-    let cmpd = match l.compound.unwrap_or_default() {
-        Compound::Single => "sng",
-        Compound::Double => "dbl",
-        Compound::ThickThin => "thickThin",
-        Compound::ThinThick => "thinThick",
-        Compound::Triple => "tri",
-    };
-    let attrs = [
-        ("w", l.width.map_or(9525, |w| w.0).to_string()),
-        ("cap", cap.into()),
-        ("cmpd", cmpd.into()),
-        ("algn", if l.inset == Some(true) { "in" } else { "ctr" }.into()),
-    ];
-    let mut inner = l.fill.as_ref().map_or_else(|| "<{w14}noFill/>".into(), w14_fill_xml);
-    if let Some(Dash::Preset(d)) = &l.dash {
-        inner.push_str(&format!(r#"<{{w14}}prstDash {{w14}}val="{}"/>"#, d.name()));
-    }
-    inner.push_str(&match l.join {
-        Some(Join::Bevel) => "<{w14}bevel/>".to_string(),
-        Some(Join::Miter(lim)) => format!(r#"<{{w14}}miter {{w14}}lim="{}"/>"#, lim.0),
-        _ => "<{w14}round/>".to_string(),
-    });
-    w14_el(cx, "textOutline", &attrs, &inner)
-}
-
 /// `w14:shadow`, in the part's prefix.
 pub(crate) fn text_shadow_xml(cx: &super::props::Cx, s: &crate::drawing::paint::OuterShadow) -> String {
     let attrs = [

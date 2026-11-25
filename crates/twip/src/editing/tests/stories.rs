@@ -351,18 +351,14 @@ fn converted_notes_take_the_other_kinds_styles() {
     let Some(Block::Para(q)) = e.document().endnotes.values().next().and_then(|b| b.first()) else { panic!("no endnote") };
     assert_eq!(q.style.style_id.as_deref(), Some("EndnoteText"));
     let mark = |q: &crate::docx::Paragraph| q.inlines.iter().find_map(|i| if let Inline::NoteMark(_, _, r) = i { Some(r.clone()) } else { None });
-    assert_eq!(
-        mark(q).map(|r| r.direct.as_read().cloned()),
-        mark(&fresh_endnote).map(|r| r.direct.as_read().cloned()),
-        "the mark's run is an inserted endnote's"
-    );
+    assert_eq!(mark(q).map(|r| written(&r)), mark(&fresh_endnote).map(|r| written(&r)), "the mark's run is an inserted endnote's");
     let reference = e.index().para(e.document(), body).and_then(|p| {
         p.inlines.iter().find_map(|i| match i {
             Inline::NoteRef { run, .. } => Some(run.clone()),
             _ => None,
         })
     });
-    assert!(reference.is_some_and(|r| r.direct.as_read().map(|x| &**x).is_some_and(|x| x.contains("EndnoteReference"))), "the reference's run");
+    assert!(reference.is_some_and(|r| written(&r).contains("EndnoteReference")), "the reference's run");
 }
 
 #[test]
@@ -402,7 +398,7 @@ fn converting_a_note_restyles_its_cells_and_a_single_quoted_reference() {
             _ => None,
         })
     });
-    assert!(reference.is_some_and(|r| r.direct.as_read().map(|x| &**x).is_some_and(|x| x.contains("EndnoteReference"))), "the reference's run");
+    assert!(reference.is_some_and(|r| written(&r).contains("EndnoteReference")), "the reference's run");
 }
 
 #[test]
@@ -695,4 +691,10 @@ fn note_options_for_this_section_take_every_selected_section() {
     assert!(matches!(e.execute(Command::SetNoteProperties(props), fonts()), Outcome::Changed(_)));
     let fmts: Vec<Option<String>> = e.document().sections.iter().map(|s| s.notes[0].fmt.clone()).collect();
     assert_eq!(fmts, [Some("lowerRoman".into()), Some("lowerRoman".into()), None], "the selected sections");
+}
+
+/// A run's `w:rPr` as saving writes it, in a part that binds the main namespace to `w`.
+fn written(r: &crate::docx::RunStyle) -> String {
+    let cx = crate::docx::write::props::Cx::of_xml(r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">"#);
+    r.direct.xml(&Default::default(), &cx).map(std::borrow::Cow::into_owned).unwrap_or_default()
 }

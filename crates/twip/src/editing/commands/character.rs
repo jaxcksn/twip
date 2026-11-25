@@ -405,67 +405,70 @@ impl Editor {
 
     pub(in crate::editing) fn set_text_effects(&mut self, change: TextEffectsChange, fonts: &Fonts) -> Outcome {
         use crate::api::drawing::EffectEdit;
-        use crate::docx::write::drawing as xml;
+        use crate::docx::char_props::{effect_off, outline_as_set};
+        use crate::docx::model::TextEffects;
+        use crate::format::Effect;
         let e = match change.to_model() {
             Ok(e) => e,
             Err(why) => return Outcome::invalid(&why),
         };
         let cx = self.formatted_part_cx();
-        // Turned off over a style's: Word's own forms of no effect.
-        let off = |key: &str| -> String {
-            let zeros = |names: &[&'static str]| names.iter().map(|&n| (n, "0")).chain([("algn", "none")]).collect::<Vec<_>>();
-            let black = "<{w14}srgbClr {w14}val=\"000000\"/>";
-            match key {
-                "w14:glow" => cx.w14("glow", &[("rad", "0")], black),
-                "w14:shadow" => cx.w14("shadow", &zeros(&["blurRad", "dist", "dir", "sx", "sy", "kx", "ky"]), black),
-                "w14:reflection" => {
-                    cx.w14("reflection", &zeros(&["blurRad", "stA", "stPos", "endA", "endPos", "dist", "dir", "fadeDir", "sx", "sy", "kx", "ky"]), "")
-                }
-                _ => cx.w14("textOutline", &[], "<{w14}noFill/>"),
-            }
-        };
-        let shows = |r: &RunStyle, key: &str| {
-            r.effects.as_deref().is_some_and(|e| match key {
-                "w14:glow" => e.glow.is_some(),
-                "w14:shadow" => e.shadow.is_some(),
-                "w14:reflection" => e.reflection.is_some(),
-                _ => e.outline.is_some(),
+        let has = |t: Option<&TextEffects>, which: Effect| {
+            t.is_some_and(|t| match which {
+                Effect::Glow => t.glow.is_some(),
+                Effect::Shadow => t.shadow.is_some(),
+                Effect::Reflection => t.reflection.is_some(),
+                _ => t.outline.is_some(),
             })
         };
         let removed = [
-            ("w14:glow", e.glow.is_remove()),
-            ("w14:shadow", e.shadow.is_remove()),
-            ("w14:reflection", e.reflection.is_remove()),
-            ("w14:textOutline", e.outline.is_remove()),
+            (Effect::Glow, e.glow.is_remove()),
+            (Effect::Shadow, e.shadow.is_remove()),
+            (Effect::Reflection, e.reflection.is_remove()),
+            (Effect::Outline, e.outline.is_remove()),
         ];
-        fn put<T>(p: &mut Props, key: &str, edit: &EffectEdit<T>, xml: impl FnOnce(&T) -> String) {
+        fn put<T: Clone>(p: &mut CharEdit, which: Effect, edit: &EffectEdit<T>, slot: impl FnOnce(&mut TextEffects) -> &mut Option<T>) {
             match edit {
-                EffectEdit::Keep => {}
-                EffectEdit::Remove => p.remove(key),
-                EffectEdit::Set(v) => p.set(key, xml(v)),
+                EffectEdit::Keep => return,
+                EffectEdit::Remove => *slot(std::rc::Rc::make_mut(p.effects.get_or_insert_with(Default::default))) = None,
+                EffectEdit::Set(v) => *slot(std::rc::Rc::make_mut(p.effects.get_or_insert_with(Default::default))) = Some(v.clone()),
             }
+            p.whole(Prop::Effect(which));
         }
-        self.format_runs_settled(
+        // None left: no effects, but a fill kept as read that reads as none
+        let tidy = |p: &mut CharEdit| {
+            let fill_kept = p.foreign.as_ref().is_some_and(|f| f.kept.iter().any(|c| &*c.name.local == "textFill"));
+            if p.effects.as_deref().is_some_and(TextEffects::is_empty) && !fill_kept {
+                p.effects = None;
+            }
+        };
+        let outline = match &e.outline {
+            EffectEdit::Set(l) => EffectEdit::Set(outline_as_set(l)),
+            EffectEdit::Remove => EffectEdit::Remove,
+            EffectEdit::Keep => EffectEdit::Keep,
+        };
+        self.format_runs_typed_settled(
             "Text Effects",
-            &|p, _, run| {
-                // Shown without an element of the text's own, an effect is its style's: removing it turns it off.
-                let inherited = removed.map(|(k, r)| r && p.get(k).is_none() && shows(run, k));
-                put(p, "w14:glow", &e.glow, |g| xml::text_glow_xml(&cx, g));
-                put(p, "w14:shadow", &e.shadow, |s| xml::text_shadow_xml(&cx, s));
-                put(p, "w14:reflection", &e.reflection, |r| xml::text_reflection_xml(&cx, r));
-                put(p, "w14:textOutline", &e.outline, |l| xml::text_outline_xml(&cx, l));
-                put(p, "w14:textFill", &e.fill, |f| xml::text_fill_xml(&cx, f));
+            &|p, run| {
+                // Shown without an effect of the text's own, an effect is its style's: removing it turns it off.
+                let inherited = removed.map(|(k, r)| r && !has(p.effects.as_deref(), k) && has(run.effects.as_deref(), k));
+                put(p, Effect::Glow, &e.glow, |t| &mut t.glow);
+                put(p, Effect::Shadow, &e.shadow, |t| &mut t.shadow);
+                put(p, Effect::Reflection, &e.reflection, |t| &mut t.reflection);
+                put(p, Effect::Outline, &outline, |t| &mut t.outline);
+                put(p, Effect::Fill, &e.fill, |t| &mut t.fill);
                 for ((k, _), on) in removed.iter().zip(inherited) {
                     if on {
-                        p.set(k, off(k));
+                        effect_off(p, *k, &cx);
                     }
                 }
+                tidy(p);
             },
             // Removed and still shown: the style under the run gives it, and the run turns it off.
-            &|p, _, run| {
+            &|p, run| {
                 let mut changed = false;
-                for (key, _) in removed.iter().filter(|(k, r)| *r && shows(run, k)) {
-                    p.set(key, off(key));
+                for (k, _) in removed.iter().filter(|(k, r)| *r && has(run.effects.as_deref(), *k)) {
+                    effect_off(p, *k, &cx);
                     changed = true;
                 }
                 changed

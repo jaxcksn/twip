@@ -66,6 +66,8 @@ pub struct CharProps {
     pub lang: LangProps,
     /// Right-to-left text.
     pub rtl: Option<bool>,
+    /// A paragraph mark's: the mark, hidden, joins its paragraph to the next as a style separator.
+    pub spec_vanish: Option<bool>,
     /// The width its region of text is fitted to (points) and the region's id.
     pub fit_text: Option<(f64, i64)>,
     /// What the source format wrote at this level that this struct does not model. Owned by the adapter that read
@@ -136,6 +138,8 @@ pub enum Prop {
     StylisticSets,
     /// A text effect.
     Effect(Effect),
+    /// A paragraph mark's style separator flag.
+    SpecVanish,
 }
 
 /// One of the text effects.
