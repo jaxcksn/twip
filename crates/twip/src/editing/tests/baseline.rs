@@ -455,10 +455,7 @@ fn pasted_html_resolves_as_its_xml_does() {
     check(e.document(), "pasted HTML");
 }
 
-// Known gap: the inserted document's first paragraph, merged into the one at the caret, keeps a paragraph format its
-// property XML does not give (the source's 4pt spacing after); saved and read again it has the destination's 8pt.
 #[test]
-#[should_panic(expected = "an inserted file: paragraph")]
 fn an_inserted_file_resolves_as_its_xml_does() {
     let mut e = Editor::open(&model(OFF), fonts()).expect("opens");
     let first = texts_ids(&e)[0];

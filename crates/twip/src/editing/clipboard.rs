@@ -1295,6 +1295,13 @@ impl Editor {
                 self.abort(tx);
                 return Outcome::Unchanged("paste failed");
             }
+            // Its properties and runs are resolved again here when the pasted paragraph's would have been (from
+            // another document).
+            if let Some(Block::Para(p)) = middle.first()
+                && tx.stale_paras.contains(&ParaId(p.id))
+            {
+                tx.stale_paras.push(para);
+            }
             middle.remove(0);
             let with = self.fit_inlines(para, inl, f.look);
             if self.step(&mut tx, Step::Text { para, range: at..at, with, edges: Default::default() }).is_err() {
@@ -1305,7 +1312,13 @@ impl Editor {
         let last_open = f.open_end && matches!(middle.last(), Some(Block::Para(_)));
         let last_inlines = if last_open {
             match middle.pop() {
-                Some(Block::Para(p)) => Some(p.inlines),
+                Some(Block::Para(p)) => {
+                    // Its runs join the tail, resolved again there when they would have been in it.
+                    if tx.stale_paras.contains(&ParaId(p.id)) {
+                        tx.stale_paras.push(tail);
+                    }
+                    Some(p.inlines)
+                }
                 _ => None,
             }
         } else {
