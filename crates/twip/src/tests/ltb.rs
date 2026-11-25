@@ -32,7 +32,7 @@ fn caret(e: &mut Editor, n: usize, u: u32) {
 }
 
 fn double(b: &Option<Border>) -> bool {
-    b.as_ref().is_some_and(|b| &*b.style == "double")
+    b.as_ref().is_some_and(|b| b.style == crate::docx::props::BorderStyle::Double)
 }
 
 /// Every paragraph and table id in the body, skipping the `skip`-th top-level table and everything in it.

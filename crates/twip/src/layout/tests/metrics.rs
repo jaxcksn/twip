@@ -148,22 +148,26 @@ fn a_complex_script_run_takes_its_complex_script_size_bold_and_font() {
 
 #[test]
 fn a_text_borders_side_is_its_styles_lines_and_gaps() {
-    let side = |style: &str, sz: f64, space: f64, shadow: bool| {
-        super::super::text::border_side(&crate::docx::props::Border {
-            style: style.into(),
-            width: sz / 8.0,
-            space,
-            shadow,
-            color: None,
-            color_theme: None,
-        })
+    let side = |style: crate::docx::props::BorderStyle, sz: f64, space: f64, shadow: bool| {
+        super::super::text::border_side(&crate::docx::props::Border { style, width: sz / 8.0, space, shadow, color: None, color_theme: None })
     };
     let near = |a: (f64, f64), b: (f64, f64)| (a.0 - b.0).abs() < 1e-9 && (a.1 - b.1).abs() < 1e-9;
     // Laid out in twips, drawn in 600-dpi pixels: triple 12 is five 30 tw lines, 12 px each.
-    assert!(near(side("triple", 12.0, 0.0, false), (7.5, 7.2)), "{:?}", side("triple", 12.0, 0.0, false));
-    assert!(near(side("wave", 12.0, 0.0, false), (3.75, 3.72)) && near(side("wave", 4.0, 0.0, false), (3.0, 3.0)));
+    assert!(
+        near(side(crate::docx::props::BorderStyle::Triple, 12.0, 0.0, false), (7.5, 7.2)),
+        "{:?}",
+        side(crate::docx::props::BorderStyle::Triple, 12.0, 0.0, false)
+    );
+    assert!(
+        near(side(crate::docx::props::BorderStyle::Wave, 12.0, 0.0, false), (3.75, 3.72))
+            && near(side(crate::docx::props::BorderStyle::Wave, 4.0, 0.0, false), (3.0, 3.0))
+    );
     // A shadow doubles the lines and gaps, not the space: 60 + 2 × (90 + 2 × 15) tw.
-    assert!(near(side("thickThinSmallGap", 36.0, 3.0, true), (15.0, 14.76)), "{:?}", side("thickThinSmallGap", 36.0, 3.0, true));
+    assert!(
+        near(side(crate::docx::props::BorderStyle::ThickThinSmallGap, 36.0, 3.0, true), (15.0, 14.76)),
+        "{:?}",
+        side(crate::docx::props::BorderStyle::ThickThinSmallGap, 36.0, 3.0, true)
+    );
 }
 
 #[test]

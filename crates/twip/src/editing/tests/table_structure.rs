@@ -612,7 +612,7 @@ fn setting_one_cell_edge_keeps_the_cells_other_borders_as_written() {
     assert!(!raw.contains("<w:left ") && !raw.contains("<w:bottom ") && !raw.contains("<w:right "), "only the edge set is written: {raw}");
     let back = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
     assert_eq!(texts(&back), texts(&e));
-    assert!(table(&back).rows[0].cells[0].left.as_ref().is_some_and(|b| &*b.style == "double"));
+    assert!(table(&back).rows[0].cells[0].left.as_ref().is_some_and(|b| b.style == crate::docx::props::BorderStyle::Double));
 }
 
 fn body_shape(e: &Editor) -> Vec<String> {

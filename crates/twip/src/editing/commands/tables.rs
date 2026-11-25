@@ -87,7 +87,7 @@ impl Editor {
         if let Some(l) = line {
             let colour = crate::editing::readback::checked(self, l)?;
             border = Border {
-                style: l.style.val().into(),
+                style: crate::editing::readback::border_style(l.style),
                 width: l.width.0,
                 space: l.space.0,
                 shadow: l.shadow,
@@ -191,7 +191,7 @@ pub(in crate::editing) fn cell_borders(edges: BorderEdges) -> (Edges, Border) {
         BorderEdges::DiagonalUp => Edges::DiagonalUp,
         BorderEdges::None => Edges::None,
     };
-    (edges, Border { style: "single".into(), width: 0.5, space: 0.0, shadow: false, color: None, color_theme: None })
+    (edges, Border { style: crate::docx::props::BorderStyle::Single, width: 0.5, space: 0.0, shadow: false, color: None, color_theme: None })
 }
 
 impl Editor {

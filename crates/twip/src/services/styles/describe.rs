@@ -72,14 +72,15 @@ fn font_name(f: &FontRef) -> String {
 }
 
 fn border_line(b: &Border) -> String {
-    let style = match &*b.style {
-        "single" => "Single solid line",
-        "double" => "Double solid lines",
-        "dotted" => "Dotted line",
-        "dashed" => "Dashed line",
-        "thick" => "Single solid line",
-        "wave" => "Wave line",
-        other => other,
+    use crate::docx::props::BorderStyle;
+    let style = match b.style {
+        BorderStyle::Single => "Single solid line",
+        BorderStyle::Double => "Double solid lines",
+        BorderStyle::Dotted => "Dotted line",
+        BorderStyle::Dashed => "Dashed line",
+        BorderStyle::Thick => "Single solid line",
+        BorderStyle::Wave => "Wave line",
+        other => crate::docx::line_style::border_val(other),
     };
     let colour = b.color.map_or("Auto".to_string(), |c| colour(c, None));
     format!("({style}, {colour},  {} Line width)", points(b.width))

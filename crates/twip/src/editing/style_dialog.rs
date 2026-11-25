@@ -120,7 +120,7 @@ fn table_style_edits(raw: &str, was: &StyleDialog, now: &StyleDialog, region: Op
                     };
                     format!(
                         "<{w}{side} {w}val=\"{}\" {w}sz=\"{}\" {w}space=\"0\" {w}color=\"{color}\"/>",
-                        b.style.val(),
+                        crate::docx::line_style::border_val(super::readback::border_style(b.style)),
                         (b.width.0 * 8.0).round() as i64
                     )
                 }
@@ -643,7 +643,7 @@ impl Editor {
                 };
                 format!(
                     "<{w}{side} {w}val=\"{}\" {w}sz=\"{}\" {w}space=\"0\" {w}color=\"{color}\"/>",
-                    b.style.val(),
+                    crate::docx::line_style::border_val(super::readback::border_style(b.style)),
                     (b.width.0 * 8.0).round() as i64
                 )
             }

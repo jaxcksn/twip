@@ -1102,7 +1102,14 @@ fn para_look(src: &crate::docx::ParaStyle, here: &crate::docx::ParaStyle, direct
         [s.border_top.clone(), s.border_left.clone(), s.border_bottom.clone(), s.border_right.clone(), s.border_between.clone()]
     };
     if sides(src) != sides(here) {
-        let nil = crate::docx::props::Border { style: "nil".into(), width: 0.0, space: 0.0, shadow: false, color: None, color_theme: None };
+        let nil = crate::docx::props::Border {
+            style: crate::docx::props::BorderStyle::Nil,
+            width: 0.0,
+            space: 0.0,
+            shadow: false,
+            color: None,
+            color_theme: None,
+        };
         let inner: String = ["top", "left", "bottom", "right", "between"]
             .iter()
             .zip(sides(src))

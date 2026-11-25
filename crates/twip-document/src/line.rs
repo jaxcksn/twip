@@ -40,3 +40,68 @@ pub enum Underline {
     /// Two waves.
     WavyDouble,
 }
+
+/// A border's line.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum BorderStyle {
+    /// No border, set over an inherited one.
+    Nil,
+    /// No border.
+    None,
+    /// A single line.
+    Single,
+    /// A thick line.
+    Thick,
+    /// Two lines.
+    Double,
+    /// Dots.
+    Dotted,
+    /// Dashes.
+    Dashed,
+    /// Dot, dash.
+    DotDash,
+    /// Dot, dot, dash.
+    DotDotDash,
+    /// Three lines.
+    Triple,
+    /// Thin then thick, a small gap between.
+    ThinThickSmallGap,
+    /// Thick then thin, a small gap between.
+    ThickThinSmallGap,
+    /// Thin, thick, thin, small gaps between.
+    ThinThickThinSmallGap,
+    /// Thin then thick, a medium gap between.
+    ThinThickMediumGap,
+    /// Thick then thin, a medium gap between.
+    ThickThinMediumGap,
+    /// Thin, thick, thin, medium gaps between.
+    ThinThickThinMediumGap,
+    /// Thin then thick, a large gap between.
+    ThinThickLargeGap,
+    /// Thick then thin, a large gap between.
+    ThickThinLargeGap,
+    /// Thin, thick, thin, large gaps between.
+    ThinThickThinLargeGap,
+    /// A wave.
+    Wave,
+    /// Two waves.
+    DoubleWave,
+    /// Dashes, small gaps between.
+    DashSmallGap,
+    /// Dash, dot, stroked.
+    DashDotStroked,
+    /// Embossed.
+    ThreeDEmboss,
+    /// Engraved.
+    ThreeDEngrave,
+    /// Raised.
+    Outset,
+    /// Sunken.
+    Inset,
+    /// An art border.
+    Art(ArtBorder),
+}
+
+/// An art border's picture: its number in the format's list of them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct ArtBorder(pub u8);

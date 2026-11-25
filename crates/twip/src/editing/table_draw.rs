@@ -57,7 +57,7 @@ const MIN_STROKE: f64 = 3.0;
 
 /// The Draw Table pen's line until one is set: single, ½ pt, automatic colour.
 pub(super) fn default_pen() -> Border {
-    Border { style: "single".into(), width: 0.5, space: 0.0, shadow: false, color: None, color_theme: None }
+    Border { style: crate::docx::props::BorderStyle::Single, width: 0.5, space: 0.0, shadow: false, color: None, color_theme: None }
 }
 
 /// Whether cell `c` is at page point `p`, or within [`REACH`] of it, in a story editing in `ctx` reaches.
@@ -247,7 +247,7 @@ impl Editor {
         match super::readback::checked(self, &l) {
             Ok(c) => {
                 self.table_pen = Border {
-                    style: l.style.val().into(),
+                    style: super::readback::border_style(l.style),
                     width: l.width.0,
                     space: l.space.0,
                     shadow: l.shadow,

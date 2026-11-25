@@ -325,20 +325,21 @@ fn border_units(b: &crate::docx::props::Border, dpi: i64) -> i64 {
     let dev = |tw: i64| (tw * dpi / 1440).max(1);
     let sz = (b.width * 8.0).round() as i64;
     let w = dev(sz * 5 / 2);
-    let total = match &*b.style {
-        "none" | "nil" => 0,
-        "double" => 3 * w,
-        "triple" => 5 * w,
-        "thinThickSmallGap" | "thickThinSmallGap" => w + 2 * dev(15),
-        "thinThickThinSmallGap" => w + 4 * dev(15),
-        "thinThickMediumGap" | "thickThinMediumGap" => w + 2 * (w / 2).max(1),
-        "thinThickThinMediumGap" => w + 4 * (w / 2).max(1),
-        "thinThickLargeGap" | "thickThinLargeGap" => dev(30) + dev(15) + w,
-        "thinThickThinLargeGap" => dev(30) + 2 * (w + dev(15)),
-        "wave" => dev(if sz == 12 { 75 } else { 60 }),
-        "doubleWave" => dev(105),
-        "dashDotStroked" => dev(60),
-        "threeDEmboss" | "threeDEngrave" => w + 2 * dev(if sz < 24 { 15 } else { 30 }),
+    use crate::docx::props::BorderStyle::*;
+    let total = match b.style {
+        None | Nil => 0,
+        Double => 3 * w,
+        Triple => 5 * w,
+        ThinThickSmallGap | ThickThinSmallGap => w + 2 * dev(15),
+        ThinThickThinSmallGap => w + 4 * dev(15),
+        ThinThickMediumGap | ThickThinMediumGap => w + 2 * (w / 2).max(1),
+        ThinThickThinMediumGap => w + 4 * (w / 2).max(1),
+        ThinThickLargeGap | ThickThinLargeGap => dev(30) + dev(15) + w,
+        ThinThickThinLargeGap => dev(30) + 2 * (w + dev(15)),
+        Wave => dev(if sz == 12 { 75 } else { 60 }),
+        DoubleWave => dev(105),
+        DashDotStroked => dev(60),
+        ThreeDEmboss | ThreeDEngrave => w + 2 * dev(if sz < 24 { 15 } else { 30 }),
         _ => w,
     };
     let space = (b.space * 20.0).round() as i64;

@@ -436,7 +436,7 @@ impl Editor {
                 }),
                 Some(None) => None,
                 Some(Some(l)) => Some(crate::docx::props::Border {
-                    style: l.style.val().into(),
+                    style: super::readback::border_style(l.style),
                     width: l.width.0,
                     space: match own(k).0 {
                         false => old.as_ref().map_or_else(|| space(side, b.offset_from_page), |o| o.space),

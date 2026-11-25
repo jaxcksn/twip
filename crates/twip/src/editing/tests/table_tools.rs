@@ -321,8 +321,8 @@ fn the_pen_splits_every_cell_its_line_crosses() {
     assert!(matches!(e.draw_table_stroke(Stroke { page: 0, from: [x, a[1] + 1.0], to: [x, c[3] - 1.0] }, fonts()), Outcome::Changed(_)));
     assert_eq!(shape(&e), [vec![(1, N); 3], vec![(1, N); 3]], "a column line in both rows");
     assert!((table(&e).grid[0] - 30.0).abs() < 0.6, "{:?}", table(&e).grid);
-    let pen = |c: &crate::docx::Cell| c.right.as_ref().map(|b| b.style.clone());
-    assert_eq!(pen(&table(&e).rows[1].cells[0]).as_deref(), Some("single"), "drawn in the pen's line");
+    let pen = |c: &crate::docx::Cell| c.right.as_ref().map(|b| b.style);
+    assert_eq!(pen(&table(&e).rows[1].cells[0]), Some(crate::docx::props::BorderStyle::Single), "drawn in the pen's line");
 }
 
 #[test]
@@ -385,14 +385,21 @@ fn a_pen_click_draws_nothing() {
 fn the_pen_redraws_a_border_it_follows() {
     use crate::editing::table_draw::Stroke;
     let mut e = open(&grid2(["", "", "", ""], "", ["", ""]));
-    e.set_table_pen(crate::docx::props::Border { style: "double".into(), width: 1.5, space: 0.0, shadow: false, color: None, color_theme: None });
+    e.set_table_pen(crate::docx::props::Border {
+        style: crate::docx::props::BorderStyle::Double,
+        width: 1.5,
+        space: 0.0,
+        shadow: false,
+        color: None,
+        color_theme: None,
+    });
     let r = cell_rect(&mut e, 0, 0);
     assert!(matches!(e.draw_table_stroke(Stroke { page: 0, from: [r[0] + 2.0, r[3]], to: [r[2] - 2.0, r[3]] }, fonts()), Outcome::Changed(_)));
     let t = table(&e);
     assert_eq!(t.rows.len(), 2, "no split");
-    assert_eq!(t.rows[0].cells[0].bottom.as_ref().map(|b| &*b.style), Some("double"));
-    assert_eq!(t.rows[1].cells[0].top.as_ref().map(|b| &*b.style), Some("double"));
-    assert_ne!(t.rows[0].cells[1].bottom.as_ref().map(|b| &*b.style), Some("double"), "only where it was drawn");
+    assert_eq!(t.rows[0].cells[0].bottom.as_ref().map(|b| b.style), Some(crate::docx::props::BorderStyle::Double));
+    assert_eq!(t.rows[1].cells[0].top.as_ref().map(|b| b.style), Some(crate::docx::props::BorderStyle::Double));
+    assert_ne!(t.rows[0].cells[1].bottom.as_ref().map(|b| b.style), Some(crate::docx::props::BorderStyle::Double), "only where it was drawn");
 }
 
 #[test]

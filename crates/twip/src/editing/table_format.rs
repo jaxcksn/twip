@@ -249,7 +249,7 @@ pub enum Edges {
 }
 
 fn nil() -> Border {
-    Border { style: "nil".into(), width: 0.0, space: 0.0, shadow: false, color: None, color_theme: None }
+    Border { style: crate::docx::props::BorderStyle::Nil, width: 0.0, space: 0.0, shadow: false, color: None, color_theme: None }
 }
 
 pub(super) fn border_xml(w: &str, name: &str, b: &Border) -> String {
@@ -258,7 +258,7 @@ pub(super) fn border_xml(w: &str, name: &str, b: &Border) -> String {
     }
     let tag = format!(
         "<{w}{name} {w}val=\"{}\" {w}sz=\"{}\" {w}space=\"{}\"{}/>",
-        crate::docx::write::props::esc(&b.style),
+        crate::docx::line_style::border_val(b.style),
         (b.width * 8.0).round() as i64,
         b.space.round() as i64,
         if b.shadow { format!(" {w}shadow=\"1\"") } else { String::new() }

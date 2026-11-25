@@ -1139,7 +1139,14 @@ fn paragraphs_group_by_their_four_sides_and_box_edges() {
 #[test]
 fn a_page_break_before_opens_a_new_box() {
     use crate::layout::line::neighbour_borders;
-    let border = crate::docx::props::Border { style: "single".into(), width: 0.5, space: 1.0, shadow: false, color: None, color_theme: None };
+    let border = crate::docx::props::Border {
+        style: crate::docx::props::BorderStyle::Single,
+        width: 0.5,
+        space: 1.0,
+        shadow: false,
+        color: None,
+        color_theme: None,
+    };
     let Some(doc) = super::plain_doc(&["x".into()]) else { return };
     let Some(crate::docx::Block::Para(p)) = doc.sections[0].blocks.first() else { return };
     let a = crate::docx::ParaStyle { border_top: Some(border), ..(*p.style).clone() };

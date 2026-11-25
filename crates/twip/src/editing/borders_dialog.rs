@@ -10,7 +10,7 @@ use crate::api::value::{AutoOr, Color, NoneOr, Points};
 pub(super) fn line(b: &Option<crate::docx::props::Border>) -> Option<Border> {
     let b = b.as_ref().filter(|b| b.visible())?;
     Some(Border {
-        style: BorderStyle::of_val(&b.style),
+        style: super::readback::api_border_style(b.style),
         width: Points(b.width),
         color: b.color.map_or(AutoOr::Auto, |c| AutoOr::Value(crate::api::drawing::ColourValue::rgb(Color(c)))),
         space: None,

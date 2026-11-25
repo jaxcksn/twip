@@ -192,7 +192,14 @@ fn random_edit(d: &mut Document, rng: &mut Rng, kind: Option<usize>) -> Option<E
             let mut st = (*p.style).clone();
             st.border_bottom = match st.border_bottom {
                 Some(_) => None,
-                None => Some(Border { style: "single".into(), width: 1.0, space: 1.0, shadow: false, color: None, color_theme: None }),
+                None => Some(Border {
+                    style: crate::docx::props::BorderStyle::Single,
+                    width: 1.0,
+                    space: 1.0,
+                    shadow: false,
+                    color: None,
+                    color_theme: None,
+                }),
             };
             p.style = Rc::new(st);
             Some(Edit { hint: change(si, bi, bi + 1, bi + 1), forces_full: false, what: format!("toggle border on block {bi}") })
@@ -507,14 +514,26 @@ fn edits_inside_joined_paragraphs() {
         }),
         ("border the paragraph before a chain", |d| {
             let Block::Para(p) = d.sections[0].blocks.get_mut(9)? else { return None };
-            Rc::make_mut(&mut p.style).border_bottom =
-                Some(Border { style: "single".into(), width: 1.0, space: 1.0, shadow: false, color: None, color_theme: None });
+            Rc::make_mut(&mut p.style).border_bottom = Some(Border {
+                style: crate::docx::props::BorderStyle::Single,
+                width: 1.0,
+                space: 1.0,
+                shadow: false,
+                color: None,
+                color_theme: None,
+            });
             Some((9, 10, 10))
         }),
         ("border a chain's last paragraph", |d| {
             let Block::Para(p) = d.sections[0].blocks.get_mut(14)? else { return None };
-            Rc::make_mut(&mut p.style).border_bottom =
-                Some(Border { style: "single".into(), width: 1.0, space: 1.0, shadow: false, color: None, color_theme: None });
+            Rc::make_mut(&mut p.style).border_bottom = Some(Border {
+                style: crate::docx::props::BorderStyle::Single,
+                width: 1.0,
+                space: 1.0,
+                shadow: false,
+                color: None,
+                color_theme: None,
+            });
             Some((14, 15, 15))
         }),
         ("insert a paragraph's mark", |d| set_mark(d, 20, false, true)),

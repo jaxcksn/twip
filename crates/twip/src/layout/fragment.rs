@@ -333,14 +333,15 @@ pub enum Dash {
 }
 
 impl Dash {
-    /// An `ST_Border` style's dashes; solid for any other style.
-    pub fn of(style: &str) -> Dash {
+    /// A border style's dashes; solid for any other style.
+    pub fn of(style: crate::docx::props::BorderStyle) -> Dash {
+        use crate::docx::props::BorderStyle;
         match style {
-            "dotted" => Dash::Dotted,
-            "dashed" => Dash::Dashed,
-            "dotDash" => Dash::DotDash,
-            "dotDotDash" => Dash::DotDotDash,
-            "dashSmallGap" => Dash::DashSmallGap,
+            BorderStyle::Dotted => Dash::Dotted,
+            BorderStyle::Dashed => Dash::Dashed,
+            BorderStyle::DotDash => Dash::DotDash,
+            BorderStyle::DotDotDash => Dash::DotDotDash,
+            BorderStyle::DashSmallGap => Dash::DashSmallGap,
             _ => Dash::Solid,
         }
     }

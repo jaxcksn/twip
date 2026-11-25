@@ -1517,7 +1517,7 @@ fn table_properties_save_and_reopen() {
     let top = t.rows.iter().position(|row| row.height.as_ref().is_some_and(|h| h.1 == crate::docx::HeightRule::Exact)).expect("a row made exact");
     if top > 0 {
         let above = &t.rows[top - 1].cells[1];
-        assert_eq!(above.bottom.as_ref().map(|b| &*b.style), Some("double"), "{above:?}");
+        assert_eq!(above.bottom.as_ref().map(|b| b.style), Some(crate::docx::props::BorderStyle::Double), "{above:?}");
     }
     let bytes = crate::docx::write::save(r.e.document()).expect("saves");
     if let Some(d) = std::env::var_os("RT_KEEP") {

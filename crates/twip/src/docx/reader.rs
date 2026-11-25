@@ -904,7 +904,8 @@ fn fold_divs(blocks: &mut [Block], divs: &HashMap<i64, Division>, in_cell: bool)
         reopened.clone()
     };
     let most = |ids: &mut dyn Iterator<Item = &i64>, i: usize| ids.map(|id| divs[id].margins[i]).fold(0.0, f64::max);
-    let width = |b: &Option<Border>| b.as_ref().map_or(0.0, |b| b.width * if &*b.style == "double" { 3.0 } else { 1.0 } + b.space);
+    let width =
+        |b: &Option<Border>| b.as_ref().map_or(0.0, |b| b.width * if b.style == super::props::BorderStyle::Double { 3.0 } else { 1.0 } + b.space);
     let boxes = |chain: &[i64], prev: &[i64], next: &[i64], again: &[i64]| -> Vec<DivBox> {
         (0..chain.len())
             .rev()

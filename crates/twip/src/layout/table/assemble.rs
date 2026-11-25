@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use crate::docx::Compat;
 use crate::docx::model::*;
-use crate::docx::props::{Border, Jc};
+use crate::docx::props::{Border, BorderStyle, Jc};
 use crate::docx::review::ReviewView;
 use crate::layout::fragment::Child;
 use crate::layout::ids::{ParaId, TableId};
@@ -51,14 +51,14 @@ fn part(own: Option<&Option<Border>>, table: &Option<Border>) -> f64 {
     };
     match b {
         None => 0.75,
-        Some(b) if &*b.style == "nil" => {
+        Some(b) if b.style == BorderStyle::Nil => {
             if cell {
                 0.75
             } else {
                 0.0
             }
         }
-        Some(b) if &*b.style == "none" => {
+        Some(b) if b.style == BorderStyle::None => {
             if b.color.is_some() {
                 0.0
             } else {

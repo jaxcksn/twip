@@ -1,10 +1,9 @@
 //! Formatting properties
 
-use std::rc::Rc;
-
 use roxmltree::Node;
 
 pub use crate::document::format::{Jc, Leader, LineRule, TabKind, VertAlign, Width};
+pub use crate::document::line::{ArtBorder, BorderStyle};
 
 use super::xml::*;
 
@@ -594,8 +593,8 @@ pub struct Hatch {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Border {
-    /// ST_Border value ("single", "double", "none", ...).
-    pub style: Rc<str>,
+    /// The line.
+    pub style: BorderStyle,
     /// Line width in points (`w:sz` eighths).
     pub width: f64,
     pub space: f64,
@@ -607,7 +606,7 @@ pub struct Border {
 
 impl Border {
     pub fn parse(e: Node, tc: &ThemeColours) -> Border {
-        let style = Rc::from(val(e).unwrap_or("none"));
+        let style = val(e).map_or(BorderStyle::None, super::line_style::border_style);
         // Eighths of a point: a fraction of 1 is 1; 0 or none is a hairline that takes no space.
         let sz = match num(attr(e, "sz")) {
             Some(v) if v > 0.0 && v < 1.0 => 1.0,
@@ -625,7 +624,7 @@ impl Border {
     }
 
     pub fn visible(&self) -> bool {
-        !matches!(&*self.style, "none" | "nil")
+        !matches!(self.style, BorderStyle::None | BorderStyle::Nil)
     }
 }
 

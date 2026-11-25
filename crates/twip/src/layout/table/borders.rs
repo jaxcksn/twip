@@ -1,7 +1,7 @@
 //! Border conflicts and border styles
 
 use crate::docx::model::*;
-use crate::docx::props::Border;
+use crate::docx::props::{Border, BorderStyle};
 use crate::layout::fragment::{Dash, Item};
 use crate::layout::units::EPS;
 use std::rc::Rc;
@@ -12,49 +12,53 @@ use crate::drawing::paint::{Join, Paint, ResolvedEffects, ResolvedLine};
 use crate::layout::fragment::ShapeItem;
 
 // Borders
-fn style_factor(style: &str) -> f64 {
+fn style_factor(style: BorderStyle) -> f64 {
+    use BorderStyle::*;
     match style {
-        "double" => 3.0,
-        "triple" => 3.5,
-        "dashed" | "dotted" | "dashSmallGap" | "dotDash" | "dotDotDash" => 0.75,
+        Double => 3.0,
+        Triple => 3.5,
+        Dashed | Dotted | DashSmallGap | DotDash | DotDotDash => 0.75,
         _ => 1.0,
     }
 }
 
-const ORDER: [&str; 27] = [
-    "nil",
-    "none",
-    "single",
-    "thick",
-    "double",
-    "dotted",
-    "dashed",
-    "dotDash",
-    "dotDotDash",
-    "triple",
-    "thinThickSmallGap",
-    "thickThinSmallGap",
-    "thinThickThinSmallGap",
-    "thinThickMediumGap",
-    "thickThinMediumGap",
-    "thinThickThinMediumGap",
-    "thinThickLargeGap",
-    "thickThinLargeGap",
-    "thinThickThinLargeGap",
-    "wave",
-    "doubleWave",
-    "dashSmallGap",
-    "dashDotStroked",
-    "threeDEmboss",
-    "threeDEngrave",
-    "outset",
-    "inset",
-];
+const ORDER: [BorderStyle; 27] = {
+    use BorderStyle::*;
+    [
+        Nil,
+        None,
+        Single,
+        Thick,
+        Double,
+        Dotted,
+        Dashed,
+        DotDash,
+        DotDotDash,
+        Triple,
+        ThinThickSmallGap,
+        ThickThinSmallGap,
+        ThinThickThinSmallGap,
+        ThinThickMediumGap,
+        ThickThinMediumGap,
+        ThinThickThinMediumGap,
+        ThinThickLargeGap,
+        ThickThinLargeGap,
+        ThinThickThinLargeGap,
+        Wave,
+        DoubleWave,
+        DashSmallGap,
+        DashDotStroked,
+        ThreeDEmboss,
+        ThreeDEngrave,
+        Outset,
+        Inset,
+    ]
+};
 
 /// sz 1, in points.
 const HAIRLINE: f64 = 0.125;
 
-fn style_rank(style: &str) -> usize {
+fn style_rank(style: BorderStyle) -> usize {
     ORDER.iter().position(|s| *s == style).unwrap_or(2)
 }
 
@@ -64,7 +68,7 @@ pub(in crate::layout) fn drawn(b: &Border) -> bool {
 }
 
 fn art(b: &Border) -> Option<f64> {
-    (!ORDER.contains(&&*b.style)).then(|| (b.width * 8.0).min(255.0))
+    matches!(b.style, BorderStyle::Art(_)).then(|| (b.width * 8.0).min(255.0))
 }
 
 pub(super) fn conflict(a: (Option<&Border>, bool), b: (Option<&Border>, bool)) -> Option<Border> {
@@ -82,11 +86,11 @@ fn winner<'a>(a: (Option<&'a Border>, bool), b: (Option<&'a Border>, bool)) -> O
             if a.1 != b.1 {
                 return Some(if a.1 { x } else { y });
             }
-            let (wx, wy) = (x.width * style_factor(&x.style), y.width * style_factor(&y.style));
+            let (wx, wy) = (x.width * style_factor(x.style), y.width * style_factor(y.style));
             if (wx - wy).abs() > EPS {
                 return Some(if wx > wy { x } else { y });
             }
-            let (sx, sy) = (style_rank(&x.style), style_rank(&y.style));
+            let (sx, sy) = (style_rank(x.style), style_rank(y.style));
             if sx != sy {
                 return Some(if sx > sy { x } else { y });
             }
@@ -117,11 +121,11 @@ pub(super) fn space_h(b: &Option<Border>) -> f64 {
         return b.space.clamp(0.0, 31.0);
     }
     let w = (b.width.clamp(0.25, 12.0) * 20.0 + 1e-6).floor() / 20.0;
-    let line = match &*b.style {
-        "wave" if (b.width - 1.5).abs() < EPS => 3.75,
-        "wave" | "dashDotStroked" => 3.0,
-        "doubleWave" => 5.25,
-        "threeDEmboss" | "threeDEngrave" => w + if b.width < 3.0 { 1.5 } else { 3.0 },
+    let line = match b.style {
+        BorderStyle::Wave if (b.width - 1.5).abs() < EPS => 3.75,
+        BorderStyle::Wave | BorderStyle::DashDotStroked => 3.0,
+        BorderStyle::DoubleWave => 5.25,
+        BorderStyle::ThreeDEmboss | BorderStyle::ThreeDEngrave => w + if b.width < 3.0 { 1.5 } else { 3.0 },
         _ if stripes(b).len() == 1 => w,
         _ => thick(b),
     };
@@ -155,29 +159,27 @@ impl std::ops::Deref for Stripes {
 }
 
 fn stripes(b: &Border) -> Stripes {
-    let (w, s) = (b.width, &*b.style);
-    let (thin, gap, thick) = if s.ends_with("SmallGap") {
-        (0.75, 0.75, w)
-    } else if s.ends_with("MediumGap") {
-        (w / 2.0, w / 2.0, w)
-    } else if s.ends_with("LargeGap") {
-        (0.75, w, 1.5)
-    } else {
-        (w, w, w)
+    use BorderStyle::*;
+    let w = b.width;
+    let (thin, gap, thick) = match b.style {
+        ThinThickSmallGap | ThickThinSmallGap | ThinThickThinSmallGap => (0.75, 0.75, w),
+        ThinThickMediumGap | ThickThinMediumGap | ThinThickThinMediumGap => (w / 2.0, w / 2.0, w),
+        ThinThickLargeGap | ThickThinLargeGap | ThinThickThinLargeGap => (0.75, w, 1.5),
+        _ => (w, w, w),
     };
     if let Some(a) = art(b) {
         return Stripes::of(&[w, (a - w).max(0.0)]);
     }
-    match s {
-        "threeDEmboss" | "threeDEngrave" => {
+    match b.style {
+        ThreeDEmboss | ThreeDEngrave => {
             let o = if w < 3.0 { 0.75 } else { 1.5 };
             Stripes::of(&[o, w, o])
         }
-        "double" => Stripes::of(&[w, w, w]),
-        "triple" => Stripes::of(&[w; 5]),
-        _ if s.starts_with("thinThickThin") => Stripes::of(&[thin, gap, thick, gap, thin]),
-        _ if s.starts_with("thinThick") => Stripes::of(&[thick, gap, thin]),
-        _ if s.starts_with("thickThin") => Stripes::of(&[thin, gap, thick]),
+        Double => Stripes::of(&[w, w, w]),
+        Triple => Stripes::of(&[w; 5]),
+        ThinThickThinSmallGap | ThinThickThinMediumGap | ThinThickThinLargeGap => Stripes::of(&[thin, gap, thick, gap, thin]),
+        ThinThickSmallGap | ThinThickMediumGap | ThinThickLargeGap => Stripes::of(&[thick, gap, thin]),
+        ThickThinSmallGap | ThickThinMediumGap | ThickThinLargeGap => Stripes::of(&[thin, gap, thick]),
         _ => Stripes::of(&[w]),
     }
 }
@@ -206,19 +208,19 @@ pub(in crate::layout) fn edge_from(out: &mut Vec<Item>, rect: [f64; 4], horizont
         }
         return;
     }
-    let dash = Dash::of(&b.style);
+    let dash = Dash::of(b.style);
     if st.len() == 1 && dash != Dash::Solid {
         out.push(Item::Rect { rect, colour, snap: false, dash, phase: phase as f32 });
         return;
     }
-    match &*b.style {
-        "wave" => return wave(out, rect, horizontal, 1, colour, phase),
-        "doubleWave" => return wave(out, rect, horizontal, 2, colour, phase),
-        "dashDotStroked" => return hatch(out, rect, horizontal, colour, phase),
+    match b.style {
+        BorderStyle::Wave => return wave(out, rect, horizontal, 1, colour, phase),
+        BorderStyle::DoubleWave => return wave(out, rect, horizontal, 2, colour, phase),
+        BorderStyle::DashDotStroked => return hatch(out, rect, horizontal, colour, phase),
         // Outset is light at the top and left and dark at the bottom and right; inset the other way.
-        "outset" | "inset" => {
+        BorderStyle::Outset | BorderStyle::Inset => {
             let [light, _, dark] = tones(b.color.unwrap_or(0xA0A0A0));
-            let lit = (&*b.style == "outset") != far;
+            let lit = (b.style == BorderStyle::Outset) != far;
             out.push(Item::rect(rect, if lit { light } else { dark }));
             return;
         }
@@ -323,17 +325,17 @@ pub(in crate::layout) fn diagonal(out: &mut Vec<Item>, rect: [f64; 4], up: bool,
     if !(w > EPS && h > EPS && len.is_finite()) {
         return;
     }
-    let dash: &[f64] = match &*b.style {
-        "dotted" => &[3.0, 3.0],
-        "dashed" | "dashSmallGap" => &[18.0, 6.0],
-        "dotDash" => &[9.0, 6.0, 3.0, 6.0],
-        "dotDotDash" => &[9.0, 3.0, 3.0, 3.0, 3.0, 3.0],
+    let dash: &[f64] = match b.style {
+        BorderStyle::Dotted => &[3.0, 3.0],
+        BorderStyle::Dashed | BorderStyle::DashSmallGap => &[18.0, 6.0],
+        BorderStyle::DotDash => &[9.0, 6.0, 3.0, 6.0],
+        BorderStyle::DotDotDash => &[9.0, 3.0, 3.0, 3.0, 3.0, 3.0],
         _ => &[],
     };
-    let width = match &*b.style {
+    let width = match b.style {
         _ if !dash.is_empty() => DEVICE_PX,
-        "thick" => 2.0 * b.width,
-        "double" => 3.0 * b.width,
+        BorderStyle::Thick => 2.0 * b.width,
+        BorderStyle::Double => 3.0 * b.width,
         _ => b.width,
     };
     let (from, dir) = if up { ([0.0, h], [w / len, -h / len]) } else { ([0.0, 0.0], [w / len, h / len]) };
@@ -449,9 +451,9 @@ pub(in crate::layout) fn shadow(out: &mut Vec<Item>, rect: [f64; 4], horizontal:
 }
 
 fn three_d(b: &Border) -> Option<[u32; 3]> {
-    let engrave = match &*b.style {
-        "threeDEmboss" => false,
-        "threeDEngrave" => true,
+    let engrave = match b.style {
+        BorderStyle::ThreeDEmboss => false,
+        BorderStyle::ThreeDEngrave => true,
         _ => return None,
     };
     let [light, middle, dark] = tones(b.color.unwrap_or(0xA0A0A0));
@@ -544,7 +546,7 @@ mod tests {
 
     #[test]
     fn a_dotted_border_is_one_dotted_rect() {
-        let b = Border { style: "dotted".into(), width: 1.0, space: 0.0, shadow: false, color: None, color_theme: None };
+        let b = Border { style: BorderStyle::Dotted, width: 1.0, space: 0.0, shadow: false, color: None, color_theme: None };
         let mut out = Vec::new();
         edge(&mut out, [0.0, 0.0, 9.0, 1.0], true, false, &b);
         assert!(matches!(out[..], [Item::Rect { rect: [0.0, 0.0, 9.0, 1.0], dash: Dash::Dotted, .. }]));
@@ -567,8 +569,8 @@ mod tests {
             .collect()
     }
 
-    fn edge_of(style: &str, far: bool, horizontal: bool, len: f64) -> Vec<Item> {
-        let b = Border { style: style.into(), width: 1.0, space: 0.0, shadow: false, color: Some(0x336699), color_theme: None };
+    fn edge_of(style: BorderStyle, far: bool, horizontal: bool, len: f64) -> Vec<Item> {
+        let b = Border { style, width: 1.0, space: 0.0, shadow: false, color: Some(0x336699), color_theme: None };
         let t = thick(&b);
         let mut out = Vec::new();
         edge(&mut out, if horizontal { [0.0, 0.0, len, t] } else { [0.0, 0.0, t, len] }, horizontal, far, &b);
@@ -578,64 +580,68 @@ mod tests {
     #[test]
     fn every_border_style_draws_its_own_way() {
         let styles = [
-            "single",
-            "double",
-            "triple",
-            "dotted",
-            "dashed",
-            "dotDash",
-            "dotDotDash",
-            "dashSmallGap",
-            "thinThickSmallGap",
-            "thickThinSmallGap",
-            "thinThickThinSmallGap",
-            "thinThickMediumGap",
-            "thickThinMediumGap",
-            "thinThickThinMediumGap",
-            "thinThickLargeGap",
-            "thickThinLargeGap",
-            "thinThickThinLargeGap",
-            "wave",
-            "doubleWave",
-            "dashDotStroked",
-            "threeDEmboss",
-            "threeDEngrave",
-            "outset",
-            "inset",
+            BorderStyle::Single,
+            BorderStyle::Double,
+            BorderStyle::Triple,
+            BorderStyle::Dotted,
+            BorderStyle::Dashed,
+            BorderStyle::DotDash,
+            BorderStyle::DotDotDash,
+            BorderStyle::DashSmallGap,
+            BorderStyle::ThinThickSmallGap,
+            BorderStyle::ThickThinSmallGap,
+            BorderStyle::ThinThickThinSmallGap,
+            BorderStyle::ThinThickMediumGap,
+            BorderStyle::ThickThinMediumGap,
+            BorderStyle::ThinThickThinMediumGap,
+            BorderStyle::ThinThickLargeGap,
+            BorderStyle::ThickThinLargeGap,
+            BorderStyle::ThinThickThinLargeGap,
+            BorderStyle::Wave,
+            BorderStyle::DoubleWave,
+            BorderStyle::DashDotStroked,
+            BorderStyle::ThreeDEmboss,
+            BorderStyle::ThreeDEngrave,
+            BorderStyle::Outset,
+            BorderStyle::Inset,
         ];
-        let all: Vec<_> = styles.iter().map(|s| described(&edge_of(s, false, true, 30.0))).collect();
+        let all: Vec<_> = styles.iter().map(|s| described(&edge_of(*s, false, true, 30.0))).collect();
         for (i, a) in all.iter().enumerate() {
-            assert!(!a.is_empty(), "{} draws nothing", styles[i]);
+            assert!(!a.is_empty(), "{:?} draws nothing", styles[i]);
             for (j, b) in all.iter().enumerate().skip(i + 1) {
-                assert_ne!(a, b, "{} and {} draw alike", styles[i], styles[j]);
+                assert_ne!(a, b, "{:?} and {:?} draw alike", styles[i], styles[j]);
             }
         }
-        assert_ne!(described(&edge_of("outset", false, true, 30.0)), described(&edge_of("outset", true, true, 30.0)));
-        assert_eq!(described(&edge_of("outset", false, true, 30.0)), described(&edge_of("inset", true, true, 30.0)));
+        assert_ne!(described(&edge_of(BorderStyle::Outset, false, true, 30.0)), described(&edge_of(BorderStyle::Outset, true, true, 30.0)));
+        assert_eq!(described(&edge_of(BorderStyle::Outset, false, true, 30.0)), described(&edge_of(BorderStyle::Inset, true, true, 30.0)));
     }
 
     #[test]
     fn wave_and_hatch_borders_are_stroked_paths_in_both_directions() {
-        for style in ["wave", "doubleWave", "dashDotStroked"] {
+        for style in [BorderStyle::Wave, BorderStyle::DoubleWave, BorderStyle::DashDotStroked] {
             for horizontal in [true, false] {
                 let out = edge_of(style, false, horizontal, 40.0);
-                let [Item::Shape(s)] = out.as_slice() else { panic!("{style} is one stroked path") };
+                let [Item::Shape(s)] = out.as_slice() else { panic!("{style:?} is one stroked path") };
                 assert!(s.line.width > 0.0 && s.fill.is_none());
                 let [x0, y0, x1, y1] = s.rect;
                 let (along, across) = if horizontal { (x1 - x0, y1 - y0) } else { (y1 - y0, x1 - x0) };
-                assert!((along - 40.0).abs() < 1e-9, "{style} spans its edge");
-                assert!(across > 0.5 && across <= 1.0 + 1e-9, "{style} is a band of {across} inside the 1 pt reserved");
+                assert!((along - 40.0).abs() < 1e-9, "{style:?} spans its edge");
+                assert!(across > 0.5 && across <= 1.0 + 1e-9, "{style:?} is a band of {across} inside the 1 pt reserved");
             }
         }
-        for (style, band) in [("wave", WAVE_HEIGHT + WAVE_STROKE), ("doubleWave", 2.0 * WAVE_HEIGHT + WAVE_STROKE), ("dashDotStroked", HATCH_BAND)] {
-            let b = Border { style: style.into(), width: 1.0, space: 0.0, shadow: false, color: Some(0), color_theme: None };
+        for (style, band) in [
+            (BorderStyle::Wave, WAVE_HEIGHT + WAVE_STROKE),
+            (BorderStyle::DoubleWave, 2.0 * WAVE_HEIGHT + WAVE_STROKE),
+            (BorderStyle::DashDotStroked, HATCH_BAND),
+        ] {
+            let b = Border { style, width: 1.0, space: 0.0, shadow: false, color: Some(0), color_theme: None };
             let mut out = Vec::new();
             edge(&mut out, [0.0, 0.0, 40.0, 8.0], true, false, &b);
             let [Item::Shape(s)] = out.as_slice() else { panic!() };
-            assert!((s.rect[3] - s.rect[1] - band).abs() < 1e-9, "{style} keeps Word's band where there is room, centred");
+            assert!((s.rect[3] - s.rect[1] - band).abs() < 1e-9, "{style:?} keeps Word's band where there is room, centred");
             assert!((s.rect[1] - (8.0 - band) / 2.0).abs() < 1e-9);
         }
-        let wave = edge_of("wave", false, true, 40.0);
+        let wave = edge_of(BorderStyle::Wave, false, true, 40.0);
         let Item::Shape(s) = &wave[0] else { panic!() };
         let ys: std::collections::BTreeSet<i64> =
             s.geom.paths[0].segs.iter().filter_map(|g| if let Seg::Line(p) = g { Some((p[1] * 100.0).round() as i64) } else { None }).collect();
@@ -644,7 +650,7 @@ mod tests {
 
     #[test]
     fn a_shadow_is_black_below_and_right_of_far_edges_only() {
-        let b = Border { style: "single".into(), width: 1.5, space: 0.0, shadow: true, color: Some(0x336699), color_theme: None };
+        let b = Border { style: BorderStyle::Single, width: 1.5, space: 0.0, shadow: true, color: Some(0x336699), color_theme: None };
         let mut out = Vec::new();
         shadow(&mut out, [0.0, 10.0, 50.0, 11.5], true, true, &b, true, true);
         shadow(&mut out, [48.5, 0.0, 50.0, 11.5], false, true, &b, true, false);
@@ -664,8 +670,8 @@ mod tests {
 
     #[test]
     fn a_diagonal_is_one_line_as_word_draws_it() {
-        let b = |style: &str| Border { style: style.into(), width: 1.5, space: 0.0, shadow: false, color: Some(0x336699), color_theme: None };
-        let draw = |style: &str, rect: [f64; 4], up: bool| {
+        let b = |style: BorderStyle| Border { style, width: 1.5, space: 0.0, shadow: false, color: Some(0x336699), color_theme: None };
+        let draw = |style: BorderStyle, rect: [f64; 4], up: bool| {
             let mut out = Vec::new();
             diagonal(&mut out, rect, up, &b(style));
             out
@@ -675,47 +681,50 @@ mod tests {
             _ => -1.0,
         };
         let rect = [10.0, 20.0, 40.0, 60.0];
-        assert_eq!(described(&draw("single", rect, false)), vec![(vec![1000, 2000, 4000, 6000, 0, 0, 3000, 4000], 1)]);
-        assert_eq!(described(&draw("single", rect, true)), vec![(vec![1000, 2000, 4000, 6000, 0, 4000, 3000, 0], 1)]);
+        assert_eq!(described(&draw(BorderStyle::Single, rect, false)), vec![(vec![1000, 2000, 4000, 6000, 0, 0, 3000, 4000], 1)]);
+        assert_eq!(described(&draw(BorderStyle::Single, rect, true)), vec![(vec![1000, 2000, 4000, 6000, 0, 4000, 3000, 0], 1)]);
         let widths: Vec<f64> =
-            ["single", "thick", "double", "thinThickSmallGap", "wave", "dashed"].iter().map(|s| width(&draw(s, rect, false))).collect();
+            [BorderStyle::Single, BorderStyle::Thick, BorderStyle::Double, BorderStyle::ThinThickSmallGap, BorderStyle::Wave, BorderStyle::Dashed]
+                .iter()
+                .map(|s| width(&draw(*s, rect, false)))
+                .collect();
         assert_eq!(widths, vec![1.5, 3.0, 4.5, 1.5, 1.5, DEVICE_PX]);
         // Dashes 18 device pixels on, 6 off, along the 50 pt line.
-        let Item::Shape(dashed) = &draw("dashed", rect, false)[0] else { panic!("a stroke") };
+        let Item::Shape(dashed) = &draw(BorderStyle::Dashed, rect, false)[0] else { panic!("a stroke") };
         let segs = &dashed.geom.paths[0].segs;
         assert_eq!(segs.len(), 2 * (50.0_f64 / (24.0 * DEVICE_PX)).ceil() as usize);
         let Seg::Line([x, y]) = segs[1] else { panic!("a dash") };
         assert!((x.hypot(y) - 18.0 * DEVICE_PX).abs() < 1e-9 && (y / x - 4.0 / 3.0).abs() < 1e-9);
-        assert!(draw("single", [0.0, 0.0, 0.0, 10.0], false).is_empty(), "a box without width has none");
-        assert!(draw("dotted", [0.0, 0.0, f64::INFINITY, 10.0], false).is_empty());
-        let Item::Shape(long) = &draw("dotted", [0.0, 0.0, 1.0e7, 1.0e7], false)[0] else { panic!("a stroke") };
+        assert!(draw(BorderStyle::Single, [0.0, 0.0, 0.0, 10.0], false).is_empty(), "a box without width has none");
+        assert!(draw(BorderStyle::Dotted, [0.0, 0.0, f64::INFINITY, 10.0], false).is_empty());
+        let Item::Shape(long) = &draw(BorderStyle::Dotted, [0.0, 0.0, 1.0e7, 1.0e7], false)[0] else { panic!("a stroke") };
         assert!(long.geom.paths[0].segs.len() <= 2 * MAX_SEGMENTS as usize + 2, "a long diagonal's dashes are bounded");
     }
 
     #[test]
     fn hostile_lengths_are_bounded() {
-        for style in ["wave", "doubleWave", "dashDotStroked"] {
+        for style in [BorderStyle::Wave, BorderStyle::DoubleWave, BorderStyle::DashDotStroked] {
             let out = edge_of(style, true, true, 1e9);
             let Item::Shape(s) = &out[0] else { panic!() };
-            assert!(s.geom.paths[0].segs.len() <= 2 * 2 * MAX_SEGMENTS as usize + 8, "{style}");
+            assert!(s.geom.paths[0].segs.len() <= 2 * 2 * MAX_SEGMENTS as usize + 8, "{style:?}");
         }
-        let b = Border { style: "dotted".into(), width: 0.25, space: 0.0, shadow: false, color: None, color_theme: None };
+        let b = Border { style: BorderStyle::Dotted, width: 0.25, space: 0.0, shadow: false, color: None, color_theme: None };
         let mut out = Vec::new();
         edge(&mut out, [0.0, 0.0, 1e9, 0.25], true, false, &b);
         assert!(out.len() <= MAX_SEGMENTS as usize + 1);
-        assert!(edge_of("wave", false, true, 0.0).is_empty() && edge_of("dashDotStroked", false, true, f64::NAN).len() <= 1);
+        assert!(edge_of(BorderStyle::Wave, false, true, 0.0).is_empty() && edge_of(BorderStyle::DashDotStroked, false, true, f64::NAN).len() <= 1);
     }
 
     #[test]
     fn a_3d_border_is_three_lines_in_light_middle_and_dark() {
-        let b = |style: &str| Border { style: style.into(), width: 1.0, space: 0.0, shadow: false, color: Some(0), color_theme: None };
-        let drawn = |style: &str| {
+        let b = |style: BorderStyle| Border { style, width: 1.0, space: 0.0, shadow: false, color: Some(0), color_theme: None };
+        let drawn = |style: BorderStyle| {
             let mut out = Vec::new();
             edge(&mut out, [0.0, 0.0, 10.0, 2.5], true, false, &b(style));
             out.iter().map(|i| if let Item::Rect { rect, colour, .. } = i { (rect[3] - rect[1], *colour) } else { (0.0, 0) }).collect::<Vec<_>>()
         };
-        assert_eq!(drawn("threeDEmboss"), vec![(0.75, 0xC0C0C0), (1.0, 0x808080), (0.75, 0x000000)]);
-        assert_eq!(drawn("threeDEngrave"), vec![(0.75, 0x000000), (1.0, 0x808080), (0.75, 0xC0C0C0)]);
+        assert_eq!(drawn(BorderStyle::ThreeDEmboss), vec![(0.75, 0xC0C0C0), (1.0, 0x808080), (0.75, 0x000000)]);
+        assert_eq!(drawn(BorderStyle::ThreeDEngrave), vec![(0.75, 0x000000), (1.0, 0x808080), (0.75, 0xC0C0C0)]);
         assert_eq!(from_hls(to_hls(0x808080).0, to_hls(0x808080).1, to_hls(0x808080).2), 0x808080);
     }
 }

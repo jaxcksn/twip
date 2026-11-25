@@ -82,7 +82,7 @@ fn resolved_table_borders_copy_without_allocating() {
     let mut all = Vec::new();
     doc.sections.iter().for_each(|s| borders(&s.blocks, &mut all));
     assert!(all.iter().any(|b| b.visible()), "the showcase's tables have borders");
-    assert_eq!(allocations(|| all.iter().for_each(|b| drop(black_box(b.clone())))), 0, "a cell edge's border is copied per edge");
+    assert_eq!(allocations(|| all.iter().for_each(|b| _ = black_box(b.clone()))), 0, "a cell edge's border is copied per edge");
 }
 
 #[test]

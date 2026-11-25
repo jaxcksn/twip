@@ -129,18 +129,19 @@ fn list_start(before: &[char], ac: &AutoCorrect) -> Option<bool> {
 }
 
 /// The bottom border a border line's character makes: its line style and width in eighths of a point.
-pub fn border_line(text: &[char]) -> Option<(&'static str, u32)> {
+pub fn border_line(text: &[char]) -> Option<(crate::docx::props::BorderStyle, u32)> {
     let &c = text.first()?;
     if text.len() < 3 || text.iter().any(|&x| x != c) {
         return None;
     }
+    use crate::docx::props::BorderStyle;
     Some(match c {
-        '-' => ("single", 6),
-        '_' => ("single", 12),
-        '=' => ("double", 6),
-        '*' => ("dotted", 24),
-        '~' => ("wave", 6),
-        '#' => ("thinThickThinSmallGap", 24),
+        '-' => (BorderStyle::Single, 6),
+        '_' => (BorderStyle::Single, 12),
+        '=' => (BorderStyle::Double, 6),
+        '*' => (BorderStyle::Dotted, 24),
+        '~' => (BorderStyle::Wave, 6),
+        '#' => (BorderStyle::ThinThickThinSmallGap, 24),
         _ => return None,
     })
 }
@@ -663,7 +664,7 @@ impl Editor {
         story: super::position::StoryId,
         para: crate::layout::ParaId,
         n: usize,
-        line: &str,
+        line: crate::docx::props::BorderStyle,
         size: u32,
         fonts: &Fonts,
     ) -> Outcome {
@@ -675,6 +676,7 @@ impl Editor {
         let borders = self.direct_ppr(para, "pBdr");
         let typed = self.index.para(&self.doc, para).map(|p| super::text::UnitText::of(p).text.chars().take(n).collect()).unwrap_or_default();
         let mut tx = self.begin("AutoFormat");
+        let line = crate::docx::line_style::border_val(line);
         let bottom = |w: &str| format!("<{w}pBdr><{w}bottom {w}val=\"{line}\" {w}sz=\"{size}\" {w}space=\"1\" {w}color=\"auto\"/></{w}pBdr>");
         let ok = self.step(&mut tx, Step::Text { para, range: Unit(0)..Unit(n as u32), with: Vec::new(), edges: Default::default() }).is_ok()
             && self.repara(&mut tx, para, &|p, w| p.set("pBdr", bottom(w)));

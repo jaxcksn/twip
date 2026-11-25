@@ -955,8 +955,14 @@ impl Editor {
     /// A new table `width` wide of `content`, each row's cells' blocks (a row with fewer than `ncols` cells filled
     /// with empty ones formatted like `like`), in the document's default table style, else Table Grid.
     pub(super) fn new_table(&self, content: Vec<Vec<Vec<Block>>>, ncols: usize, width: f64, like: &Paragraph) -> Table {
-        let border =
-            Some(crate::docx::props::Border { style: "single".into(), width: 0.5, space: 0.0, shadow: false, color: None, color_theme: None });
+        let border = Some(crate::docx::props::Border {
+            style: crate::docx::props::BorderStyle::Single,
+            width: 0.5,
+            space: 0.0,
+            shadow: false,
+            color: None,
+            color_theme: None,
+        });
         // The document's default table style, else Table Grid.
         let has = |id: &str| self.doc.resolver.as_ref().is_some_and(|r| r.styles.by_id.contains_key(id));
         let style = self.doc.settings.default_table_style.clone().filter(|s| has(s)).or_else(|| has("TableGrid").then(|| "TableGrid".to_string()));
