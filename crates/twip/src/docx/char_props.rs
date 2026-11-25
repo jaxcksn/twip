@@ -170,6 +170,16 @@ impl RunDirect {
         self.edited(props, &e.set)
     }
 
+    /// These properties where `cx` describes the part they are written in: `None` while the `w:rPr` they were read
+    /// from reads the same there, else without it, to be written from the properties.
+    pub fn moved_to(&self, cx: &Cx) -> Option<RunDirect> {
+        let (read, xml) = self.origin.as_ref()?;
+        if cx.parse(xml, |_, el| parse(el).0).is_some_and(|p| p == **read) {
+            return None;
+        }
+        Some(RunDirect { props: self.props.clone(), origin: None, set: self.set.clone() })
+    }
+
     /// The properties and the `w:rPr` they were read from, while they are still those.
     pub fn read_from(&self) -> Option<(&Rc<CharProps>, &Rc<str>)> {
         let xml = self.as_read()?;
