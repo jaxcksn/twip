@@ -1066,19 +1066,31 @@ impl Editor {
         true
     }
 
-    /// The shown, resolved sub-template reference `a..b` edits, whose body is read only.
+    /// A shown, resolved sub-template reference `a..b` edits (in its paragraph or across paragraphs), whose body is
+    /// read only.
     pub(super) fn expanded_in(&self, a: &Position, b: &Position) -> Option<FieldId> {
         let (Some((pa, ua)), Some((pb, ub))) = (a.para_offset(), b.para_offset()) else { return None };
-        if pa != pb || ua == ub {
+        if pa == pb && ua == ub {
             return None;
         }
-        let shown = self.references.by_field.iter().find(|(f, r)| r.at == pa && r.resolution == Resolution::Resolved && !self.collapsed.contains(f));
-        let (&field, _) = shown?;
-        let p = self.index.para(&self.doc, pa)?;
-        let starts: Vec<u32> = p.inlines.iter().scan(0u32, |at, i| Some(std::mem::replace(at, *at + i.units() as u32))).collect();
-        let s = fields::spans(&p.inlines).into_iter().find(|s| matches!(p.inlines[s.begin], Inline::FieldBegin { id, .. } if id == field))?;
-        let (lo, hi) = (starts[s.begin], starts[s.end] + 1);
-        (ub.0 > lo && ua.0 < hi).then_some(field)
+        let mut shown = self.references.by_field.iter().filter(|(f, r)| r.resolution == Resolution::Resolved && !self.collapsed.contains(f));
+        shown.find_map(|(&field, r)| {
+            let alone = pa == pb && r.at == pa;
+            if !alone && (pa == pb || self.index.para_slot(r.at).map(|s| self.index.story(s.container)) != Some(a.story)) {
+                return None;
+            }
+            let p = self.index.para(&self.doc, r.at)?;
+            let starts: Vec<u32> = p.inlines.iter().scan(0u32, |at, i| Some(std::mem::replace(at, *at + i.units() as u32))).collect();
+            let s = fields::spans(&p.inlines).into_iter().find(|s| matches!(p.inlines[s.begin], Inline::FieldBegin { id, .. } if id == field))?;
+            let (lo, hi) = (starts[s.begin], starts[s.end] + 1);
+            let overlaps = if alone {
+                ub.0 > lo && ua.0 < hi
+            } else {
+                let at = |u: u32| Position::text(a.story, r.at, crate::layout::Unit(u));
+                self.index.cmp(a, &at(hi)).is_lt() && self.index.cmp(&at(lo), b).is_lt()
+            };
+            overlaps.then_some(field)
+        })
     }
 
     fn rebuild_references(&mut self) {

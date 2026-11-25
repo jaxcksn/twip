@@ -22,10 +22,10 @@ pub(super) fn styles(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Resu
         Some(n) => package::read(&src.package, parts, n)?,
         None => None,
     }) else {
-        if ours.is_empty() {
+        if ours.is_empty() && styles.defaults_raw.is_none() && styles.latent.raw.is_none() {
             return Ok(());
         }
-        // A document without a styles part: one, with every style.
+        // A document without a styles part: one, with every style and the defaults and latent styles set.
         let mut sorted = ours;
         sorted.sort_by(|a, b| a.id.cmp(&b.id));
         let root = if styles.root.is_empty() { format!("<w:styles xmlns:w=\"{}\">", super::props::W_NS) } else { styles.root.clone() };
@@ -55,7 +55,7 @@ pub(super) fn styles(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Resu
         }
     }
     // Where defaults or latent styles the part lacks go: after the root's start tag, latent styles after the defaults.
-    let open = root.range().start + xml[root.range().start..].find('>').ok_or("a styles part without its start tag")? + 1;
+    let open = root.range().start + crate::docx::binding::tag_end(&xml[root.range().start..]).ok_or("a styles part without its start tag")? + 1;
     let defaults = root.children().find(|n| is_w(*n, "docDefaults"));
     if defaults.is_none()
         && let Some(d) = &styles.defaults_raw

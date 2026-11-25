@@ -105,6 +105,11 @@ enum Target {
     Body,
 }
 
+/// Whether a releveling inside a larger edit failed: anything but a change, or nothing there was to change.
+fn failed(out: &Outcome) -> bool {
+    matches!(out, Outcome::Refused(_)) || matches!(out, Outcome::Unchanged(why) if !matches!(*why, "nothing to change" | "nothing to do"))
+}
+
 /// Whether `p` has a direct outline level.
 fn direct_level(p: &Paragraph, cx: &crate::docx::write::props::Cx) -> bool {
     Props::parse(p.style.direct.0.as_deref(), "pPr", cx).get("outlineLvl").is_some()
@@ -551,11 +556,12 @@ impl Editor {
         };
         // The headings that moved, as the move placed them: not the ones that follow them in their new place.
         let headings = self.headings_between(moved, moved_last);
-        if let Some(l) = level
-            && matches!(self.shift_headings("Move Heading", &headings, l as i64 - c.level as i64, fonts), Outcome::Unchanged("locked"))
-        {
-            self.end_batch(false, fonts);
-            return Outcome::Unchanged("locked");
+        if let Some(l) = level {
+            let out = self.shift_headings("Move Heading", &headings, l as i64 - c.level as i64, fonts);
+            if failed(&out) {
+                self.end_batch(false, fonts);
+                return out;
+            }
         }
         if let Some(story) = self.index.para_slot(moved).map(|s| self.index.story(s.container)) {
             self.selection = Selection::Caret(Position::text(story, moved, Unit(0)));
@@ -1066,11 +1072,12 @@ impl Editor {
         }
         self.selection = Selection::Caret(Position::text(story, id, Unit(0)));
         self.commit(tx, None, fonts);
-        if place == NewHeading::Subheading
-            && matches!(self.relevel("New Subheading", &[(id, Target::Level(level + 1))], fonts), Outcome::Unchanged("locked"))
-        {
-            self.end_batch(false, fonts);
-            return Outcome::Unchanged("locked");
+        if place == NewHeading::Subheading {
+            let out = self.relevel("New Subheading", &[(id, Target::Level(level + 1))], fonts);
+            if failed(&out) {
+                self.end_batch(false, fonts);
+                return out;
+            }
         }
         self.end_batch(true, fonts)
     }

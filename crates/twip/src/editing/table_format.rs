@@ -46,7 +46,7 @@ pub enum TableFormat {
     /// The table's own rows and columns in each style band (`None` keeps one, `Some(None)` leaves it to the style).
     Bands(Option<Option<u32>>, Option<Option<u32>>),
     /// The table's default cell margins: top, left, bottom, right.
-    TableCellMargins([f64; 4]),
+    TableCellMargins([Option<f64>; 4]),
     Alt(crate::api::command::TableAltText),
     /// AutoFit to the window or to fixed widths: the layout, the table's width and its columns' widths.
     Fit {
@@ -240,10 +240,11 @@ pub(super) fn border_xml(w: &str, name: &str, b: &Border) -> String {
         return format!("<{w}{name} {w}val=\"nil\"/>");
     }
     let tag = format!(
-        "<{w}{name} {w}val=\"{}\" {w}sz=\"{}\" {w}space=\"{}\"/>",
+        "<{w}{name} {w}val=\"{}\" {w}sz=\"{}\" {w}space=\"{}\"{}/>",
         crate::docx::write::props::esc(&b.style),
         (b.width * 8.0).round() as i64,
-        b.space.round() as i64
+        b.space.round() as i64,
+        if b.shadow { format!(" {w}shadow=\"1\"") } else { String::new() }
     );
     let c = b.color.map(|rgb| WordColour { rgb, theme: b.color_theme });
     super::commands::colour_attrs(&tag, w, "color", super::commands::THEME_COLOR, c)
@@ -321,7 +322,7 @@ fn row_text_hidden(row: &crate::docx::Row) -> bool {
 }
 
 /// Sets a row's exceptions (`w:tblPrEx`) and what the model reads from them.
-fn set_exceptions(row: &mut crate::docx::Row, ex: &RowEx, t: &crate::docx::Table, cx: &crate::docx::write::props::Cx) {
+fn set_exceptions(row: &mut crate::docx::Row, ex: &RowEx, t: &crate::docx::Table, style_jc: Option<Jc>, cx: &crate::docx::write::props::Cx) {
     let table = &t.borders;
     let w = &cx.w;
     let mut p = crate::docx::write::props::Props::parse(if ex.reset { None } else { row.exceptions.0.as_deref() }, "tblPrEx", cx);
@@ -329,6 +330,9 @@ fn set_exceptions(row: &mut crate::docx::Row, ex: &RowEx, t: &crate::docx::Table
     p.reorder(crate::docx::write::props::TBLPR);
     if ex.reset {
         (row.shading, row.hatch, row.cell_spacing, row.borders, row.ind, row.run) = (None, None, None, None, None, None);
+        // Its own row properties' alignment, or its style's
+        let own = row.direct.0.as_deref().and_then(|x| cx.parse(x, |_, n| crate::docx::props::TrProps::parse(Some(n)).jc)).flatten();
+        row.jc = own.or(style_jc);
     }
     if let Some(j) = ex.jc {
         let v = match j {
@@ -668,6 +672,10 @@ impl Editor {
                 }
             }
             TableFormat::RowProps { hidden, exceptions } => {
+                let style_jc = match (exceptions, &self.doc.resolver) {
+                    (Some(x), Some(res)) if x.reset => res.styles.table_region(t.style_id.as_deref(), &[]).tr.jc,
+                    _ => None,
+                };
                 for row in &mut rows[r0..=r1] {
                     if let Some(h) = *hidden {
                         let mut p = crate::docx::write::props::Props::parse(row.direct.0.as_deref(), "trPr", &cx);
@@ -677,7 +685,7 @@ impl Editor {
                         row.vanished = h && row_text_hidden(row);
                     }
                     if let Some(ex) = exceptions {
-                        set_exceptions(row, ex, t, &cx);
+                        set_exceptions(row, ex, t, style_jc, &cx);
                     }
                 }
             }
@@ -693,16 +701,18 @@ impl Editor {
                 rows.iter_mut().for_each(|r| r.table_shading = None);
             }
             TableFormat::TableCellMargins(m) => {
-                let tw = |v: f64| (v * 20.0).round() as i64;
-                let side = |n: &str, v: f64| format!("<{w}{n} {w}w=\"{}\" {w}type=\"dxa\"/>", tw(v));
-                let xml = format!(
-                    "<{w}tblCellMar>{}{}{}{}</{w}tblCellMar>",
-                    side("top", m[0]),
-                    side("left", m[1]),
-                    side("bottom", m[2]),
-                    side("right", m[3])
-                );
-                set_own(&mut props, "tblCellMar", xml, &cx);
+                use crate::docx::write::props::Props;
+                let own = Props::parse(props.direct.0.as_deref(), "tblPr", &cx);
+                let mut mar = Props::parse(own.get("tblCellMar"), "tblCellMar", &cx);
+                mar.reorder(&["top", "start", "left", "bottom", "end", "right"]);
+                // A side written as `start` or `end` stays so
+                for ((side, bidi), v) in [("top", None), ("left", Some("start")), ("bottom", None), ("right", Some("end"))].into_iter().zip(m) {
+                    if let Some(v) = v {
+                        let side = bidi.filter(|n| mar.get(n).is_some()).unwrap_or(side);
+                        mar.set(side, format!("<{w}{side} {w}w=\"{}\" {w}type=\"dxa\"/>", (v * 20.0).round() as i64));
+                    }
+                }
+                set_own(&mut props, "tblCellMar", mar.xml().unwrap_or_default(), &cx);
                 restyle = true;
             }
             &TableFormat::CellSpacing(v) => {

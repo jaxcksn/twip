@@ -88,7 +88,7 @@ impl Editor {
             .stories
             .iter()
             .filter(|s| reachable(ctx, s.host) && s.float.is_some())
-            .filter_map(|s| s.float.map(|f| (f, s.rect)))
+            .filter_map(|s| s.float.map(|f| (f, s.turn.rect(s.rect))))
             .filter(|(_, [a, b, c, d])| *a >= x0 && *b >= y0 && *c <= x1 && *d <= y1)
             .map(|(f, _)| f)
             .collect();
@@ -180,13 +180,11 @@ impl Editor {
         self.anchor_at(d.page, anchor, [x, y, x, y])
     }
 
-    /// Where the dragged anchor would go: its page and the paragraph's first line's left and top, for the overlay.
+    /// Where the dragged anchor would go: its page and where the paragraph's anchor shows there, for the overlay.
     pub(super) fn anchor_drag_view(&mut self) -> Option<(usize, [f64; 2])> {
         let d = self.anchor_drag?;
-        let (para, top, _) = self.anchor_target(d)?;
-        let geo = self.pages.page(d.page, &self.index)?;
-        let x = geo.lines.iter().filter_map(|l| l.span_of(para).map(|(x0, _)| x0)).fold(f64::MAX, f64::min);
-        Some((d.page, [x, top]))
+        let (para, ..) = self.anchor_target(d)?;
+        Some((d.page, self.anchor_point(d.page, para)?))
     }
 
     /// The anchor let go: the float anchors in the paragraph there and stays where it is drawn (a place from its

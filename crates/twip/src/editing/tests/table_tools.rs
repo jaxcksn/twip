@@ -756,6 +756,11 @@ fn a_tracked_shift_down_keeps_a_moved_notes_text() {
         })
         .collect();
     assert!(note.contains("Note text"), "the note keeps its text: {note:?}");
+    let Some(Block::Para(p)) = table(&e).rows[1].cells[0].blocks.first() else { panic!("a paragraph") };
+    assert!(
+        p.inlines.iter().any(|i| matches!(i, crate::docx::Inline::NoteRef { kind: crate::docx::NoteKind::Foot, id: 1, .. })),
+        "the moved paragraph keeps its reference"
+    );
 }
 
 #[test]
@@ -827,4 +832,132 @@ fn the_pen_redraws_no_border_where_a_page_cuts_a_row() {
     let b = cell_rect(&mut e, 1, 1);
     let y = b[1];
     assert!(matches!(e.draw_table_stroke(Stroke { page: 0, from: [b[0] + 2.0, y], to: [b[2] - 2.0, y] }, fonts()), Outcome::Changed(_)));
+}
+
+#[test]
+fn table_options_are_refused_where_protection_refuses_their_commands() {
+    use crate::api::command::{BorderEdges, DocumentProtection, ProtectionKind};
+    let pos = r#"<w:tblpPr w:leftFromText="180" w:rightFromText="180" w:vertAnchor="text" w:tblpY="1"/>"#;
+    let protected = |p: DocumentProtection| {
+        let mut e = open(&grid2(["", "", "", ""], pos, ["", ""]));
+        assert!(matches!(e.execute(Command::SetDocumentProtection(p), fonts()), Outcome::Changed(_)));
+        cells(&mut e, (0, 0), (0, 0));
+        e
+    };
+    let x = RowExceptionsEdit { indent: Some(Points(18.0)), ..RowExceptionsEdit::default() };
+    let mut e = protected(DocumentProtection { formatting: Some(true), enforce: Some(true), ..Default::default() });
+    assert!(matches!(e.set_cell_border_lines(BorderEdges::All, None, fonts()), Outcome::Refused(_)), "cell borders are formatting");
+    assert!(matches!(e.set_table_cell_margins([Some(Points(3.0)), None, None, None], fonts()), Outcome::Refused(_)));
+    assert!(matches!(e.set_table_overlap(false, fonts()), Outcome::Changed(_)), "positioning isn't formatting");
+    let mut e = protected(DocumentProtection { kind: Some(ProtectionKind::ReadOnly), enforce: Some(true), ..Default::default() });
+    assert!(matches!(e.set_cell_border_lines(BorderEdges::All, None, fonts()), Outcome::Refused(_)));
+    assert!(matches!(e.set_row_exceptions(None, Some(&x), fonts()), Outcome::Refused(_)));
+    assert!(matches!(e.set_table_cell_margins([Some(Points(3.0)), None, None, None], fonts()), Outcome::Refused(_)));
+    assert!(matches!(e.set_table_overlap(true, fonts()), Outcome::Refused(_)));
+    assert!(table(&e).rows[0].ind.is_none(), "nothing changed");
+}
+
+#[test]
+fn a_rows_cell_spacing_is_0_to_1584_points() {
+    let mut e = open(&grid2(["", "", "", ""], "", ["", ""]));
+    cells(&mut e, (0, 0), (0, 0));
+    for bad in [-1.0, 1585.0, f64::NAN, f64::INFINITY] {
+        let x = RowExceptionsEdit { cell_spacing: Some(Points(bad)), ..RowExceptionsEdit::default() };
+        assert!(matches!(e.set_row_exceptions(None, Some(&x), fonts()), Outcome::Refused(_)), "{bad}");
+    }
+    let x = RowExceptionsEdit { cell_spacing: Some(Points(4.0)), ..RowExceptionsEdit::default() };
+    assert!(matches!(e.set_row_exceptions(None, Some(&x), fonts()), Outcome::Changed(_)));
+    assert_eq!(table(&e).rows[0].cell_spacing, Some(4.0));
+}
+
+#[test]
+fn table_default_margins_write_only_the_sides_given() {
+    let mut e = open(&grid2(["", "", "", ""], "", ["", ""]));
+    cells(&mut e, (0, 0), (0, 0));
+    assert!(matches!(e.set_table_cell_margins([None; 4], fonts()), Outcome::Unchanged(_)));
+    assert!(matches!(e.set_table_cell_margins([Some(Points(3.0)), None, None, None], fonts()), Outcome::Changed(_)));
+    assert!(matches!(e.set_table_cell_margins([None, None, Some(Points(4.0)), None], fonts()), Outcome::Changed(_)));
+    let xml = doc_xml(&e);
+    let at = xml.find("<w:tblCellMar>").expect("the table's margins");
+    let mar = &xml[at..at + xml[at..].find("</w:tblCellMar>").expect("closed")];
+    assert_eq!(mar, r#"<w:tblCellMar><w:top w:w="60" w:type="dxa"/><w:bottom w:w="80" w:type="dxa"/>"#, "the other sides inherited");
+}
+
+#[test]
+fn a_continuation_starting_in_another_column_isnt_counted_in_a_row_span() {
+    let restart = r#"<w:vMerge w:val="restart"/>"#;
+    let body = format!(
+        "<w:tbl><w:tblPr><w:tblW w:w=\"0\" w:type=\"auto\"/></w:tblPr><w:tblGrid><w:gridCol w:w=\"1440\"/><w:gridCol w:w=\"1440\"/></w:tblGrid><w:tr>{}{}</w:tr><w:tr>{}</w:tr></w:tbl><w:p/>",
+        tc("", "x"),
+        tc(restart, "y"),
+        tc(r#"<w:gridSpan w:val="2"/><w:vMerge/>"#, "")
+    );
+    let mut e = open(&body);
+    let Some(Block::Para(y)) = table(&e).rows[0].cells[1].blocks.first() else { panic!("a paragraph") };
+    let y = crate::layout::ParaId(y.id);
+    e.set_selection(Selection::Caret(crate::editing::position::Position::text(crate::editing::position::StoryId::Body, y, crate::layout::Unit(0))));
+    assert_eq!(e.table_readback().map(|r| r.row_span), Some(1), "the cell below starts left of it");
+}
+
+#[test]
+fn resetting_row_exceptions_keeps_the_rows_own_alignment() {
+    let ex = r#"<w:tblPrEx><w:jc w:val="right"/></w:tblPrEx>"#;
+    let own = format!(r#"{ex}<w:trPr><w:jc w:val="center"/></w:trPr>"#);
+    let mut e = open(&grid2(["", "", "", ""], "", [&own, ex]));
+    use crate::docx::props::Jc;
+    assert_eq!((table(&e).rows[0].jc, table(&e).rows[1].jc), (Some(Jc::Center), Some(Jc::Right)));
+    cells(&mut e, (0, 0), (1, 1));
+    let x = RowExceptionsEdit { reset: true, ..RowExceptionsEdit::default() };
+    assert!(matches!(e.set_row_exceptions(None, Some(&x), fonts()), Outcome::Changed(_)));
+    assert_eq!((table(&e).rows[0].jc, table(&e).rows[1].jc), (Some(Jc::Center), None), "the exceptions' alignment gone");
+    let again = reopened(&e);
+    assert_eq!((table(&again).rows[0].jc, table(&again).rows[1].jc), (Some(Jc::Center), None), "as reopened");
+}
+
+#[test]
+fn insert_cells_shift_right_puts_the_caret_in_the_new_cell_when_the_grid_changes() {
+    use crate::editing::table_cells::InsertShift;
+    // The grid's second column is no row's: rebuilt without it.
+    let mut e = open(&table_of(3, &[&[(SPAN2, "a"), ("", "b")], &[(SPAN2, "c"), ("", "d")]]));
+    cells(&mut e, (0, 2), (0, 2));
+    assert!(matches!(e.insert_cells(InsertShift::Right, fonts()), Outcome::Changed(_)));
+    assert_eq!(texts(&e), [vec!["a", "", "b"], vec!["c", "d"]]);
+    let Some(Block::Para(p)) = table(&e).rows[0].cells[1].blocks.first() else { panic!("a paragraph") };
+    let caret = e.selection().focus().and_then(|f| f.para_offset()).map(|(p, _)| p);
+    assert_eq!(caret, Some(crate::layout::ParaId(p.id)), "in the new cell");
+}
+
+#[test]
+fn the_pen_keeps_the_widths_of_the_cells_it_doesnt_split() {
+    use crate::editing::table_draw::Stroke;
+    let pct = |t: &str| {
+        (
+            format!(r#"<w:tcW w:w="1440" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>{t}</w:t>"#),
+            format!(r#"<w:tcW w:w="2500" w:type="pct"/></w:tcPr><w:p><w:r><w:t>{t}</w:t>"#),
+        )
+    };
+    let mut body = grid2(["", "", "", ""], "", ["", ""]);
+    for t in ["c", "d"] {
+        let (from, to) = pct(t);
+        body = body.replace(&from, &to);
+    }
+    let mut e = open(&body);
+    let below: Vec<_> = table(&e).rows[1].cells.iter().map(|c| c.width).collect();
+    assert!(below.iter().all(|w| matches!(w, Some(crate::docx::props::Width::Pct(_)))), "{below:?}");
+    let r = cell_rect(&mut e, 0, 0);
+    let x = r[0] + 24.0;
+    assert!(matches!(e.draw_table_stroke(Stroke { page: 0, from: [x, r[1] + 1.0], to: [x, r[3] - 1.0] }, fonts()), Outcome::Changed(_)));
+    assert_eq!(table(&e).rows[0].cells.len(), 3);
+    assert_eq!(table(&e).rows[1].cells.iter().map(|c| c.width).collect::<Vec<_>>(), below, "the row below keeps its widths");
+}
+
+#[test]
+fn a_legacy_tables_unset_indent_takes_its_first_rows_left_border() {
+    let ex = r#"<w:tblPrEx><w:tblBorders><w:left w:val="single" w:sz="48" w:space="0" w:color="000000"/></w:tblBorders></w:tblPrEx>"#;
+    let mar = r#"<w:tblCellMar><w:left w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar>"#;
+    let e = open(&grid2(["", "", "", ""], mar, [ex, ""]));
+    let t = table(&e);
+    assert!(!t.ind_set);
+    let ind = crate::layout::table::placed_indent(t, crate::docx::Compat::Legacy);
+    assert!((ind - 3.0).abs() < 0.05, "half the row's 6 pt border: {ind}");
 }

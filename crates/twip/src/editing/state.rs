@@ -303,7 +303,7 @@ impl Editor {
     pub(super) fn selection_sources(&mut self) -> Option<SelectionSources> {
         let focus = self.selection.focus();
         let ranges: Vec<(ParaId, crate::layout::Unit, crate::layout::Unit)> =
-            if self.selection.is_collapsed() { Vec::new() } else { self.selected_ranges() };
+            if self.selection.is_collapsed() && !self.is_discontiguous() { Vec::new() } else { self.selected_ranges() };
         let para_id = focus.and_then(|p| p.para_offset()).map(|(p, _)| p).or_else(|| match self.selection {
             Selection::Object(ObjectRef::Inline { para, .. }) => Some(para),
             Selection::Object(ObjectRef::Floating(f)) => self.index.float_anchor(f),
@@ -1054,7 +1054,7 @@ fn control_info(p: &crate::docx::ControlProps) -> crate::api::state::ControlInfo
         crate::docx::ControlKind::RepeatingSection => {
             let x = p.kind_xml.as_deref().unwrap_or_default();
             info.section_title = x.find("sectionTitle").and_then(|at| val(&x[at..], "val=\""));
-            info.allow_insert_delete = Some(!x.contains("doNotAllowInsertDeleteSection"));
+            info.allow_insert_delete = Some(!super::merge::items_fixed(x));
         }
         _ => {}
     }

@@ -648,10 +648,17 @@ impl Frame {
 /// The rotation of the float whose children are `children` and whose frame is `rect`: its own shape's, about the
 /// frame's centre.
 fn float_turn(children: &[Child], rect: [f64; 4]) -> Turn {
-    let shape = children.iter().find_map(|c| match c {
-        Child::Items(items) => items.iter().find_map(|i| match i {
+    fn own(i: &Item) -> Option<f64> {
+        match i {
             Item::Shape(s) if s.path.is_empty() && !s.decoration && s.rot.rem_euclid(360.0) > 1e-9 => Some(s.rot),
             _ => None,
+        }
+    }
+    // In a vertical body its items are turned with the page, in one item.
+    let shape = children.iter().find_map(|c| match c {
+        Child::Items(items) => items.iter().find_map(|i| match i {
+            Item::Turned(t) => t.items.iter().find_map(own),
+            i => own(i),
         }),
         _ => None,
     });
@@ -1024,6 +1031,20 @@ mod tests {
         assert_eq!(of(22).turn, Turn::NONE, "the float inside it is not");
         assert_eq!(of(21).rect, [0.0, 0.0, 100.0, 100.0]);
         assert_eq!(of(22).rect, [10.0, 10.0, 20.0, 20.0]);
+        // In a body running down the page: its items turned with it, its own turn still found.
+        let PageChild::Body(b) = &page.children[0] else { panic!("a body") };
+        let v = crate::layout::vertical::of_section(3).expect("tbRl");
+        let mut down = BoxBuilder::new();
+        crate::layout::vertical::turn_body(&b.children, v, [612.0, 792.0]).into_iter().for_each(|c| down.push(c));
+        let page = PageFragment {
+            children: Box::new([PageChild::Body(Rc::new(down.finish(BoxKind::Body, (0.0, 0.0), (612.0, 792.0))))]),
+            id: FragmentId::next(),
+            ..page
+        };
+        let tree = spatial_tree(&page, false).expect("a tree");
+        let of = |id: u64| tree.stories.iter().find(|s| matches!(s.story, StoryRef::Float { float, .. } if float == FloatId(id))).expect("the float");
+        assert_ne!(of(21).turn, Turn::NONE, "the outer float is turned in a vertical body");
+        assert_eq!(of(22).turn, Turn::NONE, "the float inside it is not");
     }
 
     #[test]

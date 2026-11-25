@@ -15,7 +15,7 @@ pub use window::{Window, window};
 use std::collections::HashMap;
 
 use crate::api::services::AccessibleMark;
-use crate::docx::review::{AuthorId, CommentId, RangeKind, ReviewView};
+use crate::docx::review::{AuthorId, CommentId, MarkupView, RangeKind, ReviewView, RunRevisions};
 use crate::docx::{Block, Document, Inline, Paragraph};
 use crate::editing::Editor;
 use crate::editing::text::{OBJECT, UnitText};
@@ -79,7 +79,7 @@ pub(super) fn para_marks(doc: &Document, p: &Paragraph, review: &ReviewView, ope
             continue;
         }
         let rev = i.run().map(|r| &r.rev);
-        if rev.is_some_and(|r| review.hides(r)) {
+        if rev.is_some_and(|r| unread(review, r)) {
             at += n;
             live.clear();
             continue;
@@ -115,6 +115,13 @@ pub(super) fn para_marks(doc: &Document, p: &Paragraph, review: &ReviewView, ope
         at += n;
     }
     spans
+}
+
+/// Whether a run with `rev` isn't read: as [`ReviewView::hides`], but a deletion in a balloon is read where it was.
+pub(super) fn unread(review: &ReviewView, rev: &RunRevisions) -> bool {
+    let m = &review.markup;
+    review.view.hides(rev)
+        || rev.del.as_ref().is_some_and(|d| review.view == MarkupView::All && (!m.show.shows(d) || m.style.look(d.kind).mark.hides_text()))
 }
 
 /// The review marks of the body paragraph `para`, with the comments open before it followed from the start.
@@ -219,7 +226,7 @@ impl<'a> Reading<'a> {
     ) -> Reading<'a> {
         let doc = e.document();
         let spans = para_marks(doc, p, &doc.review, open);
-        let text = UnitText::of_review(p, &doc.review);
+        let text = UnitText::masked(p, |rev| unread(&doc.review, rev));
         let chars: Vec<char> = text.text.chars().collect();
         let errors = spelling.errors(e, ParaId(p.id), language).unwrap_or_default();
         let codes = crate::docx::fields::hidden_codes(&p.inlines);
@@ -277,6 +284,11 @@ impl<'a> Reading<'a> {
             return None;
         }
         Some(if matches!(c, '\u{2028}' | '\u{c}') { '\n' } else { c })
+    }
+
+    /// Whether unit `u` is hidden: a revision the view leaves out, or hidden text.
+    pub(super) fn hidden(&self, u: u32) -> bool {
+        self.text.is_hidden(Unit(u))
     }
 
     /// What unit `u` is to a reader.

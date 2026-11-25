@@ -484,3 +484,62 @@ fn a_multi_line_fill_keeps_the_data_part_well_formed() {
     let again = Editor::open(&saved, fonts()).unwrap();
     assert!(super::texts(&again).iter().any(|t| t.contains("a\u{2028}b")), "{:?}", super::texts(&again));
 }
+
+/// The blank document without the main part's relationships: no styles, settings or notes parts.
+fn without_main_rels() -> Vec<u8> {
+    let blank = crate::docx::blank::blank_docx();
+    crate::docx::write::repackage_without(&blank, &[], &["word/_rels/document.xml.rels".into()], zip::CompressionMethod::Deflated)
+        .expect("repackages")
+}
+
+#[test]
+fn a_first_footnote_is_saved_without_main_part_relationships() {
+    let mut e = Editor::open(&without_main_rels(), fonts()).unwrap();
+    assert!(matches!(e.execute(Command::InsertFootnote, fonts()), Outcome::Changed(_)));
+    e.execute(Command::InsertText("Note".into()), fonts());
+    let saved = crate::docx::write::save(e.document()).expect("saves");
+    assert!(part(&saved, "word/_rels/document.xml.rels").contains("relationships/footnotes"));
+    let again = Editor::open(&saved, fonts()).unwrap();
+    assert!(again.document().footnotes.values().any(|b| !b.is_empty()));
+}
+
+#[test]
+fn defaults_set_without_a_styles_part_are_saved() {
+    let mut e = Editor::open(&without_main_rels(), fonts()).unwrap();
+    let d = crate::api::command::DocumentDefaults { size: Some(crate::api::value::Points(13.0)), ..Default::default() };
+    assert!(matches!(e.execute(Command::SetDocumentDefaults(d), fonts()), Outcome::Changed(_)));
+    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let rels = part(&saved, "word/_rels/document.xml.rels");
+    assert!(rels.contains("relationships/styles"), "{rels}");
+    let target = rels.split("relationships/styles\" Target=\"").nth(1).and_then(|s| s.split('"').next()).expect("a target");
+    assert!(part(&saved, &format!("word/{target}")).contains("docDefaults"));
+}
+
+#[test]
+fn defaults_added_to_a_styles_part_go_after_its_whole_start_tag() {
+    let styles = format!(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles {NS} xmlns:x="urn:x" x:note="a>b"><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style></w:styles>"#
+    );
+    let bytes = pkg("<w:p><w:r><w:t>Hi</w:t></w:r></w:p>", "", "", vec![("word/styles.xml".into(), styles.into_bytes())]);
+    let mut e = Editor::open(&bytes, fonts()).unwrap();
+    let d = crate::api::command::DocumentDefaults { size: Some(crate::api::value::Points(13.0)), ..Default::default() };
+    let out = e.execute(Command::SetDocumentDefaults(d), fonts());
+    assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
+    let xml = part(&crate::docx::write::save(e.document()).expect("saves"), "word/styles.xml");
+    assert!(xml.contains(r#"x:note="a>b"><w:docDefaults>"#), "{xml}");
+}
+
+#[test]
+fn a_drop_cap_made_on_a_split_paragraph_goes_before_that_paragraph() {
+    use crate::api::command::{DropCap, DropCapPosition};
+    let mut e = Editor::open(&blank_body("<w:p><w:r><w:t>Alpha Bravo</w:t></w:r></w:p>"), fonts()).unwrap();
+    let p = texts_ids(&e)[0];
+    e.select_range(p, Unit(6), Unit(6), fonts());
+    e.execute(Command::InsertParagraph, fonts());
+    let d = DropCap { position: DropCapPosition::Dropped, font: None, lines: Some(3), distance: None };
+    let out = e.execute(Command::SetDropCap(d), fonts());
+    assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
+    let xml = part(&crate::docx::write::save(e.document()).unwrap(), "word/document.xml");
+    let (alpha, frame) = (xml.find("Alpha").expect("the first paragraph"), xml.find("w:dropCap").expect("the drop cap"));
+    assert!(alpha < frame && frame < xml.find("ravo").expect("the second paragraph"), "{xml}");
+}

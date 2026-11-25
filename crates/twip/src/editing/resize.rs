@@ -544,16 +544,20 @@ impl Editor {
                 }
             }
             Border::Column(0) => {
-                let min = t
+                // How far the left edge can go in: each cell from it down to its margins over all its columns, the first
+                // column at most; never out, for a cell narrower than that already.
+                let room = t
                     .rows
                     .iter()
                     .enumerate()
                     .filter_map(|(r, row)| {
-                        g.cell_at(r, 0).filter(|&i| g.rows[r][i].0 == 0).map(|i| row.cells[i].margins[1] + row.cells[i].margins[3])
+                        let i = g.cell_at(r, 0).filter(|&i| g.rows[r][i].0 == 0)?;
+                        let (c, span) = (&row.cells[i], g.rows[r][i].1.max(1));
+                        Some(grid[..span.min(grid.len())].iter().sum::<f64>() - (c.margins[1] + c.margins[3] + 4.5))
                     })
-                    .fold(0.0, f64::max)
-                    + 4.5;
-                let dx = d.delta().0.min(grid[0] - min).max(grid[0] - MAX.max(grid[0]));
+                    .fold(grid[0], f64::min)
+                    .max(0.0);
+                let dx = d.delta().0.min(room).max(grid[0] - MAX.max(grid[0]));
                 grid[0] -= dx;
                 for (r, row) in rows.iter_mut().enumerate() {
                     for (i, cell) in row.cells.iter_mut().enumerate() {

@@ -688,20 +688,33 @@ fn a_click_on_a_number_formats_the_levels_numbers() {
         assert!(!para(&e, n).mark.bold, "text {n} isn't");
     }
     assert!(e.list_definition().expect("a list").levels[0].label.bold == Some(true));
+    let label = |e: &Editor| para(e, 0).list.as_ref().map(|l| (l.run.bold, l.run.color)).expect("a label");
     e.execute(Command::Undo, fonts());
+    assert!(matches!(label(&e), (true, c) if c != Some(0x0000FF)), "the colour undone, the bold kept: {:?}", label(&e));
     e.execute(Command::Undo, fonts());
-    assert!(!para(&e, 0).list.as_ref().expect("a label").run.bold, "one undo step each");
+    assert!(!label(&e).0, "then the bold");
+    let select = |e: &mut Editor| {
+        e.pointer_input(PointerKind::Down, x, y, 1, Mods::default(), fonts());
+        e.pointer_input(PointerKind::Up, x, y, 1, Mods::default(), fonts());
+        assert!(e.list_label_selection().is_some(), "the numbers are selected");
+    };
     // Clear Formatting isn't number formatting: it ends the number selection and acts on the text.
-    e.pointer_input(PointerKind::Down, x, y, 1, Mods::default(), fonts());
-    e.pointer_input(PointerKind::Up, x, y, 1, Mods::default(), fonts());
-    assert!(e.list_label_selection().is_some());
+    select(&mut e);
     e.execute(Command::ClearFormatting, fonts());
     assert!(e.list_label_selection().is_none(), "Clear Formatting ends it");
     assert!(e.view(0..1).list_labels.is_empty(), "no number shaded");
     // Another selection ends it: formatting goes to the text again.
+    select(&mut e);
+    let caret = e.selection();
     caret_in(&mut e, 0);
     assert!(e.list_label_selection().is_none());
+    // Coming back to its caret doesn't bring it back.
+    let Some((p, at)) = caret.focus().and_then(|f| f.para_offset()) else { panic!("a caret") };
+    e.select_range(p, at, at, fonts());
+    assert_eq!(e.selection(), caret);
+    assert!(e.list_label_selection().is_none(), "left, then returned to");
     // A click on the text isn't one on the number.
+    select(&mut e);
     let x1 = l.stops.iter().find(|s| s.para == id).expect("a stop").x + 4.0;
     let (x, y) = e.stack().to_doc(0, x1, (l.top + l.bottom) / 2.0).expect("on the stack");
     e.pointer_input(PointerKind::Down, x, y, 1, Mods::default(), fonts());
@@ -878,13 +891,12 @@ fn a_copied_list_keeps_the_levels_its_num_overrides_past_the_ones_supplied() {
     let now = levels_of(&mut e, 0);
     assert_eq!(now[0].text, "%1}", "the copy took the change");
     assert_eq!(now[1].format, NumberFormat::UpperRoman, "level 1 keeps the list's own definition");
-    let again = editor(&saved(&e));
-    let (_, num, _) = {
-        let mut a = again;
-        caret_in(&mut a, 0);
-        a.selection_list().unwrap()
-    };
+    let mut again = editor(&saved(&e));
+    caret_in(&mut again, 0);
+    let (_, num, _) = again.selection_list().unwrap();
     assert_ne!(num, 5, "a new list");
+    let read = levels_of(&mut again, 0);
+    assert_eq!((read[0].text.as_str(), read[1].format), ("%1}", NumberFormat::UpperRoman), "read back: the edit and the kept level");
 }
 
 #[test]
@@ -902,4 +914,49 @@ fn formatting_a_number_of_a_shared_definition_stays_with_its_list() {
     assert!(!part[..at].contains("<w:b/>"), "the shared definition does not: {part}");
     let at6 = part.find("<w:num w:numId=\"6\"").expect("list 6");
     assert!(!part[at6..].contains("lvlOverride"), "{part}");
+}
+
+#[test]
+fn an_indent_edit_keeps_a_numbers_theme_colour() {
+    let theme = r#"<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:themeElements><a:clrScheme name="T"><a:accent1><a:srgbClr val="123456"/></a:accent1></a:clrScheme></a:themeElements></a:theme>"#;
+    let colour = r#"<w:rPr><w:color w:val="4472C4" w:themeColor="accent1"/></w:rPr></w:lvl>"#;
+    let lvls: String = (0..9).map(|i| lvl(i, "decimal", &format!("%{}.", i + 1), "")).collect::<String>().replacen("</w:lvl>", colour, 1);
+    let base = pkg(&np("one", 1, 0), Some(&numbering(&format!("{}{}", abstract_of(1, &lvls), num(1, 1)))), "");
+    let rel = r#"<Relationship Id="rIdTheme" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml"/></Relationships>"#;
+    let ct = r#"<Override PartName="/word/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/></Types>"#;
+    let parts = vec![
+        ("word/_rels/document.xml.rels".to_string(), part(&base, "word/_rels/document.xml.rels").replace("</Relationships>", rel).into_bytes()),
+        ("[Content_Types].xml".to_string(), part(&base, "[Content_Types].xml").replace("</Types>", ct).into_bytes()),
+        ("word/theme/theme1.xml".to_string(), theme.as_bytes().to_vec()),
+    ];
+    let mut e = editor(&crate::docx::write::repackage(&base, &parts, zip::CompressionMethod::Deflated).expect("repackages"));
+    let mut ls = levels_of(&mut e, 0);
+    ls[0].text_indent = Points(54.0);
+    let out = e.execute(Command::SetListDefinition(ListDefinitionChange { levels: ls[..1].to_vec(), ..Default::default() }), fonts());
+    assert!(matches!(out, crate::editing::commands::Outcome::Changed(_)), "{out:?}");
+    let xml = part(&saved(&e), "word/numbering.xml");
+    assert!(xml.contains(r#"w:left="1080""#) && xml.contains(r#"w:themeColor="accent1""#), "{xml}");
+}
+
+#[test]
+fn formatting_the_numbers_leaves_nothing_older_to_repeat() {
+    let mut e = list_of("decimal", "");
+    let id = super::texts_ids(&e)[1];
+    e.execute(Command::InsertText("x".into()), fonts());
+    assert!(e.select_list_label(id), "the numbers are selected");
+    assert!(matches!(e.execute(Command::SetBold(true), fonts()), crate::editing::Outcome::Changed(_)));
+    let before = super::texts(&e);
+    assert!(!matches!(e.execute(Command::Repeat, fonts()), crate::editing::Outcome::Changed(_)), "the typing isn't repeated");
+    assert_eq!(super::texts(&e), before);
+}
+
+#[test]
+fn adjusting_indents_keeps_a_number_style_it_cant_write() {
+    let mut e = list_of("a-b", "");
+    caret_in(&mut e, 0);
+    let indents = ListIndents { number_position: Points(0.0), text_indent: Points(27.0), follow: FollowNumber::Space, tab: None };
+    let out = e.execute(Command::AdjustListIndents(indents), fonts());
+    assert!(matches!(out, crate::editing::commands::Outcome::Changed(_)), "{out:?}");
+    let xml = part(&saved(&e), "word/numbering.xml");
+    assert!(xml.contains(r#"<w:numFmt w:val="a-b"/>"#) && xml.contains(r#"w:left="540""#), "{xml}");
 }

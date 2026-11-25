@@ -937,9 +937,8 @@ impl<'a> Builder<'a> {
                         pend_units.push(at);
                         stand_in = id;
                     }
-                    at += inl.units() as u32;
-                    continue;
                 }
+                // Counted though not drawn, a deleted reference or field among them.
                 match inl {
                     _ if evaluated => field += 1,
                     Inline::NoteRef { .. } | Inline::NoteMark(..) => note += 1,

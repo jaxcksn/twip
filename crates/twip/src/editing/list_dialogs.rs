@@ -168,7 +168,7 @@ impl Editor {
             "Define List",
             |n, cx, colours| {
                 n.set_abstract_xml(
-                    super::list_defs::abstract_xml(abstract_id, None, super::list_defs::Levels::Shown(&levels), None, &[], &[], cx),
+                    super::list_defs::abstract_xml(abstract_id, None, super::list_defs::Levels::Shown(&levels), None, &[], &[], cx, colours),
                     colours,
                 )?;
                 let w = &cx.w;
@@ -199,7 +199,16 @@ impl Editor {
                     "Modify Style",
                     |n, cx, colours| {
                         n.set_abstract_xml(
-                            super::list_defs::abstract_xml(abstract_id, old.as_deref(), super::list_defs::Levels::Shown(&levels), None, &[], &[], cx),
+                            super::list_defs::abstract_xml(
+                                abstract_id,
+                                old.as_deref(),
+                                super::list_defs::Levels::Shown(&levels),
+                                None,
+                                &[],
+                                &[],
+                                cx,
+                                colours,
+                            ),
                             colours,
                         )
                         .map(|_| ())
@@ -215,7 +224,8 @@ impl Editor {
                 let out = self.edit_numbering(
                     "New Style",
                     |n, cx, colours| {
-                        let mut a = super::list_defs::abstract_xml(abstract_id, None, super::list_defs::Levels::Shown(&levels), None, &[], &[], cx);
+                        let mut a =
+                            super::list_defs::abstract_xml(abstract_id, None, super::list_defs::Levels::Shown(&levels), None, &[], &[], cx, colours);
                         // The definition is the style's: a w:styleLink after its multiLevelType.
                         let link = format!("<{w}styleLink {w}val=\"{}\"/>", esc(&style_id));
                         if let Some(at) = a.find(&format!("<{w}lvl ")) {

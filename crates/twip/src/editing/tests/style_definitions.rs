@@ -195,6 +195,10 @@ fn a_paragraph_style_numbers_with_a_list() {
     )));
     e.modify_style(&id("Body"), StyleChange { list: Some(None), ..Default::default() }, fonts());
     assert!(paras(&e)[1].list.is_none());
+    // No list over a base style's.
+    let normal = StyleChange { list: Some(Some(StyleList { list, level: 0 })), ..Default::default() };
+    assert!(!refused(&e.modify_style(&id("Normal"), normal, fonts())));
+    assert!(paras(&e)[1].list.is_none() && e.style_definition(&id("Body")).expect("Body").list.is_none(), "Body's own no list");
 }
 
 #[test]
@@ -345,6 +349,7 @@ fn style_edits_are_refused_under_restrict_editing() {
     assert!(refused(&e.modify_style(&id("Body"), StyleChange { quick: Some(true), ..Default::default() }, fonts())));
     assert!(refused(&e.create_style(NewStyle::default(), fonts()).0));
     assert!(refused(&e.set_table_band_sizes(Some(Some(2)), None, fonts())));
+    assert!(refused(&e.set_cell_shading(Some(crate::api::drawing::ColourValue::rgb(Color(0xFF0000))), fonts())));
 }
 
 #[test]
@@ -499,6 +504,55 @@ fn a_table_style_takes_shading_margins_and_row_breaking() {
     // Paragraph shading isn't a table's; cell shading isn't a paragraph style's.
     let wrong = StyleChange { formatting: vec![shade(ShadingTarget::Cell, 0xFF0000)], ..Default::default() };
     assert!(refused(&e.modify_style(&id("Body"), wrong, fonts())));
+}
+
+#[test]
+fn a_table_style_lets_rows_break_over_a_base_that_doesnt() {
+    let mut e = plain();
+    let table = |name: &str, based_on: Option<StyleId>, on: bool| NewStyle {
+        category: StyleCategory::Table,
+        change: StyleChange {
+            name: Some(name.into()),
+            based_on: based_on.map(Some),
+            formatting: vec![Command::SetRowCanBreak(on)],
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let (out, base) = e.create_style(table("Unbroken", None, false), fonts());
+    assert!(!refused(&out), "{out:?}");
+    let (out, made) = e.create_style(table("Broken", base, true), fonts());
+    assert!(!refused(&out), "{out:?}");
+    for e in [&e, &reopened(&e)] {
+        let t = e.style_definition(made.as_ref().expect("made")).expect("defined").table.expect("a table style");
+        assert!(t.parts[0].row_can_break, "over its base's");
+    }
+}
+
+#[test]
+fn a_table_parts_font_grows_from_its_own_size() {
+    let header = r#"<w:tblStylePr w:type="firstRow"><w:rPr><w:sz w:val="28"/></w:rPr></w:tblStylePr>"#;
+    let tt = format!(r#"<w:style w:type="table" w:styleId="TT"><w:name w:val="TT"/><w:rPr><w:sz w:val="20"/></w:rPr>{header}</w:style>"#);
+    let mut e = open_pkg(&pkg(&format!("{STYLES}{tt}"), "<w:p/>"));
+    let grow = |part: Option<TableStylePart>| match part {
+        Some(part) => {
+            StyleChange { parts: vec![TablePartFormatting { part, clear: false, formatting: vec![Command::GrowFont] }], ..Default::default() }
+        }
+        None => StyleChange { formatting: vec![Command::GrowFont], ..Default::default() },
+    };
+    assert!(!refused(&e.modify_style(&id("TT"), grow(Some(TableStylePart::HeaderRow)), fonts())));
+    assert!(!refused(&e.modify_style(&id("TT"), grow(None), fonts())));
+    let t = e.style_definition(&id("TT")).expect("defined").table.expect("a table style");
+    let head = t.parts.iter().find(|p| p.part == TableStylePart::HeaderRow).expect("the header row");
+    assert_eq!((t.parts[0].character.size, head.character.size), (Tri::Uniform(Points(10.5)), Tri::Uniform(Points(16.0))));
+}
+
+#[test]
+fn a_table_styles_definition_lists_its_tab_stops() {
+    let tt = r#"<w:style w:type="table" w:styleId="TT"><w:name w:val="TT"/><w:pPr><w:tabs><w:tab w:val="left" w:pos="1440"/><w:tab w:val="clear" w:pos="720"/></w:tabs></w:pPr></w:style>"#;
+    let e = open_pkg(&pkg(&format!("{STYLES}{tt}"), "<w:p/>"));
+    let d = e.style_definition(&id("TT")).expect("defined");
+    assert_eq!(d.tabs.iter().map(|t| t.position).collect::<Vec<_>>(), vec![Points(72.0)], "a clear isn't a stop");
 }
 
 #[test]

@@ -33,8 +33,18 @@ fn link_edits(a: &Shape, b: &Shape, text: &str, out: &mut Vec<Edit>) {
     let linked = |chain: u32, seq: u32| format!(r#"<wps:linkedTxbx id="{chain}" seq="{seq}"/>"#);
     match (&x.text, &y.text) {
         (T::Story, T::Story) => {
-            if let (Some(c), Some((start, end))) = (y.chain, super::find_tag(text, "txbx", 0)) {
-                out.push((start..end, set_attr(&text[start..end], "id", &c.to_string())));
+            if let Some((start, end)) = super::find_tag(text, "txbx", 0) {
+                let tag = &text[start..end];
+                match y.chain {
+                    Some(c) => out.push((start..end, set_attr(tag, "id", &c.to_string()))),
+                    // A box no longer heading a chain: its id goes.
+                    None => {
+                        if let Some((.., r)) = crate::docx::binding::tag_attrs(tag).find(|(n, ..)| *n == "id") {
+                            let from = tag[..r.start].trim_end().len();
+                            out.push((start..end, format!("{}{}", &tag[..from], &tag[r.end..])));
+                        }
+                    }
+                }
             }
         }
         (T::Story, T::Linked { chain, seq }) => {
@@ -92,14 +102,16 @@ pub(super) fn vml_size(text: &str, w: f64, h: f64) -> String {
 /// white at half). Anything else is written as DrawingML, as Word converts an edited legacy shape.
 pub(super) fn vml_says(a: &Shape, b: &Shape) -> bool {
     use crate::drawing::paint::{BlipAdjust as A, Fill as F};
-    let solid = |f: &Option<F>| {
-        matches!(f, None | Some(F::None)) || matches!(f, Some(F::Solid(c)) if matches!(c.base, ColourBase::Srgb(_)) && c.mods.is_empty())
-    };
+    // A fill or a width cleared isn't written: VML would keep the one it has.
+    let solid =
+        |f: &Option<F>| matches!(f, Some(F::None)) || matches!(f, Some(F::Solid(c)) if matches!(c.base, ColourBase::Srgb(_)) && c.mods.is_empty());
     let line = |x: &Option<Line>, y: &Option<Line>| {
         x == y
             || y.as_ref().is_some_and(|l| {
                 let base = x.clone().unwrap_or_default();
-                solid(&l.fill) && Line { width: l.width, fill: l.fill.clone(), ..base } == *l
+                (l.fill == base.fill || solid(&l.fill))
+                    && (l.width == base.width || l.width.is_some())
+                    && Line { width: l.width, fill: l.fill.clone(), ..base } == *l
             })
     };
     let adjust = |v: &[A]| v.iter().all(|a| matches!(a, A::Lum { .. } | A::Grayscale | A::BiLevel(Pct(50000))));
@@ -196,8 +208,7 @@ fn flip_css(b: &Shape) -> &'static str {
 
 /// The first `v:imagedata` start tag's range.
 fn find_imagedata(text: &str) -> Option<(usize, usize)> {
-    let k = text.find(":imagedata ")?;
-    let open = text[..k].rfind('<')?;
+    let (open, _) = super::find_tag(text, "imagedata", 0)?;
     let end = open + crate::docx::binding::tag_end(&text[open..])? + 1;
     Some((open, end))
 }
@@ -313,8 +324,9 @@ fn first_vml_shape(text: &str) -> Option<(usize, usize)> {
     None
 }
 
+/// Attribute `name`'s value, unescaped ([`set_attr`] escapes what is written back).
 fn attr(tag: &str, name: &str) -> Option<String> {
-    super::attr_range(tag, name).map(|r| tag[r].to_string())
+    super::attr_range(tag, name).map(|r| crate::docx::binding::unescape(&tag[r]))
 }
 
 fn set_attr(tag: &str, name: &str, value: &str) -> String {
@@ -392,8 +404,7 @@ fn shape_edits_in(a: &Shape, b: &Shape, base: usize, text: &str, is_child: bool,
     if is_child
         && (&a.nv.name, &a.nv.title, a.nv.hidden) != (&b.nv.name, &b.nv.title, b.nv.hidden)
         && let Some(r) = sp.shape.as_ref().map(rel)
-        && let Some(k) = text.get(r.clone()).and_then(|t| t.find(":cNvPr ").or_else(|| t.find("<cNvPr ")))
-        && let Some(open) = text[..r.start + k + 1].rfind('<')
+        && let Some(open) = text.get(r.clone()).and_then(|t| super::find_tag(t, "cNvPr", 0)).map(|(k, _)| r.start + k)
         && let Some(end) = text.get(open..).and_then(crate::docx::binding::tag_end).map(|e| open + e + 1)
     {
         let mut tag = set_attr(&text[open..end], "name", &b.nv.name);
@@ -1086,6 +1097,19 @@ mod tests {
     }
 
     #[test]
+    fn a_vml_style_is_written_back_escaped_once() {
+        let x = vml_size(r#"<w:pict><v:shape style="width:1pt;height:1pt;mso-note:a&amp;b"/></w:pict>"#, 2.0, 3.0);
+        assert!(x.contains("mso-note:a&amp;b") && x.contains("width:2pt"), "{x}");
+    }
+
+    #[test]
+    fn imagedata_is_found_whatever_follows_its_name() {
+        let x = "<v:shape><v:imagedata\n r:id=\"rId1\"/></v:shape>";
+        assert_eq!(find_imagedata(x), Some((9, x.len() - "</v:shape>".len())));
+        assert_eq!(find_imagedata("<v:shape><v:imagedataX/></v:shape>"), None);
+    }
+
+    #[test]
     fn edits_apply_last_first() {
         assert_eq!(apply("abcdef", vec![(1..2, "X".into()), (4..4, "Y".into())]), "aXcdYef");
     }
@@ -1283,6 +1307,22 @@ mod round_trip {
     }
 
     #[test]
+    fn a_cleared_fill_or_line_width_isnt_taken_for_what_vml_says() {
+        let mut d = vml_doc();
+        let a = vml_float(&mut d).shape.as_deref().cloned().expect("a shape");
+        let with = |f: &dyn Fn(&mut crate::drawing::SpShape)| {
+            let mut b = a.clone();
+            f(b.sp_mut().expect("a shape"));
+            super::vml_says(&a, &b)
+        };
+        assert!(with(&|s| s.fill = Some(Fill::Solid(Colour::srgb(0x00FF00)))), "a new solid fill is written as VML");
+        assert!(!with(&|s| s.fill = None), "a cleared fill");
+        assert!(a.sp().and_then(|s| s.line.as_ref()).is_some_and(|l| l.width.is_some()));
+        assert!(!with(&|s| s.line.as_mut().expect("a line").width = None), "a cleared width");
+        assert!(with(&|s| s.line.as_mut().expect("a line").width = Some(crate::drawing::units::Emu(25400))), "a new width");
+    }
+
+    #[test]
     fn a_vml_shape_edited_past_vml_is_saved_as_drawingml() {
         use crate::drawing::paint::{EffectList, Glow};
         let mut d = vml_doc();
@@ -1369,6 +1409,46 @@ mod round_trip {
     }
 
     #[test]
+    fn a_renamed_child_group_takes_its_own_name_not_its_childs() {
+        let inner = r#"<wps:wsp><wps:cNvPr id="3" name="Inner"/><wps:cNvSpPr/><wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="1143000" cy="762000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></wps:spPr><wps:bodyPr/></wps:wsp>"#;
+        let xfrm =
+            r#"<a:xfrm><a:off x="0" y="0"/><a:ext cx="1143000" cy="762000"/><a:chOff x="0" y="0"/><a:chExt cx="1143000" cy="762000"/></a:xfrm>"#;
+        let wpg = "http://schemas.microsoft.com/office/word/2010/wordprocessingGroup";
+        let group = format!(
+            r#"<a:graphic><a:graphicData uri="{wpg}"><wpg:wgp xmlns:wpg="{wpg}"><wpg:cNvGrpSpPr/><wpg:grpSpPr>{xfrm}</wpg:grpSpPr><grpSp xmlns="{wpg}"><cNvPr id="2" name="Old"/><cNvGrpSpPr/><grpSpPr>{xfrm}</grpSpPr>{inner}</grpSp></wpg:wgp></a:graphicData></a:graphic>"#
+        );
+        let mut d = doc_of(&format!("<w:r>{}</w:r>", anchored(&group)));
+        let c = first_float(&mut d).shape.as_deref_mut().and_then(|s| s.at_mut(&[0])).expect("the child group");
+        assert_eq!(&*c.nv.name, "Old");
+        c.nv.name = "New".into();
+        let xml = document_xml(&crate::docx::write::save(&d).expect("saves"));
+        parses(&xml);
+        assert!(xml.contains(r#"<cNvPr id="2" name="New"/>"#) && xml.contains(r#"name="Inner""#), "{xml}");
+    }
+
+    #[test]
+    fn an_unlocked_group_keeps_its_pictures_locks() {
+        let pic = PIC.replace("<pic:cNvPicPr/>", r#"<pic:cNvPicPr><a:picLocks noChangeAspect="1"/></pic:cNvPicPr>"#);
+        let body = &pic[pic.find("<pic:pic ").expect("a picture")..pic.find("</a:graphicData>").expect("its end")];
+        let xfrm =
+            r#"<a:xfrm><a:off x="0" y="0"/><a:ext cx="1143000" cy="762000"/><a:chOff x="0" y="0"/><a:chExt cx="1143000" cy="762000"/></a:xfrm>"#;
+        let wpg = "http://schemas.microsoft.com/office/word/2010/wordprocessingGroup";
+        let group = format!(
+            r#"<wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic><a:graphicData uri="{wpg}"><wpg:wgp xmlns:wpg="{wpg}"><wpg:cNvGrpSpPr/><wpg:grpSpPr>{xfrm}</wpg:grpSpPr>{body}</wpg:wgp></a:graphicData></a:graphic>"#
+        );
+        let mut d = doc_of(&format!("<w:r>{}</w:r>", anchored(&group)));
+        let f = first_float(&mut d);
+        assert!(f.lock_aspect, "its frame's lock");
+        f.lock_aspect = false;
+        let bytes = crate::docx::write::save(&d).expect("saves");
+        let xml = document_xml(&bytes);
+        parses(&xml);
+        assert!(xml.contains(r#"<a:graphicFrameLocks noChangeAspect="0"/>"#) && xml.contains(r#"<a:picLocks noChangeAspect="1"/>"#), "{xml}");
+        let mut again = crate::docx::reader::read_editable(&bytes).expect("reads");
+        assert!(!first_float(&mut again).lock_aspect, "read back unlocked");
+    }
+
+    #[test]
     fn a_vml_float_saved_as_drawingml_keeps_its_place_in_the_stack() {
         use crate::drawing::paint::{EffectList, Glow};
         let mut d = vml_doc();
@@ -1420,6 +1500,7 @@ mod round_trip {
         let xml = document_xml(&bytes);
         parses(&xml);
         assert!(xml.contains("Moved") && !xml.contains("linkedTxbx"), "{xml}");
+        assert_eq!(xml.matches("<wps:txbx>").count(), 2, "neither box heads a chain: {xml}");
         let again = crate::docx::reader::read_editable(&bytes).expect("reads");
         let Block::Para(two) = &again.sections[0].blocks[1] else { panic!() };
         assert!(two.inlines.iter().any(|i| matches!(i, Inline::Float(f, _) if f.text_box.is_some())), "the moved box holds its story");
@@ -1447,6 +1528,17 @@ mod round_trip {
     }
 
     #[test]
+    fn a_new_effect_extent_goes_after_a_paired_extent() {
+        let pic = inline_pic("").replace(r#"<wp:extent cx="1143000" cy="762000"/>"#, r#"<wp:extent cx="1143000" cy="762000"></wp:extent>"#);
+        let mut d = doc_of(&format!("<w:r>{pic}</w:r>"));
+        let p = first_picture(&mut d);
+        (p.w, p.effect) = (120.0, [1.0, 0.0, 0.0, 0.0]);
+        let xml = document_xml(&crate::docx::write::save(&d).expect("saves"));
+        parses(&xml);
+        assert!(xml.contains(r#"</wp:extent><wp:effectExtent l="12700" t="0" r="0" b="0"/>"#), "{xml}");
+    }
+
+    #[test]
     fn a_picture_controls_cropped_picture_saves_its_crop() {
         use crate::drawing::units::Pct;
         let sdt =
@@ -1463,5 +1555,23 @@ mod round_trip {
         let mut again = crate::docx::reader::read_editable(&bytes).expect("reads");
         let src = first_picture(&mut again).shape.as_deref().and_then(|s| s.pic()).map(|p| p.blip.src);
         assert_eq!(src, Some([Pct(10000), Pct(0), Pct(0), Pct(0)]));
+    }
+
+    #[test]
+    fn a_vml_picture_in_a_control_saved_as_drawingml_keeps_its_control() {
+        use crate::drawing::paint::{EffectList, Glow};
+        let vml = r#"<w:pict><v:shape id="P" style="width:90pt;height:60pt"><v:imagedata xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="rId9" o:title=""/></v:shape></w:pict>"#;
+        let sdt = format!(
+            r#"<w:sdt><w:sdtPr><w:id w:val="5"/><w:picture/></w:sdtPr><w:sdtContent><w:r><w:rPr><w:b/></w:rPr>{vml}</w:r></w:sdtContent></w:sdt>"#
+        );
+        let mut d = doc_of(&sdt);
+        let p = first_picture(&mut d);
+        let glow = Glow { radius: crate::drawing::units::Emu(76200), colour: Colour::srgb(0xFF0000) };
+        let Some(crate::drawing::ShapeKind::Pic(pic)) = p.shape.as_deref_mut().map(|s| &mut s.kind) else { panic!("a picture") };
+        pic.effects = Some(EffectList { glow: Some(glow), ..EffectList::default() });
+        let xml = document_xml(&crate::docx::write::save(&d).expect("saves"));
+        parses(&xml);
+        assert!(xml.contains(r#"<w:sdtPr><w:id w:val="5"/><w:picture/></w:sdtPr><w:sdtContent><w:r><w:rPr><w:b/></w:rPr><w:drawing>"#), "{xml}");
+        assert!(xml.contains("<a:glow") && !xml.contains("<w:pict>"), "{xml}");
     }
 }

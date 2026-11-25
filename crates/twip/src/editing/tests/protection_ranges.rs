@@ -334,5 +334,37 @@ fn a_grant_reaches_every_selected_span_that_lacks_it() {
     assert!(e.is_discontiguous());
     assert!(matches!(e.set_range_editor(ada.clone(), true, fonts()), Outcome::Changed(_)), "the other span gets one");
     assert_eq!(markers(&e), 4, "one range each, the first not doubled");
+    let spans: Vec<_> = e.editable_range_list().into_iter().map(|r| (r.start, r.end, r.ids.len(), r.editors)).collect();
+    assert_eq!(
+        spans,
+        [(at(&e, 0, 4), at(&e, 0, 7), 1, vec![ada.clone()]), (at(&e, 0, 12), at(&e, 0, 15), 1, vec![ada.clone()])],
+        "each span granted once"
+    );
     assert!(matches!(e.set_range_editor(ada, true, fonts()), Outcome::Unchanged(_)), "all granted: nothing to do");
+}
+
+#[test]
+fn a_new_permission_takes_an_id_word_reads() {
+    use crate::editing::commands::Outcome;
+    use crate::editing::protection::RangeEditor;
+    let perm = |id: i64, t: &str| format!(r#"<w:permStart w:id="{id}" w:edGrp="everyone"/><w:r><w:t>{t}</w:t></w:r><w:permEnd w:id="{id}"/>"#);
+    let body = format!("<w:p>{}{}<w:r><w:t> one two three</w:t></w:r></w:p>", perm(i64::from(i32::MAX), "a"), perm(i64::MAX, "b"));
+    let mut e = Editor::open(&blank_body(&body), fonts()).expect("opens");
+    e.complete(fonts());
+    e.select_ranges(&[(at(&e, 0, 3), at(&e, 0, 6)), (at(&e, 0, 7), at(&e, 0, 10))]);
+    assert!(matches!(e.set_range_editor(RangeEditor::User("Ada".into()), true, fonts()), Outcome::Changed(_)));
+    let mut ids: Vec<i64> = inlines(&e).iter().filter_map(|i| if let Inline::Opaque(o) = i { o.permission() } else { None }).map(|p| p.1).collect();
+    ids.sort_unstable();
+    ids.dedup();
+    assert_eq!(ids, [1, 2, i64::from(i32::MAX), i64::MAX], "the free ids from the first, past none Word reads");
+}
+
+#[test]
+fn permissions_for_one_person_named_in_two_cases_list_them_once() {
+    let span =
+        r#"<w:permStart w:id="1" w:ed="Ada"/><w:permStart w:id="2" w:ed="ada"/><w:r><w:t>one</w:t></w:r><w:permEnd w:id="2"/><w:permEnd w:id="1"/>"#;
+    let e = Editor::open(&blank_body(&format!("<w:p>{span}</w:p>")), fonts()).expect("opens");
+    let list = e.editable_range_list();
+    let [r] = &list[..] else { panic!("one range: {list:?}") };
+    assert_eq!((r.ids.len(), r.editors.len()), (2, 1), "both permissions, one editor: {r:?}");
 }

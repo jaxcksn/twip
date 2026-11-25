@@ -468,23 +468,43 @@ impl Editor {
         }
         let mut stops: Vec<(usize, ParaId, Unit, Stop)> = Vec::new();
         let mut mine = 0;
+        let fills = |c: &crate::docx::ControlId| {
+            self.doc.controls.get(c).is_some_and(|k| {
+                k.props.lock.editable() && !matches!(k.props.kind, ControlKind::Group | ControlKind::RepeatingSection | ControlKind::RepeatingItem)
+            })
+        };
+        let mut seen = std::collections::HashSet::new();
+        let mut around = Vec::new();
         for (k, para) in self.paras_of(story).into_iter().enumerate() {
             if para == here {
                 mine = k;
             }
             let Some(p) = self.index.para(&self.doc, para) else { continue };
+            // Block-level controls, outermost first, at their first paragraph's start
+            around.clear();
+            for level in self.index.chain_of(&crate::editing::position::Position::text(story, para, Unit(0))) {
+                let Some(t) = self.index.table(&self.doc, level.table) else { continue };
+                around.extend_from_slice(&t.controls);
+                if let Some(r) = t.rows.get(level.row) {
+                    around.extend_from_slice(&r.controls);
+                    if let Some(c) = r.cells.get(level.cell) {
+                        around.extend_from_slice(&c.controls);
+                    }
+                }
+            }
+            around.extend_from_slice(&p.controls);
+            for c in &around {
+                if fills(c) && seen.insert(*c) {
+                    stops.push((k, para, Unit(0), Stop::Control(*c)));
+                }
+            }
             let mut u = 0u32;
             for i in &p.inlines {
                 match i {
                     Inline::FieldBegin { id, form: Some(form), .. } if form.data.enabled => {
                         stops.push((k, para, Unit(u), Stop::Form(*id, matches!(form.data.kind, FormKind::CheckBox { .. }))));
                     }
-                    Inline::ControlStart(c) | Inline::Sym { control: Some(c), .. }
-                        if self.doc.controls.get(c).is_some_and(|k| {
-                            k.props.lock.editable()
-                                && !matches!(k.props.kind, ControlKind::Group | ControlKind::RepeatingSection | ControlKind::RepeatingItem)
-                        }) =>
-                    {
+                    Inline::ControlStart(c) | Inline::Sym { control: Some(c), .. } if fills(c) && seen.insert(*c) => {
                         stops.push((k, para, Unit(u), Stop::Control(*c)));
                     }
                     _ => {}
@@ -501,16 +521,12 @@ impl Editor {
             stops.iter().find(|s| key(s) > (mine, start)).or(stops.first())
         } else {
             // Not the one the selection is in
-            let holds = |s: &(usize, ParaId, Unit, Stop)| {
-                s.0 == mine
-                    && match &s.3 {
-                        Stop::Form(f, _) => self.form_field_range(*f, s.1).is_some_and(|(a, b, ..)| a <= start && start < b),
-                        Stop::Control(c) => self
-                            .locate(ElementId::Control(*c))
-                            .and_then(|w| self.element_range(&w))
-                            .and_then(|(a, b)| Some((a.para_offset()?.1, b.para_offset()?.1)))
-                            .is_some_and(|(a, b)| a <= start && start <= b),
-                    }
+            let at = crate::editing::position::Position::text(story, here, start);
+            let holds = |s: &(usize, ParaId, Unit, Stop)| match &s.3 {
+                Stop::Form(f, _) => s.0 == mine && self.form_field_range(*f, s.1).is_some_and(|(a, b, ..)| a <= start && start < b),
+                Stop::Control(c) => self.locate(ElementId::Control(*c)).and_then(|w| self.element_range(&w)).is_some_and(|(a, b)| {
+                    self.index.cmp(&a, &at) != std::cmp::Ordering::Greater && self.index.cmp(&at, &b) != std::cmp::Ordering::Greater
+                }),
             };
             stops.iter().rev().find(|s| key(s) < (mine, start) && !holds(s)).or(stops.last())
         };

@@ -209,10 +209,22 @@ impl Editor {
                         (Some((para, u)), false) => u == Unit(0) && blocks.first().and_then(super::first_para_of) == Some(para),
                         // A section's last paragraph holds its break: its end is the section's
                         (Some((para, u)), true) => blocks.last().and_then(super::last_para_of) == Some((para, u)),
-                        (None, _) => true,
+                        // A row's end is the section's only as its last block's last row
+                        (None, end) => {
+                            let super::position::Place::RowEnd { table, row } = p.place else { return false };
+                            end && e
+                                .index
+                                .table_slot(table)
+                                .is_some_and(|s| s.container == super::index::Container::Section(k) && s.block + 1 == blocks.len())
+                                && e.index.table(&e.doc, table).is_some_and(|t| row + 1 == t.rows.len())
+                        }
                     }
                 };
                 let (at_start, at_end) = (edge(e, &a, false), edge(e, &b, true));
+                // A break can't go inside a table
+                if (!at_start && a.para_offset().is_none()) || (!at_end && b.para_offset().is_none()) {
+                    return Outcome::unavailable("a section break can't split a table");
+                }
                 e.multi = super::multi::Multi::default();
                 if !at_end {
                     e.set_selection(Selection::Caret(b));

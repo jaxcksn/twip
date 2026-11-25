@@ -143,6 +143,8 @@ pub(super) struct ShapeDrag {
     shift: bool,
     previewed: Option<crate::layout::ParaId>,
     pub snapped: [Option<SnapLine>; 2],
+    /// The inline picture dragged, as the drag found it.
+    picture: Option<Box<crate::docx::Picture>>,
 }
 
 impl ShapeDrag {
@@ -159,7 +161,7 @@ impl ShapeDrag {
         at: [f64; 2],
         page: usize,
     ) -> ShapeDrag {
-        ShapeDrag { obj, root, child, handle, item, start: at, now: at, page, shift: false, previewed: None, snapped: [None; 2] }
+        ShapeDrag { obj, root, child, handle, item, start: at, now: at, page, shift: false, previewed: None, snapped: [None; 2], picture: None }
     }
 
     pub fn angle(&self) -> f64 {
@@ -204,6 +206,15 @@ pub(super) fn rotate_to(n: &mut crate::docx::Float, child: &[u16], deg: f64, com
     true
 }
 
+/// A shape's or a picture's geometry, as [`crate::drawing::Shape::geometry`] reads it.
+fn geom_mut(s: &mut crate::drawing::Shape) -> Option<&mut crate::drawing::geom::Geometry> {
+    match &mut s.kind {
+        crate::drawing::ShapeKind::Sp(sp) => Some(&mut sp.geom),
+        crate::drawing::ShapeKind::Pic(p) => Some(&mut p.geom),
+        crate::drawing::ShapeKind::Group(_) | crate::drawing::ShapeKind::Raw(_) => None,
+    }
+}
+
 /// How far a `w` by `h` box turned `deg` reaches past its own box on each side (left, top, right, bottom): negative
 /// where it reaches less.
 fn turn_extents(w: f64, h: f64, deg: f64) -> [f64; 4] {
@@ -218,9 +229,12 @@ fn turn_extents(w: f64, h: f64, deg: f64) -> [f64; 4] {
 pub(super) fn refit_turn(pic: &mut crate::docx::Picture, was: (f64, f64, f64)) {
     let deg = pic.shape.as_deref().map_or(0.0, |s| s.xfrm.rot.degrees());
     let (old, now) = (turn_extents(was.0, was.1, was.2), turn_extents(pic.w, pic.h, deg));
+    // None read (no `wp:effectExtent`): the turn's reach was never stored, and there is no effect's.
+    let stored = pic.effect != [0.0; 4];
     for k in 0..4 {
         // The effects' own reach (a shadow's, an outline's) stays.
-        pic.effect[k] = (((pic.effect[k] - old[k]).max(0.0) + now[k]) * 12700.0).round() / 12700.0;
+        let own = if stored { (pic.effect[k] - old[k]).max(0.0) } else { 0.0 };
+        pic.effect[k] = ((own + now[k]) * 12700.0).round() / 12700.0;
     }
 }
 
@@ -316,9 +330,19 @@ impl Editor {
                 (item, root)
             }
         };
-        self.shape_drag = Some(ShapeDrag::new(obj, root, child, handle, item, [px, py], frame.page));
+        let mut d = ShapeDrag::new(obj, root, child, handle, item, [px, py], frame.page);
+        d.picture = self.inline_picture(obj).map(|p| Box::new(p.clone()));
+        self.shape_drag = Some(d);
         self.requests.push(super::input::Request::CapturePointer);
         true
+    }
+
+    fn inline_picture(&self, obj: ObjectRef) -> Option<&crate::docx::Picture> {
+        let ObjectRef::Inline { para, offset } = obj else { return None };
+        match super::stories::inline_at(self.index.para(&self.doc, para)?, offset)? {
+            crate::docx::Inline::Picture(p, _) => Some(p),
+            _ => None,
+        }
     }
 
     pub(super) fn child_move_press(&mut self, f: FloatId, page: usize, px: f64, py: f64) -> bool {
@@ -362,8 +386,8 @@ impl Editor {
         let [x0, y0, x1, y1] = d.item.rect;
         let emu = |v: f64| crate::drawing::units::Emu((v * 12700.0).round() as i64);
         let to = d.item.to_local(d.now);
-        let sp = s.sp_mut()?;
-        sp.geom = sp.geom.drag_handle(i, emu(x1 - x0), emu(y1 - y0), to)?;
+        let geom = geom_mut(s)?;
+        *geom = geom.drag_handle(i, emu(x1 - x0), emu(y1 - y0), to)?;
         Some(())
     }
 
@@ -385,8 +409,11 @@ impl Editor {
 
     /// The inline object `d` drags, as the drag leaves it.
     fn dragged_inline(&self, d: &ShapeDrag) -> Option<crate::docx::Picture> {
-        let ObjectRef::Inline { para, offset } = d.obj else { return None };
-        let crate::docx::Inline::Picture(p, _) = super::stories::inline_at(self.index.para(&self.doc, para)?, offset)? else { return None };
+        let p = self.inline_picture(d.obj)?;
+        // Only the picture the drag took: not one that took its place since.
+        if d.picture.as_deref() != Some(p) {
+            return None;
+        }
         let mut p = p.clone();
         match d.handle {
             ShapeHandle::Rotate => {
@@ -757,11 +784,11 @@ impl Editor {
         self.edit_shapes(
             "Adjust Shape",
             |s| {
-                let Some(sp) = s.sp_mut() else { return false };
-                let mut vals = sp.geom.adjust_values();
+                let Some(geom) = geom_mut(s) else { return false };
+                let mut vals = geom.adjust_values();
                 let Some(v) = vals.get_mut(index) else { return false };
                 *v = value;
-                sp.geom.with_values(&vals).map(|g| sp.geom = g).is_some()
+                geom.with_values(&vals).map(|g| *geom = g).is_some()
             },
             fonts,
         )

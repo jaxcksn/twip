@@ -411,3 +411,24 @@ fn citation_bibliography_and_equation_controls_are_told_apart() {
     assert_eq!(kind("Equa"), Some(KeptKind::Equation));
     assert_eq!(kind("Cover"), Some(KeptKind::BuildingBlock { gallery: Some("Cover Pages".into()), category: None }));
 }
+
+#[test]
+fn filling_a_bound_controls_placeholder_writes_its_node() {
+    let date = r#"<w:showingPlcHdr/><w:date><w:dateFormat w:val="yyyy-MM-dd"/><w:lid w:val="en-US"/><w:calendar w:val="gregorian"/></w:date>"#;
+    let both = format!(
+        "{}{}",
+        sdt("C", 5, "<w:showingPlcHdr/><w:text/>", "<w:r><w:t>Type here</w:t></w:r>"),
+        sdt("D", 6, date, "<w:r><w:t>Pick</w:t></w:r>")
+    );
+    let mut e = with_controls(&both);
+    bind_to(&mut e, &["C"], "name", "<case xmlns=\"urn:case\"><name/><when/></case>");
+    bind_to(&mut e, &["D"], "when", "<case xmlns=\"urn:case\"><name/><when/></case>");
+    let (c, id) = control(&e, "C");
+    run(&mut e, fill(&id, "Ada"));
+    assert!(!e.document().controls[&c].props.showing_placeholder);
+    assert!(case_xml(&e).contains("<name>Ada</name>"), "on the first fill: {}", case_xml(&e));
+    let (d, id) = control(&e, "D");
+    assert!(matches!(e.fill_control_date(&id, "2027-02-03", fonts()), Outcome::Changed(_)));
+    assert!(!e.document().controls[&d].props.showing_placeholder);
+    assert!(case_xml(&e).contains("<when>2027-02-03"), "{}", case_xml(&e));
+}

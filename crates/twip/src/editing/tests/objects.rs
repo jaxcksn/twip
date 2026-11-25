@@ -889,9 +889,11 @@ fn an_inline_shape_shows_its_adjust_handles_and_takes_their_drags() {
     let frames = e.shape_frames(0..1);
     let [f] = &frames[..] else { panic!("one frame: {frames:?}") };
     let [h] = f.adjust[..] else { panic!("one adjust handle: {:?}", f.adjust) };
-    let before = e.object_shape().and_then(|s| s.sp()).map(|s| s.geom.adjust_values());
+    let shape = e.selection();
+    let before = e.object_shape().and_then(|s| s.sp()).map(|s| s.geom.adjust_values()).expect("its adjustments");
     drag(&mut e, h, [h[0] + 10.0, h[1]], NONE);
-    let after = e.object_shape().and_then(|s| s.sp()).map(|s| s.geom.adjust_values());
+    assert_eq!(e.selection(), shape, "the same shape stays selected");
+    let after = e.object_shape().and_then(|s| s.sp()).map(|s| s.geom.adjust_values()).expect("its adjustments");
     assert_ne!(before, after);
 }
 
@@ -1164,6 +1166,23 @@ fn lock_aspect_off_on_an_inline_picture_is_saved() {
 }
 
 #[test]
+fn a_read_pictures_title_and_lock_are_saved_without_a_resize() {
+    let saved = crate::docx::write::save(with_inserted_picture().document()).expect("saves");
+    let reopen = || {
+        let mut e = Editor::open(&saved, fonts()).expect("reopens");
+        select_first_inline_picture(&mut e);
+        e
+    };
+    let mut e = reopen();
+    assert!(changed(&e.set_object_title("A title", fonts())));
+    assert!(saved_xml(&e).contains(r#"title="A title""#), "{}", saved_xml(&e));
+    let mut e = reopen();
+    assert!(saved_xml(&e).contains(r#"noChangeAspect="1""#));
+    assert!(changed(&e.set_lock_aspect(false, fonts())));
+    assert!(!saved_xml(&e).contains(r#"noChangeAspect="1""#), "{}", saved_xml(&e));
+}
+
+#[test]
 fn restack_and_hide_undo_and_redo_one_step_each() {
     let mut e = two_shapes();
     let ids = all_floats(&e);
@@ -1372,7 +1391,205 @@ fn reset_wrap_points_respects_protection() {
     assert!(changed(&e.set_wrap_points(&square, fonts())));
     protect_read_only(&mut e);
     select(&mut e, f);
+    let before = e.selected_wrap_polygon().expect("a polygon");
+    assert_eq!((before.points.len(), before.edited), (4, true));
     assert!(!changed(&e.reset_wrap_points(fonts())));
-    let kept = e.selected_wrap_polygon().expect("a polygon");
-    assert_eq!((kept.points.len(), kept.edited), (4, true), "the edited polygon stays");
+    assert_eq!(e.selected_wrap_polygon(), Some(before), "the edited polygon stays, every point");
+}
+
+#[test]
+fn set_wrap_points_needs_an_editable_anchor_and_three_points() {
+    let star = anchor(100, 300, 100, 100, 1, false, 5, &sp(0, 0, 100, 100, "star5", "", "FF0000"));
+    let locked = format!(
+        r#"<w:p><w:sdt><w:sdtPr><w:id w:val="5"/><w:lock w:val="sdtContentLocked"/></w:sdtPr><w:sdtContent><w:r><w:t>Text</w:t></w:r>{star}</w:sdtContent></w:sdt></w:p>"#
+    );
+    let mut e = editor(&locked);
+    let f = all_floats(&e)[0];
+    select(&mut e, f);
+    let square = [(0.0, 0.0), (0.0, 1.0), (1.0, 1.0), (1.0, 0.0)];
+    assert!(!changed(&e.set_wrap_points(&square, fonts())), "its anchor is locked");
+    let mut e = editor(&format!("<w:p><w:r><w:t>Text</w:t></w:r>{star}</w:p>"));
+    let f = all_floats(&e)[0];
+    select(&mut e, f);
+    assert!(!changed(&e.set_wrap_points(&[(0.0, 0.0), (1.0, 1.0), (0.0, 0.0)], fonts())), "two vertices, closed");
+    assert!(!changed(&e.set_wrap_points(&[(-50.0, 0.0), (1.0, 1.0), (-90.0, 0.0)], fonts())), "two once clamped");
+    assert!(changed(&e.set_wrap_points(&[(0.0, 0.0), (1.0, 1.0), (0.0, 1.0), (0.0, 0.0)], fonts())), "a closed triangle");
+    assert_eq!(e.selected_wrap_polygon().map(|p| p.points.len()), Some(3));
+}
+
+#[test]
+fn select_objects_takes_a_turned_float_by_the_box_it_is_drawn_in() {
+    let mut e = two_shapes();
+    let star = all_floats(&e)[0];
+    select(&mut e, star);
+    assert!(changed(&e.execute(Command::SetObjectRotation(45.0), fonts())));
+    e.complete(fonts());
+    let geo = e.pages.page(0, &e.index).expect("page 0");
+    let s = geo.stories.iter().find(|s| s.float == Some(FloatId(star))).expect("the star's story");
+    let (laid, drawn) = (s.rect, s.turn.rect(s.rect));
+    assert!(drawn[0] < laid[0] - 1.0, "turned out past its box: {laid:?} {drawn:?}");
+    let caret = Selection::Caret(Position::text(StoryId::Body, body_para(&e, 0), Unit(0)));
+    e.set_selection(caret);
+    e.set_select_objects(true);
+    drag(&mut e, [laid[0] - 1.0, laid[1] - 1.0], [laid[2] + 1.0, laid[3] + 1.0], NONE);
+    assert!(e.selected_floats().is_empty(), "its corners stick out of the rectangle");
+    drag(&mut e, [drawn[0] - 1.0, drawn[1] - 1.0], [drawn[2] + 1.0, drawn[3] + 1.0], NONE);
+    assert_eq!(e.selected_floats(), vec![FloatId(star)]);
+}
+
+/// The inserted picture floating beside a shape, grouped, and the group's picture child selected.
+fn grouped_picture_child() -> (Editor, FloatId) {
+    let mut e = with_inserted_picture();
+    assert!(changed(&e.execute(Command::SetObjectWrap(ObjectWrap::Square), fonts())));
+    let pic = FloatId(all_floats(&e)[0]);
+    let _ = e.execute(Command::Escape, fonts());
+    assert!(changed(
+        &e.execute(Command::InsertShape(ShapeInsert { preset: ShapePreset::from_name("rect").unwrap(), width: None, height: None }), fonts())
+    ));
+    let rect = FloatId(*all_floats(&e).iter().find(|&&f| f != pic.0).expect("the shape"));
+    assert!(e.select_listed(pic, &[], false) == Outcome::Moved);
+    assert!(e.select_listed(rect, &[], true) == Outcome::Moved);
+    assert!(changed(&e.group_objects(fonts())));
+    let g = FloatId(all_floats(&e)[0]);
+    let list = e.object_list(0, fonts());
+    let child = list[0].children.iter().find(|c| c.kind == crate::api::state::ObjectKind::Picture).expect("the picture child").path.clone();
+    assert!(e.select_listed(g, &child, false) == Outcome::Moved);
+    (e, g)
+}
+
+#[test]
+fn a_group_childs_picture_gives_its_own_size_and_leaves_the_groups_lock() {
+    let (mut e, g) = grouped_picture_child();
+    assert!(e.object_image().is_some());
+    assert!(e.object_props(fonts()).is_some_and(|p| p.original_size.is_some()), "the child picture's own size");
+    let lock = e.float_of(g).map(|f| f.lock_aspect);
+    assert!(!changed(&e.set_lock_aspect(!lock.unwrap_or(false), fonts())), "the child resizes with its group");
+    assert_eq!(e.float_of(g).map(|f| f.lock_aspect), lock, "the group's lock stays");
+}
+
+#[test]
+fn a_text_boxs_lock_aspect_keeps_its_corners_in_proportion() {
+    let rect = sp(0, 0, 150, 60, "rect", "", "FFFFFF").replace(r#"<wps:cNvSpPr/>"#, r#"<wps:cNvSpPr txBox="1"/>"#);
+    let tb = rect.replace("<wps:bodyPr/>", r#"<wps:txbx><w:txbxContent><w:p/></w:txbxContent></wps:txbx><wps:bodyPr/>"#);
+    let mut e = editor(&format!("<w:p><w:r><w:t>Text</w:t></w:r>{}</w:p>", anchor(72, 300, 150, 60, 1, false, 1, &tb)));
+    let f = FloatId(all_floats(&e)[0]);
+    select(&mut e, f.0);
+    assert!(!e.float_locked(f));
+    assert!(changed(&e.set_lock_aspect(true, fonts())));
+    assert!(e.float_locked(f), "a corner drag keeps its proportions");
+}
+
+#[test]
+fn a_new_objects_name_numbers_past_a_renamed_one() {
+    let mut e = two_shapes();
+    let insert = |e: &mut Editor| {
+        let _ = e.execute(Command::Escape, fonts());
+        assert!(changed(
+            &e.execute(Command::InsertShape(ShapeInsert { preset: ShapePreset::from_name("rect").unwrap(), width: None, height: None }), fonts())
+        ));
+        e.object_props(fonts()).expect("props").name
+    };
+    let first = insert(&mut e);
+    let (base, n) = first.rsplit_once(' ').expect("numbered");
+    let taken = format!("{base} {}", n.parse::<u32>().expect("a number") + 1);
+    let star = all_floats(&e)[0];
+    select(&mut e, star);
+    assert!(changed(&e.set_object_name(&taken, fonts())));
+    assert_ne!(insert(&mut e), taken, "not the renamed object's name");
+}
+
+#[test]
+fn restacking_in_front_of_the_highest_rank_renumbers_the_layer() {
+    let r = |x: i64, id: u32, z: u32| anchor(x, 300, 100, 100, id, false, z, &sp(0, 0, 100, 100, "rect", "", "FF0000"));
+    let mut e = editor(&format!("<w:p><w:r><w:t>Text</w:t></w:r>{}{}{}</w:p>", r(72, 1, 5), r(200, 2, u32::MAX - 1), r(330, 3, u32::MAX)));
+    let ids: Vec<FloatId> = all_floats(&e).into_iter().map(FloatId).collect();
+    let order = |e: &mut Editor| e.object_list(0, fonts()).iter().map(|o| o.id).collect::<Vec<_>>();
+    assert_eq!(order(&mut e), [ids[2], ids[1], ids[0]]);
+    assert!(changed(&e.restack_object(ids[0], Some(ids[2]), fonts())));
+    assert_eq!(order(&mut e), [ids[0], ids[2], ids[1]], "in front of the top one");
+    assert!(changed(&e.restack_object(ids[1], Some(ids[0]), fonts())));
+    assert_eq!(order(&mut e), [ids[1], ids[0], ids[2]]);
+}
+
+/// An inline picture `w` by `h` points: its `xfrm` attributes, `wp:effectExtent`, preset geometry and effects as given.
+fn inline_picture(w: i64, h: i64, xfrm: &str, extent: &str, prst: &str, effects: &str) -> Editor {
+    let (cx, cy) = (w * PT, h * PT);
+    let pic = format!(
+        r#"<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="1" name="P"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm{xfrm}><a:off x="0" y="0"/><a:ext cx="{cx}" cy="{cy}"/></a:xfrm><a:prstGeom prst="{prst}"><a:avLst/></a:prstGeom>{effects}</pic:spPr></pic:pic>"#
+    );
+    let mut e = editor(&format!(
+        r#"<w:p><w:r><w:t>A</w:t></w:r><w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="{cx}" cy="{cy}"/>{extent}<wp:docPr id="1" name="Picture 1"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">{pic}</a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>"#
+    ));
+    select_first_inline_picture(&mut e);
+    e
+}
+
+#[test]
+fn turning_a_picture_read_without_effect_extents_leaves_no_reach_behind() {
+    let mut e = inline_picture(200, 100, r#" rot="5400000""#, "", "rect", "");
+    assert_eq!(first_inline_picture(&e).map(|p| p.effect), Some([0.0; 4]), "none read");
+    assert!(changed(&e.execute(Command::SetObjectRotation(0.0), fonts())));
+    assert_eq!(first_inline_picture(&e).map(|p| p.effect), Some([0.0; 4]), "unturned: its own box");
+    let mut e = inline_picture(200, 100, r#" rot="5400000""#, "", "rect", "");
+    assert!(changed(&e.execute(Command::SetObjectRotation(180.0), fonts())));
+    let p = first_inline_picture(&e).expect("the picture");
+    assert!(p.effect.iter().all(|v| v.abs() < 1e-6), "a half turn reaches no further: {:?}", p.effect);
+}
+
+#[test]
+fn reset_picture_drops_its_effects_extents() {
+    let shadow = r#"<a:effectLst><a:outerShdw blurRad="63500" dist="0" dir="0"><a:srgbClr val="000000"/></a:outerShdw></a:effectLst>"#;
+    let mut e = inline_picture(72, 72, "", r#"<wp:effectExtent l="63500" t="63500" r="63500" b="63500"/>"#, "rect", shadow);
+    assert!(first_inline_picture(&e).is_some_and(|p| p.effect[0] > 1.0), "the shadow's reach");
+    assert!(changed(&e.reset_picture(false, fonts())));
+    let p = first_inline_picture(&e).expect("the picture");
+    assert_eq!(p.effect, [0.0; 4], "no effect reaches past its box");
+    assert!(saved_xml(&e).contains(r#"<wp:effectExtent l="0" t="0" r="0" b="0"/>"#), "{}", saved_xml(&e));
+}
+
+#[test]
+fn a_picture_cut_to_a_shape_takes_its_adjustments() {
+    let mut e = inline_picture(144, 72, "", "", "roundRect", "");
+    let adjust = |e: &Editor| first_inline_picture(e).and_then(|p| p.shape.as_deref()?.geometry().map(|g| g.adjust_values()));
+    assert_ne!(adjust(&e).and_then(|a| a.first().copied()), Some(30_000));
+    assert!(changed(&e.set_shape_adjust(0, 30_000, fonts())));
+    assert_eq!(adjust(&e).and_then(|a| a.first().copied()), Some(30_000));
+}
+
+/// A frame in the body (its paragraph `framePr` and its other paragraph properties), selected, with `styles`.
+fn framed(frame_pr: &str, ppr: &str, styles: &str) -> (Editor, FloatId) {
+    let body = format!(r#"<w:p><w:pPr>{ppr}{frame_pr}</w:pPr><w:r><w:t>FRAMED</w:t></w:r></w:p><w:p><w:r><w:t>Body text.</w:t></w:r></w:p>"#);
+    let mut e = Editor::open(&super::services::package(&body, styles, ""), fonts()).expect("opens");
+    e.complete(fonts());
+    let f = FloatId(all_floats(&e)[0]);
+    e.set_caret_for_benchmark(Selection::Object(ObjectRef::Floating(f)));
+    (e, f)
+}
+
+#[test]
+fn a_frame_dragged_to_a_twip_that_reads_as_an_alignment_keeps_its_place() {
+    let pr = r#"<w:framePr w:w="2880" w:wrap="around" w:vAnchor="page" w:hAnchor="page" w:x="1441" w:y="2881"/>"#;
+    for at in [-0.25, -0.05, -0.65] {
+        let (mut e, f) = framed(pr, "", "");
+        let mut moved = e.float_of(f).cloned().expect("the frame");
+        (moved.h_offset, moved.v_offset) = (at, at);
+        assert!(changed(&e.commit_frame(f, &moved, "Move Object", fonts())), "{at}");
+        let again = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
+        let n = again.float_of(FloatId(all_floats(&again)[0])).cloned().expect("the frame");
+        assert_eq!((n.h_align.as_deref(), n.v_align.as_deref()), (None, None), "{at}: a place, not an alignment");
+        assert!((n.h_offset - at).abs() <= 0.06 && (n.v_offset - at).abs() <= 0.06, "{at}: ({}, {})", n.h_offset, n.v_offset);
+    }
+}
+
+#[test]
+fn allowing_overlap_overrides_a_styles_suppress_overlap() {
+    use crate::api::command::FrameProperties;
+    let style = r#"<w:style w:type="paragraph" w:styleId="Apart"><w:name w:val="Apart"/><w:pPr><w:suppressOverlap/></w:pPr></w:style>"#;
+    let pr = r#"<w:framePr w:w="2880" w:wrap="around" w:vAnchor="page" w:hAnchor="page" w:x="1441" w:y="2881"/>"#;
+    let (mut e, f) = framed(pr, r#"<w:pStyle w:val="Apart"/>"#, style);
+    assert!(e.float_of(f).is_some_and(|n| !n.allow_overlap), "the style keeps it apart");
+    let props: FrameProperties = e.frame_properties(None).expect("frame properties");
+    assert!(changed(&e.set_frame_with_overlap(props, Some(true), fonts())));
+    let again = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
+    assert!(again.float_of(FloatId(all_floats(&again)[0])).is_some_and(|n| n.allow_overlap), "saved as allowed");
 }

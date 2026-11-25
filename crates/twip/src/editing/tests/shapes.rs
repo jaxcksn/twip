@@ -985,3 +985,92 @@ fn create_link_goes_on_after_the_last_boxs_place() {
         "{c:?}"
     );
 }
+
+#[test]
+fn create_link_refuses_a_chain_with_a_member_that_cant_be_changed() {
+    let sdt = |inner: &str| {
+        format!(r#"<w:sdt><w:sdtPr><w:id w:val="5"/><w:lock w:val="sdtContentLocked"/></w:sdtPr><w:sdtContent>{inner}</w:sdtContent></w:sdt>"#)
+    };
+    let head = text_box(Some("<w:p><w:r><w:t>Story</w:t></w:r></w:p>"), Some(1), 0);
+    let tail = text_box(None, Some(1), 65535);
+    let empty = text_box(Some("<w:p/>"), None, 0);
+    let at = |k: u32, b: &str| anchor(72 + 160 * i64::from(k), 300, 150, 60, k + 1, false, k + 1, b);
+    let body = format!("<w:p>{}</w:p><w:p><w:r><w:t>Text</w:t></w:r>{}{}</w:p>", sdt(&at(0, &head)), at(1, &tail), at(2, &empty));
+    let mut e = editor(&body);
+    let ids = floats(&e);
+    let before = chain_texts(&e);
+    e.set_selection(Selection::Object(ObjectRef::Floating(FloatId(ids[1]))));
+    assert!(!e.can_link_to(FloatId(ids[2])), "renumbering would write the locked head");
+    assert!(!matches!(e.link_text_box(FloatId(ids[2]), fonts()), super::super::Outcome::Changed(_)));
+    assert_eq!(chain_texts(&e), before);
+}
+
+#[test]
+fn create_link_refuses_a_text_box_with_no_story_to_own_the_chain() {
+    let rect = sp(0, 0, 150, 60, "rect", "", "FFFFFF").replace(r#"<wps:cNvSpPr/>"#, r#"<wps:cNvSpPr txBox="1"/>"#);
+    let mut e = boxes_editor(&[rect, text_box(Some("<w:p/>"), None, 0)]);
+    let ids = floats(&e);
+    let before = chain_texts(&e);
+    e.set_selection(Selection::Object(ObjectRef::Floating(FloatId(ids[0]))));
+    assert!(!e.can_link_to(FloatId(ids[1])));
+    assert!(!matches!(e.link_text_box(FloatId(ids[1]), fonts()), super::super::Outcome::Changed(_)));
+    assert_eq!(chain_texts(&e), before);
+}
+
+#[test]
+fn create_link_refuses_a_box_whose_paragraph_mark_is_a_revision() {
+    let full = text_box(Some("<w:p><w:r><w:t>Story</w:t></w:r></w:p>"), None, 0);
+    let marked = text_box(Some(r#"<w:p><w:pPr><w:rPr><w:ins w:id="1" w:author="A"/></w:rPr></w:pPr></w:p><w:p/>"#), None, 0);
+    let mut e = boxes_editor(&[full, marked, text_box(Some("<w:p/>"), None, 0)]);
+    let ids = floats(&e);
+    e.set_selection(Selection::Object(ObjectRef::Floating(FloatId(ids[0]))));
+    assert!(!e.can_link_to(FloatId(ids[1])), "its inserted paragraph mark would be lost");
+    assert!(e.can_link_to(FloatId(ids[2])));
+}
+
+#[test]
+fn create_links_pointer_finds_a_turned_box_where_it_is_drawn() {
+    let full = text_box(Some("<w:p><w:r><w:t>Story</w:t></w:r></w:p>"), None, 0);
+    let turned = text_box(Some("<w:p/>"), None, 0).replacen("<a:xfrm", r#"<a:xfrm rot="5400000""#, 1);
+    let mut e = boxes_editor(&[full, turned]);
+    let ids = floats(&e);
+    e.set_selection(Selection::Object(ObjectRef::Floating(FloatId(ids[0]))));
+    assert!(e.begin_linking() == super::super::Outcome::Moved);
+    // The second box, 150 × 60 at (232, 300), turned a quarter about its centre (307, 330).
+    let at = |e: &mut Editor, x: f64, y: f64| {
+        let (x, y) = e.stack().to_doc(0, x, y).expect("on the stack");
+        e.link_target_at(x, y, fonts())
+    };
+    assert_eq!(at(&mut e, 307.0, 390.0), Some(FloatId(ids[1])), "below its unturned place, inside the turned box");
+    assert_eq!(at(&mut e, 240.0, 330.0), None, "inside its unturned place only");
+}
+
+#[test]
+fn releasing_an_inline_drag_after_its_picture_changed_changes_nothing_more() {
+    use crate::layout::tests::shapes::PT;
+    let wsp = r#"<wps:wsp><wps:cNvSpPr/><wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="W" cy="W"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="DDEEFF"/></a:solidFill></wps:spPr><wps:bodyPr/></wps:wsp>"#
+        .replace('W', &(72 * PT).to_string());
+    let shape = format!(
+        r#"<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="{w}" cy="{w}"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:docPr id="1" name="Shape 1"/><a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">{wsp}</a:graphicData></a:graphic></wp:inline></w:drawing></w:r>"#,
+        w = 72 * PT
+    );
+    let mut e = editor(&format!("<w:p>{shape}</w:p>"));
+    let rect = {
+        let snap = e.snapshot();
+        crate::layout::traverse::paint_items(&snap.pages()[0])
+            .iter()
+            .find_map(|it| if let crate::layout::fragment::Item::Shape(s) = it { Some(s.rect) } else { None })
+            .expect("the shape")
+    };
+    click(&mut e, rect[0] + 2.0, rect[1] + 2.0);
+    let frame = e.view(0..1).shapes.first().cloned().expect("a shape frame");
+    let doc = |e: &Editor, p: [f64; 2]| e.stack().to_doc(0, p[0], p[1]).expect("on the stack");
+    let (from, to) = (doc(&e, frame.rotate), doc(&e, [frame.rotate[0] + 100.0, frame.rotate[1] + 60.0]));
+    e.pointer_input(PointerKind::Down, from.0, from.1, 1, Mods::default(), fonts());
+    e.pointer_input(PointerKind::Move, to.0, to.1, 0, Mods::default(), fonts());
+    assert!(e.dragging());
+    assert!(matches!(e.set_object_title("Changed", fonts()), super::super::Outcome::Changed(_)));
+    let before = e.document().sections[0].blocks.clone();
+    e.pointer_input(PointerKind::Up, to.0, to.1, 0, Mods::default(), fonts());
+    assert_eq!(e.document().sections[0].blocks, before, "the changed picture doesn't turn");
+}

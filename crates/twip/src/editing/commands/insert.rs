@@ -128,11 +128,16 @@ impl Editor {
     /// The hyperlink at the selection's start.
     pub fn link_here(&self) -> Option<LinkHere> {
         let (a, _) = self.selection.ordered(&self.index)?;
-        self.link_at(a).filter(|l| !l.reference)
+        self.innermost_link(a, false)
     }
 
     /// The innermost link at `a`: a hyperlink, or a cross-reference that links to its bookmark.
     pub fn link_at(&self, a: crate::editing::position::Position) -> Option<LinkHere> {
+        self.innermost_link(a, true)
+    }
+
+    /// [`Editor::link_at`], cross-references left out unless `references`.
+    fn innermost_link(&self, a: crate::editing::position::Position, references: bool) -> Option<LinkHere> {
         let (para, at) = a.para_offset()?;
         let p = self.index.para(&self.doc, para)?;
         let mut unit = 0u32;
@@ -153,6 +158,9 @@ impl Editor {
                 let code = crate::docx::fields::parse(&crate::docx::fields::code_text(&p.inlines, s));
                 let switch = |f: char| code.switches.iter().find(|s| s.flag == f).and_then(|s| s.arg.clone()).filter(|a| !a.is_empty());
                 let reference = code.name != "HYPERLINK";
+                if reference && !references {
+                    return None;
+                }
                 let parts = match code.name.as_str() {
                     "HYPERLINK" => LinkParts {
                         target: code.args.first().cloned().unwrap_or_default(),

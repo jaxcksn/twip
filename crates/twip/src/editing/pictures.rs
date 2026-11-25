@@ -15,6 +15,8 @@ pub(super) struct PicEdit<'a> {
     pub w: &'a mut f64,
     pub h: &'a mut f64,
     pub image: &'a mut Option<usize>,
+    /// Its effect extents (`wp:effectExtent`).
+    pub effect: &'a mut [f64; 4],
     pub shape: Option<&'a mut crate::drawing::Shape>,
 }
 
@@ -96,12 +98,21 @@ impl Editor {
             Selection::Object(ObjectRef::Inline { .. }) => self.edit_inline(
                 label,
                 |pic| {
-                    let was = (pic.w, pic.h, pic.shape.as_deref().map_or(0.0, |s| s.xfrm.rot.degrees()));
-                    if !edit(&mut PicEdit { w: &mut pic.w, h: &mut pic.h, image: &mut pic.image, shape: pic.shape.as_deref_mut() }) {
+                    let (was, effect) = ((pic.w, pic.h, pic.shape.as_deref().map_or(0.0, |s| s.xfrm.rot.degrees())), pic.effect);
+                    if !edit(&mut PicEdit {
+                        w: &mut pic.w,
+                        h: &mut pic.h,
+                        image: &mut pic.image,
+                        effect: &mut pic.effect,
+                        shape: pic.shape.as_deref_mut(),
+                    }) {
                         return false;
                     }
                     let deg = pic.shape.as_deref().map_or(0.0, |s| s.xfrm.rot.degrees());
-                    if (was.2 != 0.0 || deg != 0.0) && (was.0, was.1, was.2) != (pic.w, pic.h, deg) {
+                    if pic.effect != effect {
+                        // The edit set the effects' own reach: the turn's goes on it.
+                        super::shapes::refit_turn(pic, (pic.w, pic.h, 0.0));
+                    } else if (was.2 != 0.0 || deg != 0.0) && (was.0, was.1, was.2) != (pic.w, pic.h, deg) {
                         super::shapes::refit_turn(pic, was);
                     }
                     true
@@ -116,7 +127,7 @@ impl Editor {
                 // A quarter-turned float's box is the picture's own width and height swapped.
                 let (w, h) = if n.rot_swap { (&mut n.h, &mut n.w) } else { (&mut n.w, &mut n.h) };
                 let rot = n.shape.as_deref().map(|s| s.xfrm.rot);
-                let mut e = PicEdit { w, h, image: &mut n.image, shape: n.shape.as_deref_mut() };
+                let mut e = PicEdit { w, h, image: &mut n.image, effect: &mut n.effect, shape: n.shape.as_deref_mut() };
                 if !edit(&mut e) {
                     return Outcome::Unchanged("already so");
                 }
@@ -306,6 +317,8 @@ impl Editor {
                 p.blip.adjust.clear();
                 p.effects = None;
                 p.line = None;
+                // Without effects or an outline, nothing but a turn reaches past its box.
+                *e.effect = [0.0; 4];
                 p.geom = crate::drawing::geom::Geometry::Preset { preset: crate::drawing::geom::Preset::Rect, adj: Vec::new() };
                 if let Some(s) = e.shape.as_deref_mut() {
                     (s.xfrm.rot, s.xfrm.flip_h, s.xfrm.flip_v) = (Default::default(), false, false);

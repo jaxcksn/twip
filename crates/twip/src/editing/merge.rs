@@ -708,7 +708,7 @@ impl Editor {
         if props.kind != ControlKind::RepeatingSection {
             return Err(bad("id"));
         }
-        if props.kind_xml.as_deref().is_some_and(|x| x.contains("doNotAllowInsertDeleteSection")) || !props.lock.editable() {
+        if props.kind_xml.as_deref().is_some_and(items_fixed) || !props.lock.editable() {
             return Err(locked());
         }
         if props.binding.is_some() || props.rest.iter().any(|(n, _)| n == "dataBinding") {
@@ -1012,7 +1012,19 @@ impl Editor {
         if !control.props.lock.editable() {
             return Err(locked());
         }
-        let secs = crate::docx::review::Timestamp::parse(date.trim()).utc.ok_or_else(|| bad("date"))?;
+        let date = date.trim();
+        let secs = crate::docx::review::Timestamp::parse(date).utc.ok_or_else(|| bad("date"))?;
+        // A day the month has
+        let ymd = (date.get(0..4), date.get(5..7), date.get(8..10));
+        let (Some(y), Some(m), Some(d)) =
+            (ymd.0.and_then(|v| v.parse().ok()), ymd.1.and_then(|v| v.parse().ok()), ymd.2.and_then(|v| v.parse().ok()))
+        else {
+            return Err(bad("date"));
+        };
+        use crate::docx::review::{civil_from_days, days_from_civil};
+        if civil_from_days(days_from_civil(y, m, d)) != (y, m, d) {
+            return Err(bad("date"));
+        }
         let full = crate::docx::review::Timestamp::from_utc(secs).raw.to_string();
         let text = crate::docx::binding::shown(&control.props, &full);
         if let Some(xml) = crate::docx::binding::with_full_date_value(&control.props, Some(full), &self.cx().w) {
@@ -1097,6 +1109,7 @@ impl Editor {
                         self.abort(tx);
                         return Err(no_element());
                     }
+                    self.placeholder_off(&mut tx, c);
                     self.follow(&tx);
                     self.commit(tx, None, fonts)
                 }
@@ -1146,6 +1159,7 @@ impl Editor {
                         self.abort(tx);
                         return Err(no_element());
                     }
+                    self.placeholder_off(&mut tx, c);
                     self.follow(&tx);
                     self.commit(tx, None, fonts)
                 }
@@ -1484,6 +1498,14 @@ impl Editor {
             let k = ranges.partition_point(|r| self.index.cmp(&r.0, &a).is_lt());
             ranges.insert(k, (a, b));
         }
+        // Joined where the selection's own range overlaps others, so the ends are in order too
+        ranges.dedup_by(|r, last| {
+            let joins = self.index.cmp(&r.0, &last.1).is_le();
+            if joins && self.index.cmp(&r.1, &last.1).is_gt() {
+                last.1 = r.1;
+            }
+            joins
+        });
         let mut picked: Vec<(FieldId, StoryId, ParaId, usize, Unit, Unit)> = if !ranges.is_empty() {
             all.iter()
                 .filter(|f| {
@@ -2783,7 +2805,7 @@ impl Editor {
                         let v = was[at..].find("val=\"")? + at + 5;
                         Some(was[v..v + was[v..].find('"')?].to_string())
                     });
-                    let fixed = o.allow_insert_delete.map_or(was.contains("doNotAllowInsertDeleteSection"), |a| !a);
+                    let fixed = o.allow_insert_delete.map_or(items_fixed(&was), |a| !a);
                     let w15 = crate::docx::xml::W15;
                     let title = title
                         .filter(|t| !t.is_empty())
@@ -3397,4 +3419,15 @@ pub fn date_formats(locale: &str) -> &'static [&'static str] {
         "zh" => ZH,
         _ => crate::services::fields::DATE_PICTURES,
     }
+}
+
+/// Whether a repeating section's `w15:doNotAllowInsertDeleteSection` is on: present, and not given a false value.
+pub(super) fn items_fixed(kind_xml: &str) -> bool {
+    let Some(at) = kind_xml.find("doNotAllowInsertDeleteSection") else { return false };
+    let rest = &kind_xml[at..];
+    let tag = &rest[..rest.find('>').unwrap_or(rest.len())];
+    let Some(v) = tag.find("val=").map(|i| tag[i + 4..].trim_start_matches(['"', '\'']).split(['"', '\'']).next().unwrap_or("")) else {
+        return true;
+    };
+    !matches!(v, "0" | "false" | "off")
 }

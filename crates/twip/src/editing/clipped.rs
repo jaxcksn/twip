@@ -51,25 +51,27 @@ impl Editor {
         let at = |para, unit| Position::text(focus.story, para, unit);
         if let Some((hidden, k, page, chain)) = self.clipped_at(focus) {
             let geo = self.pages.page(page, &self.index)?;
-            let x = geo.cells.iter().find(|c| c.chain == chain).map_or(goal[0], |c| c.turn.back(goal)[0]);
             let next = if down { hidden[k + 1..].iter().find(|h| h.0 != hidden[k].0) } else { hidden[..k].iter().rev().find(|h| h.0 != hidden[k].0) };
             if let Some(&(para, a, _)) = next {
                 return Some(at(para, a));
             }
             let last = geo.lines.iter().filter(|l| l.chain == chain && !l.repeat).max_by(|a, b| a.top.total_cmp(&b.top))?;
-            let s = last.nearest(x)?;
+            let s = last.nearest(last.local(goal)[0])?;
             let from = at(s.para, s.unit);
             if !down {
                 return Some(from);
             }
             let bottom = geo.cells.iter().find(|c| c.chain == chain).map_or(last.bottom, |c| c.rect[3]);
-            let dx = |l: &super::geometry::GLine| (l.x0() - x).max(x - l.x1()).max(0.0);
+            let dx = |l: &super::geometry::GLine| {
+                let x = l.local(goal)[0];
+                (l.x0() - x).max(x - l.x1()).max(0.0)
+            };
             let below = geo
                 .lines
                 .iter()
                 .filter(|l| !l.repeat && geo.stories[l.story].story == focus.story && l.top >= bottom - 0.01)
                 .min_by(|a, b| a.top.total_cmp(&b.top).then(dx(a).total_cmp(&dx(b))));
-            return Some(match below.and_then(|l| l.nearest(x)).map(|s| at(s.para, s.unit)) {
+            return Some(match below.and_then(|l| l.nearest(l.local(goal)[0])).map(|s| at(s.para, s.unit)) {
                 Some(p) => p,
                 None => from,
             });

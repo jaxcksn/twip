@@ -70,22 +70,26 @@ impl Editor {
         if f == target || self.selected_floats().len() != 1 || self.selected_child().is_some() {
             return false;
         }
-        if !self.float_changeable(f) || !self.float_changeable(target) {
-            return false;
-        }
         let Some((_, boxes)) = self.chain_of(f) else { return false };
         if boxes.last() != Some(&f) || boxes.len() >= MAX_CHAIN {
+            return false;
+        }
+        // Every member changeable, the first holding the story
+        let owned = boxes.first().and_then(|&g| self.float_of(g)?.shape.as_deref()?.sp()).is_some_and(|sp| sp.text == ShapeText::Story);
+        if !owned || !boxes.iter().all(|&g| self.float_changeable(g)) || !self.float_changeable(target) {
             return false;
         }
         let story = |g: FloatId| self.index.float_anchor(g).and_then(|a| self.index.para_slot(a)).map(|s| self.index.story(s.container));
         let empty = self.float_of(target).is_some_and(|t| {
             let sp = t.shape.as_deref().and_then(|s| s.sp());
             let free = sp.is_some_and(|sp| sp.text_box && sp.text == ShapeText::Story && sp.chain.is_none());
-            // Its story is dropped: only empty paragraphs, no markers (bookmarks, comments, controls) or anchored objects.
+            // Its story is dropped: only empty paragraphs, no markers (bookmarks, comments, controls), tracked paragraph
+            // marks or anchored objects.
+            let empty_text = |i: &Inline| matches!(i, Inline::Text(s, _) if s.is_empty());
             let blank = t.text_box.as_ref().is_none_or(|tb| {
-                tb.blocks.iter().all(|b| {
-                    matches!(b, Block::Para(p) if p.controls.is_empty() && p.inlines.iter().all(|i| matches!(i, Inline::Text(s, _) if s.is_empty())))
-                })
+                tb.blocks
+                    .iter()
+                    .all(|b| matches!(b, Block::Para(p) if p.controls.is_empty() && p.mark.rev.is_empty() && p.inlines.iter().all(empty_text)))
             });
             free && blank && !t.is_frame()
         });
@@ -258,6 +262,7 @@ impl Editor {
         let geo = self.pages.page(page, &self.index)?;
         let f = geo.stories.iter().rev().find(|s| {
             let [a, b, c, d] = s.rect;
+            let [px, py] = s.turn.back([px, py]);
             s.float.is_some() && px >= a && px <= c && py >= b && py <= d
         })?;
         let f = f.float?;

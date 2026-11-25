@@ -83,13 +83,7 @@ pub fn edited_parts(doc: &Document) -> Result<Vec<(String, Vec<u8>)>, String> {
             continue;
         }
         // Both kinds new: the second builds on the first's relationships and content types.
-        let made = new_notes_part(&src.package, &src.main, foot, notes, &parts, doc)?;
-        for (n, b) in made {
-            match parts.iter_mut().find(|(m, _)| *m == n) {
-                Some(p) => p.1 = b,
-                None => parts.push((n, b)),
-            }
-        }
+        new_notes_part(&src.package, &src.main, foot, notes, &mut parts, doc)?;
         // Separator stories set since reading are listed, as Word lists its own
         let listing: Vec<(i64, bool)> = [(-1, "separator"), (0, "continuationSeparator"), (-2, "continuationNotice")]
             .into_iter()
@@ -1520,16 +1514,15 @@ fn new_stories(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(),
 }
 
 /// A new `footnotes.xml` or `endnotes.xml` holding `notes` (with Word's separator notes, ids -1 and 0), and the main
-/// part's relationships and the content types with it added.
-// shortcut: its relationship and content-type edits are its own; they move to `package::add_part` when next changed.
+/// part's relationships (made when it has none) and the content types with it added.
 fn new_notes_part(
     package: &[u8],
     main: &str,
     foot: bool,
     notes: &HashMap<i64, Vec<Block>>,
-    made: &[(String, Vec<u8>)],
+    parts: &mut Vec<(String, Vec<u8>)>,
     doc: &Document,
-) -> Result<Vec<(String, Vec<u8>)>, String> {
+) -> Result<(), String> {
     let (controls, people) = (&doc.controls, &doc.people);
     let (tag, file, rel) = if foot { ("footnote", "footnotes.xml", "footnotes") } else { ("endnote", "endnotes.xml", "endnotes") };
     let ns = r#"xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships""#;
@@ -1566,36 +1559,11 @@ fn new_notes_part(
     // The part sits beside the main part; its relationship and content type go with it.
     let dir = main.rsplit_once('/').map_or("", |(d, _)| d);
     let name = if dir.is_empty() { file.to_string() } else { format!("{dir}/{file}") };
-    let rels_name = match main.rsplit_once('/') {
-        Some((d, f)) => format!("{d}/_rels/{f}.rels"),
-        None => format!("_rels/{main}.rels"),
-    };
-    let mut zin = zip::ZipArchive::new(Cursor::new(package)).map_err(|e| e.to_string())?;
-    let mut read = |n: &str| -> Result<String, String> {
-        if let Some((_, b)) = made.iter().find(|(m, _)| m == n) {
-            return String::from_utf8(b.clone()).map_err(|e| e.to_string());
-        }
-        crate::docx::package::text(zin.by_name(n).map_err(|e| format!("{n}: {e}"))?, n)
-    };
-    let rels = read(&rels_name)?;
-    let mut k = 1;
-    while rels.contains(&format!("Id=\"rId{k}\"")) {
-        k += 1;
-    }
-    let close = rels.rfind("</Relationships>").ok_or("relationships without their end tag")?;
-    let rels = format!(
-        r#"{}<Relationship Id="rId{k}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/{rel}" Target="{file}"/>{}"#,
-        &rels[..close],
-        &rels[close..]
-    );
-    let types = read("[Content_Types].xml")?;
-    let close = types.rfind("</Types>").ok_or("content types without their end tag")?;
-    let types = format!(
-        r#"{}<Override PartName="/{name}" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.{rel}+xml"/>{}"#,
-        &types[..close],
-        &types[close..]
-    );
-    Ok(vec![(name, xml.into_bytes()), (rels_name, rels.into_bytes()), ("[Content_Types].xml".into(), types.into_bytes())])
+    let content_type = format!("application/vnd.openxmlformats-officedocument.wordprocessingml.{rel}+xml");
+    let rel_type = format!("http://schemas.openxmlformats.org/officeDocument/2006/relationships/{rel}");
+    crate::docx::package::add_part(package, parts, main, &name, &content_type, &rel_type)?;
+    crate::docx::package::set(parts, &name, xml.into_bytes());
+    Ok(())
 }
 
 /// What saving a notes part changes besides its kept notes' content: notes added and removed whole, and the separator
@@ -1649,9 +1617,16 @@ fn notes_xml(
         let body = new_blocks_xml(xml, blocks, controls, people)?;
         text.push_str(&format!("<{w}{tag} {w}id=\"{id}\">{body}</{w}{tag}>"));
     }
-    // Separator stories: in place, else as a new note under an id below every other
+    // Separator stories: in place, else as a new note under a negative id no other note has
     let mut listing = Vec::new();
-    let mut free = root.children().filter(|n| is_w(*n, tag)).filter_map(id_of).min().unwrap_or(0).min(0) - 1;
+    let mut taken: Option<std::collections::HashSet<i64>> = None;
+    let mut free = || {
+        let t = taken.get_or_insert_with(|| root.children().filter(|n| is_w(*n, tag)).filter_map(id_of).collect());
+        // Fewer notes than negative ids: one is free.
+        let id = (1..=i64::MAX).map(|k| -k).find(|k| !t.contains(k)).unwrap_or(i64::MIN);
+        t.insert(id);
+        id
+    };
     for (t, blocks) in e.separators {
         let same: Vec<roxmltree::Node> = root.children().filter(|n| is_w(*n, tag) && n.attribute((W, "type")) == Some(*t)).collect();
         // The reader keeps the last listed story of a type: that one is the active story.
@@ -1659,10 +1634,17 @@ fn notes_xml(
         let had = same.iter().rev().find(|n| listed(n)).or(same.first()).copied();
         match (had, blocks) {
             (Some(n), Some(b)) => {
-                let id = id_of(n).unwrap_or(free);
+                let id = id_of(n).unwrap_or_else(&mut free);
                 let body = new_blocks_xml(xml, b, controls, people)?;
                 splices.push((n.range(), format!("<{w}{tag} {w}type=\"{t}\" {w}id=\"{id}\">{body}</{w}{tag}>")));
                 listing.push((id, true));
+                // The type's other listed stories go: only this one is listed
+                for o in same.iter().filter(|o| **o != n && listed(o)) {
+                    splices.push((o.range(), String::new()));
+                    if let Some(id) = id_of(*o) {
+                        listing.push((id, false));
+                    }
+                }
             }
             (Some(active), None) => {
                 // Every listed story of the type goes, or an earlier one would become the active one.
@@ -1675,9 +1657,9 @@ fn notes_xml(
             }
             (None, Some(b)) => {
                 let body = new_blocks_xml(xml, b, controls, people)?;
-                text.push_str(&format!("<{w}{tag} {w}type=\"{t}\" {w}id=\"{free}\">{body}</{w}{tag}>"));
-                listing.push((free, true));
-                free -= 1;
+                let id = free();
+                text.push_str(&format!("<{w}{tag} {w}type=\"{t}\" {w}id=\"{id}\">{body}</{w}{tag}>"));
+                listing.push((id, true));
             }
             (None, None) => {}
         }
@@ -1715,11 +1697,18 @@ fn list_notes(doc: &Document, src: &Source, parts: &mut Vec<(String, Vec<u8>)>, 
     };
     let Some(mut out) = package::read(&src.package, parts, &name)? else { return Ok(()) };
     let pr = format!("{tag}Pr");
-    let (w, at, mut entries, open) = {
+    let (w, id_attr, at, mut entries, open) = {
         let dom = roxmltree::Document::parse(&out).map_err(|e| e.to_string())?;
         let w = match dom.root_element().lookup_prefix(W) {
             Some(p) if !p.is_empty() => format!("{p}:"),
             _ => String::new(),
+        };
+        // A default namespace doesn't qualify an attribute: another prefix does, else one declared on the entry.
+        let other = dom.root_element().namespaces().find(|n| n.uri() == W && n.name().is_some()).and_then(|n| n.name()).filter(|_| w.is_empty());
+        let id = match other {
+            Some(p) => format!("{p}:id"),
+            None if w.is_empty() => format!("xmlns:w=\"{W}\" w:id"),
+            None => format!("{w}id"),
         };
         let el = dom.root_element().children().find(|c| is_w(*c, &pr));
         let entries: Vec<i64> =
@@ -1738,7 +1727,7 @@ fn list_notes(doc: &Document, src: &Source, parts: &mut Vec<(String, Vec<u8>)>, 
                 },
             }
         });
-        (w, props, entries, open)
+        (w, id, props, entries, open)
     };
     for (id, on) in changes {
         entries.retain(|e| *e != id);
@@ -1746,7 +1735,7 @@ fn list_notes(doc: &Document, src: &Source, parts: &mut Vec<(String, Vec<u8>)>, 
             entries.push(id);
         }
     }
-    let list: String = entries.iter().map(|id| format!("<{w}{tag} {w}id=\"{id}\"/>")).collect();
+    let list: String = entries.iter().map(|id| format!("<{w}{tag} {id_attr}=\"{id}\"/>")).collect();
     let body = format!("{at}{list}");
     let parent = open.unwrap_or_else(|| format!("<{w}{pr}>"));
     let name_of = parent[1..].split(|c: char| c.is_whitespace() || c == '>').next().unwrap_or("").to_string();
@@ -2364,18 +2353,6 @@ impl<'a, 'i> Saver<'a, 'i> {
             return Ok(());
         }
         let mut text = Emit::group(self, &qs, &srcs, &ps)?;
-        // Frames made since reading (a drop cap): their paragraphs, each with its `w:framePr`, go before the paragraph
-        // they anchor at.
-        let made: String = ps
-            .iter()
-            .flat_map(|p| p.inlines.iter())
-            .filter_map(|i| match i {
-                Inline::Float(f, _) if f.frame_src.is_none() && f.is_frame() => f.text_box.as_ref(),
-                _ => None,
-            })
-            .map(|tb| self.nested_blocks(&tb.blocks))
-            .collect::<Result<_, _>>()?;
-        text.insert_str(0, &made);
         match srcs.first() {
             Some(first) => {
                 // Frames between joined paragraphs (frames.rs anchored them in the next paragraph, now joined into
@@ -3631,8 +3608,8 @@ fn same_inline(x: &Inline, y: &Inline) -> bool {
         (Inline::FieldBegin { form: a, run: r, .. }, Inline::FieldBegin { form: b, run: q, .. }) => {
             a.as_ref().map(|f| &f.data) == b.as_ref().map(|f| &f.data) && Rc::ptr_eq(r, q)
         }
-        // A resized picture is written patched.
-        (Inline::Picture(a, r), Inline::Picture(b, q)) => a.image == b.image && a.w == b.w && a.h == b.h && a.alt == b.alt && Rc::ptr_eq(r, q),
+        // A resized or reformatted picture is written patched (its text's content is its own container).
+        (Inline::Picture(a, r), Inline::Picture(b, q)) => a.same_but_story(b) && Rc::ptr_eq(r, q),
         // A ruby whose text was formatted is written anew.
         (Inline::Ruby(a, r), Inline::Ruby(b, q)) => (Rc::ptr_eq(a, b) || a.xml.0.as_deref() == b.xml.0.as_deref()) && Rc::ptr_eq(r, q),
         _ => {
@@ -3950,6 +3927,9 @@ struct Emit<'s, 'a, 'i> {
     depth: usize,
     /// Each output paragraph's start tag and `w:pPr`, and end tag; the next one to open; whether one is open.
     heads: Vec<(String, String)>,
+    /// Each output paragraph's frames made since reading (a drop cap): their paragraphs, each with its `w:framePr`,
+    /// written before it.
+    frames: Vec<String>,
     next: usize,
     in_para: bool,
     hidden: Option<(String, String)>,
@@ -4387,6 +4367,19 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                 .cloned()
                 .collect();
         }
+        let frames = ps
+            .iter()
+            .map(|p| {
+                p.inlines
+                    .iter()
+                    .filter_map(|i| match i {
+                        Inline::Float(f, _) if f.frame_src.is_none() && f.is_frame() => f.text_box.as_ref(),
+                        _ => None,
+                    })
+                    .map(|tb| s.nested_blocks(&tb.blocks))
+                    .collect::<Result<String, _>>()
+            })
+            .collect::<Result<_, _>>()?;
         let mut e = Emit {
             s,
             out: String::new(),
@@ -4402,6 +4395,7 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
             stack: Vec::new(),
             depth: 0,
             heads,
+            frames,
             next: 0,
             in_para: false,
             hidden: None,
@@ -5046,6 +5040,9 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
         self.close_wrap();
         if !self.in_para {
             let k = self.next.min(self.heads.len().saturating_sub(1));
+            if let Some(f) = self.frames.get_mut(k) {
+                self.out.push_str(&std::mem::take(f));
+            }
             let head = self.hidden.as_ref().map_or(&self.heads[k].0, |h| &h.0);
             self.out.push_str(head);
             self.in_para = true;
@@ -5241,18 +5238,7 @@ fn emit(s: &Saver, qs: &[&Paragraph], srcs: &[&ParaSrc], ps: &[&Paragraph]) -> R
     if ps.is_empty() {
         return Ok(String::new());
     }
-    // Frames made since reading: their paragraphs, each with its `w:framePr`, go before the paragraph they anchor at.
-    let mut out: String = ps
-        .iter()
-        .flat_map(|p| p.inlines.iter())
-        .filter_map(|i| match i {
-            Inline::Float(f, _) if f.frame_src.is_none() && f.is_frame() => f.text_box.as_ref(),
-            _ => None,
-        })
-        .map(|tb| s.nested_blocks(&tb.blocks))
-        .collect::<Result<_, _>>()?;
-    out.push_str(&Emit::group(s, qs, srcs, ps)?);
-    Ok(out)
+    Emit::group(s, qs, srcs, ps)
 }
 
 fn same_src(a: &Option<Rc<Range<usize>>>, b: &Option<Rc<Range<usize>>>) -> bool {
@@ -5338,14 +5324,20 @@ impl Saver<'_, '_> {
             match drawing::vml_picture_patch(src, a, now.0.shape.as_deref(), now.0.w, now.0.h) {
                 Some(x) => return picture_relinked(x, was.and_then(|w| w.0.image), now.0.image),
                 None => {
-                    if let Some(x) = self.new_picture_xml(&now.0) {
-                        return x;
+                    // In place of its run child only: `src` may be a content control around its run.
+                    if let (Some(x), Some(r)) = (self.new_picture_xml(&now.0), vml_run_child(src)) {
+                        return format!("{}{x}{}", &src[..r.start], &src[r.end..]);
                     }
                 }
             }
         }
         picture_patched(src, p, was.and_then(|w| w.0.image), now.0.image)
     }
+}
+
+/// Where a VML picture's run child (`w:pict`, `w:object`) is in `src`.
+fn vml_run_child(src: &str) -> Option<Range<usize>> {
+    ["pict", "object"].into_iter().filter_map(|n| element(src, n)).min_by_key(|r| r.start)
 }
 
 /// A VML picture's text naming image `now` when it shows another than `was`.
@@ -6159,10 +6151,9 @@ impl Placement {
                 }
                 // None: after the extent (the schema's order: extent, effectExtent, docPr, ...).
                 None if e != [0.0; 4] => {
-                    if let Some((at, p)) = find_tag(&s, "extent", 0).map(|(start, end)| {
+                    if let (Some((start, end)), Some(at)) = (find_tag(&s, "extent", 0), element(&s, "extent").map(|r| r.end)) {
                         let name = s[start + 1..end].split(|c: char| c.is_whitespace() || c == '/' || c == '>').next().unwrap_or("");
-                        (end, name.rsplit_once(':').map_or(String::new(), |(p, _)| format!("{p}:")))
-                    }) {
+                        let p = name.rsplit_once(':').map_or(String::new(), |(p, _)| format!("{p}:"));
                         s.insert_str(at, &format!("<{p}effectExtent {ee}/>"));
                     }
                 }
@@ -6240,14 +6231,14 @@ fn set_lock_aspect(s: &str, on: bool) -> String {
     const A: &str = "http://schemas.openxmlformats.org/drawingml/2006/main";
     let mut s = s.to_string();
     let v = if on { "1" } else { "0" };
-    // A picture's own locks say it too: off there as well.
-    if !on {
-        let mut from = 0;
-        while let Some((start, end)) = find_tag(&s, "picLocks", from) {
-            let tag = set_attr(&s[start..end], "noChangeAspect", "0");
-            s.replace_range(start..end, &tag);
-            from = start + tag.len();
-        }
+    // A picture's own locks say it too: off there as well (a group's pictures keep theirs).
+    let picture = find_tag(&s, "graphicData", 0).and_then(|(a, b)| attr_range(&s[a..b], "uri").map(|r| s[a..b][r].ends_with("/picture")));
+    if !on
+        && picture == Some(true)
+        && let Some((start, end)) = find_tag(&s, "picLocks", 0)
+    {
+        let tag = set_attr(&s[start..end], "noChangeAspect", "0");
+        s.replace_range(start..end, &tag);
     }
     if let Some((start, end)) = find_tag(&s, "graphicFrameLocks", 0) {
         let tag = set_attr(&s[start..end], "noChangeAspect", v);

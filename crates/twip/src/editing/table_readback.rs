@@ -154,6 +154,7 @@ fn rows_spanned(g: &Grid, r: usize, k: usize) -> usize {
     let col = g.col_of(r, k).unwrap_or(0);
     let mut end = r;
     while let Some(n) = g.cell_at(end + 1, col)
+        && g.rows[end + 1][n].0 == col
         && g.continues(end + 1, n)
     {
         end += 1;
@@ -309,15 +310,25 @@ impl Editor {
     /// Sets the table's default cell margins (Table Options): the margins of every cell without its own. Each side 0
     /// to 1584 pt; `None` keeps a side.
     pub fn set_table_cell_margins(&mut self, m: [Option<Points>; 4], fonts: &Fonts) -> Outcome {
-        let Some(now) = self.table_readback().map(|r| r.default_cell_margins) else { return Outcome::unavailable("not in a table") };
-        let now = [now.top.0, now.left.0, now.bottom.0, now.right.0];
-        let mut v = [0.0; 4];
+        let mut v = [None; 4];
         for (k, side) in m.iter().enumerate() {
             v[k] = match side {
                 Some(p) if !(p.0.is_finite() && (0.0..=1584.0).contains(&p.0)) => return Outcome::invalid("a cell margin is 0…1584 pt"),
-                Some(p) => (p.0 * 20.0).round() / 20.0,
-                None => now[k],
+                Some(p) => Some((p.0 * 20.0).round() / 20.0),
+                None => None,
             };
+        }
+        if self.table_target().is_none() {
+            return Outcome::unavailable("not in a table");
+        }
+        if v.iter().all(Option::is_none) {
+            return Outcome::Unchanged("no side given");
+        }
+        if let Some(out) = self.refuse_like(&crate::api::command::Command::SetTableAlignment(Default::default())) {
+            return out;
+        }
+        if self.enforced_protection().is_some_and(|p| p.formatting) {
+            return Outcome::Refused(crate::api::error::Error::new(crate::api::error::ErrorCode::NotAllowed, "formatting is restricted"));
         }
         self.table_format(&TableFormat::TableCellMargins(v), fonts)
     }
@@ -327,6 +338,10 @@ impl Editor {
         let Some(tg) = self.table_target() else { return Outcome::unavailable("not in a table") };
         let Some(t) = self.index.table(&self.doc, tg.table) else { return Outcome::unavailable("not in a table") };
         let Some(mut pos) = t.floating else { return Outcome::unavailable("the table isn't positioned") };
+        // Positioning isn't direct formatting: only read-only and Restrict Editing refuse it.
+        if let Some(out) = self.refuse_like(&crate::api::command::Command::SetTablePosition(None)) {
+            return out;
+        }
         pos.never_overlap = !allow;
         self.set_floating(tg.table, Some(pos), fonts)
     }

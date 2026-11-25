@@ -273,6 +273,19 @@ fn wholly_deleted_paragraphs_have_balloons() {
     got.sort();
     assert_eq!(got, want, "one balloon per deletion: {balloons:?}");
     assert!(balloons.iter().all(|b| b.at[1] < b.at[2] && b.page < pages), "anchored on a line: {balloons:?}");
+    // The note's deletion, which shows nothing, on a line the note shows
+    let note = revisions(e.document(), e.index())
+        .into_iter()
+        .find(|r| r.kind == RevisionKind::Delete && matches!(r.story, crate::editing::position::StoryId::Footnote(_)))
+        .expect("the note's deletion");
+    let b = balloons.iter().find(|b| Some(b.revision) == note.ids.first().copied()).expect("its balloon");
+    let lines: Vec<[f64; 4]> = e
+        .page_geometries()
+        .into_iter()
+        .filter(|(page, _)| *page == b.page)
+        .flat_map(|(_, g)| g.lines.iter().filter(|l| g.stories[l.story].story == note.story).map(|l| l.band(0.0, 0.0)).collect::<Vec<_>>())
+        .collect();
+    assert!(lines.iter().any(|r| (r[1] - b.at[1]).abs() < 0.01 && (r[3] - b.at[2]).abs() < 0.01), "on a line of the note: {b:?} {lines:?}");
 }
 
 #[test]
@@ -299,4 +312,45 @@ fn accepting_the_shown_changes_leaves_hidden_moves_alone() {
     assert!(!e.document().review.markup.show.insertions_deletions, "insertions and deletions hidden");
     assert!(matches!(e.resolve_shown(true, fonts()), Outcome::Changed(_)));
     assert_eq!(marks(&e), (true, false), "the shown formatting change is accepted, the hidden move stays");
+}
+
+#[test]
+fn accepting_a_selection_that_ends_at_a_bookmark_keeps_the_rest() {
+    use crate::editing::position::{Position, StoryId};
+    use crate::layout::Unit;
+    let d = r#"w:author="a" w:date="2020-01-01T00:00:00Z""#;
+    let body = format!(
+        r#"<w:p><w:ins w:id="1" {d}><w:r><w:t>ab</w:t></w:r></w:ins><w:bookmarkStart w:id="0" w:name="m"/><w:bookmarkEnd w:id="0"/><w:ins w:id="2" {d}><w:r><w:t>cd</w:t></w:r></w:ins></w:p>"#
+    );
+    let mut e = super::Editor::open(&super::blank_body(&body), fonts()).expect("opens");
+    e.complete(fonts());
+    let para = super::para_id(&e, 0);
+    e.set_selection(Selection::range(
+        Position::text(StoryId::Body, para, Unit(0)),
+        Position::text(StoryId::Body, para, Unit(2)),
+        crate::editing::selection::Granularity::Char,
+    ));
+    let out = e.execute(Command::AcceptRevisionsInSelection, fonts());
+    assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
+    assert_eq!(super::texts(&e), ["abcd"]);
+    let left = crate::editing::revisions::index::revisions(e.document(), e.index());
+    assert_eq!(left.len(), 1, "the insertion after the bookmark stays: {left:?}");
+}
+
+#[test]
+fn a_paragraph_property_change_over_two_paragraphs_ends_in_the_second() {
+    use crate::editing::revisions::index::{RevisionKind, revisions};
+    let d = r#"w:author="a" w:date="2020-01-01T00:00:00Z""#;
+    let p = |id: u32, t: &str| {
+        format!(r#"<w:p><w:pPr><w:jc w:val="center"/><w:pPrChange w:id="{id}" {d}><w:pPr/></w:pPrChange></w:pPr><w:r><w:t>{t}</w:t></w:r></w:p>"#)
+    };
+    let body = format!("{}{}<w:p><w:r><w:t>after</w:t></w:r></w:p>", p(1, "one"), p(2, "two"));
+    let e = super::Editor::open(&super::blank_body(&body), fonts()).expect("opens");
+    let list: Vec<_> = revisions(e.document(), e.index()).into_iter().filter(|r| r.kind == RevisionKind::ParagraphProperty).collect();
+    assert_eq!(list.len(), 1, "one revision over both: {list:?}");
+    let marks = crate::editing::revisions::marks::Marks::build(e.document(), e.index());
+    let s = marks.starts_in(super::para_id(&e, 0)).find(|s| s.kind == RevisionKind::ParagraphProperty).expect("its start");
+    let end = marks.end_of(e.document(), e.index(), &s);
+    assert_eq!(end.para_offset().map(|p| p.0), Some(super::para_id(&e, 1)), "the second paragraph's: {end:?}");
+    assert_eq!(end, list[0].end, "where the revision list ends it");
 }

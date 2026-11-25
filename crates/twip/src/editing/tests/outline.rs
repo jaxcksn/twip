@@ -547,9 +547,7 @@ fn a_tracked_move_across_a_section_break_leaves_the_break() {
     let (a, c) = (id(&e, "A"), id(&e, "C"));
     assert!(changed(&e.move_heading(c, a, Beside::Before, None, fonts())));
     e.execute(C::AcceptAllRevisions(AuthorFilter::default()), fonts());
-    let got = layout_of(&e);
-    assert_eq!(got.len(), 3, "{got:?}");
-    assert_eq!(got[0].0[..2], ["C".to_string(), "c1".to_string()], "{got:?}");
+    assert_eq!(layout_of(&e), strs(&[(&["C", "c1", "A", "a1"], 792.0), (&["B", "b1"], 500.0), (&[""], 612.0)]), "as the untracked move");
 }
 
 #[test]

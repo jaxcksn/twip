@@ -327,8 +327,8 @@ pub fn inspect(e: &mut Editor, what: &str, settled: bool) -> Value {
         for (page, g) in e.page_geometries() {
             let to = |x: f64, y: f64| stack.to_doc(page, x, y).unwrap_or((x, y));
             for r in g.rows.iter().filter(|r| !r.repeat) {
-                let (x0, y0) = to(r.rect[0], r.rect[1]);
-                let (x1, y1) = to(r.rect[2], r.rect[3]);
+                let b = r.page_rect();
+                let ((x0, y0), (x1, y1)) = (to(b[0], b[1]), to(b[2], b[3]));
                 rows.push(json!({
                     "page": page, "table": o.tables.get(&r.table), "row": r.row, "rect": [x0, y0, x1, y1], "depth": r.outer.len() + 1,
                     "edges": r.edges.iter().map(|(x, k)| json!([to(*x, 0.0).0, k])).collect::<Vec<_>>(),

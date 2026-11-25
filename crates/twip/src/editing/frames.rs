@@ -136,6 +136,13 @@ pub fn frame_xml(w: &str, p: &FrameProperties, old: Option<&FramePr>) -> String 
     format!("<{w}framePr{attrs}/>")
 }
 
+/// A `w:x` or `w:y` of `v` points a twip further off when it rounds to one of `codes`, the twips that stand for an
+/// alignment: a dragged place stays a place.
+fn off_codes(v: f64, codes: &[i64]) -> f64 {
+    let t = (v * 20.0).round() as i64;
+    if codes.contains(&t) { (t - 1) as f64 / 20.0 } else { v }
+}
+
 impl Editor {
     /// The frame the selection is in, or is.
     pub(crate) fn frame_here(&self) -> Option<FloatId> {
@@ -222,7 +229,8 @@ impl Editor {
     /// [`Editor::set_frame`], as one undo step named `label`.
     fn set_frame_as(&mut self, props: FrameProperties, allow_overlap: Option<bool>, label: &'static str, fonts: &Fonts) -> Outcome {
         let overlap = |p: &mut Props, w: &str| match allow_overlap {
-            Some(true) => p.remove("suppressOverlap"),
+            // Off over a style's on.
+            Some(true) => p.set("suppressOverlap", format!("<{w}suppressOverlap {w}val=\"0\"/>")),
             Some(false) => p.set("suppressOverlap", format!("<{w}suppressOverlap/>")),
             None => {}
         };
@@ -268,7 +276,7 @@ impl Editor {
         if !drop_cap && (moved.h_align != was.h_align || ne(moved.h_offset, was.h_offset) || moved.h_relative != was.h_relative) {
             p.horizontal_align = None;
             // `w:x` holds the place plus one twip.
-            p.horizontal = Points(moved.h_offset + 0.05);
+            p.horizontal = Points(off_codes(moved.h_offset + 0.05, &[0, -4, -8, -12, -16]));
             p.horizontal_relative = match moved.h_relative.as_str() {
                 "margin" => FrameHorizontalRelative::Margin,
                 "page" => FrameHorizontalRelative::Page,
@@ -284,7 +292,7 @@ impl Editor {
             };
             // From the text `w:y` is the place itself; from the page or margin it is one twip more.
             let twip = if p.vertical_relative == FrameVerticalRelative::Paragraph { 0.0 } else { 0.05 };
-            p.vertical = Points(moved.v_offset + twip);
+            p.vertical = Points(off_codes(moved.v_offset + twip, &[-4, -8, -12, -16, -20]));
         }
         if ne(moved.w, was.w) {
             (p.width_rule, p.width) = (FrameWidthRule::Exactly, Points(moved.w));

@@ -608,6 +608,9 @@ impl Editor {
 
     fn clipped(&mut self, f: Fragment) -> Fragment {
         let mut f = f.accepted();
+        // A deleted row or cell can take a comment's start, end or reference with it
+        strip_partial_comments(&mut f.blocks);
+        f.refs = self.refs_of(&f.blocks);
         drop_unpaired(&mut f.blocks);
         drop_partial(&mut f.blocks, &self.index);
         f.controls = controls_of(&f.blocks, &self.doc);
@@ -622,10 +625,9 @@ impl Editor {
     /// accepted, unpaired markers left out, and the definitions of the controls in them and in the notes and comments
     /// they refer to kept with them.
     pub(super) fn whole_fragment(&mut self, blocks: Vec<Block>) -> Fragment {
-        let mut f = Fragment { blocks, ..Default::default() };
+        let mut f = Fragment { blocks, ..Default::default() }.accepted();
         strip_partial_comments(&mut f.blocks);
         f.refs = self.refs_of(&f.blocks);
-        let mut f = f.accepted();
         drop_unpaired(&mut f.blocks);
         f.controls = controls_of(&f.blocks, &self.doc);
         for body in f.refs.notes.iter().map(|n| &n.2).chain(f.refs.comments.iter().map(|c| &c.body)) {

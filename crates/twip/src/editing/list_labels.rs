@@ -32,6 +32,13 @@ pub(super) struct LabelHold {
     with: Selection,
 }
 
+impl LabelHold {
+    /// Whether the number selection holds with `s` selected.
+    pub(super) fn holds(&self, s: &Selection) -> bool {
+        self.with == *s
+    }
+}
+
 /// Whether a command formats characters: what a number selection takes.
 pub(super) fn formats_characters(c: &Command) -> bool {
     use crate::api::command::CommandId as C;
@@ -68,7 +75,7 @@ impl Editor {
     /// The selected list numbers: set by a click on a number, held while the caret it put stays, and while the
     /// paragraph is still in that list at that level.
     pub fn list_label_selection(&self) -> Option<&ListLabelSelection> {
-        let hold = self.list_label.as_ref().filter(|h| h.with == self.selection)?;
+        let hold = self.list_label.as_ref().filter(|h| h.holds(&self.selection))?;
         let num = self.index.para(&self.doc, hold.label.para)?.style.num?;
         (num == (hold.label.list, hold.label.level)).then_some(&hold.label)
     }
@@ -138,6 +145,10 @@ impl Editor {
     /// A command while numbers are selected: character formatting goes to their level ([`Editor::format_list_label`]);
     /// another character command (Clear Formatting, a character style) ends the number selection and acts on the text.
     pub(super) fn list_label_command(&mut self, cmd: &Command, fonts: &Fonts) -> Option<Outcome> {
+        // Its caret left since: it ended then.
+        if self.list_label.as_ref().is_some_and(|h| !h.holds(&self.selection)) {
+            self.list_label = None;
+        }
         if self.style_target.is_some() || self.label_target.is_some() || self.list_label.is_none() {
             return None;
         }

@@ -637,16 +637,9 @@ impl Editor {
     }
 
     pub(super) fn float_locked(&self, f: FloatId) -> bool {
-        if self.float_of(f).is_some_and(|fl| fl.picture_control(&self.doc.controls).is_some()) {
-            return true;
-        }
-        self.index.text_box(&self.doc, f).is_none()
-            && self.index.float_anchor(f).and_then(|a| self.index.para(&self.doc, a)).is_some_and(|p| {
-                p.inlines.iter().any(|i| {
-                    matches!(i, Inline::Float(fl, _) if FloatId(fl.id) == f
-                            && (fl.lock_aspect || fl.image.is_some_and(|k| self.doc.controlled.contains_key(&k))))
-                })
-            })
+        self.float_of(f).is_some_and(|fl| {
+            fl.lock_aspect || fl.picture_control(&self.doc.controls).is_some() || fl.image.is_some_and(|k| self.doc.controlled.contains_key(&k))
+        })
     }
 
     fn float_behind(&self, f: FloatId) -> bool {
@@ -1001,15 +994,7 @@ impl Editor {
 
     /// The selected picture's own size, points.
     pub fn original_object_size(&self) -> Option<(f64, f64)> {
-        let image = match self.selection {
-            Selection::Object(ObjectRef::Inline { para, offset }) => match self.index.para(&self.doc, para).and_then(|p| inline_at(p, offset)) {
-                Some(Inline::Picture(pic, _)) => pic.image,
-                _ => None,
-            },
-            Selection::Object(ObjectRef::Floating(f)) => self.float_of(f)?.image,
-            _ => None,
-        };
-        self.natural_size(image)
+        self.natural_size(self.selected_image())
     }
 
     pub(super) fn float_of(&self, f: FloatId) -> Option<&crate::docx::Float> {

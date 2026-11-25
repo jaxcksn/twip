@@ -442,9 +442,15 @@ fn a_table_turned_in_a_vertical_cell_turns_its_borders_and_handles() {
     drag(&mut e, 0, on, [on[0], on[1] + 18.0], Mods::default());
     let after = grid(&e);
     assert!((after[0] - before[0] - 18.0).abs() < 1.0, "dragging down the page widens the column before: {before:?} {after:?}");
+    // Laid out again: the inner paragraph's line moved with the wider column.
+    let g = pages(&mut e).into_iter().next().map(|(_, g)| g).expect("a page");
+    let row = g.rows.iter().find(|r| r.turn != crate::layout::vertical::Turn::NONE).expect("the inner table's row");
+    let inner = g.lines.iter().position(|l| l.chain.len() == 2).expect("an inner cell's line");
     press(&mut e, 0, middle(&g, inner).1, Mods::default());
+    let para = g.lines[inner].para().expect("a paragraph");
+    assert!(matches!(e.selection(), Selection::Caret(c) if c.para_offset().map(|p| p.0) == Some(para)), "in the inner cell");
     let t = e.view(0..1).table.expect("the caret's table shows its handles");
-    assert_ne!(t.turn, crate::layout::vertical::Turn::NONE, "drawn turned, as the table is");
+    assert_eq!(t.turn, row.turn, "the inner table's handles, drawn turned as it is");
 }
 
 #[test]
@@ -751,4 +757,77 @@ fn a_line_move_out_of_an_empty_turned_note_line_leaves_it_or_stops() {
         let to = e.cross_vertical(focus, goal, down, fonts());
         assert_ne!(to, Some(focus), "down: {down}: not the place it started from");
     }
+}
+
+#[test]
+fn a_composition_in_a_tbrl_line_is_underlined_along_it() {
+    let mut e = layout_fixture("vertical-directions.docx");
+    let (g, i) = line_of(&mut e, 0, "Section 1", is_body);
+    let (l, story) = (&g.lines[i], g.stories[g.lines[i].story].story);
+    let (para, at) = (l.para().expect("a paragraph"), l.stops[1].unit);
+    e.set_selection(Selection::Caret(Position::text(story, para, at)));
+    e.compose("ab", 2, fonts());
+    let end = crate::layout::Unit(at.0 + 2);
+    let g = pages(&mut e).into_iter().find(|(p, _)| *p == 0).map(|(_, g)| g).expect("the page");
+    let l = g.lines.iter().find(|l| l.x_of(para, at).is_some() && l.x_of(para, end).is_some()).expect("the composition's line");
+    assert_eq!(l.dir(), LineDir::Down, "a tbRl line");
+    let (xa, xb) = (l.x_of(para, at).expect("its start"), l.x_of(para, end).expect("its end"));
+    let corners = [l.page(xa, l.top), l.page(xa, l.bottom), l.page(xb, l.top), l.page(xb, l.bottom)];
+    let want = [
+        corners.iter().map(|p| p[0]).fold(f64::INFINITY, f64::min),
+        corners.iter().map(|p| p[1]).fold(f64::INFINITY, f64::min),
+        corners.iter().map(|p| p[0]).fold(f64::NEG_INFINITY, f64::max),
+        corners.iter().map(|p| p[1]).fold(f64::NEG_INFINITY, f64::max),
+    ];
+    let bands = e.view(0..1).composition;
+    let [(0, band)] = &bands[..] else { panic!("one band on the page: {bands:?}") };
+    assert_eq!(band.turn, l.turn, "drawn as the line is");
+    let got = band.page();
+    assert!(got.iter().zip(want).all(|(a, b)| (a - b).abs() < 1e-6), "the band spans the composed text down the line: {got:?} {want:?}");
+    e.end_composition(fonts());
+    assert!(e.view(0..1).composition.is_empty(), "gone with the composition");
+}
+
+#[test]
+fn a_dragged_anchor_in_a_tbrl_section_shows_where_its_paragraphs_anchor_does() {
+    let mut e = tbrl_with_float();
+    let f = crate::layout::FloatId(1);
+    e.set_selection(Selection::Object(super::super::selection::ObjectRef::Floating(f)));
+    e.complete(fonts());
+    let (_, [ax, ay]) = e.view(0..1).anchor.expect("the anchor shows");
+    let u = 0.75 / e.viewport.zoom.max(0.1);
+    let ring = [(ax - 18.0 * u).max(10.0 * u), ay + 8.0 * u];
+    let g = pages(&mut e).into_iter().next().map(|(_, g)| g).expect("a page");
+    let l = g.lines.iter().filter(|l| l.chain.is_empty()).nth(4).expect("a fifth line");
+    let band = l.band(l.x0(), l.x1());
+    let to = [(band[0] + band[2]) / 2.0, (band[1] + band[3]) / 2.0];
+    let (x, y) = e.stack().to_doc(0, ring[0], ring[1]).expect("on the stack");
+    e.pointer_input(PointerKind::Down, x, y, 1, Mods::default(), fonts());
+    assert!(e.anchor_drag.is_some(), "the anchor taken");
+    let (x, y) = e.stack().to_doc(0, to[0], to[1]).expect("on the stack");
+    e.pointer_input(PointerKind::Move, x, y, 0, Mods::default(), fonts());
+    let para = l.para().expect("a paragraph's line");
+    let shown = e.view(0..1).anchor.expect("the dragged anchor shows");
+    assert_eq!(shown, (0, e.anchor_point(0, para).expect("its anchor")), "turned onto the page as its line is");
+}
+
+#[test]
+fn a_fixed_vertical_text_boxs_overflow_holds_no_caret_places() {
+    use crate::layout::tests::shapes::{PT, anchor, bytes};
+    let ps: String = (0..12).map(|k| format!("<w:p><w:r><w:t>Line {k}</w:t></w:r></w:p>")).collect();
+    let wsp = format!(
+        r#"<wps:wsp><wps:cNvSpPr txBox="1"/><wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{w}" cy="{h}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></wps:spPr><wps:txbx><w:txbxContent>{ps}</w:txbxContent></wps:txbx><wps:bodyPr vert="vert" lIns="0" tIns="0" rIns="0" bIns="0"/></wps:wsp>"#,
+        w = 60 * PT,
+        h = 120 * PT
+    );
+    let body = format!("<w:p><w:r><w:t>Text</w:t></w:r>{}</w:p>", anchor(144, 200, 60, 120, 1, false, 1, &wsp));
+    let mut e = Editor::open(&bytes(&body).expect("a package"), fonts()).expect("opens");
+    e.complete(fonts());
+    let g = pages(&mut e).into_iter().next().map(|(_, g)| g).expect("a page");
+    let s = g.stories.iter().position(|s| matches!(s.story, StoryId::TextBox(_))).expect("the box's story");
+    let [x0, _, x1, _] = g.stories[s].rect;
+    let xs: Vec<f64> =
+        g.lines.iter().filter(|l| l.story == s).flat_map(|l| l.stops.iter().map(|st| l.page(st.x, (l.top + l.bottom) / 2.0)[0])).collect();
+    assert!(!xs.is_empty(), "the lines that fit");
+    assert!(xs.iter().all(|&x| x >= x0 - 2.0 && x <= x1 + 2.0), "no caret place past the box ({x0} .. {x1}): {xs:?}");
 }

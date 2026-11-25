@@ -214,6 +214,7 @@ impl Editor {
                 &[],
                 &[],
                 &cx,
+                &colours,
             ),
             &colours,
         )?;

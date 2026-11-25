@@ -425,3 +425,28 @@ fn tab_from_a_selection_across_paragraphs_goes_on_from_its_end() {
     let got = e.selection.ordered(&e.index).and_then(|(a, _)| a.para_offset()).map(|p| p.0);
     assert_eq!(got, Some(para_id(&e, 3)), "the field after the selection's end, not one paragraph on");
 }
+
+#[test]
+fn tab_stops_at_a_block_level_control_in_document_order() {
+    let field = |n: usize| {
+        let data = format!(r#"<w:name w:val="T{n}"/><w:textInput/>"#);
+        format!(r#"<w:p><w:r><w:t xml:space="preserve">A </w:t></w:r>{}</w:p>"#, form_field_xml(&data, "FORMTEXT", "abc"))
+    };
+    let block = r#"<w:sdt><w:sdtPr><w:id w:val="5"/><w:richText/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>In</w:t></w:r></w:p><w:p><w:r><w:t>Side</w:t></w:r></w:p></w:sdtContent></w:sdt>"#;
+    let body = format!("{}{block}{}", field(0), field(1));
+    let mut e = Editor::open(&blank_body(&body), fonts()).expect("opens");
+    e.complete(fonts());
+    protect(&mut e);
+    e.selection = Selection::Caret(Position::text(StoryId::Body, para_id(&e, 0), Unit(0)));
+    let para = |e: &Editor| e.selection.ordered(&e.index).and_then(|(a, _)| a.para_offset()).map(|p| p.0);
+    let mut seen = Vec::new();
+    for _ in 0..3 {
+        e.select_next_form_field(true);
+        seen.push(para(&e).expect("a selection"));
+    }
+    assert_eq!(seen, [para_id(&e, 0), para_id(&e, 1), para_id(&e, 3)], "the control between the fields, once");
+    e.select_next_form_field(false);
+    assert_eq!(para(&e), Some(para_id(&e, 1)), "Shift+Tab back to it");
+    e.select_next_form_field(false);
+    assert_eq!(para(&e), Some(para_id(&e, 0)), "and on past it");
+}

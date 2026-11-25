@@ -1254,6 +1254,10 @@ impl Editor {
             self.pending = None;
             self.history.break_typing();
         }
+        // A number selection ends once its caret is left: coming back doesn't restore it.
+        if self.list_label.as_ref().is_some_and(|h| !h.holds(&self.selection) || !h.holds(&s)) {
+            self.list_label = None;
+        }
         self.selection = s;
     }
 
@@ -1613,6 +1617,9 @@ impl Editor {
     pub fn undo_many(&mut self, undo: bool, count: usize, fonts: &Fonts) -> Outcome {
         let available = if undo { self.history.undo_depth() } else { self.history.redo_depth() };
         let count = count.min(available);
+        if count == 0 {
+            return Outcome::Unchanged(if undo { "nothing to undo" } else { "nothing to redo" });
+        }
         if count <= 1 {
             return self.undo(undo, fonts);
         }
@@ -3654,11 +3661,24 @@ impl Editor {
         out
     }
 
-    /// The highlight of `ranges` (in order, none touching another, all of one story) on `pages`: the lines are walked
-    /// once, each meeting only the ranges that reach it.
+    /// The highlight of `ranges` (in order of their starts, all of one story) on `pages`: the lines are walked once,
+    /// each meeting only the ranges that reach it.
     pub(super) fn ranges_rects(&mut self, ranges: &[(Position, Position)], pages: std::ops::Range<usize>) -> Vec<(usize, view::Band)> {
         let mut out = Vec::new();
         let Some(story) = ranges.first().map(|r| r.0.story) else { return out };
+        // Overlapping ranges (the selection's own, mid-drag) as one, for their ends to come in order
+        let mut union: Vec<(Position, Position)> = Vec::with_capacity(ranges.len());
+        for &(a, b) in ranges {
+            match union.last_mut() {
+                Some(last) if self.index.cmp(&a, &last.1).is_lt() => {
+                    if self.index.cmp(&b, &last.1).is_gt() {
+                        last.1 = b;
+                    }
+                }
+                _ => union.push((a, b)),
+            }
+        }
+        let ranges = &union[..];
         for page in pages {
             let Some(geo) = self.pages.page(page, &self.index) else { continue };
             for (l, para) in geo.lines.iter().flat_map(|l| l.paras.iter().map(move |&p| (l, p))) {

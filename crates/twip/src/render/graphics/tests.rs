@@ -1032,3 +1032,17 @@ fn a_page_thumbnail_fits_its_page_into_the_pixels() {
     }
     assert_eq!(g.page_thumbnail(&Renderer::default(), &snap.pages()[0], &d.images, &mut [], (0, 0), grey), None, "no pixels");
 }
+
+#[test]
+fn a_page_thumbnail_leaves_out_what_reaches_off_the_page() {
+    let shape = sized("rect", 800, 200, "", r#"<a:solidFill><a:srgbClr val="000000"/></a:solidFill>"#);
+    let d = crate::docx::read(&package(&shape, (800, 200), None)).expect("the document reads");
+    let snap = crate::layout::layout(&d, &fonts());
+    let mut g = Graphics::default();
+    let grey = Color::rgba(128, 128, 128, 255);
+    let mut px = vec![0u8; 100 * 100 * 4];
+    assert_eq!(g.page_thumbnail(&Renderer::default(), &snap.pages()[0], &d.images, &mut px, (100, 100), grey), Some((77, 100)));
+    let at = |x: usize, y: usize| [px[(y * 100 + x) * 4], px[(y * 100 + x) * 4 + 1], px[(y * 100 + x) * 4 + 2]];
+    assert_eq!(at(80, 25), [0, 0, 0], "the shape on the page");
+    assert_eq!(at(95, 25), [128, 128, 128], "not past its edge");
+}

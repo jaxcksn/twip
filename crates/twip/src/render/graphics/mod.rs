@@ -594,7 +594,13 @@ impl Graphics {
         let (x, y) = (f64::from((width - w) / 2), f64::from((height - h) / 2));
         let mut target = Target::new(pixels, width, height, width as usize * 4, cpu::Format::Rgba8).ok()?;
         self.cpu.render(&mut target, &self.res, &cpu::Frame { clear: Some(clear), draws: &[] });
-        let picture = self.page_picture(r, page, images);
+        // Cut to the page: what reaches off it isn't drawn on the clear round it.
+        let mut rec = Recorder::new();
+        self.recolour_log.clear();
+        rec.push_clip(Clip::Rect { rect: kurbo::Rect::new(0.0, 0.0, page.w, page.h), aa: true });
+        self.page(&mut rec, r, page, images);
+        rec.pop();
+        let picture = rec.finish();
         let sheet = r.ink_for(false, r.page_colour.unwrap_or(0xFF_FFFF));
         let mut back = Recorder::new();
         back.fill_rect(kurbo::Rect::new(0.0, 0.0, page.w, page.h), sheet);

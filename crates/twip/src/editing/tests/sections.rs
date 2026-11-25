@@ -471,6 +471,15 @@ fn columns_on_selected_text_reach_every_section_it_spans() {
     select_across(&mut e, (0, 1), (2, 2));
     assert!(matches!(e.set_columns_in(two.clone(), ColumnsScope::SelectedText, false, super::fonts()), Outcome::Changed(_)));
     assert_eq!(cols(&e), [1, 2, 2, 1]);
+    let texts: Vec<Vec<String>> = e
+        .document()
+        .sections
+        .iter()
+        .map(|s| {
+            s.blocks.iter().filter_map(|b| if let crate::docx::Block::Para(p) = b { Some(crate::docx::fields::text(p)) } else { None }).collect()
+        })
+        .collect();
+    assert_eq!(texts, [vec!["O"], vec!["ne", "Two"], vec!["Th"], vec!["ree", "Four"]], "the selected text alone in two columns");
     // One section keeps to itself.
     let mut e = two_sections();
     select_across(&mut e, (2, 1), (2, 3));
@@ -505,4 +514,27 @@ fn columns_on_selected_text_are_refused_outside_the_body() {
     assert!(!matches!(e.set_columns_in(two, ColumnsScope::SelectedText, false, super::fonts()), Outcome::Changed(_)));
     assert_eq!((e.document().sections.len(), e.history().undo_depth()), before);
     assert_eq!(e.document().sections[0].columns.num, 1, "the body's section is untouched");
+}
+
+#[test]
+fn columns_on_selected_text_ending_inside_a_table_are_refused() {
+    use crate::api::command::Columns;
+    use crate::editing::commands::Outcome;
+    use crate::editing::section::ColumnsScope;
+    let row = |t: &str| format!(r#"<w:tr><w:tc><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:tc></w:tr>"#);
+    let body = format!(
+        r#"<w:p><w:r><w:t>One</w:t></w:r></w:p><w:tbl><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid>{}{}</w:tbl><w:p><w:r><w:t>After</w:t></w:r></w:p>"#,
+        row("A"),
+        row("B")
+    );
+    let mut e = Editor::open(&super::blank_body(&body), super::fonts()).expect("opens");
+    e.complete(super::fonts());
+    let table = e.index().table_ids().next().expect("a table");
+    let start = Position::text(StoryId::Body, super::para_id(&e, 0), Unit(1));
+    e.selection = Selection::range(start, Position::row_end(StoryId::Body, table, 0), crate::editing::selection::Granularity::Char);
+    let before = e.document().sections.clone();
+    let two = Columns { count: 2, spacing: None, separator: None, widths: None };
+    let out = e.set_columns_in(two, ColumnsScope::SelectedText, false, super::fonts());
+    assert!(matches!(out, Outcome::Refused(_)), "{out:?}");
+    assert_eq!(e.document().sections, before, "nothing split or set");
 }

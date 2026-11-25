@@ -265,16 +265,24 @@ fn unit_turn(v: Vertical, rect: [f64; 4], across: f64, u: Option<&StoryUnit>) ->
     }
 }
 
-/// The lines of `units` as [`turned`] draws them into `rect`, unturned, each set with the turn it is drawn with;
+/// The lines of `units` as [`turned_in`] draws them into `rect` (without the glyphs it leaves out before `first` and
+/// from `bottom` across, and the units wholly outside them), unturned, each set with the turn it is drawn with;
 /// `outer` turns them further, as the items they go with are.
-pub fn unturned(units: &[StoryUnit], v: Vertical, rect: [f64; 4], across: f64, outer: Turn) -> Rc<[Unturned]> {
-    let group = |u: &StoryUnit| Child::Group { offset: (0.0, u.top + across), children: u.content.clone() };
+pub fn unturned(units: &[StoryUnit], v: Vertical, rect: [f64; 4], across: f64, first: f64, bottom: f64, outer: Turn) -> Rc<[Unturned]> {
+    let group = |u: &StoryUnit| {
+        let top = u.top + across;
+        let clip = first.is_finite() || bottom.is_finite();
+        let children = clip.then(|| super::table::clip_box(&u.content, f64::NEG_INFINITY, f64::INFINITY, first - top, bottom - top)).flatten();
+        Child::Group { offset: (0.0, top), children: children.unwrap_or_else(|| u.content.clone()) }
+    };
+    // Lines wholly outside it hold no text, as a box's lines past its bottom.
+    let units = units.iter().filter(|u| u.top + across < bottom && u.top + across + u.height > first);
     let axes = axes(v.flow);
     match v.flow {
         Flow::DownEast => {
-            units.iter().map(|u| Unturned { turn: unit_turn(v, rect, across, Some(u)).then(outer), axes, children: Box::new([group(u)]) }).collect()
+            units.map(|u| Unturned { turn: unit_turn(v, rect, across, Some(u)).then(outer), axes, children: Box::new([group(u)]) }).collect()
         }
-        _ => Rc::new([Unturned { turn: unit_turn(v, rect, across, None).then(outer), axes, children: units.iter().map(group).collect() }]),
+        _ => Rc::new([Unturned { turn: unit_turn(v, rect, across, None).then(outer), axes, children: units.map(group).collect() }]),
     }
 }
 

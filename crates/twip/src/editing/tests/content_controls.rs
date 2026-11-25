@@ -390,6 +390,12 @@ fn a_date_control_fills_from_a_date_and_reads_it_back() {
     e.undo_many(true, 1, fonts());
     assert_eq!((texts(&e)[0].as_str(), read(&e).as_deref()), ("Before January 2026", Some("2026-01-01T00:00:00Z")), "one undo step");
     assert!(matches!(e.fill_control_date(&id, "soon", fonts()), Outcome::Refused(_)), "not a date");
+    for bad in ["2027-02-29", "2027-04-31T10:00:00+02:00", "2027-00-10"] {
+        assert!(matches!(e.fill_control_date(&id, bad, fonts()), Outcome::Refused(_)), "no such day: {bad}");
+    }
+    assert_eq!(read(&e).as_deref(), Some("2026-01-01T00:00:00Z"), "the control as it was");
+    assert!(matches!(e.fill_control_date(&id, "2028-02-29", fonts()), Outcome::Changed(_)), "a leap day");
+    e.undo_many(true, 1, fonts());
     assert!(matches!(e.fill_control_date(&id, "2027-02-03", fonts()), Outcome::Changed(_)));
     std::mem::take(&mut e.changes);
     assert!(matches!(e.fill_control_date(&id, "2027-02-05", fonts()), Outcome::Changed(_)));
@@ -428,6 +434,19 @@ fn a_repeating_section_adds_a_copy_of_its_item() {
     assert_eq!(texts(&e)[..2], ["Name: Ada", "After"]);
     ok(&cmd(&mut e, json!({ "type": "setControl", "id": s.0, "options": { "allowInsertDelete": false } })));
     assert!(matches!(e.add_repeating_item(&s, None, false, fonts()), Outcome::Refused(_)), "the section doesn't allow it");
+    // The flag as written with a value
+    let id = ctl(&e, |c| c.props.kind == ControlKind::RepeatingSection);
+    let flag = |e: &mut Editor, v: &str| {
+        let props = &mut e.doc.controls.get_mut(&id).expect("the section").props;
+        let xml = props.kind_xml.as_deref().expect("its kind").to_string();
+        let at = xml.find("<w15:doNotAllowInsertDeleteSection").expect("the flag");
+        let end = at + xml[at..].find("/>").expect("closed") + 2;
+        props.kind_xml = Some(format!("{}<w15:doNotAllowInsertDeleteSection w15:val=\"{v}\"/>{}", &xml[..at], &xml[end..]));
+    };
+    flag(&mut e, "true");
+    assert!(matches!(e.add_repeating_item(&s, None, false, fonts()), Outcome::Refused(_)), "on");
+    flag(&mut e, "false");
+    assert!(matches!(e.add_repeating_item(&s, None, false, fonts()), Outcome::Changed(_)), "off");
 }
 
 #[test]
@@ -456,6 +475,36 @@ fn a_repeating_section_of_rows_adds_a_row() {
     assert_eq!(t.rows[2].controls.len(), 2, "in the section, its own item");
     assert_ne!(t.rows[1].controls[1], t.rows[2].controls[1]);
     assert_eq!(texts(&e)[..6], ["A", "B", "C", "D", "C", "D"]);
+}
+
+#[test]
+fn shifting_cells_down_out_of_a_repeating_item_puts_them_in_an_item_of_their_own() {
+    use crate::editing::table_cells::InsertShift;
+    let cell = |t: &str| format!("<w:tc><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:tc>");
+    let table = format!(
+        "<w:tbl><w:tblGrid><w:gridCol w:w=\"2000\"/><w:gridCol w:w=\"2000\"/></w:tblGrid><w:tr>{}{}</w:tr><w:tr>{}{}</w:tr></w:tbl><w:p/>",
+        cell("A"),
+        cell("B"),
+        cell("C"),
+        cell("D")
+    );
+    let mut e = Editor::open(&blank_body(&table), fonts()).expect("opens");
+    let table = e.index().table_ids().next().expect("a table");
+    let block = |r0: usize, c0: usize, r1: usize, c1: usize, shape| Selection::Cells {
+        table,
+        anchor: crate::editing::selection::CellRef { row: r0, col: c0 },
+        focus: crate::editing::selection::CellRef { row: r1, col: c1 },
+        shape,
+    };
+    e.selection = block(1, 0, 1, 1, crate::editing::selection::CellShape::Rows);
+    ok(&cmd(&mut e, json!({ "type": "wrapInRepeatingSection" })));
+    e.selection = block(0, 0, 0, 0, crate::editing::selection::CellShape::Rect);
+    assert!(matches!(e.insert_cells(InsertShift::Down, fonts()), Outcome::Changed(_)));
+    let Some(Block::Table(t)) = e.document().sections[0].blocks.first() else { panic!("a table") };
+    assert_eq!(texts(&e)[..6], ["", "B", "A", "D", "C", ""], "C moves down into the new row");
+    assert_eq!(t.rows[2].controls.len(), 2, "in the section, in an item: {:?}", t.rows[2].controls);
+    assert_eq!(t.rows[2].controls[0], t.rows[1].controls[0], "the same section");
+    assert_ne!(t.rows[2].controls[1], t.rows[1].controls[1], "its own item");
 }
 
 #[test]

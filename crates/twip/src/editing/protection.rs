@@ -161,18 +161,17 @@ impl Editor {
         let mut order: Vec<usize> = (0..ranges.len()).collect();
         order.sort_by(|&a, &b| keys[a].cmp(&keys[b]));
         let (mut list, mut list_keys): (Vec<EditableRangeInfo>, Vec<_>) = (Vec::new(), Vec::new());
-        let mut seen: std::collections::HashSet<&RangeEditor> = std::collections::HashSet::new();
         for k in order {
             let r = &ranges[k];
             if !list.last().is_some_and(|l| l.start == r.start && l.end == r.end) {
-                seen.clear();
                 list.push(EditableRangeInfo { ids: Vec::new(), editors: Vec::new(), start: r.start, end: r.end });
                 list_keys.push(keys[k].clone());
             }
             let Some(l) = list.last_mut() else { continue };
             l.ids.push(r.id.clone());
+            // One editor, however many permissions name them
             if let Some(e) = &r.editor
-                && seen.insert(e)
+                && !l.editors.iter().any(|x| x.same(e))
             {
                 l.editors.push(e.clone());
             }
@@ -687,14 +686,22 @@ impl Editor {
         let Some(ends) = ranges.iter().map(|(a, b)| Some((a.para_offset()?, b.para_offset()?))).collect::<Option<Vec<_>>>() else {
             return Outcome::unavailable("no text range");
         };
-        let ids: Vec<i64> = self
+        let used: std::collections::HashSet<i64> = self
             .index
             .para_ids()
             .filter_map(|p| self.index.para(&self.doc, p))
             .flat_map(|p| p.inlines.iter().filter_map(perm))
             .filter_map(|(_, id, _)| id.parse().ok())
             .collect();
-        let first = ids.iter().max().map_or(1, |m| m + 1);
+        // Ids Word reads (a signed 32-bit number): on from the greatest, else the first unused
+        const MAX: i64 = i32::MAX as i64;
+        let n = ends.len() as i64;
+        let top = used.iter().copied().filter(|id| (0..=MAX).contains(id)).max().unwrap_or(0);
+        let fresh: Vec<i64> =
+            if top + n <= MAX { (top + 1..=top + n).collect() } else { (1..=MAX).filter(|id| !used.contains(id)).take(ends.len()).collect() };
+        if fresh.len() < ends.len() {
+            return Outcome::unavailable("no free permission id");
+        }
         let w = self.cx().w;
         let esc = crate::docx::write::props::esc;
         let who = match &who {
@@ -705,7 +712,7 @@ impl Editor {
         let mut tx = self.begin("Editable Range");
         // Ranges, last first
         for (k, &((pa, oa), (pb, ob))) in ends.iter().enumerate().rev() {
-            let id = first + k as i64;
+            let id = fresh[k];
             let (start, end) = (marker(format!("<{w}permStart {w}id=\"{id}\" {who}/>")), marker(format!("<{w}permEnd {w}id=\"{id}\"/>")));
             let steps = if pa == pb && oa == ob {
                 vec![Step::Text { para: pa, range: oa..oa, with: vec![start, end], edges: Edges::default() }]

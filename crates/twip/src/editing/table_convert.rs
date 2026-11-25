@@ -283,8 +283,8 @@ impl Editor {
             }
             let Some(tg) = e.table_target() else { return out };
             let cols = e.index.table(&e.doc, tg.table).map_or(0, |t| t.grid.len());
-            for col in 0..cols {
-                e.auto_fit_column(tg.table, col, fonts);
+            if let Some(last) = cols.checked_sub(1) {
+                e.auto_fit_columns_to_contents(tg.table, (0, last), fonts);
             }
             out
         })

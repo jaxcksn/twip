@@ -117,13 +117,18 @@ pub fn word_count_in(e: &mut crate::editing::Editor, scope: WordCountScope) -> c
         ranges.iter().map(|&(p, a, b)| (p, a.0, b.0)).collect()
     };
     let mut n = crate::api::services::WordCount::default();
+    let template = e.editing_sub_template();
     let (doc, index) = (e.document(), e.index());
     let counted = |story: StoryId| match story {
         StoryId::Body => true,
+        // The sub-template being edited is the body shown.
+        StoryId::BuildingBlock(k) => template == Some(k),
         StoryId::TextBox(_) | StoryId::Footnote(_) | StoryId::Endnote(_) => scope.boxes_and_notes,
         _ => false,
     };
     let mut text = String::new();
+    // A paragraph with text in more than one selected range is one paragraph.
+    let mut seen = std::collections::HashSet::new();
     for &(para, a, b) in &paras {
         let Some(p) = index.para(doc, para) else { continue };
         if !whole && !index.para_slot(para).is_some_and(|s| counted(index.story(s.container))) {
@@ -135,7 +140,7 @@ pub fn word_count_in(e: &mut crate::editing::Editor, scope: WordCountScope) -> c
         text.extend(t.chars.iter().zip(&t.units).filter(|&(&c, &u)| c != crate::editing::text::OBJECT && (a..b).contains(&u)).map(|(c, _)| *c));
         let words = text.split_whitespace().count() as u32;
         n.words += words;
-        n.paragraphs += u32::from(words > 0);
+        n.paragraphs += u32::from(words > 0 && (whole || seen.insert(para)));
         n.characters += text.chars().filter(|c| !c.is_whitespace()).count() as u32;
         n.characters_with_spaces += text.trim_end().chars().filter(|c| !c.is_control() || *c == '\t').count() as u32;
     }
@@ -144,21 +149,28 @@ pub fn word_count_in(e: &mut crate::editing::Editor, scope: WordCountScope) -> c
     // Ranges by paragraph, so each line looks up only its own paragraphs' ranges.
     let mut by_para = ranges;
     by_para.sort_unstable_by_key(|&(p, a, _)| (p, a));
+    let body =
+        || pages.iter().flat_map(|(_, g)| g.lines.iter().filter(|l| !l.repeat && g.stories.get(l.story).is_some_and(|s| s.story == StoryId::Body)));
+    // The units paragraph `p` holds on line `l`, least and most (a right-to-left line's stops run back).
+    let held = |l: &crate::editing::geometry::GLine, p| {
+        l.stops
+            .iter()
+            .filter(|s| s.para == p)
+            .fold(None, |r: Option<(u32, u32)>, s| Some(r.map_or((s.unit.0, s.unit.0), |(a, b)| (a.min(s.unit.0), b.max(s.unit.0)))))
+    };
+    // Where each line starts: a line ends where the next starts at a wrap, not at a break or its paragraph's end.
+    let starts: std::collections::HashSet<(crate::layout::ParaId, u32)> =
+        if whole { Default::default() } else { body().flat_map(|l| l.paras.iter().filter_map(move |&p| Some((p, held(l, p)?.0)))).collect() };
     let covers = |l: &crate::editing::geometry::GLine| {
         whole
             || l.paras.iter().any(|&p| {
                 let from = by_para.partition_point(|r| r.0 < p);
-                by_para[from..]
-                    .iter()
-                    .take_while(|r| r.0 == p)
-                    .any(|&(_, a, b)| l.first_of(p).is_none_or(|start| start.0 < b.0.max(a.0 + 1)) && l.last_of(p).is_none_or(|end| end.0 >= a.0))
+                let Some((lo, hi)) = held(l, p) else { return by_para[from..].first().is_some_and(|r| r.0 == p) };
+                let wrapped = hi > lo && starts.contains(&(p, hi));
+                by_para[from..].iter().take_while(|r| r.0 == p).any(|&(_, a, b)| lo < b.0.max(a.0 + 1) && if wrapped { hi > a.0 } else { hi >= a.0 })
             })
     };
-    n.lines = pages
-        .iter()
-        .flat_map(|(_, g)| g.lines.iter().filter(|l| !l.repeat && g.stories.get(l.story).is_some_and(|s| s.story == StoryId::Body)))
-        .filter(|l| covers(l))
-        .count() as u32;
+    n.lines = body().filter(|l| covers(l)).count() as u32;
     n
 }
 

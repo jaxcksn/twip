@@ -121,11 +121,10 @@ pub fn placed_indent(t: &Table, compat: Compat) -> f64 {
     if t.ind_set || compat != Compat::Legacy {
         return placed_ind(t);
     }
-    let (lw, lmar) = t
-        .rows
-        .first()
-        .and_then(|r| r.cells.first())
-        .map_or((space_h(&t.borders[1]), 0.0), |c| (space_h(candidate(Some(&c.left), &t.borders[1])), c.margins[1]));
+    // The first row's left border, as the table's origin is drawn from it
+    let left = &row_borders(t, 0)[1];
+    let (lw, lmar) =
+        t.rows.first().and_then(|r| r.cells.first()).map_or((space_h(left), 0.0), |c| (space_h(candidate(Some(&c.left), left)), c.margins[1]));
     edge_gap(t, lw, lmar)
 }
 
@@ -851,7 +850,7 @@ fn turn_cell(
     };
     let rect = [0.0, 0.0, g.cw, len];
     let items = crate::layout::vertical::turned_in(&story.units, v, rect, across, first, bottom);
-    let text = crate::layout::vertical::unturned(&story.units, v, rect, across, crate::layout::vertical::Turn::NONE);
+    let text = crate::layout::vertical::unturned(&story.units, v, rect, across, first, bottom, crate::layout::vertical::Turn::NONE);
     let unit = StoryUnit {
         top: 0.0,
         height: 0.0,

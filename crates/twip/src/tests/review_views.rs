@@ -480,9 +480,11 @@ fn markup_style_draws_each_kind_as_set() {
         let m = |s: u32| ((((colour >> s) & 0xFF) + 3 * 0xFF) / 4) << s;
         m(16) | m(8) | m(0)
     };
-    assert!(!rects(&t, &fonts).iter().any(|(_, c)| tints.iter().any(|&a| tint(a) == *c)), "automatic: no highlight");
-    let light_blue = crate::docx::review::MarkupStyle::LIGHT_BLUE;
+    let (light_blue, pink) = (crate::docx::review::MarkupStyle::LIGHT_BLUE, crate::docx::review::MarkupStyle::PINK);
+    let auto = rects(&t, &fonts);
+    assert!(!auto.iter().any(|(_, c)| tints.iter().any(|&a| tint(a) == *c) || *c == light_blue || *c == pink), "automatic: no highlight");
     assert!(rects(&base, &fonts).iter().any(|(_, c)| *c == light_blue), "Word's Light Blue by default");
+    assert!(rects(&base, &fonts).iter().any(|(_, c)| *c == pink), "and its Pink for the deleted cells");
     let by_author = with_markup(fixture("FX-REVIEW-TABLES"), |m| m.style.inserted_cells = MarkColor::ByAuthor);
     let drawn = rects(&by_author, &fonts);
     assert!(drawn.iter().any(|(_, c)| tints.iter().any(|&a| tint(a) == *c)) && !drawn.iter().any(|(_, c)| *c == light_blue), "by author: tinted");
@@ -577,11 +579,19 @@ fn the_caret_walks_text_with_stand_in_deletions() {
     style.deletions.mark = TextMark::Caret;
     assert_eq!(e.set_markup_style(style), crate::editing::commands::Outcome::Moved);
     e.complete(&fonts);
+    // The story's end, where the walk stops.
+    let start = e.selection();
+    e.execute(moving(MoveBy::Story, Dir::Forward, false), &fonts);
+    let end = e.selection().focus();
+    e.set_caret_for_benchmark(start);
     let mut last = None;
-    for _ in 0..400 {
+    let mut done = false;
+    for _ in 0..20_000 {
         assert!(e.caret_view().is_some(), "a caret at {:?}", e.selection());
         let at = e.selection().focus();
         if at == last {
+            assert_eq!(at, end, "stopped only at the end");
+            done = true;
             break;
         }
         if let (Some(a), Some(b)) = (last, at) {
@@ -590,6 +600,7 @@ fn the_caret_walks_text_with_stand_in_deletions() {
         last = at;
         e.execute(moving(MoveBy::Char, Dir::Forward, false), &fonts);
     }
+    assert!(done, "the walk reached the end");
     let v = crate::editing::integrity::check(e.document(), e.index(), &e.selection());
     assert!(v.is_empty(), "{v:?}");
 }

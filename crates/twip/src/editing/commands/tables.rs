@@ -1,6 +1,6 @@
 //! Table commands
 
-use crate::api::command::{AutoFit, BorderEdges, CellBorders, CellMargins, HorizontalSide, InsertColumns, SplitCells, TableStyleChange};
+use crate::api::command::{AutoFit, BorderEdges, CellBorders, CellMargins, Command, HorizontalSide, InsertColumns, SplitCells, TableStyleChange};
 use crate::api::value::{AutoOr, CellAlignment, HeightRule, HorizontalAlignment, RowHeight, StyleId, TableWidth};
 use crate::docx::props::{Border, Jc, Width};
 use crate::font::Fonts;
@@ -50,15 +50,7 @@ impl Editor {
             };
             return self.table_format_on(tg, &fit, fonts);
         }
-        self.joined("AutoFit", fonts, |e| {
-            let mut out = Outcome::Unchanged("nothing to fit");
-            for col in tg.cols.0..=tg.cols.1 {
-                if let o @ Outcome::Changed(_) = e.auto_fit_column(tg.table, col, fonts) {
-                    out = o;
-                }
-            }
-            out
-        })
+        self.joined("AutoFit", fonts, |e| e.auto_fit_columns_to_contents(tg.table, tg.cols, fonts))
     }
 
     pub(in crate::editing) fn set_cell_alignment(&mut self, a: CellAlignment, fonts: &Fonts) -> Outcome {
@@ -78,6 +70,10 @@ impl Editor {
     /// Sets edges `edges` of the selected cells to `line` (default: a ½ pt single automatic line), its colour an RGB or
     /// a theme colour with a tint or shade.
     pub fn set_cell_border_lines(&mut self, edges: BorderEdges, line: Option<&crate::editing::readback::BorderLine>, fonts: &Fonts) -> Outcome {
+        let probe = Command::SetCellBorders(CellBorders { edges, border: None });
+        if let Some(out) = self.refuse_like(&probe) {
+            return out;
+        }
         match self.border_lines(edges, line) {
             Ok((edges, border)) => self.table_format(&TableFormat::CellBorders(edges, border), fonts),
             Err(why) => Outcome::invalid(&why),
@@ -108,6 +104,9 @@ impl Editor {
             Ok(x) => x,
             Err(why) => return Outcome::invalid(&why),
         };
+        if let Some(out) = self.refuse_like(&Command::SetRowProperties(Default::default())) {
+            return out;
+        }
         self.table_format(&TableFormat::RowProps { hidden, exceptions }, fonts)
     }
 
@@ -120,6 +119,11 @@ impl Editor {
             if fixed {
                 return Err("a fixed-width table's rows take the table's indent".into());
             }
+        }
+        if let Some(s) = x.cell_spacing
+            && !(s.0.is_finite() && (0.0..=1584.0).contains(&s.0))
+        {
+            return Err("a row's cell spacing is 0…1584 pt".into());
         }
         Ok(crate::editing::table_format::RowEx {
             reset: x.reset,

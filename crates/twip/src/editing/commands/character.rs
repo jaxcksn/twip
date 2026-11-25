@@ -20,22 +20,26 @@ fn toggle_xml(w: &str, name: &str, on: bool) -> String {
 }
 
 /// The span of attribute `name` in `tag` as `(start of its leading space, start of its value, end of its value)`,
-/// written with either quote.
+/// written with either quote; other attributes' values are skipped.
 fn attr_span(tag: &str, name: &str) -> Option<(usize, usize, usize)> {
-    let mut from = 0;
-    while let Some(i) = tag[from..].find(name) {
-        let k = from + i;
-        from = k + name.len();
-        let rest = tag[from..].trim_start();
-        let Some(v) = rest.strip_prefix('=').map(str::trim_start) else { continue };
-        let Some(q) = v.chars().next().filter(|c| matches!(c, '"' | '\'')) else { continue };
-        if !tag[..k].ends_with(char::is_whitespace) {
-            continue;
+    let b = tag.as_bytes();
+    let mut k = 0;
+    while k < b.len() {
+        match b[k] {
+            q @ (b'"' | b'\'') => k = tag[k + 1..].find(q as char).map_or(b.len(), |e| k + e + 2),
+            _ if k > 0 && b[k - 1].is_ascii_whitespace() && b[k..].starts_with(name.as_bytes()) => {
+                let after = k + name.len();
+                if let Some(v) = tag[after..].trim_start().strip_prefix('=').map(str::trim_start)
+                    && let Some(q) = v.chars().next().filter(|c| matches!(c, '"' | '\''))
+                {
+                    let start = tag.len() - v.len() + 1;
+                    let end = tag[start..].find(q).map_or(tag.len(), |e| start + e);
+                    return Some((tag[..k].trim_end().len(), start, end));
+                }
+                k = after;
+            }
+            _ => k += 1,
         }
-        let start = tag.len() - v.len() + 1;
-        let end = tag[start..].find(q).map_or(tag.len(), |e| start + e);
-        let lead = tag[..k].trim_end().len();
-        return Some((lead, start, end));
     }
     None
 }
@@ -850,4 +854,15 @@ fn field_code_depth(inlines: &[Inline]) -> Vec<i32> {
         *d = run;
     }
     depth
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn an_attribute_is_found_outside_other_attributes_values() {
+        let tag = r#"<w:lang w:eastAsia='x w:val="ja-JP"' w:val = "fr-FR"/>"#;
+        assert_eq!(super::with_attr(tag, "w:val", "en-US"), r#"<w:lang w:eastAsia='x w:val="ja-JP"' w:val = "en-US"/>"#);
+        assert_eq!(super::strip(tag, "w:val"), r#"<w:lang w:eastAsia='x w:val="ja-JP"'/>"#);
+        assert_eq!(super::with_attr("<w:lang/>", "w:val", "en-US"), r#"<w:lang w:val="en-US"/>"#);
+    }
 }

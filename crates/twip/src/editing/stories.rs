@@ -101,6 +101,7 @@ impl Editor {
             return Outcome::Moved;
         }
         if self.select_objects {
+            self.shape_cancel();
             self.set_select_objects(false);
             return Outcome::Moved;
         }

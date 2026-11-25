@@ -263,11 +263,12 @@ fn cell_shading_and_borders_take_theme_colours() {
     first(&mut e);
     let fill = accent(ThemeColour::Accent5, TransformKind::Tint, 0.4);
     assert!(matches!(e.set_cell_shading(Some(fill), fonts()), Outcome::Changed(_)));
-    let b = line(AutoOr::Value(ColourValue::theme(ThemeColour::Accent3)), 0.0, false);
+    let b = line(AutoOr::Value(ColourValue::theme(ThemeColour::Accent3)), 0.0, true);
     assert!(matches!(e.set_cell_border_lines(crate::api::command::BorderEdges::All, Some(&b), fonts()), Outcome::Changed(_)));
     let xml = doc_xml(&e);
     assert!(xml.contains(r#"w:themeFill="accent5" w:themeFillTint="66""#), "{xml}");
     assert!(xml.contains(r#"w:themeColor="accent3""#), "{xml}");
+    assert!(xml.contains(r#"w:shadow="1""#), "the line's shadow: {xml}");
 }
 
 #[test]
@@ -435,10 +436,11 @@ fn page_setup_applies_from_this_point_forward_or_to_the_whole_document() {
     e.execute(Command::Undo, fonts());
     assert_eq!(wide(&e), [false], "one action");
     e.execute(Command::Redo, fonts());
+    assert_eq!(wide(&e), [false, true], "redone");
     first(&mut e);
     let m = Margins { left: Some(Points(90.0)), ..Margins::default() };
     e.in_section_scope(ApplyTo::WholeDocument, "Page Setup", |e| e.execute(C::SetMargins(m), fonts()), fonts());
-    assert!(e.document().sections.iter().all(|s| s.left == 90.0), "every section");
+    assert_eq!(e.document().sections.iter().map(|s| s.left).collect::<Vec<_>>(), [90.0, 90.0], "every section");
 }
 
 #[test]
@@ -524,12 +526,11 @@ fn a_single_quoted_font_attribute_is_replaced_not_duplicated() {
     );
     assert!(matches!(e.set_theme_font(ThemeFont::Minor, fonts()), Outcome::Changed(_)));
     let xml = doc_xml(&e);
-    let at = xml.find("<w:rFonts").expect("fonts");
-    let tag = &xml[at..at + xml[at..].find("/>").unwrap()];
-    assert_eq!(tag.matches("w:asciiTheme").count(), 1, "{tag}");
-    assert_eq!(tag.matches("w:hAnsiTheme").count(), 1, "{tag}");
-    assert!(!tag.contains("w:ascii=") && !tag.contains("w:hAnsi="), "{tag}");
-    assert!(roxmltree::Document::parse(&xml).is_ok(), "{xml}");
+    let doc = roxmltree::Document::parse(&xml).expect("well-formed");
+    let w = crate::docx::write::props::W_NS;
+    let f = doc.descendants().find(|n| n.has_tag_name((w, "rFonts"))).expect("fonts");
+    assert_eq!((f.attribute((w, "ascii")), f.attribute((w, "hAnsi"))), (None, None), "{xml}");
+    assert_eq!((f.attribute((w, "asciiTheme")), f.attribute((w, "hAnsiTheme"))), (Some("minorHAnsi"), Some("minorHAnsi")), "{xml}");
 }
 
 #[test]
@@ -543,4 +544,32 @@ fn a_page_number_in_the_text_can_t_be_left_off_the_first_page() {
     assert_eq!((e.history().undo_depth(), e.document().sections[0].title_pg), (depth, titled), "nothing changed");
     let out = e.insert_page_number_shown(PageNumberFormat::Page, PageNumberSpot::Caret, None, true, fonts());
     assert!(matches!(out, Outcome::Changed(_)), "shown on the first page it's fine: {out:?}");
+}
+
+#[test]
+fn a_page_number_in_the_first_pages_own_header_can_t_be_left_off_the_first_page() {
+    use super::empty_stories::{NS, build};
+    use crate::api::command::PageNumberFormat;
+    use crate::editing::commands::PageNumberSpot;
+    let hdr = |t: &str| format!(r#"<w:hdr {NS}><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:hdr>"#);
+    let (default, first) = (hdr("Default"), hdr("First"));
+    let sect = r#"<w:headerReference w:type="default" r:id="rIdP0"/><w:headerReference w:type="first" r:id="rIdP1"/><w:titlePg/>"#;
+    let parts = [("header1.xml", "header", "header", default.as_str()), ("header2.xml", "header", "header", first.as_str())];
+    let mut e = Editor::open(&build("<w:p><w:r><w:t>Body</w:t></w:r></w:p>", sect, &parts), fonts()).expect("opens");
+    e.complete(fonts());
+    let caret_in = |e: &mut Editor, slot: usize| {
+        let name = e.document().sections[0].headers[slot].clone().expect("a header");
+        let story = e.index().header_footer(&name).expect("its story");
+        let Some(crate::docx::Block::Para(p)) = e.document().stories[&name].first() else { panic!("a paragraph") };
+        e.selection = Selection::Caret(Position::text(story, crate::layout::ParaId(p.id), crate::layout::Unit(0)));
+    };
+    caret_in(&mut e, 1);
+    let depth = e.history().undo_depth();
+    let out = e.insert_page_number_shown(PageNumberFormat::Page, PageNumberSpot::Caret, None, false, fonts());
+    assert!(matches!(out, Outcome::Refused(_)), "{out:?}");
+    assert_eq!((e.history().undo_depth(), e.document().sections[0].title_pg), (depth, true), "nothing changed");
+    caret_in(&mut e, 0);
+    let out = e.insert_page_number_shown(PageNumberFormat::Page, PageNumberSpot::Caret, None, false, fonts());
+    assert!(matches!(out, Outcome::Changed(_)), "the other pages' header takes it: {out:?}");
+    assert!(e.document().sections[0].title_pg, "the first page still its own");
 }

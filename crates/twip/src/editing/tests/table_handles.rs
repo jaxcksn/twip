@@ -905,3 +905,32 @@ fn the_left_border_drag_moves_only_the_selected_rows() {
     let after = Drawn::of(&mut e);
     assert!((after.rows[1][0] - d.rows[1][0]).abs() < 0.6, "{:?} {:?}", d.rows[1], after.rows[1]);
 }
+
+#[test]
+fn the_left_edge_goes_in_by_each_cells_whole_width_and_never_out() {
+    let tc = |w: u32, span: u32| {
+        let span = if span > 1 { format!(r#"<w:gridSpan w:val="{span}"/>"#) } else { String::new() };
+        format!(r#"<w:tc><w:tcPr><w:tcW w:w="{w}" w:type="dxa"/>{span}</w:tcPr><w:p/></w:tc>"#)
+    };
+    let table = |w0: u32, row: &str| {
+        format!(
+            r#"<w:tbl><w:tblPr><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="{w0}"/><w:gridCol w:w="1800"/><w:gridCol w:w="2160"/></w:tblGrid><w:tr>{row}</w:tr><w:tr>{row}</w:tr></w:tbl>"#
+        )
+    };
+    let edge = |e: &mut Editor| {
+        let d = Drawn::of(e);
+        (d.table, (d.edges[0], (d.rows[0][1] + d.rows[0][3]) / 2.0))
+    };
+    // A first column narrower than its cells' margins: a drag in leaves it.
+    let mut e = open(&table(100, &format!("{}{}{}", tc(100, 1), tc(1800, 1), tc(2160, 1))));
+    let (t, from) = edge(&mut e);
+    let was = grid(&e, t);
+    drag(&mut e, from, (20.0, 0.0), ALT, true);
+    assert!(grid(&e, t)[0] <= was[0] + 0.01, "not widened by a drag in: {was:?} → {:?}", grid(&e, t));
+    // A cell over the first two columns narrows past the first one's margins.
+    let mut e = open(&table(720, &format!("{}{}", tc(2520, 2), tc(2160, 1))));
+    let (t, from) = edge(&mut e);
+    drag(&mut e, from, (30.0, 0.0), ALT, true);
+    let now = grid(&e, t);
+    assert!((now[0] - 6.0).abs() < 0.1, "36 pt less 30: {now:?}");
+}

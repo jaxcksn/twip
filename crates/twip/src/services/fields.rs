@@ -1254,6 +1254,8 @@ pub enum FieldProblem {
     MissingArgument(&'static str),
     /// A switch the field doesn't take.
     UnknownSwitch(String),
+    /// A switch the field needs left out.
+    MissingSwitch(&'static str),
     /// A switch that takes a value given none.
     MissingSwitchValue(String),
     /// A switch that takes a whole number given something else.
@@ -1269,8 +1271,15 @@ pub fn check(code: &str) -> Vec<FieldProblem> {
         return vec![FieldProblem::Empty];
     }
     let name = if c.name.starts_with('=') { "=" } else { c.name.as_str() };
-    let Some(spec) = field(name) else { return vec![FieldProblem::UnknownField(c.name.clone())] };
+    let Some(spec) = field(name) else {
+        // One Word has but Insert Field doesn't offer (EMBED, FORMTEXT): nothing here to check it by.
+        return if crate::docx::fields::known_name(name) { Vec::new() } else { vec![FieldProblem::UnknownField(c.name.clone())] };
+    };
     let mut out = Vec::new();
+    // A table of authorities lists one category: Word takes none without `\c`.
+    if name == "TOA" && !c.switches.iter().any(|s| s.flag.eq_ignore_ascii_case(&'c')) {
+        out.push(FieldProblem::MissingSwitch("c"));
+    }
     let given = if name == "=" { usize::from(c.name.len() > 1) + c.args.len() } else { c.args.len() };
     if let Some(a) = spec.args.iter().take_while(|a| a.required).nth(given) {
         out.push(FieldProblem::MissingArgument(a.name));
@@ -1325,6 +1334,16 @@ mod tests {
     }
 
     #[test]
+    fn an_ifs_quoted_text_keeps_its_quotes_from_the_dialog_to_its_result() {
+        let said = r#"say "hi""#;
+        let c = FieldChoice { name: "IF".into(), args: ["1", "=", "1", said, "no"].map(String::from).to_vec(), ..FieldChoice::default() };
+        let code = c.code();
+        assert_eq!(FieldChoice::of_code(&code).args, c.args, "read back: {code}");
+        let w = crate::docx::fields::words(&code);
+        assert_eq!(crate::docx::fields::if_field(&w).as_deref(), Some(said), "its result: {code}");
+    }
+
+    #[test]
     fn choices_make_a_code_and_read_back_from_it() {
         let c = FieldChoice {
             name: "REF".into(),
@@ -1361,6 +1380,10 @@ mod tests {
         assert_eq!(check(" TOC \\p "), [FieldProblem::MissingSwitchValue("p".into())]);
         assert_eq!(check(" NUMPAGES \\@ \"d\" "), [FieldProblem::FormatNotTaken('@')]);
         assert_eq!(check(" NOSUCH "), [FieldProblem::UnknownField("NOSUCH".into())]);
+        assert!(check(" EMBED Excel.Sheet.12 ").is_empty() && check(" FORMTEXT ").is_empty(), "fields Insert Field doesn't offer");
+        assert_eq!(check(" TOA \\h "), [FieldProblem::MissingSwitch("c")], "a table of authorities without its category");
+        assert_eq!(check(" TOA \\c "), [FieldProblem::MissingSwitchValue("c".into())], "its category left empty");
+        assert!(check(" TOA \\c 2 ").is_empty());
         assert!(check(" =2+2 ").is_empty() && check(" = ").contains(&FieldProblem::MissingArgument("Formula")));
     }
 }

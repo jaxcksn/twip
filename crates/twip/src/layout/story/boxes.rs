@@ -455,7 +455,9 @@ fn turned_text(
         let centre = [(rect[0] + rect[2]) / 2.0, (rect[1] + rect[3]) / 2.0];
         let outer = if turn.abs() < 1e-9 { Turn::NONE } else { Turn::about(centre, turn) };
         let items = if turn.abs() < 1e-9 { items } else { vec![Item::Turned(Rc::new(crate::layout::fragment::Turned { centre, deg: turn, items }))] };
-        groups.push(with_text(items, outer, |outer| crate::layout::vertical::unturned(&story.units, v, frame, across, outer)));
+        groups.push(with_text(items, outer, |outer| {
+            crate::layout::vertical::unturned(&story.units, v, frame, across, f64::NEG_INFINITY, bottom, outer)
+        }));
         return Ok(());
     }
     use crate::drawing::text::TextDirection as D;

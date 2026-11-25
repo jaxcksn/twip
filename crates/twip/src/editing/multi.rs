@@ -108,6 +108,16 @@ fn bounds_of(s: Selection) -> Option<(usize, usize, usize, usize)> {
     }
 }
 
+/// Whether `a` and `b` are the same block of cells, whichever corner each began at.
+fn same_block(a: Selection, b: Selection) -> bool {
+    match (a, b) {
+        (Selection::Cells { table: t, shape: s, .. }, Selection::Cells { table: u, shape: v, .. }) => {
+            t == u && s == v && bounds_of(a) == bounds_of(b)
+        }
+        _ => a == b,
+    }
+}
+
 /// What a drag's selection `s` goes over: a range or a block of cells, none for a caret.
 fn swept_by(s: Selection) -> Option<Selection> {
     matches!(s, Selection::Text { .. } | Selection::Cells { .. }).then_some(s)
@@ -427,7 +437,7 @@ impl Editor {
         let mut cells = {
             let mut kept: Vec<Selection> = Vec::with_capacity(cells.len());
             for c in cells.into_iter().map(|c| self.normalize(c)) {
-                if Some(c) != active && !kept.contains(&c) {
+                if !active.is_some_and(|a| same_block(a, c)) && !kept.iter().any(|&k| same_block(k, c)) {
                     kept.push(c);
                 }
             }
@@ -789,41 +799,32 @@ impl Editor {
     /// Each range's and block of cells' paragraph pieces, in document order: the stretch of a paragraph that more than
     /// one holds (a selected cell and a range in it) once, joined with what touches it.
     pub(super) fn multi_pieces(&mut self) -> Vec<(ParaId, Unit, Unit)> {
-        let mut out: Vec<Option<(ParaId, Unit, Unit)>> = Vec::new();
-        let mut by_para: HashMap<ParaId, Vec<usize>> = HashMap::new();
-        for (para, mut a, mut b) in self.each_piece(|e| e.selected_ranges()).into_iter().flatten() {
-            let held = by_para.entry(para).or_default();
-            // The stretches it reaches, until it reaches no more
-            let mut first: Option<usize> = None;
-            loop {
-                let before = held.len();
-                held.retain(|&k| match out[k] {
-                    Some((_, x, y)) if x <= b && a <= y => {
-                        (a, b) = (a.min(x), b.max(y));
-                        match first {
-                            None => first = Some(k),
-                            Some(_) => out[k] = None,
-                        }
-                        false
-                    }
-                    _ => true,
-                });
-                if held.len() == before {
-                    break;
-                }
-            }
-            match first {
-                Some(k) => {
-                    out[k] = Some((para, a, b));
-                    held.push(k);
-                }
-                None => {
-                    held.push(out.len());
-                    out.push(Some((para, a, b)));
-                }
-            }
+        // Each paragraph's stretches, paragraphs in the order first reached
+        let mut order: Vec<ParaId> = Vec::new();
+        let mut by_para: HashMap<ParaId, Vec<(Unit, Unit)>> = HashMap::new();
+        for (para, a, b) in self.each_piece(|e| e.selected_ranges()).into_iter().flatten() {
+            by_para
+                .entry(para)
+                .or_insert_with(|| {
+                    order.push(para);
+                    Vec::new()
+                })
+                .push((a, b));
         }
-        out.into_iter().flatten().collect()
+        let mut out = Vec::with_capacity(order.len());
+        for para in order {
+            let mut v = by_para.remove(&para).unwrap_or_default();
+            v.sort_unstable();
+            let mut joined: Vec<(Unit, Unit)> = Vec::with_capacity(v.len());
+            for (a, b) in v {
+                match joined.last_mut() {
+                    Some(last) if a <= last.1 => last.1 = last.1.max(b),
+                    _ => joined.push((a, b)),
+                }
+            }
+            out.extend(joined.into_iter().map(|(a, b)| (para, a, b)));
+        }
+        out
     }
 
     /// The paragraphs whose marks a range holds, each once.

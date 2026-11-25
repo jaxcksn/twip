@@ -369,49 +369,75 @@ impl Editor {
     }
 
     pub(super) fn auto_fit_column(&mut self, table: TableId, col: usize, fonts: &Fonts) -> Outcome {
+        self.auto_fit_columns_to_contents(table, (col, col), fonts)
+    }
+
+    /// AutoFit to contents of columns `c0..=c1`: each as wide as what its own cells hold, within the room the columns
+    /// before it left; the table measured once for them all.
+    pub(super) fn auto_fit_columns_to_contents(&mut self, table: TableId, (c0, c1): (usize, usize), fonts: &Fonts) -> Outcome {
         let Some(t) = self.index.table(&self.doc, table) else { return Outcome::Unchanged("no table") };
+        if c0 > c1 {
+            return Outcome::Unchanged("no column");
+        }
         let g = Grid::of(t);
-        let mut paras: Vec<(crate::layout::ParaId, f64)> = Vec::new();
+        // Each column's paragraphs in cells of its own, with their side margins and indents
+        let mut paras: Vec<Vec<(crate::layout::ParaId, f64)>> = vec![Vec::new(); c1 - c0 + 1];
         for (r, row) in t.rows.iter().enumerate() {
             for (k, cell) in row.cells.iter().enumerate() {
                 let Some(&(c, s, _)) = g.rows[r].get(k) else { continue };
-                if c == col && s.max(1) == 1 {
+                if (c0..=c1).contains(&c) && s.max(1) == 1 {
                     let m = cell.margins[1] + cell.margins[3];
                     for b in &cell.blocks {
                         if let Block::Para(p) = b {
-                            paras.push((crate::layout::ParaId(p.id), m + p.style.ind_left + p.style.ind_right));
+                            paras[c - c0].push((crate::layout::ParaId(p.id), m + p.style.ind_left + p.style.ind_right));
                         }
                     }
                 }
             }
         }
-        if paras.is_empty() {
+        if paras.iter().all(Vec::is_empty) {
             return Outcome::Unchanged("no cell of its own in the column");
         }
-        let (old_w, total, nrows) = (t.grid.get(col).copied(), t.grid.iter().sum::<f64>(), t.rows.len());
-        let mut lines: std::collections::HashMap<crate::layout::ParaId, f64> = std::collections::HashMap::new();
+        let (mut grid, nrows) = (t.grid.clone(), t.rows.len());
+        let wanted: std::collections::HashSet<crate::layout::ParaId> = paras.iter().flatten().map(|(p, _)| *p).collect();
+        let mut lines: std::collections::HashMap<crate::layout::ParaId, f64> = std::collections::HashMap::with_capacity(wanted.len());
         for geo in self.measured_pages(table) {
             for l in geo.lines.iter().filter(|l| !l.repeat) {
-                for &p in l.paras.iter() {
+                for &p in l.paras.iter().filter(|p| wanted.contains(p)) {
                     let (x0, x1) = l.span_of(p).unwrap_or_default();
                     *lines.entry(p).or_default() += (x1 - x0).max(0.0);
                 }
             }
         }
-        let margins = paras.iter().map(|(_, m)| *m).fold(0.0, f64::max);
-        let content = paras.iter().map(|(p, m)| lines.get(p).copied().unwrap_or(0.0) + m).fold(0.0, f64::max);
-        let mut w = content.max(margins + 4.5);
-        let old = old_w.unwrap_or(w);
-        let avail = self.index.table_slot(table).map_or(468.0, |s| self.text_width(s.container)) + margins + 1.0;
-        if w > old {
-            w = w.min(old + (avail - total).max(0.0));
+        let text_width = self.index.table_slot(table).map_or(468.0, |s| self.text_width(s.container));
+        let mut widths: Vec<(usize, f64)> = Vec::new();
+        for (col, paras) in (c0..).zip(&paras).filter(|(_, p)| !p.is_empty()) {
+            let margins = paras.iter().map(|(_, m)| *m).fold(0.0, f64::max);
+            let content = paras.iter().map(|(p, m)| lines.get(p).copied().unwrap_or(0.0) + m).fold(0.0, f64::max);
+            let mut w = content.max(margins + 4.5);
+            let old = grid.get(col).copied().unwrap_or(w);
+            let total: f64 = grid.iter().sum();
+            if w > old {
+                w = w.min(old + (text_width + margins + 1.0 - total).max(0.0));
+            }
+            let w = (w * 10.0).round() / 10.0;
+            if (w - old).abs() < 0.05 {
+                continue;
+            }
+            // As the column width edit stores it
+            if let Some(x) = grid.get_mut(col) {
+                *x = (w.max(1.0) * 20.0).round() / 20.0;
+            }
+            widths.push((col, w));
         }
-        let w = (w * 10.0).round() / 10.0;
-        if (w - old).abs() < 0.05 {
-            return Outcome::Unchanged("already fits");
+        let mut out = Outcome::Unchanged("already fits");
+        for (col, w) in widths {
+            let target = Target { table, rows: (0, nrows.saturating_sub(1)), cols: (col, col) };
+            if let o @ Outcome::Changed(_) = self.table_format_on(target, &super::table_format::TableFormat::ColumnWidth(w), fonts) {
+                out = o;
+            }
         }
-        let target = Target { table, rows: (0, nrows.saturating_sub(1)), cols: (col, col) };
-        self.table_format_on(target, &super::table_format::TableFormat::ColumnWidth(w), fonts)
+        out
     }
 
     /// The pages to measure a table's layout on: one in a header or footer shows on every page, so its first.

@@ -17,7 +17,7 @@ const W: &str = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 
 /// The blank package with `body` for the body's content, extra `styles`, and `sect` for its section (a letter page
 /// when empty).
-fn package(body: &str, styles: &str, sect: &str) -> Vec<u8> {
+pub(super) fn package(body: &str, styles: &str, sect: &str) -> Vec<u8> {
     let src = crate::docx::blank::blank_docx();
     let mut z = zip::ZipArchive::new(std::io::Cursor::new(src)).unwrap();
     let mut out = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
@@ -456,11 +456,39 @@ fn a_selection_counts_its_own_text_and_text_boxes_count_when_asked() {
 
 #[test]
 fn a_selection_over_many_paragraphs_counts_each_line_once() {
+    use crate::editing::position::{Position, StoryId};
+    use crate::editing::selection::{Granularity, Selection};
     use crate::services::{WordCountScope, word_count_in};
-    let body: String = (0..3000).map(|_| p("word")).collect();
+    let body: String = (0..3000).map(|_| p("word")).chain([p("outside")]).collect();
     let mut e = Editor::open(&package(&body, "", ""), fonts()).expect("opens");
     e.complete(fonts());
-    e.execute(Command::SelectAll, fonts());
+    let paras = crate::services::spelling::paras_in_order(&e);
+    let at = |k: usize, u: u32| Position::text(StoryId::Body, paras[k], Unit(u));
+    e.selection = Selection::range(at(0, 0), at(2999, 4), Granularity::Char);
     let n = word_count_in(&mut e, WordCountScope { selection: true, ..WordCountScope::default() });
-    assert_eq!((n.words, n.paragraphs, n.lines), (3000, 3000, 3000));
+    assert_eq!((n.words, n.paragraphs, n.lines), (3000, 3000, 3000), "not the paragraph after it");
+}
+
+#[test]
+fn a_selection_counts_a_paragraph_once_and_the_lines_its_text_is_on() {
+    use crate::editing::position::{Position, StoryId};
+    use crate::editing::selection::{Granularity, Selection};
+    use crate::services::{WordCountScope, word_count_in};
+    let long = "Words enough to wrap onto a second line of the page, and they go on and on for a while longer still. ".repeat(2);
+    let body = format!("{}{}", p(&long), p("two words"));
+    let mut e = Editor::open(&package(&body, "", ""), fonts()).expect("opens");
+    e.complete(fonts());
+    let para = crate::services::spelling::paras_in_order(&e)[0];
+    let at = |u: u32| Position::text(StoryId::Body, para, Unit(u));
+    let sel = WordCountScope { selection: true, ..WordCountScope::default() };
+    // From the second line's start: the first line's end stop is that place too, and isn't counted.
+    let g = e.page_geometries().into_iter().next().map(|(_, g)| g).expect("a page");
+    let second = g.lines.iter().filter(|l| l.paras.contains(&para)).nth(1).and_then(|l| l.first_of(para)).expect("a second line");
+    e.selection = Selection::range(at(second.0), at(second.0 + 5), Granularity::Char);
+    assert_eq!(word_count_in(&mut e, sel).lines, 1, "from {second:?}");
+    // Two ranges in one paragraph: one paragraph.
+    e.selection = Selection::range(at(0), at(5), Granularity::Char);
+    assert!(!matches!(e.add_selection_range(at(10), at(15)), crate::editing::commands::Outcome::Refused(_)));
+    let n = word_count_in(&mut e, sel);
+    assert_eq!((n.paragraphs, n.lines), (1, 1), "{n:?}");
 }

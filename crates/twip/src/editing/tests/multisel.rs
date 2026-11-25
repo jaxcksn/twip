@@ -1180,10 +1180,11 @@ fn a_cancelled_ctrl_press_puts_the_selection_back_as_it_was() {
     assert_eq!(r.e.other_ranges(), others);
     // A word selection keeps its unit
     let mut r = Run::from_bytes(&blank_with("The quick brown fox jumps over it."), "multisel-cancel-unit");
-    r.step(&json!({ "click": { "para": 0, "offset": 5 }, "clicks": 2 }));
-    r.e.add_selection_range(at(&r.e, 0, 16), at(&r.e, 0, 19));
-    r.e.select_ranges(&[(at(&r.e, 0, 16), at(&r.e, 0, 19)), (at(&r.e, 0, 4), at(&r.e, 0, 9))]);
-    let selection = r.e.selection();
+    let selection = Selection::range(at(&r.e, 0, 4), at(&r.e, 0, 10), crate::editing::selection::Granularity::Word);
+    r.e.selection = selection;
+    r.e.multi = crate::editing::multi::Multi { primary: Some(selection), others: vec![(at(&r.e, 0, 16), at(&r.e, 0, 19))], cells: Vec::new() };
+    assert!(r.e.is_discontiguous());
+    assert!(matches!(r.e.selection(), Selection::Text { unit: crate::editing::selection::Granularity::Word, .. }), "a word selection");
     r.step(&json!({ "press": { "para": 0, "offset": 24 }, "mods": { "ctrl": true } }));
     r.send(json!({ "type": "pointer", "kind": "cancel", "x": 0, "y": 0 }));
     assert_eq!(r.e.selection(), selection);
@@ -1233,9 +1234,9 @@ fn forms_protection_checks_each_range_for_its_own_exception() {
     e.select_ranges(&[(open, at(&e, 2, 4)), (a, b)]);
     assert!(e.is_discontiguous());
     assert!(e.in_form_field(), "the selection is in the field");
-    let was = texts(&e);
     e.execute(super::del(crate::editing::commands::Dir::Forward, false), fonts());
-    assert_ne!(texts(&e), was, "each range has its own exception: the field's, the open section's");
+    let now = texts(&e);
+    assert_eq!((now[0].as_str(), now[2].as_str()), ("fid in", " text here"), "each range has its own exception: the field's, the open section's");
 }
 
 #[test]
@@ -1308,4 +1309,67 @@ fn the_view_of_many_ranges_is_that_of_each_range_alone() {
     together.sort();
     assert!(!together.is_empty());
     assert_eq!(together, one_by_one);
+}
+
+#[test]
+fn the_selections_own_range_is_highlighted_where_it_overlaps_the_others() {
+    let mut e = Editor::open(&blank_with("aaaa\nbbbb\ncccc\ndddd"), fonts()).expect("opens");
+    e.complete(fonts());
+    let primary = Selection::range(at(&e, 0, 1), at(&e, 3, 3), crate::editing::selection::Granularity::Char);
+    let others = vec![(at(&e, 0, 0), at(&e, 0, 2)), (at(&e, 2, 0), at(&e, 2, 2)), (at(&e, 3, 0), at(&e, 3, 1))];
+    e.selection = primary;
+    e.multi = crate::editing::multi::Multi { primary: Some(primary), others, cells: Vec::new() };
+    let g = e.page_geometries().into_iter().next().expect("a page").1;
+    let p3 = para(&e, 3);
+    let l = g.lines.iter().find(|l| l.paras.contains(&p3)).expect("the last line");
+    let x = (l.x_of(p3, Unit(2)).expect("a stop") + l.x_of(p3, Unit(3)).expect("a stop")) / 2.0;
+    let [px, py] = l.page(x, (l.top + l.bottom) / 2.0);
+    let super::super::view::SelectionView::Text(bands) = e.view(0..1).selection else { panic!("a text selection") };
+    assert!(bands.iter().any(|(_, b)| b.contains(px, py)), "the selection's range reaches the last line: {bands:?}");
+}
+
+#[test]
+fn a_caret_with_other_ranges_shows_their_formatting() {
+    let body = r#"<w:p><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">aaa</w:t></w:r><w:r><w:t xml:space="preserve"> bbb</w:t></w:r></w:p>"#;
+    let mut e = Editor::open(&super::blank_body(body), fonts()).expect("opens");
+    e.complete(fonts());
+    let caret = Selection::Caret(at(&e, 0, 5));
+    e.selection = caret;
+    e.multi = crate::editing::multi::Multi { primary: Some(caret), others: vec![(at(&e, 0, 0), at(&e, 0, 3))], cells: Vec::new() };
+    assert!(e.is_discontiguous());
+    let bold = e.format_state().expect("a state").character.bold;
+    assert_eq!(bold, crate::api::state::Tri::Uniform(true), "the other range's, as formatting would apply to it");
+}
+
+#[test]
+fn a_block_of_cells_given_from_either_corner_is_one_piece() {
+    use crate::editing::selection::{CellRef, CellShape};
+    let mut r = with_table();
+    let table = r.e.index().table_ids().next().expect("a table");
+    let block = |a: (usize, usize), f: (usize, usize)| Selection::Cells {
+        table,
+        anchor: CellRef { row: a.0, col: a.1 },
+        focus: CellRef { row: f.0, col: f.1 },
+        shape: CellShape::Rect,
+    };
+    let (down, up) = (block((0, 0), (1, 1)), block((1, 1), (0, 0)));
+    r.e.select_pieces(&[], vec![down, up, block((0, 2), (0, 2))], None);
+    assert_eq!(r.e.cell_blocks().len(), 2, "{:?}", r.e.cell_blocks());
+    r.e.select_pieces(&[], vec![down, block((0, 2), (0, 2))], Some(up));
+    assert_eq!(r.e.cell_blocks().len(), 2, "the active block isn't another: {:?}", r.e.cell_blocks());
+}
+
+#[test]
+fn fields_in_the_selections_own_range_are_found_where_it_overlaps_the_others() {
+    let field = r#"<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>1</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>"#;
+    let body = format!(
+        "<w:p><w:r><w:t>aaaa</w:t></w:r></w:p><w:p><w:r><w:t>bbbb</w:t></w:r></w:p><w:p><w:r><w:t>cc</w:t></w:r>{field}<w:r><w:t>cc</w:t></w:r></w:p><w:p><w:r><w:t>dddd</w:t></w:r></w:p>"
+    );
+    let mut e = Editor::open(&super::blank_body(&body), fonts()).expect("opens");
+    e.complete(fonts());
+    let primary = Selection::range(at(&e, 0, 1), at(&e, 3, 3), crate::editing::selection::Granularity::Char);
+    let others = vec![(at(&e, 0, 0), at(&e, 0, 2)), (at(&e, 2, 0), at(&e, 2, 1)), (at(&e, 3, 0), at(&e, 3, 1))];
+    e.selection = primary;
+    e.multi = crate::editing::multi::Multi { primary: Some(primary), others, cells: Vec::new() };
+    assert_eq!(e.fields_here(None, false).len(), 1, "the field inside the selection's own range");
 }

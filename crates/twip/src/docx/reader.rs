@@ -2665,9 +2665,7 @@ impl Reader {
             .and_then(|p| p.attribute("descr").filter(|s| !s.is_empty()).or(p.attribute("title")))
             .unwrap_or("")
             .into();
-        let lock_aspect = item
-            .descendants()
-            .any(|n| matches!(n.tag_name().name(), "graphicFrameLocks" | "picLocks") && matches!(n.attribute("noChangeAspect"), Some("1" | "true")));
+        let lock_aspect = crate::drawing::read::aspect_locked(item);
         if is(item, WP, "inline") {
             let ee = item.children().find(|c| is(*c, WP, "effectExtent"));
             // Negative where a turned picture's bounds are narrower than its box (Word writes a quarter-turned

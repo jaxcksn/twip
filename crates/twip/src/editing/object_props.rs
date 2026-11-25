@@ -263,14 +263,22 @@ impl Editor {
 
     /// The selected picture's image bytes (a group child's when one is selected), as the document holds them.
     pub fn object_image(&self) -> Option<&[u8]> {
-        let k = match self.object_shape().map(|s| &s.kind) {
+        self.doc.images.get(self.selected_image()?).map(Vec::as_slice)
+    }
+
+    /// The selected picture's image (a group child's when one is selected).
+    pub(super) fn selected_image(&self) -> Option<usize> {
+        match self.object_shape().map(|s| &s.kind) {
             Some(ShapeKind::Pic(p)) => p.blip.image,
             _ => match self.selection {
                 Selection::Object(ObjectRef::Floating(f)) => self.float_of(f)?.image,
+                Selection::Object(ObjectRef::Inline { para, offset }) => match inline_at(self.index.para(&self.doc, para)?, offset)? {
+                    Inline::Picture(p, _) => p.image,
+                    _ => None,
+                },
                 _ => None,
             },
-        }?;
-        self.doc.images.get(k).map(Vec::as_slice)
+        }
     }
 
     /// The selected shape's picture fill's image bytes (Fill > Picture or texture fill).
@@ -336,7 +344,12 @@ impl Editor {
         if name.is_empty() {
             return Outcome::unavailable("an object needs a name");
         }
-        self.edit_nv("Rename", |nv| nv.name.clone_from(&name), fonts)
+        let out = self.edit_nv("Rename", |nv| nv.name.clone_from(&name), fonts);
+        // New names number past it once the document is counted.
+        if self.object_number != 0 && matches!(out, Outcome::Changed(_)) {
+            self.object_number = self.object_number.max(name_number(&name));
+        }
+        out
     }
 
     /// Sets the selected object's title (at most [`MAX_NAME`] characters; empty for none).
@@ -355,6 +368,9 @@ impl Editor {
         };
         if self.selected_object_kept() {
             return Outcome::unavailable("the object can't be changed");
+        }
+        if self.selected_child().is_some() {
+            return Outcome::unavailable("a group's shape resizes with its group");
         }
         match self.selection {
             Selection::Object(ObjectRef::Inline { .. }) => {
@@ -412,6 +428,7 @@ impl Editor {
         let Some(group) = self.stack_group(id) else { return Outcome::unavailable("no such object") };
         // The floats drawn with it: the body's, or the headers' and footers'.
         let mut others = self.stacking();
+        let own = others.iter().find(|o| o.1 == id).map_or(0, |o| o.0);
         others.retain(|&(_, g)| g != id && self.stack_group(g) == Some(group));
         let below = match in_front_of {
             Some(t) => match others.iter().position(|(_, g)| *g == t) {
@@ -422,22 +439,31 @@ impl Editor {
         };
         // The z it takes; those in front of it move up as far as they must to stay in front.
         let (z, from) = match below {
-            Some(k) => (others[k].0.saturating_add(1), k + 1),
+            Some(k) => (others[k].0.checked_add(1), k + 1),
             None => match others.first() {
-                Some((n, _)) if *n > 0 => (n - 1, others.len()),
-                Some(_) => (0, 0),
+                Some((n, _)) if *n > 0 => (Some(n - 1), others.len()),
+                Some(_) => (Some(0), 0),
                 None => return Outcome::Unchanged("alone"),
             },
         };
-        let mut set: Vec<(FloatId, u32)> = vec![(id, z)];
-        let mut prev = z;
-        for &(n, g) in &others[from..] {
-            if n > prev {
-                break;
+        let bumped = || {
+            let mut prev = z?;
+            let mut set: Vec<(FloatId, u32)> = vec![(id, prev)];
+            for &(n, g) in &others[from..] {
+                if n > prev {
+                    break;
+                }
+                prev = prev.checked_add(1)?;
+                set.push((g, prev));
             }
-            prev = prev.saturating_add(1);
-            set.push((g, prev));
-        }
+            Some(set)
+        };
+        // No room in front: the layer is numbered again from 0, in its new order.
+        let set = bumped().unwrap_or_else(|| {
+            let mut order = others.clone();
+            order.insert(below.map_or(0, |k| k + 1), (own, id));
+            order.into_iter().zip(0u32..).filter(|((was, _), z)| was != z).map(|((_, g), z)| (g, z)).collect()
+        });
         let ids: Vec<FloatId> = set.iter().map(|s| s.0).collect();
         // Every float whose place in the stack changes, and the one it goes in front of.
         if !ids.iter().chain(&in_front_of).all(|&g| self.float_changeable(g)) {

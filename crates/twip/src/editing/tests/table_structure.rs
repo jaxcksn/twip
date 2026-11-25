@@ -1095,6 +1095,15 @@ fn table_to_text_keeps_a_nested_cells_content_control() {
     };
     let tabs: crate::api::command::TableToText = serde_json::from_value(serde_json::json!({"separator":"tabs"})).unwrap();
     let mut e = open_xml(&body);
+    // The controls of the paragraph reading `text`, at any depth
+    fn controls_of(blocks: &[Block], text: &str) -> Option<Vec<crate::docx::ControlId>> {
+        blocks.iter().find_map(|b| match b {
+            Block::Para(p) => (crate::editing::text::UnitText::of(p).text == text).then(|| p.controls.clone()),
+            Block::Table(t) => t.rows.iter().flat_map(|r| &r.cells).find_map(|c| controls_of(&c.blocks, text)),
+        })
+    }
+    let y = controls_of(&e.document().sections[0].blocks, "y").expect("y's paragraph");
+    assert_eq!(y.len(), 1, "y in its control");
     at(&mut e);
     assert!(!matches!(e.convert_table_to_text_nested(&tabs, true, fonts()), Outcome::Changed(_)), "y can't join x and keep its control");
     assert_eq!(body_shape(&e), ["table 1x2", "end"]);
@@ -1103,5 +1112,6 @@ fn table_to_text_keeps_a_nested_cells_content_control() {
     assert!(matches!(e.convert_table_to_text_nested(&paras, true, fonts()), Outcome::Changed(_)));
     let live = controlled(&e);
     assert_eq!(live.iter().map(|(t, n)| (t.as_str(), *n)).collect::<Vec<_>>(), [("a", 0), ("x", 0), ("y", 1), ("", 0), ("end", 0)], "{live:?}");
+    assert_eq!(controls_of(&e.document().sections[0].blocks, "y"), Some(y), "the same control");
     assert_eq!(violations(&e), Vec::<String>::new());
 }

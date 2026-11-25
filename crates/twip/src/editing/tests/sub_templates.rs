@@ -263,6 +263,20 @@ fn a_click_on_a_shown_body_selects_its_reference_and_typing_is_refused() {
 }
 
 #[test]
+fn typing_over_paragraphs_around_a_shown_body_is_refused() {
+    let (mut e, reference) = expanded();
+    let (before, after) = (body_block(&e, 0, 0), body_block(&e, 0, 2));
+    let end = e.index().para(e.document(), after).map(|p| p.inlines.iter().map(Inline::units).sum::<usize>() as u32).expect("a paragraph");
+    let at = |p, u| super::super::position::Position::text(StoryId::Body, p, Unit(u));
+    let selection = super::super::selection::Selection::range(at(before, 0), at(after, end), super::super::selection::Granularity::Char);
+    e.set_caret_for_benchmark(selection);
+    let blocks = e.document().sections[0].blocks.clone();
+    type_text(&mut e, "x");
+    assert_eq!(e.document().sections[0].blocks, blocks, "nothing changed");
+    assert!(has_field(&e, reference));
+}
+
+#[test]
 fn typing_into_a_locked_control_says_so() {
     use super::super::input::Notice;
     let mut e = open("FX-MERGE-CONTROLS.docx");

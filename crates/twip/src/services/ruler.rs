@@ -65,12 +65,13 @@ pub struct VerticalText {
 /// across the page.
 pub fn vertical_text(s: &Section, gutter_at_top: bool) -> Option<VerticalText> {
     let v = crate::layout::vertical::of_section(s.text_flow)?;
-    let left = s.left + if gutter_at_top { 0.0 } else { s.gutter };
-    let lines = Span { start: Points(s.top), end: Points(s.page_h - s.bottom) };
+    // A vertical page's gutter is beside its right margin, or above its top one.
+    let (right, top) = if gutter_at_top { (s.right, s.top + s.gutter) } else { (s.right + s.gutter, s.top) };
+    let lines = Span { start: Points(top), end: Points(s.page_h - s.bottom) };
     let columns = match v.flow {
-        crate::layout::vertical::Flow::DownEast => columns(s, left, s.page_w - s.right),
+        crate::layout::vertical::Flow::DownEast => columns(s, s.left, s.page_w - right),
         // Columns from the right margin
-        _ => columns(s, s.right, s.page_w - left)
+        _ => columns(s, right, s.page_w - s.left)
             .into_iter()
             .map(|c| Span { start: Points(s.page_w - c.end.0), end: Points(s.page_w - c.start.0) })
             .collect(),
@@ -82,11 +83,13 @@ pub fn vertical_text(s: &Section, gutter_at_top: bool) -> Option<VerticalText> {
 /// text column, or its cell), the first selected paragraph's indents and stops, and the caret's table on its page.
 pub fn model(e: &mut Editor, section: usize) -> RulerModel {
     let Some(s) = e.document().sections.get(section) else { return RulerModel::default() };
-    // shortcut: mirrored margins and right-to-left sections show the left-to-right margins.
-    let left = s.left + if e.document().settings.gutter_at_top { 0.0 } else { s.gutter };
-    let right = s.page_w - s.right;
+    // shortcut: mirrored margins show an odd page's, and right-to-left sections the left-to-right margins.
+    let set = &e.document().settings;
+    let facing = crate::layout::page::Facing { mirror: set.mirror_margins, gutter_at_top: set.gutter_at_top, book_fold: set.book_fold };
+    let (left, right, top) = crate::layout::page::margins_in(s, e.document().review.view, facing, 1);
+    let right = s.page_w - right;
     let columns = columns(s, left, right);
-    let (page_w, page_h, top, bottom) = (s.page_w, s.page_h, s.top, s.page_h - s.bottom);
+    let (page_w, page_h, bottom) = (s.page_w, s.page_h, s.page_h - s.bottom);
     let paras = e.ruler_paras();
     let (doc, index) = (e.document(), e.index());
     let mut styles = paras.iter().filter_map(|&p| index.para(doc, p)).map(|p| &p.style);
@@ -640,6 +643,14 @@ mod tests {
         s.text_flow = 5;
         let v = vertical_text(&s, false).expect("tbLrV");
         assert_eq!(v.columns[0], Span { start: Points(72.0), end: Points(72.0 + w) }, "stacked from the left");
+        // A gutter: beside the right margin, or above the top one.
+        (s.text_flow, s.gutter) = (1, 18.0);
+        let w = (612.0 - 72.0 - 90.0 - 18.0 - 36.0) / 2.0;
+        let v = vertical_text(&s, false).expect("tbRl");
+        assert_eq!((v.lines.start, v.columns[0].end, v.columns[1].start), (Points(54.0), Points(504.0), Points(72.0)), "{v:?}");
+        assert!((v.columns[0].end.0 - v.columns[0].start.0 - w).abs() < 1e-9);
+        let v = vertical_text(&s, true).expect("tbRl");
+        assert_eq!((v.lines.start, v.columns[0].end, v.columns[1].start), (Points(72.0), Points(522.0), Points(72.0)), "{v:?}");
     }
 
     #[test]

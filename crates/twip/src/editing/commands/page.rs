@@ -344,14 +344,13 @@ impl Editor {
         fonts: &Fonts,
     ) -> Outcome {
         self.joined("Page Number", fonts, |e| {
-            match place {
-                PageNumberSpot::Header | PageNumberSpot::Margin(_) => {
-                    e.edit_header_footer(None, false, fonts);
-                }
-                PageNumberSpot::Footer => {
-                    e.edit_header_footer(None, true, fonts);
-                }
-                PageNumberSpot::Caret => {}
+            let opened = match place {
+                PageNumberSpot::Header | PageNumberSpot::Margin(_) => e.edit_header_footer(None, false, fonts),
+                PageNumberSpot::Footer => e.edit_header_footer(None, true, fonts),
+                PageNumberSpot::Caret => Outcome::Moved,
+            };
+            if !matches!(opened, Outcome::Moved | Outcome::Changed(_)) {
+                return opened;
             }
             let field = move |run: &crate::docx::Run| page_number_inlines(format, run);
             let owned = move |run: crate::docx::Run| page_number_inlines(format, &run);
@@ -398,12 +397,21 @@ impl Editor {
         }
         use crate::editing::commands::Command;
         // Text's own number shows on its page; only a header or footer's first-page version can leave it out.
-        if place == PageNumberSpot::Caret
-            && !matches!(self.selection.focus().map(|p| p.story), Some(crate::editing::position::StoryId::HeaderFooter(_)))
-        {
-            return Outcome::unavailable("a number in the text shows on the first page too");
+        if place == PageNumberSpot::Caret {
+            let Some(crate::editing::position::StoryId::HeaderFooter(k)) = self.selection.focus().map(|p| p.story) else {
+                return Outcome::unavailable("a number in the text shows on the first page too");
+            };
+            // The first page's own header or footer, which the number would show on
+            let si = self.focus_section();
+            let first = |footer: bool| {
+                (0..=si).rev().find_map(|j| self.doc.sections.get(j).and_then(|s| (if footer { &s.footers } else { &s.headers })[1].as_deref()))
+            };
+            if self.index.part_name(k).is_some_and(|n| first(false) == Some(n) || first(true) == Some(n)) {
+                return Outcome::unavailable("a number in the first page's header or footer shows on the first page");
+            }
         }
-        self.joined("Page Number", fonts, |e| {
+        self.begin_batch(Some("Page Number".into()));
+        let out = (|e: &mut Editor| {
             // Into the header or footer every page but the first shows
             let first = e.doc.sections.get(e.focus_section()).is_some_and(|s| s.title_pg);
             if first {
@@ -417,7 +425,10 @@ impl Editor {
                 Outcome::Refused(why) => Outcome::Refused(why),
                 _ => out,
             }
-        })
+        })(self);
+        // Anything short of the number placed undoes the first page's change too
+        let end = self.end_batch(matches!(out, Outcome::Changed(_)), fonts);
+        if matches!(end, Outcome::Changed(_)) { end } else { out }
     }
 
     /// The `w:framePr` attributes (unprefixed) of a frame filling the margin on `side` of the caret's section's

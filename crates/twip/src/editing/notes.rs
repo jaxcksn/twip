@@ -240,7 +240,7 @@ impl Editor {
         use crate::docx::NoteSeparator as S;
         let key = part.key(kind);
         let defaults = self.doc.source.as_ref().map(|s| &s.separator_defaults);
-        let builtin = |k: &str| defaults.and_then(|d| d.get(k)).map(|b| b.iter().map(super::clipboard::fresh).collect::<Vec<_>>());
+        let builtin = |k: &str| defaults.and_then(|d| d.get(k)).map(|b| b.to_vec());
         let blocks = match text {
             None if part == S::Notice => None,
             None => match builtin(&key) {
@@ -270,8 +270,6 @@ impl Editor {
                     t.split('\n')
                         .map(|line| {
                             let mut p = template.clone();
-                            p.id = crate::docx::next_para_id();
-                            p.src = None;
                             let run = p.mark.clone();
                             p.inlines = if line.is_empty() { Vec::new() } else { vec![Inline::Text(line.trim_end_matches('\r').to_string(), run)] };
                             Block::Para(p)
@@ -280,9 +278,23 @@ impl Editor {
                 )
             }
         };
-        if self.doc.separators.get(&key) == blocks.as_ref() {
+        // The same paragraphs, whatever their ids
+        let bare = |p: &crate::docx::Paragraph| crate::docx::Paragraph { id: 0, src: None, ..p.clone() };
+        let same = |a: &[Block], b: &[Block]| {
+            a.len() == b.len()
+                && a.iter().zip(b).all(|(x, y)| match (x, y) {
+                    (Block::Para(p), Block::Para(q)) => bare(p) == bare(q),
+                    _ => x == y,
+                })
+        };
+        let unchanged = match (self.doc.separators.get(&key), &blocks) {
+            (Some(a), Some(b)) => same(a, b),
+            (a, b) => a.is_none() && b.is_none(),
+        };
+        if unchanged {
             return Outcome::Unchanged("already so");
         }
+        let blocks = blocks.map(|b| b.iter().map(super::clipboard::fresh).collect());
         let mut tx = self.begin("Note Separator");
         if self.step(&mut tx, Step::Separator { key, blocks }).is_err() {
             self.abort(tx);

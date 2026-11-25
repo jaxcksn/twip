@@ -362,6 +362,11 @@ pub struct Styles {
     pub defaults_raw: Option<String>,
 }
 
+/// Whether `n` is its parent's only child (but for whitespace): a fragment of one element.
+fn alone(n: roxmltree::Node) -> bool {
+    n.parent().is_some_and(|x| x.children().all(|c| c == n || c.is_text() && c.text().is_some_and(|t| t.trim().is_empty())))
+}
+
 impl Styles {
     pub fn parse(xml: Option<&str>, colours: ThemeColours) -> Styles {
         let mut s = Styles { colours, ..Styles::default() };
@@ -372,7 +377,8 @@ impl Styles {
         };
         let text = xml.unwrap_or_default();
         let root = doc.root_element();
-        s.root = text[root.range().start..root.range().start + text[root.range().start..].find('>').map_or(0, |e| e + 1)].to_string();
+        let open = &text[root.range().start..];
+        s.root = open[..super::binding::tag_end(open).map_or(0, |e| e + 1)].to_string();
         s.latent = child(root, "latentStyles").map(|n| LatentStyles::parse(n, text)).unwrap_or_default();
         s.defaults_raw = child(root, "docDefaults").map(|n| text[n.range()].to_string());
         match child(root, "docDefaults") {
@@ -492,7 +498,7 @@ impl Styles {
     pub fn set_latent_xml(&mut self, raw: String) -> Result<(), StyleEditError> {
         let cx = self.cx();
         let latent = cx
-            .parse(&raw, |text, n| super::xml::is_w(n, "latentStyles").then(|| LatentStyles::parse(n, text)))
+            .parse(&raw, |text, n| (alone(n) && super::xml::is_w(n, "latentStyles")).then(|| LatentStyles::parse(n, text)))
             .flatten()
             .ok_or(StyleEditError::Malformed)?;
         self.latent = LatentStyles { raw: Some(raw), ..latent };
@@ -541,9 +547,6 @@ impl Styles {
     /// A style from its `w:style` XML: that one element alone, not based on itself.
     fn parse_one(&self, raw: &str) -> Result<Style, StyleEditError> {
         let cx = self.cx();
-        let alone = |n: roxmltree::Node| {
-            n.parent().is_some_and(|x| x.children().all(|c| c == n || c.is_text() && c.text().is_some_and(|t| t.trim().is_empty())))
-        };
         let style = cx
             .parse(raw, |text, n| if alone(n) && super::xml::is_w(n, "style") { Style::parse(n, text, &self.colours) } else { None })
             .flatten()

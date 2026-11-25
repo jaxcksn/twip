@@ -683,3 +683,13 @@ fn defaults_set_in_a_self_closing_styles_part_save_well_formed() {
     assert!(dom.root_element().children().any(|n| n.has_tag_name("docDefaults")), "{xml}");
     assert_eq!(styles(&reopened(&e)).doc_rpr.size, Some(14.0));
 }
+
+#[test]
+fn latent_styles_are_set_from_one_element_alone() {
+    let mut live = Styles::parse(Some(&wrap(TN)), colours());
+    let one = r#"<w:latentStyles w:defUIPriority="99"/>"#;
+    assert!(live.set_latent_xml(format!("{one}{TG}")).is_err(), "a fragment with another element");
+    assert!(live.latent.raw.is_none());
+    live.set_latent_xml(one.to_string()).expect("one element");
+    assert_eq!(live.latent.raw.as_deref(), Some(one));
+}

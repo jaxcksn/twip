@@ -1385,19 +1385,30 @@ fn track_moves_and_formatting_options() {
     caret(&mut e, 1, 0);
     e.move_paragraphs(true, fonts());
     assert_eq!(has_moves(&e), (false, false), "an insertion and a deletion");
-    let marked = e.document().sections[0]
-        .blocks
-        .iter()
-        .filter_map(|b| if let crate::docx::Block::Para(p) = b { Some(p) } else { None })
-        .any(|p| p.inlines.iter().filter_map(|i| i.run()).any(|r| r.rev.ins.is_some() || r.rev.del.is_some()));
-    assert!(marked, "still tracked");
+    // "two" both inserted and deleted, as ordinary revisions
+    use crate::docx::review::MarkKind;
+    let marked = |e: &Editor, kind: MarkKind| {
+        e.document().sections[0].blocks.iter().filter_map(|b| if let crate::docx::Block::Para(p) = b { Some(p) } else { None }).any(|p| {
+            p.inlines.iter().any(|i| match i {
+                crate::docx::Inline::Text(t, r) if t == "two" => [&r.rev.ins, &r.rev.del].into_iter().flatten().any(|m| m.kind == kind),
+                _ => false,
+            })
+        })
+    };
+    assert!(marked(&e, MarkKind::Insert) && marked(&e, MarkKind::Delete), "still tracked, as an insertion and a deletion");
+    assert!(!marked(&e, MarkKind::MoveTo) && !marked(&e, MarkKind::MoveFrom), "not as a move");
     e.execute(C::SelectAll, fonts());
     e.execute(C::SetBold(true), fonts());
     e.execute(C::SetAlignment(crate::api::value::Alignment::Right), fonts());
     for b in &e.document().sections[0].blocks {
         let crate::docx::Block::Para(p) = b else { continue };
         assert!(p.style.change.is_none(), "no paragraph change recorded");
+        assert_eq!(p.style.jc, crate::docx::props::Jc::Right, "right-aligned");
         assert!(p.inlines.iter().filter_map(|i| i.run()).all(|r| r.rev.fmt.is_none()), "no formatting change recorded");
+        assert!(
+            p.inlines.iter().filter(|i| matches!(i, crate::docx::Inline::Text(t, _) if !t.is_empty())).filter_map(|i| i.run()).all(|r| r.bold),
+            "bold"
+        );
     }
     let bytes = crate::docx::write::save(e.document()).expect("saves");
     let back = crate::docx::read_editable(&bytes).expect("reads back");
@@ -1620,9 +1631,10 @@ fn balloons_look_up_only_the_visible_pages() {
     e.set_balloon_mode(crate::docx::review::BalloonMode::Balloons);
     e.complete(fonts());
     let pages = e.snapshot().pages().len();
-    let all = e.view(0..pages).revision_balloons.len();
+    let all = e.view(0..pages).revision_balloons;
     let first = e.view(0..1).revision_balloons.len();
-    assert_eq!((pages, all, first), (6, 6, 1), "a balloon on each page, for deleted text at a line's start too");
+    let per_page: Vec<usize> = (0..pages).map(|p| all.iter().filter(|b| b.page == p).count()).collect();
+    assert_eq!((pages, per_page, first), (6, vec![1; 6], 1), "a balloon on each page, for deleted text at a line's start too");
     e.balloon_lookups = 0;
     let _ = e.view(0..1);
     assert!(e.balloon_lookups <= first + 1, "{} lookups for {first} balloons", e.balloon_lookups);

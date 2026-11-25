@@ -484,12 +484,16 @@ impl Builder<'_> {
                 }
                 Inline::Picture(pic, _) => {
                     flush(&mut run, &mut out);
+                    if r.hidden(starts[k]) {
+                        continue;
+                    }
                     match (&pic.text, alt(&pic.alt, pic.shape.as_deref())) {
                         (Some(t), _) => out.push(self.text_box(AccessibleId(t.id), &t.text_box.blocks, depth)),
                         (None, Alt::Text(alt)) => out.push(image(derived(Kind::Image, p.id, k as u64), alt)),
                         (None, Alt::Decorative | Alt::Missing) => {}
                     }
                 }
+                Inline::Float(_, fr) if super::unread(&self.doc.review, &fr.rev) => {}
                 Inline::Float(f, _) => match (&f.text_box, alt(&f.alt, f.shape.as_deref())) {
                     (Some(tb), _) => floats.push(self.text_box(AccessibleId(f.id), &tb.blocks, depth)),
                     (None, Alt::Text(alt)) => floats.push(image(AccessibleId(f.id), alt)),
@@ -600,6 +604,7 @@ impl Builder<'_> {
             .comments
             .threads()
             .into_iter()
+            .filter(|(root, _)| doc.comments.by_id.get(root).is_some_and(|c| doc.review.shows_comment(c.author)))
             .filter_map(|(root, replies)| {
                 let mut node = self.comment(root)?;
                 node.children.extend(replies.into_iter().filter_map(|r| self.comment(r)));
@@ -850,6 +855,71 @@ mod tests {
     }
 
     #[test]
+    fn hidden_comments_are_not_read() {
+        let (mut e, _) = open("FX-A11Y-STRUCTURE.docx");
+        let read = |e: &Editor| {
+            let t = tree(e, &Spellers::default(), "en-US");
+            (with(&t, AccessibleRole::Comment).len(), all(&t).iter().filter(|n| n.details.is_some()).count())
+        };
+        let (comments, anchors) = read(&e);
+        assert!(comments > 0 && anchors > 0, "shown");
+        e.set_show_markup(true, true, false);
+        assert_eq!(read(&e), (0, 0), "Show Markup's Comments off");
+        e.set_show_markup(true, true, true);
+        e.set_hidden_reviewers(&["Grace"]);
+        let t = tree(&e, &Spellers::default(), "en-US");
+        assert!(with(&t, AccessibleRole::Comment).iter().all(|c| c.author.as_deref() != Some("Grace")), "the hidden reviewer's thread");
+        let shown: Vec<AccessibleId> = with(&t, AccessibleRole::Comment).iter().map(|c| c.id).collect();
+        assert!(all(&t).iter().filter_map(|n| n.details).all(|d| shown.contains(&d)), "no text points at a hidden comment");
+    }
+
+    #[test]
+    fn a_hidden_deleted_picture_is_not_read() {
+        use crate::editing::selection::{ObjectRef, Selection};
+        let (mut e, fonts) = open("FX-A11Y-STRUCTURE.docx");
+        let images = |e: &Editor| with(&tree(e, &Spellers::default(), "en-US"), AccessibleRole::Image).len();
+        let before = images(&e);
+        let (para, offset) = e
+            .index()
+            .para_ids()
+            .find_map(|id| {
+                let p = e.index().para(e.document(), id)?;
+                let mut at = 0u32;
+                p.inlines.iter().find_map(|i| {
+                    let here = at;
+                    at += i.units() as u32;
+                    matches!(i, Inline::Picture(pic, _) if matches!(alt(&pic.alt, pic.shape.as_deref()), Alt::Text(_)))
+                        .then_some((id, crate::layout::Unit(here)))
+                })
+            })
+            .expect("an inline picture with alternative text");
+        e.set_tracking(true);
+        e.set_caret_for_benchmark(Selection::Object(ObjectRef::Inline { para, offset }));
+        let delete = e.key_command("Delete", Mods::default()).expect("a command");
+        e.execute(delete, &fonts);
+        assert_eq!(images(&e), before, "a deletion All Markup shows is read");
+        e.set_markup_view(crate::docx::review::MarkupView::NoMarkup);
+        assert_eq!(images(&e), before - 1, "gone with its deletion");
+    }
+
+    #[test]
+    fn deletions_in_balloons_are_read() {
+        let (mut e, _) = open("FX-A11Y-REVIEW.docx");
+        let deleted = |e: &Editor| {
+            let t = tree(e, &Spellers::default(), "en-US");
+            with(&t, AccessibleRole::Text)
+                .iter()
+                .filter(|n| n.marks.contains(&AccessibleMark::Deletion))
+                .filter_map(|n| n.text.clone())
+                .collect::<Vec<_>>()
+        };
+        e.set_balloon_mode(crate::docx::review::BalloonMode::Balloons);
+        assert_eq!(deleted(&e), ["for next year "], "read where it was");
+        e.set_hidden_reviewers(&["Grace"]);
+        assert!(deleted(&e).is_empty(), "the hidden reviewer's deletion");
+    }
+
+    #[test]
     fn going_to_a_node_finds_its_paragraph() {
         let (e, _) = open("FX-A11Y-STRUCTURE.docx");
         let t = tree(&e, &Spellers::default(), "en-US");
@@ -898,10 +968,10 @@ mod tests {
         assert_eq!(now, tree(&e, &Spellers::default(), "en-US"), "the cached build is a fresh one");
     }
 
-    /// Show Markup, balloons and deletion marks change what a paragraph reads: the cached build follows each.
+    /// Show Markup, its reviewers and deletion marks change what a paragraph reads: the cached build follows each.
     #[test]
     fn the_cached_tree_follows_show_markup() {
-        use crate::docx::review::{BalloonMode, MarkupStyle, TextMark};
+        use crate::docx::review::{MarkupStyle, TextMark};
         let (mut e, _) = open("FX-A11Y-REVIEW.docx");
         let spelling = Spellers::default();
         let mut cache = TreeCache::default();
@@ -914,7 +984,7 @@ mod tests {
         };
         let changes: [(&dyn Fn(&mut Editor), &dyn Fn(&mut Editor)); 3] = [
             (&|e| _ = e.set_hidden_reviewers(&names), &|e| _ = e.set_hidden_reviewers(&[])),
-            (&|e| _ = e.set_balloon_mode(BalloonMode::Balloons), &|e| _ = e.set_balloon_mode(BalloonMode::CommentsAndFormatting)),
+            (&|e| _ = e.set_show_markup(false, true, true), &|e| _ = e.set_show_markup(true, true, true)),
             (&|e| _ = e.set_markup_style(caret.clone()), &|e| _ = e.set_markup_style(MarkupStyle::default())),
         ];
         for (i, (change, undo)) in changes.iter().enumerate() {

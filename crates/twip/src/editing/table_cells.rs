@@ -153,7 +153,10 @@ impl Editor {
                 if now < was + added {
                     return Outcome::unavailable("merged cells in the rows");
                 }
-                (grid, (tg.rows.0.min(last), c0))
+                // The caret in the first new cell, at its column in the grid as rebuilt
+                let r = tg.rows.0.min(last);
+                let col = moving(&g, r, (c0, c1)).and_then(|k| ng.rows[r].get(k)).map_or(c0, |x| x.0);
+                (grid, (r, col))
             }
             InsertShift::Down => {
                 // From the selection down, every row's cells in the columns: within them, unmerged, and with the same
@@ -175,13 +178,13 @@ impl Editor {
                 if rows.len() + n > super::tables::MAX_ROWS {
                     return Outcome::unavailable("too many rows");
                 }
-                // Rows at the end take what moves past the last.
+                // Rows at the end take what moves past the last: in the last one's controls, each its own repeating
+                // item, as rows inserted below it are.
                 let mut added: Vec<Row> = Vec::with_capacity(n);
                 for _ in 0..n {
                     let mut r = rows[last].clone();
                     r.src = None;
                     r.rev = Default::default();
-                    r.controls = Vec::new();
                     r.cells.iter_mut().for_each(|c| *c = empty_cell(c));
                     added.push(r);
                 }

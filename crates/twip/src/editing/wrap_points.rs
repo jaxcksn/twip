@@ -107,7 +107,7 @@ impl Editor {
         if self.selected_floats().len() != 1 || self.selected_child().is_some() {
             return Outcome::unavailable("select one floating object");
         }
-        if self.object_fixed(ObjectRef::Floating(f)) || !self.float_editable(f) || self.gesture_kept(CommandId::SetObjectWrap) {
+        if self.wrap_kept(f) {
             return Outcome::unavailable("the object can't be changed");
         }
         if self.float_of(f).is_none_or(|fl| fl.in_note) {
@@ -136,6 +136,11 @@ impl Editor {
         let w = self.wrap_edit.as_ref()?;
         let one = self.selection == Selection::Object(ObjectRef::Floating(w.f)) && self.selected_child().is_none();
         (one && self.selected_floats().len() == 1 && self.float_of(w.f).is_some()).then_some(w.f)
+    }
+
+    /// Whether float `f`'s wrap is kept from changing: a fixed object, its anchor not editable, or protection.
+    fn wrap_kept(&self, f: FloatId) -> bool {
+        self.object_fixed(ObjectRef::Floating(f)) || !self.float_editable(f) || self.gesture_kept(CommandId::SetObjectWrap)
     }
 
     fn float_editable(&self, f: FloatId) -> bool {
@@ -294,8 +299,8 @@ impl Editor {
 
     /// Sets `f`'s wrap polygon (box fractions, closed on save), and a tight wrap unless it is tight or through.
     fn set_wrap_polygon(&mut self, f: FloatId, mut poly: Vec<(f64, f64)>, fonts: &Fonts) -> Outcome {
-        if self.gesture_kept(CommandId::SetObjectWrap) {
-            return Outcome::Unchanged("the wrap is protected");
+        if self.wrap_kept(f) {
+            return Outcome::unavailable("the object can't be changed");
         }
         let Some(mut n) = self.float_of(f).cloned() else { return Outcome::Unchanged("no float") };
         if let Some(&first) = poly.first() {
@@ -437,14 +442,18 @@ impl Editor {
             return Outcome::invalid("a wrap point is a number");
         }
         let poly: Vec<(f64, f64)> = points.iter().map(|&(x, y)| (x.clamp(-REACH, 1.0 + REACH), y.clamp(-REACH, 1.0 + REACH))).collect();
-        self.set_wrap_polygon(f, open(&poly).to_vec(), fonts)
+        let poly = open(&poly);
+        if poly.len() < MIN_POINTS {
+            return Outcome::invalid("a wrap polygon has 3 to 1024 points");
+        }
+        self.set_wrap_polygon(f, poly.to_vec(), fonts)
     }
 
     /// Word's Reset of the wrap points: the selected floating object's polygon made again from its outline, unedited.
     /// One undo step ("Reset Wrap Points").
     pub fn reset_wrap_points(&mut self, fonts: &Fonts) -> Outcome {
         let Selection::Object(ObjectRef::Floating(f)) = self.selection else { return Outcome::unavailable("no floating object selected") };
-        if self.object_fixed(ObjectRef::Floating(f)) || !self.float_editable(f) || self.gesture_kept(CommandId::SetObjectWrap) {
+        if self.wrap_kept(f) {
             return Outcome::unavailable("the object can't be changed");
         }
         let Some(mut n) = self.float_of(f).cloned() else { return Outcome::Unchanged("no float") };

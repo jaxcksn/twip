@@ -190,7 +190,7 @@ fn break_labels_cell_and_row_marks_and_special_characters_draw_at_their_marks() 
 }
 
 #[test]
-fn editable_regions_draw_pale_gold_under_the_text_and_dark_gold_over_a_dark_page() {
+fn editable_regions_tint_the_paper_pale_gold_and_a_dark_page_dark_gold() {
     use crate::render::appearance::{Appearance, PageMode};
     let mut e = Editor::open(&crate::editing::tests::blank_body("<w:p><w:r><w:t>Text</w:t></w:r></w:p>"), fonts()).expect("opens");
     e.complete(fonts());

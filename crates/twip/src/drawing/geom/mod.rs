@@ -277,8 +277,9 @@ impl Geom {
             .iter()
             .filter(|p| !filled || p.fill != PathFill::None)
             .flat_map(|p| flatten(&p.segs))
-            .map(|(pts, _)| pts)
-            .max_by(|a, b| area(a).total_cmp(&area(b)))
+            .map(|(pts, _)| (area(&pts), pts))
+            .max_by(|a, b| a.0.total_cmp(&b.0))
+            .map(|(_, pts)| pts)
             .unwrap_or_default()
     }
 }

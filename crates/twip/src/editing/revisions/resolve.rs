@@ -124,7 +124,7 @@ fn resolve_inlines(p: &Paragraph, pick: &Pick, accept: bool) -> Option<(Vec<Inli
     for i in &p.inlines {
         let n = i.units() as u32;
         // The cuts inside it, the run read once from its start to its end.
-        let inner = &cuts[cuts.partition_point(|&c| c <= at)..cuts.partition_point(|&c| c < at + n)];
+        let inner = if n > 0 { &cuts[cuts.partition_point(|&c| c <= at)..cuts.partition_point(|&c| c < at + n)] } else { &[][..] };
         let pieces: Vec<Inline> = match i {
             Inline::Text(t, r) if !inner.is_empty() => {
                 let mut v = Vec::with_capacity(inner.len() + 1);

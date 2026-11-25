@@ -466,7 +466,10 @@ fn table_style_edit(raw: &str, region: Option<&'static str>, c: &Command, cx: &C
                 p.reorder(TRPR);
                 p.set("cantSplit", if *on { format!("<{w}cantSplit {w}val=\"0\"/>") } else { format!("<{w}cantSplit/>") });
             }),
-            None => root(raw, "trPr", TRPR, &|p| if *on { p.remove("cantSplit") } else { p.set("cantSplit", format!("<{w}cantSplit/>")) }),
+            // Said either way: a base style's setting would show through its absence.
+            None => root(raw, "trPr", TRPR, &|p| {
+                p.set("cantSplit", if *on { format!("<{w}cantSplit {w}val=\"0\"/>") } else { format!("<{w}cantSplit/>") })
+            }),
         },
         Command::SetTableAlignment(a) => {
             whole_only("the alignment")?;
@@ -731,7 +734,8 @@ impl Editor {
                 Some(StyleList { list, level }) => {
                     p.set("numPr", format!("<{w}numPr><{w}ilvl {w}val=\"{level}\"/><{w}numId {w}val=\"{list}\"/></{w}numPr>"))
                 }
-                None => p.remove("numPr"),
+                // No list over a base style's: `numId` 0.
+                None => p.set("numPr", format!("<{w}numPr><{w}numId {w}val=\"0\"/></{w}numPr>")),
             });
         }
         if let Some(name) = &change.name {
@@ -986,7 +990,14 @@ impl Editor {
                 let cx = next.styles.cx();
                 let para = next.para_from_xml(None, Some(&region), &cx);
                 let run = next.run_from_xml(&para.base, None, &cx);
-                (super::state::character(&[&run]), super::state::paragraph(&[(&para.style, None)]), Vec::new())
+                let tabs = para
+                    .style
+                    .tabs
+                    .iter()
+                    .filter(|t| t.kind != crate::docx::props::TabKind::Clear)
+                    .map(|t| super::commands::tabs::info(t, false))
+                    .collect();
+                (super::state::character(&[&run]), super::state::paragraph(&[(&para.style, None)]), tabs)
             }
             _ => self.style_formatting_state(&style.raw)?,
         };

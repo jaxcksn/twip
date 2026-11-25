@@ -466,7 +466,17 @@ impl Levels<'_> {
 
 /// A `w:abstractNum` with its levels from `levels` (edited from `old`'s where it has them). A level `over` names is
 /// the `w:num`'s: a copy (a new id) takes it as edited, else it is left to [`num_xml`].
-pub(super) fn abstract_xml(id: i64, old: Option<&str>, levels: Levels, name: Option<&str>, pics: &[PicChange], over: &[Override], cx: &Cx) -> String {
+#[allow(clippy::too_many_arguments, reason = "the part's prefix and the theme its colours are read with")]
+pub(super) fn abstract_xml(
+    id: i64,
+    old: Option<&str>,
+    levels: Levels,
+    name: Option<&str>,
+    pics: &[PicChange],
+    over: &[Override],
+    cx: &Cx,
+    colours: &crate::docx::props::ThemeColours,
+) -> String {
     let w = &cx.w;
     let blank = format!("<{w}abstractNum {w}abstractNumId=\"{id}\"><{w}multiLevelType {w}val=\"hybridMultilevel\"/></{w}abstractNum>");
     let was_id = old.and_then(|o| attr_of(o, "abstractNumId"));
@@ -488,7 +498,8 @@ pub(super) fn abstract_xml(id: i64, old: Option<&str>, levels: Levels, name: Opt
         Some(n) => a.set("name", format!("<{w}name {w}val=\"{}\"/>", esc(n))),
         None => {}
     }
-    let parsed = old.and_then(|o| cx.parse(o, |text, el| crate::docx::numbering::parse_abstract(el, text, &Default::default()))).flatten();
+    // Read as the document's levels are, so a colour from its theme compares as unchanged.
+    let parsed = old.and_then(|o| cx.parse(o, |text, el| crate::docx::numbering::parse_abstract(el, text, colours))).flatten();
     // A copy keeps the `w:num`'s own levels past the ones supplied too: it has no `w:num` of that list to hold them.
     for k in 0..if copy { 9 } else { levels.len().min(9) } {
         let over = over.get(k).and_then(Option::as_ref);
@@ -730,7 +741,10 @@ impl Editor {
     ///
     /// [`Command::SetListDefinition`]: crate::api::command::Command::SetListDefinition
     pub fn set_list_levels(&mut self, change: ListLevelsChange, fonts: &Fonts) -> Outcome {
-        if let Some(e) = change.levels.iter().find_map(|l| l.check().err()) {
+        // What the edit sets is checked: a number style or size the list was read with stays as it is.
+        let was = self.selection_list().and_then(|(_, n, _)| self.list_level_definitions(n)).unwrap_or_default();
+        let set = |k: usize, l: &LevelDefinition| was.get(k).is_none_or(|w| (&w.format, w.label.size) != (&l.format, l.label.size));
+        if let Some(e) = change.levels.iter().enumerate().filter(|(k, l)| set(*k, l)).find_map(|(_, l)| l.check().err()) {
             return Outcome::Refused(e);
         }
         if let Some(out) = self.refuse_like(&crate::api::command::Command::SetListDefinition(Default::default())) {
@@ -778,7 +792,7 @@ impl Editor {
                 "Define List",
                 |r, cx| {
                     add_pictures(&mut r.numbering, &new_pics, cx);
-                    let a = abstract_xml(abstract_id, None, Levels::Full(&levels), d.name.as_deref(), &pics, &[], cx);
+                    let a = abstract_xml(abstract_id, None, Levels::Full(&levels), d.name.as_deref(), &pics, &[], cx, &r.styles.colours);
                     r.numbering.set_abstract_xml(a, &r.styles.colours)?;
                     let w = &cx.w;
                     r.numbering.set_num_xml(
@@ -807,7 +821,7 @@ impl Editor {
                 "Define List",
                 |r, cx| {
                     add_pictures(&mut r.numbering, &new_pics, cx);
-                    let a = abstract_xml(abstract_id, old.as_deref(), Levels::Full(&defs), d.name.as_deref(), &pics, &over, cx);
+                    let a = abstract_xml(abstract_id, old.as_deref(), Levels::Full(&defs), d.name.as_deref(), &pics, &over, cx, &r.styles.colours);
                     r.numbering.set_abstract_xml(a, &r.styles.colours)?;
                     if let Some(m) = num_xml(&num_raw, Levels::Full(&defs), &pics, &over, cx) {
                         r.numbering.set_num_xml(m, &r.styles.colours)?;
@@ -842,7 +856,7 @@ impl Editor {
             "Define List",
             |r, cx| {
                 add_pictures(&mut r.numbering, &new_pics, cx);
-                let a = abstract_xml(new_abstract, old.as_deref(), Levels::Full(&defs), d.name.as_deref(), &pics, &over, cx);
+                let a = abstract_xml(new_abstract, old.as_deref(), Levels::Full(&defs), d.name.as_deref(), &pics, &over, cx, &r.styles.colours);
                 r.numbering.set_abstract_xml(a, &r.styles.colours)?;
                 let w = &cx.w;
                 let starts: String = starts
@@ -972,7 +986,8 @@ fn complete_definitions(levels: &[LevelDefinition]) -> Vec<LevelDefinition> {
 /// A list as [`Editor::list_definition`] reads it.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ListDefinition {
-    /// The list (`numId`): paragraphs number together exactly when theirs is the same.
+    /// The list instance (`numId`). Paragraphs number together when their lists share a definition
+    /// (`w:abstractNum`), whatever their ids.
     pub id: i64,
     /// Its name, which ListNum fields name it by.
     pub name: Option<String>,

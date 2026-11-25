@@ -178,14 +178,25 @@ impl Marks {
                 }
                 (end, last) = (it.end, it.run_no);
             }
-            // On into the next paragraph's first run
-            if !on_runs(ch) || last + 1 != e.runs {
+            // On into the next paragraph's first run, or (paragraph properties) the next paragraph's own
+            let next = if on_runs(ch) {
+                if last + 1 != e.runs {
+                    return end;
+                }
+                let Ok(Some(next)) = run_after(doc, idx, para) else { return end };
+                next
+            } else if ch == Channel::Para {
+                let Ok(Some(h)) = hop(doc, idx, para, true) else { return end };
+                match hop(doc, idx, h.para, false) {
+                    Ok(Some(b)) if b.para == para && !b.table => h.para,
+                    _ => return end,
+                }
+            } else {
                 return end;
-            }
-            let Ok(Some(next)) = run_after(doc, idx, para) else { return end };
+            };
             let Some(n) = self.paras.get(&next) else { return end };
             match n.items.iter().zip(&n.starts).find(|(it, _)| it.channel == ch && it.listed) {
-                Some((it, false)) if it.run_no == 0 => {}
+                Some((it, false)) if !on_runs(ch) || it.run_no == 0 => {}
                 _ => return end,
             }
             (e, from, para) = (n, 0, next);
@@ -243,14 +254,21 @@ impl Marks {
         for &p in paras.iter().filter(|p| idx.para_slot(**p).is_some()) {
             self.restart(doc, idx, p)?;
             // The paragraph after, and the runs after
-            let mut q = p;
+            let (mut q, mut ended) = (p, false);
             for _ in 0..REACH {
-                let Some(h) = hop(doc, idx, q, true)? else { break };
+                let Some(h) = hop(doc, idx, q, true)? else {
+                    ended = true;
+                    break;
+                };
                 self.restart(doc, idx, h.para)?;
                 if !transparent(doc, idx, h.para) {
+                    ended = true;
                     break;
                 }
                 q = h.para;
+            }
+            if !ended {
+                return Err(Lost);
             }
         }
         Ok(())

@@ -443,17 +443,13 @@ impl Editor {
             let mut new = empty_cell(cell);
             new.v_merge = cell.v_merge;
             (cell.span, new.span) = (at - from, to - at);
+            // The two halves' widths; the cells not split keep theirs
+            let width = |a: usize, b: usize| Some(Width::Dxa(grid[a.min(grid.len())..b.min(grid.len())].iter().sum()));
+            (cell.width, new.width) = (width(from, at), width(at, to));
             set_cell_sides(cell, RIGHT, &pen, &cx);
             set_cell_sides(&mut new, LEFT, &pen, &cx);
             rows[r].cells.insert(k + 1, new);
             rows[r].src = None;
-        }
-        let ng = Grid::of_rows(&rows, grid.len());
-        for (r, row) in rows.iter_mut().enumerate() {
-            for (k, cell) in row.cells.iter_mut().enumerate() {
-                let (c, s, _) = ng.rows[r][k];
-                cell.width = Some(Width::Dxa(grid[c.min(grid.len())..(c + s.max(1)).min(grid.len())].iter().sum()));
-            }
         }
         self.rebuild(DRAW_TABLE, table, rows, grid, caret, fonts)
     }

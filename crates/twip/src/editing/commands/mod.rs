@@ -151,6 +151,10 @@ impl Editor {
             return out;
         }
         if let Some(out) = self.list_label_command(&cmd, fonts) {
+            // Repeat doesn't format a list's number
+            if matches!(out, Outcome::Changed(_)) {
+                self.repeat = None;
+            }
             return out;
         }
         // A built-in style the document doesn't define yet joins it first, in the same undo step.

@@ -157,9 +157,12 @@ impl Editor {
         let id = crate::docx::write::props::esc(&style.id);
         let (ppr, rpr) = match style.kind {
             StyleKind::Character => (None, Some(format!("<{w}rPr><{w}rStyle {w}val=\"{id}\"/></{w}rPr>"))),
+            StyleKind::Table => (None, None),
             _ => (Some(format!("<{w}pPr><{w}pStyle {w}val=\"{id}\"/></{w}pPr>")), None),
         };
-        let para = next.para_from_xml(ppr.as_deref(), None, &cx);
+        // A table style's text: in the part being formatted, else the whole table.
+        let region = (style.kind == StyleKind::Table).then(|| next.styles.table_region(Some(&style.id), self.style_part.as_slice()));
+        let para = next.para_from_xml(ppr.as_deref(), region.as_ref(), &cx);
         let run = next.run_from_xml(&para.base, rpr.as_deref(), &cx);
         let p = Paragraph {
             style: Rc::new(para.style),
@@ -467,6 +470,9 @@ impl Editor {
     /// Sets the selected cells' fill (clear pattern), or removes their shading: an RGB or a theme colour with a tint
     /// or shade.
     pub fn set_cell_shading(&mut self, c: Option<crate::api::drawing::ColourValue>, fonts: &Fonts) -> Outcome {
+        if let Some(out) = self.refuse_like(&Command::SetCellShading(None)) {
+            return out;
+        }
         let fill = match c.map(|c| self.word_colour(&c)).transpose() {
             Ok(f) => f,
             Err(why) => return Outcome::invalid(&why),
