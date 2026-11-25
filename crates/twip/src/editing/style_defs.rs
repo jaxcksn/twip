@@ -8,7 +8,7 @@ pub use crate::api::styles::{
     BuiltInStyle, DefaultsDefinition, NewStyle, StyleCategory, StyleChange, StyleDefinition, StyleList, TableBorders, TablePartDefinition,
     TablePartFormatting, TableStyleDefinition,
 };
-use crate::api::value::{CellAlignment, Color, HorizontalAlignment, Points, StyleId};
+use crate::api::value::{Color, HorizontalAlignment, Points, StyleId};
 use crate::docx::props::{ParaProps, RunProps, toggle};
 use crate::docx::styles::{Style, StyleKind, Styles};
 use crate::docx::write::props::{Cx, Props, STYLE, TBLPR, TC_BORDERS, TCPR, TRPR, esc};
@@ -221,12 +221,8 @@ fn table_style_edit(e: &Editor, raw: &str, region: Option<&'static str>, c: &Com
             })
         }
         Command::SetCellAlignment(a) => {
-            let v = match a {
-                CellAlignment::Top => "top",
-                CellAlignment::Center => "center",
-                CellAlignment::Bottom => "bottom",
-            };
-            cell(raw, &|p| p.set("vAlign", format!("<{w}vAlign {w}val=\"{v}\"/>")))
+            let v = super::table_format::v_align_xml(&w, super::table_format::cell_alignment(*a));
+            cell(raw, &|p| p.set("vAlign", v.clone()))
         }
         Command::SetCellMargins(m) => {
             let sides = [("top", m.top), ("left", m.left), ("bottom", m.bottom), ("right", m.right)];
@@ -893,11 +889,7 @@ impl Editor {
                     character: super::state::character(&[&run]),
                     paragraph: super::state::paragraph(&[(&para.style, None)]),
                     fill: r.tc.shading.flatten().map(Color),
-                    cell_alignment: match r.tc.v_align.as_deref() {
-                        Some("center") => CellAlignment::Center,
-                        Some("bottom") => CellAlignment::Bottom,
-                        _ => CellAlignment::Top,
-                    },
+                    cell_alignment: super::table_format::api_cell_alignment(r.tc.v_align),
                     borders: b,
                     cell_margins: if region.is_none() { margins(&whole.tbl.margins) } else { margins(&r.tc.margins) },
                     row_can_break: !r.tr.cant_split.unwrap_or(false),

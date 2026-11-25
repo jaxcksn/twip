@@ -1209,7 +1209,7 @@ pub struct TcProps {
     /// The `w:shd` as written.
     pub shd: Option<Shd>,
     pub margins: Margins,
-    pub v_align: Option<String>,
+    pub v_align: Option<super::VerticalAlignment>,
     pub text_direction: Option<String>,
     pub no_wrap: Option<bool>,
     pub fit_text: Option<bool>,
@@ -1231,7 +1231,7 @@ impl TcProps {
                     p.shd = Some(Shd::parse(c, tc));
                 }
                 "tcMar" => p.margins = Margins::parse(c),
-                "vAlign" => p.v_align = val(c).map(str::to_string),
+                "vAlign" => p.v_align = val(c).map(super::section::cell_v_align),
                 "textDirection" => p.text_direction = val(c).map(str::to_string),
                 "noWrap" => p.no_wrap = Some(on_off(c)),
                 "tcFitText" => p.fit_text = Some(on_off(c)),

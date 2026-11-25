@@ -1445,7 +1445,7 @@ pub struct Cell {
     /// The shading's stripe or cross, drawn over [`Cell::shading`].
     pub hatch: Option<super::props::Hatch>,
     pub margins: [f64; 4],
-    pub v_align: String,
+    pub v_align: VerticalAlignment,
     pub text_direction: String,
     pub no_wrap: bool,
     pub fit_text: bool,

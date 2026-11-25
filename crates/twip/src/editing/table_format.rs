@@ -13,7 +13,7 @@ pub use crate::api::state::TableBands;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum TableFormat {
-    CellAlign(String),
+    CellAlign(crate::docx::VerticalAlignment),
     CellShading(Shading),
     TableShading(Shading),
     CellBorders(Edges, Border),
@@ -44,6 +44,33 @@ pub enum TableFormat {
         width: Width,
         grid: Vec<f64>,
     },
+}
+
+/// The model's cell alignment for the API's.
+pub(super) fn cell_alignment(a: crate::api::value::CellAlignment) -> crate::docx::VerticalAlignment {
+    use crate::api::value::CellAlignment as A;
+    use crate::docx::VerticalAlignment as V;
+    match a {
+        A::Top => V::Top,
+        A::Center => V::Center,
+        A::Bottom => V::Bottom,
+    }
+}
+
+/// The API's cell alignment for the model's (`None`: top).
+pub(super) fn api_cell_alignment(v: Option<crate::docx::VerticalAlignment>) -> crate::api::value::CellAlignment {
+    use crate::api::value::CellAlignment as A;
+    use crate::docx::VerticalAlignment as V;
+    match v {
+        Some(V::Center) => A::Center,
+        Some(V::Bottom) => A::Bottom,
+        Some(V::Top | V::Both) | None => A::Top,
+    }
+}
+
+/// A `w:vAlign` element.
+pub(super) fn v_align_xml(w: &str, v: crate::docx::VerticalAlignment) -> String {
+    format!("<{w}vAlign {w}val=\"{}\"/>", crate::docx::section::v_align_literal(v))
 }
 
 /// Sets `row`'s height (`None`: auto) on the model and in its `w:trPr`.
@@ -492,8 +519,8 @@ impl Editor {
                         }
                         match f {
                             TableFormat::CellAlign(v) => {
-                                cell.v_align = v.clone();
-                                set_direct(cell, "vAlign", format!("<{w}vAlign {w}val=\"{}\"/>", crate::docx::write::props::esc(v)));
+                                cell.v_align = *v;
+                                set_direct(cell, "vAlign", v_align_xml(&w, *v));
                             }
                             TableFormat::CellShading(sh) => {
                                 let p = crate::docx::write::props::Props::parse(cell.direct.0.as_deref(), "tcPr", &cx);

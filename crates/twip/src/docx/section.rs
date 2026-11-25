@@ -21,3 +21,13 @@ pub fn section_v_align(s: &str) -> VerticalAlignment {
         _ => VerticalAlignment::Top,
     }
 }
+
+/// A cell's `w:vAlign`; an unknown value is `both`, which aligns as top but isn't top.
+pub fn cell_v_align(s: &str) -> VerticalAlignment {
+    match s {
+        "top" => VerticalAlignment::Top,
+        "center" => VerticalAlignment::Center,
+        "bottom" => VerticalAlignment::Bottom,
+        _ => VerticalAlignment::Both,
+    }
+}

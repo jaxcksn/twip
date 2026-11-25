@@ -107,12 +107,8 @@ fn table_style_edits(raw: &str, was: &StyleDialog, now: &StyleDialog, region: Op
         });
     }
     if now.cell_alignment != was.cell_alignment {
-        let v = match now.cell_alignment {
-            crate::api::value::CellAlignment::Top => "top",
-            crate::api::value::CellAlignment::Center => "center",
-            crate::api::value::CellAlignment::Bottom => "bottom",
-        };
-        raw = cell(&raw, &|p| p.set("vAlign", format!("<{w}vAlign {w}val=\"{v}\"/>")));
+        let v = super::table_format::v_align_xml(&w, super::table_format::cell_alignment(now.cell_alignment));
+        raw = cell(&raw, &|p| p.set("vAlign", v.clone()));
     }
     if now.border != was.border {
         let edges = |name: &str| -> String {
@@ -284,11 +280,7 @@ impl Editor {
             auto_update: style.meta.auto_redefine,
             table_part: part,
             fill: region.as_ref().and_then(|r| r.tc.shading.flatten()).map(crate::api::value::Color),
-            cell_alignment: match region.as_ref().and_then(|r| r.tc.v_align.as_deref()) {
-                Some("center") => crate::api::value::CellAlignment::Center,
-                Some("bottom") => crate::api::value::CellAlignment::Bottom,
-                _ => crate::api::value::CellAlignment::Top,
-            },
+            cell_alignment: super::table_format::api_cell_alignment(region.as_ref().and_then(|r| r.tc.v_align)),
             border,
             row_band: whole.as_ref().and_then(|r| r.tbl.row_band).unwrap_or(1).max(1) as u32,
             column_band: whole.as_ref().and_then(|r| r.tbl.col_band).unwrap_or(1).max(1) as u32,
@@ -580,7 +572,7 @@ impl Editor {
     /// Table Properties' values for a table style: its alignment, indent, cell margins, row breaking and cell
     /// alignment (what a style holds; the rest unavailable).
     pub fn style_table_properties(&self, raw: &str) -> Option<crate::api::services::TablePropertiesDialog> {
-        use crate::api::value::{CellAlignment, HorizontalAlignment, Points, TableWidth};
+        use crate::api::value::{HorizontalAlignment, Points, TableWidth};
         let r = self.table_region_of(raw, None)?;
         let m = &r.tbl.margins;
         Some(crate::api::services::TablePropertiesDialog {
@@ -599,11 +591,7 @@ impl Editor {
             row_can_break: Tri::Uniform(!r.tr.cant_split.unwrap_or(false)),
             header_row: Tri::Unavailable,
             column_width: Tri::Unavailable,
-            cell_alignment: Tri::Uniform(match r.tc.v_align.as_deref() {
-                Some("center") => CellAlignment::Center,
-                Some("bottom") => CellAlignment::Bottom,
-                _ => CellAlignment::Top,
-            }),
+            cell_alignment: Tri::Uniform(super::table_format::api_cell_alignment(r.tc.v_align)),
             cell_margins: crate::api::services::CellMarginValues {
                 top: Points(m.top.unwrap_or(0.0)),
                 bottom: Points(m.bottom.unwrap_or(0.0)),
@@ -778,12 +766,8 @@ impl Editor {
                 if let (Tri::Uniform(x), Tri::Uniform(y)) = (&a.cell_alignment, &b.cell_alignment)
                     && x != y
                 {
-                    let va = match y {
-                        crate::api::value::CellAlignment::Top => "top",
-                        crate::api::value::CellAlignment::Center => "center",
-                        crate::api::value::CellAlignment::Bottom => "bottom",
-                    };
-                    raw = cell(&raw, &|p| p.set("vAlign", format!("<{w}vAlign {w}val=\"{va}\"/>")));
+                    let va = super::table_format::v_align_xml(&w, super::table_format::cell_alignment(*y));
+                    raw = cell(&raw, &|p| p.set("vAlign", va.clone()));
                 }
             }
             (DialogValues::Banding(a), DialogValues::Banding(b)) if a != b => {

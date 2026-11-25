@@ -92,7 +92,7 @@ impl Editor {
                             shading: tc.shading.flatten(),
                             hatch: tc.shd.as_ref().and_then(crate::docx::props::Shd::hatch),
                             margins: [0.0, 5.4, 0.0, 5.4],
-                            v_align: tc.v_align.clone().unwrap_or_else(|| "top".into()),
+                            v_align: tc.v_align.unwrap_or(crate::docx::VerticalAlignment::Top),
                             text_direction: "lrTb".into(),
                             no_wrap: false,
                             fit_text: false,

@@ -3539,7 +3539,7 @@ impl Reader {
             shading: None,
             hatch: None,
             margins: [0.0; 4],
-            v_align: String::new(),
+            v_align: VerticalAlignment::Top,
             text_direction: String::new(),
             no_wrap: false,
             fit_text: false,
@@ -3656,7 +3656,7 @@ impl Reader {
                 borders: [b.top.clone(), b.left.clone(), b.bottom.clone(), b.right.clone()],
                 shading: tcp.shading.flatten(),
                 margins: cell_margins(&tcp, tm, unset),
-                v_align: tcp.v_align.clone().unwrap_or_else(|| "top".into()),
+                v_align: tcp.v_align.unwrap_or(VerticalAlignment::Top),
                 text_direction: tcp.text_direction.clone().unwrap_or_else(|| "lrTb".into()),
                 no_wrap: tcp.no_wrap.unwrap_or(false),
             })
@@ -3758,7 +3758,7 @@ pub(crate) fn style_cell(c: &mut Cell, tcp: &TcProps, tm: &Margins, unset: f64) 
     c.shading = tcp.shading.flatten();
     c.hatch = tcp.shd.as_ref().and_then(Shd::hatch);
     c.margins = cell_margins(tcp, tm, unset);
-    c.v_align = tcp.v_align.clone().unwrap_or_else(|| "top".into());
+    c.v_align = tcp.v_align.unwrap_or(VerticalAlignment::Top);
     c.text_direction = tcp.text_direction.clone().unwrap_or_else(|| "lrTb".into());
     c.no_wrap = tcp.no_wrap.unwrap_or(false);
     c.fit_text = tcp.fit_text.unwrap_or(false);

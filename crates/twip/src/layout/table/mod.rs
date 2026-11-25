@@ -44,7 +44,7 @@ pub struct CellBox {
     pub content_h: f64,
     pub align_h: f64,
     pub fixed_floats: Box<[u64]>,
-    pub v_align: String,
+    pub v_align: crate::docx::VerticalAlignment,
     pub v_merge: VMerge,
     pub col: usize,
     pub span: usize,

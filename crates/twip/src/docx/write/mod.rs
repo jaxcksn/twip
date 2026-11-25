@@ -6904,8 +6904,8 @@ fn tc_pr(w: &str, c: &Cell, people: &People, cx: &Cx) -> String {
     if c.fit_text {
         s.push_str(&format!("<{w}tcFitText/>"));
     }
-    if c.v_align != "top" {
-        s.push_str(&format!("<{w}vAlign {w}val=\"{}\"/>", c.v_align));
+    if c.v_align != VerticalAlignment::Top {
+        s.push_str(&format!("<{w}vAlign {w}val=\"{}\"/>", super::section::v_align_literal(c.v_align)));
     }
     if c.hide_mark {
         s.push_str(&format!("<{w}hideMark/>"));

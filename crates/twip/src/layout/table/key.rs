@@ -226,7 +226,7 @@ fn shell(t: &Table) -> Table {
                         shading: *shading,
                         hatch: *hatch,
                         margins: *margins,
-                        v_align: v_align.clone(),
+                        v_align: *v_align,
                         text_direction: text_direction.clone(),
                         no_wrap: *no_wrap,
                         fit_text: *fit_text,

@@ -468,7 +468,7 @@ pub(super) fn assemble(
                 content_h,
                 align_h,
                 fixed_floats,
-                v_align: if unaligned { "top".into() } else { c.v_align.clone() },
+                v_align: if unaligned { VerticalAlignment::Top } else { c.v_align },
                 v_merge: c.v_merge,
                 col: g.col,
                 span: g.span,
@@ -842,10 +842,10 @@ fn turn_cell(
     };
     // Compat ≤ 14 doesn't clamp: a block thicker than the cell starts before its first side.
     let floor = if env.ctx.env.text.compat == Compat::Legacy { f64::NEG_INFINITY } else { 0.0 };
-    let across = match c.v_align.as_str() {
-        "center" => ((g.cw + far - story.height) / 2.0).max(floor),
-        "bottom" => (g.cw + far - story.height).max(floor),
-        _ => 0.0,
+    let across = match c.v_align {
+        VerticalAlignment::Center => ((g.cw + far - story.height) / 2.0).max(floor),
+        VerticalAlignment::Bottom => (g.cw + far - story.height).max(floor),
+        VerticalAlignment::Top | VerticalAlignment::Both => 0.0,
     };
     // Glyphs whose ink lies wholly outside the cell's clip, between its side borders' inner edges, are not drawn,
     // before the first side as past the far one.
@@ -874,7 +874,7 @@ fn turn_cell(
         row: None,
     };
     c.units = Rc::new(StoryLayout { units: vec![unit], ..StoryLayout::default() });
-    c.v_align = "top".into();
+    c.v_align = VerticalAlignment::Top;
     Ok(())
 }
 

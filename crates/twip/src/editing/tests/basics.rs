@@ -1470,7 +1470,7 @@ fn table_formatting(e: &super::super::Editor) -> Vec<String> {
                     out.push(format!("  row {:?} cant_split {}", r.height, r.cant_split));
                     for c in &r.cells {
                         out.push(format!(
-                            "    cell {:?} {:?} {:?} {:?} {:?} {:?} {:?} {}",
+                            "    cell {:?} {:?} {:?} {:?} {:?} {:?} {:?} {:?}",
                             c.width, c.top, c.left, c.bottom, c.right, c.shading, c.margins, c.v_align
                         ));
                         walk(&c.blocks, out);

@@ -296,7 +296,7 @@ pub enum PreviousProps {
         borders: [Option<Border>; 4],
         shading: Option<u32>,
         margins: [f64; 4],
-        v_align: String,
+        v_align: super::VerticalAlignment,
         text_direction: String,
         no_wrap: bool,
     },
@@ -338,7 +338,7 @@ impl PreviousProps {
         if let PreviousProps::Cell { width, borders, shading, margins, v_align, text_direction, no_wrap } = self {
             let [top, left, bottom, right] = borders.clone();
             (c.width, c.top, c.left, c.bottom, c.right, c.shading, c.margins) = (*width, top, left, bottom, right, *shading, *margins);
-            (c.v_align, c.text_direction, c.no_wrap) = (v_align.clone(), text_direction.clone(), *no_wrap);
+            (c.v_align, c.text_direction, c.no_wrap) = (*v_align, text_direction.clone(), *no_wrap);
         }
     }
 }

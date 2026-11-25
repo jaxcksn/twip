@@ -216,7 +216,7 @@ fn merged_splits(tb: &TableLayout, ri: usize, placed: &[(usize, f64, usize)], bo
         let (start, top, _) = placed[pi];
         let Some(kr) = tb.rows[start].cells.iter().position(|x| x.col == c.col && x.v_merge == VMerge::Restart) else { continue };
         let rc = &tb.rows[start].cells[kr];
-        if rc.v_align != "top" || tb.rows[start].exact || !(start + 1..ri).all(|r| continues(r, c.col)) {
+        if rc.v_align != crate::docx::VerticalAlignment::Top || tb.rows[start].exact || !(start + 1..ri).all(|r| continues(r, c.col)) {
             continue;
         }
         let content_top = top + tb.rows[start].top_border + rc.margins[0];

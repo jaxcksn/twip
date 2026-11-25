@@ -56,12 +56,7 @@ impl Editor {
     }
 
     pub(in crate::editing) fn set_cell_alignment(&mut self, a: CellAlignment, fonts: &Fonts) -> Outcome {
-        let v = match a {
-            CellAlignment::Top => "top",
-            CellAlignment::Center => "center",
-            CellAlignment::Bottom => "bottom",
-        };
-        self.table_format(&TableFormat::CellAlign(v.into()), fonts)
+        self.table_format(&TableFormat::CellAlign(super::super::table_format::cell_alignment(a)), fonts)
     }
 
     pub(in crate::editing) fn set_cell_borders(&mut self, b: CellBorders, fonts: &Fonts) -> Outcome {

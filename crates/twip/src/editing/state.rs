@@ -13,8 +13,8 @@ use crate::api::state::{
     ParagraphFormatting, TableSelection, TableStyleOptions, Tri,
 };
 use crate::api::value::{
-    Alignment, AutoOr, CellAlignment, Color, HeightRule, HighlightColor, HorizontalAlignment, LineSpacing, NoneOr, ObjectWrap, Orientation, Points,
-    RowHeight, StyleId, TableWidth, UnderlineStyle,
+    Alignment, AutoOr, Color, HeightRule, HighlightColor, HorizontalAlignment, LineSpacing, NoneOr, ObjectWrap, Orientation, Points, RowHeight,
+    StyleId, TableWidth, UnderlineStyle,
 };
 use crate::docx::props::{Jc, LineRule, VertAlign};
 use crate::docx::{FloatWrap, ParaStyle, Run, RunStyle};
@@ -816,11 +816,7 @@ impl Editor {
             can_merge: matches!(self.selection, Selection::Cells { anchor, focus, .. } if anchor != focus),
             header_row: fold(rows.iter().map(|r| r.header)),
             row_can_break: fold(rows.iter().map(|r| !r.cant_split)),
-            cell_alignment: fold(cells.iter().map(|c| match c.v_align.as_str() {
-                "center" => CellAlignment::Center,
-                "bottom" => CellAlignment::Bottom,
-                _ => CellAlignment::Top,
-            })),
+            cell_alignment: fold(cells.iter().map(|c| super::table_format::api_cell_alignment(Some(c.v_align)))),
             cell_shading: fold(cells.iter().map(|c| c.shading.map_or(NoneOr::None, |s| NoneOr::Value(Color(s))))),
             row_height: fold(rows.iter().map(|r| match &r.height {
                 None => AutoOr::Auto,

@@ -846,7 +846,7 @@ impl Recording {
                     borders: b,
                     shading: oc.shading,
                     margins: oc.margins,
-                    v_align: oc.v_align.clone(),
+                    v_align: oc.v_align,
                     text_direction: oc.text_direction.clone(),
                     no_wrap: oc.no_wrap,
                 };

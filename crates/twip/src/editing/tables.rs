@@ -972,7 +972,7 @@ impl Editor {
             shading: None,
             hatch: None,
             margins: [0.0, 5.4, 0.0, 5.4],
-            v_align: "top".into(),
+            v_align: crate::docx::VerticalAlignment::Top,
             text_direction: "lrTb".into(),
             no_wrap: false,
             fit_text: false,
