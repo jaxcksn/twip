@@ -1047,7 +1047,7 @@ impl Editor {
         let Some(res) = self.doc.resolver.clone() else { return src.clone() };
         let cx = self.cx();
         let mut out = res.run_from_xml(base, src.direct.0.as_deref(), &cx);
-        if *out != **src {
+        if !out.layout_eq(src) {
             let w = cx.w.clone();
             let mut p = Props::parse(src.direct.0.as_deref(), "rPr", &cx);
             let flag = |name: &str, on: bool| if on { format!("<{w}{name}/>") } else { format!("<{w}{name} {w}val=\"0\"/>") };

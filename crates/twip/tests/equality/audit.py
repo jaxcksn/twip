@@ -34,8 +34,10 @@ REPO = HERE.parents[3]
 WORK = REPO / "target" / "equality-audit"
 COPY = WORK / "workspace"
 RELATIONS = {"L", "A", "AL", "none", "derive", "?"}
-# Types no site may compare with `==`; a format joins once it has named equality operations.
-FORBIDDEN = set()
+# Formats no site may compare with `==`: each has named equality operations (`layout_eq`, `authored_eq`,
+# `same_run`). The frozen XML resolution baseline keeps its comparisons as they were.
+FORBIDDEN = {"RunStyle"}
+BASELINE = {"crates/twip/src/docx/resolve.rs", "crates/twip/src/docx/props.rs", "crates/twip/src/docx/styles.rs", "crates/twip/src/docx/numbering.rs"}
 COMPARISON = re.compile(r"^binary operation `[!=]=` cannot be applied|^can't compare|`(?:Partial)?Eq`|trait bounds were not satisfied")
 ITEM = re.compile(r"^\s*(?:pub(?:\([^)]*\))?\s+)?(?:struct|enum)\s+(\w+)")
 FN = re.compile(r"^\s*(?:pub(?:\([^)]*\))?\s+)?(?:const\s+)?(?:async\s+)?(?:unsafe\s+)?fn\s+(\w+)")
@@ -85,7 +87,19 @@ def strip(types):
                     lines[j] = f"{indent}#[derive({', '.join(kept)})]" if kept else ""
                     missing.discard((path, m.group(1)))
                 j -= 1
-        file.write_text("\n".join(lines), encoding="utf-8")
+        # A hand-written `impl PartialEq for` the type goes too, to its closing brace.
+        out, skip = [], False
+        for line in lines:
+            m = re.match(r"^impl (?:Partial)?Eq for (\w+) \{", line)
+            if m and m.group(1) in names:
+                skip = not line.rstrip().endswith("}")
+                missing.discard((path, m.group(1)))
+                continue
+            if skip:
+                skip = line != "}"
+                continue
+            out.append(line)
+        file.write_text("\n".join(out), encoding="utf-8")
     return missing
 
 
@@ -232,7 +246,8 @@ def main():
             problems.append(f"unknown relation `{rel}`: {chr(9).join(key)}")
         elif rel == "?":
             problems.append(f"unclassified: {chr(9).join(key)}")
-        if key[2] in FORBIDDEN and rel != "derive":
+        compared = re.findall(r"\w+", key[2])
+        if any(t in FORBIDDEN for t in compared) and rel != "derive" and key[0] not in BASELINE:
             problems.append(f"compares {key[2]} with `==`; use its named equality operation: {chr(9).join(key)}")
     for p in problems:
         print(p)

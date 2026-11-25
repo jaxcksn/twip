@@ -52,7 +52,7 @@ impl PartialEq for PieceStyle {
             (None, None) => true,
             _ => false,
         };
-        face && (Rc::ptr_eq(run, &o.run) || **run == *o.run) && *size == o.size && *raise == o.raise
+        face && (Rc::ptr_eq(run, &o.run) || run.layout_eq(&o.run)) && *size == o.size && *raise == o.raise
     }
 }
 
@@ -931,7 +931,7 @@ impl<'a> Builder<'a> {
                         if pend_runs.first().is_some_and(|(_, p)| !shapes_alike(p, run)) {
                             self.flush_text(&mut pend, &mut pend_runs, &mut pend_units)?;
                         }
-                        if !pend_runs.last().is_some_and(|(_, p)| Rc::ptr_eq(p, run) || **p == **run) {
+                        if !pend_runs.last().is_some_and(|(_, p)| Rc::ptr_eq(p, run) || p.layout_eq(run)) {
                             pend_runs.push((pend_units.len(), run.clone()));
                         }
                         pend.push(c);
@@ -957,7 +957,7 @@ impl<'a> Builder<'a> {
                 if pend_runs.first().is_some_and(|(_, p)| !shapes_alike(p, run)) {
                     self.flush_text(&mut pend, &mut pend_runs, &mut pend_units)?;
                 }
-                if !pend_runs.last().is_some_and(|(_, p)| Rc::ptr_eq(p, run) || **p == **run) {
+                if !pend_runs.last().is_some_and(|(_, p)| Rc::ptr_eq(p, run) || p.layout_eq(run)) {
                     pend_runs.push((pend_units.len(), run.clone()));
                 }
                 pend.push_str(t);
@@ -1826,8 +1826,8 @@ impl CacheKey for ShapeKey {
 /// [`same_para`] but for the stories of floats and inline shapes.
 fn same_shaping(a: &Paragraph, b: &Paragraph) -> bool {
     let inline = |x: &Inline, y: &Inline| match (x, y) {
-        (Inline::Float(f, r), Inline::Float(g, s)) => r == s && f.same_but_story(g),
-        (Inline::Picture(f, r), Inline::Picture(g, s)) => r == s && f.same_but_story(g),
+        (Inline::Float(f, r), Inline::Float(g, s)) => r.layout_eq(s) && f.same_but_story(g),
+        (Inline::Picture(f, r), Inline::Picture(g, s)) => r.layout_eq(s) && f.same_but_story(g),
         _ => x == y,
     };
     a.inlines.len() == b.inlines.len() && same_props(a, b) && a.inlines.iter().zip(&b.inlines).all(|(x, y)| inline(x, y))
@@ -1839,7 +1839,7 @@ pub fn same_para(a: &Paragraph, b: &Paragraph) -> bool {
 
 /// The identity, style, mark and list label shaping reads.
 fn same_props(a: &Paragraph, b: &Paragraph) -> bool {
-    let run = |x: &Run, y: &Run| Rc::ptr_eq(x, y) || **x == **y;
+    let run = |x: &Run, y: &Run| Rc::ptr_eq(x, y) || x.layout_eq(y);
     a.id == b.id
         && (Rc::ptr_eq(&a.style, &b.style) || *a.style == *b.style)
         && run(&a.mark, &b.mark)

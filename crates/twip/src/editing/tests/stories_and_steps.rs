@@ -69,13 +69,17 @@ fn a_style_edit_and_its_undo_restyle_the_line_numbers() {
     let mut e = open("FX-STYLES.docx");
     e.complete(fonts());
     let want = |e: &Editor| e.document().resolver.as_ref().map(|r| crate::docx::line_number_run(r));
-    assert_eq!(e.document().line_number_run, want(&e));
+    let same = |a: &Option<crate::docx::Run>, b: &Option<crate::docx::Run>| match (a, b) {
+        (Some(a), Some(b)) => a.layout_eq(b),
+        (a, b) => a.is_none() && b.is_none(),
+    };
+    assert!(same(&e.document().line_number_run, &want(&e)));
     let raw = "<w:docDefaults><w:rPrDefault><w:rPr><w:sz w:val=\"90\"/></w:rPr></w:rPrDefault></w:docDefaults>".to_string();
     let out = e.edit_styles("Set Defaults", |s| s.set_defaults_xml(raw), fonts());
     assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
-    assert_eq!(e.document().line_number_run, want(&e), "after the edit");
+    assert!(same(&e.document().line_number_run, &want(&e)), "after the edit");
     e.execute(Command::Undo(Default::default()), fonts());
-    assert_eq!(e.document().line_number_run, want(&e), "after undo");
+    assert!(same(&e.document().line_number_run, &want(&e)), "after undo");
 }
 
 /// FX-TEXT with its first paragraph an empty run carrying the formatting before it, as a split leaves one.

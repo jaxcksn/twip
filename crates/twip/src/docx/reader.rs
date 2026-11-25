@@ -3802,7 +3802,7 @@ fn sym_ex(ac: Node) -> Option<(char, String)> {
 
 fn push_text(out: &mut Vec<Inline>, t: &str, run: &Run) {
     if let Some(Inline::Text(s, r)) = out.last_mut()
-        && (Rc::ptr_eq(r, run) || (**r == **run && r.direct.0 == run.direct.0))
+        && (Rc::ptr_eq(r, run) || (r.layout_eq(run) && r.direct.0 == run.direct.0))
     {
         s.push_str(t);
         return;

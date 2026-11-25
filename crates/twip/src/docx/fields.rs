@@ -240,7 +240,7 @@ pub fn value_runs(inlines: &[Inline], s: FieldSpan, text: &str, run: &Run) -> Ve
         let w = cached.get(word);
         let r = w.and_then(|w| if space { w.0.clone().or(w.1.clone()) } else { w.1.clone().or(w.0.clone()) }).unwrap_or_else(|| run.clone());
         match out.last_mut() {
-            Some((t, last)) if std::rc::Rc::ptr_eq(last, &r) || **last == *r => t.push(c),
+            Some((t, last)) if std::rc::Rc::ptr_eq(last, &r) || last.layout_eq(&r) => t.push(c),
             _ => out.push((c.to_string(), r)),
         }
     }

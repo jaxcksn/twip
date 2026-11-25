@@ -974,7 +974,7 @@ fn with_rev(r: &Run, rev: RunRevisions) -> Run {
 }
 
 fn same_look(a: &RunStyle, b: &RunStyle) -> bool {
-    RunStyle { rev: RunRevisions::default(), ..a.clone() } == RunStyle { rev: RunRevisions::default(), ..b.clone() }
+    RunStyle { rev: RunRevisions::default(), ..a.clone() }.layout_eq(&RunStyle { rev: RunRevisions::default(), ..b.clone() })
 }
 
 fn same_para(a: &ParaStyle, b: &ParaStyle) -> bool {

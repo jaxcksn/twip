@@ -85,7 +85,7 @@ fn shapes(blocks: &[Block]) -> Vec<Shape> {
                     let mut s = (**r).clone();
                     s.rev = Default::default();
                     match runs.last_mut() {
-                        Some((prev, ps)) if *ps == s => prev.push_str(&t),
+                        Some((prev, ps)) if ps.layout_eq(&s) => prev.push_str(&t),
                         _ => runs.push((t, s)),
                     }
                 }

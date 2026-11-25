@@ -276,7 +276,10 @@ pub(super) fn ruby_again(r: &Ruby, base: &RunProps, edit: Option<(&RubyEdit, boo
     };
     let [b, t] = parts;
     let (base_text, text) = (again(&r.base, b), again(&r.text, t));
-    if splices.is_empty() && base_text == r.base && text == r.text {
+    let same = |a: &[(String, crate::docx::Run)], b: &[(String, crate::docx::Run)]| {
+        a.len() == b.len() && a.iter().zip(b).all(|(x, y)| x.0 == y.0 && x.1.layout_eq(&y.1))
+    };
+    if splices.is_empty() && same(&base_text, &r.base) && same(&text, &r.text) {
         return None;
     }
     let mut xml = raw.to_string();
@@ -337,7 +340,7 @@ impl Editor {
                     .entry((Rc::as_ptr(run), k))
                     .or_insert_with(|| {
                         let again = res.rerun(base, run, &cx);
-                        if *again == **run { run.clone() } else { again }
+                        if again.layout_eq(run) { run.clone() } else { again }
                     })
                     .clone();
                 changed |= !Rc::ptr_eq(&new, run);
@@ -349,8 +352,8 @@ impl Editor {
                 }
                 with.push(i);
             }
-            let style_changed = *p.style != again.style || *p.mark != *mark;
-            let (style, mark) = (Rc::new(again.style), if *p.mark != *mark { mark } else { p.mark.clone() });
+            let style_changed = *p.style != again.style || !p.mark.layout_eq(&mark);
+            let (style, mark) = (Rc::new(again.style), if !p.mark.layout_eq(&mark) { mark } else { p.mark.clone() });
             if style_changed {
                 let list = p.list.clone();
                 let _ = self.step(tx, Step::Para { para, style, mark, list });
@@ -635,7 +638,7 @@ impl Editor {
             let Some(again) = self.para_again(para, None, &res, &cx) else { continue };
             let Some(p) = self.index.para(&self.doc, para) else { continue };
             let mark = patch_as(&p.mark, again.mark_base(), true);
-            if *mark == *p.mark {
+            if mark.layout_eq(&p.mark) {
                 continue;
             }
             let (style, list) = (p.style.clone(), p.list.clone());

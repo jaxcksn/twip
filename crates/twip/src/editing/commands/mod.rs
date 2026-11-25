@@ -192,7 +192,11 @@ impl Editor {
                 _ if self.built_in_named(&cmd).is_some() => Outcome::Unchanged("the style couldn't be added"),
                 _ => self.execute_editable(cmd, fonts),
             };
-            let applied = matches!(out, Outcome::Changed(_) | Outcome::Moved) || self.pending != pending;
+            let applied = matches!(out, Outcome::Changed(_) | Outcome::Moved)
+                || match (&self.pending, &pending) {
+                    (Some(a), Some(b)) => !a.layout_eq(b),
+                    (a, b) => a.is_some() != b.is_some(),
+                };
             let end = self.end_batch(applied, fonts);
             return if matches!(end, Outcome::Changed(_)) { end } else { out };
         }

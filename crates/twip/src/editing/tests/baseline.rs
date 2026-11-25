@@ -55,10 +55,11 @@ fn check_blocks(res: &Resolver, cx: &Cx, blocks: &[Block], region: Option<&Regio
                 assert_eq!(*p.style, r.style, "{what}: paragraph {:?}", p.id);
                 let with_rev = |again: Run, read: &Run| RunStyle { rev: read.rev.clone(), ..(*again).clone() };
                 let mark = with_rev(res.run_from_xml(&r.base, p.mark.direct.0.as_deref(), cx), &p.mark);
-                assert_eq!(*p.mark, mark, "{what}: the mark of {:?}", p.id);
+                assert!(p.mark.layout_eq(&mark), "{what}: the mark of {:?}: {:?} against {mark:?}", p.id, p.mark);
                 for i in &p.inlines {
                     if let Inline::Text(t, run) = i {
-                        assert_eq!(**run, *res.rerun(&r.base, run, cx), "{what}: run {t:?} of {:?}", p.id);
+                        let again = res.rerun(&r.base, run, cx);
+                        assert!(run.layout_eq(&again), "{what}: run {t:?} of {:?}: {run:?} against {again:?}", p.id);
                         *checked += 1;
                     }
                 }

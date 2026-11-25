@@ -18,8 +18,8 @@ use super::review::{
     SectionChange, TableChange,
 };
 
-/// Effective character formatting of a run.
-#[derive(Clone, Debug, PartialEq)]
+/// Effective character formatting of a run. Its `==` is [`RunStyle::layout_eq`].
+#[derive(Clone, Debug)]
 pub struct RunStyle {
     /// Family names per script slot, before font substitution.
     pub ascii: String,
@@ -95,6 +95,135 @@ pub struct RunStyle {
     /// The generic categories the document's font table gives the families of the `ascii`, `h_ansi` and `east_asia`
     /// slots.
     pub categories: [Option<GenericFamily>; 3],
+}
+
+impl RunStyle {
+    /// Layout equivalence: every resolved value, the style and the revision marks, which the markup views draw. The
+    /// authored properties ([`RunStyle::direct`]) are not compared.
+    pub fn layout_eq(&self, o: &RunStyle) -> bool {
+        let RunStyle {
+            ascii,
+            h_ansi,
+            east_asia,
+            cs,
+            east_asia_unset,
+            east_asia_named,
+            hint_east_asia,
+            size,
+            bold,
+            italic,
+            caps,
+            small_caps,
+            strike,
+            dstrike,
+            hidden,
+            no_proof,
+            underline,
+            underline_color,
+            underline_color_theme,
+            emboss,
+            imprint,
+            outline,
+            shadow,
+            typography,
+            effects,
+            color,
+            color_theme,
+            font_theme,
+            highlight,
+            shading,
+            shd,
+            border,
+            vert_align,
+            position,
+            spacing,
+            scale,
+            kern,
+            ligatures,
+            figures,
+            fit_text,
+            em,
+            toc,
+            lang,
+            lang_east_asia,
+            style_id,
+            direct: _,
+            rev,
+            categories,
+        } = self;
+        *ascii == o.ascii
+            && *h_ansi == o.h_ansi
+            && *east_asia == o.east_asia
+            && *cs == o.cs
+            && *east_asia_unset == o.east_asia_unset
+            && *east_asia_named == o.east_asia_named
+            && *hint_east_asia == o.hint_east_asia
+            && *size == o.size
+            && *bold == o.bold
+            && *italic == o.italic
+            && *caps == o.caps
+            && *small_caps == o.small_caps
+            && *strike == o.strike
+            && *dstrike == o.dstrike
+            && *hidden == o.hidden
+            && *no_proof == o.no_proof
+            && *underline == o.underline
+            && *underline_color == o.underline_color
+            && *underline_color_theme == o.underline_color_theme
+            && *emboss == o.emboss
+            && *imprint == o.imprint
+            && *outline == o.outline
+            && *shadow == o.shadow
+            && *typography == o.typography
+            && *effects == o.effects
+            && *color == o.color
+            && *color_theme == o.color_theme
+            && *font_theme == o.font_theme
+            && *highlight == o.highlight
+            && *shading == o.shading
+            && *shd == o.shd
+            && *border == o.border
+            && *vert_align == o.vert_align
+            && *position == o.position
+            && *spacing == o.spacing
+            && *scale == o.scale
+            && *kern == o.kern
+            && *ligatures == o.ligatures
+            && *figures == o.figures
+            && *fit_text == o.fit_text
+            && *em == o.em
+            && *toc == o.toc
+            && *lang == o.lang
+            && *lang_east_asia == o.lang_east_asia
+            && *style_id == o.style_id
+            && *rev == o.rev
+            && *categories == o.categories
+    }
+
+    /// Authored equality: the direct formatting as written, and the revision marks with the formatting a format
+    /// change records as written.
+    pub fn authored_eq(&self, o: &RunStyle) -> bool {
+        let (a, b) = (&self.rev, &o.rev);
+        self.direct.0 == o.direct.0
+            && a.ins == b.ins
+            && a.del == b.del
+            && match (&a.fmt, &b.fmt) {
+                (None, None) => true,
+                (Some(x), Some(y)) => x.mark == y.mark && x.previous_raw.0 == y.previous_raw.0,
+                _ => false,
+            }
+    }
+
+    /// Both relations: what text joining one run needs.
+    pub fn same_run(&self, o: &RunStyle) -> bool {
+        self.layout_eq(o) && self.authored_eq(o)
+    }
+}
+
+impl PartialEq for RunStyle {
+    fn eq(&self, o: &RunStyle) -> bool {
+        self.layout_eq(o)
+    }
 }
 
 impl RunStyle {

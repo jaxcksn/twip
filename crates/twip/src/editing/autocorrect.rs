@@ -573,7 +573,7 @@ impl Editor {
                 for j in lo..hi {
                     let r = olds.get(source(j)).unwrap_or(&run);
                     match inlines.last_mut() {
-                        Some(crate::docx::Inline::Text(t, last)) if last == r => t.push(chars[j]),
+                        Some(crate::docx::Inline::Text(t, last)) if last.layout_eq(r) => t.push(chars[j]),
                         _ => inlines.push(crate::docx::Inline::Text(chars[j].to_string(), r.clone())),
                     }
                 }
