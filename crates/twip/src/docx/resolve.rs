@@ -190,7 +190,7 @@ impl Resolver {
             em: p.em.filter(|e| *e != Emphasis::None),
             toc: false,
             shading: p.shading.flatten(),
-            shd: p.shd.clone().filter(|s| s.pattern != "nil"),
+            shd: p.shd.clone().filter(|s| s.pattern != ShadingPattern::Nil),
             // A text border of style `none` draws nothing, but its space still counts.
             border: p.border.clone().filter(|b| b.visible() || b.style == BorderStyle::None && b.space > 0.0),
             vert_align: p.vert_align.unwrap_or(VertAlign::Baseline),
@@ -258,7 +258,7 @@ impl Resolver {
             border_right: bdr(&p.border_right),
             border_between: bdr(&p.border_between),
             shading: p.shading.flatten(),
-            shd: p.shd.clone().filter(|s| s.pattern != "nil"),
+            shd: p.shd.clone().filter(|s| s.pattern != ShadingPattern::Nil),
             frame: p.frame.clone(),
             text_flow: p.text_flow.unwrap_or(0),
             in_frame: false,

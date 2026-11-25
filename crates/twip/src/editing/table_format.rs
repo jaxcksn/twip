@@ -191,13 +191,14 @@ impl Shading {
 
     /// What it reads as over `was`, the `w:shd` there, and `inherited`, the shading its style gives.
     pub fn shd(&self, was: Option<&str>, inherited: Option<&crate::docx::props::Shd>) -> crate::docx::props::Shd {
+        use crate::docx::line_style::shading_pattern;
         let pattern = self
             .pattern
-            .map(str::to_string)
-            .or_else(|| was.and_then(|x| crate::docx::write::props::attr_of(x, "val")))
-            .or_else(|| inherited.map(|s| s.pattern.clone()).filter(|p| p != "nil"));
+            .map(shading_pattern)
+            .or_else(|| was.and_then(|x| crate::docx::write::props::attr_of(x, "val")).map(|v| shading_pattern(&v)))
+            .or_else(|| inherited.map(|s| s.pattern).filter(|p| *p != crate::docx::props::ShadingPattern::Nil));
         crate::docx::props::Shd {
-            pattern: pattern.unwrap_or_else(|| "clear".into()),
+            pattern: pattern.unwrap_or(crate::docx::props::ShadingPattern::Clear),
             color: self.color.map(|c| c.rgb),
             fill: self.fill.map(|c| c.rgb),
             color_theme: self.color.and_then(|c| c.theme),
@@ -215,7 +216,7 @@ impl Shading {
 pub fn shd_xml(w: &str, s: &crate::docx::props::Shd) -> String {
     use super::commands::{THEME_COLOR, THEME_FILL, colour_attrs};
     let c = |rgb: Option<u32>, theme| rgb.map(|rgb| WordColour { rgb, theme });
-    let tag = format!("<{w}shd {w}val=\"{}\"/>", crate::docx::write::props::esc(&s.pattern));
+    let tag = format!("<{w}shd {w}val=\"{}\"/>", crate::docx::line_style::shading_val(s.pattern));
     let tag = colour_attrs(&tag, w, "color", THEME_COLOR, c(s.color, s.color_theme));
     colour_attrs(&tag, w, "fill", THEME_FILL, c(s.fill, s.fill_theme))
 }

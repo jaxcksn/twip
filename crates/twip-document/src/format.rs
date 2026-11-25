@@ -26,6 +26,50 @@ pub enum Emphasis {
     UnderDot,
 }
 
+/// A stripe or cross of shading, drawn as an 8×8 tile in the pattern colour over the fill.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Stripe {
+    /// Horizontal stripes.
+    Horz,
+    /// Vertical stripes.
+    Vert,
+    /// Stripes down to the left.
+    ReverseDiag,
+    /// Stripes down to the right.
+    Diag,
+    /// A horizontal and vertical cross.
+    HorzCross,
+    /// A diagonal cross.
+    DiagCross,
+    /// Thin horizontal stripes.
+    ThinHorz,
+    /// Thin vertical stripes.
+    ThinVert,
+    /// Thin stripes down to the left.
+    ThinReverseDiag,
+    /// Thin stripes down to the right.
+    ThinDiag,
+    /// A thin horizontal and vertical cross.
+    ThinHorzCross,
+    /// A thin diagonal cross.
+    ThinDiagCross,
+}
+
+/// A shading pattern.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ShadingPattern {
+    /// No shading, set over inherited shading.
+    Nil,
+    /// The fill alone.
+    Clear,
+    /// The pattern colour alone.
+    Solid,
+    /// This percentage (0 to 100) of the pattern colour over the fill.
+    Percent(u8),
+    /// A stripe or cross in the pattern colour over the fill.
+    Stripe(Stripe),
+}
+
 /// A paragraph's alignment.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Jc {

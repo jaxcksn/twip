@@ -2,7 +2,7 @@
 
 use roxmltree::Node;
 
-pub use crate::document::format::{Emphasis, Jc, Leader, LineRule, TabKind, VertAlign, Width};
+pub use crate::document::format::{Emphasis, Jc, Leader, LineRule, ShadingPattern, Stripe, TabKind, VertAlign, Width};
 pub use crate::document::line::{ArtBorder, BorderStyle};
 
 use super::xml::*;
@@ -493,7 +493,7 @@ pub fn highlight(v: &str) -> Option<u32> {
 /// A `w:shd` as written: its pattern (`w:val`), the pattern's color and the fill (none: automatic).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Shd {
-    pub pattern: String,
+    pub pattern: ShadingPattern,
     pub color: Option<u32>,
     pub fill: Option<u32>,
     /// The theme colours the pattern colour and the fill are (`w:themeColor`, `w:themeFill`).
@@ -504,7 +504,7 @@ pub struct Shd {
 impl Shd {
     pub fn parse(e: Node, tc: &ThemeColours) -> Shd {
         Shd {
-            pattern: val(e).unwrap_or("clear").to_string(),
+            pattern: val(e).map_or(ShadingPattern::Clear, super::line_style::shading_pattern),
             color: tc.colour(e, "color", "themeColor", "themeTint", "themeShade"),
             fill: tc.colour(e, "fill", "themeFill", "themeFillTint", "themeFillShade"),
             color_theme: theme_ref(e, "themeColor", "themeTint", "themeShade"),
@@ -515,12 +515,10 @@ impl Shd {
     /// The flat colour it shows: the fill, the pattern colour when solid, a `pctNN` blend of the pattern colour over
     /// the fill; nothing for `nil`. A stripe or cross shows its fill here and its [`Shd::hatch`] over it.
     pub fn flat(&self) -> Option<u32> {
-        let p = self.pattern.as_str();
-        match p {
-            "nil" => None,
-            "solid" => Some(self.color.unwrap_or(0)),
-            _ if p.starts_with("pct") => {
-                let pct: u32 = p[3..].parse().ok().filter(|v| *v <= 100)?;
+        match self.pattern {
+            ShadingPattern::Nil => None,
+            ShadingPattern::Solid => Some(self.color.unwrap_or(0)),
+            ShadingPattern::Percent(pct) => {
                 let (fg, bg) = (self.color.unwrap_or(0), self.fill.unwrap_or(0xFFFFFF));
                 let mix = |s: u32| {
                     let (a, b) = ((fg >> s) & 255, (bg >> s) & 255);
@@ -528,60 +526,21 @@ impl Shd {
                 };
                 Some(mix(16) | mix(8) | mix(0))
             }
-            _ => self.fill,
+            ShadingPattern::Clear | ShadingPattern::Stripe(_) => self.fill,
         }
     }
 
     /// Its stripe or cross in the pattern colour (automatic: black), if it has one.
     pub fn hatch(&self) -> Option<Hatch> {
-        Stripe::parse(&self.pattern).map(|stripe| Hatch { stripe, colour: self.color.unwrap_or(0) })
+        match self.pattern {
+            ShadingPattern::Stripe(stripe) => Some(Hatch { stripe, colour: self.color.unwrap_or(0) }),
+            _ => None,
+        }
     }
 }
 
 pub fn shading_fill(e: Node, tc: &ThemeColours) -> Option<u32> {
     Shd::parse(e, tc).flat()
-}
-
-/// The stripes and crosses of `w:shd`, drawn as an 8×8 tile in the pattern colour over the fill.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Stripe {
-    Horz,
-    Vert,
-    ReverseDiag,
-    Diag,
-    HorzCross,
-    DiagCross,
-    ThinHorz,
-    ThinVert,
-    ThinReverseDiag,
-    ThinDiag,
-    ThinHorzCross,
-    ThinDiagCross,
-}
-
-impl Stripe {
-    pub const ALL: [(Stripe, &'static str); 12] = [
-        (Stripe::Horz, "horzStripe"),
-        (Stripe::Vert, "vertStripe"),
-        (Stripe::ReverseDiag, "reverseDiagStripe"),
-        (Stripe::Diag, "diagStripe"),
-        (Stripe::HorzCross, "horzCross"),
-        (Stripe::DiagCross, "diagCross"),
-        (Stripe::ThinHorz, "thinHorzStripe"),
-        (Stripe::ThinVert, "thinVertStripe"),
-        (Stripe::ThinReverseDiag, "thinReverseDiagStripe"),
-        (Stripe::ThinDiag, "thinDiagStripe"),
-        (Stripe::ThinHorzCross, "thinHorzCross"),
-        (Stripe::ThinDiagCross, "thinDiagCross"),
-    ];
-
-    pub fn parse(v: &str) -> Option<Stripe> {
-        Stripe::ALL.iter().find(|(_, n)| *n == v).map(|(s, _)| *s)
-    }
-
-    pub fn val(self) -> &'static str {
-        Stripe::ALL.iter().find(|(s, _)| *s == self).map_or("clear", |(_, n)| n)
-    }
 }
 
 /// A stripe or cross and its colour.
@@ -1324,7 +1283,13 @@ mod tests {
 
     #[test]
     fn shading_shows_its_fill_a_blend_or_nothing_and_stripes_their_hatch() {
-        let shd = |v: &str| super::Shd { pattern: v.into(), color: Some(0xFF0000), fill: Some(0x0000FF), color_theme: None, fill_theme: None };
+        let shd = |v: &str| super::Shd {
+            pattern: super::super::line_style::shading_pattern(v),
+            color: Some(0xFF0000),
+            fill: Some(0x0000FF),
+            color_theme: None,
+            fill_theme: None,
+        };
         assert_eq!(shd("nil").flat(), None, "nil draws nothing, whatever its fill");
         assert_eq!(shd("clear").flat(), Some(0x0000FF));
         assert_eq!(shd("solid").flat(), Some(0xFF0000));
@@ -1337,9 +1302,6 @@ mod tests {
             assert_eq!(shd(v).flat(), None, "{v}");
         }
         assert_eq!(shd("bogus").flat(), Some(0x0000FF), "an unknown pattern shows its fill");
-        for (s, v) in super::Stripe::ALL {
-            assert_eq!((super::Stripe::parse(v), s.val()), (Some(s), v));
-        }
     }
 
     #[test]

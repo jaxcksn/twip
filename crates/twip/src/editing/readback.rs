@@ -177,7 +177,7 @@ pub use crate::api::state::Shading as ShadingValue;
 impl ShadingValue {
     /// A model shading as read back; none for no shading (`nil`, or a clear pattern without a fill).
     pub fn of(s: &Shd) -> Option<ShadingValue> {
-        let pattern = ShadingPattern::of_val(&s.pattern);
+        let pattern = ShadingPattern::of_val(&crate::docx::line_style::shading_val(s.pattern));
         if pattern == ShadingPattern::Nil || (pattern == ShadingPattern::Clear && s.fill.is_none()) {
             return None;
         }

@@ -1,6 +1,6 @@
-//! Line style and mark values: `ST_Underline`, `ST_Border` and `ST_Em`
+//! Line style, mark and shading values: `ST_Underline`, `ST_Border`, `ST_Em` and `ST_Shd`
 
-use crate::document::format::Emphasis;
+use crate::document::format::{Emphasis, ShadingPattern, Stripe};
 use crate::document::line::{ArtBorder, BorderStyle, Underline};
 
 /// The underline a `w:u/@w:val` names: single for a value the format doesn't define.
@@ -284,6 +284,49 @@ pub fn emphasis_val(e: Emphasis) -> &'static str {
     }
 }
 
+/// The stripes and crosses of `ST_Shd`.
+pub const STRIPES: [(Stripe, &str); 12] = [
+    (Stripe::Horz, "horzStripe"),
+    (Stripe::Vert, "vertStripe"),
+    (Stripe::ReverseDiag, "reverseDiagStripe"),
+    (Stripe::Diag, "diagStripe"),
+    (Stripe::HorzCross, "horzCross"),
+    (Stripe::DiagCross, "diagCross"),
+    (Stripe::ThinHorz, "thinHorzStripe"),
+    (Stripe::ThinVert, "thinVertStripe"),
+    (Stripe::ThinReverseDiag, "thinReverseDiagStripe"),
+    (Stripe::ThinDiag, "thinDiagStripe"),
+    (Stripe::ThinHorzCross, "thinHorzCross"),
+    (Stripe::ThinDiagCross, "thinDiagCross"),
+];
+
+/// The `w:shd/@w:val` of stripe `s`.
+pub fn stripe_val(s: Stripe) -> &'static str {
+    STRIPES.iter().find(|(t, _)| *t == s).map_or("clear", |(_, n)| n)
+}
+
+/// The pattern a `w:shd/@w:val` names, for a value the format doesn't define the one layout shows it as: a `pct` of
+/// no percentage it can read shows nothing, anything else its fill.
+pub fn shading_pattern(v: &str) -> ShadingPattern {
+    match v {
+        "nil" => ShadingPattern::Nil,
+        "solid" => ShadingPattern::Solid,
+        _ if v.starts_with("pct") => v[3..].parse::<u8>().ok().filter(|n| *n <= 100).map_or(ShadingPattern::Nil, ShadingPattern::Percent),
+        _ => STRIPES.iter().find(|(_, n)| *n == v).map_or(ShadingPattern::Clear, |(s, _)| ShadingPattern::Stripe(*s)),
+    }
+}
+
+/// The `w:shd/@w:val` of `p`.
+pub fn shading_val(p: ShadingPattern) -> std::borrow::Cow<'static, str> {
+    match p {
+        ShadingPattern::Nil => "nil".into(),
+        ShadingPattern::Clear => "clear".into(),
+        ShadingPattern::Solid => "solid".into(),
+        ShadingPattern::Percent(n) => format!("pct{n}").into(),
+        ShadingPattern::Stripe(s) => stripe_val(s).into(),
+    }
+}
+
 /// The `w:val` of border line `s`.
 pub fn border_val(s: BorderStyle) -> &'static str {
     use BorderStyle::*;
@@ -344,6 +387,19 @@ mod tests {
         "wavyDouble",
         "none",
     ];
+
+    #[test]
+    fn every_shading_pattern_round_trips_and_an_unknown_one_shows_as_layout_shows_it() {
+        let pcts = [5, 10, 12, 15, 20, 25, 30, 35, 37, 40, 45, 50, 55, 60, 62, 65, 70, 75, 80, 85, 87, 90, 95].map(|n| format!("pct{n}"));
+        let named = ["nil", "clear", "solid"].into_iter().chain(STRIPES.map(|(_, n)| n));
+        for v in named.map(str::to_string).chain(pcts) {
+            assert_eq!(shading_val(shading_pattern(&v)), v);
+        }
+        assert_eq!(
+            (shading_pattern("bogus"), shading_pattern("pct500"), shading_pattern("pctx")),
+            (ShadingPattern::Clear, ShadingPattern::Nil, ShadingPattern::Nil)
+        );
+    }
 
     #[test]
     fn every_emphasis_mark_round_trips_and_an_unknown_one_is_a_dot() {

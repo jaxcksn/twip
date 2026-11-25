@@ -35,9 +35,9 @@ impl Editor {
         (v.between, v.inside_vertical) = (line(&b.inside_h), line(&b.inside_v));
         (v.diagonal_down, v.diagonal_up) = (line(&r.tc.borders.tl2br), line(&r.tc.borders.tr2bl));
         v.apply_to = ShadingTarget::Cell;
-        let shd = shd.filter(|s| s.pattern != "nil");
+        let shd = shd.filter(|s| s.pattern != crate::docx::props::ShadingPattern::Nil);
         v.fill = shd.as_ref().map_or(r.tc.shading.flatten(), |s| s.fill).map_or(NoneOr::None, |c| NoneOr::Value(Color(c)));
-        v.pattern = shd.as_ref().map_or(ShadingPattern::Clear, |s| ShadingPattern::of_val(&s.pattern));
+        v.pattern = shd.as_ref().map_or(ShadingPattern::Clear, |s| ShadingPattern::of_val(&crate::docx::line_style::shading_val(s.pattern)));
         v.pattern_color = shd.as_ref().and_then(|s| s.color).map_or(AutoOr::Auto, |c| AutoOr::Value(Color(c)));
         v.setting = crate::services::dialogs::border_setting(&v, false);
         if let Some(l) =
@@ -92,10 +92,10 @@ impl Editor {
         };
         (v.top, v.left, v.bottom, v.right, v.between, v.inside_vertical) =
             (line(&edges[0]), line(&edges[1]), line(&edges[2]), line(&edges[3]), line(&edges[4]), line(&edges[5]));
-        let shd = shd.filter(|s| s.pattern != "nil");
+        let shd = shd.filter(|s| s.pattern != crate::docx::props::ShadingPattern::Nil);
         v.apply_to = target;
         v.fill = shd.as_ref().and_then(|s| s.fill).map_or(NoneOr::None, |c| NoneOr::Value(Color(c)));
-        v.pattern = shd.as_ref().map_or(ShadingPattern::Clear, |s| ShadingPattern::of_val(&s.pattern));
+        v.pattern = shd.as_ref().map_or(ShadingPattern::Clear, |s| ShadingPattern::of_val(&crate::docx::line_style::shading_val(s.pattern)));
         v.pattern_color = shd.as_ref().and_then(|s| s.color).map_or(AutoOr::Auto, |c| AutoOr::Value(Color(c)));
         v.setting = crate::services::dialogs::border_setting(&v, false);
         // The line new edges take: the first edge's, else the default pen.
@@ -113,7 +113,13 @@ impl Editor {
     pub(super) fn cell_shd(&self, t: &crate::docx::Table, (r, k): (usize, usize), cell: &crate::docx::Cell) -> Option<crate::docx::props::Shd> {
         let res = self.doc.resolver.as_ref();
         let flat = || {
-            cell.shading.map(|f| crate::docx::props::Shd { pattern: "clear".into(), color: None, fill: Some(f), color_theme: None, fill_theme: None })
+            cell.shading.map(|f| crate::docx::props::Shd {
+                pattern: crate::docx::props::ShadingPattern::Clear,
+                color: None,
+                fill: Some(f),
+                color_theme: None,
+                fill_theme: None,
+            })
         };
         let Some(res) = res else { return flat() };
         let look = t.look.unwrap_or(crate::docx::props::Look {
@@ -172,9 +178,9 @@ impl Editor {
             }
         };
         // The shading as written: its pattern and colors; else the resolved fill.
-        let shd = if text { run.shd.clone() } else { p.shd.clone() }.filter(|s| s.pattern != "nil");
+        let shd = if text { run.shd.clone() } else { p.shd.clone() }.filter(|s| s.pattern != crate::docx::props::ShadingPattern::Nil);
         let fill = shd.as_ref().map_or(if text { run.shading } else { p.shading }, |s| s.fill);
-        let pattern = shd.as_ref().map_or(ShadingPattern::Clear, |s| ShadingPattern::of_val(&s.pattern));
+        let pattern = shd.as_ref().map_or(ShadingPattern::Clear, |s| ShadingPattern::of_val(&crate::docx::line_style::shading_val(s.pattern)));
         let pattern_color = shd.as_ref().and_then(|s| s.color).map_or(AutoOr::Auto, |c| AutoOr::Value(Color(c)));
         // Text has one border, a box: every edge is its line.
         let boxed = text.then(|| line(&run.border));

@@ -3065,7 +3065,7 @@ impl<'a, 'i> Saver<'a, 'i> {
                 None if first_own => {
                     let w = &self.w;
                     let hex = |c: Option<u32>| c.map_or("auto".to_string(), |c| format!("{c:06X}"));
-                    let pattern = hatch.map_or("clear", |h| h.stripe.val());
+                    let pattern = hatch.map_or("clear", |h| super::line_style::stripe_val(h.stripe));
                     Some(format!("<{w}shd {w}val=\"{pattern}\" {w}color=\"{}\" {w}fill=\"{}\"/>", hex(hatch.map(|h| h.colour)), hex(fill)))
                 }
                 None => None,
