@@ -17,7 +17,7 @@ use crate::api::value::{
     StyleId, TableWidth, UnderlineStyle,
 };
 use crate::docx::props::{Jc, LineRule, VertAlign};
-use crate::docx::{FloatWrap, ParaStyle, Run, RunStyle};
+use crate::docx::{FloatWrap, ParaStyle, Run, RunStyle, Underline};
 use crate::layout::{ParaId, TableId};
 
 use super::Editor;
@@ -75,30 +75,30 @@ pub(super) fn fold<T: PartialEq>(values: impl IntoIterator<Item = T>) -> Tri<T> 
 }
 
 fn underline_of(r: &RunStyle) -> UnderlineStyle {
-    underline_style(r.underline.as_deref())
+    underline_style(r.underline)
 }
 
-/// The underline a `w:u` value draws.
-pub(super) fn underline_style(v: Option<&str>) -> UnderlineStyle {
-    match v {
-        None | Some("none") => UnderlineStyle::None,
-        Some("words") => UnderlineStyle::Words,
-        Some("double") => UnderlineStyle::Double,
-        Some("thick") => UnderlineStyle::Thick,
-        Some("dotted") => UnderlineStyle::Dotted,
-        Some("dash") => UnderlineStyle::Dash,
-        Some("dotDash") => UnderlineStyle::DotDash,
-        Some("wave") => UnderlineStyle::Wave,
-        Some("dottedHeavy") => UnderlineStyle::DottedHeavy,
-        Some("dashedHeavy") => UnderlineStyle::DashedHeavy,
-        Some("dashLong") => UnderlineStyle::DashLong,
-        Some("dashLongHeavy") => UnderlineStyle::DashLongHeavy,
-        Some("dashDotHeavy") => UnderlineStyle::DashDotHeavy,
-        Some("dotDotDash") => UnderlineStyle::DotDotDash,
-        Some("dashDotDotHeavy") => UnderlineStyle::DashDotDotHeavy,
-        Some("wavyHeavy") => UnderlineStyle::WavyHeavy,
-        Some("wavyDouble") => UnderlineStyle::WavyDouble,
-        Some(_) => UnderlineStyle::Single,
+/// The underline style of a run's underline.
+pub(super) fn underline_style(u: Option<Underline>) -> UnderlineStyle {
+    match u {
+        None | Some(Underline::None) => UnderlineStyle::None,
+        Some(Underline::Single) => UnderlineStyle::Single,
+        Some(Underline::Words) => UnderlineStyle::Words,
+        Some(Underline::Double) => UnderlineStyle::Double,
+        Some(Underline::Thick) => UnderlineStyle::Thick,
+        Some(Underline::Dotted) => UnderlineStyle::Dotted,
+        Some(Underline::Dash) => UnderlineStyle::Dash,
+        Some(Underline::DotDash) => UnderlineStyle::DotDash,
+        Some(Underline::Wave) => UnderlineStyle::Wave,
+        Some(Underline::DottedHeavy) => UnderlineStyle::DottedHeavy,
+        Some(Underline::DashedHeavy) => UnderlineStyle::DashedHeavy,
+        Some(Underline::DashLong) => UnderlineStyle::DashLong,
+        Some(Underline::DashLongHeavy) => UnderlineStyle::DashLongHeavy,
+        Some(Underline::DashDotHeavy) => UnderlineStyle::DashDotHeavy,
+        Some(Underline::DotDotDash) => UnderlineStyle::DotDotDash,
+        Some(Underline::DashDotDotHeavy) => UnderlineStyle::DashDotDotHeavy,
+        Some(Underline::WavyHeavy) => UnderlineStyle::WavyHeavy,
+        Some(Underline::WavyDouble) => UnderlineStyle::WavyDouble,
     }
 }
 
@@ -1215,9 +1215,10 @@ mod underline_tests {
         let base = p.inlines.iter().find_map(crate::docx::Inline::run).expect("a run");
         for u in all {
             let value = serde_json::to_value(u).expect("serialises");
-            let r = RunStyle { underline: value.as_str().filter(|v| *v != "none").map(str::to_string), ..(**base).clone() };
+            let model = crate::docx::line_style::underline(value.as_str().expect("a string"));
+            let r = RunStyle { underline: Some(model).filter(|u| *u != Underline::None), ..(**base).clone() };
             assert_eq!(underline_of(&r), u, "{value}");
-            assert_eq!(crate::editing::commands::underline_value(u), value.as_str().expect("a string"));
+            assert_eq!(crate::editing::commands::underline(u), model);
         }
     }
 }

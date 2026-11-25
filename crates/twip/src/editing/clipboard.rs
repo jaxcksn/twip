@@ -1072,7 +1072,7 @@ impl Editor {
                 p.set("vanish", flag("vanish", src.hidden));
             }
             if out.underline != src.underline {
-                p.set("u", format!("<{w}u {w}val=\"{}\"/>", src.underline.as_deref().unwrap_or("none")));
+                p.set("u", format!("<{w}u {w}val=\"{}\"/>", src.underline.map_or("none", crate::docx::line_style::underline_val)));
             }
             if (out.size - src.size).abs() > 0.01 {
                 let hp = (src.size * 2.0).round() as i64;

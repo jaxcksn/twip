@@ -901,7 +901,11 @@ impl Editor {
                         for (on, name, xml) in [
                             (f.bold, "b", format!("<{w}b/>")),
                             (f.italic, "i", format!("<{w}i/>")),
-                            (f.underline || r.link.is_some(), "u", format!("<{w}u {w}val=\"single\"/>")),
+                            (
+                                f.underline || r.link.is_some(),
+                                "u",
+                                format!("<{w}u {w}val=\"{}\"/>", crate::docx::line_style::underline_val(crate::docx::Underline::Single)),
+                            ),
                             (f.strike, "strike", format!("<{w}strike/>")),
                             (f.sup, "vertAlign", format!("<{w}vertAlign {w}val=\"superscript\"/>")),
                             (f.sub && !f.sup, "vertAlign", format!("<{w}vertAlign {w}val=\"subscript\"/>")),

@@ -9,6 +9,7 @@ pub mod anchor;
 pub mod content;
 pub mod format;
 pub mod ident;
+pub mod line;
 pub mod paragraph;
 pub mod policy;
 pub mod position;

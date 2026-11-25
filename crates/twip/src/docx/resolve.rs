@@ -163,7 +163,7 @@ impl Resolver {
             dstrike: p.dstrike.unwrap_or(false),
             hidden: p.toggle(toggle::VANISH),
             no_proof: p.no_proof.unwrap_or(false),
-            underline: p.underline.clone().filter(|u| u != "none"),
+            underline: p.underline.filter(|u| *u != Underline::None),
             underline_color: p.underline_color.flatten(),
             underline_color_theme: p.underline_color_theme.filter(|_| p.underline_color.flatten().is_some()),
             emboss: p.toggle(super::props::toggle::EMBOSS),

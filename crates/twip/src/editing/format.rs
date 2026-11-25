@@ -52,7 +52,10 @@ impl Toggle {
                 p.set("i", flag("i"));
                 p.set("iCs", flag("iCs"));
             }
-            Toggle::Underline => p.set("u", format!("<{w}u {w}val=\"{}\"/>", if on { "single" } else { "none" })),
+            Toggle::Underline => {
+                let u = if on { crate::docx::Underline::Single } else { crate::docx::Underline::None };
+                p.set("u", format!("<{w}u {w}val=\"{}\"/>", crate::docx::line_style::underline_val(u)))
+            }
             Toggle::Strike => p.set("strike", flag("strike")),
             Toggle::Subscript | Toggle::Superscript => {
                 let v = match (self, on) {

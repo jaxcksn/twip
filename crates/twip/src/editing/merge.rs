@@ -2326,8 +2326,10 @@ impl Editor {
                         for (on, name) in flags {
                             let Some(on) = on else { continue };
                             let xml = match (name, on) {
-                                ("u", true) => format!("<{w}u {w}val=\"single\"/>"),
-                                ("u", false) => format!("<{w}u {w}val=\"none\"/>"),
+                                ("u", on) => {
+                                    let u = if on { crate::docx::Underline::Single } else { crate::docx::Underline::None };
+                                    format!("<{w}u {w}val=\"{}\"/>", crate::docx::line_style::underline_val(u))
+                                }
                                 (_, true) => format!("<{w}{name}/>"),
                                 (_, false) => format!("<{w}{name} {w}val=\"0\"/>"),
                             };

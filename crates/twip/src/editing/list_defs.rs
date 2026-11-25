@@ -49,7 +49,7 @@ impl LabelFormat {
         LabelFormat {
             bold: flag(toggle::B),
             italic: flag(toggle::I),
-            underline: r.underline.as_deref().map(|u| super::state::underline_style(Some(u))),
+            underline: r.underline.map(|u| super::state::underline_style(Some(u))),
             size: r.size.map(Points),
             color: r.color.map(|c| c.map_or(AutoOr::Auto, |c| AutoOr::Value(Color(c)))),
             highlight: r.highlight.map(super::state::highlight_color),
@@ -75,7 +75,7 @@ impl LabelFormat {
         }
         if self.underline != was.underline {
             match self.underline {
-                Some(u) => rpr.set("u", format!("<{w}u {w}val=\"{}\"/>", super::commands::underline_value(u))),
+                Some(u) => rpr.set("u", format!("<{w}u {w}val=\"{}\"/>", crate::docx::line_style::underline_val(super::commands::underline(u)))),
                 None => rpr.remove("u"),
             }
         }

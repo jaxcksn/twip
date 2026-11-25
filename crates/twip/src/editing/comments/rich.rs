@@ -65,7 +65,7 @@ impl RichText {
                     for (on, name, xml) in [
                         (r.bold, "b", format!("<{w}b/>")),
                         (r.italic, "i", format!("<{w}i/>")),
-                        (r.underline, "u", format!("<{w}u {w}val=\"single\"/>")),
+                        (r.underline, "u", format!("<{w}u {w}val=\"{}\"/>", crate::docx::line_style::underline_val(crate::docx::Underline::Single))),
                         (r.strike, "strike", format!("<{w}strike/>")),
                     ] {
                         if on {
@@ -165,7 +165,7 @@ fn paragraph(p: &Paragraph) -> RichParagraph {
             text: text.to_string(),
             bold: r.bold,
             italic: r.italic,
-            underline: r.underline.as_deref().is_some_and(|u| u != "none"),
+            underline: r.underline.is_some_and(|u| u != crate::docx::Underline::None),
             strike: r.strike,
             link: link[k].clone(),
         };

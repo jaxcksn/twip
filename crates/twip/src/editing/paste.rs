@@ -1175,8 +1175,8 @@ fn merged_run(
         p.set("i", format!("<{w}i/>"));
         p.set("iCs", format!("<{w}iCs/>"));
     }
-    if let Some(u) = src.underline.as_deref().filter(|_| !all[2]) {
-        p.set("u", format!("<{w}u {w}val=\"{}\"/>", crate::docx::write::props::esc(u)));
+    if let Some(u) = src.underline.filter(|_| !all[2]) {
+        p.set("u", format!("<{w}u {w}val=\"{}\"/>", crate::docx::line_style::underline_val(u)));
     }
     if src.style_id.as_deref() == Some("Hyperlink") && res.styles.by_id.contains_key("Hyperlink") {
         p.set("rStyle", format!("<{w}rStyle {w}val=\"Hyperlink\"/>"));

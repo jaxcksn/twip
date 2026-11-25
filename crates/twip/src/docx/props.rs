@@ -66,7 +66,7 @@ pub struct RunProps {
     pub dstrike: Option<bool>,
     /// `w:noProof`.
     pub no_proof: Option<bool>,
-    pub underline: Option<String>,
+    pub underline: Option<super::model::Underline>,
     /// `w:u`'s colour; `Some(None)` = the text's.
     pub underline_color: Option<Option<u32>>,
     /// The theme colour `underline_color` is, set with it.
@@ -197,7 +197,7 @@ impl RunProps {
                 "dstrike" => p.dstrike = Some(on_off(e)),
                 "noProof" => p.no_proof = Some(on_off(e)),
                 "u" => {
-                    p.underline = Some(val(e).unwrap_or("single").to_string());
+                    p.underline = Some(val(e).map_or(super::model::Underline::Single, super::line_style::underline));
                     p.underline_color = Some(tc.colour(e, "color", "themeColor", "themeTint", "themeShade"));
                     p.underline_color_theme = theme_ref(e, "themeColor", "themeTint", "themeShade");
                 }

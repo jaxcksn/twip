@@ -3,6 +3,7 @@
 pub use crate::document::anchor::{FloatWrap, VerticalAlign, WrapText};
 pub use crate::document::content::{BreakKind, NoteKind};
 pub use crate::document::ident::{ControlId, FieldId, next_para_id};
+pub use crate::document::line::Underline;
 pub use crate::document::paragraph::{ListJc, ListSuffix, TextAlignment};
 pub use crate::document::policy::{Compat, LayoutPolicy};
 pub use crate::document::section::{HeightRule, PageBorderDisplay, VerticalAlignment};
@@ -38,7 +39,7 @@ pub struct RunStyle {
     pub hidden: bool,
     /// `w:noProof`: no automatic hyphenation either.
     pub no_proof: bool,
-    pub underline: Option<String>,
+    pub underline: Option<Underline>,
     /// The underline's own colour (`w:u/@w:color`); `None`: the text's.
     pub underline_color: Option<u32>,
     /// The theme colour `underline_color` is.

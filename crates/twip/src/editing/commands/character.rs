@@ -4,8 +4,9 @@ use crate::api::command::{CaseChange, CharacterEffects, Language, Ligatures, Num
 use crate::api::drawing::{ColourValue, TextEffectsChange};
 use crate::api::value::{AutoOr, Color, HighlightColor, Points, StyleId, UnderlineStyle};
 use crate::docx::Inline;
+use crate::docx::line_style::underline_val;
 use crate::docx::write::props::Props;
-use crate::docx::{RunStyle, ThemeFont};
+use crate::docx::{RunStyle, ThemeFont, Underline};
 use crate::font::Fonts;
 use crate::layout::Unit;
 
@@ -128,26 +129,27 @@ pub(crate) fn colour_attrs(tag: &str, w: &str, hex: &str, names: [&str; 3], c: O
     t
 }
 
-pub(crate) fn underline_value(style: UnderlineStyle) -> &'static str {
+/// The underline an underline style draws.
+pub(crate) fn underline(style: UnderlineStyle) -> Underline {
     match style {
-        UnderlineStyle::None => "none",
-        UnderlineStyle::Single => "single",
-        UnderlineStyle::Words => "words",
-        UnderlineStyle::Double => "double",
-        UnderlineStyle::Thick => "thick",
-        UnderlineStyle::Dotted => "dotted",
-        UnderlineStyle::Dash => "dash",
-        UnderlineStyle::DotDash => "dotDash",
-        UnderlineStyle::Wave => "wave",
-        UnderlineStyle::DottedHeavy => "dottedHeavy",
-        UnderlineStyle::DashedHeavy => "dashedHeavy",
-        UnderlineStyle::DashLong => "dashLong",
-        UnderlineStyle::DashLongHeavy => "dashLongHeavy",
-        UnderlineStyle::DashDotHeavy => "dashDotHeavy",
-        UnderlineStyle::DotDotDash => "dotDotDash",
-        UnderlineStyle::DashDotDotHeavy => "dashDotDotHeavy",
-        UnderlineStyle::WavyHeavy => "wavyHeavy",
-        UnderlineStyle::WavyDouble => "wavyDouble",
+        UnderlineStyle::None => Underline::None,
+        UnderlineStyle::Single => Underline::Single,
+        UnderlineStyle::Words => Underline::Words,
+        UnderlineStyle::Double => Underline::Double,
+        UnderlineStyle::Thick => Underline::Thick,
+        UnderlineStyle::Dotted => Underline::Dotted,
+        UnderlineStyle::Dash => Underline::Dash,
+        UnderlineStyle::DotDash => Underline::DotDash,
+        UnderlineStyle::Wave => Underline::Wave,
+        UnderlineStyle::DottedHeavy => Underline::DottedHeavy,
+        UnderlineStyle::DashedHeavy => Underline::DashedHeavy,
+        UnderlineStyle::DashLong => Underline::DashLong,
+        UnderlineStyle::DashLongHeavy => Underline::DashLongHeavy,
+        UnderlineStyle::DashDotHeavy => Underline::DashDotHeavy,
+        UnderlineStyle::DotDotDash => Underline::DotDotDash,
+        UnderlineStyle::DashDotDotHeavy => Underline::DashDotDotHeavy,
+        UnderlineStyle::WavyHeavy => Underline::WavyHeavy,
+        UnderlineStyle::WavyDouble => Underline::WavyDouble,
     }
 }
 
@@ -213,7 +215,7 @@ impl Editor {
     }
 
     pub(in crate::editing) fn set_underline(&mut self, style: UnderlineStyle, fonts: &Fonts) -> Outcome {
-        let v = underline_value(style);
+        let v = underline_val(underline(style));
         self.format_runs("Underline", &|p, w, _| p.set("u", format!("<{w}u {w}val=\"{v}\"/>")), fonts)
     }
 
@@ -523,8 +525,8 @@ impl Editor {
             "Underline Color",
             &|p, w, run| {
                 // Only underlined text has an underline colour: its underline written with it.
-                let Some(u) = run.underline.as_deref() else { return };
-                let now = p.get("u").map_or_else(|| format!("<{w}u {w}val=\"{u}\"/>"), str::to_string);
+                let Some(u) = run.underline else { return };
+                let now = p.get("u").map_or_else(|| format!("<{w}u {w}val=\"{}\"/>", underline_val(u)), str::to_string);
                 let now = THEME_COLOR.iter().fold(now, |t, a| strip(&t, &format!("{w}{a}")));
                 p.set("u", colour_attrs(&now, w, "color", THEME_COLOR, c));
             },

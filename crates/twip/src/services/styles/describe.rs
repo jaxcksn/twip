@@ -1,5 +1,6 @@
 //! Style descriptions
 
+use crate::docx::Underline;
 use crate::docx::props::{Border, FontRef, Jc, LineRule, ParaProps, RunProps, Tab, TabKind, toggle};
 use crate::docx::styles::{Style, StyleKind, Styles};
 
@@ -126,8 +127,8 @@ fn character(r: &RunProps, theme: Option<&str>, default_font: Option<&str>, out:
     if let Some(Some(c)) = r.color {
         out.push(format!("Font color: {}", colour(c, theme)));
     }
-    if let Some(u) = r.underline.as_deref().filter(|u| *u != "none") {
-        out.push(if u == "single" { "Underline".into() } else { format!("Underline: {u}") });
+    if let Some(u) = r.underline.filter(|u| *u != Underline::None) {
+        out.push(if u == Underline::Single { "Underline".into() } else { format!("Underline: {}", crate::docx::line_style::underline_val(u)) });
     }
     for (bit, name) in [(toggle::CAPS, "All caps"), (toggle::SMALL_CAPS, "Small caps"), (toggle::STRIKE, "Strikethrough"), (toggle::VANISH, "Hidden")]
     {

@@ -13,6 +13,7 @@ pub(crate) mod frames;
 pub mod glossary;
 pub mod grid;
 pub mod image;
+pub mod line_style;
 pub mod model;
 pub mod numbering;
 pub mod package;

@@ -16,7 +16,7 @@ mod text;
 
 pub use crate::api::command::BreakClear;
 pub use character::{LigatureFlags, OpenTypeChange};
-pub(crate) use character::{THEME_COLOR, THEME_FILL, colour_attrs, highlight_color, highlight_value, rgb_value, underline_value, with_attr};
+pub(crate) use character::{THEME_COLOR, THEME_FILL, colour_attrs, highlight_color, highlight_value, rgb_value, underline, with_attr};
 pub use insert::{LinkHere, LinkParts};
 pub use page::{MarginSide, PageNumberAlign, PageNumberSpot, page_number_sample};
 pub use tables::RowExceptionsEdit;

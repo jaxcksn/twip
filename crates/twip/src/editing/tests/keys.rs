@@ -135,14 +135,14 @@ fn change_case_at_a_caret_changes_its_word() {
 #[test]
 fn double_and_word_underlines_toggle() {
     let mut e = edit("<w:p><w:r><w:t>one two</w:t></w:r></w:p>");
-    let underline = |e: &Editor| para(e, 0).inlines.iter().find_map(|i| i.run().map(|r| r.underline.clone())).flatten();
+    let underline = |e: &Editor| para(e, 0).inlines.iter().find_map(|i| i.run().map(|r| r.underline)).flatten();
     select(&mut e, 0, 0, 7);
     press(&mut e, "KeyD", CTRL_SHIFT);
-    assert_eq!(underline(&e).as_deref(), Some("double"));
+    assert_eq!(underline(&e), Some(crate::docx::Underline::Double));
     press(&mut e, "KeyD", CTRL_SHIFT);
     assert_eq!(underline(&e), None);
     press(&mut e, "KeyW", CTRL_SHIFT);
-    assert_eq!(underline(&e).as_deref(), Some("words"));
+    assert_eq!(underline(&e), Some(crate::docx::Underline::Words));
     press(&mut e, "KeyQ", CTRL_SHIFT);
     assert!(para(&e, 0).inlines.iter().filter_map(|i| i.run()).all(|r| r.ascii == "Symbol"));
 }

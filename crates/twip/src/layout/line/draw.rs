@@ -648,8 +648,8 @@ fn draw_decorations(o: &LineOrigin, line: &Line, base: f64, bg_at: usize, behind
         let looks =
             if label || r.rev.is_empty() { [None; 3] } else { shown_marks(r, review).map(|m| m.map(|m| review.markup.style.look(m.kind).mark)) };
         let has = |t: TextMark| looks.contains(&Some(t));
-        let rev_u = if has(TextMark::DoubleUnderline) { Some("double") } else { has(TextMark::Underline).then_some("single") };
-        let underline = rev_u.or(r.underline.as_deref()).filter(|u| !label && !(*u == "words" && matches!(p.kind, Kind::Space | Kind::Tab)));
+        let rev_u = if has(TextMark::DoubleUnderline) { Some(Underline::Double) } else { has(TextMark::Underline).then_some(Underline::Single) };
+        let underline = rev_u.or(r.underline).filter(|u| !label && !(*u == Underline::Words && matches!(p.kind, Kind::Space | Kind::Tab)));
         let mut drawn = None;
         if let Some(u) = underline {
             let (pos, thick) =
@@ -832,27 +832,27 @@ enum UnderlineForm {
 }
 
 impl UnderlineForm {
-    /// The form of `w:u` value `v`: `single`, `words` and values Word doesn't define draw a single line.
-    fn of(v: &str) -> UnderlineForm {
+    /// The form of underline `u`: single, words (and none) draw a single line.
+    fn of(u: Underline) -> UnderlineForm {
         use UnderlineForm::*;
         let dashed = |pattern, heavy| Dashed { pattern, heavy };
-        match v {
-            "double" => Double,
-            "thick" => Solid { heavy: true },
-            "dotted" => dashed(DOTTED, false),
-            "dottedHeavy" => dashed(DOTTED, true),
-            "dash" => dashed(DASH, false),
-            "dashedHeavy" => dashed(DASH, true),
-            "dashLong" => dashed(DASH_LONG, false),
-            "dashLongHeavy" => dashed(DASH_LONG, true),
-            "dotDash" => dashed(DOT_DASH, false),
-            "dashDotHeavy" => dashed(DOT_DASH, true),
-            "dotDotDash" => dashed(DOT_DOT_DASH, false),
-            "dashDotDotHeavy" => dashed(DOT_DOT_DASH, true),
-            "wave" => Wave { heavy: false, double: false },
-            "wavyHeavy" => Wave { heavy: true, double: false },
-            "wavyDouble" => Wave { heavy: false, double: true },
-            _ => Solid { heavy: false },
+        match u {
+            Underline::Double => Double,
+            Underline::Thick => Solid { heavy: true },
+            Underline::Dotted => dashed(DOTTED, false),
+            Underline::DottedHeavy => dashed(DOTTED, true),
+            Underline::Dash => dashed(DASH, false),
+            Underline::DashedHeavy => dashed(DASH, true),
+            Underline::DashLong => dashed(DASH_LONG, false),
+            Underline::DashLongHeavy => dashed(DASH_LONG, true),
+            Underline::DotDash => dashed(DOT_DASH, false),
+            Underline::DashDotHeavy => dashed(DOT_DASH, true),
+            Underline::DotDotDash => dashed(DOT_DOT_DASH, false),
+            Underline::DashDotDotHeavy => dashed(DOT_DOT_DASH, true),
+            Underline::Wave => Wave { heavy: false, double: false },
+            Underline::WavyHeavy => Wave { heavy: true, double: false },
+            Underline::WavyDouble => Wave { heavy: false, double: true },
+            Underline::None | Underline::Single | Underline::Words => Solid { heavy: false },
         }
     }
 }
@@ -1042,7 +1042,7 @@ mod tests {
     /// A document's page and tabs can be any width: a span's marks stay bounded, and the rest of it is solid.
     #[test]
     fn hostile_widths_draw_bounded_underlines() {
-        for (form, hollow) in [("dotted", false), ("dotted", true), ("wavyDouble", false)] {
+        for (form, hollow) in [(Underline::Dotted, false), (Underline::Dotted, true), (Underline::WavyDouble, false)] {
             let form = UnderlineForm::of(form);
             let span = Span { form, x0: 0.0, x1: 1e300, y: 10.0, t: 0.5, colour: 0, copies: [None; 3], size: 11.0, hollow };
             let mut out = Vec::new();
@@ -1062,14 +1062,14 @@ mod tests {
     #[test]
     fn non_finite_widths_draw_nothing() {
         for v in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-            for (form, hollow) in [("dotted", false), ("dash", true), ("wave", false), ("single", true)] {
+            for (form, hollow) in [(Underline::Dotted, false), (Underline::Dash, true), (Underline::Wave, false), (Underline::Single, true)] {
                 let span = Span { form: UnderlineForm::of(form), x0: 0.0, x1: v, y: 10.0, t: 0.5, colour: 0, copies: [None; 3], size: 11.0, hollow };
                 let mut out = Vec::new();
                 span.draw(&mut out);
-                assert!(out.is_empty(), "{form} to {v}");
+                assert!(out.is_empty(), "{form:?} to {v}");
                 Span { x0: v, x1: 0.0, ..span }.draw(&mut out);
                 Span { t: v, x1: 10.0, ..span }.draw(&mut out);
-                assert!(out.is_empty(), "{form} at {v}");
+                assert!(out.is_empty(), "{form:?} at {v}");
             }
         }
     }
