@@ -858,6 +858,44 @@ fn a_comment_reaching_past_the_selection_isnt_found_in_it() {
 }
 
 #[test]
+fn a_comment_over_many_paragraphs_is_read_whole() {
+    let comments = format!(r#"<w:comments {NS}><w:comment w:id="1" w:author="Ann"><w:p>{}</w:p></w:comment></w:comments>"#, t("c"));
+    let bold = || "<w:r><w:rPr><w:b/></w:rPr><w:t>x</w:t></w:r>";
+    let mut body = format!(r#"<w:p><w:commentRangeStart w:id="1"/>{}</w:p>"#, bold());
+    (1..299).for_each(|_| body.push_str(&format!("<w:p>{}</w:p>", bold())));
+    body.push_str(&format!(r#"<w:p>{}<w:commentRangeEnd w:id="1"/><w:r><w:commentReference w:id="1"/></w:r></w:p>"#, bold()));
+    let mut e = Editor::open(&build(&body, "", &[("comments.xml", "comments", "comments", &comments)]), fonts()).expect("opens");
+    let is_bold =
+        FindFormat { font: crate::api::services::FontDialog { style: Tri::Uniform(FontStyle::Bold), ..Default::default() }, ..Default::default() };
+    assert_eq!(search(FindSpec { format: Some(is_bold), ..spec("^a") }).all(&e).len(), 1, "all its text is bold");
+    e.set_caret_for_benchmark(Selection::Caret(Position::text(StoryId::Body, para_id(&e, 280), Unit(0))));
+    assert!(search(FindSpec { wrap: false, ..spec("^a") }).next(&e, true).is_none(), "it ends after the caret");
+}
+
+#[test]
+fn in_a_selection_a_match_overlapping_one_before_it_is_found() {
+    let within = |e: &mut Editor, a: (usize, u32), b: (usize, u32), text: &str, regex: bool| {
+        e.set_caret_for_benchmark(Selection::range(
+            Position::text(StoryId::Body, para_id(e, a.0), Unit(a.1)),
+            Position::text(StoryId::Body, para_id(e, b.0), Unit(b.1)),
+            Default::default(),
+        ));
+        let s = search(FindSpec { within: Some(e.selected_ranges()), regex, ..spec(text) });
+        s.all(e).into_iter().map(|h| (h.start, h.end, h.last == h.para)).collect::<Vec<_>>()
+    };
+    let mut e = ed(&p("ababa."));
+    assert_eq!(within(&mut e, (0, 2), (0, 6), "aba", true), [(2, 5, true)]);
+    let s = search(FindSpec { within: Some(e.selected_ranges()), regex: true, ..spec("aba") });
+    let hits = s.all(&e);
+    assert_eq!(s.replacements(&e, &hits, "x").expect("replaces").into_iter().filter(Option::is_some).count(), 1, "still a match");
+    let mut e = ed(&format!("{}{}", p("  "), p("x")));
+    assert_eq!(within(&mut e, (0, 1), (1, 1), "^w^px", false), [(1, 1, false)]);
+    let sect = r#"<w:pPr><w:sectPr><w:type w:val="continuous"/></w:sectPr></w:pPr>"#;
+    let mut e = ed(&format!("<w:p>{sect}{}</w:p>{}", t("  "), p("x")));
+    assert_eq!(within(&mut e, (0, 1), (1, 1), "^w^12x", false), [(1, 1, false)]);
+}
+
+#[test]
 fn comment_marks_with_formatting() {
     let c = |i: u32, s: &str| {
         format!(r#"<w:commentRangeStart w:id="{i}"/>{s}<w:commentRangeEnd w:id="{i}"/><w:r><w:commentReference w:id="{i}"/></w:r>"#)

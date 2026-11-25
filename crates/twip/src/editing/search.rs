@@ -864,9 +864,16 @@ impl Pattern {
 
     /// The matches in `hay` from character `from`, as character ranges with their replacement (`with` expanded:
     /// text as typed, each group a [`Piece::Copy`] of its units), each of more than nothing, all of the formatting
-    /// searched for and taken by `ok`; past one refused, from the character after its start. Each search is charged
-    /// to the text's end against the budget; past it, the remaining matches are given up.
-    pub fn matches(&self, hay: &Hay, from: usize, with: Option<&Template>, ok: impl Fn(usize, usize) -> bool) -> Vec<(usize, usize, Vec<Piece>)> {
+    /// searched for and taken by `ok`; past one refused (or any, `overlap`), from the character after its start. Each
+    /// search is charged to the text's end against the budget; past it, the remaining matches are given up.
+    pub fn matches(
+        &self,
+        hay: &Hay,
+        from: usize,
+        with: Option<&Template>,
+        overlap: bool,
+        ok: impl Fn(usize, usize) -> bool,
+    ) -> Vec<(usize, usize, Vec<Piece>)> {
         let text: String = hay.chars().iter().collect();
         // Byte offset of each character, and the end.
         let mut bytes: Vec<usize> = text.char_indices().map(|(b, _)| b).collect();
@@ -900,12 +907,14 @@ impl Pattern {
                     }
                 }
                 out.push((a, b, pieces));
-                at = m.end();
-            } else {
-                // Past an empty or refused match: from the character after its start.
-                let Some(&next) = bytes.get(char_of(m.start()) + 1) else { break };
-                at = next;
+                if !overlap {
+                    at = m.end();
+                    continue;
+                }
             }
+            // Past an empty or refused match: from the character after its start.
+            let Some(&next) = bytes.get(char_of(m.start()) + 1) else { break };
+            at = next;
         }
         out
     }
@@ -996,7 +1005,7 @@ mod tests {
         assert_eq!(p.weight, 2, "a program of a few hundred bytes");
         let h = hay(&"A".repeat(20_000));
         h.budget.set(2_000_000);
-        let found = p.matches(&h, 0, None, |_, _| true);
+        let found = p.matches(&h, 0, None, false, |_, _| true);
         assert!(h.spent(), "spent");
         assert!((40..60).contains(&found.len()), "gives up the rest past its budget: {}", found.len());
         // A large program costs time per character in proportion to its size, and is charged so.
@@ -1006,7 +1015,7 @@ mod tests {
         let h = hay(&"x".repeat(4_000_000));
         h.budget.set(REGEX_BUDGET);
         let started = std::time::Instant::now();
-        assert!(big.matches(&h, 0, None, |_, _| true).is_empty());
+        assert!(big.matches(&h, 0, None, false, |_, _| true).is_empty());
         assert!(h.spent(), "a search past the budget isn't started");
         assert!(started.elapsed() < std::time::Duration::from_secs(5), "{:?}", started.elapsed());
         assert!(matches!(Pattern::new("(?:.{0,50}){0,50}!", true), Err(SearchError::Regex(_))), "past REGEX_SIZE");
@@ -1025,11 +1034,11 @@ mod tests {
         let t = p.template("${host}:$1 $$ $9 $x ${2}");
         let copy = |a, b| Piece::Copy(Unit(a), Unit(b));
         let text = |s: &str| Piece::Text(s.into());
-        assert_eq!(p.matches(&h, 0, Some(&t), |_, _| true), [(5, 16, vec![copy(9, 16), text(":"), copy(5, 8), text(" $   "), copy(9, 16)])]);
+        assert_eq!(p.matches(&h, 0, Some(&t), false, |_, _| true), [(5, 16, vec![copy(9, 16), text(":"), copy(5, 8), text(" $   "), copy(9, 16)])]);
         assert_eq!(p.template("a$").parts, [Part::Text("a$".into())]);
         assert_eq!(p.template("${1").parts, [Part::Text("${1".into())]);
         let i = Pattern::new("BOB", false).expect("compiles");
-        assert_eq!(i.matches(&h, 0, None, |_, _| true).len(), 1, "ASCII case folded");
+        assert_eq!(i.matches(&h, 0, None, false, |_, _| true).len(), 1, "ASCII case folded");
     }
 
     #[test]
@@ -1037,7 +1046,7 @@ mod tests {
         let p = Pattern::new("a", true).expect("compiles");
         let h = hay(&"a".repeat(10_000));
         h.budget.set(REGEX_BUDGET);
-        assert_eq!(p.matches(&h, 0, None, |_, _| true).len(), 10_000);
+        assert_eq!(p.matches(&h, 0, None, false, |_, _| true).len(), 10_000);
         assert!(!h.spent());
     }
 }

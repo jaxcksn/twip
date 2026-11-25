@@ -2311,13 +2311,14 @@ impl<'a, 'i> Saver<'a, 'i> {
                 }
             }
         }
-        let chunk = self.take_chunks(&mut qs);
-        if p.iter().any(|b| matches!(b, Block::Table(_))) {
+        let tables = p.iter().any(|b| matches!(b, Block::Table(_)));
+        let mut ps: Vec<&Paragraph> = p.iter().filter_map(|b| if let Block::Para(x) = b { Some(x) } else { None }).collect();
+        let chunk = self.take_chunks(&mut qs, if tables { None } else { Some(&mut ps) });
+        if tables {
             self.gone_marks(&qs, p);
             let closing = take_closing(&mut qs);
             return self.with_new_tables(&qs, p, at, closing, chunk);
         }
-        let ps: Vec<&Paragraph> = p.iter().filter_map(|b| if let Block::Para(x) = b { Some(x) } else { None }).collect();
         if qs.is_empty() && ps.is_empty() {
             self.splices.extend(chunk.map(|r| (r, String::new())));
             return Ok(());
@@ -2426,12 +2427,19 @@ impl<'a, 'i> Saver<'a, 'i> {
 
     /// Takes the paragraphs standing for imported HTML (`w:altChunk`, a source that is no `w:p`) out of `qs`: their
     /// elements go, all but the first; that one goes too when `qs` has others left, and is returned, for the group to
-    /// be written in its place, when it hasn't.
-    fn take_chunks(&mut self, qs: &mut Vec<&Paragraph>) -> Option<Range<usize>> {
+    /// be written in its place, when it hasn't. One not brought in yet (`ps` holds its placeholder, empty) is kept as
+    /// read, its placeholder taken out of `ps`.
+    fn take_chunks(&mut self, qs: &mut Vec<&Paragraph>, mut ps: Option<&mut Vec<&Paragraph>>) -> Option<Range<usize>> {
         let mut chunks = Vec::new();
-        qs.retain(|q| match q.src.as_deref().and_then(|s| s.ranges.first()) {
-            Some(r) if !self.paras.contains_key(&r.start) && !q.src.as_deref().is_some_and(|s| s.closing) => {
-                chunks.push(r.clone());
+        qs.retain(|q| match q.src.as_ref().filter(|s| !s.closing).and_then(|s| Some((s, s.ranges.first()?))) {
+            Some((s, r)) if !self.paras.contains_key(&r.start) => {
+                let held = ps.as_deref_mut().and_then(|ps| {
+                    let k = ps.iter().position(|x| x.inlines.is_empty() && x.src.as_ref().is_some_and(|x| Rc::ptr_eq(x, s)))?;
+                    Some(ps.remove(k))
+                });
+                if held.is_none() {
+                    chunks.push(r.clone());
+                }
                 false
             }
             _ => true,
@@ -4568,11 +4576,11 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                 continue;
             }
             // A deleted float's element (or the run or wrapper holding only it).
-            if self.dropped.iter().any(|d| (r.start <= d.start && d.end <= r.end) || (d.start <= r.start && r.end <= d.end))
-                && !self.seg_starts.iter().any(|&x| x >= r.start && x < r.end)
-            {
+            let segs_in = self.seg_starts.iter().any(|&x| x >= r.start && x < r.end);
+            if !segs_in && self.only_dropped(c) {
                 continue;
             }
+            let holds_dropped = !segs_in && self.dropped.iter().any(|d| r.start <= d.start && d.end <= r.end);
             if let Some(&k) = self.seg_at.get(&r.start) {
                 let end = self.segs[k].range.end;
                 let text = ["t", "instrText", "delText", "delInstrText"].iter().any(|t| is_w(c, t));
@@ -4602,7 +4610,7 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
             }
             let inside = self.seg_starts.partition_point(|&x| x <= r.start);
             let fill = self.fills.keys().any(|&f| r.start <= f && f < r.end);
-            if c.is_element() && (fill || self.seg_starts.get(inside).is_some_and(|&x| x < r.end)) {
+            if c.is_element() && (fill || holds_dropped || self.seg_starts.get(inside).is_some_and(|&x| x < r.end)) {
                 let (mut open, close) = self.s.tags(c);
                 let run = is_w(c, "r");
                 if let Some(rpr) = child(c, "rPr").filter(|_| run) {
@@ -4631,6 +4639,16 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                 self.verbatim(r);
             }
         }
+    }
+
+    /// Whether `n` is dropped content ([`Emit::dropped`]), or holds only that besides its properties.
+    fn only_dropped(&self, n: Node) -> bool {
+        let r = n.range();
+        if self.dropped.iter().any(|d| d.start <= r.start && r.end <= d.end) {
+            return true;
+        }
+        self.dropped.iter().any(|d| r.start <= d.start && d.end <= r.end)
+            && n.children().filter(|c| c.is_element() && !c.tag_name().name().ends_with("Pr")).all(|c| self.only_dropped(c))
     }
 
     /// Closes the innermost walked element.

@@ -487,6 +487,27 @@ fn merge_table_keeps_the_cells_of_a_wider_row() {
 }
 
 #[test]
+fn merge_table_widens_the_grid_over_a_merged_row_s_cells() {
+    let tr =
+        |c: &str| format!(r#"<w:tr><w:tc><w:tcPr><w:tcW w:w="4000" w:type="dxa"/><w:gridSpan w:val="2"/></w:tcPr><w:p>{}</w:p></w:tc></w:tr>"#, t(c));
+    let grid = r#"<w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/></w:tblGrid>"#;
+    let mut e = ed(&format!("<w:tbl>{grid}{}{}</w:tbl><w:p/>{}<w:p/>", tr("a"), tr("b"), table(&[&["x", "y"]])));
+    let ids = super::texts_ids(&e);
+    let Some(Block::Table(src)) = e.document().sections[0].blocks.get(2) else { panic!("the copied table") };
+    let (table, anchor, focus) = (crate::layout::TableId(src.id), CellRef { row: 0, col: 0 }, CellRef { row: 0, col: 1 });
+    e.set_selection(Selection::Cells { table, anchor, focus, shape: CellShape::Rows });
+    let f = e.copy().expect("copies the row");
+    e.set_caret_for_benchmark(Selection::Caret(Position::text(StoryId::Body, ids[1], Unit(0))));
+    let clip = Clip { fragment: Some(f), text: "x\ty".into(), ..Clip::default() };
+    assert!(changed(&e.paste_clip(clip, Some(PasteChoice::MergeTable), fonts())));
+    assert_eq!(cell_texts(&e), [vec!["a"], vec!["x", "y"], vec!["b"]]);
+    let Some(Block::Table(t)) = e.document().sections[0].blocks.first() else { panic!("a table") };
+    let cols: Vec<usize> = t.rows.iter().map(|r| r.cells.iter().map(|c| c.span.max(1)).sum()).collect();
+    assert_eq!((t.grid.len(), cols), (3, vec![2, 3, 2]));
+    assert_eq!(t.grid[2], t.grid[1], "as wide as the column its cell covered");
+}
+
+#[test]
 fn inserted_rows_dont_continue_a_merge_above_them() {
     use crate::docx::VMerge;
     let tc = |merge: &str, text: &str| format!(r#"<w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/>{merge}</w:tcPr><w:p>{}</w:p></w:tc>"#, t(text));
@@ -634,6 +655,29 @@ fn text_from_file_brings_a_header_s_content_control() {
     assert!(changed(&e.insert_file(&other, fonts())));
     assert_eq!(e.document().sections.len(), 2);
     assert!(e.document().controls.values().any(|c| c.props.tag.as_deref() == Some("HdrTag")), "the header's control keeps its definition");
+}
+
+#[test]
+fn text_from_file_brings_a_comment_only_its_header_refers_to() {
+    use super::empty_stories::{NS, build};
+    let sect = r#"<w:pPr><w:sectPr><w:headerReference w:type="default" r:id="rIdP0"/></w:sectPr></w:pPr>"#;
+    let header = format!(
+        r#"<w:hdr {NS}><w:p><w:commentRangeStart w:id="5"/>{}<w:commentRangeEnd w:id="5"/><w:r><w:commentReference w:id="5"/></w:r></w:p></w:hdr>"#,
+        t("head")
+    );
+    let comments = format!(r#"<w:comments {NS}><w:comment w:id="5" w:author="A"><w:p>{}</w:p></w:comment></w:comments>"#, t("remark"));
+    let parts = [("header1.xml", "header", "header", header.as_str()), ("comments.xml", "comments", "comments", comments.as_str())];
+    let other = build(&format!("<w:p>{sect}{}</w:p><w:p>{}</w:p>", t("land"), t("port")), "", &parts);
+    let mut e = ed(&format!("<w:p>{}</w:p>", t("ab")));
+    caret(&mut e, (0, 1));
+    assert!(changed(&e.insert_file(&other, fonts())));
+    let d = e.document();
+    let name = d.sections[0].headers.iter().flatten().next().expect("its header comes");
+    let mut ids = Vec::new();
+    crate::editing::comments::ids_in_blocks(&d.stories[name], &mut ids);
+    assert!(!ids.is_empty() && ids.iter().all(|id| d.comments.by_id.contains_key(id)), "{ids:?} {:?}", d.comments.by_id.keys().collect::<Vec<_>>());
+    let v = crate::editing::integrity::check(e.document(), e.index(), &e.selection());
+    assert!(v.is_empty(), "{:?}", v.iter().map(|v| v.detail.clone()).collect::<Vec<_>>());
 }
 
 #[test]
@@ -1363,4 +1407,13 @@ fn copying_text_with_pictures_draws_nothing_until_its_html_is_asked_for() {
     let f = e.clipboard().cloned().expect("copied");
     assert!(f.drawn.is_empty() && f.image.is_none());
     assert_eq!(crate::services::clipboard::html(&e, &f, fonts()).matches("<img").count(), 3);
+}
+
+#[test]
+fn an_alt_chunk_not_brought_in_saves_as_read() {
+    let body = format!("<w:p>{}</w:p>{CHUNK}<w:p>{}</w:p>", t("a"), t("b"));
+    let html = "<html><body><p>one</p></body></html>";
+    let doc = crate::docx::read_editable(&with_chunk(&body, "chunk.html", html.as_bytes())).expect("reads");
+    let xml = main_part(&crate::docx::write::save(&doc).expect("saves"));
+    assert!(xml.contains("altChunk") && !xml.contains("<w:p></w:p>"), "{xml}");
 }

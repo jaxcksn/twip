@@ -196,6 +196,9 @@ impl Editor {
             Land::Object(o) => Selection::Object(o),
         });
         self.ensure(&at, fonts);
+        if let Some(focus) = self.selection.focus().filter(|f| *f != at) {
+            self.ensure(&focus, fonts);
+        }
         match land {
             Land::Object(_) => self.jump_to_object(at),
             _ => self.jump_to_caret(),

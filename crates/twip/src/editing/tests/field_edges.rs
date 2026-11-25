@@ -383,3 +383,21 @@ fn a_shown_codes_inserted_braces_take_the_insertions_look() {
     let (brace, code) = (face_of('{').expect("the opening brace"), face_of('T').expect("the code"));
     assert!(std::rc::Rc::ptr_eq(&brace, &code), "the brace in the code's bold face");
 }
+
+#[test]
+fn a_shown_code_saves_the_runs_beside_its_start_in_its_insertion() {
+    let ins = format!(r#"<w:ins w:id="3" w:author="A" w:date="2024-01-01T00:00:00Z"><w:r><w:movie/></w:r>{}</w:ins>"#, begin(CODE));
+    let doc = format!("<w:p>{ins}{}</w:p><w:p>{}</w:p><w:p>{END}</w:p>", run("One"), run("Two"));
+    let mut e = Editor::open(&doc_with(&doc, HEADINGS), fonts()).unwrap();
+    assert!(matches!(show_codes(&mut e, true), Outcome::Changed(_)));
+    let saved = crate::docx::write::save(e.document()).unwrap();
+    let xml = {
+        use std::io::Read;
+        let mut z = zip::ZipArchive::new(std::io::Cursor::new(&saved)).unwrap();
+        let mut s = String::new();
+        z.by_name("word/document.xml").unwrap().read_to_string(&mut s).unwrap();
+        s
+    };
+    assert_eq!(xml.matches("<w:movie/>").count(), 1, "{xml}");
+    assert_eq!(xml.matches("fldCharType=\"begin\"").count(), 1, "{xml}");
+}

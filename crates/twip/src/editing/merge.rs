@@ -1307,15 +1307,14 @@ impl Editor {
         if breaks.breaks.is_empty() && blocks.len() > 1 && matches!(blocks.last(), Some(Block::Para(p)) if super::step::para_len(p) == Unit(0)) {
             blocks.pop();
         }
+        let body = blocks.len();
+        // The headers' and footers' pictures, notes and comments come from the document with the body's.
+        blocks.append(&mut breaks.parts);
         let refs = super::clipboard::refs_of(&doc, &blocks);
         let mut controls = super::clipboard::controls_of(&blocks, &doc);
-        controls.extend(super::clipboard::controls_of(&breaks.parts, &doc));
-        for body in refs.notes.iter().map(|n| &n.2).chain(refs.comments.iter().map(|c| &c.body)) {
-            controls.extend(super::clipboard::controls_of(body, &doc));
+        for b in refs.notes.iter().map(|n| &n.2).chain(refs.comments.iter().map(|c| &c.body)) {
+            controls.extend(super::clipboard::controls_of(b, &doc));
         }
-        let body = blocks.len();
-        // The headers' and footers' pictures come from the document with the body's.
-        blocks.append(&mut breaks.parts);
         let mut f = super::clipboard::Fragment { id: 0, blocks, open_end: true, controls, refs, ..Default::default() };
         f.origin = Some(super::import::Origin::of_document(doc, &mut f));
         breaks.parts = f.blocks.split_off(body);
@@ -1357,7 +1356,13 @@ impl Editor {
             }
         }
         let names = self.new_story_names(order.iter().map(|&(_, footer)| footer));
-        let hf = super::clipboard::Fragment { origin: f.origin.clone(), look: f.look, controls: f.controls.clone(), ..Default::default() };
+        let hf = super::clipboard::Fragment {
+            origin: f.origin.clone(),
+            look: f.look,
+            controls: f.controls.clone(),
+            refs: f.refs.clone(),
+            ..Default::default()
+        };
         let mut taken = super::clipboard::Taken::default();
         let mut tx = self.begin("Insert File");
         let mut stories = Vec::with_capacity(order.len());

@@ -118,15 +118,14 @@ impl Editor {
             let mut rows = t.rows.clone();
             let mut tx = self.begin("Paste Rows");
             let mut new = self.take_rows(&mut tx, src, f, &rows, at);
-            let grid = if choice == Some(PasteChoice::MergeTable) {
-                let mut wider = false;
-                if let Some(like) = rows.get(at.min(rows.len().saturating_sub(1))) {
-                    wider = new.iter().any(|r| r.cells.len() > like.cells.len());
+            let grid = match rows.get(at.min(rows.len().saturating_sub(1))) {
+                Some(like) if choice == Some(PasteChoice::MergeTable) => {
+                    let grid = merged_grid(&t.grid, src, &new, like);
                     new = merged_rows(&new, like);
+                    grid
                 }
-                if wider { wide(&t.grid) } else { t.grid.clone() }
-            } else {
-                wide(&t.grid)
+                _ if choice == Some(PasteChoice::MergeTable) => t.grid.clone(),
+                _ => wide(&t.grid),
             };
             let n = new.len();
             rows.splice(at..at, new);
@@ -319,6 +318,24 @@ fn merged_rows(new: &[Row], like: &Row) -> Vec<Row> {
             row
         })
         .collect()
+}
+
+/// The grid of a table whose row `like` pasted rows `new` are merged with ([`merged_rows`]): `grid`, with the columns
+/// a merged row covers past it, each as wide as the column of `src` its pasted cell covers.
+fn merged_grid(grid: &[f64], src: &Table, new: &[Row], like: &Row) -> Vec<f64> {
+    let span = |c: &crate::docx::Cell| c.span.max(1);
+    let kept = like.cells.len();
+    let at = like.grid_before + like.cells.iter().map(span).sum::<usize>();
+    let mut out = grid.to_vec();
+    for r in new.iter().filter(|r| r.cells.len() > kept) {
+        let from = r.grid_before + r.cells[..kept].iter().map(span).sum::<usize>();
+        let end = at + r.cells[kept..].iter().map(span).sum::<usize>() + like.grid_after;
+        for c in out.len()..end {
+            let w = (c + from).checked_sub(at).and_then(|k| src.grid.get(k)).or(src.grid.last()).or(grid.last());
+            out.push(w.copied().unwrap_or_default());
+        }
+    }
+    out
 }
 
 /// Rows `at..at + n` just put in `rows`: vertically merged cells don't merge across their edges, a continued one

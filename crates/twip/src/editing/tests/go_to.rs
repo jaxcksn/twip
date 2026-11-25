@@ -242,6 +242,20 @@ fn a_field_across_paragraphs_named_numbered_and_selected() {
 }
 
 #[test]
+fn a_field_ending_past_the_laid_out_pages_scrolls_to_its_end() {
+    let fld = |kind: &str| format!(r#"<w:r><w:fldChar w:fldCharType="{kind}"/></w:r>"#);
+    let brk = "<w:r><w:br w:type=\"page\"/></w:r>";
+    let pages: String = (0..12).map(|k| format!("<w:p>{}{brk}</w:p>", t(&format!("p{k}")))).collect();
+    let code = r#"<w:r><w:instrText xml:space="preserve"> QUOTE "x" </w:instrText></w:r>"#;
+    let body = format!("<w:p>{}{code}{}{}</w:p>{pages}<w:p>{}{}</w:p>", fld("begin"), fld("separate"), t("one"), t("two"), fld("end"));
+    let mut e = Editor::open(&build(&body, "", &[]), fonts()).expect("opens");
+    assert!(!e.layout_complete());
+    e.take_requests();
+    assert!(matches!(go(&mut e, W::Field, T::Absolute(1), None), Outcome::Moved));
+    assert!(e.take_requests().iter().any(|r| matches!(r, crate::editing::input::Request::ScrollIntoView { page: 12, .. })), "scrolled to its end");
+}
+
+#[test]
 fn floats_at_one_place_go_one_by_one_and_an_object_scrolls_into_view() {
     let float = super::empty_stories::anchored_box("<w:txbxContent><w:p/></w:txbxContent>");
     let mut e = open(&format!("<w:p>{}{float}{float}</w:p>", t("a")), &[]);

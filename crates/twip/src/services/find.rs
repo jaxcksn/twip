@@ -18,6 +18,7 @@ use crate::editing::Editor;
 use crate::editing::commands::Outcome;
 use crate::editing::find::Replacement;
 use crate::editing::index::Container;
+use crate::editing::position::Position;
 use crate::editing::search::{self, Clusters, Hay, MatchOptions, Needle, Needs, Pattern, Piece, SearchError, Sep, Template, Token};
 use crate::font::Fonts;
 use crate::layout::{ParaId, Unit};
@@ -89,19 +90,30 @@ impl Hit {
             return vec![(self.para, Unit(self.start), Unit(self.end))];
         }
         let mut out = Vec::new();
+        self.each_piece(e, search::MAX_TEXT + 1, |p, a, b| {
+            out.push((p, a, b));
+            true
+        });
+        out
+    }
+
+    /// [`Hit::pieces`], up to `most` of them, each given to `f` until it says no: whether every piece was, `last`'s
+    /// among them.
+    fn each_piece(&self, e: &Editor, most: usize, mut f: impl FnMut(ParaId, Unit, Unit) -> bool) -> bool {
         let mut p = self.para;
-        for _ in 0..=search::MAX_TEXT {
-            let len = e.index().para(e.document(), p).map_or(Unit(0), crate::editing::step::para_len);
+        for _ in 0..most {
             let a = if p == self.para { Unit(self.start) } else { Unit(0) };
             if p == self.last {
-                out.push((p, a, Unit(self.end)));
-                break;
+                return f(p, a, Unit(self.end));
             }
-            out.push((p, a, len));
-            let Some((n, _)) = next_para(e, p) else { break };
+            let len = e.index().para(e.document(), p).map_or(Unit(0), crate::editing::step::para_len);
+            if !f(p, a, len) {
+                return false;
+            }
+            let Some((n, _)) = next_para(e, p) else { return false };
             p = n;
         }
-        out
+        false
     }
 }
 
@@ -424,6 +436,13 @@ struct Memo {
     budget: Rc<Cell<usize>>,
 }
 
+/// Takes `n` from `cache`'s budget: whether any was left.
+fn charged(cache: &Memo, n: usize) -> bool {
+    let left = cache.budget.get();
+    cache.budget.set(left.saturating_sub(n));
+    left > 0
+}
+
 /// The paragraphs a match crossing into them read, after the one it starts in: each with its grapheme clusters.
 type Later = Vec<(ParaId, Hay, Clusters)>;
 
@@ -579,7 +598,7 @@ impl Search {
                 && (!edges || search::edges(chars, c, i, end, o.whole || o.prefix, o.whole || o.suffix))
         };
         if let Some(p) = &self.pattern {
-            found = p.matches(hay, 0, with, |a, b| fits(a, b, false));
+            found = p.matches(hay, 0, with, overlap, |a, b| fits(a, b, false));
         } else if self.needle.is_empty() {
             // Formatting alone: each stretch of the text that has it, between field markers.
             let mut k = 0;
@@ -636,15 +655,15 @@ impl Search {
         out
     }
 
-    /// The match across paragraph marks that starts in `para` at or after character `from`, if any.
-    fn across(&self, e: &Editor, para: ParaId, first: &Hay, from: usize, cache: &mut Memo) -> Option<Hit> {
+    /// The match across paragraph marks that starts in `para` at or after character `from`, if any; with `overlap`,
+    /// one from each later start too.
+    fn across(&self, e: &Editor, para: ParaId, first: &Hay, from: usize, overlap: bool, cache: &mut Memo) -> Vec<Hit> {
         let o = &self.spec.options;
         let parts = &self.needle.parts;
         let n0 = first.chars().len();
         let c0 = Clusters::of(&first.seen.boundaries());
-        // The first part runs to the paragraph's end: its leftmost start that takes the word edges asked for.
-        let mut i = from;
-        let start = loop {
+        // The first part runs to the paragraph's end: its leftmost start from `i` that takes the word edges asked for.
+        let start_from = |mut i: usize| loop {
             let s = first.match_to_end(&parts[0], i, o)?;
             let ok = s == n0
                 || ((c0.starts(s) || !first.chars()[c0.start(s)].is_alphanumeric())
@@ -652,13 +671,39 @@ impl Search {
                     && first.formatted(c0.start(s), s)
                     && search::edges(first.chars(), &c0, s, n0, o.whole || o.prefix, false));
             if ok && (s < n0 || first.para_ok) {
-                break c0.start(s.min(n0));
+                return Some(s);
             }
             if s >= n0 {
                 return None;
             }
             i = s + 1;
         };
+        let Some(s0) = start_from(from) else { return Vec::new() };
+        let Some((last, end)) = self.across_rest(e, para, cache) else { return Vec::new() };
+        let len_first = e.index().para(e.document(), para).map_or(0, |q| crate::editing::step::para_len(q).0);
+        let hit = |s: usize| {
+            let start = c0.start(s.min(n0));
+            Hit { para, start: if start >= n0 { len_first } else { first.units_of(start, n0).0.0 }, end, last }
+        };
+        let mut out = vec![hit(s0)];
+        // Each later start takes the same rest.
+        let mut s = s0;
+        while overlap && s < n0 {
+            let Some(next) = start_from(s + 1) else { break };
+            let h = hit(next);
+            if out.last().is_none_or(|l| l.start != h.start) {
+                out.push(h);
+            }
+            s = next;
+        }
+        out
+    }
+
+    /// Where a match across paragraph marks from `para`'s end ends: the paragraph and unit, if its parts after the
+    /// first match there.
+    fn across_rest(&self, e: &Editor, para: ParaId, cache: &mut Memo) -> Option<(ParaId, u32)> {
+        let o = &self.spec.options;
+        let parts = &self.needle.parts;
         let mut p = para;
         let mut hay;
         for (k, sep) in self.needle.seps.iter().enumerate() {
@@ -689,10 +734,8 @@ impl Search {
                     return None;
                 }
             }
-            let len_first = e.index().para(e.document(), para).map_or(0, |q| crate::editing::step::para_len(q).0);
-            let s = if start >= n0 { len_first } else { first.units_of(start, n0).0.0 };
             let t = if end == 0 { 0 } else { hay.units_of(0, c.next(end)).1.0 };
-            return Some(Hit { para, start: s, end: t, last: p });
+            return Some((p, t));
         }
         None
     }
@@ -791,10 +834,14 @@ impl Search {
             match self.flex_at(e, para, hay, &c, k, &mut later, cache) {
                 Some(h) => {
                     out.push(h);
+                    if overlap {
+                        k += 1;
+                        continue;
+                    }
                     if h.last != para {
                         break;
                     }
-                    k = if overlap { k + 1 } else { hay.seen.units.partition_point(|&u| u < h.end).max(k + 1) };
+                    k = hay.seen.units.partition_point(|&u| u < h.end).max(k + 1);
                 }
                 None => k += 1,
             }
@@ -828,7 +875,7 @@ impl Search {
         }
         if !self.needle.seps.is_empty() {
             let k = hay.seen.units.partition_point(|&u| u < from);
-            return self.across(e, para, &hay, k, cache).filter(|h| h.start >= from).into_iter().collect();
+            return self.across(e, para, &hay, k, overlap, cache).into_iter().filter(|h| h.start >= from).collect();
         }
         self.single(&hay, None, overlap)
             .into_iter()
@@ -840,24 +887,22 @@ impl Search {
             .collect()
     }
 
-    /// Whether `h` is within the ranges the search is limited to.
-    fn inside(&self, e: &Editor, h: &Hit) -> bool {
+    /// Whether `h` is within the ranges the search is limited to. A match across paragraphs (a comment's span) is
+    /// walked whole, each paragraph charged to the budget.
+    fn inside(&self, e: &Editor, h: &Hit, cache: &Memo) -> bool {
         if self.spec.within.is_none() {
             return true;
         }
         let fits = |p: ParaId, a: Unit, b: Unit| self.ranges.get(&p).is_some_and(|r| r.iter().any(|&(x, y)| x <= a && b <= y));
-        if h.last == h.para {
-            return fits(h.para, Unit(h.start), Unit(h.end));
-        }
-        let pieces = h.pieces(e);
-        pieces.last().is_some_and(|l| l.0 == h.last) && pieces.iter().all(|&(p, a, b)| fits(p, a, b))
+        h.each_piece(e, usize::MAX, |p, a, b| (h.last == h.para || charged(cache, 1)) && fits(p, a, b))
     }
 
-    /// Whether the text `h` covers, all of it read, has the formatting searched for.
+    /// Whether the text `h` covers, all of it read, has the formatting searched for: a comment's span whole, each
+    /// paragraph charged to the budget.
     fn formatted(&self, e: &Editor, h: &Hit, cache: &mut Memo) -> bool {
-        let pieces = h.pieces(e);
-        pieces.last().is_some_and(|l| l.0 == h.last)
-            && pieces.iter().all(|&(p, a, b)| self.hay(e, p, cache).is_some_and(|hay| hay.formatted_units(a, b)))
+        h.each_piece(e, usize::MAX, |p, a, b| {
+            self.hay(e, p, cache).is_some_and(|hay| charged(cache, hay.chars().len().max(1)) && hay.formatted_units(a, b))
+        })
     }
 
     /// The matches starting in paragraph `para` (from unit `from`) within the ranges searched, in order, none
@@ -870,7 +915,7 @@ impl Search {
         let mut end = 0u32;
         let mut out = Vec::new();
         for h in self.para_hits(e, para, from, true, cache) {
-            if h.start < end || !self.inside(e, &h) {
+            if h.start < end || !self.inside(e, &h, cache) {
                 continue;
             }
             end = if h.last == para { h.end } else { u32::MAX };
@@ -959,9 +1004,14 @@ impl Search {
             // Going back, before wrapping: ending at or before where the search starts, across paragraphs too.
             let ends_before = |h: &Hit| {
                 if h.last == h.para {
-                    h.para != from_para || h.end <= from.0
-                } else {
-                    !h.pieces(e).iter().any(|&(p, _, b)| p == from_para && (p != h.last || b.0 > from.0))
+                    return h.para != from_para || h.end <= from.0;
+                }
+                let story = |p: ParaId| e.index().para_slot(p).map(|s| e.index().story(s.container));
+                match (story(h.last), story(from_para)) {
+                    (Some(a), Some(b)) if a == b => {
+                        e.index().cmp(&Position::text(a, h.last, Unit(h.end)), &Position::text(b, from_para, from)) != std::cmp::Ordering::Greater
+                    }
+                    _ => true,
                 }
             };
             let hit = if back {
@@ -989,14 +1039,14 @@ impl Search {
     fn on_selection(&self, e: &Editor, cache: &mut Memo) -> Option<Hit> {
         if let Some((para, a, b)) = e.selected_match()
             && let Some(h) =
-                self.para_hits(e, para, 0, true, cache).into_iter().find(|h| (h.para, h.start, h.end) == (para, a.0, b.0) && self.inside(e, h))
+                self.para_hits(e, para, 0, true, cache).into_iter().find(|h| (h.para, h.start, h.end) == (para, a.0, b.0) && self.inside(e, h, cache))
         {
             return Some(h);
         }
         let (x, y) = e.selection().ordered(e.index())?;
         let ((pa, ua), (pb, ub)) = (x.para_offset()?, y.para_offset()?);
         let want = Hit { para: pa, start: ua.0, end: ub.0, last: pb };
-        self.para_hits(e, pa, 0, true, cache).into_iter().find(|h| *h == want && self.inside(e, h))
+        self.para_hits(e, pa, 0, true, cache).into_iter().find(|h| *h == want && self.inside(e, h, cache))
     }
 
     /// The replacement of each of `hits`: `with` (text with `^` codes, or a regular expression's replacement with
@@ -1040,7 +1090,8 @@ impl Search {
             let n = hits[k..].iter().take_while(|h| h.para == para).count();
             let mut by: HashMap<(u32, u32), Vec<Piece>> = HashMap::new();
             if let Some(hay) = self.hay(e, para, &mut cache) {
-                for (a, b, pieces) in self.single(&hay, Some(&template), false) {
+                // Limited to ranges, a hit may overlap a match out of them.
+                for (a, b, pieces) in self.single(&hay, Some(&template), self.spec.within.is_some()) {
                     let (s, t) = hay.units_of(a, b);
                     by.insert((s.0, t.0), pieces);
                 }
@@ -1184,9 +1235,7 @@ pub fn replace_with(
     // Replace All within the selection keeps it round what it covered.
     let keep = search.spec.within.as_ref().filter(|_| all).and_then(|w| {
         let (&(p, a, _), &(q, _, b)) = (w.first()?, w.last()?);
-        let at = |para: ParaId, u: Unit| {
-            e.index().para_slot(para).map(|s| crate::editing::position::Position::text(e.index().story(s.container), para, u))
-        };
+        let at = |para: ParaId, u: Unit| e.index().para_slot(para).map(|s| Position::text(e.index().story(s.container), para, u));
         Some((at(p, a)?, at(q, b)?))
     });
     Ok(if commands.is_empty() && reps.iter().all(Replacement::is_typed) {
