@@ -2080,8 +2080,10 @@ pub fn repackage_without(package: &[u8], parts: &[(String, Vec<u8>)], removed: &
             None => zout.raw_copy_file(f).map_err(err)?,
         }
     }
-    for (k, (name, bytes)) in parts.iter().enumerate().filter(|(k, _)| !done[*k]) {
-        let _ = k;
+    // New parts by name, so the package's bytes don't depend on the order they were gathered in.
+    let mut added: Vec<&(String, Vec<u8>)> = parts.iter().zip(&done).filter(|(_, d)| !**d).map(|(p, _)| p).collect();
+    added.sort_by(|a, b| a.0.cmp(&b.0));
+    for (name, bytes) in added {
         zout.start_file(name.as_str(), opts).map_err(err)?;
         zout.write_all(bytes).map_err(|e| e.to_string())?;
     }
