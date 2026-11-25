@@ -5,6 +5,7 @@ use super::props::esc;
 use super::{People, new_blocks_xml, set_attr};
 use crate::docx::model::Document;
 use crate::docx::package;
+use crate::docx::props::ThemeColours;
 use crate::docx::review::{Comment, Comments, Person};
 
 const W: &str = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
@@ -64,13 +65,13 @@ impl Part {
     }
 
     /// The part's content (its root's children) for these comments and people.
-    fn children(self, comments: &Comments, people: &People, shell: &str) -> Result<String, String> {
+    fn children(self, comments: &Comments, people: &People, colours: &ThemeColours, shell: &str) -> Result<String, String> {
         let mut out = String::new();
         let hex = |v: u32| format!("{v:08X}");
         match self {
             Part::Comments => {
                 for c in comments.by_id.values() {
-                    out.push_str(&comment_xml(c, people, shell)?);
+                    out.push_str(&comment_xml(c, people, colours, shell)?);
                 }
             }
             Part::Extended => {
@@ -124,7 +125,7 @@ impl Part {
 }
 
 /// A comment's `w:comment` element from the model.
-fn comment_xml(c: &Comment, people: &People, shell: &str) -> Result<String, String> {
+fn comment_xml(c: &Comment, people: &People, colours: &ThemeColours, shell: &str) -> Result<String, String> {
     let person = people.get(c.author);
     let mut a = format!(" w:id=\"{}\" w:author=\"{}\"", c.id.0, esc(person.map_or("", |p| &p.name)));
     if let Some(d) = &c.date {
@@ -133,7 +134,7 @@ fn comment_xml(c: &Comment, people: &People, shell: &str) -> Result<String, Stri
     if let Some(i) = c.initials.as_ref().or(person.and_then(|p| p.initials.as_ref())) {
         a.push_str(&format!(" w:initials=\"{}\"", esc(i)));
     }
-    let body = comment_body(&new_blocks_xml(shell, &c.body, &Default::default(), people)?, c.para_id);
+    let body = comment_body(&new_blocks_xml(shell, &c.body, &Default::default(), people, colours)?, c.para_id);
     Ok(format!("<w:comment{a}>{body}</w:comment>"))
 }
 
@@ -149,8 +150,8 @@ fn kept_comments(xml: &str, doc: &Document, read: &Document, shell: &str) -> Res
         .collect();
     let mut out = String::new();
     for c in doc.comments.by_id.values() {
-        let now = comment_xml(c, &doc.people, shell)?;
-        let was = read.comments.by_id.get(&c.id).map(|r| comment_xml(r, &read.people, shell)).transpose()?;
+        let now = comment_xml(c, &doc.people, &super::colours_of(doc), shell)?;
+        let was = read.comments.by_id.get(&c.id).map(|r| comment_xml(r, &read.people, &super::colours_of(read), shell)).transpose()?;
         match src.get(&c.id.0) {
             Some(r) if was.as_ref() == Some(&now) => out.push_str(&xml[r.clone()]),
             _ => out.push_str(&now),
@@ -252,8 +253,8 @@ pub(super) fn save(doc: &Document, read: &Document, package: &[u8], main: &str, 
         };
         let (open, close) = root_open(part, xml.as_deref());
         let shell = format!("{open}{close}");
-        let now = part.children(&doc.comments, if part == Part::People { &listed } else { &doc.people }, &shell)?;
-        if now == part.children(&read.comments, &read.people, &shell)? || (existing.is_none() && now.is_empty()) {
+        let now = part.children(&doc.comments, if part == Part::People { &listed } else { &doc.people }, &super::colours_of(doc), &shell)?;
+        if now == part.children(&read.comments, &read.people, &super::colours_of(read), &shell)? || (existing.is_none() && now.is_empty()) {
             continue;
         }
         let now = match (part, xml.as_deref()) {
@@ -316,16 +317,16 @@ mod tests {
     #[test]
     fn threads_and_people_parts() {
         let (cs, people) = model();
-        let ex = Part::Extended.children(&cs, &people, "").expect("written");
+        let ex = Part::Extended.children(&cs, &people, &Default::default(), "").expect("written");
         assert_eq!(
             ex,
             r#"<w15:commentEx w15:paraId="00000010" w15:done="1"/><w15:commentEx w15:paraId="00000011" w15:paraIdParent="00000010" w15:done="0"/>"#
         );
-        let ids = Part::Ids.children(&cs, &people, "").expect("written");
+        let ids = Part::Ids.children(&cs, &people, &Default::default(), "").expect("written");
         assert!(ids.starts_with(r#"<w16cid:commentId w16cid:paraId="00000010" w16cid:durableId="1A000010"/>"#), "{ids}");
-        let cex = Part::Extensible.children(&cs, &people, "").expect("written");
+        let cex = Part::Extensible.children(&cs, &people, &Default::default(), "").expect("written");
         assert!(cex.starts_with(r#"<w16cex:commentExtensible w16cex:durableId="1A000010" w16cex:dateUtc="2026-02-01T09:00:00Z"/>"#), "{cex}");
-        let ps = Part::People.children(&cs, &people, "").expect("written");
+        let ps = Part::People.children(&cs, &people, &Default::default(), "").expect("written");
         assert_eq!(
             ps,
             r#"<w15:person w15:author="Author A"><w15:presenceInfo w15:providerId="AD" w15:userId="a@example.com"/></w15:person><w15:person w15:author="Author &lt;B&gt;"></w15:person>"#
@@ -356,7 +357,7 @@ mod tests {
                 r#"<w16cex:commentExtensible w16cex:durableId="1" w16cex:dateUtc="old"><w16cex:extLst/></w16cex:commentExtensible>"#,
             )));
         }
-        let cex = Part::Extensible.children(&cs, &people, "").expect("written");
+        let cex = Part::Extensible.children(&cs, &people, &Default::default(), "").expect("written");
         assert!(
             cex.starts_with(r#"<w16cex:commentExtensible w16cex:durableId="1A000010" w16cex:dateUtc="2026-02-01T09:00:00Z"><w16cex:extLst/></w16cex:commentExtensible>"#),
             "{cex}"
@@ -367,7 +368,7 @@ mod tests {
     fn bodies_carry_the_para_id_and_the_annotation_mark() {
         let (cs, people) = model();
         let (open, close) = root_open(Part::Comments, None);
-        let xml = Part::Comments.children(&cs, &people, &format!("{open}{close}")).expect("written");
+        let xml = Part::Comments.children(&cs, &people, &Default::default(), &format!("{open}{close}")).expect("written");
         assert!(
             xml.starts_with(r#"<w:comment w:id="0" w:author="Author A" w:date="2026-02-01T09:00:00Z" w:initials="AA"><w:p w14:paraId="00000010"><w:r><w:annotationRef/></w:r></w:p></w:comment>"#),
             "{xml}"

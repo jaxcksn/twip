@@ -10,6 +10,7 @@ use super::position::Position;
 use super::position::StoryId;
 use super::selection::Selection;
 use super::step::{self, Edges, Map, Step, StepError};
+use crate::docx::run_xml;
 use std::ops::Range;
 
 fn units(inlines: &[Inline], k: usize) -> Unit {
@@ -282,7 +283,7 @@ impl Editor {
             let cx = self.cx();
             let at = crate::layout::Unit(p.inlines[..start.min(p.inlines.len())].iter().map(|i| i.units() as u32).sum());
             let base = self.run_base(para, at, res, &cx)?;
-            Some(res.run_from_xml(&base, Some(x), &cx))
+            Some(run_xml::run_from_xml(res, &base, Some(x), &cx))
         }))
     }
 

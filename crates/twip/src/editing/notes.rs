@@ -14,6 +14,7 @@ use super::position::{Place, Position, StoryId};
 use super::selection::Selection;
 use super::step::Step;
 use super::{Editor, Tx};
+use crate::docx::run_xml;
 
 fn story(kind: NoteKind, id: i64) -> StoryId {
     match kind {
@@ -42,7 +43,7 @@ fn note_styles(kind: NoteKind) -> (&'static str, &'static str) {
 /// `run` in `to`'s reference style (superscript where the document has none), when it is in `from`'s.
 fn restyled_ref(res: &Resolver, cx: &Cx, base: &RunProps, run: &Run, from: NoteKind, to: NoteKind) -> Option<Run> {
     let (old, new) = (note_styles(from).0, note_styles(to).0);
-    let mut p = Props::parse(run.direct.0.as_deref(), "rPr", cx);
+    let mut p = Props::parse(run_xml::rpr(res, run, cx).as_deref(), "rPr", cx);
     if p.get("rStyle").and_then(|s| crate::docx::write::props::attr_of(s, "val")).as_deref() != Some(old) {
         return None;
     }
@@ -53,7 +54,7 @@ fn restyled_ref(res: &Resolver, cx: &Cx, base: &RunProps, run: &Run, from: NoteK
         p.remove("rStyle");
         p.set("vertAlign", format!("<{w}vertAlign {w}val=\"superscript\"/>"));
     }
-    Some(res.run_from_xml(base, p.xml().as_deref(), cx))
+    Some(run_xml::run_from_xml(res, base, p.xml().as_deref(), cx))
 }
 
 /// A converted note's paragraph in `to`'s text style when it is in `from`'s, and its marks in `to`'s reference
@@ -177,9 +178,9 @@ impl Editor {
             self.abort(tx);
             return Outcome::Unchanged("no paragraph");
         };
-        let mut p = Props::parse(run.direct.0.as_deref(), "rPr", &cx);
+        let mut p = Props::parse(run_xml::rpr(&res, &run, &cx).as_deref(), "rPr", &cx);
         mark_prop(&mut p);
-        let ref_run = res.run_from_xml(&base, p.xml().as_deref(), &cx);
+        let ref_run = run_xml::run_from_xml(&res, &base, p.xml().as_deref(), &cx);
         // A custom mark follows its reference, in its run.
         let mut with = vec![Inline::NoteRef { kind, id, custom: custom.is_some(), run: ref_run.clone() }];
         with.extend(custom.map(|m| Inline::Text(m.to_string(), ref_run)));
@@ -192,10 +193,10 @@ impl Editor {
             pp.set("pStyle", format!("<{w}pStyle {w}val=\"{text_style}\"/>"));
         }
         let r = res.para_from_xml(pp.xml().as_deref(), None, &cx);
-        let text_run = res.run_from_xml(&r.base, None, &cx);
+        let text_run = run_xml::run_from_xml(&res, &r.base, None, &cx);
         let mut mp = Props::parse(None, "rPr", &cx);
         mark_prop(&mut mp);
-        let mark_run = res.run_from_xml(&r.base, mp.xml().as_deref(), &cx);
+        let mark_run = run_xml::run_from_xml(&res, &r.base, mp.xml().as_deref(), &cx);
         let pid = crate::docx::next_para_id();
         let note = Paragraph {
             style: Rc::new(r.style),

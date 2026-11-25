@@ -30,7 +30,7 @@ mod revisions;
 mod styles;
 
 use super::anchor;
-use super::props::{Border, Jc, Width};
+use super::props::{Border, Jc, ThemeColours, Width};
 use props::{Cx, Props};
 
 /// The edited document as package bytes: the original package when nothing changed.
@@ -52,7 +52,8 @@ pub fn edited_parts(doc: &Document) -> Result<Vec<(String, Vec<u8>)>, String> {
     }
     for (name, (xml, orig)) in &src.stories {
         let now = doc.stories.get(name).map_or(&[][..], Vec::as_slice);
-        if let Some(xml) = part_xml(xml, &boxes(&[orig], &[now]), &[(orig, now)], &doc.controls, &gone_controls(doc), &doc.people)? {
+        if let Some(xml) = part_xml(xml, &boxes(&[orig], &[now]), &[(orig, now)], &doc.controls, &gone_controls(doc), &doc.people, &colours_of(doc))?
+        {
             parts.push((name.clone(), xml.into_bytes()));
         }
     }
@@ -1434,7 +1435,7 @@ fn new_stories(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(),
             r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:{tag} {NS}></w:{tag}>"#
         );
-        let body = new_blocks_xml(&shell, &doc.stories[*name], &doc.controls, &doc.people)?;
+        let body = new_blocks_xml(&shell, &doc.stories[*name], &doc.controls, &doc.people, &colours_of(doc))?;
         let end = shell.rfind("</").ok_or("story shell")?;
         parts.retain(|(n, _)| n != *name);
         parts.push(((*name).clone(), format!("{}{body}{}", &shell[..end], &shell[end..]).into_bytes()));
@@ -1530,7 +1531,7 @@ fn new_notes_part(
     parts: &mut Vec<(String, Vec<u8>)>,
     doc: &Document,
 ) -> Result<(), String> {
-    let (controls, people) = (&doc.controls, &doc.people);
+    let (controls, people, colours) = (&doc.controls, &doc.people, &colours_of(doc));
     let (tag, file, rel) = if foot { ("footnote", "footnotes.xml", "footnotes") } else { ("endnote", "endnotes.xml", "endnotes") };
     let ns = r#"xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships""#;
     let empty = format!(
@@ -1540,7 +1541,7 @@ fn new_notes_part(
     // Word's separator notes, or those set since reading
     let sep = |id: i64, kind: &str| -> Result<String, String> {
         let body = match doc.separators.get(&format!("{tag}:{kind}")) {
-            Some(b) => new_blocks_xml(&empty, b, controls, people)?,
+            Some(b) => new_blocks_xml(&empty, b, controls, people, colours)?,
             None => format!(r#"<w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:r><w:{kind}/></w:r></w:p>"#),
         };
         Ok(format!(r#"<w:{tag} w:type="{kind}" w:id="{id}">{body}</w:{tag}>"#))
@@ -1559,7 +1560,7 @@ fn new_notes_part(
     ids.sort();
     let mut body = String::new();
     for id in ids {
-        body.push_str(&format!(r#"<w:{tag} w:id="{id}">{}</w:{tag}>"#, new_blocks_xml(&shell, &notes[id], controls, people)?));
+        body.push_str(&format!(r#"<w:{tag} w:id="{id}">{}</w:{tag}>"#, new_blocks_xml(&shell, &notes[id], controls, people, colours)?));
     }
     let end = shell.rfind("</").ok_or("notes shell")?;
     let xml = format!("{}{body}{}", &shell[..end], &shell[end..]);
@@ -1604,7 +1605,7 @@ fn notes_xml(
     e: &NoteEdits,
     doc: &Document,
 ) -> Result<(Option<String>, Vec<(i64, bool)>), String> {
-    let (controls, gone, people) = (&doc.controls, &gone_controls(doc), &doc.people);
+    let (controls, gone, people, colours) = (&doc.controls, &gone_controls(doc), &doc.people, &colours_of(doc));
     let tag = e.tag;
     let dom = roxmltree::Document::parse(xml).map_err(|e| e.to_string())?;
     let root = dom.root_element();
@@ -1621,7 +1622,7 @@ fn notes_xml(
     }
     let mut text = String::new();
     for (id, blocks) in e.added {
-        let body = new_blocks_xml(xml, blocks, controls, people)?;
+        let body = new_blocks_xml(xml, blocks, controls, people, colours)?;
         text.push_str(&format!("<{w}{tag} {w}id=\"{id}\">{body}</{w}{tag}>"));
     }
     // Separator stories: in place, else as a new note under a negative id no other note has
@@ -1642,7 +1643,7 @@ fn notes_xml(
         match (had, blocks) {
             (Some(n), Some(b)) => {
                 let id = id_of(n).unwrap_or_else(&mut free);
-                let body = new_blocks_xml(xml, b, controls, people)?;
+                let body = new_blocks_xml(xml, b, controls, people, colours)?;
                 splices.push((n.range(), format!("<{w}{tag} {w}type=\"{t}\" {w}id=\"{id}\">{body}</{w}{tag}>")));
                 listing.push((id, true));
                 // The type's other listed stories go: only this one is listed
@@ -1663,7 +1664,7 @@ fn notes_xml(
                 }
             }
             (None, Some(b)) => {
-                let body = new_blocks_xml(xml, b, controls, people)?;
+                let body = new_blocks_xml(xml, b, controls, people, colours)?;
                 let id = free();
                 text.push_str(&format!("<{w}{tag} {w}type=\"{t}\" {w}id=\"{id}\">{body}</{w}{tag}>"));
                 listing.push((id, true));
@@ -1683,7 +1684,7 @@ fn notes_xml(
     }
     // One pass: the kept notes' edits and these whole-note splices never overlap (removed notes and separators
     // aren't in `lists`).
-    Ok((part_xml_with(xml, inner, lists, &splices, &SectionEdits::default(), controls, gone, people)?, listing))
+    Ok((part_xml_with(xml, inner, lists, &splices, &SectionEdits::default(), controls, gone, people, colours)?, listing))
 }
 
 /// The settings' list of the notes `tag` separator notes (`w:footnotePr/w:footnote`) with `listing`'s changes: each
@@ -1759,14 +1760,25 @@ fn gone_controls(doc: &Document) -> Vec<Control> {
     doc.source.as_ref().map_or(Vec::new(), |s| s.controls.iter().filter(|(id, _)| !doc.controls.contains_key(id)).map(|(_, c)| c.clone()).collect())
 }
 
+/// The theme colours `doc`'s styles resolve with.
+pub(super) fn colours_of(doc: &Document) -> ThemeColours {
+    doc.resolver.as_deref().map_or_else(ThemeColours::default, |r| r.styles.colours)
+}
+
 /// Blocks with no source written from the model, for a part (new notes).
-fn new_blocks_xml(xml: &str, blocks: &[Block], controls: &HashMap<ControlId, Control>, people: &People) -> Result<String, String> {
+fn new_blocks_xml(
+    xml: &str,
+    blocks: &[Block],
+    controls: &HashMap<ControlId, Control>,
+    people: &People,
+    colours: &ThemeColours,
+) -> Result<String, String> {
     let dom = roxmltree::Document::parse(xml).map_err(|e| e.to_string())?;
     let w = match dom.root_element().lookup_prefix(W) {
         Some(p) if !p.is_empty() => format!("{p}:"),
         _ => String::new(),
     };
-    blocks_in(xml, w, blocks, controls, people, Default::default())
+    blocks_in(xml, w, blocks, controls, people, colours, Default::default())
 }
 
 /// Blocks with no source written from the model, for a part (its WordprocessingML prefix `w`), with bookmark ids
@@ -1777,6 +1789,7 @@ fn blocks_in(
     blocks: &[Block],
     controls: &HashMap<ControlId, Control>,
     people: &People,
+    colours: &ThemeColours,
     bookmarks: Bookmarks,
 ) -> Result<String, String> {
     let made = HashMap::new();
@@ -1792,6 +1805,7 @@ fn blocks_in(
         controls: controls.clone(),
         ids: std::cell::Cell::new(DRAWING_IDS),
         people,
+        colours: *colours,
         dropped: &[],
         made: &made,
         bookmarks,
@@ -1943,7 +1957,7 @@ pub fn main_xml(doc: &Document) -> Result<Option<String>, String> {
     }
     let lists: Vec<(&[Block], &[Block])> = orig.iter().zip(&now).map(|(a, b)| (a.as_ref(), b.as_ref())).collect();
     let (o, n): (Vec<&[Block]>, Vec<&[Block]>) = lists.iter().copied().unzip();
-    part_xml_with(&src.xml, &boxes(&o, &n), &lists, &[], &edits, &doc.controls, &gone_controls(doc), &doc.people)
+    part_xml_with(&src.xml, &boxes(&o, &n), &lists, &[], &edits, &doc.controls, &gone_controls(doc), &doc.people, &colours_of(doc))
 }
 
 /// A part's XML with its block lists (as read, now) written back; `None` when none changed.
@@ -1954,8 +1968,9 @@ fn part_xml(
     controls: &HashMap<ControlId, Control>,
     gone: &[Control],
     people: &People,
+    colours: &ThemeColours,
 ) -> Result<Option<String>, String> {
-    part_xml_with(xml, inner, lists, &[], &SectionEdits::default(), controls, gone, people)
+    part_xml_with(xml, inner, lists, &[], &SectionEdits::default(), controls, gone, people, colours)
 }
 
 /// [`part_xml`] with `extra` splices of the original part added (whole notes in and out), and the section breaks
@@ -1970,6 +1985,7 @@ fn part_xml_with<'a>(
     controls: &HashMap<ControlId, Control>,
     gone: &[Control],
     people: &'a People,
+    colours: &ThemeColours,
 ) -> Result<Option<String>, String> {
     let dom = roxmltree::Document::parse(xml).map_err(|e| e.to_string())?;
     let paras = dom.descendants().filter(|n| is_w(*n, "p")).map(|n| (n.range().start, n)).collect();
@@ -2011,6 +2027,7 @@ fn part_xml_with<'a>(
         controls: controls.clone(),
         ids: std::cell::Cell::new(DRAWING_IDS),
         people,
+        colours: *colours,
         dropped: &sections.dropped,
         made: &sections.made,
         bookmarks: Default::default(),
@@ -2121,6 +2138,8 @@ struct Saver<'a, 'i> {
     ids: std::cell::Cell<u32>,
     /// Who made the revisions written (their names as `w:author`).
     people: &'a People,
+    /// The theme's colours: a theme colour's value is written as they resolve it.
+    colours: ThemeColours,
     /// The `w:sectPr`s of section breaks deleted: a paragraph written again doesn't keep one.
     dropped: &'a [Range<usize>],
     /// The `w:sectPr`s new sections' last paragraphs take, by paragraph id.
@@ -3332,7 +3351,7 @@ impl<'a, 'i> Saver<'a, 'i> {
     /// Content with no source (a new text box's) written from the model in this part: its bookmarks' ids are the
     /// part's.
     fn nested_blocks(&self, blocks: &[Block]) -> Result<String, String> {
-        blocks_in(self.xml, self.w.clone(), blocks, &self.controls, self.people, self.bookmarks.clone())
+        blocks_in(self.xml, self.w.clone(), blocks, &self.controls, self.people, &self.colours, self.bookmarks.clone())
     }
 
     /// A bookmark's id: the part's for its name, else a new one, the same for its start and end.
@@ -3503,9 +3522,9 @@ impl<'a, 'i> Saver<'a, 'i> {
         let mut pr = Props::parse(base.as_deref(), "pPr", &self.cx);
         if mark {
             let rpr = if p.mark.rev.is_empty() {
-                p.mark.direct.0.as_deref().map(str::to_string)
+                p.mark.direct.xml(&self.colours, &self.cx).map(std::borrow::Cow::into_owned)
             } else {
-                revisions::mark_rpr(&p.mark, &self.cx, self.people)
+                revisions::mark_rpr(&p.mark, &self.colours, &self.cx, self.people)
             };
             match rpr {
                 Some(r) => pr.set("rPr", r),
@@ -4689,7 +4708,7 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
     fn restyled(&mut self, first: Node, end: usize, run: &Run) {
         self.flush();
         self.open_to(self.stack.len());
-        let rpr = revisions::run_rpr(run, &self.s.cx, self.s.people);
+        let rpr = revisions::run_rpr(run, &self.s.colours, &self.s.cx, self.s.people);
         for n in std::iter::successors(Some(first), |n| n.next_sibling()).take_while(|n| n.range().start < end) {
             self.restyle(n, &rpr);
         }
@@ -5165,7 +5184,7 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                     }
                 }
                 let w = &self.s.w;
-                let mut rpr = revisions::run_rpr(&run, &self.s.cx, self.s.people);
+                let mut rpr = revisions::run_rpr(&run, &self.s.colours, &self.s.cx, self.s.people);
                 if self.strip_link {
                     for style in [format!("<{w}rStyle {w}val=\"Hyperlink\"/>"), format!("<{w}rStyle {w}val=\"Hyperlink\" />")] {
                         rpr = rpr.replace(&style, "");
@@ -5712,7 +5731,7 @@ impl Saver<'_, '_> {
             let w = &self.w;
             let hex = |c: char| format!("{:04X}", c as u32);
             let esc = props::esc;
-            let rpr = run.direct.0.as_deref().unwrap_or("");
+            let rpr = run.direct.xml(&self.colours, &self.cx).unwrap_or_default();
             let on = if ch == checked { 1 } else { 0 };
             let (cs, us, f) = (hex(*checked), hex(*unchecked), esc(font));
             // From its properties (alias, tag, lock and the rest), with the state it shows now.

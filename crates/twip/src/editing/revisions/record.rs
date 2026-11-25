@@ -224,11 +224,11 @@ impl Recording {
         } else if !record || !self.track_formatting || same_look(old, new) {
             old.rev.fmt.clone()
         } else {
-            let (previous, previous_raw) = match &old.rev.fmt {
-                Some(f) => (f.previous.clone(), f.previous_raw.clone()),
-                None => (Rc::new(RunStyle { rev: RunRevisions::default(), ..(**old).clone() }), old.direct.clone()),
+            let previous = match &old.rev.fmt {
+                Some(f) => f.previous.clone(),
+                None => Rc::new(RunStyle { rev: RunRevisions::default(), ..(**old).clone() }),
             };
-            (!same_look(&previous, new)).then(|| Rc::new(FormatChange { mark: self.fmt_mark(ids), previous, previous_raw }))
+            (!same_look(&previous, new)).then(|| Rc::new(FormatChange { mark: self.fmt_mark(ids), previous }))
         };
         let rev = RunRevisions { ins: old.rev.ins.clone(), del: old.rev.del.clone(), fmt };
         let n = if new.rev == rev { new.clone() } else { with_rev(new, rev) };

@@ -13,6 +13,7 @@ use crate::font::Fonts;
 use super::Editor;
 use super::commands::Outcome;
 use super::step::Step;
+use crate::docx::run_xml;
 
 /// The commands [`Editor::format_style`] runs on a style: character and paragraph formatting.
 pub fn formats_a_style(c: &Command) -> bool {
@@ -163,7 +164,7 @@ impl Editor {
         // A table style's text: in the part being formatted, else the whole table.
         let region = (style.kind == StyleKind::Table).then(|| next.styles.table_region(Some(&style.id), self.style_part.as_slice()));
         let para = next.para_from_xml(ppr.as_deref(), region.as_ref(), &cx);
-        let run = next.run_from_xml(&para.base, rpr.as_deref(), &cx);
+        let run = run_xml::run_from_xml(&next, &para.base, rpr.as_deref(), &cx);
         let p = Paragraph {
             style: Rc::new(para.style),
             mark: run.clone(),
@@ -227,7 +228,10 @@ impl Editor {
         };
         let ppr = para.and_then(|p| p.style.direct.0.as_deref()).and_then(|x| strip(x, "pPr", &["pStyle", "numPr", "sectPr", "rPr", "pPrChange"]));
         let run = self.caret().and_then(|c| self.run_at(&c));
-        let rpr = run.and_then(|r| r.direct.0.as_deref().map(str::to_string)).and_then(|x| strip(&x, "rPr", &["rStyle", "ins", "del", "rPrChange"]));
+        let colours = self.doc.resolver.as_deref().map_or_else(Default::default, |r| r.styles.colours);
+        let rpr = run
+            .and_then(|r| r.direct.xml(&colours, &cx).map(|x| x.into_owned()))
+            .and_then(|x| strip(&x, "rPr", &["rStyle", "ins", "del", "rPrChange"]));
         (ppr, rpr)
     }
 
@@ -493,9 +497,10 @@ impl Editor {
             })
         };
         let raw = |x: Option<String>| crate::docx::Raw(x.map(|x| Rc::from(x.as_str())));
+        let direct = |x: Option<String>| crate::docx::char_props::RunDirect::from_xml(x.as_deref(), &cx);
         let named = |r: &crate::docx::Run| r.style_id.as_deref() == Some(id);
         let unstyled = |r: &crate::docx::Run| -> Option<crate::docx::Run> {
-            without(r.direct.0.as_deref(), "rPr", "rStyle").map(|x| Rc::new(RunStyle { direct: raw(x), ..(**r).clone() }))
+            without(run_xml::rpr(res, r, &cx).as_deref(), "rPr", "rStyle").map(|x| Rc::new(RunStyle { direct: direct(x), ..(**r).clone() }))
         };
         let in_ruby = |i: &Inline| matches!(i, Inline::Ruby(r, _) if r.base.iter().chain(&r.text).any(|x| named(&x.1)));
         let ruby_rpr = |xml: Option<&str>, _: &RunStyle| without(xml, "rPr", "rStyle").unwrap_or_else(|| xml.map(str::to_string));

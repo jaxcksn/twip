@@ -6,6 +6,7 @@ use std::rc::Rc;
 
 use roxmltree::Node;
 
+use super::char_props::{self, RunDirect};
 use super::diagnostics::{Diagnostics, WarningCode};
 use super::model::*;
 use super::numbering::{Counters, Numbering};
@@ -16,8 +17,10 @@ use super::review::{
     PreviousProps, Protection, ProtectionKind, RangeKind, RangeMark, RevisionId, RevisionMark, RowRevisions, RunRevisions, SectionChange, ShowMarkup,
     TableChange, Timestamp,
 };
+use super::run_xml;
 use super::styles::{Region, Styles, ThemeFonts};
 use super::xml::*;
+use crate::format::CharProps;
 
 struct Package {
     zip: zip::ZipArchive<Cursor<Vec<u8>>>,
@@ -307,11 +310,23 @@ fn break_kind(kind: Option<&str>, clear: Option<&str>) -> BreakKind {
 
 /// The run line numbers draw with: the document defaults and the LineNumber character style.
 pub(crate) fn line_number_run(res: &Resolver) -> super::model::Run {
-    let mut rp = res.styles.doc_rpr.clone();
+    let mut p = run_xml::base(&res.styles.doc_rpr);
     if res.styles.get("LineNumber").is_some() {
-        rp.merge_level(&res.styles.chain_rpr(Some("LineNumber")));
+        p.merge_level(&run_xml::character_style(res, "LineNumber"));
     }
-    res.run_style(&rp)
+    Rc::new(crate::format::resolve::run_style(&run_xml::env(res), &p))
+}
+
+/// A paragraph's run base: the XML path's properties, and typed.
+struct Base {
+    xml: RunProps,
+    typed: CharProps,
+}
+
+impl Base {
+    fn new(xml: RunProps) -> Base {
+        Base { typed: run_xml::base(&xml), xml }
+    }
 }
 
 fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String> {
@@ -1436,30 +1451,27 @@ impl Reader {
     }
 
     /// A run's revisions: the wrappers it is in and its `w:rPrChange` (the previous formatting resolved over `base`).
-    fn run_revisions(&mut self, base: &RunProps, rpr: Option<Node>) -> RunRevisions {
+    fn run_revisions(&mut self, base: &Base, rpr: Option<Node>) -> RunRevisions {
         RunRevisions { ins: self.wrap.ins.clone(), del: self.wrap.del.clone(), fmt: self.format_change(base, rpr) }
     }
 
     /// A paragraph mark's revisions: inserted, deleted or moved (`w:ins`, ... in the mark's `w:rPr`), and its
     /// formatting change.
-    fn mark_revisions(&mut self, base: &RunProps, rpr: Option<Node>) -> RunRevisions {
+    fn mark_revisions(&mut self, base: &Base, rpr: Option<Node>) -> RunRevisions {
         let ins = self.mark_at(rpr, "ins", MarkKind::Insert).or_else(|| self.mark_at(rpr, "moveTo", MarkKind::MoveTo));
         let del = self.mark_at(rpr, "del", MarkKind::Delete).or_else(|| self.mark_at(rpr, "moveFrom", MarkKind::MoveFrom));
         RunRevisions { ins, del, fmt: self.format_change(base, rpr) }
     }
 
-    fn format_change(&mut self, base: &RunProps, rpr: Option<Node>) -> Option<Rc<FormatChange>> {
+    fn format_change(&mut self, base: &Base, rpr: Option<Node>) -> Option<Rc<FormatChange>> {
         let c = child(rpr?, "rPrChange")?;
-        let before = child(c, "rPr");
-        let mut previous = self.run_style(&self.run_props(base, before));
-        if self.record {
-            Rc::make_mut(&mut previous).direct = Raw(before.map(raw));
-        }
-        Some(Rc::new(FormatChange { mark: self.mark(c, MarkKind::Format), previous, previous_raw: Raw(before.map(raw)) }))
+        let direct = self.direct(child(c, "rPr"));
+        let previous = self.typed_run(base, direct, false);
+        Some(Rc::new(FormatChange { mark: self.mark(c, MarkKind::Format), previous }))
     }
 
     /// `run` with the revisions it is read in.
-    fn tracked(&mut self, mut run: Run, base: &RunProps, rpr: Option<Node>) -> Run {
+    fn tracked(&mut self, mut run: Run, base: &Base, rpr: Option<Node>) -> Run {
         let rev = self.run_revisions(base, rpr);
         if !rev.is_empty() {
             Rc::make_mut(&mut run).rev = rev;
@@ -1640,7 +1652,7 @@ impl Reader {
             return;
         }
         let r = self.res.paragraph(&ParaProps::default(), None);
-        let mark = self.run_style(&self.run_props(&r.base, None));
+        let mark = self.typed_run(&Base::new(r.base), RunDirect::default(), false);
         let src = self
             .record
             .then(|| Rc::new(ParaSrc { ranges: vec![at], segs: Vec::new(), simple: Vec::new(), lossy: false, closing: true, joined: Vec::new() }));
@@ -1847,7 +1859,7 @@ impl Reader {
             self.alt_chunks.push(AltChunk { para: id, content });
         }
         let r = self.res.paragraph(&ParaProps::default(), None);
-        let mark = self.run_style(&self.run_props(&r.base, None));
+        let mark = self.typed_run(&Base::new(r.base), RunDirect::default(), false);
         // Written from the model in its place once it holds the content; kept as read while it doesn't.
         let src = self.record.then(|| {
             Rc::new(ParaSrc { ranges: vec![n.range()], segs: Vec::new(), simple: Vec::new(), lossy: true, closing: false, joined: Vec::new() })
@@ -2063,25 +2075,34 @@ impl Reader {
         sec
     }
 
-    /// `run` carrying the `w:rPr` it was read from (editable reads), without change tracking marks: what new runs in
-    /// this formatting are written with.
-    fn with_direct(&self, run: Run, rpr: Option<Node>) -> Run {
-        if !self.record {
-            return run;
-        }
+    /// The authored properties of `rpr` (`props`, read from it), with (editable reads) the `w:rPr` they were read
+    /// from without change tracking marks: what new runs in this formatting are written with.
+    fn direct_of(&mut self, rpr: Option<Node>, props: Option<CharProps>) -> RunDirect {
+        let Some(props) = props else { return RunDirect::default() };
+        let Some(n) = rpr.filter(|_| self.record) else { return RunDirect::typed(Some(Rc::new(props))) };
         let tracked = |c: &Node| c.is_element() && matches!(c.tag_name().name(), "ins" | "del" | "moveFrom" | "moveTo" | "rPrChange");
-        let direct = rpr.map(|n| {
-            if !n.children().any(|c| tracked(&c)) {
-                return raw(n);
-            }
-            let text = n.document().input_text();
-            let open = &text[n.range().start..n.first_child().map_or(n.range().end, |c| c.range().start)];
-            let name = open[1..].split(|c: char| c.is_whitespace() || c == '>' || c == '/').next().unwrap_or("w:rPr");
-            let kept: String = n.children().filter(|c| !tracked(c)).map(|c| &text[c.range()]).collect();
-            format!("{}>{kept}</{name}>", open.trim_end_matches('>').trim_end_matches('/')).into()
-        });
-        let mut s = (*run).clone();
-        s.direct = Raw(direct);
+        if !n.children().any(|c| tracked(&c)) {
+            return RunDirect::read(props, raw(n));
+        }
+        let text = n.document().input_text();
+        let open = &text[n.range().start..n.first_child().map_or(n.range().end, |c| c.range().start)];
+        let name = open[1..].split(|c: char| c.is_whitespace() || c == '>' || c == '/').next().unwrap_or("w:rPr");
+        let kept: String = n.children().filter(|c| !tracked(c)).map(|c| &text[c.range()]).collect();
+        RunDirect::read(props, format!("{}>{kept}</{name}>", open.trim_end_matches('>').trim_end_matches('/')).into())
+    }
+
+    /// The authored properties `rpr` holds.
+    fn direct(&mut self, rpr: Option<Node>) -> RunDirect {
+        self.direct_of(rpr, rpr.map(|n| char_props::parse(n).0))
+    }
+
+    /// A run with authored properties `direct` over `base` (in a table of contents' result when `toc`), without
+    /// revisions; its authored properties kept for editable reads.
+    fn typed_run(&self, base: &Base, direct: RunDirect, toc: bool) -> Run {
+        let mut s = run_xml::resolve(&self.res, &base.typed, direct, toc);
+        if !self.record {
+            s.direct = RunDirect::default();
+        }
         Rc::new(s)
     }
 
@@ -2092,6 +2113,7 @@ impl Reader {
         let direct = ParaProps::parse(ppr_node, &self.res.styles.colours);
         let ParaResolved { style: mut para_style, base, level, num_id, ilvl, from_style, style_id } =
             self.res.paragraph(&direct, table.map(|t| &*t.region));
+        let base = Base::new(base);
         if self.record {
             para_style.direct = Raw(ppr_node.map(raw));
         }
@@ -2099,8 +2121,8 @@ impl Reader {
         let para_style = Rc::new(para_style);
 
         let mark_rpr_node = ppr_node.and_then(|p| child(p, "rPr"));
-        let mark_props = self.run_props(&base, mark_rpr_node);
-        let mut mark = self.with_direct(self.run_style(&mark_props), mark_rpr_node);
+        let direct = self.direct(mark_rpr_node);
+        let mut mark = self.typed_run(&base, direct, false);
         let mark_rev = self.mark_revisions(&base, mark_rpr_node);
         if !mark_rev.is_empty() {
             Rc::make_mut(&mut mark).rev = mark_rev;
@@ -2111,7 +2133,7 @@ impl Reader {
             (Some(l), Some(id)) => {
                 if !self.uncounted && self.res.label_shows(id, ilvl, from_style, style_id.as_deref()) {
                     self.counters.next(&self.res.numbering, &self.res.styles, id, ilvl).map(|text| {
-                        let mut lp = mark_props.clone();
+                        let mut lp = self.run_props(&base.xml, mark_rpr_node);
                         lp.merge(&l.rpr);
                         let picture = self.res.numbering.bullet_image(l);
                         ListLabel {
@@ -2208,17 +2230,13 @@ impl Reader {
         self.res.run_props(base, &RunProps::parse(rpr, &self.res.styles.colours))
     }
 
-    fn run_style(&self, p: &RunProps) -> Run {
-        self.res.run_style(p)
-    }
-
-    fn read_inlines(&mut self, container: Node, base: &RunProps, pkg: &mut Package, out: &mut Vec<Inline>) {
+    fn read_inlines(&mut self, container: Node, base: &Base, pkg: &mut Package, out: &mut Vec<Inline>) {
         for e in container.children().filter(|c| c.is_element()) {
             if e.tag_name().namespace() == Some(W) {
                 match e.tag_name().name() {
                     "r" => self.read_run(e, base, pkg, out),
                     "br" | "cr" => {
-                        let run = self.direct_run(e, base, &mut RunProps::default());
+                        let run = self.direct_run(e, base, None);
                         let kind = if e.tag_name().name() == "br" { break_kind(attr(e, "type"), attr(e, "clear")) } else { BreakKind::Line };
                         out.push(Inline::Break(kind, run));
                     }
@@ -2277,7 +2295,8 @@ impl Reader {
                         if self.controls.get(&id).is_some_and(|k| k.props.binding.is_some())
                             && let Some(rpr) = pr.and_then(|p| child(p, "rPr"))
                         {
-                            let run = self.with_direct(self.run_style(&self.run_props(base, Some(rpr))), Some(rpr));
+                            let direct = self.direct(Some(rpr));
+                            let run = self.typed_run(base, direct, false);
                             self.bound_runs.insert(id, run);
                         }
                         out.push(Inline::ControlStart(id));
@@ -2348,12 +2367,16 @@ impl Reader {
         self.opaque(e, out);
     }
 
-    fn read_run(&mut self, r: Node, base: &RunProps, pkg: &mut Package, out: &mut Vec<Inline>) {
-        let mut direct = RunProps::default();
+    fn read_run(&mut self, r: Node, base: &Base, pkg: &mut Package, out: &mut Vec<Inline>) {
+        let mut direct: Option<CharProps> = None;
+        let more = |direct: &mut Option<CharProps>, c: Node| match direct {
+            Some(d) => d.merge(&char_props::parse(c).0),
+            None => *direct = Some(char_props::parse(c).0),
+        };
         for c in r.children().filter(|c| c.is_element()).take_while(|c| is_w(*c, "rPr")) {
-            direct.merge(&RunProps::parse(Some(c), &self.res.styles.colours));
+            more(&mut direct, c);
         }
-        let mut run = self.direct_run(r, base, &mut direct);
+        let mut run = self.direct_run(r, base, direct.clone());
         let mut content = false;
         // The child being read and the units before it: what it added becomes a seg when the next one starts.
         let mut prev: Option<(std::ops::Range<usize>, (usize, usize))> = None;
@@ -2367,8 +2390,8 @@ impl Reader {
         for (c, seg) in kids {
             if is_w(c, "rPr") {
                 if content {
-                    direct.merge(&RunProps::parse(Some(c), &self.res.styles.colours));
-                    run = self.direct_run(r, base, &mut direct);
+                    more(&mut direct, c);
+                    run = self.direct_run(r, base, direct.clone());
                 }
                 continue;
             }
@@ -2450,7 +2473,7 @@ impl Reader {
                         if let (Some(id), Some(f)) = (id, self.fields.pop()) {
                             if !f.spanning {
                                 out.push(Inline::FieldEnd { id, run: run.clone() });
-                                let style = self.run_style(&self.run_props(base, None));
+                                let style = self.typed_run(base, RunDirect::default(), false);
                                 self.close_field(out, f, &run, &style);
                             } else if f.edge && self.record {
                                 let at = marker_runs(r, c, c.range().start);
@@ -2603,7 +2626,7 @@ impl Reader {
     }
 
     /// A ruby's base and annotation text with their runs, its alignment and raise.
-    fn read_ruby(&mut self, ruby: Node, base: &RunProps, pkg: &mut Package) -> Ruby {
+    fn read_ruby(&mut self, ruby: Node, base: &Base, pkg: &mut Package) -> Ruby {
         let record = std::mem::replace(&mut self.record, false);
         let mut text = |name: &str| {
             let mut tmp = Vec::new();
@@ -2631,10 +2654,11 @@ impl Reader {
     /// A checkbox content control (`w14:checkbox`) as one symbol: the character it
     /// shows, in its run's font. The symbol's run is the control's formatting without that font: text typed next to
     /// the checkbox takes it.
-    fn read_checkbox(&mut self, sdt: Node, content: Node, pr: Option<Node>, base: &RunProps, out: &mut Vec<Inline>) {
+    fn read_checkbox(&mut self, sdt: Node, content: Node, pr: Option<Node>, base: &Base, out: &mut Vec<Inline>) {
         let rpr = content.descendants().find(|x| is_w(*x, "r")).and_then(|r| child(r, "rPr"));
-        let props = self.run_props(base, rpr);
-        let shown = self.run_style(&props);
+        let own = rpr.map(|n| char_props::parse(n).0);
+        let props = run_xml::folded(&self.res, &base.typed, own.as_ref(), false);
+        let shown = crate::format::resolve::run_style(&run_xml::env(&self.res), &props);
         let checked = pr
             .and_then(|p| p.descendants().find(|x| is(*x, W14, "checked")))
             .and_then(|x| x.attribute((W14, "val")))
@@ -2658,21 +2682,23 @@ impl Reader {
             None => shown.h_ansi.clone(),
         };
         let mut plain = props;
-        (plain.ascii, plain.h_ansi, plain.east_asia, plain.cs, plain.hint) =
-            (base.ascii.clone(), base.h_ansi.clone(), base.east_asia.clone(), base.cs.clone(), base.hint.clone());
-        let mut run = (*self.run_style(&plain)).clone();
+        (plain.fonts, plain.hint) = (base.typed.fonts.clone(), base.typed.hint);
+        let mut run = crate::format::resolve::run_style(&run_xml::env(&self.res), &plain);
         run.hint_east_asia = shown.hint_east_asia && sym_ch.is_none_or(|_| !text.is_empty());
         if self.record {
             // What new runs in this formatting are written with: the control's `w:rPr` without its `w:rFonts`.
             let other = |n: &Node| n.children().any(|c| c.is_element() && !is_w(c, "rFonts"));
-            run.direct = Raw(rpr.filter(other).map(|n| {
-                let at = n.range().start;
-                let mut s = n.document().input_text()[n.range()].to_string();
-                if let Some(f) = child(n, "rFonts") {
-                    s.replace_range(f.range().start - at..f.range().end - at, "");
+            run.direct = match (rpr.filter(other), own) {
+                (Some(n), Some(own)) => {
+                    let at = n.range().start;
+                    let mut s = n.document().input_text()[n.range()].to_string();
+                    if let Some(f) = child(n, "rFonts") {
+                        s.replace_range(f.range().start - at..f.range().end - at, "");
+                    }
+                    RunDirect::read(char_props::without_fonts(own), s.into())
                 }
-                s.into()
-            }));
+                _ => RunDirect::default(),
+            };
             self.segs.push((sdt.range(), 1));
         }
         let id = self.control(sdt);
@@ -2782,12 +2808,13 @@ impl Reader {
         (address.is_some() || anchor.is_some()).then_some(code)
     }
 
-    fn read_simple_field(&mut self, e: Node, code: String, base: &RunProps, pkg: &mut Package, out: &mut Vec<Inline>) {
+    fn read_simple_field(&mut self, e: Node, code: String, base: &Base, pkg: &mut Package, out: &mut Vec<Inline>) {
         let first = e.children().find(|c| is_w(*c, "r"));
         let rpr = first.and_then(|r| child(r, "rPr"));
-        let run = self.with_direct(self.run_style(&self.run_props(base, rpr)), rpr);
+        let direct = self.direct(rpr);
+        let run = self.typed_run(base, direct, false);
         let run = self.tracked(run, base, rpr);
-        let style = self.run_style(&self.run_props(base, None));
+        let style = self.typed_run(base, RunDirect::default(), false);
         let (mark, segs) = (units_mark(out), self.segs.len());
         let id = FieldId::next();
         let flag = |a: &str| attr(e, a).is_some_and(|v| v == "1" || v == "true" || v == "on");
@@ -2806,7 +2833,7 @@ impl Reader {
         if !code.is_empty() {
             out.push(Inline::Text(code, run.clone()));
         }
-        out.push(Inline::FieldSep { id, run: self.run_style(&self.run_props(base, None)) });
+        out.push(Inline::FieldSep { id, run: self.typed_run(base, RunDirect::default(), false) });
         self.fields.push(OpenField {
             id,
             in_result: true,
@@ -3246,18 +3273,12 @@ impl Reader {
 
     /// A run's formatting from its direct properties `direct` over `base` (its first `w:rPr` kept for saving and
     /// revisions).
-    fn direct_run(&mut self, r: Node, base: &RunProps, direct: &mut RunProps) -> Run {
+    fn direct_run(&mut self, r: Node, base: &Base, direct: Option<CharProps>) -> Run {
         let toc = self.fields.iter().any(|f| f.toc && f.in_result);
-        if toc && direct.style.as_deref() == Some("Hyperlink") {
-            direct.style = None;
-        }
-        let props = self.res.run_props(base, direct);
-        let run = self.with_direct(self.run_style(&props), child(r, "rPr"));
-        let mut run = self.tracked(run, base, child(r, "rPr"));
-        if toc {
-            Rc::make_mut(&mut run).toc = true;
-        }
-        run
+        let rpr = child(r, "rPr");
+        let direct = self.direct_of(rpr, direct);
+        let run = self.typed_run(base, direct, toc);
+        self.tracked(run, base, rpr)
     }
 
     /// A text box's content and box settings: `shape` holds its `bodyPr` and outline, `t` its `w:txbxContent`.
@@ -3807,7 +3828,7 @@ fn sym_ex(ac: Node) -> Option<(char, String)> {
 
 fn push_text(out: &mut Vec<Inline>, t: &str, run: &Run) {
     if let Some(Inline::Text(s, r)) = out.last_mut()
-        && (Rc::ptr_eq(r, run) || (r.layout_eq(run) && r.direct.0 == run.direct.0))
+        && (Rc::ptr_eq(r, run) || r.same_run(run))
     {
         s.push_str(t);
         return;

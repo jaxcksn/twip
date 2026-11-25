@@ -100,7 +100,7 @@ fn a_document_built_from_typed_properties_lays_out_and_edits_without_xml() {
     let doc = sourceless(vec![paragraph(&res, &centred, &[("Built without ", RunProps::default()), ("XML", bold)], id)], &res);
     assert!(doc.source.is_none(), "no package");
     let (_, run) = &runs(&doc, 0)[1];
-    assert!(run.bold && run.size == 14.0 && run.direct.0.is_none(), "typed props resolve with no XML: {run:?}");
+    assert!(run.bold && run.size == 14.0 && run.direct.props().is_none(), "typed props resolve with no XML: {run:?}");
 
     let first = crate::layout::dump::page_text(&crate::layout::layout(&doc, fonts), &doc);
     assert_eq!(glyph_lines(&first).iter().filter(|l| l.starts_with("page ")).count(), 1, "one page:\n{first}");
@@ -218,8 +218,8 @@ fn direct(raw: &crate::docx::Raw) -> &str {
 /// The target's authored XML.
 fn authored(p: &Paragraph, t: Target) -> String {
     match t {
-        Target::Run => direct(&first_run(p).direct).to_owned(),
-        Target::Mark => direct(&p.mark.direct).to_owned(),
+        Target::Run => first_run(p).direct.as_read().map_or("", |x| &**x).to_owned(),
+        Target::Mark => p.mark.direct.as_read().map_or("", |x| &**x).to_owned(),
         Target::Paragraph => direct(&p.style.direct).to_owned(),
     }
 }
@@ -471,7 +471,7 @@ fn an_autocorrection_keeps_each_characters_authored_formatting() {
     let runs: Vec<(String, String)> = para(e.document(), 0)
         .inlines
         .iter()
-        .filter_map(|i| if let Inline::Text(t, r) = i { Some((t.to_string(), direct(&r.direct).to_owned())) } else { None })
+        .filter_map(|i| if let Inline::Text(t, r) = i { Some((t.to_string(), r.direct.as_read().map_or("", |x| &**x).to_owned())) } else { None })
         .collect();
     assert_eq!(runs.iter().map(|r| r.0.as_str()).collect::<String>(), "the ");
     let last_e = runs.iter().find(|(t, _)| t.contains('e')).expect("the e");

@@ -8,6 +8,7 @@ use crate::layout::FloatId;
 use super::Editor;
 use super::commands::Outcome;
 use super::selection::{ObjectRef, Selection};
+use crate::docx::run_xml;
 
 /// The most boxes a chain takes.
 pub const MAX_CHAIN: usize = 1024;
@@ -225,7 +226,7 @@ impl Editor {
         let res = self.doc.resolver.clone()?;
         let cx = self.cx();
         let r = res.para_from_xml(None, None, &cx);
-        let mark = res.run_from_xml(&r.base, None, &cx);
+        let mark = run_xml::run_from_xml(&res, &r.base, None, &cx);
         Some(crate::docx::Paragraph {
             style: std::rc::Rc::new(r.style),
             mark,

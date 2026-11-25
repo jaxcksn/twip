@@ -351,14 +351,18 @@ fn converted_notes_take_the_other_kinds_styles() {
     let Some(Block::Para(q)) = e.document().endnotes.values().next().and_then(|b| b.first()) else { panic!("no endnote") };
     assert_eq!(q.style.style_id.as_deref(), Some("EndnoteText"));
     let mark = |q: &crate::docx::Paragraph| q.inlines.iter().find_map(|i| if let Inline::NoteMark(_, _, r) = i { Some(r.clone()) } else { None });
-    assert_eq!(mark(q).map(|r| r.direct.clone()), mark(&fresh_endnote).map(|r| r.direct.clone()), "the mark's run is an inserted endnote's");
+    assert_eq!(
+        mark(q).map(|r| r.direct.as_read().cloned()),
+        mark(&fresh_endnote).map(|r| r.direct.as_read().cloned()),
+        "the mark's run is an inserted endnote's"
+    );
     let reference = e.index().para(e.document(), body).and_then(|p| {
         p.inlines.iter().find_map(|i| match i {
             Inline::NoteRef { run, .. } => Some(run.clone()),
             _ => None,
         })
     });
-    assert!(reference.is_some_and(|r| r.direct.0.as_deref().is_some_and(|x| x.contains("EndnoteReference"))), "the reference's run");
+    assert!(reference.is_some_and(|r| r.direct.as_read().map(|x| &**x).is_some_and(|x| x.contains("EndnoteReference"))), "the reference's run");
 }
 
 #[test]
@@ -381,7 +385,7 @@ fn converting_a_note_restyles_its_cells_and_a_single_quoted_reference() {
     for i in &mut q.inlines {
         if let Inline::NoteRef { run, .. } = i {
             let mut r = (**run).clone();
-            r.direct = crate::docx::Raw(Some(r#"<w:rPr><w:rStyle w:val='FootnoteReference'/></w:rPr>"#.into()));
+            r.direct = crate::docx::char_props::RunDirect::in_w(r#"<w:rPr><w:rStyle w:val='FootnoteReference'/></w:rPr>"#);
             *run = std::rc::Rc::new(r);
         }
     }
@@ -398,7 +402,7 @@ fn converting_a_note_restyles_its_cells_and_a_single_quoted_reference() {
             _ => None,
         })
     });
-    assert!(reference.is_some_and(|r| r.direct.0.as_deref().is_some_and(|x| x.contains("EndnoteReference"))), "the reference's run");
+    assert!(reference.is_some_and(|r| r.direct.as_read().map(|x| &**x).is_some_and(|x| x.contains("EndnoteReference"))), "the reference's run");
 }
 
 #[test]

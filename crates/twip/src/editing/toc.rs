@@ -16,6 +16,7 @@ use super::index::Container;
 use super::position::{Position, StoryId};
 use super::selection::Selection;
 use super::step::{Step, para_len};
+use crate::docx::run_xml;
 
 /// A table's switches: what it collects and how its entries read. A table of figures is one that collects captions.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -1630,12 +1631,12 @@ impl Editor {
         let run_of = |src: Option<&Run>, bold: bool| -> Run {
             match (&res, &base) {
                 (Some(r), Some(b)) => {
-                    let mut rpr = src.and_then(|s| s.direct.0.as_deref()).map(strip_rpr).unwrap_or_default();
+                    let mut rpr = src.and_then(|s| run_xml::rpr(r, s, &cx)).as_deref().map(strip_rpr).unwrap_or_default();
                     if bold {
                         rpr.push_str(&format!("<{w}b/><{w}bCs/>", w = cx.w));
                     }
                     let xml = (!rpr.is_empty()).then(|| format!("<{w}rPr>{rpr}</{w}rPr>", w = cx.w));
-                    r.run_from_xml(b, xml.as_deref(), &cx)
+                    run_xml::run_from_xml(r, b, xml.as_deref(), &cx)
                 }
                 _ => src.cloned().unwrap_or_else(|| like.mark.clone()),
             }
@@ -1653,7 +1654,7 @@ impl Editor {
         let Some(r) = self.doc.resolver.clone() else { return run.clone() };
         let cx = self.cx();
         let base = r.para_from_xml(Some(ppr), self.region_in(container, &r).as_ref(), &cx).base;
-        r.run_from_xml(&base, Some(&format!("<{w}rPr><{w}webHidden/></{w}rPr>", w = cx.w)), &cx)
+        run_xml::run_from_xml(&r, &base, Some(&format!("<{w}rPr><{w}webHidden/></{w}rPr>", w = cx.w)), &cx)
     }
 
     /// The table region a paragraph in `container` takes its table style's formatting from.
@@ -1828,8 +1829,8 @@ impl Editor {
                 let hidden = match (&res, &base) {
                     (Some(r), Some(b)) => {
                         let w = &cx.w;
-                        let rpr = run.direct.0.as_deref().map(strip_rpr).unwrap_or_default();
-                        r.run_from_xml(b, Some(&format!("<{w}rPr>{rpr}<{w}vanish/></{w}rPr>")), &cx)
+                        let rpr = run_xml::rpr(r, &run, &cx).as_deref().map(strip_rpr).unwrap_or_default();
+                        run_xml::run_from_xml(r, b, Some(&format!("<{w}rPr>{rpr}<{w}vanish/></{w}rPr>")), &cx)
                     }
                     _ => run.clone(),
                 };

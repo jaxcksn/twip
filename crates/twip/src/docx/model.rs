@@ -82,14 +82,15 @@ pub struct RunStyle {
     pub fit_text: Option<(f64, i64)>,
     /// `w:em`, when it marks the text.
     pub em: Option<super::props::Emphasis>,
-    /// In a table of contents' result: the Hyperlink character style doesn't show ([`crate::docx::resolve::Resolver::rerun`]).
+    /// In a table of contents' result: the Hyperlink character style doesn't show ([`crate::docx::run_xml::rerun`]).
     pub toc: bool,
     pub lang: String,
     /// The East Asian language (`w:lang w:eastAsia`).
     pub lang_east_asia: String,
     pub style_id: Option<String>,
-    /// The `w:rPr` as written (editable reads only): what saving writes back for new runs in this formatting.
-    pub direct: Raw,
+    /// The authored properties, with the `w:rPr` they were read as (editable reads only): what saving writes back
+    /// for new runs in this formatting.
+    pub direct: super::char_props::RunDirect,
     /// Tracked insertion, deletion and formatting change of the run (or, on a paragraph's mark, of the mark).
     pub rev: RunRevisions,
     /// The generic categories the document's font table gives the families of the `ascii`, `h_ansi` and `east_asia`
@@ -204,12 +205,12 @@ impl RunStyle {
     /// change records as written.
     pub fn authored_eq(&self, o: &RunStyle) -> bool {
         let (a, b) = (&self.rev, &o.rev);
-        self.direct.0 == o.direct.0
+        self.direct.authored_eq(&o.direct)
             && a.ins == b.ins
             && a.del == b.del
             && match (&a.fmt, &b.fmt) {
                 (None, None) => true,
-                (Some(x), Some(y)) => x.mark == y.mark && x.previous_raw.0 == y.previous_raw.0,
+                (Some(x), Some(y)) => x.mark == y.mark && x.previous.direct.authored_eq(&y.previous.direct),
                 _ => false,
             }
     }

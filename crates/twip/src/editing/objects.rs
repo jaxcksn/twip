@@ -14,6 +14,7 @@ use super::snap::{SnapLine, Snapping};
 use super::step::Step;
 use super::stories::{inline_at, reachable};
 use super::view::{Axis, Grid, GuideLine, Guides, Measure, Outline, Pt, Px, Tone};
+use crate::docx::run_xml;
 use crate::layout::vertical::Turn;
 
 impl Editor {
@@ -819,7 +820,7 @@ impl Editor {
         let name = self.new_object_name("Text Box");
         let Some(p) = self.index.para(&self.doc, para) else { return Outcome::Unchanged("no paragraph") };
         let r = res.para_from_xml(None, None, &cx);
-        let text_run = res.run_from_xml(&r.base, None, &cx);
+        let text_run = run_xml::run_from_xml(&res, &r.base, None, &cx);
         let pid = crate::docx::next_para_id();
         let inner = crate::docx::Paragraph {
             style: std::rc::Rc::new(r.style),

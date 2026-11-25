@@ -15,6 +15,7 @@ use super::commands::Outcome;
 use super::position::Position;
 use super::selection::Selection;
 use super::step::{Step, para_len};
+use crate::docx::run_xml;
 
 #[derive(Clone, Debug, Default)]
 pub struct Fragment {
@@ -1046,10 +1047,10 @@ impl Editor {
         }
         let Some(res) = self.doc.resolver.clone() else { return src.clone() };
         let cx = self.cx();
-        let mut out = res.run_from_xml(base, src.direct.0.as_deref(), &cx);
+        let mut out = run_xml::run_from_xml(&res, base, run_xml::rpr(&res, src, &cx).as_deref(), &cx);
         if !out.layout_eq(src) {
             let w = cx.w.clone();
-            let mut p = Props::parse(src.direct.0.as_deref(), "rPr", &cx);
+            let mut p = Props::parse(run_xml::rpr(&res, src, &cx).as_deref(), "rPr", &cx);
             let flag = |name: &str, on: bool| if on { format!("<{w}{name}/>") } else { format!("<{w}{name} {w}val=\"0\"/>") };
             if out.bold != src.bold {
                 p.set("b", flag("b", src.bold));
@@ -1102,7 +1103,7 @@ impl Editor {
                 };
                 p.set("vertAlign", format!("<{w}vertAlign {w}val=\"{v}\"/>"));
             }
-            out = res.run_from_xml(base, p.xml().as_deref(), &cx);
+            out = run_xml::run_from_xml(&res, base, p.xml().as_deref(), &cx);
         }
         cache.insert(Rc::as_ptr(src), out.clone());
         out

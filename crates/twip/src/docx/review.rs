@@ -232,9 +232,8 @@ impl RunRevisions {
 #[derive(Clone, Debug, PartialEq)]
 pub struct FormatChange {
     pub mark: Rc<RevisionMark>,
+    /// The formatting before, its authored properties ([`RunStyle::direct`]) the earlier `w:rPr`.
     pub previous: Rc<RunStyle>,
-    /// The earlier `w:rPr` as written, for saving.
-    pub previous_raw: Raw,
 }
 
 /// `w:pPrChange`: the paragraph's properties before the change.

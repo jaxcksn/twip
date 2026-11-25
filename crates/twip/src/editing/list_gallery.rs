@@ -12,6 +12,7 @@ use crate::services::lists;
 
 use super::Editor;
 use super::commands::Outcome;
+use crate::docx::run_xml;
 
 /// Recent entries kept per gallery.
 const RECENT: usize = 8;
@@ -239,7 +240,7 @@ impl Editor {
                 picture,
                 legacy: level.legacy,
             };
-            let base = next.run_from_xml(&para.base, None, &scx);
+            let base = run_xml::run_from_xml(&next, &para.base, None, &scx);
             let grey = Rc::new(RunStyle { color: Some(0x80_8080), ..(*base).clone() });
             out.push(Block::Para(Paragraph {
                 style: Rc::new(para.style),

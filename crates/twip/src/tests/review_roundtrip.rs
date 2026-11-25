@@ -334,7 +334,7 @@ fn tracked_runs(doc: &mut Document) -> Vec<u8> {
     let fmt = mark(doc, 9005, "Author C", MarkKind::Format);
     let inserted = with_rev(&base, |r| r.ins = Some(ins.clone()));
     let mut bold = (*inserted).clone();
-    bold.direct = Raw(Some("<w:rPr><w:b/></w:rPr>".into()));
+    bold.direct = crate::docx::char_props::RunDirect::in_w("<w:rPr><w:b/></w:rPr>");
     let bold = Rc::new(bold);
     let deleted = with_rev(&base, |r| r.del = Some(del));
     let both = with_rev(&base, |r| {
@@ -342,11 +342,12 @@ fn tracked_runs(doc: &mut Document) -> Vec<u8> {
         r.del = Some(del2);
     });
     let mut formatted = (*with_rev(&base, |r| {
-        let previous = Rc::new(RunStyle { italic: true, ..(*base).clone() });
-        r.fmt = Some(Rc::new(FormatChange { mark: fmt, previous, previous_raw: Raw(Some("<w:rPr><w:i/></w:rPr>".into())) }))
+        let previous =
+            Rc::new(RunStyle { italic: true, direct: crate::docx::char_props::RunDirect::in_w("<w:rPr><w:i/></w:rPr>"), ..(*base).clone() });
+        r.fmt = Some(Rc::new(FormatChange { mark: fmt, previous }))
     }))
     .clone();
-    formatted.direct = Raw(Some("<w:rPr><w:b/></w:rPr>".into()));
+    formatted.direct = crate::docx::char_props::RunDirect::in_w("<w:rPr><w:b/></w:rPr>");
     let formatted = Rc::new(formatted);
     let p = para_mut(doc, at);
     p.inlines = vec![

@@ -29,7 +29,7 @@ pub(super) fn write(doc: &Document, src: &Source, parts: &mut Vec<(String, Vec<u
             );
             let mut text = String::new();
             for (n, b) in made.iter().enumerate() {
-                text.push_str(&part_xml_of("w:", b, n, &new_blocks_xml(&shell, &b.body, &doc.controls, &doc.people)?));
+                text.push_str(&part_xml_of("w:", b, n, &new_blocks_xml(&shell, &b.body, &doc.controls, &doc.people, &super::colours_of(doc))?));
             }
             let xml = shell.replace("<w:docParts></w:docParts>", &format!("<w:docParts>{text}</w:docParts>"));
             // Beside the main part.
@@ -101,7 +101,7 @@ fn patched(doc: &Document, g: &Glossary, gs: &GlossarySource) -> Result<Option<S
     }
     let mut text = String::new();
     for (n, b) in g.parts.iter().enumerate().skip(gs.parts.len()).filter(|(_, b)| b.state == PartState::Added) {
-        text.push_str(&part_xml_of(&w, b, n, &new_blocks_xml(&gs.xml, &b.body, &doc.controls, &doc.people)?));
+        text.push_str(&part_xml_of(&w, b, n, &new_blocks_xml(&gs.xml, &b.body, &doc.controls, &doc.people, &super::colours_of(doc))?));
     }
     if !text.is_empty() {
         let list = dom.descendants().find(|n| is_w(*n, "docParts")).ok_or("a glossary without its parts list")?;
@@ -110,7 +110,17 @@ fn patched(doc: &Document, g: &Glossary, gs: &GlossarySource) -> Result<Option<S
         splices.push((close..close, text));
     }
     let (orig, now): (Vec<&[Block]>, Vec<&[Block]>) = lists.iter().copied().unzip();
-    part_xml_with(&gs.xml, &boxes(&orig, &now), &lists, &splices, &super::SectionEdits::default(), &doc.controls, &gone_controls(doc), &doc.people)
+    part_xml_with(
+        &gs.xml,
+        &boxes(&orig, &now),
+        &lists,
+        &splices,
+        &super::SectionEdits::default(),
+        &doc.controls,
+        &gone_controls(doc),
+        &doc.people,
+        &super::colours_of(doc),
+    )
 }
 
 #[cfg(test)]

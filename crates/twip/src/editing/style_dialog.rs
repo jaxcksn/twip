@@ -12,6 +12,7 @@ use crate::services::styles::{NameRefusal, check_name, describe, next_new_name};
 
 use super::Editor;
 use super::commands::Outcome;
+use crate::docx::run_xml;
 
 fn one<T: Clone + Default>(t: &Tri<T>) -> T {
     match t {
@@ -184,13 +185,16 @@ impl Editor {
                     }
                     p.xml().unwrap_or_default()
                 });
-                let rpr = self.caret().and_then(|c| self.run_at(&c)).and_then(|r| r.direct.0.as_deref().map(str::to_string)).map(|x| {
-                    let mut p = Props::parse(Some(&x), "rPr", &cx);
-                    for k in ["rStyle", "ins", "del", "rPrChange"] {
-                        p.remove(k);
-                    }
-                    p.xml().unwrap_or_default()
-                });
+                let rpr =
+                    self.caret().and_then(|c| self.run_at(&c)).and_then(|r| r.direct.xml(&res.styles.colours, &cx).map(|x| x.into_owned())).map(
+                        |x| {
+                            let mut p = Props::parse(Some(&x), "rPr", &cx);
+                            for k in ["rStyle", "ins", "del", "rPrChange"] {
+                                p.remove(k);
+                            }
+                            p.xml().unwrap_or_default()
+                        },
+                    );
                 let base = base.map_or(String::new(), |b| format!("<{w}basedOn {w}val=\"{}\"/>", esc(&b)));
                 format!(
                     "<{w}style {w}type=\"paragraph\" {w}customStyle=\"1\" {w}styleId=\"{id}\"><{w}name {w}val=\"{n}\"/>{base}<{w}next {w}val=\"{id}\"/><{w}qFormat/>{}{}</{w}style>",
@@ -221,7 +225,7 @@ impl Editor {
             Some(region) => {
                 let cx = next.styles.cx();
                 let para = next.para_from_xml(None, Some(region), &cx);
-                let run = next.run_from_xml(&para.base, None, &cx);
+                let run = run_xml::run_from_xml(&next, &para.base, None, &cx);
                 (super::state::character(&[&run]), super::state::paragraph(&[(&para.style, None)]))
             }
             None => {

@@ -17,6 +17,7 @@ use super::index::DocIndex;
 use super::selection::Selection;
 use super::step::{Step, para_len};
 use super::{Editor, Tx};
+use crate::docx::run_xml;
 
 impl Editor {
     pub(super) fn list_item_start(&self) -> Option<(ParaId, (i64, i64))> {
@@ -313,7 +314,8 @@ impl Editor {
     pub(super) fn label_base(&self, para: ParaId, p: &Paragraph, res: &Resolver, cx: &Cx) -> RunProps {
         let region = self.region_of_para(para, res);
         let base = res.para_from_xml(p.style.direct.0.as_deref(), region.as_ref(), cx).base;
-        let mark = p.mark.direct.0.as_deref().and_then(|x| cx.parse(x, |_, el| RunProps::parse(Some(el), &res.styles.colours))).unwrap_or_default();
+        let mark =
+            run_xml::rpr(res, &p.mark, cx).and_then(|x| cx.parse(&x, |_, el| RunProps::parse(Some(el), &res.styles.colours))).unwrap_or_default();
         res.run_props(&base, &mark)
     }
 

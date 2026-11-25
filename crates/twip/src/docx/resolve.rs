@@ -205,7 +205,7 @@ impl Resolver {
             lang: p.lang.clone().unwrap_or_default(),
             lang_east_asia: p.lang_east_asia.clone().unwrap_or_default(),
             style_id: p.style.clone(),
-            direct: Raw::default(),
+            direct: Default::default(),
             rev: Default::default(),
             categories,
         })
@@ -382,14 +382,14 @@ impl Resolver {
     pub fn run_from_xml(&self, base: &RunProps, rpr: Option<&str>, cx: &Cx) -> Run {
         let direct = rpr.and_then(|x| cx.parse(x, |_, el| RunProps::parse(Some(el), &self.styles.colours))).unwrap_or_default();
         let mut s = (*self.run_style(&self.run_props(base, &direct))).clone();
-        s.direct = Raw(rpr.map(Rc::from));
+        s.direct = super::char_props::RunDirect::from_xml(rpr, cx);
         Rc::new(s)
     }
 
     /// `run` resolved again from its direct `w:rPr` over `base`, where it is: in a table of contents' result without the
     /// Hyperlink character style, as the reader resolved it, its review marks kept.
     pub fn rerun(&self, base: &RunProps, run: &RunStyle, cx: &Cx) -> Run {
-        self.rerun_xml(base, run, run.direct.0.as_deref(), cx)
+        self.rerun_xml(base, run, run.direct.as_read().map(|x| &**x), cx)
     }
 
     /// `rpr` resolved over `base` in `run`'s place, as reading gives a run with that `w:rPr` there: in a table of
@@ -401,13 +401,13 @@ impl Resolver {
             direct.style = None;
         }
         let mut s = (*self.run_style(&self.run_props(base, &direct))).clone();
-        s.direct = Raw(rpr.map(Rc::from));
+        s.direct = super::char_props::RunDirect::from_xml(rpr, cx);
         s.toc = run.toc;
         s.rev = RunRevisions {
             ins: run.rev.ins.clone(),
             del: run.rev.del.clone(),
             fmt: run.rev.fmt.as_ref().map(|f| {
-                let previous = self.run_from_xml(base, f.previous_raw.0.as_deref(), cx);
+                let previous = self.run_from_xml(base, f.previous.direct.as_read().map(|x| &**x), cx);
                 if previous == f.previous { f.clone() } else { Rc::new(FormatChange { previous, ..(**f).clone() }) }
             }),
         };
@@ -532,7 +532,7 @@ mod tests {
                     r.style.change = p.style.change.clone();
                     assert_eq!(*p.style, r.style, "{what}: paragraph {:?}", p.id);
                     let with_rev = |again: Run, read: &Run| RunStyle { rev: read.rev.clone(), ..(*again).clone() };
-                    let mark = with_rev(res.run_from_xml(&r.base, p.mark.direct.0.as_deref(), cx), &p.mark);
+                    let mark = with_rev(res.run_from_xml(&r.base, p.mark.direct.as_read().map(|x| &**x), cx), &p.mark);
                     assert_eq!(*p.mark, mark, "{what}: the mark of {:?}", p.id);
                     for i in &p.inlines {
                         if let Inline::Text(t, run) = i {

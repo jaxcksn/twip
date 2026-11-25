@@ -18,6 +18,7 @@ use super::index::{Container, Loc};
 use super::position::{Position, StoryId};
 use super::selection::Selection;
 use super::step::Step;
+use crate::docx::run_xml;
 
 type Refused = Error;
 
@@ -2322,7 +2323,7 @@ impl Editor {
                 let flags = [(r.bold, "b"), (r.italic, "i"), (r.underline, "u"), (r.strikethrough, "strike")];
                 let formatted = match (&res, &base) {
                     (Some(res), Some(base)) if flags.iter().any(|(on, _)| on.is_some()) => {
-                        let mut rp = crate::docx::write::props::Props::parse(run.direct.0.as_deref(), "rPr", &cx);
+                        let mut rp = crate::docx::write::props::Props::parse(run_xml::rpr(res, run, &cx).as_deref(), "rPr", &cx);
                         for (on, name) in flags {
                             let Some(on) = on else { continue };
                             let xml = match (name, on) {
@@ -2335,7 +2336,7 @@ impl Editor {
                             };
                             rp.set(name, xml);
                         }
-                        res.run_from_xml(base, rp.xml().as_deref(), &cx)
+                        run_xml::run_from_xml(res, base, rp.xml().as_deref(), &cx)
                     }
                     _ => run.clone(),
                 };

@@ -84,6 +84,77 @@ impl RprRevisions {
     }
 }
 
+/// A run's authored properties: typed, with the `w:rPr` they were read from (or last written as) beside them. The
+/// written form stands for the properties only while they are the ones it was read as; never part of equality.
+#[derive(Clone, Debug, Default)]
+pub struct RunDirect {
+    props: Option<Rc<CharProps>>,
+    origin: Option<(Rc<CharProps>, Rc<str>)>,
+}
+
+impl RunDirect {
+    /// Properties read from `xml`, the `w:rPr` they were parsed from.
+    pub fn read(props: CharProps, xml: Rc<str>) -> RunDirect {
+        let props = Rc::new(props);
+        RunDirect { origin: Some((props.clone(), xml)), props: Some(props) }
+    }
+
+    /// The properties of `xml`, a `w:rPr` with the main namespace bound to `w`.
+    #[cfg(test)]
+    pub(crate) fn in_w(xml: &str) -> RunDirect {
+        RunDirect::from_xml(Some(xml), &Cx::of_xml(&format!("<w:document xmlns:w=\"{W}\">")))
+    }
+
+    /// Typed properties with no written form.
+    pub fn typed(props: Option<Rc<CharProps>>) -> RunDirect {
+        RunDirect { props, origin: None }
+    }
+
+    /// The properties `xml` (a `w:rPr` in the part `cx` describes) holds; none for no XML, and nothing typed (the
+    /// XML kept as written) for XML that doesn't parse.
+    pub fn from_xml(xml: Option<&str>, cx: &Cx) -> RunDirect {
+        let Some(x) = xml else { return RunDirect::default() };
+        RunDirect::read(cx.parse(x, |_, el| parse(el).0).unwrap_or_default(), x.into())
+    }
+
+    /// The typed properties; `None`: none of its own.
+    pub fn props(&self) -> Option<&Rc<CharProps>> {
+        self.props.as_ref()
+    }
+
+    /// The `w:rPr` as read, while the properties are the ones read from it.
+    pub fn as_read(&self) -> Option<&Rc<str>> {
+        let (read, xml) = self.origin.as_ref()?;
+        let props = self.props.as_ref()?;
+        (Rc::ptr_eq(read, props) || read == props).then_some(xml)
+    }
+
+    /// The `w:rPr` to write in the part `cx` describes: as read while the properties are those, else written from
+    /// them (a theme colour's value as `colours` resolve it).
+    pub fn xml(&self, colours: &ThemeColours, cx: &Cx) -> Option<std::borrow::Cow<'_, str>> {
+        if let Some(x) = self.as_read() {
+            return Some(std::borrow::Cow::Borrowed(x));
+        }
+        self.props.as_ref().map(|p| std::borrow::Cow::Owned(serialize(p, &RprRevisions::default(), colours, cx)))
+    }
+
+    /// Whether WordprocessingML on/off child `local`, which the typed properties don't model, is there and on.
+    pub fn unmodelled_flag(&self, local: &str) -> bool {
+        let f = self.props.as_ref().and_then(|p| p.foreign.as_ref());
+        let c = f.and_then(|f| f.children.iter().find(|c| &*c.name.ns == W && &*c.name.local == local));
+        c.is_some_and(|c| super::xml::on_off_str(super::write::props::attr_of(&c.payload, "val").as_deref()))
+    }
+
+    /// Authored equality: the typed properties.
+    pub fn authored_eq(&self, o: &RunDirect) -> bool {
+        match (&self.props, &o.props) {
+            (Some(a), Some(b)) => Rc::ptr_eq(a, b) || a == b,
+            (None, None) => true,
+            _ => false,
+        }
+    }
+}
+
 /// The on/off children and their toggles.
 const TOGGLES: [(&str, Toggle); 12] = [
     ("b", Toggle::BOLD),
@@ -449,6 +520,22 @@ fn hint(v: &str) -> FontHint {
         "cs" => FontHint::Complex,
         _ => FontHint::Default,
     }
+}
+
+/// `p` without its fonts: no font, no hint, and nothing kept of `w:rFonts`.
+pub fn without_fonts(mut p: CharProps) -> CharProps {
+    (p.fonts, p.hint) = (ScriptFonts::default(), None);
+    if let Some(f) = p.foreign.take() {
+        let mut f = Rc::unwrap_or_clone(f);
+        let fonts = |q: &QName| &*q.ns == W && &*q.local == "rFonts";
+        f.attributes.retain(|a| !a.on.as_ref().is_some_and(fonts));
+        f.children.retain(|c| !fonts(&c.name));
+        f.kept.retain(|c| !fonts(&c.name));
+        if f != ForeignProps::default() {
+            p.foreign = Some(Rc::new(f));
+        }
+    }
+    p
 }
 
 // Conversion from the XML path's properties

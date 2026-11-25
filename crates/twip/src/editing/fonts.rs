@@ -11,6 +11,7 @@ use super::Editor;
 use super::commands::Outcome;
 use super::format::with_run;
 use super::step::Step;
+use crate::docx::run_xml;
 
 const W: &str = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 
@@ -74,6 +75,7 @@ impl Editor {
             return Outcome::Unchanged("locked");
         }
         let cx = self.cx();
+        let colours = self.doc.resolver.as_deref().map_or_else(Default::default, |r| r.styles.colours);
         // What the rewrite would change, before a transaction exists: nothing to change leaves no undo step.
         let mut changed = 0;
         for (para, a, b) in self.selected_ranges().into_iter().filter(|x| x.1 < x.2) {
@@ -84,7 +86,7 @@ impl Editor {
                 let overlaps = n > 0 && at < b.0 && at + n > a.0;
                 at += n;
                 if let Some(run) = i.run().filter(|run| overlaps && styled(run, r)) {
-                    changed += u32::from(patch(&mut Props::parse(run.direct.0.as_deref(), "rPr", &cx), run, r, true, &cx));
+                    changed += u32::from(patch(&mut Props::parse(run.direct.xml(&colours, &cx).as_deref(), "rPr", &cx), run, r, true, &cx));
                 }
             }
         }
@@ -124,9 +126,9 @@ impl Editor {
                 }
             };
             if styled(&p.mark, r) {
-                let mut props = Props::parse(p.mark.direct.0.as_deref(), "rPr", &cx);
+                let mut props = Props::parse(run_xml::rpr(&res, &p.mark, &cx).as_deref(), "rPr", &cx);
                 if patch(&mut props, &p.mark, r, filtered, &cx) && tally(1, para_locked) {
-                    let mark = res.rerun_xml(again.mark_base(), &p.mark, props.xml().as_deref(), &cx);
+                    let mark = run_xml::rerun_xml(&res, again.mark_base(), &p.mark, props.xml().as_deref(), &cx);
                     steps.push(Step::Para { para, style: p.style.clone(), mark, list: p.list.clone() });
                 }
             }
@@ -148,8 +150,8 @@ impl Editor {
                 let own = styled(run, r);
                 let restyled = own
                     .then(|| {
-                        let mut props = Props::parse(run.direct.0.as_deref(), "rPr", &cx);
-                        patch(&mut props, run, r, filtered, &cx).then(|| res.rerun_xml(base, run, props.xml().as_deref(), &cx))
+                        let mut props = Props::parse(run_xml::rpr(&res, run, &cx).as_deref(), "rPr", &cx);
+                        patch(&mut props, run, r, filtered, &cx).then(|| run_xml::rerun_xml(&res, base, run, props.xml().as_deref(), &cx))
                     })
                     .flatten();
                 let symbol = matches!(i, Inline::Sym { font, .. } if own && font.eq_ignore_ascii_case(&r.from));

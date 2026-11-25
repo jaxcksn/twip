@@ -12,6 +12,7 @@ use super::commands::Outcome;
 use super::position::{Place, Position};
 use super::selection::Selection;
 use super::step::Step;
+use crate::docx::run_xml;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct AutoCorrect {
@@ -909,10 +910,10 @@ impl Editor {
         let res = self.doc.resolver.clone()?;
         let cx = self.cx();
         let base = self.run_base(para, at, &res, &cx)?;
-        let mut p = crate::docx::write::props::Props::parse(run.direct.0.as_deref(), "rPr", &cx);
+        let mut p = crate::docx::write::props::Props::parse(run_xml::rpr(&res, run, &cx).as_deref(), "rPr", &cx);
         let w = cx.w.clone();
         p.set("vertAlign", format!("<{w}vertAlign {w}val=\"superscript\"/>"));
-        Some(res.rerun_xml(&base, run, p.xml().as_deref(), &cx))
+        Some(run_xml::rerun_xml(&res, &base, run, p.xml().as_deref(), &cx))
     }
 }
 

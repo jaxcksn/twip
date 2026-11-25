@@ -12,6 +12,7 @@ use super::clipboard::{Fragment, Look};
 use super::commands::Outcome;
 use super::position::Position;
 use super::selection::{ObjectRef, Selection};
+use crate::docx::run_xml;
 use crate::layout::{FloatId, Unit};
 
 /// The most bytes a pasted picture has: the most a part of an opened document may.
@@ -1170,7 +1171,7 @@ fn merged_run(
         return r.clone();
     }
     let w = &cx.w;
-    let mut p = Props::parse(at.direct.0.as_deref(), "rPr", cx);
+    let mut p = Props::parse(run_xml::rpr(res, at, cx).as_deref(), "rPr", cx);
     p.remove("rPrChange");
     p.remove("ins");
     p.remove("del");
@@ -1188,7 +1189,7 @@ fn merged_run(
     if src.style_id.as_deref() == Some("Hyperlink") && res.styles.by_id.contains_key("Hyperlink") {
         p.set("rStyle", format!("<{w}rStyle {w}val=\"Hyperlink\"/>"));
     }
-    let mut r = res.run_from_xml(base, p.xml().as_deref(), cx);
+    let mut r = run_xml::run_from_xml(res, base, p.xml().as_deref(), cx);
     if !src.rev.is_empty() {
         let mut s = RunStyle::clone(&r);
         s.rev = src.rev.clone();

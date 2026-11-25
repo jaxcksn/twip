@@ -7,6 +7,7 @@ use crate::docx::write::props::esc;
 use crate::docx::{Block, Inline, Paragraph, RunStyle, next_para_id};
 
 use super::Editor;
+use crate::docx::run_xml;
 
 /// The style dialog's preview texts.
 const PREVIOUS: &str = "Previous Paragraph ";
@@ -79,7 +80,7 @@ impl Editor {
                     .map(|(ci, t)| {
                         let region = next.cell_region(Some(&id), look, bands, (ri, ci), (5, 5), 1);
                         let para = next.para_from_xml(None, Some(&region), &cx);
-                        let run = next.run_from_xml(&para.base, None, &cx);
+                        let run = run_xml::run_from_xml(&next, &para.base, None, &cx);
                         let tc = &region.tc;
                         Cell {
                             width: Some(crate::docx::props::Width::Dxa(width)),
@@ -141,7 +142,7 @@ impl Editor {
             grid_change: None,
         };
         let plain = next.para_from_xml(None, None, &cx);
-        let base = next.run_from_xml(&plain.base, None, &cx);
+        let base = run_xml::run_from_xml(&next, &plain.base, None, &cx);
         // A table is followed by a paragraph.
         Some(vec![Block::Table(table), paragraph(Rc::new(plain.style), base, String::new())])
     }
@@ -151,7 +152,7 @@ impl Editor {
         let res = self.doc.resolver.as_ref()?;
         let cx = res.styles.cx();
         let para = res.para_from_xml(None, None, &cx);
-        let base = res.run_from_xml(&para.base, None, &cx);
+        let base = run_xml::run_from_xml(res, &para.base, None, &cx);
         let run = Rc::new(RunStyle { ascii: family.to_string(), h_ansi: family.to_string(), cs: family.to_string(), ..(*base).clone() });
         Some(vec![paragraph(Rc::new(para.style), run, c.to_string())])
     }
@@ -171,7 +172,7 @@ impl Editor {
             _ => (Some(format!("<{w}pPr><{w}pStyle {w}val=\"{id}\"/></{w}pPr>")), None),
         };
         let para = next.para_from_xml(ppr.as_deref(), None, &cx);
-        let run = next.run_from_xml(&para.base, rpr.as_deref(), &cx);
+        let run = run_xml::run_from_xml(&next, &para.base, rpr.as_deref(), &cx);
         if tile {
             // A tile shows the character formatting on a plain paragraph.
             let plain = next.para_from_xml(None, None, &cx);
@@ -179,7 +180,7 @@ impl Editor {
         }
         let around = next.para_from_xml(None, None, &cx);
         let grey = {
-            let base = next.run_from_xml(&around.base, None, &cx);
+            let base = run_xml::run_from_xml(&next, &around.base, None, &cx);
             Rc::new(RunStyle { color: Some(0x80_8080), ..(*base).clone() })
         };
         let around = Rc::new(around.style);

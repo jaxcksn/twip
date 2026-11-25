@@ -11,6 +11,7 @@ use crate::font::Fonts;
 use crate::layout::Unit;
 
 use super::Outcome;
+use crate::docx::run_xml;
 use crate::editing::format::{Format, Toggle};
 use crate::editing::step::Step;
 use crate::editing::{Editor, Tx};
@@ -681,7 +682,8 @@ impl Editor {
             props.kids.retain(|(n, _)| !drop.contains(&n.as_str()));
             props
         };
-        let mut rpr = strip(run.as_ref().and_then(|r| r.direct.0.as_deref()), "rPr", &["ins", "del", "moveFrom", "moveTo", "rPrChange"]);
+        let own = run.as_ref().and_then(|r| run_xml::rpr(&res, r, &cx));
+        let mut rpr = strip(own.as_deref(), "rPr", &["ins", "del", "moveFrom", "moveTo", "rPrChange"]);
         if !whole && rpr.get("rStyle").is_none() {
             paragraph_style_rpr(&res.styles, p.style.style_id.as_deref(), &mut rpr, &cx);
         }

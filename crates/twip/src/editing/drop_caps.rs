@@ -8,6 +8,7 @@ use super::position::StoryId;
 use super::step::{Edges, Step};
 use crate::api::command::{DropCap, DropCapPosition};
 use crate::api::value::Points;
+use crate::docx::run_xml;
 use crate::docx::write::props::{Props, esc};
 use crate::docx::{Block, Inline, Paragraph};
 use crate::font::Fonts;
@@ -176,7 +177,7 @@ impl Editor {
             twips(drop)
         );
         let frame = res.para_from_xml(Some(&ppr), None, &cx).style;
-        let mut rpr = Props::parse(run.direct.0.as_deref(), "rPr", &cx);
+        let mut rpr = Props::parse(run_xml::rpr(&res, run, &cx).as_deref(), "rPr", &cx);
         if let Some(font) = d.font.as_deref().filter(|f| !f.is_empty()) {
             rpr.set("rFonts", format!("<{w}rFonts {w}ascii=\"{0}\" {w}hAnsi=\"{0}\" {w}cs=\"{0}\"/>", esc(font)));
         }
@@ -185,7 +186,7 @@ impl Editor {
         rpr.set("szCs", format!("<{w}szCs {w}val=\"{}\"/>", (size * 2.0) as i64));
         let mut base = res.styles.doc_rpr.clone();
         base.merge_level(&res.styles.chain_rpr(res.styles.paragraph_style(p.style.style_id.as_deref())));
-        let big = res.run_from_xml(&base, rpr.xml().as_deref(), &cx);
+        let big = run_xml::run_from_xml(&res, &base, rpr.xml().as_deref(), &cx);
         let para = Paragraph {
             style: Rc::new(frame),
             mark: big.clone(),

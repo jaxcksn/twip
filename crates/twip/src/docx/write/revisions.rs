@@ -4,7 +4,8 @@
 
 use super::props::{Cx, Props, esc};
 use crate::docx::model::{Raw, RunStyle, VMerge};
-use crate::docx::review::{CellMarkKind, CellRevisions, GridChange, MarkKind, People, RevisionMark, RowRevisions, TableChange};
+use crate::docx::props::ThemeColours;
+use crate::docx::review::{CellMarkKind, CellRevisions, FormatChange, GridChange, MarkKind, People, RevisionMark, RowRevisions, TableChange};
 
 /// ` w:id=".." w:author=".." w:date=".."`: a mark's attributes, its date as it was read.
 pub(super) fn attrs(w: &str, m: &RevisionMark, people: &People) -> String {
@@ -62,18 +63,23 @@ fn is_element(xml: &str, local: &str) -> bool {
 }
 
 /// A run's `w:rPr` as written for it: its direct properties, with its formatting change last (CT_RPr order).
-pub(super) fn run_rpr(run: &RunStyle, cx: &Cx, people: &People) -> String {
-    let direct = run.direct.0.as_deref();
-    let Some(f) = &run.rev.fmt else { return direct.unwrap_or("").to_string() };
-    let mut p = Props::parse(direct, "rPr", cx);
-    p.set("rPrChange", change(&cx.w, "rPrChange", "rPr", &f.mark, &f.previous_raw, people));
+pub(super) fn run_rpr(run: &RunStyle, colours: &ThemeColours, cx: &Cx, people: &People) -> String {
+    let direct = run.direct.xml(colours, cx);
+    let Some(f) = &run.rev.fmt else { return direct.unwrap_or_default().into_owned() };
+    let mut p = Props::parse(direct.as_deref(), "rPr", cx);
+    p.set("rPrChange", change(&cx.w, "rPrChange", "rPr", &f.mark, &previous(f, colours, cx), people));
     p.xml().unwrap_or_default()
+}
+
+/// A formatting change's earlier `w:rPr` as written.
+fn previous(f: &FormatChange, colours: &ThemeColours, cx: &Cx) -> Raw {
+    Raw(f.previous.direct.xml(colours, cx).map(|x| x.into()))
 }
 
 /// A paragraph mark's `w:rPr`: its direct properties, its insertion or deletion first and its formatting change last
 /// (CT_ParaRPr order); `None` when it has nothing.
-pub(super) fn mark_rpr(mark: &RunStyle, cx: &Cx, people: &People) -> Option<String> {
-    let mut p = Props::parse(mark.direct.0.as_deref(), "rPr", cx);
+pub(super) fn mark_rpr(mark: &RunStyle, colours: &ThemeColours, cx: &Cx, people: &People) -> Option<String> {
+    let mut p = Props::parse(mark.direct.xml(colours, cx).as_deref(), "rPr", cx);
     for name in ["ins", "del", "moveFrom", "moveTo", "rPrChange"] {
         p.remove(name);
     }
@@ -81,7 +87,7 @@ pub(super) fn mark_rpr(mark: &RunStyle, cx: &Cx, people: &People) -> Option<Stri
         p.set(tag(m), mark_element(&cx.w, m, people));
     }
     if let Some(f) = &mark.rev.fmt {
-        p.set("rPrChange", change(&cx.w, "rPrChange", "rPr", &f.mark, &f.previous_raw, people));
+        p.set("rPrChange", change(&cx.w, "rPrChange", "rPr", &f.mark, &previous(f, colours, cx), people));
     }
     p.xml()
 }
@@ -233,20 +239,19 @@ mod tests {
             Some(crate::docx::model::Block::Para(p)) => (*p.mark).clone(),
             _ => panic!("a blank document starts with a paragraph"),
         };
-        run.direct = Raw(Some("<w:rPr><w:b/><w:lang w:val=\"en-US\"/></w:rPr>".into()));
-        assert_eq!(run_rpr(&run, &cx, &people()), "<w:rPr><w:b/><w:lang w:val=\"en-US\"/></w:rPr>");
+        run.direct = crate::docx::char_props::RunDirect::in_w("<w:rPr><w:b/><w:lang w:val=\"en-US\"/></w:rPr>");
+        assert_eq!(run_rpr(&run, &Default::default(), &cx, &people()), "<w:rPr><w:b/><w:lang w:val=\"en-US\"/></w:rPr>");
         run.rev.fmt = Some(Rc::new(FormatChange {
             mark: mark(7, 0, MarkKind::Insert),
-            previous: Rc::new(run.clone()),
-            previous_raw: Raw(Some("<w:rPr><w:i/></w:rPr>".into())),
+            previous: Rc::new(RunStyle { direct: crate::docx::char_props::RunDirect::in_w("<w:rPr><w:i/></w:rPr>"), ..run.clone() }),
         }));
         assert_eq!(
-            run_rpr(&run, &cx, &people()),
+            run_rpr(&run, &Default::default(), &cx, &people()),
             r#"<w:rPr><w:b/><w:lang w:val="en-US"/><w:rPrChange w:id="7" w:author="Author A" w:date="2026-01-02T10:00:00Z"><w:rPr><w:i/></w:rPr></w:rPrChange></w:rPr>"#
         );
         // A mark's insertion comes first, its formatting change last.
         run.rev.ins = Some(mark(8, 1, MarkKind::Insert));
-        let m = mark_rpr(&run, &cx, &people()).expect("properties");
+        let m = mark_rpr(&run, &Default::default(), &cx, &people()).expect("properties");
         assert!(m.starts_with(r#"<w:rPr><w:ins w:id="8" w:author="B &amp; C""#), "{m}");
         assert!(m.ends_with("</w:rPrChange></w:rPr>"), "{m}");
         // Children of the earlier properties as read are wrapped in their element.

@@ -7,7 +7,7 @@ use super::{CharProps, Color, FontHint, FontRef, ScriptClass, ThemeFace, Toggle}
 use crate::document::format::{Emphasis, ShadingPattern, VertAlign};
 use crate::document::line::{BorderStyle, Underline};
 use crate::docx::font_table::GenericFamily;
-use crate::docx::model::{Raw, RunStyle, TextEffects, ThemeColourRef, ThemeFont, Typography};
+use crate::docx::model::{RunStyle, TextEffects, ThemeColourRef, ThemeFont, Typography};
 use crate::docx::props::{Border, Shd, ThemeColours};
 use crate::docx::styles::ThemeFonts;
 
@@ -259,7 +259,7 @@ pub fn run_style(env: &RunEnv, p: &CharProps) -> RunStyle {
         lang: p.lang.latin.as_deref().unwrap_or_default().to_string(),
         lang_east_asia: p.lang.east_asian.as_deref().unwrap_or_default().to_string(),
         style_id: p.style.as_deref().map(str::to_string),
-        direct: Raw::default(),
+        direct: Default::default(),
         rev: Default::default(),
         categories,
     }

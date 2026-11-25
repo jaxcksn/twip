@@ -7,6 +7,7 @@ use super::Editor;
 use super::selection::{ObjectRef, Selection};
 use super::snap::SnapLine;
 use super::view::ShapeFrame;
+use crate::docx::run_xml;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) enum ShapeHandle {
@@ -508,7 +509,7 @@ impl Editor {
         let Some(res) = self.doc.resolver.clone() else { return false };
         let cx = self.cx();
         let style = res.para_from_xml(Some(r#"<w:pPr><w:jc w:val="center"/></w:pPr>"#), None, &cx);
-        let mark = res.run_from_xml(&style.base, None, &cx);
+        let mark = run_xml::run_from_xml(&res, &style.base, None, &cx);
         let pid = crate::docx::next_para_id();
         let para = crate::docx::Paragraph {
             style: std::rc::Rc::new(style.style),

@@ -9,6 +9,7 @@ use crate::font::Fonts;
 use super::Editor;
 use super::clipboard::Fragment;
 use super::commands::Outcome;
+use crate::docx::run_xml;
 
 /// The most HTML read; more pastes as text.
 pub(super) const MAX_HTML: usize = 8 << 20;
@@ -893,7 +894,7 @@ impl Editor {
                         pp.set("jc", format!("<{w}jc {w}val=\"{jc}\"/>"));
                     }
                     let para = res.para_from_xml(pp.xml().as_deref(), None, cx);
-                    let mark = res.run_from_xml(&para.base, None, cx);
+                    let mark = run_xml::run_from_xml(res, &para.base, None, cx);
                     let mut inlines = Vec::new();
                     for r in &p.runs {
                         let mut rp = Props::parse(None, "rPr", cx);
@@ -918,7 +919,7 @@ impl Editor {
                             rp.remove("u");
                             rp.set("rStyle", format!("<{w}rStyle {w}val=\"Hyperlink\"/>"));
                         }
-                        let run = res.run_from_xml(&para.base, rp.xml().as_deref(), cx);
+                        let run = run_xml::run_from_xml(res, &para.base, rp.xml().as_deref(), cx);
                         if let Some(img) = &r.image {
                             let pic = self.html_picture(img, width, images, &run);
                             match &r.link {

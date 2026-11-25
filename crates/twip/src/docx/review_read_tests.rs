@@ -96,8 +96,8 @@ fn runs_carry_insertions_deletions_and_format_changes() {
     // One wrapper, one shared mark; every mark dated.
     let fmt = runs[5].rev.fmt.as_ref().expect("a format change");
     assert!(runs[5].bold && !fmt.previous.bold);
-    assert!(fmt.previous_raw.0.as_deref().is_some_and(|x| x.starts_with("<w:rPr")));
-    assert!(!runs[5].direct.0.as_deref().unwrap_or("").contains("rPrChange"), "direct formatting keeps no revision");
+    assert!(fmt.previous.direct.as_read().map(|x| &**x).is_some_and(|x| x.starts_with("<w:rPr")));
+    assert!(!runs[5].direct.as_read().map(|x| &**x).unwrap_or("").contains("rPrChange"), "direct formatting keeps no revision");
     let marks = [&runs[1].rev.ins, &runs[3].rev.del, &runs[4].rev.ins, &runs[4].rev.del];
     for m in marks.iter().copied().flatten() {
         assert!(m.date.as_ref().and_then(|d| d.utc).is_some(), "{m:?}");

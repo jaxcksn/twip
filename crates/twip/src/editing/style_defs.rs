@@ -17,6 +17,7 @@ use crate::services::styles::{NameRefusal, builtin, check_name, describe};
 
 use super::Editor;
 use super::commands::Outcome;
+use crate::docx::run_xml;
 
 impl StyleCategory {
     fn kind(self) -> StyleKind {
@@ -789,7 +790,7 @@ impl Editor {
                 let region = next.styles.table_region(Some(&style.id), &[]);
                 let cx = next.styles.cx();
                 let para = next.para_from_xml(None, Some(&region), &cx);
-                let run = next.run_from_xml(&para.base, None, &cx);
+                let run = run_xml::run_from_xml(&next, &para.base, None, &cx);
                 let tabs = para
                     .style
                     .tabs
@@ -878,7 +879,7 @@ impl Editor {
                 let region = part.region();
                 let r = next.styles.table_region(Some(id), &region.into_iter().collect::<Vec<_>>());
                 let para = next.para_from_xml(None, Some(&r), &cx);
-                let run = next.run_from_xml(&para.base, None, &cx);
+                let run = run_xml::run_from_xml(&next, &para.base, None, &cx);
                 let mut b = borders(&r.tc.borders);
                 if region.is_none() {
                     b = TableBorders { diagonal_down: b.diagonal_down, diagonal_up: b.diagonal_up, ..borders(&whole.tbl.borders) };

@@ -9,6 +9,7 @@ use super::commands::Outcome;
 use super::geometry::PageGeometry;
 use super::position::{Position, StoryId};
 use super::selection::{ObjectRef, Selection};
+use crate::docx::run_xml;
 
 pub(super) fn reachable(ctx: StoryId, s: StoryId) -> bool {
     matches!(ctx, StoryId::HeaderFooter(_)) == matches!(s, StoryId::HeaderFooter(_))
@@ -170,7 +171,7 @@ impl Editor {
             pp.set("pStyle", format!("<{w}pStyle {w}val=\"{style}\"/>"));
         }
         let r = res.para_from_xml(pp.xml().as_deref(), None, &cx);
-        let run = res.run_from_xml(&r.base, None, &cx);
+        let run = run_xml::run_from_xml(&res, &r.base, None, &cx);
         Some(crate::docx::Paragraph {
             style: std::rc::Rc::new(r.style),
             mark: run,

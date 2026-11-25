@@ -3,6 +3,7 @@
 use std::rc::Rc;
 
 use crate::docx::resolve::Resolver;
+use crate::docx::run_xml;
 use crate::docx::write::props::{Cx, Props};
 use crate::docx::{Block, BreakKind, Inline, Paragraph, Run};
 
@@ -54,7 +55,7 @@ impl RichText {
         }
         let para = res.para_from_xml(pp.xml().as_deref(), None, cx);
         let style = Rc::new(para.style);
-        let plain = res.run_from_xml(&para.base, None, cx);
+        let plain = run_xml::run_from_xml(res, &para.base, None, cx);
         let paragraphs: &[RichParagraph] = if self.paragraphs.is_empty() { &[RichParagraph { runs: Vec::new() }] } else { &self.paragraphs };
         paragraphs
             .iter()
@@ -77,7 +78,7 @@ impl RichText {
                     if link.is_some() && res.styles.by_id.contains_key("Hyperlink") {
                         rp.set("rStyle", format!("<{w}rStyle {w}val=\"Hyperlink\"/>"));
                     }
-                    let run = res.run_from_xml(&para.base, rp.xml().as_deref(), cx);
+                    let run = run_xml::run_from_xml(res, &para.base, rp.xml().as_deref(), cx);
                     match link {
                         Some(address) => {
                             let code = crate::docx::fields::link_code(&address);

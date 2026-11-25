@@ -1589,7 +1589,7 @@ mod round_trip {
             panic!("a picture")
         };
         p.w = 100.0;
-        let direct = crate::docx::model::Raw(Some("<w:rPr><w:b/></w:rPr>".into()));
+        let direct = crate::docx::char_props::RunDirect::in_w("<w:rPr><w:b/></w:rPr>");
         *run = std::rc::Rc::new(crate::docx::RunStyle { bold: true, direct, ..(**run).clone() });
         let xml = document_xml(&crate::docx::write::save(&d).expect("saves"));
         parses(&xml);

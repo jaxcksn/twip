@@ -22,6 +22,7 @@ use super::step::{Edges, Step, StepError, run_of};
 use super::text::UnitText;
 use super::view::CommentView;
 use super::{Editor, Tx};
+use crate::docx::run_xml;
 
 /// The most characters of the text a thread comments on that it shows.
 const SCOPE_LIMIT: usize = crate::api::review::ANCHOR_TEXT_LIMIT;
@@ -529,7 +530,7 @@ impl Editor {
             let mut p = Props::parse(None, "rPr", cx);
             let w = &cx.w;
             p.set("rStyle", format!("<{w}rStyle {w}val=\"CommentReference\"/>"));
-            return Some(res.run_from_xml(&base, p.xml().as_deref(), cx));
+            return Some(run_xml::run_from_xml(res, &base, p.xml().as_deref(), cx));
         }
         Some(run_before(self.index.para(&self.doc, para)?, at))
     }

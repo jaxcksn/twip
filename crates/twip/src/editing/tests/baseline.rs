@@ -57,7 +57,7 @@ fn check_blocks(res: &Resolver, cx: &Cx, blocks: &[Block], region: Option<&Regio
                 r.style.frame = p.style.frame.clone();
                 assert_eq!(*p.style, r.style, "{what}: paragraph {:?}", p.id);
                 let with_rev = |again: Run, read: &Run| RunStyle { rev: read.rev.clone(), ..(*again).clone() };
-                let mark = with_rev(res.run_from_xml(&r.base, p.mark.direct.0.as_deref(), cx), &p.mark);
+                let mark = with_rev(res.run_from_xml(&r.base, p.mark.direct.as_read().map(|x| &**x), cx), &p.mark);
                 assert!(p.mark.layout_eq(&mark), "{what}: the mark of {:?}: {:?} against {mark:?}", p.id, p.mark);
                 for i in &p.inlines {
                     if let Inline::Text(t, run) = i {
@@ -88,8 +88,8 @@ fn authored(d: &Document) -> Authored {
                 Block::Para(p) => out.push((
                     p.id,
                     p.style.direct.0.clone(),
-                    p.mark.direct.0.clone(),
-                    p.inlines.iter().filter_map(|i| if let Inline::Text(_, r) = i { Some(r.direct.0.clone()) } else { None }).collect(),
+                    p.mark.direct.as_read().cloned(),
+                    p.inlines.iter().filter_map(|i| if let Inline::Text(_, r) = i { Some(r.direct.as_read().cloned()) } else { None }).collect(),
                 )),
                 Block::Table(t) => t.rows.iter().flat_map(|r| &r.cells).for_each(|c| walk(&c.blocks, out)),
             }
@@ -359,11 +359,11 @@ fn run_props(res: &Resolver, cx: &Cx, p: &Paragraph, patch: Option<Patch>) -> Ve
         .flat_map(|(t, r)| {
             let raw = match patch {
                 Some(f) => {
-                    let mut props = Props::parse(r.direct.0.as_deref(), "rPr", cx);
+                    let mut props = Props::parse(r.direct.as_read().map(|x| &**x), "rPr", cx);
                     f(&mut props, cx);
                     props.xml()
                 }
-                None => r.direct.0.as_deref().map(str::to_string),
+                None => r.direct.as_read().map(|x| &**x).map(str::to_string),
             };
             std::iter::repeat_n(parse(raw.as_deref()), t.chars().count())
         })
@@ -601,8 +601,8 @@ fn each_rpr(d: &Document, f: &mut dyn FnMut(&str)) {
                 Block::Para(p) => {
                     let runs = p.inlines.iter().filter_map(|i| if let Inline::Text(_, r) = i { Some(r) } else { None });
                     for r in std::iter::once(&p.mark).chain(runs) {
-                        let previous = r.rev.fmt.as_ref().and_then(|c| c.previous_raw.0.as_deref());
-                        r.direct.0.as_deref().into_iter().chain(previous).for_each(&mut *f);
+                        let previous = r.rev.fmt.as_ref().and_then(|c| c.previous.direct.as_read().map(|x| &**x));
+                        r.direct.as_read().map(|x| &**x).into_iter().chain(previous).for_each(&mut *f);
                     }
                 }
                 Block::Table(t) => t.rows.iter().flat_map(|r| &r.cells).for_each(|c| walk(&c.blocks, f)),
@@ -666,16 +666,16 @@ fn resolve_blocks(
                 };
                 let changed = |r: &RunStyle, counts: &mut (&mut usize, &mut usize, &mut usize)| {
                     if let Some(c) = &r.rev.fmt {
-                        same(&c.previous, typed(c.previous_raw.0.as_deref(), false), "a formatting change");
+                        same(&c.previous, typed(c.previous.direct.as_read().map(|x| &**x), false), "a formatting change");
                         *counts.2 += 1;
                     }
                 };
-                same(&p.mark, typed(p.mark.direct.0.as_deref(), false), "the mark");
+                same(&p.mark, typed(p.mark.direct.as_read().map(|x| &**x), false), "the mark");
                 changed(&p.mark, counts);
                 *counts.1 += 1;
                 for i in &p.inlines {
                     if let Inline::Text(t, run) = i {
-                        same(run, typed(run.direct.0.as_deref(), run.toc), &format!("run {t:?}"));
+                        same(run, typed(run.direct.as_read().map(|x| &**x), run.toc), &format!("run {t:?}"));
                         changed(run, counts);
                         *counts.0 += 1;
                     }
@@ -702,7 +702,7 @@ fn bold_on_a_run_under_a_locally_bound_prefix_keeps_its_underline() {
         let ids: Vec<ParaId> = authored(d).iter().map(|p| ParaId(p.0)).collect();
         let (_, p) = para_by_label(d, &ids, label);
         let run = p.inlines.iter().find_map(Inline::run).expect("a run");
-        assert!(run.bold && run.underline.is_some(), "the run is bold and keeps its underline: {:?}", run.direct.0);
+        assert!(run.bold && run.underline.is_some(), "the run is bold and keeps its underline: {:?}", run.direct.as_read());
     };
     holds(e.document());
     let saved = crate::docx::write::save(e.document()).expect("saves");

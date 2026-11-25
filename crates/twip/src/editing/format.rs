@@ -16,6 +16,7 @@ use super::commands::Outcome;
 use super::index::Container;
 use super::step::{Step, TableProps};
 use super::{Editor, Tx};
+use crate::docx::run_xml;
 
 const NEW_ROOT: &str = r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">"#;
 
@@ -267,8 +268,8 @@ pub(super) fn ruby_again(r: &Ruby, base: &RunProps, edit: Option<(&RubyEdit, boo
             .enumerate()
             .map(|(k, (t, rpr))| {
                 let run = match old.get(k) {
-                    Some((_, o)) => res.rerun_xml(base, o, rpr.as_deref(), cx),
-                    None => res.run_from_xml(base, rpr.as_deref(), cx),
+                    Some((_, o)) => run_xml::rerun_xml(res, base, o, rpr.as_deref(), cx),
+                    None => run_xml::run_from_xml(res, base, rpr.as_deref(), cx),
                 };
                 (t, run)
             })
@@ -323,7 +324,7 @@ impl Editor {
         for para in paras {
             let Some(again) = self.para_again(para, None, &res, &cx) else { continue };
             let Some(p) = self.index.para(&self.doc, para) else { continue };
-            let mark = res.rerun(again.mark_base(), &p.mark, &cx);
+            let mark = run_xml::rerun(&res, again.mark_base(), &p.mark);
             let mut cache: HashMap<(*const RunStyle, usize), Run> = HashMap::new();
             let mut changed = false;
             let mut at = 0u32;
@@ -339,7 +340,7 @@ impl Editor {
                 let new = cache
                     .entry((Rc::as_ptr(run), k))
                     .or_insert_with(|| {
-                        let again = res.rerun(base, run, &cx);
+                        let again = run_xml::rerun(&res, base, run);
                         if again.layout_eq(run) { run.clone() } else { again }
                     })
                     .clone();
@@ -534,9 +535,9 @@ impl Editor {
         let Some(caret) = self.caret() else { return };
         let (Some((para, at)), Some(run)) = (caret.para_offset(), self.run_at(&caret)) else { return };
         let Some(base) = self.run_base(para, at, &res, &cx) else { return };
-        let mut p = Props::parse(run.direct.0.as_deref(), "rPr", &cx);
+        let mut p = Props::parse(run_xml::rpr(&res, &run, &cx).as_deref(), "rPr", &cx);
         edit(&mut p, &cx.w);
-        self.pending = Some(res.rerun_xml(&base, &run, p.xml().as_deref(), &cx));
+        self.pending = Some(run_xml::rerun_xml(&res, &base, &run, p.xml().as_deref(), &cx));
     }
 
     pub(super) fn pending_font(&mut self, font: &str) {
@@ -545,11 +546,11 @@ impl Editor {
         let Some(caret) = self.caret() else { return };
         let (Some((para, at)), Some(run)) = (caret.para_offset(), self.run_at(&caret)) else { return };
         let Some(base) = self.run_base(para, at, &res, &cx) else { return };
-        let mut p = Props::parse(run.direct.0.as_deref(), "rPr", &cx);
+        let mut p = Props::parse(run_xml::rpr(&res, &run, &cx).as_deref(), "rPr", &cx);
         let n = crate::docx::write::props::esc(font);
         let w = &cx.w;
         p.set("rFonts", format!("<{w}rFonts {w}ascii=\"{n}\" {w}hAnsi=\"{n}\" {w}eastAsia=\"{n}\" {w}cs=\"{n}\"/>"));
-        self.pending = Some(res.rerun_xml(&base, &run, p.xml().as_deref(), &cx));
+        self.pending = Some(run_xml::rerun_xml(&res, &base, &run, p.xml().as_deref(), &cx));
     }
 
     pub(super) fn runs_in(&self, (para, a, b): (ParaId, Unit, Unit)) -> Vec<Run> {
@@ -606,12 +607,12 @@ impl Editor {
                     p.set(k, x);
                 }
             }
-            let new = res.rerun_xml(base, run, p.xml().as_deref(), &cx);
+            let new = run_xml::rerun_xml(&res, base, run, p.xml().as_deref(), &cx);
             settle(&mut p, &w, &new);
             p.xml()
         };
         let patch_as = |run: &RunStyle, base: &RunProps, mark: bool| -> Run {
-            res.rerun_xml(base, run, rpr(run.direct.0.as_deref(), run, base, mark).as_deref(), &cx)
+            run_xml::rerun_xml(&res, base, run, rpr(run_xml::rpr(&res, run, &cx).as_deref(), run, base, mark).as_deref(), &cx)
         };
         let patch = |run: &RunStyle, base: &RunProps| patch_as(run, base, false);
         let mut ranges: Vec<(ParaId, Unit, Unit)> = Vec::new();
@@ -989,10 +990,7 @@ impl Editor {
 /// The hidden paragraph marks of `p`, as [`Editor::hidden_marks`] gives them.
 pub fn hidden_marks_of(p: &crate::docx::Paragraph) -> Vec<(Unit, bool)> {
     let parts = p.src.as_ref().filter(|s| s.joined.len() + 1 == s.ranges.len()).map_or(&[][..], |s| &s.joined[..]);
-    let own = p
-        .mark
-        .hidden
-        .then(|| (super::step::para_len(p), p.mark.direct.0.as_deref().is_some_and(|x| crate::docx::write::props::flag_of(x, "specVanish"))));
+    let own = p.mark.hidden.then(|| (super::step::para_len(p), p.mark.direct.unmodelled_flag("specVanish")));
     parts.iter().map(|j| (Unit(j.end), j.spec_vanish)).chain(own).collect()
 }
 
@@ -1038,11 +1036,11 @@ impl Editor {
         let (Some(again), Some(p)) = (self.para_again(para, None, &res, &cx), self.index.para(&self.doc, para)) else {
             return Outcome::Unchanged("no paragraph");
         };
-        let mut props = Props::parse(p.mark.direct.0.as_deref(), "rPr", &cx);
+        let mut props = Props::parse(run_xml::rpr(&res, &p.mark, &cx).as_deref(), "rPr", &cx);
         let w = &cx.w;
         props.set("vanish", format!("<{w}vanish/>"));
         props.set("specVanish", format!("<{w}specVanish/>"));
-        let mark = res.rerun_xml(again.mark_base(), &p.mark, props.xml().as_deref(), &cx);
+        let mark = run_xml::rerun_xml(&res, again.mark_base(), &p.mark, props.xml().as_deref(), &cx);
         let (style, list) = (p.style.clone(), p.list.clone());
         let mut tx = self.begin("Style Separator");
         if self.step(&mut tx, Step::Para { para, style, mark, list }).is_err() {
