@@ -533,11 +533,7 @@ fn property_xml_round_trips_through_the_writer() {
     assert!(checked > 5_000, "only {checked} property elements checked");
 }
 
-// Known gap: property XML under a prefix the part's root does not give the main namespace is rewritten with the
-// root's prefix in its end tag only, so it no longer parses: the run loses its formatting, and the saved package
-// does not read.
 #[test]
-#[should_panic(expected = "the run is bold and keeps its underline")]
 fn bold_on_a_run_under_a_locally_bound_prefix_keeps_its_underline() {
     let label = "Main namespace bound to w on this paragraph";
     let mut e = Editor::open(&model("namespace-dependencies.docx"), fonts()).expect("opens");
