@@ -1,5 +1,6 @@
 //! Native editing tests
 
+mod authored;
 mod backgrounds;
 mod basics;
 mod bindings;
