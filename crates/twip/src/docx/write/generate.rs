@@ -140,7 +140,7 @@ fn paragraph(p: &Paragraph, res: &Resolver, cx: &Cx) -> Result<Paragraph, Genera
     let again = res.para_from_xml(written.as_deref(), None, cx);
     let mut style = (*p.style).clone();
     style.direct = again.style.direct.clone();
-    if style != again.style {
+    if !style.layout_eq(&again.style) {
         return fail("direct paragraph formatting");
     }
     let base = run_xml::base(&again.base);

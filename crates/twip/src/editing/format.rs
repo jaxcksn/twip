@@ -449,7 +449,7 @@ impl Editor {
                 }
                 with.push(i);
             }
-            let style_changed = *p.style != again.style || !p.mark.layout_eq(&mark);
+            let style_changed = !p.style.layout_eq(&again.style) || !p.mark.layout_eq(&mark);
             let (style, mark) = (Rc::new(again.style), if !p.mark.layout_eq(&mark) { mark } else { p.mark.clone() });
             if style_changed {
                 let list = p.list.clone();
@@ -838,7 +838,7 @@ impl Editor {
             edit(&mut pr, &cx, p);
             let Some(r) = self.para_again(para, Some(pr.xml().as_deref()), &res, &cx) else { continue };
             let Some(p) = self.index.para(&self.doc, para) else { continue };
-            if r.style == *p.style {
+            if r.style.layout_eq(&p.style) {
                 continue;
             }
             let (mark, list) = (p.mark.clone(), p.list.clone());

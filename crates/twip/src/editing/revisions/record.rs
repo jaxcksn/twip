@@ -978,7 +978,7 @@ fn same_look(a: &RunStyle, b: &RunStyle) -> bool {
 }
 
 fn same_para(a: &ParaStyle, b: &ParaStyle) -> bool {
-    ParaStyle { change: None, ..a.clone() } == ParaStyle { change: None, ..b.clone() }
+    ParaStyle { change: None, ..a.clone() }.layout_eq(&ParaStyle { change: None, ..b.clone() })
 }
 
 fn push(out: &mut Vec<Inline>, i: Inline) {

@@ -139,7 +139,7 @@ impl PartialEq for FlowState {
         } = self;
         let style = match (prev, &o.prev) {
             (None, None) => true,
-            (Some(x), Some(y)) => Rc::ptr_eq(x, y) || **x == **y,
+            (Some(x), Some(y)) => Rc::ptr_eq(x, y) || x.layout_eq(y),
             _ => false,
         };
         style

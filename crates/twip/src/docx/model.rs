@@ -399,7 +399,8 @@ pub struct DivBox {
     pub ends: bool,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+/// Effective paragraph formatting. Its `==` is [`ParaStyle::layout_eq`].
+#[derive(Clone, Debug)]
 pub struct ParaStyle {
     pub style_id: Option<String>,
     pub jc: Jc,
@@ -481,6 +482,141 @@ pub struct ParaStyle {
     /// show while hidden text does. Empty otherwise; a chain longer than [`super::resolve::MAX_PARTS`] keeps its first
     /// ones only, fewer than its joins, and so shows joined.
     pub parts: Rc<[Rc<ParaStyle>]>,
+}
+
+impl ParaStyle {
+    /// Layout equivalence: every resolved value, the style and the tracked property change, which the markup views
+    /// draw. The authored properties ([`ParaStyle::direct`]) are not compared.
+    pub fn layout_eq(&self, o: &ParaStyle) -> bool {
+        let ParaStyle {
+            style_id,
+            jc,
+            bidi,
+            ind_left,
+            ind_right,
+            ind_first,
+            space_before,
+            space_after,
+            before_auto,
+            after_auto,
+            line,
+            line_rule,
+            contextual,
+            snap_to_grid,
+            keep_next,
+            keep_lines,
+            page_break_before,
+            widow_control,
+            suppress_auto_hyphens,
+            no_kinsoku,
+            no_overflow_punct,
+            no_auto_space_de,
+            no_auto_space_dn,
+            top_line_punct,
+            no_word_wrap,
+            tight_wrap,
+            suppress_overlap,
+            suppress_line_numbers,
+            mirror_indents,
+            div,
+            div_boxes,
+            tabs,
+            border_top,
+            border_bottom,
+            border_left,
+            border_right,
+            border_between,
+            shading,
+            shd,
+            frame,
+            text_flow,
+            in_frame,
+            text_alignment,
+            outline_lvl,
+            collapsed,
+            list_jc,
+            num,
+            list_fmt,
+            list,
+            mark_size,
+            direct: _,
+            change,
+            joined,
+            parts,
+        } = self;
+        *style_id == o.style_id
+            && *jc == o.jc
+            && *bidi == o.bidi
+            && *ind_left == o.ind_left
+            && *ind_right == o.ind_right
+            && *ind_first == o.ind_first
+            && *space_before == o.space_before
+            && *space_after == o.space_after
+            && *before_auto == o.before_auto
+            && *after_auto == o.after_auto
+            && *line == o.line
+            && *line_rule == o.line_rule
+            && *contextual == o.contextual
+            && *snap_to_grid == o.snap_to_grid
+            && *keep_next == o.keep_next
+            && *keep_lines == o.keep_lines
+            && *page_break_before == o.page_break_before
+            && *widow_control == o.widow_control
+            && *suppress_auto_hyphens == o.suppress_auto_hyphens
+            && *no_kinsoku == o.no_kinsoku
+            && *no_overflow_punct == o.no_overflow_punct
+            && *no_auto_space_de == o.no_auto_space_de
+            && *no_auto_space_dn == o.no_auto_space_dn
+            && *top_line_punct == o.top_line_punct
+            && *no_word_wrap == o.no_word_wrap
+            && *tight_wrap == o.tight_wrap
+            && *suppress_overlap == o.suppress_overlap
+            && *suppress_line_numbers == o.suppress_line_numbers
+            && *mirror_indents == o.mirror_indents
+            && *div == o.div
+            && *div_boxes == o.div_boxes
+            && *tabs == o.tabs
+            && *border_top == o.border_top
+            && *border_bottom == o.border_bottom
+            && *border_left == o.border_left
+            && *border_right == o.border_right
+            && *border_between == o.border_between
+            && *shading == o.shading
+            && *shd == o.shd
+            && *frame == o.frame
+            && *text_flow == o.text_flow
+            && *in_frame == o.in_frame
+            && *text_alignment == o.text_alignment
+            && *outline_lvl == o.outline_lvl
+            && *collapsed == o.collapsed
+            && *list_jc == o.list_jc
+            && *num == o.num
+            && *list_fmt == o.list_fmt
+            && *list == o.list
+            && *mark_size == o.mark_size
+            && *change == o.change
+            && joined.len() == o.joined.len()
+            && joined.iter().zip(o.joined.iter()).all(|(a, b)| a.0 == b.0 && a.1.layout_eq(&b.1))
+            && parts.len() == o.parts.len()
+            && parts.iter().zip(o.parts.iter()).all(|(a, b)| a.layout_eq(b))
+    }
+
+    /// Authored equality: the direct formatting as written, and the tracked property change with the formatting it
+    /// records as written.
+    pub fn authored_eq(&self, o: &ParaStyle) -> bool {
+        self.direct.0 == o.direct.0
+            && match (&self.change, &o.change) {
+                (None, None) => true,
+                (Some(x), Some(y)) => x.mark == y.mark && x.previous_raw.0 == y.previous_raw.0 && x.numbering_change.0 == y.numbering_change.0,
+                _ => false,
+            }
+    }
+}
+
+impl PartialEq for ParaStyle {
+    fn eq(&self, o: &ParaStyle) -> bool {
+        self.layout_eq(o)
+    }
 }
 
 /// A field or content control: what the host names (`f12` / `c7` in JSON).

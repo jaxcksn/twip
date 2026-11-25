@@ -61,7 +61,7 @@ fn check_blocks(res: &Resolver, cx: &Cx, blocks: &[Block], region: Option<&Regio
                 r.style.change = p.style.change.clone();
                 r.style.in_frame = p.style.in_frame;
                 r.style.frame = p.style.frame.clone();
-                assert_eq!(*p.style, r.style, "{what}: paragraph {:?}", p.id);
+                assert!(p.style.layout_eq(&r.style), "{what}: paragraph {:?}: {:?} against {:?}", p.id, p.style, r.style);
                 let with_rev = |again: Run, read: &Run| RunStyle { rev: read.rev.clone(), ..(*again).clone() };
                 let mark = with_rev(res.run_from_xml(&r.base, written(res, cx, &p.mark).as_deref(), cx), &p.mark);
                 assert!(p.mark.layout_eq(&mark), "{what}: the mark of {:?}: {:?} against {mark:?}", p.id, p.mark);

@@ -804,7 +804,7 @@ impl Editor {
         let _ = self.format_style_part("pPr", &|p, cx, para, _| edit(p, cx, para));
         let Some(now) = self.style_target.take() else { return Outcome::Unchanged("no style") };
         // The formatting it has already, as for paragraphs formatted directly: no undo step.
-        if now == raw || self.style_formatting(&now).zip(self.style_formatting(&raw)).is_some_and(|(a, b)| a.0.style == b.0.style) {
+        if now == raw || self.style_formatting(&now).zip(self.style_formatting(&raw)).is_some_and(|(a, b)| a.0.style.layout_eq(&b.0.style)) {
             return Outcome::Unchanged("the style already has it");
         }
         self.edit_styles("Modify Style", |s| s.set_xml(now), fonts)

@@ -1841,7 +1841,7 @@ pub fn same_para(a: &Paragraph, b: &Paragraph) -> bool {
 fn same_props(a: &Paragraph, b: &Paragraph) -> bool {
     let run = |x: &Run, y: &Run| Rc::ptr_eq(x, y) || x.layout_eq(y);
     a.id == b.id
-        && (Rc::ptr_eq(&a.style, &b.style) || *a.style == *b.style)
+        && (Rc::ptr_eq(&a.style, &b.style) || a.style.layout_eq(&b.style))
         && run(&a.mark, &b.mark)
         && match (&a.list, &b.list) {
             (None, None) => true,
