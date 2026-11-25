@@ -457,6 +457,31 @@ fn content_pasted_from_another_document_resolves_as_its_xml_does() {
     check(dst.document(), "pasted from another document");
 }
 
+/// Runs pasted from a document that binds the main namespace to another prefix keep their formatting and are written
+/// in this document's prefixes.
+#[test]
+fn runs_pasted_from_another_prefix_are_written_in_this_ones() {
+    let mut src = Editor::open(&model("foreign-content-copy-source.docx"), fonts()).expect("opens");
+    src.execute(Command::SelectAll, fonts());
+    let frag = src.copy().expect("copies");
+    let mut dst = Editor::open(&model("foreign-content-copy-destination.docx"), fonts()).expect("opens");
+    let first = texts_ids(&dst)[0];
+    dst.select_range(first, Unit(0), Unit(0), fonts());
+    assert!(matches!(dst.paste_fragment(&frag, fonts()), Outcome::Changed(_)), "pasted");
+    let d = dst.document();
+    let (res, cx) = (d.resolver.as_deref().expect("a resolver"), cx(d));
+    let mut styled = 0;
+    for p in d.sections.iter().flat_map(|s| &s.blocks).filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None }) {
+        for r in std::iter::once(&p.mark).chain(p.inlines.iter().filter_map(Inline::run)) {
+            let Some(x) = written(res, &cx, r) else { continue };
+            let read = cx.parse(&x, |_, el| char_props::parse(el).0);
+            assert_eq!(read.as_ref(), r.direct.props().map(|p| &**p), "{x} reads as written here");
+            styled += usize::from(r.style_id.as_deref() == Some("SourceMark"));
+        }
+    }
+    assert!(styled > 0, "the pasted run keeps its character style");
+}
+
 #[test]
 fn pasted_html_resolves_as_its_xml_does() {
     let mut e = Editor::open(&model(OFF), fonts()).expect("opens");

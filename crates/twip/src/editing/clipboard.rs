@@ -759,6 +759,7 @@ impl Editor {
         let mut refs = taken.refs.get_or_insert_with(|| RefIndex::of(&f.refs)).held(&f.refs, blocks);
         // From another document: its paragraphs show as this document's styles have them, or keep their own look.
         if let Some(o) = f.origin.as_deref().filter(|o| o.key != self.key) {
+            super::import::write_runs_here(blocks, &mut refs, &self.cx());
             if f.look == Look::Source
                 && let Some(from) = o.resolver.as_deref()
             {

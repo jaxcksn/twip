@@ -5,9 +5,9 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::docx::resolve::Resolver;
-use crate::docx::review::{AuthorId, People, RevisionMark};
+use crate::docx::review::{AuthorId, FormatChange, People, RevisionMark};
 use crate::docx::write::props::Cx;
-use crate::docx::{Block, Inline, Paragraph};
+use crate::docx::{Block, Inline, Paragraph, Run, RunStyle};
 use crate::drawing::paint::Fill;
 use crate::drawing::{Shape, ShapeKind};
 use crate::layout::{ParaId, TableId};
@@ -211,6 +211,53 @@ fn each_mark(block: &mut Block, f: &mut dyn FnMut(&mut RevisionMark)) {
             }
         }
     }
+}
+
+/// Pasted `blocks` and the bodies of the notes and comments they refer to, from another document, as written in the
+/// part `cx` describes: their runs' `w:rPr` as read kept where they read the same there, else written from their
+/// properties.
+pub(super) fn write_runs_here(blocks: &mut [Block], refs: &mut Refs, cx: &Cx) {
+    let mut seen = HashMap::new();
+    each_block_of(blocks, refs, &mut |b| {
+        if let Block::Para(p) = b {
+            p.mark = written_here(&p.mark, cx, &mut seen);
+            for i in &mut p.inlines {
+                if let Some(r) = i.run() {
+                    let here = written_here(r, cx, &mut seen);
+                    if !Rc::ptr_eq(&here, r) {
+                        *i = super::format::with_run(i, &here);
+                    }
+                }
+            }
+        }
+    });
+}
+
+/// `run` as written in the part `cx` describes: the `w:rPr` it and its format change's earlier formatting were read
+/// from kept where they read the same there, else written from their properties. `seen`: runs done, by identity.
+fn written_here(run: &Run, cx: &Cx, seen: &mut HashMap<*const RunStyle, Run>) -> Run {
+    if let Some(r) = seen.get(&Rc::as_ptr(run)) {
+        return r.clone();
+    }
+    let direct = run.direct.moved_to(cx);
+    let fmt = run.rev.fmt.as_ref().and_then(|f| {
+        let direct = f.previous.direct.moved_to(cx)?;
+        Some(Rc::new(FormatChange { previous: Rc::new(RunStyle { direct, ..(*f.previous).clone() }), ..(**f).clone() }))
+    });
+    let out = if direct.is_none() && fmt.is_none() {
+        run.clone()
+    } else {
+        let mut s = (**run).clone();
+        if let Some(d) = direct {
+            s.direct = d;
+        }
+        if fmt.is_some() {
+            s.rev.fmt = fmt;
+        }
+        Rc::new(s)
+    };
+    seen.insert(Rc::as_ptr(run), out.clone());
+    out
 }
 
 /// `raw`, an element as `cx` writes one, with the edits `f` names for each element in it: a byte range of the text it
