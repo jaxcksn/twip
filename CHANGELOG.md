@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.3.0](https://github.com/jaxcksn/twip/compare/v0.2.1...v0.3.0) (2026-11-25)
+
+
+### ⚠ BREAKING CHANGES
+
+* **editing:** public API for phase 4 editing ([#62](https://github.com/jaxcksn/twip/issues/62))
+
+### Features
+
+* add full DOCX roundtrip capabilities ([#30](https://github.com/jaxcksn/twip/issues/30)) ([706af62](https://github.com/jaxcksn/twip/commit/706af629ea1f8bdf8dc2613d0b4d76e4f56b0dbb))
+* **editing:** find, paste and tables of contents ([#61](https://github.com/jaxcksn/twip/issues/61)) ([7d45348](https://github.com/jaxcksn/twip/commit/7d4534861dc75d7fec7fcaf4b2a2c8db863ba5d6))
+* **editing:** Keyboard Shortcuts, Canvas Menus, Hover, Pointers ([#59](https://github.com/jaxcksn/twip/issues/59)) ([4f4e508](https://github.com/jaxcksn/twip/commit/4f4e5088a82ec5fca0bfef5575cd9673e4447792))
+* **editing:** public API for phase 4 editing ([#62](https://github.com/jaxcksn/twip/issues/62)) ([db966d6](https://github.com/jaxcksn/twip/commit/db966d6a0a6e7fba7a37f349310ac6e2c4db6855))
+* **editing:** selection, styles, objects and review ([#60](https://github.com/jaxcksn/twip/issues/60)) ([496da68](https://github.com/jaxcksn/twip/commit/496da6826f34e598aca715ce7af937887b616bc9))
+* rendering fidelity ([#35](https://github.com/jaxcksn/twip/issues/35)) ([a9e3f13](https://github.com/jaxcksn/twip/commit/a9e3f13a0e1fb74091e08dc4cc7256dfa93c8666))
+
+
+### Bug Fixes
+
+* **dotnet:** copy the native library to smoke on macOS ([#37](https://github.com/jaxcksn/twip/issues/37)) ([7288476](https://github.com/jaxcksn/twip/commit/7288476784b2696e1bce649ad26eb677aac4c65c))
+* **editing:** harden the editing subsystem ([#58](https://github.com/jaxcksn/twip/issues/58)) ([b21666c](https://github.com/jaxcksn/twip/commit/b21666cc3abf8eeabe41d1b4486ae9c4bdf7744e))
+* **layout:** close additional layout gaps ([#34](https://github.com/jaxcksn/twip/issues/34)) ([b24e8f2](https://github.com/jaxcksn/twip/commit/b24e8f2a097eb6539402e0239965b159c5fb3d0c))
+* **layout:** draw a cell's bottom border over columns the prior leaves out ([#31](https://github.com/jaxcksn/twip/issues/31)) ([cc73823](https://github.com/jaxcksn/twip/commit/cc738238e6cdc011cb1997f1192bdb15be2a4431))
+* **layout:** merge grid lines no cell ends on ([#33](https://github.com/jaxcksn/twip/issues/33)) ([70afc6e](https://github.com/jaxcksn/twip/commit/70afc6ed2d201b9204f36566bb0c5145d54885bd))
+* **render:** drop caches when resources change ([#38](https://github.com/jaxcksn/twip/issues/38)) ([dc8068d](https://github.com/jaxcksn/twip/commit/dc8068d236ccd873fac6ad883ea2b4ee6a272a50))
+
+
+### Performance Improvements
+
+* improve load times of larger documents ([#40](https://github.com/jaxcksn/twip/issues/40)) ([bbc8b85](https://github.com/jaxcksn/twip/commit/bbc8b85475e4849d856f8e4702ccffbd8f4ebf3e))
+
 ## [0.2.1](https://github.com/jaxcksn/twip/compare/v0.2.0...v0.2.1) (2026-11-16)
 
 
