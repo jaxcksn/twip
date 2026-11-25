@@ -201,6 +201,31 @@ impl RunDirect {
     }
 }
 
+/// `p` with WordprocessingML on/off child `local`, which the typed properties don't model, on, as the part `cx`
+/// describes writes it.
+pub fn put_unmodelled_flag(p: &mut CharProps, local: &str, cx: &Cx) {
+    drop_unmodelled(p, local);
+    let child = ForeignChild {
+        name: QName { ns: W.into(), local: local.into() },
+        payload: format!("<{}{local}/>", cx.w).into(),
+        bindings: Rc::from([(Rc::from(cx.w.trim_end_matches(':')), Rc::from(W))]),
+    };
+    Rc::make_mut(p.foreign.get_or_insert_with(Default::default)).children.push(child);
+}
+
+/// `p` without WordprocessingML child `local`, which the typed properties don't model.
+pub fn drop_unmodelled(p: &mut CharProps, local: &str) {
+    let Some(f) = p.foreign.as_mut() else { return };
+    if !f.children.iter().any(|c| &*c.name.ns == W && &*c.name.local == local) {
+        return;
+    }
+    let f = Rc::make_mut(f);
+    f.children.retain(|c| !(&*c.name.ns == W && &*c.name.local == local));
+    if f.children.is_empty() && f.attributes.is_empty() && f.kept.is_empty() {
+        p.foreign = None;
+    }
+}
+
 /// The on/off children and their toggles.
 const TOGGLES: [(&str, Toggle); 12] = [
     ("b", Toggle::BOLD),
@@ -2140,5 +2165,21 @@ pub(crate) mod tests {
         let want = r#"<w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsi="Calibri"/><w:b w:val="true"/><w:i/><w:u w:val="single" tx:x="1"/><w:sz w:val="24"/></w:rPr>"#;
         assert_eq!(write(e).as_deref(), Some(want));
         assert_eq!(write(CharEdit::default()), None);
+    }
+
+    /// An unmodelled flag put on reads as written, in the part's prefix, and taken off leaves nothing.
+    #[test]
+    fn unmodelled_flags_put_on_read_as_written() {
+        for root in [format!("<w:document {NS}>"), format!("<document xmlns=\"{W}\">")] {
+            let cx = Cx::of_xml(&root);
+            let mut p = CharProps::default();
+            put_unmodelled_flag(&mut p, "webHidden", &cx);
+            put_unmodelled_flag(&mut p, "webHidden", &cx);
+            let xml = serialize(&p, &RprRevisions::default(), &ThemeColours::default(), &cx);
+            assert_eq!(xml, format!("<{w}rPr><{w}webHidden/></{w}rPr>", w = cx.w));
+            assert_eq!(cx.parse(&xml, |_, el| parse(el).0), Some(p.clone()), "{xml}");
+            drop_unmodelled(&mut p, "webHidden");
+            assert_eq!(p, CharProps::default());
+        }
     }
 }
