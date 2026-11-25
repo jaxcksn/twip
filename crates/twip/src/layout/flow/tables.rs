@@ -310,7 +310,7 @@ fn cell_paras<'b>(rows: &'b [crate::docx::model::Row], out: &mut Vec<&'b crate::
     }
 }
 
-fn page_floats<'b>(t: &'b Table, ctx: &LayoutCtx<'b>) -> HashMap<u64, &'b Float> {
+pub(super) fn page_floats<'b>(t: &'b Table, ctx: &LayoutCtx<'b>) -> HashMap<u64, &'b Float> {
     let mut out = HashMap::new();
     let mut paras = Vec::new();
     cell_paras(&t.rows, &mut paras);

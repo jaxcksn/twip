@@ -386,3 +386,52 @@ fn a_layout_published_page_by_page_ends_as_a_full_one() {
     assert!(runs + 1 >= full.pages().len() && full.info().iter().any(|i| i.blank), "a run a page, a blank page among them: {runs} runs");
     assert_matches_full(&dl, &d);
 }
+
+/// A table of `n` rows of one to three lines over two columns, then text: row 0 a repeated header, the first column
+/// merged down rows 20 to 40 (its first cell taller than they are) and 62 to 70, rows 44 to 49 kept with the next.
+fn long_table_doc(n: usize) -> Document {
+    let rows: String = (0..n)
+        .map(|i| {
+            let h = if i == 0 { "<w:trPr><w:tblHeader/></w:trPr>" } else { "" };
+            let merge = match i {
+                20 | 62 => r#"<w:vMerge w:val="restart"/>"#,
+                21..=40 | 63..=70 => "<w:vMerge/>",
+                _ => "",
+            };
+            let keep = if (44..50).contains(&i) { "<w:pPr><w:keepNext/></w:pPr>" } else { "" };
+            let text = format!("Row {i:03} ").repeat(1 + i % 3 * 6);
+            let first = if i == 20 { text.repeat(60) } else { text.clone() };
+            format!(
+                r#"<w:tr>{h}<w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/>{merge}</w:tcPr><w:p>{keep}<w:r><w:t>{first}</w:t></w:r></w:p></w:tc><w:tc><w:tcPr><w:tcW w:w="6000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>{text}</w:t></w:r></w:p></w:tc></w:tr>"#
+            )
+        })
+        .collect();
+    let borders = r#"<w:tblBorders><w:top w:val="single" w:sz="4"/><w:bottom w:val="single" w:sz="12"/><w:insideH w:val="single" w:sz="4"/><w:insideV w:val="single" w:sz="4"/></w:tblBorders>"#;
+    let sect = sect();
+    docx(&format!(
+        r#"<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/>{borders}</w:tblPr><w:tblGrid><w:gridCol w:w="3000"/><w:gridCol w:w="6000"/></w:tblGrid>{rows}</w:tbl><w:p><w:r><w:t>After</w:t></w:r></w:p>{sect}"#
+    ))
+}
+
+/// What each page draws.
+fn drawn(dl: &DocumentLayout) -> Vec<String> {
+    dl.snapshot().pages().iter().map(|p| format!("{:?}", crate::layout::traverse::paint_items(p))).collect()
+}
+
+#[test]
+fn a_live_drags_table_laid_out_in_parts_draws_as_laid_out_whole() {
+    let fonts = fonts();
+    for n in [40, 75, 150] {
+        let d = long_table_doc(n);
+        let Block::Table(t) = &d.sections[0].blocks[0] else { panic!("table first") };
+        let mut whole = DocumentLayout::new();
+        whole.edit(Revision(1), None);
+        whole.complete(&d, &fonts);
+        let mut live = DocumentLayout::new();
+        live.set_live_tables(std::rc::Rc::from([t.id]));
+        live.edit(Revision(1), None);
+        live.complete(&d, &fonts);
+        assert!(whole.snapshot().pages().len() >= n / 25, "{n} rows span pages");
+        assert_eq!(drawn(&live), drawn(&whole), "{n} rows");
+    }
+}

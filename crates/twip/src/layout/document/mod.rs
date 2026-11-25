@@ -401,6 +401,8 @@ pub struct LayoutJob {
     /// Note numbers the last pass found different on its pages, for the next pass.
     renumber: Option<HashMap<(NoteKind, i64), String>>,
     facts: Option<Rc<DocFacts>>,
+    /// The tables a live drag lays out (see [`crate::layout::flow::PassMemo::live`]).
+    pub live: Rc<[u64]>,
 }
 
 impl LayoutJob {
@@ -418,6 +420,7 @@ impl LayoutJob {
             finished: None,
             renumber: None,
             facts: None,
+            live: Rc::from([]),
         }
     }
 
@@ -474,6 +477,7 @@ impl LayoutJob {
                     continue;
                 }
                 let r = if self.run.k == 1 { reuse.as_deref_mut() } else { None };
+                self.run.memo.live.clone_from(&self.live);
                 if step(&mut self.run, &cx, r, &mut memos).is_err() {
                     break Some(Step::Yielded);
                 }

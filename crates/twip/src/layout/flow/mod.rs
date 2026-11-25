@@ -134,6 +134,8 @@ pub struct ColumnResult {
 
 #[derive(Default)]
 pub struct PassMemo {
+    /// The tables a live drag lays out: each only as far as the pages laid out need.
+    pub live: Rc<[u64]>,
     tables: HashMap<(usize, u64), Rc<TableLayout>>,
     varies: HashMap<usize, bool>,
     joined: HashMap<(usize, usize), Rc<Joined>>,
@@ -164,6 +166,24 @@ impl PassMemo {
     pub fn seed(&mut self, t: &Table, width: f64, tb: Rc<TableLayout>) {
         self.tables.insert((std::ptr::from_ref(t) as usize, width.to_bits()), tb);
     }
+}
+
+/// Whether `tb`, the first rows of a table of `n`, holds those its rows from `from` place in a column `room` high: the
+/// rows after `from` before its last are higher than the column (exact rows as compat 14 cuts them), so the column
+/// ends before its last row, which shows, as does a row not repeated at a page's top.
+fn reaches(tb: &TableLayout, n: usize, from: usize, room: f64, legacy: bool) -> bool {
+    let k = tb.rows.len();
+    if k >= n {
+        return true;
+    }
+    if k < from + 2 || tb.rows[k - 1].hidden || !tb.rows.iter().any(|r| !r.header && !r.hidden) {
+        return false;
+    }
+    let placed = |r: &super::table::RowBox| match r.exact && legacy {
+        true => r.height.min((room - r.top_border - tb.bottom_border).max(0.0)),
+        false => r.height,
+    };
+    tb.rows[from + 1..k - 1].iter().filter(|r| !r.hidden).map(placed).sum::<f64>() > room
 }
 
 fn varies_by_page(blocks: &[Block]) -> bool {
@@ -346,7 +366,12 @@ impl<'d> PageFill<'d, '_> {
         Ok(lines)
     }
 
+    /// The table at `bi` laid out: a live drag's table as far as its first rows.
     pub(super) fn table_layout(&mut self, bi: usize, width: f64, memos: &mut Memos) -> Result<Rc<TableLayout>, Yield> {
+        self.table_from(bi, width, 0, 0.0, memos)
+    }
+
+    fn whole_table(&mut self, bi: usize, width: f64, memos: &mut Memos) -> Result<Rc<TableLayout>, Yield> {
         let Some(Block::Table(t)) = self.sec.blocks.get(bi) else { unreachable!("table_layout on a paragraph block") };
         let id = std::ptr::from_ref(t) as usize;
         let varies = *self.pass.varies.entry(id).or_insert_with(|| t.rows.iter().any(|r| r.cells.iter().any(|c| varies_by_page(&c.blocks))));
@@ -362,6 +387,45 @@ impl<'d> PageFill<'d, '_> {
             self.pass.tables.insert((id, width.to_bits()), tb.clone());
         }
         Ok(tb)
+    }
+
+    /// The table at `bi` laid out far enough to place from row `from` in a column `room` high: a live drag's table only
+    /// that far (laid out further as later pages need it), any other whole.
+    fn table_from(&mut self, bi: usize, width: f64, from: usize, room: f64, memos: &mut Memos) -> Result<Rc<TableLayout>, Yield> {
+        let Some(Block::Table(t)) = self.sec.blocks.get(bi) else { unreachable!("table_from on a paragraph block") };
+        let id = std::ptr::from_ref(t) as usize;
+        let varies = *self.pass.varies.entry(id).or_insert_with(|| t.rows.iter().any(|r| r.cells.iter().any(|c| varies_by_page(&c.blocks))));
+        if varies || t.floating.is_some() || self.ctx.env.text.vertical.is_some() || !self.pass.live.contains(&t.id) {
+            return self.whole_table(bi, width, memos);
+        }
+        let (n, legacy) = (t.rows.len(), self.ctx.env.text.compat == Compat::Legacy);
+        // Compat ≤ 14 places the floats of every row from the table's first part.
+        if legacy && !tables::page_floats(t, &self.ctx).is_empty() {
+            return self.whole_table(bi, width, memos);
+        }
+        let mut upto = 0;
+        if let Some(tb) = self.pass.tables.get(&(id, width.to_bits())) {
+            if reaches(tb, n, from, room, legacy) {
+                hold(&mut self.pass.held.tables, tb);
+                return Ok(tb.clone());
+            }
+            upto = tb.rows.len();
+        }
+        let env = StoryEnv { ctx: self.ctx, fields: self.fields, notes: self.note_numbers };
+        let prev = self.sec.blocks.neighbours(bi, bi, &self.ctx.env.text.review).0;
+        loop {
+            upto = (upto * 2).max(from + 32).min(n);
+            // A merged cell's rows are laid out together.
+            while upto < n && t.rows[upto].cells.iter().any(|c| c.v_merge == VMerge::Continue) {
+                upto += 1;
+            }
+            let tb = crate::prof::time("table", || super::table::layout_rows(t, width, &env, prev, upto, memos))?;
+            hold(&mut self.pass.held.tables, &tb);
+            self.pass.tables.insert((id, width.to_bits()), tb.clone());
+            if upto == n || reaches(&tb, n, from, room, legacy) {
+                return Ok(tb);
+            }
+        }
     }
 
     // Column fill
@@ -691,7 +755,7 @@ impl<'d> PageFill<'d, '_> {
         if cur.pos.at.at_start() && breaks && !(*cur.empty && page_empty) {
             return Ok(Some((Stop::Page, *cur.y)));
         }
-        let tb = self.table_layout(bi, col.width, memos)?;
+        let tb = self.table_from(bi, col.width, cur.pos.at.index(), col.bottom.to_pt() - col.top.to_pt(), memos)?;
         match self.place_table(&tb, cur, col, memos)? {
             Stop::Done => keep.reset(),
             s => {
