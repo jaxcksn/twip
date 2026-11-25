@@ -1,5 +1,6 @@
 //! The layout engine's input: a document with every style resolved (the STYLE rules). Lengths are points.
 
+pub use crate::document::content::{BreakKind, NoteKind};
 pub use crate::document::ident::{ControlId, FieldId, next_para_id};
 
 use super::font_table::GenericFamily;
@@ -345,41 +346,6 @@ pub struct ParaStyle {
     /// show while hidden text does. Empty otherwise; a chain longer than [`super::resolve::MAX_PARTS`] keeps its first
     /// ones only, fewer than its joins, and so shows joined.
     pub parts: Rc<[Rc<ParaStyle>]>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum BreakKind {
-    Line,
-    Page,
-    Column,
-    /// Text-wrapping breaks (`w:br w:clear`).
-    ClearLeft,
-    ClearRight,
-    ClearAll,
-}
-
-impl BreakKind {
-    pub fn is_line(self) -> bool {
-        matches!(self, BreakKind::Line | BreakKind::ClearLeft | BreakKind::ClearRight | BreakKind::ClearAll)
-    }
-
-    /// The break `w:br@type` and `@clear` give.
-    pub fn of(kind: Option<&str>, clear: Option<&str>) -> BreakKind {
-        match (kind, clear) {
-            (Some("page"), _) => BreakKind::Page,
-            (Some("column"), _) => BreakKind::Column,
-            (_, Some("left")) => BreakKind::ClearLeft,
-            (_, Some("right")) => BreakKind::ClearRight,
-            (_, Some("all")) => BreakKind::ClearAll,
-            _ => BreakKind::Line,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum NoteKind {
-    Foot,
-    End,
 }
 
 /// A field or content control: what the host names (`f12` / `c7` in JSON).
@@ -2197,17 +2163,5 @@ impl Inline {
 impl Tab {
     pub fn is_clear(&self) -> bool {
         self.kind == TabKind::Clear
-    }
-}
-
-impl Leader {
-    pub fn glyph(self) -> Option<char> {
-        match self {
-            Leader::None => None,
-            Leader::Dot => Some('.'),
-            Leader::Hyphen => Some('-'),
-            Leader::Underscore | Leader::Heavy => Some('_'),
-            Leader::MiddleDot => Some('·'),
-        }
     }
 }

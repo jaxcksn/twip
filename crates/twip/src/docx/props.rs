@@ -4,6 +4,8 @@ use std::rc::Rc;
 
 use roxmltree::Node;
 
+pub use crate::document::format::{Jc, Leader, LineRule, TabKind, VertAlign, Width};
+
 use super::xml::*;
 
 /// A font attribute pair (`w:ascii` / `w:asciiTheme`): the theme form wins within one element.
@@ -40,13 +42,6 @@ pub mod toggle {
         ("outline", OUTLINE),
         ("shadow", SHADOW),
     ];
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum VertAlign {
-    Baseline,
-    Superscript,
-    Subscript,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -597,22 +592,6 @@ pub struct Hatch {
     pub colour: u32,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Jc {
-    Left,
-    Center,
-    Right,
-    Both,
-    Distribute,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum LineRule {
-    Auto,
-    Exact,
-    AtLeast,
-}
-
 #[derive(Clone, Debug, PartialEq)]
 pub struct Border {
     /// ST_Border value ("single", "double", "none", ...).
@@ -648,28 +627,6 @@ impl Border {
     pub fn visible(&self) -> bool {
         !matches!(&*self.style, "none" | "nil")
     }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum TabKind {
-    Left,
-    Center,
-    Right,
-    Decimal,
-    Bar,
-    Num,
-    Clear,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Leader {
-    None,
-    Dot,
-    Hyphen,
-    Underscore,
-    /// A heavy line (tab stops only; an alignment tab has none).
-    Heavy,
-    MiddleDot,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -970,67 +927,33 @@ impl ParaProps {
     }
 }
 
-/// A table width (`w:tblW`, `w:tcW`, `w:tblInd`, ...).
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Width {
-    Auto,
-    Nil,
-    /// Points.
-    Dxa(f64),
-    /// Fraction (1.0 = 100%).
-    Pct(f64),
+/// A table width (`w:tblW`, `w:tcW`, `w:tblInd`, ...), its measures clamped.
+pub fn width(e: Node) -> Width {
+    match width_raw(e) {
+        Width::Dxa(v) => Width::Dxa(v.clamp(-MAX_MEASURE, MAX_MEASURE)),
+        Width::Pct(f) => Width::Pct(f.clamp(-MAX_PCT, MAX_PCT)),
+        w => w,
+    }
 }
 
-impl Width {
-    pub fn parse(e: Node) -> Width {
-        Width::parse_raw(e).clamped()
-    }
-
-    fn clamped(self) -> Width {
-        match self {
-            Width::Dxa(v) => Width::Dxa(v.clamp(-MAX_MEASURE, MAX_MEASURE)),
-            Width::Pct(f) => Width::Pct(f.clamp(-MAX_PCT, MAX_PCT)),
-            w => w,
-        }
-    }
-
-    fn parse_raw(e: Node) -> Width {
-        let w = attr(e, "w");
-        match attr(e, "type") {
-            Some("nil") => Width::Nil,
-            Some("pct") => {
-                // 50ths of a percent, or "50%".
-                let s = w.unwrap_or("0");
-                if let Some(p) = s.strip_suffix('%') {
-                    Width::Pct(num(Some(p)).unwrap_or(0.0) / 100.0)
-                } else {
-                    Width::Pct(num(Some(s)).unwrap_or(0.0) / 5000.0)
-                }
+fn width_raw(e: Node) -> Width {
+    let w = attr(e, "w");
+    match attr(e, "type") {
+        Some("nil") => Width::Nil,
+        Some("pct") => {
+            // 50ths of a percent, or "50%".
+            let s = w.unwrap_or("0");
+            if let Some(p) = s.strip_suffix('%') {
+                Width::Pct(num(Some(p)).unwrap_or(0.0) / 100.0)
+            } else {
+                Width::Pct(num(Some(s)).unwrap_or(0.0) / 5000.0)
             }
-            Some("auto") => Width::Auto,
-            _ => match twips(w) {
-                Some(v) => Width::Dxa(v),
-                None => Width::Auto,
-            },
         }
-    }
-
-    /// A dxa or pct width as it is, any other as 0 points.
-    pub fn sized(self) -> Width {
-        match self {
-            Width::Dxa(_) | Width::Pct(_) => self,
-            _ => Width::Dxa(0.0),
-        }
-    }
-
-    /// The points of a dxa width, 0 for any other.
-    pub fn dxa(self) -> f64 {
-        if let Width::Dxa(v) = self { v } else { 0.0 }
-    }
-
-    /// The fraction of a pct width.
-    pub fn pct(self) -> Option<f64> {
-        if let Width::Pct(p) = self { Some(p) } else { None }
+        Some("auto") => Width::Auto,
+        _ => match twips(w) {
+            Some(v) => Width::Dxa(v),
+            None => Width::Auto,
+        },
     }
 }
 
@@ -1044,7 +967,7 @@ pub struct Margins {
 
 impl Margins {
     fn parse(e: Node) -> Margins {
-        let m = |n| child(e, n).map(Width::parse).map(|w| if let Width::Dxa(v) = w { v } else { 0.0 });
+        let m = |n| child(e, n).map(width).map(|w| if let Width::Dxa(v) = w { v } else { 0.0 });
         Margins { top: m("top"), left: m("left").or_else(|| m("start")), bottom: m("bottom"), right: m("right").or_else(|| m("end")) }
     }
 
@@ -1180,7 +1103,7 @@ impl TblProps {
         for c in e.children().filter(|c| c.is_element() && c.tag_name().namespace() == Some(W)) {
             match c.tag_name().name() {
                 "tblStyle" => p.style = val(c).map(str::to_string),
-                "tblW" => p.width = Some(Width::parse(c)),
+                "tblW" => p.width = Some(width(c)),
                 "bidiVisual" => p.bidi_visual = Some(on_off(c)),
                 "jc" => {
                     p.jc = Some(match val(c) {
@@ -1189,11 +1112,11 @@ impl TblProps {
                         _ => Jc::Left,
                     })
                 }
-                "tblInd" => p.ind = Some(Width::parse(c)),
+                "tblInd" => p.ind = Some(width(c)),
                 "tblBorders" => p.borders = Borders::parse(c, tc),
                 "tblCellMar" => p.margins = Margins::parse(c),
                 "tblLayout" => p.fixed = Some(attr(c, "type") == Some("fixed")),
-                "tblCellSpacing" => p.cell_spacing = Some(if let Width::Dxa(v) = Width::parse(c) { v } else { 0.0 }),
+                "tblCellSpacing" => p.cell_spacing = Some(if let Width::Dxa(v) = width(c) { v } else { 0.0 }),
                 "tblStyleRowBandSize" => p.row_band = int(val(c)),
                 "tblStyleColBandSize" => p.col_band = int(val(c)),
                 "tblpPr" => {
@@ -1298,7 +1221,7 @@ impl TcProps {
         let Some(e) = e else { return p };
         for c in e.children().filter(|c| c.is_element() && c.tag_name().namespace() == Some(W)) {
             match c.tag_name().name() {
-                "tcW" => p.width = Some(Width::parse(c)),
+                "tcW" => p.width = Some(width(c)),
                 "gridSpan" => p.grid_span = int(val(c)),
                 "vMerge" => p.v_merge = Some(val(c) == Some("restart")),
                 "hMerge" => p.h_merge = Some(val(c) == Some("restart")),
@@ -1361,9 +1284,9 @@ impl TrProps {
                 }
                 "gridBefore" => p.grid_before = int(val(c)),
                 "gridAfter" => p.grid_after = int(val(c)),
-                "wBefore" => p.w_before = Some(Width::parse(c).sized()),
-                "wAfter" => p.w_after = Some(Width::parse(c).sized()),
-                "tblCellSpacing" => p.cell_spacing = Some(if let Width::Dxa(v) = Width::parse(c) { v } else { 0.0 }),
+                "wBefore" => p.w_before = Some(width(c).sized()),
+                "wAfter" => p.w_after = Some(width(c).sized()),
+                "tblCellSpacing" => p.cell_spacing = Some(if let Width::Dxa(v) = width(c) { v } else { 0.0 }),
                 _ => {}
             }
         }

@@ -293,6 +293,18 @@ fn esc_attr(v: &str) -> String {
     v.replace('&', "&amp;").replace('"', "&quot;")
 }
 
+/// The break `w:br@type` and `@clear` give.
+fn break_kind(kind: Option<&str>, clear: Option<&str>) -> BreakKind {
+    match (kind, clear) {
+        (Some("page"), _) => BreakKind::Page,
+        (Some("column"), _) => BreakKind::Column,
+        (_, Some("left")) => BreakKind::ClearLeft,
+        (_, Some("right")) => BreakKind::ClearRight,
+        (_, Some("all")) => BreakKind::ClearAll,
+        _ => BreakKind::Line,
+    }
+}
+
 /// The run line numbers draw with: the document defaults and the LineNumber character style.
 pub(crate) fn line_number_run(res: &Resolver) -> super::model::Run {
     let mut rp = res.styles.doc_rpr.clone();
@@ -2152,7 +2164,7 @@ impl Reader {
                     "r" => self.read_run(e, base, pkg, out),
                     "br" | "cr" => {
                         let run = self.direct_run(e, base, &mut RunProps::default());
-                        let kind = if e.tag_name().name() == "br" { BreakKind::of(attr(e, "type"), attr(e, "clear")) } else { BreakKind::Line };
+                        let kind = if e.tag_name().name() == "br" { break_kind(attr(e, "type"), attr(e, "clear")) } else { BreakKind::Line };
                         out.push(Inline::Break(kind, run));
                     }
                     // In a code too: a field nested in another's code (an `IF`'s operand).
@@ -2469,7 +2481,7 @@ impl Reader {
                     out.push(Inline::PTab(PTab { align, margin: attr(c, "relativeTo") != Some("indent"), leader }, run.clone()));
                 }
                 "br" => {
-                    out.push(Inline::Break(BreakKind::of(attr(c, "type"), attr(c, "clear")), run.clone()));
+                    out.push(Inline::Break(break_kind(attr(c, "type"), attr(c, "clear")), run.clone()));
                 }
                 "cr" => out.push(Inline::Break(BreakKind::Line, run.clone())),
                 "noBreakHyphen" => push_text(out, "\u{2011}", &run),
