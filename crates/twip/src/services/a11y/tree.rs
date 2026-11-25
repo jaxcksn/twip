@@ -67,7 +67,7 @@ pub fn tree_with(e: &Editor, spelling: &Spellers, language: &str, cache: &mut Tr
     let lang = document_language(doc, language);
     let context = {
         let mut h = DefaultHasher::new();
-        (&lang, spelling.signature(), std::mem::discriminant(&doc.review.view), doc.comments.by_id.len()).hash(&mut h);
+        (&lang, spelling.signature(), std::mem::discriminant(&doc.review.view), &*doc.review.markup, doc.comments.by_id.len()).hash(&mut h);
         h.finish()
     };
     let mut b = Builder { e, doc, spelling, language, lang, open: Vec::new(), notes: Vec::new(), cache, context, seen: Vec::new() };
@@ -81,7 +81,7 @@ pub fn tree_with(e: &Editor, spelling: &Spellers, language: &str, cache: &mut Tr
 
 /// The paragraphs a tree build read, kept for the next build: a paragraph is read again only when its reading could
 /// differ (its text, its runs' language, review marks and hidden text, its pictures' alternative text and fields'
-/// values, the comments open at its start, the notes before it, the markup view, the spelling).
+/// values, the comments open at its start, the notes before it, the markup view and Show Markup, the spelling).
 #[derive(Default)]
 pub struct TreeCache {
     paras: std::collections::HashMap<u64, Read>,
@@ -480,16 +480,23 @@ impl Builder<'_> {
             match inline {
                 Inline::NoteRef { kind, id, .. } => {
                     flush(&mut run, &mut out);
-                    out.push(self.note_ref(*kind, *id, p.id, k));
+                    let node = self.note_ref(*kind, *id, p.id, k);
+                    if !r.hidden(starts[k]) {
+                        out.push(node);
+                    }
                 }
                 Inline::Picture(pic, _) => {
                     flush(&mut run, &mut out);
+                    if r.hidden(starts[k]) {
+                        continue;
+                    }
                     match (&pic.text, alt(&pic.alt, pic.shape.as_deref())) {
                         (Some(t), _) => out.push(self.text_box(AccessibleId(t.id), &t.text_box.blocks, depth)),
                         (None, Alt::Text(alt)) => out.push(image(derived(Kind::Image, p.id, k as u64), alt)),
                         (None, Alt::Decorative | Alt::Missing) => {}
                     }
                 }
+                Inline::Float(_, fr) if super::unread(&self.doc.review, &fr.rev) => {}
                 Inline::Float(f, _) => match (&f.text_box, alt(&f.alt, f.shape.as_deref())) {
                     (Some(tb), _) => floats.push(self.text_box(AccessibleId(f.id), &tb.blocks, depth)),
                     (None, Alt::Text(alt)) => floats.push(image(AccessibleId(f.id), alt)),
@@ -600,6 +607,7 @@ impl Builder<'_> {
             .comments
             .threads()
             .into_iter()
+            .filter(|(root, _)| doc.comments.by_id.get(root).is_some_and(|c| doc.review.shows_comment(c.author)))
             .filter_map(|(root, replies)| {
                 let mut node = self.comment(root)?;
                 node.children.extend(replies.into_iter().filter_map(|r| self.comment(r)));
@@ -850,6 +858,108 @@ mod tests {
     }
 
     #[test]
+    fn a_hidden_note_reference_is_not_read_but_keeps_its_number() {
+        use std::io::{Read, Write};
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-A11Y-STRUCTURE.docx");
+        let mut z = zip::ZipArchive::new(std::io::Cursor::new(std::fs::read(path).expect("fixture"))).expect("a zip");
+        let mut out = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        for i in 0..z.len() {
+            let mut f = z.by_index(i).expect("an entry");
+            let name = f.name().expect("a name").to_string();
+            let mut data = Vec::new();
+            f.read_to_end(&mut data).expect("reads");
+            if name == "word/document.xml" {
+                let xml = String::from_utf8(data).expect("utf-8");
+                let k = xml.find(r#"<w:footnoteReference w:id="1"/>"#).expect("the first reference");
+                let pr = xml[..k].rfind("</w:rPr>").expect("its run properties");
+                data = format!("{}<w:vanish/>{}", &xml[..pr], &xml[pr..]).into_bytes();
+            }
+            out.start_file(name, zip::write::SimpleFileOptions::default()).expect("writes");
+            out.write_all(&data).expect("writes");
+        }
+        let fonts = Fonts::system_recommended();
+        let e = Editor::open(&out.finish().expect("a zip").into_inner(), &fonts).expect("opens");
+        let t = tree(&e, &Spellers::default(), "en-US");
+        let names: Vec<String> = with(&t, AccessibleRole::NoteRef).iter().map(|r| r.name.clone().unwrap_or_default()).collect();
+        assert_eq!(names, ["Footnote 2", "Endnote 1"], "the hidden reference isn't read; the next keeps its number");
+    }
+
+    #[test]
+    fn hidden_comments_are_not_read() {
+        let (mut e, _) = open("FX-A11Y-STRUCTURE.docx");
+        let read = |e: &Editor| {
+            let t = tree(e, &Spellers::default(), "en-US");
+            (with(&t, AccessibleRole::Comment).len(), all(&t).iter().filter(|n| n.details.is_some()).count())
+        };
+        let (comments, anchors) = read(&e);
+        assert!(comments > 0 && anchors > 0, "shown");
+        e.set_show_markup(true, true, false);
+        assert_eq!(read(&e), (0, 0), "Show Markup's Comments off");
+        e.set_show_markup(true, true, true);
+        e.set_hidden_reviewers(&["Grace"]);
+        let t = tree(&e, &Spellers::default(), "en-US");
+        assert!(with(&t, AccessibleRole::Comment).iter().all(|c| c.author.as_deref() != Some("Grace")), "the hidden reviewer's thread");
+        let shown: Vec<AccessibleId> = with(&t, AccessibleRole::Comment).iter().map(|c| c.id).collect();
+        assert!(all(&t).iter().filter_map(|n| n.details).all(|d| shown.contains(&d)), "no text points at a hidden comment");
+    }
+
+    #[test]
+    fn a_hidden_deleted_picture_is_not_read() {
+        use crate::editing::selection::{ObjectRef, Selection};
+        let (mut e, fonts) = open("FX-A11Y-STRUCTURE.docx");
+        let images = |e: &Editor| with(&tree(e, &Spellers::default(), "en-US"), AccessibleRole::Image).len();
+        let before = images(&e);
+        let (para, offset) = e
+            .index()
+            .para_ids()
+            .find_map(|id| {
+                let p = e.index().para(e.document(), id)?;
+                let mut at = 0u32;
+                p.inlines.iter().find_map(|i| {
+                    let here = at;
+                    at += i.units() as u32;
+                    matches!(i, Inline::Picture(pic, _) if matches!(alt(&pic.alt, pic.shape.as_deref()), Alt::Text(_)))
+                        .then_some((id, crate::layout::Unit(here)))
+                })
+            })
+            .expect("an inline picture with alternative text");
+        e.set_tracking(true);
+        e.set_caret_for_benchmark(Selection::Object(ObjectRef::Inline { para, offset }));
+        let delete = e.key_command("Delete", Mods::default()).expect("a command");
+        e.execute(delete, &fonts);
+        assert_eq!(images(&e), before, "a deletion All Markup shows is read");
+        e.set_markup_view(crate::docx::review::MarkupView::NoMarkup);
+        assert_eq!(images(&e), before - 1, "gone with its deletion");
+    }
+
+    #[test]
+    fn deletions_in_balloons_are_read() {
+        let (mut e, _) = open("FX-A11Y-REVIEW.docx");
+        let deleted = |e: &Editor| {
+            let t = tree(e, &Spellers::default(), "en-US");
+            with(&t, AccessibleRole::Text)
+                .iter()
+                .filter(|n| n.marks.contains(&AccessibleMark::Deletion))
+                .filter_map(|n| n.text.clone())
+                .collect::<Vec<_>>()
+        };
+        e.set_balloon_mode(crate::docx::review::BalloonMode::Balloons);
+        assert_eq!(deleted(&e), ["for next year "], "read where it was");
+        // A caret is how an inline deletion draws: one in a balloon is still read.
+        let caret = crate::docx::review::MarkupStyle {
+            deletions: crate::docx::review::MarkLook {
+                mark: crate::docx::review::TextMark::Caret,
+                ..crate::docx::review::MarkupStyle::default().deletions
+            },
+            ..crate::docx::review::MarkupStyle::default()
+        };
+        e.set_markup_style(caret);
+        assert_eq!(deleted(&e), ["for next year "], "in a balloon, whatever its inline mark");
+        e.set_hidden_reviewers(&["Grace"]);
+        assert!(deleted(&e).is_empty(), "the hidden reviewer's deletion");
+    }
+
+    #[test]
     fn going_to_a_node_finds_its_paragraph() {
         let (e, _) = open("FX-A11Y-STRUCTURE.docx");
         let t = tree(&e, &Spellers::default(), "en-US");
@@ -896,6 +1006,35 @@ mod tests {
         );
         let now = tree_with(&e, &Spellers::default(), "en-US", &mut cache);
         assert_eq!(now, tree(&e, &Spellers::default(), "en-US"), "the cached build is a fresh one");
+    }
+
+    /// Show Markup, its reviewers and deletion marks change what a paragraph reads: the cached build follows each.
+    #[test]
+    fn the_cached_tree_follows_show_markup() {
+        use crate::docx::review::{MarkupStyle, TextMark};
+        let (mut e, _) = open("FX-A11Y-REVIEW.docx");
+        let spelling = Spellers::default();
+        let mut cache = TreeCache::default();
+        let base = tree_with(&e, &spelling, "en-US", &mut cache);
+        let names: Vec<String> = e.document().people.persons.iter().map(|p| p.name.to_string()).collect();
+        let names: Vec<&str> = names.iter().map(String::as_str).collect();
+        let caret = MarkupStyle {
+            deletions: crate::docx::review::MarkLook { mark: TextMark::Caret, ..MarkupStyle::default().deletions },
+            ..MarkupStyle::default()
+        };
+        let changes: [(&dyn Fn(&mut Editor), &dyn Fn(&mut Editor)); 3] = [
+            (&|e| _ = e.set_hidden_reviewers(&names), &|e| _ = e.set_hidden_reviewers(&[])),
+            (&|e| _ = e.set_show_markup(false, true, true), &|e| _ = e.set_show_markup(true, true, true)),
+            (&|e| _ = e.set_markup_style(caret.clone()), &|e| _ = e.set_markup_style(MarkupStyle::default())),
+        ];
+        for (i, (change, undo)) in changes.iter().enumerate() {
+            change(&mut e);
+            let now = tree_with(&e, &spelling, "en-US", &mut cache);
+            assert_eq!(now, tree(&e, &spelling, "en-US"), "change {i}: the cached build is a fresh one");
+            assert_ne!(now, base, "change {i} reads differently");
+            undo(&mut e);
+            assert_eq!(tree_with(&e, &spelling, "en-US", &mut cache), base, "change {i} undone");
+        }
     }
 
     #[test]

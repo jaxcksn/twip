@@ -41,7 +41,7 @@ fn on(e: &mut Editor, rects: &Rects, para: ParaId) -> Rects {
 
 fn all_pages(e: &mut Editor, mode: FieldShading) -> Rects {
     let n = e.page_geometries().len();
-    e.field_shading(0..n, mode)
+    e.field_shading(0..n, mode).into_iter().map(|(p, b)| (p, b.page())).collect()
 }
 
 fn caret_on(e: &mut Editor, (page, r): (usize, [f64; 4])) {

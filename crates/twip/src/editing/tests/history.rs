@@ -129,3 +129,47 @@ fn a_symbol_is_its_own_step() {
     e.execute(Command::Undo, fonts());
     assert_eq!(texts(&e).concat(), "\u{a9}");
 }
+
+#[test]
+fn the_undo_list_undoes_back_to_the_action_chosen_and_redo_does_them_again() {
+    let mut e = Editor::open(&blank_with("x"), fonts()).expect("opens");
+    e.complete(fonts());
+    e.execute(Command::SelectAll, fonts());
+    e.execute(Command::SetBold(true), fonts());
+    e.execute(Command::SetItalic(true), fonts());
+    e.execute(Command::SetUnderline(crate::api::value::UnderlineStyle::Single), fonts());
+    let labels: Vec<&str> = e.history().undo_labels().collect();
+    assert_eq!(labels, ["Underline", "Italic", "Bold"], "the most recent first");
+    assert_eq!(labels[0], e.history().next_undo().unwrap());
+    let shown = |e: &mut Editor| {
+        let c = e.format_state().expect("a state").character;
+        (c.bold, c.italic)
+    };
+    assert!(matches!(e.undo_many(true, 2, fonts()), Outcome::Changed(_)));
+    assert_eq!(e.history().redo_depth(), 2);
+    assert_eq!(shown(&mut e), (crate::api::state::Tri::Uniform(true), crate::api::state::Tri::Uniform(false)));
+    assert_eq!(e.history().redo_labels().collect::<Vec<_>>(), ["Italic", "Underline"], "the next to redo first");
+    assert!(matches!(e.undo_many(true, 0, fonts()), Outcome::Unchanged(_)), "none undoes nothing");
+    assert!(matches!(e.undo_many(false, 0, fonts()), Outcome::Unchanged(_)), "none redoes nothing");
+    assert_eq!((e.history().undo_depth(), e.history().redo_depth()), (1, 2));
+    assert_eq!(shown(&mut e), (crate::api::state::Tri::Uniform(true), crate::api::state::Tri::Uniform(false)));
+    assert!(matches!(e.undo_many(false, 9, fonts()), Outcome::Changed(_)), "more than there are redoes them all");
+    assert_eq!((e.history().undo_depth(), e.history().redo_depth()), (3, 0));
+    assert!(matches!(e.undo_many(false, 1, fonts()), Outcome::Unchanged(_)));
+}
+
+#[test]
+fn undoing_several_scrolls_to_where_the_first_put_the_caret() {
+    use super::super::input::Request;
+    let mut e = Editor::open(&blank_with("one two\nthree"), fonts()).expect("opens");
+    e.complete(fonts());
+    let ids = super::texts_ids(&e);
+    e.select_range(ids[0], crate::layout::Unit(0), crate::layout::Unit(3), fonts());
+    e.execute(Command::SetBold(true), fonts());
+    e.execute(Command::SetItalic(true), fonts());
+    e.select_range(ids[1], crate::layout::Unit(0), crate::layout::Unit(0), fonts());
+    e.take_requests();
+    assert!(matches!(e.undo_many(true, 2, fonts()), Outcome::Changed(_)));
+    assert!(e.selection.focus().is_some_and(|p| p.para_offset().map(|(p, _)| p) == Some(ids[0])), "back on the first paragraph");
+    assert!(e.take_requests().iter().any(|r| matches!(r, Request::ScrollIntoView { .. })), "the view follows it");
+}

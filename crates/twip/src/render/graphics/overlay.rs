@@ -7,8 +7,9 @@ use twip_graphics::paint::{BlendMode, Color};
 use twip_graphics::scene::{Clip, Layer, Recorder};
 
 use super::{Graphics, aliased, chrome_face, dashed, measure, pen, rect, rect_path};
-use crate::editing::view::{MarkKind, SelectionView, View};
+use crate::editing::view::{Band, MarkKind, SelectionView, View};
 use crate::layout::fragment::Item;
+use crate::layout::vertical::Turn;
 use crate::render::{ChromeFace, Frame, Renderer};
 
 /// The points of a wavy line along `x0..x1` at `y`: a step `step` across, alternately `amp` down.
@@ -38,8 +39,14 @@ impl Graphics {
         // leave the highlight untouched.
         let (shade, blend) = if page.is_dark() { (Color::rgb(0x2C_2C2C), BlendMode::Screen) } else { (Color::rgb(0xD9_D9D9), BlendMode::Multiply) };
         let shade = twip_graphics::paint::Paint { blend, ..aliased(shade) };
-        for (_, b) in view.field_shading.iter().filter(|(pg, _)| *pg == i) {
-            rec.fill_rect(rect(*b), shade);
+        for (_, b) in view.field_shading.iter().chain(&view.list_labels).filter(|(pg, _)| *pg == i) {
+            fill_band(rec, b, shade);
+        }
+        // Editable regions: Word's pale gold, multiplied under the text (screened dark over a dark page)
+        let (gold, blend) = if page.is_dark() { (Color::rgb(0x40_3A1F), BlendMode::Screen) } else { (Color::rgb(0xFF_F2CC), BlendMode::Multiply) };
+        let gold = twip_graphics::paint::Paint { blend, ..aliased(gold) };
+        for (_, b) in view.editable_regions.iter().filter(|(pg, _)| *pg == i) {
+            fill_band(rec, b, gold);
         }
         for (_, b) in view.fade.iter().filter(|(pg, _)| *pg == i) {
             rec.fill_rect(rect(*b), fade);
@@ -48,8 +55,10 @@ impl Graphics {
         let px = (k * f.dpr).max(0.01);
         let (step, amp) = (2.0 / px, 1.5 / px);
         let red = ink(0xE6_0000);
-        for (_, [x0, _, x1, y1]) in view.spelling.iter().filter(|(pg, _)| *pg == i) {
-            self.polyline(rec, wave(*x0, *x1, y1 - 1.5 * amp, step, amp), &pen(1.0 / px), red);
+        for (_, b) in view.spelling.iter().filter(|(pg, _)| *pg == i) {
+            let (turned, [x0, _, x1, y1]) = along(rec, b);
+            self.polyline(rec, wave(x0, x1, y1 - 1.5 * amp, step, amp), &pen(1.0 / px), red);
+            done(rec, turned);
         }
         // Labelled regions (content controls, shown sub-templates): a dashed boundary and a title tab above its top left.
         let blue = ink(0x00_78D4);
@@ -68,14 +77,18 @@ impl Graphics {
             }
         }
         // The IME composition: a solid accent underline.
-        for (_, [x0, _, x1, y1]) in view.composition.iter().filter(|(pg, _)| *pg == i) {
-            rec.line((*x0, y1 - 0.5).into(), (*x1, y1 - 0.5).into(), &pen(1.0), page.accent.solid);
+        for (_, b) in view.composition.iter().filter(|(pg, _)| *pg == i) {
+            let (turned, [x0, _, x1, y1]) = along(rec, b);
+            rec.line((x0, y1 - 0.5).into(), (x1, y1 - 0.5).into(), &pen(1.0), page.accent.solid);
+            done(rec, turned);
         }
         // The correction just made: a dashed accent underline, and its options button (16 x 12 px) under it.
         if let Some(c) = &view.correction {
             let accent = page.accent.solid;
-            for (_, [x0, _, x1, y1]) in c.rects.iter().filter(|(pg, _)| *pg == i) {
-                rec.line((*x0, y1 - 0.5).into(), (*x1, y1 - 0.5).into(), &dashed(0.75, 2.25, 1.5), accent);
+            for (_, b) in c.bands.iter().filter(|(pg, _)| *pg == i) {
+                let (turned, [x0, _, x1, y1]) = along(rec, b);
+                rec.line((x0, y1 - 0.5).into(), (x1, y1 - 0.5).into(), &dashed(0.75, 2.25, 1.5), accent);
+                done(rec, turned);
             }
             if let Some((_, b)) = c.button.filter(|(pg, _)| *pg == i) {
                 let b = rect(b);
@@ -91,8 +104,8 @@ impl Graphics {
         // printed.
         for c in &view.comments {
             let tint = aliased(ink(0xFF_B900).with_alpha(if c.active { 110 } else { 45 }));
-            for (_, b) in c.rects.iter().filter(|(pg, _)| *pg == i) {
-                rec.fill_rect(rect(*b), tint);
+            for (_, b) in c.bands.iter().filter(|(pg, _)| *pg == i) {
+                fill_band(rec, b, tint);
             }
         }
         // Element marks: a tint over the element and a wavy line twice the spelling line's weight, in the severity's
@@ -103,12 +116,14 @@ impl Graphics {
                 crate::editing::view::Severity::Warning => 0xC1_9C00,
                 crate::editing::view::Severity::Info => 0x00_78D4,
             });
-            let [x0, _, x1, y1] = m.rect;
-            rec.fill_rect(rect(m.rect), aliased(c.with_alpha(28)));
+            fill_band(rec, &m.rect, aliased(c.with_alpha(28)));
+            let (turned, [x0, _, x1, y1]) = along(rec, &m.rect);
             self.polyline(rec, wave(x0, x1, y1 - 1.5 * amp, step, amp), &pen(2.0 / px), c.with_alpha(255));
+            done(rec, turned);
         }
         if let Some(c) = view.drop.as_ref().filter(|c| c.page == i) {
-            rec.line((c.x, c.top).into(), (c.x, c.bottom).into(), &dashed(0.75, 1.5, 1.5), aliased(palette.drop));
+            let [a, b] = c.ends;
+            rec.line((a[0], a[1]).into(), (b[0], b[1]).into(), &dashed(0.75, 1.5, 1.5), aliased(palette.drop));
         }
         if let Some((_, [x0, y0, x1, y1])) = view.guide.filter(|(pg, _)| *pg == i) {
             rec.line((x0, y0).into(), (x1, y1).into(), &outline, aliased(object));
@@ -156,7 +171,12 @@ impl Graphics {
             rec.fill_rect(kurbo::Rect::new(cx - 0.75 * u, cy + 4.0 * u, cx + 0.75 * u, cy + 10.0 * u), aliased(object));
         }
         match &view.selection {
-            SelectionView::Text(rects) | SelectionView::Cells(rects) => {
+            SelectionView::Text(bands) => {
+                for (_, b) in bands.iter().filter(|(pg, _)| *pg == i) {
+                    fill_band(rec, b, highlight);
+                }
+            }
+            SelectionView::Cells(rects) => {
                 for (_, b) in rects.iter().filter(|(pg, _)| *pg == i) {
                     rec.fill_rect(rect(*b), highlight);
                 }
@@ -223,13 +243,39 @@ impl Graphics {
                 rec.fill_rect(kurbo::Rect::new(x - h, y - h, x + h, y + h), aliased(Color::rgb(0x00_0000)));
             }
         }
+        // Select Objects' rectangle: a 1 px dashed outline in the object colour.
+        if let Some((_, b)) = view.marquee.filter(|(pg, _)| *pg == i) {
+            rec.stroke_path(&rect_path(rect(b)), &dashed(1.0 / k, 4.0 / k, 2.0 / k), aliased(object));
+        }
         self.table_affordances(rec, r, view, i, f);
         self.object_feedback(rec, r, view, i, f);
         self.marks(rec, r, view, i, f);
-        // The caret: a bar at the insertion point, at least one device pixel wide, last so nothing covers it.
+        // The caret: a bar at the insertion point across its line, at least one device pixel thick, last so nothing
+        // covers it.
         if let Some(c) = view.caret.as_ref().filter(|c| f.caret && c.page == i && matches!(view.selection, SelectionView::None)) {
             let width = f.dpr.round().max(1.0) / (k * f.dpr);
-            rec.fill_rect(kurbo::Rect::new(c.x, c.top, c.x + width, c.bottom), aliased(r.caret()));
+            if c.slanted() {
+                // Slanted bar
+                let [[x0, y0], [x1, y1]] = c.ends;
+                let len = (x1 - x0).hypot(y1 - y0);
+                let (ux, uy) = ((y1 - y0) / len * width, (x0 - x1) / len * width);
+                let bar = [(x0, y0), (x1, y1), (x1 + ux, y1 + uy), (x0 + ux, y0 + uy)].map(kurbo::Point::from);
+                let path = [
+                    kurbo::PathEl::MoveTo(bar[0]),
+                    kurbo::PathEl::LineTo(bar[1]),
+                    kurbo::PathEl::LineTo(bar[2]),
+                    kurbo::PathEl::LineTo(bar[3]),
+                    kurbo::PathEl::ClosePath,
+                ];
+                rec.fill_path(&path, aliased(r.caret()));
+            } else {
+                let bar = if c.vertical() {
+                    kurbo::Rect::new(c.x, c.top, c.right, c.top + width)
+                } else {
+                    kurbo::Rect::new(c.x, c.top, c.x + width, c.bottom)
+                };
+                rec.fill_rect(bar, aliased(r.caret()));
+            }
         }
     }
 
@@ -344,6 +390,10 @@ impl Graphics {
             rec.stroke_path(&rect_path(rect(b)), &dash, solid);
         }
         let Some(t) = view.table.as_ref().filter(|t| t.page == i) else { return };
+        let turned = t.turn != Turn::NONE;
+        if turned {
+            rec.push_transform(affine(t.turn));
+        }
         match t.mark {
             Some(TableMark::InsertColumn { x, top, bottom }) => {
                 line(rec, (x, top - 4.0 * u), (x, bottom + 4.0 * u), &dash);
@@ -382,6 +432,7 @@ impl Graphics {
         if let Some([x, y]) = t.end {
             boxed(rec, x, y, 7.0);
         }
+        done(rec, turned);
     }
 
     /// Page `i`'s formatting marks and text boundaries, in the palette's marks colour, in page points.
@@ -394,7 +445,7 @@ impl Graphics {
         let line = pen(1.0 / px);
         let face = self.fallback.clone();
         for m in view.formatting_marks.iter().filter(|m| m.page == i) {
-            let [x0, top, x1, bottom] = m.at;
+            let (turned, [x0, top, x1, bottom]) = along(rec, &m.at);
             let h = bottom - top;
             let mid = top + h * 0.55;
             match m.kind {
@@ -473,6 +524,7 @@ impl Graphics {
                     }
                 }
             }
+            done(rec, turned);
         }
         let edge = dashed(1.0 / px, 2.0 / px, 2.0 / px);
         for (_, b) in view.boundaries.iter().filter(|(pg, _)| *pg == i) {
@@ -502,6 +554,38 @@ fn section_break_label(k: crate::docx::SectionBreak) -> &'static str {
         crate::docx::SectionBreak::OddPage => "Section Break (Odd Page)",
         crate::docx::SectionBreak::NextColumn => "Section Break (Next Column)",
     }
+}
+
+/// `b` as its line is laid out, drawing from here on turned with that line when it is drawn turned (true); [`done`]
+/// ends that.
+fn along(rec: &mut Recorder, b: &Band) -> (bool, [f64; 4]) {
+    let turned = b.turn != Turn::NONE;
+    if turned {
+        rec.push_transform(affine(b.turn));
+    }
+    (turned, b.rect)
+}
+
+/// Fills `b`: a box on the page when its line keeps boxes boxes, otherwise turned with its line.
+fn fill_band<'p>(rec: &mut Recorder, b: &Band, paint: impl Into<twip_graphics::paint::Paint<'p>>) {
+    if b.turn.is_quarter() {
+        rec.fill_rect(rect(b.page()), paint);
+        return;
+    }
+    rec.push_transform(affine(b.turn));
+    rec.fill_rect(rect(b.rect), paint);
+    rec.pop();
+}
+
+/// Ends what [`along`] turned.
+fn done(rec: &mut Recorder, turned: bool) {
+    if turned {
+        rec.pop();
+    }
+}
+
+fn affine(t: Turn) -> kurbo::Affine {
+    kurbo::Affine::new([t.m[0], t.m[1], t.m[2], t.m[3], t.t[0], t.t[1]])
 }
 
 #[cfg(test)]

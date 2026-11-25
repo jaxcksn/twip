@@ -15,7 +15,11 @@ pub(super) struct PicEdit<'a> {
     pub w: &'a mut f64,
     pub h: &'a mut f64,
     pub image: &'a mut Option<usize>,
+    /// Its effect extents (`wp:effectExtent`).
+    pub effect: &'a mut [f64; 4],
     pub shape: Option<&'a mut crate::drawing::Shape>,
+    /// A float's width and height relative to a box.
+    pub relative: Option<&'a mut [Option<(String, i64)>; 2]>,
 }
 
 impl Editor {
@@ -61,36 +65,63 @@ impl Editor {
         })
     }
 
+    /// Applies `edit` to the selected inline object (a picture or a shape); `false` from it changes nothing.
+    pub(super) fn edit_inline(&mut self, label: &'static str, edit: impl FnOnce(&mut crate::docx::Picture) -> bool, fonts: &Fonts) -> Outcome {
+        let Selection::Object(ObjectRef::Inline { para, offset }) = self.selection else { return Outcome::unavailable("no inline object selected") };
+        let Some(p) = self.index.para(&self.doc, para) else { return Outcome::Unchanged("no paragraph") };
+        let mut inlines = p.inlines.clone();
+        let mut at = 0;
+        let Some(pic) = inlines.iter_mut().find_map(|i| {
+            let here = at;
+            at += i.units();
+            match i {
+                Inline::Picture(pic, _) if here == offset.0 as usize => Some(pic),
+                _ => None,
+            }
+        }) else {
+            return Outcome::Unchanged("no picture");
+        };
+        let before = pic.clone();
+        if !edit(pic) || *pic == before {
+            return Outcome::Unchanged("already so");
+        }
+        let mut tx = self.begin(label);
+        if self.step(&mut tx, Step::Restyle { para, inlines }).is_err() {
+            self.abort(tx);
+            return Outcome::Unchanged("stale object");
+        }
+        self.selection = Selection::Object(ObjectRef::Inline { para, offset });
+        self.commit(tx, None, fonts)
+    }
+
     /// Applies `edit` to the selected picture, inline or floating; `false` from it changes nothing.
     pub(super) fn edit_picture(&mut self, label: &'static str, edit: impl FnOnce(&mut PicEdit) -> bool, fonts: &Fonts) -> Outcome {
         match self.selection {
-            Selection::Object(ObjectRef::Inline { para, offset }) => {
-                let Some(p) = self.index.para(&self.doc, para) else { return Outcome::Unchanged("no paragraph") };
-                let mut inlines = p.inlines.clone();
-                let mut at = 0;
-                let Some(pic) = inlines.iter_mut().find_map(|i| {
-                    let here = at;
-                    at += i.units();
-                    match i {
-                        Inline::Picture(pic, _) if here == offset.0 as usize => Some(pic),
-                        _ => None,
+            Selection::Object(ObjectRef::Inline { .. }) => self.edit_inline(
+                label,
+                |pic| {
+                    let (was, effect) = ((pic.w, pic.h, pic.shape.as_deref().map_or(0.0, |s| s.xfrm.rot.degrees())), pic.effect);
+                    if !edit(&mut PicEdit {
+                        w: &mut pic.w,
+                        h: &mut pic.h,
+                        image: &mut pic.image,
+                        effect: &mut pic.effect,
+                        shape: pic.shape.as_deref_mut(),
+                        relative: None,
+                    }) {
+                        return false;
                     }
-                }) else {
-                    return Outcome::Unchanged("no picture");
-                };
-                let before = pic.clone();
-                let mut e = PicEdit { w: &mut pic.w, h: &mut pic.h, image: &mut pic.image, shape: pic.shape.as_deref_mut() };
-                if !edit(&mut e) || *pic == before {
-                    return Outcome::Unchanged("already so");
-                }
-                let mut tx = self.begin(label);
-                if self.step(&mut tx, Step::Restyle { para, inlines }).is_err() {
-                    self.abort(tx);
-                    return Outcome::Unchanged("stale object");
-                }
-                self.selection = Selection::Object(ObjectRef::Inline { para, offset });
-                self.commit(tx, None, fonts)
-            }
+                    let deg = pic.shape.as_deref().map_or(0.0, |s| s.xfrm.rot.degrees());
+                    if pic.effect != effect {
+                        // The edit set the effects' own reach: the turn's goes on it.
+                        super::shapes::refit_turn(pic, (pic.w, pic.h, 0.0));
+                    } else if (was.2 != 0.0 || deg != 0.0) && (was.0, was.1, was.2) != (pic.w, pic.h, deg) {
+                        super::shapes::refit_turn(pic, was);
+                    }
+                    true
+                },
+                fonts,
+            ),
             Selection::Object(ObjectRef::Floating(f)) => {
                 let Some(mut n) = self.float_of(f).cloned() else { return Outcome::Unchanged("no float") };
                 if n.text_box.is_some() {
@@ -98,9 +129,17 @@ impl Editor {
                 }
                 // A quarter-turned float's box is the picture's own width and height swapped.
                 let (w, h) = if n.rot_swap { (&mut n.h, &mut n.w) } else { (&mut n.w, &mut n.h) };
-                let mut e = PicEdit { w, h, image: &mut n.image, shape: n.shape.as_deref_mut() };
+                let rot = n.shape.as_deref().map(|s| s.xfrm.rot);
+                let mut e =
+                    PicEdit { w, h, image: &mut n.image, effect: &mut n.effect, shape: n.shape.as_deref_mut(), relative: Some(&mut n.relative.size) };
                 if !edit(&mut e) {
                     return Outcome::Unchanged("already so");
+                }
+                // A changed turn swaps the box back when it leaves or enters a quarter turn.
+                if let Some(now) = n.shape.as_deref().map(|s| s.xfrm.rot)
+                    && Some(now) != rot
+                {
+                    super::shapes::rotate_to(&mut n, &[], now.degrees(), self.doc.settings.compat_mode);
                 }
                 self.set_float(n, label, fonts)
             }
@@ -162,6 +201,144 @@ impl Editor {
             self.pending_images.clear();
         }
         out
+    }
+}
+
+/// A picture's recolouring (Word's Picture Color > Recolor).
+#[derive(Clone, Debug, PartialEq)]
+pub enum Recolor {
+    /// Its own colours.
+    None,
+    /// Shades of grey.
+    Grayscale,
+    /// Black and white: pixels lighter than the threshold (0 to 1) white, the rest black.
+    BlackAndWhite(f64),
+    /// Two colours, its darkest drawn in the first and its lightest in the second (Sepia, the accent variations).
+    Duotone(crate::drawing::colour::Colour, crate::drawing::colour::Colour),
+}
+
+impl Recolor {
+    /// The recolouring a picture's adjustments make.
+    pub fn of(adjust: &[crate::drawing::paint::BlipAdjust]) -> Recolor {
+        use crate::drawing::paint::BlipAdjust as A;
+        adjust
+            .iter()
+            .find_map(|a| match a {
+                A::Grayscale => Some(Recolor::Grayscale),
+                A::BiLevel(t) => Some(Recolor::BlackAndWhite(t.fraction())),
+                A::Duotone([a, b]) => Some(Recolor::Duotone(a.clone(), b.clone())),
+                _ => None,
+            })
+            .unwrap_or(Recolor::None)
+    }
+}
+
+/// A picture's adjustments (Picture Corrections, Color and Transparency), read from its adjustments.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PictureAdjust {
+    /// Lighter (positive, to 1) or darker (to −1).
+    pub brightness: f64,
+    /// More (positive, to 1) or less contrast (to −1).
+    pub contrast: f64,
+    /// How see-through it is (0 opaque, 1 invisible).
+    pub transparency: f64,
+    /// Its recolouring.
+    pub recolor: Recolor,
+}
+
+impl PictureAdjust {
+    /// A picture's adjustments as `adjust` holds them.
+    pub fn of(adjust: &[crate::drawing::paint::BlipAdjust]) -> PictureAdjust {
+        use crate::drawing::paint::BlipAdjust as A;
+        let (brightness, contrast) = adjust
+            .iter()
+            .find_map(|a| if let A::Lum { bright, contrast } = a { Some((bright.fraction(), contrast.fraction())) } else { None })
+            .unwrap_or((0.0, 0.0));
+        let transparency = adjust.iter().find_map(|a| if let A::AlphaModFix(p) = a { Some(1.0 - p.fraction()) } else { None }).unwrap_or(0.0);
+        PictureAdjust { brightness, contrast, transparency, recolor: Recolor::of(adjust) }
+    }
+}
+
+impl Editor {
+    /// The selected picture's adjustments (a group child's when one is selected).
+    pub fn picture_adjust(&self) -> Option<PictureAdjust> {
+        Some(PictureAdjust::of(&self.object_shape()?.pic()?.blip.adjust))
+    }
+
+    /// Replaces the selected pictures' adjustments (every selected picture, or the selected group child).
+    pub fn set_picture_adjust(&mut self, adjust: &[crate::drawing::paint::BlipAdjust], fonts: &Fonts) -> Outcome {
+        self.edit_shapes(
+            "Picture Adjustments",
+            |s| match &mut s.kind {
+                ShapeKind::Pic(p) => {
+                    p.blip.adjust = adjust.to_vec();
+                    true
+                }
+                _ => false,
+            },
+            fonts,
+        )
+    }
+
+    /// Recolours the selected pictures, keeping their other adjustments.
+    pub fn set_picture_recolor(&mut self, recolor: Recolor, fonts: &Fonts) -> Outcome {
+        use crate::drawing::paint::BlipAdjust as A;
+        if let Recolor::BlackAndWhite(t) = recolor
+            && !(0.0..=1.0).contains(&t)
+        {
+            return Outcome::invalid("a threshold is 0 to 1");
+        }
+        self.edit_shapes(
+            "Recolor",
+            |s| match &mut s.kind {
+                ShapeKind::Pic(p) => {
+                    p.blip.adjust.retain(|a| !matches!(a, A::Grayscale | A::BiLevel(_) | A::Duotone(_)));
+                    match &recolor {
+                        Recolor::None => {}
+                        Recolor::Grayscale => p.blip.adjust.push(A::Grayscale),
+                        Recolor::BlackAndWhite(t) => p.blip.adjust.push(A::BiLevel(Pct((t * 100_000.0).round() as i32))),
+                        Recolor::Duotone(a, b) => p.blip.adjust.push(A::Duotone([a.clone(), b.clone()])),
+                    }
+                    true
+                }
+                _ => false,
+            },
+            fonts,
+        )
+    }
+
+    /// Word's Reset Picture: the selected picture's adjustments, effects, outline and shape gone (its crop kept); with
+    /// `and_size` (Reset Picture & Size) its crop gone too and its image at its own size. One step.
+    pub fn reset_picture(&mut self, and_size: bool, fonts: &Fonts) -> Outcome {
+        let natural = self.original_object_size();
+        if and_size && natural.is_none() {
+            return Outcome::unavailable("no image size");
+        }
+        self.edit_picture(
+            if and_size { "Reset Picture & Size" } else { "Reset Picture" },
+            |e| {
+                let Some(ShapeKind::Pic(p)) = e.shape.as_mut().map(|s| &mut s.kind) else { return false };
+                p.blip.adjust.clear();
+                p.effects = None;
+                p.line = None;
+                // Without effects or an outline, nothing but a turn reaches past its box.
+                *e.effect = [0.0; 4];
+                p.geom = crate::drawing::geom::Geometry::Preset { preset: crate::drawing::geom::Preset::Rect, adj: Vec::new() };
+                if let Some(s) = e.shape.as_deref_mut() {
+                    (s.xfrm.rot, s.xfrm.flip_h, s.xfrm.flip_v) = (Default::default(), false, false);
+                }
+                if and_size && let (Some((w, h)), Some(ShapeKind::Pic(p))) = (natural, e.shape.as_mut().map(|s| &mut s.kind)) {
+                    p.blip.src = [Pct(0); 4];
+                    *e.w = (w.max(1.0) * 20.0).round() / 20.0;
+                    *e.h = (h.max(1.0) * 20.0).round() / 20.0;
+                    if let Some(r) = e.relative.as_deref_mut() {
+                        *r = [None, None];
+                    }
+                }
+                true
+            },
+            fonts,
+        )
     }
 }
 

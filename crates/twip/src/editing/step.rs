@@ -85,6 +85,11 @@ pub enum Step {
         id: i64,
         blocks: Option<Vec<Block>>,
     },
+    /// A note separator story (by [`crate::docx::NoteSeparator::key`]) replaced, or taken away.
+    Separator {
+        key: String,
+        blocks: Option<Vec<Block>>,
+    },
     SectionPage {
         section: usize,
         page: Box<crate::docx::SectionPage>,
@@ -169,6 +174,9 @@ pub struct PageSettings {
     pub no_surround_footer: bool,
     pub endnotes_sect_end: bool,
     pub no_form_shading: bool,
+    pub auto_format_override: bool,
+    pub style_lock_theme: bool,
+    pub style_lock_style_set: bool,
 }
 
 impl PageSettings {
@@ -182,6 +190,9 @@ impl PageSettings {
             no_surround_footer: s.borders_do_not_surround_footer,
             endnotes_sect_end: s.endnotes_sect_end,
             no_form_shading: s.no_form_shading,
+            auto_format_override: s.auto_format_override,
+            style_lock_theme: s.style_lock_theme,
+            style_lock_style_set: s.style_lock_style_set,
         }
     }
 }
@@ -890,6 +901,13 @@ impl Step {
                     hint: None,
                 })
             }
+            Step::Separator { key, blocks } => {
+                let old = match blocks {
+                    Some(b) => doc.separators.insert(key.clone(), b),
+                    None => doc.separators.remove(&key),
+                };
+                Ok(Applied { inverse: Step::Separator { key, blocks: old }, map: Map::Same, hint: None })
+            }
             Step::ImageData { index, data, filled } => {
                 let slot = doc.images.get_mut(index).ok_or(StepError::Missing)?;
                 let old = std::mem::replace(slot, data);
@@ -1060,6 +1078,8 @@ impl Step {
                 (s.borders_do_not_surround_header, s.borders_do_not_surround_footer) = (p.no_surround_header, p.no_surround_footer);
                 s.endnotes_sect_end = p.endnotes_sect_end;
                 s.no_form_shading = p.no_form_shading;
+                (s.auto_format_override, s.style_lock_theme, s.style_lock_style_set) =
+                    (p.auto_format_override, p.style_lock_theme, p.style_lock_style_set);
                 Ok(Applied { inverse: Step::PageSettings(old), map: Map::Same, hint: None })
             }
             Step::SectionBreak { section, back } => {

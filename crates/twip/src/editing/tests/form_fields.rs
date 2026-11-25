@@ -180,3 +180,294 @@ fn a_disabled_form_field_is_not_filled_in() {
         assert!(!checked(s), "a disabled field is not filled");
     });
 }
+
+#[test]
+fn a_form_fields_every_option_reads_back() {
+    with_session(None, |s| {
+        s.run(Command::InsertFormField(FormFieldType::CheckBox)).expect("inserts");
+        s.run(Command::SetFormField(FormFieldChange {
+            entry_macro: Some("OnEnter".into()),
+            exit_macro: Some("OnExit".into()),
+            check_box: Some(CheckBoxFormOptions {
+                size: Some(crate::api::value::AutoOr::Value(crate::api::value::Points(12.0))),
+                checked_by_default: Some(true),
+            }),
+            ..Default::default()
+        }))
+        .expect("sets");
+        let d = s.with_editor(|e| {
+            let f = e.document().sections[0]
+                .blocks
+                .iter()
+                .filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None })
+                .flat_map(|p| p.inlines.iter())
+                .find_map(|i| if let Inline::FieldBegin { id, form: Some(_), .. } = i { Some(*id) } else { None })
+                .expect("a form field");
+            e.form_data(Some(&crate::editing::merge::api_id(crate::docx::ElementId::Field(f)))).cloned()
+        });
+        let d = d.expect("a form field");
+        assert_eq!((d.entry_macro.as_str(), d.exit_macro.as_str()), ("OnEnter", "OnExit"));
+        assert!(matches!(d.kind, FormKind::CheckBox { size: Some(12.0), default: true, .. }), "{:?}", d.kind);
+    });
+    let text = r#"<w:p><w:r><w:fldChar w:fldCharType="begin"><w:ffData><w:name w:val="T"/><w:enabled/><w:helpText w:type="autoText" w:val="Entry"/><w:textInput><w:format w:val="UPPERCASE"/></w:textInput></w:ffData></w:fldChar></w:r><w:r><w:instrText xml:space="preserve"> FORMTEXT </w:instrText></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>"#;
+    let mut e = Editor::open(&blank_body(text), fonts()).expect("opens");
+    e.selection = Selection::Caret(Position::text(StoryId::Body, para_id(&e, 0), Unit(0)));
+    let d = e.form_data(None).expect("the field at the selection");
+    assert_eq!(d.help, (true, "Entry".to_string()), "an AutoText help entry");
+    assert!(matches!(&d.kind, FormKind::Text { format, .. } if format == "UPPERCASE"));
+}
+
+/// A legacy form field's runs: its `data` options, its `code` and its `result`.
+fn form_field_xml(data: &str, code: &str, result: &str) -> String {
+    let result =
+        if result.is_empty() { String::new() } else { format!(r#"<w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>{result}</w:t></w:r>"#) };
+    format!(
+        r#"<w:r><w:fldChar w:fldCharType="begin"><w:ffData><w:enabled/>{data}</w:ffData></w:fldChar></w:r><w:r><w:instrText xml:space="preserve"> {code} </w:instrText></w:r>{result}<w:r><w:fldChar w:fldCharType="end"/></w:r>"#
+    )
+}
+
+/// A paragraph with a text form field, a check box and a drop-down, each after a letter.
+fn three_fields() -> Editor {
+    let field = form_field_xml;
+    let body = format!(
+        r#"<w:p><w:r><w:t xml:space="preserve">A </w:t></w:r>{}<w:r><w:t xml:space="preserve"> B </w:t></w:r>{}<w:r><w:t xml:space="preserve"> C </w:t></w:r>{}</w:p>"#,
+        field(TEXT_FIELD, "FORMTEXT", "abc"),
+        field(CHECK_BOX_FIELD, "FORMCHECKBOX", ""),
+        field(r#"<w:name w:val="D"/><w:ddList><w:listEntry w:val="One"/><w:listEntry w:val="Two"/></w:ddList>"#, "FORMDROPDOWN", "One"),
+    );
+    let mut e = Editor::open(&blank_body(&body), fonts()).expect("opens");
+    e.complete(fonts());
+    e
+}
+
+const TEXT_FIELD: &str = r#"<w:name w:val="T"/><w:textInput/>"#;
+const CHECK_BOX_FIELD: &str = r#"<w:name w:val="K"/><w:checkBox><w:sizeAuto/></w:checkBox>"#;
+
+fn protect(e: &mut Editor) {
+    let p = DocumentProtection { kind: Some(ProtectionKind::Forms), enforce: Some(true), ..Default::default() };
+    assert!(matches!(e.execute(Command::SetDocumentProtection(p), fonts()), super::super::commands::Outcome::Changed(_)));
+}
+
+/// The unit the `n`th field of the first paragraph starts at, and a point on it.
+fn field_at(e: &mut Editor, n: usize) -> (u32, f64, f64) {
+    let Some(Block::Para(p)) = e.document().sections[0].blocks.first() else { panic!("a paragraph") };
+    let s = crate::docx::fields::spans(&p.inlines)[n];
+    let u: u32 = p.inlines[..s.begin].iter().map(|i| i.units() as u32).sum();
+    let c = e.caret_at(Position::text(StoryId::Body, para_id(e, 0), Unit(u))).expect("laid out");
+    let (x, y) = e.stack().to_doc(c.page, c.x + 2.0, (c.top + c.bottom) / 2.0).expect("on the stack");
+    (u, x, y)
+}
+
+fn check_box_checked(e: &Editor) -> bool {
+    forms(e).iter().any(|(_, d)| matches!(d.kind, FormKind::CheckBox { checked: Some(true), .. }))
+}
+
+#[test]
+fn a_legacy_check_box_toggles_by_click_space_and_x_only_where_forms_are_filled_in() {
+    use super::super::input::PointerKind;
+    use super::super::keymap::Mods;
+    let mut e = three_fields();
+    let (_, x, y) = field_at(&mut e, 1);
+    let click = |e: &mut Editor| {
+        e.pointer_input(PointerKind::Down, x, y, 1, Mods::default(), fonts());
+        e.pointer_input(PointerKind::Up, x, y, 1, Mods::default(), fonts());
+    };
+    click(&mut e);
+    assert!(!check_box_checked(&e), "unprotected: a click doesn't toggle it");
+    protect(&mut e);
+    click(&mut e);
+    assert!(check_box_checked(&e), "a click toggles it");
+    e.execute(Command::InsertText(" ".into()), fonts());
+    assert!(!check_box_checked(&e), "Space toggles it, still selected");
+    e.execute(Command::InsertText("x".into()), fonts());
+    assert!(check_box_checked(&e), "so does X");
+    assert_eq!(super::texts(&e)[0].matches(" B ").count(), 1, "no text typed");
+}
+
+#[test]
+fn tab_moves_between_the_fields_to_fill_in_and_round() {
+    let mut e = three_fields();
+    protect(&mut e);
+    e.selection = Selection::Caret(Position::text(StoryId::Body, para_id(&e, 0), Unit(0)));
+    assert!(e.tab_moves_between_form_fields());
+    let selected = |e: &Editor| e.selection.ordered(&e.index).map(|(a, b)| (a.para_offset().unwrap().1.0, b.para_offset().unwrap().1.0));
+    let (t, _, _) = field_at(&mut e, 0);
+    let (k, _, _) = field_at(&mut e, 1);
+    let (d, _, _) = field_at(&mut e, 2);
+    let mut seen = Vec::new();
+    for _ in 0..4 {
+        e.select_next_form_field(true);
+        seen.push(selected(&e).expect("a selection"));
+    }
+    let text_result = (t + " FORMTEXT ".chars().count() as u32 + 2, t + " FORMTEXT ".chars().count() as u32 + 5);
+    assert_eq!(seen[0], text_result, "the text field's result");
+    assert_eq!(seen[1].0, k, "the check box, whole");
+    assert!(seen[2].0 > d, "the drop-down's result");
+    assert_eq!(seen[3], seen[0], "round to the first");
+    e.select_next_form_field(false);
+    assert_eq!(selected(&e), Some(seen[2]), "Shift+Tab goes back round");
+}
+
+#[test]
+fn tab_visits_fields_over_paragraphs_and_table_cells_in_document_order() {
+    let field = |n: usize| {
+        let (data, code, result) = match n % 3 {
+            0 => (format!(r#"<w:name w:val="T{n}"/><w:textInput/>"#), "FORMTEXT", "abc"),
+            1 => (format!(r#"<w:name w:val="K{n}"/><w:checkBox><w:sizeAuto/></w:checkBox>"#), "FORMCHECKBOX", ""),
+            _ => (format!(r#"<w:name w:val="D{n}"/><w:ddList><w:listEntry w:val="One"/></w:ddList>"#), "FORMDROPDOWN", "One"),
+        };
+        format!(r#"<w:p><w:r><w:t xml:space="preserve">A </w:t></w:r>{}</w:p>"#, form_field_xml(&data, code, result))
+    };
+    // Paragraphs 0-3, a table cell's (4), then 5-9
+    let mut body: String = (0..4).map(field).collect();
+    body += &format!(r#"<w:tbl><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:tc>{}</w:tc></w:tr></w:tbl>"#, field(4));
+    body.extend((5..10).map(field));
+    let mut e = Editor::open(&blank_body(&body), fonts()).expect("opens");
+    e.complete(fonts());
+    protect(&mut e);
+    e.selection = Selection::Caret(Position::text(StoryId::Body, para_id(&e, 0), Unit(0)));
+    let para = |e: &Editor| e.selection.ordered(&e.index).and_then(|(a, _)| a.para_offset()).map(|p| p.0);
+    let order: Vec<_> = (0..10).map(|n| para_id(&e, n)).collect();
+    let mut seen = Vec::new();
+    for _ in 0..11 {
+        e.select_next_form_field(true);
+        seen.push(para(&e).expect("a selection"));
+    }
+    assert_eq!(seen[..10], order[..], "Tab in document order");
+    assert_eq!(seen[10], order[0], "round to the first");
+    let mut back = Vec::new();
+    for _ in 0..10 {
+        e.select_next_form_field(false);
+        back.push(para(&e).expect("a selection"));
+    }
+    let expected: Vec<_> = order.iter().rev().copied().collect();
+    assert_eq!(back, expected, "Shift+Tab back round in reverse order");
+}
+
+#[test]
+fn tab_goes_from_a_check_box_to_the_one_right_after_it() {
+    let box_xml = |n: &str| form_field_xml(&format!(r#"<w:name w:val="{n}"/><w:checkBox><w:sizeAuto/></w:checkBox>"#), "FORMCHECKBOX", "");
+    let body = format!(r#"<w:p><w:r><w:t xml:space="preserve">A </w:t></w:r>{}{}</w:p>"#, box_xml("K1"), box_xml("K2"));
+    let mut e = Editor::open(&blank_body(&body), fonts()).expect("opens");
+    e.complete(fonts());
+    protect(&mut e);
+    let Some(Block::Para(p)) = e.document().sections[0].blocks.first() else { panic!("a paragraph") };
+    let spans = crate::docx::fields::spans(&p.inlines);
+    let units = |k: usize| p.inlines[..k].iter().map(|i| i.units() as u32).sum::<u32>();
+    let ((a0, a1), (b0, b1)) = ((units(spans[0].begin), units(spans[0].end + 1)), (units(spans[1].begin), units(spans[1].end + 1)));
+    assert_eq!(a1, b0, "the boxes touch");
+    let para = para_id(&e, 0);
+    let at = |u| Position::text(StoryId::Body, para, Unit(u));
+    e.selection = Selection::range(at(a0), at(a1), super::super::selection::Granularity::Char);
+    e.select_next_form_field(true);
+    assert_eq!(e.selection.ordered(e.index()), Some((at(b0), at(b1))), "the second box");
+    e.select_next_form_field(false);
+    assert_eq!(e.selection.ordered(e.index()), Some((at(a0), at(a1))), "back to the first");
+}
+
+#[test]
+fn unprotected_typing_over_a_selected_check_box_replaces_it() {
+    for typed in ["x", " "] {
+        let body = format!(
+            r#"<w:p><w:r><w:t xml:space="preserve">A </w:t></w:r>{}<w:r><w:t xml:space="preserve"> B</w:t></w:r></w:p>"#,
+            form_field_xml(CHECK_BOX_FIELD, "FORMCHECKBOX", "")
+        );
+        let mut e = Editor::open(&blank_body(&body), fonts()).expect("opens");
+        e.complete(fonts());
+        let Some(Block::Para(p)) = e.document().sections[0].blocks.first() else { panic!("a paragraph") };
+        let s = crate::docx::fields::spans(&p.inlines)[0];
+        let units = |r: std::ops::Range<usize>| p.inlines[r].iter().map(|i| i.units() as u32).sum::<u32>();
+        let (start, end) = (units(0..s.begin), units(0..s.end + 1));
+        let para = para_id(&e, 0);
+        e.selection = Selection::range(
+            Position::text(StoryId::Body, para, Unit(start)),
+            Position::text(StoryId::Body, para, Unit(end)),
+            super::super::selection::Granularity::Char,
+        );
+        assert!(e.selected_form_check_box().is_none(), "no forms protection");
+        e.execute(Command::InsertText(typed.into()), fonts());
+        assert!(forms(&e).is_empty(), "{typed:?} replaces the field");
+        assert_eq!(super::texts(&e)[0], format!("A {typed} B"));
+    }
+}
+
+#[test]
+fn f4_finds_the_drop_down_at_the_selection_only_where_forms_are_filled_in() {
+    let mut e = three_fields();
+    let drop_down = |e: &Editor| {
+        let Some(Block::Para(p)) = e.document().sections[0].blocks.first() else { panic!("a paragraph") };
+        match &p.inlines[crate::docx::fields::spans(&p.inlines)[2].begin] {
+            Inline::FieldBegin { id, .. } => *id,
+            _ => panic!("a field"),
+        }
+    };
+    let (d, _, _) = field_at(&mut e, 2);
+    e.selection = Selection::Caret(Position::text(StoryId::Body, para_id(&e, 0), Unit(d + 3)));
+    assert_eq!(e.selected_form_drop_down(), None, "unprotected");
+    protect(&mut e);
+    e.selection = Selection::Caret(Position::text(StoryId::Body, para_id(&e, 0), Unit(0)));
+    assert_eq!(e.selected_form_drop_down(), None, "not in one");
+    for _ in 0..3 {
+        e.select_next_form_field(true);
+    }
+    assert_eq!(e.selected_form_drop_down(), Some(drop_down(&e)), "Tab selected its result");
+    e.select_next_form_field(true);
+    assert_eq!(e.selected_form_drop_down(), None, "the text field");
+}
+
+#[test]
+fn a_drop_down_click_and_a_form_field_double_click_ask_the_host() {
+    use super::super::forms::FormPress;
+    let mut e = three_fields();
+    let (_, x, y) = field_at(&mut e, 2);
+    assert_eq!(e.form_field_press_at(x, y, 1, fonts()).map(|p| p.1), None, "unprotected: a click places the caret");
+    assert_eq!(e.form_field_press_at(x, y, 2, fonts()).map(|p| p.1), Some(FormPress::Options));
+    let (_, tx, ty) = field_at(&mut e, 0);
+    assert_eq!(e.form_field_press_at(tx, ty, 2, fonts()).map(|p| p.1), Some(FormPress::Options), "any form field's options");
+    protect(&mut e);
+    assert_eq!(e.form_field_press_at(x, y, 1, fonts()).map(|p| p.1), Some(FormPress::OpenList));
+    assert_eq!(e.form_field_press_at(tx, ty, 1, fonts()).map(|p| p.1), None, "a text field is typed in");
+}
+
+#[test]
+fn tab_from_a_selection_across_paragraphs_goes_on_from_its_end() {
+    let field = |n: usize| {
+        let data = format!(r#"<w:name w:val="T{n}"/><w:textInput/>"#);
+        format!(r#"<w:p><w:r><w:t xml:space="preserve">A </w:t></w:r>{}</w:p>"#, form_field_xml(&data, "FORMTEXT", "abc"))
+    };
+    let body: String = (0..4).map(field).collect();
+    let mut e = Editor::open(&blank_body(&body), fonts()).expect("opens");
+    e.complete(fonts());
+    protect(&mut e);
+    let len = crate::editing::step::para_len(e.index().para(e.document(), para_id(&e, 2)).expect("a paragraph"));
+    let (a, b) = (Position::text(StoryId::Body, para_id(&e, 2), len), Position::text(StoryId::Body, para_id(&e, 3), Unit(1)));
+    e.selection = Selection::range(a, b, crate::editing::selection::Granularity::Char);
+    e.select_next_form_field(true);
+    let got = e.selection.ordered(&e.index).and_then(|(a, _)| a.para_offset()).map(|p| p.0);
+    assert_eq!(got, Some(para_id(&e, 3)), "the field after the selection's end, not one paragraph on");
+}
+
+#[test]
+fn tab_stops_at_a_block_level_control_in_document_order() {
+    let field = |n: usize| {
+        let data = format!(r#"<w:name w:val="T{n}"/><w:textInput/>"#);
+        format!(r#"<w:p><w:r><w:t xml:space="preserve">A </w:t></w:r>{}</w:p>"#, form_field_xml(&data, "FORMTEXT", "abc"))
+    };
+    let block = r#"<w:sdt><w:sdtPr><w:id w:val="5"/><w:richText/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>In</w:t></w:r></w:p><w:p><w:r><w:t>Side</w:t></w:r></w:p></w:sdtContent></w:sdt>"#;
+    let body = format!("{}{block}{}", field(0), field(1));
+    let mut e = Editor::open(&blank_body(&body), fonts()).expect("opens");
+    e.complete(fonts());
+    protect(&mut e);
+    e.selection = Selection::Caret(Position::text(StoryId::Body, para_id(&e, 0), Unit(0)));
+    let para = |e: &Editor| e.selection.ordered(&e.index).and_then(|(a, _)| a.para_offset()).map(|p| p.0);
+    let mut seen = Vec::new();
+    for _ in 0..3 {
+        e.select_next_form_field(true);
+        seen.push(para(&e).expect("a selection"));
+    }
+    assert_eq!(seen, [para_id(&e, 0), para_id(&e, 1), para_id(&e, 3)], "the control between the fields, once");
+    e.select_next_form_field(false);
+    assert_eq!(para(&e), Some(para_id(&e, 1)), "Shift+Tab back to it");
+    e.select_next_form_field(false);
+    assert_eq!(para(&e), Some(para_id(&e, 0)), "and on past it");
+}

@@ -22,6 +22,13 @@ pub struct Element {
     pub story: StoryId,
     pub parent: Option<ElementId>,
     pub locked: bool,
+    /// A field drawn as its code rather than its result.
+    pub showing_code: bool,
+    /// A field whose result is stale: updated on the next field update.
+    pub dirty: bool,
+    /// A date control's date (`YYYY-MM-DDTHH:MM:SSZ`): the one it stores when its text shows it, else the date its
+    /// text reads as in its format; `None` while it shows its placeholder or no date.
+    pub date: Option<String>,
     pub at: Option<ParaId>,
 }
 
@@ -67,10 +74,12 @@ impl Element {
         if self.props.is_none() {
             self.display.hash(&mut h);
         }
-        self.locked.hash(&mut h);
+        (self.locked, self.showing_code, self.dirty, &self.date).hash(&mut h);
         self.parent.hash(&mut h);
         if let Some(p) = &self.props {
             (kind_name(&p.kind), &p.tag, &p.alias, p.lock.val(), p.showing_placeholder, &p.binding).hash(&mut h);
+            // Its kind's settings: a gallery's gallery and category, a date's calendar and storage, a list's items
+            p.kind_xml.hash(&mut h);
         }
         h.finish()
     }
@@ -150,7 +159,20 @@ impl<'d> Walk<'d> {
     fn control(&mut self, id: crate::docx::ControlId, story: StoryId, parent: Option<ElementId>, display: String, at: Option<ParaId>) {
         let props = self.doc.controls.get(&id).map(|c| c.props.clone());
         let locked = props.as_ref().is_some_and(|p| !p.lock.editable());
-        self.out.push(Element { id: ElementId::Control(id), code: None, props, display, story, parent, locked, at });
+        let date = props.as_ref().filter(|p| !p.showing_placeholder).and_then(|p| crate::docx::binding::full_date(p, &display));
+        self.out.push(Element {
+            id: ElementId::Control(id),
+            code: None,
+            props,
+            display,
+            story,
+            parent,
+            locked,
+            showing_code: false,
+            dirty: false,
+            date,
+            at,
+        });
     }
 
     fn blocks(&mut self, blocks: &'d [Block], story: StoryId, parents: &[ElementId]) {
@@ -205,7 +227,7 @@ impl<'d> Walk<'d> {
         let mut stack: Vec<ElementId> = parents.to_vec();
         for (k, i) in p.inlines.iter().enumerate() {
             match i {
-                Inline::FieldBegin { id, lock, .. } => {
+                Inline::FieldBegin { id, lock, dirty, view, .. } => {
                     let s = span_in(&all, k);
                     let (code, display) = s.map_or((String::new(), String::new()), |s| (code_text(&p.inlines, s), result_text(&p.inlines, s)));
                     self.out.push(Element {
@@ -216,6 +238,9 @@ impl<'d> Walk<'d> {
                         story,
                         parent: stack.last().copied(),
                         locked: *lock,
+                        showing_code: *view == crate::docx::FieldView::Code,
+                        dirty: *dirty,
+                        date: None,
                         at: here,
                     });
                     stack.push(ElementId::Field(*id));
@@ -451,7 +476,12 @@ pub fn touched(inverses: &[super::step::Step]) -> Touched {
                 }));
             }
             Step::Para { para, .. } | Step::FieldViews { para, .. } => paras.push(*para),
-            Step::AddImage { .. } | Step::Resolver { .. } | Step::DefaultTab(_) | Step::Hyphenation(_) | Step::PageSettings(_) => {}
+            Step::AddImage { .. }
+            | Step::Resolver { .. }
+            | Step::DefaultTab(_)
+            | Step::Hyphenation(_)
+            | Step::PageSettings(_)
+            | Step::Separator { .. } => {}
             Step::Join { first, second } => paras.extend([*first, *second]),
             Step::Split { para, second, .. } => {
                 paras.push(*para);

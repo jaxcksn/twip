@@ -11,6 +11,8 @@ use super::selection::{Granularity, Selection};
 pub struct Modes {
     pub extend: u8,
     pub block: bool,
+    /// Where extending started: what Shrink Selection shrinks back around.
+    pub origin: Option<Position>,
 }
 
 impl Editor {
@@ -19,6 +21,9 @@ impl Editor {
         let level = (self.modes.extend + 1).min(5);
         self.modes.extend = level;
         let Some(focus) = self.selection.focus() else { return Outcome::Moved };
+        if level == 1 {
+            self.modes.origin = Some(focus);
+        }
         let unit = match level {
             1 => return Outcome::Moved,
             2 => Granularity::Word,
@@ -37,6 +42,54 @@ impl Editor {
         let (_, b) = self.span(end, unit);
         self.selection = Selection::range(a, b, unit);
         Outcome::Moved
+    }
+
+    /// Shrink Selection (Shift+F8): extending, the selection one level smaller around where extending started (or,
+    /// once the selection has moved off that, its anchor): the story to its paragraph, then the sentence, the word,
+    /// and the caret, still extending.
+    pub fn shrink_selection(&mut self) -> Outcome {
+        if self.modes.extend < 2 {
+            return Outcome::Unchanged("not extending");
+        }
+        // Origin
+        let holds =
+            |o: &Position| self.selection.ordered(&self.index).is_some_and(|(a, b)| self.index.cmp(&a, o).is_le() && self.index.cmp(o, &b).is_le());
+        let Some(origin) = self.modes.origin.filter(holds).or_else(|| self.selection.anchor()).or_else(|| self.selection.focus()) else {
+            return Outcome::Unchanged("no caret");
+        };
+        self.modes.origin = Some(origin);
+        let current = self.selection.ordered(&self.index);
+        let mut level = (self.modes.extend - 1).min(4);
+        // The largest unit below the extension's that stays within the selection: a selection made smaller since
+        // (by `select_range`) isn't grown to a word.
+        while level > 1 {
+            let unit = match level {
+                2 => Granularity::Word,
+                3 => Granularity::Sentence,
+                _ => Granularity::Paragraph,
+            };
+            let (a, b) = self.span(origin, unit);
+            if current.is_some_and(|(x, y)| self.index.cmp(&x, &a).is_le() && self.index.cmp(&b, &y).is_le()) {
+                self.modes.extend = level;
+                self.selection = Selection::range(a, b, unit);
+                return Outcome::Moved;
+            }
+            level -= 1;
+        }
+        self.modes.extend = 1;
+        self.selection = Selection::Caret(origin);
+        Outcome::Moved
+    }
+
+    /// Ctrl+Alt+Page Up or Down: the caret to the top or bottom of the window; `extend`, the selection to there.
+    pub fn move_to_window_edge(&mut self, bottom: bool, extend: bool, fonts: &crate::font::Fonts) -> Outcome {
+        let extend = extend || self.modes != Modes::default();
+        let dir = if bottom { super::commands::Dir::Forward } else { super::commands::Dir::Back };
+        let out = self.move_caret(super::commands::MoveBy::ScreenEdge, dir, extend, fonts);
+        if self.modes.block {
+            self.selection = self.as_block(self.selection);
+        }
+        out
     }
 
     pub(super) fn extend_to_char(&mut self, ch: char) -> Outcome {
@@ -71,7 +124,7 @@ impl Editor {
     }
 
     pub(super) fn block_mode(&mut self) -> Outcome {
-        self.modes = Modes { extend: 0, block: true };
+        self.modes = Modes { extend: 0, block: true, origin: None };
         Outcome::Moved
     }
 
@@ -94,7 +147,7 @@ impl Editor {
         }
     }
 
-    pub(super) fn block_pieces(&mut self) -> Vec<(usize, [f64; 4], ParaId, Unit, Unit)> {
+    pub(super) fn block_pieces(&mut self) -> Vec<(usize, super::view::Band, ParaId, Unit, Unit)> {
         let Selection::Block { anchor, focus } = self.selection else { return Vec::new() };
         let (Some(ax), Some(fx)) = (self.nav().caret_x(anchor), self.nav().caret_x(focus)) else { return Vec::new() };
         let (x0, x1) = (ax.min(fx), ax.max(fx));
@@ -127,7 +180,7 @@ impl Editor {
                     if let (Some(lo), Some(hi)) = (lo, hi)
                         && lo.unit < hi.unit
                     {
-                        out.push((page, [lo.x, l.top, hi.x, l.bottom], para, lo.unit, hi.unit));
+                        out.push((page, l.strip(lo.x, hi.x), para, lo.unit, hi.unit));
                     }
                 }
                 let both = hits[0] && hits[1];

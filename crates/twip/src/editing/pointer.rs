@@ -25,6 +25,10 @@ impl Editor {
     }
 
     fn shape_at(&mut self, x: f64, y: f64, mods: Mods, fonts: &Fonts) -> Cursor {
+        // Create Link: the pointer over a box the text can go on in, the arrow elsewhere.
+        if self.linking() {
+            return if self.link_target_at(x, y, fonts).is_some() { Cursor::Pointer } else { Cursor::Default };
+        }
         if !mods.shift
             && let Some((.., hit, _)) = self.wrap_point_at(x, y)
         {
@@ -32,6 +36,9 @@ impl Editor {
                 super::wrap_points::PolyHit::Vertex(_) => Cursor::Move,
                 super::wrap_points::PolyHit::Edge(_) => Cursor::Crosshair,
             };
+        }
+        if !mods.shift && self.anchor_hit(x, y).is_some() {
+            return Cursor::Move;
         }
         if !mods.shift {
             if !mods.ctrl
@@ -55,11 +62,12 @@ impl Editor {
                 return Cursor::Pointer;
             }
         }
-        match self.border_at(x, y, fonts) {
-            Some((_, _, Border::Column(_), ..)) => return Cursor::ResizeHorizontal,
-            Some((_, _, Border::Row(_), ..)) => return Cursor::ResizeVertical,
-            Some((_, _, Border::Handle, ..)) => return Cursor::ResizeNorthWestSouthEast,
-            None => {}
+        // Select Objects: the arrow off objects.
+        if self.select_objects {
+            return Cursor::Default;
+        }
+        if let Some((_, _, border, .., turn)) = self.border_at(x, y, fonts) {
+            return border_cursor(border, turn);
         }
         match self.zone_hit(x, y, fonts) {
             Some(Zone::Cell(..)) => return Cursor::CellSelect,
@@ -79,19 +87,38 @@ impl Editor {
         Cursor::Text
     }
 
+    /// The way the text under the pointer runs: an I-beam over a vertical line lies across it.
+    pub fn text_dir_at(&mut self, x: f64, y: f64, fonts: &Fonts) -> Option<super::geometry::LineDir> {
+        let near = self.near;
+        let (page, px, py) = self.stack().page_at(x, y)?;
+        self.ensure_page(page, fonts);
+        let geo = self.pages.page(page, &self.index)?;
+        let ctx = self.editing();
+        let hit = geo.hit_text(px, py, &|s| super::stories::reachable(ctx, s))?;
+        let holds =
+            |l: &&super::geometry::GLine| l.first_of(hit.para).is_some_and(|a| a <= hit.unit) && l.last_of(hit.para).is_some_and(|b| hit.unit <= b);
+        // A repeated header's line isn't one the caret goes to: it is looked for among the repeated lines
+        let line = match hit.repeat {
+            true => geo.lines.iter().filter(|l| l.repeat && l.shows(hit.para)).find(holds),
+            false => geo.line_at(hit.para, hit.unit, hit.affinity).map(|i| &geo.lines[i]),
+        };
+        let dir = line?.dir();
+        self.near = near;
+        Some(dir)
+    }
+
     pub(super) fn drag_cursor(&self) -> Option<Cursor> {
         if self.shape_insert.is_some() {
             return Some(Cursor::Crosshair);
         }
-        if self.wrap_point_dragging() {
+        if self.wrap_point_dragging() || self.anchor_drag.is_some() {
             return Some(Cursor::Move);
         }
+        if self.marquee.is_some() {
+            return Some(Cursor::Default);
+        }
         if let Some(d) = &self.border_drag {
-            return Some(match d.border {
-                Border::Column(_) => Cursor::ResizeHorizontal,
-                Border::Row(_) => Cursor::ResizeVertical,
-                Border::Handle => Cursor::ResizeNorthWestSouthEast,
-            });
+            return Some(border_cursor(d.border, d.turn));
         }
         if let Some(d) = &self.shape_drag {
             return Some(shape_cursor(d.handle));
@@ -117,6 +144,22 @@ impl Editor {
         } else {
             Cursor::Default
         })
+    }
+}
+
+/// A table border's resize arrow: across the border as the table is drawn.
+fn border_cursor(border: Border, turn: crate::layout::vertical::Turn) -> Cursor {
+    let across = |v: [f64; 2]| {
+        let [x, y] = turn.along(v);
+        if x.abs() >= y.abs() { Cursor::ResizeHorizontal } else { Cursor::ResizeVertical }
+    };
+    match border {
+        Border::Column(_) => across([1.0, 0.0]),
+        Border::Row(_) => across([0.0, 1.0]),
+        Border::Handle => {
+            let [x, y] = turn.along([1.0, 1.0]);
+            if x * y > 0.0 { Cursor::ResizeNorthWestSouthEast } else { Cursor::ResizeNorthEastSouthWest }
+        }
     }
 }
 

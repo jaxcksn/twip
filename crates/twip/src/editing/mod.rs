@@ -21,7 +21,7 @@ mod field_shading;
 pub mod find;
 mod fonts;
 pub mod format;
-mod forms;
+pub mod forms;
 mod frames;
 pub mod geometry;
 pub(crate) mod gestures;
@@ -37,16 +37,21 @@ pub mod inspect;
 pub mod integrity;
 pub mod interaction;
 pub mod keymap;
-mod list_defs;
+pub mod list_defs;
 mod list_dialogs;
 mod list_gallery;
+pub mod list_labels;
 pub mod lists;
 mod merge;
 mod move_paras;
 pub mod move_to;
+pub(crate) mod multi;
+pub mod outline;
 pub(crate) use merge::api_id;
+mod marquee;
 pub mod navigate;
 mod notes;
+pub mod object_props;
 pub mod objects;
 pub mod picture_controls;
 mod pictures;
@@ -55,6 +60,7 @@ pub mod position;
 mod preview;
 mod properties;
 pub mod protection;
+pub mod readback;
 mod resize;
 pub mod revisions;
 pub mod section;
@@ -65,17 +71,22 @@ pub(crate) mod snap;
 pub mod state;
 pub mod step;
 mod stories;
+pub mod style_defs;
 mod style_dialog;
 mod styles;
+pub mod text_links;
 pub use styles::formats_a_style;
 pub mod sub_templates;
 pub use crate::docx::grid as table;
-mod table_cells;
-mod table_convert;
+pub mod table_cells;
+pub mod table_convert;
+pub mod table_draw;
 pub mod table_format;
 mod table_handles;
+pub mod table_readback;
 pub mod tables;
 pub mod text;
+pub mod theme;
 mod touched;
 pub mod view;
 mod wrap_points;
@@ -100,7 +111,9 @@ use geometry::Pages;
 use history::{History, SelectionRecord, Transaction, Typing, TypingRun};
 use index::{Container, DocIndex};
 use input::{PointerKind, Request, Viewport};
+pub use merge::{DateSettings, DateStorage, date_formats, date_settings};
 use navigate::Nav;
+pub use notes::NoteSeparatorInfo;
 use position::{Affinity, Place, Position, StoryId};
 use selection::{Granularity, Selection};
 use step::{Map, Step, StepError, para_len, run_of};
@@ -110,6 +123,10 @@ use view::{CaretView, PageStack, SelectionView, View};
 
 pub const IDLE_BUDGET: Duration = Duration::from_millis(4);
 
+/// The comment threads [`Editor::review_counts`] counted, all and shown, and the comment edits and Show Markup they
+/// were counted at.
+type CommentCounts = (u64, Rc<crate::docx::review::Markup>, (u32, u32));
+
 #[derive(Clone, Copy, Debug)]
 struct Drag {
     anchor: Position,
@@ -117,6 +134,10 @@ struct Drag {
     unit: Granularity,
     at: (f64, f64),
     block: bool,
+    /// Ctrl adds what the drag selects to the selection.
+    adding: bool,
+    /// Alt: a column block.
+    column: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -154,7 +175,8 @@ pub struct Editor {
     index: DocIndex,
     history: History,
     selection: Selection,
-    goal_x: Option<f64>,
+    /// The page point line moves keep to: each line reads its place along it from the point.
+    goal: Option<[f64; 2]>,
     pending: Option<Run>,
     /// The format painter's formatting: a run's `w:rPr`, and a paragraph's `w:pPr` when it took the paragraph's too.
     painter: Option<(Option<String>, Option<Option<String>>)>,
@@ -176,6 +198,16 @@ pub struct Editor {
     shape_drag: Option<shapes::ShapeDrag>,
     /// The selected float's wrap points being edited.
     wrap_edit: Option<wrap_points::WrapEdit>,
+    /// The text box whose text Create Link's pointer is to take on.
+    linking: Option<crate::layout::FloatId>,
+    /// Word's Select Objects is on.
+    select_objects: bool,
+    /// A Select Objects rectangle being dragged.
+    marquee: Option<marquee::Marquee>,
+    /// The selected float's anchor being dragged.
+    anchor_drag: Option<marquee::AnchorDrag>,
+    /// The number the last new object's name took (0: not yet counted), as Word numbers them.
+    object_number: u32,
     /// The objects the last Ungroup made, for Regroup.
     ungrouped: Option<Vec<crate::layout::FloatId>>,
     /// The wrap a picture is inserted with (Word's "Insert/paste pictures as").
@@ -186,22 +218,34 @@ pub struct Editor {
     provisional: Option<stories::Provisional>,
     composition: Option<composition::Composition>,
     border_drag: Option<resize::BorderDrag>,
+    /// The line the Draw Table pen draws.
+    table_pen: crate::docx::props::Border,
     /// Tables laid out as a live drag would leave them, in place of the model's.
     table_preview: Vec<resize::Provisional>,
     table_drag: Option<table_handles::TableDrag>,
     /// A pointer press, move or release is running: its edits are where the pointer is, so they don't scroll to the
     /// caret.
     pointing: bool,
+    /// Edits leave the caret's page unlaid until the last of several undone or redone in one go.
+    deferring: bool,
+    /// The sections section commands act on, over the selection's.
+    section_scope: Option<std::ops::RangeInclusive<usize>>,
     table_hover: Option<view::TableHover>,
     zone_drag: Option<(TableId, selection::CellRef, selection::CellShape)>,
     cursor: input::Cursor,
-    saved: (u64, bool),
+    saved: (u64, [bool; 3]),
     origin: Origin,
     batch: Option<Batch>,
     commits: Vec<Committed>,
     requests: Vec<Request>,
     repeat: Option<Command>,
     modes: extend::Modes,
+    /// The other ranges of a discontiguous selection.
+    multi: multi::Multi,
+    /// The other ranges an edit that replaces the selection set aside, to put back should the edit change nothing.
+    set_aside: Option<multi::Multi>,
+    /// The ranges selected before a Ctrl click or drag that adds one, while its clicks go on.
+    adding: Option<multi::Adding>,
     mac: bool,
     edit_marks: Vec<Position>,
     back_step: Option<usize>,
@@ -245,6 +289,8 @@ pub struct Editor {
     editable_cache: std::cell::RefCell<Option<(u64, Rc<protection::EditableRanges>)>>,
     /// Counts the steps that can have changed the editable ranges.
     perm_generation: u64,
+    /// The groups the author is in, for editable ranges ([`Editor::set_editing_groups`]).
+    editing_groups: Vec<String>,
     drop: Option<Position>,
     field_labels: HashMap<String, String>,
     sub_template_rules: Vec<sub_templates::Rule>,
@@ -281,10 +327,21 @@ pub struct Editor {
     hover_cache: Option<(hover::HoverKey, Option<hover::Hovered>)>,
     #[cfg(test)]
     hover_lookups: usize,
+    #[cfg(test)]
+    balloon_lookups: usize,
+    #[cfg(test)]
+    mark_builds: usize,
     /// A style's XML that formatting commands edit instead of the selection ([`Editor::format_style`]).
     style_target: Option<String>,
     /// The table style part formatting commands edit, when they edit a table style.
     style_part: Option<&'static str>,
+    /// The list numbers a click selected.
+    list_label: Option<list_labels::LabelHold>,
+    /// A list level's number formatting that character formatting commands edit instead of the selection
+    /// ([`Editor::format_list_label`]).
+    label_target: Option<Box<list_labels::LabelTarget>>,
+    /// The style target is the document defaults: formatted alone.
+    defaults_target: bool,
     /// The lists applied or defined in this session, newest first, by gallery.
     recent_lists: Vec<(crate::api::services::ListGalleryKind, Vec<crate::api::command::ListLevel>)>,
     hover_region: Option<crate::docx::ElementId>,
@@ -292,6 +349,14 @@ pub struct Editor {
     pub control_labels: bool,
     comments: comments::State,
     review_list: revisions::index::List,
+    /// The revision marks by paragraph as of a [`Editor::revision_marks`] and the sub-template edited, followed edit
+    /// by edit: what balloons and the review counts are worked out from.
+    review_marks: Option<((u64, u64), Option<u32>, revisions::marks::Marks)>,
+    /// The visible pages' paragraphs, the blank paragraphs next to them (with the paragraph their balloons anchor at
+    /// and whether at its end) and the revisions starting in them, kept for the next frame's balloons.
+    balloon_scratch: (Vec<ParaId>, Vec<(ParaId, ParaId, bool)>, Vec<revisions::marks::Start>),
+    /// The comment threads counted.
+    counted: Option<CommentCounts>,
     author: (Rc<str>, Option<crate::docx::review::Identity>),
     author_id: Option<crate::docx::review::AuthorId>,
     move_name: Option<Rc<str>>,
@@ -373,13 +438,14 @@ impl Editor {
 
     pub fn with_document(doc: Document, fonts: &Fonts) -> Editor {
         let index = DocIndex::build(&doc);
+        let doc_hides_white_space = doc.hides_white_space;
         let mut e = Editor {
             doc,
             layout: DocumentLayout::new(),
             index,
             history: History::default(),
             selection: Selection::Caret(Position::text(StoryId::Body, ParaId(0), Unit(0))),
-            goal_x: None,
+            goal: None,
             pending: None,
             painter: None,
             painter_claim: None,
@@ -397,6 +463,11 @@ impl Editor {
             object_also: None,
             shape_drag: None,
             wrap_edit: None,
+            object_number: 0,
+            linking: None,
+            select_objects: false,
+            marquee: None,
+            anchor_drag: None,
             ungrouped: None,
             default_picture_wrap: crate::api::value::ObjectWrap::Inline,
             snaps: snap::SnapLines::default(),
@@ -405,19 +476,25 @@ impl Editor {
             provisional: None,
             composition: None,
             border_drag: None,
+            table_pen: table_draw::default_pen(),
             table_preview: Vec::new(),
             table_drag: None,
             pointing: false,
+            deferring: false,
+            section_scope: None,
             table_hover: None,
             zone_drag: None,
             cursor: input::Cursor::Text,
-            saved: (0, false),
+            saved: (0, [false; 3]),
             origin: Origin::User,
             batch: None,
             commits: Vec::new(),
             requests: Vec::new(),
             repeat: None,
             modes: extend::Modes::default(),
+            multi: multi::Multi::default(),
+            set_aside: None,
+            adding: None,
             mac: false,
             edit_marks: Vec::new(),
             back_step: None,
@@ -428,7 +505,7 @@ impl Editor {
             text_drag_off: false,
             mark_options: view::MarkOptions::default(),
             click_and_type_off: false,
-            white_space_hidden: false,
+            white_space_hidden: doc_hides_white_space,
             click_and_type_style: None,
             tab_stop: None,
             mode: Mode::Editing,
@@ -447,6 +524,7 @@ impl Editor {
             pending_images: Vec::new(),
             editable_cache: Default::default(),
             perm_generation: 0,
+            editing_groups: Vec::new(),
             touched: touched::Touched::new(),
             revision_marks: (0, 0),
             comment_edits: 0,
@@ -472,13 +550,23 @@ impl Editor {
             hover_cache: None,
             #[cfg(test)]
             hover_lookups: 0,
+            #[cfg(test)]
+            balloon_lookups: 0,
+            #[cfg(test)]
+            mark_builds: 0,
             style_target: None,
             style_part: None,
+            list_label: None,
+            label_target: None,
+            defaults_target: false,
             recent_lists: Vec::new(),
             hover_region: None,
             control_labels: true,
             comments: comments::State::default(),
             review_list: Default::default(),
+            counted: None,
+            review_marks: None,
+            balloon_scratch: Default::default(),
             author: ("Author".into(), None),
             author_id: None,
             move_name: None,
@@ -490,7 +578,7 @@ impl Editor {
             key: import::next_key(),
             found: None,
         };
-        e.saved.1 = e.doc.settings.track_revisions;
+        e.saved.1 = e.tracking_settings();
         e.elems = elements::by_id(&e.doc, &e.index);
         let start = e.nav().story_edge(StoryId::Body, false).unwrap_or(Position::text(StoryId::Body, ParaId(0), Unit(0)));
         e.selection = Selection::Caret(start);
@@ -538,12 +626,43 @@ impl Editor {
     }
 
     pub fn is_dirty(&self) -> bool {
-        (self.history.position(), self.doc.settings.track_revisions) != self.saved
+        (self.history.position(), self.tracking_settings()) != self.saved
     }
 
     pub fn mark_saved(&mut self) {
         self.history.break_typing();
-        self.saved = (self.history.position(), self.doc.settings.track_revisions);
+        self.saved = (self.history.position(), self.tracking_settings());
+    }
+
+    /// The saved settings outside the history: tracking, and whether moves and formatting are tracked.
+    fn tracking_settings(&self) -> [bool; 3] {
+        let s = &self.doc.settings;
+        [s.track_revisions, s.do_not_track_moves, s.do_not_track_formatting]
+    }
+
+    /// Whether tracking records moves as moves (Track moves) and formatting changes (Track formatting): document
+    /// settings, saved, outside the history as tracking is.
+    pub fn track_options(&self) -> (bool, bool) {
+        let s = &self.doc.settings;
+        (!s.do_not_track_moves, !s.do_not_track_formatting)
+    }
+
+    /// Sets Track moves and Track formatting; turning either off is refused while protection forces tracking.
+    pub fn set_track_options(&mut self, moves: bool, formatting: bool) -> Outcome {
+        if !(moves && formatting) && self.tracking_locked() {
+            return Outcome::unavailable("protection forces tracking");
+        }
+        if self.track_options() == (moves, formatting) {
+            return Outcome::Unchanged("already so");
+        }
+        let s = &mut self.doc.settings;
+        (s.do_not_track_moves, s.do_not_track_formatting) = (!moves, !formatting);
+        Outcome::Moved
+    }
+
+    /// The track options recording follows: both on while protection forces tracking, whatever the settings say.
+    pub(crate) fn recorded_options(&self) -> (bool, bool) {
+        if self.tracking_locked() { (true, true) } else { self.track_options() }
     }
 
     pub fn history(&self) -> &History {
@@ -557,6 +676,56 @@ impl Editor {
         self.doc.review.view = view;
         self.relayout_review();
         Outcome::Moved
+    }
+
+    /// Sets the markup's view settings past the markup view, laying the document out again when they change.
+    fn set_markup(&mut self, change: impl FnOnce(&mut crate::docx::review::Markup), unchanged: &'static str) -> Outcome {
+        let mut m = (*self.doc.review.markup).clone();
+        change(&mut m);
+        if m == *self.doc.review.markup {
+            return Outcome::Unchanged(unchanged);
+        }
+        self.doc.review.markup = Rc::new(m);
+        self.relayout_review();
+        Outcome::Moved
+    }
+
+    /// Which kinds of markup show (Word's Show Markup: Insertions and Deletions, Formatting, Comments). Revisions and
+    /// comments of a kind left out show as if accepted, and are left out of what the review pane lists as shown.
+    pub fn set_show_markup(&mut self, insertions_deletions: bool, formatting: bool, comments: bool) -> Outcome {
+        self.set_markup(
+            |m| (m.show.insertions_deletions, m.show.formatting, m.show.comments) = (insertions_deletions, formatting, comments),
+            "already shown so",
+        )
+    }
+
+    /// The reviewers whose markup does not show (Show Markup, Specific People), by name: every author of that name
+    /// the document has now (one added later under that name shows). Empty: all reviewers show. A name no author of
+    /// the document has is refused.
+    pub fn set_hidden_reviewers(&mut self, names: &[&str]) -> Outcome {
+        let persons = &self.doc.people.persons;
+        if names.iter().any(|n| !persons.iter().any(|p| *p.name == **n)) {
+            return Outcome::invalid("no such reviewer");
+        }
+        let hidden: Vec<crate::docx::review::AuthorId> = (0..persons.len() as u32)
+            .filter(|&i| names.iter().any(|n| *persons[i as usize].name == **n))
+            .map(crate::docx::review::AuthorId)
+            .collect();
+        self.set_markup(|m| m.show.hidden_reviewers = hidden, "already shown so")
+    }
+
+    /// Where revisions show in All Markup: in balloons beside the page or in place.
+    pub fn set_balloon_mode(&mut self, mode: crate::docx::review::BalloonMode) -> Outcome {
+        self.set_markup(|m| m.balloons = mode, "already in that mode")
+    }
+
+    /// How revisions draw: each kind's mark and colour, change bars and cell highlights. Hidden, caret and pound
+    /// marks are for deleted and moved-away text only (as Word offers them): elsewhere refused.
+    pub fn set_markup_style(&mut self, style: crate::docx::review::MarkupStyle) -> Outcome {
+        if [style.insertions, style.formatting, style.moved_to].iter().any(|l| l.mark.hides_text()) {
+            return Outcome::invalid("that mark is for deletions");
+        }
+        self.set_markup(|m| m.style = style, "already drawn so")
     }
 
     /// Which formatting marks show. Showing hidden text or optional hyphens lays the document out again with them.
@@ -761,7 +930,7 @@ impl Editor {
 
     pub fn set_caret_for_benchmark(&mut self, s: Selection) {
         self.history.break_typing();
-        self.goal_x = None;
+        self.goal = None;
         self.selection = s;
     }
 
@@ -1074,7 +1243,7 @@ impl Editor {
             .cells
             .iter()
             .filter(|c| c.chain.last().is_some_and(|k| k.0 == table))
-            .min_by(|a, b| dist(&a.rect, px, py).total_cmp(&dist(&b.rect, px, py)))?;
+            .min_by(|a, b| dist(&a.page_rect(), px, py).total_cmp(&dist(&b.page_rect(), px, py)))?;
         let &(_, row, _) = c.chain.last()?;
         Some((row, c.col))
     }
@@ -1084,6 +1253,10 @@ impl Editor {
         if s != self.selection {
             self.pending = None;
             self.history.break_typing();
+        }
+        // A number selection ends once its caret is left: coming back doesn't restore it.
+        if self.list_label.as_ref().is_some_and(|h| !h.holds(&self.selection) || !h.holds(&s)) {
+            self.list_label = None;
         }
         self.selection = s;
     }
@@ -1138,7 +1311,9 @@ impl Editor {
         if tx.rec.is_none() {
             let author = self.session_author();
             let secs = crate::clock::unix_secs();
-            tx.rec = Some(revisions::Recording::new(author, crate::docx::review::Timestamp::from_utc(secs), self.move_name.clone(), tx.label));
+            let mut rec = revisions::Recording::new(author, crate::docx::review::Timestamp::from_utc(secs), self.move_name.clone(), tx.label);
+            rec.track_formatting = self.recorded_options().1;
+            tx.rec = Some(rec);
         }
         let Some(rec) = tx.rec.as_mut() else { return self.apply_step(tx, s) };
         let mut ids = std::mem::take(&mut self.doc.review_ids);
@@ -1183,6 +1358,7 @@ impl Editor {
 
     fn abort(&mut self, tx: Tx) {
         self.selection = tx.before.selection;
+        self.restore_aside();
         self.pending_controls.clear();
         self.pending_images.clear();
         self.perm_generation += 1;
@@ -1199,8 +1375,10 @@ impl Editor {
             return Outcome::Unchanged(why);
         }
         if tx.undo.is_empty() {
+            self.restore_aside();
             return Outcome::Unchanged("no change");
         }
+        self.set_aside = None;
         self.repair_selection();
         crate::prof::time("edit:effects", || self.effects(&mut tx));
         if tx.replayed.is_none()
@@ -1332,6 +1510,7 @@ impl Editor {
     }
 
     fn effects(&mut self, tx: &mut Tx) {
+        let was = self.revision_marks;
         let mut parts = false;
         let mut hints: Vec<Option<Change>> = Vec::with_capacity(tx.hints.len());
         for (h, s) in tx.hints.iter().zip(&tx.undo).filter(|(_, s)| s.lays_out()) {
@@ -1357,11 +1536,13 @@ impl Editor {
         if regroups {
             self.revision_marks.1 += 1;
         }
+        self.follow_marks(was, tx);
         if !tx.targets.comments.is_empty() {
             self.comment_edits += 1;
         }
         let maps = std::mem::take(&mut tx.maps);
         self.map_marks(&maps);
+        self.map_multi(&maps);
         if !matches!(tx.origin, Origin::Undo | Origin::Redo) {
             self.mark_edit();
             self.last_maps = maps;
@@ -1414,7 +1595,7 @@ impl Editor {
             let labels = self.labels_changed(|_| true);
             assert!(labels.is_empty(), "integrity: 9 list labels: {} differ from a fresh numbering, first {:?}", labels.len(), labels.first());
         }
-        if let Some(p) = self.caret() {
+        if let Some(p) = self.caret().filter(|_| !self.deferring) {
             self.ensure(&p, fonts);
             if !self.pointing && before.focus() != Some(p) {
                 self.scroll_to_caret(fonts);
@@ -1429,6 +1610,37 @@ impl Editor {
             return Outcome::Unchanged("read only");
         }
         self.step_history(undo, fonts)
+    }
+
+    /// Undoes (or redoes) the last `count` actions in one go: the Undo and Redo lists' choice of an action takes back
+    /// (or does again) it and everything after it. Changed when at least one was.
+    pub fn undo_many(&mut self, undo: bool, count: usize, fonts: &Fonts) -> Outcome {
+        let available = if undo { self.history.undo_depth() } else { self.history.redo_depth() };
+        let count = count.min(available);
+        if count == 0 {
+            return Outcome::Unchanged(if undo { "nothing to undo" } else { "nothing to redo" });
+        }
+        if count <= 1 {
+            return self.undo(undo, fonts);
+        }
+        let before = self.selection;
+        self.deferring = true;
+        let mut out = Outcome::Unchanged(if undo { "nothing to undo" } else { "nothing to redo" });
+        for _ in 0..count {
+            match self.undo(undo, fonts) {
+                o @ Outcome::Changed(_) => out = o,
+                o => {
+                    if !matches!(out, Outcome::Changed(_)) {
+                        out = o;
+                    }
+                    break;
+                }
+            }
+        }
+        // Scrolled to once, from where the caret was before the first
+        self.deferring = false;
+        self.after_edit(before, fonts);
+        out
     }
 
     /// Takes back transaction `tx`, the last one, unrecorded: an edit that was only ever provisional, whatever the
@@ -1877,14 +2089,14 @@ impl Editor {
         if text == " " && self.mode != Mode::Design && self.selected_picture_unfilled() && self.activate_picture_control() {
             return Outcome::Unchanged("placeholder activated");
         }
-        if text == " "
+        if (text == " " || ((text == "x" || text == "X") && self.selected_form_check_box().is_some()))
             && let Some(p) = self.selected_checkbox()
         {
             return if self.mode == Mode::Design { Outcome::Unchanged("design mode") } else { self.toggle_checkbox(p, fonts) };
         }
         self.shape_story_for_typing(fonts);
         self.object_to_caret();
-        if self.refuse_expanded() || self.refuse_locked() {
+        if self.refuse_replacing() {
             return Outcome::Unchanged("locked");
         }
         let mut tx = self.begin("Typing");
@@ -1898,6 +2110,7 @@ impl Editor {
                 if why != "no caret" {
                     self.abort(tx);
                 }
+                self.restore_aside();
                 Outcome::Unchanged(why)
             }
         }
@@ -1973,7 +2186,7 @@ impl Editor {
     }
 
     fn column_break(&mut self, fonts: &Fonts) -> Outcome {
-        if self.refuse_expanded() || self.refuse_locked() {
+        if self.refuse_replacing() {
             return Outcome::Unchanged("locked");
         }
         let at_start = self.selection.is_collapsed()
@@ -2020,7 +2233,7 @@ impl Editor {
         if s.compat() == crate::docx::Compat::Legacy && s.has("splitPgBreakAndParaMark") {
             return self.insert_inline(|run| Inline::Break(BreakKind::Page, run), "Page Break", fonts);
         }
-        if self.refuse_expanded() || self.refuse_locked() {
+        if self.refuse_replacing() {
             return Outcome::Unchanged("locked");
         }
         let mut tx = self.begin("Page Break");
@@ -2070,7 +2283,7 @@ impl Editor {
         if self.mode != Mode::Design && self.activate_picture_control() {
             return Outcome::Unchanged("picture control activated");
         }
-        if self.refuse_expanded() || self.refuse_locked() {
+        if self.refuse_replacing() {
             return Outcome::Unchanged("locked");
         }
         if let Some(o) = self.list_enter(fonts) {
@@ -2164,7 +2377,7 @@ impl Editor {
 
     /// `typing`: the insert joins the typing around it in one undo step.
     fn insert_inlines_typed(&mut self, make: impl Fn(Run) -> Vec<Inline>, label: &'static str, typing: bool, fonts: &Fonts) -> Outcome {
-        if self.refuse_expanded() || self.refuse_locked() {
+        if self.refuse_replacing() {
             return Outcome::Unchanged("locked");
         }
         let mut tx = self.begin(label);
@@ -2197,12 +2410,15 @@ impl Editor {
         }
         // A placeholder deleted shows again
         // Backspace at its start
-        if let Some((_, at, _, s, _)) = self.placeholder_here()
+        if !self.is_discontiguous()
+            && let Some((_, at, _, s, _)) = self.placeholder_here()
             && !(dir == Dir::Back && self.selection.is_collapsed() && at.para_offset().is_some_and(|(_, u)| u.0 == s))
         {
             return Outcome::Unchanged("a placeholder");
         }
-        if let Some(o) = self.delete_cells(dir == Dir::Forward, fonts) {
+        if !self.is_discontiguous()
+            && let Some(o) = self.delete_cells(dir == Dir::Forward, fonts)
+        {
             return o;
         }
         if dir == Dir::Back
@@ -2239,6 +2455,9 @@ impl Editor {
             }
         } else if self.refuse_locked() {
             return Outcome::Unchanged("locked");
+        }
+        if self.is_discontiguous() {
+            return self.multi_delete(dir, fonts);
         }
         let mut tx = self.begin(if dir == Dir::Back { "Backspace" } else { "Delete" });
         if !self.selection.is_collapsed() {
@@ -2534,22 +2753,22 @@ impl Editor {
             MoveBy::ColumnEdge => self.nav().table_edge(focus, false, forward),
             MoveBy::LineEdge => self.nav().line_edge(focus, forward).or_else(|| self.clipped_line_edge(focus, forward)),
             MoveBy::Line => {
-                let x = match self.goal_x {
-                    Some(x) => x,
+                let goal = match self.goal {
+                    Some(g) => g,
                     None => {
-                        let x = match self.nav().caret_x(focus) {
-                            Some(x) => x,
-                            None => self.clipped_x(focus).unwrap_or(0.0),
+                        let g = match self.nav().caret_point(focus) {
+                            Some(g) => g,
+                            None => self.clipped_x(focus).unwrap_or([0.0; 2]),
                         };
-                        self.goal_x = Some(x);
-                        x
+                        self.goal = Some(g);
+                        g
                     }
                 };
-                match self.clipped_vertical(focus, x, forward) {
+                match self.clipped_vertical(focus, goal, forward) {
                     Some(t) => Some(t),
                     None => {
-                        let t = self.nav().vertical(focus, x, forward);
-                        t.or_else(|| self.cross_vertical(focus, x, forward, fonts)).or_else(|| self.nav().story_edge(focus.story, forward))
+                        let t = self.nav().vertical(focus, goal, forward);
+                        t.or_else(|| self.cross_vertical(focus, goal, forward, fonts)).or_else(|| self.nav().story_edge(focus.story, forward))
                     }
                 }
             }
@@ -2560,7 +2779,7 @@ impl Editor {
             self.selection = was;
             return Outcome::Unchanged("no place to move to");
         };
-        let goal = self.goal_x;
+        let goal = self.goal;
         let s = if extend {
             let anchor = self.selection.anchor().unwrap_or(focus);
             match self.drag_across_cells(anchor, target, false) {
@@ -2572,7 +2791,7 @@ impl Editor {
         };
         self.set_selection(s);
         if matches!(by, MoveBy::Line | MoveBy::Screen) {
-            self.goal_x = goal;
+            self.goal = goal;
         }
         self.ensure(&target, fonts);
         match self.caret_view() {
@@ -2611,7 +2830,7 @@ impl Editor {
         let stack = self.stack();
         let caret = self.caret_view()?;
         let (cx, cy) = stack.to_doc(caret.page, caret.x, caret.top)?;
-        let x = *self.goal_x.get_or_insert(caret.x);
+        let x = self.goal.get_or_insert([caret.x, (caret.top + caret.bottom) / 2.0])[0];
         let (tx, ty) = match by {
             MoveBy::Screen => {
                 let dy = if forward { self.viewport.height } else { -self.viewport.height };
@@ -2670,7 +2889,9 @@ impl Editor {
         self.ensure_page(page, fonts);
         let geo = self.pages.page(page, &self.index)?;
         let section = self.snapshot().info().get(page).map_or(0, |i| i.section);
-        let left = self.doc.sections.get(section).map_or(72.0, |s| s.left) - 1.5 / self.viewport.zoom.max(0.1);
+        // Lines' start margin
+        let start = |s: &crate::docx::Section| if crate::layout::vertical::of_section(s.text_flow).is_some() { s.top } else { s.left };
+        let left = self.doc.sections.get(section).map_or(72.0, start) - 1.5 / self.viewport.zoom.max(0.1);
         let i = geo.selection_bar(px, py, left, &|s| stories::reachable(ctx, s) && !matches!(s, StoryId::BuildingBlock(_)))?;
         self.near = page;
         self.line_span_of(&geo, i)
@@ -2746,9 +2967,18 @@ impl Editor {
             PointerKind::Down if self.move_to_press(x, y, fonts) => {}
             PointerKind::Down => {
                 let mods = if self.modes.extend > 0 && clicks == 1 { keymap::Mods { shift: true, ..mods } } else { mods };
-                self.goal_x = None;
+                self.goal = None;
                 self.history.break_typing();
                 if !mods.shift && self.wrap_points_press(x, y, mods.ctrl, fonts) {
+                    return;
+                }
+                if self.linking_press(x, y, fonts) {
+                    return;
+                }
+                if !mods.shift && self.anchor_press(x, y) {
+                    return;
+                }
+                if !mods.shift && !mods.ctrl && self.marquee_press(x, y, fonts) {
                     return;
                 }
                 if self.region_title_click(x, y, fonts) {
@@ -2792,12 +3022,11 @@ impl Editor {
                 }
                 if clicks == 2
                     && let Some((_, table, resize::Border::Column(k), ..)) = self.border_at(x, y, fonts)
-                    && k > 0
                 {
                     self.border_cancel();
                     self.history.break_typing();
                     if !self.table_gesture_kept(table, crate::api::command::CommandId::AutoFitColumns) {
-                        self.auto_fit_column(table, k - 1, fonts);
+                        self.auto_fit_column(table, k.saturating_sub(1), fonts);
                     }
                     return;
                 }
@@ -2845,12 +3074,14 @@ impl Editor {
                             selection::CellShape::Columns => ((0, col), (t.rows.len().saturating_sub(1), col + span - 1)),
                             _ => ((row, col), (row, col + span - 1)),
                         };
+                        let adding = self.zone_press_adds(table, mods);
                         self.set_selection(Selection::Cells {
                             table,
                             anchor: selection::CellRef { row: a.0, col: a.1 },
                             focus: selection::CellRef { row: f.0, col: f.1 },
                             shape,
                         });
+                        self.zone_added(adding);
                         self.drag = None;
                         self.zone_drag = Some((table, selection::CellRef { row: a.0, col: a.1 }, shape));
                         self.requests.push(Request::CapturePointer);
@@ -2869,7 +3100,7 @@ impl Editor {
                         _ => (Granularity::Line, (a, b)),
                     };
                     self.set_selection(Selection::range(a, b, unit));
-                    self.drag = Some(Drag { anchor: a, span: Some((a, b)), unit, at: (x, y), block: false });
+                    self.drag = Some(Drag { anchor: a, span: Some((a, b)), unit, at: (x, y), block: false, adding: false, column: false });
                     self.requests.push(Request::CapturePointer);
                     return;
                 }
@@ -2882,6 +3113,9 @@ impl Editor {
                     self.click_and_type(t, fonts);
                     return;
                 }
+                if clicks == 1 && !mods.shift && !mods.ctrl && !mods.meta && !mods.alt && self.label_press(x, y, fonts) {
+                    return;
+                }
                 let Some(p) = self.hit(x, y, fonts) else { return };
                 if clicks == 2 && self.note_jump(p) {
                     return;
@@ -2889,13 +3123,18 @@ impl Editor {
                 if clicks == 1
                     && !mods.shift
                     && !self.text_drag_off
+                    && !mods.alt
                     && self.modes == extend::Modes::default()
                     && self.mode != Mode::ReadOnly
                     && self.highlighter.is_none()
-                    && self.inside_selection(&p)
+                    && (self.inside_selection(&p) || !(mods.ctrl || (self.mac && mods.meta)) && self.inside_any_range(&p))
                 {
                     self.text_drag = Some(interaction::TextDrag { start: (x, y), press: p, moved: false, copy: mods.ctrl, drop: None, menu: false });
+                    self.ctrl_press_on_selection(mods);
                     self.requests.push(Request::CapturePointer);
+                    return;
+                }
+                if self.add_press(p, x, y, clicks, mods) {
                     return;
                 }
                 // The double-click that opens a selected text box puts the caret there.
@@ -2939,19 +3178,19 @@ impl Editor {
                     let span = (unit == Granularity::Word).then_some((sa, sb));
                     let anchor = s.anchor().unwrap_or(p);
                     self.set_selection(s);
-                    self.drag = Some(Drag { anchor, span, unit, at: (x, y), block: false });
+                    self.drag = Some(Drag { anchor, span, unit, at: (x, y), block: false, adding: false, column: false });
                 } else if unit == Granularity::Char {
                     self.set_selection(Selection::Caret(p));
-                    self.drag = Some(Drag { anchor: p, span: None, unit, at: (x, y), block: false });
+                    self.drag = Some(Drag { anchor: p, span: None, unit, at: (x, y), block: false, adding: false, column: false });
                 } else {
                     let (a, b) = self.span(p, unit);
                     self.set_selection(Selection::range(a, b, unit));
-                    self.drag = Some(Drag { anchor: a, span: Some((a, b)), unit, at: (x, y), block: false });
+                    self.drag = Some(Drag { anchor: a, span: Some((a, b)), unit, at: (x, y), block: false, adding: false, column: false });
                 }
                 self.requests.push(Request::CapturePointer);
             }
             PointerKind::Move => {
-                if self.wrap_point_move(x, y) {
+                if self.wrap_point_move(x, y) || self.marquee_move(x, y) || self.anchor_move(x, y) {
                     return;
                 }
                 if self.text_drag.is_some() {
@@ -2989,6 +3228,9 @@ impl Editor {
                             _ => anchor,
                         };
                         self.set_selection(Selection::Cells { table, anchor: a, focus, shape });
+                        if self.adding.is_some() {
+                            self.multi.primary = Some(self.selection);
+                        }
                     }
                     return;
                 }
@@ -3005,41 +3247,42 @@ impl Editor {
                 if p.story != d.anchor.story {
                     return;
                 }
-                if d.unit == Granularity::Char
-                    && let Some((s, block)) = self.drag_across_cells(d.anchor, p, d.block)
-                {
-                    if let Some(dd) = self.drag.as_mut() {
-                        dd.block |= block;
-                    }
-                    self.selection = s;
+                if d.column {
+                    self.selection = if p.same_place(&d.anchor) { Selection::Caret(p) } else { Selection::Block { anchor: d.anchor, focus: p } };
                     self.pending = None;
                     return;
                 }
-                let s = match (d.unit, d.span) {
-                    (Granularity::Char, _) | (_, None) => {
-                        let (wa, wb) = self.word_span(d.anchor);
-                        let beyond = !(self.index.cmp(&p, &wa) != std::cmp::Ordering::Less && self.index.cmp(&p, &wb) != std::cmp::Ordering::Greater);
-                        if beyond {
-                            let (pa, pb) = self.word_span(p);
-                            if self.index.cmp(&p, &d.anchor) == std::cmp::Ordering::Less {
-                                Selection::range(wb, pa, Granularity::Char)
-                            } else {
-                                let pb = if pb.para_offset() == p.para_offset() && self.at_para_end(p) { self.after_mark(p) } else { pb };
-                                Selection::range(wa, pb, Granularity::Char)
-                            }
-                        } else {
-                            Selection::range(d.anchor, p, Granularity::Char)
-                        }
-                    }
-                    (unit, Some((a, b))) => {
-                        let (pa, pb) = self.span(p, unit);
-                        if self.index.cmp(&p, &a) == std::cmp::Ordering::Less { Selection::range(b, pa, unit) } else { Selection::range(a, pb, unit) }
-                    }
+                let crossed = if d.unit == Granularity::Char { self.drag_across_cells(d.anchor, p, d.block) } else { None };
+                if let Some((_, true)) = crossed
+                    && let Some(dd) = self.drag.as_mut()
+                {
+                    dd.block = true;
+                }
+                let s = match crossed {
+                    // Over whole merged cells, as a plain drag's selection is
+                    Some((s, _)) => self.normalize(s),
+                    None => self.dragged_selection(d, p),
                 };
-                self.selection = self.normalize(s);
+                if d.adding && self.removing() && !self.sweeps_anew(&s) {
+                    return;
+                }
+                self.selection = s;
+                if d.adding {
+                    self.multi.primary = Some(self.selection);
+                    if self.removing() {
+                        self.show_removal(p);
+                    }
+                }
                 self.pending = None;
             }
             PointerKind::Cancel if self.wrap_point_cancel() => {}
+            PointerKind::Cancel if self.marquee_cancel() => {}
+            PointerKind::Up if self.marquee.is_some() => {
+                self.marquee_release(fonts);
+            }
+            PointerKind::Up if self.anchor_drag.is_some() => {
+                self.anchor_release(fonts);
+            }
             PointerKind::Up if self.wrap_point_dragging() => {
                 self.wrap_point_release(fonts);
             }
@@ -3059,12 +3302,33 @@ impl Editor {
             PointerKind::Up if self.object_drag.is_some() => {
                 self.object_release(fonts);
             }
+            PointerKind::Up if self.text_drag.is_some_and(|d| !d.moved) && self.removing() => {
+                if let Some(d) = self.text_drag.take() {
+                    self.requests.push(Request::ReleasePointer);
+                    self.add_release(d.press, false);
+                }
+            }
             PointerKind::Up if self.text_drag.is_some() => {
+                self.adding = None;
                 self.text_drag_release(fonts);
             }
-            PointerKind::Cancel if self.text_drag.take().is_some() => self.requests.push(Request::ReleasePointer),
-            PointerKind::Up | PointerKind::Cancel if self.zone_drag.take().is_some() => self.requests.push(Request::ReleasePointer),
+            PointerKind::Cancel if self.text_drag.take().is_some() => {
+                self.adding = None;
+                self.requests.push(Request::ReleasePointer);
+            }
+            PointerKind::Up | PointerKind::Cancel if self.zone_drag.take().is_some() => {
+                self.requests.push(Request::ReleasePointer);
+                if self.adding.is_some()
+                    && let Some(at) = self.cells_start(&self.selection)
+                {
+                    self.zone_release(at, kind == PointerKind::Cancel);
+                }
+                self.adding = None;
+            }
             PointerKind::Up | PointerKind::Cancel => {
+                if let Some(d) = self.drag.filter(|d| d.adding) {
+                    self.add_release(d.anchor, kind == PointerKind::Cancel);
+                }
                 if self.drag.take().is_some() {
                     self.requests.push(Request::ReleasePointer);
                     self.requests.push(Request::Autoscroll { vx: 0.0, vy: 0.0 });
@@ -3074,6 +3338,33 @@ impl Editor {
                 }
             }
         }
+    }
+
+    /// A selecting drag's selection from its press to `p` within text: by words once it leaves the press's word, by
+    /// its unit for a drag from a double or triple click.
+    fn dragged_selection(&mut self, d: Drag, p: Position) -> Selection {
+        let s = match (d.unit, d.span) {
+            (Granularity::Char, _) | (_, None) => {
+                let (wa, wb) = self.word_span(d.anchor);
+                let beyond = !(self.index.cmp(&p, &wa) != std::cmp::Ordering::Less && self.index.cmp(&p, &wb) != std::cmp::Ordering::Greater);
+                if beyond {
+                    let (pa, pb) = self.word_span(p);
+                    if self.index.cmp(&p, &d.anchor) == std::cmp::Ordering::Less {
+                        Selection::range(wb, pa, Granularity::Char)
+                    } else {
+                        let pb = if pb.para_offset() == p.para_offset() && self.at_para_end(p) { self.after_mark(p) } else { pb };
+                        Selection::range(wa, pb, Granularity::Char)
+                    }
+                } else {
+                    Selection::range(d.anchor, p, Granularity::Char)
+                }
+            }
+            (unit, Some((a, b))) => {
+                let (pa, pb) = self.span(p, unit);
+                if self.index.cmp(&p, &a) == std::cmp::Ordering::Less { Selection::range(b, pa, unit) } else { Selection::range(a, pb, unit) }
+            }
+        };
+        self.normalize(s)
     }
 
     fn drag_across_cells(&mut self, anchor: Position, p: Position, was_block: bool) -> Option<(Selection, bool)> {
@@ -3219,6 +3510,18 @@ impl Editor {
         self.caret_at(focus)
     }
 
+    /// How the arrow keys move from the selection's focus: along its line's text flow.
+    pub fn caret_arrows(&mut self) -> Option<keymap::Arrows> {
+        let focus = self.selection.focus()?;
+        let at = self.nav().line_of(focus)?;
+        keymap::Arrows::of(at.geo.lines[at.line].axes)
+    }
+
+    /// The page showing `p`, once laid out.
+    pub fn page_showing(&mut self, p: Position) -> Option<usize> {
+        self.caret_at(p).map(|c| c.page)
+    }
+
     fn caret_at(&mut self, focus: Position) -> Option<CaretView> {
         let (para, unit) = focus.para_offset()?;
         let affinity = focus.affinity();
@@ -3229,13 +3532,13 @@ impl Editor {
             let l = &geo.lines[i];
             let x = l.x_of(para, unit)?;
             self.near = page;
-            return Some(CaretView { page, x, top: l.top, bottom: l.bottom });
+            return Some(CaretView::of(page, geometry::CaretRect::turned(l.turn, x, l.top, l.bottom)));
         }
         for page in self.pages.pages_of(para, near, &self.index) {
             let geo = self.pages.page(page, &self.index)?;
             if let Some(c) = geo.caret(para, unit, affinity) {
                 self.near = page;
-                return Some(CaretView { page, x: c.x, top: c.top, bottom: c.bottom });
+                return Some(CaretView::of(page, c));
             }
         }
         None
@@ -3243,14 +3546,14 @@ impl Editor {
 
     fn scroll_to_caret(&mut self, _fonts: &Fonts) {
         if let Some(c) = self.caret_view() {
-            self.requests.push(Request::ScrollIntoView { page: c.page, rect: [c.x, c.top, c.x + 1.0, c.bottom], at_top: false });
+            self.requests.push(Request::ScrollIntoView { page: c.page, rect: c.rect(), at_top: false });
         }
     }
 
     /// After a jump (a link, a bookmark, a page): the caret's line at the top of the view, as Word puts it.
     fn jump_to_caret(&mut self) {
         if let Some(c) = self.caret_view() {
-            self.requests.push(Request::ScrollIntoView { page: c.page, rect: [c.x, c.top, c.x + 1.0, c.bottom], at_top: true });
+            self.requests.push(Request::ScrollIntoView { page: c.page, rect: c.rect(), at_top: true });
         }
     }
 
@@ -3259,7 +3562,8 @@ impl Editor {
         let mut out = view::SelectionBounds::default();
         match self.selection_view(pages) {
             SelectionView::None => {}
-            SelectionView::Text(r) | SelectionView::Cells(r) => out.rects = r,
+            SelectionView::Text(r) => out.rects = r.into_iter().map(|(page, b)| (page, b.page())).collect(),
+            SelectionView::Cells(r) => out.rects = r,
             SelectionView::Object(f, _) => out.frames = f,
         }
         let boxes = out.rects.iter().copied().chain(out.frames.iter().map(|f| (f.page, f.turned_box())));
@@ -3293,32 +3597,28 @@ impl Editor {
                         }
                     }
                     selection::ObjectRef::Inline { para, offset } => {
-                        out.extend(self.inline_box(&geo, para, offset).map(|rect| view::Outline { page, rect, rot: 0.0 }))
+                        // Turned live by a rotate drag: an inline object isn't laid out until the drop.
+                        let turn = match &self.shape_drag {
+                            Some(d) if d.obj == o && d.handle == shapes::ShapeHandle::Rotate => d.angle(),
+                            _ => self.inline_turn(para, offset),
+                        };
+                        out.extend(self.inline_frame(&geo, para, offset).map(|(rect, rot)| view::Outline { page, rect, rot: rot + turn }))
                     }
                 }
             }
             let dragged = self.object_drag.is_some_and(|d| d.now != d.start) || self.shape_drag.is_some();
             return SelectionView::Object(out, !self.object_fixed(o) && !dragged);
         }
+        if self.is_discontiguous() {
+            return SelectionView::Text(self.multi_rects(pages));
+        }
         if let Selection::Block { .. } = self.selection {
             return SelectionView::Text(
                 self.block_pieces().into_iter().filter(|(page, ..)| pages.contains(page)).map(|(page, r, ..)| (page, r)).collect(),
             );
         }
-        if let Selection::Cells { table, anchor, focus, .. } = self.selection {
-            let (r0, r1) = (anchor.row.min(focus.row), anchor.row.max(focus.row));
-            let (c0, c1) = (anchor.col.min(focus.col), anchor.col.max(focus.col));
-            let mut out = Vec::new();
-            for page in pages {
-                let Some(geo) = self.pages.page(page, &self.index) else { continue };
-                for c in &geo.cells {
-                    let Some(&(t, row, _)) = c.chain.last() else { continue };
-                    if t == table && (r0..=r1).contains(&row) && c.col <= c1 && c.col + c.span.max(1) > c0 {
-                        out.push((page, c.rect));
-                    }
-                }
-            }
-            return SelectionView::Cells(out);
+        if let Selection::Cells { .. } = self.selection {
+            return SelectionView::Cells(self.block_rects(self.selection, pages));
         }
         let Some((a, b)) = self.selection.ordered(&self.index) else { return SelectionView::None };
         if a.same_place(&b) {
@@ -3327,28 +3627,73 @@ impl Editor {
         SelectionView::Text(self.range_rects(a, b, pages))
     }
 
-    pub(super) fn range_rects(&mut self, a: Position, b: Position, pages: std::ops::Range<usize>) -> Vec<(usize, [f64; 4])> {
+    /// The cells of block `s` on `pages`.
+    pub(super) fn block_rects(&mut self, s: Selection, pages: std::ops::Range<usize>) -> Vec<(usize, [f64; 4])> {
+        let Selection::Cells { table, anchor, focus, .. } = s else { return Vec::new() };
+        let (r0, r1) = (anchor.row.min(focus.row), anchor.row.max(focus.row));
+        let (c0, c1) = (anchor.col.min(focus.col), anchor.col.max(focus.col));
+        let mut out = Vec::new();
+        for page in pages {
+            let Some(geo) = self.pages.page(page, &self.index) else { continue };
+            for c in &geo.cells {
+                let Some(&(t, row, _)) = c.chain.last() else { continue };
+                if t == table && (r0..=r1).contains(&row) && c.col <= c1 && c.col + c.span.max(1) > c0 {
+                    out.push((page, c.page_rect()));
+                }
+            }
+        }
+        out
+    }
+
+    pub(super) fn range_rects(&mut self, a: Position, b: Position, pages: std::ops::Range<usize>) -> Vec<(usize, view::Band)> {
         let mut out = Vec::new();
         for page in pages {
             let Some(geo) = self.pages.page(page, &self.index) else { continue };
             for (l, para) in geo.lines.iter().flat_map(|l| l.paras.iter().map(move |&p| (l, p))) {
-                if geo.stories[l.story].story != a.story {
+                if geo.stories[l.story].story == a.story
+                    && let Some(band) = range_band(&self.index, l, para, &a, &b)
+                {
+                    out.push((page, band));
+                }
+            }
+        }
+        out
+    }
+
+    /// The highlight of `ranges` (in order of their starts, all of one story) on `pages`: the lines are walked once,
+    /// each meeting only the ranges that reach it.
+    pub(super) fn ranges_rects(&mut self, ranges: &[(Position, Position)], pages: std::ops::Range<usize>) -> Vec<(usize, view::Band)> {
+        let mut out = Vec::new();
+        let Some(story) = ranges.first().map(|r| r.0.story) else { return out };
+        // Overlapping ranges (the selection's own, mid-drag) as one, for their ends to come in order
+        let mut union: Vec<(Position, Position)> = Vec::with_capacity(ranges.len());
+        for &(a, b) in ranges {
+            match union.last_mut() {
+                Some(last) if self.index.cmp(&a, &last.1).is_lt() => {
+                    if self.index.cmp(&b, &last.1).is_gt() {
+                        last.1 = b;
+                    }
+                }
+                _ => union.push((a, b)),
+            }
+        }
+        let ranges = &union[..];
+        for page in pages {
+            let Some(geo) = self.pages.page(page, &self.index) else { continue };
+            for (l, para) in geo.lines.iter().flat_map(|l| l.paras.iter().map(move |&p| (l, p))) {
+                if geo.stories[l.story].story != story {
                     continue;
                 }
                 let (Some(lf), Some(ll)) = (l.first_of(para), l.last_of(para)) else { continue };
-                let first = Position::text(a.story, para, lf);
-                let last = Position::text(a.story, para, ll);
-                if self.index.cmp(&last, &a) == std::cmp::Ordering::Less || self.index.cmp(&first, &b) == std::cmp::Ordering::Greater {
-                    continue;
-                }
-                let lo = if self.index.cmp(&first, &a) == std::cmp::Ordering::Less { a.para_offset().map(|(_, u)| u) } else { Some(lf) };
-                let hi = if self.index.cmp(&last, &b) == std::cmp::Ordering::Greater { b.para_offset().map(|(_, u)| u) } else { Some(ll) };
-                let (Some(lo), Some(hi)) = (lo, hi) else { continue };
-                let (Some(x0), Some(x1)) = (l.x_of(para, lo), l.x_of(para, hi)) else { continue };
-                let shown_end = l.stops.last().is_some_and(|s| s.end && s.para == para);
-                let mark = if hi == ll && self.index.cmp(&last, &b) == std::cmp::Ordering::Less && shown_end { 4.0 } else { 0.0 };
-                if x1 + mark > x0 + 0.01 {
-                    out.push((page, [x0, l.top, x1 + mark, l.bottom]));
+                let (first, last) = (Position::text(story, para, lf), Position::text(story, para, ll));
+                let from = ranges.partition_point(|r| self.index.cmp(&r.1, &first) == std::cmp::Ordering::Less);
+                for (a, b) in &ranges[from..] {
+                    if self.index.cmp(a, &last) == std::cmp::Ordering::Greater {
+                        break;
+                    }
+                    if let Some(band) = range_band(&self.index, l, para, a, b) {
+                        out.push((page, band));
+                    }
                 }
             }
         }
@@ -3361,22 +3706,20 @@ impl Editor {
         let selection = self.selection_view(visible.clone());
         let story = self.editing();
         let anchor = match self.selection {
+            _ if self.anchor_drag.is_some() => self.anchor_drag_view(),
             Selection::Object(selection::ObjectRef::Floating(f)) => {
                 let locked = self.selected_object().and_then(|o| o.locked) == Some(true);
                 let moving = self.object_drag.filter(|d| d.handle.is_none() && d.now != d.start && !locked);
                 let to = moving.and_then(|d| {
-                    let (para, _) = self.anchor_at(d.over, self.index.float_anchor(f)?, d.on_over(d.placed(d.rect(false)))[1])?;
+                    let (para, ..) = self.anchor_at(d.over, self.index.float_anchor(f)?, d.on_over(d.placed(d.rect(false))))?;
                     Some((d.over, para))
                 });
-                let at = |e: &mut Self, page: usize, para: ParaId| {
-                    let geo = e.pages.page(page, &e.index)?;
-                    let top = geo.lines.iter().find(|l| l.span_of(para).is_some())?.top;
-                    let x = geo.lines.iter().filter_map(|l| l.span_of(para).map(|(x0, _)| x0)).fold(f64::MAX, f64::min);
-                    Some((page, [x, top]))
-                };
                 match to {
-                    Some((page, para)) => at(self, page, para),
-                    None => self.index.float_anchor(f).and_then(|para| (0..self.pages.len()).find_map(|page| at(self, page, para))),
+                    Some((page, para)) => self.anchor_point(page, para).map(|p| (page, p)),
+                    None => self.index.float_anchor(f).and_then(|para| {
+                        let page = *self.pages.pages_of(para, self.near, &self.index).first()?;
+                        self.anchor_point(page, para).map(|p| (page, p))
+                    }),
                 }
             }
             _ => None,
@@ -3397,6 +3740,7 @@ impl Editor {
         let visible_pages = visible.clone();
         let (marks, tooltip) = self.mark_views(visible.clone());
         let (comments, comment_anchors) = self.comment_views(visible.clone());
+        let revision_balloons = self.revision_balloons(visible.clone());
         let mut fade = Vec::new();
         if matches!(story, StoryId::HeaderFooter(_)) {
             for page in visible.clone() {
@@ -3417,8 +3761,9 @@ impl Editor {
             selection,
             story,
             fade,
-            guide: self.border_drag.as_ref().map(|d| (d.page, d.guide())),
+            guide: self.border_drag.as_ref().map(|d| (d.page, d.page_guide())),
             anchor: anchor.filter(|_| self.mark_options.all || self.mark_options.anchors),
+            marquee: self.marquee_rect(),
             ghost,
             shapes: self.shape_frames(visible_pages.clone()),
             wrap_points: self.wrap_points(visible_pages.clone()),
@@ -3434,10 +3779,13 @@ impl Editor {
             regions: self.region_views(visible_pages.clone()),
             comments,
             comment_anchors,
+            revision_balloons,
             spelling: Vec::new(),
             formatting_marks: Vec::new(),
             boundaries: Vec::new(),
             field_shading: Vec::new(),
+            editable_regions: Vec::new(),
+            list_labels: self.list_label_rects(visible_pages.clone()),
             drop: self
                 .text_drag
                 .filter(|d| d.moved)
@@ -3453,9 +3801,8 @@ impl Editor {
     pub fn selection_contains(&mut self, x: f64, y: f64) -> bool {
         let Some((page, px, py)) = self.stack().page_at(x, y) else { return false };
         match self.selection_view(page..page + 1) {
-            SelectionView::Text(r) | SelectionView::Cells(r) => {
-                r.iter().any(|(p, [x0, y0, x1, y1])| *p == page && px >= *x0 && px <= *x1 && py >= *y0 && py <= *y1)
-            }
+            SelectionView::Text(r) => r.iter().any(|(p, b)| *p == page && b.contains(px, py)),
+            SelectionView::Cells(r) => r.iter().any(|(p, [x0, y0, x1, y1])| *p == page && px >= *x0 && px <= *x1 && py >= *y0 && py <= *y1),
             SelectionView::Object(r, _) => r.iter().any(|o| {
                 let [x0, y0, x1, y1] = o.rect;
                 let (cx, cy) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
@@ -3492,12 +3839,15 @@ impl Editor {
                         std::collections::hash_map::Entry::Occupied(e) => e.into_mut(),
                         std::collections::hash_map::Entry::Vacant(e) => {
                             let Some(p) = self.index.para(&self.doc, para) else { continue };
-                            e.insert(UnitText::of_view(p, self.doc.review.view))
+                            e.insert(UnitText::of_review(p, &self.doc.review))
                         }
                     };
                     let stops: Vec<&geometry::Stop> = line.stops.iter().filter(|s| s.para == para).collect();
-                    let (top, bottom) = (line.top, line.bottom);
-                    let right = geo.stories[line.story].rect[2];
+                    let right = if line.turn == crate::layout::vertical::Turn::NONE {
+                        geo.stories[line.story].rect[2]
+                    } else {
+                        line.turn.inverse().rect([0.0, 0.0, geo.w, geo.h])[2]
+                    };
                     for (k, a) in stops.iter().enumerate() {
                         // Break at a line's end
                         let b = match stops.get(k + 1) {
@@ -3506,7 +3856,7 @@ impl Editor {
                             None if matches!(text.char_at(a.unit), Some('\u{c}' | '\u{2028}')) => geometry::Stop { x: a.x, ..**a },
                             None => continue,
                         };
-                        let mut mark = |kind, x0: f64, x1: f64| out.push(FormattingMark { page, kind, at: [x0, top, x1, bottom] });
+                        let mut mark = |kind, x0: f64, x1: f64| out.push(FormattingMark { page, kind, at: line.strip(x0, x1) });
                         if o.shows_hidden_text() && text.is_hidden(a.unit) {
                             mark(MarkKind::Hidden, a.x, b.x);
                         }
@@ -3518,8 +3868,18 @@ impl Editor {
                                 _ => None,
                             }
                         };
+                        // A deletion's stand-in (`^`, `#`) is blanked in the text, not a space
+                        let stand_in = |u: Unit| {
+                            text.is_hidden(u)
+                                && self
+                                    .index
+                                    .para(&self.doc, para)
+                                    .and_then(|q| stories::inline_at(q, u))
+                                    .and_then(crate::docx::Inline::run)
+                                    .is_some_and(|r| self.doc.review.hides(&r.rev))
+                        };
                         match text.char_at(a.unit) {
-                            Some(' ') if spaces => mark(MarkKind::Space, a.x, b.x),
+                            Some(' ') if spaces && !stand_in(a.unit) => mark(MarkKind::Space, a.x, b.x),
                             Some('\u{a0}') if spaces => mark(MarkKind::NonBreakingSpace, a.x, b.x),
                             Some('\u{2011}') if o.all => mark(MarkKind::NonBreakingHyphen, a.x, b.x),
                             Some('\t') if tabs => mark(MarkKind::Tab, a.x, b.x),
@@ -3534,7 +3894,7 @@ impl Editor {
                     if let Some(last) = stops.last().filter(|s| s.unit != text.len() && self.doc.review.show_hidden && o.shows_hidden_text())
                         && self.index.para(&self.doc, para).is_some_and(|q| shown_join_at(q, last.unit))
                     {
-                        out.push(FormattingMark { page, kind: MarkKind::HiddenParagraph, at: [last.x, top, last.x, bottom] });
+                        out.push(FormattingMark { page, kind: MarkKind::HiddenParagraph, at: line.strip(last.x, last.x) });
                     }
                     // Paragraph mark after a closing break
                     let after_break = stops.last().filter(|s| s.unit.0 + 1 == text.len().0 && text.char_at(s.unit) == Some('\u{c}'));
@@ -3560,13 +3920,13 @@ impl Editor {
                         }
                         _ => MarkKind::Paragraph,
                     };
-                    out.push(FormattingMark { page, kind, at: [end, top, end, bottom] });
+                    out.push(FormattingMark { page, kind, at: line.strip(end, end) });
                     if let Some(index::Container::Section(k)) = slot.map(|s| s.container)
                         && sections.contains(&k)
                         && slot.is_some_and(|s| s.block + 1 == self.doc.sections[k].blocks.len())
                         && let Some(next) = self.doc.sections.get(k + 1)
                     {
-                        out.push(FormattingMark { page, kind: MarkKind::SectionBreak(next.break_kind), at: [end, top, right.max(end), bottom] });
+                        out.push(FormattingMark { page, kind: MarkKind::SectionBreak(next.break_kind), at: line.strip(end, right.max(end)) });
                     }
                 }
             }
@@ -3583,7 +3943,11 @@ impl Editor {
                 }
                 for r in geo.rows.iter().filter(|r| !r.repeat) {
                     if let Some(&(top, bottom)) = first.get(&(r.table, r.row)) {
-                        out.push(FormattingMark { page, kind: MarkKind::RowEnd, at: [r.rect[2], top, r.rect[2], bottom] });
+                        out.push(FormattingMark {
+                            page,
+                            kind: MarkKind::RowEnd,
+                            at: view::Band { rect: [r.rect[2], top, r.rect[2], bottom], turn: r.turn },
+                        });
                     }
                 }
             }
@@ -3606,7 +3970,7 @@ impl Editor {
                 }
             }
             if let Some(geo) = self.pages.page(page, &self.index) {
-                out.extend(geo.cells.iter().map(|c| (page, c.rect)));
+                out.extend(geo.cells.iter().map(|c| (page, c.page_rect())));
             }
         }
         out
@@ -3616,7 +3980,7 @@ impl Editor {
         let mut out = Vec::new();
         for page in pages {
             if let Some(geo) = self.pages.page(page, &self.index) {
-                out.extend(geo.cells.iter().map(|c| (page, c.rect)));
+                out.extend(geo.cells.iter().map(|c| (page, c.page_rect())));
             }
         }
         out
@@ -3635,7 +3999,7 @@ impl Editor {
         out
     }
 
-    pub fn unit_rects(&mut self, para: ParaId, a: Unit, b: Unit, pages: std::ops::Range<usize>) -> Vec<(usize, [f64; 4])> {
+    pub fn unit_rects(&mut self, para: ParaId, a: Unit, b: Unit, pages: std::ops::Range<usize>) -> Vec<(usize, view::Band)> {
         let mut out = Vec::new();
         for page in pages {
             let Some(geo) = self.pages.page(page, &self.index) else { continue };
@@ -3646,7 +4010,7 @@ impl Editor {
                     continue;
                 }
                 if let (Some(x0), Some(x1)) = (l.x_of(para, lo), l.x_of(para, hi)) {
-                    out.push((page, [x0.min(x1), l.top, x0.max(x1), l.bottom]));
+                    out.push((page, l.strip(x0.min(x1), x0.max(x1))));
                 }
             }
         }
@@ -3733,6 +4097,9 @@ impl Editor {
         if let Selection::Block { .. } = self.selection {
             return self.block_text(limit);
         }
+        if self.is_discontiguous() {
+            return self.multi_text(limit);
+        }
         let Some((a, b)) = self.selection.ordered(&self.index) else { return (String::new(), true) };
         let mut out = String::new();
         let mut chars = 0usize;
@@ -3801,7 +4168,7 @@ pub(crate) fn plain_char(c: char) -> char {
 /// A paragraph's text as it reads: what the markup view shows, hidden text only while it shows, fields as their
 /// results.
 fn seen_text(p: &Paragraph, review: &crate::docx::review::ReviewView) -> text::Seen {
-    text::Seen::of(p, |r| (review.show_hidden || !r.hidden) && !review.view.hides(&r.rev), true)
+    text::Seen::of(p, |r| (review.show_hidden || !r.hidden) && !review.hides(&r.rev), true)
 }
 
 /// Whether a paragraph joined to `p` through its vanished mark ends at `u`, its parts showing on their own lines while
@@ -3886,4 +4253,21 @@ fn splits_a_control(p: &crate::docx::Paragraph, at: Unit) -> bool {
 
 fn moves_picture_controls(s: &Step) -> bool {
     matches!(s, Step::Control { .. }) || s.pictures_where(&|_| true) > 0
+}
+
+/// The band of `a..b` on line `l`'s part of paragraph `para`, if it reaches any.
+fn range_band(index: &index::DocIndex, l: &geometry::GLine, para: ParaId, a: &Position, b: &Position) -> Option<view::Band> {
+    use std::cmp::Ordering::{Greater, Less};
+    let (lf, ll) = (l.first_of(para)?, l.last_of(para)?);
+    let first = Position::text(a.story, para, lf);
+    let last = Position::text(a.story, para, ll);
+    if index.cmp(&last, a) == Less || index.cmp(&first, b) == Greater {
+        return None;
+    }
+    let lo = if index.cmp(&first, a) == Less { a.para_offset().map(|(_, u)| u) } else { Some(lf) }?;
+    let hi = if index.cmp(&last, b) == Greater { b.para_offset().map(|(_, u)| u) } else { Some(ll) }?;
+    let (x0, x1) = (l.x_of(para, lo)?, l.x_of(para, hi)?);
+    let shown_end = l.stops.last().is_some_and(|s| s.end && s.para == para);
+    let mark = if hi == ll && index.cmp(&last, b) == Less && shown_end { 4.0 } else { 0.0 };
+    (x1 + mark > x0 + 0.01).then(|| l.strip(x0, x1 + mark))
 }

@@ -104,7 +104,7 @@ fn boxes(children: &[Child], dx: f64, dy: f64, out: &mut Vec<(&'static str, [f64
                     boxes(&cell.content, dx, dy, out);
                 }
             }
-            Child::Para(_) | Child::Line { .. } | Child::Items(_) => {}
+            Child::Para(_) | Child::Line { .. } | Child::Items(_) | Child::Turned { .. } => {}
         }
     }
 }

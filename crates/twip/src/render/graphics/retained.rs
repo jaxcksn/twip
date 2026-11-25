@@ -58,7 +58,7 @@ pub fn drawing_key(page: &PageFragment) -> u64 {
                     }
                 }
                 Child::Line { placed, .. } => (6u8, Rc::as_ptr(&placed.line) as usize, placed.x.to_bits(), placed.y.to_bits()).hash(h),
-                Child::Items(i) => {
+                Child::Items(i) | Child::Turned { items: i, .. } => {
                     7u8.hash(h);
                     items(i, h);
                 }
@@ -76,6 +76,7 @@ pub fn drawing_key(page: &PageFragment) -> u64 {
     }
     let mut h = std::collections::hash_map::DefaultHasher::new();
     (page.w.to_bits(), page.h.to_bits()).hash(&mut h);
+    page.borders_behind.hash(&mut h);
     items(&page.borders, &mut h);
     for c in page.children.iter() {
         match c {
@@ -260,6 +261,7 @@ mod tests {
                 body_area: None,
                 children: Box::new([PageChild::Body(Rc::new(body))]),
                 borders: Box::new([]),
+                borders_behind: false,
             }
         };
         assert_eq!(drawing_key(&page(Some(20.0))), drawing_key(&page(Some(20.0))));
@@ -284,6 +286,7 @@ mod tests {
                     body_area: None,
                     children: Box::new([]),
                     borders: Box::new([]),
+                    borders_behind: false,
                 })
             })
             .collect();

@@ -19,7 +19,9 @@ impl Editor {
         if self.copy().is_none() {
             return Outcome::Unchanged("nothing selected");
         }
-        if let Selection::Cells { table, anchor, focus, .. } = self.selection {
+        if !self.is_discontiguous()
+            && let Selection::Cells { table, anchor, focus, .. } = self.selection
+        {
             let Some(t) = self.index.table(&self.doc, table) else { return Outcome::Unchanged("no table") };
             let cols = table::Grid::of(t).cols;
             let rows = t.rows.len();
@@ -32,8 +34,8 @@ impl Editor {
                 (false, false) => self.delete(Dir::Forward, false, fonts),
             };
         }
-        let moving = self.tracking() && self.moves_whole();
-        if !moving {
+        let moving = self.tracking() && !self.is_discontiguous() && self.moves_whole();
+        if !moving && !self.is_discontiguous() {
             self.smart_cut();
         }
         let out = self.delete(Dir::Back, false, fonts);
@@ -68,6 +70,9 @@ impl Editor {
             return self.undo(false, fonts);
         }
         match self.repeat.clone() {
+            Some(c) if self.is_discontiguous() && crate::editing::multi::single_only(c.id()) => {
+                Outcome::unavailable("not available for multiple selections")
+            }
             Some(c) => match self.protection_refusal(&c) {
                 Some(e) => Outcome::Refused(e),
                 None => self.run(c, fonts),

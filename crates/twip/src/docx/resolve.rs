@@ -165,6 +165,7 @@ impl Resolver {
             no_proof: p.no_proof.unwrap_or(false),
             underline: p.underline.clone().filter(|u| u != "none"),
             underline_color: p.underline_color.flatten(),
+            underline_color_theme: p.underline_color_theme.filter(|_| p.underline_color.flatten().is_some()),
             emboss: p.toggle(super::props::toggle::EMBOSS),
             imprint: p.toggle(super::props::toggle::IMPRINT),
             outline: p.toggle(super::props::toggle::OUTLINE),
@@ -178,6 +179,13 @@ impl Resolver {
             },
             effects: p.effects.as_ref().and_then(TextEffects::shown),
             color: p.color.flatten(),
+            color_theme: p.color_theme.filter(|_| p.color.flatten().is_some()),
+            // The theme font the family is: from the font that gives it.
+            font_theme: match if complex { p.cs.as_ref().or(p.ascii.as_ref()).or(p.h_ansi.as_ref()) } else { p.ascii.as_ref().or(p.h_ansi.as_ref()) }
+            {
+                Some(FontRef::Theme(t)) => super::model::ThemeFont::of(t),
+                _ => None,
+            },
             highlight: p.highlight.flatten(),
             em: p.em.clone().filter(|e| e != "none"),
             toc: false,
@@ -630,6 +638,19 @@ mod tests {
         // A named font under the slot fills it, so the run's name stands.
         assert!(!unset(r#"w:eastAsia="Calibri""#, r#"w:eastAsiaTheme="minorEastAsia""#));
         assert!(!unset(r#"w:eastAsia="Calibri""#, ""));
+    }
+
+    #[test]
+    fn a_runs_theme_font_is_that_of_the_font_giving_its_family() {
+        let res = Resolver::new(Styles::parse(None, Default::default()), Numbering::default(), ThemeFonts::default());
+        use super::super::model::ThemeFont;
+        let theme = |t: &str| Some(FontRef::Theme(t.into()));
+        let of = |p: RunProps| res.run_style(&p).font_theme;
+        assert_eq!(of(RunProps { h_ansi: theme("majorHAnsi"), ..RunProps::default() }), Some(ThemeFont::Major), "no ascii: hAnsi's");
+        let both = RunProps { ascii: theme("minorHAnsi"), h_ansi: theme("majorHAnsi"), ..RunProps::default() };
+        assert_eq!(of(both.clone()), Some(ThemeFont::Minor), "ascii's");
+        let cs = RunProps { cs: theme("majorBidi"), complex: Some(true), ..both };
+        assert_eq!(of(cs), Some(ThemeFont::Major), "a complex script run's: its cs font");
     }
 
     #[test]

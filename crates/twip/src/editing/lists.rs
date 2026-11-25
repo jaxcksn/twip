@@ -308,6 +308,15 @@ impl Editor {
         out
     }
 
+    /// What paragraph `p`'s list number is formatted over, its level's own formatting aside: the paragraph's style
+    /// chain and its mark's formatting.
+    pub(super) fn label_base(&self, para: ParaId, p: &Paragraph, res: &Resolver, cx: &Cx) -> RunProps {
+        let region = self.region_of_para(para, res);
+        let base = res.para_from_xml(p.style.direct.0.as_deref(), region.as_ref(), cx).base;
+        let mark = p.mark.direct.0.as_deref().and_then(|x| cx.parse(x, |_, el| RunProps::parse(Some(el), &res.styles.colours))).unwrap_or_default();
+        res.run_props(&base, &mark)
+    }
+
     /// The labels that change: those whose text changed, or, for the paragraphs `full` names, any part of them.
     pub(super) fn labels_changed(&self, full: impl Fn(ParaId) -> bool) -> Vec<(ParaId, Option<ListLabel>)> {
         let Some(res) = self.doc.resolver.clone() else { return Vec::new() };
@@ -327,16 +336,7 @@ impl Editor {
                 (None, Some(_)) => None,
                 (Some((id, ilvl, text)), _) => {
                     let Some(level) = res.numbering.level(*id, *ilvl, &res.styles).cloned() else { continue };
-                    let region = self.region_of_para(para, &res);
-                    let base = res.para_from_xml(p.style.direct.0.as_deref(), region.as_ref(), &cx).base;
-                    let mark = p
-                        .mark
-                        .direct
-                        .0
-                        .as_deref()
-                        .and_then(|x| cx.parse(x, |_, el| RunProps::parse(Some(el), &res.styles.colours)))
-                        .unwrap_or_default();
-                    let mut lp = res.run_props(&base, &mark);
+                    let mut lp = self.label_base(para, p, &res, &cx);
                     lp.merge(&level.rpr);
                     let picture = res.numbering.bullet_image(&level);
                     let label = ListLabel {

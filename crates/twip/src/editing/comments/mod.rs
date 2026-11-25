@@ -464,6 +464,13 @@ impl Editor {
             .collect()
     }
 
+    /// Whether a comment shows in the review view: comments shown and its thread's first comment's author's markup
+    /// (a thread draws whole or not at all).
+    pub fn comment_shown(&self, id: CommentId) -> bool {
+        let comments = &self.doc.comments;
+        comments.by_id.contains_key(&id) && comments.by_id.get(&comments.root(id)).is_some_and(|c| self.doc.review.shows_comment(c.author))
+    }
+
     pub(super) fn comment_views(&mut self, visible: std::ops::Range<usize>) -> (Vec<CommentView>, Vec<(CommentId, usize, [f64; 2])>) {
         if self.doc.comments.by_id.is_empty() {
             return (Vec::new(), Vec::new());
@@ -473,12 +480,16 @@ impl Editor {
         let (mut views, mut anchors) = (Vec::new(), Vec::new());
         let near = self.near;
         for r in ranges.iter() {
+            if !self.comment_shown(r.root) {
+                continue;
+            }
             if let Some(c) = self.caret_at(r.start).filter(|c| visible.contains(&c.page)) {
                 anchors.push((r.root, c.page, [c.x, c.top]));
             }
-            let rects = self.range_rects(r.start, r.end, visible.clone());
-            if !rects.is_empty() {
-                views.push(CommentView { thread: r.root, rects, active: active == Some(r.root) });
+            let bands = self.range_rects(r.start, r.end, visible.clone());
+            if !bands.is_empty() {
+                let rects = bands.iter().map(|&(page, b)| (page, b.page())).collect();
+                views.push(CommentView { thread: r.root, rects, bands, active: active == Some(r.root) });
             }
         }
         self.near = near;
@@ -634,6 +645,45 @@ impl Editor {
         }
         let mut tx = self.begin("Delete Comment");
         if self.remove_comments(&mut tx, &[id]).is_err() {
+            self.abort(tx);
+            return Outcome::Unchanged("stale comment");
+        }
+        self.commit(tx, None, fonts)
+    }
+
+    /// The document's revisions and comment threads by kind: all of them, and those Show Markup shows. The revisions
+    /// follow each edit from the paragraphs it touched; the threads are counted again after a comment edit or a change
+    /// of Show Markup.
+    pub fn review_counts(&mut self) -> (crate::editing::revisions::index::Counts, crate::editing::revisions::index::Counts) {
+        self.review_marks();
+        let marks = &self.review_marks.as_ref().expect("just found").2;
+        let (mut all, mut shown) = marks.counts(&self.doc.review.markup.show);
+        let markup = self.doc.review.markup.clone();
+        let threads = match &self.counted {
+            Some((edits, m, n)) if *edits == self.comment_edits && Rc::ptr_eq(m, &markup) => *n,
+            _ => {
+                let roots: Vec<CommentId> = self.doc.comments.threads().into_iter().map(|(root, _)| root).collect();
+                let n = (roots.len() as u32, roots.iter().filter(|&&r| self.comment_shown(r)).count() as u32);
+                self.counted = Some((self.comment_edits, markup, n));
+                n
+            }
+        };
+        (all.comments, shown.comments) = threads;
+        (all, shown)
+    }
+
+    /// Deletes every comment, resolved threads too (Delete All Comments in Document), or with `shown_only` those Show
+    /// Markup shows (Delete All Comments Shown): whole threads, by their first comment. One undo step.
+    pub fn delete_all_comments(&mut self, shown_only: bool, fonts: &Fonts) -> Outcome {
+        let comments = &self.doc.comments;
+        let roots = if shown_only { comments.roots() } else { HashMap::new() };
+        let shown = |id: &CommentId| roots.get(id).and_then(|r| comments.by_id.get(r)).is_some_and(|c| self.doc.review.shows_comment(c.author));
+        let ids: Vec<CommentId> = comments.by_id.keys().copied().filter(|id| !shown_only || shown(id)).collect();
+        if ids.is_empty() {
+            return self.comment_refused(if shown_only { "no comment shown" } else { "no comment" });
+        }
+        let mut tx = self.begin("Delete All Comments");
+        if self.remove_comments(&mut tx, &ids).is_err() {
             self.abort(tx);
             return Outcome::Unchanged("stale comment");
         }

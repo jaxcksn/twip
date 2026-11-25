@@ -286,8 +286,8 @@ pub fn layout_with(
             LaidBlock::Para(laid)
                 if cell.is_none()
                     && bi + 1 == blocks.len()
-                    && view.hides(&laid.para().mark.rev)
-                    && super::paragraph::shows_nothing(laid.para(), view, text.review.show_hidden) => {}
+                    && text.review.hides(&laid.para().mark.rev)
+                    && super::paragraph::shows_nothing(laid.para(), &text.review) => {}
             LaidBlock::Para(laid) => stack_para(&w, &mut st, bi, laid, from, memos)?,
             LaidBlock::Table(t) => stack_table(&w, &mut st, bi, t, memos)?,
         }

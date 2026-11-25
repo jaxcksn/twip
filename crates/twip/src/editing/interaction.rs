@@ -76,8 +76,9 @@ impl Editor {
         }
         let fragment = self.clip()?;
         let source = self.selection.ordered(&self.index);
-        let can_move = self.mode != super::Mode::ReadOnly
-            && source.is_some_and(|(a, b)| !self.kept(crate::api::command::CommandId::Delete, &a, &b) && self.editable(&a));
+        let kept = |(a, b): &(Position, Position)| self.kept(crate::api::command::CommandId::Delete, a, b);
+        let can_move =
+            self.mode != super::Mode::ReadOnly && source.is_some_and(|r| !kept(&r) && self.editable(&r.0)) && !self.other_ranges().iter().any(kept);
         self.drag_out = Some((self.selection, self.revision, fragment.blocks.clone()));
         Some(DragOut { text: fragment.text(), html: fragment.html(), fragment, can_move })
     }
@@ -110,7 +111,10 @@ impl Editor {
             return Outcome::Unchanged("nothing moved");
         }
         // Smart cut
-        if !matches!(self.selection, Selection::Object(_) | Selection::Cells { .. }) && !(self.tracking() && self.moves_whole()) {
+        if !matches!(self.selection, Selection::Object(_) | Selection::Cells { .. })
+            && !self.is_discontiguous()
+            && !(self.tracking() && self.moves_whole())
+        {
             let dragged = self.selection;
             self.smart_cut();
             // The space it takes along may be out of reach where the dragged text is not.
@@ -142,7 +146,14 @@ impl Editor {
     pub(super) fn inside_selection(&self, p: &Position) -> bool {
         let Selection::Text { .. } = self.selection else { return false };
         let Some((a, b)) = self.selection.ordered(&self.index) else { return false };
-        self.index.cmp(&a, p) == std::cmp::Ordering::Less && self.index.cmp(p, &b) == std::cmp::Ordering::Less
+        // Order keys compare within a story only
+        a.story == p.story && self.index.cmp(&a, p) == std::cmp::Ordering::Less && self.index.cmp(p, &b) == std::cmp::Ordering::Less
+    }
+
+    /// Whether `p` is strictly inside the selection's own range or another range of a discontiguous selection.
+    pub(super) fn inside_any_range(&self, p: &Position) -> bool {
+        self.inside_selection(p)
+            || self.other_ranges().iter().any(|(a, b)| a.story == p.story && self.index.cmp(a, p).is_lt() && self.index.cmp(p, b).is_lt())
     }
 
     pub(super) fn text_drag_move(&mut self, x: f64, y: f64, ctrl: bool, fonts: &Fonts) {
@@ -169,7 +180,8 @@ impl Editor {
             s => s.ordered(&self.index),
         };
         use crate::api::command::CommandId as C;
-        let taken = !d.copy && source.is_none_or(|(a, b)| self.kept(C::Delete, &a, &b));
+        let taken = !d.copy
+            && (source.is_none_or(|(a, b)| self.kept(C::Delete, &a, &b)) || self.other_ranges().iter().any(|(a, b)| self.kept(C::Delete, a, b)));
         taken || !self.editable(&drop) || self.kept(C::Paste, &drop, &drop)
     }
 
@@ -211,6 +223,8 @@ impl Editor {
 
     /// Moves (or copies) the selected text to `drop` as a drag and drop does: one undo step, a tracked move when
     /// changes are tracked, the moved text selected after. `object`: the inline object selection the text stands for.
+    /// Every range of a discontiguous selection moves or copies, as Cut (or Copy) and Paste would: the ranges go
+    /// first, wherever they are, and the drop place follows their removal.
     pub(super) fn drop_selection(&mut self, drop: Position, copy: bool, object: Option<Selection>, fonts: &Fonts) -> Outcome {
         let restore = |e: &mut Self| {
             if let Some(o) = object {
@@ -226,6 +240,10 @@ impl Editor {
                 None => return Outcome::Unchanged("no selection"),
             },
         };
+        if !self.other_cells().is_empty() {
+            restore(self);
+            return Outcome::unavailable("cells don't move by dragging");
+        }
         let pieces = if source.is_none() { self.selected_ranges() } else { Vec::new() };
         // Where the story dropped in is hosted: a text box's float, a note's reference.
         let in_box = match drop.story {
@@ -240,9 +258,17 @@ impl Editor {
             super::position::StoryId::Endnote(id) => self.note_reference(crate::docx::NoteKind::End, id).map(|(at, _)| at),
             _ => None,
         };
-        let inside = |p: &Position| match source {
-            Some((a, b)) => self.index.cmp(&a, p) != std::cmp::Ordering::Greater && self.index.cmp(p, &b) != std::cmp::Ordering::Greater,
-            None => p.para_offset().is_some_and(|(q, u)| pieces.iter().any(|&(r, s, t)| r == q && s <= u && u <= t)),
+        // Discontiguous selection
+        let multi = self.is_discontiguous();
+        let ranges = match source {
+            Some(_) if multi => self.selection_ranges(),
+            Some(r) => vec![r],
+            None => Vec::new(),
+        };
+        let inside = |p: &Position| {
+            ranges.iter().any(|(a, b)| {
+                a.story == p.story && self.index.cmp(a, p) != std::cmp::Ordering::Greater && self.index.cmp(p, b) != std::cmp::Ordering::Greater
+            }) || p.para_offset().is_some_and(|(q, u)| pieces.iter().any(|&(r, s, t)| r == q && s <= u && u <= t))
         };
         if inside(&drop) || in_box.is_some_and(|p| inside(&p)) {
             restore(self);
@@ -252,10 +278,10 @@ impl Editor {
         let Some(mut frag) = self.clip() else { return Outcome::Unchanged("nothing to move") };
         frag.moved = !copy;
         let sel = self.selection;
-        let moving = !copy && self.tracking() && self.moves_whole();
+        let moving = !copy && !multi && self.tracking() && self.moves_whole();
         let mut marks = (Vec::new(), Vec::new());
         let mut placed: Option<(Position, Position)> = None;
-        let paste = |e: &mut Self, placed: &mut Option<(Position, Position)>| {
+        let paste = |e: &mut Self, placed: &mut Option<(Position, Position)>, drop: Position| {
             e.set_selection(Selection::Caret(drop));
             let start = e.selection.focus().unwrap_or(drop);
             // The spaces a smart paste adds around the text aren't the text moved.
@@ -275,7 +301,7 @@ impl Editor {
         };
         let delete = |e: &mut Self, placed: &mut Option<(Position, Position)>| {
             e.set_selection(sel);
-            if !moving && object.is_none() {
+            if !moving && !multi && object.is_none() {
                 e.smart_cut();
             }
             let ok = matches!(e.delete(super::commands::Dir::Forward, false, fonts), Outcome::Changed(_));
@@ -287,8 +313,8 @@ impl Editor {
             ok
         };
         let after = source.is_some_and(|(_, b)| self.index.cmp(&drop, &b) == std::cmp::Ordering::Greater);
-        let mut paste = |e: &mut Self, placed: &mut Option<(Position, Position)>| {
-            let ok = paste(e, placed);
+        let mut paste = |e: &mut Self, placed: &mut Option<(Position, Position)>, drop: Position| {
+            let ok = paste(e, placed, drop);
             if ok {
                 marks.0 = e.recorded.0.clone();
             }
@@ -305,11 +331,16 @@ impl Editor {
         // Paste and delete, together or not at all
         #[allow(clippy::if_same_then_else, reason = "the order differs: each call moves what the other one sees")]
         let done = if copy {
-            paste(self, &mut placed)
+            paste(self, &mut placed, drop)
+        } else if multi {
+            delete(self, &mut placed) && {
+                let drop = self.last_maps.iter().fold(drop, |p, m| m.apply(p));
+                paste(self, &mut placed, drop)
+            }
         } else if after {
-            paste(self, &mut placed) && delete(self, &mut placed)
+            paste(self, &mut placed, drop) && delete(self, &mut placed)
         } else {
-            delete(self, &mut placed) && paste(self, &mut placed)
+            delete(self, &mut placed) && paste(self, &mut placed, drop)
         };
         if !done {
             self.end_batch(false, fonts);
@@ -344,6 +375,9 @@ impl Editor {
     }
 
     pub(super) fn moves_whole(&mut self) -> bool {
+        if !self.recorded_options().0 {
+            return false;
+        }
         let Some((a, b)) = self.selection.ordered(&self.index) else { return false };
         let (Some((pa, oa)), Some((pb, ob))) = (a.para_offset(), b.para_offset()) else { return false };
         let whole = if pa == pb {
@@ -357,6 +391,9 @@ impl Editor {
     }
 
     pub(super) fn record_move(&mut self, to: &[Rc<RevisionMark>], from: &[Rc<RevisionMark>], fonts: &Fonts) -> bool {
+        if !self.recorded_options().0 {
+            return false;
+        }
         let (Some(to_first), Some(from_first)) = (to.first(), from.first()) else { return false };
         let id = self.doc.review_ids.next_revision_id();
         let name: Rc<str> = format!("move{id}").into();

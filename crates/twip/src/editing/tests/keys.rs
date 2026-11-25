@@ -881,7 +881,7 @@ fn create_hyperlink_here_links_to_a_hidden_bookmark_on_the_text() {
     assert_eq!(texts(&e)[0], "one two", "the text stays");
     let name = e.bookmarks().into_iter().map(|b| b.name).find(|n| n.starts_with("_Hlk")).expect("a hidden bookmark on the source");
     let codes = link_codes(&e, 1);
-    assert!(codes.len() == 1 && codes[0].starts_with("HYPERLINK") && codes[0].contains(&format!("#{name}")), "{codes:?}");
+    assert!(codes.len() == 1 && codes[0].starts_with("HYPERLINK") && codes[0].contains(&format!(r#"\l "{name}""#)), "{codes:?}");
     e.execute(C::Undo, fonts());
     assert_eq!(texts(&e), ["one two", "three"], "one undo step");
     assert!(e.bookmarks().is_empty());
@@ -1348,4 +1348,294 @@ fn a_tracked_move_of_an_empty_paragraph() {
             assert!(centred(&e, ""));
         }
     }
+}
+
+#[test]
+fn formatting_restrictions_keep_auto_format_unless_it_may_override_them() {
+    use crate::api::command::DocumentProtection;
+    use crate::editing::commands::Outcome;
+    for allow in [false, true] {
+        let mut e = edit("<w:p><w:r><w:t>above</w:t></w:r></w:p><w:p/>");
+        assert!(matches!(e.set_formatting_restrictions(Some(allow), Some(true), None, fonts()), Outcome::Changed(_) | Outcome::Unchanged(_)));
+        let protect = DocumentProtection { formatting: Some(true), enforce: Some(true), ..Default::default() };
+        assert!(matches!(e.execute(C::SetDocumentProtection(protect), fonts()), Outcome::Changed(_)));
+        assert!(matches!(e.set_formatting_restrictions(Some(!allow), None, None, fonts()), Outcome::Refused(_)), "not while enforced");
+        assert!(e.style_switch_blocked(true) && !e.style_switch_blocked(false));
+        caret(&mut e, 1, 0);
+        type_in(&mut e, "---\n");
+        assert_eq!(para(&e, 1).style.border_bottom.is_some(), allow, "override {allow}");
+        let saved = crate::docx::write::save(e.document()).expect("saves");
+        let again = Editor::open(&saved, fonts()).expect("reopens");
+        let s = &again.document().settings;
+        assert_eq!((s.auto_format_override, s.style_lock_theme, s.style_lock_style_set), (allow, true, false));
+    }
+    let e = edit("<w:p><w:r><w:t>a</w:t></w:r></w:p>");
+    let min = e.recommended_minimum_styles();
+    assert!(min.iter().any(|s| s == "Normal"), "{min:?}");
+}
+
+/// Track moves off: a tracked paragraph move records an insertion and a deletion; Track formatting off: formatting
+/// applies untracked while text edits are still tracked. Both are saved settings.
+#[test]
+fn track_moves_and_formatting_options() {
+    let mut e = tracked_three();
+    assert_eq!(e.track_options(), (true, true));
+    assert_eq!(e.set_track_options(false, false), crate::editing::commands::Outcome::Moved);
+    assert!(e.is_dirty(), "a saved setting");
+    caret(&mut e, 1, 0);
+    e.move_paragraphs(true, fonts());
+    assert_eq!(has_moves(&e), (false, false), "an insertion and a deletion");
+    // "two" both inserted and deleted, as ordinary revisions
+    use crate::docx::review::MarkKind;
+    let marked = |e: &Editor, kind: MarkKind| {
+        e.document().sections[0].blocks.iter().filter_map(|b| if let crate::docx::Block::Para(p) = b { Some(p) } else { None }).any(|p| {
+            p.inlines.iter().any(|i| match i {
+                crate::docx::Inline::Text(t, r) if t == "two" => [&r.rev.ins, &r.rev.del].into_iter().flatten().any(|m| m.kind == kind),
+                _ => false,
+            })
+        })
+    };
+    assert!(marked(&e, MarkKind::Insert) && marked(&e, MarkKind::Delete), "still tracked, as an insertion and a deletion");
+    assert!(!marked(&e, MarkKind::MoveTo) && !marked(&e, MarkKind::MoveFrom), "not as a move");
+    e.execute(C::SelectAll, fonts());
+    e.execute(C::SetBold(true), fonts());
+    e.execute(C::SetAlignment(crate::api::value::Alignment::Right), fonts());
+    for b in &e.document().sections[0].blocks {
+        let crate::docx::Block::Para(p) = b else { continue };
+        assert!(p.style.change.is_none(), "no paragraph change recorded");
+        assert_eq!(p.style.jc, crate::docx::props::Jc::Right, "right-aligned");
+        assert!(p.inlines.iter().filter_map(|i| i.run()).all(|r| r.rev.fmt.is_none()), "no formatting change recorded");
+        assert!(
+            p.inlines.iter().filter(|i| matches!(i, crate::docx::Inline::Text(t, _) if !t.is_empty())).filter_map(|i| i.run()).all(|r| r.bold),
+            "bold"
+        );
+    }
+    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let back = crate::docx::read_editable(&bytes).expect("reads back");
+    assert!(back.settings.do_not_track_moves && back.settings.do_not_track_formatting, "written as the two settings");
+    let mut e = crate::editing::Editor::with_document(back, fonts());
+    assert_eq!(e.set_track_options(true, true), crate::editing::commands::Outcome::Moved);
+    let again = crate::docx::read_editable(&crate::docx::write::save(e.document()).expect("saves")).expect("reads back");
+    assert!(!again.settings.do_not_track_moves && !again.settings.do_not_track_formatting, "and cleared");
+}
+
+/// Tracked typing in a long document follows each edit in the revision marks balloons and the review counts come
+/// from: they are found from the whole document once.
+#[test]
+fn tracked_typing_follows_the_marks_without_finding_them_again() {
+    let para = |i: usize| {
+        format!(
+            r#"<w:p><w:ins w:id="{i}" w:author="A"><w:r><w:t>new</w:t></w:r></w:ins><w:r><w:t> text</w:t></w:r><w:del w:id="{}" w:author="B"><w:r><w:delText>gone</w:delText></w:r></w:del></w:p>"#,
+            i + 1000
+        )
+    };
+    let mut e = edit(&(0..300).map(para).collect::<String>());
+    e.set_markup_view(crate::docx::review::MarkupView::All);
+    e.set_balloon_mode(crate::docx::review::BalloonMode::Balloons);
+    e.set_tracking(true);
+    let pages = e.snapshot().pages().len();
+    let (all, _) = e.review_counts();
+    assert_eq!((all.insertions, all.deletions), (300, 300));
+    let balloons = e.view(0..1).revision_balloons.len();
+    assert!(balloons > 0);
+    for (k, at) in [(5, 3), (5, 4), (0, 8), (120, 0), (299, 2)] {
+        caret(&mut e, k, at);
+        e.execute(C::InsertText("x".into()), fonts());
+        let _ = e.view(0..1);
+        e.check_review_marks().expect("followed");
+    }
+    let (all, _) = e.review_counts();
+    assert!(all.insertions > 300 && all.deletions == 300, "the typing counted: {all:?}");
+    assert_eq!(e.mark_builds, 1, "found once");
+    e.balloon_lookups = 0;
+    let _ = e.view(0..1);
+    assert!(e.balloon_lookups <= balloons + 2, "{} lookups beside one page", e.balloon_lookups);
+    assert!(e.view(0..0).revision_balloons.is_empty() && pages > 1);
+}
+
+/// The review counts are kept while typing in a paragraph without marks, and counted again after a comment is added.
+#[test]
+fn review_counts_are_kept_while_typing_elsewhere() {
+    let mut e = edit(concat!(
+        r#"<w:p><w:ins w:id="1" w:author="A"><w:r><w:t>new</w:t></w:r></w:ins><w:r><w:t> text</w:t></w:r></w:p>"#,
+        "<w:p><w:r><w:t>plain</w:t></w:r></w:p>",
+    ));
+    let (all, _) = e.review_counts();
+    assert_eq!((all.insertions, all.comments), (1, 0));
+    caret(&mut e, 1, 5);
+    e.execute(C::InsertText("!".into()), fonts());
+    assert_eq!(e.review_counts().0, all);
+    caret(&mut e, 0, 4);
+    e.execute(C::InsertText("x".into()), fonts());
+    assert_eq!(e.review_counts().0, all);
+    assert_eq!(e.mark_builds, 1, "kept, then followed");
+    e.add_comment(&crate::editing::comments::RichText::plain("Note"), "A", fonts());
+    assert_eq!(e.review_counts().0.comments, 1, "counted again");
+}
+
+/// Seeded edits, tracked and not, in paragraphs, table cells and across paragraph marks: the revision marks followed
+/// edit by edit are always those of the whole document.
+#[test]
+fn followed_revision_marks_match_the_document() {
+    let body = concat!(
+        r#"<w:p><w:ins w:id="1" w:author="A"><w:r><w:t>new</w:t></w:r></w:ins><w:r><w:t> text </w:t></w:r><w:del w:id="2" w:author="B"><w:r><w:delText>gone</w:delText></w:r></w:del><w:r><w:t> end</w:t></w:r></w:p>"#,
+        "<w:p><w:r><w:t>plain words here</w:t></w:r></w:p>",
+        r#"<w:p><w:pPr><w:jc w:val="center"/><w:pPrChange w:id="3" w:author="A"><w:pPr/></w:pPrChange></w:pPr><w:r><w:t>centred</w:t></w:r></w:p>"#,
+        r#"<w:p><w:pPr><w:jc w:val="right"/><w:pPrChange w:id="4" w:author="A"><w:pPr/></w:pPrChange></w:pPr><w:r><w:rPr><w:b/><w:rPrChange w:id="5" w:author="B"><w:rPr/></w:rPrChange></w:rPr><w:t>bold</w:t></w:r></w:p>"#,
+        r#"<w:tbl><w:tblGrid><w:gridCol w:w="3000"/><w:gridCol w:w="3000"/></w:tblGrid>"#,
+        r#"<w:tr><w:tc><w:p><w:ins w:id="6" w:author="A"><w:r><w:t>cell</w:t></w:r></w:ins></w:p></w:tc><w:tc><w:p><w:ins w:id="7" w:author="A"><w:r><w:t>next</w:t></w:r></w:ins></w:p><w:p><w:r><w:t>two</w:t></w:r></w:p></w:tc></w:tr>"#,
+        r#"<w:tr><w:tc><w:p/></w:tc><w:tc><w:p><w:del w:id="8" w:author="B"><w:r><w:delText>old</w:delText></w:r></w:del></w:p></w:tc></w:tr>"#,
+        "</w:tbl>",
+        r#"<w:p><w:ins w:id="9" w:author="A"><w:r><w:t>after</w:t></w:r></w:ins></w:p>"#,
+        r#"<w:p><w:pPr><w:rPr><w:ins w:id="10" w:author="A"/></w:rPr></w:pPr><w:ins w:id="11" w:author="A"><w:r><w:t>tail</w:t></w:r></w:ins></w:p>"#,
+        r#"<w:p><w:ins w:id="12" w:author="A"><w:r><w:t>head</w:t></w:r></w:ins><w:r><w:t> rest</w:t></w:r></w:p>"#,
+        "<w:p/>",
+    );
+    let mut seed = 0x9e37_79b9_7f4a_7c15_u64;
+    let mut below = |n: usize| {
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        (seed % n.max(1) as u64) as usize
+    };
+    let back = || C::Delete(crate::api::command::DeleteOptions { direction: crate::api::value::Direction::Backward, unit: None });
+    let forward = || C::Delete(crate::api::command::DeleteOptions { direction: crate::api::value::Direction::Forward, unit: None });
+    let mut e = edit(body);
+    e.set_markup_view(crate::docx::review::MarkupView::All);
+    e.set_balloon_mode(crate::docx::review::BalloonMode::Balloons);
+    for step in 0..400 {
+        let _ = e.review_counts();
+        if step % 7 == 0 {
+            let _ = e.view(0..1);
+        }
+        e.set_tracking(below(3) > 0);
+        let ids = texts_ids(&e);
+        let id = ids[below(ids.len())];
+        let len = e.index().para(e.document(), id).map_or(0, |p| crate::editing::step::para_len(p).0);
+        let (a, b) = (below(len as usize + 1) as u32, below(len as usize + 1) as u32);
+        let at = |u: u32| Position::text(StoryId::Body, id, Unit(u));
+        e.selection = Selection::Caret(at(a));
+        let c = match below(9) {
+            0..=2 => C::InsertText(["x", "ab ", " "][below(3)].into()),
+            3 => back(),
+            4 => forward(),
+            5 => C::InsertParagraph,
+            6 => {
+                e.selection = Selection::range(at(a.min(b)), at(a.max(b)), Default::default());
+                C::SetBold(below(2) == 0)
+            }
+            7 => C::Undo,
+            _ => C::Redo,
+        };
+        e.execute(c.clone(), fonts());
+        e.check_review_marks().unwrap_or_else(|why| panic!("step {step} ({c:?} at {a}..{b}): {why}"));
+    }
+    assert!(e.mark_builds < 20, "found again {} times", e.mark_builds);
+}
+
+/// Seeded edits, tracked and not, in the last paragraph of an inserted, deleted or merged cell and of a section with a
+/// changed layout follow the spans those changes cover: the marks are found from the document once.
+#[test]
+fn edits_ending_cell_and_section_changes_follow_the_marks() {
+    fn ends(blocks: &[crate::docx::Block], out: &mut Vec<crate::layout::ParaId>) {
+        for b in blocks {
+            let crate::docx::Block::Table(t) = b else { continue };
+            for c in t.rows.iter().flat_map(|r| &r.cells) {
+                if c.rev.structural.is_some()
+                    && let Some(crate::docx::Block::Para(p)) = c.blocks.last()
+                {
+                    out.push(crate::layout::ParaId(p.id));
+                }
+                ends(&c.blocks, out);
+            }
+        }
+    }
+    let back = || C::Delete(crate::api::command::DeleteOptions { direction: crate::api::value::Direction::Backward, unit: None });
+    let forward = || C::Delete(crate::api::command::DeleteOptions { direction: crate::api::value::Direction::Forward, unit: None });
+    let mut seed = 0x2545_f491_4f6c_dd1d_u64;
+    let mut below = |n: usize| {
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        (seed % n.max(1) as u64) as usize
+    };
+    for name in ["review/FX-REVIEW-CELLS.docx", "review/FX-REVIEW-SECTIONS.docx"] {
+        let mut e = super::open(name);
+        e.complete(fonts());
+        e.set_markup_view(crate::docx::review::MarkupView::All);
+        e.set_balloon_mode(crate::docx::review::BalloonMode::Balloons);
+        let _ = e.review_counts();
+        if let Some(crate::docx::Block::Para(p)) = e.document().sections.last().and_then(|s| s.blocks.last()) {
+            // Untracked typing at a changed section's end joins and parts no marks
+            let id = crate::layout::ParaId(p.id);
+            let len = crate::editing::step::para_len(p).0;
+            let was = e.revision_marks();
+            e.set_tracking(false);
+            e.selection = Selection::Caret(Position::text(StoryId::Body, id, Unit(len)));
+            e.execute(C::InsertText("typed".into()), fonts());
+            assert_eq!(e.revision_marks(), was, "{name}: no marks touched");
+            let _ = e.review_counts();
+            e.check_review_marks().unwrap_or_else(|why| panic!("{name} typed at the end: {why}"));
+        }
+        for step in 0..150 {
+            let mut targets = Vec::new();
+            for s in &e.document().sections {
+                ends(&s.blocks, &mut targets);
+                if s.change.is_some()
+                    && let Some(crate::docx::Block::Para(p)) = s.blocks.last()
+                {
+                    targets.push(crate::layout::ParaId(p.id));
+                }
+            }
+            assert!(!targets.is_empty(), "{name}: spans to edit");
+            e.set_tracking(below(2) == 0);
+            let id = targets[below(targets.len())];
+            let len = e.index().para(e.document(), id).map_or(0, |p| crate::editing::step::para_len(p).0);
+            let (a, b) = (below(len as usize + 1) as u32, below(len as usize + 1) as u32);
+            let at = |u: u32| Position::text(StoryId::Body, id, Unit(u));
+            e.selection = Selection::Caret(at(a));
+            let c = match below(8) {
+                0..=2 => C::InsertText(["x", "ab ", " "][below(3)].into()),
+                3 if a > 0 => back(),
+                4 if a < len => forward(),
+                5 => C::InsertParagraph,
+                6 => {
+                    e.selection = Selection::range(at(a.min(b)), at(a.max(b)), Default::default());
+                    C::SetBold(below(2) == 0)
+                }
+                3 | 4 => C::Undo,
+                _ => C::Redo,
+            };
+            e.execute(c.clone(), fonts());
+            let _ = e.review_counts();
+            if step % 5 == 0 {
+                let _ = e.view(0..1);
+            }
+            e.check_review_marks().unwrap_or_else(|why| panic!("{name} step {step} ({c:?} at {a}..{b}): {why}"));
+        }
+        assert_eq!(e.mark_builds, 1, "{name}: found once");
+    }
+}
+
+/// A view of one page looks up anchors only for the balloons whose revisions start on it; deleted text at a line's
+/// start has its balloon where the text after it starts.
+#[test]
+fn balloons_look_up_only_the_visible_pages() {
+    let page = |i: usize| {
+        format!(
+            r#"<w:p><w:del w:id="{i}" w:author="A" w:date="2024-01-01T00:00:00Z"><w:r><w:delText>gone</w:delText></w:r></w:del><w:r><w:t> kept</w:t></w:r></w:p><w:p><w:r><w:br w:type="page"/></w:r></w:p>"#
+        )
+    };
+    let mut e = edit(&(1..=6).map(page).collect::<String>());
+    e.set_markup_view(crate::docx::review::MarkupView::All);
+    e.set_balloon_mode(crate::docx::review::BalloonMode::Balloons);
+    e.complete(fonts());
+    let pages = e.snapshot().pages().len();
+    let all = e.view(0..pages).revision_balloons;
+    let first = e.view(0..1).revision_balloons.len();
+    let per_page: Vec<usize> = (0..pages).map(|p| all.iter().filter(|b| b.page == p).count()).collect();
+    assert_eq!((pages, per_page, first), (6, vec![1; 6], 1), "a balloon on each page, for deleted text at a line's start too");
+    e.balloon_lookups = 0;
+    let _ = e.view(0..1);
+    assert!(e.balloon_lookups <= first + 1, "{} lookups for {first} balloons", e.balloon_lookups);
 }

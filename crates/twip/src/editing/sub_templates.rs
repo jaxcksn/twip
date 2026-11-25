@@ -999,42 +999,41 @@ impl Editor {
 
     pub(super) fn expansion_at(&mut self, x: f64, y: f64) -> Option<(FieldId, u32)> {
         let (page, px, py) = self.stack().page_at(x, y)?;
-        let snapshot = self.layout.snapshot();
-        let (frag, _) = snapshot.page(page)?;
         let mut found = None;
-        for child in frag.children.iter() {
-            let crate::layout::fragment::PageChild::Body(b) = child else { continue };
-            let (bx, by) = b.offset;
-            crate::layout::traverse::lines_in(&b.children, &mut |_, l, dx, dy| {
-                for (r, e) in l.line.expansions.iter() {
-                    let (x0, y0) = (r[0] + dx + l.x + bx, r[1] + dy + l.y + by);
-                    if (x0..=x0 + e.size.0).contains(&px) && (y0..=y0 + e.size.1).contains(&py) {
-                        found = Some((e.field, e.part));
-                    }
-                }
-            });
-        }
+        self.each_expansion(page, &mut |field, part, r, turn| {
+            let [lx, ly] = turn.back([px, py]);
+            if (r[0]..=r[2]).contains(&lx) && (r[1]..=r[3]).contains(&ly) {
+                found = Some((field, part));
+            }
+        });
         found
     }
 
     /// Where a shown sub-template is drawn on `pages`: one rect per page.
     pub(super) fn expansion_rects(&mut self, f: FieldId, pages: std::ops::Range<usize>) -> Vec<(usize, [f64; 4])> {
-        let snapshot = self.layout.snapshot();
         let mut out = Vec::new();
         for page in pages {
-            let Some((frag, _)) = snapshot.page(page) else { continue };
-            for child in frag.children.iter() {
-                let crate::layout::fragment::PageChild::Body(b) = child else { continue };
-                let (bx, by) = b.offset;
-                crate::layout::traverse::lines_in(&b.children, &mut |_, l, dx, dy| {
-                    for (r, e) in l.line.expansions.iter().filter(|(_, e)| e.field == f) {
-                        let (x0, y0) = (r[0] + dx + l.x + bx, r[1] + dy + l.y + by);
-                        out.push((page, [x0, y0, x0 + e.size.0, y0 + e.size.1]));
-                    }
-                });
-            }
+            self.each_expansion(page, &mut |field, _, r, turn| {
+                if field == f {
+                    out.push((page, turn.rect(r)));
+                }
+            });
         }
         out
+    }
+
+    /// Each sub-template shown in the body of page `page`: its field and part, its box as its line is laid out and
+    /// where that line is drawn.
+    fn each_expansion(&mut self, page: usize, f: &mut dyn FnMut(FieldId, u32, [f64; 4], crate::layout::vertical::Turn)) {
+        if self.expansions.as_ref().is_none_or(|x| x.paras.is_empty()) {
+            return;
+        }
+        let snapshot = self.layout.snapshot();
+        self.pages.sync(&snapshot);
+        let Some(g) = self.pages.page(page, &self.index) else { return };
+        for &(field, part, r, turn) in &g.expansions {
+            f(field, part, r, turn);
+        }
     }
 
     pub(super) fn expansion_click(&mut self, x: f64, y: f64, clicks: u8, fonts: &Fonts) -> bool {
@@ -1047,13 +1046,19 @@ impl Editor {
     }
 
     pub(super) fn refuse_expanded(&mut self) -> bool {
-        let Some((a, b)) = self.selection.ordered(&self.index) else { return false };
-        self.refuse_expanded_in(&a, &b)
+        let primary = self.selection.ordered(&self.index).and_then(|(a, b)| self.expanded_in(&a, &b));
+        let field = primary.or_else(|| self.other_ranges().iter().find_map(|(a, b)| self.expanded_in(a, b)));
+        self.refuse_field(field)
     }
 
     /// [`Editor::refuse_expanded`] for `a..b` rather than the selection.
     pub(super) fn refuse_expanded_in(&mut self, a: &Position, b: &Position) -> bool {
-        let Some(field) = self.expanded_in(a, b) else { return false };
+        let field = self.expanded_in(a, b);
+        self.refuse_field(field)
+    }
+
+    fn refuse_field(&mut self, field: Option<FieldId>) -> bool {
+        let Some(field) = field else { return false };
         let part = self.references.by_field.get(&field).and_then(|r| r.part);
         let name = part.and_then(|k| self.doc.glossary.as_ref()?.parts.get(k as usize)).map(|b| b.name.clone());
         self.refused = Some("sub-template");
@@ -1061,19 +1066,37 @@ impl Editor {
         true
     }
 
-    /// The shown, resolved sub-template reference `a..b` edits, whose body is read only.
+    /// A shown, resolved sub-template reference `a..b` edits (in its paragraph or across paragraphs), whose body is
+    /// read only.
     pub(super) fn expanded_in(&self, a: &Position, b: &Position) -> Option<FieldId> {
         let (Some((pa, ua)), Some((pb, ub))) = (a.para_offset(), b.para_offset()) else { return None };
-        if pa != pb || ua == ub {
+        if pa == pb && ua == ub {
             return None;
         }
-        let shown = self.references.by_field.iter().find(|(f, r)| r.at == pa && r.resolution == Resolution::Resolved && !self.collapsed.contains(f));
-        let (&field, _) = shown?;
-        let p = self.index.para(&self.doc, pa)?;
-        let starts: Vec<u32> = p.inlines.iter().scan(0u32, |at, i| Some(std::mem::replace(at, *at + i.units() as u32))).collect();
-        let s = fields::spans(&p.inlines).into_iter().find(|s| matches!(p.inlines[s.begin], Inline::FieldBegin { id, .. } if id == field))?;
-        let (lo, hi) = (starts[s.begin], starts[s.end] + 1);
-        (ub.0 > lo && ua.0 < hi).then_some(field)
+        // A reference to the sub-template being edited doesn't expand in it
+        let active = self.editing_sub_template();
+        let mut shown = self
+            .references
+            .by_field
+            .iter()
+            .filter(|(f, r)| r.resolution == Resolution::Resolved && !self.collapsed.contains(f) && (active.is_none() || r.part != active));
+        shown.find_map(|(&field, r)| {
+            let alone = pa == pb && r.at == pa;
+            if !alone && (pa == pb || self.index.para_slot(r.at).map(|s| self.index.story(s.container)) != Some(a.story)) {
+                return None;
+            }
+            let p = self.index.para(&self.doc, r.at)?;
+            let starts: Vec<u32> = p.inlines.iter().scan(0u32, |at, i| Some(std::mem::replace(at, *at + i.units() as u32))).collect();
+            let s = fields::spans(&p.inlines).into_iter().find(|s| matches!(p.inlines[s.begin], Inline::FieldBegin { id, .. } if id == field))?;
+            let (lo, hi) = (starts[s.begin], starts[s.end] + 1);
+            let overlaps = if alone {
+                ub.0 > lo && ua.0 < hi
+            } else {
+                let at = |u: u32| Position::text(a.story, r.at, crate::layout::Unit(u));
+                self.index.cmp(a, &at(hi)).is_lt() && self.index.cmp(&at(lo), b).is_lt()
+            };
+            overlaps.then_some(field)
+        })
     }
 
     fn rebuild_references(&mut self) {

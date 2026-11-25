@@ -5,7 +5,7 @@ use std::rc::Rc;
 use crate::docx::Compat;
 use crate::docx::model::*;
 use crate::docx::props::Jc;
-use crate::docx::review::{AuthorPalette, MarkKind, MarkupView, ReviewView};
+use crate::docx::review::{ReviewView, RevisionMark, TextMark};
 use crate::drawing::paint::Palette;
 use crate::font::Fonts;
 use crate::layout::fragment::{Atom, GlyphRun, ImageKey, Item, LineFragment, PictureOf};
@@ -74,18 +74,33 @@ fn behind(o: &LineOrigin, src: &Paragraph) -> Option<u32> {
     src.para_style_in(o.review.view).shading.or(o.backdrop)
 }
 
+/// The shown revision marks a run draws: its deletion, insertion and formatting change, each `None` when it has none
+/// or the review view leaves it out.
+fn shown_marks<'r>(r: &'r RunStyle, review: &ReviewView) -> [Option<&'r RevisionMark>; 3] {
+    [r.rev.del.as_deref(), r.rev.ins.as_deref(), r.rev.fmt.as_deref().map(|f| &*f.mark)].map(|m| m.filter(|m| review.marks(m)))
+}
+
+/// The colour a run's revision draws it in: its first shown mark's (a deletion's, else an insertion's, else a
+/// formatting change's) that marks its text.
 fn revision_colour(r: &RunStyle, review: &ReviewView) -> Option<u32> {
-    let m = r.rev.del.as_ref().or(r.rev.ins.as_ref()).filter(|_| review.view == MarkupView::All)?;
-    Some(if matches!(m.kind, MarkKind::MoveFrom | MarkKind::MoveTo) { AuthorPalette::MOVE } else { review.palette.color(m.author) })
+    if r.rev.is_empty() {
+        return None;
+    }
+    shown_marks(r, review).into_iter().flatten().find(|m| review.markup.style.look(m.kind).mark != TextMark::None).and_then(|m| review.mark_color(m))
+}
+
+/// Whether any of a run's revisions puts a change bar beside it.
+fn barred(rev: &crate::docx::review::RunRevisions, review: &ReviewView) -> bool {
+    [rev.ins.as_deref(), rev.del.as_deref(), rev.fmt.as_deref().map(|f| &*f.mark)].into_iter().flatten().any(|m| review.bars(m))
 }
 
 fn line_changed(o: &LineOrigin, line: &Line, src: &Paragraph) -> bool {
-    let view = o.review.view;
+    let review = o.review;
     let last = line.end >= o.pieces().len();
-    if src.style.change.as_ref().is_some_and(|c| !c.numbering_only()) || (last && !src.mark.rev.is_empty()) {
+    if src.style.change.as_ref().is_some_and(|c| !c.numbering_only() && review.bars(&c.mark)) || (last && barred(&src.mark.rev, review)) {
         return true;
     }
-    if !src.inlines.iter().any(|i| i.run().is_some_and(|r| !r.rev.is_empty())) {
+    if !src.inlines.iter().any(|i| i.run().is_some_and(|r| barred(&r.rev, review))) {
         return false;
     }
     let pieces = &o.pieces()[line.start..line.end];
@@ -96,7 +111,7 @@ fn line_changed(o: &LineOrigin, line: &Line, src: &Paragraph) -> bool {
     src.inlines.iter().any(|i| {
         let (a, n) = (at, i.units() as u32);
         at += n;
-        i.run().is_some_and(|r| !r.rev.is_empty() && n > 0 && if view.hides(&r.rev) { a <= hi && a + n >= lo } else { a < hi && a + n > lo })
+        i.run().is_some_and(|r| barred(&r.rev, review) && n > 0 && if review.hides(&r.rev) { a <= hi && a + n >= lo } else { a < hi && a + n > lo })
     })
 }
 
@@ -193,10 +208,16 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
                 })
             })
         };
+        let mut label: Option<(f64, f64)> = None;
         for (k, ix) in (line.start..line.end).enumerate() {
             let p = &pieces[ix];
             let st = &sp.styles[p.style as usize];
             let x = x0 + line.xs[k];
+            // List label: the pieces that draw (not a legacy level's spacing)
+            if p.kind == Kind::ListNumber && (st.face.is_some() || p.object.is_some()) && line.widths[k] > 0.0 {
+                let (a, b) = (x, x + line.widths[k]);
+                label = Some(label.map_or((a, b), |(l, r)| (l.min(a), r.max(b))));
+            }
             while let Some((_, q)) = places.next_if(|e| e.0 == Some(k)) {
                 flush(&mut run, &mut out);
                 out.extend(caret(x, q));
@@ -392,7 +413,7 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
         for (_, q) in places.by_ref() {
             out.extend(caret(end, q));
         }
-        let changed = o.review.view.change_bars() && line_changed(o, line, src);
+        let changed = o.review.change_bars() && line_changed(o, line, src);
         let mark = (line.start == line.end && o.shaped.join.is_none()).then(|| match o.shaped.parts.as_ref().and_then(|p| p.get(line.part + 1)) {
             // Empty shown part
             Some(next) => Unit(next.start),
@@ -409,6 +430,7 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
             mark,
             texts: texts.into_boxed_slice(),
             expansions: expansions.into_boxed_slice(),
+            label,
         }
     }
 }
@@ -623,10 +645,10 @@ fn draw_decorations(o: &LineOrigin, line: &Line, base: f64, bg_at: usize, behind
         let ink = ink(r, review, behind).unwrap_or(0);
         let copies = copies(r, st.size, under_text(r, behind, o.page_colour));
         let line_at = |v: &mut Vec<Item>, y: f64, t: f64, c: u32| lines(v, [x, y - t / 2.0, x + w, y + t / 2.0], c, &copies);
-        let marked = review.view == MarkupView::All && !label;
-        let kind = |m: &Option<Rc<crate::docx::review::RevisionMark>>| m.as_ref().filter(|_| marked).map(|m| m.kind);
-        let (ins, del) = (kind(&r.rev.ins), kind(&r.rev.del));
-        let rev_u = ins.map(|k| if k == MarkKind::MoveTo { "double" } else { "single" });
+        let looks =
+            if label || r.rev.is_empty() { [None; 3] } else { shown_marks(r, review).map(|m| m.map(|m| review.markup.style.look(m.kind).mark)) };
+        let has = |t: TextMark| looks.contains(&Some(t));
+        let rev_u = if has(TextMark::DoubleUnderline) { Some("double") } else { has(TextMark::Underline).then_some("single") };
         let underline = rev_u.or(r.underline.as_deref()).filter(|u| !label && !(*u == "words" && matches!(p.kind, Kind::Space | Kind::Tab)));
         let mut drawn = None;
         if let Some(u) = underline {
@@ -656,8 +678,8 @@ fn draw_decorations(o: &LineOrigin, line: &Line, base: f64, bg_at: usize, behind
                 }
             }
         }
-        let dstrike = r.dstrike || del == Some(MarkKind::MoveFrom);
-        if (r.strike || dstrike || del.is_some()) && !trailing {
+        let dstrike = r.dstrike || has(TextMark::DoubleStrikethrough);
+        if (r.strike || dstrike || has(TextMark::Strikethrough)) && !trailing {
             let t = (face.strike_thick * em).max(0.5);
             let sy = y - face.strike_pos * em;
             if dstrike {

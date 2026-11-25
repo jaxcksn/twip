@@ -13,28 +13,6 @@ page 1 612 792
   text Tip: open the Navigation pane — every heading is a real outline level.
   image /X1 1800x600 700636de883cccd7
   op 1 0 0 -1 0 792 cm
-  op /Artifact << /Type /Layout >> BDC
-  op q
-  op 0.12 0.22 0.39 rg
-  op 0 0 612 1.5 re
-  op f
-  op Q
-  op q
-  op 0.12 0.22 0.39 rg
-  op 0 790.5 612 1.5 re
-  op f
-  op Q
-  op q
-  op 0.12 0.22 0.39 rg
-  op 0 0 1.5 792 re
-  op f
-  op Q
-  op q
-  op 0.12 0.22 0.39 rg
-  op 610.5 0 1.5 792 re
-  op f
-  op Q
-  op EMC
   op /P << /MCID 0 >> BDC
   op q
   op 1 0 0 1 72 72 cm
@@ -403,6 +381,28 @@ page 1 612 792
   op /Artifact << /Type /Pagination /Subtype /Header >> BDC
   op EMC
   op /Artifact << /Type /Pagination /Subtype /Footer >> BDC
+  op EMC
+  op /Artifact << /Type /Layout >> BDC
+  op q
+  op 0.12 0.22 0.39 rg
+  op 0 0 612 1.5 re
+  op f
+  op Q
+  op q
+  op 0.12 0.22 0.39 rg
+  op 0 790.5 612 1.5 re
+  op f
+  op Q
+  op q
+  op 0.12 0.22 0.39 rg
+  op 0 0 1.5 792 re
+  op f
+  op Q
+  op q
+  op 0.12 0.22 0.39 rg
+  op 610.5 0 1.5 792 re
+  op f
+  op Q
   op EMC
 page 2 612 792
   text Contents

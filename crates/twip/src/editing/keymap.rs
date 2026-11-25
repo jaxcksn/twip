@@ -20,6 +20,46 @@ pub struct KeyContext {
     pub list_start: bool,
     pub float: bool,
     pub mac: bool,
+    /// The caret's line, when its text runs other than left to right with lines stacking down (read for arrow keys).
+    pub arrows: Option<Arrows>,
+}
+
+/// The page directions (unit steps, y down) the caret's text runs and its lines stack, by text flow: the arrow keys
+/// move along the text with the keys pointing along it and between lines with the others.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Arrows {
+    /// The way the text runs.
+    pub along: [i8; 2],
+    /// The way its lines stack.
+    pub stack: [i8; 2],
+}
+
+impl Arrows {
+    /// The arrows of text running along `axes[0..2]` with lines stacking along `axes[2..4]`; `None` when that is
+    /// left to right and down, as the keys are.
+    pub fn of(axes: [f64; 4]) -> Option<Arrows> {
+        let unit = |x: f64, y: f64| -> [i8; 2] { if x.abs() >= y.abs() { [x.signum() as i8, 0] } else { [0, y.signum() as i8] } };
+        let a = Arrows { along: unit(axes[0], axes[1]), stack: unit(axes[2], axes[3]) };
+        (a != Arrows { along: [1, 0], stack: [0, 1] }).then_some(a)
+    }
+
+    /// The key that moves as `code`'s arrow does in text that runs left to right with lines stacking down.
+    fn key(&self, code: &str) -> Option<&'static str> {
+        let v: [i8; 2] = match code {
+            "ArrowLeft" => [-1, 0],
+            "ArrowRight" => [1, 0],
+            "ArrowUp" => [0, -1],
+            "ArrowDown" => [0, 1],
+            _ => return None,
+        };
+        let dot = |w: [i8; 2]| v[0] * w[0] + v[1] * w[1];
+        Some(match (dot(self.along), dot(self.stack)) {
+            (d, _) if d > 0 => "ArrowRight",
+            (d, _) if d < 0 => "ArrowLeft",
+            (_, d) if d > 0 => "ArrowDown",
+            _ => "ArrowUp",
+        })
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -86,6 +126,11 @@ fn mac(code: &str, m: Mods) -> Option<Bound> {
 }
 
 pub fn command(code: &str, m: Mods, cx: KeyContext) -> Option<Bound> {
+    // Arrows by text flow; row moves as pressed
+    let code = match cx.arrows.filter(|_| !m.alt || cx.mac).and_then(|a| a.key(code)) {
+        Some(c) if !(m.alt && m.shift && cx.in_table) => c,
+        _ => code,
+    };
     if cx.mac
         && let Some(c) = mac(code, m)
     {

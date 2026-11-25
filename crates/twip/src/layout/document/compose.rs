@@ -240,8 +240,15 @@ pub(crate) fn finish_page(pg: &PageRecord, section_page: usize) -> (Rc<PageFragm
     if let Some(f) = &pg.hf_boxes[1] {
         children.push(PageChild::Footer(f.clone()));
     }
-    let page =
-        PageFragment { id: FragmentId::next(), w: pg.w, h: pg.h, body_area: pg.body_area, children: children.into(), borders: page_borders(pg) };
+    let page = PageFragment {
+        id: FragmentId::next(),
+        w: pg.w,
+        h: pg.h,
+        body_area: pg.body_area,
+        children: children.into(),
+        borders: page_borders(pg),
+        borders_behind: pg.page_borders.as_ref().is_some_and(|(b, _)| b.behind_text),
+    };
     (Rc::new(page), PageMeta { section: pg.section, number: pg.number, section_page, blank: pg.blank })
 }
 

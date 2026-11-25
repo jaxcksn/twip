@@ -6,6 +6,8 @@ use crate::docx::props::Width;
 use crate::font::Fonts;
 use crate::layout::TableId;
 
+use crate::layout::vertical::Turn;
+
 use super::Editor;
 use super::commands::Outcome;
 use super::index::Container;
@@ -42,6 +44,8 @@ pub(super) struct BorderDrag {
     pub base: Rc<BorderBase>,
     /// A step changed the document since `base` was measured.
     pub stale: bool,
+    /// Where the table, as laid out, is drawn: `at`, `row_top`, `span` and the guide are as laid out.
+    pub turn: Turn,
 }
 
 /// The table as drawn when a border drag starts: what the drag resizes from, however the table is laid out as it goes.
@@ -67,22 +71,37 @@ pub(super) struct Provisional {
 }
 
 impl BorderDrag {
+    /// How far the pointer moved, along the table's rows and down its columns as laid out.
+    pub fn delta(&self) -> (f64, f64) {
+        let [dx, dy] = self.turn.inverse().along([self.now.0 - self.start.0, self.now.1 - self.start.1]);
+        (dx, dy)
+    }
+
+    /// The border's line where the drag has it, as the table is laid out.
     pub fn guide(&self) -> [f64; 4] {
+        let (dx, dy) = self.delta();
         match self.border {
             Border::Column(_) => {
-                let x = self.at + self.now.0 - self.start.0;
+                let x = self.at + dx;
                 [x, self.span[0], x, self.span[1]]
             }
             Border::Row(_) => {
-                let y = (self.at + self.now.1 - self.start.1).max(self.row_top + 1.0);
+                let y = (self.at + dy).max(self.row_top + 1.0);
                 [self.span[0], y, self.span[1], y]
             }
             Border::Handle => {
-                let x = (self.at + self.now.0 - self.start.0).max(self.span[0] + 1.0);
-                let y = (self.span[1] + self.now.1 - self.start.1).max(self.row_top + 1.0);
+                let x = (self.at + dx).max(self.span[0] + 1.0);
+                let y = (self.span[1] + dy).max(self.row_top + 1.0);
                 [x, self.row_top, x, y]
             }
         }
+    }
+
+    /// [`BorderDrag::guide`] on the page.
+    pub fn page_guide(&self) -> [f64; 4] {
+        let g = self.guide();
+        let [a, b] = [self.turn.at([g[0], g[1]]), self.turn.at([g[2], g[3]])];
+        [a[0], a[1], b[0], b[1]]
     }
 }
 
@@ -100,7 +119,7 @@ pub(crate) struct TableEdges {
 
 impl Editor {
     pub(super) fn border_press(&mut self, x: f64, y: f64, shift: bool, ctrl: bool, fonts: &Fonts) -> bool {
-        let Some((page, table, border, at, row_top, span, row)) = self.border_at(x, y, fonts) else { return false };
+        let Some((page, table, border, at, row_top, span, row, turn)) = self.border_at(x, y, fonts) else { return false };
         if self.table_gesture_kept(table, crate::api::command::CommandId::SetColumnWidth) {
             return false;
         }
@@ -116,24 +135,43 @@ impl Editor {
             page,
             fonts,
         ));
-        self.border_drag =
-            Some(BorderDrag { table, border, start: (x, y), now: (x, y), page, shift, ctrl, at, row_top, span, row, snapping, base, stale: false });
+        self.border_drag = Some(BorderDrag {
+            table,
+            border,
+            start: (x, y),
+            now: (x, y),
+            page,
+            shift,
+            ctrl,
+            at,
+            row_top,
+            span,
+            row,
+            snapping,
+            base,
+            stale: false,
+            turn,
+        });
         self.requests.push(Request::CapturePointer);
         true
     }
 
+    /// The table border under the pointer: its page, table, border, where it is, its row's top, the span it runs
+    /// across, its row, all as the table is laid out, and where the table is drawn.
     #[allow(clippy::type_complexity)]
-    pub(super) fn border_at(&mut self, x: f64, y: f64, fonts: &Fonts) -> Option<(usize, TableId, Border, f64, f64, [f64; 2], usize)> {
+    pub(super) fn border_at(&mut self, x: f64, y: f64, fonts: &Fonts) -> Option<(usize, TableId, Border, f64, f64, [f64; 2], usize, Turn)> {
         let stack = self.stack();
-        let (page, px, py) = stack.page_at(x, y)?;
+        let (page, qx, qy) = stack.page_at(x, y)?;
         self.ensure_page(page, fonts);
         let geo = self.pages.page(page, &self.index)?;
         let ctx = self.editing();
         let tol = 2.0 * 0.75 / self.viewport.zoom.max(0.1);
+        // Rows, as laid out
+        let local = |r: &super::geometry::GRow| r.turn.back([qx, qy]);
         let mut rows: Vec<&super::geometry::GRow> = geo
             .rows
             .iter()
-            .filter(|r| !r.repeat && reachable(ctx, geo.stories[r.story].host) && r.rect[0] - tol <= px && px <= r.rect[2] + tol)
+            .filter(|r| !r.repeat && reachable(ctx, geo.stories[r.story].host) && r.rect[0] - tol <= local(r)[0] && local(r)[0] <= r.rect[2] + tol)
             .collect();
         rows.sort_by_key(|r| std::cmp::Reverse(r.outer.len()));
         let table_span = |t: TableId| {
@@ -141,27 +179,28 @@ impl Editor {
             [top, bottom]
         };
         let found = rows.iter().find_map(|r| {
+            let [px, py] = local(r);
             if py < r.rect[1] || py > r.rect[3] {
                 return None;
             }
-            let &(ex, k) = r.edges.iter().filter(|(_, k)| *k > 0).find(|(ex, _)| (px - ex).abs() <= tol)?;
-            Some((r.table, Border::Column(k), ex, r.rect[1], table_span(r.table), r.row))
+            let &(ex, k) = r.edges.iter().find(|(ex, _)| (px - ex).abs() <= tol)?;
+            Some((r.table, Border::Column(k), ex, r.rect[1], table_span(r.table), r.row, r.turn))
         });
         // Row borders
         let px1 = tol / 2.0;
         let last_row = |r: &super::geometry::GRow| !geo.rows.iter().any(|o| o.table == r.table && o.row > r.row);
         let row_hit = |r: &super::geometry::GRow| {
-            let b = r.rect[3];
+            let (b, py) = (r.rect[3], local(r)[1]);
             py >= b - 0.5 * px1 && py <= b + 3.0 * px1
         };
         let above = rows.iter().find(|r| {
-            let b = r.rect[3];
+            let (b, py) = (r.rect[3], local(r)[1]);
             !r.outer.is_empty() && last_row(r) && py < b - 0.5 * px1 && py >= b - 3.0 * px1
         });
         let found = found.or_else(|| {
             above
                 .or_else(|| rows.iter().rev().find(|r| row_hit(r)))
-                .map(|r| (r.table, Border::Row(r.row), r.rect[3], r.rect[1], [r.rect[0], r.rect[2]], r.row))
+                .map(|r| (r.table, Border::Row(r.row), r.rect[3], r.rect[1], [r.rect[0], r.rect[2]], r.row, r.turn))
         });
         // Resize handle
         let held = self.held_tables();
@@ -171,14 +210,17 @@ impl Editor {
                 .filter(|r| !r.repeat && reachable(ctx, geo.stories[r.story].host))
                 .filter(|r| r.outer.is_empty() || held.contains(&r.table))
                 .filter(|r| !geo.rows.iter().any(|o| o.table == r.table && o.row > r.row))
-                .find(|r| px >= r.rect[2] && px <= r.rect[2] + 4.0 * tol && py >= r.rect[3] && py <= r.rect[3] + 4.0 * tol)
+                .find(|r| {
+                    let [px, py] = local(r);
+                    px >= r.rect[2] && px <= r.rect[2] + 4.0 * tol && py >= r.rect[3] && py <= r.rect[3] + 4.0 * tol
+                })
                 .map(|r| {
                     let (left, top) =
                         geo.rows.iter().filter(|o| o.table == r.table).fold((f64::MAX, f64::MAX), |(a, b), o| (a.min(o.rect[0]), b.min(o.rect[1])));
-                    (r.table, Border::Handle, r.rect[2], top, [left, r.rect[3]], r.row)
+                    (r.table, Border::Handle, r.rect[2], top, [left, r.rect[3]], r.row, r.turn)
                 })
         });
-        found.map(|(table, border, at, row_top, span, row)| (page, table, border, at, row_top, span, row))
+        found.map(|(table, border, at, row_top, span, row, turn)| (page, table, border, at, row_top, span, row, turn))
     }
 
     pub(super) fn held_tables(&self) -> Vec<TableId> {
@@ -249,6 +291,7 @@ impl Editor {
             snapping: super::snap::Snapping::default(),
             base: base.clone(),
             stale: false,
+            turn: Turn::NONE,
         };
         if dx.abs() < 1e-9 {
             return Outcome::Unchanged("already there");
@@ -293,6 +336,7 @@ impl Editor {
             snapping: super::snap::Snapping::default(),
             base,
             stale: false,
+            turn: Turn::NONE,
         };
         self.apply_border_drag(&d, fonts)
     }
@@ -446,12 +490,14 @@ impl Editor {
             }
             _ => None,
         };
+        // How far the left edge moves right
+        let mut moved = 0.0;
         match d.border {
             Border::Column(k) if k < grid.len() && selected.as_ref().is_some_and(|s| s.contains(&d.row)) => {
                 let sel = selected.unwrap_or(0..=0);
                 let x: f64 = grid[..k].iter().sum();
                 let total: f64 = grid.iter().sum();
-                let dx = d.now.0 - d.start.0;
+                let dx = d.delta().0;
                 let mut bounds: Vec<Vec<f64>> = Vec::new();
                 for (r, row) in t.rows.iter().enumerate() {
                     let mut b = vec![grid[..row.grid_before.min(grid.len())].iter().sum::<f64>()];
@@ -459,16 +505,29 @@ impl Editor {
                         let (col, span, _) = g.rows[r][i];
                         b.push(grid[..(col + span).min(grid.len())].iter().sum());
                     }
+                    let inner = if k == 0 { 0..b.len().min(1) } else { 1..b.len().saturating_sub(1) };
                     if sel.contains(&r)
-                        && let Some(j) = (1..b.len().saturating_sub(1)).find(|&j| (b[j] - x).abs() < 0.01)
+                        && b.len() > 1
+                        && let Some(j) = inner.into_iter().find(|&j| (b[j] - x).abs() < 0.01)
                     {
                         let m = |i: usize| row.cells.get(i).map_or(4.5, |c| c.margins[1] + c.margins[3] + 4.5);
-                        let (lo, hi) = (b[j - 1] + m(j - 1), b[j + 1] - m(j));
+                        let lo = if j == 0 { b[1] - MAX.max(b[1] - b[0]) } else { b[j - 1] + m(j - 1) };
+                        let hi = b[j + 1] - m(j);
                         if lo <= hi {
                             b[j] = (b[j] + dx).clamp(lo, hi);
                         }
                     }
                     bounds.push(b);
+                }
+                // The left edge: the rows from the leftmost one's start, the table moving by it.
+                let mut total = total;
+                if k == 0 {
+                    let from = bounds.iter().filter_map(|b| b.first().copied()).fold(f64::INFINITY, f64::min);
+                    if from.is_finite() {
+                        bounds.iter_mut().flatten().for_each(|v| *v -= from);
+                        total -= from;
+                        moved = from;
+                    }
                 }
                 let mut all: Vec<f64> = bounds.iter().flatten().copied().chain([0.0, total]).collect();
                 all.sort_by(f64::total_cmp);
@@ -483,6 +542,31 @@ impl Editor {
                     }
                     row.grid_after = grid.len().saturating_sub(at(*b.last().unwrap_or(&total)));
                 }
+            }
+            Border::Column(0) => {
+                // How far the left edge can go in: each cell from it down to its margins over all its columns, the first
+                // column at most; never out, for a cell narrower than that already.
+                let room = t
+                    .rows
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(r, row)| {
+                        let i = g.cell_at(r, 0).filter(|&i| g.rows[r][i].0 == 0)?;
+                        let (c, span) = (&row.cells[i], g.rows[r][i].1.max(1));
+                        Some(grid[..span.min(grid.len())].iter().sum::<f64>() - (c.margins[1] + c.margins[3] + 4.5))
+                    })
+                    .fold(grid[0], f64::min)
+                    .max(0.0);
+                let dx = d.delta().0.min(room).max(grid[0] - MAX.max(grid[0]));
+                grid[0] -= dx;
+                for (r, row) in rows.iter_mut().enumerate() {
+                    for (i, cell) in row.cells.iter_mut().enumerate() {
+                        if let Some(&(col, span, _)) = g.rows[r].get(i) {
+                            cell.width = Some(Width::Dxa(grid[col..(col + span).min(grid.len())].iter().sum()));
+                        }
+                    }
+                }
+                moved = dx;
             }
             Border::Column(k) => {
                 let n = grid.len();
@@ -504,7 +588,7 @@ impl Editor {
                         .fold(0.0, f64::max)
                         + 4.5
                 };
-                let dx = d.now.0 - d.start.0;
+                let dx = d.delta().0;
                 let left = k - 1;
                 if d.shift && !d.ctrl || k == n {
                     let grown = grid[left] + dx.max(min(left) - grid[left]);
@@ -552,7 +636,7 @@ impl Editor {
                         (m + 4.5) / w.max(0.01)
                     })
                     .fold(0.0, f64::max);
-                let sx = ((total + d.now.0 - d.start.0) / total.max(0.01)).max(floor);
+                let sx = ((total + d.delta().0) / total.max(0.01)).max(floor);
                 grid.iter_mut().for_each(|w| *w *= sx);
                 for (r, row) in rows.iter_mut().enumerate() {
                     for (i, cell) in row.cells.iter_mut().enumerate() {
@@ -562,7 +646,7 @@ impl Editor {
                     }
                 }
                 let height = d.span[1] - d.row_top;
-                let dy = d.now.1 - d.start.1;
+                let dy = d.delta().1;
                 if dy.abs() > 0.5 && height > 1.0 {
                     let sy = ((height + dy) / height).max(0.05);
                     for &(r, h) in &d.base.rows {
@@ -577,12 +661,41 @@ impl Editor {
             }
             Border::Row(_) => return Err(STALE),
         }
+        // The left edge's move: an inline table's indent takes it, a positioned one's place.
+        let (mut indent_by, mut floating) = (0.0, None);
+        if moved != 0.0 {
+            match t.floating {
+                None if t.jc == crate::docx::props::Jc::Left => indent_by = moved,
+                Some(mut pos) if pos.x_align().is_none_or(|a| a == crate::docx::props::Jc::Left) => {
+                    pos.x = if pos.x_align().is_some() { moved } else { pos.x + moved };
+                    pos.x_spec = None;
+                    // Not one of the alignments `tblpX` codes
+                    if matches!((pos.x * 20.0).round() as i64, 0 | -4 | -8 | -12 | -16) && pos.x != 0.0 {
+                        pos.x -= 0.05;
+                    }
+                    floating = Some(pos);
+                }
+                _ => {}
+            }
+        }
         let new_sum: f64 = grid.iter().sum();
         let label = if d.border == Border::Handle { "Resize Table" } else { "Column Width" };
         let mut steps = vec![Step::Rows { table: d.table, range: 0..n, with: rows, grid: Some(grid) }];
-        if (new_sum - old_sum).abs() > 1e-9 && sized {
+        let resized = (new_sum - old_sum).abs() > 1e-9 && sized;
+        if resized || indent_by != 0.0 || floating.is_some() {
             let mut props = super::step::TableProps::of(t);
-            super::table_format::set_width(&mut props, Width::Dxa(new_sum), &cx);
+            if floating.is_some() {
+                props.floating = floating;
+            }
+            if resized {
+                super::table_format::set_width(&mut props, Width::Dxa(new_sum), &cx);
+            }
+            if indent_by != 0.0 {
+                let compat = self.doc.resolver.as_ref().map_or(crate::docx::Compat::Generic, |r| r.styles.compat);
+                let nested = self.index.table_slot(d.table).is_some_and(|s| matches!(s.container, Container::Cell { .. }));
+                let from = if nested { t.ind } else { crate::layout::table::placed_indent(t, compat) };
+                super::table_format::set_indent(&mut props, from + indent_by, &cx);
+            }
             steps.push(Step::TableProps { table: d.table, props });
         }
         if new_sum > old_sum + 1e-9
@@ -685,7 +798,7 @@ const STALE: Outcome = Outcome::Unchanged("stale table");
 fn drawn_grid(t: &crate::docx::Table, id: TableId, geo: Option<&super::geometry::PageGeometry>, cols: usize) -> Vec<f64> {
     let mut grid = super::tables::full_grid(t, cols);
     if let Some(geo) = geo {
-        super::tables::drawn_grid(geo, id, &mut grid);
+        super::tables::drawn_grid(geo, id, t, &mut grid);
     }
     grid
 }

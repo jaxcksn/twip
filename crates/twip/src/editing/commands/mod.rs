@@ -13,9 +13,13 @@ mod tables;
 pub(in crate::editing) mod tabs;
 mod text;
 
-pub(crate) use character::highlight_value;
-#[cfg(test)]
-pub(crate) use character::underline_value;
+pub use character::{LigatureFlags, OpenTypeChange};
+pub(crate) use character::{THEME_COLOR, THEME_FILL, colour_attrs, highlight_value, rgb_value, underline_value, with_attr};
+pub use insert::{LinkHere, LinkParts};
+pub use page::{MarginSide, PageNumberAlign, PageNumberSpot, page_number_sample};
+pub use tables::RowExceptionsEdit;
+pub(in crate::editing) use tables::cell_borders;
+pub use text::BreakClear;
 
 use crate::api::command::CommandId;
 
@@ -108,6 +112,8 @@ fn repeats(c: &Command) -> bool {
 
 impl Editor {
     pub fn execute(&mut self, cmd: Command, fonts: &Fonts) -> Outcome {
+        self.sync_multi();
+        self.set_aside = None;
         self.made = None;
         self.refused = None;
         if self.mode == super::Mode::ReadOnly && cmd.mutates() {
@@ -124,6 +130,9 @@ impl Editor {
         if let Err(e) = bounds::bounds(&cmd) {
             return Outcome::Refused(e);
         }
+        if self.is_discontiguous() && super::multi::single_only(cmd.id()) {
+            return Outcome::unavailable("not available for multiple selections");
+        }
         let typed = match &cmd {
             Command::InsertText(t) => t.chars().count(),
             _ => 0,
@@ -139,6 +148,13 @@ impl Editor {
 
     fn execute_editable(&mut self, cmd: Command, fonts: &Fonts) -> Outcome {
         if let Some(out) = self.move_to_command(&cmd, fonts) {
+            return out;
+        }
+        if let Some(out) = self.list_label_command(&cmd, fonts) {
+            // Repeat doesn't format a list's number
+            if matches!(out, Outcome::Changed(_)) {
+                self.repeat = None;
+            }
             return out;
         }
         // A built-in style the document doesn't define yet joins it first, in the same undo step.
@@ -198,6 +214,10 @@ impl Editor {
             c => c,
         };
         let moving = matches!(cmd, Command::MoveSelection(_));
+        // Any navigation ends a number selection, the caret moved or not.
+        if moving {
+            self.list_label = None;
+        }
         if !matches!(cmd, Command::GoBack) {
             self.back_step = None;
         }
@@ -229,7 +249,7 @@ impl Editor {
         use crate::api::command::{DeleteUnit, MoveUnit};
         let vertical = matches!(&cmd, Command::MoveSelection(m) if matches!(m.by, MoveUnit::Line | MoveUnit::Screen));
         if !vertical {
-            self.goal_x = None;
+            self.goal = None;
         }
         let typing = match &cmd {
             Command::InsertText(_) | Command::InsertTab => true,
@@ -420,9 +440,7 @@ impl Editor {
             Command::MoveRows(d) => self.move_rows(d == crate::api::command::VerticalDirection::Up, fonts),
             Command::AutoFitColumns(to) => self.auto_fit_columns(to, fonts),
             Command::SetCellAlignment(a) => self.set_cell_alignment(a, fonts),
-            Command::SetCellShading(c) => {
-                self.table_format(&super::table_format::TableFormat::CellShading(super::table_format::Shading::fill(c.map(|c| c.0))), fonts)
-            }
+            Command::SetCellShading(c) => self.set_cell_shading(c.map(crate::api::drawing::ColourValue::rgb), fonts),
             Command::SetCellBorders(b) => self.set_cell_borders(b, fonts),
             Command::SetCellMargins(m) => self.set_cell_margins(m, fonts),
             Command::SetCellProperties(p) => self.table_format(&super::table_format::TableFormat::CellProps(p), fonts),

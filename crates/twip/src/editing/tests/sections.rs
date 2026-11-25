@@ -402,3 +402,173 @@ mod page_setup {
         assert_eq!((s[0].pg_start, s[1].pg_start), (Some(5), None));
     }
 }
+
+#[test]
+fn columns_apply_to_the_selected_text_or_from_this_point_on() {
+    use crate::api::command::Columns;
+    use crate::editing::section::{ColumnPreset, ColumnsScope};
+    let body = "<w:p><w:r><w:t>One</w:t></w:r></w:p><w:p><w:r><w:t>Two</w:t></w:r></w:p><w:p><w:r><w:t>Three</w:t></w:r></w:p>";
+    let mut e = Editor::open(&super::blank_body(body), super::fonts()).expect("opens");
+    let two = Columns { count: 2, spacing: None, separator: None, widths: None };
+    let para = |e: &Editor, k: usize| super::para_id(e, k);
+    e.selection = Selection::range(
+        Position::text(StoryId::Body, para(&e, 1), Unit(0)),
+        Position::text(StoryId::Body, para(&e, 1), Unit(3)),
+        crate::editing::selection::Granularity::Char,
+    );
+    let depth = e.history().undo_depth();
+    assert!(matches!(e.set_columns_in(two.clone(), ColumnsScope::SelectedText, false, super::fonts()), super::super::commands::Outcome::Changed(_)));
+    let cols: Vec<usize> = e.document().sections.iter().map(|s| s.columns.num).collect();
+    assert_eq!(cols, [1, 2, 1], "the selected text alone in two columns");
+    assert!(e.document().sections[1..].iter().all(|s| s.break_kind == crate::docx::SectionBreak::Continuous), "continuous breaks");
+    assert_eq!(e.history().undo_depth(), depth + 1, "one undo step");
+    e.undo_many(true, 1, super::fonts());
+    assert_eq!(e.document().sections.len(), 1);
+    e.selection = Selection::Caret(Position::text(StoryId::Body, para(&e, 2), Unit(0)));
+    assert!(matches!(
+        e.set_columns_in(two.clone(), ColumnsScope::ThisPointForward, true, super::fonts()),
+        super::super::commands::Outcome::Changed(_)
+    ));
+    let s = &e.document().sections;
+    assert_eq!((s.len(), s[0].columns.num, s[1].columns.num, s[1].break_kind), (2, 1, 2, crate::docx::SectionBreak::NextColumn));
+    assert!(
+        matches!(e.set_columns_in(two, ColumnsScope::WholeDocument, true, super::fonts()), super::super::commands::Outcome::Refused(_)),
+        "a new column only from here on"
+    );
+    let left = e.column_preset(ColumnPreset::Left);
+    let w: Vec<f64> = left.widths.iter().flatten().map(|c| c.width.0).collect();
+    assert_eq!(left.count, 2);
+    assert!(w[0] < w[1] && (w[0] - (468.0 - 72.0) / 3.0).abs() < 0.01, "{w:?}");
+}
+
+fn two_sections() -> Editor {
+    let body = r#"<w:p><w:r><w:t>One</w:t></w:r></w:p><w:p><w:pPr><w:sectPr/></w:pPr><w:r><w:t>Two</w:t></w:r></w:p><w:p><w:r><w:t>Three</w:t></w:r></w:p><w:p><w:r><w:t>Four</w:t></w:r></w:p>"#;
+    let mut e = Editor::open(&super::blank_body(body), super::fonts()).expect("opens");
+    e.complete(super::fonts());
+    assert_eq!(e.document().sections.len(), 2);
+    e
+}
+
+fn select_across(e: &mut Editor, from: (usize, u32), to: (usize, u32)) {
+    let at = |e: &Editor, (k, u): (usize, u32)| Position::text(StoryId::Body, super::para_id(e, k), Unit(u));
+    e.selection = Selection::range(at(e, from), at(e, to), crate::editing::selection::Granularity::Char);
+}
+
+#[test]
+fn columns_on_selected_text_reach_every_section_it_spans() {
+    use crate::api::command::Columns;
+    use crate::editing::commands::Outcome;
+    use crate::editing::section::ColumnsScope;
+    let two = Columns { count: 2, spacing: None, separator: None, widths: None };
+    let cols = |e: &Editor| e.document().sections.iter().map(|s| s.columns.num).collect::<Vec<_>>();
+    // From the outer edges: no breaks, both sections change.
+    let mut e = two_sections();
+    select_across(&mut e, (0, 0), (3, 4));
+    assert!(matches!(e.set_columns_in(two.clone(), ColumnsScope::SelectedText, false, super::fonts()), Outcome::Changed(_)));
+    assert_eq!(cols(&e), [2, 2]);
+    // From inside the first to inside the second: both ends split off.
+    let mut e = two_sections();
+    select_across(&mut e, (0, 1), (2, 2));
+    assert!(matches!(e.set_columns_in(two.clone(), ColumnsScope::SelectedText, false, super::fonts()), Outcome::Changed(_)));
+    assert_eq!(cols(&e), [1, 2, 2, 1]);
+    let texts: Vec<Vec<String>> = e
+        .document()
+        .sections
+        .iter()
+        .map(|s| {
+            s.blocks.iter().filter_map(|b| if let crate::docx::Block::Para(p) = b { Some(crate::docx::fields::text(p)) } else { None }).collect()
+        })
+        .collect();
+    assert_eq!(texts, [vec!["O"], vec!["ne", "Two"], vec!["Th"], vec!["ree", "Four"]], "the selected text alone in two columns");
+    // Whole paragraphs of the first, up to the second's start: the first alone, split from its own start.
+    let mut e = two_sections();
+    select_across(&mut e, (0, 1), (2, 0));
+    assert!(matches!(e.set_columns_in(two.clone(), ColumnsScope::SelectedText, false, super::fonts()), Outcome::Changed(_)));
+    assert_eq!(cols(&e), [1, 2, 1], "no section split off at the second's start");
+    // One section keeps to itself.
+    let mut e = two_sections();
+    select_across(&mut e, (2, 1), (2, 3));
+    assert!(matches!(e.set_columns_in(two, ColumnsScope::SelectedText, false, super::fonts()), Outcome::Changed(_)));
+    assert_eq!(cols(&e), [1, 1, 2, 1]);
+}
+
+#[test]
+fn columns_on_selected_text_are_refused_outside_the_body() {
+    use crate::api::command::Columns;
+    use crate::editing::commands::{Command, Outcome};
+    use crate::editing::section::ColumnsScope;
+    let hdr = format!(r#"<w:hdr {}><w:p><w:r><w:t>Header</w:t></w:r></w:p></w:hdr>"#, super::empty_stories::NS);
+    let bytes = super::empty_stories::build(
+        "<w:p><w:r><w:t>Body</w:t></w:r></w:p>",
+        r#"<w:headerReference w:type="default" r:id="rIdP0"/>"#,
+        &[("header1.xml", "header", "header", &hdr)],
+    );
+    let mut e = Editor::open(&bytes, super::fonts()).expect("opens");
+    e.complete(super::fonts());
+    e.execute(Command::EditHeader, super::fonts());
+    let Some(end) = e.selection().focus() else { panic!("a caret") };
+    assert!(matches!(end.story, StoryId::HeaderFooter(_)));
+    let start = Position::text(end.story, end.para_offset().expect("a paragraph").0, Unit(0));
+    e.selection = Selection::range(
+        start,
+        Position::text(end.story, end.para_offset().expect("a paragraph").0, Unit(6)),
+        crate::editing::selection::Granularity::Char,
+    );
+    let before = (e.document().sections.len(), e.history().undo_depth());
+    let two = Columns { count: 2, spacing: None, separator: None, widths: None };
+    assert!(!matches!(e.set_columns_in(two, ColumnsScope::SelectedText, false, super::fonts()), Outcome::Changed(_)));
+    assert_eq!((e.document().sections.len(), e.history().undo_depth()), before);
+    assert_eq!(e.document().sections[0].columns.num, 1, "the body's section is untouched");
+}
+
+#[test]
+fn columns_on_selected_text_ending_inside_a_table_are_refused() {
+    use crate::api::command::Columns;
+    use crate::editing::commands::Outcome;
+    use crate::editing::section::ColumnsScope;
+    let row = |t: &str| format!(r#"<w:tr><w:tc><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:tc></w:tr>"#);
+    let body = format!(
+        r#"<w:p><w:r><w:t>One</w:t></w:r></w:p><w:tbl><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid>{}{}</w:tbl><w:p><w:r><w:t>After</w:t></w:r></w:p>"#,
+        row("A"),
+        row("B")
+    );
+    let mut e = Editor::open(&super::blank_body(&body), super::fonts()).expect("opens");
+    e.complete(super::fonts());
+    let table = e.index().table_ids().next().expect("a table");
+    let start = Position::text(StoryId::Body, super::para_id(&e, 0), Unit(1));
+    e.selection = Selection::range(start, Position::row_end(StoryId::Body, table, 0), crate::editing::selection::Granularity::Char);
+    let before = e.document().sections.clone();
+    let two = Columns { count: 2, spacing: None, separator: None, widths: None };
+    let out = e.set_columns_in(two, ColumnsScope::SelectedText, false, super::fonts());
+    assert!(matches!(out, Outcome::Refused(_)), "{out:?}");
+    assert_eq!(e.document().sections, before, "nothing split or set");
+}
+
+#[test]
+fn a_row_end_caret_is_in_its_tables_section() {
+    let body = r#"<w:p><w:pPr><w:sectPr/></w:pPr><w:r><w:t>One</w:t></w:r></w:p><w:tbl><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>A</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p><w:r><w:t>After</w:t></w:r></w:p>"#;
+    let mut e = Editor::open(&super::blank_body(body), super::fonts()).expect("opens");
+    assert_eq!(e.document().sections.len(), 2);
+    let table = e.index().table_ids().next().expect("a table");
+    e.selection = Selection::Caret(Position::row_end(StoryId::Body, table, 0));
+    assert_eq!(e.focus_section(), 1);
+}
+
+#[test]
+fn a_nested_section_scope_leaves_the_outer_one() {
+    use crate::api::services::ApplyTo;
+    let body = r#"<w:p><w:pPr><w:sectPr/></w:pPr><w:r><w:t>One</w:t></w:r></w:p><w:p><w:r><w:t>Two</w:t></w:r></w:p>"#;
+    let mut e = Editor::open(&super::blank_body(body), super::fonts()).expect("opens");
+    let out = e.in_section_scope(
+        ApplyTo::WholeDocument,
+        "Outer",
+        |e| {
+            e.in_section_scope(ApplyTo::WholeDocument, "Inner", |_| crate::editing::commands::Outcome::Moved, super::fonts());
+            assert_eq!(e.selected_sections(), [0, 1], "still every section");
+            crate::editing::commands::Outcome::Moved
+        },
+        super::fonts(),
+    );
+    assert!(matches!(out, crate::editing::commands::Outcome::Moved), "{out:?}");
+    assert_eq!(e.section_scope, None);
+}

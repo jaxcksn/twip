@@ -6,6 +6,7 @@ use std::rc::Rc;
 use crate::docx::VMerge;
 use crate::layout::fragment::{BoxFragment, BoxKind, Child, Item, LineFragment, PageChild, PageFragment};
 use crate::layout::traverse::{CellNode, LineNode, SpatialNode, StoryRef, spatial_tree};
+use crate::layout::vertical::Turn;
 use crate::layout::{FloatId, ParaId, TableId, Unit};
 
 use super::index::DocIndex;
@@ -21,6 +22,33 @@ pub struct Stop {
     pub end: bool,
 }
 
+/// The way a line's text runs on the page.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum LineDir {
+    /// Across the page, a caret a vertical bar.
+    #[default]
+    Horizontal,
+    /// Down the page, a caret a horizontal bar.
+    Down,
+    /// Up the page.
+    Up,
+}
+
+impl LineDir {
+    /// The way text running along `v` (a page direction) runs.
+    pub fn of(v: [f64; 2]) -> LineDir {
+        if v[1].abs() <= v[0].abs() {
+            LineDir::Horizontal
+        } else if v[1] > 0.0 {
+            LineDir::Down
+        } else {
+            LineDir::Up
+        }
+    }
+}
+
+/// A line's stops, top and bottom are as it is laid out: `turn` draws them on the page, `region` the boxes laid out
+/// with it (they differ for lines turned each about their own band).
 #[derive(Debug)]
 pub struct GLine {
     pub story: usize,
@@ -28,12 +56,52 @@ pub struct GLine {
     pub paras: Rc<[ParaId]>,
     pub top: f64,
     pub bottom: f64,
+    /// Each inline picture's frame as the line is laid out.
     pub pictures: Vec<(ParaId, Unit, [f64; 4])>,
     pub stops: Rc<[Stop]>,
     pub repeat: bool,
+    /// Where the line is drawn.
+    pub turn: Turn,
+    /// Where the boxes laid out with it are drawn.
+    pub region: Turn,
+    /// The page directions its text runs and its lines stack by text flow alone.
+    pub axes: [f64; 4],
+    /// Along the line as laid out, the left and right of the list number or bullet drawn on it.
+    pub label: Option<(f64, f64)>,
 }
 
 impl GLine {
+    /// The box on the page that holds the line's band from `x0` to `x1` along it.
+    pub fn band(&self, x0: f64, x1: f64) -> [f64; 4] {
+        self.strip(x0, x1).page()
+    }
+
+    /// The line's band from `x0` to `x1` along it.
+    pub fn strip(&self, x0: f64, x1: f64) -> super::view::Band {
+        super::view::Band { rect: [x0, self.top, x1, self.bottom], turn: self.turn }
+    }
+
+    /// The point on the page at `x` along the line, `y` down it as laid out.
+    pub fn page(&self, x: f64, y: f64) -> [f64; 2] {
+        self.turn.at([x, y])
+    }
+
+    /// The page point `p` as the line is laid out.
+    pub fn local(&self, p: [f64; 2]) -> [f64; 2] {
+        self.turn.back(p)
+    }
+
+    /// Whether the page point `x`, `y` lies across the line's band.
+    pub fn holds(&self, x: f64, y: f64) -> bool {
+        let y = self.local([x, y])[1];
+        y >= self.top && y < self.bottom
+    }
+
+    /// The way the line's text runs on the page.
+    pub fn dir(&self) -> LineDir {
+        LineDir::of(self.turn.along([1.0, 0.0]))
+    }
+
     pub fn shows(&self, para: ParaId) -> bool {
         self.paras.contains(&para)
     }
@@ -81,10 +149,13 @@ struct Part {
     label_end: Option<f64>,
 }
 
+/// A cell's rect, clip and closing caret are as laid out; `turn` draws them on the page.
 #[derive(Debug)]
 pub struct GCell {
     pub story: usize,
     pub chain: Rc<[CellKey]>,
+    /// Where the cell is drawn.
+    pub turn: Turn,
     pub rect: [f64; 4],
     pub col: usize,
     pub span: usize,
@@ -94,9 +165,12 @@ pub struct GCell {
     pub closing: Option<(ParaId, [f64; 3])>,
 }
 
+/// A row's rect, top and edges are as laid out; `turn` draws them on the page.
 #[derive(Debug)]
 pub struct GRow {
     pub story: usize,
+    /// Where the row is drawn.
+    pub turn: Turn,
     pub outer: Rc<[CellKey]>,
     pub table: TableId,
     pub row: usize,
@@ -112,6 +186,10 @@ pub struct GStory {
     pub host: StoryId,
     pub float: Option<FloatId>,
     pub rect: [f64; 4],
+    /// A float's rotation on the page, which turns `rect` about its centre.
+    pub turn: Turn,
+    /// Where the frame a float or note is laid out in is drawn on the page.
+    pub region: Turn,
 }
 
 #[derive(Debug, Default)]
@@ -125,6 +203,8 @@ pub struct PageGeometry {
     pub rows: Vec<GRow>,
     /// Each footnote or endnote area, separator included (left, top, right, bottom).
     pub notes: Vec<[f64; 4]>,
+    /// Each sub-template shown in the body: its field, part, box as its line is laid out and where that line is drawn.
+    pub expansions: Vec<(crate::docx::FieldId, u32, [f64; 4], Turn)>,
     paras: HashSet<ParaId>,
     tables: HashSet<TableId>,
     after_break: std::collections::HashMap<ParaId, Unit>,
@@ -149,11 +229,51 @@ pub struct TextHit {
     pub repeat: bool,
 }
 
+/// A caret on the page: a bar across a line running `dir`, in the box from `x`, `top` to `right`, `bottom` (`right`
+/// is `x` for an upright horizontal line's, `bottom` is `top` for an upright vertical one's).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct CaretRect {
+    /// The box's left.
     pub x: f64,
+    /// The box's top.
     pub top: f64,
+    /// The box's bottom.
     pub bottom: f64,
+    /// The box's right.
+    pub right: f64,
+    /// The way the line runs.
+    pub dir: LineDir,
+    /// The bar's ends: on the line's top side, then on its bottom side.
+    pub ends: [[f64; 2]; 2],
+}
+
+impl CaretRect {
+    /// The caret at `x` across a line from `top` to `bottom` as laid out, drawn by `turn`.
+    pub fn turned(turn: Turn, x: f64, top: f64, bottom: f64) -> CaretRect {
+        let [x0, y0, x1, y1] = turn.rect([x, top, x, bottom]);
+        let ends = [turn.at([x, top]), turn.at([x, bottom])];
+        CaretRect { x: x0, top: y0, bottom: y1, right: x1, dir: LineDir::of(turn.along([1.0, 0.0])), ends }
+    }
+}
+
+impl GCell {
+    /// The cell's box on the page.
+    pub fn page_rect(&self) -> [f64; 4] {
+        self.turn.rect(self.rect)
+    }
+
+    /// Whether the page point `x`, `y` is in the cell.
+    pub fn contains(&self, x: f64, y: f64) -> bool {
+        let [lx, ly] = self.turn.back([x, y]);
+        lx >= self.rect[0] && lx < self.rect[2] && ly >= self.rect[1] && ly < self.rect[3]
+    }
+}
+
+impl GRow {
+    /// The row's box on the page.
+    pub fn page_rect(&self) -> [f64; 4] {
+        self.turn.rect(self.rect)
+    }
 }
 
 impl PageGeometry {
@@ -179,7 +299,7 @@ impl PageGeometry {
                 StoryRef::Float { float, .. } => (StoryId::TextBox(idx.box_story(float)), Some(float)),
             };
             let si = g.stories.len();
-            g.stories.push(GStory { story, host: idx.host(story), float, rect: s.rect });
+            g.stories.push(GStory { story, host: idx.host(story), float, rect: s.rect, turn: s.turn, region: s.region });
             g.nodes(&s.nodes, si, &Rc::from([]), false, memo);
         }
         let viewed = |s: StoryId| matches!(s, StoryId::BuildingBlock(k) if Some(k) != shows);
@@ -197,17 +317,18 @@ impl PageGeometry {
             if s == StoryId::Body {
                 continue;
             }
-            let (top, bottom) = (g.lines[i].top, g.lines[i].bottom);
+            let l = &g.lines[i];
+            let region = l.region;
             let k = match g.stories.iter().position(|t| t.story == s) {
                 Some(k) => {
-                    let r = &mut g.stories[k].rect;
-                    r[1] = r[1].min(top);
-                    r[3] = r[3].max(bottom);
+                    let r = region.inverse().rect(g.stories[k].rect);
+                    g.stories[k].rect = region.rect([r[0], r[1].min(l.top), r[2], r[3].max(l.bottom)]);
                     k
                 }
                 None => {
-                    let r = g.stories[si].rect;
-                    g.stories.push(GStory { story: s, host: s, float: None, rect: [r[0], top, r[2], bottom] });
+                    let r = region.inverse().rect(g.stories[si].rect);
+                    let rect = region.rect([r[0], l.top, r[2], l.bottom]);
+                    g.stories.push(GStory { story: s, host: s, float: None, rect, turn: Turn::NONE, region: Turn::NONE });
                     g.stories.len() - 1
                 }
             };
@@ -228,6 +349,8 @@ impl PageGeometry {
         if bodies.len() < 2 {
             return;
         }
+        // Body bands, as laid out
+        let region = self.lines.iter().find(|l| bodies.contains(&l.story)).map_or(Turn::NONE, |l| l.region);
         let extent = |i: usize| {
             let lines = self.lines.iter().filter(|l| l.story == i).map(|l| (l.top, l.bottom));
             let rows = self.rows.iter().filter(|r| r.story == i).map(|r| (r.rect[1], r.rect[3]));
@@ -235,16 +358,17 @@ impl PageGeometry {
         };
         let mut bands: Vec<(usize, f64, f64)> = bodies.iter().filter_map(|&i| extent(i).map(|(t, b)| (i, t, b))).collect();
         bands.sort_by(|a, b| a.1.total_cmp(&b.1));
-        let (page_top, page_bottom) = (self.stories[bodies[0]].rect[1], self.stories[bodies[0]].rect[3]);
+        let back = region.inverse();
+        let page = back.rect(self.stories[bodies[0]].rect);
         for &i in &bodies {
-            let r = &mut self.stories[i].rect;
-            r[3] = r[1];
+            let r = back.rect(self.stories[i].rect);
+            self.stories[i].rect = region.rect([r[0], r[1], r[2], r[1]]);
         }
         for (k, &(i, top, bottom)) in bands.iter().enumerate() {
-            let from = if k == 0 { page_top } else { (bands[k - 1].2 + top) / 2.0 };
-            let to = bands.get(k + 1).map_or(page_bottom, |next| (bottom + next.1) / 2.0);
-            let r = &mut self.stories[i].rect;
-            (r[1], r[3]) = (from, to);
+            let from = if k == 0 { page[1] } else { (bands[k - 1].2 + top) / 2.0 };
+            let to = bands.get(k + 1).map_or(page[3], |next| (bottom + next.1) / 2.0);
+            let r = back.rect(self.stories[i].rect);
+            self.stories[i].rect = region.rect([r[0], from, r[2], to]);
         }
     }
 
@@ -257,6 +381,7 @@ impl PageGeometry {
                     for r in &t.rows {
                         self.rows.push(GRow {
                             story,
+                            turn: r.turn,
                             outer: chain.clone(),
                             table: t.table,
                             row: r.row,
@@ -282,6 +407,7 @@ impl PageGeometry {
         self.cells.push(GCell {
             story,
             chain: chain.clone(),
+            turn: c.turn,
             rect: c.rect,
             col: c.place.col,
             span: c.place.span,
@@ -294,6 +420,12 @@ impl PageGeometry {
     }
 
     fn line(&mut self, l: &LineNode, story: usize, chain: &Rc<[CellKey]>, repeat: bool, memo: &mut LineMemo) {
+        if self.stories[story].story == StoryId::Body {
+            for (r, e) in l.line.expansions.iter() {
+                let (x0, y0) = (r[0] + l.x, r[1] + l.y);
+                self.expansions.push((e.field, e.part, [x0, y0, x0 + e.size.0, y0 + e.size.1], l.turn));
+            }
+        }
         let Some(own) = l.para else { return };
         let key = (Rc::as_ptr(l.line), l.x.to_bits(), own);
         let (paras, stops) = match memo.0.get(&key) {
@@ -314,7 +446,6 @@ impl PageGeometry {
             self.paras.extend(paras.iter().copied());
         }
         let pictures = l
-            .line
             .items
             .iter()
             .filter_map(|it| match it {
@@ -328,7 +459,21 @@ impl PageGeometry {
                 Some((a.para, a.unit, [l.x + r[0], l.y + r[1], l.x + r[2], l.y + r[3]]))
             })
             .collect();
-        self.lines.push(GLine { story, chain: chain.clone(), paras, top: l.y, bottom: l.y + l.line.pitch - l.line.after, pictures, stops, repeat });
+        let label = l.line.label.map(|(a, b)| (l.x + a, l.x + b));
+        self.lines.push(GLine {
+            story,
+            chain: chain.clone(),
+            paras,
+            top: l.y,
+            bottom: l.y + l.line.pitch - l.line.after,
+            pictures,
+            stops,
+            repeat,
+            turn: l.turn,
+            region: l.region,
+            axes: l.axes,
+            label,
+        });
     }
 
     /// The line's paragraphs and stops, the paragraph ends its breaks leave, and whether all of it depends on the
@@ -345,8 +490,7 @@ impl PageGeometry {
             };
             &mut parts[k]
         }
-        for it in l.line.items.iter() {
-            let Item::Glyphs(r) = it else { continue };
+        for r in runs(l.items) {
             let Part { stops, end, empty_at, label_end, para } = part(&mut parts, r.para.unwrap_or(own));
             let para = *para;
             if r.chars.is_empty() {
@@ -445,6 +589,11 @@ impl PageGeometry {
         Some((paras, stops, breaks, pure))
     }
 
+    /// The paragraphs with lines on the page, in no order.
+    pub fn paras(&self) -> impl Iterator<Item = ParaId> + '_ {
+        self.paras.iter().copied()
+    }
+
     pub fn shows_para(&self, p: ParaId) -> bool {
         self.paras.contains(&p)
     }
@@ -478,17 +627,21 @@ impl PageGeometry {
         if let Some(i) = self.line_at(para, u, affinity) {
             let l = &self.lines[i];
             let x = l.x_of(para, u)?;
-            return Some(CaretRect { x, top: l.top, bottom: l.bottom });
+            return Some(CaretRect::turned(l.turn, x, l.top, l.bottom));
         }
         self.cells.iter().find_map(|c| match c.closing {
-            Some((p, [x, top, h])) if p == para => Some(CaretRect { x, top, bottom: top + h }),
+            Some((p, [x, top, h])) if p == para => Some(CaretRect::turned(c.turn, x, top, top + h)),
             _ => None,
         })
     }
 
     fn story_at(&self, x: f64, y: f64, want: &dyn Fn(StoryId) -> bool) -> Option<usize> {
         let inside = |r: &[f64; 4]| x >= r[0] && x <= r[2] && y >= r[1] && y <= r[3];
-        let float = self.stories.iter().enumerate().rev().find(|(_, s)| s.float.is_some() && want(s.host) && inside(&s.rect) && self.has_lines(s));
+        let turned_inside = |s: &GStory| {
+            let [x, y] = s.turn.back([x, y]);
+            x >= s.rect[0] && x <= s.rect[2] && y >= s.rect[1] && y <= s.rect[3]
+        };
+        let float = self.stories.iter().enumerate().rev().find(|(_, s)| s.float.is_some() && want(s.host) && turned_inside(s) && self.has_lines(s));
         if let Some((i, _)) = float {
             return Some(i);
         }
@@ -508,10 +661,7 @@ impl PageGeometry {
     }
 
     pub fn cell_at(&self, story: usize, x: f64, y: f64) -> Option<&GCell> {
-        self.cells
-            .iter()
-            .filter(|c| c.story == story && x >= c.rect[0] && x < c.rect[2] && y >= c.rect[1] && y < c.rect[3])
-            .max_by_key(|c| c.chain.len())
+        self.cells.iter().filter(|c| c.story == story && c.contains(x, y)).max_by_key(|c| c.chain.len())
     }
 
     pub fn zone(&self, x: f64, y: f64, px: f64, hovered: Option<TableId>) -> Option<Zone> {
@@ -524,8 +674,10 @@ impl PageGeometry {
                 .fold(f64::INFINITY, f64::min)
         };
         let mut found: Vec<(usize, Zone)> = Vec::new();
+        let (px0, py0) = (x, y);
         for c in &self.cells {
             let Some(&(t, row, cell)) = c.chain.last() else { continue };
+            let [x, y] = c.turn.back([px0, py0]);
             let [x0, y0, x1, y1] = c.rect;
             if y < y0 || y >= y1 {
                 continue;
@@ -540,6 +692,7 @@ impl PageGeometry {
             return Some(z);
         }
         for r in self.rows.iter().filter(|r| r.row == 0 && !r.repeat) {
+            let [x, y] = r.turn.back([px0, py0]);
             let [x0, y0, ..] = r.rect;
             if (x0 - 20.0 * px..=x0 - 5.0 * px).contains(&x) && (y0 - 20.0 * px..=y0 - 5.0 * px).contains(&y) {
                 found.push((r.outer.len(), Zone::Table(r.table)));
@@ -549,6 +702,7 @@ impl PageGeometry {
             return Some(z);
         }
         for r in self.rows.iter().filter(|r| Some(r.table) == hovered && !r.repeat) {
+            let [x, y] = r.turn.back([px0, py0]);
             let [_, y0, _, y1] = r.rect;
             if r.row == 0
                 && y >= y0 - 22.0 * px
@@ -563,6 +717,7 @@ impl PageGeometry {
             }
         }
         for r in &self.rows {
+            let [x, y] = r.turn.back([px0, py0]);
             if y < r.rect[1] || y >= r.rect[3] {
                 continue;
             }
@@ -578,10 +733,15 @@ impl PageGeometry {
         deepest(&mut found)
     }
 
-    /// The line the selection bar at (`x`, `y`) selects: the bar is the page's left margin, up to `left`, beside the
-    /// lines of the stories `want` takes (never a text box's).
+    /// The line the selection bar at (`x`, `y`) selects: the bar is the page's start margin, up to `left`, beside the
+    /// lines of the stories `want` takes (never a text box's), as the lines are laid out.
     pub fn selection_bar(&self, x: f64, y: f64, left: f64, want: &dyn Fn(StoryId) -> bool) -> Option<usize> {
-        let si = self.stories.iter().position(|s| want(s.story) && s.float.is_none() && y >= s.rect[1] && y <= s.rect[3])?;
+        let region = self.lines.iter().find(|l| self.stories[l.story].story == StoryId::Body && l.chain.is_empty()).map_or(Turn::NONE, |l| l.region);
+        let [x, y] = region.back([x, y]);
+        let si = self.stories.iter().position(|s| {
+            let r = region.inverse().rect(s.rect);
+            want(s.story) && s.float.is_none() && y >= r[1] && y <= r[3]
+        })?;
         if x < 0.0 || x > left {
             return None;
         }
@@ -589,6 +749,7 @@ impl PageGeometry {
             return None;
         }
         let vdist = |l: &GLine| {
+            let y = l.local(region.at([x, y]))[1];
             if y < l.top {
                 l.top - y
             } else if y > l.bottom {
@@ -624,7 +785,7 @@ impl PageGeometry {
         let best = candidates.min_by(|a, b| line_dist(a, x, y).total_cmp(&line_dist(b, x, y)));
         if let Some(c) = cell
             && let Some((p, [_, top, _])) = c.closing
-            && best.is_none_or(|l| y > l.bottom && top <= y + 1.0)
+            && best.is_none_or(|l| l.local([x, y])[1] > l.bottom && top <= c.turn.back([x, y])[1] + 1.0)
         {
             return Some(TextHit { story, para: p, unit: Unit(0), affinity: Affinity::Downstream, repeat: false });
         }
@@ -636,7 +797,7 @@ impl PageGeometry {
                 .filter(|l| l.story == si && l.chain.starts_with(chain))
                 .min_by(|a, b| line_dist(a, x, y).total_cmp(&line_dist(b, x, y)))?,
         };
-        let stop = line.nearest(x)?;
+        let stop = line.nearest(line.local([x, y])[0])?;
         let wraps = stop.end && self.lines.iter().any(|m| m.first_of(stop.para) == Some(stop.unit) && !std::ptr::eq(m, line));
         Some(TextHit {
             story,
@@ -646,6 +807,18 @@ impl PageGeometry {
             repeat: line.repeat,
         })
     }
+}
+
+/// The glyph runs in `items`, with those of upright glyphs, which a vertical line turns back a quarter where they
+/// stand.
+fn runs(items: &[Item]) -> impl Iterator<Item = &crate::layout::fragment::GlyphRun> {
+    items.iter().flat_map(|it| {
+        let inner: &[Item] = match it {
+            Item::Turned(t) if t.deg == -90.0 => &t.items,
+            it => std::slice::from_ref(it),
+        };
+        inner.iter().filter_map(|i| if let Item::Glyphs(r) = i { Some(r) } else { None })
+    })
 }
 
 fn dist(r: &[f64; 4], x: f64, y: f64) -> f64 {
@@ -667,6 +840,7 @@ fn dist(r: &[f64; 4], x: f64, y: f64) -> f64 {
 }
 
 fn line_dist(l: &GLine, x: f64, y: f64) -> f64 {
+    let [x, y] = l.local([x, y]);
     let dy = if y < l.top {
         l.top - y
     } else if y > l.bottom {

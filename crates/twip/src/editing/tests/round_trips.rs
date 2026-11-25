@@ -73,3 +73,23 @@ fn undoing_a_tracked_edit_leaves_no_new_person_in_the_saved_package() {
     e.execute(Command::Undo, fonts());
     assert!(!people(&e));
 }
+
+#[test]
+fn page_borders_set_without_a_shadow_keep_each_edges_own() {
+    let edge = |side: &str, shadow: bool| {
+        format!(r#"<w:{side} w:val="single" w:sz="4" w:space="24" w:color="auto"{}/>"#, if shadow { r#" w:shadow="1""# } else { "" })
+    };
+    let sect = format!(
+        r#"<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/><w:pgBorders w:offsetFrom="page">{}{}</w:pgBorders></w:sectPr>"#,
+        edge("bottom", false),
+        edge("right", true)
+    );
+    let body = format!("<w:p><w:pPr>{sect}</w:pPr><w:r><w:t>one</w:t></w:r></w:p><w:p><w:r><w:t>two</w:t></w:r></w:p>");
+    let mut e = Editor::open(&blank_body(&body), fonts()).expect("opens");
+    let shadows = |e: &Editor| {
+        e.document().sections[0].page_borders.as_ref().map(|b| (b.bottom.as_ref().map(|x| x.shadow), b.right.as_ref().map(|x| x.shadow)))
+    };
+    assert_eq!(shadows(&e), Some((Some(false), Some(true))));
+    e.execute(Command::SetPageBorders(PageBordersChange { surround_header: Some(false), ..Default::default() }), fonts());
+    assert_eq!(shadows(&e), Some((Some(false), Some(true))), "neither edge's shadow given");
+}

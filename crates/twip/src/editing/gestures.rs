@@ -72,6 +72,7 @@ impl Editor {
 
     pub fn pointer_input(&mut self, kind: PointerKind, x: f64, y: f64, clicks: u8, mods: Mods, fonts: &Fonts) {
         self.pointing = true;
+        self.sync_multi();
         let revision = self.revision();
         self.pointed(kind, x, y, clicks, mods, fonts);
         self.pointing = false;
@@ -169,7 +170,7 @@ impl Editor {
             return found(G::LinkActivate, GestureTarget::Menu(MenuTarget::Link { address }));
         }
         match self.border_at(x, y, fonts) {
-            Some((_, _, resize::Border::Column(k), ..)) if clicks == 2 && k > 0 => {
+            Some((_, _, resize::Border::Column(_), ..)) if clicks == 2 => {
                 return found(G::TableBorderDoubleClick, area(AreaKind::TableBorder));
             }
             Some(_) if clicks < 2 => return None,
@@ -279,10 +280,12 @@ impl Editor {
         }
         let Some(p) = self.hit(x, y, fonts) else { return };
         let keep = match self.selection {
-            Selection::Cells { table, .. } => self.index.chain_of(&p).iter().any(|l| l.table == table),
+            Selection::Cells { table, .. } => {
+                self.index.chain_of(&p).iter().any(|l| l.table == table) || self.inside_any_range(&p) || self.in_cell_blocks(&p)
+            }
             Selection::Object(_) => false,
             Selection::Caret(c) => c == p,
-            _ => self.inside_selection(&p),
+            _ => self.inside_any_range(&p) || self.in_cell_blocks(&p),
         };
         if !keep {
             self.set_selection(Selection::Caret(p));

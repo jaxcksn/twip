@@ -796,3 +796,291 @@ fn typing_in_a_text_box_keeps_its_anchor_paragraphs_shaping() {
     assert!(shaped <= 20 && entries <= 20, "{shaped} paragraphs shaped and {entries} entries kept for 20 keystrokes in the box");
     same_as_full(&mut e);
 }
+
+fn chain_texts(e: &Editor) -> Vec<(u64, crate::drawing::ShapeText, Option<u32>)> {
+    let mut v = Vec::new();
+    for b in &e.document().sections[0].blocks {
+        if let crate::docx::Block::Para(p) = b {
+            for i in &p.inlines {
+                if let crate::docx::Inline::Float(f, _) = i
+                    && let Some(sp) = f.shape.as_deref().and_then(|s| s.sp())
+                {
+                    v.push((f.id, sp.text.clone(), sp.chain));
+                }
+            }
+        }
+    }
+    v
+}
+
+#[test]
+fn break_link_leaves_the_boxes_after_it_a_chain_of_their_own_and_saves() {
+    use crate::drawing::ShapeText as T;
+    let mut e = linked_boxes();
+    let ids = floats(&e);
+    e.set_selection(Selection::Object(ObjectRef::Floating(FloatId(ids[0]))));
+    let link = e.text_box_link().expect("in a chain");
+    assert_eq!((link.index, link.count, link.next), (0, 3, Some(FloatId(ids[1]))));
+    assert!(matches!(e.unlink_text_box(fonts()), super::super::Outcome::Changed(_)));
+    assert_eq!(e.text_box_link(), None, "the first box is alone");
+    let c = chain_texts(&e);
+    assert!(matches!((&c[0].1, c[0].2), (T::Story, None)), "{c:?}");
+    assert!(matches!((&c[1].1, c[1].2), (T::Story, Some(_))) && matches!(c[2].1, T::Linked { seq: 1, .. }), "{c:?}");
+    same_as_full(&mut e);
+    let lines = page_lines(&e);
+    assert!(!lines.iter().any(|l| l.0.starts_with('P') && l.1 > 250.0), "the story stops in the first box: {lines:?}");
+    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let mut again = Editor::open(&bytes, fonts()).expect("reopens");
+    again.set_selection(Selection::Object(ObjectRef::Floating(FloatId(floats(&again)[1]))));
+    assert_eq!(again.text_box_link().map(|l| (l.index, l.count)), Some((0, 2)), "the rest are a chain");
+    assert!(box_text(&again).is_some_and(|t| t.starts_with("P1")));
+    // One undo joins them again; redo breaks them again.
+    e.undo(true, fonts());
+    assert_eq!(e.text_box_link().map(|l| l.count), Some(3));
+    let _ = e.execute(super::super::commands::Command::Redo, fonts());
+    assert_eq!(e.text_box_link(), None);
+}
+
+#[test]
+fn create_link_takes_a_click_on_an_empty_text_box_and_the_text_flows_into_it() {
+    let story: String =
+        (1..=8).map(|i| format!("<w:p><w:r><w:t>P{i} words to fill the boxes in turn, one after another.</w:t></w:r></w:p>")).collect();
+    let rect = sp(0, 0, 150, 60, "rect", "", "FFFFFF").replace(r#"<wps:cNvSpPr/>"#, r#"<wps:cNvSpPr txBox="1"/>"#);
+    let full = rect.replace("<wps:bodyPr/>", &format!(r#"<wps:txbx><w:txbxContent>{story}</w:txbxContent></wps:txbx><wps:bodyPr/>"#));
+    let empty = rect.replace("<wps:bodyPr/>", r#"<wps:txbx><w:txbxContent><w:p/></w:txbxContent></wps:txbx><wps:bodyPr/>"#);
+    let mut e = editor(&format!(
+        "<w:p><w:r><w:t>Text</w:t></w:r>{}{}</w:p>",
+        anchor(72, 300, 150, 60, 1, false, 1, &full),
+        anchor(250, 300, 150, 60, 2, false, 2, &empty)
+    ));
+    let ids = floats(&e);
+    e.set_selection(Selection::Object(ObjectRef::Floating(FloatId(ids[0]))));
+    assert!(!e.can_link_to(FloatId(ids[0])), "not to itself");
+    assert!(e.begin_linking() == super::super::Outcome::Moved);
+    assert_eq!(hover(&mut e, [300.0, 330.0]), super::super::input::Cursor::Pointer, "the pouring pointer over the empty box");
+    click(&mut e, 300.0, 330.0);
+    assert!(!e.linking());
+    let link = e.text_box_link().expect("linked");
+    assert_eq!((link.index, link.count, link.next), (0, 2, Some(FloatId(ids[1]))));
+    same_as_full(&mut e);
+    let lines = page_lines(&e);
+    assert!(lines.iter().any(|l| l.0.starts_with("P2") && l.1 > 250.0), "the text goes on in the second box: {lines:?}");
+    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let xml = crate::docx::package::read(&bytes, &[], "word/document.xml").expect("reads").expect("the main part");
+    assert!(xml.contains(r#"<wps:txbx id="1">"#) && xml.contains(r#"<wps:linkedTxbx id="1" seq="1"/>"#), "{xml}");
+    let mut again = Editor::open(&bytes, fonts()).expect("reopens");
+    again.set_selection(Selection::Object(ObjectRef::Floating(FloatId(floats(&again)[0]))));
+    assert_eq!(again.text_box_link().map(|l| l.count), Some(2));
+    e.undo(true, fonts());
+    assert_eq!(e.text_box_link(), None);
+    let _ = e.execute(super::super::commands::Command::Redo, fonts());
+    assert_eq!(e.text_box_link().map(|l| l.count), Some(2), "redone");
+}
+
+#[test]
+fn releasing_an_inline_drag_after_the_selection_moved_changes_nothing() {
+    use crate::layout::tests::shapes::PT;
+    let shape = |id: u32| {
+        let wsp = r#"<wps:wsp><wps:cNvSpPr/><wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="W" cy="W"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="DDEEFF"/></a:solidFill></wps:spPr><wps:bodyPr/></wps:wsp>"#
+            .replace('W', &(72 * PT).to_string());
+        format!(
+            r#"<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="{w}" cy="{w}"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:docPr id="{id}" name="Shape {id}"/><a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">{wsp}</a:graphicData></a:graphic></wp:inline></w:drawing></w:r>"#,
+            w = 72 * PT
+        )
+    };
+    let mut e = editor(&format!(r#"<w:p>{}<w:r><w:t xml:space="preserve">   </w:t></w:r>{}</w:p>"#, shape(1), shape(2)));
+    let rects: Vec<[f64; 4]> = {
+        let snap = e.snapshot();
+        crate::layout::traverse::paint_items(&snap.pages()[0])
+            .iter()
+            .filter_map(|it| if let crate::layout::fragment::Item::Shape(s) = it { Some(s.rect) } else { None })
+            .collect()
+    };
+    assert_eq!(rects.len(), 2);
+    let b = click(&mut e, rects[1][0] + 2.0, rects[1][1] + 2.0);
+    assert!(matches!(b, Selection::Object(ObjectRef::Inline { .. })), "{b:?}");
+    click(&mut e, rects[0][0] + 2.0, rects[0][1] + 2.0);
+    let frame = e.view(0..1).shapes.first().cloned().expect("a shape frame");
+    let doc = |e: &Editor, p: [f64; 2]| e.stack().to_doc(0, p[0], p[1]).expect("on the stack");
+    let (from, to) = (doc(&e, frame.rotate), doc(&e, [frame.rotate[0] + 100.0, frame.rotate[1] + 60.0]));
+    e.pointer_input(PointerKind::Down, from.0, from.1, 1, Mods::default(), fonts());
+    e.pointer_input(PointerKind::Move, to.0, to.1, 0, Mods::default(), fonts());
+    assert!(e.dragging());
+    let before = e.document().sections[0].blocks.clone();
+    e.set_selection(b);
+    e.pointer_input(PointerKind::Up, to.0, to.1, 0, Mods::default(), fonts());
+    assert_eq!(e.document().sections[0].blocks, before, "neither shape turns");
+}
+
+/// A text box with `story` (`None`: linked into chain `chain` at `seq`), its story's chain id `chain` when given.
+fn text_box(story: Option<&str>, chain: Option<u32>, seq: u32) -> String {
+    let rect = sp(0, 0, 150, 60, "rect", "", "FFFFFF").replace(r#"<wps:cNvSpPr/>"#, r#"<wps:cNvSpPr txBox="1"/>"#);
+    let id = chain.map(|c| format!(r#" id="{c}""#)).unwrap_or_default();
+    let text = match story {
+        Some(s) => format!(r#"<wps:txbx{id}><w:txbxContent>{s}</w:txbxContent></wps:txbx>"#),
+        None => format!(r#"<wps:linkedTxbx{id} seq="{seq}"/>"#),
+    };
+    rect.replace("<wps:bodyPr/>", &format!("{text}<wps:bodyPr/>"))
+}
+
+fn boxes_editor(boxes: &[String]) -> Editor {
+    let anchors: String = boxes
+        .iter()
+        .enumerate()
+        .map(|(k, b)| anchor(72 + 160 * (k as i64 % 3), 300 + 80 * (k as i64 / 3), 150, 60, k as u32 + 1, false, k as u32 + 1, b))
+        .collect();
+    editor(&format!("<w:p><w:r><w:t>Text</w:t></w:r>{anchors}</w:p>"))
+}
+
+#[test]
+fn create_link_refuses_a_box_holding_a_bookmark_tracked_formatting_or_vertical_text() {
+    let full = text_box(Some("<w:p><w:r><w:t>Story</w:t></w:r></w:p>"), None, 0);
+    let marked = text_box(Some(r#"<w:p><w:bookmarkStart w:id="0" w:name="Here"/><w:bookmarkEnd w:id="0"/></w:p>"#), None, 0);
+    let empty = text_box(Some("<w:p/><w:p/>"), None, 0);
+    let tracked = text_box(
+        Some(
+            r#"<w:p><w:pPr><w:jc w:val="center"/><w:pPrChange w:id="9" w:author="A" w:date="2024-01-01T00:00:00Z"><w:pPr/></w:pPrChange></w:pPr></w:p>"#,
+        ),
+        None,
+        0,
+    );
+    let vertical = text_box(Some("<w:p/>"), None, 0).replace("<wps:bodyPr/>", r#"<wps:bodyPr vert="vert"/>"#);
+    let mut e = boxes_editor(&[full, marked, empty, tracked, vertical]);
+    let ids = floats(&e);
+    e.set_selection(Selection::Object(ObjectRef::Floating(FloatId(ids[0]))));
+    assert!(!e.can_link_to(FloatId(ids[1])), "its bookmark would be lost");
+    assert!(!matches!(e.link_text_box(FloatId(ids[1]), fonts()), super::super::Outcome::Changed(_)));
+    assert!(e.can_link_to(FloatId(ids[2])), "empty paragraphs only");
+    assert!(!e.can_link_to(FloatId(ids[3])), "its tracked formatting would be lost");
+    assert!(!e.can_link_to(FloatId(ids[4])), "a vertical box: the chain's text would turn");
+}
+
+#[test]
+fn create_link_takes_a_chain_id_drawingml_can_hold() {
+    let head = text_box(Some("<w:p><w:r><w:t>Old</w:t></w:r></w:p>"), Some(65535), 0);
+    let next = text_box(None, Some(65535), 1);
+    let full = text_box(Some("<w:p><w:r><w:t>New</w:t></w:r></w:p>"), None, 0);
+    let empty = text_box(Some("<w:p/>"), None, 0);
+    let mut e = boxes_editor(&[head, next, full, empty]);
+    let ids = floats(&e);
+    e.set_selection(Selection::Object(ObjectRef::Floating(FloatId(ids[2]))));
+    assert!(matches!(e.link_text_box(FloatId(ids[3]), fonts()), super::super::Outcome::Changed(_)));
+    let c = chain_texts(&e);
+    let made = c[2].2.expect("a chain id");
+    assert!(made != 65535 && made <= u32::from(u16::MAX), "{c:?}");
+    assert!(matches!(c[3].1, crate::drawing::ShapeText::Linked { chain, seq: 1 } if chain == made), "{c:?}");
+}
+
+#[test]
+fn create_link_goes_on_after_the_last_boxs_place() {
+    let head = text_box(Some("<w:p><w:r><w:t>Story</w:t></w:r></w:p>"), Some(1), 0);
+    let b = text_box(None, Some(1), 8);
+    let empty = text_box(Some("<w:p/>"), None, 0);
+    let mut e = boxes_editor(&[head, b, empty]);
+    let ids = floats(&e);
+    e.set_selection(Selection::Object(ObjectRef::Floating(FloatId(ids[1]))));
+    assert!(matches!(e.link_text_box(FloatId(ids[2]), fonts()), super::super::Outcome::Changed(_)));
+    e.set_selection(Selection::Object(ObjectRef::Floating(FloatId(ids[2]))));
+    let link = e.text_box_link().expect("in the chain");
+    assert_eq!((link.index, link.count, link.previous), (2, 3, Some(FloatId(ids[1]))), "A, B, then C");
+    // At the top of DrawingML's range, the chain is numbered again.
+    let head = text_box(Some("<w:p><w:r><w:t>Story</w:t></w:r></w:p>"), Some(1), 0);
+    let mut e = boxes_editor(&[head, text_box(None, Some(1), 65535), text_box(Some("<w:p/>"), None, 0)]);
+    let ids = floats(&e);
+    e.set_selection(Selection::Object(ObjectRef::Floating(FloatId(ids[1]))));
+    assert!(matches!(e.link_text_box(FloatId(ids[2]), fonts()), super::super::Outcome::Changed(_)));
+    let c = chain_texts(&e);
+    assert!(
+        matches!((&c[1].1, &c[2].1), (crate::drawing::ShapeText::Linked { seq: 1, .. }, crate::drawing::ShapeText::Linked { seq: 2, .. })),
+        "{c:?}"
+    );
+}
+
+#[test]
+fn create_link_refuses_a_chain_with_a_member_that_cant_be_changed() {
+    let sdt = |inner: &str| {
+        format!(r#"<w:sdt><w:sdtPr><w:id w:val="5"/><w:lock w:val="sdtContentLocked"/></w:sdtPr><w:sdtContent>{inner}</w:sdtContent></w:sdt>"#)
+    };
+    let head = text_box(Some("<w:p><w:r><w:t>Story</w:t></w:r></w:p>"), Some(1), 0);
+    let tail = text_box(None, Some(1), 65535);
+    let empty = text_box(Some("<w:p/>"), None, 0);
+    let at = |k: u32, b: &str| anchor(72 + 160 * i64::from(k), 300, 150, 60, k + 1, false, k + 1, b);
+    let body = format!("<w:p>{}</w:p><w:p><w:r><w:t>Text</w:t></w:r>{}{}</w:p>", sdt(&at(0, &head)), at(1, &tail), at(2, &empty));
+    let mut e = editor(&body);
+    let ids = floats(&e);
+    let before = chain_texts(&e);
+    e.set_selection(Selection::Object(ObjectRef::Floating(FloatId(ids[1]))));
+    assert!(!e.can_link_to(FloatId(ids[2])), "renumbering would write the locked head");
+    assert!(!matches!(e.link_text_box(FloatId(ids[2]), fonts()), super::super::Outcome::Changed(_)));
+    assert_eq!(chain_texts(&e), before);
+}
+
+#[test]
+fn create_link_refuses_a_text_box_with_no_story_to_own_the_chain() {
+    let rect = sp(0, 0, 150, 60, "rect", "", "FFFFFF").replace(r#"<wps:cNvSpPr/>"#, r#"<wps:cNvSpPr txBox="1"/>"#);
+    let mut e = boxes_editor(&[rect, text_box(Some("<w:p/>"), None, 0)]);
+    let ids = floats(&e);
+    let before = chain_texts(&e);
+    e.set_selection(Selection::Object(ObjectRef::Floating(FloatId(ids[0]))));
+    assert!(!e.can_link_to(FloatId(ids[1])));
+    assert!(!matches!(e.link_text_box(FloatId(ids[1]), fonts()), super::super::Outcome::Changed(_)));
+    assert_eq!(chain_texts(&e), before);
+}
+
+#[test]
+fn create_link_refuses_a_box_whose_paragraph_mark_is_a_revision() {
+    let full = text_box(Some("<w:p><w:r><w:t>Story</w:t></w:r></w:p>"), None, 0);
+    let marked = text_box(Some(r#"<w:p><w:pPr><w:rPr><w:ins w:id="1" w:author="A"/></w:rPr></w:pPr></w:p><w:p/>"#), None, 0);
+    let mut e = boxes_editor(&[full, marked, text_box(Some("<w:p/>"), None, 0)]);
+    let ids = floats(&e);
+    e.set_selection(Selection::Object(ObjectRef::Floating(FloatId(ids[0]))));
+    assert!(!e.can_link_to(FloatId(ids[1])), "its inserted paragraph mark would be lost");
+    assert!(e.can_link_to(FloatId(ids[2])));
+}
+
+#[test]
+fn create_links_pointer_finds_a_turned_box_where_it_is_drawn() {
+    let full = text_box(Some("<w:p><w:r><w:t>Story</w:t></w:r></w:p>"), None, 0);
+    let turned = text_box(Some("<w:p/>"), None, 0).replacen("<a:xfrm", r#"<a:xfrm rot="5400000""#, 1);
+    let mut e = boxes_editor(&[full, turned]);
+    let ids = floats(&e);
+    e.set_selection(Selection::Object(ObjectRef::Floating(FloatId(ids[0]))));
+    assert!(e.begin_linking() == super::super::Outcome::Moved);
+    // The second box, 150 × 60 at (232, 300), turned a quarter about its centre (307, 330).
+    let at = |e: &mut Editor, x: f64, y: f64| {
+        let (x, y) = e.stack().to_doc(0, x, y).expect("on the stack");
+        e.link_target_at(x, y, fonts())
+    };
+    assert_eq!(at(&mut e, 307.0, 390.0), Some(FloatId(ids[1])), "below its unturned place, inside the turned box");
+    assert_eq!(at(&mut e, 240.0, 330.0), None, "inside its unturned place only");
+}
+
+#[test]
+fn releasing_an_inline_drag_after_its_picture_changed_changes_nothing_more() {
+    use crate::layout::tests::shapes::PT;
+    let wsp = r#"<wps:wsp><wps:cNvSpPr/><wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="W" cy="W"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="DDEEFF"/></a:solidFill></wps:spPr><wps:bodyPr/></wps:wsp>"#
+        .replace('W', &(72 * PT).to_string());
+    let shape = format!(
+        r#"<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="{w}" cy="{w}"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:docPr id="1" name="Shape 1"/><a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">{wsp}</a:graphicData></a:graphic></wp:inline></w:drawing></w:r>"#,
+        w = 72 * PT
+    );
+    let mut e = editor(&format!("<w:p>{shape}</w:p>"));
+    let rect = {
+        let snap = e.snapshot();
+        crate::layout::traverse::paint_items(&snap.pages()[0])
+            .iter()
+            .find_map(|it| if let crate::layout::fragment::Item::Shape(s) = it { Some(s.rect) } else { None })
+            .expect("the shape")
+    };
+    click(&mut e, rect[0] + 2.0, rect[1] + 2.0);
+    let frame = e.view(0..1).shapes.first().cloned().expect("a shape frame");
+    let doc = |e: &Editor, p: [f64; 2]| e.stack().to_doc(0, p[0], p[1]).expect("on the stack");
+    let (from, to) = (doc(&e, frame.rotate), doc(&e, [frame.rotate[0] + 100.0, frame.rotate[1] + 60.0]));
+    e.pointer_input(PointerKind::Down, from.0, from.1, 1, Mods::default(), fonts());
+    e.pointer_input(PointerKind::Move, to.0, to.1, 0, Mods::default(), fonts());
+    assert!(e.dragging());
+    assert!(matches!(e.set_object_title("Changed", fonts()), super::super::Outcome::Changed(_)));
+    let before = e.document().sections[0].blocks.clone();
+    e.pointer_input(PointerKind::Up, to.0, to.1, 0, Mods::default(), fonts());
+    assert_eq!(e.document().sections[0].blocks, before, "the changed picture doesn't turn");
+}

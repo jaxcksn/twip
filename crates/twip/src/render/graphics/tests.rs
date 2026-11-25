@@ -1008,3 +1008,40 @@ fn a_namespaced_svg_is_a_vector_picture() {
     let fill = format!(r#"<a:blipFill><a:blip r:embed="rId5"/>{STRETCH}</a:blipFill>{NO_LINE}"#);
     assert!(red(draw_sized(&wsp("rect", &fill), (100, 60), Some(svg.as_bytes())).at(150.0, 130.0)));
 }
+
+#[test]
+fn a_page_thumbnail_fits_its_page_into_the_pixels() {
+    let shape = sized("rect", 412, 592, "", r#"<a:solidFill><a:srgbClr val="000000"/></a:solidFill>"#);
+    let d = crate::docx::read(&package(&shape, (412, 592), None)).expect("the document reads");
+    let snap = crate::layout::layout(&d, &fonts());
+    let mut g = Graphics::default();
+    let grey = Color::rgba(128, 128, 128, 255);
+    let mut px = vec![0u8; 100 * 100 * 4];
+    // A letter page, 612 x 792 pt, is 77 x 100 px, 11 px in from each side.
+    assert_eq!(g.page_thumbnail(&Renderer::default(), &snap.pages()[0], &d.images, &mut px, (100, 100), grey), Some((77, 100)));
+    let at = |x: usize, y: usize| [px[(y * 100 + x) * 4], px[(y * 100 + x) * 4 + 1], px[(y * 100 + x) * 4 + 2]];
+    assert_eq!(at(5, 50), [128, 128, 128], "around the page");
+    assert_eq!(at(14, 5), [255, 255, 255], "the page's margin");
+    assert_eq!(at(50, 50), [0, 0, 0], "its content");
+    assert_eq!(g.page_thumbnail(&Renderer::default(), &snap.pages()[0], &d.images, &mut px, (101, 100), grey), None, "pixels of another size");
+    let mut big = vec![0u8; 100 * 100 * 4 + 4];
+    assert_eq!(g.page_thumbnail(&Renderer::default(), &snap.pages()[0], &d.images, &mut big, (100, 100), grey), None, "more pixels than the size");
+    // As many pixels as the size has, none: the size itself is refused.
+    for size in [(0, 100), (100, 0), (0, 0)] {
+        assert_eq!(g.page_thumbnail(&Renderer::default(), &snap.pages()[0], &d.images, &mut [], size, grey), None, "an empty size {size:?}");
+    }
+}
+
+#[test]
+fn a_page_thumbnail_leaves_out_what_reaches_off_the_page() {
+    let shape = sized("rect", 800, 200, "", r#"<a:solidFill><a:srgbClr val="000000"/></a:solidFill>"#);
+    let d = crate::docx::read(&package(&shape, (800, 200), None)).expect("the document reads");
+    let snap = crate::layout::layout(&d, &fonts());
+    let mut g = Graphics::default();
+    let grey = Color::rgba(128, 128, 128, 255);
+    let mut px = vec![0u8; 100 * 100 * 4];
+    assert_eq!(g.page_thumbnail(&Renderer::default(), &snap.pages()[0], &d.images, &mut px, (100, 100), grey), Some((77, 100)));
+    let at = |x: usize, y: usize| [px[(y * 100 + x) * 4], px[(y * 100 + x) * 4 + 1], px[(y * 100 + x) * 4 + 2]];
+    assert_eq!(at(80, 25), [0, 0, 0], "the shape on the page");
+    assert_eq!(at(95, 25), [128, 128, 128], "not past its edge");
+}

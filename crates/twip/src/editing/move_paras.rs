@@ -17,14 +17,14 @@ use super::step::{Step, para_len};
 
 /// What may span paragraphs, by its start or end: a bookmark (by name), a comment's or move's range, a field.
 #[derive(Clone, PartialEq, Eq, Hash)]
-enum Span {
+pub(super) enum Span {
     Bookmark(String),
     Comment(i64),
     Move(i64),
     Field(u64),
 }
 
-fn span_of(i: &Inline) -> Option<Span> {
+pub(super) fn span_of(i: &Inline) -> Option<Span> {
     match i {
         Inline::Bookmark(name) => Some(Span::Bookmark(name.trim_start_matches('/').to_string())),
         Inline::Range(r) if matches!(r.kind, RangeKind::CommentStart | RangeKind::CommentEnd) => Some(Span::Comment(r.id)),
@@ -35,7 +35,7 @@ fn span_of(i: &Inline) -> Option<Span> {
 }
 
 /// Every [`Span`] with a start or end in `blocks` (tables' cells too).
-fn spans(blocks: &[Block], out: &mut HashSet<Span>) {
+pub(super) fn spans(blocks: &[Block], out: &mut HashSet<Span>) {
     let mut stack = vec![blocks];
     while let Some(blocks) = stack.pop() {
         for b in blocks {
@@ -48,7 +48,7 @@ fn spans(blocks: &[Block], out: &mut HashSet<Span>) {
 }
 
 /// Takes the markers of `crossing` out of `blocks` (tables' cells too), in text order.
-fn take_markers(blocks: &mut [Block], crossing: &HashSet<Span>, out: &mut Vec<Inline>) {
+pub(super) fn take_markers(blocks: &mut [Block], crossing: &HashSet<Span>, out: &mut Vec<Inline>) {
     for b in blocks {
         match b {
             Block::Para(p) => p.inlines.retain(|i| match span_of(i) {
@@ -64,7 +64,7 @@ fn take_markers(blocks: &mut [Block], crossing: &HashSet<Span>, out: &mut Vec<In
 }
 
 /// The first (or last) paragraph in `b`, into a table's first (or last) cell.
-fn edge_para(b: &mut Block, end: bool) -> Option<&mut Paragraph> {
+pub(super) fn edge_para(b: &mut Block, end: bool) -> Option<&mut Paragraph> {
     let mut b = b;
     // Each step goes a table deeper.
     loop {
@@ -80,7 +80,7 @@ fn edge_para(b: &mut Block, end: bool) -> Option<&mut Paragraph> {
 }
 
 /// The first (or last) paragraph in `b`, as [`edge_para`] finds it.
-fn edge_para_ref(b: &Block, end: bool) -> Option<&Paragraph> {
+pub(super) fn edge_para_ref(b: &Block, end: bool) -> Option<&Paragraph> {
     let mut b = b;
     // Each step goes a table deeper.
     loop {
@@ -112,7 +112,7 @@ fn accepted_offset(p: &Paragraph, u: Unit) -> u32 {
     kept
 }
 
-fn controls(b: &Block) -> &[crate::docx::ControlId] {
+pub(super) fn controls(b: &Block) -> &[crate::docx::ControlId] {
     match b {
         Block::Para(p) => &p.controls,
         Block::Table(t) => &t.controls,
@@ -310,34 +310,10 @@ impl Editor {
         dest: Vec<crate::docx::ControlId>,
         fonts: &Fonts,
     ) -> Option<(ParaId, ParaId)> {
-        let story = self.index.story(container);
         let changed = |o: Outcome| matches!(o, Outcome::Changed(_));
         // Moved to
-        let (copy_first, copy_last) = if past_final {
-            let c = passed_para?;
-            let len = para_len(self.index.para(&self.doc, c)?);
-            let second = self.split_template(c)?;
-            let tail = ParaId(second.id);
-            let mut tx = self.begin("Move Paragraphs");
-            if self.step(&mut tx, Step::Split { para: c, at: len, second, kept: Vec::new() }).is_err() {
-                self.abort(tx);
-                return None;
-            }
-            if !changed(self.commit(tx, None, fonts)) {
-                return None;
-            }
-            self.selection = Selection::Caret(Position::text(story, tail, Unit(0)));
-            let mut open = frag.clone();
-            open.open_end = true;
-            if !changed(self.paste_fragment(&open, fonts)) {
-                return None;
-            }
-            (tail, self.selection.focus()?.para_offset()?.0)
-        } else {
-            let mut whole = frag.clone();
-            whole.open_end = false;
-            self.paste_blocks(&whole, container, if up { passed } else { passed + 1 }, &dest, fonts)?
-        };
+        let past = if past_final { Some(passed_para?) } else { None };
+        let (copy_first, copy_last) = self.paste_move_copies(frag, container, if up { passed } else { passed + 1 }, past, &dest, fonts)?;
         let to = self.recorded.0.clone();
         // Moved from
         let (b0, b1) = (self.index.para_slot(first)?.block, self.index.para_slot(last)?.block);
@@ -380,5 +356,43 @@ impl Editor {
             self.abort(tx);
         }
         Some((copy_first, copy_last))
+    }
+
+    /// A tracked move's copies, `frag`, in `container` before block `at`, inside the block controls `dest`; or, `past`
+    /// the story's last paragraph, after its text in a paragraph split from it. The copies' first and last paragraphs.
+    pub(super) fn paste_move_copies(
+        &mut self,
+        frag: &super::clipboard::Fragment,
+        container: Container,
+        at: usize,
+        past: Option<ParaId>,
+        dest: &[crate::docx::ControlId],
+        fonts: &Fonts,
+    ) -> Option<(ParaId, ParaId)> {
+        let Some(c) = past else {
+            let mut whole = frag.clone();
+            whole.open_end = false;
+            return self.paste_blocks(&whole, container, at, dest, fonts);
+        };
+        let changed = |o: Outcome| matches!(o, Outcome::Changed(_));
+        let story = self.index.story(container);
+        let len = para_len(self.index.para(&self.doc, c)?);
+        let second = self.split_template(c)?;
+        let tail = ParaId(second.id);
+        let mut tx = self.begin("Move Paragraphs");
+        if self.step(&mut tx, Step::Split { para: c, at: len, second, kept: Vec::new() }).is_err() {
+            self.abort(tx);
+            return None;
+        }
+        if !changed(self.commit(tx, None, fonts)) {
+            return None;
+        }
+        self.selection = Selection::Caret(Position::text(story, tail, Unit(0)));
+        let mut open = frag.clone();
+        open.open_end = true;
+        if !changed(self.paste_fragment(&open, fonts)) {
+            return None;
+        }
+        Some((tail, self.selection.focus()?.para_offset()?.0))
     }
 }

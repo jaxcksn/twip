@@ -5,7 +5,7 @@ use std::rc::Rc;
 use crate::docx::Compat;
 use crate::docx::model::*;
 use crate::docx::props::{Border, Jc};
-use crate::docx::review::{MarkupView, ReviewView};
+use crate::docx::review::ReviewView;
 use crate::layout::fragment::Child;
 use crate::layout::ids::{ParaId, TableId};
 use crate::layout::job::{Memos, Yield};
@@ -115,6 +115,19 @@ pub fn legacy_lead(t: &Table) -> f64 {
     lw / 2.0 + edge_gap(t, lw, lmar)
 }
 
+/// The indent that places a left-aligned top-level table where it is drawn: its own, else in compat ≤ 14 (where an
+/// unset indent isn't pulled left) the gap before its column edge.
+pub fn placed_indent(t: &Table, compat: Compat) -> f64 {
+    if t.ind_set || compat != Compat::Legacy {
+        return placed_ind(t);
+    }
+    // The first row's left border, as the table's origin is drawn from it
+    let left = &row_borders(t, 0)[1];
+    let (lw, lmar) =
+        t.rows.first().and_then(|r| r.cells.first()).map_or((space_h(left), 0.0), |c| (space_h(candidate(Some(&c.left), left)), c.margins[1]));
+    edge_gap(t, lw, lmar)
+}
+
 fn rtl(t: &Table) -> bool {
     t.bidi_visual && t.floating.is_none()
 }
@@ -208,27 +221,37 @@ pub(super) struct CellEdges {
 
 /// Each cell's resolved edges. A shared edge goes to the conflict winner of the two cells' borders, or with `single`
 /// to the right or lower cell's border, the left or upper one's when that is nil.
+struct Side<'a> {
+    b: Option<&'a Border>,
+    cell: bool,
+}
+
+fn side<'a>(own: &'a Option<Border>, table: &'a Option<Border>) -> Side<'a> {
+    match own {
+        Some(b) => Side { b: Some(b), cell: true },
+        None => Side { b: table.as_ref(), cell: false },
+    }
+}
+
+/// A cell's own side against its neighbour's; `later`: the cell is the right or lower one.
+fn shared_side(own: &Side, other: &Side, later: bool, single: bool) -> Option<Border> {
+    if single {
+        let (first, second) = if later { (other, own) } else { (own, other) };
+        second.b.filter(|b| b.visible()).or(first.b.filter(|b| b.visible())).cloned()
+    } else {
+        conflict((own.b, own.cell), (other.b, other.cell))
+    }
+}
+
+/// The line drawn where two cells meet, as [`cell_edges`] resolves it: the left or upper cell's side (its own border,
+/// else its row's or table's line there) against the right or lower one's.
+pub fn shared_edge(first: (&Option<Border>, &Option<Border>), second: (&Option<Border>, &Option<Border>), single: bool) -> Option<Border> {
+    shared_side(&side(first.0, first.1), &side(second.0, second.1), false, single)
+}
+
 pub(super) fn cell_edges<'k>(t: &Table, ncols: usize, single: bool, kept: &dyn Fn(usize) -> Option<&'k RowBox>) -> Vec<Vec<CellEdges>> {
     let nrows = t.rows.len();
-    struct Side<'a> {
-        b: Option<&'a Border>,
-        cell: bool,
-    }
-    fn side<'a>(own: &'a Option<Border>, table: &'a Option<Border>) -> Side<'a> {
-        match own {
-            Some(b) => Side { b: Some(b), cell: true },
-            None => Side { b: table.as_ref(), cell: false },
-        }
-    }
-    // A cell's own side against its neighbour's; `later`: the cell is the right or lower one.
-    let shared = |own: &Side, other: &Side, later: bool| {
-        if single {
-            let (first, second) = if later { (other, own) } else { (own, other) };
-            second.b.filter(|b| b.visible()).or(first.b.filter(|b| b.visible())).cloned()
-        } else {
-            conflict((own.b, own.cell), (other.b, other.cell))
-        }
-    };
+    let shared = |own: &Side, other: &Side, later: bool| shared_side(own, other, later, single);
     let mut grid_cells: Vec<Vec<(usize, usize)>> = Vec::new();
     for r in &t.rows {
         let mut col = r.grid_before;
@@ -451,11 +474,15 @@ pub(super) fn assemble(
                 closing: closings.next().copied().flatten(),
             });
         }
-        let changed = review.view.change_bars()
-            && (r.rev.ins.is_some()
-                || r.rev.del.is_some()
-                || r.rev.change.is_some()
-                || cells_geo.iter().any(|g| r.cells[g.ci].rev.structural.is_some() || r.cells[g.ci].rev.change.is_some()));
+        let bars = |m: Option<&crate::docx::review::RevisionMark>| m.is_some_and(|m| review.bars(m));
+        let changed = review.change_bars()
+            && (bars(r.rev.ins.as_deref())
+                || bars(r.rev.del.as_deref())
+                || bars(r.rev.change.as_deref().map(|c| &*c.mark))
+                || cells_geo.iter().any(|g| {
+                    let c = &r.cells[g.ci].rev;
+                    bars(c.structural.as_ref().map(|(m, _)| &**m)) || bars(c.change.as_deref().map(|c| &*c.mark))
+                }));
         let mut top_border = cells.iter().map(|c| space_h(&c.edges[0])).fold(0.0, f64::max);
         let seams: Vec<(f64, f64, Border)> = match ri.checked_sub(1).and_then(|p| geo.get(p)) {
             Some(above) if row_s.is_none() && !framed(t, ri - 1) => {
@@ -821,14 +848,16 @@ fn turn_cell(
         Flow::Up => (l - g.cx, g.w - g.cx - r),
         Flow::DownEast => (f64::NEG_INFINITY, f64::INFINITY),
     };
-    let items = crate::layout::vertical::turned_in(&story.units, v, [0.0, 0.0, g.cw, len], across, first, bottom);
+    let rect = [0.0, 0.0, g.cw, len];
+    let items = crate::layout::vertical::turned_in(&story.units, v, rect, across, first, bottom);
+    let text = crate::layout::vertical::unturned(&story.units, v, rect, across, first, bottom, crate::layout::vertical::Turn::NONE);
     let unit = StoryUnit {
         top: 0.0,
         height: 0.0,
         below: 0.0,
         after: 0.0,
         hold: 0.0,
-        content: Rc::from([Child::Items(items.into())]),
+        content: Rc::from([Child::Turned { items: items.into(), text }]),
         block: 0,
         from: 0,
         widow: false,
@@ -842,16 +871,40 @@ fn turn_cell(
     Ok(())
 }
 
-/// A cell's shading, or a tracked inserted or deleted cell's (or row's) author colour over its fill.
+/// A cell's shading, or a tracked inserted, deleted, merged or split cell's (or inserted or deleted row's) highlight over its
+/// fill: the author's colour mixed in, or the markup style's fixed colour.
 fn tint(review: &ReviewView, r: &Row, c: &Cell) -> crate::layout::shade::Shade {
-    let cell =
-        c.rev.structural.as_ref().filter(|(_, k)| matches!(k, crate::docx::review::CellMarkKind::Insert | crate::docx::review::CellMarkKind::Delete));
-    let Some(m) = cell.map(|(m, _)| m).or(r.rev.del.as_ref()).or(r.rev.ins.as_ref()).filter(|_| review.view == MarkupView::All) else {
-        return crate::layout::shade::Shade { fill: c.shading, hatch: c.hatch };
+    use crate::docx::VMerge;
+    use crate::docx::review::{CellMarkKind, MarkColor};
+    let own = crate::layout::shade::Shade { fill: c.shading, hatch: c.hatch };
+    let style = &review.markup.style;
+    let shown = |m: &&std::rc::Rc<crate::docx::review::RevisionMark>| review.marks(m);
+    let cell = c.rev.structural.as_ref().filter(|(m, _)| shown(&m)).map(|(m, k)| match k {
+        CellMarkKind::Insert => (m, style.inserted_cells),
+        CellMarkKind::Delete => (m, style.deleted_cells),
+        CellMarkKind::Merge { v_merge, v_merge_orig } => {
+            let split = *v_merge_orig == Some(VMerge::Continue) && *v_merge != Some(VMerge::Continue);
+            (m, if split { style.split_cells } else { style.merged_cells })
+        }
+    });
+    let row = || {
+        r.rev
+            .del
+            .as_ref()
+            .filter(shown)
+            .map(|m| (m, style.deleted_cells))
+            .or_else(|| r.rev.ins.as_ref().filter(shown).map(|m| (m, style.inserted_cells)))
     };
-    let (a, b) = (review.palette.color(m.author), c.shading.unwrap_or(0xFFFFFF));
-    let mix = |s: u32| ((((a >> s) & 0xFF) + 3 * ((b >> s) & 0xFF)) / 4) << s;
-    crate::layout::shade::Shade { fill: Some(mix(16) | mix(8) | mix(0)), hatch: None }
+    let Some((m, color)) = cell.or_else(row) else { return own };
+    match color {
+        MarkColor::Auto => own,
+        MarkColor::Fixed(f) => crate::layout::shade::Shade { fill: Some(f), hatch: None },
+        MarkColor::ByAuthor => {
+            let (a, b) = (review.palette.color(m.author), c.shading.unwrap_or(0xFFFFFF));
+            let mix = |s: u32| ((((a >> s) & 0xFF) + 3 * ((b >> s) & 0xFF)) / 4) << s;
+            crate::layout::shade::Shade { fill: Some(mix(16) | mix(8) | mix(0)), hatch: None }
+        }
+    }
 }
 
 #[cfg(test)]

@@ -172,3 +172,347 @@ fn a_tip_is_looked_up_again_only_once_the_pointer_or_the_document_changes() {
     assert!(e.hover_tip().is_none(), "no change tips outside All Markup");
     assert_eq!(e.hover_lookups, looked + 1);
 }
+
+/// A paragraph of a hyperlink with a ScreenTip, frame and bookmark, then a cross-reference made a link by `\h`, then
+/// the bookmarked paragraph.
+fn linked() -> Editor {
+    let field = |code: &str, shown: &str| {
+        format!(
+            r#"<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve">{code}</w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>{shown}</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>"#
+        )
+    };
+    let body = format!(
+        r#"<w:p>{}<w:r><w:t xml:space="preserve"> and </w:t></w:r>{}</w:p><w:p><w:bookmarkStart w:id="1" w:name="Target"/><w:r><w:t>Here</w:t></w:r><w:bookmarkEnd w:id="1"/></w:p>"#,
+        field(r#" HYPERLINK "https://a.test/" \l "top" \o "Read the guide" \t "_blank" "#, "guide"),
+        field(r#" REF Target \h "#, "Here"),
+    );
+    let mut e = Editor::open(&super::blank_body(&body), fonts()).expect("opens");
+    e.complete(fonts());
+    e
+}
+
+/// The position `after` units into the `n`th field of the first paragraph, and its place on the stack.
+fn in_field(e: &mut Editor, n: usize, after: u32) -> (Position, f64, f64) {
+    let Some(Block::Para(p)) = e.document().sections[0].blocks.first() else { panic!("a paragraph") };
+    let s = crate::docx::fields::spans(&p.inlines)[n];
+    let u: u32 = p.inlines[..s.begin].iter().map(|i| i.units() as u32).sum();
+    let at = Position::text(StoryId::Body, ParaId(p.id), Unit(u + after));
+    let c = e.caret_at(at).expect("laid out");
+    let (x, y) = e.stack().to_doc(c.page, c.x + 1.0, (c.top + c.bottom) / 2.0).expect("on the stack");
+    (at, x, y)
+}
+
+#[test]
+fn a_link_reads_back_its_parts_and_shows_its_screen_tip() {
+    let mut e = linked();
+    let (at, x, y) = in_field(&mut e, 0, 1);
+    let link = e.link_at(at).expect("a link");
+    assert_eq!(
+        (link.address.as_str(), link.target.as_str(), link.bookmark.as_deref(), link.tip.as_deref(), link.frame.as_deref(), link.reference),
+        ("https://a.test/#top", "https://a.test/", Some("top"), Some("Read the guide"), Some("_blank"), false)
+    );
+    e.pointer_input(PointerKind::Move, x, y, 0, Mods::default(), fonts());
+    assert_eq!(tip(&mut e), Some((HoverTip::Link, "Read the guide".into())), "the tip, not the address");
+}
+
+#[test]
+fn a_linked_cross_reference_is_a_link_that_ctrl_click_follows() {
+    let mut e = linked();
+    let (at, x, y) = in_field(&mut e, 1, 1);
+    let link = e.link_at(at).expect("a link");
+    assert_eq!((link.address.as_str(), link.reference), ("#Target", true));
+    e.selection = crate::editing::selection::Selection::Caret(at);
+    assert!(e.link_here().is_none(), "not a hyperlink to edit or remove");
+    e.pointer_input(PointerKind::Move, x, y, 0, Mods::default(), fonts());
+    assert_eq!(tip(&mut e), Some((HoverTip::Link, "#Target".into())));
+    let ctrl = Mods { ctrl: true, ..Mods::default() };
+    e.pointer_input(PointerKind::Down, x, y, 1, ctrl, fonts());
+    e.pointer_input(PointerKind::Up, x, y, 1, ctrl, fonts());
+    let second = match &e.document().sections[0].blocks[1] {
+        Block::Para(p) => ParaId(p.id),
+        Block::Table(_) => panic!("a paragraph"),
+    };
+    assert_eq!(e.selection().anchor().and_then(|a| a.para_offset()).map(|p| p.0), Some(second), "at the bookmark");
+}
+
+#[test]
+fn editing_a_link_address_keeps_its_screen_tip() {
+    let mut e = linked();
+    let (at, ..) = in_field(&mut e, 0, 1);
+    e.selection = crate::editing::selection::Selection::Caret(at);
+    let edit = crate::api::command::HyperlinkEdit { address: Some("https://b.test/".into()), text: None };
+    assert!(matches!(e.edit_hyperlink(edit, fonts()), crate::editing::Outcome::Changed(_)));
+    let link = e.link_here().expect("still a link");
+    assert_eq!((link.address.as_str(), link.bookmark, link.tip.as_deref()), ("https://b.test/", None, Some("Read the guide")));
+    let mut e = linked();
+    e.selection = crate::editing::selection::Selection::Caret(Position::text(
+        StoryId::Body,
+        ParaId(match &e.document().sections[0].blocks[1] {
+            Block::Para(p) => p.id,
+            Block::Table(_) => panic!("a paragraph"),
+        }),
+        Unit(0),
+    ));
+    let parts = crate::editing::commands::LinkParts { bookmark: Some("Target".into()), tip: Some("Go".into()), ..Default::default() };
+    assert_eq!(parts.code(), r#" HYPERLINK \l "Target" \o "Go" "#);
+    assert!(matches!(e.insert_link(parts, Some("go".into()), fonts()), crate::editing::Outcome::Changed(_)));
+}
+
+#[test]
+fn the_notes_list_gives_each_notes_mark_text_reference_and_page() {
+    use crate::api::command::{NoteInsert, NoteType};
+    use crate::docx::NoteKind;
+    let mut e = Editor::open(&super::blank_body("<w:p><w:r><w:t>Body</w:t></w:r></w:p>"), fonts()).expect("opens");
+    let body = |e: &Editor| match &e.document().sections[0].blocks[0] {
+        Block::Para(p) => ParaId(p.id),
+        Block::Table(_) => panic!("a paragraph"),
+    };
+    let at_end = |e: &mut Editor| e.selection = crate::editing::selection::Selection::Caret(Position::text(StoryId::Body, body(e), Unit(4)));
+    for (kind, custom, text) in [(NoteType::Footnote, None, "First"), (NoteType::Footnote, Some("*"), "Starred"), (NoteType::Endnote, None, "Last")] {
+        at_end(&mut e);
+        e.execute(super::super::commands::Command::InsertNote(NoteInsert { kind, custom_mark: custom.map(Into::into) }), fonts());
+        e.execute(super::super::commands::Command::InsertText(text.into()), fonts());
+    }
+    e.complete(fonts());
+    let notes = e.notes();
+    let got: Vec<(NoteKind, &str, bool, &str, Option<usize>)> =
+        notes.iter().map(|n| (n.kind, n.mark.as_str(), n.custom, n.text.as_str(), n.page)).collect();
+    assert_eq!(
+        got,
+        [
+            (NoteKind::Foot, "*", true, "Starred", Some(0)),
+            (NoteKind::Foot, "1", false, "First", Some(0)),
+            (NoteKind::End, "i", false, "Last", Some(0))
+        ],
+        "in their references' order, each inserted before the last"
+    );
+    assert!(notes.iter().all(|n| n.reference.and_then(|r| r.para_offset()).map(|p| p.0) == Some(body(&e))), "referenced from the body");
+}
+
+#[test]
+fn a_note_separator_set_in_a_document_without_notes_is_saved() {
+    use crate::docx::{NoteKind, NoteSeparator as S};
+    // With a settings part, and without one
+    let docs = [open("FX-EMPTY.docx"), Editor::open(&super::blank_body("<w:p><w:r><w:t>Text</w:t></w:r></w:p>"), fonts()).expect("opens")];
+    for mut e in docs {
+        assert!(e.document().footnotes.is_empty(), "no footnotes");
+        assert!(matches!(e.set_note_separator(NoteKind::Foot, S::Notice, Some("Continued"), fonts()), crate::editing::Outcome::Changed(_)));
+        let saved = crate::docx::write::save(e.document()).expect("saves");
+        let again = Editor::open(&saved, fonts()).expect("reopens");
+        assert_eq!(again.note_separator(NoteKind::Foot, S::Notice).map(|s| s.text), Some("Continued".into()), "saved");
+        assert_eq!(again.note_separator(NoteKind::End, S::Notice), None, "no endnote part's notice");
+    }
+}
+
+#[test]
+fn a_note_separators_text_keeps_an_object_replacement_character() {
+    use crate::docx::{NoteKind, NoteSeparator as S};
+    let mut e = Editor::open(&super::blank_body("<w:p><w:r><w:t>Text</w:t></w:r></w:p>"), fonts()).expect("opens");
+    assert!(matches!(e.set_note_separator(NoteKind::Foot, S::Notice, Some("a\u{FFFC}b"), fonts()), crate::editing::Outcome::Changed(_)));
+    assert_eq!(e.note_separator(NoteKind::Foot, S::Notice).map(|s| s.text), Some("a\u{FFFC}b".into()));
+}
+
+#[test]
+fn note_separators_are_set_read_back_saved_and_reset() {
+    use crate::docx::{NoteKind, NoteSeparator as S};
+    let mut e = open("FX-STORIES.docx");
+    e.complete(fonts());
+    let sep = |e: &Editor, part| e.note_separator(NoteKind::Foot, part).map(|s| (s.text, s.builtin));
+    assert_eq!(sep(&e, S::Separator), Some((String::new(), true)), "Word's line");
+    assert_eq!(sep(&e, S::Notice), None, "no notice");
+    let depth = e.history().undo_depth();
+    assert!(matches!(e.set_note_separator(NoteKind::Foot, S::Separator, Some("Notes"), fonts()), crate::editing::Outcome::Changed(_)));
+    assert!(matches!(
+        e.set_note_separator(NoteKind::Foot, S::Notice, Some("Continued on the next page"), fonts()),
+        crate::editing::Outcome::Changed(_)
+    ));
+    assert!(
+        matches!(e.set_note_separator(NoteKind::Foot, S::Separator, Some("Notes"), fonts()), crate::editing::Outcome::Unchanged(_)),
+        "the same text again"
+    );
+    assert_eq!(e.history().undo_depth(), depth + 2);
+    assert_eq!(sep(&e, S::Separator), Some(("Notes".into(), false)));
+    e.complete(fonts());
+    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let mut again = Editor::open(&saved, fonts()).expect("reopens");
+    assert_eq!(sep(&again, S::Separator), Some(("Notes".into(), false)), "saved");
+    assert_eq!(sep(&again, S::Notice), Some(("Continued on the next page".into(), false)), "the new notice listed in the settings");
+    assert_eq!(sep(&again, S::Continuation), Some((String::new(), true)), "the other kept");
+    assert!(matches!(again.set_note_separator(NoteKind::Foot, S::Notice, None, fonts()), crate::editing::Outcome::Changed(_)));
+    assert!(matches!(again.set_note_separator(NoteKind::Foot, S::Separator, None, fonts()), crate::editing::Outcome::Changed(_)));
+    assert!(
+        matches!(again.set_note_separator(NoteKind::Foot, S::Separator, None, fonts()), crate::editing::Outcome::Unchanged(_)),
+        "Word's line again"
+    );
+    let twice = Editor::open(&crate::docx::write::save(again.document()).expect("saves"), fonts()).expect("reopens");
+    assert_eq!((sep(&twice, S::Separator), sep(&twice, S::Notice)), (Some((String::new(), true)), None), "reset");
+    e.undo_many(true, 2, fonts());
+    assert_eq!((sep(&e, S::Separator), sep(&e, S::Notice)), (Some((String::new(), true)), None), "undone");
+}
+
+fn separator_doc(foot: &str, settings: &str) -> Editor {
+    use super::empty_stories::NS;
+    let foot = format!(r#"<w:footnotes {NS}>{foot}</w:footnotes>"#);
+    let settings = format!(r#"<w:settings {NS}>{settings}</w:settings>"#);
+    let body = "<w:p><w:r><w:t>Text</w:t></w:r></w:p>";
+    let parts = [("footnotes.xml", "footnotes", "footnotes", foot.as_str()), ("settings.xml", "settings", "settings", settings.as_str())];
+    let mut e = Editor::open(&super::empty_stories::build(body, "", &parts), fonts()).expect("opens");
+    e.complete(fonts());
+    e
+}
+
+/// Part `name` of the package `docx`.
+fn part(docx: &[u8], name: &str) -> String {
+    use std::io::Read;
+    let mut xml = String::new();
+    zip::ZipArchive::new(std::io::Cursor::new(docx)).expect("a package").by_name(name).expect("the part").read_to_string(&mut xml).expect("text");
+    xml
+}
+
+fn separator_note(id: i64, text: &str) -> String {
+    format!(r#"<w:footnote w:type="separator" w:id="{id}"><w:p><w:r><w:t>{text}</w:t></w:r></w:p></w:footnote>"#)
+}
+
+#[test]
+fn a_separator_edit_updates_the_story_the_reader_uses() {
+    use crate::docx::{NoteKind, NoteSeparator as S};
+    // -1 is unlisted; -3 is listed and the active one.
+    let foot = separator_note(-1, "Unlisted") + &separator_note(-3, "Listed");
+    let mut e = separator_doc(&foot, r#"<w:footnotePr><w:footnote w:id="-3"/></w:footnotePr>"#);
+    let text = |e: &Editor| e.note_separator(NoteKind::Foot, S::Separator).map(|s| s.text);
+    assert_eq!(text(&e), Some("Listed".into()));
+    assert!(matches!(e.set_note_separator(NoteKind::Foot, S::Separator, Some("New"), fonts()), crate::editing::Outcome::Changed(_)));
+    let saved = crate::docx::write::save(e.document()).expect("saves");
+    assert_eq!(text(&Editor::open(&saved, fonts()).expect("reopens")), Some("New".into()), "the edit survives");
+}
+
+#[test]
+fn a_separator_reset_removes_every_listed_story_of_the_type() {
+    use crate::docx::{NoteKind, NoteSeparator as S};
+    let foot = separator_note(-1, "A") + &separator_note(-3, "B");
+    let mut e = separator_doc(&foot, r#"<w:footnotePr><w:footnote w:id="-1"/><w:footnote w:id="-3"/></w:footnotePr>"#);
+    assert!(matches!(e.set_note_separator(NoteKind::Foot, S::Notice, None, fonts()), crate::editing::Outcome::Unchanged(_)));
+    assert!(matches!(e.set_note_separator(NoteKind::Foot, S::Separator, None, fonts()), crate::editing::Outcome::Changed(_)));
+    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let again = Editor::open(&saved, fonts()).expect("reopens");
+    assert_eq!(again.note_separator(NoteKind::Foot, S::Separator).map(|s| (s.text, s.builtin)), Some((String::new(), true)));
+    // Neither old story is in the notes part, and the settings list only what's there
+    let notes = part(&saved, "word/footnotes.xml");
+    let notes = roxmltree::Document::parse(&notes).expect("the notes part parses");
+    let w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+    let texts: Vec<&str> = notes.descendants().filter(|n| n.has_tag_name((w, "t"))).filter_map(|n| n.text()).collect();
+    assert!(!texts.contains(&"A") && !texts.contains(&"B"), "the custom stories are gone: {}", notes.input_text());
+    let ids: Vec<&str> = notes
+        .descendants()
+        .filter(|n| n.has_tag_name((w, "footnote")) && n.attribute((w, "type")) == Some("separator"))
+        .filter_map(|n| n.attribute((w, "id")))
+        .collect();
+    assert_eq!(ids.len(), 1, "one separator story, the line: {ids:?}");
+    let settings = part(&saved, "word/settings.xml");
+    let settings = roxmltree::Document::parse(&settings).expect("the settings part parses");
+    let listed: Vec<&str> = settings
+        .descendants()
+        .filter(|n| n.has_tag_name((w, "footnotePr")))
+        .flat_map(|n| n.children().filter(|c| c.has_tag_name((w, "footnote"))).filter_map(|c| c.attribute((w, "id"))))
+        .collect();
+    assert!(
+        listed
+            .iter()
+            .all(|id| ids.contains(id)
+                || notes.descendants().any(|n| n.attribute((w, "id")) == Some(id) && n.attribute((w, "type")) != Some("separator"))),
+        "listed {listed:?}, stories {ids:?}"
+    );
+}
+
+#[test]
+fn a_separator_edit_keeps_the_note_properties_namespace_declarations() {
+    use crate::docx::{NoteKind, NoteSeparator as S};
+    let foot = separator_note(-1, "Old");
+    let pr = r#"<w:footnotePr xmlns:p="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><p:numFmt p:val="upperRoman"/></w:footnotePr>"#;
+    let mut e = separator_doc(&foot, pr);
+    assert!(matches!(e.set_note_separator(NoteKind::Foot, S::Separator, Some("New"), fonts()), crate::editing::Outcome::Changed(_)));
+    let saved = crate::docx::write::save(e.document()).expect("saves a settings part with a bound prefix");
+    let again = Editor::open(&saved, fonts()).expect("reopens");
+    assert_eq!(again.note_separator(NoteKind::Foot, S::Separator).map(|s| s.text), Some("New".into()));
+    let settings = part(&saved, "word/settings.xml");
+    let settings = roxmltree::Document::parse(&settings).expect("the settings part parses");
+    let w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+    let format = settings
+        .descendants()
+        .filter(|n| n.has_tag_name((w, "footnotePr")))
+        .flat_map(|n| n.children().filter(|c| c.has_tag_name((w, "numFmt"))))
+        .find_map(|c| c.attribute((w, "val")));
+    assert_eq!(format, Some("upperRoman"), "the number format kept: {}", settings.input_text());
+}
+
+#[test]
+fn a_separator_with_a_table_reports_its_cells_text() {
+    use crate::docx::{NoteKind, NoteSeparator as S};
+    let table = r#"<w:tbl><w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>Notes</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>here</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p><w:r><w:t>after</w:t></w:r></w:p>"#;
+    let foot = format!(r#"<w:footnote w:type="separator" w:id="-1">{table}</w:footnote>"#);
+    let e = separator_doc(&foot, r#"<w:footnotePr><w:footnote w:id="-1"/></w:footnotePr>"#);
+    assert_eq!(e.note_separator(NoteKind::Foot, S::Separator).map(|s| s.text), Some("Notes\nhere\nafter".into()));
+}
+
+#[test]
+fn a_cross_reference_inside_a_hyperlink_leaves_the_hyperlink_to_edit() {
+    let r = |x: &str| format!("<w:r>{x}</w:r>");
+    let ch = |k: &str| r(&format!(r#"<w:fldChar w:fldCharType="{k}"/>"#));
+    let code = |c: &str| r(&format!(r#"<w:instrText xml:space="preserve">{c}</w:instrText>"#));
+    let text = |t: &str| r(&format!("<w:t>{t}</w:t>"));
+    let body = format!(
+        r#"<w:p>{}{}{}{}{}{}{}{}{}{}</w:p><w:p><w:bookmarkStart w:id="0" w:name="Target"/>{}<w:bookmarkEnd w:id="0"/></w:p>"#,
+        ch("begin"),
+        code(r#" HYPERLINK "https://a.test/" "#),
+        ch("separate"),
+        text("x"),
+        ch("begin"),
+        code(r" REF Target \h "),
+        ch("separate"),
+        text("ref"),
+        ch("end"),
+        ch("end"),
+        text("there")
+    );
+    let mut e = Editor::open(&super::blank_body(&body), fonts()).expect("opens");
+    e.complete(fonts());
+    let Block::Para(p) = &e.document().sections[0].blocks[0] else { panic!("a paragraph") };
+    let k = p.inlines.iter().position(|i| matches!(i, Inline::Text(t, _) if t == "ref")).expect("the reference's text");
+    let unit: u32 = p.inlines[..k].iter().map(|i| i.units() as u32).sum::<u32>() + 1;
+    let at = Position::text(StoryId::Body, ParaId(p.id), Unit(unit));
+    assert!(e.link_at(at).expect("a link").reference, "the innermost link is the cross-reference");
+    e.selection = crate::editing::selection::Selection::Caret(at);
+    assert_eq!(e.link_here().map(|l| l.address), Some("https://a.test/".into()), "the hyperlink around it");
+}
+
+#[test]
+fn a_new_separator_takes_a_free_id_beside_the_least_one() {
+    use crate::docx::{NoteKind, NoteSeparator as S};
+    let foot = format!("{}<w:footnote w:id=\"{}\"><w:p/></w:footnote>", separator_note(-1, "Line"), i64::MIN);
+    let mut e = separator_doc(&foot, r#"<w:footnotePr><w:footnote w:id="-1"/></w:footnotePr>"#);
+    assert!(matches!(e.set_note_separator(NoteKind::Foot, S::Notice, Some("Continued"), fonts()), crate::editing::Outcome::Changed(_)));
+    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let foot = crate::docx::package::read(&saved, &[], "word/footnotes.xml").expect("reads").expect("the notes");
+    assert!(foot.contains(r#"w:type="continuationNotice" w:id="-2""#), "{foot}");
+    let again = Editor::open(&saved, fonts()).expect("reopens");
+    assert_eq!(again.note_separator(NoteKind::Foot, S::Notice).map(|s| s.text), Some("Continued".into()));
+}
+
+#[test]
+fn a_separator_listed_in_default_namespace_settings_is_read_back() {
+    use super::empty_stories::NS;
+    use crate::docx::{NoteKind, NoteSeparator as S};
+    let foot = format!(r#"<w:footnotes {NS}>{}</w:footnotes>"#, separator_note(-1, "Line"));
+    let settings = r#"<settings xmlns="http://schemas.openxmlformats.org/wordprocessingml/2006/main"></settings>"#;
+    let parts = [("footnotes.xml", "footnotes", "footnotes", foot.as_str()), ("settings.xml", "settings", "settings", settings)];
+    let mut e = Editor::open(&super::empty_stories::build("<w:p><w:r><w:t>Text</w:t></w:r></w:p>", "", &parts), fonts()).expect("opens");
+    assert!(matches!(e.set_note_separator(NoteKind::Foot, S::Notice, Some("Continued"), fonts()), crate::editing::Outcome::Changed(_)));
+    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let xml = crate::docx::package::read(&saved, &[], "word/settings.xml").expect("reads").expect("the settings");
+    let d = roxmltree::Document::parse(&xml).expect("well-formed");
+    let w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+    let listed: Vec<&str> = d.descendants().filter(|n| n.has_tag_name((w, "footnote"))).filter_map(|n| n.attribute((w, "id"))).collect();
+    assert!(listed.contains(&"-2"), "the notice listed by a qualified id: {xml}");
+    let again = Editor::open(&saved, fonts()).expect("reopens");
+    assert_eq!(again.note_separator(NoteKind::Foot, S::Notice).map(|s| s.text), Some("Continued".into()));
+}

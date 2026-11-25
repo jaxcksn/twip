@@ -167,7 +167,10 @@ impl Editor {
         let out = self.edit_numbering(
             "Define List",
             |n, cx, colours| {
-                n.set_abstract_xml(super::list_defs::abstract_xml(abstract_id, None, &levels, None, &[], &[], cx), colours)?;
+                n.set_abstract_xml(
+                    super::list_defs::abstract_xml(abstract_id, None, super::list_defs::Levels::Shown(&levels), None, &[], &[], cx, colours),
+                    colours,
+                )?;
                 let w = &cx.w;
                 n.set_num_xml(format!("<{w}num {w}numId=\"{num_id}\"><{w}abstractNumId {w}val=\"{abstract_id}\"/></{w}num>"), colours)?;
                 Some(())
@@ -195,8 +198,20 @@ impl Editor {
                 self.edit_numbering(
                     "Modify Style",
                     |n, cx, colours| {
-                        n.set_abstract_xml(super::list_defs::abstract_xml(abstract_id, old.as_deref(), &levels, None, &[], &[], cx), colours)
-                            .map(|_| ())
+                        n.set_abstract_xml(
+                            super::list_defs::abstract_xml(
+                                abstract_id,
+                                old.as_deref(),
+                                super::list_defs::Levels::Shown(&levels),
+                                None,
+                                &[],
+                                &[],
+                                cx,
+                                colours,
+                            ),
+                            colours,
+                        )
+                        .map(|_| ())
                     },
                     &[],
                     false,
@@ -209,7 +224,8 @@ impl Editor {
                 let out = self.edit_numbering(
                     "New Style",
                     |n, cx, colours| {
-                        let mut a = super::list_defs::abstract_xml(abstract_id, None, &levels, None, &[], &[], cx);
+                        let mut a =
+                            super::list_defs::abstract_xml(abstract_id, None, super::list_defs::Levels::Shown(&levels), None, &[], &[], cx, colours);
                         // The definition is the style's: a w:styleLink after its multiLevelType.
                         let link = format!("<{w}styleLink {w}val=\"{}\"/>", esc(&style_id));
                         if let Some(at) = a.find(&format!("<{w}lvl ")) {

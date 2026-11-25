@@ -8,13 +8,18 @@ page 1 612 792
   op 1 0 0 -1 0 792 cm
   op /Artifact << /Type /Layout >> BDC
   op q
-  op 0.95 0.8 0.8 rg
+  op 0.6 0.8 1 rg
   op 228.25 91.87 156 20.37 re
   op f
   op Q
   op q
-  op 0.75 0.87 0.96 rg
+  op 1 0.6 0.8 rg
   op 228.25 112.24 156 20.37 re
+  op f
+  op Q
+  op q
+  op 1 1 0.6 rg
+  op 72.25 152.98 156 20.37 re
   op f
   op Q
   op EMC
@@ -364,12 +369,12 @@ page 1 612 792
   op EMC
   op /Artifact << /Type /Layout >> BDC
   op q
-  op 0 0 0 rg
+  op 0.5 0.5 0.5 rg
   op 36 92.37 0.72 40.74 re
   op f
   op Q
   op q
-  op 0 0 0 rg
+  op 0.5 0.5 0.5 rg
   op 36 153.48 0.72 20.37 re
   op f
   op Q

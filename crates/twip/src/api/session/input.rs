@@ -476,7 +476,9 @@ impl Session {
                     M::Right => Command::SetIndents(Indents { right: Some(Points(end - value)), ..Indents::default() }),
                     M::TextStart => Command::SetMargins(Margins { left: Some(Points(margins.left.0 + value - start)), ..Margins::default() }),
                     M::TextEnd => Command::SetMargins(Margins { right: Some(Points(margins.right.0 + end - value)), ..Margins::default() }),
-                    M::Top => Command::SetMargins(Margins { top: Some(Points(value)), ..Margins::default() }),
+                    M::Top => {
+                        Command::SetMargins(Margins { top: Some(Points((margins.top.0 + value - v.text.start.0).max(0.0))), ..Margins::default() })
+                    }
                     M::Bottom => Command::SetMargins(Margins { bottom: Some(Points(v.page_height.0 - value)), ..Margins::default() }),
                     M::Column(column) => Command::MoveColumnBoundary(ColumnBoundaryMove { column, to: Points(value) }),
                     M::TableColumn(index) => Command::MoveTableColumnBoundary(BoundaryMove { index, to: Points(value) }),

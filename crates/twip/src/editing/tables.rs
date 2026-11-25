@@ -17,7 +17,7 @@ use super::selection::{CellRef, Selection};
 use super::step::{Step, para_len};
 use super::table::Grid;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct Target {
     pub table: TableId,
     pub rows: (usize, usize),
@@ -202,16 +202,44 @@ pub(super) fn remove_cells(rows: &mut Vec<Row>, gone: &[(usize, usize)], grid: &
     any
 }
 
-/// `grid` with the widths its columns are drawn at on `geo`.
-pub(super) fn drawn_grid(geo: &super::geometry::PageGeometry, table: TableId, grid: &mut [f64]) {
+/// `grid` with the widths its columns are drawn at on `geo`, `t` the table drawn there.
+pub(super) fn drawn_grid(geo: &super::geometry::PageGeometry, table: TableId, t: &Table, grid: &mut [f64]) {
     let mut xs: Vec<Option<f64>> = vec![None; grid.len() + 1];
-    for r in geo.rows.iter().filter(|r| r.table == table && !r.repeat) {
+    let take = |r: &super::geometry::GRow, shift: f64, xs: &mut [Option<f64>]| {
         for &(x, k) in &r.edges {
             if let Some(slot) = xs.get_mut(k)
                 && slot.is_none()
             {
-                *slot = Some(x);
+                *slot = Some(x + shift);
             }
+        }
+    };
+    let shared =
+        |r: &super::geometry::GRow, xs: &[Option<f64>]| r.edges.iter().find_map(|&(x, k)| xs.get(k).copied().flatten().map(|known| known - x));
+    // The rows placed by the table's indent first; a row with an indent or alignment of its own is drawn shifted, its
+    // edges taken where the others put theirs, and left out while it shares none of them.
+    let own = |r: &&super::geometry::GRow| t.rows.get(r.row).is_some_and(|m| m.ind.is_some() || m.jc.is_some());
+    let rows = geo.rows.iter().filter(|r| r.table == table && !r.repeat);
+    let mut shifted: Vec<&super::geometry::GRow> = Vec::new();
+    for r in rows {
+        if own(&r) {
+            shifted.push(r);
+        } else {
+            take(r, shared(r, &xs).unwrap_or(0.0), &mut xs);
+        }
+    }
+    // Each pass places the rows that share an edge with those placed; at most one pass per row.
+    while !shifted.is_empty() {
+        let before = shifted.len();
+        shifted.retain(|r| match shared(r, &xs) {
+            Some(shift) => {
+                take(r, shift, &mut xs);
+                false
+            }
+            None => true,
+        });
+        if shifted.len() == before {
+            break;
         }
     }
     for (k, w) in grid.iter_mut().enumerate() {
@@ -222,7 +250,7 @@ pub(super) fn drawn_grid(geo: &super::geometry::PageGeometry, table: TableId, gr
 }
 
 /// The cells of the vertical merge starting at `(r, k)`: it and the continuations under it.
-fn merge_chain(g: &Grid, r: usize, k: usize) -> Vec<(usize, usize)> {
+pub(super) fn merge_chain(g: &Grid, r: usize, k: usize) -> Vec<(usize, usize)> {
     let c = g.rows[r][k].0;
     std::iter::once((r, k))
         .chain((r + 1..g.rows.len()).map_while(|rr| {
@@ -367,49 +395,88 @@ impl Editor {
     }
 
     pub(super) fn auto_fit_column(&mut self, table: TableId, col: usize, fonts: &Fonts) -> Outcome {
+        self.auto_fit_columns_to_contents(table, (col, col), fonts)
+    }
+
+    /// AutoFit to contents of columns `c0..=c1`: each as wide as what its own cells hold, within the room the columns
+    /// before it left; the table measured once for them all.
+    pub(super) fn auto_fit_columns_to_contents(&mut self, table: TableId, (c0, c1): (usize, usize), fonts: &Fonts) -> Outcome {
         let Some(t) = self.index.table(&self.doc, table) else { return Outcome::Unchanged("no table") };
+        if c0 > c1 {
+            return Outcome::Unchanged("no column");
+        }
         let g = Grid::of(t);
-        let mut paras: Vec<(crate::layout::ParaId, f64)> = Vec::new();
+        // Each column's paragraphs in cells of its own, with their side margins and indents
+        let mut paras: Vec<Vec<(crate::layout::ParaId, f64)>> = vec![Vec::new(); c1 - c0 + 1];
         for (r, row) in t.rows.iter().enumerate() {
             for (k, cell) in row.cells.iter().enumerate() {
                 let Some(&(c, s, _)) = g.rows[r].get(k) else { continue };
-                if c == col && s.max(1) == 1 {
+                if (c0..=c1).contains(&c) && s.max(1) == 1 {
                     let m = cell.margins[1] + cell.margins[3];
                     for b in &cell.blocks {
                         if let Block::Para(p) = b {
-                            paras.push((crate::layout::ParaId(p.id), m + p.style.ind_left + p.style.ind_right));
+                            paras[c - c0].push((crate::layout::ParaId(p.id), m + p.style.ind_left + p.style.ind_right));
                         }
                     }
                 }
             }
         }
-        if paras.is_empty() {
+        if paras.iter().all(Vec::is_empty) {
             return Outcome::Unchanged("no cell of its own in the column");
         }
-        let (old_w, total, nrows) = (t.grid.get(col).copied(), t.grid.iter().sum::<f64>(), t.rows.len());
-        let mut lines: std::collections::HashMap<crate::layout::ParaId, f64> = std::collections::HashMap::new();
+        let (mut grid, nrows) = (t.grid.clone(), t.rows.len());
+        let wanted: std::collections::HashSet<crate::layout::ParaId> = paras.iter().flatten().map(|(p, _)| *p).collect();
+        let mut lines: std::collections::HashMap<crate::layout::ParaId, f64> = std::collections::HashMap::with_capacity(wanted.len());
         for geo in self.measured_pages(table) {
             for l in geo.lines.iter().filter(|l| !l.repeat) {
-                for &p in l.paras.iter() {
+                for &p in l.paras.iter().filter(|p| wanted.contains(p)) {
                     let (x0, x1) = l.span_of(p).unwrap_or_default();
                     *lines.entry(p).or_default() += (x1 - x0).max(0.0);
                 }
             }
         }
-        let margins = paras.iter().map(|(_, m)| *m).fold(0.0, f64::max);
-        let content = paras.iter().map(|(p, m)| lines.get(p).copied().unwrap_or(0.0) + m).fold(0.0, f64::max);
-        let mut w = content.max(margins + 4.5);
-        let old = old_w.unwrap_or(w);
-        let avail = self.index.table_slot(table).map_or(468.0, |s| self.text_width(s.container)) + margins + 1.0;
-        if w > old {
-            w = w.min(old + (avail - total).max(0.0));
+        let text_width = self.index.table_slot(table).map_or(468.0, |s| self.text_width(s.container));
+        // Each column's width for its contents, with its margins
+        let wants: Vec<(usize, f64, f64)> = (c0..)
+            .zip(&paras)
+            .filter(|(_, p)| !p.is_empty())
+            .map(|(col, paras)| {
+                let margins = paras.iter().map(|(_, m)| *m).fold(0.0, f64::max);
+                let content = paras.iter().map(|(p, m)| lines.get(p).copied().unwrap_or(0.0) + m).fold(0.0, f64::max);
+                (col, content.max(margins + 4.5), margins)
+            })
+            .collect();
+        let mut widths: Vec<(usize, f64)> = Vec::new();
+        // The columns that shrink first: the room they leave is there for those that grow, in column order.
+        for shrinking in [true, false] {
+            for &(col, mut w, margins) in &wants {
+                let old = grid.get(col).copied().unwrap_or(w);
+                if (w < old) != shrinking {
+                    continue;
+                }
+                if w > old {
+                    let total: f64 = grid.iter().sum();
+                    w = w.min(old + (text_width + margins + 1.0 - total).max(0.0));
+                }
+                let w = (w * 10.0).round() / 10.0;
+                if (w - old).abs() < 0.05 {
+                    continue;
+                }
+                // As the column width edit stores it
+                if let Some(x) = grid.get_mut(col) {
+                    *x = (w.max(1.0) * 20.0).round() / 20.0;
+                }
+                widths.push((col, w));
+            }
         }
-        let w = (w * 10.0).round() / 10.0;
-        if (w - old).abs() < 0.05 {
-            return Outcome::Unchanged("already fits");
+        let mut out = Outcome::Unchanged("already fits");
+        for (col, w) in widths {
+            let target = Target { table, rows: (0, nrows.saturating_sub(1)), cols: (col, col) };
+            if let o @ Outcome::Changed(_) = self.table_format_on(target, &super::table_format::TableFormat::ColumnWidth(w), fonts) {
+                out = o;
+            }
         }
-        let target = Target { table, rows: (0, nrows.saturating_sub(1)), cols: (col, col) };
-        self.table_format_on(target, &super::table_format::TableFormat::ColumnWidth(w), fonts)
+        out
     }
 
     /// The pages to measure a table's layout on: one in a header or footer shows on every page, so its first.
@@ -888,7 +955,8 @@ impl Editor {
     /// A new table `width` wide of `content`, each row's cells' blocks (a row with fewer than `ncols` cells filled
     /// with empty ones formatted like `like`), in the document's default table style, else Table Grid.
     pub(super) fn new_table(&self, content: Vec<Vec<Vec<Block>>>, ncols: usize, width: f64, like: &Paragraph) -> Table {
-        let border = Some(crate::docx::props::Border { style: "single".into(), width: 0.5, space: 0.0, shadow: false, color: None });
+        let border =
+            Some(crate::docx::props::Border { style: "single".into(), width: 0.5, space: 0.0, shadow: false, color: None, color_theme: None });
         // The document's default table style, else Table Grid.
         let has = |id: &str| self.doc.resolver.as_ref().is_some_and(|r| r.styles.by_id.contains_key(id));
         let style = self.doc.settings.default_table_style.clone().filter(|s| has(s)).or_else(|| has("TableGrid").then(|| "TableGrid".to_string()));
@@ -1183,20 +1251,31 @@ impl Editor {
                 _ => Outcome::Unchanged("Delete Cells dialog"),
             });
         }
+        let (_, rows, grid, first) = self.cleared_cells(self.selection)?;
+        Some(self.rebuild("Clear", table, rows, grid, first.unwrap_or((r0, c0)), fonts))
+    }
+
+    /// Block of cells `s`'s table with the block's cells emptied: the table, its rows and its grid, and the row and
+    /// column of the first cell emptied.
+    pub(super) fn cleared_cells(&self, s: Selection) -> Option<(TableId, Vec<Row>, Vec<f64>, Option<(usize, usize)>)> {
+        let Selection::Cells { table, anchor, focus, .. } = s else { return None };
+        let t = self.index.table(&self.doc, table)?;
+        let g = Grid::of(t);
+        let (r0, r1) = (anchor.row.min(focus.row), anchor.row.max(focus.row));
+        let (c0, c1) = (anchor.col.min(focus.col), anchor.col.max(focus.col));
         let mut rows = t.rows.clone();
         let mut first = None;
         for (r, row) in rows.iter_mut().enumerate().filter(|(r, _)| (r0..=r1).contains(r)) {
             for (k, cell) in row.cells.iter_mut().enumerate() {
                 let (c, s, _) = g.rows[r][k];
                 if c + s > c0 && c <= c1 {
-                    *cell = Cell { blocks: empty_cell(cell).blocks, ..cell.clone() };
                     first.get_or_insert((r, c));
+                    *cell = Cell { blocks: empty_cell(cell).blocks, ..cell.clone() };
                 }
             }
         }
-        let grid = t.grid.clone();
-        let (r, c) = first.unwrap_or((r0, c0));
-        Some(self.rebuild("Clear", table, rows, grid, (r, c), fonts))
+        tidy_merges(&mut rows);
+        Some((table, rows, t.grid.clone(), first))
     }
 
     pub(super) fn select_to_edge(&mut self, row_wise: bool, end: bool) -> Outcome {
@@ -1454,7 +1533,7 @@ impl Editor {
         self.end_batch(true, fonts)
     }
 
-    fn set_floating(&mut self, table: TableId, floating: Option<TablePos>, fonts: &Fonts) -> Outcome {
+    pub(super) fn set_floating(&mut self, table: TableId, floating: Option<TablePos>, fonts: &Fonts) -> Outcome {
         let Some(t) = self.index.table(&self.doc, table) else { return Outcome::Unchanged("no table") };
         let mut props = super::step::TableProps::of(t);
         if props.floating == floating {

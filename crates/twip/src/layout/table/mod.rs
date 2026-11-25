@@ -21,7 +21,7 @@ mod draw;
 mod key;
 mod widths;
 
-pub use assemble::{cells_box, float_box, legacy_lead, nested_shift, outer_box, row_borders};
+pub use assemble::{cells_box, float_box, legacy_lead, nested_shift, outer_box, placed_indent, row_borders, shared_edge};
 pub(super) use borders::{drawn, edge, edge_from, shadow, stroked, thick};
 pub(super) use clip::clip_stroke;
 pub use draw::{CellPart, DrawnRow, draw_row, draw_whole_row, frame_part, whole};
@@ -368,8 +368,8 @@ fn in_view(t: &Table, review: &crate::docx::review::ReviewView, expansions: Opti
     let vanished = |r: &crate::docx::Row| r.vanished && !show_hidden;
     let original = view == MarkupView::Original;
     let grid = t.table_grid_in(view);
-    let differs = |c: &Cell| view.hides_cell(&c.rev) || c.v_merge_in(view) != c.v_merge || original && c.rev.change.is_some();
-    let hides = t.rows.iter().any(|r| vanished(r) || view.hides_row(&r.rev) || original && r.rev.change.is_some() || r.cells.iter().any(differs));
+    let differs = |c: &Cell| review.hides_cell(&c.rev) || c.v_merge_in(view) != c.v_merge || original && c.rev.change.is_some();
+    let hides = t.rows.iter().any(|r| vanished(r) || review.hides_row(&r.rev) || original && r.rev.change.is_some() || r.cells.iter().any(differs));
     let shown_row = |ri: usize| expansions.and_then(|e| e.rows.get(&(super::ids::TableId(t.id), ri)));
     let expanded = expansions.is_some_and(|e| !e.rows.is_empty()) && (0..t.rows.len()).any(|ri| shown_row(ri).is_some());
     if !hides && !expanded && grid == t.grid.as_slice() && !(original && t.change.is_some()) {
@@ -395,12 +395,12 @@ fn in_view(t: &Table, review: &crate::docx::review::ReviewView, expansions: Opti
                 rows.push(Some((0..r.cells.len()).map(|k| k.min(n - 1)).collect()));
                 return Some(r);
             }
-            if vanished(&r) || view.hides_row(&r.rev) {
+            if vanished(&r) || review.hides_row(&r.rev) {
                 rows.push(None);
                 return None;
             }
-            let keep: Vec<usize> = (0..r.cells.len()).filter(|&k| !view.hides_cell(&r.cells[k].rev)).collect();
-            r.cells = std::mem::take(&mut r.cells).into_iter().filter(|c| !view.hides_cell(&c.rev)).collect();
+            let keep: Vec<usize> = (0..r.cells.len()).filter(|&k| !review.hides_cell(&r.cells[k].rev)).collect();
+            r.cells = std::mem::take(&mut r.cells).into_iter().filter(|c| !review.hides_cell(&c.rev)).collect();
             if let Some(p) = previous(&r.rev.change) {
                 p.restore_row(&mut r);
             }
@@ -715,7 +715,7 @@ fn source_units(children: &[Child], out: &mut Vec<(ParaId, Unit, Unit)>) {
             Child::Box(b) if !matches!(b.kind, BoxKind::Float { .. }) => source_units(&b.children, out),
             Child::Box(_) => {}
             Child::Table(t) => t.rows.iter().flat_map(|r| r.cells.iter()).for_each(|cell| source_units(&cell.content, out)),
-            Child::Items(_) => {}
+            Child::Items(_) | Child::Turned { .. } => {}
         }
     }
 }

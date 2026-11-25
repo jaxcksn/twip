@@ -1019,6 +1019,23 @@ fn a_note_ending_in_a_deleted_mark_joins_the_next_notes_first_paragraph() {
 }
 
 #[test]
+fn a_run_of_endnotes_ending_in_deleted_marks_goes_on_as_one_paragraph() {
+    let del = r#"w:id="1" w:author="A" w:date="2026-01-01T00:00:00Z""#;
+    let gone = |id: u32, t: &str| {
+        format!(r#"<w:endnote w:id="{id}"><w:p><w:pPr><w:rPr><w:del {del}/></w:rPr></w:pPr><w:r><w:t>{t}</w:t></w:r></w:p></w:endnote>"#)
+    };
+    let extra = format!(r#"{}{}<w:endnote w:id="12"><w:p><w:r><w:t>Third</w:t></w:r></w:p></w:endnote>"#, gone(10, "One"), gone(11, "Two"));
+    let body = para("Text", &["e10", "e11", "e12"]) + &sect("", true);
+    let Some(mut doc) = notes_doc_with(&body, "", &extra) else { return };
+    doc.review.view = crate::docx::review::MarkupView::NoMarkup;
+    let chars: Vec<(char, f64, f64)> = super::page_chars(&doc).into_iter().flatten().collect();
+    let text: String = chars.iter().map(|c| c.0).collect();
+    assert_eq!(text.matches("Third").count(), 1, "the third once: {text}");
+    let at = |word: &str| text.find(word).map(|k| chars[text[..k].chars().count()].2).expect("drawn");
+    assert_eq!(at("One"), at("Third"), "all three on one line, one paragraph");
+}
+
+#[test]
 fn an_empty_paragraph_with_a_deleted_mark_ending_a_notes_story_isnt_laid_out() {
     let del = r#"w:id="1" w:author="A" w:date="2026-01-01T00:00:00Z""#;
     let note_y = |last: &str| {

@@ -190,3 +190,17 @@ fn object_steps_from_the_body_skip_the_header_floats() {
     e.execute(Command::Escape, fonts());
     assert!(body_caret(&e), "Esc returns to the body text");
 }
+
+#[test]
+fn a_header_object_is_changed_by_name_only_while_its_header_is_edited() {
+    let mut e = fixture();
+    let g = page(&mut e, 0);
+    let (head, body) = (background(&g).0, behind(&g).0);
+    click(&mut e, 0, on_body_text(&g, 3), 1);
+    assert!(body_caret(&e));
+    assert!(e.float_changeable(body) && !e.float_changeable(head), "the body's objects while the body is edited");
+    assert!(!matches!(e.set_object_hidden(head, &[], true, fonts()), super::super::Outcome::Changed(_)), "a header object stays");
+    assert!(!matches!(e.restack_object(body, Some(head), fonts()), super::super::Outcome::Changed(_)));
+    edit_header(&mut e, 0);
+    assert!(e.float_changeable(head) && !e.float_changeable(body), "the headers' while a header is edited");
+}

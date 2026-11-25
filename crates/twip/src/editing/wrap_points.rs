@@ -7,11 +7,11 @@ use crate::layout::FloatId;
 
 use crate::api::command::CommandId;
 
-use super::Editor;
 use super::commands::Outcome;
 use super::position::Position;
 use super::selection::{ObjectRef, Selection};
 use super::view::WrapPoints;
+use super::{Editor, Mode};
 
 /// The float whose wrap points are being edited, and the point being dragged.
 #[derive(Clone, Debug)]
@@ -107,7 +107,7 @@ impl Editor {
         if self.selected_floats().len() != 1 || self.selected_child().is_some() {
             return Outcome::unavailable("select one floating object");
         }
-        if self.object_fixed(ObjectRef::Floating(f)) || !self.float_editable(f) || self.gesture_kept(CommandId::SetObjectWrap) {
+        if self.wrap_kept(f) {
             return Outcome::unavailable("the object can't be changed");
         }
         if self.float_of(f).is_none_or(|fl| fl.in_note) {
@@ -138,10 +138,26 @@ impl Editor {
         (one && self.selected_floats().len() == 1 && self.float_of(w.f).is_some()).then_some(w.f)
     }
 
+    /// Whether float `f`'s wrap is kept from changing: a fixed object, its anchor not editable, or protection.
+    fn wrap_kept(&self, f: FloatId) -> bool {
+        self.object_fixed(ObjectRef::Floating(f)) || !self.float_editable(f) || self.gesture_kept(CommandId::SetObjectWrap)
+    }
+
     fn float_editable(&self, f: FloatId) -> bool {
         let Some(anchor) = self.index.float_anchor(f) else { return false };
         let story = self.index.para_slot(anchor).map_or(super::position::StoryId::Body, |s| self.index.story(s.container));
         self.editable(&Position::text(story, anchor, crate::layout::Unit(0)))
+    }
+
+    /// Whether float `f` can be changed now: not read-only, in the stories being edited (the body's, or the headers'
+    /// and footers'), its anchor editable (document protection, a locked control) and not in a locked picture control.
+    pub(super) fn float_changeable(&self, f: FloatId) -> bool {
+        let Some(at) = self.float_point(f) else { return false };
+        self.mode != Mode::ReadOnly
+            && super::stories::reachable(self.editing(), self.index.host(at.story))
+            && self.float_editable(f)
+            && !self.kept(crate::api::command::CommandId::ArrangeObject, &at, &at)
+            && !self.object_fixed(ObjectRef::Floating(f))
     }
 
     /// Where `f`'s polygon lies on `page`.
@@ -283,19 +299,255 @@ impl Editor {
 
     /// Sets `f`'s wrap polygon (box fractions, closed on save), and a tight wrap unless it is tight or through.
     fn set_wrap_polygon(&mut self, f: FloatId, mut poly: Vec<(f64, f64)>, fonts: &Fonts) -> Outcome {
-        if self.gesture_kept(CommandId::SetObjectWrap) {
-            return Outcome::Unchanged("the wrap is protected");
+        if self.wrap_kept(f) {
+            return Outcome::unavailable("the object can't be changed");
         }
+        // A point drag of the polygon replaced would land on the new one
+        self.wrap_point_cancel();
         let Some(mut n) = self.float_of(f).cloned() else { return Outcome::Unchanged("no float") };
         if let Some(&first) = poly.first() {
             poly.push(first);
         }
         n.poly = Some(Rc::from(poly));
+        n.poly_edited = true;
         if !matches!(n.wrap.as_str(), "tight" | "through") {
             (n.wrap, n.behind) = ("tight".into(), false);
         }
         let out = self.set_float(n, "Edit Wrap Points", fonts);
         self.selection = Selection::Object(ObjectRef::Floating(f));
         out
+    }
+}
+
+/// The most vertices a wrap polygon set or made takes.
+pub use crate::docx::MAX_WRAP_POINTS;
+
+/// How many bands a picture's outline is traced in, top to bottom.
+const PICTURE_BANDS: usize = 32;
+
+/// A float's wrap polygon.
+#[derive(Clone, Debug, PartialEq)]
+pub struct WrapPolygon {
+    /// Its vertices as fractions of the object's box (0 to 1 across and down; outside it beyond), unclosed.
+    pub points: Vec<(f64, f64)>,
+    /// Edited by hand: kept as it is when the object changes.
+    pub edited: bool,
+}
+
+/// A picture's opaque pixels as a polygon down its left side and up its right, band by band, in fractions of the
+/// shown part (`src`, the crop's fractions from each edge); `None` for a picture that doesn't decode or is opaque to its
+/// edges (its box is its outline).
+fn picture_outline(data: &[u8], src: [f64; 4]) -> Option<Vec<(f64, f64)>> {
+    let (w, h, px) = twip_graphics::image::pixels_straight(data).ok()?;
+    let (w, h) = (w as usize, h as usize);
+    let span = |lo: f64, hi: f64, n: usize| {
+        let a = ((lo.clamp(0.0, 1.0) * n as f64) as usize).min(n);
+        let b = (((1.0 - hi).clamp(0.0, 1.0) * n as f64).ceil() as usize).clamp(a, n);
+        (a, b)
+    };
+    let ((x0, x1), (y0, y1)) = (span(src[0], src[2], w), span(src[1], src[3], h));
+    if x1 <= x0 || y1 <= y0 {
+        return None;
+    }
+    let opaque = |x: usize, y: usize| px[(y * w + x) * 4 + 3] > 0;
+    let bands = PICTURE_BANDS.min(y1 - y0);
+    let fx = |x: usize| (x - x0) as f64 / (x1 - x0) as f64;
+    let (mut left, mut right) = (Vec::new(), Vec::new());
+    for k in 0..bands {
+        let (ya, yb) = (y0 + k * (y1 - y0) / bands, y0 + (k + 1) * (y1 - y0) / bands);
+        let (mut lo, mut hi) = (usize::MAX, 0);
+        for y in ya..yb {
+            if let Some(a) = (x0..x1).find(|&x| opaque(x, y)) {
+                lo = lo.min(a);
+                hi = hi.max((a..x1).rev().find(|&x| opaque(x, y)).unwrap_or(a) + 1);
+            }
+        }
+        if lo == usize::MAX {
+            continue;
+        }
+        let (ta, tb) = ((ya - y0) as f64 / (y1 - y0) as f64, (yb - y0) as f64 / (y1 - y0) as f64);
+        left.extend([(fx(lo), ta), (fx(lo), tb)]);
+        right.extend([(fx(hi), ta), (fx(hi), tb)]);
+    }
+    let full = left.iter().all(|p| p.0 == 0.0)
+        && right.iter().all(|p| p.0 == 1.0)
+        && left.first().is_some_and(|p| p.1 == 0.0)
+        && left.last().is_some_and(|p| p.1 == 1.0);
+    if left.is_empty() || full {
+        return None;
+    }
+    right.reverse();
+    left.extend(right);
+    Some(simplified(left))
+}
+
+/// `pts` without the points on a straight line between their neighbours, at most [`MAX_WRAP_POINTS`].
+fn simplified(pts: Vec<(f64, f64)>) -> Vec<(f64, f64)> {
+    let mut out: Vec<(f64, f64)> = Vec::with_capacity(pts.len());
+    for p in pts {
+        if out.last() == Some(&p) {
+            continue;
+        }
+        if let [.., a, b] = out[..]
+            && ((b.0 - a.0) * (p.1 - a.1) - (b.1 - a.1) * (p.0 - a.0)).abs() < 1e-9
+        {
+            out.pop();
+        }
+        out.push(p);
+    }
+    if out.len() > MAX_WRAP_POINTS {
+        let step = out.len().div_ceil(MAX_WRAP_POINTS);
+        out = out.into_iter().step_by(step).collect();
+    }
+    out
+}
+
+/// A float's outline as its wrap polygon, as Word makes one for a tight or through wrap: a shape's geometry, a
+/// picture's opaque pixels, else its box.
+pub(super) fn outline_polygon<'a>(image: &dyn Fn(usize) -> Option<&'a [u8]>, f: &crate::docx::Float) -> Vec<(f64, f64)> {
+    use crate::drawing::ShapeKind;
+    let made = match f.shape.as_deref().map(|s| (&s.kind, s.xfrm.ext)) {
+        Some((ShapeKind::Sp(sp), ext)) if ext[0].0 > 0 && ext[1].0 > 0 => {
+            let (w, h) = (ext[0].0 as f64 / 12700.0, ext[1].0 as f64 / 12700.0);
+            let pts: Vec<(f64, f64)> = sp.geom.evaluate(ext[0], ext[1]).outline().into_iter().map(|[x, y]| (x / w, y / h)).collect();
+            (pts.len() >= MIN_POINTS).then(|| simplified(pts))
+        }
+        Some((ShapeKind::Pic(p), _)) => {
+            p.blip.image.or(f.image).and_then(image).and_then(|data| picture_outline(data, p.blip.src.map(|v| v.fraction())))
+        }
+        _ => None,
+    };
+    made.filter(|p| p.len() >= MIN_POINTS).unwrap_or_else(|| BOX.to_vec())
+}
+
+impl Editor {
+    /// The selected floating object's wrap polygon as set; a tight or through one without a polygon wraps round its
+    /// box. `None` for another wrap without one.
+    pub fn selected_wrap_polygon(&self) -> Option<WrapPolygon> {
+        let Selection::Object(ObjectRef::Floating(f)) = self.selection else { return None };
+        let fl = self.float_of(f)?;
+        match fl.poly.as_deref().map(open).filter(|p| p.len() >= MIN_POINTS) {
+            Some(p) => Some(WrapPolygon { points: p.to_vec(), edited: fl.poly_edited }),
+            None if matches!(fl.wrap.as_str(), "tight" | "through") => Some(WrapPolygon { points: BOX.to_vec(), edited: false }),
+            None => None,
+        }
+    }
+
+    /// Sets the selected floating object's wrap polygon (box fractions, 3 to [`MAX_WRAP_POINTS`] vertices), edited by
+    /// hand, and a tight wrap unless it is tight or through. One undo step ("Edit Wrap Points").
+    pub fn set_wrap_points(&mut self, points: &[(f64, f64)], fonts: &Fonts) -> Outcome {
+        let Selection::Object(ObjectRef::Floating(f)) = self.selection else { return Outcome::unavailable("no floating object selected") };
+        if !(MIN_POINTS..=MAX_WRAP_POINTS).contains(&points.len()) {
+            return Outcome::invalid("a wrap polygon has 3 to 1024 points");
+        }
+        if points.iter().any(|(x, y)| !x.is_finite() || !y.is_finite()) {
+            return Outcome::invalid("a wrap point is a number");
+        }
+        let poly: Vec<(f64, f64)> = points.iter().map(|&(x, y)| (x.clamp(-REACH, 1.0 + REACH), y.clamp(-REACH, 1.0 + REACH))).collect();
+        let poly = open(&poly);
+        if poly.len() < MIN_POINTS {
+            return Outcome::invalid("a wrap polygon has 3 to 1024 points");
+        }
+        self.set_wrap_polygon(f, poly.to_vec(), fonts)
+    }
+
+    /// Word's Reset of the wrap points: the selected floating object's polygon made again from its outline, unedited.
+    /// One undo step ("Reset Wrap Points").
+    pub fn reset_wrap_points(&mut self, fonts: &Fonts) -> Outcome {
+        let Selection::Object(ObjectRef::Floating(f)) = self.selection else { return Outcome::unavailable("no floating object selected") };
+        if self.wrap_kept(f) {
+            return Outcome::unavailable("the object can't be changed");
+        }
+        self.wrap_point_cancel();
+        let Some(mut n) = self.float_of(f).cloned() else { return Outcome::Unchanged("no float") };
+        let mut poly = outline_polygon(&|k| self.image_bytes(k), &n);
+        if let Some(&first) = poly.first() {
+            poly.push(first);
+        }
+        (n.poly, n.poly_edited) = (Some(Rc::from(poly)), false);
+        self.set_float(n, "Reset Wrap Points", fonts)
+    }
+}
+
+impl Editor {
+    /// Image `k`'s bytes: the document's, or one added in the transaction being built.
+    fn image_bytes(&self, k: usize) -> Option<&[u8]> {
+        match k.checked_sub(self.doc.images.len()) {
+            None => self.doc.images.get(k).map(Vec::as_slice),
+            Some(j) => self.pending_images.get(j).map(Vec::as_slice),
+        }
+    }
+
+    /// `n`'s wrap polygon made again from its outline when it wraps tight or through, wasn't edited by hand and its
+    /// outline may have changed since `was` (its wrap, shape, size or picture), as Word does.
+    pub(super) fn rewrap(&self, was: &crate::docx::Float, n: &mut crate::docx::Float) {
+        if !matches!(n.wrap.as_str(), "tight" | "through") || n.poly_edited {
+            return;
+        }
+        fn inputs(f: &crate::docx::Float) -> impl PartialEq + '_ {
+            let s = f.shape.as_deref();
+            // A picture's outline is in fractions of its box: its size changes nothing.
+            let geom = s.and_then(|s| Some((&s.sp()?.geom, s.xfrm.ext)));
+            (geom, s.and_then(|s| s.pic()).map(|p| (&p.blip.src, p.blip.image)), f.image)
+        }
+        let fresh = !matches!(was.wrap.as_str(), "tight" | "through") || n.poly.is_none();
+        if !fresh && inputs(was) == inputs(n) {
+            return;
+        }
+        let mut poly = outline_polygon(&|k| self.image_bytes(k), n);
+        if let Some(&first) = poly.first() {
+            poly.push(first);
+        }
+        n.poly = Some(Rc::from(poly));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// A PNG of `w` × `h` RGBA pixels.
+    fn png(w: u32, h: u32, rgba: &[u8]) -> Vec<u8> {
+        use std::io::Write;
+        let chunk = |out: &mut Vec<u8>, kind: &[u8; 4], data: &[u8]| {
+            out.extend((data.len() as u32).to_be_bytes());
+            let mut crc = flate2::Crc::new();
+            crc.update(kind);
+            crc.update(data);
+            out.extend(kind);
+            out.extend(data);
+            out.extend(crc.sum().to_be_bytes());
+        };
+        let mut out = b"\x89PNG\r\n\x1a\n".to_vec();
+        let mut ihdr = Vec::new();
+        ihdr.extend(w.to_be_bytes());
+        ihdr.extend(h.to_be_bytes());
+        ihdr.extend([8, 6, 0, 0, 0]);
+        chunk(&mut out, b"IHDR", &ihdr);
+        let mut z = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::fast());
+        for row in rgba.chunks(w as usize * 4) {
+            z.write_all(&[0]).expect("filter");
+            z.write_all(row).expect("row");
+        }
+        chunk(&mut out, b"IDAT", &z.finish().expect("deflated"));
+        chunk(&mut out, b"IEND", &[]);
+        out
+    }
+
+    #[test]
+    fn a_pictures_outline_follows_its_opaque_pixels() {
+        // A 64 × 64 picture opaque in its middle 32 columns only.
+        let (w, h) = (64u32, 64u32);
+        let mut px = vec![0u8; (w * h * 4) as usize];
+        for y in 0..h {
+            for x in 16..48 {
+                px[((y * w + x) * 4 + 3) as usize] = 255;
+            }
+        }
+        let poly = super::picture_outline(&png(w, h, &px), [0.0; 4]).expect("an outline");
+        assert!(poly.iter().all(|&(x, _)| x == 0.25 || x == 0.75), "{poly:?}");
+        assert_eq!(poly.len(), 4, "a rectangle: {poly:?}");
+        // Opaque to its edges: its box is its outline.
+        assert_eq!(super::picture_outline(&png(2, 2, &[255; 16]), [0.0; 4]), None);
+        // Cropped to its opaque middle: its box again.
+        assert_eq!(super::picture_outline(&png(w, h, &px), [0.25, 0.0, 0.25, 0.0]), None);
     }
 }

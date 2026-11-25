@@ -698,3 +698,68 @@ fn a_cell_block_pasted_from_another_document_takes_each_cells_note_once() {
     // 4x the cells should cost about 4x; quadratic is about 16x.
     assert!(large < small * 10 + std::time::Duration::from_millis(50), "{small:?} for 256 cells, {large:?} for 1024");
 }
+
+#[test]
+fn accepting_a_whole_table_revision_removes_its_deleted_cells() {
+    let d = r#"w:id="1" w:author="a" w:date="2020-01-01T00:00:00Z""#;
+    let cell = |text: &str, pr: &str| format!(r#"<w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/>{pr}</w:tcPr><w:p>{}</w:p></w:tc>"#, t(text));
+    let table = format!(
+        r#"<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/></w:tblGrid><w:tr>{}{}</w:tr><w:tr>{}{}</w:tr></w:tbl>"#,
+        cell("keep", ""),
+        cell("gone", &format!("<w:cellDel {d}/>")),
+        cell("a", ""),
+        cell("b", "")
+    );
+    let e = ed(&format!("{table}<w:p/>"));
+    let blocks = e.document().sections[0].blocks[..1].to_vec();
+    let f = crate::editing::clipboard::Fragment { blocks, ..Default::default() }.accepted();
+    let [Block::Table(t)] = f.blocks.as_slice() else { panic!("a table: {:?}", f.blocks) };
+    let text = |c: &crate::docx::Cell| {
+        c.blocks
+            .iter()
+            .filter_map(|b| if let Block::Para(p) = b { Some(crate::editing::text::UnitText::of(p).text) } else { None })
+            .collect::<String>()
+    };
+    let rows: Vec<Vec<String>> = t.rows.iter().map(|r| r.cells.iter().map(text).collect()).collect();
+    assert_eq!(rows[0], ["keep"], "the deleted cell and its text are gone: {rows:?}");
+    assert_eq!(rows[1], ["a", "b"]);
+}
+
+#[test]
+fn a_copy_drops_a_comment_whose_start_was_in_a_deleted_cell() {
+    use crate::docx::review::RangeKind;
+    let d = r#"w:id="9" w:author="a" w:date="2020-01-01T00:00:00Z""#;
+    let cell = |inner: &str, pr: &str| format!(r#"<w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/>{pr}</w:tcPr><w:p>{inner}</w:p></w:tc>"#);
+    let whole = |id: i64, text: &str| {
+        format!(r#"<w:commentRangeStart w:id="{id}"/>{}<w:commentRangeEnd w:id="{id}"/><w:r><w:commentReference w:id="{id}"/></w:r>"#, t(text))
+    };
+    let table = format!(
+        r#"<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/></w:tblGrid><w:tr>{}{}</w:tr></w:tbl>"#,
+        cell(&format!(r#"<w:commentRangeStart w:id="1"/>{}"#, t("gone")), &format!("<w:cellDel {d}/>")),
+        cell(&format!(r#"{}<w:commentRangeEnd w:id="1"/><w:r><w:commentReference w:id="1"/></w:r>{}"#, t("kept"), whole(2, "own")), "")
+    );
+    use super::empty_stories::{NS, build};
+    let comments: String = [1, 2]
+        .map(|c| format!(r#"<w:comment w:id="{c}" w:author="A" w:date="2024-01-01T00:00:00Z"><w:p><w:r><w:t>c{c}</w:t></w:r></w:p></w:comment>"#))
+        .concat();
+    let xml = format!("<w:comments {NS}>{comments}</w:comments>");
+    let mut e = Editor::open(&build(&format!("{table}<w:p/>"), "", &[("comments.xml", "comments", "comments", &xml)]), fonts()).expect("opens");
+    rect(&mut e, 0, 0, 0, 1, CellShape::Rect);
+    let f = e.copy().expect("copies");
+    assert_eq!(f.refs.comments.iter().map(|c| c.id.0).collect::<Vec<_>>(), [2], "only the whole comment goes with it");
+    let mut ids = Vec::new();
+    fn walk(blocks: &[Block], ids: &mut Vec<i64>) {
+        for b in blocks {
+            match b {
+                Block::Para(p) => ids.extend(p.inlines.iter().filter_map(|i| match i {
+                    Inline::Range(r) if matches!(r.kind, RangeKind::CommentStart | RangeKind::CommentEnd) => Some(r.id),
+                    Inline::CommentRef { id, .. } => Some(id.0),
+                    _ => None,
+                })),
+                Block::Table(t) => t.rows.iter().flat_map(|r| &r.cells).for_each(|c| walk(&c.blocks, ids)),
+            }
+        }
+    }
+    walk(&f.blocks, &mut ids);
+    assert_eq!(ids, [2, 2, 2], "the comment cut off by the deleted cell goes, the whole one stays");
+}

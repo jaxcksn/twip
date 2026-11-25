@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use twip_graphics::pdf::{ArtifactKind, Cell, Element, Kind, Node, Numbering, Scope};
 
 use crate::docx::grid::Grid;
-use crate::docx::review::MarkupView;
+use crate::docx::review::ReviewView;
 use crate::docx::{Block, Document, Inline, NoteKind, Paragraph, Table, VMerge, fields};
 use crate::services::a11y::roles::{Alt, HeaderScope, alt, document_language, header_scopes, heading_level, other_language};
 
@@ -287,7 +287,7 @@ impl<'c> Tags<'c> {
             self.repeated.insert(p.id);
         }
         if self.title.is_none() && !self.in_note && !self.in_instance && style_name(doc, p).is_some_and(|n| n.eq_ignore_ascii_case("title")) {
-            self.title = Some(fields::visible_in(&p.inlines, doc.review.view).trim().to_string()).filter(|t| !t.is_empty());
+            self.title = Some(fields::visible_in(&p.inlines, &doc.review).trim().to_string()).filter(|t| !t.is_empty());
         }
         let mut e = Element::new(kind, Vec::new());
         let mut stretches = Vec::new();
@@ -305,7 +305,7 @@ impl<'c> Tags<'c> {
         }
         if let Some(level) = level.filter(|_| !self.in_instance) {
             let content = stretches.iter().map(|s| s.1).collect();
-            self.headings.push(Heading { level: level as u8, title: fields::visible_in(&p.inlines, doc.review.view).trim().to_string(), content });
+            self.headings.push(Heading { level: level as u8, title: fields::visible_in(&p.inlines, &doc.review).trim().to_string(), content });
         }
         self.places.paras.insert(p.id, stretches);
         if !item {
@@ -334,7 +334,7 @@ impl<'c> Tags<'c> {
 
     fn inlines(&mut self, doc: &Document, p: &Paragraph, kids: &mut Vec<Node>, stretches: &mut Vec<(u32, u32)>, floats: &mut Vec<Node>) {
         let starts: Vec<u32> = p.inlines.iter().scan(0u32, |at, i| Some(std::mem::replace(at, at.saturating_add(i.units() as u32)))).collect();
-        let links = self.links(p, doc.review.view);
+        let links = self.links(p, &doc.review);
         let mut next_link = 0;
         // The open text stretch's language, and the open link: (its end inline, its element's place in `kids`, its
         // id). Outer `None`: no stretch is open.
@@ -468,15 +468,15 @@ impl<'c> Tags<'c> {
 
     /// A paragraph's links: (begin inline, end inline, link id) of each HYPERLINK field and each REF, PAGEREF and
     /// NOTEREF field that links to its bookmark (`\h`), outermost only.
-    fn links(&mut self, p: &Paragraph, view: MarkupView) -> Vec<(usize, usize, u32)> {
+    fn links(&mut self, p: &Paragraph, review: &ReviewView) -> Vec<(usize, usize, u32)> {
         let mut out: Vec<(usize, usize, u32)> = Vec::new();
         for s in fields::spans(&p.inlines) {
             if out.last().is_some_and(|l| s.begin < l.1) {
                 continue;
             }
-            let code = fields::parse(&fields::code_text_in(&p.inlines, s, view));
+            let code = fields::parse(&fields::code_text_in(&p.inlines, s, review));
             let Some(target) = link_target(&code) else { continue };
-            let shown = s.sep.map(|sep| fields::visible_in(&p.inlines[sep + 1..s.end], view)).unwrap_or_default();
+            let shown = s.sep.map(|sep| fields::visible_in(&p.inlines[sep + 1..s.end], review)).unwrap_or_default();
             let tip = code.switches.iter().find(|w| w.flag == 'o').and_then(|w| w.arg.clone()).unwrap_or_default();
             let description = [tip.trim(), shown.trim()].into_iter().find(|t| !t.is_empty()).map_or_else(
                 || match &target {

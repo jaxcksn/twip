@@ -20,17 +20,24 @@ pub(in crate::editing) const MERGE_CELLS: &str = "Merge Cells";
 pub(in crate::editing) const SPLIT_CELLS: &str = "Split Cells";
 pub(in crate::editing) const INSERT_COLUMNS: &str = "Insert Columns";
 pub(in crate::editing) const DELETE_COLUMNS: &str = "Delete Columns";
+pub(in crate::editing) const INSERT_CELLS: &str = "Insert Cells";
+pub(in crate::editing) const DRAW_TABLE: &str = "Draw Table";
 
-const UNTRACKED_TABLE_EDITS: [&str; 2] = [MERGE_CELLS, SPLIT_CELLS];
+const UNTRACKED_TABLE_EDITS: [&str; 3] = [MERGE_CELLS, SPLIT_CELLS, DRAW_TABLE];
 
 // Edits whose cells are tracked as inserted or deleted cells: accepting them gives the untracked edit. Word tracks
 // Delete Cells as a change of the table's properties.
-const CELL_EDITS: [&str; 2] = [INSERT_COLUMNS, DELETE_COLUMNS];
+const CELL_EDITS: [&str; 3] = [INSERT_COLUMNS, DELETE_COLUMNS, INSERT_CELLS];
+
+// Edits whose rows stay in place, matched by position: content moving between them is tracked as moved out and in.
+const ROWS_IN_PLACE: [&str; 1] = [INSERT_CELLS];
 
 pub struct Recording {
     pub author: AuthorId,
     pub time: Timestamp,
     pub move_name: Option<Rc<str>>,
+    /// Formatting changes are recorded (Track formatting): without it they apply untracked.
+    pub track_formatting: bool,
     label: &'static str,
     /// The step's marks: each step's edits are a revision of their own.
     ins: Option<Rc<RevisionMark>>,
@@ -55,6 +62,7 @@ impl Recording {
             author,
             time,
             move_name,
+            track_formatting: true,
             label,
             ins: None,
             del: None,
@@ -213,7 +221,7 @@ impl Recording {
         }
         let fmt = if self.new_here(old) {
             None
-        } else if !record || same_look(old, new) {
+        } else if !record || !self.track_formatting || same_look(old, new) {
             old.rev.fmt.clone()
         } else {
             let (previous, previous_raw) = match &old.rev.fmt {
@@ -232,7 +240,7 @@ impl Recording {
         if Rc::ptr_eq(old, &new) {
             return new;
         }
-        let change = if same_para(old, &new) {
+        let change = if !self.track_formatting || same_para(old, &new) {
             old.change.clone()
         } else {
             let (previous, previous_raw) = match &old.change {
@@ -246,7 +254,7 @@ impl Recording {
     }
 
     fn section_change(&mut self, s: &Section, page: &SectionPage, ids: &mut IdCounter) -> Option<Rc<SectionChange>> {
-        if *page == s.page() {
+        if *page == s.page() || !self.track_formatting {
             return s.change.clone();
         }
         let (previous, previous_raw) = match &s.change {
@@ -283,7 +291,7 @@ impl Recording {
             }
             Block::Table(mut t) => {
                 t.rows = std::mem::take(&mut t.rows).into_iter().map(|r| self.ins_row(r, ids)).collect();
-                if t.change.is_none() {
+                if self.track_formatting && t.change.is_none() {
                     t.change = Some(Rc::new(TableChange {
                         mark: self.fmt_mark(ids),
                         previous_raw: t.direct.clone(),
@@ -342,7 +350,7 @@ impl Recording {
                 if n.rows.is_empty() {
                     return None;
                 }
-                if n.change.is_none() {
+                if self.track_formatting && n.change.is_none() {
                     n.change = Some(Rc::new(TableChange {
                         mark: self.fmt_mark(ids),
                         previous_raw: t.direct.clone(),
@@ -675,14 +683,26 @@ impl Recording {
         let Some((t, old)) = t.and_then(|t| Some((t, t.rows.get(range.clone())?))).filter(|_| !UNTRACKED_TABLE_EDITS.contains(&self.label)) else {
             return vec![Step::Rows { table, range, with, grid }];
         };
-        let keys: Vec<HashSet<u64>> = old.iter().map(row_paras).collect();
-        let matched: Vec<Option<usize>> = with
-            .iter()
-            .map(|r| {
-                let k = row_paras(r);
-                keys.iter().position(|o| !o.is_disjoint(&k))
-            })
-            .collect();
+        let in_place = ROWS_IN_PLACE.contains(&self.label);
+        // Rows added in place take content moved from rows that keep it, marked deleted: theirs is a copy.
+        let added = |n: &Row| {
+            let mut r = n.clone();
+            if in_place {
+                r.cells.iter_mut().for_each(|c| c.blocks = c.blocks.iter().map(super::super::clipboard::fresh).collect());
+            }
+            r
+        };
+        let matched: Vec<Option<usize>> = if in_place {
+            (0..with.len()).map(|i| (i < old.len()).then_some(i)).collect()
+        } else {
+            let keys: Vec<HashSet<u64>> = old.iter().map(row_paras).collect();
+            with.iter()
+                .map(|r| {
+                    let k = row_paras(r);
+                    keys.iter().position(|o| !o.is_disjoint(&k))
+                })
+                .collect()
+        };
         let order: Vec<usize> = matched.iter().flatten().copied().collect();
         if order.windows(2).any(|w| w[0] >= w[1]) {
             return vec![Step::Rows { table, range, with, grid }];
@@ -713,7 +733,7 @@ impl Recording {
             match kept[i] {
                 Some(k) => {
                     for n in &with[next..k] {
-                        rows.push(self.ins_row(n.clone(), ids));
+                        rows.push(self.ins_row(added(n), ids));
                         changed = true;
                     }
                     let mut lost_own = Vec::new();
@@ -733,7 +753,7 @@ impl Recording {
             }
         }
         for n in &with[next..] {
-            rows.push(self.ins_row(n.clone(), ids));
+            rows.push(self.ins_row(added(n), ids));
             changed = true;
         }
         // Rejecting inserted cells drops their columns again.
@@ -744,6 +764,8 @@ impl Recording {
                 grid = Some(g);
             }
         }
+        // A note whose reference moves stays: only those no reference is left to go with their references.
+        notes.retain(|&(kind, id)| !rows.iter().flat_map(|r| &r.cells).any(|c| live_note_ref(&c.blocks, kind, id, 0)));
         let mut out: Vec<Step> = if changed { self.table_change(table, grid_changed, doc, idx, ids).into_iter().collect() } else { Vec::new() };
         out.push(Step::Rows { table, range, with: rows, grid });
         out.extend(self.note_steps(notes, doc, ids));
@@ -769,7 +791,7 @@ impl Recording {
             (r.grid_before, r.grid_after, r.w_before, r.w_after) = (o.grid_before, o.grid_after, o.w_before, o.w_after);
         }
         let props = (o.height.clone(), o.cant_split, o.header) != (r.height.clone(), r.cant_split, r.header);
-        if props && r.rev.change.is_none() && !self.new_here_row(o) {
+        if props && self.track_formatting && r.rev.change.is_none() && !self.new_here_row(o) {
             let previous = PreviousProps::Row { height: o.height.clone(), cant_split: o.cant_split, header: o.header };
             r.rev.change = Some(Rc::new(TableChange { mark: self.fmt_mark(ids), previous_raw: o.direct.clone(), previous: Some(previous) }));
         }
@@ -810,7 +832,7 @@ impl Recording {
             let looks =
                 |x: &crate::docx::Cell| (x.width, x.top.clone(), x.left.clone(), x.bottom.clone(), x.right.clone(), x.shading, x.margins, x.no_wrap);
             let restyled = looks(c) != looks(oc) || (&c.v_align, &c.text_direction) != (&oc.v_align, &oc.text_direction);
-            if restyled && c.rev.change.is_none() && !fresh {
+            if restyled && self.track_formatting && c.rev.change.is_none() && !fresh {
                 let b = [oc.top.clone(), oc.left.clone(), oc.bottom.clone(), oc.right.clone()];
                 let previous = PreviousProps::Cell {
                     width: oc.width,
@@ -823,7 +845,7 @@ impl Recording {
                 };
                 c.rev.change = Some(Rc::new(TableChange { mark: self.fmt_mark(ids), previous_raw: oc.direct.clone(), previous: Some(previous) }));
             }
-            if c.v_merge != oc.v_merge && c.rev.structural.is_none() && !fresh {
+            if c.v_merge != oc.v_merge && self.track_formatting && c.rev.structural.is_none() && !fresh {
                 let kind = CellMarkKind::Merge { v_merge: Some(c.v_merge), v_merge_orig: Some(oc.v_merge) };
                 c.rev.structural = Some((self.fmt_mark(ids), kind));
             }
@@ -857,6 +879,9 @@ impl Recording {
         }
         match (new, kept.first_mut()) {
             ([Block::Para(p)], Some(Block::Para(first))) => {
+                // The paragraph takes the incoming one's properties, as a tracked change of them.
+                first.style = self.para_change(&first.style, p.style.clone(), ids);
+                first.list.clone_from(&p.list);
                 let inlines: Vec<Inline> = p.inlines.iter().filter(|i| !matches!(i, Inline::Text(t, _) if t.is_empty())).cloned().collect();
                 let inlines: Vec<Inline> = inlines.into_iter().map(|i| self.ins_inline(i, ids)).collect();
                 first.inlines.splice(0..0, inlines);
@@ -879,7 +904,7 @@ impl Recording {
         let slot = idx.table_slot(table)?;
         let Block::Table(t) = idx.blocks(doc, slot.container)?.get(slot.block)? else { return None };
         let (change, grid) = (t.change.is_none(), grid && t.grid_change.is_none());
-        if !change && !grid {
+        if !change && !grid || !self.track_formatting {
             return None;
         }
         let mut n = t.clone();
@@ -892,6 +917,20 @@ impl Recording {
         }
         Some(Step::Blocks { container: slot.container, range: slot.block..slot.block + 1, with: vec![Block::Table(n)] })
     }
+}
+
+/// Whether `blocks` hold a reference to note `id` that isn't deleted.
+fn live_note_ref(blocks: &[Block], kind: NoteKind, id: i64, depth: usize) -> bool {
+    // Deeper nesting than a document can be read with holds nothing.
+    if depth > crate::docx::xml::MAX_DEPTH {
+        return false;
+    }
+    blocks.iter().any(|b| match b {
+        Block::Para(p) => {
+            p.inlines.iter().any(|i| matches!(i, Inline::NoteRef { kind: k, id: n, run, .. } if *k == kind && *n == id && run.rev.del.is_none()))
+        }
+        Block::Table(t) => t.rows.iter().flat_map(|r| &r.cells).any(|c| live_note_ref(&c.blocks, kind, id, depth + 1)),
+    })
 }
 
 pub fn all_deleted(p: &Paragraph, a: Unit, b: Unit) -> bool {

@@ -371,3 +371,226 @@ fn wrapping_rows_across_a_row_controls_boundary_is_refused() {
     let rs = rows(&e).expect("a table");
     assert!(rs[0].len() == 2 && rs[0][0] == r && rs[0] == rs[1], "the new control nests inside the one both rows are in: {rs:?}");
 }
+
+#[test]
+fn a_date_control_fills_from_a_date_and_reads_it_back() {
+    let date = r#"<w:date w:fullDate="2026-01-01T00:00:00Z"><w:dateFormat w:val="MMMM yyyy"/><w:lid w:val="en-US"/><w:storeMappedDataAs w:val="dateTime"/><w:calendar w:val="gregorian"/></w:date>"#;
+    let mut e = with_control(date, "<w:r><w:t>January 2026</w:t></w:r>");
+    let c = by_alias(&e, "C");
+    let read = |e: &Editor| {
+        let all = crate::editing::elements::enumerate(e.document(), e.index(), &crate::editing::elements::Filter::default());
+        all.into_iter().find(|x| x.id == crate::docx::ElementId::Control(c)).and_then(|x| x.date)
+    };
+    assert_eq!(read(&e).as_deref(), Some("2026-01-01T00:00:00Z"), "its stored date, which its text shows");
+    let id = crate::api::value::ElementId(api(c));
+    assert!(matches!(e.fill_control_date(&id, "2027-02-03", fonts()), Outcome::Changed(_)));
+    assert_eq!(texts(&e)[0], "Before February 2027");
+    assert_eq!(read(&e).as_deref(), Some("2027-02-03T00:00:00Z"), "the day kept though the format hides it");
+    assert!(doc_xml(&e).contains(r#"w:fullDate="2027-02-03T00:00:00Z""#));
+    e.undo_many(true, 1, fonts());
+    assert_eq!((texts(&e)[0].as_str(), read(&e).as_deref()), ("Before January 2026", Some("2026-01-01T00:00:00Z")), "one undo step");
+    assert!(matches!(e.fill_control_date(&id, "soon", fonts()), Outcome::Refused(_)), "not a date");
+    for bad in ["2027-02-29", "2027-04-31T10:00:00+02:00", "2027-00-10"] {
+        assert!(matches!(e.fill_control_date(&id, bad, fonts()), Outcome::Refused(_)), "no such day: {bad}");
+    }
+    assert_eq!(read(&e).as_deref(), Some("2026-01-01T00:00:00Z"), "the control as it was");
+    assert!(matches!(e.fill_control_date(&id, "2028-02-29", fonts()), Outcome::Changed(_)), "a leap day");
+    e.undo_many(true, 1, fonts());
+    assert!(matches!(e.fill_control_date(&id, "2027-02-28T23:00:00-05:00", fonts()), Outcome::Changed(_)));
+    assert_eq!((texts(&e)[0].as_str(), read(&e).as_deref()), ("Before February 2027", Some("2027-02-28T23:00:00Z")), "the day given");
+    e.undo_many(true, 1, fonts());
+    assert!(matches!(e.fill_control_date(&id, "2027-02-03", fonts()), Outcome::Changed(_)));
+    std::mem::take(&mut e.changes);
+    assert!(matches!(e.fill_control_date(&id, "2027-02-05", fonts()), Outcome::Changed(_)));
+    assert_eq!(texts(&e)[0], "Before February 2027", "the text stays");
+    assert!(element_changed(&mut e, crate::docx::ElementId::Control(c)), "the date change is reported");
+}
+
+/// Whether the changes since the last call report element `id` changed.
+pub(super) fn element_changed(e: &mut Editor, id: crate::docx::ElementId) -> bool {
+    std::mem::take(&mut e.changes).changed.iter().any(|x| x.id == id)
+}
+
+#[test]
+fn a_repeating_section_adds_a_copy_of_its_item() {
+    let name = r#"<w:p><w:r><w:t xml:space="preserve">Name: </w:t></w:r><w:sdt><w:sdtPr><w:alias w:val="N"/><w:id w:val="7"/><w:text/></w:sdtPr><w:sdtContent><w:r><w:t>Ada</w:t></w:r></w:sdtContent></w:sdt></w:p><w:p><w:r><w:t>After</w:t></w:r></w:p>"#;
+    let mut e = Editor::open(&blank_body(name), fonts()).expect("opens");
+    send(&mut e, json!({ "type": "key", "code": "Home", "mods": { "ctrl": true } }));
+    send(&mut e, json!({ "type": "key", "code": "End", "mods": { "shift": true } }));
+    ok(&cmd(&mut e, json!({ "type": "wrapInRepeatingSection", "tag": "People" })));
+    let s = crate::api::value::ElementId(api(ctl(&e, |c| c.props.kind == ControlKind::RepeatingSection)));
+    let depth = e.history().undo_depth();
+    assert!(matches!(e.add_repeating_item(&s, None, false, fonts()), Outcome::Changed(_)));
+    assert_eq!(texts(&e)[..3], ["Name: Ada", "Name: Ada", "After"], "a copy of the item, content and all");
+    assert_eq!(e.history().undo_depth(), depth + 1, "one undo step");
+    let pc = para_controls(&e);
+    assert_eq!((pc[0][0], pc[1][0]), (pc[0][0], pc[0][0]), "both in the section");
+    assert_ne!(pc[0][1], pc[1][1], "each its own item");
+    let names: Vec<ControlId> = e.document().controls.iter().filter(|(_, c)| c.props.alias.as_deref() == Some("N")).map(|(k, _)| *k).collect();
+    assert_eq!(names.len(), 2, "the copy's control is its own");
+    assert_eq!(e.selection().anchor().and_then(|a| a.para_offset()).map(|p| p.0), Some(para_id(&e, 1)), "at the new item");
+    let first = crate::api::value::ElementId(api(pc[0][1]));
+    assert!(matches!(e.add_repeating_item(&s, Some(&first), true, fonts()), Outcome::Changed(_)));
+    assert_eq!(texts(&e)[..4], ["Name: Ada", "Name: Ada", "Name: Ada", "After"]);
+    assert_eq!(para_controls(&e)[1][1], pc[0][1], "before the first item");
+    e.undo_many(true, 2, fonts());
+    assert_eq!(texts(&e)[..2], ["Name: Ada", "After"]);
+    ok(&cmd(&mut e, json!({ "type": "setControl", "id": s.0, "options": { "allowInsertDelete": false } })));
+    assert!(matches!(e.add_repeating_item(&s, None, false, fonts()), Outcome::Refused(_)), "the section doesn't allow it");
+    // The flag as written with a value
+    let id = ctl(&e, |c| c.props.kind == ControlKind::RepeatingSection);
+    let flag = |e: &mut Editor, v: &str| {
+        let props = &mut e.doc.controls.get_mut(&id).expect("the section").props;
+        let xml = props.kind_xml.as_deref().expect("its kind").to_string();
+        let at = xml.find("<w15:doNotAllowInsertDeleteSection").expect("the flag");
+        let end = at + xml[at..].find("/>").expect("closed") + 2;
+        props.kind_xml = Some(format!("{}<w15:doNotAllowInsertDeleteSection w15:val=\"{v}\"/>{}", &xml[..at], &xml[end..]));
+    };
+    flag(&mut e, "true");
+    assert!(matches!(e.add_repeating_item(&s, None, false, fonts()), Outcome::Refused(_)), "on");
+    flag(&mut e, "false");
+    assert!(matches!(e.add_repeating_item(&s, None, false, fonts()), Outcome::Changed(_)), "off");
+}
+
+#[test]
+fn a_repeating_section_in_a_locked_control_adds_no_item() {
+    let name = r#"<w:p><w:r><w:t>Ada</w:t></w:r></w:p><w:p><w:r><w:t>After</w:t></w:r></w:p>"#;
+    let mut e = Editor::open(&blank_body(name), fonts()).expect("opens");
+    send(&mut e, json!({ "type": "key", "code": "Home", "mods": { "ctrl": true } }));
+    send(&mut e, json!({ "type": "key", "code": "End", "mods": { "shift": true } }));
+    ok(&cmd(&mut e, json!({ "type": "wrapInRepeatingSection", "tag": "People" })));
+    let s = crate::api::value::ElementId(api(ctl(&e, |c| c.props.kind == ControlKind::RepeatingSection)));
+    let outer = ControlId::next();
+    let props = crate::docx::ControlProps { lock: crate::docx::Lock::ContentLocked, ..Default::default() };
+    e.doc.controls.insert(outer, crate::docx::Control::new(props));
+    let Block::Para(p) = &mut e.doc.sections[0].blocks[0] else { panic!("a paragraph") };
+    p.controls.insert(0, outer);
+    let before = texts(&e);
+    assert!(matches!(e.add_repeating_item(&s, None, false, fonts()), Outcome::Refused(_)), "the control around it is locked");
+    assert_eq!(texts(&e), before);
+}
+
+#[test]
+fn a_repeating_section_of_rows_adds_a_row() {
+    let cell = |t: &str| format!("<w:tc><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:tc>");
+    let table = format!(
+        "<w:tbl><w:tblGrid><w:gridCol w:w=\"2000\"/><w:gridCol w:w=\"2000\"/></w:tblGrid><w:tr>{}{}</w:tr><w:tr>{}{}</w:tr></w:tbl><w:p/>",
+        cell("A"),
+        cell("B"),
+        cell("C"),
+        cell("D")
+    );
+    let mut e = Editor::open(&blank_body(&table), fonts()).expect("opens");
+    let table = e.index().table_ids().next().expect("a table");
+    e.selection = Selection::Cells {
+        table,
+        anchor: crate::editing::selection::CellRef { row: 1, col: 0 },
+        focus: crate::editing::selection::CellRef { row: 1, col: 1 },
+        shape: crate::editing::selection::CellShape::Rows,
+    };
+    ok(&cmd(&mut e, json!({ "type": "wrapInRepeatingSection" })));
+    let s = crate::api::value::ElementId(api(ctl(&e, |c| c.props.kind == ControlKind::RepeatingSection)));
+    assert!(matches!(e.add_repeating_item(&s, None, false, fonts()), Outcome::Changed(_)));
+    let Some(Block::Table(t)) = e.document().sections[0].blocks.first() else { panic!("a table") };
+    assert_eq!(t.rows.len(), 3);
+    assert_eq!(t.rows[2].controls.len(), 2, "in the section, its own item");
+    assert_ne!(t.rows[1].controls[1], t.rows[2].controls[1]);
+    assert_eq!(texts(&e)[..6], ["A", "B", "C", "D", "C", "D"]);
+}
+
+#[test]
+fn shifting_cells_down_out_of_a_repeating_item_puts_them_in_an_item_of_their_own() {
+    use crate::editing::table_cells::InsertShift;
+    let cell = |t: &str| format!("<w:tc><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:tc>");
+    let table = format!(
+        "<w:tbl><w:tblGrid><w:gridCol w:w=\"2000\"/><w:gridCol w:w=\"2000\"/></w:tblGrid><w:tr>{}{}</w:tr><w:tr>{}{}</w:tr></w:tbl><w:p/>",
+        cell("A"),
+        cell("B"),
+        cell("C"),
+        cell("D")
+    );
+    let mut e = Editor::open(&blank_body(&table), fonts()).expect("opens");
+    let table = e.index().table_ids().next().expect("a table");
+    let block = |r0: usize, c0: usize, r1: usize, c1: usize, shape| Selection::Cells {
+        table,
+        anchor: crate::editing::selection::CellRef { row: r0, col: c0 },
+        focus: crate::editing::selection::CellRef { row: r1, col: c1 },
+        shape,
+    };
+    e.selection = block(1, 0, 1, 1, crate::editing::selection::CellShape::Rows);
+    ok(&cmd(&mut e, json!({ "type": "wrapInRepeatingSection" })));
+    e.selection = block(0, 0, 0, 0, crate::editing::selection::CellShape::Rect);
+    assert!(matches!(e.insert_cells(InsertShift::Down, fonts()), Outcome::Changed(_)));
+    let Some(Block::Table(t)) = e.document().sections[0].blocks.first() else { panic!("a table") };
+    assert_eq!(texts(&e)[..6], ["", "B", "A", "D", "C", ""], "C moves down into the new row");
+    assert_eq!(t.rows[2].controls.len(), 2, "in the section, in an item: {:?}", t.rows[2].controls);
+    assert_eq!(t.rows[2].controls[0], t.rows[1].controls[0], "the same section");
+    assert_ne!(t.rows[2].controls[1], t.rows[1].controls[1], "its own item");
+}
+
+#[test]
+fn a_date_control_s_calendar_and_storage_are_set_and_read() {
+    use crate::editing::{DateStorage, date_formats, date_settings};
+    let date = r#"<w:date><w:dateFormat w:val="M/d/yyyy"/><w:lid w:val="en-US"/></w:date>"#;
+    let mut e = with_control(date, "<w:r><w:t>1/1/2026</w:t></w:r>");
+    let c = by_alias(&e, "C");
+    let id = crate::api::value::ElementId(api(c));
+    let s = date_settings(&e.document().controls[&c].props).expect("a date control");
+    assert_eq!((s.calendar.as_str(), s.storage), ("gregorian", DateStorage::DateTime), "Word's defaults");
+    std::mem::take(&mut e.changes);
+    assert!(matches!(e.set_date_control_storage(&id, Some("hijri"), Some(DateStorage::Text), fonts()), Outcome::Changed(_)));
+    assert!(element_changed(&mut e, crate::docx::ElementId::Control(c)), "the calendar change is reported");
+    let xml = doc_xml(&e);
+    let (store, cal, lid) = (xml.find("w:storeMappedDataAs").unwrap(), xml.find("w:calendar").unwrap(), xml.find("w:lid").unwrap());
+    assert!(lid < store && store < cal, "in schema order: {xml}");
+    let s = date_settings(&e.document().controls[&c].props).expect("a date control");
+    assert_eq!((s.calendar.as_str(), s.storage, s.locale.as_deref()), ("hijri", DateStorage::Text, Some("en-US")));
+    assert!(matches!(e.set_date_control_storage(&id, Some("martian"), None, fonts()), Outcome::Refused(_)));
+    assert_eq!(date_formats("en-US")[0], "M/d/yyyy");
+    assert_eq!(date_formats("de-DE")[0], "dd.MM.yyyy");
+}
+
+#[test]
+fn a_date_control_around_a_paragraph_fills_from_a_date() {
+    let date = r#"<w:date w:fullDate="2026-01-01T00:00:00Z"><w:dateFormat w:val="MMMM yyyy"/><w:lid w:val="en-US"/><w:calendar w:val="gregorian"/></w:date>"#;
+    let body = format!(
+        r#"<w:sdt><w:sdtPr><w:alias w:val="C"/><w:id w:val="5"/>{date}</w:sdtPr><w:sdtContent><w:p><w:r><w:t>January 2026</w:t></w:r></w:p></w:sdtContent></w:sdt><w:p><w:r><w:t>Other</w:t></w:r></w:p>"#
+    );
+    let mut e = Editor::open(&blank_body(&body), fonts()).expect("opens");
+    let c = by_alias(&e, "C");
+    let id = crate::api::value::ElementId(api(c));
+    assert!(matches!(e.fill_control_date(&id, "2027-02-03", fonts()), Outcome::Changed(_)));
+    assert_eq!(texts(&e), ["February 2027", "Other"]);
+    assert!(doc_xml(&e).contains(r#"w:fullDate="2027-02-03T00:00:00Z""#));
+    e.undo_many(true, 1, fonts());
+    assert_eq!(texts(&e), ["January 2026", "Other"], "one undo step");
+    assert!(doc_xml(&e).contains(r#"w:fullDate="2026-01-01T00:00:00Z""#));
+}
+
+#[test]
+fn a_date_control_s_settings_are_read_whatever_whitespace_follows_an_element_name() {
+    use crate::editing::{DateStorage, date_settings};
+    let date = "<w:date><w:dateFormat w:val=\"M/d/yyyy\"/><w:lid w:val=\"en-US\"/><w:storeMappedDataAs\tw:val=\"text\"/><w:calendar\n  w:val=\"hijri\"/></w:date>";
+    let e = with_control(date, "<w:r><w:t>1/1/2026</w:t></w:r>");
+    let c = by_alias(&e, "C");
+    let s = date_settings(&e.document().controls[&c].props).expect("a date control");
+    assert_eq!((s.calendar.as_str(), s.storage), ("hijri", DateStorage::Text));
+}
+
+#[test]
+fn a_date_control_without_its_xml_keeps_its_locale_when_its_calendar_is_set() {
+    use crate::editing::date_settings;
+    let mut e = Editor::open(&blank_body("<w:p><w:r><w:t>Hi </w:t></w:r></w:p>"), fonts()).expect("opens");
+    caret(&mut e, 0, 3);
+    ok(&cmd(&mut e, json!({ "type": "insertControl", "kind": "date" })));
+    let c = ctl(&e, |_| true);
+    let id = crate::api::value::ElementId(api(c));
+    ok(&cmd(&mut e, json!({ "type": "setControl", "id": id.0, "options": { "locale": "de-DE" } })));
+    assert!(e.document().controls[&c].props.kind_xml.is_none(), "no XML of its own yet");
+    assert!(matches!(e.set_date_control_storage(&id, Some("hijri"), None, fonts()), Outcome::Changed(_)));
+    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let again = Editor::open(&saved, fonts()).expect("reopens");
+    let k = ctl(&again, |_| true);
+    let s = date_settings(&again.document().controls[&k].props).expect("a date control");
+    assert_eq!((s.locale.as_deref(), s.calendar.as_str()), (Some("de-DE"), "hijri"));
+}

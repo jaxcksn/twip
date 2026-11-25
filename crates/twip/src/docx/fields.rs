@@ -89,9 +89,9 @@ pub fn code_text(inlines: &[Inline], s: FieldSpan) -> String {
     code_where(inlines, s, |_| true)
 }
 
-/// [`code_text`] as `view` shows it: without the revisions the view hides.
-pub fn code_text_in(inlines: &[Inline], s: FieldSpan, view: super::review::MarkupView) -> String {
-    code_where(inlines, s, |r| !view.hides(&r.rev))
+/// [`code_text`] as `review` shows it: without the revisions it hides.
+pub fn code_text_in(inlines: &[Inline], s: FieldSpan, review: &super::review::ReviewView) -> String {
+    code_where(inlines, s, |r| !review.hides(&r.rev))
 }
 
 fn code_where(inlines: &[Inline], s: FieldSpan, keep: impl Fn(&Run) -> bool) -> String {
@@ -226,11 +226,11 @@ const MAX_SHOWN_DEPTH: usize = 32;
 
 /// How each of `inlines` shows; an evaluated field without a value shows the runs of its result that `keep` takes.
 fn show(inlines: &[Inline], views: bool, keep: &dyn Fn(&Run) -> bool) -> Vec<Shown> {
-    show_at(inlines, views, keep, 0)
+    show_at(inlines, views, keep, &|_| None, 0)
 }
 
-/// [`show`] `depth` results down.
-fn show_at(inlines: &[Inline], views: bool, keep: &dyn Fn(&Run) -> bool, depth: usize) -> Vec<Shown> {
+/// [`show`] `depth` results down, a run `keep` leaves out showing as its `stand_in` character.
+fn show_at(inlines: &[Inline], views: bool, keep: &dyn Fn(&Run) -> bool, stand_in: &dyn Fn(&Run) -> Option<char>, depth: usize) -> Vec<Shown> {
     let mut out = vec![Shown::Itself; inlines.len()];
     for s in spans(inlines) {
         // Outer fields come first: a field inside a part that isn't drawn isn't drawn either.
@@ -253,7 +253,7 @@ fn show_at(inlines: &[Inline], views: bool, keep: &dyn Fn(&Run) -> bool, depth: 
             not(&mut out, s.code_end()..=s.end);
             if visible {
                 out[s.begin] = Shown::Value(value.clone().unwrap_or_else(|| match s.sep {
-                    Some(sep) if depth < MAX_SHOWN_DEPTH => visible_at(&inlines[sep + 1..s.end], keep, depth + 1),
+                    Some(sep) if depth < MAX_SHOWN_DEPTH => visible_at(&inlines[sep + 1..s.end], keep, stand_in, depth + 1),
                     _ => String::new(),
                 }));
             }
@@ -268,25 +268,46 @@ fn show_at(inlines: &[Inline], views: bool, keep: &dyn Fn(&Run) -> bool, depth: 
 
 /// The text of `inlines` as results show it: codes left out, an evaluated field as its value (or its result).
 pub fn visible(inlines: &[Inline]) -> String {
-    visible_where(inlines, &|_| true)
+    visible_where(inlines, &|_| true, &|_| None)
 }
 
-/// [`visible`] as `view` draws it: without hidden text and the revisions the view hides.
-pub fn visible_in(inlines: &[Inline], view: super::review::MarkupView) -> String {
-    visible_where(inlines, &|r| !r.hidden && !view.hides(&r.rev))
+/// [`visible`] as `review` draws it: without hidden text and the revisions it hides, a deletion drawn as a stand-in
+/// character (`^`, `#`) as that.
+pub fn visible_in(inlines: &[Inline], review: &super::review::ReviewView) -> String {
+    let stand_in = |r: &Run| if r.hidden { None } else { review.markup.stand_in(review.view, &r.rev) };
+    visible_where(inlines, &|r| !r.hidden && !review.hides(&r.rev), &stand_in)
 }
 
-/// [`visible`] of the inlines whose runs `keep` takes.
-fn visible_where(inlines: &[Inline], keep: &dyn Fn(&Run) -> bool) -> String {
-    visible_at(inlines, keep, 0)
+/// [`visible`] of the inlines whose runs `keep` takes, a deletion it leaves out as its `stand_in` character.
+fn visible_where(inlines: &[Inline], keep: &dyn Fn(&Run) -> bool, stand_in: &dyn Fn(&Run) -> Option<char>) -> String {
+    visible_at(inlines, keep, stand_in, 0)
 }
 
 /// [`visible_where`] `depth` results down.
-fn visible_at(inlines: &[Inline], keep: &dyn Fn(&Run) -> bool, depth: usize) -> String {
+fn visible_at(inlines: &[Inline], keep: &dyn Fn(&Run) -> bool, stand_in: &dyn Fn(&Run) -> Option<char>, depth: usize) -> String {
     let mut out = String::new();
-    for (i, s) in inlines.iter().zip(show_at(inlines, false, keep, depth)) {
-        if i.run().is_none_or(keep) {
-            push_shown(&mut out, s, i);
+    // One stand-in for each deletion, at its start.
+    let mut deletion = None;
+    for (i, s) in inlines.iter().zip(show_at(inlines, false, keep, stand_in, depth)) {
+        match i.run() {
+            Some(r) if !keep(r) => {
+                if s != Shown::Not
+                    && i.units() > 0
+                    && let Some(c) = stand_in(r)
+                {
+                    let id = r.rev.del.as_ref().map(|d| d.id);
+                    if deletion != Some(id) {
+                        out.push(c);
+                        deletion = Some(id);
+                    }
+                }
+            }
+            _ => {
+                if i.units() > 0 {
+                    deletion = None;
+                }
+                push_shown(&mut out, s, i);
+            }
         }
     }
     out
@@ -357,6 +378,11 @@ const FIELD_NAMES: &str = "ADDRESSBLOCK ADVANCE ASK AUTHOR AUTONUM AUTONUMLGL AU
     MERGEBARCODE MERGEFIELD MERGEREC MERGESEQ NEXT NEXTIF NOTEREF NUMCHARS NUMPAGES NUMWORDS PAGE PAGEREF PRINT PRINTDATE \
     PRIVATE QUOTE RD REF REVNUM SAVEDATE SECTION SECTIONPAGES SEQ SET SHAPE SKIPIF STYLEREF SUBJECT SYMBOL TA TC TEMPLATE \
     TIME TITLE TOA TOC USERADDRESS USERINITIALS USERNAME XE";
+
+/// Whether Word has a field named `name` (upper-cased).
+pub(crate) fn known_name(name: &str) -> bool {
+    FIELD_NAMES.split_whitespace().any(|f| f == name)
+}
 
 /// A field argument quoted so that `parse` reads it back unchanged.
 pub(crate) fn quote(v: &str) -> String {
@@ -620,8 +646,11 @@ pub fn words(code: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut cur = String::new();
     let mut quoted = false;
-    for c in code.chars() {
+    let mut chars = code.chars().peekable();
+    while let Some(c) = chars.next() {
         match c {
+            // An escaped quote or backslash, as `parse` reads one.
+            '\\' if quoted && chars.peek().is_some_and(|n| matches!(n, '"' | '\\')) => cur.extend(chars.next()),
             '"' => {
                 // A quote ends the word before it too: `"a"="b"` is three words.
                 if quoted || !cur.is_empty() {
@@ -1010,7 +1039,7 @@ impl Whole {
         let mut text = String::new();
         let mut at = Vec::with_capacity(inlines.len() + 1);
         let (mut notes, mut firsts) = (Vec::new(), Vec::new());
-        for (k, (i, s)) in inlines.iter().zip(show_at(inlines, false, &|_| true, 0)).enumerate() {
+        for (k, (i, s)) in inlines.iter().zip(show_at(inlines, false, &|_| true, &|_| None, 0)).enumerate() {
             at.push(text.len());
             match (i, &s) {
                 (Inline::NoteRef { .. }, _) => notes.push(k),
@@ -2039,7 +2068,12 @@ mod tests {
             t(" z", &run),
         ];
         assert_eq!(visible(&v), "a 1secretquiet2nested z");
-        assert_eq!(visible_in(&v, MarkupView::NoMarkup), "a 12 z");
-        assert_eq!(visible_in(&v, MarkupView::All), "a 1secret2nested z");
+        let in_view = |view| crate::docx::review::ReviewView { view, ..Default::default() };
+        assert_eq!(visible_in(&v, &in_view(MarkupView::NoMarkup)), "a 12 z");
+        assert_eq!(visible_in(&v, &in_view(MarkupView::All)), "a 1secret2nested z");
+        let mut markup = crate::docx::review::Markup::default();
+        markup.style.deletions.mark = crate::docx::review::TextMark::Caret;
+        let caret = crate::docx::review::ReviewView { view: MarkupView::All, markup: Rc::new(markup), ..Default::default() };
+        assert_eq!(visible_in(&v, &caret), "a 1^2^ z", "each deletion as its stand-in");
     }
 }

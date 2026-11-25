@@ -39,6 +39,8 @@ pub struct ShapeSpace {
     /// Fitted regions keep their natural widths (still never broken).
     pub unfitted: bool,
     pub view: MarkupView,
+    /// Which revisions show and how they mark their text.
+    pub markup: std::rc::Rc<crate::docx::review::Markup>,
     /// Hidden text is laid out.
     pub show_hidden: bool,
     pub join: Option<std::rc::Rc<super::join::JoinMap>>,

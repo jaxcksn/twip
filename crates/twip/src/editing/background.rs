@@ -1,7 +1,7 @@
 //! Watermarks and the page background
 
 use crate::api::command::{PictureWatermark, TextWatermark, Watermark, WatermarkLayout};
-use crate::api::drawing::{ColourValue, FillValue, TransformKind};
+use crate::api::drawing::{ColourValue, FillValue};
 use crate::api::value::{Bytes, Color, Points};
 use crate::docx::watermark::{self as wm, PictureMark, TextMark};
 use crate::docx::{Block, Float, Inline, ThemeColourRef};
@@ -90,19 +90,7 @@ impl Editor {
 
     /// A page colour and the theme colour it is: a theme colour takes one tint or shade.
     fn page_colour_of(&self, c: &ColourValue) -> Result<(u32, Option<ThemeColourRef>), String> {
-        let Some(t) = c.theme else {
-            let model = c.to_model()?;
-            return Ok((model.resolve(&self.doc.theme, &self.doc.colour_map, None).to_rgb(), None));
-        };
-        let byte = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
-        let (tint, shade) = match c.transforms.as_slice() {
-            [] => (None, None),
-            [x] if x.kind == TransformKind::Tint => (Some(byte(x.value)), None),
-            [x] if x.kind == TransformKind::Shade => (None, Some(byte(x.value))),
-            _ => return Err("a theme page colour takes one tint or shade".into()),
-        };
-        let r = ThemeColourRef { slot: t.slot(), tint, shade };
-        Ok((crate::docx::props::ThemeColours::new(&self.doc.theme, &self.doc.colour_map).resolve(r), Some(r)))
+        self.word_colour(c).map(|w| (w.rgb, w.theme))
     }
 
     /// The page background as the state reports it: a pattern's tile picture as its pattern.
@@ -122,30 +110,36 @@ impl Editor {
             return Some(FillValue::of(f, None, &[]));
         }
         let colour = self.doc.page_colour?;
-        let value = match self.doc.page_colour_theme.and_then(|t| crate::api::drawing::ThemeColour::of(t.slot).map(|s| (s, t))) {
-            Some((slot, t)) => {
-                let mut v = ColourValue::theme(slot);
-                let f = |b: u8| f64::from(b) / 255.0;
-                match (t.tint, t.shade) {
-                    (Some(b), _) => v.transforms.push(crate::api::drawing::ColourTransform { kind: TransformKind::Tint, value: f(b) }),
-                    (None, Some(b)) => v.transforms.push(crate::api::drawing::ColourTransform { kind: TransformKind::Shade, value: f(b) }),
-                    _ => {}
-                }
-                v
-            }
-            None => ColourValue::rgb(Color(colour)),
-        };
+        let value = super::theme::colour_value(colour, self.doc.page_colour_theme);
         Some(FillValue::Solid { colour: value })
     }
 
-    /// The first watermark section `section`'s pages show, else the first in any header.
+    /// The first watermark section `section`'s pages show: in its default header, its first page's when it has a
+    /// different first page, its even pages' when the document has different odd and even pages (a header it lacks
+    /// is the section before's).
     fn shown_watermark(&self, section: usize) -> Option<(&Float, &crate::docx::Run)> {
         let sections = &self.doc.sections;
-        let shown: Vec<&String> = (0..3)
-            .filter_map(|slot| (0..=section.min(sections.len().saturating_sub(1))).rev().find_map(|k| sections[k].headers[slot].as_ref()))
-            .collect();
-        let names = shown.into_iter().chain(sections.iter().flat_map(|s| s.headers.iter().flatten()));
-        names.filter_map(|n| self.doc.stories.get(n)).find_map(|b| first_watermark(b))
+        let last = section.min(sections.len().checked_sub(1)?);
+        let used = [true, sections[last].title_pg, self.doc.settings.even_and_odd];
+        let shown = (0..3).filter(|&slot| used[slot]).filter_map(|slot| (0..=last).rev().find_map(|k| sections[k].headers[slot].as_ref()));
+        shown.filter_map(|n| self.doc.stories.get(n)).find_map(|b| first_watermark(b))
+    }
+
+    /// The picture of the watermark section `section`'s pages show: its image's bytes (`None` for a text watermark or
+    /// none).
+    pub fn watermark_image(&self, section: usize) -> Option<&[u8]> {
+        let (f, _) = self.shown_watermark(section)?;
+        let wm::Watermark::Picture(p) = wm::of(f)? else { return None };
+        self.doc.images.get(p.image?).map(Vec::as_slice)
+    }
+
+    /// The page background's picture (Fill Effects > Picture or Texture): its image's bytes.
+    pub fn page_fill_image(&self) -> Option<&[u8]> {
+        let k = match self.doc.page_fill.as_ref()? {
+            crate::drawing::paint::Fill::Blip(b) => b.image?,
+            _ => return None,
+        };
+        self.doc.images.get(k).map(Vec::as_slice)
     }
 
     /// The watermark section `section`'s pages show: the first in its headers, else in any header.

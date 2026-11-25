@@ -144,6 +144,28 @@ fn a_reference_typed_by_hand_is_a_reference() {
     assert!(para.inlines.iter().any(|i| matches!(i, Inline::FieldBegin { kind: Some(crate::docx::FieldKind::SubTemplate), .. })));
 }
 
+#[test]
+fn a_reference_to_the_sub_template_being_edited_can_be_edited_over() {
+    use super::super::sub_templates::Resolution as R;
+    let (mut e, _) = expanded();
+    let name = Command::EditSubTemplate(crate::api::command::SubTemplateName { name: "Appeals notice".into(), category: None });
+    e.execute(name, fonts());
+    assert_eq!(e.editing_sub_template(), Some(2));
+    let p = body_para(&e, 2, 0);
+    let len = super::super::step::para_len(e.index().para(e.document(), p).expect("the paragraph"));
+    e.select_range(p, Unit(0), len, fonts());
+    e.execute(Command::Delete(crate::api::command::DeleteOptions { direction: crate::api::value::Direction::Backward, unit: None }), fonts());
+    e.execute(
+        Command::InsertField(crate::api::command::InsertField { code: "SUBTEMPLATE \"Appeals notice\"".into(), display: None, show_code: None }),
+        fonts(),
+    );
+    let r = e.references().by_field.values().find(|r| r.at == p).expect("a reference");
+    assert_eq!(r.resolution, R::Resolved, "nothing in the body leads to it");
+    let len = super::super::step::para_len(e.index().para(e.document(), p).expect("the paragraph"));
+    let at = |u| super::super::position::Position::text(StoryId::BuildingBlock(2), p, u);
+    assert_eq!(e.expanded_in(&at(Unit(0)), &at(len)), None, "it doesn't expand in itself");
+}
+
 fn body_block(e: &Editor, s: usize, i: usize) -> ParaId {
     match &e.document().sections[s].blocks[i] {
         Block::Para(p) => ParaId(p.id),
@@ -259,6 +281,20 @@ fn a_click_on_a_shown_body_selects_its_reference_and_typing_is_refused() {
     e.execute(Command::Delete(crate::api::command::DeleteOptions { direction: crate::api::value::Direction::Backward, unit: None }), fonts());
     assert!(!has_field(&e, reference));
     e.execute(Command::Undo, fonts());
+    assert!(has_field(&e, reference));
+}
+
+#[test]
+fn typing_over_paragraphs_around_a_shown_body_is_refused() {
+    let (mut e, reference) = expanded();
+    let (before, after) = (body_block(&e, 0, 0), body_block(&e, 0, 2));
+    let end = e.index().para(e.document(), after).map(|p| p.inlines.iter().map(Inline::units).sum::<usize>() as u32).expect("a paragraph");
+    let at = |p, u| super::super::position::Position::text(StoryId::Body, p, Unit(u));
+    let selection = super::super::selection::Selection::range(at(before, 0), at(after, end), super::super::selection::Granularity::Char);
+    e.set_caret_for_benchmark(selection);
+    let blocks = e.document().sections[0].blocks.clone();
+    type_text(&mut e, "x");
+    assert_eq!(e.document().sections[0].blocks, blocks, "nothing changed");
     assert!(has_field(&e, reference));
 }
 
@@ -959,4 +995,78 @@ fn a_replaced_body_brings_the_lists_of_its_group_shapes_text() {
     e.execute(Command::ReplaceBody(crate::api::command::ReplaceBody { from: crate::api::value::Bytes(source) }), fonts());
     let saved = crate::docx::write::save(e.document()).expect("saves");
     assert_eq!(formats(&crate::docx::read_editable(&saved).expect("reads again")), ["upperRoman"], "its own list, as saved");
+}
+
+#[test]
+fn a_range_on_a_shown_body_keeps_every_range_from_formatting() {
+    let (mut e, reference) = expanded();
+    click_line(&mut e, reference, 1);
+    let (a, b) = e.selection().ordered(e.index()).expect("the reference field");
+    let after = body_block(&e, 0, 2);
+    let story = a.story;
+    let free = (super::super::position::Position::text(story, after, Unit(0)), super::super::position::Position::text(story, after, Unit(2)));
+    e.select_ranges(&[(a, b), free]);
+    assert!(e.is_discontiguous());
+    let before = e.document().sections[0].blocks.clone();
+    let free_text = text_of(&e, after);
+    assert!(free_text.chars().count() > 2, "setup: {free_text:?}");
+    let out = e.execute(Command::SetBold(true), fonts());
+    assert!(!matches!(out, super::super::commands::Outcome::Changed(_)), "{out:?}");
+    assert_eq!(e.document().sections[0].blocks, before, "neither range formatted");
+    let out = e.execute(Command::InsertText("x".into()), fonts());
+    assert!(matches!(out, super::super::commands::Outcome::Changed(_)), "typing replaces the free range alone: {out:?}");
+    assert_eq!(e.document().sections[0].blocks[1], before[1], "the reference is kept");
+    let want: String = std::iter::once('x').chain(free_text.chars().skip(2)).collect();
+    assert_eq!(text_of(&e, after), want, "the free range's two units are replaced by the typed text, the rest kept");
+}
+
+#[test]
+fn a_shown_body_is_checked_when_a_cell_block_is_the_selection() {
+    let (mut e, reference) = expanded();
+    click_line(&mut e, reference, 1);
+    let (a, b) = e.selection().ordered(e.index()).expect("the reference field");
+    let table = e.document().sections[0]
+        .blocks
+        .iter()
+        .find_map(|b| if let Block::Table(t) = b { Some(crate::layout::TableId(t.id)) } else { None })
+        .expect("a table");
+    let cell = crate::editing::selection::CellRef { row: 0, col: 0 };
+    let cells = crate::editing::selection::Selection::Cells { table, anchor: cell, focus: cell, shape: crate::editing::selection::CellShape::Rect };
+    e.select_pieces(&[(a, b)], Vec::new(), Some(cells));
+    assert!(matches!(e.selection(), crate::editing::selection::Selection::Cells { .. }) && e.is_discontiguous());
+    let before = e.document().sections[0].blocks.clone();
+    let out = e.execute(Command::SetBold(true), fonts());
+    assert!(!matches!(out, super::super::commands::Outcome::Changed(_)), "{out:?}");
+    assert_eq!(e.document().sections[0].blocks, before, "the reference's range is checked whichever range is the selection");
+}
+
+#[test]
+fn a_shown_body_in_a_tbrl_section_is_hit_and_outlined_where_it_is_drawn() {
+    let (mut e, reference) = expanded();
+    e.execute(Command::SetSectionTextDirection(crate::api::command::TextFlow::TbRl), fonts());
+    e.complete(fonts());
+    let field = e.expansions.as_ref().and_then(|x| x.paras.get(&reference)).map(|x| x.field).expect("shown");
+    let (pg, g) = e.page_geometries().into_iter().find(|(_, g)| g.lines.iter().any(|l| l.shows(reference))).expect("a page");
+    let l = g.lines.iter().find(|l| l.shows(reference)).expect("a line");
+    assert_eq!(l.dir(), super::super::geometry::LineDir::Down);
+    let band = l.band(l.x0(), l.x1());
+    let rects = e.expansion_rects(field, pg..pg + 1);
+    let &(_, r) = rects.first().expect("outlined");
+    assert!(r[0] >= band[0] - 0.5 && r[2] <= band[2] + 0.5 && r[3] - r[1] > r[2] - r[0], "down the line's band: {r:?} in {band:?}");
+    let (x, y) = e.stack().to_doc(pg, (r[0] + r[2]) / 2.0, (r[1] + r[3]) / 2.0).expect("on the stack");
+    assert_eq!(e.expansion_at(x, y).map(|h| h.0), Some(field), "hit where it is drawn");
+}
+
+#[test]
+fn the_current_heading_is_the_sub_template_s_while_it_is_edited() {
+    let (mut e, reference) = expanded();
+    click_line(&mut e, reference, 1);
+    click_line(&mut e, reference, 2);
+    assert_eq!(e.editing_sub_template(), Some(0));
+    let first = body_para(&e, 0, 0);
+    e.select_range(first, Unit(0), Unit(0), fonts());
+    assert_eq!(e.outline_level(first), Some(1), "Violation's heading");
+    let id = crate::api::value::HeadingId(first.0.to_string());
+    assert!(crate::services::headings(&mut e).iter().any(|h| h.id == id), "listed");
+    assert_eq!(crate::services::current_heading(&e), Some(id));
 }

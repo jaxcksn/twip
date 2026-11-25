@@ -192,7 +192,7 @@ fn random_edit(d: &mut Document, rng: &mut Rng, kind: Option<usize>) -> Option<E
             let mut st = (*p.style).clone();
             st.border_bottom = match st.border_bottom {
                 Some(_) => None,
-                None => Some(Border { style: "single".into(), width: 1.0, space: 1.0, shadow: false, color: None }),
+                None => Some(Border { style: "single".into(), width: 1.0, space: 1.0, shadow: false, color: None, color_theme: None }),
             };
             p.style = Rc::new(st);
             Some(Edit { hint: change(si, bi, bi + 1, bi + 1), forces_full: false, what: format!("toggle border on block {bi}") })
@@ -507,12 +507,14 @@ fn edits_inside_joined_paragraphs() {
         }),
         ("border the paragraph before a chain", |d| {
             let Block::Para(p) = d.sections[0].blocks.get_mut(9)? else { return None };
-            Rc::make_mut(&mut p.style).border_bottom = Some(Border { style: "single".into(), width: 1.0, space: 1.0, shadow: false, color: None });
+            Rc::make_mut(&mut p.style).border_bottom =
+                Some(Border { style: "single".into(), width: 1.0, space: 1.0, shadow: false, color: None, color_theme: None });
             Some((9, 10, 10))
         }),
         ("border a chain's last paragraph", |d| {
             let Block::Para(p) = d.sections[0].blocks.get_mut(14)? else { return None };
-            Rc::make_mut(&mut p.style).border_bottom = Some(Border { style: "single".into(), width: 1.0, space: 1.0, shadow: false, color: None });
+            Rc::make_mut(&mut p.style).border_bottom =
+                Some(Border { style: "single".into(), width: 1.0, space: 1.0, shadow: false, color: None, color_theme: None });
             Some((14, 15, 15))
         }),
         ("insert a paragraph's mark", |d| set_mark(d, 20, false, true)),
@@ -525,11 +527,22 @@ fn edits_inside_joined_paragraphs() {
             Some((2, 3, 3))
         }),
     ];
-    // NoMarkup hides what Simple hides (Simple adds change bars), so Simple stands for both. Both budgets lay out
-    // the same document in step and share one full layout per edit.
-    for view in [MarkupView::Simple, MarkupView::Original, MarkupView::All] {
+    // NoMarkup hides what Simple hides (Simple adds change bars), so Simple stands for both. All Markup also with
+    // what takes deleted marks out of it: Balloons, the reviewer hidden, deletions shown as carets. Both budgets lay
+    // out the same document in step and share one full layout per edit.
+    use crate::docx::review::{BalloonMode, Markup, TextMark};
+    let markups = {
+        let mut hidden = Markup::default();
+        hidden.show.hidden_reviewers = vec![AuthorId(0)];
+        let mut caret = Markup::default();
+        caret.style.deletions.mark = TextMark::Caret;
+        [Markup::default(), Markup { balloons: BalloonMode::Balloons, ..Markup::default() }, hidden, caret]
+    };
+    let views = [MarkupView::Simple, MarkupView::Original].map(|v| (v, Markup::default()));
+    for (view, markup) in views.into_iter().chain(markups.map(|m| (MarkupView::All, m))) {
         let mut d = base.clone();
         d.review.view = view;
+        d.review.markup = Rc::new(markup.clone());
         for i in [2, 3, 10, 11, 12, 13] {
             set_mark(&mut d, i, true, true);
         }
@@ -550,7 +563,7 @@ fn edits_inside_joined_paragraphs() {
                 if a != b {
                     let line = a.lines().zip(b.lines()).position(|(x, y)| x != y).unwrap_or(0);
                     panic!(
-                        "{view:?} {budget:?}: {what}: incremental layout differs at dump line {line}:\n  incremental: {}\n  full:        {}",
+                        "{view:?} {markup:?} {budget:?}: {what}: incremental layout differs at dump line {line}:\n  incremental: {}\n  full:        {}",
                         a.lines().nth(line).unwrap_or("<end>"),
                         b.lines().nth(line).unwrap_or("<end>")
                     );

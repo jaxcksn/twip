@@ -280,6 +280,7 @@ pub fn float(m: &Watermark, size: [f64; 2], spid: u32, image: Option<usize>) -> 
         dist: [0.0, 0.0, 9.0, 9.0],
         effect: [0.0; 4],
         poly: None,
+        poly_edited: false,
         behind: true,
         allow_overlap: v.allow_overlap,
         layout_in_cell: v.allow_in_cell,

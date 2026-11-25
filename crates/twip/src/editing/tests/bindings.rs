@@ -89,8 +89,9 @@ fn a_gallery_control_takes_a_building_block_of_its_category() {
     .expect("repackages");
     let mut e = Editor::open(&bytes, fonts()).expect("opens");
     let (c, id) = control(&e, "Pick");
-    let category = e.document().controls[&c].props.gallery().expect("a gallery");
-    let names: Vec<String> = e.gallery_entries(category.as_deref()).map(|b| b.name.clone()).collect();
+    let Some(crate::docx::KeptKind::Gallery { gallery, category }) = e.document().controls[&c].props.kept_kind() else { panic!("a gallery") };
+    assert_eq!((gallery.as_deref(), category.as_deref()), (Some("Custom 1"), Some("Sub-templates")));
+    let names: Vec<String> = e.gallery_entries(gallery.as_deref(), category.as_deref()).map(|b| b.name.clone()).collect();
     assert!(names.iter().any(|n| n == "Violation"), "{names:?}");
     run(&mut e, Command::FillControl(FillControl { id: id.clone(), text: None, image: None, docx: None, building_block: Some("Violation".into()) }));
     assert!(texts(&e).iter().any(|t| t == "Violation notice") && !texts(&e).iter().any(|t| t == "Choose"), "{:?}", texts(&e));
@@ -99,6 +100,39 @@ fn a_gallery_control_takes_a_building_block_of_its_category() {
     let saved = crate::docx::write::save(e.document()).expect("saves");
     let again = Editor::open(&saved, fonts()).expect("reopens");
     assert!(texts(&again).iter().any(|t| t == "Violation notice"));
+}
+
+#[test]
+fn a_building_block_name_two_categories_share_is_refused() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-SUBTEMPLATES.docx");
+    let gallery = r#"<w:sdt><w:sdtPr><w:alias w:val="Pick"/><w:id w:val="9"/><w:docPartList><w:docPartGallery w:val="Custom 1"/></w:docPartList></w:sdtPr><w:sdtContent><w:p><w:r><w:t>Choose</w:t></w:r></w:p></w:sdtContent></w:sdt>"#;
+    let xml = format!(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>{gallery}<w:p><w:r><w:t>After</w:t></w:r></w:p><w:sectPr/></w:body></w:document>"#
+    );
+    let part = |name: &str, category: &str, text: &str| {
+        format!(
+            r#"<w:docPart><w:docPartPr><w:name w:val="{name}"/><w:category><w:name w:val="{category}"/><w:gallery w:val="custom1"/></w:category><w:behaviors><w:behavior w:val="content"/></w:behaviors></w:docPartPr><w:docPartBody><w:p><w:r><w:t>{text}</w:t></w:r></w:p></w:docPartBody></w:docPart>"#
+        )
+    };
+    let glossary = format!(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:glossaryDocument xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docParts>{}{}{}</w:docParts></w:glossaryDocument>"#,
+        part("Summary", "General", "General summary"),
+        part("Summary", "Legal", "Legal summary"),
+        part("Notice", "Legal", "Legal notice")
+    );
+    let bytes = crate::docx::write::repackage(
+        &std::fs::read(path).expect("fixture"),
+        &[("word/document.xml".into(), xml.into_bytes()), ("word/glossary/document.xml".into(), glossary.into_bytes())],
+        zip::CompressionMethod::Deflated,
+    )
+    .expect("repackages");
+    let mut e = Editor::open(&bytes, fonts()).expect("opens");
+    let (_, id) = control(&e, "Pick");
+    let pick = |name: &str| FillControl { id: id.clone(), text: None, image: None, docx: None, building_block: Some(name.into()) };
+    assert!(matches!(e.execute(Command::FillControl(pick("Summary")), fonts()), Outcome::Refused(_)), "which one was meant is unknown");
+    assert!(texts(&e).iter().any(|t| t == "Choose"), "nothing was inserted");
+    assert!(matches!(e.execute(Command::FillControl(pick("Notice")), fonts()), Outcome::Changed(_)), "an unambiguous name fills");
+    assert!(texts(&e).iter().any(|t| t == "Legal notice"));
 }
 
 #[test]
@@ -324,4 +358,77 @@ fn a_new_data_parts_item_id_is_a_guid() {
         "{:?}",
         again.data_parts.iter().map(|d| &d.item_id).collect::<Vec<_>>()
     );
+}
+
+#[test]
+fn a_gallery_control_is_inserted_set_and_kept_with_its_gallery_and_category() {
+    use crate::docx::KeptKind;
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-SUBTEMPLATES.docx");
+    let mut e = Editor::open(&std::fs::read(path).expect("fixture"), fonts()).expect("opens");
+    let out = e.insert_gallery_control(Some("Custom 1".into()), None, fonts());
+    assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
+    let kept = |e: &Editor| {
+        let found = e.document().controls.values().find_map(|c| match c.props.kept_kind() {
+            Some(k @ KeptKind::Gallery { .. }) => Some((k, c.props.showing_placeholder)),
+            _ => None,
+        });
+        found.expect("a gallery control")
+    };
+    assert_eq!(kept(&e), (KeptKind::Gallery { gallery: Some("Custom 1".into()), category: None }, true));
+    let c = *e.document().controls.iter().find(|(_, c)| c.props.kept_kind().is_some()).map(|(k, _)| k).expect("the control");
+    let id = super::super::merge::api_id(crate::docx::ElementId::Control(c));
+    assert!(e.gallery_entries(Some("Custom 1"), None).any(|b| b.name == "Violation"), "a Custom 1 entry");
+    assert_eq!(e.gallery_entries(Some("Cover Pages"), None).count(), 0, "not another gallery's");
+    std::mem::take(&mut e.changes);
+    assert!(matches!(e.set_gallery_control(&id, None, Some(Some("Sub-templates".into())), fonts()), Outcome::Changed(_)));
+    assert!(super::content_controls::element_changed(&mut e, crate::docx::ElementId::Control(c)), "the category change is reported");
+    assert_eq!(kept(&e).0, KeptKind::Gallery { gallery: Some("Custom 1".into()), category: Some("Sub-templates".into()) });
+    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let again = Editor::open(&saved, fonts()).expect("reopens");
+    assert_eq!(kept(&again), (KeptKind::Gallery { gallery: Some("Custom 1".into()), category: Some("Sub-templates".into()) }, true));
+}
+
+#[test]
+fn citation_bibliography_and_equation_controls_are_told_apart() {
+    use crate::docx::KeptKind;
+    let sdt = |alias: &str, kind: &str| {
+        format!(
+            r#"<w:sdt><w:sdtPr><w:alias w:val="{alias}"/><w:id w:val="{}"/>{kind}</w:sdtPr><w:sdtContent><w:p><w:r><w:t>{alias}</w:t></w:r></w:p></w:sdtContent></w:sdt>"#,
+            alias.len()
+        )
+    };
+    let body = [
+        sdt("C", "<w:citation/>"),
+        sdt("Bib", "<w:bibliography/>"),
+        sdt("Equa", "<w:equation/>"),
+        sdt("Cover", r#"<w:docPartObj><w:docPartGallery w:val="Cover Pages"/><w:docPartUnique/></w:docPartObj>"#),
+    ]
+    .concat();
+    let e = Editor::open(&super::blank_body(&body), fonts()).expect("opens");
+    let kind = |a: &str| e.document().controls[&control(&e, a).0].props.kept_kind();
+    assert_eq!(kind("C"), Some(KeptKind::Citation));
+    assert_eq!(kind("Bib"), Some(KeptKind::Bibliography));
+    assert_eq!(kind("Equa"), Some(KeptKind::Equation));
+    assert_eq!(kind("Cover"), Some(KeptKind::BuildingBlock { gallery: Some("Cover Pages".into()), category: None }));
+}
+
+#[test]
+fn filling_a_bound_controls_placeholder_writes_its_node() {
+    let date = r#"<w:showingPlcHdr/><w:date><w:dateFormat w:val="yyyy-MM-dd"/><w:lid w:val="en-US"/><w:calendar w:val="gregorian"/></w:date>"#;
+    let both = format!(
+        "{}{}",
+        sdt("C", 5, "<w:showingPlcHdr/><w:text/>", "<w:r><w:t>Type here</w:t></w:r>"),
+        sdt("D", 6, date, "<w:r><w:t>Pick</w:t></w:r>")
+    );
+    let mut e = with_controls(&both);
+    bind_to(&mut e, &["C"], "name", "<case xmlns=\"urn:case\"><name/><when/></case>");
+    bind_to(&mut e, &["D"], "when", "<case xmlns=\"urn:case\"><name/><when/></case>");
+    let (c, id) = control(&e, "C");
+    run(&mut e, fill(&id, "Ada"));
+    assert!(!e.document().controls[&c].props.showing_placeholder);
+    assert!(case_xml(&e).contains("<name>Ada</name>"), "on the first fill: {}", case_xml(&e));
+    let (d, id) = control(&e, "D");
+    assert!(matches!(e.fill_control_date(&id, "2027-02-03", fonts()), Outcome::Changed(_)));
+    assert!(!e.document().controls[&d].props.showing_placeholder);
+    assert!(case_xml(&e).contains("<when>2027-02-03"), "{}", case_xml(&e));
 }

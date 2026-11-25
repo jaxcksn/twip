@@ -23,12 +23,15 @@ pub enum Scope {
     All,
     Author(String),
     Revision(RevisionId),
+    /// The revisions Show Markup shows: of the kinds and reviewers shown.
+    Shown,
 }
 
 enum Who {
     All,
     Author(AuthorId),
     Ids(HashSet<RevisionId>),
+    Shown(crate::docx::review::ShowMarkup),
 }
 
 impl Who {
@@ -37,6 +40,7 @@ impl Who {
             Who::All => true,
             Who::Author(a) => m.author == *a,
             Who::Ids(ids) => ids.contains(&m.id),
+            Who::Shown(show) => show.shows(m),
         }
     }
 }
@@ -45,7 +49,8 @@ struct Pick {
     who: Who,
     /// In a selection: the block-level changes it touches, where they are.
     blocks: Option<HashSet<(Spot, RevisionId)>>,
-    inside: Option<HashMap<ParaId, Range<u32>>>,
+    /// In a selection: the parts of each paragraph with run marks it covers, in order, apart from each other.
+    inside: Option<HashMap<ParaId, Vec<Range<u32>>>>,
     /// In a selection: the run marks of each paragraph a row insertion or deletion it takes holds, by their id.
     tied: HashMap<ParaId, HashSet<RevisionId>>,
     moves: HashSet<Rc<str>>,
@@ -108,24 +113,28 @@ fn decide(r: &Run, accept: bool, take: impl Fn(&RevisionMark) -> bool) -> Option
 }
 
 fn resolve_inlines(p: &Paragraph, pick: &Pick, accept: bool) -> Option<(Vec<Inline>, Vec<Range<u32>>)> {
-    let inside = pick.inside.as_ref().map(|i| i.get(&ParaId(p.id)).cloned());
+    let inside = pick.inside.as_ref().map(|i| i.get(&ParaId(p.id)));
     let tied = pick.tied.get(&ParaId(p.id));
-    let cuts: Vec<u32> = inside.clone().flatten().map(|r| vec![r.start, r.end]).unwrap_or_default();
+    let mut cuts: Vec<u32> = inside.flatten().into_iter().flatten().flat_map(|r| [r.start, r.end]).collect();
+    cuts.sort_unstable();
+    cuts.dedup();
     let mut cache: HashMap<(*const RunStyle, bool), Option<(bool, Run)>> = HashMap::new();
     let mut out: Vec<(Inline, bool)> = Vec::with_capacity(p.inlines.len());
     let (mut at, mut changed) = (0u32, false);
     for i in &p.inlines {
         let n = i.units() as u32;
+        // The cuts inside it, the run read once from its start to its end.
+        let inner = if n > 0 { &cuts[cuts.partition_point(|&c| c <= at)..cuts.partition_point(|&c| c < at + n)] } else { &[][..] };
         let pieces: Vec<Inline> = match i {
-            Inline::Text(t, r) if cuts.iter().any(|&c| at < c && c < at + n) => {
-                let mut v = Vec::new();
-                let mut from = 0usize;
-                for &c in cuts.iter().filter(|&&c| at < c && c < at + n) {
+            Inline::Text(t, r) if !inner.is_empty() => {
+                let mut v = Vec::with_capacity(inner.len() + 1);
+                let (mut chars, mut from) = (t.chars(), 0usize);
+                for &c in inner {
                     let k = (c - at) as usize;
-                    v.push(Inline::Text(t.chars().skip(from).take(k - from).collect(), r.clone()));
+                    v.push(Inline::Text(chars.by_ref().take(k - from).collect(), r.clone()));
                     from = k;
                 }
-                v.push(Inline::Text(t.chars().skip(from).collect(), r.clone()));
+                v.push(Inline::Text(chars.collect(), r.clone()));
                 v
             }
             _ => vec![i.clone()],
@@ -147,7 +156,7 @@ fn resolve_inlines(p: &Paragraph, pick: &Pick, accept: bool) -> Option<(Vec<Inli
             let in_range = match &inside {
                 None => true,
                 Some(None) => false,
-                Some(Some(x)) => x.start <= at && at + n <= x.end,
+                Some(Some(x)) => x.iter().any(|x| x.start <= at && at + n <= x.end),
             };
             let take = |m: &RevisionMark| pick.run(m, in_range) || tied.is_some_and(|t| t.contains(&m.id));
             let d = cache.entry((Rc::as_ptr(r), in_range)).or_insert_with(|| decide(r, accept, take)).clone();
@@ -259,6 +268,33 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
+    /// Accepts or rejects the revisions Show Markup shows (Accept All Changes Shown, Reject All Changes Shown): one undo
+    /// step; those it leaves out stay.
+    pub fn resolve_shown(&mut self, accept: bool, fonts: &Fonts) -> Outcome {
+        self.resolve_revisions(accept, &Scope::Shown, fonts)
+    }
+
+    /// Accepts every revision and turns tracking off (Accept All Changes and Stop Tracking): the acceptance one undo
+    /// step, tracking a setting as Track Changes sets it.
+    pub fn accept_all_and_stop_tracking(&mut self, fonts: &Fonts) -> Outcome {
+        if self.tracking_locked() {
+            return Outcome::unavailable("protection forces tracking");
+        }
+        if self.mode == super::super::Mode::ReadOnly {
+            return self.refuse_read_only();
+        }
+        let out = self.resolve_revisions(true, &Scope::All, fonts);
+        // Tracking stops once every revision is accepted, or there was none
+        if !matches!(out, Outcome::Changed(_) | Outcome::Unchanged("no revision")) {
+            return out;
+        }
+        let stopped = self.doc.settings.track_revisions && self.set_tracking(false);
+        match out {
+            Outcome::Unchanged(_) if stopped => Outcome::Moved,
+            o => o,
+        }
+    }
+
     fn pick(&mut self, scope: &Scope) -> Option<Pick> {
         let f = found(&self.doc, &self.index);
         let base = |who: Who| Pick { who, blocks: None, inside: None, tied: HashMap::new(), moves: HashSet::new(), move_ranges: HashSet::new() };
@@ -271,6 +307,14 @@ impl Editor {
             Scope::Author(name) => {
                 let a = AuthorId(self.doc.people.persons.iter().position(|p| &*p.name == name.as_str())? as u32);
                 base(Who::Author(a)).with_moves(&f, |it| it.mark.author == a)
+            }
+            Scope::Shown => {
+                let show = self.doc.review.markup.show.clone();
+                if !f.items.iter().any(|it| show.shows(&it.mark)) {
+                    return None;
+                }
+                // Only the moves a shown revision is part of: with `Who::All` every move would be taken.
+                base(Who::Shown(show.clone())).with_moves(&f, |it| show.shows(&it.mark))
             }
             Scope::Revision(id) => {
                 let list = revisions(&self.doc, &self.index);
@@ -286,6 +330,33 @@ impl Editor {
                 };
                 p.with_moves(&f, |it| picked.contains(&it.mark.id))
             }
+            Scope::Selection if self.is_discontiguous() => {
+                let pieces = self.pieces();
+                let idx = &self.index;
+                let ranges: Vec<(Position, Position)> = pieces.iter().filter_map(|s| s.ordered(idx)).collect();
+                let blocks: Vec<CellsPick> = pieces.iter().filter_map(|s| CellsPick::of(&self.doc, idx, s)).collect();
+                // The ranges from the first ending after a place
+                let from = |a: &Position| ranges.partition_point(|r| idx.cmp(&r.1, a).is_le());
+                let touches = |it: &Item| {
+                    ranges.get(from(&it.start)).is_some_and(|r| it.story == r.0.story && idx.cmp(&r.0, &it.end).is_lt())
+                        || blocks.iter().any(|b| b.touches(idx, it))
+                };
+                let covers = |p: ParaId| {
+                    let q = idx.para(&self.doc, p)?;
+                    let story = idx.story(idx.para_slot(p)?.container);
+                    let (p0, p1) = (Position::text(story, p, Unit(0)), Position::text(story, p, para_len(q)));
+                    if blocks.iter().any(|b| b.inside(idx, &p0)) {
+                        return Some(std::iter::once(0..para_len(q).0).collect());
+                    }
+                    let v: Vec<Range<u32>> = ranges[from(&p0)..]
+                        .iter()
+                        .take_while(|r| idx.cmp(&r.0, &p1).is_lt())
+                        .filter_map(|r| covered(&self.doc, idx, r.0, r.1, p))
+                        .collect();
+                    (!v.is_empty()).then_some(v)
+                };
+                self.place_pick(&f, touches, covers)
+            }
             Scope::Selection => match self.selection {
                 Selection::Caret(c) => {
                     let list = revisions(&self.doc, &self.index);
@@ -297,30 +368,17 @@ impl Editor {
                     let (s, e) = self.selection.ordered(&self.index)?;
                     let idx = &self.index;
                     let touches = |it: &Item| it.story == s.story && idx.cmp(&it.start, &e).is_lt() && idx.cmp(&s, &it.end).is_lt();
-                    self.place_pick(&f, touches, |p| covered(&self.doc, idx, s, e, p))
+                    self.place_pick(&f, touches, |p| covered(&self.doc, idx, s, e, p).map(|r| vec![r]))
                 }
-                Selection::Cells { table, anchor, focus, .. } => {
-                    let t = self.index.table(&self.doc, table)?;
-                    let g = crate::docx::grid::Grid::of(t);
-                    let (rows, cols) = (anchor.row.min(focus.row)..=anchor.row.max(focus.row), anchor.col.min(focus.col)..=anchor.col.max(focus.col));
-                    let chosen = |row: usize, cell: usize| {
-                        rows.contains(&row)
-                            && g.rows.get(row).and_then(|r| r.get(cell)).is_some_and(|&(c, n, _)| c <= *cols.end() && c + n.max(1) > *cols.start())
-                    };
+                Selection::Cells { .. } => {
+                    let b = CellsPick::of(&self.doc, &self.index, &self.selection)?;
                     let idx = &self.index;
-                    let inside = |pos: &Position| idx.chain_of(pos).iter().any(|l| l.table == table && chosen(l.row, l.cell));
-                    let touches = |it: &Item| match it.spot {
-                        Spot::Row(x, row) if x == table => rows.contains(&row),
-                        Spot::Table(x) if x == table => true,
-                        Spot::Cell(x, row, cell) if x == table => chosen(row, cell),
-                        _ => inside(&it.start),
-                    };
                     let whole = |p: ParaId| {
                         let q = idx.para(&self.doc, p)?;
                         let story = idx.story(idx.para_slot(p)?.container);
-                        inside(&Position::text(story, p, Unit(0))).then(|| 0..para_len(q).0)
+                        b.inside(idx, &Position::text(story, p, Unit(0))).then(|| std::iter::once(0..para_len(q).0).collect())
                     };
-                    self.place_pick(&f, touches, whole)
+                    self.place_pick(&f, |it| b.touches(idx, it), whole)
                 }
                 Selection::Object(_) | Selection::Block { .. } => return None,
             },
@@ -329,11 +387,11 @@ impl Editor {
     }
 
     /// The pick of the changes `touches` takes, the text of each paragraph `covered` gives.
-    fn place_pick(&self, f: &Found, touches: impl Fn(&Item) -> bool, covered: impl Fn(ParaId) -> Option<Range<u32>>) -> Pick {
+    fn place_pick(&self, f: &Found, touches: impl Fn(&Item) -> bool, covered: impl Fn(ParaId) -> Option<Vec<Range<u32>>>) -> Pick {
         let mut blocks: HashSet<(Spot, RevisionId)> =
             f.items.iter().filter(|it| it.run.is_none() && touches(it)).map(|it| (it.spot, it.mark.id)).collect();
         let paras: HashSet<ParaId> = f.items.iter().filter_map(|it| it.run.as_ref().map(|r| r.0)).collect();
-        let inside: HashMap<ParaId, Range<u32>> = paras.into_iter().filter_map(|p| Some((p, covered(p)?))).collect();
+        let inside: HashMap<ParaId, Vec<Range<u32>>> = paras.into_iter().filter_map(|p| Some((p, covered(p)?))).collect();
         // A row inserted or deleted goes or stays whole: the same revision's marks anywhere in its cells with it.
         let rows: HashSet<(TableId, usize, RevisionId)> = f
             .items
@@ -610,6 +668,190 @@ impl Editor {
         self.repair_selection();
     }
 
+    /// Whether marks found at `at` still hold: no edit of marks since, nor of a paragraph that holds one unless there
+    /// were none.
+    fn marks_hold(&self, at: (u64, u64), flow: Option<u32>, empty: bool) -> bool {
+        let marks = self.revision_marks;
+        flow == self.index.flow && at.0 == marks.0 && (empty || at.1 == marks.1)
+    }
+
+    /// The revision marks by paragraph, found from the whole document only when no edit could be followed.
+    pub(in crate::editing) fn review_marks(&mut self) -> &super::marks::Marks {
+        let fresh = self.review_marks.as_ref().is_some_and(|(at, flow, m)| self.marks_hold(*at, *flow, m.is_empty()));
+        if !fresh {
+            #[cfg(test)]
+            {
+                self.mark_builds += 1;
+            }
+            let m = crate::prof::time("review:marks", || super::marks::Marks::build(&self.doc, &self.index));
+            self.review_marks = Some((self.revision_marks, self.index.flow, m));
+        }
+        &self.review_marks.as_ref().expect("just found").2
+    }
+
+    /// Follows an edit with the revision marks found before it (as of `was`), if they were.
+    pub(in crate::editing) fn follow_marks(&mut self, was: (u64, u64), tx: &Tx) {
+        let Some((at, flow, mut m)) = self.review_marks.take() else { return };
+        let held = flow == self.index.flow && at.0 == was.0 && (m.is_empty() || at.1 == was.1);
+        if !held {
+            self.review_marks = Some((at, flow, m));
+            return;
+        }
+        // An edit that groups no marks anew can still move where a section's change ends
+        if self.marks_hold(at, flow, m.is_empty()) {
+            if m.follow_ends(&self.doc, &self.index, &tx.targets.paras).is_ok() {
+                self.review_marks = Some((at, flow, m));
+            }
+            return;
+        }
+        if m.patch(&self.doc, &self.index, &tx.undo, &tx.targets.paras).is_ok() {
+            self.review_marks = Some((self.revision_marks, flow, m));
+        }
+    }
+
+    /// Whether the revision marks followed through the edits so far are those the whole document has.
+    #[cfg(test)]
+    pub(in crate::editing) fn check_review_marks(&mut self) -> Result<(), String> {
+        let Some((at, flow, m)) = &self.review_marks else { return Ok(()) };
+        if !self.marks_hold(*at, *flow, m.is_empty()) {
+            return Ok(());
+        }
+        m.same(&super::marks::Marks::build(&self.doc, &self.index))?;
+        let mut listed = super::index::Counts::default();
+        for r in revisions(&self.doc, &self.index) {
+            listed.add(r.kind, 1);
+        }
+        let (all, _) = m.counts(&self.doc.review.markup.show);
+        if all != listed {
+            return Err(format!("counts {all:?} != the list's {listed:?}"));
+        }
+        Ok(())
+    }
+
+    /// Whether a revision of `kind` by `author` shows in a balloon in the review view: All Markup, a balloon mode, its
+    /// kind and reviewer shown; deletions in Balloons mode, formatting changes in either.
+    pub fn in_balloon(&self, kind: RevisionKind, author: crate::docx::review::AuthorId) -> bool {
+        use crate::docx::review::{BalloonMode, MarkupView};
+        let review = &self.doc.review;
+        let mode = review.markup.balloons;
+        if review.view != MarkupView::All || mode == BalloonMode::Inline || !review.markup.show.shows_change(kind.is_formatting(), author) {
+            return false;
+        }
+        kind.is_formatting()
+            || mode == BalloonMode::Balloons && matches!(kind, RevisionKind::Delete | RevisionKind::MovedFrom | RevisionKind::CellDeletion)
+    }
+
+    /// The revisions in balloons beside `visible` pages, by page and line: those starting on the pages' paragraphs.
+    pub(in crate::editing) fn revision_balloons(&mut self, visible: std::ops::Range<usize>) -> Vec<super::super::view::RevisionBalloon> {
+        use crate::docx::review::{BalloonMode, MarkupView};
+        let review = &self.doc.review;
+        if visible.is_empty() || review.view != MarkupView::All || review.markup.balloons == BalloonMode::Inline {
+            return Vec::new();
+        }
+        if self.review_marks().is_empty() {
+            return Vec::new();
+        }
+        let snapshot = self.layout.snapshot();
+        self.pages.sync(&snapshot);
+        let (mut paras, mut blanks, mut starts) = std::mem::take(&mut self.balloon_scratch);
+        paras.clear();
+        blanks.clear();
+        starts.clear();
+        for i in visible.clone() {
+            if let Some(g) = self.pages.page(i, &self.index) {
+                paras.extend(g.paras());
+            }
+        }
+        paras.sort_unstable();
+        paras.dedup();
+        // Paragraphs showing nothing next to them, which layout may have left out, and where their balloons anchor:
+        // after a shown paragraph, the first paragraph past them at its start, else (the story's end, or past the
+        // reach) that shown paragraph's end; before one, its start
+        for &v in &paras {
+            for forward in [true, false] {
+                let from = blanks.len();
+                let mut q = v;
+                let mut at = (v, forward);
+                for _ in 0..super::marks::REACH {
+                    match super::marks::next_para(&self.doc, &self.index, q, forward) {
+                        Some(n) if self.blank(n) && paras.binary_search(&n).is_err() => {
+                            blanks.push((n, v, forward));
+                            q = n;
+                        }
+                        Some(n) if forward => {
+                            at = (n, false);
+                            break;
+                        }
+                        _ => break,
+                    }
+                }
+                for b in &mut blanks[from..] {
+                    (b.1, b.2) = at;
+                }
+            }
+        }
+        blanks.sort_by_key(|b| b.0);
+        blanks.dedup_by_key(|b| b.0);
+        let marks = self.review_marks();
+        starts.extend(paras.iter().chain(blanks.iter().map(|b| &b.0)).flat_map(|&p| marks.starts_in(p)));
+        starts.retain(|s| self.in_balloon(s.kind, s.author));
+        let near = self.near;
+        self.near = visible.start;
+        let mut out = Vec::new();
+        for s in &starts {
+            #[cfg(test)]
+            {
+                self.balloon_lookups += 1;
+            }
+            let c = match blanks.binary_search_by_key(&s.para, |b| b.0) {
+                Ok(i) => {
+                    let (_, para, end) = blanks[i];
+                    paras.binary_search(&para).ok().and_then(|_| self.para_edge(para, end))
+                }
+                Err(_) => match self.caret_at(s.start) {
+                    Some(c) => Some(c),
+                    None => {
+                        let marks = &self.review_marks.as_ref().expect("found above").2;
+                        let end = marks.end_of(&self.doc, &self.index, s);
+                        self.caret_at(end)
+                    }
+                },
+            };
+            if let Some(c) = c.filter(|c| visible.contains(&c.page)) {
+                out.push(super::super::view::RevisionBalloon {
+                    revision: s.id,
+                    kind: s.kind,
+                    author: s.author,
+                    page: c.page,
+                    at: [c.x, c.top, c.bottom],
+                });
+            }
+        }
+        self.near = near;
+        self.balloon_scratch = (paras, blanks, starts);
+        out.sort_by(|a, b| (a.page, a.at[1], a.at[0]).partial_cmp(&(b.page, b.at[1], b.at[0])).unwrap_or(std::cmp::Ordering::Equal));
+        out
+    }
+
+    /// Whether paragraph `p` shows nothing, its mark hidden too: layout leaves it out before a table and at a story's
+    /// end, or joins it to the next. A cell's last paragraph keeps its line.
+    fn blank(&self, p: ParaId) -> bool {
+        let review = &self.doc.review;
+        let at_cell_end = |s: super::super::index::Slot| {
+            matches!(s.container, super::super::index::Container::Cell { .. })
+                && self.index.blocks(&self.doc, s.container).is_some_and(|b| s.block + 1 == b.len())
+        };
+        self.index.para(&self.doc, p).is_some_and(|q| review.hides(&q.mark.rev) && crate::layout::paragraph::shows_nothing(q, review))
+            && !self.index.para_slot(p).is_some_and(at_cell_end)
+    }
+
+    /// The caret at paragraph `para`'s start, or its end (`end`).
+    fn para_edge(&mut self, para: ParaId, end: bool) -> Option<super::super::view::CaretView> {
+        let story = self.index.story(self.index.para_slot(para)?.container);
+        let unit = if end { para_len(self.index.para(&self.doc, para)?) } else { Unit(0) };
+        self.caret_at(Position::text(story, para, unit))
+    }
+
     /// The revision the selection is in (a caret in it or at either end, or a range within it), the one Accept and
     /// Reject in the selection take: its first mark's id, as the revision list names it.
     pub fn revision_here(&mut self) -> Option<crate::docx::review::RevisionId> {
@@ -652,6 +894,41 @@ impl Editor {
 /// The innermost revision in `list` holding `a..b`, its ends included.
 fn holding<'l>(list: &'l [Revision], idx: &DocIndex, a: Position, b: Position) -> Option<&'l Revision> {
     list.iter().rfind(|r| r.story == a.story && idx.cmp(&r.start, &a).is_le() && idx.cmp(&b, &r.end).is_le())
+}
+
+/// A block of selected cells, as Accept and Reject in the selection take it.
+struct CellsPick {
+    table: TableId,
+    rows: std::ops::RangeInclusive<usize>,
+    cols: std::ops::RangeInclusive<usize>,
+    grid: crate::docx::grid::Grid,
+}
+
+impl CellsPick {
+    fn of(doc: &Document, idx: &DocIndex, s: &Selection) -> Option<CellsPick> {
+        let Selection::Cells { table, anchor, focus, .. } = *s else { return None };
+        let grid = crate::docx::grid::Grid::of(idx.table(doc, table)?);
+        let (rows, cols) = (anchor.row.min(focus.row)..=anchor.row.max(focus.row), anchor.col.min(focus.col)..=anchor.col.max(focus.col));
+        Some(CellsPick { table, rows, cols, grid })
+    }
+
+    fn chosen(&self, row: usize, cell: usize) -> bool {
+        self.rows.contains(&row)
+            && self.grid.rows.get(row).and_then(|r| r.get(cell)).is_some_and(|&(c, n, _)| c <= *self.cols.end() && c + n.max(1) > *self.cols.start())
+    }
+
+    fn inside(&self, idx: &DocIndex, pos: &Position) -> bool {
+        idx.chain_of(pos).iter().any(|l| l.table == self.table && self.chosen(l.row, l.cell))
+    }
+
+    fn touches(&self, idx: &DocIndex, it: &Item) -> bool {
+        match it.spot {
+            Spot::Row(x, row) if x == self.table => self.rows.contains(&row),
+            Spot::Table(x) if x == self.table => true,
+            Spot::Cell(x, row, cell) if x == self.table => self.chosen(row, cell),
+            _ => self.inside(idx, &it.start),
+        }
+    }
 }
 
 fn covered(doc: &Document, idx: &DocIndex, s: Position, e: Position, para: ParaId) -> Option<Range<u32>> {

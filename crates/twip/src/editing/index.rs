@@ -478,6 +478,28 @@ impl DocIndex {
         }
     }
 
+    /// Float `f`'s text box chain and whether it is the chain's first box.
+    pub fn link(&self, f: FloatId) -> Option<(u32, bool)> {
+        self.links.get(&f).copied()
+    }
+
+    /// The floats of text box chain `chain`, in no order.
+    pub fn chain_members(&self, chain: u32) -> impl Iterator<Item = FloatId> + '_ {
+        self.links.iter().filter(move |(_, l)| l.0 == chain).map(|(f, _)| *f)
+    }
+
+    /// An unused text box chain id within DrawingML's 16-bit range: one past the highest, else the lowest free one;
+    /// `None` when every one is in use.
+    pub fn free_chain(&self) -> Option<u32> {
+        const MAX: u32 = u16::MAX as u32;
+        let max = self.links.values().map(|l| l.0).max().unwrap_or(0);
+        if max < MAX {
+            return Some(max + 1);
+        }
+        let used: std::collections::HashSet<u32> = self.links.values().map(|l| l.0).collect();
+        (1..=MAX).find(|c| !used.contains(c))
+    }
+
     pub fn box_story(&self, f: FloatId) -> FloatId {
         match self.links.get(&f) {
             Some(&(c, false)) => self.links.iter().find(|(_, l)| **l == (c, true)).map_or(f, |(h, _)| *h),

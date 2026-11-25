@@ -33,6 +33,19 @@ fn on(v: Option<&str>) -> bool {
     matches!(v, Some("1" | "true" | "on"))
 }
 
+/// Lock aspect ratio on a drawing (`wp:inline`, `wp:anchor`): its frame's locks, or its picture's own (a group's
+/// children's are theirs).
+pub fn aspect_locked(item: Node) -> bool {
+    let frame = named(item, "cNvGraphicFramePr").and_then(|c| named(c, "graphicFrameLocks"));
+    let pic = named(item, "graphic")
+        .and_then(|g| named(g, "graphicData"))
+        .and_then(|d| named(d, "pic"))
+        .and_then(|p| named(p, "nvPicPr"))
+        .and_then(|v| named(v, "cNvPicPr"))
+        .and_then(|c| named(c, "picLocks"));
+    [frame, pic].into_iter().flatten().any(|l| on(l.attribute("noChangeAspect")))
+}
+
 fn xfrm_of(x: Option<Node>) -> (Xfrm, [Emu; 2], [Emu; 2]) {
     let Some(x) = x else { return (Xfrm::default(), [Emu(0); 2], [Emu(0); 2]) };
     let pair = |name: &str, k: [&str; 2]| a(x, name).map(|e| k.map(|k| e.attribute(k).and_then(Emu::parse).unwrap_or_default()));
@@ -54,6 +67,7 @@ fn nv_of(c: Option<Node>) -> NonVisual {
         id: c.attribute("id").and_then(|v| v.parse().ok()).unwrap_or(0),
         name: c.attribute("name").unwrap_or("").to_string(),
         descr: Rc::from(descr),
+        title: Rc::from(c.attribute("title").unwrap_or("")),
         hidden: on(c.attribute("hidden")),
         lock_aspect: false,
         decorative: c.descendants().any(|n| n.tag_name().name() == "decorative" && on(n.attribute("val"))),
@@ -215,8 +229,7 @@ pub fn read(item: Node, ctx: &mut Ctx) -> Shape {
     let extent = item.children().find(|c| c.is_element() && c.tag_name().name() == "extent" && c.tag_name().namespace() == Some(WP));
     let ext = ["cx", "cy"].map(|k| extent.and_then(|e| e.attribute(k)).and_then(Emu::parse).unwrap_or_default());
     let doc_pr = item.children().find(|c| c.is_element() && c.tag_name().name() == "docPr");
-    let lock_aspect =
-        item.descendants().any(|n| matches!(n.tag_name().name(), "graphicFrameLocks" | "picLocks") && on(n.attribute("noChangeAspect")));
+    let lock_aspect = aspect_locked(item);
     let data = item.descendants().find(|n| n.is_element() && n.tag_name().name() == "graphicData" && n.tag_name().namespace() == Some(A));
     let uri = data.and_then(|d| d.attribute("uri")).unwrap_or("").to_string();
     let body = data.and_then(|d| d.children().find(|c| c.is_element()));

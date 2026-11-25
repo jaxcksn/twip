@@ -1261,6 +1261,40 @@ fn the_accessibility_tree_goes_whole_then_as_throttled_changes() {
 }
 
 #[test]
+fn a_markup_view_setting_sends_the_accessibility_tree_again() {
+    use crate::api::services::{A11yUpdate, AccessibleNode, AccessibleRole};
+    use crate::api::session::HostRequest;
+    fn all<'a>(n: &'a AccessibleNode, out: &mut Vec<&'a AccessibleNode>) {
+        out.push(n);
+        n.children.iter().for_each(|c| all(c, out));
+    }
+    let (mut engine, _) = engine();
+    let id = engine.create_session(SessionOptions::default());
+    let s = engine.session(id).expect("a session");
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-A11Y-STRUCTURE.docx");
+    s.open(&std::fs::read(path).expect("the fixture")).expect("opens");
+    let updates = Rc::new(RefCell::new(Vec::new()));
+    let sink = updates.clone();
+    s.host().attach(move |r| {
+        if let HostRequest::A11y { update } = r {
+            sink.borrow_mut().push(update);
+        }
+    });
+    let _ = s.host().take_timers();
+    updates.borrow_mut().clear();
+    // Show Markup's Comments off: not an edit, and the tree still goes again.
+    s.editor.set_show_markup(true, true, false);
+    s.deliver_requests();
+    assert_eq!(s.host().take_timers().iter().filter(|t| t.0 == 3).count(), 1, "the setting arms the tree's timer");
+    s.host().timer_fired(3);
+    assert!(matches!(updates.borrow()[..], [A11yUpdate::Patch(_)]), "and sends the change");
+    let tree = s.accessible_tree();
+    let mut nodes = Vec::new();
+    all(&tree, &mut nodes);
+    assert!(nodes.iter().all(|n| n.role != AccessibleRole::Comment && n.details.is_none()), "no comment, nothing pointing at one");
+}
+
+#[test]
 fn an_opened_documents_accessibility_tree_goes_on_the_timer() {
     use crate::api::services::A11yUpdate;
     use crate::api::session::HostRequest;

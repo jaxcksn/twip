@@ -84,6 +84,10 @@ fn dump(r: &mut Run) -> Value {
 fn check(r: &mut Run, n: usize, full: bool) {
     let st = inspect(&mut r.e, "caret,integrity,dump", true);
     assert_eq!(st["integrity"], json!([]), "step {n}: integrity");
+    if let Err(why) = r.e.check_review_marks() {
+        panic!("step {n}: revision marks: {why}");
+    }
+    let _ = r.e.review_counts();
     if let Some(p) = st["caret"]["para"].as_u64() {
         let depth = super::scenarios::paragraph(&st["dump"], p as usize)["depth"].as_u64();
         let chain = st["caret"]["chain"].as_array().map(|c| c.len() as u64);
@@ -160,7 +164,7 @@ fn generate(r: &mut Run, rng: &mut Rng) -> Value {
             }
             let l = lines[rng.below(lines.len())];
             let stops = l["stops"].as_array().cloned().unwrap_or_default();
-            let u = stops.get(rng.below(stops.len())).map_or(0, |s| s[1].as_u64().unwrap_or(0));
+            let u = stops.get(rng.below(stops.len())).map_or(0, |s| s[2].as_u64().unwrap_or(0));
             let clicks = [1, 1, 1, 2, 3][rng.below(5)];
             json!({ "click": { "para": l["para"], "offset": u }, "clicks": clicks, "shift": rng.below(6) == 0 })
         }

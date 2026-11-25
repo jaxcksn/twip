@@ -29,8 +29,7 @@ const REMOVE_BELOW: f64 = 30.0;
 pub const SELECTOR: ClientRect = ClientRect { left: INSET, top: INSET, width: BAND - 2.0 * INSET, height: BAND - 2.0 * INSET };
 
 /// A section's text columns between `left` and `right` (page points).
-fn columns(s: &Section, left: f64, right: f64) -> Vec<Span> {
-    let c = &s.columns;
+fn columns(c: &crate::docx::Columns, left: f64, right: f64) -> Vec<Span> {
     let n = c.num.clamp(1, crate::docx::Columns::MAX);
     let widths: Vec<(f64, f64)> = if c.equal || c.cols.len() < n {
         let w = ((right - left) - c.space * (n - 1) as f64) / n as f64;
@@ -49,15 +48,48 @@ fn columns(s: &Section, left: f64, right: f64) -> Vec<Span> {
         .collect()
 }
 
+/// A vertical section's text area as its rulers show it: where its lines run down the page (`lines`, from the top
+/// margin to the bottom one, which the line's indents and tab stops are along) and its text columns across the page
+/// in the order its lines stack (right to left, or left to right for lines stacked from the left), each from its
+/// left edge to its right on the page.
+#[derive(Clone, Debug, PartialEq)]
+pub struct VerticalText {
+    /// Where the lines run down the page.
+    pub lines: Span,
+    /// The text columns across the page, in stacking order.
+    pub columns: Vec<Span>,
+}
+
+/// [`VerticalText`] for section `s` (`gutter_at_top` as the document's settings say), `None` when its lines run
+/// across the page.
+pub fn vertical_text(s: &Section, gutter_at_top: bool) -> Option<VerticalText> {
+    let v = crate::layout::vertical::of_section(s.text_flow)?;
+    // A vertical page's gutter is beside its right margin, or above its top one.
+    let (right, top) = if gutter_at_top { (s.right, s.top + s.gutter) } else { (s.right + s.gutter, s.top) };
+    let lines = Span { start: Points(top), end: Points(s.page_h - s.bottom) };
+    let columns = match v.flow {
+        crate::layout::vertical::Flow::DownEast => columns(&s.columns, s.left, s.page_w - right),
+        // Columns from the right margin
+        _ => columns(&s.columns, right, s.page_w - s.left)
+            .into_iter()
+            .map(|c| Span { start: Points(s.page_w - c.end.0), end: Points(s.page_w - c.start.0) })
+            .collect(),
+    };
+    Some(VerticalText { lines, columns })
+}
+
 /// The ruler model for the selection, in `section`: its page, the text area around the caret (the margins, its
 /// text column, or its cell), the first selected paragraph's indents and stops, and the caret's table on its page.
 pub fn model(e: &mut Editor, section: usize) -> RulerModel {
     let Some(s) = e.document().sections.get(section) else { return RulerModel::default() };
-    // shortcut: mirrored margins and right-to-left sections show the left-to-right margins.
-    let left = s.left + if e.document().settings.gutter_at_top { 0.0 } else { s.gutter };
-    let right = s.page_w - s.right;
-    let columns = columns(s, left, right);
-    let (page_w, page_h, top, bottom) = (s.page_w, s.page_h, s.top, s.page_h - s.bottom);
+    // shortcut: mirrored margins show an odd page's, and right-to-left sections the left-to-right margins.
+    let set = &e.document().settings;
+    let facing = crate::layout::page::Facing { mirror: set.mirror_margins, gutter_at_top: set.gutter_at_top, book_fold: set.book_fold };
+    let (left, right, top) = crate::layout::page::margins_in(s, e.document().review.view, facing, 1);
+    let s = s.section_in(e.document().review.view);
+    let right = s.page_w - right;
+    let columns = columns(&s.columns, left, right);
+    let (page_w, page_h, bottom) = (s.page_w, s.page_h, s.page_h - s.bottom);
     let paras = e.ruler_paras();
     let (doc, index) = (e.document(), e.index());
     let mut styles = paras.iter().filter_map(|&p| index.para(doc, p)).map(|p| &p.style);
@@ -110,6 +142,95 @@ pub fn model(e: &mut Editor, section: usize) -> RulerModel {
         },
         vertical: VerticalRuler { page_height: Points(page_h), text: Span { start: Points(top), end: Points(bottom) }, table_rows },
     }
+}
+
+/// Which of a section's margins a ruler's edge is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MarginEdge {
+    /// The section's left margin (the inside one with mirrored margins).
+    Left,
+    /// Its right margin (the outside one with mirrored margins).
+    Right,
+}
+
+/// The caret's page's margins as its rulers show them: facing pages swap their left and right, and the gutter is
+/// beside the margin it widens.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RulerMargins {
+    /// The text area across the page, page points, the gutter outside it.
+    pub text: Span,
+    /// Where the text starts down the page, the gutter above it when it's at the top.
+    pub top: f64,
+    /// The margin the start of the horizontal ruler's text area is.
+    pub start: MarginEdge,
+    /// The margin the end is.
+    pub end: MarginEdge,
+    /// Mirrored margins: the left margin is the inside one, the right the outside.
+    pub mirrored: bool,
+    /// The gutter across the page (on the horizontal ruler), if it has width.
+    pub gutter: Option<Span>,
+    /// The gutter down the page (at the top), if it has height.
+    pub gutter_top: Option<Span>,
+}
+
+impl RulerMargins {
+    /// The margins a drag of a margin marker to `at` (page points along its ruler) sets: the section's margin that
+    /// edge is, measured from the page's edge less the gutter beside it.
+    pub fn margins_at(&self, marker: Marker, at: f64, page_w: f64, page_h: f64) -> Option<crate::api::command::Margins> {
+        use crate::api::command::Margins;
+        let width = |g: Option<Span>| g.map_or(0.0, |g| g.end.0 - g.start.0);
+        let gutter_before = self.gutter.filter(|g| g.end.0 <= self.text.start.0);
+        let gutter_after = self.gutter.filter(|g| g.start.0 >= self.text.end.0);
+        let set = |edge: MarginEdge, v: f64| {
+            let v = Some(Points(v.max(0.0)));
+            match edge {
+                MarginEdge::Left => Margins { left: v, ..Margins::default() },
+                MarginEdge::Right => Margins { right: v, ..Margins::default() },
+            }
+        };
+        Some(match marker {
+            Marker::TextStart => set(self.start, at - width(gutter_before)),
+            Marker::TextEnd => set(self.end, page_w - at - width(gutter_after)),
+            Marker::Top => Margins { top: Some(Points((at - width(self.gutter_top)).max(0.0))), ..Margins::default() },
+            Marker::Bottom => Margins { bottom: Some(Points((page_h - at).max(0.0))), ..Margins::default() },
+            _ => return None,
+        })
+    }
+}
+
+/// The caret's page's [`RulerMargins`] in `section`: its page number's parity picks the side of the gutter and, with
+/// mirrored margins or a book fold, which margin is on the left.
+pub fn margins(e: &mut Editor, section: usize) -> Option<RulerMargins> {
+    // shortcut: right-to-left sections show the left-to-right ruler.
+    let number = e.caret_view().and_then(|c| e.snapshot().info().get(c.page).map(|i| i.number)).unwrap_or(1);
+    let doc = e.document();
+    let s = doc.sections.get(section)?;
+    let settings = &doc.settings;
+    let facing =
+        crate::layout::page::Facing { mirror: settings.mirror_margins, gutter_at_top: settings.gutter_at_top, book_fold: settings.book_fold };
+    let (left, right, top) = crate::layout::page::margins_in(s, doc.review.view, facing, number);
+    let s = s.section_in(doc.review.view);
+    let swapped = crate::layout::page::swaps_margins(&s, facing, number);
+    let (start, end) = if swapped { (MarginEdge::Right, MarginEdge::Left) } else { (MarginEdge::Left, MarginEdge::Right) };
+    let own = |edge: MarginEdge| if edge == MarginEdge::Left { s.left } else { s.right };
+    let (gl, gr) = (left - own(start), right - own(end));
+    let gutter = if gl > 1e-6 {
+        Some(Span { start: Points(left - gl), end: Points(left) })
+    } else if gr > 1e-6 {
+        Some(Span { start: Points(s.page_w - right), end: Points(s.page_w - right + gr) })
+    } else {
+        None
+    };
+    let gt = top - s.top;
+    Some(RulerMargins {
+        text: Span { start: Points(left), end: Points(s.page_w - right) },
+        top,
+        start,
+        end,
+        mirrored: settings.mirror_margins,
+        gutter,
+        gutter_top: (gt > 1e-6).then_some(Span { start: Points(top - gt), end: Points(top) }),
+    })
 }
 
 /// How far `x` is outside a span (0 inside it).
@@ -497,6 +618,42 @@ mod tests {
     }
 
     #[test]
+    fn a_vertical_sections_lines_run_down_its_rulers_and_its_columns_stack_from_the_right() {
+        let fonts = crate::font::Fonts::system_recommended();
+        let e = Editor::open(&crate::docx::blank::blank_docx(), &fonts).expect("opens");
+        let mut s = Section {
+            page_w: 612.0,
+            page_h: 792.0,
+            left: 72.0,
+            right: 90.0,
+            top: 54.0,
+            bottom: 36.0,
+            gutter: 0.0,
+            ..e.document().sections[0].clone()
+        };
+        assert_eq!(vertical_text(&s, false), None, "horizontal");
+        s.text_flow = 1;
+        s.columns.num = 2;
+        s.columns.equal = true;
+        s.columns.space = 36.0;
+        let v = vertical_text(&s, false).expect("tbRl");
+        assert_eq!(v.lines, Span { start: Points(54.0), end: Points(756.0) });
+        let w = (612.0 - 72.0 - 90.0 - 36.0) / 2.0;
+        assert_eq!(v.columns, vec![Span { start: Points(522.0 - w), end: Points(522.0) }, Span { start: Points(72.0), end: Points(72.0 + w) }]);
+        s.text_flow = 5;
+        let v = vertical_text(&s, false).expect("tbLrV");
+        assert_eq!(v.columns[0], Span { start: Points(72.0), end: Points(72.0 + w) }, "stacked from the left");
+        // A gutter: beside the right margin, or above the top one.
+        (s.text_flow, s.gutter) = (1, 18.0);
+        let w = (612.0 - 72.0 - 90.0 - 18.0 - 36.0) / 2.0;
+        let v = vertical_text(&s, false).expect("tbRl");
+        assert_eq!((v.lines.start, v.columns[0].end, v.columns[1].start), (Points(54.0), Points(504.0), Points(72.0)), "{v:?}");
+        assert!((v.columns[0].end.0 - v.columns[0].start.0 - w).abs() < 1e-9);
+        let v = vertical_text(&s, true).expect("tbRl");
+        assert_eq!((v.lines.start, v.columns[0].end, v.columns[1].start), (Points(72.0), Points(522.0), Points(72.0)), "{v:?}");
+    }
+
+    #[test]
     fn a_point_on_the_rulers_names_what_it_is_over() {
         let (v, b) = (view(), Bands { horizontal: true, vertical: true });
         assert_eq!(hit(&v, b, 5.0, 5.0), Some(Hit::Selector));
@@ -523,6 +680,64 @@ mod tests {
         let section = e.format_state().map_or(0, |f| f.section);
         let m = model(&mut e, section);
         (e, m)
+    }
+
+    #[test]
+    fn the_model_shows_the_page_of_the_markup_view() {
+        use crate::docx::review::MarkupView;
+        use crate::editing::tests::{blank_body, fonts};
+        let mar = r#"<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>"#;
+        let body = format!(
+            r#"<w:p><w:pPr><w:sectPr><w:pgSz w:w="15840" w:h="12240"/>{mar}<w:sectPrChange w:id="1" w:author="A"><w:sectPr><w:pgSz w:w="12240" w:h="15840"/>{mar}</w:sectPr></w:sectPrChange></w:sectPr></w:pPr><w:r><w:t>one</w:t></w:r></w:p>"#
+        );
+        let mut e = Editor::open(&blank_body(&body), fonts()).expect("opens");
+        e.complete(fonts());
+        let page = |e: &mut Editor| {
+            let m = model(e, 0);
+            (m.horizontal.page_width.0, m.vertical.page_height.0, m.vertical.text.end.0, m.horizontal.columns[0].end.0)
+        };
+        assert_eq!(page(&mut e), (792.0, 612.0, 540.0, 720.0), "landscape, as changed");
+        e.set_markup_view(MarkupView::Original);
+        assert_eq!(page(&mut e), (612.0, 792.0, 720.0, 540.0), "portrait, as it was");
+    }
+
+    #[test]
+    fn mirrored_margins_swap_on_even_pages_with_the_gutter_inside() {
+        use crate::api::command::{Command as C, Margins, MultiplePages, MultiplePagesMode};
+        use crate::editing::tests::{blank_with, fonts};
+        let mut e = Editor::open(&blank_with("one"), fonts()).expect("opens");
+        e.complete(fonts());
+        let pt = |v: f64| Some(Points(v));
+        e.execute(C::SetMargins(Margins { left: pt(108.0), right: pt(36.0), gutter: pt(18.0), ..Margins::default() }), fonts());
+        e.execute(C::SetMultiplePages(MultiplePages { mode: Some(MultiplePagesMode::MirrorMargins), gutter_at_top: None }), fonts());
+        let odd = margins(&mut e, 0).expect("a section");
+        assert_eq!((odd.text, odd.start, odd.gutter), (span(126.0, 576.0), MarginEdge::Left, Some(span(108.0, 126.0))));
+        e.execute(C::InsertPageBreak, fonts());
+        let even = margins(&mut e, 0).expect("a section");
+        assert_eq!((even.text, even.start, even.end), (span(36.0, 486.0), MarginEdge::Right, MarginEdge::Left));
+        assert_eq!(even.gutter, Some(span(486.0, 504.0)), "the gutter is inside: on the right");
+        assert_eq!(model(&mut e, 0).horizontal.text, span(126.0, 576.0), "the model stays left to right, as drags set it");
+        let at = |m, x| even.margins_at(m, x, 612.0, 792.0).expect("a margin");
+        assert_eq!(at(Marker::TextStart, 50.0), Margins { right: pt(50.0), ..Margins::default() }, "the left edge is the outside margin");
+        assert_eq!(
+            at(Marker::TextEnd, 480.0),
+            Margins { left: pt(114.0), ..Margins::default() },
+            "the right edge is the inside one, past the gutter"
+        );
+        assert_eq!(odd.margins_at(Marker::TextStart, 130.0, 612.0, 792.0), Some(Margins { left: pt(112.0), ..Margins::default() }));
+    }
+
+    #[test]
+    fn a_gutter_at_the_top_is_above_the_top_margin() {
+        use crate::api::command::{Command as C, Margins, MultiplePages};
+        use crate::editing::tests::{blank_with, fonts};
+        let mut e = Editor::open(&blank_with("one"), fonts()).expect("opens");
+        e.complete(fonts());
+        e.execute(C::SetMargins(Margins { gutter: Some(Points(18.0)), ..Margins::default() }), fonts());
+        e.execute(C::SetMultiplePages(MultiplePages { mode: None, gutter_at_top: Some(true) }), fonts());
+        let f = margins(&mut e, 0).expect("a section");
+        assert_eq!((f.gutter, f.gutter_top, f.top), (None, Some(span(72.0, 90.0)), 90.0));
+        assert_eq!(f.margins_at(Marker::Top, 100.0, 612.0, 792.0).and_then(|m| m.top), Some(Points(82.0)));
     }
 
     fn span(a: f64, b: f64) -> Span {

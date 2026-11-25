@@ -34,6 +34,8 @@ pub struct RunStyle {
     pub underline: Option<String>,
     /// The underline's own colour (`w:u/@w:color`); `None`: the text's.
     pub underline_color: Option<u32>,
+    /// The theme colour `underline_color` is.
+    pub underline_color_theme: Option<ThemeColourRef>,
     /// Emboss, engrave (`w:imprint`), outline and shadow.
     pub emboss: bool,
     pub imprint: bool,
@@ -45,6 +47,10 @@ pub struct RunStyle {
     /// Word 2010's text effects through the style chain; `None` without any.
     pub effects: Option<Rc<TextEffects>>,
     pub color: Option<u32>,
+    /// The theme colour `color` is.
+    pub color_theme: Option<ThemeColourRef>,
+    /// The theme font the Latin text's family is (`w:asciiTheme`), when it is one.
+    pub font_theme: Option<ThemeFont>,
     pub highlight: Option<u32>,
     pub shading: Option<u32>,
     /// The shading's pattern, pattern color and fill, as written.
@@ -91,6 +97,28 @@ impl RunStyle {
 }
 
 pub type Run = Rc<RunStyle>;
+
+/// One of a theme's two font sets: its headings' or its body text's.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ThemeFont {
+    /// The heading font (`major`).
+    Major,
+    /// The body font (`minor`).
+    Minor,
+}
+
+impl ThemeFont {
+    /// The theme font a `w:asciiTheme`-style value names.
+    pub fn of(v: &str) -> Option<ThemeFont> {
+        if v.starts_with("major") {
+            Some(ThemeFont::Major)
+        } else if v.starts_with("minor") {
+            Some(ThemeFont::Minor)
+        } else {
+            None
+        }
+    }
+}
 
 /// A run's OpenType settings as written (`w14:ligatures`, `w14:cntxtAlts`, `w14:numForm`, `w14:numSpacing`,
 /// `w14:stylisticSets`).
@@ -496,6 +524,7 @@ impl Float {
             dist,
             effect,
             poly,
+            poly_edited,
             behind,
             allow_overlap,
             layout_in_cell,
@@ -530,6 +559,7 @@ impl Float {
             && *dist == o.dist
             && *effect == o.effect
             && *poly == o.poly
+            && *poly_edited == o.poly_edited
             && *behind == o.behind
             && *allow_overlap == o.allow_overlap
             && *layout_in_cell == o.layout_in_cell
@@ -578,6 +608,35 @@ pub struct InlineText {
     pub text_box: TextBox,
 }
 
+/// The most vertices a wrap polygon keeps: a longer one read or made is thinned to about this many.
+pub const MAX_WRAP_POINTS: usize = 1024;
+
+/// `pts` thinned to at most [`MAX_WRAP_POINTS`] vertices, the closing copy of the first aside, by keeping every n-th;
+/// closed again when it was closed.
+pub fn bounded_polygon(mut pts: Vec<(f64, f64)>) -> Vec<(f64, f64)> {
+    let closed = pts.len() > 1 && pts.first() == pts.last();
+    let distinct = pts.len() - usize::from(closed);
+    if distinct <= MAX_WRAP_POINTS {
+        return pts;
+    }
+    if closed {
+        pts.pop();
+    }
+    let step = distinct.div_ceil(MAX_WRAP_POINTS);
+    let mut k = 0;
+    pts.retain(|_| {
+        k += 1;
+        (k - 1) % step == 0
+    });
+    if closed
+        && let Some(&first) = pts.first()
+        && pts.last() != Some(&first)
+    {
+        pts.push(first);
+    }
+    pts
+}
+
 /// An anchored (floating) picture or text box (the FLOAT rules).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Float {
@@ -607,6 +666,8 @@ pub struct Float {
     pub effect: [f64; 4],
     /// The wrap polygon of a tight or through float, as fractions of its box.
     pub poly: Option<Rc<[(f64, f64)]>>,
+    /// The wrap polygon was edited (`wp:wrapPolygon/@edited`): it isn't made again from the object's outline.
+    pub poly_edited: bool,
     pub behind: bool,
     pub allow_overlap: bool,
     pub layout_in_cell: bool,
@@ -952,6 +1013,41 @@ pub struct Source {
     pub page_background: (Option<u32>, Option<crate::drawing::paint::Fill>),
     /// The page background colour's theme colour as read.
     pub page_theme: Option<ThemeColourRef>,
+    /// The note separator stories as read (as [`Document::separators`], Word's built-in ones among them).
+    pub separators: HashMap<String, Vec<Block>>,
+    /// Word's built-in separator and continuation separator of each kind of note, by [`NoteSeparator::key`].
+    pub separator_defaults: HashMap<String, Vec<Block>>,
+}
+
+/// One of the stories Word draws around a page's notes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum NoteSeparator {
+    /// The line above the notes.
+    Separator,
+    /// The line above notes going on from the page before.
+    Continuation,
+    /// The notice below notes going on to the next page.
+    Notice,
+}
+
+impl NoteSeparator {
+    /// Its note `w:type`.
+    pub fn xml_type(self) -> &'static str {
+        match self {
+            NoteSeparator::Separator => "separator",
+            NoteSeparator::Continuation => "continuationSeparator",
+            NoteSeparator::Notice => "continuationNotice",
+        }
+    }
+
+    /// Its key in [`Document::separators`] for notes of `kind`.
+    pub fn key(self, kind: NoteKind) -> String {
+        let tag = match kind {
+            NoteKind::Foot => "footnote",
+            NoteKind::End => "endnote",
+        };
+        format!("{tag}:{}", self.xml_type())
+    }
 }
 
 /// The glossary part as read: its name and XML, and each building block's `w:docPart` byte range in that XML with
@@ -1031,6 +1127,34 @@ pub enum Gallery {
 }
 
 impl Gallery {
+    /// Whether a gallery control naming gallery `name` (as Word's Content Control Properties name it: `Quick
+    /// Parts`, `AutoText`, `Cover Pages`, ..., `Custom 1`) offers building blocks of this gallery: its built-in and
+    /// custom ones, `Custom 1` to `Custom 5` their own.
+    pub fn named(&self, name: &str) -> bool {
+        let v = self.xml();
+        let base = v.strip_prefix("cust").filter(|_| !matches!(self, Gallery::Custom(_))).map_or(v.as_str(), |b| b);
+        let want: &[&str] = match name.trim() {
+            "Quick Parts" => &["docParts", "QuickParts"],
+            "AutoText" => &["autoTxt", "AutoTxt"],
+            "Cover Pages" => &["coverPg", "CoverPg"],
+            "Equations" => &["eq", "Eq"],
+            "Footers" => &["ftrs", "Ftrs"],
+            "Headers" => &["hdrs", "Hdrs"],
+            "Page Numbers" => &["pgNum", "PgNum"],
+            "Page Numbers (Top of Page)" => &["pgNumT", "PgNumT"],
+            "Page Numbers (Bottom of Page)" => &["pgNumB", "PgNumB"],
+            "Page Numbers (Margins)" => &["pgNumMargins", "PgNumMargins"],
+            "Tables" => &["tbls", "Tbls"],
+            "Table of Contents" => &["tblOfContents", "TblOfContents"],
+            "Text Boxes" => &["txtBox", "TxtBox"],
+            "Watermarks" => &["watermarks", "Watermarks"],
+            "Bibliographies" => &["bib", "Bib"],
+            "" => return true,
+            other => return other.strip_prefix("Custom ").and_then(|n| n.parse::<u8>().ok()).is_some_and(|n| *self == Gallery::Custom(n)),
+        };
+        want.contains(&base)
+    }
+
     pub fn parse(v: &str) -> Gallery {
         match v {
             "placeholder" => Gallery::Placeholder,
@@ -1091,16 +1215,86 @@ pub struct Control {
     pub at: Option<(usize, usize)>,
 }
 
+/// A content control kind the editor keeps as written (`ControlKind::Other`), as its kind element names it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum KeptKind {
+    /// `w:docPartList`: a building block gallery, offering the building blocks of its gallery (by Word's name for it,
+    /// `Quick Parts`, `Custom 1`, ...) and category (`None`: any).
+    Gallery { gallery: Option<String>, category: Option<String> },
+    /// `w:docPartObj`: a building block inserted from a gallery (a cover page, a table of contents).
+    BuildingBlock { gallery: Option<String>, category: Option<String> },
+    /// `w:citation`.
+    Citation,
+    /// `w:bibliography`.
+    Bibliography,
+    /// `w:equation`.
+    Equation,
+}
+
+impl KeptKind {
+    /// A building block gallery's (or building block's) kind element, `w` its prefix: `None` for the other kinds.
+    pub fn part_xml(&self, w: &str) -> Option<String> {
+        use super::write::props::esc;
+        let (name, gallery, category) = match self {
+            KeptKind::Gallery { gallery, category } => ("docPartList", gallery, category),
+            KeptKind::BuildingBlock { gallery, category } => ("docPartObj", gallery, category),
+            _ => return None,
+        };
+        let mut x = format!("<{w}{name}>");
+        if let Some(g) = gallery {
+            x += &format!("<{w}docPartGallery {w}val=\"{}\"/>", esc(g));
+        }
+        if let Some(c) = category {
+            x += &format!("<{w}docPartCategory {w}val=\"{}\"/>", esc(c));
+        }
+        x += &format!("</{w}{name}>");
+        Some(x)
+    }
+}
+
+/// The value of the `val` attribute of `xml`'s first element named `local` (any prefix), unescaped.
+fn child_val(xml: &str, local: &str) -> Option<String> {
+    let at = xml.match_indices(local).map(|(k, _)| k).find(|&k| {
+        let before = xml[..k].chars().next_back();
+        let after = xml[k + local.len()..].chars().next();
+        matches!(before, Some('<' | ':')) && after.is_some_and(|c| c.is_whitespace() || c == '/' || c == '>')
+    })?;
+    let rest = &xml[at..];
+    let head = &rest[..super::binding::tag_end(rest)?];
+    super::binding::tag_attrs(head).find(|(n, ..)| n.rsplit(':').next() == Some("val")).map(|(_, v, _)| super::binding::unescape(v))
+}
+
 impl ControlProps {
     /// A building block gallery (`w:docPartList`): `Some` of its category (`None`: any).
     pub fn gallery(&self) -> Option<Option<String>> {
-        let x = self.kind_xml.as_deref().filter(|x| x.contains("docPartList"))?;
-        let cat = x.find("docPartCategory").and_then(|k| {
-            let rest = &x[k..];
-            let v = rest.find("val=\"")? + 5;
-            Some(rest[v..v + rest[v..].find('"')?].to_string())
-        });
-        Some(cat.filter(|c| !c.is_empty()))
+        match self.kept_kind()? {
+            KeptKind::Gallery { category, .. } => Some(category),
+            _ => None,
+        }
+    }
+
+    /// What a control the editor keeps as written is, from its kind element.
+    pub fn kept_kind(&self) -> Option<KeptKind> {
+        let x = self.kind_xml.as_deref()?.trim_start().strip_prefix('<')?;
+        let name = &x[..x.find(|c: char| c.is_whitespace() || c == '>' || c == '/').unwrap_or(x.len())];
+        let part = || {
+            let v = |n| child_val(x, n).filter(|v| !v.is_empty());
+            (v("docPartGallery"), v("docPartCategory"))
+        };
+        Some(match name.rsplit(':').next()? {
+            "docPartList" => {
+                let (gallery, category) = part();
+                KeptKind::Gallery { gallery, category }
+            }
+            "docPartObj" => {
+                let (gallery, category) = part();
+                KeptKind::BuildingBlock { gallery, category }
+            }
+            "citation" => KeptKind::Citation,
+            "bibliography" => KeptKind::Bibliography,
+            "equation" => KeptKind::Equation,
+            _ => return None,
+        })
     }
 
     /// Whether a drop-down's kind element is `w:comboBox` (`w:dropDownList` otherwise).
@@ -1563,6 +1757,8 @@ pub struct PageBorders {
     pub display: String,
     pub surround_header: bool,
     pub surround_footer: bool,
+    /// Behind the text and objects they meet (`w:zOrder="back"`); else in front of them.
+    pub behind_text: bool,
 }
 
 /// Header/footer references per variant: default, first, even.
@@ -1638,6 +1834,13 @@ pub struct Settings {
     pub default_table_style: Option<String>,
     /// Legacy form fields aren't shaded (`w:doNotShadeFormData`).
     pub no_form_shading: bool,
+    /// AutoFormat as you type may format text the formatting restrictions keep formatting from
+    /// (`w:autoFormatOverride`).
+    pub auto_format_override: bool,
+    /// Formatting restrictions keep the theme and its colours and fonts from changing (`w:styleLockTheme`).
+    pub style_lock_theme: bool,
+    /// Formatting restrictions keep the Quick Style Set from changing (`w:styleLockQFSet`).
+    pub style_lock_style_set: bool,
     /// The document variables (`w:docVars`), in order.
     pub variables: Vec<(String, String)>,
     /// `w:decimalSymbol` and `w:listSeparator`: what `=` formulas read numbers and arguments with.
@@ -1655,6 +1858,10 @@ pub struct Settings {
     pub borders_do_not_surround_footer: bool,
     /// `w:trackRevisions`: edits are recorded as revisions.
     pub track_revisions: bool,
+    /// `w:doNotTrackMoves`: moved text is recorded as an insertion and a deletion, not a move.
+    pub do_not_track_moves: bool,
+    /// `w:doNotTrackFormatting`: formatting changes made while tracking are not recorded.
+    pub do_not_track_formatting: bool,
     /// `w:endnotePr/w:pos sectEnd`: endnotes follow their section rather than the document.
     pub endnotes_sect_end: bool,
     /// The note stories `w:footnotePr` / `w:endnotePr` list, as `footnote:<id>` / `endnote:<id>`.
@@ -1768,6 +1975,9 @@ pub struct Document {
     pub comments: Comments,
     /// How the review shows (markup view, author colours): a view setting, never saved.
     pub review: ReviewView,
+    /// The white space between pages hidden when the document opens (`w:doNotDisplayPageBoundaries`): a view
+    /// setting, never saved.
+    pub hides_white_space: bool,
     /// New revision, comment and paragraph ids, past those read.
     pub review_ids: IdCounter,
     /// What reading couldn't keep or make sense of.

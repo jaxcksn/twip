@@ -124,6 +124,168 @@ pub fn turned_in(units: &[StoryUnit], v: Vertical, rect: [f64; 4], across: f64, 
     }
 }
 
+/// Where content laid out with its lines along x and stacked down y is drawn: `[x, y]` at
+/// `[m[0] x + m[2] y + t[0], m[1] x + m[3] y + t[1]]`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Turn {
+    /// The linear part, column by column.
+    pub m: [f64; 4],
+    /// The translation.
+    pub t: [f64; 2],
+}
+
+impl Turn {
+    /// Drawn where it is laid out.
+    pub const NONE: Turn = Turn { m: [1.0, 0.0, 0.0, 1.0], t: [0.0, 0.0] };
+    /// Lines along y stacked along x, as lines stacked left to right are turned into place.
+    pub const TRANSPOSE: Turn = Turn { m: [0.0, 1.0, 1.0, 0.0], t: [0.0, 0.0] };
+
+    /// A turn of `deg` clockwise about `centre`, as [`Item::Turned`] draws it; a quarter turn is exact.
+    pub fn about(centre: [f64; 2], deg: f64) -> Turn {
+        let snap = |v: f64| if (v - v.round()).abs() < 1e-12 { v.round() + 0.0 } else { v };
+        let (sin, cos) = deg.to_radians().sin_cos();
+        let (sin, cos) = (snap(sin), snap(cos));
+        let [cx, cy] = centre;
+        Turn { m: [cos, sin, -sin, cos], t: [cx - cx * cos + cy * sin, cy - cx * sin - cy * cos] }
+    }
+
+    /// Moved by `[dx, dy]` where it is drawn.
+    pub fn shifted(self, dx: f64, dy: f64) -> Turn {
+        Turn { t: [self.t[0] + dx, self.t[1] + dy], ..self }
+    }
+
+    /// This turn, then `outer`.
+    pub fn then(self, outer: Turn) -> Turn {
+        let [a, b, c, d] = outer.m;
+        let m = self.m;
+        Turn { m: [a * m[0] + c * m[1], b * m[0] + d * m[1], a * m[2] + c * m[3], b * m[2] + d * m[3]], t: outer.at(self.t) }
+    }
+
+    /// Where `p` is drawn.
+    pub fn at(&self, p: [f64; 2]) -> [f64; 2] {
+        let [a, b, c, d] = self.m;
+        [a * p[0] + c * p[1] + self.t[0], b * p[0] + d * p[1] + self.t[1]]
+    }
+
+    /// The direction `v` is drawn in.
+    pub fn along(&self, v: [f64; 2]) -> [f64; 2] {
+        let [a, b, c, d] = self.m;
+        [a * v[0] + c * v[1], b * v[0] + d * v[1]]
+    }
+
+    /// The point laid out where `p` is drawn.
+    pub fn back(&self, p: [f64; 2]) -> [f64; 2] {
+        self.inverse().at(p)
+    }
+
+    /// The turn that undoes this one.
+    pub fn inverse(&self) -> Turn {
+        let [a, b, c, d] = self.m;
+        let det = a * d - b * c;
+        if *self == Turn::NONE || det.abs() < 1e-12 {
+            return Turn::NONE;
+        }
+        let m = [d / det, -b / det, -c / det, a / det];
+        let [x, y] = self.t;
+        Turn { m, t: [-(m[0] * x + m[2] * y), -(m[1] * x + m[3] * y)] }
+    }
+
+    /// The box `r` = `[x0, y0, x1, y1]` is drawn in.
+    pub fn rect(&self, r: [f64; 4]) -> [f64; 4] {
+        if *self == Turn::NONE {
+            return r;
+        }
+        let [p, q] = [self.at([r[0], r[1]]), self.at([r[2], r[3]])];
+        let [s, u] = [self.at([r[0], r[3]]), self.at([r[2], r[1]])];
+        let xs = [p[0], q[0], s[0], u[0]];
+        let ys = [p[1], q[1], s[1], u[1]];
+        let min = |v: [f64; 4]| v.into_iter().fold(f64::INFINITY, f64::min);
+        let max = |v: [f64; 4]| v.into_iter().fold(f64::NEG_INFINITY, f64::max);
+        [min(xs), min(ys), max(xs), max(ys)]
+    }
+
+    /// Whether it keeps boxes boxes: a whole number of quarter turns, mirrored or not.
+    pub fn is_quarter(&self) -> bool {
+        self.m.iter().all(|v| *v == 0.0 || v.abs() == 1.0)
+    }
+}
+
+/// A vertical section's body, laid out unturned and drawn turned: `turn` places it, or, with `each_line`, places
+/// each line's band and every other box, each line drawn about its own band.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Turning {
+    /// Where the body is drawn.
+    pub turn: Turn,
+    /// Each line is also turned about its own band.
+    pub each_line: bool,
+}
+
+impl Turning {
+    /// The turn that places a line whose text band, as laid out, is `top` and `height` deep.
+    pub fn line(&self, top: f64, height: f64) -> Turn {
+        if !self.each_line {
+            return self.turn;
+        }
+        Turn { m: [1.0, 0.0, 0.0, -1.0], t: [0.0, 2.0 * top + height] }.then(self.turn)
+    }
+}
+
+/// Lines drawn turned, as laid out: `turn` places `children` where they are drawn; `axes` are the page directions
+/// its text runs (`[0..2]`) and its lines stack (`[2..4]`) by its flow alone, without the turn of a shape it is in.
+#[derive(Clone, Debug)]
+pub struct Unturned {
+    /// Where `children` are drawn.
+    pub turn: Turn,
+    /// The page directions the text runs and its lines stack, by flow alone.
+    pub axes: [f64; 4],
+    /// The lines as laid out.
+    pub children: Box<[Child]>,
+}
+
+/// The page directions a flow's text runs and its lines stack, as [`Unturned::axes`].
+pub fn axes(flow: Flow) -> [f64; 4] {
+    match flow {
+        Flow::Down => [0.0, 1.0, -1.0, 0.0],
+        Flow::Up => [0.0, -1.0, 1.0, 0.0],
+        Flow::DownEast => Turn::TRANSPOSE.m,
+    }
+}
+
+/// The turn [`turned_in`] draws unit `u` with, or every unit with when `u` is `None` (not for `DownEast`).
+fn unit_turn(v: Vertical, rect: [f64; 4], across: f64, u: Option<&StoryUnit>) -> Turn {
+    let [x0, y0, x1, y1] = rect;
+    match (v.flow, u) {
+        (Flow::Down, _) => Turn::about([(x1 - y0) / 2.0, (x1 + y0) / 2.0], 90.0),
+        (Flow::Up, _) => Turn::about([(x0 + y1) / 2.0, (y1 - x0) / 2.0], 270.0),
+        (Flow::DownEast, Some(u)) => {
+            let s = x0 + 2.0 * (u.top + across) + u.height - u.below;
+            Turn::about([(s - y0) / 2.0, (s + y0) / 2.0], 90.0)
+        }
+        (Flow::DownEast, None) => Turn::NONE,
+    }
+}
+
+/// The lines of `units` as [`turned_in`] draws them into `rect` (without the glyphs it leaves out before `first` and
+/// from `bottom` across, and the units wholly outside them), unturned, each set with the turn it is drawn with;
+/// `outer` turns them further, as the items they go with are.
+pub fn unturned(units: &[StoryUnit], v: Vertical, rect: [f64; 4], across: f64, first: f64, bottom: f64, outer: Turn) -> Rc<[Unturned]> {
+    let group = |u: &StoryUnit| {
+        let top = u.top + across;
+        let clip = first.is_finite() || bottom.is_finite();
+        let children = clip.then(|| super::table::clip_box(&u.content, f64::NEG_INFINITY, f64::INFINITY, first - top, bottom - top)).flatten();
+        Child::Group { offset: (0.0, top), children: children.unwrap_or_else(|| u.content.clone()) }
+    };
+    // Lines wholly outside it hold no text, as a box's lines past its bottom.
+    let units = units.iter().filter(|u| u.top + across < bottom && u.top + across + u.height > first);
+    let axes = axes(v.flow);
+    match v.flow {
+        Flow::DownEast => {
+            units.map(|u| Unturned { turn: unit_turn(v, rect, across, Some(u)).then(outer), axes, children: Box::new([group(u)]) }).collect()
+        }
+        _ => Rc::new([Unturned { turn: unit_turn(v, rect, across, None).then(outer), axes, children: units.map(group).collect() }]),
+    }
+}
+
 /// The glyph runs in a turned item, each with its origin on the page and its direction (rounded to a unit step for
 /// quarter turns).
 pub fn runs(t: &Turned) -> Vec<(&GlyphRun, [f64; 2], [f64; 2])> {
@@ -167,7 +329,20 @@ pub fn same_page(prev: &crate::docx::Section, next: &crate::docx::Section) -> bo
 /// each table's backgrounds and borders are turned where they are.
 pub fn turn_body(children: &[Child], v: Vertical, page: [f64; 2]) -> Vec<Child> {
     let f = |items: &[Item], origin: [f64; 2], band: Option<(f64, f64)>| turn_items(&upright(items, v), v.flow, page, origin, band);
-    children.iter().map(|c| map_child(c, &f, 0.0, 0.0)).collect()
+    let [w, h] = page;
+    let turning = match v.flow {
+        Flow::Down => Turning { turn: Turn::about([w / 2.0, w / 2.0], 90.0), each_line: false },
+        Flow::Up => Turning { turn: Turn::about([h / 2.0, h / 2.0], 270.0), each_line: false },
+        Flow::DownEast => Turning { turn: Turn::TRANSPOSE, each_line: true },
+    };
+    let children = children.iter().map(|c| map_child(c, &f, 0.0, 0.0)).collect();
+    vec![Child::Box(super::fragment::BoxFragment {
+        kind: super::fragment::BoxKind::Turned(turning),
+        id: None,
+        offset: (0.0, 0.0),
+        size: (w, h),
+        children,
+    })]
 }
 
 /// A horizontal flow's East Asian glyphs turned a quarter counter-clockwise (`lrTbV`), each about the middle of its
@@ -193,6 +368,7 @@ fn map_child(c: &Child, f: &ItemMap, ox: f64, oy: f64) -> Child {
         }),
         Child::Line { para, placed } => Child::Line { para: *para, placed: map_line(placed, f, ox, oy) },
         Child::Items(items) => Child::Items(f(items, [ox, oy], None)),
+        Child::Turned { items, text } => Child::Turned { items: f(items, [ox, oy], None), text: text.clone() },
         Child::Table(t) => Child::Table(TableFragment {
             table: t.table,
             rows: t
@@ -223,6 +399,7 @@ fn map_line(l: &super::fragment::PlacedLine, f: &ItemMap, ox: f64, oy: f64) -> s
         mark: line.mark,
         texts: line.texts.clone(),
         expansions: line.expansions.clone(),
+        label: line.label,
     };
     super::fragment::PlacedLine { x: l.x, y: l.y, line: Rc::new(line) }
 }

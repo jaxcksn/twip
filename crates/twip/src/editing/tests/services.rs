@@ -17,7 +17,7 @@ const W: &str = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 
 /// The blank package with `body` for the body's content, extra `styles`, and `sect` for its section (a letter page
 /// when empty).
-fn package(body: &str, styles: &str, sect: &str) -> Vec<u8> {
+pub(super) fn package(body: &str, styles: &str, sect: &str) -> Vec<u8> {
     let src = crate::docx::blank::blank_docx();
     let mut z = zip::ZipArchive::new(std::io::Cursor::new(src)).unwrap();
     let mut out = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
@@ -431,4 +431,76 @@ fn check_accessibility_reaches_an_inline_shapes_text() {
     host.inlines.push(Inline::Picture(pic, run));
     assert!(before > 0, "setup: the fixture's floating picture has no alt text");
     assert_eq!(floats(&doc), before + 1, "the copy in the inline shape's text is listed too");
+}
+
+#[test]
+fn a_selection_counts_its_own_text_and_text_boxes_count_when_asked() {
+    use crate::editing::position::{Position, StoryId};
+    use crate::editing::selection::{Granularity, Selection};
+    use crate::services::{WordCountScope, word_count_in};
+    let body = format!("{}{}", p("one two"), p("three more words"));
+    let mut e = Editor::open(&package(&body, "", ""), fonts()).expect("opens");
+    e.complete(fonts());
+    e.execute(Command::InsertTextBox, fonts());
+    e.execute(Command::InsertText("boxed in".into()), fonts());
+    let all = WordCountScope::default();
+    assert_eq!(word_count_in(&mut e, all).words, 7);
+    assert_eq!(word_count_in(&mut e, WordCountScope { boxes_and_notes: false, ..all }).words, 5);
+    let first = crate::services::spelling::paras_in_order(&e)[0];
+    let at = |u: u32| Position::text(StoryId::Body, first, Unit(u));
+    e.selection = Selection::range(at(0), at(3), Granularity::Char);
+    let n = word_count_in(&mut e, WordCountScope { selection: true, ..all });
+    assert_eq!((n.words, n.characters, n.paragraphs, n.lines), (1, 3, 1, 1));
+    assert_eq!(word_count_in(&mut e, all).words, 7, "the document's, the selection or not");
+    // A selected object holds no text of the selection's
+    let float = e.document().sections[0]
+        .blocks
+        .iter()
+        .find_map(|b| match b {
+            crate::docx::Block::Para(p) => p.inlines.iter().find_map(|i| if let crate::docx::Inline::Float(f, _) = i { Some(f.id) } else { None }),
+            crate::docx::Block::Table(_) => None,
+        })
+        .expect("the text box");
+    e.selection = Selection::Object(crate::editing::selection::ObjectRef::Floating(crate::layout::FloatId(float)));
+    let n = word_count_in(&mut e, WordCountScope { selection: true, ..all });
+    assert_eq!((n.words, n.characters, n.paragraphs, n.lines), (0, 0, 0, 0), "not the document's");
+}
+
+#[test]
+fn a_selection_over_many_paragraphs_counts_each_line_once() {
+    use crate::editing::position::{Position, StoryId};
+    use crate::editing::selection::{Granularity, Selection};
+    use crate::services::{WordCountScope, word_count_in};
+    let body: String = (0..3000).map(|_| p("word")).chain([p("outside")]).collect();
+    let mut e = Editor::open(&package(&body, "", ""), fonts()).expect("opens");
+    e.complete(fonts());
+    let paras = crate::services::spelling::paras_in_order(&e);
+    let at = |k: usize, u: u32| Position::text(StoryId::Body, paras[k], Unit(u));
+    e.selection = Selection::range(at(0, 0), at(2999, 4), Granularity::Char);
+    let n = word_count_in(&mut e, WordCountScope { selection: true, ..WordCountScope::default() });
+    assert_eq!((n.words, n.paragraphs, n.lines), (3000, 3000, 3000), "not the paragraph after it");
+}
+
+#[test]
+fn a_selection_counts_a_paragraph_once_and_the_lines_its_text_is_on() {
+    use crate::editing::position::{Position, StoryId};
+    use crate::editing::selection::{Granularity, Selection};
+    use crate::services::{WordCountScope, word_count_in};
+    let long = "Words enough to wrap onto a second line of the page, and they go on and on for a while longer still. ".repeat(2);
+    let body = format!("{}{}", p(&long), p("two words"));
+    let mut e = Editor::open(&package(&body, "", ""), fonts()).expect("opens");
+    e.complete(fonts());
+    let para = crate::services::spelling::paras_in_order(&e)[0];
+    let at = |u: u32| Position::text(StoryId::Body, para, Unit(u));
+    let sel = WordCountScope { selection: true, ..WordCountScope::default() };
+    // From the second line's start: the first line's end stop is that place too, and isn't counted.
+    let g = e.page_geometries().into_iter().next().map(|(_, g)| g).expect("a page");
+    let second = g.lines.iter().filter(|l| l.paras.contains(&para)).nth(1).and_then(|l| l.first_of(para)).expect("a second line");
+    e.selection = Selection::range(at(second.0), at(second.0 + 5), Granularity::Char);
+    assert_eq!(word_count_in(&mut e, sel).lines, 1, "from {second:?}");
+    // Two ranges in one paragraph: one paragraph.
+    e.selection = Selection::range(at(0), at(5), Granularity::Char);
+    assert!(!matches!(e.add_selection_range(at(10), at(15)), crate::editing::commands::Outcome::Refused(_)));
+    let n = word_count_in(&mut e, sel);
+    assert_eq!((n.paragraphs, n.lines), (1, 1), "{n:?}");
 }

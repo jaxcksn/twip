@@ -202,6 +202,20 @@ impl Editor {
         self.story_paras(Stories::ALL)
     }
 
+    /// The paragraph ids of `story` in document order, tables included, not the text boxes it anchors.
+    pub(crate) fn paras_of(&self, story: super::position::StoryId) -> Vec<ParaId> {
+        let mut out = Vec::new();
+        if story == super::position::StoryId::Body {
+            // The document's own body, whatever sub-template is edited.
+            self.doc.sections.iter().for_each(|s| walk(&s.blocks, &mut out, &mut Vec::new()));
+            return out;
+        }
+        if let Some(blocks) = self.index.blocks(&self.doc, crate::editing::index::Container::Story(story)) {
+            walk(blocks, &mut out, &mut Vec::new());
+        }
+        out
+    }
+
     /// The paragraph ids of the body (or the sub-template being edited) in document order, tables included, then
     /// those of the stories `also` takes: the text boxes, the headers and footers in part order, the footnotes and the
     /// endnotes in id order.
@@ -263,15 +277,15 @@ impl Editor {
     /// Whether the unit at `u` is a space the markup view shows (not a tab, break, object, or hidden or deleted text).
     pub fn space_at(&self, para: ParaId, u: Unit) -> bool {
         let Some(p) = self.index.para(&self.doc, para) else { return false };
-        let view = self.doc.review.view;
-        let t = UnitText::masked(p, |rev| rev.del.is_some() || view.hides(rev));
+        let review = &self.doc.review;
+        let t = UnitText::masked(p, |rev| rev.del.is_some() || review.hides(rev));
         !t.is_hidden(u) && t.char_at(u) == Some(' ')
     }
 
     /// A paragraph's text as Find reads it: what the markup view shows, fields as they show, values aside.
     pub(crate) fn find_text(&self, para: ParaId) -> Seen {
-        let view = self.doc.review.view;
-        self.index.para(&self.doc, para).map_or_else(Seen::default, |p| Seen::of(p, |r| !view.hides(&r.rev), false))
+        let review = &self.doc.review;
+        self.index.para(&self.doc, para).map_or_else(Seen::default, |p| Seen::of(p, |r| !review.hides(&r.rev), false))
     }
 
     fn unit_hits(&self, para: ParaId, needle: &[char], case: bool) -> Vec<(Unit, Unit)> {
@@ -315,6 +329,9 @@ impl Editor {
     }
 
     pub fn selection_matches(&self, needle: &str, case: bool) -> bool {
+        if self.is_discontiguous() {
+            return false;
+        }
         let Some((a, b)) = self.selection.ordered(&self.index) else { return false };
         let (Some((pa, ua)), Some((pb, ub))) = (a.para_offset(), b.para_offset()) else { return false };
         let needle: Vec<char> = needle.chars().collect();

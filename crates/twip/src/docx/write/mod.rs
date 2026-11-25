@@ -67,23 +67,30 @@ pub fn edited_parts(doc: &Document) -> Result<Vec<(String, Vec<u8>)>, String> {
         added.sort_by_key(|(id, _)| **id);
         let removed: Vec<i64> = was.keys().filter(|id| !is.contains_key(id)).copied().collect();
         let tag = if *foot { "footnote" } else { "endnote" };
-        if let Some(xml) = notes_xml(xml, &boxes(&o, &n), &lists, tag, &added, &removed, &doc.controls, &gone_controls(doc), &doc.people)? {
+        let seps = separator_edits(doc, src, tag);
+        let edits = NoteEdits { tag, added: &added, removed: &removed, separators: &seps };
+        let (out, listing) = notes_xml(xml, &boxes(&o, &n), &lists, &edits, doc)?;
+        if let Some(xml) = out {
             parts.push((name.clone(), xml.into_bytes()));
         }
+        list_notes(doc, src, &mut parts, tag, &listing)?;
     }
     // Notes inserted in a document that had no notes part of their kind: the part, its relationship and its type.
     for (foot, notes) in [(true, &doc.footnotes), (false, &doc.endnotes)] {
-        if notes.is_empty() || src.notes.iter().any(|(_, _, f)| *f == foot) {
+        let tag = if foot { "footnote" } else { "endnote" };
+        let separators = doc.separators.keys().any(|k| k.strip_prefix(tag).is_some_and(|r| r.starts_with(':')));
+        if (notes.is_empty() && !separators) || src.notes.iter().any(|(_, _, f)| *f == foot) {
             continue;
         }
         // Both kinds new: the second builds on the first's relationships and content types.
-        let made = new_notes_part(&src.package, &src.main, foot, notes, &parts, &doc.controls, &doc.people)?;
-        for (n, b) in made {
-            match parts.iter_mut().find(|(m, _)| *m == n) {
-                Some(p) => p.1 = b,
-                None => parts.push((n, b)),
-            }
-        }
+        new_notes_part(&src.package, &src.main, foot, notes, &mut parts, doc)?;
+        // Separator stories set since reading are listed, as Word lists its own
+        let listing: Vec<(i64, bool)> = [(-1, "separator"), (0, "continuationSeparator"), (-2, "continuationNotice")]
+            .into_iter()
+            .filter(|(_, t)| doc.separators.contains_key(&format!("{tag}:{t}")))
+            .map(|(id, _)| (id, true))
+            .collect();
+        list_notes(doc, src, &mut parts, tag, &listing)?;
     }
     section_pages(doc, &mut parts)?;
     new_stories(doc, &mut parts)?;
@@ -448,10 +455,7 @@ fn settings_part(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(
     let existing = package::related(&src.package, parts, &src.main, SETTINGS)?;
     let xml = match &existing {
         Some(n) => package::read(&src.package, parts, n)?.unwrap_or_default(),
-        None => format!(
-            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:settings xmlns:w="{W}"/>"#
-        ),
+        None => EMPTY_SETTINGS.to_string(),
     };
     if xml.is_empty() {
         return Ok(());
@@ -525,8 +529,13 @@ fn settings_part(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(
     for (name, was, is) in [
         ("evenAndOddHeaders", read.even_and_odd, now.even_and_odd),
         ("mirrorMargins", read.mirror_margins, now.mirror_margins),
+        ("doNotTrackMoves", read.do_not_track_moves, now.do_not_track_moves),
+        ("doNotTrackFormatting", read.do_not_track_formatting, now.do_not_track_formatting),
         ("gutterAtTop", read.gutter_at_top, now.gutter_at_top),
         ("doNotShadeFormData", read.no_form_shading, now.no_form_shading),
+        ("autoFormatOverride", read.auto_format_override, now.auto_format_override),
+        ("styleLockTheme", read.style_lock_theme, now.style_lock_theme),
+        ("styleLockQFSet", read.style_lock_style_set, now.style_lock_style_set),
         ("bordersDoNotSurroundHeader", read.borders_do_not_surround_header, now.borders_do_not_surround_header),
         ("bordersDoNotSurroundFooter", read.borders_do_not_surround_footer, now.borders_do_not_surround_footer),
         ("bookFoldPrinting", read.book_fold == Some(false), now.book_fold == Some(false)),
@@ -545,16 +554,26 @@ fn settings_part(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(
     }
     let name = match existing {
         Some(n) => n,
-        None => {
-            let name = src.main.rsplit_once('/').map_or_else(|| "settings.xml".into(), |(dir, _)| format!("{dir}/settings.xml"));
-            let name = package::free_name(&src.package, parts, &name)?;
-            let ct = "application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml";
-            package::add_part(&src.package, parts, &src.main, &name, ct, SETTINGS)?;
-            name
-        }
+        None => add_settings_part(src, parts)?,
     };
     package::set(parts, &name, out.into_bytes());
     Ok(())
+}
+
+/// A settings part with no settings.
+const EMPTY_SETTINGS: &str = concat!(
+    r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>"#,
+    "\n",
+    r#"<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>"#
+);
+
+/// A new settings part beside the main part, with its relationship and content type: its name.
+fn add_settings_part(src: &Source, parts: &mut Vec<(String, Vec<u8>)>) -> Result<String, String> {
+    let name = src.main.rsplit_once('/').map_or_else(|| "settings.xml".into(), |(dir, _)| format!("{dir}/settings.xml"));
+    let name = package::free_name(&src.package, parts, &name)?;
+    let ct = "application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml";
+    package::add_part(&src.package, parts, &src.main, &name, ct, SETTINGS)?;
+    Ok(name)
 }
 
 /// The main part's `w:background` when the page background changed since reading: the model's colour, and its fill.
@@ -1495,29 +1514,39 @@ fn new_stories(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(),
 }
 
 /// A new `footnotes.xml` or `endnotes.xml` holding `notes` (with Word's separator notes, ids -1 and 0), and the main
-/// part's relationships and the content types with it added.
-// shortcut: its relationship and content-type edits are its own; they move to `package::add_part` when next changed.
+/// part's relationships (made when it has none) and the content types with it added.
 fn new_notes_part(
     package: &[u8],
     main: &str,
     foot: bool,
     notes: &HashMap<i64, Vec<Block>>,
-    made: &[(String, Vec<u8>)],
-    controls: &HashMap<ControlId, Control>,
-    people: &People,
-) -> Result<Vec<(String, Vec<u8>)>, String> {
+    parts: &mut Vec<(String, Vec<u8>)>,
+    doc: &Document,
+) -> Result<(), String> {
+    let (controls, people) = (&doc.controls, &doc.people);
     let (tag, file, rel) = if foot { ("footnote", "footnotes.xml", "footnotes") } else { ("endnote", "endnotes.xml", "endnotes") };
     let ns = r#"xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships""#;
-    let sep = |id: i64, kind: &str| {
-        format!(
-            r#"<w:{tag} w:type="{kind}" w:id="{id}"><w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:r><w:{kind}/></w:r></w:p></w:{tag}>"#
-        )
+    let empty = format!(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:{tag}s {ns}></w:{tag}s>"#
+    );
+    // Word's separator notes, or those set since reading
+    let sep = |id: i64, kind: &str| -> Result<String, String> {
+        let body = match doc.separators.get(&format!("{tag}:{kind}")) {
+            Some(b) => new_blocks_xml(&empty, b, controls, people)?,
+            None => format!(r#"<w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:r><w:{kind}/></w:r></w:p>"#),
+        };
+        Ok(format!(r#"<w:{tag} w:type="{kind}" w:id="{id}">{body}</w:{tag}>"#))
+    };
+    let notice = match doc.separators.contains_key(&format!("{tag}:continuationNotice")) {
+        true => sep(-2, "continuationNotice")?,
+        false => String::new(),
     };
     let shell = format!(
         r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:{tag}s {ns}>{}{}</w:{tag}s>"#,
-        sep(-1, "separator"),
-        sep(0, "continuationSeparator")
+<w:{tag}s {ns}>{}{}{notice}</w:{tag}s>"#,
+        sep(-1, "separator")?,
+        sep(0, "continuationSeparator")?
     );
     let mut ids: Vec<&i64> = notes.keys().collect();
     ids.sort();
@@ -1530,51 +1559,46 @@ fn new_notes_part(
     // The part sits beside the main part; its relationship and content type go with it.
     let dir = main.rsplit_once('/').map_or("", |(d, _)| d);
     let name = if dir.is_empty() { file.to_string() } else { format!("{dir}/{file}") };
-    let rels_name = match main.rsplit_once('/') {
-        Some((d, f)) => format!("{d}/_rels/{f}.rels"),
-        None => format!("_rels/{main}.rels"),
-    };
-    let mut zin = zip::ZipArchive::new(Cursor::new(package)).map_err(|e| e.to_string())?;
-    let mut read = |n: &str| -> Result<String, String> {
-        if let Some((_, b)) = made.iter().find(|(m, _)| m == n) {
-            return String::from_utf8(b.clone()).map_err(|e| e.to_string());
-        }
-        crate::docx::package::text(zin.by_name(n).map_err(|e| format!("{n}: {e}"))?, n)
-    };
-    let rels = read(&rels_name)?;
-    let mut k = 1;
-    while rels.contains(&format!("Id=\"rId{k}\"")) {
-        k += 1;
-    }
-    let close = rels.rfind("</Relationships>").ok_or("relationships without their end tag")?;
-    let rels = format!(
-        r#"{}<Relationship Id="rId{k}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/{rel}" Target="{file}"/>{}"#,
-        &rels[..close],
-        &rels[close..]
-    );
-    let types = read("[Content_Types].xml")?;
-    let close = types.rfind("</Types>").ok_or("content types without their end tag")?;
-    let types = format!(
-        r#"{}<Override PartName="/{name}" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.{rel}+xml"/>{}"#,
-        &types[..close],
-        &types[close..]
-    );
-    Ok(vec![(name, xml.into_bytes()), (rels_name, rels.into_bytes()), ("[Content_Types].xml".into(), types.into_bytes())])
+    let content_type = format!("application/vnd.openxmlformats-officedocument.wordprocessingml.{rel}+xml");
+    let rel_type = format!("http://schemas.openxmlformats.org/officeDocument/2006/relationships/{rel}");
+    crate::docx::package::add_part(package, parts, main, &name, &content_type, &rel_type)?;
+    crate::docx::package::set(parts, &name, xml.into_bytes());
+    Ok(())
+}
+
+/// What saving a notes part changes besides its kept notes' content: notes added and removed whole, and the separator
+/// stories edited (each one's note type and its new content, `None`: gone).
+struct NoteEdits<'a> {
+    tag: &'a str,
+    added: &'a [(&'a i64, &'a Vec<Block>)],
+    removed: &'a [i64],
+    separators: &'a [(&'static str, Option<&'a [Block]>)],
+}
+
+/// The separator stories of the notes `tag` the edits changed: each one's note type and its content now.
+fn separator_edits<'d>(doc: &'d Document, src: &Source, tag: &str) -> Vec<(&'static str, Option<&'d [Block]>)> {
+    ["separator", "continuationSeparator", "continuationNotice"]
+        .into_iter()
+        .filter_map(|t| {
+            let key = format!("{tag}:{t}");
+            let now = doc.separators.get(&key);
+            (now != src.separators.get(&key)).then(|| (t, now.map(Vec::as_slice)))
+        })
+        .collect()
 }
 
 /// A notes part's XML after the edits: its kept notes' edits, `added` notes at the end, `removed` ones taken out.
-#[allow(clippy::too_many_arguments, reason = "the part, its note lists and the document state its rewrite reads")]
+/// The notes part `xml` with its edits, when they change it, and the separator notes whose listing in the settings
+/// changes: each id, and whether it is listed now.
 fn notes_xml(
     xml: &str,
     inner: &[(&[Block], &[Block])],
     lists: &[(&[Block], &[Block])],
-    tag: &str,
-    added: &[(&i64, &Vec<Block>)],
-    removed: &[i64],
-    controls: &HashMap<ControlId, Control>,
-    gone: &[Control],
-    people: &People,
-) -> Result<Option<String>, String> {
+    e: &NoteEdits,
+    doc: &Document,
+) -> Result<(Option<String>, Vec<(i64, bool)>), String> {
+    let (controls, gone, people) = (&doc.controls, &gone_controls(doc), &doc.people);
+    let tag = e.tag;
     let dom = roxmltree::Document::parse(xml).map_err(|e| e.to_string())?;
     let root = dom.root_element();
     let w = match root.lookup_prefix(W) {
@@ -1582,15 +1606,63 @@ fn notes_xml(
         _ => String::new(),
     };
     let mut splices: Vec<Splice> = Vec::new();
+    let id_of = |n: roxmltree::Node| attr(n, "id").and_then(|v| v.parse::<i64>().ok());
     for n in root.children().filter(|n| is_w(*n, tag)) {
-        if n.attribute((W, "id")).and_then(|v| v.parse::<i64>().ok()).is_some_and(|id| removed.contains(&id)) {
+        if id_of(n).is_some_and(|id| e.removed.contains(&id)) {
             splices.push((n.range(), String::new()));
         }
     }
     let mut text = String::new();
-    for (id, blocks) in added {
+    for (id, blocks) in e.added {
         let body = new_blocks_xml(xml, blocks, controls, people)?;
         text.push_str(&format!("<{w}{tag} {w}id=\"{id}\">{body}</{w}{tag}>"));
+    }
+    // Separator stories: in place, else as a new note under a negative id no other note has
+    let mut listing = Vec::new();
+    let mut taken: Option<std::collections::HashSet<i64>> = None;
+    let mut free = || {
+        let t = taken.get_or_insert_with(|| root.children().filter(|n| is_w(*n, tag)).filter_map(id_of).collect());
+        // Fewer notes than negative ids: one is free.
+        let id = (1..=i64::MAX).map(|k| -k).find(|k| !t.contains(k)).unwrap_or(i64::MIN);
+        t.insert(id);
+        id
+    };
+    for (t, blocks) in e.separators {
+        let same: Vec<roxmltree::Node> = root.children().filter(|n| is_w(*n, tag) && attr(*n, "type") == Some(*t)).collect();
+        // The reader keeps the last listed story of a type: that one is the active story.
+        let listed = |n: &roxmltree::Node| id_of(*n).is_some_and(|id| doc.settings.listed_notes.iter().any(|l| *l == format!("{tag}:{id}")));
+        let had = same.iter().rev().find(|n| listed(n)).or(same.first()).copied();
+        match (had, blocks) {
+            (Some(n), Some(b)) => {
+                let id = id_of(n).unwrap_or_else(&mut free);
+                let body = new_blocks_xml(xml, b, controls, people)?;
+                splices.push((n.range(), format!("<{w}{tag} {w}type=\"{t}\" {w}id=\"{id}\">{body}</{w}{tag}>")));
+                listing.push((id, true));
+                // The type's other listed stories go: only this one is listed
+                for o in same.iter().filter(|o| **o != n && listed(o)) {
+                    splices.push((o.range(), String::new()));
+                    if let Some(id) = id_of(*o) {
+                        listing.push((id, false));
+                    }
+                }
+            }
+            (Some(active), None) => {
+                // Every listed story of the type goes, or an earlier one would become the active one.
+                for n in same.iter().filter(|n| **n == active || listed(n)) {
+                    splices.push((n.range(), String::new()));
+                    if let Some(id) = id_of(*n) {
+                        listing.push((id, false));
+                    }
+                }
+            }
+            (None, Some(b)) => {
+                let body = new_blocks_xml(xml, b, controls, people)?;
+                let id = free();
+                text.push_str(&format!("<{w}{tag} {w}type=\"{t}\" {w}id=\"{id}\">{body}</{w}{tag}>"));
+                listing.push((id, true));
+            }
+            (None, None) => {}
+        }
     }
     if !text.is_empty() {
         let r = root.range();
@@ -1602,8 +1674,77 @@ fn notes_xml(
             splices.push((close..close, text));
         }
     }
-    // One pass: the kept notes' edits and these whole-note splices never overlap (removed notes aren't in `lists`).
-    part_xml_with(xml, inner, lists, &splices, &SectionEdits::default(), controls, gone, people)
+    // One pass: the kept notes' edits and these whole-note splices never overlap (removed notes and separators
+    // aren't in `lists`).
+    Ok((part_xml_with(xml, inner, lists, &splices, &SectionEdits::default(), controls, gone, people)?, listing))
+}
+
+/// The settings' list of the notes `tag` separator notes (`w:footnotePr/w:footnote`) with `listing`'s changes: each
+/// id listed or not.
+fn list_notes(doc: &Document, src: &Source, parts: &mut Vec<(String, Vec<u8>)>, tag: &str, listing: &[(i64, bool)]) -> Result<(), String> {
+    let listed = |id: i64| doc.settings.listed_notes.iter().any(|n| *n == format!("{tag}:{id}"));
+    let changes: Vec<(i64, bool)> = listing.iter().copied().filter(|&(id, on)| listed(id) != on).collect();
+    if changes.is_empty() {
+        return Ok(());
+    }
+    let name = match package::related(&src.package, parts, &src.main, SETTINGS)? {
+        Some(n) => n,
+        None => {
+            let n = add_settings_part(src, parts)?;
+            package::set(parts, &n, EMPTY_SETTINGS.as_bytes().to_vec());
+            n
+        }
+    };
+    let Some(mut out) = package::read(&src.package, parts, &name)? else { return Ok(()) };
+    let pr = format!("{tag}Pr");
+    let (w, id_attr, at, mut entries, open) = {
+        let dom = roxmltree::Document::parse(&out).map_err(|e| e.to_string())?;
+        let w = match dom.root_element().lookup_prefix(W) {
+            Some(p) if !p.is_empty() => format!("{p}:"),
+            _ => String::new(),
+        };
+        // A default namespace doesn't qualify an attribute: another prefix does, else one declared on the entry.
+        let other = dom.root_element().namespaces().find(|n| n.uri() == W && n.name().is_some()).and_then(|n| n.name()).filter(|_| w.is_empty());
+        let id = match other {
+            Some(p) => format!("{p}:id"),
+            None if w.is_empty() => format!("xmlns:w=\"{W}\" w:id"),
+            None => format!("{w}id"),
+        };
+        let el = dom.root_element().children().find(|c| is_w(*c, &pr));
+        let entries: Vec<i64> =
+            el.into_iter().flat_map(|p| p.children().filter(|c| is_w(*c, tag))).filter_map(|c| c.attribute((W, "id"))?.parse().ok()).collect();
+        // Its properties, which the list follows
+        let props: String =
+            el.into_iter().flat_map(|p| p.children().filter(|c| c.is_element() && !is_w(*c, tag))).map(|c| out[c.range()].to_string()).collect();
+        // The parent's own start tag (attributes and namespace declarations), which the rebuilt list keeps.
+        let open = el.map(|p| {
+            let raw = &out[p.range()];
+            match p.first_child().map(|c| c.range().start) {
+                Some(at) => raw[..at - p.range().start].to_string(),
+                None => match raw.strip_suffix("/>") {
+                    Some(t) => format!("{}>", t.trim_end()),
+                    None => raw[..raw.rfind("</").unwrap_or(raw.len())].to_string(),
+                },
+            }
+        });
+        (w, id, props, entries, open)
+    };
+    for (id, on) in changes {
+        entries.retain(|e| *e != id);
+        if on {
+            entries.push(id);
+        }
+    }
+    let list: String = entries.iter().map(|id| format!("<{w}{tag} {id_attr}=\"{id}\"/>")).collect();
+    let body = format!("{at}{list}");
+    let parent = open.unwrap_or_else(|| format!("<{w}{pr}>"));
+    let name_of = parent[1..].split(|c: char| c.is_whitespace() || c == '>').next().unwrap_or("").to_string();
+    set_setting(&mut out, &pr, (!body.is_empty()).then(|| format!("{parent}{body}</{name_of}>")))?;
+    match parts.iter_mut().find(|(m, _)| *m == name) {
+        Some(p) => p.1 = out.into_bytes(),
+        None => parts.push((name, out.into_bytes())),
+    }
+    Ok(())
 }
 
 /// The controls read that the document no longer has (removed, or emptied of every member).
@@ -2093,9 +2234,20 @@ impl<'a, 'i> Saver<'a, 'i> {
         self.paragraphs(q, p, at)
     }
 
+    /// The table's own default cell margins, as its properties hold them.
+    fn direct_cell_margins(&self, t: &Table) -> Option<String> {
+        Props::parse(t.direct.0.as_deref(), "tblPr", &self.cx).get("tblCellMar").map(str::to_string)
+    }
+
     /// A table's own `w:shd` as written in its `w:tblPr` (not its style's).
     fn direct_shd(&self, t: &Table) -> Option<String> {
         Props::parse(t.direct.0.as_deref(), "tblPr", &self.cx).get("shd").map(str::to_string)
+    }
+
+    /// A table's own band sizes as written in its `w:tblPr` (not its style's).
+    fn direct_bands(&self, t: &Table) -> [Option<String>; 2] {
+        let p = Props::parse(t.direct.0.as_deref(), "tblPr", &self.cx);
+        ["tblStyleRowBandSize", "tblStyleColBandSize"].map(|n| p.get(n).map(str::to_string))
     }
 
     fn table(&mut self, a: &Table, b: &Table) -> Result<(), String> {
@@ -2124,6 +2276,8 @@ impl<'a, 'i> Saver<'a, 'i> {
             && a.width == b.width
             && (a.cell_spacing, &a.alt) == (b.cell_spacing, &b.alt)
             && self.direct_shd(a) == self.direct_shd(b)
+            && self.direct_bands(a) == self.direct_bands(b)
+            && self.direct_cell_margins(a) == self.direct_cell_margins(b)
             && (&a.style_id, a.look, a.jc, a.ind, a.ind_pct, a.floating) == (&b.style_id, b.look, b.jc, b.ind, b.ind_pct, b.floating)
             && (a.fixed, a.cell_spacing, &a.alt) == (b.fixed, b.cell_spacing, &b.alt);
         // Tables read as one (nothing between them) are written as one.
@@ -2199,18 +2353,6 @@ impl<'a, 'i> Saver<'a, 'i> {
             return Ok(());
         }
         let mut text = Emit::group(self, &qs, &srcs, &ps)?;
-        // Frames made since reading (a drop cap): their paragraphs, each with its `w:framePr`, go before the paragraph
-        // they anchor at.
-        let made: String = ps
-            .iter()
-            .flat_map(|p| p.inlines.iter())
-            .filter_map(|i| match i {
-                Inline::Float(f, _) if f.frame_src.is_none() && f.is_frame() => f.text_box.as_ref(),
-                _ => None,
-            })
-            .map(|tb| self.nested_blocks(&tb.blocks))
-            .collect::<Result<_, _>>()?;
-        text.insert_str(0, &made);
         match srcs.first() {
             Some(first) => {
                 // Frames between joined paragraphs (frames.rs anchored them in the next paragraph, now joined into
@@ -2399,6 +2541,17 @@ impl<'a, 'i> Saver<'a, 'i> {
                         if self.direct_shd(a) != own {
                             fix.push(("shd", own.unwrap_or_default(), before("shd")));
                         }
+                        let (was, now) = (self.direct_bands(a), self.direct_bands(t));
+                        for (k, name) in ["tblStyleRowBandSize", "tblStyleColBandSize"].into_iter().enumerate() {
+                            if was[k] != now[k] {
+                                fix.push((name, now[k].clone().unwrap_or_default(), before(name)));
+                            }
+                        }
+                        // The table's own default cell margins, as its properties hold them.
+                        let (was, now) = (self.direct_cell_margins(a), self.direct_cell_margins(t));
+                        if was != now {
+                            fix.push(("tblCellMar", now.unwrap_or_default(), before("tblCellMar")));
+                        }
                         if a.alt != t.alt {
                             let (title, description) = t.alt.as_deref().map_or(("", ""), |a| (a.title.as_str(), a.description.as_str()));
                             let tag = |name: &str, v: &str| if v.is_empty() { String::new() } else { format!("<{w}{name} {w}val=\"{}\"/>", props::esc(v)) };
@@ -2437,14 +2590,14 @@ impl<'a, 'i> Saver<'a, 'i> {
                         if fix.is_empty() { self.xml[p.range()].to_string() } else { self.spliced(p.range(), fix)? }
                     }
                     (Some(p), None) => self.xml[p.range()].to_string(),
-                    (None, _) => tbl_pr(&w, t, self.direct_shd(t).as_deref(), self.people),
+                    (None, _) => tbl_pr(&w, t, self.direct_shd(t).as_deref(), &self.direct_bands(t), self.direct_cell_margins(t).as_deref(), self.people),
                 });
                 close
             }
             None => {
                 out.push_str(&format!("<{w}tbl>"));
                 let shd = self.direct_shd(t);
-                out.push_str(&tbl_pr(&w, t, shd.as_deref(), self.people));
+                out.push_str(&tbl_pr(&w, t, shd.as_deref(), &self.direct_bands(t), self.direct_cell_margins(t).as_deref(), self.people));
                 format!("</{w}tbl>")
             }
         };
@@ -3034,11 +3187,16 @@ impl<'a, 'i> Saver<'a, 'i> {
             let mut src = if copied.is_some() { self.xml[r.clone()].to_string() } else { self.src_text(r.clone()) };
             let text: Vec<drawing::Edit> = own.map_or(Vec::new(), |x| box_contents(&src).into_iter().map(|b| (b, x.clone())).collect());
             if drawing::is_vml(&src) {
-                push(&drawing::vml_patch(&drawing::apply(&src, text), was, f));
+                // What VML can't say is written as DrawingML.
+                match drawing::vml_patch(&drawing::apply(&src, text), was, f).or_else(|| self.new_float_xml(f, run)) {
+                    Some(x) => push(&x),
+                    None => push(&src),
+                }
                 continue;
             }
             // The shape's own properties first (their ranges are in the source as read), then its placement.
             let mut edits = drawing::changed(was, f, &src).unwrap_or_default();
+            edits.extend(self.story_edit(was, f));
             edits.extend(text);
             if !edits.is_empty() {
                 src = drawing::apply(&src, edits);
@@ -3050,6 +3208,15 @@ impl<'a, 'i> Saver<'a, 'i> {
             push(&if copied.is_some() { self.new_doc_pr_ids(&d) } else { d });
         }
         out
+    }
+
+    /// A story the float's shape gained (typed into a shape without one, or a box no longer going on from another):
+    /// its `wps:txbx`, written from the model, at its place in the float's source.
+    fn story_edit(&self, was: &Float, now: &Float) -> Option<drawing::Edit> {
+        let (at, tb) = (drawing::story_added(was, now)?, now.text_box.as_ref()?);
+        let blocks = self.nested_blocks(&tb.blocks).ok()?;
+        let txbx = format!("{}<{w}txbxContent>{blocks}</{w}txbxContent></wps:txbx>", drawing::txbx_open(now.shape.as_deref()), w = self.w);
+        Some((at..at, txbx))
     }
 
     /// The source element at exactly `r`, inside one of the part's paragraphs.
@@ -3151,6 +3318,15 @@ impl<'a, 'i> Saver<'a, 'i> {
     fn alternate_content(&self, r: Range<usize>) -> Option<Range<usize>> {
         let ch = self.node_at(r)?.parent().filter(|c| is(*c, MC, "Choice"))?;
         ch.parent().filter(|a| is(*a, MC, "AlternateContent")).map(|a| a.range())
+    }
+
+    /// The `mc:AlternateContent` in the element at `within` whose Choice's `w:drawing` holds source position `at`, and
+    /// that drawing.
+    fn choice_around(&self, within: Range<usize>, at: usize) -> Option<(Range<usize>, Range<usize>)> {
+        self.node_at(within)?.descendants().filter(|a| is(*a, MC, "AlternateContent")).find_map(|ac| {
+            let d = ac.children().find(|c| is(*c, MC, "Choice"))?.children().find(|d| is_w(*d, "drawing"))?;
+            d.range().contains(&at).then(|| (ac.range(), d.range()))
+        })
     }
 
     /// The Choice's `w:drawing` of the `mc:AlternateContent` at `r`.
@@ -3432,8 +3608,8 @@ fn same_inline(x: &Inline, y: &Inline) -> bool {
         (Inline::FieldBegin { form: a, run: r, .. }, Inline::FieldBegin { form: b, run: q, .. }) => {
             a.as_ref().map(|f| &f.data) == b.as_ref().map(|f| &f.data) && Rc::ptr_eq(r, q)
         }
-        // A resized picture is written patched.
-        (Inline::Picture(a, r), Inline::Picture(b, q)) => a.image == b.image && a.w == b.w && a.h == b.h && a.alt == b.alt && Rc::ptr_eq(r, q),
+        // A resized or reformatted picture is written patched (its text's content is its own container).
+        (Inline::Picture(a, r), Inline::Picture(b, q)) => a.same_but_story(b) && Rc::ptr_eq(r, q),
         // A ruby whose text was formatted is written anew.
         (Inline::Ruby(a, r), Inline::Ruby(b, q)) => (Rc::ptr_eq(a, b) || a.xml.0.as_deref() == b.xml.0.as_deref()) && Rc::ptr_eq(r, q),
         _ => {
@@ -3751,6 +3927,9 @@ struct Emit<'s, 'a, 'i> {
     depth: usize,
     /// Each output paragraph's start tag and `w:pPr`, and end tag; the next one to open; whether one is open.
     heads: Vec<(String, String)>,
+    /// Each output paragraph's frames made since reading (a drop cap): their paragraphs, each with its `w:framePr`,
+    /// written before it.
+    frames: Vec<String>,
     next: usize,
     in_para: bool,
     hidden: Option<(String, String)>,
@@ -4110,17 +4289,20 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                 // A VML float's edits patch its VML (`style`, fill and stroke attributes).
                 let text = s.src_text(src.clone());
                 if drawing::is_vml(&text) {
-                    let now = drawing::vml_patch(&text, a, b);
+                    // What VML can't say is written as DrawingML.
+                    let now = drawing::vml_patch(&text, a, b).or_else(|| {
+                        let run = ps.iter().flat_map(|p| p.inlines.iter()).find_map(|i| match i {
+                            Inline::Float(f, r) if f.id == b.id => Some(r),
+                            _ => None,
+                        })?;
+                        s.new_float_xml(b, run)
+                    })?;
                     return (now != text).then(|| (src, Placement { replace: Some(now), ..Placement::default() }));
                 }
                 // The shape's own properties (their ranges are in the source as read), then its placement.
                 let mut shape = drawing::changed(a, b, &text);
-                // A story added by typing into the shape: its `wps:txbx`, written from the model.
-                if let (Some(at), Some(tb)) = (drawing::story_added(a, b), b.text_box.as_ref())
-                    && let Ok(blocks) = s.nested_blocks(&tb.blocks)
-                {
-                    let txbx = format!("<wps:txbx><{w}txbxContent>{blocks}</{w}txbxContent></wps:txbx>", w = s.w);
-                    shape.get_or_insert_with(Vec::new).push((at..at, txbx));
+                if let Some(story) = s.story_edit(a, b) {
+                    shape.get_or_insert_with(Vec::new).push(story);
                 }
                 // A floating picture control drops the fallback copy beside it: its bare Choice drawing.
                 let bare = b.picture_control(&s.controls).is_some() && s.alternate_content(src.clone()).is_some();
@@ -4185,6 +4367,19 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                 .cloned()
                 .collect();
         }
+        let frames = ps
+            .iter()
+            .map(|p| {
+                p.inlines
+                    .iter()
+                    .filter_map(|i| match i {
+                        Inline::Float(f, _) if f.frame_src.is_none() && f.is_frame() => f.text_box.as_ref(),
+                        _ => None,
+                    })
+                    .map(|tb| s.nested_blocks(&tb.blocks))
+                    .collect::<Result<String, _>>()
+            })
+            .collect::<Result<_, _>>()?;
         let mut e = Emit {
             s,
             out: String::new(),
@@ -4200,6 +4395,7 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
             stack: Vec::new(),
             depth: 0,
             heads,
+            frames,
             next: 0,
             in_para: false,
             hidden: None,
@@ -4485,9 +4681,11 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                     // A whole field (its runs) or a simple field: reformatted, every run of it takes the formatting.
                     // A content control around a resized picture: its drawing with the new extents.
                     if let Some(size) = resized(self, i).filter(|_| Rc::as_ptr(&run) == self.orig[i].run) {
-                        let p = Placement { size: Some((size.0, size.1)), alt: Some(size.2.to_string()), ..Placement::default() };
-                        let src = self.src(range.clone());
-                        let x = picture_patched(&src, p, self.orig[i].size.as_ref().and_then(|s| s.4), size.4);
+                        let was = self.orig[i].size.as_ref();
+                        let p = Placement { decorative: None, ..size.placement(was) };
+                        let edits = self.contained_shape_edits(range.clone(), was, &size);
+                        let src = self.src_with(range.clone(), edits);
+                        let x = self.s.picture_patched(&src, p, was, &size);
                         self.flush();
                         self.open_to(self.stack.len());
                         self.out.push_str(&x);
@@ -4496,7 +4694,27 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                         self.verbatim(range.clone());
                         self.fmt_run = None;
                     } else {
+                        // A restyled content control around a resized picture: its drawing patched in the runs.
+                        let patch = resized(self, i).and_then(|size| {
+                            let was = self.orig[i].size.as_ref();
+                            let d = std::iter::successors(Some(node), |n| n.next_sibling())
+                                .take_while(|n| n.range().start < range.end)
+                                .flat_map(|n| n.descendants())
+                                .find(|c| {
+                                    c.parent().is_some_and(|p| is_w(p, "r"))
+                                        && matches!(c.tag_name().name(), "drawing" | "pict" | "object" | "AlternateContent")
+                                })?
+                                .range();
+                            let p = Placement { decorative: None, ..size.placement(was) };
+                            let edits = self.contained_shape_edits(d.clone(), was, &size);
+                            Some((d.clone(), self.s.picture_patched(&self.src_with(d, edits), p, was, &size)))
+                        });
+                        let patched = patch.is_some();
+                        self.prs.extend(patch);
                         self.restyled(node, range.end, &run);
+                        if patched {
+                            self.prs.pop();
+                        }
                     }
                 } else {
                     let to = self.target(ctx(self, i), &self.cur[j]);
@@ -4508,13 +4726,9 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                         // A resized or reformatted inline picture: its drawing with the new extents and properties.
                         self.add(to, None, None);
                         self.flush_text();
-                        let mut p = Placement {
-                            size: Some((size.0, size.1)),
-                            alt: Some(size.2.to_string()),
-                            decorative: Some(decorative(&size.3)),
-                            ..Placement::default()
-                        };
-                        if let (Some(a), Some(b)) = (self.orig[i].size.as_ref().and_then(|s| s.3.as_deref()), size.3.as_deref()) {
+                        let was = self.orig[i].size.as_ref();
+                        let mut p = size.placement(was);
+                        if let (Some(a), Some(b)) = (was.and_then(|s| s.0.shape.as_deref()), size.0.shape.as_deref()) {
                             let d = self.s.choice_drawing(range.clone()).unwrap_or(range.clone());
                             p.shape = drawing::shape_changed(a, b, d.start, &self.s.src_text(d.clone()));
                             // an edited shape drops its VML fallback.
@@ -4523,7 +4737,7 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                             }
                         }
                         let src = self.s.src_text(range.clone());
-                        let x = picture_patched(&src, p, self.orig[i].size.as_ref().and_then(|s| s.4), size.4);
+                        let x = self.s.picture_patched(&src, p, self.orig[i].size.as_ref(), &size);
                         self.pend.push_str(&x);
                     } else {
                         self.add(to, None, Some(range.clone()))
@@ -4846,6 +5060,9 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
         self.close_wrap();
         if !self.in_para {
             let k = self.next.min(self.heads.len().saturating_sub(1));
+            if let Some(f) = self.frames.get_mut(k) {
+                self.out.push_str(&std::mem::take(f));
+            }
             let head = self.hidden.as_ref().map_or(&self.heads[k].0, |h| &h.0);
             self.out.push_str(head);
             self.in_para = true;
@@ -4869,10 +5086,19 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
 
     /// Source bytes, with moved or resized floats and changed controls' properties in them patched.
     fn src(&self, r: Range<usize>) -> String {
+        self.src_with(r, Vec::new())
+    }
+
+    /// [`Emit::src`] with `edits` (source ranges and their text) made too.
+    fn src_with(&self, r: Range<usize>, edits: Vec<drawing::Edit>) -> String {
         // Floats patched in place, the rest with its nested rewrites (text boxes) applied.
         let floats = self.patched.iter().map(|(d, p)| (d.clone(), Ok(p)));
-        let mut inside: Vec<(Range<usize>, Result<&Placement, &str>)> =
-            floats.chain(self.prs.iter().map(|(d, x)| (d.clone(), Err(x.as_str())))).filter(|(d, _)| r.start <= d.start && d.end <= r.end).collect();
+        let mut inside: Vec<(Range<usize>, Result<&Placement, &str>)> = edits
+            .iter()
+            .map(|(d, x)| (d.clone(), Err(x.as_str())))
+            .chain(floats.chain(self.prs.iter().map(|(d, x)| (d.clone(), Err(x.as_str())))))
+            .filter(|(d, _)| r.start <= d.start && d.end <= r.end)
+            .collect();
         inside.sort_by_key(|(d, _)| d.start);
         let mut out = String::new();
         let mut at = r.start;
@@ -4889,6 +5115,23 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
         }
         out.push_str(&self.s.src_text(at..r.end));
         out
+    }
+
+    /// The edits of a resized inline picture's shape (its crop, outline, ...) in the element `r` around it (a content
+    /// control), in source ranges: an edited shape's `mc:AlternateContent` becomes its Choice's drawing, as in a run.
+    fn contained_shape_edits(&self, r: Range<usize>, was: Option<&PicState>, now: &PicState) -> Vec<drawing::Edit> {
+        let (Some(a), Some(b)) = (was.and_then(|s| s.0.shape.as_deref()), now.0.shape.as_deref()) else { return Vec::new() };
+        let Some(at) = a.spans.shape.as_ref().map(|x| x.start) else { return Vec::new() };
+        match self.s.choice_around(r.clone(), at) {
+            Some((ac, d)) => {
+                let text = self.s.src_text(d.clone());
+                drawing::shape_changed(a, b, d.start, &text).map_or_else(Vec::new, |e| vec![(ac, drawing::apply(&text, e))])
+            }
+            None => {
+                let edits = drawing::shape_changed(a, b, r.start, &self.s.src_text(r.clone())).unwrap_or_default();
+                edits.into_iter().map(|(x, t)| (x.start + r.start..x.end + r.start, t)).collect()
+            }
+        }
     }
 
     /// A paragraph mark: the output paragraph ends, except the group's last, which takes what is left of the
@@ -5012,7 +5255,10 @@ fn place(
 
 /// [`Emit::group`], or nothing for no paragraphs (the sources' text is deleted).
 fn emit(s: &Saver, qs: &[&Paragraph], srcs: &[&ParaSrc], ps: &[&Paragraph]) -> Result<String, String> {
-    if ps.is_empty() { Ok(String::new()) } else { Emit::group(s, qs, srcs, ps) }
+    if ps.is_empty() {
+        return Ok(String::new());
+    }
+    Emit::group(s, qs, srcs, ps)
 }
 
 fn same_src(a: &Option<Rc<Range<usize>>>, b: &Option<Rc<Range<usize>>>) -> bool {
@@ -5057,11 +5303,82 @@ fn checkbox_xml(src: &str, face: char) -> String {
     s
 }
 
-/// An inline picture's size, alternative text and shape tree.
-type PicState = (f64, f64, Rc<str>, Option<Box<crate::drawing::Shape>>, Option<usize>);
+/// An inline picture or shape as it is, compared but for its text's blocks (written as its own container).
+#[derive(Clone, Debug)]
+struct PicState(Picture);
+
+impl PartialEq for PicState {
+    fn eq(&self, o: &PicState) -> bool {
+        self.0.same_but_story(&o.0)
+    }
+}
 
 fn picture_size(i: &Inline) -> Option<PicState> {
-    if let Inline::Picture(p, _) = i { Some((p.w, p.h, p.alt.clone(), p.shape.clone(), p.image)) } else { None }
+    if let Inline::Picture(p, _) = i { Some(PicState(p.clone())) } else { None }
+}
+
+impl PicState {
+    /// The placement patch a kept picture's drawing takes to be this from `was`.
+    fn placement(&self, was: Option<&PicState>) -> Placement {
+        let p = &self.0;
+        let a = was.map(|w| &w.0);
+        Placement {
+            size: Some((p.w, p.h)),
+            alt: Some(p.alt.to_string()),
+            decorative: Some(decorative(&p.shape)),
+            effect: Some(p.effect),
+            nv: nv_changed(a.and_then(|a| a.shape.as_deref()), p.shape.as_deref()),
+            lock: a.filter(|a| a.lock_aspect != p.lock_aspect).map(|_| p.lock_aspect),
+            ..Placement::default()
+        }
+    }
+}
+
+impl Saver<'_, '_> {
+    /// A kept picture's drawing (`src`) as it is now: its extents, alternative text and, when it shows another image
+    /// than it was read with, a blip naming that image. A VML picture edited past what VML says is written as
+    /// DrawingML.
+    fn picture_patched(&self, src: &str, p: Placement, was: Option<&PicState>, now: &PicState) -> String {
+        if drawing::is_vml(src) {
+            let a = was.and_then(|w| w.0.shape.as_deref());
+            // A lock change isn't VML's to say: it is read from DrawingML only
+            let vml = p.lock.is_none().then(|| drawing::vml_picture_patch(src, a, now.0.shape.as_deref(), now.0.w, now.0.h)).flatten();
+            match vml {
+                Some(x) => return picture_relinked(x, was.and_then(|w| w.0.image), now.0.image),
+                None => {
+                    // In place of its run child only: `src` may be a content control around its run.
+                    if let (Some(x), Some(r)) = (self.new_picture_xml(&now.0), vml_run_child(src)) {
+                        return format!("{}{x}{}", &src[..r.start], &src[r.end..]);
+                    }
+                }
+            }
+        }
+        picture_patched(src, p, was.and_then(|w| w.0.image), now.0.image)
+    }
+}
+
+/// Where a VML picture's run child (`w:pict`, `w:object`) is in `src`.
+fn vml_run_child(src: &str) -> Option<Range<usize>> {
+    ["pict", "object"].into_iter().filter_map(|n| element(src, n)).min_by_key(|r| r.start)
+}
+
+/// A VML picture's text naming image `now` when it shows another than `was`.
+fn picture_relinked(x: String, was: Option<usize>, now: Option<usize>) -> String {
+    let image = now.filter(|_| now != was);
+    match (image, find_tag(&x, "imagedata", 0)) {
+        // Its `r:id`, else the `o:relid` read when it has none.
+        (Some(k), Some((start, end))) => {
+            match x[start..end].find(":id=\"").map(|a| a + 5).or_else(|| x[start..end].find(":relid=\"").map(|a| a + 8)) {
+                Some(a) => {
+                    let v0 = start + a;
+                    let v1 = x[v0..end].find('"').map_or(end, |e| v0 + e);
+                    format!("{}{NEW_IMAGE}{k}{}", &x[..v0], &x[v1..])
+                }
+                None => x,
+            }
+        }
+        _ => x,
+    }
 }
 
 /// A kept picture's drawing (`src`) as it is now: its extents, alternative text and, when it shows another image
@@ -5225,15 +5542,16 @@ impl Saver<'_, '_> {
         let [dt, db, dl, dr] = f.dist.map(emu);
         Some(format!(
             concat!(
-                r#"<{w}drawing><wp:anchor xmlns:wp="{wp}" distT="{dt}" distB="{db}" distL="{dl}" distR="{dr}" simplePos="0" relativeHeight="{id}" "#,
+                r#"<{w}drawing><wp:anchor xmlns:wp="{wp}" distT="{dt}" distB="{db}" distL="{dl}" distR="{dr}" simplePos="0" relativeHeight="{z}" "#,
                 r#"behindDoc="{behind}" locked="{locked}" layoutInCell="{cell}" allowOverlap="{overlap}"><wp:simplePos x="0" y="0"/>{h}{v}"#,
-                r#"<wp:extent cx="{cx}" cy="{cy}"/><wp:effectExtent {ee}/>{wrap}<wp:docPr id="{id}" name="{kind} {id}"{descr}/>"#,
+                r#"<wp:extent cx="{cx}" cy="{cy}"/><wp:effectExtent {ee}/>{wrap}<wp:docPr id="{id}" name="{name}"{title}{descr}/>"#,
                 r#"<wp:cNvGraphicFramePr>{locks}</wp:cNvGraphicFramePr><a:graphic xmlns:a="{a}">{graphic}</a:graphic>{sizes}</wp:anchor></{w}drawing>"#
             ),
             w = self.w,
             wp = WP,
             a = A,
             ee = effect_extent(f.effect),
+            z = f.z,
             dt = dt,
             db = db,
             dl = dl,
@@ -5247,11 +5565,12 @@ impl Saver<'_, '_> {
             v = pos("positionV", &f.v_relative, &f.v_align, f.v_offset),
             cx = cx,
             cy = cy,
-            wrap = wrap_xml("wp:", &f.wrap, &f.wrap_text, f.poly.as_deref(), f.poly.is_some()),
-            kind = match f.shape.as_deref().map(|s| s.nv.name.as_str()).filter(|n| !n.is_empty()) {
+            wrap = wrap_xml("wp:", &f.wrap, &f.wrap_text, f.poly.as_deref(), f.poly_edited),
+            name = match f.shape.as_deref().map(|s| s.nv.name.as_str()).filter(|n| !n.is_empty()) {
                 Some(n) => props::esc(n),
-                None => (if f.text_box.is_some() { "Text Box" } else { "Picture" }).to_string(),
+                None => format!("{} {id}", if f.text_box.is_some() { "Text Box" } else { "Picture" }),
             },
+            title = f.shape.as_deref().map_or(String::new(), |s| title_attr(&s.nv)),
             descr = descr_attr(&f.alt),
             locks = if f.lock_aspect { format!(r#"<a:graphicFrameLocks xmlns:a="{A}" noChangeAspect="1"/>"#) } else { String::new() },
             graphic = graphic,
@@ -5297,7 +5616,6 @@ impl Saver<'_, '_> {
                 esc(ch.encode_utf8(&mut [0; 4]))
             ));
         }
-        // A shape put in line with text: its tree in a `wp:inline`.
         // A copy pasted into the part it came from: its source XML (its relationships are this part's), at its size now,
         // with drawing ids of its own.
         if let Inline::Picture(p, _) = i
@@ -5312,13 +5630,22 @@ impl Saver<'_, '_> {
             let x = if drawing::is_vml(x) {
                 drawing::vml_size(x, p.w, p.h)
             } else {
-                Placement { size: Some((p.w, p.h)), alt: Some(p.alt.to_string()), ..Placement::default() }.apply(x)
+                Placement { size: Some((p.w, p.h)), alt: Some(p.alt.to_string()), effect: Some(p.effect), ..Placement::default() }.apply(x)
             };
             return Some(self.new_doc_pr_ids(&x));
         }
-        if let Inline::Picture(p, _) = i
-            && let Some(shape) = p.shape.as_deref().filter(|s| p.image.is_none() || s.pic().is_none_or(|q| q.blip.image.is_some()))
-        {
+        if let Inline::Picture(p, _) = i {
+            return self.new_picture_xml(p);
+        }
+        object_xml(&self.w, i)
+    }
+}
+
+impl Saver<'_, '_> {
+    /// A picture or shape written from the model, as a new inline drawing.
+    fn new_picture_xml(&self, p: &Picture) -> Option<String> {
+        // A shape put in line with text: its tree in a `wp:inline`.
+        if let Some(shape) = p.shape.as_deref().filter(|s| p.image.is_none() || s.pic().is_none_or(|q| q.blip.image.is_some())) {
             let id = self.ids.get();
             self.ids.set(id + 1);
             let emu = |pt: f64| (pt * 12700.0).round() as i64;
@@ -5327,11 +5654,11 @@ impl Saver<'_, '_> {
             shape.xfrm.ext = [crate::drawing::units::Emu(cx), crate::drawing::units::Emu(cy)];
             const WP: &str = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
             const A: &str = "http://schemas.openxmlformats.org/drawingml/2006/main";
-            let name = if shape.nv.name.is_empty() { "Shape".to_string() } else { props::esc(&shape.nv.name) };
+            let name = if shape.nv.name.is_empty() { format!("Shape {id}") } else { props::esc(&shape.nv.name) };
             return Some(format!(
                 concat!(
                     r#"<{w}drawing><wp:inline xmlns:wp="{wp}" distT="0" distB="0" distL="0" distR="0"><wp:extent cx="{cx}" cy="{cy}"/>"#,
-                    r#"<wp:effectExtent {ee}/><wp:docPr id="{id}" name="{name} {id}"{descr}/><wp:cNvGraphicFramePr>{locks}"#,
+                    r#"<wp:effectExtent {ee}/><wp:docPr id="{id}" name="{name}"{title}{descr}/><wp:cNvGraphicFramePr>{locks}"#,
                     r#"</wp:cNvGraphicFramePr><a:graphic xmlns:a="{a}">{graphic}</a:graphic></wp:inline></{w}drawing>"#
                 ),
                 locks = if p.lock_aspect { format!(r#"<a:graphicFrameLocks xmlns:a="{A}" noChangeAspect="1"/>"#) } else { String::new() },
@@ -5344,6 +5671,7 @@ impl Saver<'_, '_> {
                 id = id,
                 name = name,
                 descr = descr_attr(&p.alt),
+                title = title_attr(&shape.nv),
                 graphic = drawing::graphic_data(
                     &shape,
                     &|path: &[u16]| self.nested_blocks(&p.text.as_ref().filter(|_| path.is_empty())?.text_box.blocks).ok(),
@@ -5351,42 +5679,46 @@ impl Saver<'_, '_> {
                 ),
             ));
         }
-        if let Inline::Picture(p, _) = i {
-            let image = p.image?;
-            let id = self.ids.get();
-            self.ids.set(id + 1);
-            let emu = |pt: f64| (pt * 12700.0).round() as i64;
-            let (cx, cy) = (emu(p.w), emu(p.h));
-            const WP: &str = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
-            const A: &str = "http://schemas.openxmlformats.org/drawingml/2006/main";
-            const PIC: &str = "http://schemas.openxmlformats.org/drawingml/2006/picture";
-            const R: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
-            return Some(format!(
-                concat!(
-                    r#"<{w}drawing><wp:inline xmlns:wp="{wp}" distT="0" distB="0" distL="0" distR="0"><wp:extent cx="{cx}" cy="{cy}"/>"#,
-                    r#"<wp:effectExtent {ee}/><wp:docPr id="{id}" name="Picture {id}"{descr}/><wp:cNvGraphicFramePr>"#,
-                    r#"<a:graphicFrameLocks xmlns:a="{a}" noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic xmlns:a="{a}">"#,
-                    r#"<a:graphicData uri="{pic}"><pic:pic xmlns:pic="{pic}"><pic:nvPicPr><pic:cNvPr id="0" name="Picture {id}"/>"#,
-                    r#"<pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip xmlns:r="{r}" r:embed="{new}{image}"/><a:stretch><a:fillRect/>"#,
-                    r#"</a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{cx}" cy="{cy}"/></a:xfrm>"#,
-                    r#"<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></{w}drawing>"#
-                ),
-                w = self.w,
-                wp = WP,
-                a = A,
-                pic = PIC,
-                r = R,
-                new = NEW_IMAGE,
-                cx = cx,
-                cy = cy,
-                id = id,
-                image = image,
-                descr = descr_attr(&p.alt),
-                ee = effect_extent(p.effect),
-            ));
-        }
-        object_xml(&self.w, i)
+        // A picture without its shape tree.
+        let image = p.image?;
+        let id = self.ids.get();
+        self.ids.set(id + 1);
+        let emu = |pt: f64| (pt * 12700.0).round() as i64;
+        let (cx, cy) = (emu(p.w), emu(p.h));
+        const WP: &str = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
+        const A: &str = "http://schemas.openxmlformats.org/drawingml/2006/main";
+        const PIC: &str = "http://schemas.openxmlformats.org/drawingml/2006/picture";
+        const R: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+        Some(format!(
+            concat!(
+                r#"<{w}drawing><wp:inline xmlns:wp="{wp}" distT="0" distB="0" distL="0" distR="0"><wp:extent cx="{cx}" cy="{cy}"/>"#,
+                r#"<wp:effectExtent {ee}/><wp:docPr id="{id}" name="Picture {id}"{descr}/><wp:cNvGraphicFramePr>"#,
+                r#"<a:graphicFrameLocks xmlns:a="{a}" noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic xmlns:a="{a}">"#,
+                r#"<a:graphicData uri="{pic}"><pic:pic xmlns:pic="{pic}"><pic:nvPicPr><pic:cNvPr id="0" name="Picture {id}"/>"#,
+                r#"<pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip xmlns:r="{r}" r:embed="{new}{image}"/><a:stretch><a:fillRect/>"#,
+                r#"</a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{cx}" cy="{cy}"/></a:xfrm>"#,
+                r#"<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></{w}drawing>"#
+            ),
+            w = self.w,
+            wp = WP,
+            a = A,
+            pic = PIC,
+            r = R,
+            new = NEW_IMAGE,
+            cx = cx,
+            cy = cy,
+            id = id,
+            image = image,
+            descr = descr_attr(&p.alt),
+            ee = effect_extent(p.effect),
+        ))
     }
+}
+
+/// A new drawing's `wp:docPr` title and hidden mark: none when it has neither.
+fn title_attr(nv: &crate::drawing::NonVisual) -> String {
+    let title = if nv.title.is_empty() { String::new() } else { format!(r#" title="{}""#, props::esc(&nv.title)) };
+    if nv.hidden { format!(r#"{title} hidden="1""#) } else { title }
 }
 
 /// A new drawing's `wp:docPr/@descr`, its alternative text: none when it has none.
@@ -5590,6 +5922,8 @@ fn object_xml(w: &str, i: &Inline) -> Option<String> {
         Inline::Sym { ch, font, control: None, .. } => Some(format!("<{w}sym {w}font=\"{}\" {w}char=\"{:04X}\"/>", props::esc(font), *ch as u32)),
         Inline::NoteMark(NoteKind::Foot, ..) => Some(format!("<{w}footnoteRef/>")),
         Inline::NoteMark(NoteKind::End, ..) => Some(format!("<{w}endnoteRef/>")),
+        Inline::Separator { continuation: false, .. } => Some(format!("<{w}separator/>")),
+        Inline::Separator { continuation: true, .. } => Some(format!("<{w}continuationSeparator/>")),
         // each marker is its `fldChar`, in a run of the field's formatting.
         Inline::FieldBegin { lock, dirty, form, .. } => {
             let lock = if *lock { format!(" {w}fldLock=\"1\"") } else { String::new() };
@@ -5635,7 +5969,7 @@ struct Placement {
     h: Option<(String, Option<String>, f64)>,
     v: Option<(String, Option<String>, f64)>,
     size: Option<(f64, f64)>,
-    /// Wrapping (`wrap`, `wrap_text`, behind the text, the wrap polygon and whether it changed), when changed.
+    /// Wrapping (`wrap`, `wrap_text`, behind the text, the wrap polygon and whether it was edited), when changed.
     wrap: Option<(String, String, bool, Option<Rc<[(f64, f64)]>>, bool)>,
     locked: Option<bool>,
     z: Option<u32>,
@@ -5643,10 +5977,16 @@ struct Placement {
     alt: Option<String>,
     /// The decorative mark (`adec:decorative` in `wp:docPr`'s extension list).
     decorative: Option<bool>,
+    /// The name, title and hidden mark (`wp:docPr`'s `name`, `title` and `hidden`).
+    nv: Option<(String, String, bool)>,
+    /// Lock aspect ratio (`a:graphicFrameLocks/@noChangeAspect`).
+    lock: Option<bool>,
     /// A new picture (an image of [`Document::images`]): the blip names it ([`NEW_IMAGE`]).
     blip: Option<usize>,
     /// The distance from the text (`distT`, `distB`, `distL`, `distR`), `allowOverlap` and `layoutInCell`.
     dist: Option<[f64; 4]>,
+    /// An inline picture's effect extents (`wp:effectExtent`: left, top, right, bottom).
+    effect: Option<[f64; 4]>,
     overlap: Option<bool>,
     in_cell: Option<bool>,
     /// The shape's own properties, as edits in the drawing's text: applied first.
@@ -5690,14 +6030,17 @@ impl Placement {
             h: pos((&a.h_relative, &a.h_align, a.h_offset), (&b.h_relative, &b.h_align, b.h_offset)),
             v: pos((&a.v_relative, &a.v_align, a.v_offset), (&b.v_relative, &b.v_align, b.v_offset)),
             size: (ne(a.w, b.w) || ne(a.h, b.h)).then_some((b.w, b.h)),
-            wrap: (a.wrap != b.wrap || a.wrap_text != b.wrap_text || a.behind != b.behind || a.poly != b.poly)
-                .then(|| (b.wrap.clone(), b.wrap_text.clone(), b.behind, b.poly.clone(), a.poly != b.poly)),
+            wrap: (a.wrap != b.wrap || a.wrap_text != b.wrap_text || a.behind != b.behind || a.poly != b.poly || a.poly_edited != b.poly_edited)
+                .then(|| (b.wrap.clone(), b.wrap_text.clone(), b.behind, b.poly.clone(), b.poly_edited)),
             locked: (a.locked != b.locked).then_some(b.locked),
             z: (a.z != b.z).then_some(b.z),
             alt: (a.alt != b.alt).then(|| b.alt.to_string()),
             decorative: (decorative(&a.shape) != decorative(&b.shape)).then(|| decorative(&b.shape)),
+            nv: nv_changed(a.shape.as_deref(), b.shape.as_deref()),
+            lock: (a.lock_aspect != b.lock_aspect).then_some(b.lock_aspect),
             blip: b.image.filter(|_| a.image != b.image),
             dist: a.dist.iter().zip(&b.dist).any(|(x, y)| ne(*x, *y)).then_some(b.dist),
+            effect: a.effect.iter().zip(&b.effect).any(|(x, y)| ne(*x, *y)).then_some(b.effect),
             overlap: (a.allow_overlap != b.allow_overlap).then_some(b.allow_overlap),
             in_cell: (a.layout_in_cell != b.layout_in_cell).then_some(b.layout_in_cell),
             shape: None,
@@ -5714,7 +6057,10 @@ impl Placement {
             || p.locked.is_some()
             || p.alt.is_some()
             || p.decorative.is_some()
+            || p.nv.is_some()
+            || p.lock.is_some()
             || p.blip.is_some()
+            || p.effect.is_some()
             || p.z.is_some();
         (any || p.dist.is_some() || p.overlap.is_some() || p.in_cell.is_some()).then_some(p)
     }
@@ -5815,14 +6161,51 @@ impl Placement {
                 }
             }
         }
+        if let Some(e) = self.effect {
+            let ee = effect_extent(e);
+            match find_tag(&s, "effectExtent", 0) {
+                // Its own start tag, self-closing or not, with the extents set.
+                Some((start, end)) => {
+                    let mut tag = s[start..end].to_string();
+                    for (name, v) in ["l", "t", "r", "b"].into_iter().zip(e) {
+                        tag = set_attr(&tag, name, &emu(v));
+                    }
+                    s.replace_range(start..end, &tag);
+                }
+                // None: after the extent (the schema's order: extent, effectExtent, docPr, ...).
+                None if e != [0.0; 4] => {
+                    if let (Some((start, end)), Some(at)) = (find_tag(&s, "extent", 0), element(&s, "extent").map(|r| r.end)) {
+                        let name = s[start + 1..end].split(|c: char| c.is_whitespace() || c == '/' || c == '>').next().unwrap_or("");
+                        let p = name.rsplit_once(':').map_or(String::new(), |(p, _)| format!("{p}:"));
+                        s.insert_str(at, &format!("<{p}effectExtent {ee}/>"));
+                    }
+                }
+                None => {}
+            }
+        }
         if let Some(alt) = &self.alt
             && let Some((start, end)) = find_tag(&s, "docPr", 0)
         {
             let tag = set_attr(&s[start..end], "descr", &props::esc(alt));
             s.replace_range(start..end, &tag);
         }
+        if let Some((name, title, hidden)) = &self.nv
+            && let Some((start, end)) = find_tag(&s, "docPr", 0)
+        {
+            let mut tag = set_attr(&s[start..end], "name", &props::esc(name));
+            if !title.is_empty() || attr_range(&tag, "title").is_some() {
+                tag = set_attr(&tag, "title", &props::esc(title));
+            }
+            if *hidden || attr_range(&tag, "hidden").is_some() {
+                tag = set_attr(&tag, "hidden", if *hidden { "1" } else { "0" });
+            }
+            s.replace_range(start..end, &tag);
+        }
         if let Some(on) = self.decorative {
             s = set_decorative(&s, on);
+        }
+        if let Some(on) = self.lock {
+            s = set_lock_aspect(&s, on);
         }
         // The first blip (the picture's) replaced by one naming the new image; its effects go with the old picture.
         if let Some(k) = self.blip
@@ -5864,6 +6247,54 @@ fn same_rev(a: &RunStyle, b: &RunStyle) -> bool {
 /// The first start tag named `local` (any prefix) at or after `from`: its byte range.
 /// The decorative mark's extension (`a:ext/@uri`).
 const DECORATIVE: &str = "{C183D7F6-B498-43B3-948B-1728B52AA6E4}";
+
+/// A drawing's XML with its lock aspect ratio on or off: `noChangeAspect` on its frame's locks (`a:graphicFrameLocks`
+/// in `wp:cNvGraphicFramePr`, made when it has none).
+fn set_lock_aspect(s: &str, on: bool) -> String {
+    const A: &str = "http://schemas.openxmlformats.org/drawingml/2006/main";
+    let mut s = s.to_string();
+    let v = if on { "1" } else { "0" };
+    // A picture's own locks say it too: off there as well (a group's pictures keep theirs).
+    let picture = find_tag(&s, "graphicData", 0).and_then(|(a, b)| attr_range(&s[a..b], "uri").map(|r| s[a..b][r].ends_with("/picture")));
+    if !on
+        && picture == Some(true)
+        && let Some((start, end)) = find_tag(&s, "picLocks", 0)
+    {
+        let tag = set_attr(&s[start..end], "noChangeAspect", "0");
+        s.replace_range(start..end, &tag);
+    }
+    if let Some((start, end)) = find_tag(&s, "graphicFrameLocks", 0) {
+        let tag = set_attr(&s[start..end], "noChangeAspect", v);
+        s.replace_range(start..end, &tag);
+        return s;
+    }
+    let locks = format!(r#"<a:graphicFrameLocks xmlns:a="{A}" noChangeAspect="{v}"/>"#);
+    match find_tag(&s, "cNvGraphicFramePr", 0) {
+        Some((start, end)) if s[start..end].ends_with("/>") => {
+            let open = s[start..end - 2].trim_end().to_string();
+            let name = open[1..].split_whitespace().next().unwrap_or("wp:cNvGraphicFramePr").to_string();
+            s.replace_range(start..end, &format!("{open}>{locks}</{name}>"));
+        }
+        Some((_, end)) => s.insert_str(end, &locks),
+        // None: after the `wp:docPr` (the schema's order: docPr, cNvGraphicFramePr, graphic).
+        None => {
+            if let Some(at) = element(&s, "docPr").map(|r| r.end) {
+                let prefix = find_tag(&s, "docPr", 0).and_then(|(a, b)| {
+                    s[a + 1..b].split(|c: char| c.is_whitespace() || c == '/' || c == '>').next()?.rsplit_once(':').map(|(p, _)| p.to_string())
+                });
+                let p = prefix.map_or(String::new(), |p| format!("{p}:"));
+                s.insert_str(at, &format!("<{p}cNvGraphicFramePr>{locks}</{p}cNvGraphicFramePr>"));
+            }
+        }
+    }
+    s
+}
+
+/// A drawing's new name, title and hidden mark, when they changed.
+fn nv_changed(a: Option<&crate::drawing::Shape>, b: Option<&crate::drawing::Shape>) -> Option<(String, String, bool)> {
+    let (a, b) = (&a?.nv, &b?.nv);
+    ((&a.name, &a.title, a.hidden) != (&b.name, &b.title, b.hidden)).then(|| (b.name.clone(), b.title.to_string(), b.hidden))
+}
 
 fn decorative(shape: &Option<Box<crate::drawing::Shape>>) -> bool {
     shape.as_ref().is_some_and(|s| s.nv.decorative)
@@ -5922,7 +6353,7 @@ fn find_tag(s: &str, local: &str, from: usize) -> Option<(usize, usize)> {
         let name_end = s[start + 1..].find(|c: char| c.is_whitespace() || c == '>' || c == '/').map(|e| start + 1 + e)?;
         let name = &s[start + 1..name_end];
         if name.rsplit(':').next() == Some(local) && !name.starts_with('/') {
-            let end = s[start..].find('>').map(|e| start + e + 1)?;
+            let end = crate::docx::binding::tag_end(&s[start..]).map(|e| start + e + 1)?;
             return Some((start, end));
         }
         at = start + 1;
@@ -5966,7 +6397,27 @@ fn element(s: &str, local: &str) -> Option<Range<usize>> {
     }
     let name = s[start + 1..].split(|c: char| c.is_whitespace() || c == '>').next()?;
     let close = format!("</{name}>");
-    s[end..].find(&close).map(|k| start..end + k + close.len())
+    // Nested elements of the same name (a text box in a text box's story)
+    let mut depth = 0usize;
+    let mut at = end;
+    while let Some(k) = s[at..].find('<') {
+        let lt = at + k;
+        let rest = &s[lt..];
+        if rest.starts_with(&close) {
+            if depth == 0 {
+                return Some(start..lt + close.len());
+            }
+            depth -= 1;
+            at = lt + close.len();
+        } else if rest[1..].strip_prefix(name).is_some_and(|r| r.starts_with(|c: char| c.is_whitespace() || c == '>' || c == '/')) {
+            let e = crate::docx::binding::tag_end(rest)?;
+            depth += usize::from(!rest[..e].ends_with('/'));
+            at = lt + e + 1;
+        } else {
+            at = lt + 1;
+        }
+    }
+    None
 }
 
 /// Replaces the content of the first element named `local` with `with(prefix)` (its prefix, with the colon).
@@ -5978,14 +6429,43 @@ fn set_content(s: &mut String, local: &str, with: impl Fn(&str) -> String) {
     s.replace_range(end..close, &with(&prefix));
 }
 
-fn set_attr(tag: &str, name: &str, value: &str) -> String {
-    let key = format!(" {name}=\"");
-    match tag.find(&key) {
-        Some(k) => {
-            let v0 = k + key.len();
-            let v1 = tag[v0..].find('"').map_or(tag.len(), |e| v0 + e);
-            format!("{}{value}{}", &tag[..v0], &tag[v1..])
+/// Attribute `name`'s value in start tag `tag`, quoted either way: its range, between the quotes. The tag's attributes
+/// are read in turn, so one whose value holds ` name=` isn't taken for it.
+pub(super) fn attr_range(tag: &str, name: &str) -> Option<Range<usize>> {
+    let b = tag.as_bytes();
+    let skip = |mut i: usize| {
+        while b.get(i).is_some_and(u8::is_ascii_whitespace) {
+            i += 1;
         }
+        i
+    };
+    let mut i = tag.find(|c: char| c.is_ascii_whitespace())?;
+    loop {
+        let k0 = skip(i);
+        i = k0;
+        while b.get(i).is_some_and(|c| !c.is_ascii_whitespace() && !matches!(c, b'=' | b'/' | b'>')) {
+            i += 1;
+        }
+        let key = &tag[k0..i];
+        i = skip(i);
+        if key.is_empty() || b.get(i) != Some(&b'=') {
+            return None;
+        }
+        i = skip(i + 1);
+        let q = *b.get(i).filter(|q| matches!(q, b'"' | b'\''))?;
+        let v0 = i + 1;
+        let v1 = v0 + tag[v0..].find(q as char)?;
+        if key == name {
+            return Some(v0..v1);
+        }
+        i = v1 + 1;
+    }
+}
+
+/// Start tag `tag` with attribute `name` set to `value` (already escaped), double quoted: in its place, else added.
+pub(super) fn set_attr(tag: &str, name: &str, value: &str) -> String {
+    match attr_range(tag, name) {
+        Some(r) => format!("{}\"{value}\"{}", &tag[..r.start - 1], &tag[r.end + 1..]),
         None => {
             let at = if tag.ends_with("/>") { tag.len() - 2 } else { tag.len() - 1 };
             format!("{} {name}=\"{value}\"{}", &tag[..at], &tag[at..])
@@ -6062,7 +6542,7 @@ fn shading(w: &str, fill: Option<u32>) -> String {
 
 /// A table's `w:tblPr` from the model (its resolved properties written as direct ones, its tracked change last), in
 /// CT_TblPr order.
-fn tbl_pr(w: &str, t: &Table, shd: Option<&str>, people: &People) -> String {
+fn tbl_pr(w: &str, t: &Table, shd: Option<&str>, bands: &[Option<String>; 2], cell_mar: Option<&str>, people: &People) -> String {
     let mut s = format!("<{w}tblPr>");
     if let Some(id) = &t.style_id {
         s.push_str(&format!("<{w}tblStyle {w}val=\"{}\"/>", props::esc(id)));
@@ -6072,6 +6552,9 @@ fn tbl_pr(w: &str, t: &Table, shd: Option<&str>, people: &People) -> String {
     s.push_str(&overlap);
     if t.bidi_visual {
         s.push_str(&format!("<{w}bidiVisual/>"));
+    }
+    for b in bands.iter().flatten() {
+        s.push_str(b);
     }
     s.push_str(&width(w, "tblW", &t.width));
     match t.jc {
@@ -6099,6 +6582,9 @@ fn tbl_pr(w: &str, t: &Table, shd: Option<&str>, people: &People) -> String {
     }
     if t.fixed {
         s.push_str(&format!("<{w}tblLayout {w}type=\"fixed\"/>"));
+    }
+    if let Some(x) = cell_mar {
+        s.push_str(x);
     }
     if let Some(l) = t.look {
         let bit = |on: bool| if on { 1 } else { 0 };
@@ -6407,6 +6893,20 @@ mod tests {
         assert_eq!(diff(&k("abc"), &k("")), vec![None; 3]);
         assert_eq!(strip_attr(r#"<w:p w14:paraId="1A" w:rsidR="00"><"#, "paraId"), r#"<w:p w:rsidR="00"><"#);
         assert_eq!(strip_attr(r#"<w:p w14:paraId='1"A' w:rsidR="00"><"#, "paraId"), r#"<w:p w:rsidR="00"><"#);
+    }
+
+    #[test]
+    fn an_element_holds_nested_ones_of_its_name() {
+        let xml = r#"<x/><wps:txbx><w:p/><wps:txbx id="2"><w:p/></wps:txbx><wps:txbx/></wps:txbx><wps:txbx>after</wps:txbx>"#;
+        let r = element(xml, "txbx").expect("the element");
+        assert_eq!(&xml[r], r#"<wps:txbx><w:p/><wps:txbx id="2"><w:p/></wps:txbx><wps:txbx/></wps:txbx>"#);
+    }
+
+    #[test]
+    fn a_tag_ends_past_a_quoted_angle_bracket() {
+        let xml = r#"<wp:extent/><wp:docPr id="1" descr="a > b" name="n"/><x/>"#;
+        let (start, end) = find_tag(xml, "docPr", 0).expect("the tag");
+        assert_eq!(&xml[start..end], r#"<wp:docPr id="1" descr="a > b" name="n"/>"#);
     }
 
     #[test]

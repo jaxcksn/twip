@@ -111,7 +111,7 @@ fn joined_paragraphs_share_their_line_for_editing() {
     assert_eq!(hit(end.x + 1.0), Some((b, Unit(0))), "just past the join");
     assert_eq!(hit(end.x - 1.0), Some((a, Unit(len))), "just before the join");
     let rects = e.range_rects(Position::text(StoryId::Body, a, Unit(len - 3)), Position::text(StoryId::Body, b, Unit(3)), *page..*page + 1);
-    let on_line: Vec<[f64; 4]> = rects.iter().map(|r| r.1).filter(|r| r[1] >= l.top - 0.01 && r[3] <= l.bottom + 0.01).collect();
+    let on_line: Vec<[f64; 4]> = rects.iter().map(|r| r.1.page()).filter(|r| r[1] >= l.top - 0.01 && r[3] <= l.bottom + 0.01).collect();
     assert_eq!(on_line.len(), 2, "one band per paragraph: {on_line:?}");
     assert!((on_line[0][2] - on_line[1][0]).abs() < 0.01, "the bands meet at the join, with no mark between: {on_line:?}");
 }
@@ -215,7 +215,8 @@ fn snapshot_colours(snapshot: &Snapshot) -> Vec<Option<u32>> {
 
 /// Change bars: 0.72 wide, black, `min(36, left margin / 2)` left of the body.
 fn bars(rs: &[([f64; 4], u32)], left: f64) -> Vec<[f64; 4]> {
-    rs.iter().filter(|(r, c)| *c == 0 && (r[2] - r[0] - 0.72).abs() < 1e-9 && r[2] < left).map(|(r, _)| *r).collect()
+    let auto = [crate::docx::review::ReviewView::SIMPLE_BAR, crate::docx::review::ReviewView::MARKUP_BAR];
+    rs.iter().filter(|(r, c)| auto.contains(c) && (r[2] - r[0] - 0.72).abs() < 1e-9 && r[2] < left).map(|(r, _)| *r).collect()
 }
 
 #[test]
@@ -244,14 +245,10 @@ fn all_markup_draws_revision_marks_colours_and_change_bars() {
                 assert!(all.iter().filter(|(_, c)| *c == AuthorPalette::MOVE).count() >= 4, "{name}: move marks");
             }
             "FX-REVIEW-TABLES" => {
-                // A quarter of the inserted row's author's colour over white.
-                let Some(Block::Table(t)) = d.sections[0].blocks.iter().find(|b| matches!(b, Block::Table(_))) else { panic!("{name}: a table") };
-                let by = t.rows.iter().find_map(|r| r.rev.ins.as_ref()).map(|m| m.author).expect("an inserted row");
-                let colour = d.review.palette.color(by);
-                let tint = |s: u32| ((((colour >> s) & 0xFF) + 3 * 0xFF) / 4) << s;
-                let tint = tint(16) | tint(8) | tint(0);
-                assert!(all.iter().any(|(_, c)| *c == tint), "{name}: inserted and deleted rows tinted");
-                assert!(!simple.iter().any(|(_, c)| *c == tint), "{name}: no tint in Simple markup");
+                // Word's default cell highlights: Light Blue inserted, Pink deleted.
+                let tint = crate::docx::review::MarkupStyle::LIGHT_BLUE;
+                assert!(all.iter().any(|(_, c)| *c == tint), "{name}: inserted rows highlighted");
+                assert!(!simple.iter().any(|(_, c)| *c == tint), "{name}: no highlight in Simple markup");
             }
             _ => {
                 assert!(colours.contains(&Some(author)), "{name}: revised text in its author's colour");
@@ -318,4 +315,342 @@ fn view_commands_relayout_without_editing() {
     e.complete(&fonts);
     assert!(snapshot_colours(&e.snapshot()).contains(&Some(0x112233)), "the author's revisions in the chosen colour");
     assert!(matches!(run(&mut e, color("Nobody")), Outcome::Refused(_)));
+}
+
+/// `d` with its markup's view settings changed.
+fn with_markup(mut d: Document, change: impl FnOnce(&mut crate::docx::review::Markup)) -> Document {
+    change(std::rc::Rc::make_mut(&mut d.review.markup));
+    d
+}
+
+/// Insertions, deletions and formatting left out of Show Markup show as accepted: laid out as accepted, drawn plain,
+/// with no change bars; each kind alone leaves the other's marks.
+#[test]
+fn show_markup_kinds_show_left_out_revisions_as_accepted() {
+    let fonts = Fonts::system_recommended();
+    let author = AuthorPalette::DEFAULT[0];
+    let d = fixture("FX-REVIEW-RUNS");
+    let left = d.sections[0].left;
+    let none = with_markup(d.clone(), |m| (m.show.insertions_deletions, m.show.formatting) = (false, false));
+    assert_eq!(lines(&none, &fonts), lines(&fixture("FX-REVIEW-RUNS-ACCEPTED"), &fonts), "laid out as accepted");
+    assert!(!glyph_colours(&none, &fonts).contains(&Some(author)), "drawn plain");
+    assert!(bars(&rects(&none, &fonts), left).is_empty(), "no change bars");
+    let formatting_only = with_markup(d.clone(), |m| m.show.insertions_deletions = false);
+    assert_eq!(lines(&formatting_only, &fonts), lines(&none, &fonts), "deletions gone with insertions and deletions left out");
+    let ins_del = with_markup(d.clone(), |m| m.show.formatting = false);
+    assert!(glyph_colours(&ins_del, &fonts).contains(&Some(author)), "insertions and deletions still marked");
+    assert_eq!(lines(&ins_del, &fonts), lines(&d, &fonts), "formatting left out moves nothing");
+    // Simple Markup: the kinds left out draw no change bars.
+    let simple = in_view(none, MarkupView::Simple);
+    assert!(bars(&rects(&simple, &fonts), left).is_empty(), "no change bars in Simple markup either");
+}
+
+/// A hidden reviewer's revisions show as accepted; everyone else's keep their marks.
+#[test]
+fn hidden_reviewers_show_their_revisions_as_accepted() {
+    let fonts = Fonts::system_recommended();
+    for name in ["FX-REVIEW-RUNS", "FX-REVIEW-TABLES", "FX-REVIEW-MOVES"] {
+        let d = fixture(name);
+        let everyone = (0..d.people.persons.len() as u32).map(crate::docx::review::AuthorId).collect::<Vec<_>>();
+        let hidden = with_markup(d.clone(), |m| m.show.hidden_reviewers = everyone.clone());
+        let accepted = in_view(d.clone(), MarkupView::NoMarkup);
+        assert_eq!(lines(&hidden, &fonts), lines(&accepted, &fonts), "{name}: every reviewer hidden lays out as accepted");
+        let marks = |d: &Document| {
+            let palette = &d.review.palette;
+            let tint = |colour: u32| {
+                let m = |s: u32| ((((colour >> s) & 0xFF) + 3 * 0xFF) / 4) << s;
+                m(16) | m(8) | m(0)
+            };
+            use crate::docx::review::MarkupStyle as S;
+            let fixed = [AuthorPalette::MOVE, S::LIGHT_BLUE, S::PINK, S::LIGHT_YELLOW, S::LIGHT_ORANGE];
+            let colours: Vec<u32> = everyone.iter().flat_map(|&a| [palette.color(a), tint(palette.color(a))]).chain(fixed).collect();
+            let glyphs = glyph_colours(d, &fonts).into_iter().flatten().filter(|c| colours.contains(c)).count();
+            glyphs + rects(d, &fonts).iter().filter(|(_, c)| colours.contains(c)).count()
+        };
+        assert!(marks(&d) > 0, "{name}: marked with everyone shown");
+        assert_eq!(marks(&hidden), 0, "{name}: no marks with every reviewer hidden");
+        assert!(bars(&rects(&hidden, &fonts), d.sections[0].left).is_empty(), "{name}: no change bars");
+    }
+}
+
+/// The editor's Show Markup and reviewer settings are view settings: no edit, laid out again, refused for no reviewer.
+#[test]
+fn show_markup_commands_are_view_settings() {
+    use crate::editing::Editor;
+    use crate::editing::commands::Outcome;
+    let fonts = Fonts::system_recommended();
+    let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/review/FX-REVIEW-RUNS.docx");
+    let mut e = Editor::open(&std::fs::read(p).expect("the fixture"), &fonts).expect("opens");
+    assert_eq!(e.set_show_markup(false, false, true), Outcome::Moved);
+    assert_eq!(e.set_show_markup(false, false, true), Outcome::Unchanged("already shown so"));
+    e.complete(&fonts);
+    assert_eq!(snapshot_lines(&e.snapshot()), lines(&fixture("FX-REVIEW-RUNS-ACCEPTED"), &fonts));
+    assert!(!e.is_dirty() && e.history().undo_depth() == 0, "a view change is no edit");
+    assert_eq!(e.set_show_markup(true, true, true), Outcome::Moved);
+    let names: Vec<String> = e.document().people.persons.iter().map(|p| p.name.to_string()).collect();
+    let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+    assert_eq!(e.set_hidden_reviewers(&refs), Outcome::Moved);
+    e.complete(&fonts);
+    assert_eq!(snapshot_lines(&e.snapshot()), lines(&fixture("FX-REVIEW-RUNS-ACCEPTED"), &fonts));
+    assert!(matches!(e.set_hidden_reviewers(&["Nobody"]), Outcome::Refused(_)));
+    assert_eq!(e.set_hidden_reviewers(&[]), Outcome::Moved);
+    assert!(e.document().review.markup.show.hidden_reviewers.is_empty());
+}
+
+/// Balloons: deletions leave the line for their balloons, insertions stay marked in place.
+#[test]
+fn balloon_mode_takes_deletions_out_of_the_line() {
+    use crate::docx::review::BalloonMode;
+    let fonts = Fonts::system_recommended();
+    let author = AuthorPalette::DEFAULT[0];
+    let d = fixture("FX-REVIEW-RUNS");
+    let balloons = with_markup(d.clone(), |m| m.balloons = BalloonMode::Balloons);
+    assert_eq!(lines(&balloons, &fonts), lines(&in_view(d.clone(), MarkupView::Simple), &fonts), "deleted text gone from the lines");
+    assert!(glyph_colours(&balloons, &fonts).contains(&Some(author)), "insertions still marked");
+    let inline = with_markup(d.clone(), |m| m.balloons = BalloonMode::Inline);
+    assert_eq!(lines(&inline, &fonts), lines(&d, &fonts), "inline keeps deletions in place");
+}
+
+/// Track Changes Options: each kind's mark and colour, change bars' side and colour, cells' highlight.
+#[test]
+fn markup_style_draws_each_kind_as_set() {
+    use crate::docx::review::{BarSide, MarkColor, MarkLook, TextMark};
+    let fonts = Fonts::system_recommended();
+    let d = fixture("FX-REVIEW-RUNS");
+    let left = d.sections[0].left;
+    // Colours
+    let fixed = with_markup(d.clone(), |m| {
+        m.style.insertions.color = MarkColor::Fixed(0x123456);
+        m.style.deletions.color = MarkColor::Fixed(0x123456);
+    });
+    assert!(glyph_colours(&fixed, &fonts).contains(&Some(0x123456)), "a fixed colour");
+    let auto = with_markup(d.clone(), |m| {
+        m.style.insertions.color = MarkColor::Auto;
+        m.style.deletions.color = MarkColor::Auto;
+    });
+    assert!(!glyph_colours(&auto, &fonts).contains(&Some(AuthorPalette::DEFAULT[0])), "automatic: the text's own colour");
+    // No mark: no rules and no colour, laid out as before.
+    let plain = with_markup(d.clone(), |m| {
+        m.style.insertions = MarkLook { mark: TextMark::None, color: MarkColor::ByAuthor };
+        m.style.deletions = MarkLook { mark: TextMark::None, color: MarkColor::ByAuthor };
+    });
+    assert_eq!(lines(&plain, &fonts), lines(&d, &fonts));
+    assert!(!glyph_colours(&plain, &fonts).contains(&Some(AuthorPalette::DEFAULT[0])));
+    // Hidden deletions leave the line; a caret stands in for each.
+    let hidden = with_markup(d.clone(), |m| m.style.deletions.mark = TextMark::Hidden);
+    assert_eq!(lines(&hidden, &fonts), lines(&in_view(d.clone(), MarkupView::Simple), &fonts));
+    let caret = with_markup(d.clone(), |m| m.style.deletions.mark = TextMark::Caret);
+    let text = |d: &Document| lines(d, &fonts).concat().into_iter().map(|l| l.2).collect::<String>();
+    let carets = text(&caret).matches('^').count() - text(&d).matches('^').count();
+    assert!(carets > 0, "a caret for each deletion");
+    assert_eq!(text(&caret).replace('^', ""), text(&hidden).replace('^', ""), "the deleted text gone");
+    // Bold insertions lay out bold.
+    let bold = with_markup(d.clone(), |m| m.style.insertions.mark = TextMark::Bold);
+    assert_ne!(lines(&bold, &fonts), lines(&d, &fonts), "bold insertions are wider");
+    // Change bars on the right, in their colour; none.
+    let right = with_markup(d.clone(), |m| (m.style.change_bars, m.style.change_bar_color) = (BarSide::Right, Some(0xFF0000)));
+    let page_right = d.sections[0].page_w - d.sections[0].right;
+    let red: Vec<[f64; 4]> =
+        rects(&right, &fonts).into_iter().filter(|(r, c)| *c == 0xFF0000 && (r[2] - r[0] - 0.72).abs() < 1e-9).map(|(r, _)| r).collect();
+    assert!(!red.is_empty() && red.iter().all(|r| r[0] > page_right), "bars right of the text: {red:?}");
+    assert!(bars(&rects(&right, &fonts), left).is_empty(), "none left of it");
+    // Outside: the right of an odd page with mirrored margins.
+    let mut mirrored = d.clone();
+    mirrored.settings.mirror_margins = true;
+    let auto_bars = |d: &Document, colour: u32| {
+        rects(d, &fonts).into_iter().filter(|(r, c)| *c == colour && (r[2] - r[0] - 0.72).abs() < 1e-9).map(|(r, _)| r).collect::<Vec<_>>()
+    };
+    let outside = auto_bars(&mirrored, crate::docx::review::ReviewView::MARKUP_BAR);
+    assert!(!outside.is_empty() && outside.iter().all(|r| r[0] > page_right), "page 1's outside is its right: {outside:?}");
+    // Automatic: grey in All Markup, red in Simple Markup.
+    let simple = in_view(d.clone(), MarkupView::Simple);
+    assert!(!auto_bars(&d, crate::docx::review::ReviewView::MARKUP_BAR).is_empty(), "grey in All Markup");
+    assert!(!auto_bars(&simple, crate::docx::review::ReviewView::SIMPLE_BAR).is_empty(), "red in Simple Markup");
+    assert!(auto_bars(&simple, crate::docx::review::ReviewView::MARKUP_BAR).is_empty());
+    let no_bars = with_markup(d.clone(), |m| m.style.change_bars = BarSide::None);
+    assert!(bars(&rects(&no_bars, &fonts), left).is_empty());
+    // Cells: a fixed highlight.
+    let t = with_markup(fixture("FX-REVIEW-TABLES"), |m| m.style.inserted_cells = MarkColor::Fixed(0xABCDEF));
+    assert!(rects(&t, &fonts).iter().any(|(_, c)| *c == 0xABCDEF), "the inserted row highlighted");
+    let t = with_markup(fixture("FX-REVIEW-TABLES"), |m| (m.style.inserted_cells, m.style.deleted_cells) = (MarkColor::Auto, MarkColor::Auto));
+    let base = fixture("FX-REVIEW-TABLES");
+    let by = base.people.persons.len() as u32;
+    let tints: Vec<u32> = (0..by).map(|a| base.review.palette.color(crate::docx::review::AuthorId(a))).collect();
+    let tint = |colour: u32| {
+        let m = |s: u32| ((((colour >> s) & 0xFF) + 3 * 0xFF) / 4) << s;
+        m(16) | m(8) | m(0)
+    };
+    let (light_blue, pink) = (crate::docx::review::MarkupStyle::LIGHT_BLUE, crate::docx::review::MarkupStyle::PINK);
+    let auto = rects(&t, &fonts);
+    assert!(!auto.iter().any(|(_, c)| tints.iter().any(|&a| tint(a) == *c) || *c == light_blue || *c == pink), "automatic: no highlight");
+    assert!(rects(&base, &fonts).iter().any(|(_, c)| *c == light_blue), "Word's Light Blue by default");
+    assert!(rects(&base, &fonts).iter().any(|(_, c)| *c == pink), "and its Pink for the deleted cells");
+    let by_author = with_markup(fixture("FX-REVIEW-TABLES"), |m| m.style.inserted_cells = MarkColor::ByAuthor);
+    let drawn = rects(&by_author, &fonts);
+    assert!(drawn.iter().any(|(_, c)| tints.iter().any(|&a| tint(a) == *c)) && !drawn.iter().any(|(_, c)| *c == light_blue), "by author: tinted");
+}
+
+/// A tracked split cell (its vertical merge undone) fills with the split cells' colour, Word's Light Orange by
+/// default; a merged one with the merged cells'.
+#[test]
+fn split_cells_have_their_own_highlight() {
+    use crate::docx::VMerge;
+    use crate::docx::review::{CellMarkKind, MarkColor, MarkupStyle as S};
+    let fonts = Fonts::system_recommended();
+    let merged = fixture("FX-REVIEW-CELLS");
+    let has = |d: &Document, colour: u32| rects(d, &fonts).iter().any(|(_, c)| *c == colour);
+    assert!(has(&merged, S::LIGHT_YELLOW) && !has(&merged, S::LIGHT_ORANGE), "a merged cell in Light Yellow");
+    let mut split = merged.clone();
+    let mut found = 0;
+    for b in &mut split.sections[0].blocks {
+        let Block::Table(t) = b else { continue };
+        for c in t.rows.iter_mut().flat_map(|r| &mut r.cells) {
+            if let Some((_, k @ CellMarkKind::Merge { .. })) = &mut c.rev.structural {
+                *k = CellMarkKind::Merge { v_merge: Some(VMerge::Restart), v_merge_orig: Some(VMerge::Continue) };
+                c.v_merge = VMerge::None;
+                found += 1;
+            }
+        }
+    }
+    assert_eq!(found, 1, "the fixture's merged cell");
+    assert!(has(&split, S::LIGHT_ORANGE) && !has(&split, S::LIGHT_YELLOW), "a split cell in Light Orange");
+    let fixed = with_markup(split, |m| m.style.split_cells = MarkColor::Fixed(0x123456));
+    assert!(has(&fixed, 0x123456), "the split cells' colour set");
+}
+
+/// Balloons beside the pages: formatting changes in the default mode, deletions too in Balloons mode, none inline or
+/// outside All Markup; only the kinds and reviewers shown. The pane's counts by kind, all and shown.
+#[test]
+fn revision_balloons_and_counts_follow_the_view() {
+    use crate::docx::review::BalloonMode;
+    use crate::editing::Editor;
+    use crate::editing::revisions::index::RevisionKind as K;
+    let fonts = Fonts::system_recommended();
+    let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/review/FX-REVIEW-RUNS.docx");
+    let mut e = Editor::open(&std::fs::read(p).expect("the fixture"), &fonts).expect("opens");
+    e.complete(&fonts);
+    let pages = e.snapshot().pages().len();
+    let kinds = |e: &mut Editor| e.view(0..pages).revision_balloons.iter().map(|b| b.kind).collect::<Vec<_>>();
+    let list = crate::editing::revisions::index::revisions(e.document(), e.index());
+    let formatting = list.iter().filter(|r| r.kind.is_formatting()).count();
+    let deletions = list.iter().filter(|r| matches!(r.kind, K::Delete | K::MovedFrom | K::CellDeletion)).count();
+    assert!(formatting > 0 && deletions > 0, "the fixture has both");
+    let default = kinds(&mut e);
+    assert_eq!(default.len(), formatting, "formatting changes in balloons by default");
+    assert!(default.iter().all(|k| k.is_formatting()));
+    e.set_balloon_mode(BalloonMode::Balloons);
+    e.complete(&fonts);
+    assert_eq!(kinds(&mut e).len(), formatting + deletions, "deletions too in Balloons mode");
+    let b = e.view(0..pages).revision_balloons;
+    assert!(b.iter().all(|b| b.at[1] < b.at[2] && b.page < pages), "anchored on a line: {b:?}");
+    e.set_show_markup(true, false, true);
+    assert_eq!(kinds(&mut e).len(), deletions, "formatting left out");
+    let (all, shown) = e.review_counts();
+    assert_eq!(all.revisions() as usize, list.len());
+    assert_eq!(all.formatting as usize, formatting);
+    assert_eq!(shown.formatting, 0);
+    assert_eq!(shown.revisions(), all.revisions() - all.formatting);
+    e.set_show_markup(true, true, true);
+    e.set_balloon_mode(BalloonMode::Inline);
+    assert!(kinds(&mut e).is_empty(), "inline: no balloons");
+    e.set_balloon_mode(BalloonMode::CommentsAndFormatting);
+    e.set_markup_view(MarkupView::Simple);
+    assert!(kinds(&mut e).is_empty(), "Simple markup: no balloons");
+    let (all, shown) = e.review_counts();
+    assert_eq!(all, shown, "everything shown");
+}
+
+/// With deletions shown as carets the caret walks the text as it shows: every place has a caret and it never goes
+/// back.
+#[test]
+fn the_caret_walks_text_with_stand_in_deletions() {
+    use crate::docx::review::TextMark;
+    use crate::editing::Editor;
+    use crate::editing::commands::{Dir, MoveBy, moving};
+    let fonts = Fonts::system_recommended();
+    let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/review/FX-REVIEW-RUNS.docx");
+    let mut e = Editor::open(&std::fs::read(p).expect("the fixture"), &fonts).expect("opens");
+    let mut style = e.document().review.markup.style.clone();
+    for mark in [TextMark::Hidden, TextMark::Caret, TextMark::Pound] {
+        let mut wrong = style.clone();
+        wrong.insertions.mark = mark;
+        assert!(matches!(e.set_markup_style(wrong), crate::editing::commands::Outcome::Refused(_)), "{mark:?} is for deletions");
+    }
+    style.deletions.mark = TextMark::Caret;
+    assert_eq!(e.set_markup_style(style), crate::editing::commands::Outcome::Moved);
+    e.complete(&fonts);
+    // The story's end, where the walk stops.
+    let start = e.selection();
+    e.execute(moving(MoveBy::Story, Dir::Forward, false), &fonts);
+    let end = e.selection().focus();
+    e.set_caret_for_benchmark(start);
+    let mut last = None;
+    let mut done = false;
+    for _ in 0..20_000 {
+        assert!(e.caret_view().is_some(), "a caret at {:?}", e.selection());
+        let at = e.selection().focus();
+        if at == last {
+            assert_eq!(at, end, "stopped only at the end");
+            done = true;
+            break;
+        }
+        if let (Some(a), Some(b)) = (last, at) {
+            assert!(e.index().cmp(&a, &b).is_lt(), "forward from {a:?} to {b:?}");
+        }
+        last = at;
+        e.execute(moving(MoveBy::Char, Dir::Forward, false), &fonts);
+    }
+    assert!(done, "the walk reached the end");
+    let v = crate::editing::integrity::check(e.document(), e.index(), &e.selection());
+    assert!(v.is_empty(), "{v:?}");
+}
+
+/// A one-paragraph document whose settings part holds `settings`.
+fn with_settings(settings: &str) -> Vec<u8> {
+    const W: &str = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+    const REL: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+    let ct = r#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/></Types>"#;
+    let root = format!(
+        r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="{REL}/officeDocument" Target="word/document.xml"/></Relationships>"#
+    );
+    let rels = format!(
+        r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="{REL}/settings" Target="settings.xml"/></Relationships>"#
+    );
+    let body = format!(r#"<w:document xmlns:w="{W}"><w:body><w:p><w:r><w:t>Text.</w:t></w:r></w:p></w:body></w:document>"#);
+    let settings = format!(r#"<w:settings xmlns:w="{W}">{settings}</w:settings>"#);
+    crate::layout::tests::package_bytes(&[
+        ("[Content_Types].xml", ct),
+        ("_rels/.rels", &root),
+        ("word/_rels/document.xml.rels", &rels),
+        ("word/document.xml", &body),
+        ("word/settings.xml", &settings),
+    ])
+    .expect("a package")
+}
+
+#[test]
+fn show_markup_opens_as_the_document_saved_it() {
+    let shown = |settings: &str| {
+        let m = &crate::docx::read(&with_settings(settings)).expect("reads").review.markup.show;
+        (m.insertions_deletions, m.formatting, m.comments)
+    };
+    assert_eq!(shown(""), (true, true, true), "no revisionView: all shows");
+    assert_eq!(shown(r#"<w:revisionView w:insDel="0" w:comments="false"/>"#), (false, true, false));
+    assert_eq!(shown(r#"<w:revisionView w:formatting="off" w:insDel="1"/>"#), (true, false, true));
+}
+
+#[test]
+fn white_space_opens_hidden_as_the_document_saved_it() {
+    let fonts = crate::layout::tests::fonts();
+    let open = |settings: &str| crate::editing::Editor::open(&with_settings(settings), &fonts).expect("opens");
+    assert!(!open("").white_space_hidden());
+    assert!(!open(r#"<w:doNotDisplayPageBoundaries w:val="0"/>"#).white_space_hidden());
+    let mut e = open("<w:doNotDisplayPageBoundaries/>");
+    assert!(e.white_space_hidden());
+    e.set_white_space_hidden(false);
+    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let mut z = zip::ZipArchive::new(std::io::Cursor::new(saved)).expect("a package");
+    let mut settings = String::new();
+    std::io::Read::read_to_string(&mut z.by_name("word/settings.xml").expect("settings"), &mut settings).expect("reads");
+    assert!(settings.contains("<w:doNotDisplayPageBoundaries/>"), "kept as read: {settings}");
 }

@@ -16,25 +16,70 @@ use super::commands::Outcome;
 use super::position::Position;
 use super::step::{Edges, Step};
 
+/// Who an editable range lets edit it.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum RangeEditor {
+    /// A group (`w:edGrp`): `everyone`, or `administrators`, `contributors`, `editors`, `owners`, `current` and the
+    /// like, which the host says the author is in.
+    Group(String),
+    /// One person (`w:ed`): a name or email address.
+    User(String),
+}
+
+/// The `w:edGrp` values (`ST_EdGrp`).
+const GROUPS: [&str; 7] = ["none", "everyone", "administrators", "contributors", "editors", "owners", "current"];
+
+impl RangeEditor {
+    /// The same editor, comparing names as Word does within each kind: a group never matches a person.
+    pub fn same(&self, other: &RangeEditor) -> bool {
+        match (self, other) {
+            (Self::Group(a), Self::Group(b)) | (Self::User(a), Self::User(b)) => a.eq_ignore_ascii_case(b),
+            _ => false,
+        }
+    }
+
+    /// This editor lets `author`, a member of `groups`, edit: `everyone` lets all, a group its members, a person
+    /// themselves.
+    fn lets(&self, author: &str, groups: &[String]) -> bool {
+        match self {
+            Self::Group(g) => g.eq_ignore_ascii_case("everyone") || groups.iter().any(|x| x.eq_ignore_ascii_case(g)),
+            Self::User(u) => u.eq_ignore_ascii_case(author),
+        }
+    }
+}
+
+/// An editable range as the Restrict Editing pane lists it: the permissions on one stretch of the document, each
+/// for one editor.
+#[derive(Clone, Debug, PartialEq)]
+pub struct EditableRangeInfo {
+    /// Its permissions' ids, one per editor.
+    pub ids: Vec<String>,
+    /// Who may edit it.
+    pub editors: Vec<RangeEditor>,
+    pub start: Position,
+    pub end: Position,
+}
+
 /// An editing permission marker: `w:permStart` (its id, and who: `w:edGrp` or `w:ed`) or `w:permEnd`.
-fn perm(i: &Inline) -> Option<(bool, String, Option<String>)> {
+fn perm(i: &Inline) -> Option<(bool, String, Option<RangeEditor>)> {
     let Inline::Opaque(o) = i else { return None };
     let x = o.xml.0.as_deref()?;
     let attr = |k: &str| {
         let at = x.find(&format!(":{k}=\""))? + k.len() + 3;
-        Some(x[at..at + x[at..].find('"')?].to_string())
+        Some(crate::docx::binding::unescape(&x[at..at + x[at..].find('"')?]))
     };
     let start = x.contains("permStart");
     if !start && !x.contains("permEnd") {
         return None;
     }
-    let who = if start { attr("edGrp").or_else(|| attr("ed")) } else { None };
+    let who = if start { attr("edGrp").map(RangeEditor::Group).or_else(|| attr("ed").map(RangeEditor::User)) } else { None };
     Some((start, attr("id")?, who))
 }
 
-/// `who` (a `w:edGrp` or `w:ed`) lets `author` edit.
-fn may(who: &Option<String>, author: &str) -> bool {
-    who.as_deref().is_some_and(|w| w.eq_ignore_ascii_case("everyone") || w.eq_ignore_ascii_case(author))
+/// `who` (a `w:edGrp` or `w:ed`) lets `author` edit, a member of `groups`: everyone does, a group its members, a
+/// person themselves.
+fn may(who: &Option<RangeEditor>, author: &str, groups: &[String]) -> bool {
+    who.as_ref().is_some_and(|w| w.lets(author, groups))
 }
 
 fn api_kind(k: ProtectionKind) -> Kind {
@@ -47,11 +92,22 @@ fn api_kind(k: ProtectionKind) -> Kind {
     }
 }
 
-/// The editable ranges: who may edit each (`w:edGrp` or `w:ed`), its start and end, and their order keys.
+/// One editing permission: its id, who it lets edit (`w:edGrp` or `w:ed`), its start and end.
+struct Perm {
+    id: String,
+    editor: Option<RangeEditor>,
+    start: Position,
+    end: Position,
+}
+
+/// The editable ranges: each permission and its order keys, in the order their ends come; and the permissions over
+/// the same stretch as one, in document order, with their order keys.
 #[derive(Default)]
 pub(super) struct EditableRanges {
-    ranges: Vec<(Option<String>, Position, Position)>,
+    ranges: Vec<Perm>,
     keys: Vec<(Vec<usize>, Vec<usize>)>,
+    list: Vec<EditableRangeInfo>,
+    list_keys: Vec<(Vec<usize>, Vec<usize>)>,
 }
 
 /// Where an edit falls, for the exceptions Restrict Editing makes.
@@ -66,7 +122,7 @@ pub(crate) struct Openings {
 }
 
 /// The permission markers' `(start, id, who)` in `inlines`, each with its unit.
-fn perms(inlines: &[Inline]) -> impl Iterator<Item = (Unit, (bool, String, Option<String>))> + '_ {
+fn perms(inlines: &[Inline]) -> impl Iterator<Item = (Unit, (bool, String, Option<RangeEditor>))> + '_ {
     inlines.iter().scan(0u32, |unit, i| Some((Unit(std::mem::replace(unit, *unit + i.units() as u32)), i))).filter_map(|(u, i)| Some((u, perm(i)?)))
 }
 
@@ -81,23 +137,46 @@ impl Editor {
             return r.clone();
         }
         // Each open `w:permStart` by id; a later start with the same id replaces it.
-        let mut open: HashMap<String, (Position, Option<String>)> = HashMap::new();
+        let mut open: HashMap<String, (Position, Option<RangeEditor>)> = HashMap::new();
         let mut ranges = Vec::new();
         for para in self.paras_in_order() {
             let Some(p) = self.index.para(&self.doc, para) else { continue };
             let Some(slot) = self.index.para_slot(para) else { continue };
             let story = self.index.story(slot.container);
-            for (unit, (start, id, who)) in perms(&p.inlines) {
-                let at = Position::text(story, para, unit);
-                if start {
-                    open.insert(id, (at, who));
-                } else if let Some((from, who)) = open.remove(&id) {
-                    ranges.push((who, from, at));
+            let mut unit = 0u32;
+            for i in &p.inlines {
+                if let Some((start, id, who)) = perm(i) {
+                    let at = Position::text(story, para, Unit(unit));
+                    if start {
+                        open.insert(id, (at, who));
+                    } else if let Some((from, editor)) = open.remove(&id) {
+                        ranges.push(Perm { id, editor, start: from, end: at });
+                    }
                 }
+                unit += i.units() as u32;
             }
         }
-        let keys = ranges.iter().map(|(_, a, b)| (self.index.order_key(a), self.index.order_key(b))).collect();
-        let out = Rc::new(EditableRanges { ranges, keys });
+        let keys: Vec<_> = ranges.iter().map(|r| (self.index.order_key(&r.start), self.index.order_key(&r.end))).collect();
+        // Permissions over the same stretch, side by side
+        let mut order: Vec<usize> = (0..ranges.len()).collect();
+        order.sort_by(|&a, &b| keys[a].cmp(&keys[b]));
+        let (mut list, mut list_keys): (Vec<EditableRangeInfo>, Vec<_>) = (Vec::new(), Vec::new());
+        for k in order {
+            let r = &ranges[k];
+            if !list.last().is_some_and(|l| l.start == r.start && l.end == r.end) {
+                list.push(EditableRangeInfo { ids: Vec::new(), editors: Vec::new(), start: r.start, end: r.end });
+                list_keys.push(keys[k].clone());
+            }
+            let Some(l) = list.last_mut() else { continue };
+            l.ids.push(r.id.clone());
+            // One editor, however many permissions name them
+            if let Some(e) = &r.editor
+                && !l.editors.iter().any(|x| x.same(e))
+            {
+                l.editors.push(e.clone());
+            }
+        }
+        let out = Rc::new(EditableRanges { ranges, keys, list, list_keys });
         *cache = Some((self.perm_generation, out.clone()));
         out
     }
@@ -130,7 +209,23 @@ impl Editor {
             return false;
         }
         let (ka, kb) = (self.index.order_key(a), self.index.order_key(b));
-        ranges.ranges.iter().zip(&ranges.keys).any(|((w, ..), (s, e))| may(w, author) && *s <= ka && kb <= *e)
+        let own = || ranges.ranges.iter().zip(&ranges.keys).filter(|(r, _)| may(&r.editor, author, &self.editing_groups)).map(|(_, k)| k);
+        if own().any(|(s, e)| *s <= ka && kb <= *e) {
+            return true;
+        }
+        // Ranges that touch or overlap cover what is between them together
+        let mut spans: Vec<&(Vec<usize>, Vec<usize>)> = own().collect();
+        spans.sort_unstable_by(|x, y| x.0.cmp(&y.0));
+        let (mut reach, mut covered) = (&ka, false);
+        for (s, e) in spans {
+            if s > reach {
+                break;
+            }
+            if e >= reach {
+                (reach, covered) = (e, true);
+            }
+        }
+        covered && *reach >= kb
     }
 
     /// The selection is in a range `author` may edit.
@@ -165,8 +260,8 @@ impl Editor {
             if at == u.0 && !matches!(i, Inline::Text(..)) {
                 match perm(i) {
                     Some((false, id, _)) if started.as_deref() == Some(id.as_str()) => inside = Some(markers),
-                    Some((false, id, _)) if inside.is_none() && may(&self.range_who(&id), author) => inside = Some(markers),
-                    Some((true, id, who)) if may(&who, author) => {
+                    Some((false, id, _)) if inside.is_none() && may(&self.range_who(&id), author, &self.editing_groups) => inside = Some(markers),
+                    Some((true, id, who)) if may(&who, author, &self.editing_groups) => {
                         inside = Some(markers + 1);
                         started = Some(id);
                     }
@@ -181,7 +276,7 @@ impl Editor {
 
     /// Who may edit range `id`: its `w:permStart`'s `w:edGrp` or `w:ed`. Not from [`Self::editable_ranges`], which is
     /// found once per revision and a transaction's steps move.
-    fn range_who(&self, id: &str) -> Option<String> {
+    fn range_who(&self, id: &str) -> Option<RangeEditor> {
         self.paras_in_order().into_iter().find_map(|para| {
             self.index.para(&self.doc, para)?.inlines.iter().find_map(|i| perm(i).filter(|(start, o, _)| *start && o == id).and_then(|(.., w)| w))
         })
@@ -229,17 +324,37 @@ impl Editor {
         }
     }
 
-    /// [`Editor::openings`] of the selection; of floats selected together, those every one's anchor has.
-    fn selection_openings(&self) -> Openings {
-        let at = self.selection_span().map_or_else(Openings::default, |(a, b)| self.openings(&a, &b));
-        self.selected_floats().into_iter().skip(1).fold(at, |at, f| {
-            let o = self.float_point(f).map_or_else(Openings::default, |p| self.openings(&p, &p));
-            Openings { range: at.range && o.range, form: at.form && o.form, section: at.section && o.section }
-        })
+    /// [`Editor::openings`] of each place the selection edits, apart: every range of a discontiguous one (its own
+    /// range alone for command `id` when that replaces only it), the table of each block of cells, each float selected
+    /// together.
+    fn selection_openings(&self, id: CommandId) -> Vec<Openings> {
+        // A block of cells: each paragraph of each cell in it
+        let cells = |s: &super::selection::Selection, out: &mut Vec<Openings>| {
+            let super::selection::Selection::Cells { table, anchor, focus, .. } = *s else { return };
+            let story = self.index.table_slot(table).map_or(super::position::StoryId::Body, |t| self.index.story(t.container));
+            let pieces = self.cell_ranges(table, anchor, focus);
+            if pieces.is_empty() {
+                out.push(self.table_point(table).map_or_else(Openings::default, |p| self.openings(&p, &p)));
+            }
+            out.extend(pieces.into_iter().map(|(para, a, b)| self.openings(&Position::text(story, para, a), &Position::text(story, para, b))));
+        };
+        let mut out = Vec::new();
+        match self.selection {
+            s @ super::selection::Selection::Cells { .. } => cells(&s, &mut out),
+            _ => out.push(self.selection_span().map_or_else(Openings::default, |(a, b)| self.openings(&a, &b))),
+        }
+        if !replaces_primary(id) {
+            out.extend(self.other_ranges().iter().map(|(a, b)| self.openings(a, b)));
+            for c in self.other_cells() {
+                cells(c, &mut out);
+            }
+        }
+        out.extend(self.selected_floats().into_iter().skip(1).map(|f| self.float_point(f).map_or_else(Openings::default, |p| self.openings(&p, &p))));
+        out
     }
 
     /// Where float `f` is anchored.
-    fn float_point(&self, f: crate::layout::FloatId) -> Option<Position> {
+    pub(super) fn float_point(&self, f: crate::layout::FloatId) -> Option<Position> {
         let para = self.index.float_anchor(f)?;
         Some(Position::text(self.index.story(self.index.para_slot(para)?.container), para, Unit(0)))
     }
@@ -282,7 +397,26 @@ impl Editor {
             return true;
         }
         let Some(p) = self.enforced_protection() else { return false };
-        refusal(p, id, || self.table_point(t).map_or_else(Openings::default, |at| self.openings(&at, &at))).is_some()
+        refusal(p, id, || [self.table_point(t).map_or_else(Openings::default, |at| self.openings(&at, &at))]).is_some()
+    }
+
+    /// Why a tool's edit of table `t`, command `id`'s, is refused where it lands (the table under the pointer, not the
+    /// selection): read only, document protection there or a locked control around it.
+    pub(super) fn table_edit_refusal(&self, t: crate::layout::TableId, id: CommandId) -> Option<Error> {
+        match self.table_point(t) {
+            Some(at) => self.edit_refusal_at(id, &at),
+            None if self.mode == super::Mode::ReadOnly => Some(Error::new(ErrorCode::ReadOnly, "the document is read only")),
+            None => refusal(self.enforced_protection()?, id, || [Openings::default()]),
+        }
+    }
+
+    /// Why an edit, command `id`'s, at `at`, which isn't the selection, is refused: read only, document protection
+    /// there or a locked control.
+    pub(super) fn edit_refusal_at(&self, id: CommandId, at: &Position) -> Option<Error> {
+        if self.mode == super::Mode::ReadOnly {
+            return Some(Error::new(ErrorCode::ReadOnly, "the document is read only"));
+        }
+        self.protection_refuses_at(id, at, at).or_else(|| (self.kept(id, at, at) || !self.editable(at)).then(|| Error::unavailable("locked")))
     }
 
     /// The protection, when it's enforced.
@@ -300,15 +434,22 @@ impl Editor {
         {
             return Some(Error::new(ErrorCode::NotAllowed, "the style is restricted"));
         }
-        refusal(p, command.id(), || match command {
-            Command::Delete(d) if self.selection.is_collapsed() => self.delete_span(d).map_or_else(Openings::default, |(a, b)| self.openings(&a, &b)),
-            _ => self.selection_openings(),
+        // Space or X on a selected legacy check box fills it in
+        let id = match command {
+            Command::InsertText(t) if matches!(t.as_str(), " " | "x" | "X") && self.selected_form_check_box().is_some() => CommandId::FillFormField,
+            _ => command.id(),
+        };
+        refusal(p, id, || match command {
+            Command::Delete(d) if self.selection.is_collapsed() => {
+                vec![self.delete_span(d).map_or_else(Openings::default, |(a, b)| self.openings(&a, &b))]
+            }
+            _ => self.selection_openings(command.id()),
         })
     }
 
     /// Why document protection refuses an edit that command `id` would make at `a..b`: a gesture's, where it lands.
     pub(super) fn protection_refuses_at(&self, id: CommandId, a: &Position, b: &Position) -> Option<Error> {
-        refusal(self.enforced_protection()?, id, || self.openings(a, b))
+        refusal(self.enforced_protection()?, id, || [self.openings(a, b)])
     }
 
     /// Whether an edit that command `id` would make at `a..b`, which isn't the command's own (a correction, a
@@ -320,15 +461,16 @@ impl Editor {
     /// Why document protection refuses an edit that command `id` would make at the selection: a dialog's or a
     /// gesture's, which isn't a command.
     pub fn protection_refuses(&self, id: CommandId) -> Option<Error> {
-        refusal(self.enforced_protection()?, id, || self.selection_openings())
+        refusal(self.enforced_protection()?, id, || self.selection_openings(id))
     }
 
     /// Whether document protection refuses each command at the selection, for the state: `None` when it's not
     /// enforced.
     pub(super) fn protection_gate(&self) -> Option<impl Fn(CommandId) -> bool + '_> {
         let p = self.enforced_protection()?;
-        let at = self.selection_openings();
-        Some(move |id| refusal(p, id, || at).is_some())
+        let all = self.selection_openings(CommandId::Delete);
+        let own = if self.is_discontiguous() { self.selection_openings(CommandId::InsertText) } else { all.clone() };
+        Some(move |id| refusal(p, id, || if replaces_primary(id) { &own[..] } else { &all[..] }).is_some())
     }
 
     /// What a delete at the caret removes, as [`Editor::delete`] finds it: the grapheme or word beside it in the
@@ -387,6 +529,101 @@ impl Editor {
     /// The sections filling-in-forms protection leaves open.
     fn unprotected_sections(&self) -> impl Iterator<Item = u32> + '_ {
         self.doc.sections.iter().enumerate().filter(|(_, s)| !s.form_protected).map(|(k, _)| k as u32)
+    }
+
+    /// Sets the formatting restrictions' settings (what is `None` stays): AutoFormat may override them, the theme
+    /// and the Quick Style Set can't change. Refused while the protection is enforced. One undo step.
+    pub fn set_formatting_restrictions(
+        &mut self,
+        auto_format_override: Option<bool>,
+        lock_theme: Option<bool>,
+        lock_style_set: Option<bool>,
+        fonts: &Fonts,
+    ) -> Outcome {
+        if self.enforced_protection().is_some() {
+            return Outcome::Refused(Error::new(ErrorCode::NotAllowed, "stop the protection before changing it"));
+        }
+        let mut p = super::step::PageSettings::of(&self.doc.settings);
+        let was = p;
+        p.auto_format_override = auto_format_override.unwrap_or(p.auto_format_override);
+        p.style_lock_theme = lock_theme.unwrap_or(p.style_lock_theme);
+        p.style_lock_style_set = lock_style_set.unwrap_or(p.style_lock_style_set);
+        if p == was {
+            return Outcome::Unchanged("already so");
+        }
+        let mut tx = self.begin("Formatting Restrictions");
+        if self.step(&mut tx, Step::PageSettings(p)).is_err() {
+            self.abort(tx);
+            return Outcome::Unchanged("the setting can't change");
+        }
+        self.commit(tx, None, fonts)
+    }
+
+    /// The styles Word's Formatting Restrictions leave allowed with Recommended Minimum: each kind's default style,
+    /// the styles the Recommended list shows (not hidden), and those the document uses; by id, sorted.
+    pub fn recommended_minimum_styles(&self) -> Vec<String> {
+        use crate::docx::Block;
+        let Some(res) = self.doc.resolver.as_ref() else { return Vec::new() };
+        fn walk(blocks: &[Block], used: &mut std::collections::HashSet<String>) {
+            for b in blocks {
+                match b {
+                    Block::Para(p) => {
+                        used.extend(p.style.style_id.clone());
+                        for i in &p.inlines {
+                            if let Some(id) = i.run().and_then(|r| r.style_id.clone()) {
+                                used.insert(id);
+                            }
+                            if let Some((_, tb)) = i.story() {
+                                walk(&tb.blocks, used);
+                            }
+                        }
+                    }
+                    Block::Table(t) => {
+                        used.extend(t.style_id.clone());
+                        t.rows.iter().flat_map(|r| r.cells.iter()).for_each(|c| walk(&c.blocks, used));
+                    }
+                }
+            }
+        }
+        let mut used = std::collections::HashSet::new();
+        let d = &self.doc;
+        for b in d.sections.iter().map(|s| &s.blocks).chain(d.stories.values()).chain(d.footnotes.values()).chain(d.endnotes.values()) {
+            walk(b, &mut used);
+        }
+        let mut out: Vec<String> =
+            res.styles.by_id.values().filter(|st| st.default || !st.hidden() || used.contains(&st.id)).map(|st| st.id.clone()).collect();
+        out.sort_unstable();
+        out
+    }
+
+    /// Enforced formatting restrictions keep the theme (`true`) or the Quick Style Set from changing.
+    pub fn style_switch_blocked(&self, theme: bool) -> bool {
+        let s = &self.doc.settings;
+        self.enforced_protection().is_some_and(|p| p.formatting) && if theme { s.style_lock_theme } else { s.style_lock_style_set }
+    }
+
+    /// [`Editor::kept`] for the formatting an AutoFormat as you type change makes at `a..b` as command `id` would:
+    /// formatting restrictions don't keep it from the document when it lets AutoFormat override them.
+    pub(super) fn auto_format_kept(&self, id: CommandId, a: &Position, b: &Position) -> bool {
+        let Some(p) = self.enforced_protection().filter(|p| p.formatting && self.doc.settings.auto_format_override) else {
+            return self.kept(id, a, b);
+        };
+        let open = Protection { formatting: false, ..p.clone() };
+        refusal(&open, id, || [self.openings(a, b)]).is_some() || self.locked_edit(a, b) || self.expanded_in(a, b).is_some()
+    }
+
+    /// Starts enforcing the protection set, as Word's Start Enforcement Protection does: the password typed twice
+    /// (none when both are empty), refused when the two differ or when there is nothing to enforce.
+    pub fn start_protection(&mut self, password: &str, confirm: &str, fonts: &Fonts) -> Outcome {
+        if password != confirm {
+            return Outcome::invalid("the passwords don't match");
+        }
+        let restricts = self.doc.settings.protection.as_ref().is_some_and(|p| p.edit != ProtectionKind::None || p.formatting);
+        if !restricts {
+            return Outcome::unavailable("no editing or formatting restriction to enforce");
+        }
+        let d = DocumentProtection { enforce: Some(true), password: Some(password.to_string()), ..DocumentProtection::default() };
+        self.set_document_protection(d, fonts)
     }
 
     pub(in crate::editing) fn set_document_protection(&mut self, d: DocumentProtection, fonts: &Fonts) -> Outcome {
@@ -457,63 +694,240 @@ impl Editor {
         self.commit(tx, None, fonts)
     }
 
+    /// The selection's ranges, each of a discontiguous one (its blocks of cells aside), in document order.
+    fn text_ranges(&mut self) -> Vec<(Position, Position)> {
+        if self.is_discontiguous() { self.selection_ranges() } else { self.selection.ordered(&self.index).into_iter().collect() }
+    }
+
+    /// An editable range on each range of the selection, each with an id of its own, in one step.
     pub(in crate::editing) fn add_editable_range(&mut self, r: EditableRange, fonts: &Fonts) -> Outcome {
-        let Some((a, b)) = self.selection.ordered(&self.index) else { return Outcome::Unchanged("no selection") };
-        let (Some((pa, oa)), Some((pb, ob))) = (a.para_offset(), b.para_offset()) else { return Outcome::unavailable("no text range") };
-        let ids: Vec<i64> = self
+        let ranges = self.text_ranges();
+        self.add_permission(r.editor.map_or_else(|| RangeEditor::Group("everyone".into()), RangeEditor::User), &ranges, fonts)
+    }
+
+    /// Adds a permission for `who` over each of `ranges`.
+    fn add_permission(&mut self, who: RangeEditor, ranges: &[(Position, Position)], fonts: &Fonts) -> Outcome {
+        if ranges.is_empty() {
+            return Outcome::Unchanged("no selection");
+        }
+        let Some(ends) = ranges.iter().map(|(a, b)| Some((a.para_offset()?, b.para_offset()?))).collect::<Option<Vec<_>>>() else {
+            return Outcome::unavailable("no text range");
+        };
+        let used: std::collections::HashSet<i64> = self
             .index
             .para_ids()
             .filter_map(|p| self.index.para(&self.doc, p))
             .flat_map(|p| p.inlines.iter().filter_map(perm))
             .filter_map(|(_, id, _)| id.parse().ok())
             .collect();
-        let id = ids.iter().max().map_or(1, |m| m + 1);
+        // Ids Word reads (a signed 32-bit number): on from the greatest, else the first unused
+        const MAX: i64 = i32::MAX as i64;
+        let n = ends.len() as i64;
+        let top = used.iter().copied().filter(|id| (0..=MAX).contains(id)).max().unwrap_or(0);
+        let fresh: Vec<i64> =
+            if top + n <= MAX { (top + 1..=top + n).collect() } else { (1..=MAX).filter(|id| !used.contains(id)).take(ends.len()).collect() };
+        if fresh.len() < ends.len() {
+            return Outcome::unavailable("no free permission id");
+        }
         let w = self.cx().w;
         let esc = crate::docx::write::props::esc;
-        let who = r.editor.as_deref().map_or_else(|| format!("{w}edGrp=\"everyone\""), |e| format!("{w}ed=\"{}\"", esc(e)));
-        let marker = |x: String| Inline::Opaque(Rc::new(Opaque { xml: Raw(Some(Rc::from(x.as_str()))) }));
-        let (start, end) = (marker(format!("<{w}permStart {w}id=\"{id}\" {who}/>")), marker(format!("<{w}permEnd {w}id=\"{id}\"/>")));
-        let steps = if pa == pb && oa == ob {
-            vec![Step::Text { para: pa, range: oa..oa, with: vec![start, end], edges: Edges::default() }]
-        } else {
-            vec![
-                Step::Text { para: pb, range: ob..ob, with: vec![end], edges: Edges::default() },
-                Step::Text { para: pa, range: oa..oa, with: vec![start], edges: Edges::default() },
-            ]
+        let who = match &who {
+            RangeEditor::Group(g) => format!("{w}edGrp=\"{}\"", esc(g)),
+            RangeEditor::User(u) => format!("{w}ed=\"{}\"", esc(u)),
         };
+        let marker = |x: String| Inline::Opaque(Rc::new(Opaque { xml: Raw(Some(Rc::from(x.as_str()))) }));
         let mut tx = self.begin("Editable Range");
-        for s in steps {
-            if self.step(&mut tx, s).is_err() {
-                self.abort(tx);
-                return Outcome::Unchanged("stale selection");
+        // Ranges, last first
+        for (k, &((pa, oa), (pb, ob))) in ends.iter().enumerate().rev() {
+            let id = fresh[k];
+            let (start, end) = (marker(format!("<{w}permStart {w}id=\"{id}\" {who}/>")), marker(format!("<{w}permEnd {w}id=\"{id}\"/>")));
+            let steps = if pa == pb && oa == ob {
+                vec![Step::Text { para: pa, range: oa..oa, with: vec![start, end], edges: Edges::default() }]
+            } else {
+                vec![
+                    Step::Text { para: pb, range: ob..ob, with: vec![end], edges: Edges::default() },
+                    Step::Text { para: pa, range: oa..oa, with: vec![start], edges: Edges::default() },
+                ]
+            };
+            for s in steps {
+                if self.step(&mut tx, s).is_err() {
+                    self.abort(tx);
+                    return Outcome::Unchanged("stale selection");
+                }
             }
         }
         self.commit(tx, None, fonts)
     }
 
-    pub(in crate::editing) fn remove_editable_ranges(&mut self, fonts: &Fonts) -> Outcome {
-        let Some((a, b)) = self.selection.ordered(&self.index) else { return Outcome::Unchanged("no selection") };
-        // The ids of the ranges around the selection, whoever may edit them.
-        let mut open: HashMap<String, Position> = HashMap::new();
-        let mut gone: std::collections::HashSet<String> = std::collections::HashSet::new();
-        for para in self.paras_in_order() {
-            let (Some(p), Some(slot)) = (self.index.para(&self.doc, para), self.index.para_slot(para)) else { continue };
-            let story = self.index.story(slot.container);
-            for (unit, (start, id, _)) in perms(&p.inlines) {
-                let at = Position::text(story, para, unit);
-                if start {
-                    open.insert(id, at);
-                } else if let Some(from) = open.remove(&id)
-                    && self.index.cmp(&from, &b).is_le()
-                    && self.index.cmp(&a, &at).is_le()
-                {
-                    gone.insert(id);
+    /// The groups the author is in, which editable ranges for them let edit (the host knows them; everyone is
+    /// always one).
+    pub fn set_editing_groups(&mut self, groups: Vec<String>) {
+        self.editing_groups = groups;
+    }
+
+    /// The editable ranges, in document order: those over the same stretch as one, with each of their editors.
+    pub fn editable_range_list(&self) -> Vec<EditableRangeInfo> {
+        self.editable_ranges().list.clone()
+    }
+
+    /// Who may edit the editable ranges holding the selection, as the Restrict Editing pane ticks them.
+    pub fn editors_here(&self) -> Vec<RangeEditor> {
+        let Some((a, b)) = self.selection.ordered(&self.index) else { return Vec::new() };
+        self.editors_over(&a, &b)
+    }
+
+    /// Who may edit the editable ranges holding `a..b`.
+    fn editors_over(&self, a: &Position, b: &Position) -> Vec<RangeEditor> {
+        let ranges = self.editable_ranges();
+        if ranges.list.is_empty() {
+            return Vec::new();
+        }
+        let (ka, kb) = (self.index.order_key(a), self.index.order_key(b));
+        let mut out: Vec<RangeEditor> = Vec::new();
+        for (r, (s, e)) in ranges.list.iter().zip(&ranges.list_keys) {
+            if *s <= ka && kb <= *e {
+                for e in &r.editors {
+                    if !out.iter().any(|o| o.same(e)) {
+                        out.push(e.clone());
+                    }
                 }
             }
         }
+        out
+    }
+
+    /// The editable ranges the author may edit.
+    fn own_ranges(&self) -> Vec<(Position, Position)> {
+        let (author, groups) = (&*self.author.0, &self.editing_groups);
+        self.editable_ranges().list.iter().filter(|r| r.editors.iter().any(|e| e.lets(author, groups))).map(|r| (r.start, r.end)).collect()
+    }
+
+    /// Selects the next (or previous) editable range the author may edit after the selection, round to the first
+    /// (last): Word's Find Next Region I Can Edit.
+    pub fn select_next_editable_range(&mut self, forward: bool) -> Outcome {
+        let ranges = self.own_ranges();
+        let Some((a, b)) = self.selection.ordered(&self.index) else { return Outcome::Unchanged("no selection") };
+        let pick = if forward {
+            ranges.iter().find(|r| self.index.cmp(&r.0, &b).is_ge() && !(r.0 == a && r.1 == b)).or(ranges.first())
+        } else {
+            ranges.iter().rev().find(|r| self.index.cmp(&r.1, &a).is_le() && !(r.0 == a && r.1 == b)).or(ranges.last())
+        };
+        let Some(&(s, e)) = pick else { return Outcome::Unchanged("no region you can edit") };
+        let before = self.selection;
+        self.multi = super::multi::Multi::default();
+        self.selection = super::selection::Selection::range(s, e, super::selection::Granularity::Char);
+        if self.selection == before { Outcome::Unchanged("already there") } else { Outcome::Moved }
+    }
+
+    /// Selects every editable range the author may edit, of the selection's story: Word's Show All Regions I Can
+    /// Edit.
+    pub fn select_all_editable_ranges(&mut self) -> Outcome {
+        let story = self.selection.focus().map_or(super::position::StoryId::Body, |p| p.story);
+        let ranges: Vec<(Position, Position)> = self.own_ranges().into_iter().filter(|r| r.0.story == story && !r.0.same_place(&r.1)).collect();
+        if ranges.is_empty() {
+            return Outcome::Unchanged("no region you can edit");
+        }
+        self.select_ranges(&ranges)
+    }
+
+    /// What Word's Highlight the regions I can edit draws on `pages`: each editable range the author may edit
+    /// shaded, one band per line part, and bracketed at its ends, in page points.
+    pub fn editable_region_views(&mut self, pages: std::ops::Range<usize>) -> (Vec<(usize, super::view::Band)>, Vec<super::view::FormattingMark>) {
+        use super::view::{FormattingMark, MarkKind};
+        let (mut bands, mut marks) = (Vec::new(), Vec::new());
+        let near = self.near;
+        for (a, b) in self.own_ranges() {
+            let rects = self.range_rects(a, b, pages.clone());
+            // A bracket where the range's end is: not at the edge of the pages asked for
+            let (first, last) = (rects.first(), rects.last());
+            let (start_page, end_page) = (first.and_then(|_| self.page_showing(a)), last.and_then(|_| self.page_showing(b)));
+            if let Some(first) = first.filter(|f| start_page == Some(f.0)) {
+                let s = first.1.rect;
+                marks.push(FormattingMark {
+                    page: first.0,
+                    kind: MarkKind::BookmarkStart,
+                    at: super::view::Band { rect: [s[0], s[1], s[0], s[3]], turn: first.1.turn },
+                });
+            }
+            if let Some(last) = last.filter(|l| end_page == Some(l.0)) {
+                let e = last.1.rect;
+                marks.push(FormattingMark {
+                    page: last.0,
+                    kind: MarkKind::BookmarkEnd,
+                    at: super::view::Band { rect: [e[2], e[1], e[2], e[3]], turn: last.1.turn },
+                });
+            }
+            bands.extend(rects);
+        }
+        self.near = near;
+        (bands, marks)
+    }
+
+    /// Lets `editor` edit the selection (`allowed`), adding a permission for them over it, or stops them editing the
+    /// editable ranges over it, as ticking or clearing them in the Restrict Editing pane does. One undo step.
+    pub fn set_range_editor(&mut self, editor: RangeEditor, allowed: bool, fonts: &Fonts) -> Outcome {
+        // The gates of the commands it stands for: enforced protection keeps its exceptions as they are
+        let like = if allowed { Command::AddEditableRange(EditableRange::default()) } else { Command::RemoveEditableRanges };
+        if let Some(out) = self.refuse_like(&like) {
+            return out;
+        }
+        let ranges = self.text_ranges();
+        if allowed {
+            // `w:edGrp` takes only its enumerated values, which Word writes in lower case.
+            let editor = match editor {
+                RangeEditor::Group(g) => match GROUPS.iter().find(|n| n.eq_ignore_ascii_case(&g)) {
+                    Some(n) => RangeEditor::Group((*n).to_string()),
+                    None => return Outcome::invalid("not a group Word's editable ranges know"),
+                },
+                user => user,
+            };
+            // Only the spans this editor can't edit yet get a permission.
+            let missing: Vec<(Position, Position)> =
+                ranges.iter().filter(|(a, b)| !self.editors_over(a, b).iter().any(|e| e.same(&editor))).copied().collect();
+            if missing.is_empty() {
+                return Outcome::Unchanged("already so");
+            }
+            return self.add_permission(editor, &missing, fonts);
+        }
+        // The editor's own permissions reaching the selection
+        let theirs: std::collections::HashSet<String> = self
+            .editable_ranges()
+            .ranges
+            .iter()
+            .filter(|r| r.editor.as_ref().is_some_and(|e| e.same(&editor)))
+            .filter(|r| ranges.iter().any(|(a, b)| self.index.cmp(&r.start, b).is_le() && self.index.cmp(a, &r.end).is_le()))
+            .map(|r| r.id.clone())
+            .collect();
+        if theirs.is_empty() {
+            return Outcome::Unchanged("not an editor here");
+        }
+        self.drop_permissions(&theirs, "Remove Editable Range", fonts)
+    }
+
+    /// Removes the editable ranges that reach any range of the selection.
+    pub(in crate::editing) fn remove_editable_ranges(&mut self, fonts: &Fonts) -> Outcome {
+        let ranges = self.text_ranges();
+        if ranges.is_empty() {
+            return Outcome::Unchanged("no selection");
+        }
+        // The ids of the ranges around the selection, whoever may edit them.
+        let gone: std::collections::HashSet<String> = self
+            .editable_ranges()
+            .ranges
+            .iter()
+            .filter(|r| {
+                ranges.get(ranges.partition_point(|x| self.index.cmp(&x.1, &r.start).is_lt())).is_some_and(|(a, _)| self.index.cmp(a, &r.end).is_le())
+            })
+            .map(|r| r.id.clone())
+            .collect();
         if gone.is_empty() {
             return Outcome::Unchanged("no editable range here");
         }
+        self.drop_permissions(&gone, "Remove Editable Range", fonts)
+    }
+
+    /// Takes the permissions `gone` (by id) out, both their markers.
+    fn drop_permissions(&mut self, gone: &std::collections::HashSet<String>, label: &'static str, fonts: &Fonts) -> Outcome {
         let edits: Vec<(ParaId, Vec<Inline>)> = self
             .index
             .para_ids()
@@ -523,7 +937,7 @@ impl Editor {
                 (!p.inlines.iter().all(keep)).then(|| (para, p.inlines.iter().filter(|i| keep(i)).cloned().collect()))
             })
             .collect();
-        let mut tx = self.begin("Remove Editable Range");
+        let mut tx = self.begin(label);
         for (para, inlines) in edits {
             if self.step(&mut tx, Step::Restyle { para, inlines }).is_err() {
                 self.abort(tx);
@@ -558,6 +972,37 @@ pub fn edits_selection(id: crate::api::command::CommandId, section: bool) -> boo
         || matches!(id, C::InsertHyperlink | C::EditHyperlink | C::RemoveHyperlink | C::InsertPicture | C::InsertField | C::InsertSymbol)
         || (section && matches!(info.group, G::Table | G::Object));
     here && !document
+}
+
+/// Whether command `id` replaces the selection (typing, paste, a break or an insert): of a discontiguous selection,
+/// only the selection's own range, the others deselected.
+pub(super) fn replaces_primary(id: CommandId) -> bool {
+    use CommandId as C;
+    matches!(
+        id,
+        C::InsertText
+            | C::InsertParagraph
+            | C::InsertLineBreak
+            | C::InsertPageBreak
+            | C::InsertColumnBreak
+            | C::InsertSectionBreak
+            | C::InsertTab
+            | C::InsertAlignmentTab
+            | C::InsertSymbol
+            | C::InsertField
+            | C::InsertFormField
+            | C::InsertHyperlink
+            | C::InsertPicture
+            | C::InsertPageNumber
+            | C::InsertNote
+            | C::InsertFootnote
+            | C::InsertEndnote
+            | C::InsertShape
+            | C::InsertTextBox
+            | C::InsertTable
+            | C::Paste
+            | C::PasteText
+    )
 }
 
 /// Whether a protection lets a command run: comments in a comments-only document, filling in forms in a forms one.
@@ -612,7 +1057,7 @@ pub fn restricts_formatting(id: CommandId) -> bool {
 
 /// Why an enforced protection `p` refuses command `id`, where `at` says the edit falls: formatting protection, a
 /// tracked-changes protection's revisions, then what Restrict Editing allows and where.
-fn refusal(p: &Protection, id: CommandId, at: impl FnOnce() -> Openings) -> Option<Error> {
+fn refusal<P: AsRef<[Openings]>>(p: &Protection, id: CommandId, at: impl FnOnce() -> P) -> Option<Error> {
     use CommandId as C;
     if !p.enforced || !crate::api::catalog::info(id).is_some_and(|i| i.mutates) {
         return None;
@@ -635,9 +1080,32 @@ fn refusal(p: &Protection, id: CommandId, at: impl FnOnce() -> Openings) -> Opti
     if allows(p, id) {
         return None;
     }
-    let at = at();
-    let range = matches!(p.edit, ProtectionKind::ReadOnly | ProtectionKind::Comments) && edits_selection(id, false) && at.range;
-    let form = p.edit == ProtectionKind::Forms && matches!(id, C::InsertText | C::Delete | C::PasteText) && at.form;
-    let section = p.edit == ProtectionKind::Forms && edits_selection(id, true) && at.section;
-    (!range && !form && !section).then(|| Error::new(ErrorCode::NotAllowed, "the document is protected"))
+    // Each place the edit falls on needs an exception of its own: a form field in one and an open section in another
+    // are both allowed.
+    let places = at();
+    let opens = |at: &Openings| {
+        let range = matches!(p.edit, ProtectionKind::ReadOnly | ProtectionKind::Comments) && edits_selection(id, false) && at.range;
+        let form = p.edit == ProtectionKind::Forms && matches!(id, C::InsertText | C::Delete | C::PasteText) && at.form;
+        let section = p.edit == ProtectionKind::Forms && edits_selection(id, true) && at.section;
+        range || form || section
+    };
+    let places = places.as_ref();
+    let allowed = if places.is_empty() { opens(&Openings::default()) } else { places.iter().all(opens) };
+    (!allowed).then(|| Error::new(ErrorCode::NotAllowed, "the document is protected"))
+}
+
+/// What Word's Restrict Editing pane offers with editing restriction `kind`: exceptions (editable ranges and who may
+/// edit them) for read-only and comments, sections to leave open for filling in forms.
+pub fn restriction_options(kind: crate::api::command::ProtectionKind) -> RestrictionOptions {
+    use crate::api::command::ProtectionKind as K;
+    RestrictionOptions { exceptions: matches!(kind, K::ReadOnly | K::Comments), sections: kind == K::Forms }
+}
+
+/// The options Word's Restrict Editing pane offers with an editing restriction.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RestrictionOptions {
+    /// Exceptions: parts of the document, and who may edit them.
+    pub exceptions: bool,
+    /// The sections filling in forms leaves open.
+    pub sections: bool,
 }

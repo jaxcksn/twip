@@ -142,6 +142,16 @@ impl History {
         self.redo.last().map(|t| t.label.as_ref())
     }
 
+    /// What undo would take back, most recent first.
+    pub fn undo_labels(&self) -> impl Iterator<Item = &str> {
+        self.undo.iter().rev().map(|t| t.label.as_ref())
+    }
+
+    /// What redo would do again, the next first.
+    pub fn redo_labels(&self) -> impl Iterator<Item = &str> {
+        self.redo.iter().rev().map(|t| t.label.as_ref())
+    }
+
     pub fn bytes(&self) -> usize {
         self.bytes
     }
@@ -204,7 +214,7 @@ pub fn step_bytes(s: &Step) -> usize {
         Step::FieldViews { views, .. } => 32 + 16 * views.len(),
         Step::Restyle { inlines: v, .. } => 32 + inlines(v),
         Step::Blocks { with, .. } => 32 + blocks(with),
-        Step::Note { blocks: b, .. } | Step::HeaderPart { blocks: b, .. } => 32 + b.as_deref().map_or(0, blocks),
+        Step::Note { blocks: b, .. } | Step::HeaderPart { blocks: b, .. } | Step::Separator { blocks: b, .. } => 32 + b.as_deref().map_or(0, blocks),
         Step::BuildingBlock { part, .. } => 64 + part.as_ref().map_or(0, |p| p.name.len() + blocks(&p.body)),
         Step::Rows { with, .. } => 32 + with.iter().flat_map(|r| r.cells.iter()).map(|c| 64 + blocks(&c.blocks)).sum::<usize>(),
         Step::Control { control, .. } => 32 + control.as_ref().map_or(0, |c| c.open.len() + c.close.len() + 128),

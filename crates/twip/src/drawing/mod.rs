@@ -32,6 +32,8 @@ pub struct NonVisual {
     pub id: u32,
     pub name: String,
     pub descr: Rc<str>,
+    /// Its title (`title`): a short name for the object that screen readers read before its description.
+    pub title: Rc<str>,
     pub hidden: bool,
     pub lock_aspect: bool,
     pub decorative: bool,

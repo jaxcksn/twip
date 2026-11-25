@@ -110,3 +110,15 @@ fn facing_pages_keep_page_number_parity() {
     let Some(doc) = two_sections(r#"<w:type w:val="oddPage"/><w:pgNumType w:start="2"/>"#, "") else { return };
     assert_eq!(numbers(&doc), ["1", "3"], "an odd-page restart bumps the number, no blank page");
 }
+
+#[test]
+fn dash_symbol_and_hex_page_number_formats() {
+    let shown = |fmt: &str| {
+        let doc = two_sections(&format!(r#"<w:pgNumType w:fmt="{fmt}" w:start="11"/>"#), "")?;
+        numbers(&doc).pop()
+    };
+    let Some(dash) = shown("numberInDash") else { return };
+    assert_eq!(dash, "- 11 -");
+    assert_eq!(shown("chicago").as_deref(), Some("‡‡‡"));
+    assert_eq!(shown("hex").as_deref(), Some("B"));
+}

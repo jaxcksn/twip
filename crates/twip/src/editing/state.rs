@@ -62,7 +62,7 @@ pub struct FormatState {
     pub section: usize,
 }
 
-fn fold<T: PartialEq>(values: impl IntoIterator<Item = T>) -> Tri<T> {
+pub(super) fn fold<T: PartialEq>(values: impl IntoIterator<Item = T>) -> Tri<T> {
     let mut out = Tri::Unavailable;
     for v in values {
         out = match out {
@@ -75,7 +75,12 @@ fn fold<T: PartialEq>(values: impl IntoIterator<Item = T>) -> Tri<T> {
 }
 
 fn underline_of(r: &RunStyle) -> UnderlineStyle {
-    match r.underline.as_deref() {
+    underline_style(r.underline.as_deref())
+}
+
+/// The underline a `w:u` value draws.
+pub(super) fn underline_style(v: Option<&str>) -> UnderlineStyle {
+    match v {
         None | Some("none") => UnderlineStyle::None,
         Some("words") => UnderlineStyle::Words,
         Some("double") => UnderlineStyle::Double,
@@ -116,8 +121,13 @@ const HIGHLIGHTS: [HighlightColor; 15] = [
 ];
 
 fn highlight_of(r: &RunStyle) -> NoneOr<HighlightColor> {
+    highlight_color(r.highlight)
+}
+
+/// The highlight colour of a highlight's RGB.
+pub(super) fn highlight_color(rgb: Option<u32>) -> NoneOr<HighlightColor> {
     let named = |rgb: u32| HIGHLIGHTS.into_iter().find(|h| crate::docx::props::highlight(super::commands::highlight_value(*h)) == Some(rgb));
-    match r.highlight.and_then(named) {
+    match rgb.and_then(named) {
         Some(h) => NoneOr::Value(h),
         None => NoneOr::None,
     }
@@ -272,35 +282,66 @@ pub(super) fn paragraph(paras: &[(&ParaStyle, Option<bool>)]) -> ParagraphFormat
     }
 }
 
+/// What the selection's formatting is read from.
+pub(super) struct SelectionSources {
+    /// The focus's paragraph.
+    pub para: ParaId,
+    /// The selected runs, at least one.
+    pub runs: Vec<Run>,
+    /// The selected paragraphs, at least one.
+    pub paras: Vec<ParaId>,
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct StateFlags {
     pub read_only: bool,
 }
 
 impl Editor {
-    pub fn format_state(&mut self) -> Option<FormatState> {
+    /// The selection's formatting sources: the focus's paragraph, the selected runs (none: the caret's run, else the
+    /// paragraph mark's, alone) and the selected paragraphs.
+    pub(super) fn selection_sources(&mut self) -> Option<SelectionSources> {
         let focus = self.selection.focus();
         let ranges: Vec<(ParaId, crate::layout::Unit, crate::layout::Unit)> =
-            if self.selection.is_collapsed() { Vec::new() } else { self.selected_ranges() };
+            if self.selection.is_collapsed() && !self.is_discontiguous() { Vec::new() } else { self.selected_ranges() };
         let para_id = focus.and_then(|p| p.para_offset()).map(|(p, _)| p).or_else(|| match self.selection {
             Selection::Object(ObjectRef::Inline { para, .. }) => Some(para),
             Selection::Object(ObjectRef::Floating(f)) => self.index.float_anchor(f),
             Selection::Cells { .. } => ranges.first().map(|r| r.0),
             _ => None,
-        });
-        let para = self.index.para(&self.doc, para_id?)?;
-        let (mark, style) = (para.mark.clone(), para.style.clone());
-        let list = self.para_list(para_id?);
-        let caret_run = focus.and_then(|c| self.run_at(&c));
+        })?;
+        let mark = self.index.para(&self.doc, para_id)?.mark.clone();
         let mut runs: Vec<Run> = ranges.iter().filter(|r| r.1 < r.2).flat_map(|&r| self.runs_in(r)).collect();
         runs.dedup_by(|a, b| Rc::ptr_eq(a, b));
-        let run = runs.first().cloned().or(caret_run).unwrap_or(mark);
-        let character = if runs.is_empty() { self::character(&[&run]) } else { self::character(&runs.iter().map(|r| &**r).collect::<Vec<_>>()) };
+        if runs.is_empty() {
+            runs.push(focus.and_then(|c| self.run_at(&c)).unwrap_or(mark));
+        }
         let mut paras: Vec<ParaId> = ranges.iter().map(|r| r.0).collect();
         paras.dedup();
         if paras.is_empty() {
-            paras.push(para_id?);
+            paras.push(para_id);
         }
+        Some(SelectionSources { para: para_id, runs, paras })
+    }
+
+    pub fn format_state(&mut self) -> Option<FormatState> {
+        let sources = self.selection_sources()?;
+        self.format_state_of(&sources)
+    }
+
+    pub(super) fn format_state_of(&mut self, sources: &SelectionSources) -> Option<FormatState> {
+        let focus = self.selection.focus();
+        let SelectionSources { para: para_id, runs, paras } = sources;
+        let para_id = *para_id;
+        let style = self.index.para(&self.doc, para_id)?.style.clone();
+        let list = self.para_list(para_id);
+        let run = runs[0].clone();
+        // With list numbers selected, the number's formatting, as it draws in the clicked paragraph
+        let label = self.list_label_selection().and_then(|l| self.index.para(&self.doc, l.para)).and_then(|p| p.list.as_ref()).map(|l| l.run.clone());
+        let character = match label {
+            Some(l) => self::character(&[&l]),
+            None => self::character(&runs.iter().map(|r| &**r).collect::<Vec<_>>()),
+        };
         let mut styles: Vec<(Rc<ParaStyle>, Option<bool>)> =
             paras.iter().filter_map(|&p| Some((self.index.para(&self.doc, p)?.style.clone(), self.para_list(p)))).collect();
         styles.dedup_by(|a, b| Rc::ptr_eq(&a.0, &b.0) && a.1 == b.1);
@@ -380,6 +421,7 @@ impl Editor {
             list_start: self.tab_changes_level(),
             float: matches!(self.selection, Selection::Object(ObjectRef::Floating(_))),
             mac: self.mac,
+            arrows: if code.starts_with("Arrow") { self.caret_arrows() } else { None },
         };
         match super::keymap::command(code, mods, cx)? {
             // Tab takes a list along from its first item as an AutoFormat option: off, it changes the level.
@@ -460,7 +502,8 @@ impl Editor {
         let link = self.link_here().is_some();
         let comments = !self.doc.comments.by_id.is_empty();
         let back = !self.edit_marks.is_empty();
-        let repeat = f.is_some_and(|f| f.can_redo) || self.repeat.is_some();
+        let repeat =
+            f.is_some_and(|f| f.can_redo) || self.repeat.as_ref().is_some_and(|c| !(self.is_discontiguous() && super::multi::single_only(c.id())));
         let tracking = self.tracking();
         let locked = self.doc.settings.protection.as_ref().is_some_and(|p| p.forces_tracking());
         let (undo_label, redo_label) = (self.history.next_undo().map(str::to_string), self.history.next_redo().map(str::to_string));
@@ -606,7 +649,12 @@ impl Editor {
                 (C::ChangePicture, _) => (editable && matches!(object, Some(ObjectKind::Picture | ObjectKind::Float)), (None, None)),
                 (C::ResetObjectSize, _) => (editable && matches!(object, Some(ObjectKind::Picture | ObjectKind::Float)), (None, None)),
                 (C::SetAnchorLocked | C::SetObjectPosition | C::SetObjectWrapOptions, _) => (editable && floating, (None, None)),
-                (C::SetShapePreset | C::SetShapeAdjust | C::SetShapeText, _) => (editable && shape.as_ref().is_some_and(|s| s.sp), (None, None)),
+                (C::SetShapePreset | C::SetShapeText, _) => (editable && shape.as_ref().is_some_and(|s| s.sp), (None, None)),
+                // A picture's geometry has adjustments too (a rounded rectangle's corners)
+                (C::SetShapeAdjust, _) => (
+                    editable && shape.as_ref().is_some_and(|s| s.sp || (s.pic && s.state.as_ref().is_some_and(|st| !st.adjust.is_empty()))),
+                    (None, None),
+                ),
                 (C::SetShapeFill | C::SetShapeEffects, _) => (editable && shape.is_some(), (None, None)),
                 (C::SetShapeLine, _) => (editable && shape.as_ref().is_some_and(|s| s.sp || s.pic), (None, None)),
                 (C::SetPictureAdjust, _) => (editable && shape.as_ref().is_some_and(|s| s.pic), (None, None)),
@@ -644,6 +692,17 @@ impl Editor {
                 _ => (editable || !info.mutates, (None, None)),
             };
             out.insert(id, CommandState { enabled, checked, value });
+        }
+        // A discontiguous selection
+        if self.is_discontiguous() {
+            let cells = editable && self.any_piece_in_table();
+            for (id, s) in out.iter_mut() {
+                if super::multi::single_only(*id) {
+                    s.enabled = false;
+                } else if super::multi::formats_cells(*id) {
+                    s.enabled = cells;
+                }
+            }
         }
         // What document protection refuses here.
         if let Some(refuses) = self.protection_gate() {
@@ -814,8 +873,8 @@ impl Editor {
                     crate::docx::ControlKind::RichText | crate::docx::ControlKind::Other => ElementKind::RichText,
                 };
                 let mut info = control_info(&props);
-                if let Some(category) = props.gallery() {
-                    info.building_blocks = self.gallery_entries(category.as_deref()).map(|b| b.name.clone()).collect();
+                if let Some(crate::docx::KeptKind::Gallery { gallery, category }) = props.kept_kind() {
+                    info.building_blocks = self.gallery_entries(gallery.as_deref(), category.as_deref()).map(|b| b.name.clone()).collect();
                 }
                 let control = Some(Box::new(info));
                 ElementContext {
@@ -1000,7 +1059,7 @@ fn control_info(p: &crate::docx::ControlProps) -> crate::api::state::ControlInfo
         crate::docx::ControlKind::RepeatingSection => {
             let x = p.kind_xml.as_deref().unwrap_or_default();
             info.section_title = x.find("sectionTitle").and_then(|at| val(&x[at..], "val=\""));
-            info.allow_insert_delete = Some(!x.contains("doNotAllowInsertDeleteSection"));
+            info.allow_insert_delete = Some(!super::merge::items_fixed(x));
         }
         _ => {}
     }

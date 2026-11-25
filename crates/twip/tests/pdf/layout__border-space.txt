@@ -20,28 +20,6 @@ page 1 612 792
   text Top and bottom borders with w:space 255 (kept as 31pt).
   text Plain paragraph between.
   op 1 0 0 -1 0 792 cm
-  op /Artifact << /Type /Layout >> BDC
-  op q
-  op 0 0 0 rg
-  op 39.5 30.5 533 1.5 re
-  op f
-  op Q
-  op q
-  op 0 0 0 rg
-  op 39.5 787 533 1.5 re
-  op f
-  op Q
-  op q
-  op 0 0 0 rg
-  op 39.5 30.5 1.5 758 re
-  op f
-  op Q
-  op q
-  op 0 0 0 rg
-  op 571 30.5 1.5 758 re
-  op f
-  op Q
-  op EMC
   op /P << /MCID 0 >> BDC
   op q
   op /Span << /ActualText <426f7264657220773a7370616365> >> BDC
@@ -382,11 +360,6 @@ page 1 612 792
   op EMC
   op Q
   op EMC
-page 2 612 792
-  text Left and right borders with w:space 12 and 40 (8pt): the text keeps its indents, the 
-  text lines drawn outside them.
-  text Page borders measured from the text: w:space 4, 31, 40 (clamped to 31) and 255 (31).
-  op 1 0 0 -1 0 792 cm
   op /Artifact << /Type /Layout >> BDC
   op q
   op 0 0 0 rg
@@ -408,6 +381,13 @@ page 2 612 792
   op 571 30.5 1.5 758 re
   op f
   op Q
+  op EMC
+page 2 612 792
+  text Left and right borders with w:space 12 and 40 (8pt): the text keeps its indents, the 
+  text lines drawn outside them.
+  text Page borders measured from the text: w:space 4, 31, 40 (clamped to 31) and 255 (31).
+  op 1 0 0 -1 0 792 cm
+  op /Artifact << /Type /Layout >> BDC
   op q
   op 0 0 0 rg
   op 59.5 72 0.5 11.87 re
@@ -465,6 +445,28 @@ page 2 612 792
   op [<0002> <0002> <0002> <0002> <0001> <0002> <0002> <0002> <0002> <0002> <0002> <0002> <0001> <0002> <0002> 0 <0002> <0002> <0002> <0002> <0002> 0 <0002> <0001> <0002> <0002> <0002> <0002> 0 <0001> <0002> <0002> <0002> <0001> <0002> <0002> 0 <0002> 0 <0002> 0 <0002> 0 <0001> <0002> 0 <0002> 0 <0002> 0 <0002> 0 <0002> 0 <0002> 0 <0002> 0 <0001> <0002> 0 <0002> 0 <0001> <0002> 0 <0002> 0 <0002> 0 <0001> <0002> 0 <0002> 0 <0001> <0002> 0 <0002> 0 <0002> 0 <0002> 0 <0002> 0 <0002> 0 <0002> 0 <0002> 0 <0001> <0002> 0 <0002> 0 <0001> <0002> 0 <0002> 0 <0002> 0 <0001> <0002> 0 <0002> 0 <0002> 0 <0001> <0002> 0 <0002> 0 <0002> 0 <0001> <0002> 0 <0002> 0 <0002> 0 <0002> 0 <0002>] TJ
   op ET
   op EMC
+  op Q
+  op EMC
+  op /Artifact << /Type /Layout >> BDC
+  op q
+  op 0 0 0 rg
+  op 39.5 30.5 533 1.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 39.5 787 533 1.5 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 39.5 30.5 1.5 758 re
+  op f
+  op Q
+  op q
+  op 0 0 0 rg
+  op 571 30.5 1.5 758 re
+  op f
   op Q
   op EMC
 page 3 612 792

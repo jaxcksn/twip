@@ -106,12 +106,15 @@ struct Sink {
 /// blink).
 pub(super) const A11Y_TIMER: u32 = 3;
 
-/// What the reading tree is read from: the document, and the sub-template view (which references there are, which
-/// bodies show in place, which one is edited). The tree is sent again when this changes.
+/// What the reading tree is read from: the document, its markup view (which revisions and comments read), and the
+/// sub-template view (which references there are, which bodies show in place, which one is edited). The tree is sent
+/// again when this changes.
 fn a11y_key(e: &crate::editing::Editor) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
     (e.revision(), e.references().revision, e.editing_sub_template()).hash(&mut h);
+    let review = &e.document().review;
+    (review.view, &*review.markup, review.show_hidden).hash(&mut h);
     let mut shown: Vec<u64> = e.references().by_field.keys().filter(|f| e.reference_expanded(**f)).map(|f| f.0).collect();
     shown.sort_unstable();
     shown.hash(&mut h);
@@ -1679,6 +1682,24 @@ mod tests {
         fn at(s: &mut Session, kind: K, x: f64, y: f64, alt: bool) {
             let clicks = if kind == K::Down { 1 } else { 0 };
             s.pointer(kind, Point { x, y }, B::Primary, clicks, Modifiers { alt, ..Modifiers::default() });
+        }
+
+        #[test]
+        fn dragging_the_top_margin_under_a_top_gutter_moves_the_margin_alone() {
+            use crate::api::command::{Margins, MultiplePages};
+            let (mut engine, id, _) = ruled();
+            let s = engine.session(id).expect("a session");
+            s.run(Command::SetMargins(Margins { gutter: Some(Points(18.0)), ..Margins::default() })).expect("a gutter");
+            s.run(Command::SetMultiplePages(MultiplePages { mode: None, gutter_at_top: Some(true) })).expect("at the top");
+            let mut pixels = vec![0u8; 800 * 600 * 4];
+            s.host().frame_rgba(&mut pixels, 800, 600).expect("draws");
+            let v = s.ruler_view();
+            assert_eq!(v.model.vertical.text.start.0, 90.0, "the text starts below the gutter");
+            let y = |pt: f64| v.vertical.origin + pt * v.vertical.scale;
+            at(s, K::Down, 10.0, y(90.0), false);
+            at(s, K::Move, 10.0, y(108.0), false);
+            at(s, K::Up, 10.0, y(108.0), false);
+            assert_eq!(s.state().page.margins.top.0, 90.0, "18 pt more, the gutter not added in");
         }
 
         fn click(s: &mut Session, x: f64, y: f64) {

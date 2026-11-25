@@ -1,10 +1,10 @@
 //! Shape editing
 
 use crate::layout::FloatId;
-use crate::layout::fragment::{Item, ShapeItem};
+use crate::layout::fragment::{Item, PictureOf, ShapeItem};
 
 use super::Editor;
-use super::selection::ObjectRef;
+use super::selection::{ObjectRef, Selection};
 use super::snap::SnapLine;
 use super::view::ShapeFrame;
 
@@ -22,32 +22,75 @@ fn turned(p: [f64; 2], c: [f64; 2], deg: f64) -> [f64; 2] {
 }
 
 impl Editor {
-    fn selected_shape(&self, f: FloatId, page: usize) -> Option<std::rc::Rc<ShapeItem>> {
-        let child = self.selected_child().map(<[u16]>::to_vec).unwrap_or_default();
+    /// The selected object's DrawingML shape, inline or floating: the selected group child's when one is.
+    pub fn object_shape(&self) -> Option<&crate::drawing::Shape> {
+        let shape = match self.selection {
+            super::selection::Selection::Object(ObjectRef::Floating(f)) => self.float_of(f)?.shape.as_deref()?,
+            super::selection::Selection::Object(ObjectRef::Inline { para, offset }) => {
+                match super::stories::inline_at(self.index.para(&self.doc, para)?, offset)? {
+                    crate::docx::Inline::Picture(p, _) => p.shape.as_deref()?,
+                    _ => return None,
+                }
+            }
+            _ => return None,
+        };
+        shape.at(self.selected_child().unwrap_or(&[]))
+    }
+
+    /// The selected object's drawn shape on `page`: a float's (its selected child's) or an inline object's.
+    fn selected_item(&self, obj: ObjectRef, page: usize) -> Option<std::rc::Rc<ShapeItem>> {
         let snap = self.snapshot();
-        let items = crate::layout::traverse::paint_float(snap.pages().get(page)?, f);
-        items.into_iter().find_map(|it| match it {
-            Item::Shape(s) if s.path == child && !s.decoration => Some(s),
-            _ => None,
-        })
+        let pg = snap.pages().get(page)?;
+        match obj {
+            ObjectRef::Floating(f) => {
+                let child = self.selected_child().unwrap_or(&[]);
+                crate::layout::traverse::paint_float(pg, f).into_iter().find_map(|it| match it {
+                    Item::Shape(s) if s.path == child && !s.decoration => Some(s),
+                    _ => None,
+                })
+            }
+            ObjectRef::Inline { para, offset } => {
+                let mine = |it: &Item| matches!(it, Item::Shape(s) if s.of == PictureOf::Inline(para, offset) && s.path.is_empty() && !s.decoration);
+                match crate::layout::traverse::find_in_para(pg, para, &mine)? {
+                    Item::Shape(s) => Some(s),
+                    _ => None,
+                }
+            }
+        }
+    }
+
+    /// The one selected object whose shape takes rotate and adjust handles: a float, or an inline picture or shape.
+    fn handled_object(&self) -> Option<ObjectRef> {
+        let obj = match self.selection {
+            Selection::Object(o @ ObjectRef::Inline { .. }) => o,
+            Selection::Object(ObjectRef::Floating(_)) => match self.selected_floats()[..] {
+                [f] if self.float_of(f).is_some_and(|fl| fl.shape.is_some()) => ObjectRef::Floating(f),
+                _ => return None,
+            },
+            _ => return None,
+        };
+        (self.object_shape().is_some() && !self.object_fixed(obj)).then_some(obj)
     }
 
     pub(super) fn shape_frames(&mut self, pages: std::ops::Range<usize>) -> Vec<ShapeFrame> {
-        let floats = self.selected_floats();
-        let [f] = floats[..] else { return Vec::new() };
-        if self.object_fixed(ObjectRef::Floating(f))
-            || self.object_drag.is_some_and(|d| d.now != d.start)
-            || self.shape_drag.is_some()
-            || self.float_of(f).is_none_or(|fl| fl.shape.is_none())
-        {
+        let Some(obj) = self.handled_object() else { return Vec::new() };
+        if self.object_drag.is_some_and(|d| d.now != d.start) || self.shape_drag.is_some() {
             return Vec::new();
         }
         let up = KNOB * 0.75 / self.viewport.zoom.max(0.1);
         let mut out = Vec::new();
         for page in pages {
-            let (rect, rot, adjust) = match self.selected_shape(f, page) {
+            // An inline object in a turned line (vertical text) is turned with it: it takes its frame's handles only.
+            if let ObjectRef::Inline { para, offset } = obj
+                && self.pages.page(page, &self.index).and_then(|g| self.inline_frame(&g, para, offset)).is_some_and(|(_, rot)| rot.abs() > 1e-9)
+            {
+                continue;
+            }
+            let (rect, rot, adjust) = match self.selected_item(obj, page) {
                 Some(s) => (s.rect, s.rot, s.geom.handles.iter().map(|h| s.to_page(h.at)).collect()),
-                None if self.selected_child().is_none() => {
+                None if self.selected_child().is_none()
+                    && let ObjectRef::Floating(f) = obj =>
+                {
                     let Some(geo) = self.pages.page(page, &self.index) else { continue };
                     let Some(st) = geo.stories.iter().find(|s| s.float == Some(f)) else { continue };
                     (st.rect, 0.0, Vec::new())
@@ -62,9 +105,9 @@ impl Editor {
         out
     }
 
-    pub(super) fn shape_handle_at(&mut self, x: f64, y: f64) -> Option<(FloatId, ShapeHandle, ShapeFrame)> {
+    pub(super) fn shape_handle_at(&mut self, x: f64, y: f64) -> Option<(ObjectRef, ShapeHandle, ShapeFrame)> {
         let (page, px, py) = self.stack().page_at(x, y)?;
-        let f = *self.selected_floats().first()?;
+        let obj = self.handled_object()?;
         let reach = 4.0 * 0.75 / self.viewport.zoom.max(0.1);
         let near = |p: [f64; 2]| (p[0] - px).abs() <= reach && (p[1] - py).abs() <= reach;
         let frame = self.shape_frames(page..page + 1).into_iter().next()?;
@@ -73,7 +116,15 @@ impl Editor {
             None if near(frame.rotate) => ShapeHandle::Rotate,
             None => return None,
         };
-        Some((f, h, frame))
+        Some((obj, h, frame))
+    }
+
+    /// An inline object's turn, clockwise in degrees.
+    pub(super) fn inline_turn(&self, para: crate::layout::ParaId, offset: crate::layout::Unit) -> f64 {
+        match self.index.para(&self.doc, para).and_then(|p| super::stories::inline_at(p, offset)) {
+            Some(crate::docx::Inline::Picture(p, _)) => p.shape.as_deref().map_or(0.0, |s| s.xfrm.rot.degrees()),
+            _ => 0.0,
+        }
     }
 }
 
@@ -81,7 +132,7 @@ const KNOB: f64 = 24.0;
 
 #[derive(Clone, Debug)]
 pub(super) struct ShapeDrag {
-    f: FloatId,
+    pub obj: ObjectRef,
     root: [f64; 4],
     child: crate::drawing::ChildPath,
     pub handle: ShapeHandle,
@@ -92,6 +143,8 @@ pub(super) struct ShapeDrag {
     shift: bool,
     previewed: Option<crate::layout::ParaId>,
     pub snapped: [Option<SnapLine>; 2],
+    /// The inline picture dragged, as the drag found it.
+    picture: Option<Box<crate::docx::Picture>>,
 }
 
 impl ShapeDrag {
@@ -100,7 +153,7 @@ impl ShapeDrag {
     }
 
     fn new(
-        f: FloatId,
+        obj: ObjectRef,
         root: [f64; 4],
         child: crate::drawing::ChildPath,
         handle: ShapeHandle,
@@ -108,7 +161,7 @@ impl ShapeDrag {
         at: [f64; 2],
         page: usize,
     ) -> ShapeDrag {
-        ShapeDrag { f, root, child, handle, item, start: at, now: at, page, shift: false, previewed: None, snapped: [None; 2] }
+        ShapeDrag { obj, root, child, handle, item, start: at, now: at, page, shift: false, previewed: None, snapped: [None; 2], picture: None }
     }
 
     pub fn angle(&self) -> f64 {
@@ -150,6 +203,48 @@ pub(super) fn rotate_to(n: &mut crate::docx::Float, child: &[u16], deg: f64, com
             n.rot_swap = quarter;
         }
     }
+    true
+}
+
+/// A shape's or a picture's geometry, as [`crate::drawing::Shape::geometry`] reads it.
+fn geom_mut(s: &mut crate::drawing::Shape) -> Option<&mut crate::drawing::geom::Geometry> {
+    match &mut s.kind {
+        crate::drawing::ShapeKind::Sp(sp) => Some(&mut sp.geom),
+        crate::drawing::ShapeKind::Pic(p) => Some(&mut p.geom),
+        crate::drawing::ShapeKind::Group(_) | crate::drawing::ShapeKind::Raw(_) => None,
+    }
+}
+
+/// How far a `w` by `h` box turned `deg` reaches past its own box on each side (left, top, right, bottom): negative
+/// where it reaches less.
+fn turn_extents(w: f64, h: f64, deg: f64) -> [f64; 4] {
+    let (sin, cos) = deg.to_radians().sin_cos();
+    let (bw, bh) = (w * cos.abs() + h * sin.abs(), w * sin.abs() + h * cos.abs());
+    let (dx, dy) = ((bw - w) / 2.0, (bh - h) / 2.0);
+    [dx, dy, dx, dy]
+}
+
+/// An inline object's effect extents after it went from `was` (width, height, turn) to its size and turn now: the
+/// turned box's bounds are its line box, as Word writes a turned inline picture's `wp:effectExtent`.
+pub(super) fn refit_turn(pic: &mut crate::docx::Picture, was: (f64, f64, f64)) {
+    let deg = pic.shape.as_deref().map_or(0.0, |s| s.xfrm.rot.degrees());
+    let (old, now) = (turn_extents(was.0, was.1, was.2), turn_extents(pic.w, pic.h, deg));
+    // None read (no `wp:effectExtent`): the turn's reach was never stored, and there is no effect's.
+    let stored = pic.effect != [0.0; 4];
+    for k in 0..4 {
+        // The effects' own reach (a shadow's, an outline's) stays.
+        let own = if stored { (pic.effect[k] - old[k]).max(0.0) } else { 0.0 };
+        pic.effect[k] = ((own + now[k]) * 12700.0).round() / 12700.0;
+    }
+}
+
+/// Turns an inline object to `deg` clockwise.
+pub(super) fn rotate_inline(pic: &mut crate::docx::Picture, deg: f64) -> bool {
+    let deg = deg.rem_euclid(360.0);
+    let Some(s) = pic.shape.as_deref_mut() else { return false };
+    let was = (pic.w, pic.h, s.xfrm.rot.degrees());
+    s.xfrm.rot = crate::drawing::units::Angle((deg * 60000.0).round() as i32 % crate::drawing::units::Angle::FULL);
+    refit_turn(pic, was);
     true
 }
 
@@ -217,23 +312,44 @@ const SETTLE: f64 = 4.0;
 
 impl Editor {
     pub(super) fn shape_press(&mut self, x: f64, y: f64) -> bool {
-        let Some((f, handle, frame)) = self.shape_handle_at(x, y) else { return false };
+        let Some((obj, handle, frame)) = self.shape_handle_at(x, y) else { return false };
         if self.gesture_kept(crate::api::command::CommandId::SetShapeAdjust) {
             return false;
         }
         let Some((_, px, py)) = self.stack().page_at(x, y) else { return false };
         let child = self.selected_child().map(<[u16]>::to_vec).unwrap_or_default();
-        let Some(item) = self.selected_shape(f, frame.page).or_else(|| self.group_item(f, frame.page)) else { return false };
-        let Some(root) = self.shape_root(f, frame.page) else { return false };
-        self.shape_drag = Some(ShapeDrag::new(f, root, child, handle, item, [px, py], frame.page));
+        let (item, root) = match obj {
+            ObjectRef::Floating(f) => {
+                let Some(item) = self.selected_item(obj, frame.page).or_else(|| self.group_item(f, frame.page)) else { return false };
+                let Some(root) = self.shape_root(f, frame.page) else { return false };
+                (item, root)
+            }
+            ObjectRef::Inline { .. } => {
+                let Some(item) = self.selected_item(obj, frame.page) else { return false };
+                let root = item.rect;
+                (item, root)
+            }
+        };
+        let mut d = ShapeDrag::new(obj, root, child, handle, item, [px, py], frame.page);
+        d.picture = self.inline_picture(obj).map(|p| Box::new(p.clone()));
+        self.shape_drag = Some(d);
         self.requests.push(super::input::Request::CapturePointer);
         true
     }
 
+    fn inline_picture(&self, obj: ObjectRef) -> Option<&crate::docx::Picture> {
+        let ObjectRef::Inline { para, offset } = obj else { return None };
+        match super::stories::inline_at(self.index.para(&self.doc, para)?, offset)? {
+            crate::docx::Inline::Picture(p, _) => Some(p),
+            _ => None,
+        }
+    }
+
     pub(super) fn child_move_press(&mut self, f: FloatId, page: usize, px: f64, py: f64) -> bool {
         let Some(child) = self.selected_child().map(<[u16]>::to_vec) else { return false };
-        let (Some(item), Some(root)) = (self.selected_shape(f, page), self.shape_root(f, page)) else { return false };
-        self.shape_drag = Some(ShapeDrag::new(f, root, child, ShapeHandle::Move, item, [px, py], page));
+        let obj = ObjectRef::Floating(f);
+        let (Some(item), Some(root)) = (self.selected_item(obj, page), self.shape_root(f, page)) else { return false };
+        self.shape_drag = Some(ShapeDrag::new(obj, root, child, ShapeHandle::Move, item, [px, py], page));
         self.build_snaps(page, super::objects::Dragged::Float(f));
         self.requests.push(super::input::Request::CapturePointer);
         true
@@ -265,8 +381,19 @@ impl Editor {
         Some(std::rc::Rc::new(s))
     }
 
+    /// A shape's adjust handle `i` dragged to `d.now`.
+    fn adjusted(s: &mut crate::drawing::Shape, d: &ShapeDrag, i: usize) -> Option<()> {
+        let [x0, y0, x1, y1] = d.item.rect;
+        let emu = |v: f64| crate::drawing::units::Emu((v * 12700.0).round() as i64);
+        let to = d.item.to_local(d.now);
+        let geom = geom_mut(s)?;
+        *geom = geom.drag_handle(i, emu(x1 - x0), emu(y1 - y0), to)?;
+        Some(())
+    }
+
     fn dragged_float(&self, d: &ShapeDrag) -> Option<crate::docx::Float> {
-        let mut n = self.float_of(d.f)?.clone();
+        let ObjectRef::Floating(f) = d.obj else { return None };
+        let mut n = self.float_of(f)?.clone();
         let compat = self.doc.settings.compat_mode;
         let s = n.shape.as_deref_mut()?.at_mut(&d.child)?;
         match d.handle {
@@ -274,16 +401,28 @@ impl Editor {
                 let own = s.xfrm.rot.degrees() + d.angle() - d.item.rot;
                 rotate_to(&mut n, &d.child, own, compat);
             }
-            ShapeHandle::Adjust(i) => {
-                let [x0, y0, x1, y1] = d.item.rect;
-                let emu = |v: f64| crate::drawing::units::Emu((v * 12700.0).round() as i64);
-                let to = d.item.to_local(d.now);
-                let sp = s.sp_mut()?;
-                sp.geom = sp.geom.drag_handle(i, emu(x1 - x0), emu(y1 - y0), to)?;
-            }
+            ShapeHandle::Adjust(i) => Self::adjusted(s, d, i)?,
             ShapeHandle::Move => move_child(&mut n, &d.child, d.root, [d.now[0] - d.start[0], d.now[1] - d.start[1]])?,
         }
         Some(n)
+    }
+
+    /// The inline object `d` drags, as the drag leaves it.
+    fn dragged_inline(&self, d: &ShapeDrag) -> Option<crate::docx::Picture> {
+        let p = self.inline_picture(d.obj)?;
+        // Only the picture the drag took: not one that took its place since.
+        if d.picture.as_deref() != Some(p) {
+            return None;
+        }
+        let mut p = p.clone();
+        match d.handle {
+            ShapeHandle::Rotate => {
+                rotate_inline(&mut p, d.angle());
+            }
+            ShapeHandle::Adjust(i) => Self::adjusted(p.shape.as_deref_mut()?, d, i)?,
+            ShapeHandle::Move => return None,
+        }
+        Some(p)
     }
 
     pub(super) fn shape_move(&mut self, x: f64, y: f64, mods: super::keymap::Mods) {
@@ -296,29 +435,47 @@ impl Editor {
             let (off, hit) = super::snap::snap([x0 + dx, y0 + dy, x1 + dx, y1 + dy], &self.snaps, self.snap_threshold());
             (d.now, d.snapped) = ([d.now[0] + off[0], d.now[1] + off[1]], hit);
         }
-        let preview = self.dragged_float(&d).and_then(|float| Some(crate::layout::Preview { float, anchor: self.index.float_anchor(d.f)? }));
-        let at = preview.as_ref().map(|p| p.anchor);
-        self.preview_layout(d.f, preview, d.previewed);
-        d.previewed = at;
+        // An inline object isn't laid out live: its outline turns (`selection_view`).
+        if let ObjectRef::Floating(f) = d.obj {
+            let preview = self.dragged_float(&d).and_then(|float| Some(crate::layout::Preview { float, anchor: self.index.float_anchor(f)? }));
+            let at = preview.as_ref().map(|p| p.anchor);
+            self.preview_layout(f, preview, d.previewed);
+            d.previewed = at;
+        }
         self.shape_drag = Some(d);
+    }
+
+    fn end_shape_preview(&mut self, d: &ShapeDrag) {
+        if let ObjectRef::Floating(f) = d.obj {
+            self.preview_layout(f, None, d.previewed);
+        }
     }
 
     pub(super) fn shape_release(&mut self, fonts: &crate::font::Fonts) -> Option<super::commands::Outcome> {
         let d = self.shape_drag.take()?;
         self.requests.push(super::input::Request::ReleasePointer);
-        let n = (d.now != d.start).then(|| self.dragged_float(&d)).flatten();
-        self.preview_layout(d.f, None, d.previewed);
+        let label = match d.handle {
+            ShapeHandle::Rotate => "Rotate",
+            ShapeHandle::Adjust(_) => "Adjust Shape",
+            ShapeHandle::Move => "Move Object",
+        };
+        let moved = d.now != d.start;
+        if let ObjectRef::Inline { .. } = d.obj {
+            // The edit lands on the selection: only while it is still the dragged picture.
+            if self.selection != Selection::Object(d.obj) {
+                return Some(super::commands::Outcome::Unchanged("the selection moved"));
+            }
+            let p = moved.then(|| self.dragged_inline(&d)).flatten();
+            return Some(match p {
+                Some(p) => self.edit_inline(label, |q| std::mem::replace(q, p) != *q, fonts),
+                None => super::commands::Outcome::Unchanged("no drag"),
+            });
+        }
+        let n = moved.then(|| self.dragged_float(&d)).flatten();
+        self.end_shape_preview(&d);
         let child = self.object_child.clone();
         let out = match n {
-            Some(n) => self.set_float(
-                n,
-                match d.handle {
-                    ShapeHandle::Rotate => "Rotate",
-                    ShapeHandle::Adjust(_) => "Adjust Shape",
-                    ShapeHandle::Move => "Move Object",
-                },
-                fonts,
-            ),
+            Some(n) => self.set_float(n, label, fonts),
             None => super::commands::Outcome::Unchanged("no drag"),
         };
         self.object_child = child;
@@ -427,8 +584,9 @@ impl Editor {
             return Outcome::unavailable("floating objects don't go in notes");
         }
         let (para, rect) = match at {
-            Some((page, r)) => match self.anchor_at(page, caret_para, r[1]) {
-                Some((p, top)) => {
+            Some((page, r)) => match self.anchor_at(page, caret_para, r) {
+                Some((p, top, region)) => {
+                    let r = region.inverse().rect(r);
                     let left = self.float_frames(page, Some(p), true).map_or(72.0, |(fr, o)| o[0] + fr.column.0);
                     (p, [r[0] - left, r[1] - top, r[2] - r[0], r[3] - r[1]])
                 }
@@ -438,13 +596,14 @@ impl Editor {
         };
         let Some(p) = self.index.para(&self.doc, para) else { return Outcome::Unchanged("no paragraph") };
         let Some(run) = p.inlines.iter().find_map(|i| i.run().cloned()).or_else(|| self.run_at(&caret)) else { return Outcome::Unchanged("no run") };
-        let emu = |v: f64| crate::drawing::units::Emu((v * 12700.0).round() as i64);
-        let twips = |v: f64| (v * 20.0).trunc() / 20.0;
-        let name = match kind {
+        let name = self.new_object_name(match kind {
             NewShape::Shape(_) => "Shape",
             NewShape::Line(_) => "Connector",
             NewShape::TextBox => "Text Box",
-        };
+        });
+        let Some(p) = self.index.para(&self.doc, para) else { return Outcome::Unchanged("no paragraph") };
+        let emu = |v: f64| crate::drawing::units::Emu((v * 12700.0).round() as i64);
+        let twips = |v: f64| (v * 20.0).trunc() / 20.0;
         let fid = crate::docx::next_para_id();
         let float = crate::docx::Float {
             id: fid,
@@ -466,6 +625,7 @@ impl Editor {
             dist: [0.0, 0.0, 9.0, 9.0],
             effect: [0.0; 4],
             poly: None,
+            poly_edited: false,
             behind: false,
             allow_overlap: true,
             layout_in_cell: true,
@@ -476,7 +636,7 @@ impl Editor {
             frame_src: None,
             in_note: false,
             parts: Vec::new(),
-            shape: Some(Box::new(Shape::new(kind, emu(rect[2]), emu(rect[3]), name))),
+            shape: Some(Box::new(Shape::new(kind, emu(rect[2]), emu(rect[3]), &name))),
             rot_swap: false,
             vml: false,
             relative: Default::default(),
@@ -540,7 +700,7 @@ impl Editor {
 
     pub(super) fn shape_cancel(&mut self) -> bool {
         let Some(d) = self.shape_drag.take() else { return false };
-        self.preview_layout(d.f, None, d.previewed);
+        self.end_shape_preview(&d);
         self.requests.push(super::input::Request::ReleasePointer);
         true
     }
@@ -548,7 +708,7 @@ impl Editor {
 
 // Formatting operations
 impl Editor {
-    fn edit_floats(
+    pub(super) fn edit_floats(
         &mut self,
         label: &'static str,
         ids: &[FloatId],
@@ -575,7 +735,11 @@ impl Editor {
             };
             let mut n = (**fl).clone();
             let here = if ids.len() == 1 { &path[..] } else { &[] };
-            if !edit(&mut n, here) || n == **fl {
+            if !edit(&mut n, here) {
+                continue;
+            }
+            self.rewrap(fl, &mut n);
+            if n == **fl {
                 continue;
             }
             **fl = n;
@@ -595,12 +759,15 @@ impl Editor {
         out
     }
 
-    fn edit_shapes(
+    pub(super) fn edit_shapes(
         &mut self,
         label: &'static str,
         mut edit: impl FnMut(&mut crate::drawing::Shape) -> bool,
         fonts: &crate::font::Fonts,
     ) -> super::commands::Outcome {
+        if let super::selection::Selection::Object(ObjectRef::Inline { .. }) = self.selection {
+            return self.edit_inline(label, |p| p.shape.as_deref_mut().is_some_and(&mut edit), fonts);
+        }
         let ids = self.selected_floats();
         self.edit_floats(label, &ids, |n, path| n.shape.as_deref_mut().and_then(|s| s.at_mut(path)).is_some_and(&mut edit), fonts)
     }
@@ -617,11 +784,11 @@ impl Editor {
         self.edit_shapes(
             "Adjust Shape",
             |s| {
-                let Some(sp) = s.sp_mut() else { return false };
-                let mut vals = sp.geom.adjust_values();
+                let Some(geom) = geom_mut(s) else { return false };
+                let mut vals = geom.adjust_values();
                 let Some(v) = vals.get_mut(index) else { return false };
                 *v = value;
-                sp.geom.with_values(&vals).map(|g| sp.geom = g).is_some()
+                geom.with_values(&vals).map(|g| *geom = g).is_some()
             },
             fonts,
         )
@@ -686,23 +853,37 @@ impl Editor {
 
     pub fn set_shape_body(&mut self, body: crate::drawing::text::BodyProps, fonts: &crate::font::Fonts) -> super::commands::Outcome {
         use crate::drawing::text::{AutoFit, VAnchor};
+        let set = |sp: &mut crate::drawing::SpShape, tb: Option<&mut crate::docx::TextBox>| {
+            sp.body = body.clone();
+            if let Some(tb) = tb {
+                let pt = |e: crate::drawing::units::Emu| e.0 as f64 / 12700.0;
+                tb.insets = body.insets.map(pt);
+                tb.v_anchor = match body.anchor {
+                    VAnchor::Centre => 1,
+                    VAnchor::Bottom => 2,
+                    _ => 0,
+                };
+                tb.auto_fit = matches!(body.autofit, AutoFit::Shape);
+            }
+        };
+        if let super::selection::Selection::Object(ObjectRef::Inline { .. }) = self.selection {
+            return self.edit_inline(
+                "Text Box Options",
+                |p| {
+                    let Some(sp) = p.shape.as_deref_mut().and_then(|s| s.sp_mut()) else { return false };
+                    set(sp, p.text.as_mut().map(|t| &mut t.text_box));
+                    true
+                },
+                fonts,
+            );
+        }
         let ids = self.selected_floats();
         self.edit_floats(
             "Text Box Options",
             &ids,
             |n, path| {
                 let Some(sp) = n.shape.as_deref_mut().and_then(|s| s.at_mut(path)).and_then(|s| s.sp_mut()) else { return false };
-                sp.body = body.clone();
-                if let Some(tb) = n.text_box.as_mut().filter(|_| path.is_empty()) {
-                    let pt = |e: crate::drawing::units::Emu| e.0 as f64 / 12700.0;
-                    tb.insets = body.insets.map(pt);
-                    tb.v_anchor = match body.anchor {
-                        VAnchor::Centre => 1,
-                        VAnchor::Bottom => 2,
-                        _ => 0,
-                    };
-                    tb.auto_fit = matches!(body.autofit, AutoFit::Shape);
-                }
+                set(sp, n.text_box.as_mut().filter(|_| path.is_empty()));
                 true
             },
             fonts,
@@ -712,6 +893,9 @@ impl Editor {
     pub fn set_object_rotation(&mut self, deg: f64, fonts: &crate::font::Fonts) -> super::commands::Outcome {
         if !(0.0..=360.0).contains(&deg) {
             return super::commands::Outcome::unavailable("a rotation is 0 to 360 degrees");
+        }
+        if let super::selection::Selection::Object(ObjectRef::Inline { .. }) = self.selection {
+            return self.edit_inline("Rotate", |p| rotate_inline(p, deg), fonts);
         }
         let ids = self.selected_floats();
         let compat = self.doc.settings.compat_mode;
@@ -776,13 +960,13 @@ impl Editor {
 // Stacking order
 impl Editor {
     /// Each float's z and id, in document order.
-    fn each_float(&self, f: &mut dyn FnMut(u32, FloatId)) {
-        fn walk(blocks: &[crate::docx::Block], f: &mut dyn FnMut(u32, FloatId)) {
+    fn each_float(&self, f: &mut dyn FnMut(&crate::docx::Float)) {
+        fn walk(blocks: &[crate::docx::Block], f: &mut dyn FnMut(&crate::docx::Float)) {
             for b in blocks {
                 match b {
                     crate::docx::Block::Para(p) => p.inlines.iter().for_each(|i| {
                         if let crate::docx::Inline::Float(fl, _) = i {
-                            f(fl.z, FloatId(fl.id));
+                            f(fl);
                         }
                     }),
                     crate::docx::Block::Table(t) => t.rows.iter().flat_map(|r| &r.cells).for_each(|c| walk(&c.blocks, f)),
@@ -793,18 +977,18 @@ impl Editor {
         self.doc.stories.values().for_each(|b| walk(b, f));
     }
 
-    /// Every float's z and id, back to front.
-    fn stacking(&self) -> Vec<(u32, FloatId)> {
+    /// Every float's z and id, back to front: equal z in document order, as they are drawn.
+    pub(super) fn stacking(&self) -> Vec<(u32, FloatId)> {
         let mut all = Vec::new();
-        self.each_float(&mut |z, id| all.push((z, id)));
-        all.sort();
-        all
+        self.each_float(&mut |fl| all.push((fl.z, fl.order, FloatId(fl.id))));
+        all.sort_unstable();
+        all.into_iter().map(|(z, _, id)| (z, id)).collect()
     }
 
     /// The z a new float takes: in front of every other.
     pub(super) fn front_z(&self) -> u32 {
         let mut front = None;
-        self.each_float(&mut |z, _| front = front.max(Some(z)));
+        self.each_float(&mut |fl| front = front.max(Some(fl.z)));
         front.map_or(0, |z: u32| z.saturating_add(1))
     }
 }
@@ -948,7 +1132,7 @@ impl Editor {
         }
         let (gw, gh) = (u[2] - u[0], u[3] - u[1]);
         let group = Shape {
-            nv: NonVisual { name: "Group".into(), ..NonVisual::default() },
+            nv: NonVisual { name: self.new_object_name("Group"), ..NonVisual::default() },
             xfrm: Xfrm { ext: [emu(gw), emu(gh)], ..Xfrm::default() },
             kind: ShapeKind::Group(GroupShape { child_off: [Emu(0), Emu(0)], child_ext: [emu(gw), emu(gh)], fill: None, children, canvas: false }),
             spans: Spans::default(),
@@ -1110,6 +1294,7 @@ impl Editor {
                 }
             }
             C::SetPictureAdjust(change) => {
+                // Each selected picture's own adjustments, changed.
                 let mut err = None;
                 let out = self.edit_shapes(
                     "Picture Adjustments",
@@ -1141,15 +1326,11 @@ impl Editor {
     }
 
     fn selected_sp(&self) -> Option<crate::drawing::SpShape> {
-        let f = *self.selected_floats().first()?;
-        let path = self.selected_child().map(<[u16]>::to_vec).unwrap_or_default();
-        self.float_of(f)?.shape.as_deref()?.at(&path)?.sp().cloned()
+        self.object_shape()?.sp().cloned()
     }
 
     fn selected_line(&self) -> Option<crate::drawing::paint::Line> {
-        let f = *self.selected_floats().first()?;
-        let path = self.selected_child().map(<[u16]>::to_vec).unwrap_or_default();
-        match &self.float_of(f)?.shape.as_deref()?.at(&path)?.kind {
+        match &self.object_shape()?.kind {
             crate::drawing::ShapeKind::Sp(s) => s.line.clone(),
             crate::drawing::ShapeKind::Pic(p) => p.line.clone(),
             _ => None,
@@ -1157,9 +1338,7 @@ impl Editor {
     }
 
     fn selected_effects(&self) -> Option<crate::drawing::paint::EffectList> {
-        let f = *self.selected_floats().first()?;
-        let path = self.selected_child().map(<[u16]>::to_vec).unwrap_or_default();
-        match &self.float_of(f)?.shape.as_deref()?.at(&path)?.kind {
+        match &self.object_shape()?.kind {
             crate::drawing::ShapeKind::Sp(s) => s.effects.clone(),
             crate::drawing::ShapeKind::Pic(p) => p.effects.clone(),
             _ => None,

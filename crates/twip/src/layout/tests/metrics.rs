@@ -149,7 +149,14 @@ fn a_complex_script_run_takes_its_complex_script_size_bold_and_font() {
 #[test]
 fn a_text_borders_side_is_its_styles_lines_and_gaps() {
     let side = |style: &str, sz: f64, space: f64, shadow: bool| {
-        super::super::text::border_side(&crate::docx::props::Border { style: style.into(), width: sz / 8.0, space, shadow, color: None })
+        super::super::text::border_side(&crate::docx::props::Border {
+            style: style.into(),
+            width: sz / 8.0,
+            space,
+            shadow,
+            color: None,
+            color_theme: None,
+        })
     };
     let near = |a: (f64, f64), b: (f64, f64)| (a.0 - b.0).abs() < 1e-9 && (a.1 - b.1).abs() < 1e-9;
     // Laid out in twips, drawn in 600-dpi pixels: triple 12 is five 30 tw lines, 12 px each.

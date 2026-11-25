@@ -199,6 +199,7 @@ pub const PPR: &[&str] = &[
 ];
 
 /// How XML for the main part is written: its WordprocessingML prefix (`w:`) and its root's namespace declarations.
+#[derive(Clone)]
 pub struct Cx {
     pub w: String,
     ns: String,

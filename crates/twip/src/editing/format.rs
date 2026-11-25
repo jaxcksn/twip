@@ -371,6 +371,17 @@ impl Editor {
         Cx::of_xml(self.doc.source.as_ref().map_or(NEW_ROOT, |s| s.xml.as_str()))
     }
 
+    /// The names of the part character formatting is written in: the numbering part when a list's number is
+    /// formatted, the styles part when a style is, else the document's. Whether it declares the w14 namespace
+    /// follows.
+    pub(super) fn formatted_part_cx(&self) -> Cx {
+        match (&self.label_target, &self.style_target, &self.doc.resolver) {
+            (Some(t), _, _) => t.cx.clone(),
+            (None, Some(_), Some(r)) => r.styles.cx(),
+            _ => self.cx(),
+        }
+    }
+
     pub(super) fn region_of_para(&self, para: ParaId, res: &Resolver) -> Option<Region> {
         let slot = self.index.para_slot(para)?;
         let Container::Cell { table, row, cell } = slot.container else { return None };
@@ -420,8 +431,11 @@ impl Editor {
         Some(Again { style: res.para_again(&p.style, style, region.as_ref(), cx), bases })
     }
 
-    pub(super) fn selected_ranges(&mut self) -> Vec<(ParaId, Unit, Unit)> {
+    pub(crate) fn selected_ranges(&mut self) -> Vec<(ParaId, Unit, Unit)> {
         use super::selection::{ObjectRef, Selection};
+        if self.is_discontiguous() {
+            return self.multi_pieces();
+        }
         match self.selection {
             Selection::Block { .. } => return self.block_pieces().into_iter().map(|(_, _, p, a, b)| (p, a, b)).collect(),
             Selection::Cells { table, anchor, focus, .. } => return self.cell_ranges(table, anchor, focus),
@@ -460,7 +474,7 @@ impl Editor {
     }
 
     /// Every paragraph of the cells from `anchor` to `focus` (nested tables' too), whole.
-    fn cell_ranges(
+    pub(super) fn cell_ranges(
         &self,
         table: crate::layout::TableId,
         anchor: super::selection::CellRef,
@@ -559,6 +573,9 @@ impl Editor {
         settle: &dyn Fn(&mut Props, &str, &RunStyle) -> bool,
         fonts: &Fonts,
     ) -> Outcome {
+        if self.label_target.is_some() {
+            return self.format_label_part(edit, settle);
+        }
         if self.style_target.is_some() {
             return self.format_style_part("rPr", &|p, cx, _, run| edit(p, &cx.w, run));
         }
@@ -590,7 +607,7 @@ impl Editor {
         let mut ranges: Vec<(ParaId, Unit, Unit)> = Vec::new();
         // The paragraphs whose marks are in the selection.
         let mut marks: Vec<ParaId> = Vec::new();
-        if self.selection.is_collapsed() {
+        if self.selection.is_collapsed() && !self.is_discontiguous() {
             let Some(caret) = self.caret() else { return Outcome::Unchanged("no caret") };
             let (Some((para, off)), Some(run)) = (caret.para_offset(), self.run_at(&caret)) else { return Outcome::Unchanged("no paragraph") };
             let Some(base) = self.run_base(para, off, &res, &cx) else { return Outcome::Unchanged("no paragraph") };
@@ -669,6 +686,9 @@ impl Editor {
     /// end after its last mark otherwise); in selected cells, every one. A column block holds none.
     pub(super) fn selected_marks(&mut self, ranges: &[(ParaId, Unit, Unit)]) -> Vec<ParaId> {
         use super::selection::Selection;
+        if self.is_discontiguous() {
+            return self.multi_marks();
+        }
         match self.selection {
             Selection::Block { .. } => return Vec::new(),
             Selection::Cells { .. } => return ranges.iter().map(|r| r.0).collect(),
@@ -768,8 +788,12 @@ impl Editor {
                 )
             }
             Format::FontColor(c) => {
-                let v = c.map_or("auto".to_string(), |c| format!("{c:06X}"));
-                self.format_runs("Font Color", &|p, w, _| p.set("color", format!("<{w}color {w}val=\"{v}\"/>")), fonts)
+                let c = *c;
+                self.format_runs(
+                    "Font Color",
+                    &|p, w, _| p.set("color", super::commands::colour_attrs(&format!("<{w}color/>"), w, "val", super::commands::THEME_COLOR, c)),
+                    fonts,
+                )
             }
             Format::Highlight(name) => {
                 let name = name.clone();
@@ -1053,7 +1077,8 @@ pub enum Format {
     Set(Toggle, bool),
     FontSize(f64),
     GrowFont(bool),
-    FontColor(Option<u32>),
+    /// A colour, or automatic.
+    FontColor(Option<super::theme::WordColour>),
     Highlight(Option<String>),
     FontFamily(String),
     ClearFormatting,

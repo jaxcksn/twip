@@ -13,7 +13,7 @@ use super::props::*;
 use super::resolve::{ParaResolved, Resolver, div_chain};
 use super::review::{
     AuthorId, CellMarkKind, CellRevisions, Comment, CommentId, FormatChange, GridChange, IdCounter, Identity, MarkKind, ParaChange, People,
-    PreviousProps, Protection, ProtectionKind, RangeKind, RangeMark, RevisionId, RevisionMark, RowRevisions, RunRevisions, SectionChange,
+    PreviousProps, Protection, ProtectionKind, RangeKind, RangeMark, RevisionId, RevisionMark, RowRevisions, RunRevisions, SectionChange, ShowMarkup,
     TableChange, Timestamp,
 };
 use super::styles::{Region, Styles, ThemeFonts};
@@ -229,9 +229,10 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
     let drawing_theme = Rc::new(crate::drawing::theme::Theme::parse(theme_xml.as_deref()));
     let settings_xml = part_of("settings").and_then(|p| pkg.read_str(&p));
     let settings = read_settings(settings_xml.as_deref());
-    let colour_map = crate::drawing::theme::ColourMap::parse(
-        settings_xml.as_deref().and_then(|x| roxmltree::Document::parse(x).ok()).as_ref().map(|d| d.root_element()),
-    );
+    let settings_tree = settings_xml.as_deref().and_then(|x| roxmltree::Document::parse(x).ok());
+    let settings_root = settings_tree.as_ref().map(|d| d.root_element());
+    let colour_map = crate::drawing::theme::ColourMap::parse(settings_root);
+    let opening = settings_root.map(opening_view);
     let colours = ThemeColours::new(&drawing_theme, &colour_map);
     let mut styles = Styles::parse(part_of("styles").and_then(|p| pkg.read_str(&p)).as_deref(), colours);
     let mut numbering = Numbering::parse(part_of("numbering").and_then(|p| pkg.read_str(&p)).as_deref(), &colours);
@@ -418,10 +419,13 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
     // Word's built-in separators: one line with no paragraph spacing.
     // ponytail: in the default paragraph style's run font, not the document default's; differs only when that style
     // sets a font or size.
+    let mut separator_defaults = HashMap::new();
     for (tag, t) in [("footnote", "separator"), ("footnote", "continuationSeparator"), ("endnote", "separator"), ("endnote", "continuationSeparator")]
     {
         let key = format!("{tag}:{t}");
-        if doc.separators.contains_key(&key) || (tag == "endnote" && doc.endnotes.is_empty()) || (tag == "footnote" && doc.footnotes.is_empty()) {
+        let used =
+            !(doc.separators.contains_key(&key) || (tag == "endnote" && doc.endnotes.is_empty()) || (tag == "footnote" && doc.footnotes.is_empty()));
+        if !used && !editable {
             continue;
         }
         let xml = format!(
@@ -430,7 +434,10 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
         if let Ok(dom) = roxmltree::Document::parse(&xml) {
             r.in_endnotes = tag == "endnote";
             let blocks = r.read_blocks(dom.root_element(), &mut pkg, None);
-            doc.separators.insert(key, blocks);
+            if used {
+                doc.separators.insert(key.clone(), blocks.clone());
+            }
+            separator_defaults.insert(key, blocks);
         }
     }
     if let (Some(path), Some(dom)) = (&comments_part, &comments_dom) {
@@ -507,6 +514,10 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
     doc.theme = drawing_theme;
     doc.colour_map = colour_map;
     doc.settings = r.settings;
+    if let Some((show, hides_white_space)) = opening {
+        doc.review.markup = Rc::new(super::review::Markup { show, ..Default::default() });
+        doc.hides_white_space = hides_white_space;
+    }
     doc.people = r.people;
     doc.review_ids = r.ids;
     doc.diagnostics = r.diagnostics;
@@ -542,6 +553,8 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
             glossary: glossary_src,
             page_background: (doc.page_colour, doc.page_fill.clone()),
             page_theme: doc.page_colour_theme,
+            separators: doc.separators.clone(),
+            separator_defaults,
         }));
     }
     Ok(doc)
@@ -817,6 +830,17 @@ fn fold_divs(blocks: &mut [Block], divs: &HashMap<i64, Division>, in_cell: bool)
     }
 }
 
+/// What the document shows when it opens: its Show Markup (`w:revisionView`) and whether the white space between
+/// pages is hidden (`w:doNotDisplayPageBoundaries`).
+fn opening_view(root: Node) -> (ShowMarkup, bool) {
+    let mut show = ShowMarkup::default();
+    if let Some(v) = child(root, "revisionView") {
+        let on = |name| on_off_str(attr(v, name));
+        (show.insertions_deletions, show.formatting, show.comments) = (on("insDel"), on("formatting"), on("comments"));
+    }
+    (show, flag(root, "doNotDisplayPageBoundaries").unwrap_or(false))
+}
+
 pub(crate) fn read_settings(xml: Option<&str>) -> Settings {
     let mut s = Settings { compat_mode: 12, default_tab: 36.0, hyphenation_zone: 18.0, ..Default::default() };
     let Some(doc) = xml.and_then(|x| roxmltree::Document::parse(x).ok()) else { return s };
@@ -831,6 +855,9 @@ pub(crate) fn read_settings(xml: Option<&str>) -> Settings {
     s.mirror_margins = flag(root, "mirrorMargins").unwrap_or(false);
     s.gutter_at_top = flag(root, "gutterAtTop").unwrap_or(false);
     s.no_form_shading = flag(root, "doNotShadeFormData").unwrap_or(false);
+    s.auto_format_override = flag(root, "autoFormatOverride").unwrap_or(false);
+    s.style_lock_theme = flag(root, "styleLockTheme").unwrap_or(false);
+    s.style_lock_style_set = flag(root, "styleLockQFSet").unwrap_or(false);
     s.default_table_style = child(root, "defaultTableStyle").and_then(val).filter(|v| !v.is_empty()).map(str::to_string);
     s.variables = child(root, "docVars")
         .into_iter()
@@ -852,6 +879,8 @@ pub(crate) fn read_settings(xml: Option<&str>) -> Settings {
     }
     s.consecutive_hyphen_limit = child(root, "consecutiveHyphenLimit").and_then(|n| int(val(n))).unwrap_or(0);
     s.track_revisions = flag(root, "trackRevisions").unwrap_or(false);
+    s.do_not_track_moves = flag(root, "doNotTrackMoves").unwrap_or(false);
+    s.do_not_track_formatting = flag(root, "doNotTrackFormatting").unwrap_or(false);
     s.endnotes_sect_end = child(root, "endnotePr").and_then(|p| child(p, "pos")).and_then(val) == Some("sectEnd");
     for tag in ["footnote", "endnote"] {
         for n in child(root, &format!("{tag}Pr")).into_iter().flat_map(|p| children(p, tag)) {
@@ -1630,6 +1659,7 @@ impl Reader {
                 display: attr(b, "display").unwrap_or("allPages").to_string(),
                 surround_header: !self.settings.borders_do_not_surround_header,
                 surround_footer: !self.settings.borders_do_not_surround_footer,
+                behind_text: attr(b, "zOrder") == Some("back"),
             });
         }
         if let Some(c) = child(s, "sectPrChange") {
@@ -2547,7 +2577,7 @@ impl Reader {
         let dist = std::array::from_fn(|i| (st.wrap_dist[i].unwrap_or(dflt[i]) * 20.0).round() / 20.0);
         // Compat 15: a VML float is behind the text only without wrapping.
         let behind = st.z < 0 && (self.res.styles.compat != Compat::Generic || wrap == "none");
-        let poly = v.wrap_coords.filter(|_| matches!(wrap.as_str(), "tight" | "through")).map(Rc::from);
+        let poly = v.wrap_coords.filter(|_| matches!(wrap.as_str(), "tight" | "through")).map(|p| Rc::from(super::bounded_polygon(p)));
         let line = shape.sp().and_then(|s| s.line.as_ref()).or_else(|| shape.pic().and_then(|p| p.line.as_ref()));
         let pen = line.filter(|l| !matches!(l.fill, Some(crate::drawing::paint::Fill::None))).map(|l| l.width.map_or(15.0, |w| w.0 as f64 / 635.0));
         let (h_align, v_align) = (align(&st.h_align), align(&st.v_align));
@@ -2581,6 +2611,8 @@ impl Reader {
                 dist,
                 effect,
                 poly,
+                // A VML wrap polygon (`wrapcoords`) is kept as it is.
+                poly_edited: true,
                 behind,
                 allow_overlap: v.allow_overlap,
                 layout_in_cell: v.allow_in_cell,
@@ -2633,13 +2665,13 @@ impl Reader {
             .and_then(|p| p.attribute("descr").filter(|s| !s.is_empty()).or(p.attribute("title")))
             .unwrap_or("")
             .into();
-        let lock_aspect = item
-            .descendants()
-            .any(|n| matches!(n.tag_name().name(), "graphicFrameLocks" | "picLocks") && matches!(n.attribute("noChangeAspect"), Some("1" | "true")));
+        let lock_aspect = crate::drawing::read::aspect_locked(item);
         if is(item, WP, "inline") {
             let ee = item.children().find(|c| is(*c, WP, "effectExtent"));
-            let e = |n: &str| ee.and_then(|e| emu(e.attribute(n))).unwrap_or(0.0).max(0.0);
-            let effect = [e("l"), e("t"), e("r"), e("b")];
+            // Negative where a turned picture's bounds are narrower than its box (Word writes a quarter-turned
+            // picture's so); never past half the box, so the line box never turns inside out.
+            let e = |n: &str, size: f64| ee.and_then(|e| emu(e.attribute(n))).unwrap_or(0.0).max(-size / 2.0);
+            let effect = [e("l", w), e("t", h), e("r", w), e("b", h)];
             // An inline shape's text: a stand-alone shape's (a group's children's text isn't read inline).
             let group = item.descendants().any(|n| n.tag_name().name() == "wgp");
             let text = txbx.filter(|_| !group).map(|t| Box::new(InlineText { id: next_para_id(), text_box: self.text_box(item, t, pkg) }));
@@ -2709,6 +2741,9 @@ impl Reader {
                     let e = |n: &str| ee.and_then(|e| e.attribute(n)?.parse::<f64>().ok()).map_or(0.0, |v| (v / 635.0).trunc() / 20.0);
                     [e("l"), e("t"), e("r"), e("b")]
                 },
+                poly_edited: wrap_el
+                    .and_then(|w| w.children().find(|c| is(*c, WP, "wrapPolygon")))
+                    .is_some_and(|p| p.attribute("edited").is_some_and(|v| on_off_str(Some(v)))),
                 poly: wrap_el.filter(|_| matches!(wrap, "tight" | "through")).and_then(|w| {
                     let pts: Vec<(f64, f64)> = w
                         .children()
@@ -2717,7 +2752,7 @@ impl Reader {
                         .filter(|q| q.is_element())
                         .filter_map(|q| Some((q.attribute("x")?.parse::<f64>().ok()? / 21600.0, q.attribute("y")?.parse::<f64>().ok()? / 21600.0)))
                         .collect();
-                    (pts.len() >= 2).then(|| Rc::from(pts))
+                    (pts.len() >= 2).then(|| Rc::from(super::bounded_polygon(pts)))
                 }),
                 behind: item.attribute("behindDoc").is_some_and(|v| on_off_str(Some(v))),
                 allow_overlap: item.attribute("allowOverlap").map(|v| on_off_str(Some(v))).unwrap_or(true),

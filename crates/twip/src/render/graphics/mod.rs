@@ -573,6 +573,44 @@ impl Graphics {
         self.cpu.render(target, &self.res, &cpu::Frame { clear: Some(clear), draws: &draws });
     }
 
+    /// `page` drawn whole into `pixels`, `width` x `height` RGBA (premultiplied, rows packed), as large as fits with its
+    /// shape kept, centred, over `clear` around it and the page colour under it: a page thumbnail. The page's size in
+    /// pixels; `None` when either side is 0 or `pixels` isn't `width` x `height` x 4 bytes.
+    pub fn page_thumbnail(
+        &mut self,
+        r: &Renderer,
+        page: &crate::layout::fragment::PageFragment,
+        images: &[Vec<u8>],
+        pixels: &mut [u8],
+        (width, height): (u32, u32),
+        clear: Color,
+    ) -> Option<(u32, u32)> {
+        let size = (width as usize).checked_mul(height as usize).and_then(|n| n.checked_mul(4));
+        if width == 0 || height == 0 || size != Some(pixels.len()) || page.w <= 0.0 || page.h <= 0.0 {
+            return None;
+        }
+        let k = (f64::from(width) / page.w).min(f64::from(height) / page.h);
+        let (w, h) = (((page.w * k).round() as u32).clamp(1, width), ((page.h * k).round() as u32).clamp(1, height));
+        let (x, y) = (f64::from((width - w) / 2), f64::from((height - h) / 2));
+        let mut target = Target::new(pixels, width, height, width as usize * 4, cpu::Format::Rgba8).ok()?;
+        self.cpu.render(&mut target, &self.res, &cpu::Frame { clear: Some(clear), draws: &[] });
+        // Cut to the page: what reaches off it isn't drawn on the clear round it.
+        let mut rec = Recorder::new();
+        self.recolour_log.clear();
+        rec.push_clip(Clip::Rect { rect: kurbo::Rect::new(0.0, 0.0, page.w, page.h), aa: true });
+        self.page(&mut rec, r, page, images);
+        rec.pop();
+        let picture = rec.finish();
+        let sheet = r.ink_for(false, r.page_colour.unwrap_or(0xFF_FFFF));
+        let mut back = Recorder::new();
+        back.fill_rect(kurbo::Rect::new(0.0, 0.0, page.w, page.h), sheet);
+        let back = back.finish();
+        let at = Affine::translate((x, y)) * Affine::scale(k);
+        let draws = [Draw { picture: &back, transform: at }, Draw { picture: &picture, transform: at }];
+        self.cpu.render(&mut target, &self.res, &cpu::Frame { clear: None, draws: &draws });
+        Some((w, h))
+    }
+
     /// What the last frame couldn't draw.
     pub fn stats(&self) -> cpu::Stats {
         self.cpu.stats()

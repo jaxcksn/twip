@@ -4,6 +4,7 @@ use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use crate::docx::props::VertAlign;
+use crate::docx::review::CellMarkKind;
 use crate::docx::write::props::{Props, esc};
 use crate::docx::{Block, Inline, Paragraph, Run, RunStyle, VMerge};
 use crate::font::Fonts;
@@ -488,6 +489,21 @@ fn accept(blocks: &mut Vec<Block>) {
             Block::Table(t) => {
                 t.rows.retain(|r| r.rev.del.is_none());
                 (t.change, t.grid_change) = (None, None);
+                // Cells with a tracked deletion go, their columns with them where nothing else needs them.
+                let mut gone = Vec::new();
+                for (ri, r) in t.rows.iter().enumerate() {
+                    gone.extend(
+                        r.cells
+                            .iter()
+                            .enumerate()
+                            .filter(|(_, c)| matches!(c.rev.structural, Some((_, CellMarkKind::Delete))))
+                            .map(|(ci, _)| (ri, ci)),
+                    );
+                }
+                if !gone.is_empty() {
+                    super::tables::remove_cells(&mut t.rows, &gone, &mut t.grid);
+                    super::tables::tidy_merges(&mut t.rows);
+                }
                 for r in &mut t.rows {
                     r.rev = Default::default();
                     for c in &mut r.cells {
@@ -566,6 +582,7 @@ impl Editor {
         Some(self.completed(f))
     }
 
+    /// Copied content with what copying keeps beside its blocks: its hidden text, the notes and comments it refers to.
     fn completed(&mut self, mut f: Fragment) -> Fragment {
         f.hidden_text = self.doc.review.show_hidden;
         strip_partial_comments(&mut f.blocks);
@@ -591,6 +608,9 @@ impl Editor {
 
     fn clipped(&mut self, f: Fragment) -> Fragment {
         let mut f = f.accepted();
+        // A deleted row or cell can take a comment's start, end or reference with it
+        strip_partial_comments(&mut f.blocks);
+        f.refs = self.refs_of(&f.blocks);
         drop_unpaired(&mut f.blocks);
         drop_partial(&mut f.blocks, &self.index);
         f.controls = controls_of(&f.blocks, &self.doc);
@@ -598,6 +618,21 @@ impl Editor {
             f.controls.extend(controls_of(body, &self.doc));
         }
         f.origin = Some(self.origin_of(&mut f));
+        f
+    }
+
+    /// Whole `blocks` of this document as content to paste, as [`Editor::clip`] takes a selection: revisions
+    /// accepted, unpaired markers left out, and the definitions of the controls in them and in the notes and comments
+    /// they refer to kept with them.
+    pub(super) fn whole_fragment(&mut self, blocks: Vec<Block>) -> Fragment {
+        let mut f = Fragment { blocks, ..Default::default() }.accepted();
+        strip_partial_comments(&mut f.blocks);
+        f.refs = self.refs_of(&f.blocks);
+        drop_unpaired(&mut f.blocks);
+        f.controls = controls_of(&f.blocks, &self.doc);
+        for body in f.refs.notes.iter().map(|n| &n.2).chain(f.refs.comments.iter().map(|c| &c.body)) {
+            f.controls.extend(controls_of(body, &self.doc));
+        }
         f
     }
 
@@ -814,7 +849,10 @@ impl Editor {
         stories
     }
 
-    fn copy_content(&mut self) -> Option<Fragment> {
+    pub(super) fn copy_content(&mut self) -> Option<Fragment> {
+        if self.is_discontiguous() {
+            return self.multi_copy();
+        }
         if matches!(self.selection, Selection::Cells { .. }) {
             let id = self.clipboard.as_ref().map_or(1, |f| f.id + 1);
             return self.copy_cells(id);
@@ -982,7 +1020,8 @@ impl Editor {
             };
         }
         let ids: Vec<ParaId> = blocks.iter().filter_map(|b| if let Block::Para(p) = b { Some(ParaId(p.id)) } else { None }).collect();
-        let (&a, &b) = (ids.first()?, ids.last()?);
+        let a = *ids.first()?;
+        let b = blocks.last().and_then(|b| super::move_paras::edge_para_ref(b, true)).map(|p| ParaId(p.id))?;
         if self.step(&mut tx, Step::Blocks { container, range: at..at, with: blocks }).is_err() {
             self.abort(tx);
             return None;
@@ -1004,7 +1043,7 @@ impl Editor {
             [Block::Para(p)] if f.open_end => self.smart_spaces(&super::text::UnitText::of(p).text),
             _ => (false, false),
         };
-        if self.refuse_expanded() || self.refuse_locked() {
+        if self.refuse_replacing() {
             return Outcome::Unchanged("locked");
         }
         let mut tx = self.begin("Paste");

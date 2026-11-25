@@ -60,7 +60,7 @@ impl Editor {
     }
 
     /// The composition's rects on `pages`, to underline.
-    pub(super) fn composition_rects(&mut self, pages: std::ops::Range<usize>) -> Vec<(usize, [f64; 4])> {
+    pub(super) fn composition_rects(&mut self, pages: std::ops::Range<usize>) -> Vec<(usize, super::view::Band)> {
         let Some((para, start, end)) = self.composition.as_ref().map(|c| (c.para, c.start, c.end)) else { return Vec::new() };
         let Some(story) = self.index.para_slot(para).map(|s| self.index.story(s.container)) else { return Vec::new() };
         self.range_rects(Position::text(story, para, start), Position::text(story, para, end), pages)

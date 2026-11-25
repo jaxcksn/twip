@@ -7,6 +7,7 @@ use super::fragment::{
     BoxFragment, BoxKind, CellFragment, CellPlace, Child, Item, LineFragment, PageChild, PageFragment, PlacedLine, RowFragment, translated,
 };
 use super::ids::{FloatId, ParaId, TableId, Unit};
+use super::vertical::{Turn, Turning};
 
 #[derive(Clone, Copy)]
 pub struct Placed<'a> {
@@ -102,7 +103,7 @@ fn flow<'a>(children: &'a [Child], dx: f64, dy: f64, skip: &dyn Fn(&BoxKind) -> 
                 }
             }
             Child::Line { para, placed } => line_items(*para, placed, dx, dy, lines, out),
-            Child::Items(items) => {
+            Child::Items(items) | Child::Turned { items, .. } => {
                 let line = lines.next();
                 for it in items.iter() {
                     out(Placed { dx, dy, item: it, line, own_colours: false, float: None, clip: None });
@@ -170,7 +171,7 @@ fn filled(children: &[Child]) -> bool {
         })
     }
     children.iter().any(|c| match c {
-        Child::Items(i) => shapes(i),
+        Child::Items(i) | Child::Turned { items: i, .. } => shapes(i),
         Child::Group { children, .. } => filled(children),
         Child::Box(b) => filled(&b.children),
         _ => false,
@@ -208,8 +209,13 @@ pub fn paint_lines<'a>(
         }
     };
     let mut lines = Lines { n: 0, placed };
-    for item in page.borders.iter() {
-        visible(Placed { dx: 0.0, dy: 0.0, item, line: 0, own_colours: false, float: None, clip: None });
+    let borders = |visible: &mut dyn FnMut(Placed<'a>)| {
+        for item in page.borders.iter() {
+            visible(Placed { dx: 0.0, dy: 0.0, item, line: 0, own_colours: false, float: None, clip: None });
+        }
+    };
+    if page.borders_behind {
+        borders(&mut visible);
     }
     let bodies = || page.children.iter().filter_map(|c| if let PageChild::Body(b) = c { Some(&**b) } else { None });
     let neither = |k: &BoxKind| is_float(k) || is_notes(k);
@@ -258,6 +264,9 @@ pub fn paint_lines<'a>(
             backgrounds(&b.children, b.offset.0, b.offset.1, &behind, &mut visible);
             flow(&b.children, b.offset.0, b.offset.1, &behind, &mut lines, &mut visible);
         }
+    }
+    if !page.borders_behind {
+        borders(&mut visible);
     }
 }
 
@@ -313,6 +322,31 @@ pub fn paint_float_clipped(page: &PageFragment, id: FloatId) -> Vec<Clipped> {
         flow(&fb.children, dx, dy, &|_| false, &mut Lines { n: 0, placed: &mut |_, _, _, _, _| {} }, &mut out);
     }
     v
+}
+
+/// The first item `want` takes among paragraph `para`'s lines on `page` (and any turned or loose items), placed on
+/// the page: other paragraphs' lines are skipped unread.
+pub fn find_in_para(page: &PageFragment, para: ParaId, want: &dyn Fn(&Item) -> bool) -> Option<Item> {
+    fn walk(children: &[Child], dx: f64, dy: f64, para: ParaId, want: &dyn Fn(&Item) -> bool) -> Option<Item> {
+        let in_line = |l: &PlacedLine| l.line.items.iter().find(|it| want(it)).map(|it| translated(it, dx + l.x, dy + l.y));
+        children.iter().find_map(|c| match c {
+            Child::Box(b) => walk(&b.children, dx + b.offset.0, dy + b.offset.1, para, want),
+            Child::Group { offset, children } => walk(children, dx + offset.0, dy + offset.1, para, want),
+            Child::Para(p) if p.para == para => p.lines.iter().find_map(in_line),
+            Child::Para(_) => None,
+            Child::Line { para: Some(q), placed } if *q == para => in_line(placed),
+            Child::Line { .. } => None,
+            Child::Table(t) => t.rows.iter().flat_map(|r| r.cells.iter()).find_map(|cell| walk(&cell.content, dx, dy, para, want)),
+            Child::Items(items) | Child::Turned { items, .. } => items.iter().find(|it| want(it)).map(|it| translated(it, dx, dy)),
+        })
+    }
+    page.children.iter().find_map(|c| {
+        let b: &BoxFragment = match c {
+            PageChild::Body(b) => b,
+            PageChild::Header(b) | PageChild::Footer(b) => b,
+        };
+        walk(&b.children, b.offset.0, b.offset.1, para, want)
+    })
 }
 
 pub fn paint_items(page: &PageFragment) -> Vec<Item> {
@@ -445,7 +479,7 @@ pub fn spatial(page: &PageFragment, provisional: bool) -> Spatial {
                         }
                     }
                 }
-                Child::Items(_) => {}
+                Child::Items(_) | Child::Turned { .. } => {}
             }
         }
     }
@@ -468,6 +502,10 @@ pub struct SpatialTree<'a> {
 pub struct SpatialStory<'a> {
     pub story: StoryRef<'a>,
     pub rect: [f64; 4],
+    /// A float's rotation on the page, which turns `rect` about the float's centre; none for other stories.
+    pub turn: Turn,
+    /// Where the frame a float or note is laid out in is drawn on the page; none for other stories.
+    pub region: Turn,
     pub nodes: Vec<SpatialNode<'a>>,
 }
 
@@ -490,6 +528,14 @@ pub struct LineNode<'a> {
     pub x: f64,
     pub y: f64,
     pub line: &'a std::rc::Rc<LineFragment>,
+    /// The line's items as laid out: a vertical section's line's without the turn they are drawn with.
+    pub items: &'a [Item],
+    /// Where the line, laid out at `x`, `y`, is drawn on the page.
+    pub turn: Turn,
+    /// Where the boxes laid out with it are drawn: `turn`, unless lines are turned each about their own band.
+    pub region: Turn,
+    /// The page directions its text runs and its lines stack by text flow alone, as [`super::vertical::Unturned::axes`].
+    pub axes: [f64; 4],
 }
 
 pub struct TableNode<'a> {
@@ -498,6 +544,8 @@ pub struct TableNode<'a> {
 }
 
 pub struct RowNode<'a> {
+    /// Where its rects and edges, as laid out, are drawn on the page.
+    pub turn: Turn,
     pub row: usize,
     pub rect: [f64; 4],
     pub top: f64,
@@ -507,6 +555,8 @@ pub struct RowNode<'a> {
 }
 
 pub struct CellNode<'a> {
+    /// Where its rect, clip and closing caret, as laid out, are drawn on the page.
+    pub turn: Turn,
     pub place: &'a CellPlace,
     pub rect: [f64; 4],
     pub clip: Option<f64>,
@@ -514,18 +564,34 @@ pub struct CellNode<'a> {
     pub nodes: Vec<SpatialNode<'a>>,
 }
 
+/// Each line among `nodes`, those in table cells included.
+pub fn each_line<'a>(nodes: &[SpatialNode<'a>], f: &mut dyn FnMut(&LineNode<'a>)) {
+    for n in nodes {
+        match n {
+            SpatialNode::Line(l) => f(l),
+            SpatialNode::Table(t) => t.rows.iter().flat_map(|r| &r.cells).for_each(|c| each_line(&c.nodes, f)),
+        }
+    }
+}
+
 pub fn spatial_tree(page: &PageFragment, provisional: bool) -> Option<SpatialTree<'_>> {
     if provisional {
         return None;
     }
-    let mut w = SpatialWalk { h: page.h, stories: Vec::new() };
+    let mut w = SpatialWalk { h: page.h, stories: Vec::new(), frame: Frame::PAGE };
     let mut bodies = Vec::new();
     for c in page.children.iter() {
         if let PageChild::Body(b) = c {
             let mut nodes = Vec::new();
             w.children(&b.children, b.offset.0, b.offset.1, &mut nodes);
             let (x, y) = b.offset;
-            bodies.push(SpatialStory { story: StoryRef::Body, rect: [x, y, x + b.size.0, y + b.size.1], nodes });
+            bodies.push(SpatialStory {
+                story: StoryRef::Body,
+                rect: [x, y, x + b.size.0, y + b.size.1],
+                turn: Turn::NONE,
+                region: Turn::NONE,
+                nodes,
+            });
         }
     }
     let floats_and_notes = std::mem::take(&mut w.stories);
@@ -553,32 +619,126 @@ pub fn spatial_tree(page: &PageFragment, provisional: bool) -> Option<SpatialTre
 struct SpatialWalk<'a> {
     h: f64,
     stories: Vec<SpatialStory<'a>>,
+    frame: Frame,
+}
+
+/// Where the content being walked is drawn: `post` places what `turning` (a vertical section's body) turns, or the
+/// content itself without one.
+#[derive(Clone, Copy)]
+struct Frame {
+    post: Turn,
+    turning: Option<Turning>,
+    axes: [f64; 4],
+    /// Lines hold their items turned, in one item.
+    peel: bool,
+}
+
+impl Frame {
+    const PAGE: Frame = Frame { post: Turn::NONE, turning: None, axes: Turn::NONE.m, peel: false };
+
+    fn rects(&self) -> Turn {
+        self.turning.map_or(self.post, |t| t.turn.then(self.post))
+    }
+
+    fn line(&self, top: f64, height: f64) -> Turn {
+        self.turning.map_or(self.post, |t| t.line(top, height).then(self.post))
+    }
+}
+
+/// The rotation of the float whose children are `children` and whose frame is `rect`: its own shape's, about the
+/// frame's centre.
+fn float_turn(children: &[Child], rect: [f64; 4]) -> Turn {
+    fn own(i: &Item) -> Option<f64> {
+        match i {
+            Item::Shape(s) if s.path.is_empty() && !s.decoration && s.rot.rem_euclid(360.0) > 1e-9 => Some(s.rot),
+            _ => None,
+        }
+    }
+    // In a vertical body its items are turned with the page, in one item.
+    let shape = children.iter().find_map(|c| match c {
+        Child::Items(items) => items.iter().find_map(|i| match i {
+            Item::Turned(t) => t.items.iter().find_map(own),
+            i => own(i),
+        }),
+        _ => None,
+    });
+    shape.map_or(Turn::NONE, |deg| Turn::about([(rect[0] + rect[2]) / 2.0, (rect[1] + rect[3]) / 2.0], deg))
+}
+
+/// `outer`'s linear part after `inner`'s.
+fn axes_then(inner: [f64; 4], outer: [f64; 4]) -> [f64; 4] {
+    Turn { m: inner, t: [0.0; 2] }.then(Turn { m: outer, t: [0.0; 2] }).m
 }
 
 impl<'a> SpatialWalk<'a> {
     fn line(&self, para: Option<ParaId>, p: &'a PlacedLine, dx: f64, dy: f64, out: &mut Vec<SpatialNode<'a>>) {
         let (x, y) = (dx + p.x, dy + p.y);
-        let mut runs = p.line.items.iter().filter(|it| matches!(it, Item::Glyphs(_))).peekable();
-        if runs.peek().is_some() && runs.all(|it| below_page(it, y, self.h)) {
-            return;
+        let f = &self.frame;
+        let items: &[Item] = match &*p.line.items {
+            [Item::Turned(t)] if f.peel => &t.items,
+            items => items,
+        };
+        if f.turning.is_none() && f.post == Turn::NONE {
+            let mut runs = items.iter().filter(|it| matches!(it, Item::Glyphs(_))).peekable();
+            if runs.peek().is_some() && runs.all(|it| below_page(it, y, self.h)) {
+                return;
+            }
         }
-        out.push(SpatialNode::Line(LineNode { para, x, y, line: &p.line }));
+        let turn = f.line(y, p.line.pitch - p.line.below);
+        out.push(SpatialNode::Line(LineNode { para, x, y, line: &p.line, items, turn, region: f.rects(), axes: f.axes }));
+    }
+
+    /// `children` walked in `frame`.
+    fn within(&mut self, frame: Frame, children: &'a [Child], out: &mut Vec<SpatialNode<'a>>) {
+        let outer = std::mem::replace(&mut self.frame, frame);
+        self.children(children, 0.0, 0.0, out);
+        self.frame = outer;
+    }
+
+    /// The lines of turned text drawn by `items` at `dx`, `dy`.
+    fn unturned(&mut self, items: &[Item], text: &'a [super::vertical::Unturned], dx: f64, dy: f64, out: &mut Vec<SpatialNode<'a>>) {
+        let f = self.frame;
+        for (k, u) in text.iter().enumerate() {
+            // Lines turned each about their own band
+            let outer = match f.turning {
+                Some(t) if t.each_line => {
+                    let c = match items.get(k).or(items.first()) {
+                        Some(Item::Turned(i)) => i.centre[1],
+                        Some(i) => i.top(),
+                        None => 0.0,
+                    };
+                    t.line(dy + c, 0.0).then(f.post)
+                }
+                _ => f.rects(),
+            };
+            let post = u.turn.then(Turn::NONE.shifted(dx, dy)).then(outer);
+            self.within(Frame { post, turning: None, axes: axes_then(u.axes, f.axes), peel: false }, &u.children, out);
+        }
     }
 
     fn story(&mut self, story: StoryRef<'a>, b: &'a BoxFragment, dx: f64, dy: f64) {
         let (x, y) = (dx + b.offset.0, dy + b.offset.1);
         let mut nodes = Vec::new();
         self.children(&b.children, x, y, &mut nodes);
+        // Extent as laid out, in the frame the box is laid out in
+        let f = self.frame;
+        let region = f.rects();
+        let back = region.inverse();
         let mut r = [f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY];
         let mut add = |q: [f64; 4]| r = [r[0].min(q[0]), r[1].min(q[1]), r[2].max(q[2]), r[3].max(q[3])];
         for n in &nodes {
             match n {
-                SpatialNode::Line(l) => add([l.x, l.y, l.x + 1.0, l.y + l.line.pitch]),
-                SpatialNode::Table(t) => t.rows.iter().for_each(|row| add(row.rect)),
+                SpatialNode::Line(l) => {
+                    let q = [l.x, l.y, l.x + 1.0, l.y + l.line.pitch];
+                    add(if l.turn == f.line(l.y, l.line.pitch - l.line.below) { q } else { back.rect(l.turn.rect(q)) })
+                }
+                SpatialNode::Table(t) => {
+                    t.rows.iter().for_each(|row| add(if row.turn == region { row.rect } else { back.rect(row.turn.rect(row.rect)) }))
+                }
             }
         }
-        let rect = if r[0].is_finite() { [r[0], r[1], r[2].max(r[0] + b.size.0), r[3]] } else { [x, y, x + b.size.0, y + b.size.1] };
-        self.stories.push(SpatialStory { story, rect, nodes });
+        let laid = if r[0].is_finite() { [r[0], r[1], r[2].max(r[0] + b.size.0), r[3]] } else { [x, y, x + b.size.0, y + b.size.1] };
+        self.stories.push(SpatialStory { story, rect: region.rect(laid), turn: Turn::NONE, region, nodes });
     }
 
     fn children(&mut self, children: &'a [Child], dx: f64, dy: f64, out: &mut Vec<SpatialNode<'a>>) {
@@ -586,9 +746,19 @@ impl<'a> SpatialWalk<'a> {
             match c {
                 Child::Box(b) => match &b.kind {
                     BoxKind::Float { anchor, float, rect, .. } => {
-                        let n = self.stories.len();
                         self.story(StoryRef::Float { float: *float, anchor: *anchor }, b, dx, dy);
-                        self.stories[n].rect = [rect[0] + dx, rect[1] + dy, rect[2] + dx, rect[3] + dy];
+                        // Pushed after any story nested in it.
+                        let n = self.stories.len() - 1;
+                        let r = self.frame.rects().rect([rect[0] + dx, rect[1] + dy, rect[2] + dx, rect[3] + dy]);
+                        self.stories[n].rect = r;
+                        self.stories[n].turn = float_turn(&b.children, r);
+                        self.stories[n].region = self.frame.rects();
+                    }
+                    BoxKind::Turned(turning) => {
+                        let f = self.frame;
+                        let post = Turn::NONE.shifted(dx + b.offset.0, dy + b.offset.1).then(f.rects());
+                        let axes = axes_then(turning.turn.m, f.axes);
+                        self.within(Frame { post, turning: Some(*turning), axes, peel: true }, &b.children, out);
                     }
                     BoxKind::Notes => {
                         for n in b.children.iter() {
@@ -612,6 +782,7 @@ impl<'a> SpatialWalk<'a> {
                     out.push(SpatialNode::Table(TableNode { table: t.table, rows }));
                 }
                 Child::Items(_) => {}
+                Child::Turned { items, text } => self.unturned(items, text, dx, dy, out),
             }
         }
     }
@@ -625,6 +796,7 @@ impl<'a> SpatialWalk<'a> {
                 let mut nodes = Vec::new();
                 self.children(&c.content, dx, dy, &mut nodes);
                 CellNode {
+                    turn: self.frame.rects(),
                     place: &c.place,
                     rect: shift(c.place.rect),
                     clip: c.place.clip.map(|y| y + dy),
@@ -634,6 +806,7 @@ impl<'a> SpatialWalk<'a> {
             })
             .collect();
         RowNode {
+            turn: self.frame.rects(),
             row: r.row,
             rect: shift(r.rect),
             top: r.top + dy,
@@ -678,7 +851,7 @@ pub fn semantic_chars(page: &PageFragment, out: &mut Vec<(ParaId, Unit, char)>) 
                         }
                     }
                 }
-                Child::Items(items) => {
+                Child::Items(items) | Child::Turned { items, .. } => {
                     for it in items.iter() {
                         run(it, dy, h, out);
                     }
@@ -719,6 +892,7 @@ mod tests {
                 mark: None,
                 texts: Box::new([]),
                 expansions: Box::new([]),
+                label: None,
             }),
         }
     }
@@ -775,6 +949,7 @@ mod tests {
             h: 792.0,
             body_area: Some((72.0, 720.0)),
             borders: Box::new([]),
+            borders_behind: false,
             children: Box::new([
                 PageChild::Body(Rc::new(body.finish(BoxKind::Body, (0.0, 0.0), (612.0, 792.0)))),
                 PageChild::Header(header.finish(BoxKind::Header { story: "header1.xml".into() }, (0.0, 36.0), (612.0, 12.0))),
@@ -809,6 +984,70 @@ mod tests {
     }
 
     #[test]
+    fn a_float_in_a_float_keeps_each_its_own_frame_and_turn() {
+        use crate::drawing::geom::Geom;
+        let shape = Item::Shape(Rc::new(ShapeItem {
+            rect: [0.0, 0.0, 100.0, 100.0],
+            rot: 45.0,
+            flip_h: false,
+            flip_v: false,
+            geom: Rc::new(Geom { paths: vec![], text_rect: [0.0; 4], handles: vec![], cxn: vec![] }),
+            fill: crate::drawing::paint::Paint::None,
+            line: crate::drawing::paint::ResolvedLine::none(),
+            effects: Default::default(),
+            behind: false,
+            float: 0,
+            path: Vec::new(),
+            picture: false,
+            ink: false,
+            decoration: false,
+            snap: false,
+            clip_bottom: None,
+            text_float: 0,
+            text: None,
+            text_path: None,
+            of: Default::default(),
+        }));
+        let float = |id: u64, rect: [f64; 4]| BoxKind::Float { anchor: ParaId(1), float: FloatId(id), rect, layer: Default::default() };
+        let mut inner = BoxBuilder::new();
+        inner.push(Child::Items(Box::new([rect(0.0, 1)])));
+        let mut outer = BoxBuilder::new();
+        outer.push(Child::Items(Box::new([shape])));
+        outer.push(Child::Box(inner.finish(float(22, [10.0, 10.0, 20.0, 20.0]), (0.0, 0.0), (10.0, 10.0))));
+        let mut body = BoxBuilder::new();
+        body.push(Child::Box(outer.finish(float(21, [0.0, 0.0, 100.0, 100.0]), (0.0, 0.0), (100.0, 100.0))));
+        let page = PageFragment {
+            id: FragmentId::next(),
+            w: 612.0,
+            h: 792.0,
+            body_area: None,
+            children: Box::new([PageChild::Body(Rc::new(body.finish(BoxKind::Body, (0.0, 0.0), (612.0, 792.0))))]),
+            borders: Box::new([]),
+            borders_behind: false,
+        };
+        let tree = spatial_tree(&page, false).expect("a tree");
+        let of = |id: u64| tree.stories.iter().find(|s| matches!(s.story, StoryRef::Float { float, .. } if float == FloatId(id))).expect("the float");
+        assert_ne!(of(21).turn, Turn::NONE, "the outer float is turned");
+        assert_eq!(of(22).turn, Turn::NONE, "the float inside it is not");
+        assert_eq!(of(21).rect, [0.0, 0.0, 100.0, 100.0]);
+        assert_eq!(of(22).rect, [10.0, 10.0, 20.0, 20.0]);
+        // In a body running down the page: its items turned with it, its own turn still found.
+        let PageChild::Body(b) = &page.children[0] else { panic!("a body") };
+        let v = crate::layout::vertical::of_section(3).expect("tbRl");
+        let mut down = BoxBuilder::new();
+        crate::layout::vertical::turn_body(&b.children, v, [612.0, 792.0]).into_iter().for_each(|c| down.push(c));
+        let page = PageFragment {
+            children: Box::new([PageChild::Body(Rc::new(down.finish(BoxKind::Body, (0.0, 0.0), (612.0, 792.0))))]),
+            id: FragmentId::next(),
+            ..page
+        };
+        let tree = spatial_tree(&page, false).expect("a tree");
+        let of = |id: u64| tree.stories.iter().find(|s| matches!(s.story, StoryRef::Float { float, .. } if float == FloatId(id))).expect("the float");
+        assert_ne!(of(21).turn, Turn::NONE, "the outer float is turned in a vertical body");
+        assert_eq!(of(22).turn, Turn::NONE, "the float inside it is not");
+    }
+
+    #[test]
     fn text_below_the_page_is_excluded() {
         let face = crate::font::Fonts::system_recommended().face("Calibri", None, false, false);
         let Some(face) = face else { return };
@@ -839,6 +1078,7 @@ mod tests {
                 mark: None,
                 texts: Box::new([]),
                 expansions: Box::new([]),
+                label: None,
             }),
         };
         let mut body = BoxBuilder::new();
@@ -850,6 +1090,7 @@ mod tests {
             body_area: None,
             children: Box::new([PageChild::Body(Rc::new(body.finish(BoxKind::Body, (0.0, 0.0), (612.0, 792.0))))]),
             borders: Box::new([]),
+            borders_behind: false,
         };
         assert_eq!(paint_items(&page).len(), 1);
         assert_eq!(excluded(&page).len(), 1);

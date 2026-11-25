@@ -623,3 +623,72 @@ fn selecting_an_earlier_note_does_not_lay_out_the_rest_of_the_document() {
     assert_eq!(e.caret_view().expect("the note's caret").page, 0);
     assert!(matches!(e.snapshot().status(), crate::layout::LayoutStatus::Pending { .. }), "the note's line was on a page already laid out");
 }
+
+/// The main part's XML as saved.
+fn saved_document(e: &Editor) -> String {
+    let saved = crate::docx::write::save(e.document()).expect("saves");
+    crate::docx::package::read(&saved, &[], "word/document.xml").expect("reads").expect("the main part")
+}
+
+#[test]
+fn a_frame_is_selected_moved_and_resized_by_its_border_and_saved_in_its_frame_properties() {
+    use crate::editing::input::PointerKind;
+    use crate::editing::keymap::Mods;
+    let frame = r#"<w:p><w:pPr><w:framePr w:w="2880" w:h="1440" w:wrap="around" w:vAnchor="page" w:hAnchor="page" w:x="1441" w:y="2881"/></w:pPr><w:r><w:t>FRAMED</w:t></w:r></w:p>"#;
+    let mut e = package(&format!("{frame}{}<w:sectPr>{SEC}</w:sectPr>", p("Body text after the frame.")), None);
+    e.complete(fonts());
+    let f = frames(&e)[0];
+    let none = Mods::default();
+    let at = |e: &Editor, x: f64, y: f64| e.stack().to_doc(0, x, y).expect("on the stack");
+    // A press on its border selects it; a drag from there moves it 36 pt right and down.
+    let (x, y) = at(&e, 72.5, 180.0);
+    e.pointer_input(PointerKind::Down, x, y, 1, none, fonts());
+    assert_eq!(e.selection(), Selection::Object(ObjectRef::Floating(f)));
+    assert!(e.object_props(fonts()).is_some_and(|p| p.frame && p.stack_index.is_none()));
+    for k in 1..=4 {
+        let t = f64::from(k) * 9.0;
+        let (mx, my) = at(&e, 72.5 + t, 180.0 + t);
+        e.pointer_input(PointerKind::Move, mx, my, 0, none, fonts());
+    }
+    let (ux, uy) = at(&e, 108.5, 216.0);
+    e.pointer_input(PointerKind::Up, ux, uy, 0, none, fonts());
+    let props = e.frame_properties(None).expect("frame properties");
+    assert!((props.horizontal.0 - 108.05).abs() < 0.06 && (props.vertical.0 - 180.05).abs() < 0.06, "{props:?}");
+    let xml = saved_document(&e);
+    assert!(xml.contains(r#"w:x="2161""#) && xml.contains(r#"w:y="3601""#), "{xml}");
+    // Its bottom-right handle widens it by 36 pt.
+    e.complete(fonts());
+    let (hx, hy) = at(&e, 108.0 + 144.0, 180.0 + 72.0);
+    let (tx, ty) = at(&e, 108.0 + 180.0, 180.0 + 72.0);
+    e.pointer_input(PointerKind::Down, hx, hy, 1, none, fonts());
+    e.pointer_input(PointerKind::Move, tx, ty, 0, none, fonts());
+    e.pointer_input(PointerKind::Up, tx, ty, 0, none, fonts());
+    assert!((e.frame_properties(None).expect("frame properties").width.0 - 180.0).abs() < 0.06);
+    assert!(saved_document(&e).contains(r#"w:w="3600""#));
+    // Allow overlap off: suppressOverlap on its paragraph.
+    assert_eq!(e.frame_allow_overlap(), Some(true));
+    assert!(matches!(e.set_frame_allow_overlap(false, fonts()), Outcome::Changed(_)));
+    assert_eq!(e.frame_allow_overlap(), Some(false));
+    assert!(saved_document(&e).contains("suppressOverlap"));
+}
+
+#[test]
+fn note_options_for_this_section_take_every_selected_section() {
+    use crate::api::command::{NoteProperties, NoteScope, NoteType, NumberFormat};
+    let mut e = three_sections(&p("Three"));
+    let (a, b) = (para_of(&e, "One"), para_of(&e, "Two"));
+    e.selection = Selection::range(
+        Position::text(StoryId::Body, a, Unit(1)),
+        Position::text(StoryId::Body, b, Unit(1)),
+        crate::editing::selection::Granularity::Char,
+    );
+    let props = NoteProperties {
+        kind: NoteType::Footnote,
+        format: Some(NumberFormat::LowerRoman),
+        apply_to: Some(NoteScope::ThisSection),
+        ..Default::default()
+    };
+    assert!(matches!(e.execute(Command::SetNoteProperties(props), fonts()), Outcome::Changed(_)));
+    let fmts: Vec<Option<String>> = e.document().sections.iter().map(|s| s.notes[0].fmt.clone()).collect();
+    assert_eq!(fmts, [Some("lowerRoman".into()), Some("lowerRoman".into()), None], "the selected sections");
+}

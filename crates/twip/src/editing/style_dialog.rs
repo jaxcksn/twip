@@ -725,7 +725,11 @@ impl Editor {
                         AutoOr::Auto => None,
                     };
                     let clear = fill.is_none() && b.pattern == crate::api::command::ShadingPattern::Clear;
-                    let sh = super::table_format::Shading { pattern: b.pattern.val(), color: color.map(|c| c.0), fill: fill.map(|c| c.0) };
+                    let sh = super::table_format::Shading {
+                        pattern: b.pattern.val(),
+                        color: color.map(|c| super::theme::WordColour::rgb(c.0)),
+                        fill: fill.map(|c| super::theme::WordColour::rgb(c.0)),
+                    };
                     raw = cell(&raw, &|p| {
                         if clear {
                             p.remove("shd");
@@ -794,13 +798,5 @@ impl Editor {
         let mut out = self.style_values(&raw, v.open.clone(), &res.styles, v.table_part)?;
         (out.short_form, out.kind, out.name) = (v.short_form, v.kind, v.name.clone());
         Ok(out)
-    }
-
-    /// The formatting state of text in a style's XML: for the Format menu's dialogs.
-    pub fn style_formatting_state(&self, raw: &str) -> Option<(CharacterFormatting, ParagraphFormatting, Vec<crate::api::services::TabStopInfo>)> {
-        let (para, run, _) = self.style_formatting(raw)?;
-        let tabs =
-            para.style.tabs.iter().filter(|t| t.kind != crate::docx::props::TabKind::Clear).map(|t| super::commands::tabs::info(t, false)).collect();
-        Some((super::state::character(&[&run]), super::state::paragraph(&[(&para.style, None)]), tabs))
     }
 }

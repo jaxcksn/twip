@@ -8,9 +8,33 @@ use crate::font::Fonts;
 use super::{Dir, Outcome};
 use crate::editing::Editor;
 
+/// Which floating objects a text wrapping break moves the text below.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BreakClear {
+    /// Those on the left.
+    Left,
+    /// Those on the right.
+    Right,
+    /// Those on either side.
+    Both,
+}
+
 impl Editor {
     pub(in crate::editing) fn line_break(&mut self, fonts: &Fonts) -> Outcome {
-        self.insert_inline(|run| Inline::Break(BreakKind::Line, run), "Line Break", fonts)
+        self.line_break_clearing(None, fonts)
+    }
+
+    /// A line break at the selection; `clear` makes it a text wrapping break, the text after it going below the
+    /// floating objects on that side (Layout > Breaks > Text Wrapping clears both).
+    pub fn line_break_clearing(&mut self, clear: Option<BreakClear>, fonts: &Fonts) -> Outcome {
+        let kind = match clear {
+            None => BreakKind::Line,
+            Some(BreakClear::Left) => BreakKind::ClearLeft,
+            Some(BreakClear::Right) => BreakKind::ClearRight,
+            Some(BreakClear::Both) => BreakKind::ClearAll,
+        };
+        let label = if clear.is_some() { "Text Wrapping Break" } else { "Line Break" };
+        self.insert_inline(|run| Inline::Break(kind, run), label, fonts)
     }
 
     /// A section break at the selection: its paragraph splits there, the text before it ends a new section with the
@@ -22,7 +46,7 @@ impl Editor {
         if self.style_target.is_some() {
             return Outcome::unavailable("not in a style");
         }
-        if self.refuse_expanded() || self.refuse_locked() {
+        if self.refuse_replacing() {
             return Outcome::Unchanged("locked");
         }
         let mut tx = self.begin("Section Break");
