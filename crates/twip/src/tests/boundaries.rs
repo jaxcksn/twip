@@ -63,7 +63,8 @@ fn layout_doesnt_know_the_editor() {
 #[test]
 fn renderers_read_only_the_view() {
     for m in ["render", "pdf"] {
-        let v = violations(m, &["editing", "editor", "legacy", "host"], &["editing::view"]);
+        // The view, and a read document opened as an editor opens it (its imported HTML brought in)
+        let v = violations(m, &["editing", "editor", "legacy", "host"], &["editing::view", "editing::opened"]);
         assert!(v.is_empty(), "{m} reads editing internals:\n{}", v.join("\n"));
     }
 }

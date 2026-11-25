@@ -75,7 +75,9 @@ impl DocIndex {
 
     pub fn build_with_parts(doc: &Document, parts: &[String]) -> DocIndex {
         let mut parts = parts.to_vec();
-        parts.extend(doc.stories.keys().filter(|k| !parts.contains(k)).cloned().collect::<Vec<_>>());
+        let known: std::collections::HashSet<&str> = parts.iter().map(String::as_str).collect();
+        let more: Vec<String> = doc.stories.keys().filter(|k| !known.contains(k.as_str())).cloned().collect();
+        parts.extend(more);
         let mut idx = DocIndex { parts, ..DocIndex::default() };
         for (i, s) in doc.sections.iter().enumerate() {
             idx.add_blocks(Container::Section(i), &s.blocks);

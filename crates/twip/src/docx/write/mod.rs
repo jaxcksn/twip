@@ -2311,13 +2311,16 @@ impl<'a, 'i> Saver<'a, 'i> {
                 }
             }
         }
-        if p.iter().any(|b| matches!(b, Block::Table(_))) {
+        let tables = p.iter().any(|b| matches!(b, Block::Table(_)));
+        let mut ps: Vec<&Paragraph> = p.iter().filter_map(|b| if let Block::Para(x) = b { Some(x) } else { None }).collect();
+        let chunk = self.take_chunks(&mut qs, if tables { None } else { Some(&mut ps) });
+        if tables {
             self.gone_marks(&qs, p);
             let closing = take_closing(&mut qs);
-            return self.with_new_tables(&qs, p, at, closing);
+            return self.with_new_tables(&qs, p, at, closing, chunk);
         }
-        let ps: Vec<&Paragraph> = p.iter().filter_map(|b| if let Block::Para(x) = b { Some(x) } else { None }).collect();
         if qs.is_empty() && ps.is_empty() {
+            self.splices.extend(chunk.map(|r| (r, String::new())));
             return Ok(());
         }
         if qs.len() == 1
@@ -2350,6 +2353,7 @@ impl<'a, 'i> Saver<'a, 'i> {
             for r in srcs.iter().flat_map(|s| s.ranges.iter()) {
                 self.splices.push((r.clone(), String::new()));
             }
+            self.splices.extend(chunk.map(|r| (r, String::new())));
             return Ok(());
         }
         let mut text = Emit::group(self, &qs, &srcs, &ps)?;
@@ -2379,7 +2383,7 @@ impl<'a, 'i> Saver<'a, 'i> {
                     self.splices.push((r.clone(), String::new()));
                 }
             }
-            None => self.put(closing, at, text, "nowhere to put new paragraphs")?,
+            None => self.put(chunk, closing, at, text, "nowhere to put new paragraphs")?,
         }
         Ok(())
     }
@@ -2421,8 +2425,44 @@ impl<'a, 'i> Saver<'a, 'i> {
         self.splices.extend(gone);
     }
 
-    /// `text` where a group without source paragraphs goes: in place of its closing paragraph, else at `at`.
-    fn put(&mut self, closing: Option<Range<usize>>, at: Option<usize>, text: String, none: &str) -> Result<(), String> {
+    /// Takes the paragraphs standing for imported HTML (`w:altChunk`, a source that is no `w:p`) out of `qs`: their
+    /// elements go, all but the first; that one goes too when `qs` has others left, and is returned, for the group to
+    /// be written in its place, when it hasn't. One not brought in yet (`ps` holds its placeholder, empty) is kept as
+    /// read, its placeholder taken out of `ps`.
+    fn take_chunks(&mut self, qs: &mut Vec<&Paragraph>, mut ps: Option<&mut Vec<&Paragraph>>) -> Option<Range<usize>> {
+        let mut chunks = Vec::new();
+        qs.retain(|q| match q.src.as_ref().filter(|s| !s.closing).and_then(|s| Some((s, s.ranges.first()?))) {
+            Some((s, r)) if !self.paras.contains_key(&r.start) => {
+                let held = ps.as_deref_mut().and_then(|ps| {
+                    let k = ps.iter().position(|x| x.inlines.is_empty() && x.src.as_ref().is_some_and(|x| Rc::ptr_eq(x, s)))?;
+                    Some(ps.remove(k))
+                });
+                if held.is_none() {
+                    chunks.push(r.clone());
+                }
+                false
+            }
+            _ => true,
+        });
+        let mut chunks = chunks.into_iter();
+        let first = chunks.next();
+        self.splices.extend(chunks.map(|r| (r, String::new())));
+        match first {
+            Some(r) if !qs.is_empty() => {
+                self.splices.push((r, String::new()));
+                None
+            }
+            first => first,
+        }
+    }
+
+    /// `text` where a group without source paragraphs goes: in place of the imported HTML it holds (`chunk`), else of
+    /// its closing paragraph, else at `at`.
+    fn put(&mut self, chunk: Option<Range<usize>>, closing: Option<Range<usize>>, at: Option<usize>, text: String, none: &str) -> Result<(), String> {
+        if let Some(r) = chunk {
+            self.splices.push((r, text));
+            return Ok(());
+        }
         let splice = match closing {
             Some(r) if !r.is_empty() => {
                 let el = &self.xml[r.clone()];
@@ -2441,7 +2481,14 @@ impl<'a, 'i> Saver<'a, 'i> {
     /// A paragraph group with new tables among its paragraphs: each run of paragraphs is written with the source
     /// paragraphs it continues (deleted ones with the first run), each table from the model.
     // shortcut: a section break in the group goes with the run its source paragraph went to, which may not be the last.
-    fn with_new_tables(&mut self, qs: &[&Paragraph], p: &[Block], at: Option<usize>, closing: Option<Range<usize>>) -> Result<(), String> {
+    fn with_new_tables(
+        &mut self,
+        qs: &[&Paragraph],
+        p: &[Block],
+        at: Option<usize>,
+        closing: Option<Range<usize>>,
+        chunk: Option<Range<usize>>,
+    ) -> Result<(), String> {
         let mut runs: Vec<Vec<&Paragraph>> = vec![Vec::new()];
         for b in p {
             match b {
@@ -2486,7 +2533,7 @@ impl<'a, 'i> Saver<'a, 'i> {
                     self.splices.push((r, String::new()));
                 }
             }
-            None => self.put(closing, at, text, "nowhere to put new blocks")?,
+            None => self.put(chunk, closing, at, text, "nowhere to put new blocks")?,
         }
         Ok(())
     }
@@ -3975,10 +4022,49 @@ struct Emit<'s, 'a, 'i> {
     fresh_written: usize,
 }
 
+/// A field edge's runs `xml` with their code as deleted (`w:delInstrText`) or not, in the prefix the runs are in.
+fn edge_runs(xml: &str, deleted: bool) -> String {
+    let w = crate::docx::fields::edge_prefix(xml);
+    let (from, to) = if deleted { ("instrText", "delInstrText") } else { ("delInstrText", "instrText") };
+    xml.replace(&format!("<{w}{from}"), &format!("<{w}{to}")).replace(&format!("</{w}{from}>"), &format!("</{w}{to}>"))
+}
+
+/// Where the runs are of the field edges ([`super::model::FieldEdge`]) paragraphs `qs` were read with that paragraphs
+/// `ps` don't hold now.
+fn gone_edges<'q>(qs: &'q [&Paragraph], ps: &'q [&Paragraph]) -> impl Iterator<Item = Range<usize>> + 'q {
+    let held =
+        move |o: &Rc<super::model::Opaque>| ps.iter().flat_map(|p| p.inlines.iter()).any(|i| matches!(i, Inline::Opaque(x) if Rc::ptr_eq(x, o)));
+    qs.iter().flat_map(|p| p.inlines.iter()).filter_map(move |i| match i {
+        Inline::Opaque(o) if o.field.is_some() && !held(o) => o.src.clone(),
+        _ => None,
+    })
+}
+
 impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
     /// A group's XML: its source walked, with markers added since reading written where they are, when that comes out
     /// whole (well-formed, every added marker written); else as [`Emit::group_as`] without them.
     fn group(s: &'s Saver<'a, 'i>, qs: &[&Paragraph], srcs: &[&ParaSrc], ps: &[&Paragraph]) -> Result<String, String> {
+        // Fields across paragraphs showing their codes are written showing their results (a view isn't saved).
+        let results: Vec<Option<Paragraph>> = if ps.iter().any(|p| super::fields::shows_span_code(&p.inlines)) {
+            ps.iter()
+                .map(|p| {
+                    super::fields::shows_span_code(&p.inlines).then(|| {
+                        let mut q = (*p).clone();
+                        super::fields::show_span_results(&mut q.inlines);
+                        q
+                    })
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let shown: Vec<&Paragraph>;
+        let ps = if results.is_empty() {
+            ps
+        } else {
+            shown = ps.iter().zip(&results).map(|(p, r)| r.as_ref().unwrap_or(p)).collect();
+            &shown
+        };
         match Emit::group_as(s, qs, srcs, ps, true)? {
             Some(x) => Ok(x),
             None => Emit::group_as(s, qs, srcs, ps, false).map(|x| x.unwrap_or_default()),
@@ -4276,6 +4362,8 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
             .filter(|(id, _, r)| !now.iter().any(|(n, _, q)| n == id && same_rev(r, q)))
             .filter_map(|(_, src, _)| src)
             .chain(removed.iter().map(|(_, r)| r.clone()))
+            // The marker runs of a field edge read here and gone since.
+            .chain(gone_edges(qs, ps))
             .collect();
         let all = |ps: &[&Paragraph]| -> Vec<Float> {
             ps.iter().flat_map(|p| p.inlines.iter()).filter_map(|i| if let Inline::Float(f, _) = i { Some((**f).clone()) } else { None }).collect()
@@ -4348,7 +4436,9 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
             let mut read = Vec::new();
             qs.iter().flat_map(|q| q.inlines.iter()).for_each(|i| marker(i, &mut read));
             marker_outside = read.iter().filter_map(Marker::element).filter(|k| !marker_src.contains_key(k)).collect();
-            for m in read.iter().filter(|m| s.marker_range(m, srcs).is_none()) {
+            // A field edge the reader made (not its source's) is its paragraph's.
+            let made = |m: &Marker| matches!(m, Marker::Opaque(o) if o.field.is_some() && o.src.is_none());
+            for m in read.iter().filter(|m| !made(m) && s.marker_range(m, srcs).is_none()) {
                 match m {
                     Marker::Bookmark(n) => marks_outside.0.push(n.clone()),
                     Marker::Opaque(o) => marks_outside.1.push(Rc::as_ptr(o)),
@@ -4486,9 +4576,11 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                 continue;
             }
             // A deleted float's element (or the run or wrapper holding only it).
-            if self.dropped.iter().any(|d| r.start <= d.start && d.end <= r.end) && !self.seg_starts.iter().any(|&x| x >= r.start && x < r.end) {
+            let segs_in = self.seg_starts.iter().any(|&x| x >= r.start && x < r.end);
+            if !segs_in && self.only_dropped(c) {
                 continue;
             }
+            let holds_dropped = !segs_in && self.dropped.iter().any(|d| r.start <= d.start && d.end <= r.end);
             if let Some(&k) = self.seg_at.get(&r.start) {
                 let end = self.segs[k].range.end;
                 let text = ["t", "instrText", "delText", "delInstrText"].iter().any(|t| is_w(c, t));
@@ -4518,7 +4610,7 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
             }
             let inside = self.seg_starts.partition_point(|&x| x <= r.start);
             let fill = self.fills.keys().any(|&f| r.start <= f && f < r.end);
-            if c.is_element() && (fill || self.seg_starts.get(inside).is_some_and(|&x| x < r.end)) {
+            if c.is_element() && (fill || holds_dropped || self.seg_starts.get(inside).is_some_and(|&x| x < r.end)) {
                 let (mut open, close) = self.s.tags(c);
                 let run = is_w(c, "r");
                 if let Some(rpr) = child(c, "rPr").filter(|_| run) {
@@ -4547,6 +4639,16 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                 self.verbatim(r);
             }
         }
+    }
+
+    /// Whether `n` is dropped content ([`Emit::dropped`]), or holds only that besides its properties.
+    fn only_dropped(&self, n: Node) -> bool {
+        let r = n.range();
+        if self.dropped.iter().any(|d| d.start <= r.start && r.end <= d.end) {
+            return true;
+        }
+        self.dropped.iter().any(|d| r.start <= d.start && d.end <= r.end)
+            && n.children().filter(|c| c.is_element() && !c.tag_name().name().ends_with("Pr")).all(|c| self.only_dropped(c))
     }
 
     /// Closes the innermost walked element.
@@ -4840,6 +4942,20 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                         format!("<{w}bookmarkEnd {w}id=\"{id}\"/>")
                     };
                     self.out.push_str(&x);
+                }
+                // A field edge in the wrappers of its tracked changes.
+                Marker::Opaque(o) if o.field.is_some() && o.run.is_some() => {
+                    let Some(run) = o.run.clone() else { continue };
+                    self.flush();
+                    self.close_wrap();
+                    let (level, ins, del) = self.own_level(&run);
+                    self.open_to(level);
+                    let (open, close) = revisions::wrappers(&self.s.w, ins.as_deref(), del.as_deref(), self.s.people);
+                    let deleted = run.rev.del.as_ref().is_some_and(|m| m.kind != crate::docx::review::MarkKind::MoveFrom);
+                    let x = edge_runs(o.xml.0.as_deref().unwrap_or(""), deleted);
+                    self.out.push_str(&open);
+                    self.out.push_str(&x);
+                    self.out.push_str(&close);
                 }
                 Marker::Opaque(o) => {
                     self.flush();

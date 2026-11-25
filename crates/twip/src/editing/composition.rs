@@ -5,7 +5,7 @@ use crate::layout::{ParaId, Unit};
 
 use super::Editor;
 use super::commands::{Command, Outcome};
-use super::history::Transaction;
+use super::history::Redo;
 use super::position::Position;
 use super::selection::{Granularity, Selection};
 
@@ -17,7 +17,7 @@ pub(super) struct Composition {
     start: Unit,
     end: Unit,
     tx: u64,
-    redo: Vec<Transaction>,
+    redo: Redo,
 }
 
 impl Editor {
@@ -49,7 +49,12 @@ impl Editor {
     /// Takes the composition showing out again, as if it had never been typed.
     pub fn end_composition(&mut self, fonts: &Fonts) {
         let Some(c) = self.composition.take() else { return };
+        let chained = self.history.chained() == Some(c.tx);
         if self.retract(c.tx, fonts) {
+            // The view's steps its record put before it are pending again, as the redo steps found them
+            if chained {
+                self.history.unchain();
+            }
             self.history.put_redo(c.redo);
         }
     }

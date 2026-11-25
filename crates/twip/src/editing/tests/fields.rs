@@ -189,3 +189,58 @@ fn insert_field_opens_on_the_field_at_the_selection() {
     assert_eq!((c.name.as_str(), c.args.as_slice()), ("SEQ", &["Figure".to_string()][..]));
     assert_eq!(c.switches, [("r".to_string(), Some("3".to_string()))]);
 }
+
+fn fld(code: &str, shown: &str) -> String {
+    format!(
+        r#"<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> {code} </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t xml:space="preserve">{shown}</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>"#
+    )
+}
+
+#[test]
+fn one_update_renumbers_a_sequence_and_the_reference_to_it() {
+    use crate::editing::commands::{Command, Dir};
+    let figure = |n: &str| format!(r#"<w:r><w:t xml:space="preserve">Figure </w:t></w:r>{}"#, fld(r"SEQ Figure \* ARABIC", n));
+    let body = format!(
+        r#"<w:p>{}</w:p><w:p><w:bookmarkStart w:id="1" w:name="_Ref1"/>{}<w:bookmarkEnd w:id="1"/></w:p><w:p><w:r><w:t xml:space="preserve">See </w:t></w:r>{}</w:p>"#,
+        figure("1"),
+        figure("2"),
+        fld(r"REF _Ref1 \h", "Figure 2")
+    );
+    let mut e = Editor::open(&blank_body(&body), fonts()).expect("opens");
+    let (first, second) = (super::para_id(&e, 0), super::para_id(&e, 1));
+    let at = |p| crate::editing::position::Position::text(crate::editing::position::StoryId::Body, p, crate::layout::Unit(0));
+    e.set_caret_for_benchmark(crate::editing::selection::Selection::range(at(first), at(second), crate::editing::selection::Granularity::Char));
+    e.execute(super::del(Dir::Forward, false), fonts());
+    e.execute(Command::SelectAll, fonts());
+    e.execute(Command::UpdateFields(Default::default()), fonts());
+    let shown = super::texts(&e);
+    assert!(shown[0].ends_with("\u{fffc}1\u{fffc}") && shown[1].ends_with("\u{fffc}Figure 1\u{fffc}"), "{shown:?}");
+}
+
+#[test]
+fn spanning_fields_ending_in_one_run_keep_each_its_own_end() {
+    let begin = |text: &str| {
+        let f = fld("X", "");
+        format!("<w:p>{}<w:r><w:t>{text}</w:t></w:r></w:p>", &f[..f.find("<w:r><w:t").expect("its result")])
+    };
+    let body = format!(
+        r#"{}{}<w:p><w:r><w:t>c</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/><w:fldChar w:fldCharType="end"/></w:r></w:p>"#,
+        begin("a"),
+        begin("b")
+    );
+    let doc = crate::docx::read_editable(&blank_body(&body)).expect("reads");
+    let ends: Vec<String> = doc.sections[0]
+        .blocks
+        .iter()
+        .filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None })
+        .flat_map(|p| p.inlines.iter())
+        .filter_map(|i| match i {
+            Inline::Opaque(o) if o.field == Some(crate::docx::FieldEdge::End) => o.xml.0.as_deref().map(str::to_string),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(ends.len(), 2);
+    for xml in &ends {
+        assert_eq!(xml.matches("fldCharType=\"end\"").count(), 1, "{xml}");
+    }
+}

@@ -440,7 +440,9 @@ fn formatting(id: &str) -> (String, String) {
             r#"<w:spacing w:after="200" w:line="240" w:lineRule="auto"/>"#,
             r#"<w:i/><w:iCs/><w:color w:val="0E2841"/><w:sz w:val="18"/><w:szCs w:val="18"/>"#,
         ),
-        "TOCHeading" => (r#"<w:outlineLvl w:val="9"/>"#.to_string(), String::new()),
+        // Out of a list Heading 1 numbers in.
+        "TOCHeading" => (r#"<w:numPr><w:numId w:val="0"/></w:numPr><w:outlineLvl w:val="9"/>"#.to_string(), String::new()),
+        "TableofFigures" => s(r#"<w:spacing w:after="0"/>"#, ""),
         "Header" | "Footer" => s(
             r#"<w:tabs><w:tab w:val="center" w:pos="4680"/><w:tab w:val="right" w:pos="9360"/></w:tabs><w:spacing w:after="0" w:line="240" w:lineRule="auto"/>"#,
             "",
@@ -469,6 +471,8 @@ fn formatting(id: &str) -> (String, String) {
 pub fn definition(b: &BuiltIn, w: &str) -> String {
     let base = match (b.kind, b.id) {
         (_, "Normal" | "DefaultParagraphFont" | "TableNormal" | "NoList") => None,
+        // Word's TOC Heading is Heading 1 at body text level.
+        (_, "TOCHeading") => Some("Heading1"),
         (StyleKind::Paragraph, _) => Some("Normal"),
         (StyleKind::Character, _) => Some("DefaultParagraphFont"),
         (StyleKind::Table, _) => Some("TableNormal"),
@@ -484,7 +488,7 @@ pub fn definition(b: &BuiltIn, w: &str) -> String {
     if let Some(base) = base {
         x.push_str(&format!(r#"<w:basedOn w:val="{base}"/>"#));
     }
-    if b.kind == StyleKind::Paragraph && b.id.starts_with("Heading") {
+    if b.kind == StyleKind::Paragraph && (b.id.starts_with("Heading") || matches!(b.id, "TOCHeading" | "TableofFigures")) {
         x.push_str(r#"<w:next w:val="Normal"/>"#);
     }
     x.push_str(&format!(r#"<w:uiPriority w:val="{}"/>"#, b.priority));

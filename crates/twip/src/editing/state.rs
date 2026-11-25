@@ -133,7 +133,8 @@ pub(super) fn highlight_color(rgb: Option<u32>) -> NoneOr<HighlightColor> {
     }
 }
 
-pub(super) fn character(runs: &[&RunStyle]) -> CharacterFormatting {
+/// The character formatting of `runs` together: each value uniform, mixed or unavailable.
+pub fn character(runs: &[&RunStyle]) -> CharacterFormatting {
     let tri = |f: &dyn Fn(&RunStyle) -> bool| fold(runs.iter().map(|r| f(r)));
     CharacterFormatting {
         font: fold(runs.iter().map(|r| r.ascii.clone())),
@@ -213,7 +214,8 @@ fn borders_of(p: &ParaStyle) -> BorderState {
     }
 }
 
-pub(super) fn paragraph(paras: &[(&ParaStyle, Option<bool>)]) -> ParagraphFormatting {
+/// The paragraph formatting of `paras` (each style and whether it is in a list) together.
+pub fn paragraph(paras: &[(&ParaStyle, Option<bool>)]) -> ParagraphFormatting {
     let tri = |f: &dyn Fn(&ParaStyle) -> bool| fold(paras.iter().map(|(p, _)| f(p)));
     let pt = |f: &dyn Fn(&ParaStyle) -> f64| fold(paras.iter().map(|(p, _)| Points(f(p))));
     ParagraphFormatting {

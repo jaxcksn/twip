@@ -13,8 +13,11 @@ use super::token::PageToken;
 #[derive(Clone, Default, Debug, PartialEq)]
 pub struct PageEffects {
     pub paras: Vec<ParaId>,
-    pub bookmarks: Vec<String>,
+    /// The bookmarks starting on the page and the paragraphs they start in.
+    pub bookmarks: Vec<(String, ParaId)>,
     pub notes_shown: Vec<(NoteKind, i64, String)>,
+    /// How many reference fields showing where their bookmark is (`\p`) the page's paragraphs hold.
+    pub relative: usize,
     /// The top of the highest footnote area drawn at the bottom of its column.
     pub notes_top: Option<f64>,
     /// The wrapping floats placed on the page, which a continuous section going on on it wraps too.
@@ -29,10 +32,11 @@ impl PageEffects {
             }
         }
         for b in &o.bookmarks {
-            self.bookmarks.retain(|x| x != b);
+            self.bookmarks.retain(|x| x.0 != b.0);
             self.bookmarks.push(b.clone());
         }
         self.notes_shown.extend(o.notes_shown.iter().cloned());
+        self.relative += o.relative;
         self.notes_top = self.notes_top.into_iter().chain(o.notes_top).reduce(f64::min);
     }
 }

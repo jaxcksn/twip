@@ -5,6 +5,7 @@ mod background;
 mod bindings;
 pub mod bookmarks;
 mod borders_dialog;
+pub mod captions;
 mod cell_clipboard;
 mod char_code;
 pub mod click_type;
@@ -26,6 +27,7 @@ mod frames;
 pub mod geometry;
 pub(crate) mod gestures;
 mod goback;
+pub mod goto;
 pub mod history;
 pub mod hover;
 mod html;
@@ -53,6 +55,7 @@ pub mod navigate;
 mod notes;
 pub mod object_props;
 pub mod objects;
+pub mod paste;
 pub mod picture_controls;
 mod pictures;
 pub mod pointer;
@@ -63,11 +66,13 @@ pub mod protection;
 pub mod readback;
 mod resize;
 pub mod revisions;
+pub mod search;
 pub mod section;
 pub mod selection;
 mod shapes;
 mod smart;
 pub(crate) mod snap;
+pub mod span_codes;
 pub mod state;
 pub mod step;
 mod stories;
@@ -75,6 +80,7 @@ pub mod style_defs;
 mod style_dialog;
 mod styles;
 pub mod text_links;
+pub mod toc;
 pub use styles::formats_a_style;
 pub mod sub_templates;
 pub use crate::docx::grid as table;
@@ -90,6 +96,7 @@ pub mod theme;
 mod touched;
 pub mod view;
 mod wrap_points;
+pub mod xref;
 
 #[cfg(test)]
 pub(crate) mod tests;
@@ -212,6 +219,10 @@ pub struct Editor {
     ungrouped: Option<Vec<crate::layout::FloatId>>,
     /// The wrap a picture is inserted with (Word's "Insert/paste pictures as").
     default_picture_wrap: crate::api::value::ObjectWrap,
+    /// The cut, copy and paste options.
+    paste_defaults: paste::PasteDefaults,
+    /// The paste just made, for its Paste Options.
+    last_paste: Option<paste::LastPaste>,
     snaps: snap::SnapLines,
     shape_insert: Option<shapes::ShapeInsert>,
     toggled_checkbox: Option<objects::ToggledCheckbox>,
@@ -260,6 +271,10 @@ pub struct Editor {
     white_space_hidden: bool,
     click_and_type_style: Option<String>,
     clipboard: Option<clipboard::Fragment>,
+    /// The find matches highlighted (Highlight All), by paragraph, and the revision they were found at.
+    find_highlights: Option<(u64, std::collections::HashMap<ParaId, Vec<(Unit, Unit)>>)>,
+    /// A replace pastes: no smart spaces round what it pastes.
+    pasting_replacement: bool,
     /// The document's identity among those open: what tells a fragment copied from it from one copied elsewhere.
     key: u64,
     /// The find match selected last, with the selection that selected it.
@@ -293,6 +308,8 @@ pub struct Editor {
     editing_groups: Vec<String>,
     drop: Option<Position>,
     field_labels: HashMap<String, String>,
+    /// The host's AutoCaption for inserted tables.
+    auto_caption: Option<captions::CaptionOptions>,
     sub_template_rules: Vec<sub_templates::Rule>,
     touched: touched::Touched,
     /// Counts the transactions that touched revision marks, tables, sections or sub-templates, and those that
@@ -414,6 +431,14 @@ struct Tx {
     relabel: bool,
     /// The control whose placeholder the selection replaces: its paragraph and unit, where what is put in goes inside it.
     placeholder: Option<(ParaId, Unit, crate::docx::ControlId)>,
+    /// How many of the first steps take back the pending view's steps: not recorded.
+    skip: usize,
+    /// The views' steps an undo or redo takes with its edit: where each one's steps start, and it.
+    chain: Vec<(usize, Transaction)>,
+    /// Where the edit's own steps start.
+    real: usize,
+    /// The steps from this one on show fields across paragraphs as codes or results: a view's, the fields and how.
+    view: Option<(usize, Vec<(span_codes::SpanKey, bool)>)>,
 }
 
 struct Batch {
@@ -470,6 +495,8 @@ impl Editor {
             anchor_drag: None,
             ungrouped: None,
             default_picture_wrap: crate::api::value::ObjectWrap::Inline,
+            paste_defaults: paste::PasteDefaults::default(),
+            last_paste: None,
             snaps: snap::SnapLines::default(),
             shape_insert: None,
             toggled_checkbox: None,
@@ -530,6 +557,7 @@ impl Editor {
             comment_edits: 0,
             drop: None,
             field_labels: HashMap::new(),
+            auto_caption: None,
             sub_template_rules: Vec::new(),
             application_field_types: Vec::new(),
             protected_prefixes: Vec::new(),
@@ -575,6 +603,8 @@ impl Editor {
             #[cfg(test)]
             track_work: 0,
             clipboard: None,
+            pasting_replacement: false,
+            find_highlights: None,
             key: import::next_key(),
             found: None,
         };
@@ -583,12 +613,24 @@ impl Editor {
         let start = e.nav().story_edge(StoryId::Body, false).unwrap_or(Position::text(StoryId::Body, ParaId(0), Unit(0)));
         e.selection = Selection::Caret(start);
         e.layout.edit(Revision(e.generation), None);
+        if !e.doc.alt_chunks.is_empty() {
+            e.import_alt_chunks(fonts);
+            e.elems = elements::by_id(&e.doc, &e.index);
+            let start = e.nav().story_edge(StoryId::Body, false).unwrap_or(Position::text(StoryId::Body, ParaId(0), Unit(0)));
+            e.selection = Selection::Caret(start);
+        }
+        let start = e.selection.focus().unwrap_or(start);
         e.ensure(&start, fonts);
         e
     }
 
     pub fn document(&self) -> &Document {
         &self.doc
+    }
+
+    /// The document, as the editor holds it (its imported HTML brought in).
+    pub fn into_document(self) -> Document {
+        self.doc
     }
 
     pub fn index(&self) -> &DocIndex {
@@ -989,7 +1031,11 @@ impl Editor {
         self.sync_expansions(fonts);
         let snapshot = self.layout.snapshot();
         let stale = snapshot.revision() != self.layout.revision();
-        let pending = if stale { Some(0) } else { snapshot.info().iter().position(|i| i.provisional) };
+        let pending = match snapshot.status() {
+            _ if stale => Some(0),
+            crate::layout::LayoutStatus::Pending { stale_from } => Some(*stale_from),
+            _ => None,
+        };
         if pending.is_some_and(|p| page >= p) {
             self.with_flow(|l, d| l.through(d, fonts, Target::Page(page)));
         }
@@ -1175,7 +1221,11 @@ impl Editor {
     fn normalize(&self, s: Selection) -> Selection {
         let snap = |p: Position, end: bool| match p.place {
             Place::Text { para, offset, affinity } => match self.index.para(&self.doc, para).map(UnitText::of) {
-                Some(t) => Position { place: Place::Text { para, offset: t.widen(offset, end), affinity }, ..p },
+                Some(t) => {
+                    let p = Position { place: Place::Text { para, offset: t.widen(offset, end), affinity }, ..p };
+                    // A place a field showing its code hides: where it shows.
+                    span_codes::shown_place(&self.doc, &self.index, p).unwrap_or(p)
+                }
                 None => p,
             },
             Place::RowEnd { .. } => p,
@@ -1290,6 +1340,10 @@ impl Editor {
             boxes: false,
             relabel: false,
             placeholder: None,
+            skip: 0,
+            chain: Vec::new(),
+            real: 0,
+            view: None,
         }
     }
 
@@ -1524,7 +1578,7 @@ impl Editor {
         // Table, row and cell marks, and a section's or sub-template's, aren't in the targets.
         if !tx.targets.revisions.is_empty()
             || !tx.targets.tables.is_empty()
-            || tx.undo.iter().any(|s| matches!(s, Step::SectionBreak { .. } | Step::BuildingBlock { .. }))
+            || tx.undo.iter().any(|s| matches!(s, Step::SectionBreak { .. } | Step::Sections { .. } | Step::BuildingBlock { .. }))
         {
             self.revision_marks.0 += 1;
         }
@@ -1544,7 +1598,9 @@ impl Editor {
         self.map_marks(&maps);
         self.map_multi(&maps);
         if !matches!(tx.origin, Origin::Undo | Origin::Redo) {
-            self.mark_edit();
+            if tx.view.is_none() {
+                self.mark_edit();
+            }
             self.last_maps = maps;
         }
         crate::prof::time("edit:elements", || self.track_elements(&tx.undo));
@@ -1559,21 +1615,64 @@ impl Editor {
     fn finish(&mut self, mut tx: Tx, label: Cow<'static, str>, typing: Option<TypingRun>, fonts: &Fonts) -> Outcome {
         let before = tx.before.selection;
         self.revision += 1;
-        let undo = std::mem::take(&mut tx.undo);
+        let mut undo = std::mem::take(&mut tx.undo);
+        let view = tx.view.take().map(|(from, keys)| (undo.split_off(from.min(undo.len())), keys));
+        let real = undo.split_off(tx.real.min(undo.len()));
+        let mut chain: Vec<Transaction> = Vec::with_capacity(tx.chain.len());
+        for (from, mut v) in std::mem::take(&mut tx.chain).into_iter().rev() {
+            v.undo = undo.split_off(from.min(undo.len()));
+            v.bytes = v.undo.iter().map(history::step_bytes).sum();
+            chain.push(v);
+        }
+        let undo = real;
         let bytes = undo.iter().map(history::step_bytes).sum();
         // Starting or stopping enforced protection fences the history
         let enforced = self.enforced_protection().is_some();
         let enforces = undo.iter().any(|s| matches!(s, Step::Protection(was) if was.as_ref().is_some_and(|p| p.enforced) != enforced));
+        let after = self.record();
         match tx.replayed.take() {
-            Some(done) if tx.origin == Origin::Undo => self.history.push_redo(Transaction { undo, bytes, ..done }),
-            Some(done) => self.history.push_undo_keep_redo(Transaction { undo, bytes, ..done }),
-            None => {
-                let after = self.record();
-                self.history.record(Transaction { undo, before: tx.before, after, label: label.clone(), bytes, id: 0 }, typing);
+            Some(done) if tx.origin == Origin::Undo => {
+                for v in chain.into_iter().rev() {
+                    self.history.push_redo(v);
+                }
+                self.history.push_redo(Transaction { undo, bytes, ..done });
             }
+            Some(done) => {
+                for v in chain.into_iter().rev() {
+                    self.history.push_undo_keep_redo(v);
+                }
+                self.history.push_undo_keep_redo(Transaction { undo, bytes, ..done });
+            }
+            // Only a view's steps: no edit
+            None if view.is_some() => {}
+            None => {
+                let tx = Transaction { undo, before: tx.before.clone(), after: after.clone(), label: label.clone(), bytes, id: 0, view: None };
+                self.history.record(tx, typing);
+            }
+        }
+        if let Some((undo, keys)) = view {
+            if !undo.is_empty() {
+                // A paste's options went with the view's change of places
+                self.last_paste = None;
+            }
+            let bytes = undo.iter().map(history::step_bytes).sum();
+            let pending = (!undo.is_empty() || !keys.is_empty()).then(|| Transaction {
+                undo,
+                before: tx.before,
+                after,
+                label: label.clone(),
+                bytes,
+                id: 0,
+                view: Some(keys),
+            });
+            self.history.set_pending(pending);
         }
         if enforces {
             self.history.fence();
+        }
+        // A paste's options go with the next change, and its clipboard with them
+        if self.last_paste.as_ref().is_some_and(|l| l.position() != self.history.position()) {
+            self.last_paste = None;
         }
         self.commits.push(Committed { revision: self.revision, origin: tx.origin, label, targets: tx.targets });
         self.after_edit(before, fonts);
@@ -1657,13 +1756,37 @@ impl Editor {
         if self.batch.is_some() {
             return Outcome::Unchanged("in a batch");
         }
-        let done = if undo { self.history.pop_undo() } else { self.history.pop_redo() };
-        let Some(mut done) = done else { return Outcome::Unchanged(if undo { "nothing to undo" } else { "nothing to redo" }) };
+        if (if undo { self.history.undo_depth() } else { self.history.redo_depth() }) == 0 {
+            return Outcome::Unchanged(if undo { "nothing to undo" } else { "nothing to redo" });
+        }
         let mut tx = self.begin("");
         tx.origin = if undo { Origin::Undo } else { Origin::Redo };
+        // Fields across paragraphs shown otherwise since the last edit, undo or redo: as they were for the edit, as
+        // they are now after it
+        let mut keys = self.history.take_pending().map(|p| {
+            self.replay(&mut tx, p.undo);
+            p.view.unwrap_or_default()
+        });
+        tx.skip = tx.undo.len();
+        while let Some(mut v) = if undo { self.history.pop_undo_view() } else { self.history.pop_redo_view() } {
+            let from = tx.undo.len();
+            self.replay(&mut tx, std::mem::take(&mut v.undo));
+            keys = Some(history::merge_views(v.view.clone().unwrap_or_default(), keys.unwrap_or_default()));
+            tx.chain.push((from, v));
+        }
+        tx.real = tx.undo.len();
+        let done = if undo { self.history.pop_undo() } else { self.history.pop_redo() };
+        let Some(mut done) = done else { return Outcome::Unchanged(if undo { "nothing to undo" } else { "nothing to redo" }) };
+        // The fields' starts followed through the edit's steps
+        let places = keys.map(|k| self.span_places(k));
+        let maps = tx.maps.len();
         self.replay(&mut tx, std::mem::take(&mut done.undo));
+        let keys = places.map(|p| self.span_keys_after(p, &tx.maps[maps..]));
         self.selection = if undo { done.before.selection } else { done.after.selection };
         self.pending = None;
+        if let Some(keys) = keys {
+            self.reshow_views(&mut tx, keys);
+        }
         tx.replayed = Some(done);
         let out = self.commit(tx, None, fonts);
         self.follow_selection();
@@ -1751,12 +1874,44 @@ impl Editor {
     fn delete_range_joining(&mut self, tx: &mut Tx, join: bool) -> Result<Option<Position>, StepError> {
         self.take_placeholder(tx)?;
         let end = self.selection.ordered(&self.index).map(|(_, b)| b).filter(|_| tx.tracked && matches!(self.selection, Selection::Text { .. }));
+        let cut = match self.selection.ordered(&self.index) {
+            Some((a, b)) if !a.same_place(&b) && matches!(self.selection, Selection::Text { .. }) => {
+                // Untracked across sections: merged first, its edges read in the one section left.
+                if !tx.tracked
+                    && let Some((i, j)) = self.sections_of(&a, &b)
+                {
+                    for _ in i..j {
+                        self.merge_section(tx, i)?;
+                    }
+                }
+                self.edges_in(a, b)
+            }
+            _ => Vec::new(),
+        };
         let from = tx.maps.len();
         let at = self.delete_range_untracked(tx, join)?;
+        if tx.tracked {
+            self.delete_whole_fields(tx, cut, at)?;
+        } else {
+            self.settle_edges(tx, cut, at)?;
+        }
         Ok(match (at, end) {
             (Some(_), Some(b)) => Some(tx.maps[from..].iter().fold(b, |p, m| m.apply(p))),
             _ => at,
         })
+    }
+
+    /// The sections `a` and `b` are in, when `a`'s is before `b`'s.
+    fn sections_of(&self, a: &Position, b: &Position) -> Option<(usize, usize)> {
+        let section_of = |p: &Position| {
+            let s = match p.place {
+                Place::Text { para, .. } => self.index.para_slot(para)?,
+                Place::RowEnd { table, .. } => self.index.table_slot(table)?,
+            };
+            self.index.top_block(s.container, s.block).map(|t| t.0)
+        };
+        let (i, j) = (section_of(a)?, section_of(b)?);
+        (i < j).then_some((i, j))
     }
 
     /// Merges section `section` into the next, which keeps its page, headers and footers. Its own headers and
@@ -1807,16 +1962,7 @@ impl Editor {
             return Ok(Some(a));
         }
         self.remove_comments_within(tx, a, b)?;
-        let section_of = |e: &Editor, p: &Position| {
-            let s = match p.place {
-                Place::Text { para, .. } => e.index.para_slot(para)?,
-                Place::RowEnd { table, .. } => e.index.table_slot(table)?,
-            };
-            e.index.top_block(s.container, s.block).map(|t| t.0)
-        };
-        if let (Some(i), Some(j)) = (section_of(self, &a), section_of(self, &b))
-            && i < j
-        {
+        if let Some((i, j)) = self.sections_of(&a, &b) {
             if !tx.tracked {
                 for _ in i..j {
                     self.merge_section(tx, i)?;
@@ -1947,7 +2093,8 @@ impl Editor {
                 let (pa, oa) = a.para_offset().ok_or(StepError::Missing)?;
                 let len = para_len(self.index.para(&self.doc, pa).ok_or(StepError::Missing)?);
                 self.delete_text(tx, pa, oa..len)?;
-                if let Some(target) = moved_into {
+                // A paragraph holding an edge of a field across paragraphs stays out of the cell, the edge with its partner.
+                if let Some(target) = moved_into.filter(|_| !self.holds_span_edge(pa)) {
                     let n = self.move_para_into(tx, pa, target)?;
                     return Ok(Some(Position::text(story, target, Unit(n))));
                 }
@@ -1959,6 +2106,11 @@ impl Editor {
     /// Moves `para`'s content to the start of `target` and removes it; returns the units moved. Untracked, every
     /// inline moves (anchored objects, bookmarks, comment and control edges); tracked, the deleted paragraph keeps
     /// its markers and only its text is inserted.
+    /// Whether `para` holds an edge of a field across paragraphs.
+    fn holds_span_edge(&self, para: ParaId) -> bool {
+        self.index.para(&self.doc, para).is_some_and(|p| p.inlines.iter().any(|i| crate::docx::fields::span_edge(i).is_some()))
+    }
+
     fn move_para_into(&mut self, tx: &mut Tx, para: ParaId, target: ParaId) -> Result<u32, StepError> {
         let p = self.index.para(&self.doc, para).ok_or(StepError::Missing)?;
         let inlines: Vec<Inline> = if tx.tracked {
@@ -2120,6 +2272,11 @@ impl Editor {
     /// for each tab character. Where the caret ends, and whether the text was one line; on an error, `tx` is to be
     /// aborted (except "no caret", where nothing changed).
     fn type_into(&mut self, tx: &mut Tx, text: &str) -> Result<(Position, bool), &'static str> {
+        self.type_into_with(tx, text, false)
+    }
+
+    /// [`Editor::type_into`]; `breaks`, with U+000B a line break, U+000C a page break and U+000E a column break.
+    fn type_into_with(&mut self, tx: &mut Tx, text: &str, breaks: bool) -> Result<(Position, bool), &'static str> {
         let caret = match self.delete_range(tx) {
             Ok(Some(p)) => p,
             Ok(None) => return Err("no caret"),
@@ -2133,6 +2290,10 @@ impl Editor {
         for (k, line) in text.split('\n').map(|l| l.strip_suffix('\r').unwrap_or(l)).enumerate() {
             if k > 0 {
                 single = false;
+                // A code a field across paragraphs shows stays on its line, as with Enter.
+                if self.index.para(&self.doc, para).is_some_and(|p| span_codes::in_code(p, at)) {
+                    return Err("in a field's code");
+                }
                 let Some(second) = self.split_template(para) else { break };
                 let id = ParaId(second.id);
                 if self.step(tx, Step::Split { para, at, second, kept: Vec::new() }).is_err() {
@@ -2142,13 +2303,21 @@ impl Editor {
                 at = Unit(0);
             }
             let mut inlines = Vec::new();
-            for (j, seg) in line.split('\t').enumerate() {
-                if j > 0 {
-                    inlines.push(Inline::Tab(run.clone()));
+            let special = |c: char| c == '\t' || (breaks && matches!(c, '\u{b}' | '\u{c}' | '\u{e}'));
+            let mut seg = line;
+            while !seg.is_empty() {
+                let cut = seg.find(special).unwrap_or(seg.len());
+                if cut > 0 {
+                    inlines.push(Inline::Text(seg[..cut].to_string(), run.clone()));
                 }
-                if !seg.is_empty() {
-                    inlines.push(Inline::Text(seg.to_string(), run.clone()));
-                }
+                let Some(c) = seg[cut..].chars().next() else { break };
+                inlines.push(match c {
+                    '\t' => Inline::Tab(run.clone()),
+                    '\u{b}' => Inline::Break(crate::docx::BreakKind::Line, run.clone()),
+                    '\u{c}' => Inline::Break(crate::docx::BreakKind::Page, run.clone()),
+                    _ => Inline::Break(crate::docx::BreakKind::Column, run.clone()),
+                });
+                seg = &seg[cut + c.len_utf8()..];
             }
             let n: u32 = inlines.iter().map(|i| i.units() as u32).sum();
             if n > 0 && self.step(tx, Step::Text { para, range: at..at, with: inlines, edges: Default::default() }).is_err() {
@@ -2313,6 +2482,11 @@ impl Editor {
             self.abort(tx);
             return (Outcome::Unchanged("caret at a row end"), None);
         };
+        // A code a field across paragraphs shows stays on its line.
+        if self.index.para(&self.doc, para).is_some_and(|p| span_codes::in_code(p, at)) {
+            self.abort(tx);
+            return (Outcome::Unchanged("in a field's code"), None);
+        }
         if enter
             && at == Unit(0)
             && let Some(slot) = self.index.para_slot(para)
@@ -2442,6 +2616,11 @@ impl Editor {
                 self.set_selection(Selection::range(Position::text(story, para, start), Position::text(story, para, end), Granularity::Char));
                 return Outcome::Moved;
             }
+            // A brace of a field across paragraphs showing its code, or its end: the whole field selected.
+            if let Some((a, b)) = span_codes::brace_field(&self.doc, &self.index, p, dir == Dir::Back) {
+                self.set_selection(Selection::range(a, b, Granularity::Char));
+                return Outcome::Moved;
+            }
         }
         if self.selection.is_collapsed() {
             if let Some(p) = self.caret()
@@ -2566,6 +2745,7 @@ impl Editor {
                     self.selection = Selection::Caret(end);
                     self.commit(tx, None, fonts)
                 }
+                Some(Err(_)) if self.holds_span_edge(para) => Outcome::Unchanged("an edge of a field across paragraphs"),
                 Some(Err(table)) => {
                     let Some(target) = self
                         .index
@@ -3785,6 +3965,7 @@ impl Editor {
             boundaries: Vec::new(),
             field_shading: Vec::new(),
             editable_regions: Vec::new(),
+            find_highlights: self.find_highlight_bands(visible_pages.clone()),
             list_labels: self.list_label_rects(visible_pages.clone()),
             drop: self
                 .text_drag
@@ -4067,11 +4248,16 @@ impl Editor {
 
     pub fn copy(&mut self) -> Option<clipboard::Fragment> {
         let f = self.clip()?;
+        Some(self.copied_to_clipboard(f))
+    }
+
+    /// `f`, just copied, the clipboard: the host is asked to put its text and HTML on the system clipboard.
+    pub(super) fn copied_to_clipboard(&mut self, f: clipboard::Fragment) -> clipboard::Fragment {
         // The clipboard changes: Ctrl+Shift+V pastes it, not the painter's formatting.
         self.painter_claim = None;
         self.requests.push(Request::Clipboard { text: f.text(), html: Some(f.html()) });
         self.clipboard = Some(f.clone());
-        Some(f)
+        f
     }
 
     pub fn selected_text(&mut self) -> String {
@@ -4154,6 +4340,15 @@ impl Editor {
         }
         (out, self.index.cmp(&p, &b) != std::cmp::Ordering::Less)
     }
+}
+
+/// A read document as an editor holds it once opened: its imported HTML (`w:altChunk`) brought in as content, as
+/// Word does on open. The document as it is when it has none.
+pub fn opened(doc: Document, fonts: &Fonts) -> Document {
+    if doc.alt_chunks.is_empty() {
+        return doc;
+    }
+    Editor::with_document(doc, fonts).into_document()
 }
 
 /// A character of text as plain text: breaks as line ends, objects as spaces.

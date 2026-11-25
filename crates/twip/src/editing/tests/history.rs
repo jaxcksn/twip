@@ -61,7 +61,7 @@ fn a_batch_refused_in_read_only_is_still_reverted() {
 fn tx(bytes: usize) -> Transaction {
     let at = Position::text(StoryId::Body, crate::layout::ParaId(0), crate::layout::Unit(0));
     let rec = SelectionRecord { selection: Selection::Caret(at), chain: Vec::new() };
-    Transaction { undo: Vec::new(), before: rec.clone(), after: rec, label: "t".into(), bytes, id: 0 }
+    Transaction { undo: Vec::new(), before: rec.clone(), after: rec, label: "t".into(), bytes, id: 0, view: None }
 }
 
 #[test]
@@ -74,6 +74,19 @@ fn undoing_past_evicted_steps_is_not_the_opened_document() {
     assert!(h.undo_depth() < n, "the oldest steps were evicted");
     while h.pop_undo().is_some() {}
     assert_ne!(h.position(), 0);
+}
+
+#[test]
+fn eviction_keeps_the_fewest_edits_between_view_changes() {
+    let mut h = History::default();
+    for _ in 0..MIN_STEPS + 5 {
+        let mut view = tx(1 << 20);
+        view.undo.push(super::super::step::Step::Restyle { para: crate::layout::ParaId(0), inlines: Vec::new() });
+        view.view = Some(Vec::new());
+        h.set_pending(Some(view));
+        h.record(tx(1 << 20), None);
+    }
+    assert_eq!(h.undo_depth(), MIN_STEPS, "the edits kept, however many views' steps are between them");
 }
 
 #[test]

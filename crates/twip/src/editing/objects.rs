@@ -1327,7 +1327,7 @@ impl Editor {
     /// Where a drag puts float `f`: moved on its own page, then onto the page under the pointer and re-anchored there.
     fn dropped_float(&mut self, f: FloatId, d: &ObjectDrag) -> Option<(crate::docx::Float, Option<crate::layout::ParaId>)> {
         let new = d.placed(d.rect(self.float_locked(f)));
-        let mut fl = self.moved_float_in(f, d.page, d.region, d.placed(d.rect), new)?;
+        let mut fl = self.placed_float_in(f, d.page, d.region, d.placed(d.rect), new, [false; 2])?;
         if d.handle.is_some() {
             return Some((fl, None));
         }
@@ -1488,12 +1488,25 @@ impl Editor {
     }
 
     pub(super) fn moved_float(&mut self, f: FloatId, page: usize, old: [f64; 4], new: [f64; 4]) -> Option<crate::docx::Float> {
-        let region = self.float_region(f, page);
-        self.moved_float_in(f, page, region, old, new)
+        self.placed_float(f, page, old, new, [false; 2])
     }
 
-    /// [`Self::moved_float`] with the float's region drawn turned by `region`.
-    fn moved_float_in(&mut self, f: FloatId, page: usize, region: Turn, old: [f64; 4], new: [f64; 4]) -> Option<crate::docx::Float> {
+    /// [`Editor::moved_float`], each axis `unplace` names going to an offset from its reference however little it moves.
+    pub(super) fn placed_float(&mut self, f: FloatId, page: usize, old: [f64; 4], new: [f64; 4], unplace: [bool; 2]) -> Option<crate::docx::Float> {
+        let region = self.float_region(f, page);
+        self.placed_float_in(f, page, region, old, new, unplace)
+    }
+
+    /// [`Self::placed_float`] with the float's region drawn turned by `region`.
+    fn placed_float_in(
+        &mut self,
+        f: FloatId,
+        page: usize,
+        region: Turn,
+        old: [f64; 4],
+        new: [f64; 4],
+        unplace: [bool; 2],
+    ) -> Option<crate::docx::Float> {
         let back = region.inverse();
         let (old, new) = (back.rect(old), back.rect(new));
         let anchor = self.index.float_anchor(f)?;
@@ -1505,8 +1518,8 @@ impl Editor {
         // An alignment its size moves (right, centre, inside, outside) goes to an offset when the size changes
         let by_size = |a: &Option<String>, start: &str| a.as_deref().is_some_and(|a| a != start);
         let moved = [
-            (new[0] - old[0]).abs() > 1e-9 || sized[0] && by_size(&fl.h_align, "left"),
-            (new[1] - old[1]).abs() > 1e-9 || sized[1] && by_size(&fl.v_align, "top"),
+            unplace[0] || (new[0] - old[0]).abs() > 1e-9 || sized[0] && by_size(&fl.h_align, "left"),
+            unplace[1] || (new[1] - old[1]).abs() > 1e-9 || sized[1] && by_size(&fl.v_align, "top"),
         ];
         // An aligned or percentage place goes to an offset from its reference where the float now is.
         let placed = [fl.h_align.is_some() || fl.relative.pos[0].is_some(), fl.v_align.is_some() || fl.relative.pos[1].is_some()];

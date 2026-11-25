@@ -383,6 +383,8 @@ pub struct View {
     pub field_shading: Vec<(usize, Band)>,
     /// The editable regions the author may edit, highlighted ([`super::Editor::editable_region_views`]).
     pub editable_regions: Vec<(usize, Band)>,
+    /// The find matches highlighted (Highlight All).
+    pub find_highlights: Vec<(usize, Band)>,
     /// The selected list numbers, shaded.
     pub list_labels: Vec<(usize, Band)>,
 }

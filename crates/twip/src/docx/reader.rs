@@ -25,6 +25,80 @@ struct Package {
     budget: u64,
 }
 
+/// The most bytes of HTML one `w:altChunk` imports.
+const MAX_ALT_CHUNK: usize = 8 << 20;
+/// The most bytes of HTML a document's `w:altChunk`s import in all: each is parsed and laid out as content.
+const MAX_ALT_CHUNKS: usize = 32 << 20;
+
+/// The most `w:altChunk`s a document imports: past it, each is kept as read.
+const MAX_ALT_CHUNK_COUNT: usize = 10_000;
+
+/// The most bytes a document's `w:altChunk` documents import in all, each import counting what reading its package
+/// decompressed: each is copied in as content where it stands.
+const MAX_ALT_DOCS: u64 = 256 << 20;
+
+/// How many `w:altChunk` documents deep a document imports: one may import itself (a zip holding itself).
+// ponytail: a safety bound; raise it if a real document nests deeper.
+const MAX_ALT_DEPTH: u8 = 8;
+
+/// HTML bytes as text: UTF-16 when a byte order mark says so, Windows-1252 when its `<meta>` declares a Latin-1
+/// charset, else UTF-8 (a bad sequence replaced).
+fn decode_html(data: &[u8]) -> String {
+    let utf16 = |le: bool| {
+        let units = data[2..].as_chunks::<2>().0.iter().map(|&c| if le { u16::from_le_bytes(c) } else { u16::from_be_bytes(c) });
+        char::decode_utf16(units).map(|c| c.unwrap_or(char::REPLACEMENT_CHARACTER)).collect()
+    };
+    match data {
+        [0xFF, 0xFE, ..] => utf16(true),
+        [0xFE, 0xFF, ..] => utf16(false),
+        [0xEF, 0xBB, 0xBF, rest @ ..] => String::from_utf8_lossy(rest).into_owned(),
+        _ if latin1_declared(data) => data.iter().map(|&b| windows_1252(b)).collect(),
+        _ => String::from_utf8_lossy(data).into_owned(),
+    }
+}
+
+/// Whether the head of HTML `data` declares a charset HTML reads as Windows-1252 (`windows-1252`, `iso-8859-1`,
+/// `latin1`, `us-ascii`).
+fn latin1_declared(data: &[u8]) -> bool {
+    let mut rest = &data[..data.len().min(4096)];
+    while let Some(at) = rest.windows(7).position(|w| w.eq_ignore_ascii_case(b"charset")) {
+        rest = rest[at + 7..].trim_ascii_start();
+        let Some(value) = rest.strip_prefix(b"=") else { continue };
+        let name: Vec<u8> = value
+            .iter()
+            .skip_while(|b| matches!(b, b'"' | b'\'') || b.is_ascii_whitespace())
+            .take_while(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
+            .map(u8::to_ascii_lowercase)
+            .collect();
+        return matches!(name.as_slice(), b"windows-1252" | b"iso-8859-1" | b"latin1" | b"cp1252" | b"us-ascii" | b"ascii");
+    }
+    false
+}
+
+/// Plain text bytes as text: as a byte order mark says, else UTF-8 when they are, else Windows-1252.
+fn decode_text(data: &[u8]) -> String {
+    match data {
+        [0xFF, 0xFE, ..] | [0xFE, 0xFF, ..] | [0xEF, 0xBB, 0xBF, ..] => decode_html(data),
+        _ => match std::str::from_utf8(data) {
+            Ok(s) => s.to_string(),
+            Err(_) => data.iter().map(|&b| windows_1252(b)).collect(),
+        },
+    }
+}
+
+/// A Windows-1252 byte as its character.
+fn windows_1252(b: u8) -> char {
+    const HIGH: [char; 32] = [
+        '\u{20AC}', '\u{81}', '\u{201A}', '\u{192}', '\u{201E}', '\u{2026}', '\u{2020}', '\u{2021}', '\u{2C6}', '\u{2030}', '\u{160}', '\u{2039}',
+        '\u{152}', '\u{8D}', '\u{17D}', '\u{8F}', '\u{90}', '\u{2018}', '\u{2019}', '\u{201C}', '\u{201D}', '\u{2022}', '\u{2013}', '\u{2014}',
+        '\u{2DC}', '\u{2122}', '\u{161}', '\u{203A}', '\u{153}', '\u{9D}', '\u{17E}', '\u{178}',
+    ];
+    match b {
+        0x80..=0x9F => HIGH[usize::from(b - 0x80)],
+        _ => char::from(b),
+    }
+}
+
 /// What reading a package may decompress in all.
 // ponytail: one fixed budget; make it an open option if hosts load documents bigger than this.
 const PACKAGE_BUDGET: u64 = 2 << 30;
@@ -52,17 +126,20 @@ impl Package {
     /// A part's bytes: none when it is missing, unreadable, larger than [`super::package::MAX_PART`] or past the
     /// package's budget.
     fn read(&mut self, path: &str) -> Option<Vec<u8>> {
+        self.read_at_most(path, super::package::MAX_PART)
+    }
+
+    /// A part's bytes, as [`Package::read`] reads them, none when it is larger than `max`.
+    fn read_at_most(&mut self, path: &str, max: u64) -> Option<Vec<u8>> {
         let f = self.zip.by_name(path.trim_start_matches('/')).ok()?;
-        let limit = super::package::MAX_PART.min(self.budget);
+        let limit = max.min(super::package::MAX_PART).min(self.budget);
         let mut out = Vec::new();
-        // One byte past the limit tells a part that is too large from one that just fits.
-        f.take(limit + 1).read_to_end(&mut out).ok()?;
+        // One byte past the limit tells a part that is too large from one that just fits; what was decompressed is
+        // spent, read in full or not.
+        let read = f.take(limit + 1).read_to_end(&mut out);
         let n = out.len() as u64;
-        if n > limit {
-            return None;
-        }
-        self.budget -= n;
-        Some(out)
+        self.budget = self.budget.saturating_sub(n);
+        (read.is_ok() && n <= limit).then_some(out)
     }
 
     /// A part's text, refused (none) when its elements nest deeper than [`MAX_DEPTH`].
@@ -217,8 +294,38 @@ pub(crate) fn line_number_run(res: &Resolver) -> super::model::Run {
 }
 
 fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String> {
+    read_nested(bytes, editable, now, &mut PACKAGE_BUDGET.clone(), 0)
+}
+
+/// A `w:altChunk`'s document `target` read from `pkg`, with what reading it decompressed: refused past `left` bytes.
+fn read_alt_doc(pkg: &mut Package, target: &str, left: u64, now: i64, depth: u8) -> Result<(Rc<Document>, u64), &'static str> {
+    if left == 0 {
+        return Err("too much to import");
+    }
+    // Read from a budget one byte past what is left: a read stopped by it has spent it all, and is refused.
+    let cap = pkg.budget.min(left + 1);
+    let rest = pkg.budget - cap;
+    pkg.budget = cap;
+    let doc = pkg.read_at_most(target, super::package::MAX_PART).and_then(|bytes| read_nested(&bytes, false, now, &mut pkg.budget, depth).ok());
+    let cost = cap - pkg.budget;
+    pkg.budget += rest;
+    match doc {
+        _ if cost > left => Err("too much to import"),
+        Some(doc) => Ok((Rc::new(doc), cost)),
+        None => Err("missing or not a readable document"),
+    }
+}
+
+/// [`read_with`] for a package `depth` documents in (a `w:altChunk`'s), its reads taken from `budget`.
+fn read_nested(bytes: &[u8], editable: bool, now: i64, budget: &mut u64, depth: u8) -> Result<Document, String> {
     let zip = zip::ZipArchive::new(Cursor::new(bytes.to_vec())).map_err(|e| e.to_string())?;
-    let mut pkg = Package { zip, budget: PACKAGE_BUDGET };
+    let mut pkg = Package { zip, budget: *budget };
+    let doc = read_package(bytes, &mut pkg, editable, now, depth);
+    *budget = pkg.budget;
+    doc
+}
+
+fn read_package(bytes: &[u8], pkg: &mut Package, editable: bool, now: i64, depth: u8) -> Result<Document, String> {
     let root_rels = pkg.rels("");
     let main = root_rels.values().find(|(k, _)| k == "officeDocument").map(|(_, t)| t.clone()).unwrap_or_else(|| "word/document.xml".into());
     let rels = pkg.rels(&main);
@@ -311,6 +418,11 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
         anchored: HashSet::new(),
         orphans: HashSet::new(),
         glossary_comments: None,
+        alt_chunks: Vec::new(),
+        alt_bytes: 0,
+        alt_parts: HashMap::new(),
+        alt_docs: Vec::new(),
+        alt_depth: depth,
         theme: drawing_theme.clone(),
     };
     // The picture bullets' images, from the numbering part's relationships.
@@ -350,11 +462,11 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
         if let Some(b) = child(dom.root_element(), "background") {
             doc.page_colour = colours.colour(b, "color", "themeColor", "themeTint", "themeShade");
             doc.page_colour_theme = crate::docx::props::theme_ref(b, "themeColor", "themeTint", "themeShade");
-            let mut src = DrawingSource { reader: &mut r, pkg: &mut pkg };
+            let mut src = DrawingSource { reader: &mut r, pkg: &mut *pkg };
             doc.page_fill = crate::drawing::vml::background_fill(b, doc.page_colour, &mut |rid| crate::drawing::read::Source::image(&mut src, rid));
         }
         r.record = editable;
-        doc.sections = r.read_body(body, &mut pkg);
+        doc.sections = r.read_body(body, &mut *pkg);
         shift_connector_text(&mut doc.sections);
         r.record = false;
     }
@@ -372,7 +484,7 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
     let mut story_xml = HashMap::new();
     for path in wanted {
         r.record = editable;
-        if let Some(blocks) = r.read_story(&path, &mut pkg, |root| Some(root)) {
+        if let Some(blocks) = r.read_story(&path, &mut *pkg, |root| Some(root)) {
             if editable {
                 story_xml.insert(path.clone(), pkg.read_str(&path).unwrap_or_default());
             }
@@ -385,7 +497,7 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
         let Some(path) = part_of(kind) else { continue };
         let Some(xml) = pkg.read_str(&path) else { continue };
         let Ok(dom) = roxmltree::Document::parse(&xml) else { continue };
-        r.enter_part(&path, &mut pkg);
+        r.enter_part(&path, &mut *pkg);
         // Editable reads keep where each note's paragraphs came from, as the body's.
         r.record = editable;
         if editable {
@@ -397,8 +509,8 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
             r.in_endnotes = tag == "endnote";
             let separator = attr(n, "type").filter(|t| matches!(*t, "separator" | "continuationSeparator" | "continuationNotice"));
             let mut blocks = match separator {
-                Some(_) => r.read_blocks(n, &mut pkg, None),
-                None => r.read_story_blocks(n, &mut pkg),
+                Some(_) => r.read_blocks(n, &mut *pkg, None),
+                None => r.read_story_blocks(n, &mut *pkg),
             };
             r.close_ranges(&mut blocks);
             note_floats(&mut blocks);
@@ -433,7 +545,7 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
         );
         if let Ok(dom) = roxmltree::Document::parse(&xml) {
             r.in_endnotes = tag == "endnote";
-            let blocks = r.read_blocks(dom.root_element(), &mut pkg, None);
+            let blocks = r.read_blocks(dom.root_element(), &mut *pkg, None);
             if used {
                 doc.separators.insert(key.clone(), blocks.clone());
             }
@@ -441,9 +553,9 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
         }
     }
     if let (Some(path), Some(dom)) = (&comments_part, &comments_dom) {
-        r.enter_part(path, &mut pkg);
+        r.enter_part(path, &mut *pkg);
         r.record = editable;
-        let read = r.read_comments(dom.root_element(), &mut pkg);
+        let read = r.read_comments(dom.root_element(), &mut *pkg);
         r.record = false;
         let mut part = |kind: &str| part_of(kind).and_then(|p| pkg.read_str(&p));
         let (extended, ids, extensible) = (part("commentsExtended"), part("commentsIds"), part("commentsExtensible"));
@@ -466,13 +578,13 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
         let xml = pkg.read_str(path).map(|x| map.to_view_xml(&x).into_owned());
         match xml.as_deref().map(roxmltree::Document::parse) {
             Some(Ok(dom)) => {
-                r.enter_part(path, &mut pkg);
+                r.enter_part(path, &mut *pkg);
                 let comments = r.rels.values().find(|(k, _)| k == "comments").and_then(|(_, t)| pkg.read_str(t));
                 let ids = comments.as_deref().and_then(|x| roxmltree::Document::parse(x).ok());
                 r.glossary_comments =
                     Some(ids.iter().flat_map(|d| children(d.root_element(), "comment")).filter_map(|c| int(attr(c, "id"))).collect());
                 r.record = editable;
-                let read = r.read_glossary(dom.root_element(), &mut pkg);
+                let read = r.read_glossary(dom.root_element(), &mut *pkg);
                 r.record = false;
                 r.glossary_comments = None;
                 if editable {
@@ -488,14 +600,27 @@ fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String>
     for (name, identity) in &people_part {
         r.people.author(name, identity.as_ref());
     }
+    let refused = r.read_alt_docs(pkg, now);
+    if !refused.is_empty() {
+        r.record = editable;
+        let last = doc.sections.len().saturating_sub(1);
+        for (k, s) in doc.sections.iter_mut().enumerate() {
+            r.drop_paras(&mut s.blocks, &refused, k == last);
+        }
+        for b in doc.stories.values_mut().chain(doc.footnotes.values_mut()).chain(doc.endnotes.values_mut()) {
+            r.drop_paras(b, &refused, true);
+        }
+        r.record = false;
+    }
     doc.line_number_run = Some(line_number_run(&r.res));
     let mut image_parts = vec![String::new(); r.images.len()];
     for (part, &i) in &r.image_index {
         image_parts[i] = part.clone();
     }
     doc.images = r.images;
+    doc.alt_chunks = std::mem::take(&mut r.alt_chunks);
     doc.controls = std::mem::take(&mut r.controls);
-    doc.data_parts = data_parts(&mut pkg, &rels);
+    doc.data_parts = data_parts(&mut *pkg, &rels);
     // Bound controls show their data.
     if !doc.data_parts.is_empty() {
         let (controls, parts) = (&mut doc.controls, super::binding::Parts::new(&doc.data_parts));
@@ -956,8 +1081,46 @@ struct OpenField {
     spanning: bool,
     /// A TOC field (known at its separator): its result doesn't show the Hyperlink character style.
     toc: bool,
+    /// Where its begin marker starts in the part, and then the part's bytes of its begin, code and separator runs when they
+    /// hold only those (one parent): what its start edge keeps once it spans paragraphs.
+    begin_at: usize,
+    marker_runs: Option<std::ops::Range<usize>>,
+    /// It spans paragraphs and its start is kept as an edge ([`FieldEdge`]): its end is kept too.
+    edge: bool,
     /// A legacy form field's data (`w:ffData`): the kind it lays out as, and a drop-down's shown entry.
     form: Option<(FieldKind, Option<String>)>,
+}
+
+/// The main namespace's prefix where `n` is (`w:`, or empty when it is the default namespace).
+fn prefix_of(n: Node) -> String {
+    n.lookup_prefix(W).filter(|p| !p.is_empty()).map_or_else(String::new, |p| format!("{p}:"))
+}
+
+/// The part's bytes from the run holding `from` (where a field's first marker starts) to the end of run `r` (holding
+/// its last, `last`), when `r` and the elements before it back to that run are runs holding only field markers and
+/// code (one parent) and no marker before `from` or after `last`: what a field's edge keeps.
+fn marker_runs(r: Node, last: Node, from: usize) -> Option<std::ops::Range<usize>> {
+    let markers =
+        |n: Node| is_w(n, "r") && n.children().filter(|c| c.is_element()).all(|c| is_w(c, "rPr") || is_w(c, "fldChar") || is_w(c, "instrText"));
+    let marker_at = |n: Node, beyond: &dyn Fn(usize) -> bool| n.children().any(|c| is_w(c, "fldChar") && beyond(c.range().start));
+    if marker_at(r, &|c| c > last.range().start) {
+        return None;
+    }
+    // Bounded by the parent's children: one walk back.
+    let mut at = r;
+    loop {
+        if !markers(at) {
+            return None;
+        }
+        let range = at.range();
+        if range.contains(&from) {
+            return (!marker_at(at, &|c| c < from)).then_some(range.start..r.range().end);
+        }
+        if range.start < from {
+            return None;
+        }
+        at = at.prev_sibling_element()?;
+    }
 }
 
 /// A legacy form field's `w:ffData`: a check box (its `w:size` in points, shown checked), or a drop-down and the entry
@@ -1032,6 +1195,15 @@ struct Reader {
     orphans: HashSet<i64>,
     /// While the glossary is read, its own comments part's ids: markers in a body that name one aren't orphans.
     glossary_comments: Option<HashSet<i64>>,
+    /// [`Document::alt_chunks`], and the bytes of HTML they hold.
+    alt_chunks: Vec<AltChunk>,
+    alt_bytes: usize,
+    /// Each HTML or text part a `w:altChunk` imports, read once (none: refused).
+    alt_parts: HashMap<String, Option<Rc<str>>>,
+    /// The `w:altChunk`s importing a document, read once the stories are: each placeholder, its part and `w:matchSrc`.
+    alt_docs: Vec<(u64, String, bool)>,
+    /// How many `w:altChunk` documents in this package is.
+    alt_depth: u8,
 }
 
 /// Units added to `out` since `before` (its length and last inline's units then): text may grow the last inline.
@@ -1415,6 +1587,37 @@ impl Reader {
         }));
     }
 
+    /// `blocks` without the paragraphs `ids` names, in tables and text boxes too; a `story` (and a text box) left
+    /// without a final paragraph closed again where the last went ([`Reader::close_story`]).
+    fn drop_paras(&mut self, blocks: &mut Vec<Block>, ids: &HashSet<u64>, story: bool) {
+        let end = match blocks.last() {
+            Some(Block::Para(p)) if ids.contains(&p.id) => Some(p.src.as_ref().and_then(|s| s.ranges.first()).map_or(0..0, |r| r.end..r.end)),
+            _ => None,
+        };
+        blocks.retain(|b| !matches!(b, Block::Para(p) if ids.contains(&p.id)));
+        for b in blocks.iter_mut() {
+            match b {
+                Block::Para(p) => {
+                    for i in &mut p.inlines {
+                        if let Some(tb) = i.story_mut() {
+                            self.drop_paras(&mut tb.blocks, ids, true);
+                        }
+                    }
+                }
+                Block::Table(t) => {
+                    for r in &mut t.rows {
+                        for c in &mut r.cells {
+                            self.drop_paras(&mut c.blocks, ids, false);
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(at) = end.filter(|_| story) {
+            self.close_story(blocks, at);
+        }
+    }
+
     /// [`Reader::read_blocks`] of a story's element, closed by [`Reader::close_story`].
     fn read_story_blocks(&mut self, container: Node, pkg: &mut Package) -> Vec<Block> {
         let mut blocks = self.read_blocks(container, pkg, None);
@@ -1485,6 +1688,8 @@ impl Reader {
                 && let Some(c) = choose(n)
             {
                 out.extend(self.walk_blocks(c, pkg, table));
+            } else if is_w(n, "altChunk") {
+                self.alt_chunk(n, pkg, &mut out);
             } else if let Some(m) = self.range(n) {
                 self.pending_marks.push(Inline::Range(m));
             } else if let Some(b) = self.bookmark(n) {
@@ -1505,6 +1710,118 @@ impl Reader {
             }
         }
         out
+    }
+
+    /// A `w:altChunk` importing HTML, text or a document: an empty paragraph in its place added to `out`, its source
+    /// the element, and the content kept ([`Document::alt_chunks`], a document's once read). Nothing (the element kept
+    /// as read, not drawn) for another format, past [`MAX_ALT_DEPTH`], a
+    /// glossary's, or past [`MAX_ALT_CHUNK`], [`MAX_ALT_CHUNKS`] or [`MAX_ALT_CHUNK_COUNT`]. Not inlined, and adding to `out` itself:
+    /// [`Reader::walk_blocks`] recurses through nested tables, and its frame stays as small as it was.
+    #[inline(never)]
+    fn alt_chunk<'a, 'i>(&mut self, n: Node<'a, 'i>, pkg: &mut Package, out: &mut Vec<(Option<Block>, Option<Node<'a, 'i>>)>) {
+        if let Some(p) = self.alt_chunk_para(n, pkg) {
+            if let Some(h) = self.pending_hidden.take() {
+                out.push((Some(Block::Para(h)), None));
+            }
+            out.push((Some(Block::Para(p)), None));
+        }
+    }
+
+    fn alt_chunk_para(&mut self, n: Node, pkg: &mut Package) -> Option<Paragraph> {
+        if self.glossary_comments.is_some() {
+            return None;
+        }
+        let target = n.attribute((R, "id")).and_then(|id| self.rels.get(id)).map(|(_, t)| t.clone())?;
+        let ext = target.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase()).unwrap_or_default();
+        let (html, document) = match ext.as_str() {
+            "htm" | "html" | "xhtml" => (true, false),
+            "txt" => (false, false),
+            "docx" | "docm" | "dotx" | "dotm" => (false, true),
+            _ => {
+                self.warn(WarningCode::UnsupportedElement, || format!("altChunk {target}: only HTML, text and documents are imported"));
+                return None;
+            }
+        };
+        if self.alt_chunks.len() + self.alt_docs.len() >= MAX_ALT_CHUNK_COUNT {
+            self.warn(WarningCode::UnsupportedElement, || format!("altChunk {target}: too many altChunks to import"));
+            return None;
+        }
+        let id = next_para_id();
+        if document {
+            if self.alt_depth >= MAX_ALT_DEPTH {
+                self.warn(WarningCode::UnsupportedElement, || format!("altChunk {target}: imported documents nest too deeply"));
+                return None;
+            }
+            let match_src = child(n, "altChunkPr").and_then(|p| flag(p, "matchSrc")).unwrap_or(false);
+            self.alt_docs.push((id, target, match_src));
+        } else {
+            let text = match self.alt_parts.get(&target) {
+                Some(h) => h.clone(),
+                None => {
+                    let decode = if html { decode_html } else { decode_text };
+                    let h: Option<Rc<str>> = pkg.read_at_most(&target, MAX_ALT_CHUNK as u64).map(|d| decode(&d).into());
+                    self.alt_parts.insert(target.clone(), h.clone());
+                    h
+                }
+            };
+            let Some(text) = text else {
+                self.warn(WarningCode::UnsupportedElement, || format!("altChunk {target}: missing, unreadable or too large to import"));
+                return None;
+            };
+            // Each import parses and lays out its content: one part imported many times counts each time.
+            if self.alt_bytes + text.len() > MAX_ALT_CHUNKS {
+                self.warn(WarningCode::UnsupportedElement, || format!("altChunk {target}: too much content to import"));
+                return None;
+            }
+            self.alt_bytes += text.len();
+            let content = if html { AltContent::Html(text) } else { AltContent::Text(text) };
+            self.alt_chunks.push(AltChunk { para: id, content });
+        }
+        let r = self.res.paragraph(&ParaProps::default(), None);
+        let mark = self.run_style(&self.run_props(&r.base, None));
+        // Written from the model in its place once it holds the content; kept as read while it doesn't.
+        let src = self.record.then(|| {
+            Rc::new(ParaSrc { ranges: vec![n.range()], segs: Vec::new(), simple: Vec::new(), lossy: true, closing: false, joined: Vec::new() })
+        });
+        Some(Paragraph { style: Rc::new(r.style), mark, list: None, inlines: Vec::new(), src, id, div: None, controls: Vec::new() })
+    }
+
+    /// The documents `w:altChunk`s import ([`Reader::alt_docs`]): each part read once, from this package's budget,
+    /// and each import counted against [`MAX_ALT_DOCS`]. Read once the stories are, so a nested read never stands on
+    /// a story's nested tables. Returns the placeholders of those refused, to go as one refused while reading does.
+    fn read_alt_docs(&mut self, pkg: &mut Package, now: i64) -> HashSet<u64> {
+        let depth = self.alt_depth + 1;
+        // A document past what is left to import is refused, and stays so: what is left only shrinks.
+        let mut read: HashMap<String, Result<(Rc<Document>, u64), &'static str>> = HashMap::new();
+        let mut spent = 0u64;
+        let mut refused = HashSet::new();
+        for (para, target, match_src) in std::mem::take(&mut self.alt_docs) {
+            let left = MAX_ALT_DOCS - spent;
+            let got = match read.get(&target) {
+                Some(got) => got.clone(),
+                None => {
+                    let got = read_alt_doc(pkg, &target, left, now, depth);
+                    read.insert(target.clone(), got.clone());
+                    got
+                }
+            };
+            match got {
+                Ok((doc, cost)) if cost <= left => {
+                    spent += cost;
+                    self.alt_chunks.push(AltChunk { para, content: AltContent::Document { doc, match_src } });
+                }
+                Ok(_) => {
+                    read.insert(target.clone(), Err("too much to import"));
+                    refused.insert(para);
+                    self.warn(WarningCode::UnsupportedElement, || format!("altChunk {target}: too much to import"));
+                }
+                Err(why) => {
+                    refused.insert(para);
+                    self.warn(WarningCode::UnsupportedElement, || format!("altChunk {target}: {why}"));
+                }
+            }
+        }
+        refused
     }
 
     fn default_sect(&self) -> Section {
@@ -1751,7 +2068,7 @@ impl Reader {
             rev.ins = ins.or(rev.ins.take());
             rev.del = del.or(rev.del.take());
         }
-        self.cut_spanning_fields(&mut inlines);
+        self.cut_spanning_fields(n, &mut inlines);
         self.para_no = outer_para;
         let (segs, lossy, simple) =
             (std::mem::replace(&mut self.segs, outer.0), std::mem::replace(&mut self.lossy, outer.1), std::mem::replace(&mut self.simple, outer.2));
@@ -1929,7 +2246,7 @@ impl Reader {
     /// An element between runs the engine doesn't model, kept as read (editable reads).
     fn opaque(&mut self, e: Node, out: &mut Vec<Inline>) {
         if self.record {
-            out.push(Inline::Opaque(Rc::new(Opaque { xml: Raw(Some(raw(e))) })));
+            out.push(Inline::Opaque(Rc::new(Opaque { xml: Raw(Some(raw(e))), field: None, src: None, run: None })));
         }
     }
 
@@ -1944,7 +2261,7 @@ impl Reader {
         let name = &open[1..open.find(|ch: char| ch.is_whitespace() || ch == '>' || ch == '/').unwrap_or(1)];
         let rpr = child(r, "rPr").map_or_else(String::new, |p| raw(p).to_string());
         let xml = format!("{open}{rpr}{}</{name}>", raw(c));
-        out.push(Inline::Opaque(Rc::new(Opaque { xml: Raw(Some(xml.into())) })));
+        out.push(Inline::Opaque(Rc::new(Opaque { xml: Raw(Some(xml.into())), field: None, src: None, run: None })));
     }
 
     /// [`Reader::opaque`], reported as content that isn't drawn.
@@ -2017,6 +2334,9 @@ impl Reader {
                             begin: out.len(),
                             spanning: false,
                             toc: false,
+                            begin_at: c.range().start,
+                            marker_runs: None,
+                            edge: false,
                             form: child(c, "ffData").and_then(form_data),
                         });
                         let (lock, dirty) = (flag("fldLock"), flag("dirty"));
@@ -2042,6 +2362,7 @@ impl Reader {
                         {
                             f.in_result = true;
                             if !f.spanning {
+                                f.marker_runs = marker_runs(r, c, f.begin_at);
                                 let code: String =
                                     out[f.begin..].iter().filter_map(|i| if let Inline::Text(t, _) = i { Some(t.as_str()) } else { None }).collect();
                                 f.toc = code.split_whitespace().next().is_some_and(|w| w.eq_ignore_ascii_case("TOC"));
@@ -2050,12 +2371,27 @@ impl Reader {
                         }
                     }
                     Some("end") => {
-                        if let (Some(id), Some(f)) = (id, self.fields.pop())
-                            && !f.spanning
-                        {
-                            out.push(Inline::FieldEnd { id, run: run.clone() });
-                            let style = self.run_style(&self.run_props(base, None));
-                            self.close_field(out, f, &run, &style);
+                        if let (Some(id), Some(f)) = (id, self.fields.pop()) {
+                            if !f.spanning {
+                                out.push(Inline::FieldEnd { id, run: run.clone() });
+                                let style = self.run_style(&self.run_props(base, None));
+                                self.close_field(out, f, &run, &style);
+                            } else if f.edge && self.record {
+                                let at = marker_runs(r, c, c.range().start);
+                                let xml = match &at {
+                                    Some(at) => Rc::from(&r.document().input_text()[at.clone()]),
+                                    None => {
+                                        self.lossy = true;
+                                        Rc::from(FieldEdge::End.xml(&prefix_of(r)).as_str())
+                                    }
+                                };
+                                out.push(Inline::Opaque(Rc::new(Opaque {
+                                    xml: Raw(Some(xml)),
+                                    field: Some(FieldEdge::End),
+                                    src: at,
+                                    run: Some(run.clone()),
+                                })));
+                            }
                         }
                     }
                     _ => {}
@@ -2404,6 +2740,9 @@ impl Reader {
             begin,
             spanning: false,
             toc: false,
+            begin_at: e.range().start,
+            marker_runs: None,
+            edge: false,
             form: None,
         });
         self.read_inlines(e, base, pkg, out);
@@ -2419,7 +2758,7 @@ impl Reader {
 
     /// At a paragraph's end: a field begun in it and still open spans paragraphs. Its markers and code (with the
     /// fields in it) come out of the paragraph, and its result reads as plain text from here on.
-    fn cut_spanning_fields(&mut self, out: &mut Vec<Inline>) {
+    fn cut_spanning_fields(&mut self, n: Node, out: &mut Vec<Inline>) {
         let no = self.para_no;
         let Some(first) = self.fields.iter().position(|f| f.para == no && !f.spanning) else { return };
         let begin = self.fields[first].begin;
@@ -2428,7 +2767,29 @@ impl Reader {
         let stop = out[begin..].iter().position(|i| matches!(i, Inline::FieldSep { id: s, .. } if *s == id)).map_or(out.len(), |k| begin + k + 1);
         let units_before: usize = out[..begin].iter().map(Inline::units).sum();
         let cut: usize = out[begin..stop].iter().map(Inline::units).sum();
+        // Its start is kept as an edge, as its runs were written when they hold only its markers and code.
+        let sep = out[begin..stop].iter().position(|i| matches!(i, Inline::FieldSep { id: s, .. } if *s == id)).map(|k| begin + k);
+        let edge = match (&out[begin], sep) {
+            (Inline::FieldBegin { lock, dirty, .. }, Some(sep)) if self.record => {
+                let code = super::fields::code_text(out, super::fields::FieldSpan { begin, sep: Some(sep), end: sep });
+                Some(FieldEdge::Start { code, lock: *lock, dirty: *dirty, view: FieldView::Result })
+            }
+            _ => None,
+        };
+        let begin_run = out[begin].run().cloned();
         out.drain(begin..stop);
+        if let Some(edge) = edge {
+            let at = self.fields[first].marker_runs.clone();
+            let xml = match &at {
+                Some(at) => Rc::from(&n.document().input_text()[at.clone()]),
+                None => {
+                    self.lossy = true;
+                    Rc::from(edge.xml(&prefix_of(n)).as_str())
+                }
+            };
+            out.insert(begin, Inline::Opaque(Rc::new(Opaque { xml: Raw(Some(xml)), field: Some(edge), src: at, run: begin_run })));
+            self.fields[first].edge = true;
+        }
         for f in &mut self.fields[first..] {
             f.spanning = true;
             // A code doesn't go on past its paragraph: what follows shows (a field without its end reads as text).
@@ -3588,6 +3949,20 @@ fn cell_ids(tc: Node, tc_pr: Option<Node>) -> Option<Rc<crate::docx::CellIds>> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_part_refused_as_too_large_still_spends_what_it_decompressed() {
+        use std::io::Write;
+        let mut z = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        z.start_file("big.html", zip::write::SimpleFileOptions::default()).expect("starts");
+        z.write_all(&[b'x'; 100]).expect("writes");
+        let zip = zip::ZipArchive::new(std::io::Cursor::new(z.finish().expect("finishes").into_inner())).expect("a zip");
+        let mut pkg = super::Package { zip, budget: 1000 };
+        assert!(pkg.read_at_most("big.html", 10).is_none());
+        assert_eq!(pkg.budget, 1000 - 11, "the part's first bytes, read to tell it is too large");
+        assert!(pkg.read_at_most("big.html", 100).is_some());
+        assert_eq!(pkg.budget, 1000 - 11 - 100);
+    }
+
     #[test]
     fn a_bound_control_shows_its_data_in_its_own_run_over_its_paragraphs() {
         let rel = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";

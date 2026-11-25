@@ -27,11 +27,13 @@ pub(crate) fn hf_fields(run: &PassRun, cx: &PassCx, i: usize) -> FieldValues {
         section: Some((si + 1).to_string()),
         section_pages: info.section_pages.get(si).cloned(),
         page_refs: Some(info.page_refs.clone()),
-        style_refs: style_refs(&cx.wanted, &run.pages, &cx.paras, i),
+        style_refs: style_refs(cx, &run.pages, i),
         page_fmt: cx.doc.sections[si].pg_fmt.clone(),
         chapter: page_chapter(cx, &run.pages, i),
         section_chapter: cx.chapters.sections.get(si).cloned().flatten(),
         chapters: None,
+        here: Some(i),
+        para_at: Some(info.para_at.clone()),
     }
 }
 
@@ -256,18 +258,14 @@ pub(crate) fn finish_page(pg: &PageRecord, section_page: usize) -> (Rc<PageFragm
 /// last), else the last on an earlier page, else the first on a later one.
 // ponytail: a page's paragraphs whole; a character style's runs on the part of a split paragraph another page holds
 // count on this one too.
-fn style_refs(
-    wanted: &[(String, crate::docx::fields::StyleQuery)],
-    pages: &[PageRecord],
-    paras: &HashMap<ParaId, Vec<(String, bool, String)>>,
-    i: usize,
-) -> Vec<(String, String)> {
+fn style_refs(cx: &PassCx, pages: &[PageRecord], i: usize) -> Vec<(String, String)> {
     let on = |k: usize| pages.get(k).map(|p| &p.effects.paras[..]).unwrap_or(&[]);
-    wanted
+    let resolver = cx.doc.resolver.as_deref();
+    cx.wanted
         .iter()
         .filter_map(|(code, q)| {
             let hit = |list: &[ParaId], rev: bool| {
-                let find = |r: &ParaId| q.find(paras.get(r)?, rev);
+                let find = |r: &ParaId| Some(q.shown(q.find(cx.paras.get(r)?, rev)?, cx.numbers.get(&r.0), resolver));
                 if rev { list.iter().rev().find_map(find) } else { list.iter().find_map(find) }
             };
             hit(on(i), q.last)

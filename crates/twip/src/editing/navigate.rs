@@ -153,6 +153,9 @@ impl Nav<'_> {
     // Logical movement
 
     pub fn right(&self, pos: Position, word: bool) -> Position {
+        if let Some(p) = super::span_codes::fold_step(self.doc, self.idx, pos, true) {
+            return p;
+        }
         match pos.place {
             Place::Text { para, offset, .. } => {
                 let Some(t) = self.text(para) else { return pos };
@@ -168,6 +171,9 @@ impl Nav<'_> {
     }
 
     pub fn left(&self, pos: Position, word: bool) -> Position {
+        if let Some(p) = super::span_codes::fold_step(self.doc, self.idx, pos, false) {
+            return p;
+        }
         match pos.place {
             Place::Text { para, offset, .. } => {
                 let Some(t) = self.text(para) else { return pos };
@@ -271,7 +277,7 @@ impl Nav<'_> {
     }
 
     /// The place `stop` of line `line` on `page` stands for, upstream when downstream would show it on another line.
-    fn at_stop(&mut self, story: StoryId, page: usize, line: usize, stop: Stop) -> Position {
+    pub(in crate::editing) fn at_stop(&mut self, story: StoryId, page: usize, line: usize, stop: Stop) -> Position {
         let down = Position::text(story, stop.para, stop.unit);
         if !stop.end {
             return down;

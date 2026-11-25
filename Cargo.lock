@@ -1776,6 +1776,7 @@ dependencies = [
  "getrandom",
  "harfrust",
  "hayro-interpret",
+ "regex-lite",
  "roxmltree",
  "serde",
  "serde_json",

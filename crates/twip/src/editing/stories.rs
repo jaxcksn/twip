@@ -183,7 +183,11 @@ impl Editor {
     /// refers to (a part that didn't load), or the package holds (a removed part's name names that part's
     /// relationship).
     pub(super) fn new_story_name(&self, footer: bool) -> String {
-        let kind = if footer { "footer" } else { "header" };
+        self.new_story_names(std::iter::once(footer)).pop().unwrap_or_default()
+    }
+
+    /// [`Editor::new_story_name`] for several new parts at once, each a header or a footer (`true`), all different.
+    pub(super) fn new_story_names(&self, footers: impl IntoIterator<Item = bool>) -> Vec<String> {
         let src = self.doc.source.as_ref();
         let dir = src.and_then(|s| s.main.rsplit_once('/')).map_or(String::new(), |(d, _)| format!("{d}/"));
         let package = src.and_then(|s| zip::ZipArchive::new(std::io::Cursor::new(&s.package[..])).ok());
@@ -195,8 +199,16 @@ impl Editor {
                 || referred.contains(name)
                 || package.as_ref().is_some_and(|z| z.index_for_name(name).is_some())
         };
-        let n = (1..).find(|n| !taken(&format!("{dir}header{n}.xml")) && !taken(&format!("{dir}footer{n}.xml"))).unwrap_or(1);
-        format!("{dir}{kind}{n}.xml")
+        let mut from = 1usize;
+        footers
+            .into_iter()
+            .map(|footer| {
+                let kind = if footer { "footer" } else { "header" };
+                let n = (from..).find(|n| !taken(&format!("{dir}header{n}.xml")) && !taken(&format!("{dir}footer{n}.xml"))).unwrap_or(from);
+                from = n + 1;
+                format!("{dir}{kind}{n}.xml")
+            })
+            .collect()
     }
 
     /// The step that takes section `section`'s own header or footer `name` away: the part goes with it, unless another

@@ -83,6 +83,8 @@ pub fn shows_nothing(p: &crate::docx::Paragraph, review: &crate::docx::review::R
         |r: &crate::docx::Run| (r.hidden && !review.show_hidden) || (review.hides(&r.rev) && review.markup.stand_in(review.view, &r.rev).is_none());
     p.inlines.iter().all(|i| match i {
         Inline::Text(t, r) => t.is_empty() || hidden(r),
+        // A shown code's brace
+        Inline::Opaque(o) if o.field.as_ref().is_some_and(|e| e.units() > 0) => o.run.as_ref().is_some_and(hidden),
         Inline::Bookmark(_) | Inline::Opaque(_) | Inline::Range(_) | Inline::ControlStart(_) | Inline::ControlEnd(_) | Inline::CommentRef { .. } => {
             true
         }

@@ -72,18 +72,26 @@ struct EffectsMark {
     paras: usize,
     bookmarks: usize,
     notes_shown: usize,
+    relative: usize,
     notes_top: Option<f64>,
 }
 
 impl EffectsMark {
     fn of(e: &PageEffects) -> EffectsMark {
-        EffectsMark { paras: e.paras.len(), bookmarks: e.bookmarks.len(), notes_shown: e.notes_shown.len(), notes_top: e.notes_top }
+        EffectsMark {
+            paras: e.paras.len(),
+            bookmarks: e.bookmarks.len(),
+            notes_shown: e.notes_shown.len(),
+            relative: e.relative,
+            notes_top: e.notes_top,
+        }
     }
 
     fn restore(self, e: &mut PageEffects) {
         e.paras.truncate(self.paras);
         e.bookmarks.truncate(self.bookmarks);
         e.notes_shown.truncate(self.notes_shown);
+        e.relative = self.relative;
         e.notes_top = self.notes_top;
     }
 }
@@ -766,12 +774,16 @@ impl<'d> PageFill<'d, '_> {
             self.at.effects.paras.push(id);
         }
         if first_part {
-            for i in &p.inlines {
-                if let Inline::Bookmark(name) = i
-                    && !name.starts_with('/')
-                {
+            for (k, i) in p.inlines.iter().enumerate() {
+                match i {
                     // A name found again moves to the end where the page's effects are merged.
-                    self.at.effects.bookmarks.push(name.clone());
+                    Inline::Bookmark(name) if !name.starts_with('/') => self.at.effects.bookmarks.push((name.clone(), id)),
+                    Inline::FieldBegin { kind: Some(FieldKind::PageRef(_) | FieldKind::NoteRef(..)), .. }
+                        if crate::docx::fields::relative_at(&p.inlines, k) =>
+                    {
+                        self.at.effects.relative += 1;
+                    }
+                    _ => {}
                 }
             }
         }

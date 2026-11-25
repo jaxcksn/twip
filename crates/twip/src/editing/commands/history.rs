@@ -8,15 +8,15 @@ use crate::editing::selection::Selection;
 use crate::editing::{Editor, table};
 
 impl Editor {
-    pub(in crate::editing) fn copy_selection(&mut self) -> Outcome {
-        match self.copy() {
+    pub(in crate::editing) fn copy_selection(&mut self, fonts: &Fonts) -> Outcome {
+        match self.copy_drawn(fonts) {
             Some(_) => Outcome::Moved,
             None => Outcome::Unchanged("nothing selected"),
         }
     }
 
     pub(in crate::editing) fn cut(&mut self, fonts: &Fonts) -> Outcome {
-        if self.copy().is_none() {
+        if self.copy_drawn(fonts).is_none() {
             return Outcome::Unchanged("nothing selected");
         }
         if !self.is_discontiguous()
@@ -35,7 +35,7 @@ impl Editor {
             };
         }
         let moving = self.tracking() && !self.is_discontiguous() && self.moves_whole();
-        if !moving && !self.is_discontiguous() {
+        if !moving && !self.is_discontiguous() && self.paste_defaults.spaces() {
             self.smart_cut();
         }
         let out = self.delete(Dir::Back, false, fonts);
@@ -48,17 +48,14 @@ impl Editor {
 
     pub(in crate::editing) fn paste_held(&mut self, p: PasteOptions, fonts: &Fonts) -> Outcome {
         let Some(f) = self.clipboard.clone() else { return Outcome::unavailable("nothing to paste") };
-        if p.as_ == Some(PasteAs::Text) {
-            return self.paste_text(&f.text(), fonts);
-        }
-        let out = self.paste_fragment(&f, fonts);
-        self.paste_moved(&f, &out, fonts);
-        out
+        let choice = (p.as_ == Some(PasteAs::Text)).then_some(crate::editing::paste::PasteChoice::Unformatted);
+        let clip = crate::editing::paste::Clip { text: f.text(), fragment: Some(f), ..Default::default() };
+        self.paste_clip(clip, choice, fonts)
     }
 
     pub(in crate::editing) fn paste_text(&mut self, t: &str, fonts: &Fonts) -> Outcome {
         self.history.break_typing();
-        let (sb, sa) = self.smart_spaces(t);
+        let (sb, sa) = if self.paste_defaults.spaces() { self.smart_spaces(t) } else { (false, false) };
         let t = format!("{}{t}{}", if sb { " " } else { "" }, if sa { " " } else { "" });
         let r = self.insert_text(&t, fonts);
         self.history.break_typing();

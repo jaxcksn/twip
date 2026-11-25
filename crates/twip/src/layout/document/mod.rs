@@ -21,6 +21,7 @@ use super::page::{Cursor, Next, Paginator, PassInfo, PassRun};
 use super::record::PageRecord;
 use super::snapshot::{LayoutStatus, PageMeta, Snapshot};
 use super::space::HfHeights;
+use super::text::PageRef;
 use super::token::{FlowToken, PageToken};
 use super::units::EPS;
 
@@ -118,6 +119,8 @@ pub struct PassCx<'d> {
     wanted: Vec<(String, crate::docx::fields::StyleQuery)>,
     /// What a `STYLEREF` can show from each body paragraph.
     paras: HashMap<ParaId, Vec<(String, bool, String)>>,
+    /// The body paragraphs' list numbers, when a `STYLEREF` there shows one.
+    numbers: HashMap<u64, crate::docx::fields::ParaNumber>,
     chapters: Chapters,
 }
 
@@ -174,7 +177,8 @@ impl<'d> PassCx<'d> {
                 }
             }
         }
-        PassCx { doc, ctx, nodes, notes, wanted, paras, chapters: chapters(doc) }
+        let numbers = if wanted.iter().any(|(_, q)| q.numbered()) { crate::docx::fields::para_numbers(doc) } else { HashMap::new() };
+        PassCx { doc, ctx, nodes, notes, wanted, paras, numbers, chapters: chapters(doc) }
     }
 
     fn notes(&self) -> Notes<'d> {
@@ -328,7 +332,7 @@ pub fn step(run: &mut PassRun, cx: &PassCx, reuse: Option<&mut Reuse>, memos: &m
         }
         Cursor::Compose(i) => {
             if run.info.is_none() {
-                run.info = Some(pass_info(&run.pages, nsec));
+                run.info = Some(pass_info(cx, &run.pages));
             }
             if i >= run.pages.len() {
                 run.cursor = Cursor::Done;
@@ -474,7 +478,8 @@ impl LayoutJob {
             run.info = Some(PassInfo {
                 num_pages: Some(n.max(pages).to_string()),
                 section_pages: section_pages(&run.pages, nsec),
-                page_refs: Rc::new(bookmark_pages(&run.pages)),
+                page_refs: Rc::new(bookmark_pages(doc, cx.chapters.body.as_deref(), &run.pages)),
+                para_at: Rc::new(para_at(&run.pages)),
             });
             for i in 0..n {
                 let pg = &run.pages[i];
@@ -586,8 +591,25 @@ pub(crate) fn excluded(records: &[PageRecord]) -> Vec<(usize, ParaId, std::ops::
     out
 }
 
-fn pass_info(pages: &[PageRecord], nsec: usize) -> PassInfo {
-    PassInfo { num_pages: Some(pages.len().to_string()), section_pages: section_pages(pages, nsec), page_refs: Rc::new(bookmark_pages(pages)) }
+fn pass_info(cx: &PassCx, pages: &[PageRecord]) -> PassInfo {
+    PassInfo {
+        num_pages: Some(pages.len().to_string()),
+        section_pages: section_pages(pages, cx.doc.sections.len()),
+        page_refs: Rc::new(bookmark_pages(cx.doc, cx.chapters.body.as_deref(), pages)),
+        para_at: Rc::new(para_at(pages)),
+    }
+}
+
+/// The page and place on it of each paragraph on the pages holding reference fields with `\p` (those fields tell
+/// above from below by it).
+fn para_at(pages: &[PageRecord]) -> HashMap<ParaId, (usize, usize)> {
+    let mut out = HashMap::new();
+    for (i, pg) in pages.iter().enumerate().filter(|(_, pg)| pg.effects.relative > 0) {
+        for (k, p) in pg.effects.paras.iter().enumerate() {
+            out.entry(*p).or_insert((i, k));
+        }
+    }
+    out
 }
 
 /// Each of the `nsec` sections' pages, blank ones not counted, as `SECTIONPAGES` shows them.
@@ -601,12 +623,20 @@ fn section_pages(pages: &[PageRecord], nsec: usize) -> Vec<String> {
     counts.iter().map(usize::to_string).collect()
 }
 
-fn bookmark_pages(pages: &[PageRecord]) -> HashMap<String, String> {
+/// Each bookmark's page as `PAGEREF` shows it, with `chapters`' prefix for the paragraph it starts in.
+pub(crate) fn bookmark_pages(doc: &Document, chapters: Option<&HashMap<ParaId, String>>, pages: &[PageRecord]) -> HashMap<String, PageRef> {
     let mut out = HashMap::new();
-    for pg in pages {
-        for b in &pg.effects.bookmarks {
-            out.insert(b.clone(), pg.number.to_string());
+    for (page, pg) in pages.iter().enumerate() {
+        let fmt = doc.sections.get(pg.section).and_then(|s| s.pg_fmt.as_ref());
+        for (name, para) in &pg.effects.bookmarks {
+            let chapter = chapters.and_then(|c| c.get(para)).cloned();
+            out.insert(name.clone(), PageRef { number: pg.number, fmt: fmt.cloned(), chapter, page, para: *para });
         }
     }
     out
+}
+
+/// [`bookmark_pages`] of a finished layout of `doc`.
+pub(crate) fn bookmark_pages_of(doc: &Document, pages: &[PageRecord]) -> HashMap<String, PageRef> {
+    bookmark_pages(doc, chapters(doc).body.as_deref(), pages)
 }

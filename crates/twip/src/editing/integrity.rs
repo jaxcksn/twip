@@ -356,7 +356,7 @@ fn elements(doc: &Document, idx: &DocIndex, out: &mut Vec<Violation>) {
                             && !kind.as_ref().is_some_and(crate::docx::FieldKind::is_not_from_code)
                             // None: a locked field, or one of the application's types.
                             && kind.is_some()
-                            && *kind != crate::docx::fields::kind_at(&p.inlines, s)
+                            && !same_kind(kind.as_ref(), crate::docx::fields::kind_at(&p.inlines, s).as_ref())
                         {
                             out.push(Violation { invariant: "F3 kind from code", detail: format!("field in paragraph {} has {kind:?}", p.id) });
                         }
@@ -526,4 +526,13 @@ pub fn duplicate_ids(doc: &Document) -> Vec<u64> {
         walk(b, &mut seen, &mut dup);
     }
     dup
+}
+
+/// Whether a field's kind is the one its code gives: a `NOTEREF`'s note is evaluation's, not its code's.
+fn same_kind(kind: Option<&crate::docx::FieldKind>, code: Option<&crate::docx::FieldKind>) -> bool {
+    use crate::docx::FieldKind::NoteRef;
+    match (kind, code) {
+        (Some(NoteRef(a, _)), Some(NoteRef(b, _))) => a == b,
+        _ => kind == code,
+    }
 }

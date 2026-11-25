@@ -295,6 +295,12 @@ pub(crate) fn rgba(bytes: &[u8], w: u32, h: u32) -> Option<Vec<u8>> {
     let draws = [Draw { picture: &picture, transform: Affine::IDENTITY }];
     let clear = Some(twip_graphics::paint::Color::TRANSPARENT);
     Renderer::new().render(&mut target, &twip_graphics::Resources::default(), &Frame { clear, draws: &draws });
+    unpremultiply(&mut px);
+    Some(px)
+}
+
+/// Premultiplied RGBA pixels made straight.
+pub(crate) fn unpremultiply(px: &mut [u8]) {
     for p in px.as_chunks_mut::<4>().0 {
         let a = p[3];
         if a != 0 && a != 255 {
@@ -303,7 +309,6 @@ pub(crate) fn rgba(bytes: &[u8], w: u32, h: u32) -> Option<Vec<u8>> {
             }
         }
     }
-    Some(px)
 }
 
 /// RGBA pixels as a PNG.

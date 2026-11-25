@@ -48,6 +48,12 @@ impl Graphics {
         for (_, b) in view.editable_regions.iter().filter(|(pg, _)| *pg == i) {
             fill_band(rec, b, gold);
         }
+        // Find's Highlight All: Word's yellow, multiplied under the text (screened dark over a dark page)
+        let (yellow, blend) = if page.is_dark() { (Color::rgb(0x5C_5A00), BlendMode::Screen) } else { (Color::rgb(0xFF_FF00), BlendMode::Multiply) };
+        let yellow = twip_graphics::paint::Paint { blend, ..aliased(yellow) };
+        for (_, b) in view.find_highlights.iter().filter(|(pg, _)| *pg == i) {
+            fill_band(rec, b, yellow);
+        }
         for (_, b) in view.fade.iter().filter(|(pg, _)| *pg == i) {
             rec.fill_rect(rect(*b), fade);
         }
