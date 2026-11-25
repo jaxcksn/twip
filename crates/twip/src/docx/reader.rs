@@ -2117,7 +2117,7 @@ impl Reader {
                             text,
                             run: self.res.run_style(&lp),
                             jc: super::paragraph::list_jc(&l.jc),
-                            suff: l.suff.clone(),
+                            suff: super::paragraph::list_suffix(&l.suff),
                             picture,
                             legacy: l.legacy,
                         }

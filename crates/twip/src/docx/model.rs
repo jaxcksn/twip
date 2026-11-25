@@ -3,7 +3,7 @@
 pub use crate::document::anchor::{FloatWrap, VerticalAlign, WrapText};
 pub use crate::document::content::{BreakKind, NoteKind};
 pub use crate::document::ident::{ControlId, FieldId, next_para_id};
-pub use crate::document::paragraph::{ListJc, TextAlignment};
+pub use crate::document::paragraph::{ListJc, ListSuffix, TextAlignment};
 pub use crate::document::policy::{Compat, LayoutPolicy};
 
 use super::font_table::GenericFamily;
@@ -938,7 +938,7 @@ pub struct ListLabel {
     pub text: String,
     pub run: Run,
     pub jc: ListJc,
-    pub suff: String,
+    pub suff: ListSuffix,
     /// A picture bullet's image (an index into [`Document::images`]), drawn instead of the text.
     pub picture: Option<usize>,
     /// A legacy level's space and indent ([`super::numbering::Level::legacy`]).

@@ -235,7 +235,7 @@ impl Editor {
                 text,
                 run: next.run_style(&lp),
                 jc: crate::docx::paragraph::list_jc(&level.jc),
-                suff: level.suff.clone(),
+                suff: crate::docx::paragraph::list_suffix(&level.suff),
                 picture,
                 legacy: level.legacy,
             };

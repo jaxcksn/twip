@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 
 use crate::docx::props::{Jc, VertAlign};
 use crate::docx::review::RangeKind;
-use crate::docx::{Block, Document, FieldKind, Inline, NoteKind, Paragraph, Run};
+use crate::docx::{Block, Document, FieldKind, Inline, ListSuffix, NoteKind, Paragraph, Run};
 
 /// Every feature name [`of`] can report, in the order the CLI lists them.
 pub const ALL: &[&str] = &[
@@ -111,7 +111,7 @@ fn para(p: &Paragraph, depth: usize, f: &mut BTreeSet<&'static str>) {
     }
     if let Some(list) = &p.list {
         f.insert("lists");
-        if list.suff == "tab" || list.suff.is_empty() {
+        if list.suff == ListSuffix::Tab {
             f.insert("tabs");
         }
     }

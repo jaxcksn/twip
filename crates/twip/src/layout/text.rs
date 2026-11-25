@@ -1211,9 +1211,9 @@ impl<'a> Builder<'a> {
                 let gap = at(self, gap);
                 self.atom(gap, "");
             }
-            match l.suff.as_str() {
+            match l.suff {
                 _ if l.legacy.is_some() => {}
-                "space" => {
+                ListSuffix::Space => {
                     let s = self.pieces.len();
                     self.text(" ", &l.run)?;
                     for i in s..self.pieces.len() {
@@ -1223,8 +1223,8 @@ impl<'a> Builder<'a> {
                         p.width = LIST_SUFFIX_SPACE_EM * size * l.run.scale / 100.0 + l.run.spacing;
                     }
                 }
-                "nothing" => {}
-                _ => {
+                ListSuffix::Nothing => {}
+                ListSuffix::Tab => {
                     let f = self.face(&l.run.ascii, &l.run);
                     let mut t = self.new_piece(Kind::Tab, &l.run, f, l.run.size, 0.0);
                     t.ascent = 0.0;

@@ -43,3 +43,14 @@ pub enum ListJc {
     /// Thai distributed.
     ThaiDistribute,
 }
+
+/// What follows a list label.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ListSuffix {
+    /// A tab.
+    Tab,
+    /// A space.
+    Space,
+    /// Nothing.
+    Nothing,
+}

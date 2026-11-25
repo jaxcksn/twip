@@ -1,6 +1,6 @@
 //! Paragraph and list label values
 
-pub use crate::document::paragraph::{ListJc, TextAlignment};
+pub use crate::document::paragraph::{ListJc, ListSuffix, TextAlignment};
 
 /// A `w:textAlignment` value (an empty one `auto`, any other unknown one `baseline`).
 pub fn text_alignment(v: &str) -> TextAlignment {
@@ -31,6 +31,15 @@ pub fn list_jc(v: &str) -> ListJc {
     }
 }
 
+/// A `w:suff` value (an unknown one `tab`).
+pub fn list_suffix(v: &str) -> ListSuffix {
+    match v {
+        "space" => ListSuffix::Space,
+        "nothing" => ListSuffix::Nothing,
+        _ => ListSuffix::Tab,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -40,5 +49,6 @@ mod tests {
         assert_eq!(text_alignment(""), TextAlignment::Auto);
         assert_eq!(text_alignment("middle"), TextAlignment::Baseline);
         assert_eq!(list_jc("middle"), ListJc::Start);
+        assert_eq!(list_suffix("dot"), ListSuffix::Tab);
     }
 }
