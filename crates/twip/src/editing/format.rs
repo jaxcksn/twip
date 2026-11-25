@@ -202,15 +202,6 @@ pub(super) fn edit_rpr_xml(
     direct.edit(e).xml(colours, cx).map(std::borrow::Cow::into_owned)
 }
 
-/// A part whose root gives WordprocessingML prefix `w` (with its colon).
-pub(super) fn cx_in(w: &str) -> Cx {
-    let (p, colon) = match w.strip_suffix(':') {
-        Some(p) => (p, ":"),
-        None => ("", ""),
-    };
-    Cx::of_xml(&format!("<{w}x xmlns{colon}{p}=\"{}\">", crate::docx::xml::W))
-}
-
 /// A paragraph's formatting resolved again from its direct XML, with what reading gave it beyond that
 /// ([`Resolver::para_again`]), and what its runs resolve over.
 pub(super) struct Again {

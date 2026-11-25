@@ -235,7 +235,7 @@ impl Editor {
     ) -> Outcome {
         let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
         let Some(t) = self.label_target.as_deref_mut() else { return Outcome::Unchanged("no list number") };
-        let (colours, cx) = (res.styles.colours, super::format::cx_in(&t.cx.w));
+        let (colours, cx) = (res.styles.colours, t.cx.clone());
         let run = t.run(&res, t.rpr.as_deref());
         let edited = edit_rpr_xml(t.rpr.as_deref(), &colours, &cx, |e| {
             edit(e, &run);

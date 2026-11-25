@@ -921,6 +921,25 @@ fn formatting_a_number_of_a_shared_definition_stays_with_its_list() {
 }
 
 #[test]
+fn formatting_a_number_keeps_its_levels_formatting_in_other_namespaces() {
+    const W14: &str = "http://schemas.microsoft.com/office/word/2010/wordml";
+    let own = r#"<w:rPr><w:rFonts w:ascii="Symbol" w:hAnsi="Symbol" w:hint="default"/><w14:ligatures w14:val="standard"/></w:rPr></w:lvl>"#;
+    let lvls = levels("decimal", |i| format!("%{}.", i + 1)).replacen("</w:lvl>", own, 1);
+    let nums = numbering(&(abstract_of(2, &lvls) + &num(5, 2))).replace("<w:numbering ", &format!("<w:numbering xmlns:w14=\"{W14}\" "));
+    let mut e = editor(&pkg(&np("A", 5, 0), Some(&nums), ""));
+    let para = super::para_id(&e, 0);
+    let o = e.format_list_label(para, vec![Command::SetBold(true)], fonts());
+    assert!(matches!(o, crate::editing::commands::Outcome::Changed(_)), "{o:?}");
+    let part = part(&saved(&e), "word/numbering.xml");
+    let at = part.find("<w:rPr>").expect("the level's run properties");
+    let rpr = &part[at..at + part[at..].find("</w:rPr>").expect("closed") + 8];
+    assert_eq!(
+        rpr,
+        r#"<w:rPr><w:rFonts w:ascii="Symbol" w:hAnsi="Symbol" w:hint="default"/><w:b/><w:bCs/><w14:ligatures w14:val="standard"/></w:rPr>"#
+    );
+}
+
+#[test]
 fn a_locked_paragraphs_number_isnt_formatted() {
     let abs = abstract_of(2, &levels("decimal", |i| format!("%{}.", i + 1)));
     let nums = numbering(&(abs + &num(5, 2)));
