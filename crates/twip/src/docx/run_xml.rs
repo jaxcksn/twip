@@ -59,7 +59,10 @@ pub fn rpr<'r>(res: &Resolver, run: &'r RunStyle, cx: &Cx) -> Option<Cow<'r, str
 /// A run from its direct `w:rPr` as written (in the part `cx` describes) over `base`: what an edit of a run's direct
 /// formatting gives.
 pub fn run_from_xml(res: &Resolver, base: &RunProps, rpr: Option<&str>, cx: &Cx) -> Run {
-    Rc::new(resolve(res, &self::base(base), RunDirect::from_xml(rpr, cx), false))
+    let direct = RunDirect::from_xml(rpr, cx);
+    #[cfg(test)]
+    written_as(res, None, &direct, rpr, cx);
+    Rc::new(resolve(res, &self::base(base), direct, false))
 }
 
 /// `run` resolved again from its authored properties over `base`, where it is: in a table of contents' result
@@ -72,7 +75,37 @@ pub fn rerun(res: &Resolver, base: &RunProps, run: &RunStyle) -> Run {
 /// contents' result without the Hyperlink character style, and with `run`'s revisions (a format change's previous
 /// properties resolved again over `base`).
 pub fn rerun_xml(res: &Resolver, base: &RunProps, run: &RunStyle, rpr: Option<&str>, cx: &Cx) -> Run {
-    again(res, &self::base(base), run, RunDirect::from_xml(rpr, cx))
+    let direct = RunDirect::from_xml(rpr, cx);
+    #[cfg(test)]
+    written_as(res, Some(run), &direct, rpr, cx);
+    again(res, &self::base(base), run, direct)
+}
+
+/// What an edit of a run's `w:rPr` as XML wrote (`rpr`, over `run`'s as read) is what writing its typed properties
+/// over the same writes, byte for byte; `TWIP_RPR_BYTES_OUT` names a file to list each one that isn't in, runs made
+/// from XML included, in place of failing.
+#[cfg(test)]
+fn written_as(res: &Resolver, run: Option<&RunStyle>, direct: &RunDirect, rpr: Option<&str>, cx: &Cx) {
+    let origin = run.and_then(|r| r.direct.read_from()).map(|(p, x)| (&**p, &**x));
+    // A run made from XML copied from elsewhere keeps that XML as written: compared on request only.
+    let report = std::env::var_os("TWIP_RPR_BYTES_OUT");
+    if run.is_none() && report.is_none() || run.is_some_and(|r| r.direct.props().is_some() && r.direct.as_read().is_none()) {
+        return;
+    }
+    let got = direct.props().and_then(|p| super::char_props::written_over(p, &Default::default(), &res.styles.colours, cx, origin, &[]));
+    if got.as_deref() == rpr {
+        return;
+    }
+    let what = format!("over {:?}\n  wrote {rpr:?}\n  typed {got:?}\n", origin.map(|o| o.1));
+    match report {
+        Some(path) => {
+            use std::io::Write;
+            let mut f = std::fs::OpenOptions::new().create(true).append(true).open(path).expect("the report");
+            let test = std::thread::current().name().unwrap_or_default().to_string();
+            let _ = writeln!(f, "{} {test} {what}", if run.is_some() { "edit" } else { "new" });
+        }
+        None => panic!("an edit's w:rPr is not what its typed properties write: {what}"),
+    }
 }
 
 /// Authored properties `direct` resolved over typed `base` in `run`'s place.
