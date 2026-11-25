@@ -1,0 +1,41 @@
+name: Base against head
+
+# What two builds of the engine produce from the same inputs (tests/ab/compare.py): layout geometry, saved bytes,
+# layout reuse counts, and allocation and generated-export reports. Run by hand with the revision to compare against.
+on:
+  workflow_dispatch:
+    inputs:
+      base:
+        description: The base revision (a commit, tag or branch)
+        required: true
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # the base revision is checked out as a worktree
+          filter: 'blob:none'
+      - uses: moonrepo/setup-toolchain@v0
+      - run: moon setup
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ab
+          save-if: false
+      # The same stand-in fonts the tests use (see ci.yml), so both builds lay out with them.
+      - run: sudo apt-get update && sudo apt-get install -y fonts-crosextra-carlito fonts-crosextra-caladea fonts-liberation
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+      # Through the environment, not interpolated into the script.
+      - run: python3 -I tests/ab/compare.py "$BASE"
+        env:
+          BASE: ${{ inputs.base }}
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: ab
+          path: |
+            target/ab/base
+            target/ab/head

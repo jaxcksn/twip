@@ -59,6 +59,7 @@ mod snap;
 mod steps;
 mod stories;
 mod stories_and_steps;
+mod stripped;
 mod style_definitions;
 mod style_model;
 mod styles;
