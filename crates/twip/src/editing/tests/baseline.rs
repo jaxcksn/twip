@@ -11,11 +11,14 @@ use crate::api::command::{Command as C, DeleteOptions, FontChoice, Indents, Inse
 use crate::api::drawing::{ColourTransform, ColourValue, ThemeColour, TransformKind};
 use crate::api::styles::{StyleChange, StyleModification};
 use crate::api::value::{Alignment, AutoOr, Bytes, Direction, HighlightColor, Points, StyleId, UnderlineStyle};
-use crate::docx::props::{ParaProps, RunProps};
+use crate::docx::char_props;
+use crate::docx::props::{ParaProps, RunProps, ThemeColours};
 use crate::docx::resolve::Resolver;
 use crate::docx::styles::Region;
 use crate::docx::write::props::{Cx, Props};
 use crate::docx::{Block, Document, Inline, Paragraph, Run, RunStyle};
+use crate::format::resolve::{self, RunEnv};
+use crate::format::{CharProps, Color};
 use crate::layout::{ParaId, Unit};
 
 fn model(name: &str) -> Vec<u8> {
@@ -495,38 +498,198 @@ fn with_html_chunk(body: &str, html: &[u8]) -> Vec<u8> {
     out.finish().expect("finishes").into_inner()
 }
 
-/// Every paragraph's, mark's and text run's property XML in every fixture, written again by the property writer,
-/// parses to the same properties, whatever prefix (or default namespace) the element names its namespace with.
-#[test]
-fn property_xml_round_trips_through_the_writer() {
+/// Every fixture's documents, read for editing, with their resolver and the main part's namespaces.
+fn fixtures() -> impl Iterator<Item = (std::path::PathBuf, Document)> {
     let mut paths = Vec::new();
     crate::layout::tests::output::fixtures(&crate::layout::tests::output::root().join("fixtures"), &mut paths);
-    let mut checked = 0;
-    for path in &paths {
-        let Ok(d) = crate::docx::read_editable(&std::fs::read(path).expect("reads")) else { continue };
-        let (Some(res), Some(_)) = (d.resolver.as_deref(), d.source.as_ref()) else { continue };
+    paths.into_iter().filter_map(|path| {
+        let d = crate::docx::read_editable(&std::fs::read(&path).expect("reads")).ok()?;
+        (d.resolver.is_some() && d.source.is_some()).then_some((path, d))
+    })
+}
+
+/// `rpr`'s typed properties and revisions, written again by the typed serializer, parse to the same typed properties
+/// and revisions, and to the same properties on the XML path, and the writing holds every element, text and
+/// attribute value of `rpr` (whatever its prefixes and order); converting the XML path's properties gives the typed
+/// ones but for what that path doesn't read.
+fn typed_round_trip(rpr: roxmltree::Node, cx: &Cx, colours: &ThemeColours, what: &str) {
+    let typed = char_props::parse(rpr);
+    let xml = char_props::serialize(&typed.0, &typed.1, colours, cx);
+    let again = cx.parse(&xml, |_, el| char_props::parse(el)).unwrap_or_else(|| panic!("{what}: written as {xml}, parses"));
+    assert_eq!(again, typed, "{what}: typed, written as {xml}");
+    let lost = cx.parse(&xml, |_, el| char_props::tests::lost(rpr, el)).unwrap_or_default();
+    assert!(lost.is_empty(), "{what}: written as {xml}, loses {lost:?}");
+    let read = RunProps::parse(Some(rpr), colours);
+    assert_eq!(cx.parse(&xml, |_, el| RunProps::parse(Some(el), colours)), Some(read.clone()), "{what}: on the XML path, written as {xml}");
+    let mut typed = typed.0;
+    (typed.foreign, typed.lang.complex) = (None, None);
+    let auto = |c: &mut Option<Color>| *c = c.filter(|c| *c != Color::Auto);
+    if let Some(u) = &mut typed.underline {
+        auto(&mut u.color);
+    }
+    if let Some(s) = &mut typed.shading {
+        auto(&mut s.color);
+        auto(&mut s.fill);
+    }
+    if let Some(b) = &mut typed.border {
+        auto(&mut b.color);
+    }
+    assert_eq!(char_props::from_run_props(&read), typed, "{what}: converted from the XML path");
+}
+
+/// Every paragraph's property XML in every fixture, written again by the property writer, parses to the same
+/// properties, whatever prefix (or default namespace) the element names its namespace with; every run property
+/// element (a run's, a mark's and a formatting change's earlier one, as held and as written in the main part, with
+/// its revisions, and a style's, a table style region's and the document defaults') round trips through the typed
+/// parse and serializer.
+#[test]
+fn property_xml_round_trips_through_the_writer() {
+    let w = r#"xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main""#;
+    let (had, has) = (format!(r#"<w:rPr {w}><w:b w:val="1"/></w:rPr>"#), format!(r#"<w:rPr {w}><w:b/></w:rPr>"#));
+    let (had, has) = (roxmltree::Document::parse(&had).expect("parses"), roxmltree::Document::parse(&has).expect("parses"));
+    assert_eq!(char_props::tests::lost(had.root_element(), has.root_element()).len(), 1, "a value left out is lost");
+    let (mut ppr, mut rpr) = (0, 0);
+    for (path, d) in fixtures() {
+        let res = d.resolver.as_deref().expect("a resolver");
         let cx = cx(&d);
         let colours = &res.styles.colours;
-        let mut each = |raw: Option<&str>, local: &str| {
-            let Some(raw) = raw else { return };
-            let again = Props::parse(Some(raw), local, &cx).xml();
-            let what = format!("{}: {raw}", path.display());
-            if local == "rPr" {
-                let parse = |x: Option<&str>| x.and_then(|x| cx.parse(x, |_, el| RunProps::parse(Some(el), colours)));
-                assert_eq!(parse(Some(raw)).unwrap_or_default(), parse(again.as_deref()).unwrap_or_default(), "{what}");
-            } else {
-                let parse = |x: Option<&str>| x.and_then(|x| cx.parse(x, |_, el| ParaProps::parse(Some(el), colours)));
-                assert_eq!(parse(Some(raw)).unwrap_or_default(), parse(again.as_deref()).unwrap_or_default(), "{what}");
-            }
-            checked += 1;
-        };
+        let what = |raw: &str| format!("{}: {raw}", path.display());
         for p in authored(&d) {
-            each(p.1.as_deref(), "pPr");
-            each(p.2.as_deref(), "rPr");
-            p.3.iter().for_each(|r| each(r.as_deref(), "rPr"));
+            if let Some(raw) = p.1.as_deref() {
+                let again = Props::parse(Some(raw), "pPr", &cx).xml();
+                let parse = |x: Option<&str>| x.and_then(|x| cx.parse(x, |_, el| ParaProps::parse(Some(el), colours)));
+                assert_eq!(parse(Some(raw)).unwrap_or_default(), parse(again.as_deref()).unwrap_or_default(), "{}", what(raw));
+                ppr += 1;
+            }
+        }
+        each_rpr(&d, &mut |raw| {
+            cx.parse(raw, |_, el| typed_round_trip(el, &cx, colours, &what(raw))).unwrap_or_else(|| panic!("{}: parses", what(raw)));
+            rpr += 1;
+        });
+        let src = &d.source.as_ref().expect("a source").xml;
+        let doc = roxmltree::Document::parse(src).expect("the main part parses");
+        for n in doc.descendants().filter(|n| crate::docx::xml::is_w(*n, "rPr") && !in_change(*n)) {
+            typed_round_trip(n, &cx, colours, &what(&src[n.range()]));
+            rpr += 1;
+        }
+        let scx = res.styles.cx();
+        let mut styles: Vec<&str> = res.styles.by_id.values().map(|s| s.raw.as_str()).collect();
+        styles.extend(res.styles.defaults_raw.as_deref());
+        for raw in styles {
+            let n = scx.parse(raw, |_, el| {
+                let rprs = el.descendants().filter(|n| crate::docx::xml::is_w(*n, "rPr") && !in_change(*n));
+                rprs.map(|n| typed_round_trip(n, &scx, colours, &what(raw))).count()
+            });
+            rpr += n.unwrap_or_else(|| panic!("{}: parses", what(raw)));
         }
     }
-    assert!(checked > 5_000, "only {checked} property elements checked");
+    assert!(ppr > 7_000, "only {ppr} paragraph property elements checked");
+    assert!(rpr > 4_500, "only {rpr} run property elements checked");
+}
+
+/// Whether a property element is a formatting change's earlier one.
+fn in_change(n: roxmltree::Node) -> bool {
+    n.parent_element().is_some_and(|p| p.tag_name().name().ends_with("PrChange"))
+}
+
+/// Every run property element a body paragraph's mark and text runs hold as written: their own and their formatting
+/// changes' earlier ones.
+fn each_rpr(d: &Document, f: &mut dyn FnMut(&str)) {
+    fn walk(blocks: &[Block], f: &mut dyn FnMut(&str)) {
+        for b in blocks {
+            match b {
+                Block::Para(p) => {
+                    let runs = p.inlines.iter().filter_map(|i| if let Inline::Text(_, r) = i { Some(r) } else { None });
+                    for r in std::iter::once(&p.mark).chain(runs) {
+                        let previous = r.rev.fmt.as_ref().and_then(|c| c.previous_raw.0.as_deref());
+                        r.direct.0.as_deref().into_iter().chain(previous).for_each(&mut *f);
+                    }
+                }
+                Block::Table(t) => t.rows.iter().flat_map(|r| &r.cells).for_each(|c| walk(&c.blocks, f)),
+            }
+        }
+    }
+    d.sections.iter().for_each(|s| walk(&s.blocks, f));
+}
+
+/// Every body paragraph's mark and text runs, and their formatting changes' earlier formatting, resolved by the typed
+/// resolver from the typed parse of their property XML over the paragraph's run base give the format reading gave,
+/// theme references included.
+#[test]
+fn typed_resolution_gives_what_reading_resolved() {
+    let (mut runs, mut marks, mut changes) = (0, 0, 0);
+    for (path, d) in fixtures() {
+        let res = d.resolver.as_deref().expect("a resolver");
+        let cx = cx(&d);
+        let env = RunEnv { colours: &res.styles.colours, fonts: &res.theme, categories: &res.categories, open_type: res.styles.open_type };
+        let mut counts = (&mut runs, &mut marks, &mut changes);
+        for s in &d.sections {
+            resolve_blocks(res, &env, &cx, &s.blocks, None, &path.display().to_string(), &mut counts);
+        }
+    }
+    assert!(runs > 20_000 && marks > 10_000 && changes >= 6, "only {runs} runs, {marks} marks and {changes} formatting changes checked");
+}
+
+fn resolve_blocks(
+    res: &Resolver,
+    env: &RunEnv,
+    cx: &Cx,
+    blocks: &[Block],
+    region: Option<&Region>,
+    what: &str,
+    counts: &mut (&mut usize, &mut usize, &mut usize),
+) {
+    for b in blocks {
+        match b {
+            Block::Para(p) => {
+                if p.src.as_ref().is_some_and(|s| s.ranges.len() > 1) {
+                    continue;
+                }
+                let base = char_props::from_run_props(&res.para_from_xml(p.style.direct.0.as_deref(), region, cx).base);
+                let typed = |raw: Option<&str>, toc: bool| {
+                    let mut direct = raw.and_then(|x| cx.parse(x, |_, el| char_props::parse(el).0)).unwrap_or_default();
+                    if toc && direct.style.as_deref() == Some("Hyperlink") {
+                        direct.style = None;
+                    }
+                    let chain: Option<Vec<CharProps>> = direct
+                        .style
+                        .as_deref()
+                        .map(|id| res.styles.chain(Some(id)).iter().map(|s| char_props::from_run_props(&s.base.rpr)).collect());
+                    let style = chain.map(|c| CharProps::fold_chain(&c));
+                    resolve::run_style(env, &resolve::run_props(&base, style.as_ref(), &direct))
+                };
+                let same = |read: &RunStyle, again: RunStyle, of: &str| {
+                    let again = RunStyle { rev: read.rev.clone(), toc: read.toc, ..again };
+                    assert!(read.layout_eq(&again), "{what}: {of} of {:?}: {read:?} against {again:?}", p.id);
+                    let refs = |s: &RunStyle| (s.color_theme, s.underline_color_theme, s.font_theme);
+                    assert_eq!(refs(read), refs(&again), "{what}: the theme references of {of} of {:?}", p.id);
+                };
+                let changed = |r: &RunStyle, counts: &mut (&mut usize, &mut usize, &mut usize)| {
+                    if let Some(c) = &r.rev.fmt {
+                        same(&c.previous, typed(c.previous_raw.0.as_deref(), false), "a formatting change");
+                        *counts.2 += 1;
+                    }
+                };
+                same(&p.mark, typed(p.mark.direct.0.as_deref(), false), "the mark");
+                changed(&p.mark, counts);
+                *counts.1 += 1;
+                for i in &p.inlines {
+                    if let Inline::Text(t, run) = i {
+                        same(run, typed(run.direct.0.as_deref(), run.toc), &format!("run {t:?}"));
+                        changed(run, counts);
+                        *counts.0 += 1;
+                    }
+                }
+            }
+            Block::Table(t) => {
+                for (ri, row) in t.rows.iter().enumerate() {
+                    for (ci, c) in row.cells.iter().enumerate() {
+                        resolve_blocks(res, env, cx, &c.blocks, Some(&res.region_of(t, ri, ci)), what, counts);
+                    }
+                }
+            }
+        }
+    }
 }
 
 #[test]

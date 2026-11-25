@@ -97,3 +97,18 @@ fn the_only_bundled_fonts_are_the_symbol_fallback_and_the_interface_font() {
     want.sort();
     assert_eq!(bundled, want, "fonts the engine bundles");
 }
+
+#[test]
+fn authored_formatting_names_no_xml() {
+    let forbidden = ["layout", "api", "docx::xml", "docx::reader", "docx::write", "docx::binding"];
+    let v = violations("format", &forbidden, &[]);
+    assert!(v.is_empty(), "format imports XML, layout or the API:\n{}", v.join("\n"));
+    let mut files = Vec::new();
+    sources(&Path::new(env!("CARGO_MANIFEST_DIR")).join("src/format"), &mut files);
+    for f in files {
+        let text = fs::read_to_string(&f).unwrap_or_default();
+        for word in ["roxmltree", "Node", "<w:", "RunProps", "docx::xml", "docx::reader", "docx::write", "layout::", "api::"] {
+            assert!(!text.contains(word), "{} names {word}", f.display());
+        }
+    }
+}
