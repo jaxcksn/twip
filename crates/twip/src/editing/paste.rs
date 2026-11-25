@@ -13,6 +13,7 @@ use super::commands::Outcome;
 use super::position::Position;
 use super::selection::{ObjectRef, Selection};
 use crate::docx::run_xml;
+use crate::format::{CharEdit, CharProps, Prop};
 use crate::layout::{FloatId, Unit};
 
 /// The most bytes a pasted picture has: the most a part of an opened document may.
@@ -748,10 +749,10 @@ impl Editor {
             let base = resolved.base.clone();
             p.style = Rc::new(resolved.style);
             let mark_src = p.mark.clone();
-            p.mark = merged_run(&res, &cx, &base, &run, &mark_src, [true; 3], &mut cache);
+            p.mark = merged_run(&res, &base, &run, &mark_src, [true; 3], &mut cache);
             for i in &mut p.inlines {
                 if let Some(r) = i.run().cloned() {
-                    let new = merged_run(&res, &cx, &base, &run, &r, all, &mut cache);
+                    let new = merged_run(&res, &base, &run, &r, all, &mut cache);
                     *i = super::format::with_run(i, &new);
                 }
             }
@@ -1159,42 +1160,39 @@ fn para_look(src: &crate::docx::ParaStyle, here: &crate::docx::ParaStyle, direct
 /// underline unless all of the text had it (`all`), and its Hyperlink style.
 fn merged_run(
     res: &crate::docx::resolve::Resolver,
-    cx: &Cx,
     base: &crate::docx::props::RunProps,
     at: &Run,
     src: &Run,
     all: [bool; 3],
     cache: &mut HashMap<(*const RunStyle, [bool; 3]), Run>,
 ) -> Run {
+    use crate::format::Toggle as T;
     let key = (Rc::as_ptr(src), all);
     if let Some(r) = cache.get(&key) {
         return r.clone();
     }
-    let w = &cx.w;
-    let mut p = Props::parse(run_xml::rpr(res, at, cx).as_deref(), "rPr", cx);
-    p.remove("rPrChange");
-    p.remove("ins");
-    p.remove("del");
+    let mut e = CharEdit::new(at.direct.props().map_or_else(CharProps::default, |p| (**p).clone()));
     if src.bold && !all[0] {
-        p.set("b", format!("<{w}b/>"));
-        p.set("bCs", format!("<{w}bCs/>"));
+        e.toggle(T::BOLD, true);
+        e.toggle(T::BOLD_COMPLEX, true);
     }
     if src.italic && !all[1] {
-        p.set("i", format!("<{w}i/>"));
-        p.set("iCs", format!("<{w}iCs/>"));
+        e.toggle(T::ITALIC, true);
+        e.toggle(T::ITALIC_COMPLEX, true);
     }
-    if let Some(u) = src.underline.filter(|_| !all[2]) {
-        p.set("u", format!("<{w}u {w}val=\"{}\"/>", crate::docx::line_style::underline_val(u)));
+    if let Some(style) = src.underline.filter(|_| !all[2]) {
+        e.underline = Some(crate::format::UnderlineProps { style, color: None });
+        e.whole(Prop::Underline);
     }
     if src.style_id.as_deref() == Some("Hyperlink") && res.styles.by_id.contains_key("Hyperlink") {
-        p.set("rStyle", format!("<{w}rStyle {w}val=\"Hyperlink\"/>"));
+        e.style = Some("Hyperlink".into());
+        e.whole(Prop::Style);
     }
-    let mut r = run_xml::run_from_xml(res, base, p.xml().as_deref(), cx);
+    let mut r = run_xml::resolve(res, &run_xml::base(base), at.direct.edit(e), false);
     if !src.rev.is_empty() {
-        let mut s = RunStyle::clone(&r);
-        s.rev = src.rev.clone();
-        r = Rc::new(s);
+        r.rev = src.rev.clone();
     }
+    let r = Rc::new(r);
     cache.insert(key, r.clone());
     r
 }

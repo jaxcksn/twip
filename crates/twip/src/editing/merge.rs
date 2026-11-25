@@ -19,6 +19,8 @@ use super::position::{Position, StoryId};
 use super::selection::Selection;
 use super::step::Step;
 use crate::docx::run_xml;
+use crate::format::{CharEdit, CharProps};
+use std::rc::Rc;
 
 type Refused = Error;
 
@@ -2313,30 +2315,31 @@ impl Editor {
         let res = self.doc.resolver.clone();
         let cx = self.cx();
         let base = res.as_ref().and_then(|res| self.run_base(para, at, res, &cx));
-        let w = &cx.w;
         let mut out = Vec::new();
         for (k, p) in rich.paragraphs.iter().enumerate() {
             if k > 0 {
                 out.push(Inline::Break(crate::docx::BreakKind::Line, run.clone()));
             }
             for r in p.runs.iter().filter(|r| !r.text.is_empty()) {
-                let flags = [(r.bold, "b"), (r.italic, "i"), (r.underline, "u"), (r.strikethrough, "strike")];
+                let toggles = [
+                    (r.bold, crate::format::Toggle::BOLD),
+                    (r.italic, crate::format::Toggle::ITALIC),
+                    (r.strikethrough, crate::format::Toggle::STRIKE),
+                ];
                 let formatted = match (&res, &base) {
-                    (Some(res), Some(base)) if flags.iter().any(|(on, _)| on.is_some()) => {
-                        let mut rp = crate::docx::write::props::Props::parse(run_xml::rpr(res, run, &cx).as_deref(), "rPr", &cx);
-                        for (on, name) in flags {
-                            let Some(on) = on else { continue };
-                            let xml = match (name, on) {
-                                ("u", on) => {
-                                    let u = if on { crate::docx::Underline::Single } else { crate::docx::Underline::None };
-                                    format!("<{w}u {w}val=\"{}\"/>", crate::docx::line_style::underline_val(u))
-                                }
-                                (_, true) => format!("<{w}{name}/>"),
-                                (_, false) => format!("<{w}{name} {w}val=\"0\"/>"),
-                            };
-                            rp.set(name, xml);
+                    (Some(res), Some(base)) if toggles.iter().any(|(on, _)| on.is_some()) || r.underline.is_some() => {
+                        let mut e = CharEdit::new(run.direct.props().map_or_else(CharProps::default, |p| (**p).clone()));
+                        for (on, t) in toggles {
+                            if let Some(on) = on {
+                                e.toggle(t, on);
+                            }
                         }
-                        run_xml::run_from_xml(res, base, rp.xml().as_deref(), &cx)
+                        if let Some(on) = r.underline {
+                            let style = if on { crate::docx::Underline::Single } else { crate::docx::Underline::None };
+                            e.underline = Some(crate::format::UnderlineProps { style, color: None });
+                            e.whole(crate::format::Prop::Underline);
+                        }
+                        Rc::new(run_xml::resolve(res, &run_xml::base(base), run.direct.edit(e), false))
                     }
                     _ => run.clone(),
                 };
@@ -3165,7 +3168,9 @@ impl Editor {
             let xml = match s {
                 crate::api::value::NoneOr::None => None,
                 crate::api::value::NoneOr::Value(id) => {
-                    Some(format!("<{prefix}rPr><{prefix}rStyle {prefix}val=\"{}\"/></{prefix}rPr>", crate::docx::write::props::esc(&id.0)))
+                    let p = CharProps { style: Some(id.0.as_str().into()), ..Default::default() };
+                    let colours = self.doc.resolver.as_deref().map_or_else(Default::default, |r| r.styles.colours);
+                    Some(crate::docx::char_props::serialize(&p, &Default::default(), &colours, &self.cx()))
                 }
             };
             rest("rPr", xml);

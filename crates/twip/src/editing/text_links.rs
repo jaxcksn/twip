@@ -226,7 +226,7 @@ impl Editor {
         let res = self.doc.resolver.clone()?;
         let cx = self.cx();
         let r = res.para_from_xml(None, None, &cx);
-        let mark = run_xml::run_from_xml(&res, &r.base, None, &cx);
+        let mark = std::rc::Rc::new(run_xml::resolve(&res, &run_xml::base(&r.base), Default::default(), false));
         Some(crate::docx::Paragraph {
             style: std::rc::Rc::new(r.style),
             mark,

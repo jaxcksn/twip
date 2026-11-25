@@ -283,7 +283,8 @@ impl Editor {
             let cx = self.cx();
             let at = crate::layout::Unit(p.inlines[..start.min(p.inlines.len())].iter().map(|i| i.units() as u32).sum());
             let base = self.run_base(para, at, res, &cx)?;
-            Some(run_xml::run_from_xml(res, &base, Some(x), &cx))
+            let direct = crate::docx::char_props::RunDirect::from_xml(Some(x), &cx);
+            Some(std::rc::Rc::new(run_xml::resolve(res, &run_xml::base(&base), direct, false)))
         }))
     }
 

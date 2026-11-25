@@ -16,7 +16,9 @@ use super::index::Container;
 use super::position::{Position, StoryId};
 use super::selection::Selection;
 use super::step::{Step, para_len};
+use crate::docx::char_props::{self, RunDirect};
 use crate::docx::run_xml;
+use crate::format::{CharEdit, CharProps, Prop, Toggle};
 
 /// A table's switches: what it collects and how its entries read. A table of figures is one that collects captions.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -1631,12 +1633,13 @@ impl Editor {
         let run_of = |src: Option<&Run>, bold: bool| -> Run {
             match (&res, &base) {
                 (Some(r), Some(b)) => {
-                    let mut rpr = src.and_then(|s| run_xml::rpr(r, s, &cx)).as_deref().map(strip_rpr).unwrap_or_default();
+                    let mut e = entry_format(src);
                     if bold {
-                        rpr.push_str(&format!("<{w}b/><{w}bCs/>", w = cx.w));
+                        e.toggle(Toggle::BOLD, true);
+                        e.toggle(Toggle::BOLD_COMPLEX, true);
                     }
-                    let xml = (!rpr.is_empty()).then(|| format!("<{w}rPr>{rpr}</{w}rPr>", w = cx.w));
-                    run_xml::run_from_xml(r, b, xml.as_deref(), &cx)
+                    let direct = src.map_or_else(RunDirect::default, |s| s.direct.clone()).edit(e);
+                    Rc::new(run_xml::resolve(r, &run_xml::base(b), direct, false))
                 }
                 _ => src.cloned().unwrap_or_else(|| like.mark.clone()),
             }
@@ -1654,7 +1657,9 @@ impl Editor {
         let Some(r) = self.doc.resolver.clone() else { return run.clone() };
         let cx = self.cx();
         let base = r.para_from_xml(Some(ppr), self.region_in(container, &r).as_ref(), &cx).base;
-        run_xml::run_from_xml(&r, &base, Some(&format!("<{w}rPr><{w}webHidden/></{w}rPr>", w = cx.w)), &cx)
+        let mut p = CharProps::default();
+        char_props::put_unmodelled_flag(&mut p, "webHidden", &cx);
+        Rc::new(run_xml::resolve(&r, &run_xml::base(&base), RunDirect::typed(Some(Rc::new(p))), false))
     }
 
     /// The table region a paragraph in `container` takes its table style's formatting from.
@@ -1828,9 +1833,9 @@ impl Editor {
             |run| {
                 let hidden = match (&res, &base) {
                     (Some(r), Some(b)) => {
-                        let w = &cx.w;
-                        let rpr = run_xml::rpr(r, &run, &cx).as_deref().map(strip_rpr).unwrap_or_default();
-                        run_xml::run_from_xml(r, b, Some(&format!("<{w}rPr>{rpr}<{w}vanish/></{w}rPr>")), &cx)
+                        let mut e = entry_format(Some(&run));
+                        e.toggle(Toggle::HIDDEN, true);
+                        Rc::new(run_xml::resolve(r, &run_xml::base(b), run.direct.edit(e), false))
                     }
                     _ => run.clone(),
                 };
@@ -2028,28 +2033,15 @@ impl Editor {
     }
 }
 
-/// A run's `w:rPr` content without its style, revision marks and the `w:rPr` element itself: the direct formatting
-/// an entry keeps.
-fn strip_rpr(rpr: &str) -> String {
-    let inner = rpr.find('>').map_or("", |k| &rpr[k + 1..]);
-    let inner = inner.rfind("</").map_or(inner, |k| &inner[..k]);
-    let mut out = String::new();
-    let mut rest = inner;
-    // Element by element: those that aren't formatting go.
-    while let Some(open) = rest.find('<') {
-        let tail = &rest[open..];
-        let name_end = tail[1..].find(|c: char| c.is_whitespace() || c == '/' || c == '>').map_or(tail.len(), |k| k + 1);
-        let name = &tail[1..name_end];
-        let close = format!("</{name}>");
-        let end = match tail.find("/>") {
-            Some(k) if !tail[..k].contains('>') => k + 2,
-            _ => tail.find(&close).map_or(tail.len(), |k| k + close.len()),
-        };
-        let local = name.rsplit(':').next().unwrap_or(name);
-        if !matches!(local, "rStyle" | "ins" | "del" | "rPrChange" | "moveFrom" | "moveTo" | "vanish" | "webHidden") {
-            out.push_str(&tail[..end]);
-        }
-        rest = &tail[end..];
-    }
-    out
+/// The direct formatting of `run` (none: none) an entry keeps: all but its style and its hiding, in print and on the
+/// web.
+fn entry_format(run: Option<&Run>) -> CharEdit {
+    let mut e = CharEdit::new(run.and_then(|r| r.direct.props()).map_or_else(CharProps::default, |p| (**p).clone()));
+    e.style = None;
+    e.whole(Prop::Style);
+    e.toggles.set &= !Toggle::HIDDEN.0;
+    e.toggles.on &= !Toggle::HIDDEN.0;
+    e.whole(Prop::Toggle(Toggle::HIDDEN));
+    char_props::drop_unmodelled(&mut e, "webHidden");
+    e
 }

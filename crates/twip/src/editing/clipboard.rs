@@ -5,7 +5,7 @@ use std::rc::Rc;
 
 use crate::docx::props::VertAlign;
 use crate::docx::review::CellMarkKind;
-use crate::docx::write::props::{Props, esc};
+use crate::docx::write::props::esc;
 use crate::docx::{Block, Inline, Paragraph, Run, RunStyle, VMerge};
 use crate::font::Fonts;
 use crate::layout::{ParaId, Unit};
@@ -16,6 +16,7 @@ use super::position::Position;
 use super::selection::Selection;
 use super::step::{Step, para_len};
 use crate::docx::run_xml;
+use crate::format::{CharEdit, CharProps, Color, FontRef, Prop, ScriptClass, ScriptFonts, UnderlineProps};
 
 #[derive(Clone, Debug, Default)]
 pub struct Fragment {
@@ -1047,64 +1048,51 @@ impl Editor {
             return r.clone();
         }
         let Some(res) = self.doc.resolver.clone() else { return src.clone() };
-        let cx = self.cx();
-        let mut out = run_xml::run_from_xml(&res, base, run_xml::rpr(&res, src, &cx).as_deref(), &cx);
+        let base = run_xml::base(base);
+        let mut out = Rc::new(run_xml::resolve(&res, &base, src.direct.clone(), false));
         if !out.layout_eq(src) {
-            let w = cx.w.clone();
-            let mut p = Props::parse(run_xml::rpr(&res, src, &cx).as_deref(), "rPr", &cx);
-            let flag = |name: &str, on: bool| if on { format!("<{w}{name}/>") } else { format!("<{w}{name} {w}val=\"0\"/>") };
-            if out.bold != src.bold {
-                p.set("b", flag("b", src.bold));
-                p.set("bCs", flag("bCs", src.bold));
-            }
-            if out.italic != src.italic {
-                p.set("i", flag("i", src.italic));
-                p.set("iCs", flag("iCs", src.italic));
-            }
-            if out.caps != src.caps {
-                p.set("caps", flag("caps", src.caps));
-            }
-            if out.small_caps != src.small_caps {
-                p.set("smallCaps", flag("smallCaps", src.small_caps));
-            }
-            if out.strike != src.strike {
-                p.set("strike", flag("strike", src.strike));
-            }
-            if out.hidden != src.hidden {
-                p.set("vanish", flag("vanish", src.hidden));
+            use crate::format::Toggle as T;
+            let mut e = CharEdit::new(src.direct.props().map_or_else(CharProps::default, |p| (**p).clone()));
+            let toggles = [
+                (out.bold, src.bold, &[T::BOLD, T::BOLD_COMPLEX][..]),
+                (out.italic, src.italic, &[T::ITALIC, T::ITALIC_COMPLEX]),
+                (out.caps, src.caps, &[T::CAPS]),
+                (out.small_caps, src.small_caps, &[T::SMALL_CAPS]),
+                (out.strike, src.strike, &[T::STRIKE]),
+                (out.hidden, src.hidden, &[T::HIDDEN]),
+            ];
+            for (here, want, ts) in toggles {
+                if here != want {
+                    ts.iter().for_each(|&t| e.toggle(t, want));
+                }
             }
             if out.underline != src.underline {
-                p.set("u", format!("<{w}u {w}val=\"{}\"/>", src.underline.map_or("none", crate::docx::line_style::underline_val)));
+                e.underline = Some(UnderlineProps { style: src.underline.unwrap_or(crate::docx::Underline::None), color: None });
+                e.whole(Prop::Underline);
             }
             if (out.size - src.size).abs() > 0.01 {
-                let hp = (src.size * 2.0).round() as i64;
-                p.set("sz", format!("<{w}sz {w}val=\"{hp}\"/>"));
-                p.set("szCs", format!("<{w}szCs {w}val=\"{hp}\"/>"));
+                let pt = (src.size * 2.0).round() / 2.0;
+                (e.size, e.complex_size) = (Some(pt), Some(pt));
+                e.whole(Prop::Size);
+                e.whole(Prop::ComplexSize);
             }
             if out.ascii != src.ascii || out.h_ansi != src.h_ansi || out.east_asia != src.east_asia || out.cs != src.cs {
-                p.set(
-                    "rFonts",
-                    format!(
-                        "<{w}rFonts {w}ascii=\"{}\" {w}hAnsi=\"{}\" {w}eastAsia=\"{}\" {w}cs=\"{}\"/>",
-                        esc(&src.ascii),
-                        esc(&src.h_ansi),
-                        esc(&src.east_asia),
-                        esc(&src.cs)
-                    ),
-                );
+                let f = |name: &str| Some(FontRef::Family(name.into()));
+                e.fonts = ScriptFonts { latin: f(&src.ascii), latin_extended: f(&src.h_ansi), east_asian: f(&src.east_asia), complex: f(&src.cs) };
+                e.hint = None;
+                for c in [ScriptClass::Latin, ScriptClass::LatinExtended, ScriptClass::EastAsian, ScriptClass::Complex] {
+                    e.whole(Prop::Font(c));
+                }
             }
             if out.color != src.color {
-                p.set("color", format!("<{w}color {w}val=\"{}\"/>", src.color.map_or("auto".to_string(), |c| format!("{c:06X}"))));
+                e.color = Some(src.color.map_or(Color::Auto, Color::Rgb));
+                e.whole(Prop::Color);
             }
             if out.vert_align != src.vert_align {
-                let v = match src.vert_align {
-                    VertAlign::Superscript => "superscript",
-                    VertAlign::Subscript => "subscript",
-                    VertAlign::Baseline => "baseline",
-                };
-                p.set("vertAlign", format!("<{w}vertAlign {w}val=\"{v}\"/>"));
+                e.vertical = Some(src.vert_align);
+                e.whole(Prop::Vertical);
             }
-            out = run_xml::run_from_xml(&res, base, p.xml().as_deref(), &cx);
+            out = Rc::new(run_xml::resolve(&res, &base, src.direct.edit(e), false));
         }
         cache.insert(Rc::as_ptr(src), out.clone());
         out

@@ -8,7 +8,7 @@ use std::rc::Rc;
 
 use crate::docx::resolve::Resolver;
 use crate::docx::review::{Comment, CommentId, RangeKind, RangeMark, Timestamp};
-use crate::docx::write::props::{Cx, Props};
+use crate::docx::write::props::Cx;
 use crate::docx::{Block, Inline, Paragraph, Raw, Run};
 use crate::font::Fonts;
 use crate::layout::{ParaId, Unit};
@@ -527,10 +527,9 @@ impl Editor {
     fn reference_run(&self, para: ParaId, at: Unit, res: &Resolver, cx: &Cx) -> Option<Run> {
         if res.styles.by_id.contains_key("CommentReference") {
             let base = self.run_base(para, at, res, cx)?;
-            let mut p = Props::parse(None, "rPr", cx);
-            let w = &cx.w;
-            p.set("rStyle", format!("<{w}rStyle {w}val=\"CommentReference\"/>"));
-            return Some(run_xml::run_from_xml(res, &base, p.xml().as_deref(), cx));
+            let p = crate::format::CharProps { style: Some("CommentReference".into()), ..Default::default() };
+            let direct = crate::docx::char_props::RunDirect::typed(Some(Rc::new(p)));
+            return Some(Rc::new(run_xml::resolve(res, &run_xml::base(&base), direct, false)));
         }
         Some(run_before(self.index.para(&self.doc, para)?, at))
     }

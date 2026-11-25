@@ -1,6 +1,7 @@
 //! HTML paste: paragraphs, headings, lists, tables, links and character formatting from another application's HTML
 
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use crate::docx::write::props::{Cx, Props};
 use crate::docx::{AltContent, Block, Inline, Paragraph, VMerge};
@@ -9,7 +10,9 @@ use crate::font::Fonts;
 use super::Editor;
 use super::clipboard::Fragment;
 use super::commands::Outcome;
+use crate::docx::char_props::RunDirect;
 use crate::docx::run_xml;
+use crate::format::CharProps;
 
 /// The most HTML read; more pastes as text.
 pub(super) const MAX_HTML: usize = 8 << 20;
@@ -894,32 +897,32 @@ impl Editor {
                         pp.set("jc", format!("<{w}jc {w}val=\"{jc}\"/>"));
                     }
                     let para = res.para_from_xml(pp.xml().as_deref(), None, cx);
-                    let mark = run_xml::run_from_xml(res, &para.base, None, cx);
+                    let base = run_xml::base(&para.base);
+                    let mark = Rc::new(run_xml::resolve(res, &base, RunDirect::default(), false));
                     let mut inlines = Vec::new();
                     for r in &p.runs {
-                        let mut rp = Props::parse(None, "rPr", cx);
+                        use crate::format::Toggle as T;
                         let f = r.fmt;
-                        for (on, name, xml) in [
-                            (f.bold, "b", format!("<{w}b/>")),
-                            (f.italic, "i", format!("<{w}i/>")),
-                            (
-                                f.underline || r.link.is_some(),
-                                "u",
-                                format!("<{w}u {w}val=\"{}\"/>", crate::docx::line_style::underline_val(crate::docx::Underline::Single)),
-                            ),
-                            (f.strike, "strike", format!("<{w}strike/>")),
-                            (f.sup, "vertAlign", format!("<{w}vertAlign {w}val=\"superscript\"/>")),
-                            (f.sub && !f.sup, "vertAlign", format!("<{w}vertAlign {w}val=\"subscript\"/>")),
-                        ] {
+                        let mut q = CharProps::default();
+                        for (on, t) in [(f.bold, T::BOLD), (f.italic, T::ITALIC), (f.strike, T::STRIKE)] {
                             if on {
-                                rp.set(name, xml);
+                                q.toggles.put(t, true);
                             }
                         }
-                        if r.link.is_some() && res.styles.by_id.contains_key("Hyperlink") {
-                            rp.remove("u");
-                            rp.set("rStyle", format!("<{w}rStyle {w}val=\"Hyperlink\"/>"));
+                        if f.underline || r.link.is_some() {
+                            q.underline = Some(crate::format::UnderlineProps { style: crate::docx::Underline::Single, color: None });
                         }
-                        let run = run_xml::run_from_xml(res, &para.base, rp.xml().as_deref(), cx);
+                        if f.sup {
+                            q.vertical = Some(crate::docx::props::VertAlign::Superscript);
+                        } else if f.sub {
+                            q.vertical = Some(crate::docx::props::VertAlign::Subscript);
+                        }
+                        if r.link.is_some() && res.styles.by_id.contains_key("Hyperlink") {
+                            q.underline = None;
+                            q.style = Some("Hyperlink".into());
+                        }
+                        let direct = RunDirect::typed((q != CharProps::default()).then(|| Rc::new(q)));
+                        let run = Rc::new(run_xml::resolve(res, &base, direct, false));
                         if let Some(img) = &r.image {
                             let pic = self.html_picture(img, width, images, &run);
                             match &r.link {
