@@ -34,11 +34,14 @@ use super::write::props::{Cx, RPR};
 use super::xml::{W, W14, attr, color, half_points, int, num, on_off, twips, val};
 use crate::document::format::VertAlign;
 use crate::format::{
-    CharProps, Color, FontHint, FontRef, ForeignAttr, ForeignChild, ForeignProps, Highlight, LangProps, NumberForm, NumberSpacing, QName,
-    ScriptClass, ScriptFonts, Shading, TextBorder, ThemeFace, Toggle, Toggles, TypographyProps, UnderlineProps,
+    CharEdit, CharProps, Color, Effect, FontHint, FontRef, ForeignAttr, ForeignChild, ForeignProps, Highlight, LangProps, NumberForm, NumberSpacing,
+    Prop, QName, ScriptClass, ScriptFonts, Set, Shading, TextBorder, ThemeFace, Toggle, Toggles, TypographyProps, UnderlineProps,
 };
 
 const XML_NS: &str = "http://www.w3.org/XML/1998/namespace";
+
+/// Word 2010's namespace declared on an element of it.
+const W14_DECL: &str = " xmlns:w14=\"http://schemas.microsoft.com/office/word/2010/wordml\"";
 
 /// A revision element's identity as written, and its other attributes.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -90,13 +93,15 @@ impl RprRevisions {
 pub struct RunDirect {
     props: Option<Rc<CharProps>>,
     origin: Option<(Rc<CharProps>, Rc<str>)>,
+    /// What edits since reading set, in order: written again over the `w:rPr` as read.
+    set: Vec<Set>,
 }
 
 impl RunDirect {
     /// Properties read from `xml`, the `w:rPr` they were parsed from.
     pub fn read(props: CharProps, xml: Rc<str>) -> RunDirect {
         let props = Rc::new(props);
-        RunDirect { origin: Some((props.clone(), xml)), props: Some(props) }
+        RunDirect { origin: Some((props.clone(), xml)), props: Some(props), set: Vec::new() }
     }
 
     /// The properties of `xml`, a `w:rPr` with the main namespace bound to `w`.
@@ -107,12 +112,12 @@ impl RunDirect {
 
     /// Properties read from `xml`, shared with other runs read alike.
     pub fn shared(props: Rc<CharProps>, xml: Rc<str>) -> RunDirect {
-        RunDirect { origin: Some((props.clone(), xml)), props: Some(props) }
+        RunDirect { origin: Some((props.clone(), xml)), props: Some(props), set: Vec::new() }
     }
 
     /// Typed properties with no written form.
     pub fn typed(props: Option<Rc<CharProps>>) -> RunDirect {
-        RunDirect { props, origin: None }
+        RunDirect { props, origin: None, set: Vec::new() }
     }
 
     /// The properties `xml` (a `w:rPr` in the part `cx` describes) holds; none for no XML, and nothing typed (the
@@ -140,7 +145,35 @@ impl RunDirect {
         if let Some(x) = self.as_read() {
             return Some(std::borrow::Cow::Borrowed(x));
         }
-        self.props.as_ref().map(|p| std::borrow::Cow::Owned(serialize(p, &RprRevisions::default(), colours, cx)))
+        let p = self.props.as_ref()?;
+        let origin = self.origin.as_ref().map(|(read, xml)| (&**read, &**xml));
+        written_over(p, &RprRevisions::default(), colours, cx, origin, &self.set).map(std::borrow::Cow::Owned)
+    }
+
+    /// `props` in place of these properties, set by an edit that set `set`, in order: the `w:rPr` they were read from
+    /// kept to write them over, what was set written again.
+    pub fn edited(&self, props: Option<CharProps>, set: &[Set]) -> RunDirect {
+        let mut all = self.set.clone();
+        all.extend_from_slice(set);
+        let props = props.map(|mut p| {
+            if let Some(was) = self.props.as_deref().filter(|_| p.foreign.is_some()) {
+                drop_replaced(was, &mut p, &all);
+            }
+            Rc::new(p)
+        });
+        RunDirect { props, origin: self.origin.clone(), set: all }
+    }
+
+    /// An edit's result as these properties' successor.
+    pub fn edit(&self, e: CharEdit) -> RunDirect {
+        let props = (e.props != CharProps::default()).then_some(e.props);
+        self.edited(props, &e.set)
+    }
+
+    /// The properties and the `w:rPr` they were read from, while they are still those.
+    pub fn read_from(&self) -> Option<(&Rc<CharProps>, &Rc<str>)> {
+        let xml = self.as_read()?;
+        Some((self.props.as_ref()?, xml))
     }
 
     /// Whether WordprocessingML on/off child `local`, which the typed properties don't model, is there and on.
@@ -703,13 +736,13 @@ fn emit(p: &CharProps, key: &str, s: &mut dyn Sink) -> bool {
                 val(s, &border_val(b.style));
                 s.attr(false, "sz", &(b.width * 8.0));
                 s.attr(false, "space", &b.space);
+                if let Some(c) = b.color {
+                    colour_attrs(s, c, LINE_COLOUR);
+                }
                 if b.shadow {
                     s.attr(false, "shadow", &1);
                 } else {
                     s.implied("shadow", "0");
-                }
-                if let Some(c) = b.color {
-                    colour_attrs(s, c, LINE_COLOUR);
                 }
             })
             .is_some(),
@@ -884,11 +917,16 @@ impl Sink for Compare<'_, '_, '_> {
 /// resolve it.
 pub fn serialize(p: &CharProps, rev: &RprRevisions, colours: &ThemeColours, cx: &Cx) -> String {
     let w14 = cx.prefix_of(W14);
-    let mut out = Out { s: String::new(), cx, colours, w14: w14.clone().unwrap_or_else(|| "w14:".into()), declared: Vec::new(), renamed: Vec::new() };
+    let mut out = Out {
+        s: String::new(),
+        cx,
+        colours,
+        w14: w14.clone().unwrap_or_else(|| "w14:".into()),
+        w14_decl: if w14.is_some() { "" } else { W14_DECL },
+        declared: Vec::new(),
+        renamed: Vec::new(),
+    };
     let mut decls = String::new();
-    if w14.is_none() && (writes_w14(p) || rev.change.as_ref().is_some_and(|c| writes_w14(&c.previous))) {
-        out.declare("w14", W14, &mut decls);
-    }
     let previous = rev.change.as_ref().map(|c| &c.previous);
     for q in [Some(p), previous].into_iter().flatten() {
         out.declarations(q.foreign.as_deref(), &mut decls);
@@ -906,9 +944,335 @@ pub fn serialize(p: &CharProps, rev: &RprRevisions, colours: &ThemeColours, cx: 
     out.s
 }
 
-fn writes_w14(p: &CharProps) -> bool {
-    let t = &p.typography;
-    t.ligatures.is_some() || t.contextual_alternates.is_some() || t.number_form.is_some() || t.number_spacing.is_some() || t.stylistic_sets.is_some()
+/// `p` and its revisions as a `w:rPr` in the part `cx` describes, written as an edit of `origin` (the `w:rPr` the
+/// properties it holds were read from, and those properties) would: each child the change leaves alone as written
+/// there, each it changes in its place, a new one in schema order after any of its name, one it drops removed; with no
+/// origin, as an edit of no `w:rPr`. A changed child is written whole in its place, or, when `patch` names it, as its
+/// attributes set on it. `None` when nothing is left.
+pub fn written_over(
+    p: &CharProps,
+    rev: &RprRevisions,
+    colours: &ThemeColours,
+    cx: &Cx,
+    origin: Option<(&CharProps, &str)>,
+    set: &[Set],
+) -> Option<String> {
+    use super::write::props::Props;
+    let foreign = |q: &CharProps| q.foreign.as_ref().is_some_and(|f| !f.children.is_empty() || !f.attributes.is_empty() || !f.kept.is_empty());
+    let w14 = cx.prefix_of(W14);
+    if origin.is_none() && foreign(p) {
+        return Some(serialize(p, rev, colours, cx));
+    }
+    let empty = CharProps::default();
+    let (read, xml) = origin.unwrap_or((&empty, ""));
+    let mut props = Props::parse(origin.map(|_| xml), "rPr", cx);
+    let mut out = Out {
+        s: String::new(),
+        cx,
+        colours,
+        w14: w14.clone().unwrap_or_else(|| "w14:".into()),
+        w14_decl: if w14.is_some() { "" } else { W14_DECL },
+        declared: Vec::new(),
+        renamed: Vec::new(),
+    };
+    let none = RprRevisions::default();
+    for &key in RPR {
+        let mut render = |q: &CharProps, rev: &RprRevisions| {
+            if is_revision(key) {
+                out.revision(Some(rev), key);
+            } else {
+                out.modelled(q, key);
+            }
+            std::mem::take(&mut out.s)
+        };
+        let (was, now) = (render(read, &none), render(p, rev));
+        let whole: Vec<Prop> = set.iter().filter(|s| s.whole && key_of(s.prop) == key).map(|s| s.prop).collect();
+        let parts: Vec<Prop> = set.iter().filter(|s| !s.whole && key_of(s.prop) == key).map(|s| s.prop).collect();
+        if was == now && whole.is_empty() && parts.is_empty() {
+            continue;
+        }
+        if now.is_empty() {
+            props.remove(key);
+            continue;
+        }
+        let written = match props.get(key) {
+            Some(old) if whole.is_empty() && !parts.is_empty() => in_part(old, &now, &parts, &cx.w),
+            _ => None,
+        };
+        props.set(key, written.unwrap_or_else(|| in_order(&now, &whole)));
+    }
+    let children = |q: &CharProps| {
+        q.foreign.as_ref().map_or_else(Vec::new, |f| f.children.iter().map(|c| (props_key(&c.name), c.payload.clone())).collect::<Vec<_>>())
+    };
+    let (had, mut want) = (children(read), children(p));
+    if had != want {
+        for (key, text) in had {
+            match want.iter().position(|w| w.0 == key && w.1 == text) {
+                Some(k) => {
+                    want.remove(k);
+                }
+                None => {
+                    if let Some(k) = props.kids.iter().position(|(n, x)| *n == key && **x == *text) {
+                        props.kids.remove(k);
+                    }
+                }
+            }
+        }
+        for (key, text) in want {
+            props.add(&key, text.to_string());
+        }
+    }
+    props.xml()
+}
+
+/// The child of CT_RPr a property is written in.
+fn key_of(p: Prop) -> &'static str {
+    match p {
+        Prop::Toggle(t) => TOGGLES.iter().find(|(_, x)| *x == t).map_or("b", |(n, _)| n),
+        Prop::DoubleStrike => "dstrike",
+        Prop::NoProof => "noProof",
+        Prop::Complex => "cs",
+        Prop::Rtl => "rtl",
+        Prop::Size => "sz",
+        Prop::ComplexSize => "szCs",
+        Prop::Underline | Prop::UnderlineColor => "u",
+        Prop::Color => "color",
+        Prop::Highlight => "highlight",
+        Prop::Shading => "shd",
+        Prop::Border => "bdr",
+        Prop::Vertical => "vertAlign",
+        Prop::Position => "position",
+        Prop::Spacing => "spacing",
+        Prop::Scale => "w",
+        Prop::Kern => "kern",
+        Prop::Font(_) | Prop::Hint => "rFonts",
+        Prop::Style => "rStyle",
+        Prop::Lang(_) => "lang",
+        Prop::FitText => "fitText",
+        Prop::Emphasis => "em",
+        Prop::Ligatures => "w14:ligatures",
+        Prop::ContextualAlternates => "w14:cntxtAlts",
+        Prop::NumberForm => "w14:numForm",
+        Prop::NumberSpacing => "w14:numSpacing",
+        Prop::StylisticSets => "w14:stylisticSets",
+        Prop::Effect(e) => match e {
+            Effect::Fill => "w14:textFill",
+            Effect::Outline => "w14:textOutline",
+            Effect::Shadow => "w14:shadow",
+            Effect::Glow => "w14:glow",
+            Effect::Reflection => "w14:reflection",
+        },
+    }
+}
+
+/// A script class's name and theme font attributes in `w:rFonts`.
+fn font_attrs(c: ScriptClass) -> (&'static str, &'static str) {
+    match c {
+        ScriptClass::Latin => FONT_SLOTS[0],
+        ScriptClass::LatinExtended => FONT_SLOTS[1],
+        ScriptClass::EastAsian => FONT_SLOTS[2],
+        ScriptClass::Complex => FONT_SLOTS[3],
+    }
+}
+
+/// An element with no content as written: its name and each attribute's name and quoted value.
+fn attr_list(x: &str) -> Option<(String, Vec<(String, String)>)> {
+    let x = x.strip_suffix("/>")?;
+    let name = x.strip_prefix('<')?.split(|c: char| c.is_whitespace()).next()?.to_string();
+    let list = super::binding::tag_attrs(x)
+        .map(|(name, _, r)| {
+            let written = &x[r];
+            (name.to_string(), written[written.find('=').map_or(0, |e| e + 1)..].trim_start().to_string())
+        })
+        .collect();
+    Some((name, list))
+}
+
+/// `now`, a child written anew, with the attributes of the fonts `whole` names first, in its order.
+fn in_order(now: &str, whole: &[Prop]) -> String {
+    let slots: Vec<ScriptClass> = whole.iter().filter_map(|p| if let Prop::Font(c) = p { Some(*c) } else { None }).collect();
+    let Some((name, mut attrs)) = attr_list(now).filter(|_| slots.len() > 1) else { return now.to_string() };
+    let mut out = format!("<{name}");
+    for c in slots {
+        let (n, t) = font_attrs(c);
+        if let Some(k) = attrs.iter().position(|(q, _)| q.rsplit(':').next().is_some_and(|l| l == n || l == t)) {
+            let (q, v) = attrs.remove(k);
+            let _ = write!(out, " {q}={v}");
+        }
+    }
+    for (q, v) in attrs {
+        let _ = write!(out, " {q}={v}");
+    }
+    out.push_str("/>");
+    out
+}
+
+/// Child `old` as written with the properties `parts` set on it in part, in order, as editing the XML set them: a
+/// font named in place of what it had (its theme font gone), a theme font, an underline's colour or a language as
+/// attributes set on it, the others kept as written. Values come from `now`, the child as its properties write it.
+/// `None` unless both are elements with no content.
+fn in_part(old: &str, now: &str, parts: &[Prop], w: &str) -> Option<String> {
+    let (_, new) = attr_list(now)?;
+    attr_list(old)?;
+    let value = |local: &str| new.iter().find(|(q, _)| q.rsplit(':').next() == Some(local)).map(|(_, v)| v.as_str());
+    let mut tag = old.to_string();
+    // A family named in part: the slot's attributes set on the element, rewritten
+    let named: Vec<ScriptClass> =
+        parts.iter().filter_map(|p| if let Prop::Font(c) = p { Some(*c) } else { None }).filter(|c| value(font_attrs(*c).0).is_some()).collect();
+    if !named.is_empty() {
+        let (_, mut attrs) = attr_list(&tag)?;
+        let local = |q: &str| q.rsplit(':').next().map(str::to_string);
+        for c in named {
+            let (n, t) = font_attrs(c);
+            let v = value(n)?.to_string();
+            match attrs.iter_mut().find(|(q, _)| local(q).as_deref() == Some(n)) {
+                Some(a) => a.1 = v,
+                None => attrs.push((format!("{w}{n}"), v)),
+            }
+            attrs.retain(|(q, _)| local(q).as_deref() != Some(t) && !(c == ScriptClass::Complex && local(q).as_deref() == Some("csTheme")));
+        }
+        tag = format!("<{w}rFonts{}/>", attrs.iter().map(|(q, v)| format!(" {q}={v}")).collect::<String>());
+    }
+    for p in parts {
+        match *p {
+            Prop::Font(c) if value(font_attrs(c).0).is_none() => {
+                let (n, t) = font_attrs(c);
+                tag = strip(&tag, &format!("{w}{n}"));
+                tag = strip(&tag, &format!("{w}{t}"));
+                if let Some(v) = value(t) {
+                    tag = with_attr_written(&tag, &format!("{w}{t}"), v);
+                }
+            }
+            Prop::UnderlineColor => {
+                for a in ["themeColor", "themeTint", "themeShade"] {
+                    tag = strip(&tag, &format!("{w}{a}"));
+                }
+                for a in ["color", "themeColor", "themeTint", "themeShade"] {
+                    if let Some(v) = value(a) {
+                        tag = with_attr_written(&tag, &format!("{w}{a}"), v);
+                    }
+                }
+            }
+            Prop::Lang(c) => {
+                let a = match c {
+                    ScriptClass::EastAsian => "eastAsia",
+                    ScriptClass::Complex => "bidi",
+                    _ => "val",
+                };
+                tag = match value(a) {
+                    Some(v) => with_attr_written(&tag, &format!("{w}{a}"), v),
+                    None => strip(&tag, &format!("{w}{a}")),
+                };
+            }
+            Prop::Hint => {
+                tag = match value("hint") {
+                    Some(v) => with_attr_written(&tag, &format!("{w}hint"), v),
+                    None => strip(&tag, &format!("{w}hint")),
+                };
+            }
+            _ => {}
+        }
+    }
+    Some(tag)
+}
+
+/// The span of attribute `name` in `tag` as `(start of its leading space, start of its value, end of its value)`,
+/// written with either quote; other attributes' values are skipped.
+fn attr_span(tag: &str, name: &str) -> Option<(usize, usize, usize)> {
+    let b = tag.as_bytes();
+    let mut k = 0;
+    while k < b.len() {
+        match b[k] {
+            q @ (b'"' | b'\'') => k = tag[k + 1..].find(q as char).map_or(b.len(), |e| k + e + 2),
+            _ if k > 0 && b[k - 1].is_ascii_whitespace() && b[k..].starts_with(name.as_bytes()) => {
+                let after = k + name.len();
+                if let Some(v) = tag[after..].trim_start().strip_prefix('=').map(str::trim_start)
+                    && let Some(q) = v.chars().next().filter(|c| matches!(c, '"' | '\''))
+                {
+                    let start = tag.len() - v.len() + 1;
+                    let end = tag[start..].find(q).map_or(tag.len(), |e| start + e);
+                    return Some((tag[..k].trim_end().len(), start, end));
+                }
+                k = after;
+            }
+            _ => k += 1,
+        }
+    }
+    None
+}
+
+/// `tag` without the attribute `name`.
+pub(crate) fn strip(tag: &str, name: &str) -> String {
+    let Some((lead, _, end)) = attr_span(tag, name) else { return tag.to_string() };
+    format!("{}{}", &tag[..lead], &tag[(end + 1).min(tag.len())..])
+}
+
+/// `tag` (one start tag or empty element) with the attribute `name` set to `quoted`, a value written in double quotes
+/// (escaped).
+fn with_attr_written(tag: &str, name: &str, quoted: &str) -> String {
+    with_attr_text(tag, name, quoted.strip_prefix('"').and_then(|v| v.strip_suffix('"')).unwrap_or(quoted))
+}
+
+fn with_attr_text(tag: &str, name: &str, v: &str) -> String {
+    if let Some((_, from, to)) = attr_span(tag, name) {
+        // Its own quotes kept: a single-quoted value's apostrophes escaped
+        let v = if tag[..from].ends_with('\'') { v.replace('\'', "&apos;") } else { v.to_string() };
+        return format!("{}{v}{}", &tag[..from], &tag[to..]);
+    }
+    let at = tag.rfind("/>").or_else(|| tag.rfind('>')).unwrap_or(tag.len());
+    format!("{} {name}=\"{v}\"{}", &tag[..at], &tag[at..])
+}
+
+/// What `p` keeps beside each modelled child `set` sets whole, or that it changes and doesn't set in part: nothing, as
+/// writing the child anew keeps nothing of it as written; beside one set in part, no value written otherwise.
+fn drop_replaced(was: &CharProps, p: &mut CharProps, set: &[Set]) {
+    let cx = Cx::of_xml(&format!("<w:document xmlns:w=\"{W}\" xmlns:w14=\"{W14}\">"));
+    let colours = ThemeColours::default();
+    let mut out = Out { s: String::new(), cx: &cx, colours: &colours, w14: "w14:".into(), w14_decl: "", declared: Vec::new(), renamed: Vec::new() };
+    let mut render = |q: &CharProps, key: &'static str| {
+        out.modelled(q, key);
+        std::mem::take(&mut out.s)
+    };
+    let replaced: Vec<(&str, &str)> = RPR
+        .iter()
+        .filter(|k| {
+            let by = |whole: bool| set.iter().any(|s| s.whole == whole && key_of(s.prop) == **k);
+            !is_revision(k) && (by(true) || !by(false) && render(was, k) != render(p, k))
+        })
+        .map(|k| match k.strip_prefix("w14:") {
+            Some(local) => (W14, local),
+            None => (W, *k),
+        })
+        .collect();
+    if replaced.is_empty() {
+        return;
+    }
+    let Some(f) = p.foreign.as_mut() else { return };
+    let f = Rc::make_mut(f);
+    let of = |q: &QName| replaced.contains(&(&*q.ns, &*q.local));
+    let part: Vec<&str> = set.iter().filter(|s| !s.whole).map(|s| key_of(s.prop)).collect();
+    let in_part = |q: &QName| {
+        part.iter().any(|k| match k.strip_prefix("w14:") {
+            Some(l) => &*q.ns == W14 && &*q.local == l,
+            None => &*q.ns == W && &*q.local == *k,
+        })
+    };
+    f.attributes.retain(|a| !a.on.as_ref().is_some_and(|q| of(q) || in_part(q) && a.stands_for.is_some()));
+    f.kept.retain(|c| !of(&c.name));
+    if *f == ForeignProps::default() {
+        p.foreign = None;
+    }
+}
+
+/// A child's key among a properties element's ([`super::write::props::Props`]): its local name in WordprocessingML,
+/// Word 2010's and 2012's with their prefix, any other with its namespace.
+fn props_key(name: &QName) -> String {
+    match &*name.ns {
+        W | "" => name.local.to_string(),
+        W14 => format!("w14:{}", name.local),
+        super::xml::W15 => format!("w15:{}", name.local),
+        ns => format!("{{{ns}}}{}", name.local),
+    }
 }
 
 struct Out<'a> {
@@ -917,6 +1281,8 @@ struct Out<'a> {
     colours: &'a ThemeColours,
     /// Word 2010's prefix, with its colon.
     w14: String,
+    /// Its declaration, on each element of it, when the part's root lacks one.
+    w14_decl: &'static str,
     /// The bindings declared on the `w:rPr`.
     declared: Vec<(Rc<str>, Rc<str>)>,
     /// Unmodelled attributes' namespaces written under a prefix of their own, to keep clear of the writer's.
@@ -1156,7 +1522,12 @@ impl Out<'_> {
                 }
                 "stylisticSets" => {
                     let Some(sets) = p.typography.stylistic_sets else { return };
-                    let _ = write!(self.s, "<{}{local}>", self.w14);
+                    let _ = write!(self.s, "<{}{local}{}", self.w14, self.w14_decl);
+                    if sets == 0 {
+                        self.s.push_str("/>");
+                        return;
+                    }
+                    self.s.push('>');
                     for n in (1..=20).filter(|n| sets & 1 << (n - 1) != 0) {
                         let _ = write!(self.s, "<{p}styleSet {p}id=\"{n}\"/>", p = self.w14);
                     }
@@ -1171,7 +1542,14 @@ impl Out<'_> {
             None => (false, key, W),
         };
         let at = self.s.len();
-        let _ = write!(self.s, "<{}{local}", if w14 { &self.w14 } else { &self.cx.w });
+        match w14 {
+            true => {
+                let _ = write!(self.s, "<{}{local}{}", self.w14, self.w14_decl);
+            }
+            false => {
+                let _ = write!(self.s, "<{}{local}", self.cx.w);
+            }
+        }
         let mut present = false;
         let written = self.attrs(w14, foreign, Some((ns, local)), |s| present = emit(p, key, s));
         if !present {
@@ -1241,7 +1619,9 @@ impl Sink for Attrs<'_, '_, '_> {
     fn decided(&mut self, local: &'static str, _: &'static str, theme: Option<ThemeColourRef>) {
         let Some(r) = theme else { return };
         // The value as read goes with the theme colour that decided it.
-        if self.as_read(local).is_some_and(|a| a.beside.is_some()) {
+        if let Some(a) = self.as_read(local).filter(|a| a.beside.is_some()).cloned() {
+            self.write(Some(&a), local, &a.value);
+            self.written.push((W, local));
             return;
         }
         let rgb = format!("{:06X}", self.out.colours.resolve(r));
@@ -1505,7 +1885,7 @@ pub(crate) mod tests {
         assert_eq!((change.previous.toggles.get(Toggle::ITALIC), change.previous.typography.ligatures), (Some(true), Some(1)));
         assert_eq!(
             xml,
-            r#"<w:rPr xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"><w:ins w:id="1" w:author="A &amp; B" w:date="2024-01-02T03:04:05Z"/><w:b/><w:rPrChange w:id="2" w:author="C"><w:rPr><w:i/><w14:ligatures w14:val="standard"/></w:rPr></w:rPrChange></w:rPr>"#
+            r#"<w:rPr><w:ins w:id="1" w:author="A &amp; B" w:date="2024-01-02T03:04:05Z"/><w:b/><w:rPrChange w:id="2" w:author="C"><w:rPr><w:i/><w14:ligatures xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" w14:val="standard"/></w:rPr></w:rPrChange></w:rPr>"#
         );
     }
 
@@ -1652,5 +2032,43 @@ pub(crate) mod tests {
             let (p, ..) = round_trip(doc.root_element(), &ThemeColours::default(), &cx);
             assert!(p.effects.is_some(), "{e}");
         }
+    }
+
+    #[test]
+    fn an_edit_writes_over_the_xml_it_was_read_from() {
+        let ns = format!(r#"{NS} xmlns:tx="urn:tx""#);
+        let cx = Cx::of_xml(&format!("<w:document {ns}>"));
+        let x = r#"<w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsi="Calibri"/><w:b w:val="true"/><w:u w:val="single" tx:x="1"/><w:sz w:val="24"/></w:rPr>"#;
+        let d = RunDirect::from_xml(Some(x), &cx);
+        let read = || CharEdit::new((**d.props().expect("properties")).clone());
+        let write = |e: CharEdit| d.edit(e).xml(&ThemeColours::default(), &cx).map(std::borrow::Cow::into_owned);
+        assert_eq!(write(read()).as_deref(), Some(x), "as read");
+        // A font set in part keeps the others in their places; the underline set whole loses what it held beside its
+        // value; the size removed.
+        let mut e = read();
+        e.fonts.latin = Some(FontRef::Family("Arial".into()));
+        e.part(Prop::Font(ScriptClass::Latin));
+        e.underline = Some(UnderlineProps { style: Underline::Double, color: None });
+        e.whole(Prop::Underline);
+        e.size = None;
+        e.whole(Prop::Size);
+        let want = r#"<w:rPr><w:rFonts w:hAnsi="Calibri" w:ascii="Arial"/><w:b w:val="true"/><w:u w:val="double"/></w:rPr>"#;
+        assert_eq!(write(e).as_deref(), Some(want));
+        // What is set whole is written anew though its value stays; fonts set whole come in the order set.
+        let mut e = read();
+        e.toggle(Toggle::BOLD, true);
+        let f = Some(FontRef::Family("Arial".into()));
+        e.fonts = ScriptFonts { latin: f.clone(), latin_extended: f.clone(), east_asian: f.clone(), complex: f };
+        for c in [ScriptClass::Latin, ScriptClass::LatinExtended, ScriptClass::Complex, ScriptClass::EastAsian] {
+            e.whole(Prop::Font(c));
+        }
+        let want = r#"<w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial" w:eastAsia="Arial"/><w:b/><w:u w:val="single" tx:x="1"/><w:sz w:val="24"/></w:rPr>"#;
+        assert_eq!(write(e).as_deref(), Some(want));
+        // A child new to it goes in schema order; nothing left, no element.
+        let mut e = read();
+        e.toggle(Toggle::ITALIC, true);
+        let want = r#"<w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsi="Calibri"/><w:b w:val="true"/><w:i/><w:u w:val="single" tx:x="1"/><w:sz w:val="24"/></w:rPr>"#;
+        assert_eq!(write(e).as_deref(), Some(want));
+        assert_eq!(write(CharEdit::default()), None);
     }
 }

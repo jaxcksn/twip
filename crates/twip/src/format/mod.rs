@@ -73,6 +73,142 @@ pub struct CharProps {
     pub foreign: Option<Rc<ForeignProps>>,
 }
 
+/// A property an edit sets, as a source format writes it: one written element or attribute.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Prop {
+    /// An on/off property.
+    Toggle(Toggle),
+    /// Double strikethrough.
+    DoubleStrike,
+    /// No proofing.
+    NoProof,
+    /// Laid out as complex script.
+    Complex,
+    /// Right-to-left.
+    Rtl,
+    /// The size.
+    Size,
+    /// The complex-script size.
+    ComplexSize,
+    /// The underline, its line and colour.
+    Underline,
+    /// The underline's colour alone.
+    UnderlineColor,
+    /// The text colour.
+    Color,
+    /// The highlight.
+    Highlight,
+    /// The shading.
+    Shading,
+    /// The border.
+    Border,
+    /// Superscript or subscript.
+    Vertical,
+    /// The raise or lowering.
+    Position,
+    /// The character spacing.
+    Spacing,
+    /// The horizontal scale.
+    Scale,
+    /// Kerning.
+    Kern,
+    /// The font of a script class.
+    Font(ScriptClass),
+    /// The script class ambiguous characters take.
+    Hint,
+    /// The character style.
+    Style,
+    /// The language of a script class.
+    Lang(ScriptClass),
+    /// Fit Text.
+    FitText,
+    /// The emphasis mark.
+    Emphasis,
+    /// Ligatures.
+    Ligatures,
+    /// Contextual alternates.
+    ContextualAlternates,
+    /// The figures' form.
+    NumberForm,
+    /// The figures' spacing.
+    NumberSpacing,
+    /// Stylistic sets.
+    StylisticSets,
+    /// A text effect.
+    Effect(Effect),
+}
+
+/// One of the text effects.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Effect {
+    /// The letters' fill.
+    Fill,
+    /// Their outline.
+    Outline,
+    /// Their shadow.
+    Shadow,
+    /// Their glow.
+    Glow,
+    /// Their reflection.
+    Reflection,
+}
+
+/// A property an edit set: whole (written anew, whatever it was), or in part (among what is written with it, which
+/// stays as written).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Set {
+    /// The property.
+    pub prop: Prop,
+    /// Set whole.
+    pub whole: bool,
+}
+
+/// Authored properties being edited, with what the edit set, in the order it set it: a source format writes what was
+/// set again, the rest as it was written.
+#[derive(Clone, Debug, Default)]
+pub struct CharEdit {
+    /// The properties.
+    pub props: CharProps,
+    /// What was set, in order.
+    pub set: Vec<Set>,
+}
+
+impl CharEdit {
+    /// An edit of `props`.
+    pub fn new(props: CharProps) -> CharEdit {
+        CharEdit { props, set: Vec::new() }
+    }
+
+    /// Notes `prop` set whole.
+    pub fn whole(&mut self, prop: Prop) {
+        self.set.push(Set { prop, whole: true });
+    }
+
+    /// Notes `prop` set in part.
+    pub fn part(&mut self, prop: Prop) {
+        self.set.push(Set { prop, whole: false });
+    }
+
+    /// Sets on/off property `t` whole.
+    pub fn toggle(&mut self, t: Toggle, on: bool) {
+        self.props.toggles.put(t, on);
+        self.whole(Prop::Toggle(t));
+    }
+}
+
+impl std::ops::Deref for CharEdit {
+    type Target = CharProps;
+    fn deref(&self) -> &CharProps {
+        &self.props
+    }
+}
+
+impl std::ops::DerefMut for CharEdit {
+    fn deref_mut(&mut self) -> &mut CharProps {
+        &mut self.props
+    }
+}
+
 /// One value per script class. `latin_extended` is the slot for Latin text beyond ASCII.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ScriptFonts<T> {
