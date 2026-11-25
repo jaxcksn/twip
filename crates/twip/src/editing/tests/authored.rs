@@ -176,8 +176,14 @@ enum Target {
 /// A paragraph in a bold, centred, 14pt style ("Strong"), then one in a plain style. The style sets the
 /// complex-script twins too, as the Bold and size commands do.
 fn styled_docx() -> Vec<u8> {
+    with_strong_style(
+        r#"<w:p><w:pPr><w:pStyle w:val="Strong"/></w:pPr><w:r><w:t>Total</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Plain"/></w:pPr><w:r><w:t>Other</w:t></w:r></w:p>"#,
+    )
+}
+
+/// `body` in a package that has the "Strong" and "Plain" paragraph styles.
+fn with_strong_style(body: &str) -> Vec<u8> {
     let styles = r#"<w:style w:type="paragraph" w:styleId="Strong"><w:name w:val="Strong Paragraph"/><w:basedOn w:val="Normal"/><w:pPr><w:jc w:val="center"/></w:pPr><w:rPr><w:b/><w:bCs/><w:sz w:val="28"/><w:szCs w:val="28"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Plain"><w:name w:val="Plain Paragraph"/><w:basedOn w:val="Normal"/></w:style>"#;
-    let body = r#"<w:p><w:pPr><w:pStyle w:val="Strong"/></w:pPr><w:r><w:t>Total</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Plain"/></w:pPr><w:r><w:t>Other</w:t></w:r></w:p>"#;
     let src = crate::docx::blank::blank_docx();
     let mut z = zip::ZipArchive::new(std::io::Cursor::new(src)).expect("the blank package");
     let mut out = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
@@ -447,4 +453,30 @@ fn a_mark_edit_reads_the_documents_format_not_the_cached_one() {
 #[should_panic(expected = "a step is recorded for Paragraph")]
 fn a_paragraph_edit_reads_the_documents_format_not_the_cached_one() {
     stale_formats_in_the_cache(Target::Paragraph);
+}
+
+// Joining text into one run
+
+/// "te" bold directly and "h" bold through its paragraph style: typing a space corrects "teh" to "the", and each
+/// character keeps the authored formatting of the one it replaces, though all three look the same.
+#[test]
+fn an_autocorrection_keeps_each_characters_authored_formatting() {
+    use crate::editing::autocorrect::{AutoCorrect, Trigger};
+    let body = r#"<w:p><w:pPr><w:pStyle w:val="Strong"/></w:pPr><w:r><w:rPr><w:b/><w:bCs/></w:rPr><w:t>te</w:t></w:r><w:r><w:t>h</w:t></w:r></w:p>"#;
+    let mut e = Editor::open(&with_strong_style(body), fonts()).expect("opens");
+    let p = ParaId(para(e.document(), 0).id);
+    e.select_range(p, Unit(3), Unit(3), fonts());
+    e.execute(Command::InsertText(" ".into()), fonts());
+    assert!(
+        matches!(e.auto_correct(&AutoCorrect { sentence_capitals: false, ..AutoCorrect::default() }, Trigger::Typed, fonts()), Outcome::Changed(_)),
+        "corrected"
+    );
+    let runs: Vec<(String, String)> = para(e.document(), 0)
+        .inlines
+        .iter()
+        .filter_map(|i| if let Inline::Text(t, r) = i { Some((t.to_string(), direct(&r.direct).to_owned())) } else { None })
+        .collect();
+    assert_eq!(runs.iter().map(|r| r.0.as_str()).collect::<String>(), "the ");
+    let last_e = runs.iter().find(|(t, _)| t.contains('e')).expect("the e");
+    assert!(!last_e.1.contains("<w:b/>"), "the e takes the plain h's formatting, not the direct bold: {runs:?}");
 }
