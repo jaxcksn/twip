@@ -1,5 +1,7 @@
 //! Style definitions
 
+use std::rc::Rc;
+
 use crate::api::command::{CellMargins, Command};
 use crate::api::error::Error;
 use crate::api::services::{StyleVisibility, TableStylePart};
@@ -790,7 +792,7 @@ impl Editor {
                 let region = next.styles.table_region(Some(&style.id), &[]);
                 let cx = next.styles.cx();
                 let para = next.para_from_xml(None, Some(&region), &cx);
-                let run = run_xml::run_from_xml(&next, &para.base, None, &cx);
+                let run = Rc::new(run_xml::resolve(&next, &run_xml::base(&para.base), Default::default(), false));
                 let tabs = para
                     .style
                     .tabs
@@ -879,7 +881,7 @@ impl Editor {
                 let region = part.region();
                 let r = next.styles.table_region(Some(id), &region.into_iter().collect::<Vec<_>>());
                 let para = next.para_from_xml(None, Some(&r), &cx);
-                let run = run_xml::run_from_xml(&next, &para.base, None, &cx);
+                let run = Rc::new(run_xml::resolve(&next, &run_xml::base(&para.base), Default::default(), false));
                 let mut b = borders(&r.tc.borders);
                 if region.is_none() {
                     b = TableBorders { diagonal_down: b.diagonal_down, diagonal_up: b.diagonal_up, ..borders(&whole.tbl.borders) };

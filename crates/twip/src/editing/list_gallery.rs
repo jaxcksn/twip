@@ -240,7 +240,7 @@ impl Editor {
                 picture,
                 legacy: level.legacy,
             };
-            let base = run_xml::run_from_xml(&next, &para.base, None, &scx);
+            let base = Rc::new(run_xml::resolve(&next, &run_xml::base(&para.base), Default::default(), false));
             let grey = Rc::new(RunStyle { color: Some(0x80_8080), ..(*base).clone() });
             out.push(Block::Para(Paragraph {
                 style: Rc::new(para.style),

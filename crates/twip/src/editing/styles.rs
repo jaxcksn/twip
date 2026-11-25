@@ -13,7 +13,27 @@ use crate::font::Fonts;
 use super::Editor;
 use super::commands::Outcome;
 use super::step::Step;
+use crate::docx::char_props::RunDirect;
 use crate::docx::run_xml;
+use crate::format::{CharEdit, CharProps, Prop};
+
+/// The text's shading set to `sh` over its own and `run`'s, its formatting; `none` takes its own away.
+fn text_shading(e: &mut CharEdit, sh: &super::table_format::Shading, none: bool, run: &RunStyle) {
+    use crate::docx::props::ShadingPattern as P;
+    let was = e.shading;
+    e.shading = (!none).then(|| {
+        // A pattern the change keeps: the text's own, else its style's
+        let pattern = sh
+            .pattern
+            .map(crate::docx::line_style::shading_pattern)
+            .or_else(|| was.map(|s| s.pattern))
+            .or_else(|| run.shd.as_ref().map(|s| s.pattern).filter(|p| *p != P::Nil))
+            .unwrap_or(P::Clear);
+        let c = |c: Option<super::theme::WordColour>| Some(c.map_or(crate::format::Color::Auto, super::format::colour));
+        crate::format::Shading { pattern, color: c(sh.color), fill: c(sh.fill) }
+    });
+    e.whole(Prop::Shading);
+}
 
 /// The commands [`Editor::format_style`] runs on a style: character and paragraph formatting.
 pub fn formats_a_style(c: &Command) -> bool {
@@ -156,15 +176,17 @@ impl Editor {
         let cx = next.styles.cx();
         let w = &cx.w;
         let id = crate::docx::write::props::esc(&style.id);
-        let (ppr, rpr) = match style.kind {
-            StyleKind::Character => (None, Some(format!("<{w}rPr><{w}rStyle {w}val=\"{id}\"/></{w}rPr>"))),
-            StyleKind::Table => (None, None),
-            _ => (Some(format!("<{w}pPr><{w}pStyle {w}val=\"{id}\"/></{w}pPr>")), None),
+        let (ppr, direct) = match style.kind {
+            StyleKind::Character => {
+                (None, RunDirect::typed(Some(Rc::new(CharProps { style: Some(style.id.as_str().into()), ..Default::default() }))))
+            }
+            StyleKind::Table => (None, RunDirect::default()),
+            _ => (Some(format!("<{w}pPr><{w}pStyle {w}val=\"{id}\"/></{w}pPr>")), RunDirect::default()),
         };
         // A table style's text: in the part being formatted, else the whole table.
         let region = (style.kind == StyleKind::Table).then(|| next.styles.table_region(Some(&style.id), self.style_part.as_slice()));
         let para = next.para_from_xml(ppr.as_deref(), region.as_ref(), &cx);
-        let run = run_xml::run_from_xml(&next, &para.base, rpr.as_deref(), &cx);
+        let run = Rc::new(run_xml::resolve(&next, &run_xml::base(&para.base), direct, false));
         let p = Paragraph {
             style: Rc::new(para.style),
             mark: run.clone(),
@@ -229,9 +251,12 @@ impl Editor {
         let ppr = para.and_then(|p| p.style.direct.0.as_deref()).and_then(|x| strip(x, "pPr", &["pStyle", "numPr", "sectPr", "rPr", "pPrChange"]));
         let run = self.caret().and_then(|c| self.run_at(&c));
         let colours = self.doc.resolver.as_deref().map_or_else(Default::default, |r| r.styles.colours);
-        let rpr = run
-            .and_then(|r| r.direct.xml(&colours, &cx).map(|x| x.into_owned()))
-            .and_then(|x| strip(&x, "rPr", &["rStyle", "ins", "del", "rPrChange"]));
+        let rpr = run.and_then(|r| {
+            let mut e = CharEdit::new((**r.direct.props()?).clone());
+            e.style = None;
+            e.whole(Prop::Style);
+            r.direct.edit(e).xml(&colours, &cx).map(std::borrow::Cow::into_owned)
+        });
         (ppr, rpr)
     }
 
@@ -374,11 +399,19 @@ impl Editor {
             Ok(c) => c.flatten(),
             Err(why) => return Outcome::invalid(&why),
         };
-        self.format_runs(
+        // Whole eighths of a point wide, whole points from the text
+        let border = b.map(|b| crate::format::TextBorder {
+            style: super::readback::border_style(b.style),
+            width: (b.width.0 * 8.0).round() / 8.0,
+            space: b.space.0.round(),
+            shadow: b.shadow,
+            color: Some(colour.map_or(crate::format::Color::Auto, super::format::colour)),
+        });
+        self.format_runs_typed(
             "Borders",
-            &|p, w, _| match b {
-                Some(b) => p.set("bdr", b.xml(w, "bdr", colour)),
-                None => p.remove("bdr"),
+            &|e, _| {
+                e.border = border;
+                e.whole(Prop::Border);
             },
             fonts,
         )
@@ -452,7 +485,7 @@ impl Editor {
         }
         match target {
             ShadingTarget::Paragraph => self.format_paras("Shading", &|p, cx, para| edit(p, &cx.w, para.style.shd.as_ref()), fonts),
-            ShadingTarget::Text => self.format_runs("Shading", &|p, w, run| edit(p, w, run.shd.as_ref()), fonts),
+            ShadingTarget::Text => self.format_runs_typed("Shading", &|e, run| text_shading(e, &sh, none, run), fonts),
             ShadingTarget::Cell => self.table_format(&TableFormat::CellShading(sh.clone()), fonts),
             ShadingTarget::Table => self.table_format(&TableFormat::TableShading(sh.clone()), fonts),
         }
@@ -497,13 +530,22 @@ impl Editor {
             })
         };
         let raw = |x: Option<String>| crate::docx::Raw(x.map(|x| Rc::from(x.as_str())));
-        let direct = |x: Option<String>| crate::docx::char_props::RunDirect::from_xml(x.as_deref(), &cx);
         let named = |r: &crate::docx::Run| r.style_id.as_deref() == Some(id);
+        // The properties without the character style when they name it
+        let unstyle = |e: &mut CharEdit| {
+            let ours = e.style.as_deref() == Some(id);
+            if ours {
+                e.style = None;
+                e.whole(Prop::Style);
+            }
+            ours
+        };
         let unstyled = |r: &crate::docx::Run| -> Option<crate::docx::Run> {
-            without(run_xml::rpr(res, r, &cx).as_deref(), "rPr", "rStyle").map(|x| Rc::new(RunStyle { direct: direct(x), ..(**r).clone() }))
+            let mut e = CharEdit::new((**r.direct.props()?).clone());
+            unstyle(&mut e).then(|| Rc::new(RunStyle { direct: r.direct.edit(e), ..(**r).clone() }))
         };
         let in_ruby = |i: &Inline| matches!(i, Inline::Ruby(r, _) if r.base.iter().chain(&r.text).any(|x| named(&x.1)));
-        let ruby_rpr = |xml: Option<&str>, _: &RunStyle| without(xml, "rPr", "rStyle").unwrap_or_else(|| xml.map(str::to_string));
+        let ruby_rpr = |xml: Option<&str>, _: &RunStyle| super::format::edit_rpr_xml(xml, &res.styles.colours, &cx, unstyle);
         let paras: Vec<_> = self.index.para_ids().collect();
         for para in paras {
             let Some(p) = self.index.para(&self.doc, para) else { continue };

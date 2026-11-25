@@ -153,6 +153,56 @@ fn a_text_border_keeps_its_distance_shadow_and_theme_colour() {
 }
 
 #[test]
+fn text_shading_and_borders_write_their_elements_as_paragraphs_do() {
+    use super::super::table_format::Shading;
+    let el = |xml: &str, name: &str| {
+        // The run's, after its mark's
+        let at = xml.rfind(&format!("<w:{name} ")).unwrap_or_else(|| panic!("no {name}: {xml}"));
+        xml[at..].split_inclusive("/>").next().unwrap_or_default().to_string()
+    };
+    let was = r#"<w:shd w:val="pct25" w:color="auto" w:fill="FF0000"/>"#;
+    let body = format!("<w:p><w:r><w:rPr>{was}</w:rPr><w:t>one</w:t></w:r></w:p>");
+    let red = ColourValue::rgb(Color(0xC0_0000));
+    let shadings = [
+        (ShadingPattern::Other, NoneOr::Value(accent(ThemeColour::Accent2, TransformKind::Tint, 0.2)), AutoOr::Auto),
+        (ShadingPattern::Pct20, NoneOr::None, AutoOr::Value(ColourValue::theme(ThemeColour::Text1))),
+        (ShadingPattern::Clear, NoneOr::Value(red.clone()), AutoOr::Value(red.clone())),
+    ];
+    for (pattern, fill, color) in shadings {
+        let mut e = all(&body);
+        let c = |c: Option<&ColourValue>| c.map(|c| e.word_colour(c).expect("a colour"));
+        let sh = Shading {
+            pattern: pattern.val(),
+            color: c(match &color {
+                AutoOr::Value(c) => Some(c),
+                AutoOr::Auto => None,
+            }),
+            fill: c(match &fill {
+                NoneOr::Value(c) => Some(c),
+                NoneOr::None => None,
+            }),
+        };
+        let s = ShadingValue { fill, pattern, color };
+        assert!(matches!(e.set_shading_value(ShadingTarget::Text, &s, fonts()), Outcome::Changed(_)));
+        assert_eq!(el(&doc_xml(&e), "shd"), sh.xml("w:", Some(was), None), "{pattern:?}");
+    }
+    let lines = [
+        BorderLine { width: Points(0.3), ..line(AutoOr::Auto, 4.4, false) },
+        line(AutoOr::Value(accent(ThemeColour::Accent4, TransformKind::Shade, 0.5)), 1.0, true),
+        line(AutoOr::Value(red), 0.0, false),
+    ];
+    for b in lines {
+        let mut e = all(TWO);
+        let colour = match &b.color {
+            AutoOr::Value(c) => Some(e.word_colour(c).expect("a colour")),
+            AutoOr::Auto => None,
+        };
+        assert!(matches!(e.set_text_border_line(Some(&b), fonts()), Outcome::Changed(_)));
+        assert_eq!(el(&doc_xml(&e), "bdr"), b.xml("w:", "bdr", colour), "{b:?}");
+    }
+}
+
+#[test]
 fn a_border_distance_past_31_points_is_refused() {
     let mut e = all(TWO);
     assert!(matches!(e.set_text_border_line(Some(&line(AutoOr::Auto, 32.0, false)), fonts()), Outcome::Refused(_)));

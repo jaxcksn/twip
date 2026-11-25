@@ -1,5 +1,7 @@
 //! The style dialog
 
+use std::rc::Rc;
+
 use crate::api::command::{Command, Indents, ParagraphSpacing};
 use crate::api::error::Error;
 use crate::api::services::{StyleDialog, StyleDialogType, StyleOpen, TableStylePart};
@@ -177,24 +179,7 @@ impl Editor {
                 let name = next_new_name(styles);
                 let para = self.selection.focus().and_then(|p| p.para_offset()).and_then(|(p, _)| self.index.para(&self.doc, p));
                 let base = para.and_then(|p| p.style.style_id.clone()).or_else(|| styles.default_paragraph.clone());
-                // The selection's direct formatting: its paragraph's, and its first run's.
-                let ppr = para.and_then(|p| p.style.direct.0.as_deref()).map(|x| {
-                    let mut p = Props::parse(Some(x), "pPr", &cx);
-                    for k in ["pStyle", "numPr", "sectPr", "rPr", "pPrChange"] {
-                        p.remove(k);
-                    }
-                    p.xml().unwrap_or_default()
-                });
-                let rpr =
-                    self.caret().and_then(|c| self.run_at(&c)).and_then(|r| r.direct.xml(&res.styles.colours, &cx).map(|x| x.into_owned())).map(
-                        |x| {
-                            let mut p = Props::parse(Some(&x), "rPr", &cx);
-                            for k in ["rStyle", "ins", "del", "rPrChange"] {
-                                p.remove(k);
-                            }
-                            p.xml().unwrap_or_default()
-                        },
-                    );
+                let (ppr, rpr) = self.selection_formatting();
                 let base = base.map_or(String::new(), |b| format!("<{w}basedOn {w}val=\"{}\"/>", esc(&b)));
                 format!(
                     "<{w}style {w}type=\"paragraph\" {w}customStyle=\"1\" {w}styleId=\"{id}\"><{w}name {w}val=\"{n}\"/>{base}<{w}next {w}val=\"{id}\"/><{w}qFormat/>{}{}</{w}style>",
@@ -225,7 +210,7 @@ impl Editor {
             Some(region) => {
                 let cx = next.styles.cx();
                 let para = next.para_from_xml(None, Some(region), &cx);
-                let run = run_xml::run_from_xml(&next, &para.base, None, &cx);
+                let run = Rc::new(run_xml::resolve(&next, &run_xml::base(&para.base), Default::default(), false));
                 (super::state::character(&[&run]), super::state::paragraph(&[(&para.style, None)]))
             }
             None => {
