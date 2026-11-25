@@ -15,6 +15,7 @@ use super::commands::Outcome;
 use super::position::Position;
 use super::selection::Selection;
 use super::step::{Step, para_len};
+use crate::document::paragraph::{ListId, ListRef};
 use crate::docx::run_xml;
 use crate::format::{CharEdit, CharProps, Color, FontRef, Prop, ScriptClass, ScriptFonts, UnderlineProps};
 
@@ -1196,7 +1197,7 @@ impl Editor {
         self.take_in(&mut tx, &mut blocks, f, &mut Taken::default());
         // Landing in a list item: its list goes on through the pasted items.
         if self.paste_defaults.lists()
-            && let Some((num, _)) = self.index.para(&self.doc, para).and_then(|p| p.style.num)
+            && let Some(ListRef { list: ListId(num), level: _ }) = self.index.para(&self.doc, para).and_then(|p| p.style.num)
         {
             self.join_list(&mut blocks, num);
         }

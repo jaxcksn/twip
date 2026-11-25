@@ -1276,7 +1276,7 @@ fn html_with_a_picture_offers_no_picture_on_the_button() {
 
 #[test]
 fn pasted_list_items_landing_in_a_list_continue_it_unless_told_not_to() {
-    let numbering = |e: &Editor| -> Vec<Option<i64>> { paras(e).iter().map(|p| p.style.num.map(|n| n.0)).collect() };
+    let numbering = |e: &Editor| -> Vec<Option<i64>> { paras(e).iter().map(|p| p.style.num.map(|n| n.list.0)).collect() };
     let html = "<ul><li>new</li><li>mid</li><li>end</li></ul>";
     let mut e = ed(&format!("<w:p>{}</w:p>", t("x")));
     caret(&mut e, (0, 1));

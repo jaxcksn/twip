@@ -255,7 +255,7 @@ impl Builder<'_> {
         for b in list {
             match b {
                 Block::Para(p) if p.style.num.is_some() && heading_level(self.doc, p).is_none() => {
-                    let level = p.style.num.map_or(0, |n| n.1).max(0);
+                    let level = p.style.num.map_or(0, |n| n.level).max(0);
                     let (children, floats) = self.inlines(p, depth);
                     if children.is_empty() && floats.is_empty() {
                         continue;

@@ -19,6 +19,7 @@ use crate::services::styles::{NameRefusal, builtin, check_name, describe};
 
 use super::Editor;
 use super::commands::Outcome;
+use crate::document::paragraph::{ListId, ListRef};
 use crate::docx::run_xml;
 
 impl StyleCategory {
@@ -346,7 +347,12 @@ impl Editor {
             para.style.tabs.iter().filter(|t| t.kind != crate::docx::props::TabKind::Clear).map(|t| super::commands::tabs::info(t, false)).collect();
         // Its list, its own or a base style's: bulleted or numbered
         let res = self.doc.resolver.as_ref()?;
-        let list = para.style.num.filter(|(n, _)| *n != 0).and_then(|(n, l)| res.numbering.level(n, l, &res.styles)).map(|l| l.fmt == "bullet");
+        let list = para
+            .style
+            .num
+            .filter(|ListRef { list: ListId(n), level: _ }| *n != 0)
+            .and_then(|ListRef { list: ListId(n), level: l }| res.numbering.level(n, l, &res.styles))
+            .map(|l| l.fmt == "bullet");
         let mut paragraph = super::state::paragraph(&[(&para.style, list)]);
         paragraph.tabs = Tri::Uniform(tabs.clone());
         Some((super::state::character(&[&run]), paragraph, tabs))

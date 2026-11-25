@@ -54,3 +54,16 @@ pub enum ListSuffix {
     /// Nothing.
     Nothing,
 }
+
+/// A list, by the id its source format gives it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct ListId(pub i64);
+
+/// A paragraph's place in a list: which list, at which level.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct ListRef {
+    /// The list.
+    pub list: ListId,
+    /// The level, from 0.
+    pub level: i64,
+}

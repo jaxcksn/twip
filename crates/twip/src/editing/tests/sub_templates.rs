@@ -5,6 +5,7 @@ use super::super::commands::Command;
 use super::super::elements;
 use super::super::position::StoryId;
 use super::{fonts, open};
+use crate::document::paragraph::{ListId, ListRef};
 use crate::docx::{Block, Inline};
 use crate::layout::{ParaId, Unit};
 
@@ -803,7 +804,7 @@ fn lists_and_notes(doc: &crate::docx::Document) -> (Vec<(String, String)>, Vec<S
     let mut notes = Vec::new();
     for b in doc.sections.iter().flat_map(|s| &s.blocks) {
         let Block::Para(p) = b else { continue };
-        if let Some((id, ilvl)) = p.style.num.filter(|n| n.0 != 0)
+        if let Some(ListRef { list: ListId(id), level: ilvl }) = p.style.num.filter(|n| n.list.0 != 0)
             && let Some(l) = res.numbering.level(id, ilvl, &res.styles)
         {
             lists.push((l.fmt.clone(), l.text.clone()));
@@ -881,7 +882,7 @@ fn a_sub_template_from_another_docx_takes_lists_of_its_own_and_no_notes() {
     let res = e.document().resolver.as_ref().expect("styles");
     let part = e.document().glossary.as_ref().expect("a glossary").parts.iter().find(|b| b.name == "Lists").expect("made");
     let used: Vec<i64> =
-        part.body.iter().filter_map(|b| if let Block::Para(p) = b { p.style.num.map(|n| n.0) } else { None }).filter(|n| *n != 0).collect();
+        part.body.iter().filter_map(|b| if let Block::Para(p) = b { p.style.num.map(|n| n.list.0) } else { None }).filter(|n| *n != 0).collect();
     assert!(!used.is_empty());
     assert!(used.iter().all(|n| !nums.contains(n) && res.numbering.nums.contains_key(n)), "{used:?} past {nums:?}");
     assert!(matches!(create(&mut e, "Notes", Some(fixture_bytes("FX-A11Y-STRUCTURE.docx"))), Outcome::Refused(_)));
@@ -985,7 +986,9 @@ fn a_replaced_body_brings_the_lists_of_its_group_shapes_text() {
                 let Inline::Float(f, _) = i else { continue };
                 for q in f.parts.iter().filter_map(|g| g.text_box.as_ref()).flat_map(|t| &t.blocks) {
                     let Block::Para(q) = q else { continue };
-                    out.extend(q.style.num.and_then(|(n, l)| res.numbering.level(n, l, &res.styles)).map(|l| l.fmt.clone()));
+                    out.extend(
+                        q.style.num.and_then(|ListRef { list: ListId(n), level: l }| res.numbering.level(n, l, &res.styles)).map(|l| l.fmt.clone()),
+                    );
                 }
             }
         }

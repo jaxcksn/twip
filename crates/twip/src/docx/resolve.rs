@@ -326,7 +326,7 @@ impl Resolver {
         if let Some(l) = &level {
             // A legacy level places its number itself, in the label.
             style.list_jc = if l.legacy.is_some() { ListJc::Left } else { super::paragraph::list_jc(&l.jc) };
-            style.num = num_id.map(|id| (id, ilvl));
+            style.num = num_id.map(|id| ListRef { list: ListId(id), level: ilvl });
             style.list_fmt = Some(l.fmt.clone());
             style.list = num_id.and_then(|id| self.numbering.abstract_of(id, &self.styles));
         }

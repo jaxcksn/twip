@@ -49,7 +49,7 @@ fn caret_marks(e: &Editor) -> Vec<ReviewMark> {
 fn caret_list(e: &Editor) -> Option<((i64, i64), usize)> {
     let (para, _) = e.selection().focus()?.para_offset()?;
     let p = e.index().para(e.document(), para)?;
-    let (list, level) = (p.style.list?, p.style.num?.1);
+    let (list, level) = (p.style.list?, p.style.num?.level);
     if heading_level(e.document(), p).is_some() {
         return None;
     }
@@ -57,7 +57,9 @@ fn caret_list(e: &Editor) -> Option<((i64, i64), usize)> {
     let blocks = e.index().blocks(e.document(), slot.container)?;
     // Items of any list run on (a nested list is inside the item before it); those of this list at this level count.
     let item = |b: &Block| match b {
-        Block::Para(q) if q.style.num.is_some() && heading_level(e.document(), q).is_none() => Some((q.style.list, q.style.num.map_or(0, |n| n.1))),
+        Block::Para(q) if q.style.num.is_some() && heading_level(e.document(), q).is_none() => {
+            Some((q.style.list, q.style.num.map_or(0, |n| n.level)))
+        }
         _ => None,
     };
     let before = blocks[..slot.block].iter().rev().map_while(item);

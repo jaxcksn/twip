@@ -6,6 +6,7 @@ use crate::font::Fonts;
 use crate::layout::ParaId;
 
 use super::Outcome;
+use crate::document::paragraph::{ListId, ListRef};
 use crate::editing::Editor;
 use crate::editing::format::Format;
 
@@ -126,7 +127,7 @@ impl Editor {
 
     pub(crate) fn para_list(&self, para: ParaId) -> Option<bool> {
         let p = self.index.para(&self.doc, para)?;
-        let (id, ilvl) = p.style.num.filter(|(id, _)| *id != 0)?;
+        let ListRef { list: ListId(id), level: ilvl } = p.style.num.filter(|ListRef { list: ListId(id), level: _ }| *id != 0)?;
         let r = self.doc.resolver.as_ref()?;
         Some(r.numbering.level(id, ilvl, &r.styles)?.fmt == "bullet")
     }

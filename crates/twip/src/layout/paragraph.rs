@@ -142,9 +142,16 @@ mod tests {
         let doc = crate::docx::read(&crate::docx::blank::blank_docx()).expect("the blank document reads");
         let Some(crate::docx::Block::Para(p)) = doc.sections[0].blocks.first() else { panic!("a paragraph") };
         let env = super::TextEnv::new(&doc, None);
-        let item = crate::docx::ParaStyle { before_auto: true, after_auto: true, num: Some((1, 0)), list: Some(0), ..(*p.style).clone() };
+        let item = crate::docx::ParaStyle {
+            before_auto: true,
+            after_auto: true,
+            num: Some(crate::docx::model::ListRef { list: crate::docx::model::ListId(1), level: 0 }),
+            list: Some(0),
+            ..(*p.style).clone()
+        };
         assert_eq!(super::gap(&env, &item, 14.0, &item, 14.0), 0.0);
-        let other_num = crate::docx::ParaStyle { num: Some((2, 1)), ..item.clone() };
+        let other_num =
+            crate::docx::ParaStyle { num: Some(crate::docx::model::ListRef { list: crate::docx::model::ListId(2), level: 1 }), ..item.clone() };
         assert_eq!(super::gap(&env, &item, 14.0, &other_num, 14.0), 0.0);
         let explicit = crate::docx::ParaStyle { before_auto: false, space_before: 12.0, ..item.clone() };
         assert_eq!(super::gap(&env, &item, 14.0, &explicit, 12.0), 12.0);

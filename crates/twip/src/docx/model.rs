@@ -4,7 +4,7 @@ pub use crate::document::anchor::{FloatWrap, HorizontalAlign, HorizontalRelation
 pub use crate::document::content::{BreakKind, NoteKind};
 pub use crate::document::ident::{ControlId, FieldId, next_para_id};
 pub use crate::document::line::Underline;
-pub use crate::document::paragraph::{ListJc, ListSuffix, TextAlignment};
+pub use crate::document::paragraph::{ListId, ListJc, ListRef, ListSuffix, TextAlignment};
 pub use crate::document::policy::{Compat, LayoutPolicy};
 pub use crate::document::section::{HeightRule, LineNumberingRestart, PageBorderDisplay, VerticalAlignment};
 
@@ -465,8 +465,8 @@ pub struct ParaStyle {
     /// `w15:collapsed`: the heading opens collapsed.
     pub collapsed: bool,
     pub list_jc: ListJc,
-    /// The list the paragraph is in (numId, ilvl; direct or from its style), and that level's `w:numFmt`.
-    pub num: Option<(i64, i64)>,
+    /// The list the paragraph is in (direct or from its style), and that level's `w:numFmt`.
+    pub num: Option<ListRef>,
     pub list_fmt: Option<String>,
     pub list: Option<i64>,
     pub mark_size: Option<f64>,

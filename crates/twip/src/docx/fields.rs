@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 
 use super::model::{Block, DATE_BLOCKS, Document, FieldEdge, FieldId, FieldKind, FieldView, Inline, NoteKind, Paragraph, Run};
+use crate::document::paragraph::{ListId, ListRef};
 
 /// A field's markers in a paragraph's inlines: the indexes of its begin, separator (if it has one) and
 /// end.
@@ -1320,7 +1321,7 @@ impl NumberContext {
 impl ParaNumber {
     /// Paragraph `p`'s number, counting it in `counters` (read in document order), when it shows a list number.
     fn next(p: &Paragraph, counters: &mut super::numbering::Counters, r: &super::resolve::Resolver) -> Option<ParaNumber> {
-        let (num_id, ilvl) = p.style.num?;
+        let ListRef { list: ListId(num_id), level: ilvl } = p.style.num?;
         p.list.as_ref()?;
         counters.next(&r.numbering, &r.styles, num_id, ilvl)?;
         let values = counters.values(&r.numbering, &r.styles, num_id)?;

@@ -237,7 +237,7 @@ impl<'c> Tags<'c> {
             }
             match b {
                 Block::Para(p) if heading_level(doc, p).is_none() && p.list.is_some() => {
-                    let (num, level) = p.style.num.map_or((0, 0), |n| (n.0, n.1.max(0)));
+                    let (num, level) = p.style.num.map_or((0, 0), |n| (n.list.0, n.level.max(0)));
                     while lists.last().is_some_and(|l| l.level > level || (l.level == level && l.num != num)) {
                         close(&mut lists, out);
                     }

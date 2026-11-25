@@ -8,6 +8,7 @@ use super::super::revisions::resolve::Scope;
 use super::super::selection::{CellRef, CellShape, Selection};
 use super::{blank_body, fonts, para_id, texts};
 use crate::api::command::{CellShift, SplitCells, VerticalDirection};
+use crate::document::paragraph::{ListId, ListRef};
 use crate::docx::{Block, Table, VMerge};
 use crate::layout::Unit;
 
@@ -664,7 +665,7 @@ fn text_with_more_pieces_than_columns_goes_on_over_the_next_row() {
 #[test]
 fn a_numbered_paragraph_converts_to_one_numbered_cell() {
     let mut e = super::open("FX-LISTS.docx");
-    let num = |p: &crate::docx::Paragraph| p.style.num.is_some_and(|(n, _)| n != 0);
+    let num = |p: &crate::docx::Paragraph| p.style.num.is_some_and(|ListRef { list: ListId(n), level: _ }| n != 0);
     let at = e.document().sections[0].blocks.iter().position(|b| matches!(b, Block::Para(p) if num(p))).expect("a numbered paragraph");
     let Block::Para(p) = &e.document().sections[0].blocks[at] else { unreachable!() };
     let (id, len) = (crate::layout::ParaId(p.id), crate::editing::step::para_len(p));

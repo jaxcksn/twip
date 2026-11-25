@@ -9,6 +9,7 @@ use crate::api::event::Event;
 use crate::api::fonts::FontLibrary;
 use crate::api::input::{CompositionPhase, Key, Modifiers};
 use crate::api::session::Session;
+use crate::document::paragraph::{ListId, ListRef};
 
 fn text(s: &mut Session) -> String {
     s.with_editor(|e| {
@@ -130,7 +131,7 @@ fn html_from_another_application_pastes_formatted() {
         let bold = blocks.iter().any(|b| {
             matches!(b, crate::docx::Block::Para(p) if p.inlines.iter().any(|i| matches!(i, crate::docx::Inline::Text(t, r) if t == "bold" && r.bold)))
         });
-        let lists = blocks.iter().filter(|b| matches!(b, crate::docx::Block::Para(p) if p.style.num.is_some_and(|(n, _)| n != 0))).count();
+        let lists = blocks.iter().filter(|b| matches!(b, crate::docx::Block::Para(p) if p.style.num.is_some_and(|ListRef { list: ListId(n), level: _ }| n != 0))).count();
         let tables = blocks.iter().filter(|b| matches!(b, crate::docx::Block::Table(_))).count();
         (bold, lists, tables)
     });
@@ -174,7 +175,7 @@ fn a_pasted_heading_or_list_item_keeps_its_paragraph() {
                     _ => None,
                 })
                 .expect("the pasted paragraph");
-            (p.style.style_id.clone(), p.style.num.is_some_and(|(n, _)| n != 0))
+            (p.style.style_id.clone(), p.style.num.is_some_and(|ListRef { list: ListId(n), level: _ }| n != 0))
         });
         if text == "Title" {
             assert_eq!(style.as_deref(), Some("Heading1"), "{html}");

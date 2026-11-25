@@ -3,6 +3,7 @@
 use super::{blank_body, blank_with, fonts, para_id, texts};
 use crate::api::command::TableSize;
 use crate::api::review::Body;
+use crate::document::paragraph::{ListId, ListRef};
 use crate::docx::{Block, Inline};
 use crate::editing::Editor;
 use crate::editing::commands::Command;
@@ -548,7 +549,7 @@ fn a_list_pasted_in_another_document_brings_its_definition() {
     caret(&mut b, (0, 0));
     b.paste_fragment(&frag, fonts());
     // The first paragraph's text goes into the paragraph at the caret; the second is pasted whole.
-    let (n, _) = paras(&b)[1].style.num.expect("the pasted paragraph is in a list");
+    let ListRef { list: ListId(n), level: _ } = paras(&b)[1].style.num.expect("the pasted paragraph is in a list");
     assert!(b.document().resolver.as_ref().is_some_and(|r| r.numbering.nums.contains_key(&n)), "its list is defined here");
     let again = saved(&b);
     assert_eq!(super::super::text::UnitText::of(paras(&again)[1]).text, "Two");
@@ -561,7 +562,7 @@ fn table_lists(e: &Editor) -> Vec<i64> {
         .rows
         .iter()
         .flat_map(|r| r.cells.iter().flat_map(|c| c.blocks.iter()))
-        .filter_map(|b| if let Block::Para(p) = b { Some(p.style.num?.0) } else { None })
+        .filter_map(|b| if let Block::Para(p) = b { Some(p.style.num?.list.0) } else { None })
         .collect();
     out.sort_unstable();
     out.dedup();

@@ -12,6 +12,7 @@ use super::clipboard::{Fragment, Look};
 use super::commands::Outcome;
 use super::position::Position;
 use super::selection::{ObjectRef, Selection};
+use crate::document::paragraph::{ListId, ListRef};
 use crate::docx::run_xml;
 use crate::format::{CharEdit, CharProps, Prop};
 use crate::layout::{FloatId, Unit};
@@ -742,7 +743,7 @@ impl Editor {
             if let Some(dest_id) = &dest.style.style_id {
                 pp.set("pStyle", format!("<{w}pStyle {w}val=\"{}\"/>", crate::docx::write::props::esc(dest_id)));
             }
-            if let Some((num, lvl)) = p.style.num {
+            if let Some(ListRef { list: ListId(num), level: lvl }) = p.style.num {
                 pp.set("numPr", format!("<{w}numPr><{w}ilvl {w}val=\"{lvl}\"/><{w}numId {w}val=\"{num}\"/></{w}numPr>"));
             }
             let resolved = res.para_from_xml(pp.xml().as_deref(), None, &cx);
@@ -768,7 +769,9 @@ impl Editor {
         let w = cx.w.clone();
         for b in blocks {
             let Block::Para(p) = b else { continue };
-            let Some((_, lvl)) = p.style.num.filter(|&(n, _)| n != num) else { continue };
+            let Some(ListRef { list: ListId(_), level: lvl }) = p.style.num.filter(|&ListRef { list: ListId(n), level: _ }| n != num) else {
+                continue;
+            };
             let mut pp = Props::parse(p.style.direct.0.as_deref(), "pPr", &cx);
             pp.set("numPr", format!("<{w}numPr><{w}ilvl {w}val=\"{lvl}\"/><{w}numId {w}val=\"{num}\"/></{w}numPr>"));
             p.style = Rc::new(res.para_from_xml(pp.xml().as_deref(), None, &cx).style);

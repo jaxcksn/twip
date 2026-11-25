@@ -18,16 +18,17 @@ use super::index::DocIndex;
 use super::selection::Selection;
 use super::step::{Step, para_len};
 use super::{Editor, Tx};
+use crate::document::paragraph::{ListId, ListRef};
 use crate::docx::run_xml;
 use crate::format::CharProps;
 
 impl Editor {
-    pub(super) fn list_item_start(&self) -> Option<(ParaId, (i64, i64))> {
+    pub(super) fn list_item_start(&self) -> Option<(ParaId, ListRef)> {
         let Selection::Caret(c) = self.selection else { return None };
         let (para, off) = c.para_offset()?;
         let p = self.index.para(&self.doc, para)?;
         (off == Unit(0)).then_some(())?;
-        p.style.num.filter(|(id, _)| *id != 0).map(|n| (para, n))
+        p.style.num.filter(|ListRef { list: ListId(id), level: _ }| *id != 0).map(|n| (para, n))
     }
 
     pub(super) fn repara(&mut self, tx: &mut Tx, para: ParaId, edit: &dyn Fn(&mut Props, &str)) -> bool {
@@ -70,7 +71,7 @@ impl Editor {
         let twips = |pt: f64| (pt * 20.0).round() as i64;
         let left = p.style.ind_left;
         let mut tx = self.begin("Paragraph Formatting");
-        let ok = if p.style.num.is_some_and(|(id, _)| id != 0) {
+        let ok = if p.style.num.is_some_and(|ListRef { list: ListId(id), level: _ }| id != 0) {
             let l = twips(left);
             self.repara(&mut tx, para, &|p, w| {
                 p.set("numPr", format!("<{w}numPr><{w}ilvl {w}val=\"0\"/><{w}numId {w}val=\"0\"/></{w}numPr>"));
@@ -105,8 +106,9 @@ impl Editor {
         Some(self.commit(tx, None, fonts))
     }
 
-    pub(super) fn list_items(&self, paras: &[ParaId]) -> Vec<(ParaId, (i64, i64))> {
-        let num = |&para: &ParaId| Some((para, self.index.para(&self.doc, para)?.style.num.filter(|(id, _)| *id != 0)?));
+    pub(super) fn list_items(&self, paras: &[ParaId]) -> Vec<(ParaId, ListRef)> {
+        let num =
+            |&para: &ParaId| Some((para, self.index.para(&self.doc, para)?.style.num.filter(|ListRef { list: ListId(id), level: _ }| *id != 0)?));
         paras.iter().filter_map(num).collect()
     }
 
@@ -129,7 +131,7 @@ impl Editor {
         }
         let mut tx = self.begin("Numbering");
         let mut changed = false;
-        for (para, (num, ilvl)) in items {
+        for (para, ListRef { list: ListId(num), level: ilvl }) in items {
             let to = if back { ilvl - 1 } else { ilvl + 1 };
             if !(0..=8).contains(&to) {
                 continue;
@@ -155,7 +157,7 @@ impl Editor {
         let Some(&first) = paras.first() else { return Outcome::Unchanged("no paragraph") };
         let kind = |e: &Self, para: ParaId| -> Option<(bool, (i64, i64))> {
             let p = e.index.para(&e.doc, para)?;
-            let (id, ilvl) = p.style.num.filter(|(id, _)| *id != 0)?;
+            let ListRef { list: ListId(id), level: ilvl } = p.style.num.filter(|ListRef { list: ListId(id), level: _ }| *id != 0)?;
             let r = e.doc.resolver.as_ref()?;
             let level = r.numbering.level(id, ilvl, &r.styles)?;
             Some((level.fmt == "bullet", (id, ilvl)))
@@ -364,7 +366,7 @@ impl Editor {
 
 /// The list and level a paragraph's label counts in, when it shows one.
 pub(super) fn counted(res: &Resolver, p: &Paragraph, uncounted: bool, cx: &Cx) -> Option<(i64, i64)> {
-    let (id, ilvl) = p.style.num.filter(|(id, _)| *id != 0 && !uncounted)?;
+    let ListRef { list: ListId(id), level: ilvl } = p.style.num.filter(|ListRef { list: ListId(id), level: _ }| *id != 0 && !uncounted)?;
     let from_style = !direct_num(p.style.direct.0.as_deref(), cx);
     res.label_shows(id, ilvl, from_style, p.style.style_id.as_deref()).then_some((id, ilvl))
 }
@@ -459,7 +461,7 @@ pub(super) fn numbered_paras<'d>(doc: &'d Document, idx: &DocIndex) -> Vec<(&'d 
 pub(super) fn first_numbered(doc: &Document, idx: &DocIndex, num: i64) -> Option<ParaId> {
     numbered_stories(doc, idx).find_map(|(_, blocks)| {
         visit(blocks, &mut |p| match p.style.num {
-            Some((id, _)) if id == num => ControlFlow::Break(ParaId(p.id)),
+            Some(ListRef { list: ListId(id), level: _ }) if id == num => ControlFlow::Break(ParaId(p.id)),
             _ => ControlFlow::Continue(()),
         })
         .break_value()

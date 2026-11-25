@@ -15,6 +15,7 @@ use super::Editor;
 use super::commands::Outcome;
 use super::position::{Place, Position};
 use super::selection::Selection;
+use crate::document::paragraph::{ListId, ListRef};
 
 /// The numbers (or bullets) of one level of a list, selected by a click on one of them: character formatting goes to
 /// that level's number formatting, so every number of the level shows it.
@@ -80,14 +81,14 @@ impl Editor {
     pub fn list_label_selection(&self) -> Option<&ListLabelSelection> {
         let hold = self.list_label.as_ref().filter(|h| h.holds(&self.selection))?;
         let num = self.index.para(&self.doc, hold.label.para)?.style.num?;
-        (num == (hold.label.list, hold.label.level)).then_some(&hold.label)
+        (num == ListRef { list: ListId(hold.label.list), level: hold.label.level }).then_some(&hold.label)
     }
 
     /// Selects the numbers of `para`'s list at its level, as a click on its number does: the caret goes to the
     /// paragraph's start. False when it isn't numbered or bulleted.
     pub fn select_list_label(&mut self, para: ParaId) -> bool {
         let Some(p) = self.index.para(&self.doc, para) else { return false };
-        let Some((list, level)) = p.style.num.filter(|(n, _)| *n != 0) else { return false };
+        let Some(ListRef { list: ListId(list), level }) = p.style.num.filter(|ListRef { list: ListId(n), level: _ }| *n != 0) else { return false };
         if p.list.is_none() {
             return false;
         }
@@ -136,7 +137,10 @@ impl Editor {
                 let first = line.para().is_some_and(|p| !seen.contains(&p));
                 seen.extend(line.paras.iter().copied());
                 let (Some(para), Some((a, b)), true) = (line.para(), line.label, first) else { continue };
-                let numbered = self.index.para(&self.doc, para).is_some_and(|p| p.list.is_some() && p.style.num == Some((l.list, l.level)));
+                let numbered = self
+                    .index
+                    .para(&self.doc, para)
+                    .is_some_and(|p| p.list.is_some() && p.style.num == Some(ListRef { list: ListId(l.list), level: l.level }));
                 if numbered {
                     out.push((page, line.strip(a, b)));
                 }
@@ -177,7 +181,8 @@ impl Editor {
         }
         let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
         let Some(p) = self.index.para(&self.doc, para) else { return Outcome::unavailable("no such paragraph") };
-        let Some((list, level)) = p.style.num.filter(|(n, _)| *n != 0 && p.list.is_some()) else {
+        let Some(ListRef { list: ListId(list), level }) = p.style.num.filter(|ListRef { list: ListId(n), level: _ }| *n != 0 && p.list.is_some())
+        else {
             return Outcome::unavailable("the paragraph isn't numbered");
         };
         let story = self.index.para_slot(para).map_or(super::position::StoryId::Body, |s| self.index.story(s.container));

@@ -7,6 +7,7 @@ use super::super::position::{Position, StoryId};
 use super::super::selection::Selection;
 use super::{blank_body, fonts, texts, texts_ids};
 use crate::api::command::{CaseChange, Command as C, InsertField};
+use crate::document::paragraph::{ListId, ListRef};
 use crate::docx::Inline;
 use crate::layout::Unit;
 
@@ -190,7 +191,7 @@ fn increase_indent_changes_a_list_items_level_or_moves_the_whole_list() {
         Default::default(),
     );
     e.execute(C::SetList(Some(crate::api::command::ListKind::Bullet)), fonts());
-    let level = |e: &Editor, n: usize| para(e, n).style.num.map(|(_, l)| l);
+    let level = |e: &Editor, n: usize| para(e, n).style.num.map(|ListRef { list: ListId(_), level: l }| l);
     caret(&mut e, 1, 0);
     e.execute(C::IncreaseIndent, fonts());
     assert_eq!((level(&e, 0), level(&e, 1)), (Some(0), Some(1)), "a later item goes a level down");
@@ -215,7 +216,7 @@ fn increase_indent_on_list_items_and_plain_paragraphs_together() {
         Default::default(),
     );
     e.execute(C::SetList(Some(crate::api::command::ListKind::Bullet)), fonts());
-    let level = |e: &Editor, n: usize| para(e, n).style.num.map(|(_, l)| l);
+    let level = |e: &Editor, n: usize| para(e, n).style.num.map(|ListRef { list: ListId(_), level: l }| l);
     let item_left = para(&e, 1).style.ind_left;
     e.selection = Selection::range(
         Position::text(StoryId::Body, texts_ids(&e)[1], Unit(0)),
@@ -281,7 +282,7 @@ fn list_bullet_comes_with_its_bullet() {
     press(&mut e, "KeyL", CTRL_SHIFT);
     let p = para(&e, 0);
     assert_eq!(p.style.style_id.as_deref(), Some("ListBullet"));
-    assert!(p.style.num.is_some_and(|(id, _)| id != 0), "{:?}", p.style.num);
+    assert!(p.style.num.is_some_and(|ListRef { list: ListId(id), level: _ }| id != 0), "{:?}", p.style.num);
     assert_eq!(p.list.as_ref().map(|l| l.text.as_str()), Some("\u{F0B7}"));
     assert_eq!(p.style.ind_left, 18.0);
     e.execute(C::Undo(Default::default()), fonts());
@@ -1182,16 +1183,16 @@ fn a_style_separator_in_a_lists_empty_last_item_splits_it() {
     caret(&mut e, 0, 3);
     e.execute(C::SetList(Some(crate::api::command::ListKind::Numbered)), fonts());
     e.execute(C::InsertParagraph, fonts());
-    assert!(para(&e, 1).style.num.is_some_and(|(id, _)| id != 0), "setup: an empty last item");
+    assert!(para(&e, 1).style.num.is_some_and(|ListRef { list: ListId(id), level: _ }| id != 0), "setup: an empty last item");
     assert!(matches!(e.insert_style_separator(fonts()), crate::editing::commands::Outcome::Changed(_)));
     assert_eq!(texts(&e), ["one", "", ""], "the empty item splits at the caret");
     let ids = texts_ids(&e);
     assert!(e.hidden_marks(ids[0]).is_empty(), "the item before keeps its mark");
     assert_eq!(e.hidden_marks(ids[1]), [(Unit(0), true)], "the first part's mark is the separator");
-    assert!(para(&e, 1).style.num.is_some_and(|(id, _)| id != 0), "the item stays in its list");
+    assert!(para(&e, 1).style.num.is_some_and(|ListRef { list: ListId(id), level: _ }| id != 0), "the item stays in its list");
     e.execute(C::Undo(Default::default()), fonts());
     assert_eq!(texts(&e), ["one", ""], "one undo step");
-    assert!(!para(&e, 1).mark.hidden && para(&e, 1).style.num.is_some_and(|(id, _)| id != 0));
+    assert!(!para(&e, 1).mark.hidden && para(&e, 1).style.num.is_some_and(|ListRef { list: ListId(id), level: _ }| id != 0));
 }
 
 #[test]
@@ -1229,7 +1230,10 @@ fn tab_on_a_lists_first_item_moves_the_list() {
         Default::default(),
     );
     e.execute(C::SetList(Some(crate::api::command::ListKind::Numbered)), fonts());
-    let (left, level) = (|e: &Editor, n: usize| para(e, n).style.ind_left, |e: &Editor, n: usize| para(e, n).style.num.map(|(_, l)| l));
+    let (left, level) = (
+        |e: &Editor, n: usize| para(e, n).style.ind_left,
+        |e: &Editor, n: usize| para(e, n).style.num.map(|ListRef { list: ListId(_), level: l }| l),
+    );
     let a = left(&e, 1);
     caret(&mut e, 1, 0);
     press(&mut e, "Tab", Mods::default());

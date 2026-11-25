@@ -16,6 +16,7 @@ use super::commands::Outcome;
 use super::index::Container;
 use super::step::{Step, TableProps};
 use super::{Editor, Tx};
+use crate::document::paragraph::{ListId, ListRef};
 use crate::docx::char_props::RunDirect;
 use crate::docx::run_xml;
 use crate::format::{CharEdit, CharProps, Prop, ScriptClass};
@@ -995,7 +996,7 @@ impl Editor {
         self.format_paras(
             "Indent",
             &|p, cx, q| {
-                if q.style.num.is_none_or(|(id, _)| id == 0) {
+                if q.style.num.is_none_or(|ListRef { list: ListId(id), level: _ }| id == 0) {
                     p.attrs("ind", &[("left", Some(twips(grid_step(q.style.ind_left, tab, more)))), ("start", None)], cx);
                 }
             },
@@ -1012,7 +1013,7 @@ impl Editor {
         }
         let paras = self.selected_paras();
         let items = self.list_items(&paras);
-        let &(first, (num, ilvl)) = items.first()?;
+        let &(first, ListRef { list: ListId(num), level: ilvl }) = items.first()?;
         let whole = ilvl == 0 && self.first_in_list(first, num);
         let list = move |e: &mut Self| if whole { e.shift_list(num, more, fonts) } else { e.list_level(!more, fonts) };
         if items.len() == paras.len() {

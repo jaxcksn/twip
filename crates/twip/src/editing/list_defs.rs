@@ -17,6 +17,7 @@ use crate::layout::ParaId;
 use super::Editor;
 use super::commands::Outcome;
 use super::step::Step;
+use crate::document::paragraph::{ListId, ListRef};
 
 /// CT_Lvl's children in schema order.
 const LVL: &[&str] = &["start", "numFmt", "lvlRestart", "pStyle", "isLgl", "suff", "lvlText", "lvlPicBulletId", "legacy", "lvlJc", "pPr", "rPr"];
@@ -447,7 +448,8 @@ impl Editor {
     /// The selection's list: its first list paragraph, `numId` and level.
     pub(crate) fn selection_list(&mut self) -> Option<(ParaId, i64, i64)> {
         self.selected_paras().into_iter().find_map(|para| {
-            let (num, ilvl) = self.index.para(&self.doc, para)?.style.num.filter(|(id, _)| *id != 0)?;
+            let ListRef { list: ListId(num), level: ilvl } =
+                self.index.para(&self.doc, para)?.style.num.filter(|ListRef { list: ListId(id), level: _ }| *id != 0)?;
             Some((para, num, ilvl))
         })
     }
@@ -483,7 +485,8 @@ impl Editor {
     /// its levels, without a dialog. `None` outside a list.
     pub fn list_definition(&self) -> Option<ListDefinition> {
         let para = self.selection.focus().and_then(|p| p.para_offset()).map(|(p, _)| p)?;
-        let (num, ilvl) = self.index.para(&self.doc, para)?.style.num.filter(|(n, _)| *n != 0)?;
+        let ListRef { list: ListId(num), level: ilvl } =
+            self.index.para(&self.doc, para)?.style.num.filter(|ListRef { list: ListId(n), level: _ }| *n != 0)?;
         self.list_definition_of(num, ilvl)
     }
 
@@ -509,7 +512,7 @@ impl Editor {
         super::lists::numbered_paras(&self.doc, &self.index)
             .into_iter()
             .filter_map(|(p, _)| {
-                let (num, ilvl) = p.style.num.filter(|(id, _)| *id != 0)?;
+                let ListRef { list: ListId(num), level: ilvl } = p.style.num.filter(|ListRef { list: ListId(id), level: _ }| *id != 0)?;
                 let para = ParaId(p.id);
                 self.index.para_slot(para).is_some().then_some((para, num, ilvl))
             })
@@ -552,7 +555,11 @@ impl Editor {
             return Outcome::Unchanged("the list didn't change");
         }
         for &(para, num) in assign {
-            let ilvl = if fresh { 0 } else { self.index.para(&self.doc, para).and_then(|p| p.style.num).map_or(0, |(_, l)| l.max(0)) };
+            let ilvl = if fresh {
+                0
+            } else {
+                self.index.para(&self.doc, para).and_then(|p| p.style.num).map_or(0, |ListRef { list: ListId(_), level: l }| l.max(0))
+            };
             let ok = self.repara(&mut tx, para, &|p, w| {
                 p.set("numPr", format!("<{w}numPr><{w}ilvl {w}val=\"{ilvl}\"/><{w}numId {w}val=\"{num}\"/></{w}numPr>"));
                 if list_style && p.get("pStyle").is_none() {
@@ -719,7 +726,9 @@ impl Editor {
             ListApplyTo::ThisPointForward => self.list_from(first, num).into_iter().map(|p| (p, new_num)).collect(),
             _ => paras
                 .iter()
-                .filter(|&&p| self.index.para(&self.doc, p).is_some_and(|q| q.style.num.is_some_and(|(n, _)| n == num)))
+                .filter(|&&p| {
+                    self.index.para(&self.doc, p).is_some_and(|q| q.style.num.is_some_and(|ListRef { list: ListId(n), level: _ }| n == num))
+                })
                 .map(|&p| (p, new_num))
                 .collect(),
         };

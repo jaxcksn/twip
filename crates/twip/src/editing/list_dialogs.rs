@@ -8,6 +8,7 @@ use crate::api::services::{
 use crate::services::lists;
 
 use super::Editor;
+use crate::document::paragraph::{ListId, ListRef};
 
 impl Editor {
     /// The selection's list: its `numId`, the level, the nine levels, its name, and the paragraph's number.
@@ -44,7 +45,7 @@ impl Editor {
     pub fn list_dialog_values(&mut self, kind: DialogKind, style: Option<&str>) -> Option<DialogValues> {
         if kind == DialogKind::BulletsNumbering {
             let (para, _, _) = self.style_formatting(style?)?;
-            let num = para.style.num.filter(|(n, _)| *n != 0).map(|(n, _)| n);
+            let num = para.style.num.filter(|ListRef { list: ListId(n), level: _ }| *n != 0).map(|ListRef { list: ListId(n), level: _ }| n);
             let gallery = num.and_then(|n| self.list_levels(n)).map_or(ListGalleryKind::Bullet, |l| super::list_gallery::gallery_of(&l, false));
             return Some(DialogValues::BulletsNumbering(BulletsNumberingDialog {
                 gallery,

@@ -6,6 +6,7 @@ use crate::api::command::{Border, BorderEdges, BorderStyle, CellBorders, Command
 use crate::api::services::{StyleVisibility, TableStylePart};
 use crate::api::state::Tri;
 use crate::api::value::{Alignment, AutoOr, Color, HorizontalAlignment, Points, StyleId};
+use crate::document::paragraph::{ListId, ListRef};
 use crate::docx::Block;
 use crate::editing::Editor;
 use crate::editing::commands::Outcome;
@@ -192,7 +193,7 @@ fn a_paragraph_style_numbers_with_a_list() {
     let mut e = plain();
     caret_in(&mut e, 0);
     e.execute(Command::SetList(Some(ListKind::Numbered)), fonts());
-    let (list, _) = paras(&e)[0].style.num.expect("a list");
+    let ListRef { list: ListId(list), level: _ } = paras(&e)[0].style.num.expect("a list");
     let o = e.modify_style(&id("Body"), StyleChange { list: Some(Some(StyleList { list, level: 1 })), ..Default::default() }, fonts());
     assert!(!refused(&o), "{o:?}");
     assert!(paras(&e)[1].list.is_some(), "Body's paragraph is numbered");
@@ -217,7 +218,7 @@ fn a_new_base_reformats_the_styles_numbers() {
     let mut e = plain();
     caret_in(&mut e, 0);
     e.execute(Command::SetList(Some(ListKind::Numbered)), fonts());
-    let (list, _) = paras(&e)[0].style.num.expect("a list");
+    let ListRef { list: ListId(list), level: _ } = paras(&e)[0].style.num.expect("a list");
     let own = StyleChange { list: Some(Some(StyleList { list, level: 0 })), ..Default::default() };
     assert!(!refused(&e.modify_style(&id("Body"), own, fonts())));
     let label = |e: &Editor| paras(e)[1].list.as_ref().map(|l| (l.text.clone(), l.run.bold)).expect("a number");

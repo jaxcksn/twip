@@ -15,6 +15,7 @@ use crate::layout::story::{StoryEnv, hf_limit, stack_limited};
 use crate::layout::text::FieldValues;
 
 use super::{PassCx, hook_height, used};
+use crate::document::paragraph::{ListId, ListRef};
 
 // Header and footer composition
 pub(crate) fn hf_fields(run: &PassRun, cx: &PassCx, i: usize) -> FieldValues {
@@ -120,7 +121,7 @@ impl Found {
 /// A heading's level and chapter number: a "heading N" paragraph numbered through its style, its label without the
 /// level text's literal text before the first and after the last number.
 fn chapter_of(r: &crate::docx::resolve::Resolver, p: &Paragraph) -> Option<(i64, String)> {
-    let (label, (num, ilvl), id) = (p.list.as_ref()?, p.style.num?, p.style.style_id.as_deref()?);
+    let (label, ListRef { list: ListId(num), level: ilvl }, id) = (p.list.as_ref()?, p.style.num?, p.style.style_id.as_deref()?);
     let level = r.styles.by_id.get(id)?.name.to_lowercase().strip_prefix("heading ")?.parse().ok()?;
     if r.styles.chain_ppr(Some(id)).num_id != Some(num) {
         return None;

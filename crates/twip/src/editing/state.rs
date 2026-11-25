@@ -24,6 +24,7 @@ use super::Editor;
 use super::keymap::{Bound, KeyContext, Mods, Toggle};
 use super::position::StoryId;
 use super::selection::{ObjectRef, Selection};
+use crate::document::paragraph::{ListId, ListRef};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ObjectKind {
@@ -248,7 +249,7 @@ pub fn paragraph(paras: &[(&ParaStyle, Option<bool>)]) -> ParagraphFormatting {
             Some(false) => ListState::Numbered,
             None => ListState::None,
         })),
-        list_level: fold(paras.iter().filter(|(_, l)| l.is_some()).filter_map(|(p, _)| p.num.map(|(_, l)| l as u32))),
+        list_level: fold(paras.iter().filter(|(_, l)| l.is_some()).filter_map(|(p, _)| p.num.map(|ListRef { list: ListId(_), level: l }| l as u32))),
         flow: FlowState {
             keep_with_next: tri(&|p| p.keep_next),
             keep_lines_together: tri(&|p| p.keep_lines),
@@ -514,7 +515,10 @@ impl Editor {
         let in_list = f.is_some_and(|f| f.list.is_some());
         let styled = self.style_target.is_some();
         let paras = if styled { Vec::new() } else { self.selected_paras() };
-        let listed = styled || paras.iter().any(|&p| self.index.para(&self.doc, p).is_some_and(|p| p.style.num.is_some_and(|(id, _)| id != 0)));
+        let listed = styled
+            || paras
+                .iter()
+                .any(|&p| self.index.para(&self.doc, p).is_some_and(|p| p.style.num.is_some_and(|ListRef { list: ListId(id), level: _ }| id != 0)));
         let framed = styled || self.frame_here().is_some();
         let tab_stops = self.tab_stops_in(&paras);
         let notes = self.takes_notes();

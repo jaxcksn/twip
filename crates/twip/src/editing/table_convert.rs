@@ -11,6 +11,7 @@ use super::position::Position;
 use super::selection::Selection;
 use super::step::Step;
 use super::tables::{MAX_COLUMNS, MAX_ROWS, blank_para, tidy_merges};
+use crate::document::paragraph::{ListId, ListRef};
 
 /// Where text splits into cells, or what joins cells into text.
 #[derive(Clone, Copy, PartialEq)]
@@ -214,7 +215,7 @@ impl Editor {
     /// `p`'s formatting without its numbering, re-resolved: the cells after a numbered paragraph's first.
     fn unnumbered(&self, p: &Paragraph) -> Option<std::rc::Rc<ParaStyle>> {
         use crate::docx::write::props::Props;
-        p.style.num.filter(|&(id, _)| id != 0)?;
+        p.style.num.filter(|&ListRef { list: ListId(id), level: _ }| id != 0)?;
         let res = self.doc.resolver.clone()?;
         let cx = self.cx();
         let w = &cx.w;

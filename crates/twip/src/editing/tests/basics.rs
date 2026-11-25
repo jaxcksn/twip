@@ -4,6 +4,7 @@ use super::super::commands::{Command, Dir, MoveBy};
 use super::super::position::{Place, StoryId};
 use super::super::selection::Selection;
 use super::{blank_with, fonts, open, texts};
+use crate::document::paragraph::{ListId, ListRef};
 use crate::layout::Unit;
 
 fn type_text(e: &mut super::super::Editor, s: &str) {
@@ -2296,7 +2297,7 @@ fn tab_changes_the_level_of_list_items() {
     use crate::editing::keymap::Mods;
     let mut e = open("FX-LISTS.docx");
     let level = |e: &super::super::Editor, i: usize| match &e.document().sections[0].blocks[i] {
-        crate::docx::Block::Para(p) => p.style.num.map(|(_, l)| l),
+        crate::docx::Block::Para(p) => p.style.num.map(|ListRef { list: ListId(_), level: l }| l),
         _ => None,
     };
     let at = |e: &super::super::Editor, i: usize| Position::text(StoryId::Body, super::super::tests::para_id(e, i), Unit(0));
@@ -2339,7 +2340,9 @@ fn tab_in_a_cells_list_item_changes_its_level() {
     let found = (0..e.document().sections.len()).find_map(|si| {
         e.document().sections[si].blocks.iter().find_map(|b| match b {
             crate::docx::Block::Table(t) => t.rows.iter().flat_map(|r| r.cells.iter()).flat_map(|c| c.blocks.iter()).find_map(|b| match b {
-                crate::docx::Block::Para(p) if p.style.num.is_some_and(|(_, l)| l == 1) => Some(crate::layout::ParaId(p.id)),
+                crate::docx::Block::Para(p) if p.style.num.is_some_and(|ListRef { list: ListId(_), level: l }| l == 1) => {
+                    Some(crate::layout::ParaId(p.id))
+                }
                 _ => None,
             }),
             _ => None,
@@ -2350,7 +2353,7 @@ fn tab_in_a_cells_list_item_changes_its_level() {
     let tab = e.key_command("Tab", Mods::default()).unwrap();
     assert!(matches!(tab, Command::IncreaseIndent), "the list's Tab, not the next cell: {tab:?}");
     e.execute(tab, fonts());
-    assert_eq!(e.index().para(e.document(), para).and_then(|p| p.style.num).map(|(_, l)| l), Some(2));
+    assert_eq!(e.index().para(e.document(), para).and_then(|p| p.style.num).map(|ListRef { list: ListId(_), level: l }| l), Some(2));
 }
 
 #[test]
