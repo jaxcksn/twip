@@ -11,6 +11,21 @@ pub enum VertAlign {
     Subscript,
 }
 
+/// An emphasis mark over or under each character.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Emphasis {
+    /// No mark, set over an inherited one.
+    None,
+    /// A dot above.
+    Dot,
+    /// A comma above.
+    Comma,
+    /// A circle above.
+    Circle,
+    /// A dot below.
+    UnderDot,
+}
+
 /// A paragraph's alignment.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Jc {

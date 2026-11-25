@@ -99,8 +99,8 @@ pub(super) fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &P
                 let r = if sp.rules.no_raise_lower { 0.0 } else { st.run.position };
                 let (a0, d0) = ((pa - r).max(0.0), (pd + r).max(0.0));
                 if p.kind == Kind::Text {
-                    match st.run.em.as_deref() {
-                        Some("underDot") => em_below = true,
+                    match st.run.em {
+                        Some(crate::docx::props::Emphasis::UnderDot) => em_below = true,
                         Some(_) => em_above = true,
                         None => {}
                     }

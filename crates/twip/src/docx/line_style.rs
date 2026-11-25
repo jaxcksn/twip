@@ -1,5 +1,6 @@
-//! Line style values: `ST_Underline` and `ST_Border`
+//! Line style and mark values: `ST_Underline`, `ST_Border` and `ST_Em`
 
+use crate::document::format::Emphasis;
 use crate::document::line::{ArtBorder, BorderStyle, Underline};
 
 /// The underline a `w:u/@w:val` names: single for a value the format doesn't define.
@@ -261,6 +262,28 @@ pub fn border_style(v: &str) -> BorderStyle {
     }
 }
 
+/// The emphasis mark a `w:em/@w:val` names: a dot, as layout places one, for a value the format doesn't define.
+pub fn emphasis(v: &str) -> Emphasis {
+    match v {
+        "none" => Emphasis::None,
+        "comma" => Emphasis::Comma,
+        "circle" => Emphasis::Circle,
+        "underDot" => Emphasis::UnderDot,
+        _ => Emphasis::Dot,
+    }
+}
+
+/// The `w:em/@w:val` of `e`.
+pub fn emphasis_val(e: Emphasis) -> &'static str {
+    match e {
+        Emphasis::None => "none",
+        Emphasis::Dot => "dot",
+        Emphasis::Comma => "comma",
+        Emphasis::Circle => "circle",
+        Emphasis::UnderDot => "underDot",
+    }
+}
+
 /// The `w:val` of border line `s`.
 pub fn border_val(s: BorderStyle) -> &'static str {
     use BorderStyle::*;
@@ -321,6 +344,14 @@ mod tests {
         "wavyDouble",
         "none",
     ];
+
+    #[test]
+    fn every_emphasis_mark_round_trips_and_an_unknown_one_is_a_dot() {
+        for v in ["none", "dot", "comma", "circle", "underDot"] {
+            assert_eq!(emphasis_val(emphasis(v)), v);
+        }
+        assert_eq!(emphasis("sparkle"), Emphasis::Dot);
+    }
 
     #[test]
     fn every_underline_round_trips() {

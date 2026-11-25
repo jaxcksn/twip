@@ -2,7 +2,7 @@
 
 use roxmltree::Node;
 
-pub use crate::document::format::{Jc, Leader, LineRule, TabKind, VertAlign, Width};
+pub use crate::document::format::{Emphasis, Jc, Leader, LineRule, TabKind, VertAlign, Width};
 pub use crate::document::line::{ArtBorder, BorderStyle};
 
 use super::xml::*;
@@ -95,8 +95,8 @@ pub struct RunProps {
     pub num_spacing: Option<u32>,
     /// `w14:stylisticSets`: bit n − 1 for set n.
     pub style_sets: Option<u32>,
-    /// `w:em`: the emphasis mark ("dot", "comma", "circle", "underDot"; "none").
-    pub em: Option<String>,
+    /// `w:em`: the emphasis mark.
+    pub em: Option<Emphasis>,
     pub lang: Option<String>,
     /// `w:lang w:eastAsia`.
     pub lang_east_asia: Option<String>,
@@ -215,7 +215,7 @@ impl RunProps {
                     p.shd = Some(Shd::parse(e, tc));
                 }
                 "bdr" => p.border = Some(Border::parse(e, tc)),
-                "em" => p.em = Some(val(e).unwrap_or("none").to_string()),
+                "em" => p.em = Some(val(e).map_or(Emphasis::None, super::line_style::emphasis)),
                 "vertAlign" => {
                     p.vert_align = Some(match val(e) {
                         Some("superscript") => VertAlign::Superscript,

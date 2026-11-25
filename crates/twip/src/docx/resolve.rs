@@ -187,7 +187,7 @@ impl Resolver {
                 _ => None,
             },
             highlight: p.highlight.flatten(),
-            em: p.em.clone().filter(|e| e != "none"),
+            em: p.em.filter(|e| *e != Emphasis::None),
             toc: false,
             shading: p.shading.flatten(),
             shd: p.shd.clone().filter(|s| s.pattern != "nil"),
