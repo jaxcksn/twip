@@ -51,6 +51,15 @@ pub fn resolve(res: &Resolver, base: &CharProps, direct: RunDirect, toc: bool) -
     s
 }
 
+/// A list number's run: its level's formatting `level` over `under`, what its paragraph mark's levels fold to.
+pub fn label(res: &Resolver, under: &CharProps, level: Option<&CharProps>) -> Run {
+    let mut p = under.clone();
+    if let Some(l) = level {
+        p.merge(l);
+    }
+    Rc::new(resolve::run_style(&env(res), &p))
+}
+
 /// A run's `w:rPr` to edit as XML in the part `cx` describes: as read, else written from its typed properties.
 pub fn rpr<'r>(res: &Resolver, run: &'r RunStyle, cx: &Cx) -> Option<Cow<'r, str>> {
     run.direct.xml(&res.styles.colours, cx)

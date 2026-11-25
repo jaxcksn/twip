@@ -4,8 +4,9 @@ use std::collections::HashSet;
 use std::ops::ControlFlow;
 use std::rc::Rc;
 
+use crate::docx::char_props::from_run_props;
 use crate::docx::numbering::Counters;
-use crate::docx::props::{ParaProps, RunProps};
+use crate::docx::props::ParaProps;
 use crate::docx::resolve::Resolver;
 use crate::docx::write::props::{Cx, Props};
 use crate::docx::{Block, Document, Inline, ListLabel, Paragraph};
@@ -18,6 +19,7 @@ use super::selection::Selection;
 use super::step::{Step, para_len};
 use super::{Editor, Tx};
 use crate::docx::run_xml;
+use crate::format::CharProps;
 
 impl Editor {
     pub(super) fn list_item_start(&self) -> Option<(ParaId, (i64, i64))> {
@@ -311,12 +313,10 @@ impl Editor {
 
     /// What paragraph `p`'s list number is formatted over, its level's own formatting aside: the paragraph's style
     /// chain and its mark's formatting.
-    pub(super) fn label_base(&self, para: ParaId, p: &Paragraph, res: &Resolver, cx: &Cx) -> RunProps {
+    pub(super) fn label_base(&self, para: ParaId, p: &Paragraph, res: &Resolver, cx: &Cx) -> CharProps {
         let region = self.region_of_para(para, res);
         let base = res.para_from_xml(p.style.direct.0.as_deref(), region.as_ref(), cx).base;
-        let mark =
-            run_xml::rpr(res, &p.mark, cx).and_then(|x| cx.parse(&x, |_, el| RunProps::parse(Some(el), &res.styles.colours))).unwrap_or_default();
-        res.run_props(&base, &mark)
+        run_xml::folded(res, &run_xml::base(&base), p.mark.direct.props().map(|m| &**m), false)
     }
 
     /// The labels that change: those whose text changed, or, for the paragraphs `full` names, any part of them.
@@ -338,12 +338,11 @@ impl Editor {
                 (None, Some(_)) => None,
                 (Some((id, ilvl, text)), _) => {
                     let Some(level) = res.numbering.level(*id, *ilvl, &res.styles).cloned() else { continue };
-                    let mut lp = self.label_base(para, p, &res, &cx);
-                    lp.merge(&level.rpr);
+                    let under = self.label_base(para, p, &res, &cx);
                     let picture = res.numbering.bullet_image(&level);
                     let label = ListLabel {
                         text: text.clone(),
-                        run: res.run_style(&lp),
+                        run: run_xml::label(&res, &under, Some(&from_run_props(&level.rpr))),
                         jc: crate::docx::paragraph::list_jc(&level.jc),
                         suff: crate::docx::paragraph::list_suffix(&level.suff),
                         picture,

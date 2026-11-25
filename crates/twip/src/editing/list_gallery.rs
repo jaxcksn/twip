@@ -229,12 +229,11 @@ impl Editor {
             let para = next.para_from_xml(Some(&ppr), None, &scx);
             let text = counters.next(&next.numbering, &next.styles, num_id, ilvl)?;
             let level = next.numbering.level(num_id, ilvl, &next.styles)?.clone();
-            let mut lp = next.run_props(&para.base, &Default::default());
-            lp.merge(&level.rpr);
+            let under = run_xml::folded(&next, &run_xml::base(&para.base), None, false);
             let picture = next.numbering.bullet_image(&level);
             let label = ListLabel {
                 text,
-                run: next.run_style(&lp),
+                run: run_xml::label(&next, &under, Some(&crate::docx::char_props::from_run_props(&level.rpr))),
                 jc: crate::docx::paragraph::list_jc(&level.jc),
                 suff: crate::docx::paragraph::list_suffix(&level.suff),
                 picture,

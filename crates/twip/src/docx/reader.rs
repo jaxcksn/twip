@@ -317,15 +317,14 @@ pub(crate) fn line_number_run(res: &Resolver) -> super::model::Run {
     Rc::new(crate::format::resolve::run_style(&run_xml::env(res), &p))
 }
 
-/// A paragraph's run base: the XML path's properties, and typed.
+/// A paragraph's run base, typed.
 struct Base {
-    xml: RunProps,
     typed: CharProps,
 }
 
 impl Base {
     fn new(xml: RunProps) -> Base {
-        Base { typed: run_xml::base(&xml), xml }
+        Base { typed: run_xml::base(&xml) }
     }
 }
 
@@ -2135,6 +2134,7 @@ impl Reader {
 
         let mark_rpr_node = ppr_node.and_then(|p| child(p, "rPr"));
         let direct = self.direct(mark_rpr_node);
+        let mark_own = direct.props().cloned();
         let mut mark = self.typed_run(&base, direct, false);
         let mark_rev = self.mark_revisions(&base, mark_rpr_node);
         if !mark_rev.is_empty() {
@@ -2146,12 +2146,11 @@ impl Reader {
             (Some(l), Some(id)) => {
                 if !self.uncounted && self.res.label_shows(id, ilvl, from_style, style_id.as_deref()) {
                     self.counters.next(&self.res.numbering, &self.res.styles, id, ilvl).map(|text| {
-                        let mut lp = self.run_props(&base.xml, mark_rpr_node);
-                        lp.merge(&l.rpr);
+                        let under = run_xml::folded(&self.res, &base.typed, mark_own.as_deref(), false);
                         let picture = self.res.numbering.bullet_image(l);
                         ListLabel {
                             text,
-                            run: self.res.run_style(&lp),
+                            run: run_xml::label(&self.res, &under, Some(&char_props::from_run_props(&l.rpr))),
                             jc: super::paragraph::list_jc(&l.jc),
                             suff: super::paragraph::list_suffix(&l.suff),
                             picture,
@@ -2239,10 +2238,6 @@ impl Reader {
     }
 
     /// A run's properties over a base: its character style chain (a toggle level), then direct formatting.
-    fn run_props(&self, base: &RunProps, rpr: Option<Node>) -> RunProps {
-        self.res.run_props(base, &RunProps::parse(rpr, &self.res.styles.colours))
-    }
-
     fn read_inlines(&mut self, container: Node, base: &Base, pkg: &mut Package, out: &mut Vec<Inline>) {
         for e in container.children().filter(|c| c.is_element()) {
             if e.tag_name().namespace() == Some(W) {

@@ -1,11 +1,12 @@
 //! List number selection
 
 use crate::api::command::Command;
-use crate::docx::props::RunProps;
+use crate::docx::char_props::RunDirect;
 use crate::docx::resolve::Resolver;
 use crate::docx::write::props::{Cx, Props, RPR};
 use crate::docx::{Run, RunStyle};
 use crate::font::Fonts;
+use crate::format::CharProps;
 use crate::layout::{ParaId, Unit};
 
 use super::Editor;
@@ -250,16 +251,13 @@ pub(super) struct LabelTarget {
     /// The level's `w:rPr`, as the commands so far leave it.
     rpr: Option<String>,
     /// What the number is formatted over where it was clicked ([`Editor::label_base`]).
-    base: RunProps,
+    base: CharProps,
 }
 
 impl LabelTarget {
     /// The number as it draws with `rpr` as its level's formatting.
     fn run(&self, res: &Resolver, rpr: Option<&str>) -> Run {
-        let own = rpr.and_then(|x| self.cx.parse(x, |_, el| RunProps::parse(Some(el), &res.styles.colours))).unwrap_or_default();
-        let mut lp = self.base.clone();
-        lp.merge(&own);
-        res.run_style(&lp)
+        crate::docx::run_xml::label(res, &self.base, RunDirect::from_xml(rpr, &self.cx).props().map(|p| &**p))
     }
 }
 
