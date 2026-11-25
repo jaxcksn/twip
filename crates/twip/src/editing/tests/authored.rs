@@ -325,9 +325,7 @@ fn explicit_bold_on_a_run_holds_when_its_style_loses_bold() {
     inherited_then_explicit_then_base_change(Target::Run);
 }
 
-// The command compares effective values to decide nothing changed, so the explicit value is dropped.
 #[test]
-#[should_panic(expected = "the explicit value is in the authored state of the Mark")]
 fn explicit_bold_on_a_paragraph_mark_holds_when_its_style_loses_bold() {
     inherited_then_explicit_then_base_change(Target::Mark);
 }
@@ -444,7 +442,6 @@ fn a_run_edit_reads_the_documents_format_not_the_cached_one() {
 }
 
 #[test]
-#[should_panic(expected = "the explicit value is in the authored state of the Mark")]
 fn a_mark_edit_reads_the_documents_format_not_the_cached_one() {
     stale_formats_in_the_cache(Target::Mark);
 }

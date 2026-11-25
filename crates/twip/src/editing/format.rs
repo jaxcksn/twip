@@ -638,7 +638,7 @@ impl Editor {
             let Some(again) = self.para_again(para, None, &res, &cx) else { continue };
             let Some(p) = self.index.para(&self.doc, para) else { continue };
             let mark = patch_as(&p.mark, again.mark_base(), true);
-            if mark.layout_eq(&p.mark) {
+            if mark.same_run(&p.mark) {
                 continue;
             }
             let (style, list) = (p.style.clone(), p.list.clone());
