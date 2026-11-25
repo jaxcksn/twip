@@ -5,15 +5,18 @@ use std::rc::Rc;
 use crate::docx::{Block, Document};
 use crate::layout::hyphenate::{Hyphenation, Patterns};
 
-use super::{page_chars, plain_doc};
+use super::{page_chars_with, plain_doc};
+
+/// A document and the hyphenation patterns the host gives it.
+type Hyphenated = (Document, Option<Hyphenation>);
 
 const LIANG: &str = "UTF-8\nLEFTHYPHENMIN 2\nRIGHTHYPHENMIN 3\nhy3ph\nhe2n\nhena4\nhen5at\n1na\nn2at\n1tio\n2io\no2n";
 
-fn doc_at(text: &str, compat: i64, indent: f64, set: impl Fn(&mut Document)) -> Option<Document> {
+fn doc_at(text: &str, compat: i64, indent: f64, set: impl Fn(&mut Hyphenated)) -> Option<Hyphenated> {
     let mut d = plain_doc(&[text.to_string()])?;
     d.settings.compat_mode = compat;
     d.settings.auto_hyphenation = true;
-    d.hyphenation = Some(Hyphenation::default().with("en-US", Patterns::parse(LIANG)));
+    let h = Some(Hyphenation::default().with("en-US", Patterns::parse(LIANG)));
     if let Some(Block::Para(p)) = d.sections[0].blocks.first_mut() {
         Rc::make_mut(&mut p.style).ind_right = indent;
         for i in &mut p.inlines {
@@ -22,12 +25,13 @@ fn doc_at(text: &str, compat: i64, indent: f64, set: impl Fn(&mut Document)) -> 
             }
         }
     }
-    set(&mut d);
-    Some(d)
+    let mut out = (d, h);
+    set(&mut out);
+    Some(out)
 }
 
-fn line_ends(d: &Document) -> Vec<char> {
-    let chars = &page_chars(d)[0];
+fn line_ends((d, h): &Hyphenated) -> Vec<char> {
+    let chars = &page_chars_with(d, h.as_ref())[0];
     let mut ends: Vec<(f64, char)> = Vec::new();
     for &(c, _, y) in chars.iter().filter(|c| c.0 != ' ') {
         match ends.last_mut() {
@@ -38,15 +42,15 @@ fn line_ends(d: &Document) -> Vec<char> {
     ends.into_iter().map(|e| e.1).collect()
 }
 
-fn hyphens(d: &Document) -> usize {
+fn hyphens(d: &Hyphenated) -> usize {
     line_ends(d).iter().filter(|&&c| c == '-').count()
 }
 
-fn swept(text: &str, compat: i64, set: impl Fn(&mut Document) + Copy) -> usize {
+fn swept(text: &str, compat: i64, set: impl Fn(&mut Hyphenated) + Copy) -> usize {
     swept_to(10, text, compat, set)
 }
 
-fn swept_to(n: usize, text: &str, compat: i64, set: impl Fn(&mut Document) + Copy) -> usize {
+fn swept_to(n: usize, text: &str, compat: i64, set: impl Fn(&mut Hyphenated) + Copy) -> usize {
     (0..n).filter_map(|k| doc_at(text, compat, 150.0 + 20.0 * k as f64, set)).map(|d| hyphens(&d)).sum()
 }
 
@@ -57,9 +61,9 @@ fn words_break_at_their_pattern_points_when_the_settings_ask() {
         return;
     }
     assert!(swept(&text, 15, |_| {}) > 0);
-    assert_eq!(swept(&text, 15, |d| d.settings.auto_hyphenation = false), 0);
-    assert_eq!(swept(&text, 15, |d| d.hyphenation = None), 0);
-    let suppress = |d: &mut Document| {
+    assert_eq!(swept(&text, 15, |(d, _)| d.settings.auto_hyphenation = false), 0);
+    assert_eq!(swept(&text, 15, |(_, h)| *h = None), 0);
+    let suppress = |(d, _): &mut Hyphenated| {
         if let Some(Block::Para(p)) = d.sections[0].blocks.first_mut() {
             Rc::make_mut(&mut p.style).suppress_auto_hyphens = true;
         }
@@ -67,7 +71,7 @@ fn words_break_at_their_pattern_points_when_the_settings_ask() {
     assert_eq!(swept(&text, 15, suppress), 0);
     let caps = "HYPHENATION ".repeat(40);
     assert!(swept(&caps, 15, |_| {}) > 0);
-    assert_eq!(swept(&caps, 15, |d| d.settings.do_not_hyphenate_caps = true), 0);
+    assert_eq!(swept(&caps, 15, |(d, _)| d.settings.do_not_hyphenate_caps = true), 0);
 }
 
 #[test]
@@ -76,7 +80,7 @@ fn a_run_without_a_language_hyphenates_as_en_us() {
     if plain_doc(&[String::new()]).is_none() {
         return;
     }
-    let unset = |d: &mut Document| {
+    let unset = |(d, _): &mut Hyphenated| {
         if let Some(Block::Para(p)) = d.sections[0].blocks.first_mut() {
             for i in &mut p.inlines {
                 if let crate::docx::Inline::Text(_, r) = i {
@@ -95,8 +99,8 @@ fn compat_14_hyphenates_only_past_the_zone() {
     if plain_doc(&[String::new()]).is_none() {
         return;
     }
-    assert_eq!(swept_to(7, &text, 14, |d| d.settings.hyphenation_zone = 1000.0), 0, "the whole word fits a line");
-    assert!(swept(&text, 14, |d| d.settings.hyphenation_zone = 0.05) > 0);
+    assert_eq!(swept_to(7, &text, 14, |(d, _)| d.settings.hyphenation_zone = 1000.0), 0, "the whole word fits a line");
+    assert!(swept(&text, 14, |(d, _)| d.settings.hyphenation_zone = 0.05) > 0);
 }
 
 #[test]
@@ -104,7 +108,7 @@ fn the_consecutive_limit_caps_hyphenated_line_ends() {
     let text = "on hyphenation ".repeat(30);
     let runs = |limit: i64| -> usize {
         (0..10)
-            .filter_map(|k| doc_at(&text, 15, 150.0 + 20.0 * k as f64, |d| d.settings.consecutive_hyphen_limit = limit))
+            .filter_map(|k| doc_at(&text, 15, 150.0 + 20.0 * k as f64, |(d, _)| d.settings.consecutive_hyphen_limit = limit))
             .map(|d| line_ends(&d).windows(2).filter(|w| w[0] == '-' && w[1] == '-').count())
             .sum()
     };
@@ -125,8 +129,8 @@ fn a_line_inside_a_word_hyphenates_the_rest_of_it_as_a_word() {
     let most = |compat| {
         (0..20)
             .filter_map(|k| {
-                doc_at(text, compat, 400.0 + 3.0 * k as f64, |d| {
-                    d.hyphenation = Some(Hyphenation::default().with("en-US", Patterns::parse(".par1tic1u1lar1ly.")));
+                doc_at(text, compat, 400.0 + 3.0 * k as f64, |(_, h)| {
+                    *h = Some(Hyphenation::default().with("en-US", Patterns::parse(".par1tic1u1lar1ly.")));
                 })
             })
             .map(|d| hyphens(&d))
@@ -148,10 +152,9 @@ fn courier(settings: &str, ppr: &str, sz: u32, pat: &str, fill: usize, t: &str) 
     let ppr = format!(r#"<w:pPr><w:widowControl w:val="0"/><w:spacing w:after="0" w:line="250" w:lineRule="exact"/>{ppr}</w:pPr>"#);
     let fill: String = (0..fill).map(|k| format!("<w:p>{ppr}<w:r><w:t>Fill {k}</w:t></w:r></w:p>")).collect();
     let rpr = format!(r#"<w:rFonts w:ascii="Courier New" w:hAnsi="Courier New"/><w:sz w:val="{sz}"/><w:lang w:val="en-US"/>"#);
-    let mut d = super::breaking::test_doc(settings, &rpr, &format!("{fill}<w:p>{ppr}{t}</w:p>"), "")?;
+    let d = super::breaking::test_doc(settings, &rpr, &format!("{fill}<w:p>{ppr}{t}</w:p>"), "")?;
     let pat = format!("UTF-8\nLEFTHYPHENMIN 2\nRIGHTHYPHENMIN 3\n{pat}");
-    d.hyphenation = Some(Hyphenation::default().with("en-US", Patterns::parse(&pat)));
-    let pages = page_chars(&d);
+    let pages = page_chars_with(&d, Some(&Hyphenation::default().with("en-US", Patterns::parse(&pat))));
     let lines = |k: usize| {
         let mut out: Vec<(f64, String)> = Vec::new();
         for &(c, _, y) in pages.get(k).into_iter().flatten() {

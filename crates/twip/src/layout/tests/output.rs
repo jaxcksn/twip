@@ -6,7 +6,6 @@ use std::path::{Path, PathBuf};
 
 use crate::font::Fonts;
 use crate::layout::fragment::{BoxKind, Child, Item, PageChild};
-use crate::layout::layout;
 use crate::layout::traverse::paint;
 
 /// The gates' fonts: the stand-ins (single-box glyphs) as the generic families, and JetBrains Mono under its own name,
@@ -67,17 +66,20 @@ pub(crate) fn fixtures(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// Every fixture read as the layout gate reads it (DATE/TIME fields at its instant, its hyphenation patterns), by
-/// snapshot stem: the path under `fixtures` with `__` for its separators, without `.docx`.
-pub(crate) fn corpus() -> Vec<(String, crate::docx::Document)> {
+/// The host's en-US hyphenation patterns the gates supply, for the documents that turn automatic hyphenation on.
+pub(crate) fn hyphenation() -> crate::layout::hyphenate::Hyphenation {
     let patterns = std::fs::read_to_string(root().join("fixtures/layout/hyph-en-US.dic")).expect("hyphenation patterns");
-    let hyphenation = crate::layout::hyphenate::Hyphenation::default().with("en-US", crate::layout::hyphenate::Patterns::parse(&patterns));
+    crate::layout::hyphenate::Hyphenation::default().with("en-US", crate::layout::hyphenate::Patterns::parse(&patterns))
+}
+
+/// Every fixture read as the layout gate reads it (DATE/TIME fields at its instant), by snapshot stem: the path under
+/// `fixtures` with `__` for its separators, without `.docx`. The gates lay them out with [`hyphenation`].
+pub(crate) fn corpus() -> Vec<(String, crate::docx::Document)> {
     let mut paths = Vec::new();
     fixtures(&root().join("fixtures"), &mut paths);
     let mut out = Vec::new();
     for path in &paths {
-        let Some(mut d) = std::fs::read(path).ok().and_then(|b| crate::docx::read_at(&b, 1_794_225_600).ok()) else { continue };
-        d.hyphenation = Some(hyphenation.clone());
+        let Some(d) = std::fs::read(path).ok().and_then(|b| crate::docx::read_at(&b, 1_794_225_600).ok()) else { continue };
         let rel = path.strip_prefix(root().join("fixtures")).unwrap().to_string_lossy().replace(['\\', '/'], "__");
         let name = rel.trim_end_matches(".docx").to_owned();
         assert!(!out.iter().any(|(n, _)| *n == name), "two fixtures flatten to the snapshot name `{name}`: rename one");
@@ -113,10 +115,10 @@ fn boxes(children: &[Child], dx: f64, dy: f64, out: &mut Vec<(&'static str, [f64
 /// picture boxes, floats and table cells, in twips.
 // ponytail: coordinates rounded to whole twips and compared as text; a value landing on a rounding edge on one
 // platform only would need a tolerance compare.
-fn snapshot(doc: &crate::docx::Document, fonts: &Fonts) -> String {
+fn snapshot(doc: &crate::docx::Document, fonts: &Fonts, hyphenation: &crate::layout::hyphenate::Hyphenation) -> String {
     let f = |v: f64| format!("{}", (v * 20.0).round() as i64);
     let mut s = String::new();
-    for (pi, page) in layout(doc, fonts).pages().iter().enumerate() {
+    for (pi, page) in crate::layout::layout_hyphenated(doc, fonts, Some(hyphenation)).pages().iter().enumerate() {
         writeln!(s, "page {pi} {} {}", f(page.w), f(page.h)).unwrap();
         let mut lines: Vec<(u32, f64, f64, String)> = Vec::new();
         let mut images = Vec::new();
@@ -267,18 +269,15 @@ fn write_diff(name: &str, want: &str, got: &str) -> Vec<String> {
 fn layout_output_matches_snapshots() {
     let (dir, write) = (root().join("layout"), std::env::var_os("TWIP_WRITE_LAYOUT").is_some());
     let fonts = bundled_fonts();
-    // The host's en-US hyphenation patterns, for the documents that turn automatic hyphenation on.
-    let patterns = std::fs::read_to_string(root().join("fixtures/layout/hyph-en-US.dic")).expect("hyphenation patterns");
-    let hyphenation = crate::layout::hyphenate::Hyphenation::default().with("en-US", crate::layout::hyphenate::Patterns::parse(&patterns));
+    let hyphenation = hyphenation();
     let mut paths = Vec::new();
     fixtures(&root().join("fixtures"), &mut paths);
     let mut got = BTreeMap::new();
     for path in &paths {
         // DATE/TIME fields at a fixed instant (2026-11-09 12:00 UTC), so the snapshots don't change with the day.
-        let Some(mut d) = std::fs::read(path).ok().and_then(|b| crate::docx::read_at(&b, 1_794_225_600).ok()) else { continue };
-        d.hyphenation = Some(hyphenation.clone());
+        let Some(d) = std::fs::read(path).ok().and_then(|b| crate::docx::read_at(&b, 1_794_225_600).ok()) else { continue };
         let rel = path.strip_prefix(root().join("fixtures")).unwrap().to_string_lossy().replace(['\\', '/'], "__");
-        got.insert(rel.replace(".docx", ".txt"), snapshot(&d, &fonts));
+        got.insert(rel.replace(".docx", ".txt"), snapshot(&d, &fonts, &hyphenation));
     }
     assert!(!got.is_empty(), "no fixtures read from {}", root().join("fixtures").display());
     if write {

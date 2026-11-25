@@ -969,7 +969,7 @@ impl Editor {
             controls: Vec::new(),
             div: None,
         };
-        let (_, children) = crate::layout::expansion::lay(&self.doc, &[Block::Para(para)], DRAW_WIDTH, fonts, None);
+        let (_, children) = crate::layout::expansion::lay(&self.doc, &[Block::Para(para)], DRAW_WIDTH, fonts, None, self.layout.hyphenation());
         let items = crate::layout::traverse::clipped_items_of(&children);
         if items.is_empty() {
             return None;

@@ -930,10 +930,14 @@ impl Editor {
 
     /// The hyphenation patterns automatic hyphenation uses.
     pub fn set_hyphenation(&mut self, h: Option<crate::layout::hyphenate::Hyphenation>) {
-        if self.doc.hyphenation != h {
-            self.doc.hyphenation = h;
+        if self.layout.set_hyphenation(h) {
             self.relayout_environment();
         }
+    }
+
+    /// The hyphenation patterns the host supplied.
+    pub fn hyphenation(&self) -> Option<&crate::layout::hyphenate::Hyphenation> {
+        self.layout.hyphenation()
     }
 
     fn pending_image(&mut self, data: Vec<u8>) -> usize {

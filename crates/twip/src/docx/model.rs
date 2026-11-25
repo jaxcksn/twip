@@ -1986,8 +1986,6 @@ pub struct Document {
     pub properties: super::properties::Properties,
     /// The file's name, and folder when the host gave one: what FILENAME shows. Not saved.
     pub file_name: Option<String>,
-    /// The hyphenation patterns the host supplied.
-    pub hyphenation: Option<crate::layout::hyphenate::Hyphenation>,
     /// Content controls the model keeps: row-level wrappers (repeating sections and their items) and checkboxes,
     /// by id.
     pub controls: HashMap<ControlId, Control>,

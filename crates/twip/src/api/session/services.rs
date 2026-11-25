@@ -401,8 +401,14 @@ impl Session {
         }
         let fonts = self.fonts.fonts();
         let width = size.width * 72.0 / 96.0;
-        let (height, children) =
-            crate::layout::expansion::lay(self.editor.document(), &blocks, if fit { f64::MAX / 4.0 } else { width }, &fonts, None);
+        let (height, children) = crate::layout::expansion::lay(
+            self.editor.document(),
+            &blocks,
+            if fit { f64::MAX / 4.0 } else { width },
+            &fonts,
+            None,
+            self.editor.hyphenation(),
+        );
         let items = crate::layout::traverse::items_of(&children);
         let appearance = self.presentation.appearance();
         let (png, w, h) = crate::render::preview::png(
@@ -1390,9 +1396,7 @@ mod tests {
         s.spelling()
             .add_dictionary(Dictionary { language: "en-US".into(), aff: Bytes(Vec::new()), dic: Bytes(Vec::new()), hyphenation: Some(patterns) })
             .expect("loads");
-        let has = |s: &mut crate::api::session::Session| {
-            s.with_editor(|e| e.document().hyphenation.as_ref().is_some_and(|h| h.for_language("en-US").is_some()))
-        };
+        let has = |s: &mut crate::api::session::Session| s.with_editor(|e| e.hyphenation().is_some_and(|h| h.for_language("en-US").is_some()));
         assert!(has(s));
         s.new_document();
         assert!(has(s), "a new document keeps them");

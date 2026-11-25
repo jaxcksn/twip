@@ -27,7 +27,7 @@ fn shown(body: &str, (start, part): (usize, usize), width: f64) -> Option<ParaLi
     let doc = doc(body)?;
     let Block::Para(p) = &doc.sections[0].blocks[0] else { panic!("a paragraph") };
     let fonts = fonts();
-    let env = LayoutEnv::new(&doc);
+    let env = LayoutEnv::new(&doc, None);
     let (mut cache, mut meter) = (LayoutCache::new(), Meter::unlimited());
     let mut memos = Memos { cache: &mut cache, meter: &mut meter };
     let space = shape_space(p, &FieldValues::default(), &Default::default(), &env.text, None);

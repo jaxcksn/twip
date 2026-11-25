@@ -138,7 +138,12 @@ pub fn plain_doc(texts: &[String]) -> Option<Document> {
 }
 
 pub fn page_chars(doc: &Document) -> Vec<Vec<(char, f64, f64)>> {
-    let snap = crate::layout::layout(doc, &fonts());
+    page_chars_with(doc, None)
+}
+
+/// [`page_chars`] with the host's hyphenation patterns.
+pub fn page_chars_with(doc: &Document, hyphenation: Option<&crate::layout::hyphenate::Hyphenation>) -> Vec<Vec<(char, f64, f64)>> {
+    let snap = crate::layout::layout_hyphenated(doc, &fonts(), hyphenation);
     snap.pages()
         .iter()
         .map(|page| {

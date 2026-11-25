@@ -40,9 +40,14 @@ pub fn layout(doc: &Document, fonts: &Fonts) -> Snapshot {
     layout_with(doc, fonts, &mut cache)
 }
 
+/// [`layout`] with the host's hyphenation patterns.
+pub fn layout_hyphenated(doc: &Document, fonts: &Fonts, hyphenation: Option<&super::hyphenate::Hyphenation>) -> Snapshot {
+    layout_showing(doc, fonts, &mut LayoutCache::new(), None, hyphenation).0
+}
+
 /// Stepped layout, stoppable between steps.
 pub fn layout_until(doc: &Document, fonts: &Fonts, mut stop: impl FnMut() -> bool) -> Option<Snapshot> {
-    let env = LayoutEnv::new(doc);
+    let env = LayoutEnv::new(doc, None);
     let ctx = LayoutCtx { fonts, env: &env, preview: None, expansions: None };
     let mut cache = LayoutCache::new();
     let mut job = LayoutJob::new(doc, Revision(0));
@@ -59,11 +64,11 @@ pub fn layout_with(doc: &Document, fonts: &Fonts, cache: &mut LayoutCache) -> Sn
 }
 
 pub(crate) fn layout_records(doc: &Document, fonts: &Fonts, cache: &mut LayoutCache) -> (Snapshot, Vec<PageRecord>) {
-    layout_showing(doc, fonts, cache, None)
+    layout_showing(doc, fonts, cache, None, None)
 }
 
 pub fn layout_expanded(doc: &Document, fonts: &Fonts, expansions: &super::expansion::Expansions) -> Snapshot {
-    layout_showing(doc, fonts, &mut LayoutCache::new(), Some(expansions)).0
+    layout_showing(doc, fonts, &mut LayoutCache::new(), Some(expansions), None).0
 }
 
 fn layout_showing(
@@ -71,8 +76,9 @@ fn layout_showing(
     fonts: &Fonts,
     cache: &mut LayoutCache,
     expansions: Option<&super::expansion::Expansions>,
+    hyphenation: Option<&super::hyphenate::Hyphenation>,
 ) -> (Snapshot, Vec<PageRecord>) {
-    let env = LayoutEnv::new(doc);
+    let env = LayoutEnv::new(doc, hyphenation);
     let ctx = LayoutCtx { fonts, env: &env, preview: None, expansions };
     let mut job = LayoutJob::new(doc, Revision(0));
     job.run(doc, &ctx, cache, None, Budget::Unlimited);

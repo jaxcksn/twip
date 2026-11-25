@@ -629,6 +629,8 @@ pub struct DocumentLayout {
     chains: Option<Rc<[super::env::Chain]>>,
     /// The tables a live drag lays out.
     live: Rc<[u64]>,
+    /// The hyphenation patterns the host supplied.
+    hyphenation: Option<super::hyphenate::Hyphenation>,
 }
 
 type Frame = (Rc<PageFragment>, PageMeta, [Option<HfRecord>; 2]);
@@ -658,6 +660,7 @@ impl DocumentLayout {
             env: None,
             chains: None,
             live: Rc::from([]),
+            hyphenation: None,
         }
     }
 
@@ -665,6 +668,22 @@ impl DocumentLayout {
     /// laid out need, the rest of it as later pages do.
     pub fn set_live_tables(&mut self, tables: Rc<[u64]>) {
         self.live = tables;
+    }
+
+    /// The hyphenation patterns the host supplied.
+    pub fn hyphenation(&self) -> Option<&super::hyphenate::Hyphenation> {
+        self.hyphenation.as_ref()
+    }
+
+    /// Takes the host's hyphenation patterns; whether they differ from the ones it had. The environment is read again
+    /// when they do.
+    pub fn set_hyphenation(&mut self, h: Option<super::hyphenate::Hyphenation>) -> bool {
+        if self.hyphenation == h {
+            return false;
+        }
+        self.hyphenation = h;
+        self.env = None;
+        true
     }
 
     /// The document changed: its environment is read again, though nothing needs laying out again.
@@ -690,7 +709,7 @@ impl DocumentLayout {
                     doc.sections.get(s.section).and_then(|sec| sec.blocks.get(s.first..s.new_end)).is_some_and(|b| !super::env::chained(b))
                 })
         });
-        let env = Rc::new(LayoutEnv::with_chains(doc, kept));
+        let env = Rc::new(LayoutEnv::with_chains(doc, kept, self.hyphenation.as_ref()));
         self.chains = Some(env.chains.clone());
         self.env = Some(env.clone());
         env

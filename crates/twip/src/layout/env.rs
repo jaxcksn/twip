@@ -103,7 +103,8 @@ pub fn is_dark(c: u32) -> bool {
 }
 
 impl TextEnv {
-    pub fn new(doc: &Document) -> TextEnv {
+    /// The document's text environment, hyphenated with the host's `hyphenation` patterns when it asks for it.
+    pub fn new(doc: &Document, hyphenation: Option<&super::hyphenate::Hyphenation>) -> TextEnv {
         let s = &doc.settings;
         let bottom = s.compat() == Compat::Generic && !s.has("allowHyphenationAtTrackBottom");
         TextEnv {
@@ -156,8 +157,8 @@ impl TextEnv {
             backdrop: None,
             page_colour: doc.shown_background().0,
             vertical: None,
-            hyphenation: doc.hyphenation.clone().filter(|_| s.auto_hyphenation).map(|patterns| HyphenEnv {
-                patterns,
+            hyphenation: hyphenation.filter(|_| s.auto_hyphenation).map(|patterns| HyphenEnv {
+                patterns: patterns.clone(),
                 zone: s.hyphenation_zone,
                 limit: s.consecutive_hyphen_limit,
                 caps: s.do_not_hyphenate_caps,
@@ -260,17 +261,18 @@ thread_local! {
 }
 
 impl LayoutEnv {
-    pub fn new(doc: &Document) -> LayoutEnv {
-        LayoutEnv::with_chains(doc, None)
+    /// The document's environment, with the host's `hyphenation` patterns.
+    pub fn new(doc: &Document, hyphenation: Option<&super::hyphenate::Hyphenation>) -> LayoutEnv {
+        LayoutEnv::with_chains(doc, None, hyphenation)
     }
 
     /// [`LayoutEnv::new`] with the document's text box chains when they are known.
-    pub fn with_chains(doc: &Document, chains: Option<Rc<[Chain]>>) -> LayoutEnv {
+    pub fn with_chains(doc: &Document, chains: Option<Rc<[Chain]>>, hyphenation: Option<&super::hyphenate::Hyphenation>) -> LayoutEnv {
         #[cfg(test)]
         BUILT.set(BUILT.get() + 1);
         let s = &doc.settings;
         LayoutEnv {
-            text: TextEnv::new(doc),
+            text: TextEnv::new(doc, hyphenation),
             even_and_odd: s.even_and_odd,
             mirror_margins: s.mirror_margins,
             gutter_at_top: s.gutter_at_top,

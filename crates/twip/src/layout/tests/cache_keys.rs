@@ -15,7 +15,7 @@ fn omitted_key_is_caught() {
     let Some(doc) = plain_doc(&[words(300)]) else { return };
     let Block::Para(p) = &doc.sections[0].blocks[0] else { unreachable!() };
     let fonts = fonts();
-    let env = LayoutEnv::new(&doc);
+    let env = LayoutEnv::new(&doc, None);
     let mut cache = LayoutCache::new();
     let mut meter = Meter::unlimited();
     let mut memos = Memos { cache: &mut cache, meter: &mut meter };
@@ -50,9 +50,9 @@ fn markup_view_is_in_the_keys() {
     use crate::layout::text::{FieldValues, shape_space};
     let Some(mut doc) = plain_doc(&[words(3)]) else { return };
     let Block::Para(p) = doc.sections[0].blocks[0].clone() else { unreachable!() };
-    let all = TextEnv::new(&doc);
+    let all = TextEnv::new(&doc, None);
     doc.review.view = MarkupView::NoMarkup;
-    let none = TextEnv::new(&doc);
+    let none = TextEnv::new(&doc, None);
     assert_ne!(all, none);
     let notes = Default::default();
     assert_ne!(shape_space(&p, &FieldValues::default(), &notes, &all, None), shape_space(&p, &FieldValues::default(), &notes, &none, None));
@@ -69,7 +69,7 @@ fn a_preview_is_in_the_keys_of_its_paragraphs_only() {
     let float_of = |p: &Paragraph| p.inlines.iter().find_map(|i| if let Inline::Float(f, _) = i { Some((**f).clone()) } else { None });
     let (home, f) = paras.iter().find_map(|p| float_of(p).map(|f| (*p, f))).expect("a float");
     let other = *paras.iter().find(|p| float_of(p).is_none()).expect("a paragraph without one");
-    let env = LayoutEnv::new(doc);
+    let env = LayoutEnv::new(doc, None);
     let (fields, notes) = (FieldValues::default(), Default::default());
     let space = |p: &Paragraph, v: Option<&Preview>| shape_space(p, &fields, &notes, &env.text, v);
     let mut moved = f.clone();

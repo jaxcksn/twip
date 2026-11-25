@@ -420,7 +420,7 @@ impl Editor {
         }
         path.pop();
         let nested = (!nested.paras.is_empty()).then_some(&nested);
-        let (height, content) = crate::layout::expansion::lay(&self.doc, body, width, fonts, nested);
+        let (height, content) = crate::layout::expansion::lay(&self.doc, body, width, fonts, nested, self.layout.hyphenation());
         Some(Rc::new(Expansion { field: f, part, size: (width, height), content }))
     }
 
@@ -511,7 +511,6 @@ impl Editor {
         std::mem::swap(&mut s.doc.images, &mut self.doc.images);
         std::mem::swap(&mut s.doc.controls, &mut self.doc.controls);
         std::mem::swap(&mut s.doc.settings, &mut self.doc.settings);
-        std::mem::swap(&mut s.doc.hyphenation, &mut self.doc.hyphenation);
         std::mem::swap(&mut s.doc.line_number_run, &mut self.doc.line_number_run);
         s.doc.resolver = self.doc.resolver.clone();
         s.doc.review = self.doc.review.clone();
@@ -524,7 +523,6 @@ impl Editor {
         }
         let out = f(&mut self.layout, &s.doc);
         std::mem::swap(&mut s.doc.line_number_run, &mut self.doc.line_number_run);
-        std::mem::swap(&mut s.doc.hyphenation, &mut self.doc.hyphenation);
         std::mem::swap(&mut s.doc.settings, &mut self.doc.settings);
         std::mem::swap(&mut s.doc.controls, &mut self.doc.controls);
         std::mem::swap(&mut s.doc.images, &mut self.doc.images);
@@ -573,7 +571,9 @@ impl Editor {
             Some(h) => h,
             None => (std::mem::take(&mut self.layout), std::mem::take(&mut self.pages), self.expansions.take(), self.selection),
         };
+        let hyphenation = template.hyphenation().cloned();
         self.layout = DocumentLayout::new();
+        self.layout.set_hyphenation(hyphenation);
         self.pages = Pages::default();
         self.pages.shows = Some(part);
         self.index.flow = Some(part);
@@ -950,7 +950,9 @@ impl Editor {
         let Some(s) = self.surface.take() else { return Outcome::Unchanged("not on a sub-template") };
         let touched = s.template_touched;
         let (template, pages, expansions, back) = self.park_out(s);
+        let hyphenation = self.layout.hyphenation().cloned();
         self.layout = template;
+        self.layout.set_hyphenation(hyphenation);
         self.pages = pages;
         self.pages.shows = None;
         self.index.flow = None;
