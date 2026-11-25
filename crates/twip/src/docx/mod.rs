@@ -30,6 +30,8 @@ pub(crate) use reader::MAX_CELL_HEADERS;
 pub(crate) use reader::header_list;
 pub(crate) use reader::line_number_run;
 pub(crate) use reader::local_offset;
+#[cfg(test)]
+pub(crate) use reader::set_option;
 pub(crate) use reader::style_cell;
 pub use reader::{now_local, now_utc, read, read_at, read_editable};
 #[cfg(test)]

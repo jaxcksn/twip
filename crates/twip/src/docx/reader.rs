@@ -374,9 +374,9 @@ fn read_package(bytes: &[u8], pkg: &mut Package, editable: bool, now: i64, depth
         super::glossary::merge_tables(&mut styles, &mut numbering, gstyles, gnumbering)
     });
     styles.compat = settings.compat();
-    styles.word2002_rules = styles.compat == Compat::Legacy && settings.has("useWord2002TableStyleRules");
-    styles.open_type = styles.compat == Compat::Generic || settings.has("enableOpenTypeFeatures");
-    styles.cell_size_rules = styles.compat == Compat::Legacy && !settings.has("overrideTableStyleFontSizeAndJustification");
+    styles.word2002_rules = styles.compat == Compat::Legacy && settings.policy.use_word2002_table_style_rules;
+    styles.open_type = styles.compat == Compat::Generic || settings.policy.enable_open_type_features;
+    styles.cell_size_rules = styles.compat == Compat::Legacy && !settings.policy.override_table_style_font_size_and_justification;
     let xml = pkg.read_str(&main).ok_or("no main document part, or one too large or nested too deeply")?;
 
     // New revision, comment and paragraph ids go past every id in the parts read, so ids are seeded before reading.
@@ -987,8 +987,55 @@ fn opening_view(root: Node) -> (ShowMarkup, bool) {
     (show, flag(root, "doNotDisplayPageBoundaries").unwrap_or(false))
 }
 
+/// Turns on the compatibility option `name` (a `w:compat` child, an on/off `w:compatSetting`, or
+/// `useWord2013TrackBottomHyphenation=0` for that setting off).
+pub(crate) fn set_option(p: &mut LayoutPolicy, name: &str) {
+    match name {
+        "adjustLineHeightInTable" => p.adjust_line_height_in_table = true,
+        "alignTablesRowByRow" => p.align_tables_row_by_row = true,
+        "allowHyphenationAtTrackBottom" => p.allow_hyphenation_at_track_bottom = true,
+        "allowSpaceOfSameStyleInTable" => p.allow_space_of_same_style_in_table = true,
+        "allowTextAfterFloatingTableBreak" => p.allow_text_after_floating_table_break = true,
+        "applyBreakingRules" => p.apply_breaking_rules = true,
+        "balanceSingleByteDoubleByteWidth" => p.balance_single_byte_double_byte_width = true,
+        "doNotAutofitConstrainedTables" => p.do_not_autofit_constrained_tables = true,
+        "doNotBreakWrappedTables" => p.do_not_break_wrapped_tables = true,
+        "doNotExpandShiftReturn" => p.do_not_expand_shift_return = true,
+        "doNotSuppressIndentation" => p.do_not_suppress_indentation = true,
+        "doNotUseHTMLParagraphAutoSpacing" => p.do_not_use_html_paragraph_auto_spacing = true,
+        "doNotUseIndentAsNumberingTabStop" => p.do_not_use_indent_as_numbering_tab_stop = true,
+        "doNotVertAlignCellWithSp" => p.do_not_vert_align_cell_with_sp = true,
+        "enableOpenTypeFeatures" => p.enable_open_type_features = true,
+        "footnoteLayoutLikeWW8" => p.footnote_layout_like_ww8 = true,
+        "growAutofit" => p.grow_autofit = true,
+        "layoutRawTableWidth" => p.layout_raw_table_width = true,
+        "mwSmallCaps" => p.mw_small_caps = true,
+        "noColumnBalance" => p.no_column_balance = true,
+        "noExtraLineSpacing" => p.no_extra_line_spacing = true,
+        "noLeading" => p.no_leading = true,
+        "noSpaceRaiseLower" => p.no_space_raise_lower = true,
+        "noTabHangInd" => p.no_tab_hang_ind = true,
+        "overrideTableStyleFontSizeAndJustification" => p.override_table_style_font_size_and_justification = true,
+        "showBreaksInFrames" => p.show_breaks_in_frames = true,
+        "spacingInWholePoints" => p.spacing_in_whole_points = true,
+        "splitPgBreakAndParaMark" => p.split_pg_break_and_para_mark = true,
+        "suppressBottomSpacing" => p.suppress_bottom_spacing = true,
+        "suppressSpBfAfterPgBrk" => p.suppress_sp_bf_after_pg_brk = true,
+        "suppressSpacingAtTopOfPage" => p.suppress_spacing_at_top_of_page = true,
+        "suppressTopSpacing" => p.suppress_top_spacing = true,
+        "suppressTopSpacingWP" => p.suppress_top_spacing_wp = true,
+        "ulTrailSpace" => p.ul_trail_space = true,
+        "useSingleBorderforContiguousCells" => p.use_single_border_for_contiguous_cells = true,
+        "useWord2002TableStyleRules" => p.use_word2002_table_style_rules = true,
+        "useWord97LineBreakRules" => p.use_word97_line_break_rules = true,
+        "wpJustification" => p.wp_justification = true,
+        "useWord2013TrackBottomHyphenation=0" => p.word2013_track_bottom_hyphenation_off = true,
+        _ => p.other = true,
+    }
+}
+
 pub(crate) fn read_settings(xml: Option<&str>) -> Settings {
-    let mut s = Settings { compat_mode: 12, default_tab: 36.0, hyphenation_zone: 18.0, ..Default::default() };
+    let mut s = Settings { policy: LayoutPolicy { mode: 12, ..Default::default() }, default_tab: 36.0, hyphenation_zone: 18.0, ..Default::default() };
     let Some(doc) = xml.and_then(|x| roxmltree::Document::parse(x).ok()) else { return s };
     let root = doc.root_element();
     if let Some(t) = child(root, "defaultTabStop").and_then(|n| twips(val(n)))
@@ -1063,7 +1110,7 @@ pub(crate) fn read_settings(xml: Option<&str>) -> Settings {
                 if attr(e, "name") == Some("compatibilityMode")
                     && let Some(m) = int(attr(e, "val"))
                 {
-                    s.compat_mode = m.min(15);
+                    s.policy.mode = m.min(15);
                 } else if let Some(
                     name @ ("enableOpenTypeFeatures"
                     | "overrideTableStyleFontSizeAndJustification"
@@ -1072,12 +1119,12 @@ pub(crate) fn read_settings(xml: Option<&str>) -> Settings {
                 ) = attr(e, "name")
                     && on_off_str(attr(e, "val"))
                 {
-                    s.compat.insert(name.to_string());
+                    set_option(&mut s.policy, name);
                 } else if attr(e, "name") == Some("useWord2013TrackBottomHyphenation") && !on_off_str(attr(e, "val")) {
-                    s.compat.insert("useWord2013TrackBottomHyphenation=0".to_string());
+                    set_option(&mut s.policy, "useWord2013TrackBottomHyphenation=0");
                 }
             } else if on_off(e) {
-                s.compat.insert(e.tag_name().name().to_string());
+                set_option(&mut s.policy, e.tag_name().name());
             }
         }
     }
@@ -3167,7 +3214,7 @@ impl Reader {
         ));
         if let Some(Inline::Float(f, _)) = out.last_mut() {
             let deg = f.shape.as_ref().map_or(0.0, |s| s.xfrm.rot.normalized().degrees()) % 180.0;
-            if (45.0..135.0).contains(&deg) && self.settings.compat_mode != 12 {
+            if (45.0..135.0).contains(&deg) && self.settings.policy.mode != 12 {
                 let (w0, h0) = (f.w, f.h);
                 (f.w, f.h) = (h0, w0);
                 if f.h_align.is_none() {

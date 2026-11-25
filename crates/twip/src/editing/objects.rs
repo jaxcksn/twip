@@ -1221,7 +1221,7 @@ impl Editor {
             relative: Default::default(),
         };
         if let Some(deg) = float.shape.as_ref().map(|s| s.xfrm.rot.normalized().degrees()) {
-            super::shapes::rotate_to(&mut float, &[], deg, self.doc.settings.compat_mode);
+            super::shapes::rotate_to(&mut float, &[], deg, self.doc.settings.policy.mode);
         }
         let unwrapped = crate::docx::Float { wrap: "none".into(), ..float.clone() };
         self.rewrap(&unwrapped, &mut float);

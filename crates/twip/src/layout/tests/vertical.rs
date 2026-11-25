@@ -89,7 +89,7 @@ fn compat_12_aligns_a_vertical_cells_block_into_its_far_margin() {
             .replace("<w:textDirection", &format!(r#"<w:vAlign w:val="{align}"/><w:textDirection"#))
             .replace("<w:tblLayout", r#"<w:tblCellMar><w:left w:w="108" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar><w:tblLayout"#);
         let mut d = doc(&body)?;
-        d.settings.compat_mode = mode;
+        d.settings.policy.mode = mode;
         Some(turned_runs(&d)[0].1[0])
     };
     // How far a block sits from the top-aligned one.
@@ -106,7 +106,7 @@ fn compat_12_centres_a_vertical_block_thicker_than_its_cell_unclamped() {
     let at = |mode: i64, align: &str| {
         let body = table("btLr", row, WORDS).replace("<w:textDirection", &format!(r#"<w:vAlign w:val="{align}"/><w:textDirection"#));
         let mut d = doc(&body)?;
-        d.settings.compat_mode = mode;
+        d.settings.policy.mode = mode;
         Some(turned_runs(&d))
     };
     // A line drawn in both blocks (the lines wholly outside the cell aren't drawn).
@@ -289,7 +289,7 @@ fn only_compat_15_moves_a_vertical_sections_table_too_wide_for_the_rest_of_the_p
     let table = r#"<w:tbl><w:tblPr><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="6100"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="6100" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#;
     let first_page = |mode: i64| {
         let mut doc = section("tbRl", "0", &format!("{}{table}{}", para("before", ""), para("after", "")))?;
-        doc.settings.compat_mode = mode;
+        doc.settings.policy.mode = mode;
         let snap = crate::layout::layout(&doc, &fonts());
         let items = crate::layout::traverse::paint_items(&snap.pages()[0]);
         Some(items.iter().any(|i| matches!(i, Item::Glyphs(r) if r.chars.iter().any(|c| c.0 == 'c'))))
@@ -374,7 +374,7 @@ fn cells_on(doc: &crate::docx::Document, page: usize) -> Vec<(String, f64, f64)>
 fn a_line_with_no_room_beside_a_vertical_table_moves_to_its_far_side_and_the_table_stays() {
     let body = format!("{}{}{}{}", para("one", ""), para("two", ""), para("three", ""), long_table(50, 2000));
     let Some(mut doc) = section("tbRl", "0", &body) else { return };
-    doc.settings.compat_mode = 12;
+    doc.settings.policy.mode = 12;
     // The table at the stack position after three lines, compat 12's 5.4pt back: its first cell's text 5.4pt in.
     let cells = cells_on(&doc, 0);
     let Some(&(_, x, _)) = cells.iter().find(|c| c.0 == "r0") else { panic!("{cells:?}") };
@@ -393,7 +393,7 @@ fn a_vertical_table_longer_than_the_line_splits_by_rows_its_header_repeated() {
     let body = format!("{}{}{}", para("one", ""), long_table(40, 2000), para("after", ""));
     let at = |mode: i64, page: usize| {
         let mut doc = section("tbRl", "0", &body)?;
-        doc.settings.compat_mode = mode;
+        doc.settings.policy.mode = mode;
         Some(cells_on(&doc, page))
     };
     let first = |cells: &[(String, f64, f64)], t: &str| cells.iter().find(|c| c.0 == t).map(|c| c.1);
@@ -561,7 +561,7 @@ fn note_in_table(doc: &mut crate::docx::Document, lines: usize) {
 fn a_footnote_in_a_vertical_sections_table_goes_to_the_page_and_runs_on_past_the_text() {
     let body = format!("{}{}{}", para("before", ""), named_table("c", 1, 2000), para("after", ""));
     let Some(mut doc) = section("tbRl", "0", &body) else { return };
-    doc.settings.compat_mode = 15;
+    doc.settings.policy.mode = 15;
     note_in_table(&mut doc, 30);
     let on = |page: usize| turned_runs_on(&doc, page).into_iter().map(|r| r.0).collect::<Vec<_>>();
     let (p1, p2) = (on(0), on(1));
@@ -576,7 +576,7 @@ fn a_footnote_cut_after_a_vertical_sections_table_leaves_no_room_for_the_text_af
     let lines: String = (0..16).map(|k| para(&format!("l{k}"), exact)).collect();
     let pages = |mode: i64, w: u32| {
         let mut doc = section("tbRl", "0", &format!("{lines}{}{}", named_table("c", 1, w), para("after", "")))?;
-        doc.settings.compat_mode = mode;
+        doc.settings.policy.mode = mode;
         note_in_table(&mut doc, 6);
         let on = |page: usize| turned_runs_on(&doc, page).into_iter().map(|r| r.0).collect::<Vec<_>>();
         Some((on(0), on(1)))
@@ -597,7 +597,7 @@ fn compat_14_draws_a_vertical_table_too_long_below_an_earlier_one_from_the_line_
     let body = format!("{}{}{}{}{}", para("pa", ""), named_table("r", 12, 2000), para("pb", ""), named_table("s", 14, 2000), para("pc", ""));
     let at = |mode: i64, page: usize| {
         let mut doc = section("tbRl", "0", &body)?;
-        doc.settings.compat_mode = mode;
+        doc.settings.policy.mode = mode;
         Some(cells_on(&doc, page))
     };
     let Some(p1) = at(12, 0) else { return };
@@ -616,7 +616,7 @@ fn compat_14_draws_a_vertical_table_too_long_below_an_earlier_one_from_the_line_
 fn compat_15_moves_a_vertical_table_too_long_below_an_earlier_one_across_past_it() {
     let body = format!("{}{}{}{}{}", para("pa", ""), named_table("r", 12, 2500), para("pb", ""), named_table("s", 18, 1500), para("pc", ""));
     let Some(mut doc) = section("tbRl", "0", &body) else { return };
-    doc.settings.compat_mode = 15;
+    doc.settings.policy.mode = 15;
     let p1 = cells_on(&doc, 0);
     let x = |t: &str| p1.iter().find(|c| c.0 == t).map(|c| c.1);
     // All its rows stay on the page, from the line start, past the earlier table across the stack.
@@ -629,7 +629,7 @@ fn compat_15_moves_a_vertical_table_whose_note_cant_start_past_it_to_the_next_pa
     let lines: String = (0..18).map(|k| para(&format!("l{k}"), "")).collect();
     let pages = |mode: i64| {
         let mut doc = section("tbRl", "0", &format!("{lines}{}{}", named_table("c", 1, 1300), para("after", "")))?;
-        doc.settings.compat_mode = mode;
+        doc.settings.policy.mode = mode;
         note_in_table(&mut doc, 2);
         let on = |page: usize| {
             cells_on(&doc, page).into_iter().map(|r| r.0).chain(turned_runs_on(&doc, page).into_iter().map(|r| r.0)).collect::<Vec<_>>()
@@ -662,7 +662,7 @@ fn compat_14_keeps_the_more_of_a_too_long_vertical_tables_rows_below_the_earlier
         let body =
             format!("{}{}{}{}{}", para("pa", ""), exact_table("r", &vec![500; t1], 2000), para("pb", ""), exact_table("s", t2, 2000), para("pc", ""));
         let mut doc = section("tbRl", "0", &body)?;
-        doc.settings.compat_mode = 12;
+        doc.settings.policy.mode = 12;
         Some((cells_on(&doc, 0).iter().filter(|c| c.0.starts_with('s')).count(), turned_runs(&doc)))
     };
     // 1840 tw below the earlier table hold no row of 3000; stacked below its own image twice the table leaves 5840,
@@ -682,7 +682,7 @@ fn compat_14_keeps_the_more_of_a_too_long_vertical_tables_rows_below_the_earlier
 /// A Letter `tbRl` section with inch margins in compat 15: lines 12960 tw long from 1440 tw.
 fn inch_section(body: &str) -> Option<crate::docx::Document> {
     let mut doc = sectioned(&format!(r#"{body}<w:sectPr>{MARGINS}<w:textDirection w:val="tbRl"/></w:sectPr>"#))?;
-    doc.settings.compat_mode = 15;
+    doc.settings.policy.mode = 15;
     Some(doc)
 }
 
@@ -736,7 +736,7 @@ fn compat_12_breaks_a_word_too_long_for_the_piece_beside_a_vertical_table_and_co
     let body = format!("{}{}", exact_table("r", &[500; 25], 1500), para("pc amber1 garden2", ""));
     let runs = |mode: i64| {
         let mut doc = inch_section(&body)?;
-        doc.settings.compat_mode = mode;
+        doc.settings.policy.mode = mode;
         Some(turned_runs(&doc))
     };
     let Some(c12) = runs(12) else { return };
@@ -764,7 +764,7 @@ fn compat_12_places_a_vertical_table_after_lines_that_jumped_an_earlier_one_by_t
             para(pc, "")
         );
         let mut doc = inch_section(&body)?;
-        doc.settings.compat_mode = 12;
+        doc.settings.policy.mode = 12;
         let s0 = cells_on(&doc, 0).iter().find(|c| c.0 == "s0").map(|c| c.1);
         Some((s0, turned_runs(&doc)))
     };

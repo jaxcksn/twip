@@ -860,7 +860,7 @@ impl Editor {
             in_note: false,
             ..(*m).clone()
         };
-        super::shapes::rotate_to(&mut n, &[], deg, self.doc.settings.compat_mode);
+        super::shapes::rotate_to(&mut n, &[], deg, self.doc.settings.policy.mode);
         // Placed where it is drawn, from the group's place
         let (cx, cy) = ((rect[0] + rect[2]) / 2.0, (rect[1] + rect[3]) / 2.0);
         let (nw, nh) = if n.rot_swap { (n.h, n.w) } else { (n.w, n.h) };

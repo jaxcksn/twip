@@ -62,7 +62,7 @@ pub fn of(doc: &Document) -> BTreeSet<&'static str> {
     if !doc.comments.by_id.is_empty() {
         f.insert("comments");
     }
-    if doc.settings.compat_mode != 15 || !doc.settings.compat.is_empty() {
+    if doc.settings.policy.mode != 15 || doc.settings.policy.any_option() {
         f.insert("compat_non15");
     }
     for b in doc.stories.values().chain(doc.footnotes.values()).chain(doc.endnotes.values()) {

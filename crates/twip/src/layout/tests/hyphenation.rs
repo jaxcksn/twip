@@ -14,7 +14,7 @@ const LIANG: &str = "UTF-8\nLEFTHYPHENMIN 2\nRIGHTHYPHENMIN 3\nhy3ph\nhe2n\nhena
 
 fn doc_at(text: &str, compat: i64, indent: f64, set: impl Fn(&mut Hyphenated)) -> Option<Hyphenated> {
     let mut d = plain_doc(&[text.to_string()])?;
-    d.settings.compat_mode = compat;
+    d.settings.policy.mode = compat;
     d.settings.auto_hyphenation = true;
     let h = Some(Hyphenation::default().with("en-US", Patterns::parse(LIANG)));
     if let Some(Block::Para(p)) = d.sections[0].blocks.first_mut() {

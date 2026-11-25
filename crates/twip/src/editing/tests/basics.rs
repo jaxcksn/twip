@@ -2270,8 +2270,8 @@ fn after_a_page_break_the_caret_shows_on_the_next_page() {
 #[test]
 fn a_page_break_with_split_pg_break_and_para_mark_keeps_its_paragraph() {
     let mut doc = crate::docx::read_editable(&blank_with("Conversation\nB")).unwrap();
-    doc.settings.compat_mode = 11;
-    doc.settings.compat.insert("splitPgBreakAndParaMark".into());
+    doc.settings.policy.mode = 11;
+    doc.settings.policy.split_pg_break_and_para_mark = true;
     let mut e = crate::editing::Editor::with_document(doc, fonts());
     e.execute(super::mv(MoveBy::LineEdge, Dir::Forward, false), fonts());
     e.execute(Command::InsertPageBreak, fonts());

@@ -2443,7 +2443,7 @@ impl Editor {
 
     fn page_break(&mut self, fonts: &Fonts) -> Outcome {
         let s = &self.doc.settings;
-        if s.compat() == crate::docx::Compat::Legacy && s.has("splitPgBreakAndParaMark") {
+        if s.compat() == crate::docx::Compat::Legacy && s.policy.split_pg_break_and_para_mark {
             return self.insert_inline(|run| Inline::Break(BreakKind::Page, run), "Page Break", fonts);
         }
         if self.refuse_replacing() {

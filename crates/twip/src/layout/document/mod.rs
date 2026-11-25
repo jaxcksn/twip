@@ -249,7 +249,7 @@ fn next_split(cx: &PassCx, si: usize, block: usize) -> Option<usize> {
 pub(crate) fn balances(cx: &PassCx, si: usize, token: &PageToken) -> bool {
     let doc = cx.doc;
     let nsec = doc.sections.len();
-    let off = doc.settings.compat() == crate::docx::Compat::Legacy && doc.settings.has("noColumnBalance");
+    let off = doc.settings.compat() == crate::docx::Compat::Legacy && doc.settings.policy.no_column_balance;
     let mut split = endnote_split(cx, si);
     if split.is_some_and(|e| token.flow.block >= e) {
         if next_split(cx, si, token.flow.block).is_some() || doc.settings.compat() == crate::docx::Compat::Legacy {

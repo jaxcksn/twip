@@ -394,7 +394,7 @@ impl Editor {
     fn dragged_float(&self, d: &ShapeDrag) -> Option<crate::docx::Float> {
         let ObjectRef::Floating(f) = d.obj else { return None };
         let mut n = self.float_of(f)?.clone();
-        let compat = self.doc.settings.compat_mode;
+        let compat = self.doc.settings.policy.mode;
         let s = n.shape.as_deref_mut()?.at_mut(&d.child)?;
         match d.handle {
             ShapeHandle::Rotate => {
@@ -898,7 +898,7 @@ impl Editor {
             return self.edit_inline("Rotate", |p| rotate_inline(p, deg), fonts);
         }
         let ids = self.selected_floats();
-        let compat = self.doc.settings.compat_mode;
+        let compat = self.doc.settings.policy.mode;
         self.edit_floats("Rotate", &ids, |n, path| rotate_to(n, path, deg, compat), fonts)
     }
 
@@ -1169,7 +1169,7 @@ impl Editor {
         };
         let Some(anchor) = self.index.float_anchor(g) else { return Outcome::Unchanged("no anchor") };
         let Some((_, r)) = self.float_box(g, fonts) else { return Outcome::Unchanged("not laid out") };
-        let compat = self.doc.settings.compat_mode;
+        let compat = self.doc.settings.policy.mode;
         let emu = |v: f64| Emu((v * 12700.0).round() as i64);
         let Some(tree) = m.shape.as_deref() else { return Outcome::unavailable("not a group") };
         // The group's own box, unswapped about its laid-out centre

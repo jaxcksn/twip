@@ -9,23 +9,16 @@ use crate::layout::{DocumentLayout, dump, layout, layout_with};
 
 use super::{doc, fixture, fonts};
 
-fn toggle(d: &mut Document, name: &str) {
-    let c = &mut d.settings.compat;
-    if !c.remove(name) {
-        c.insert(name.to_string());
-    }
-}
-
 type Sweep = (&'static str, fn(&mut Document));
 
 fn sweeps() -> Vec<Sweep> {
     vec![
-        ("compat mode", |d| d.settings.compat_mode = if d.settings.compat_mode >= 15 { 14 } else { 15 }),
+        ("compat mode", |d| d.settings.policy.mode = if d.settings.policy.mode >= 15 { 14 } else { 15 }),
         ("default tab", |d| d.settings.default_tab += 18.0),
-        ("doNotExpandShiftReturn", |d| toggle(d, "doNotExpandShiftReturn")),
-        ("splitPgBreakAndParaMark", |d| toggle(d, "splitPgBreakAndParaMark")),
-        ("allowSpaceOfSameStyleInTable", |d| toggle(d, "allowSpaceOfSameStyleInTable")),
-        ("doNotUseHTMLParagraphAutoSpacing", |d| toggle(d, "doNotUseHTMLParagraphAutoSpacing")),
+        ("doNotExpandShiftReturn", |d| d.settings.policy.do_not_expand_shift_return ^= true),
+        ("splitPgBreakAndParaMark", |d| d.settings.policy.split_pg_break_and_para_mark ^= true),
+        ("allowSpaceOfSameStyleInTable", |d| d.settings.policy.allow_space_of_same_style_in_table ^= true),
+        ("doNotUseHTMLParagraphAutoSpacing", |d| d.settings.policy.do_not_use_html_paragraph_auto_spacing ^= true),
         ("even and odd headers", |d| d.settings.even_and_odd = !d.settings.even_and_odd),
         ("mirror margins", |d| {
             d.settings.mirror_margins = !d.settings.mirror_margins;

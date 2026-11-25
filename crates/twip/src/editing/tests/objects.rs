@@ -405,7 +405,7 @@ fn an_inserted_picture_can_be_rotated_once_floating() {
 fn a_quarter_turned_new_picture_saves_its_unturned_extent() {
     let data = open("FX-OBJ.docx").document().images.last().cloned().expect("an image");
     let mut doc = crate::docx::read_editable(&super::blank_with("Body text here")).unwrap();
-    doc.settings.compat_mode = 15;
+    doc.settings.policy.mode = 15;
     let mut e = Editor::with_document(doc, fonts());
     e.set_caret_for_benchmark(Selection::Caret(Position::text(StoryId::Body, super::para_id(&e, 0), Unit(2))));
     assert!(changed(&e.execute(Command::InsertPicture(Picture { data: Bytes(data), alt_text: None }), fonts())));

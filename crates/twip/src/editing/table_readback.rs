@@ -282,7 +282,7 @@ impl Editor {
         let ends = |r: usize, k: usize| r + rows_spanned(&g, r, k) - 1;
         // Where two selected cells meet: both cells' sides, as the edge is drawn.
         let settings = &self.doc.settings;
-        let single = settings.compat() == crate::docx::Compat::Legacy && settings.has("useSingleBorderforContiguousCells");
+        let single = settings.compat() == crate::docx::Compat::Legacy && settings.policy.use_single_border_for_contiguous_cells;
         let (row_borders, shared_edge) = (crate::layout::table::row_borders, crate::layout::table::shared_edge);
         let gr = &g;
         let cell_borders = CellEdgeLines {

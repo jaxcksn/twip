@@ -2,6 +2,7 @@
 
 pub use crate::document::content::{BreakKind, NoteKind};
 pub use crate::document::ident::{ControlId, FieldId, next_para_id};
+pub use crate::document::policy::{Compat, LayoutPolicy};
 
 use super::font_table::GenericFamily;
 use std::collections::HashMap;
@@ -1841,20 +1842,10 @@ pub struct Section {
     pub read: Option<Rc<SectionPage>>,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub enum Compat {
-    #[default]
-    Legacy,
-    Generic,
-}
-
 #[derive(Clone, Debug, Default)]
 pub struct Settings {
-    pub compat_mode: i64,
-    /// `w:compat` child options that are on, and the on/off `w:compatSetting`s that are on (`enableOpenTypeFeatures`,
-    /// `overrideTableStyleFontSizeAndJustification`, `allowHyphenationAtTrackBottom`,
-    /// `allowTextAfterFloatingTableBreak`); `useWord2013TrackBottomHyphenation=0` when that one is off.
-    pub compat: std::collections::HashSet<String>,
+    /// Word's compatibility mode and options.
+    pub policy: LayoutPolicy,
     pub default_tab: f64,
     /// `w:characterSpacingControl` is compressPunctuation or compressPunctuationAndJapaneseKana.
     pub compress_punctuation: bool,
@@ -1925,11 +1916,7 @@ impl Document {
 
 impl Settings {
     pub fn compat(&self) -> Compat {
-        if self.compat_mode >= 15 { Compat::Generic } else { Compat::Legacy }
-    }
-
-    pub fn has(&self, flag: &str) -> bool {
-        self.compat.contains(flag)
+        self.policy.compat()
     }
 }
 

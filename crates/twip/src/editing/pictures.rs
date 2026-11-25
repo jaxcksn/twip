@@ -139,7 +139,7 @@ impl Editor {
                 if let Some(now) = n.shape.as_deref().map(|s| s.xfrm.rot)
                     && Some(now) != rot
                 {
-                    super::shapes::rotate_to(&mut n, &[], now.degrees(), self.doc.settings.compat_mode);
+                    super::shapes::rotate_to(&mut n, &[], now.degrees(), self.doc.settings.policy.mode);
                 }
                 self.set_float(n, label, fonts)
             }
