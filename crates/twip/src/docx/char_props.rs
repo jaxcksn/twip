@@ -105,6 +105,11 @@ impl RunDirect {
         RunDirect::from_xml(Some(xml), &Cx::of_xml(&format!("<w:document xmlns:w=\"{W}\">")))
     }
 
+    /// Properties read from `xml`, shared with other runs read alike.
+    pub fn shared(props: Rc<CharProps>, xml: Rc<str>) -> RunDirect {
+        RunDirect { origin: Some((props.clone(), xml)), props: Some(props) }
+    }
+
     /// Typed properties with no written form.
     pub fn typed(props: Option<Rc<CharProps>>) -> RunDirect {
         RunDirect { props, origin: None }

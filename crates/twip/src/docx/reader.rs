@@ -437,6 +437,7 @@ fn read_package(bytes: &[u8], pkg: &mut Package, editable: bool, now: i64, depth
         note_id: 0,
         in_endnotes: false,
         record: false,
+        interned: HashMap::new(),
         segs: Vec::new(),
         simple: Vec::new(),
         lossy: false,
@@ -1250,6 +1251,8 @@ struct Reader {
     in_endnotes: bool,
     /// Reading the main body for editing: paragraphs and tables get their sources, runs their direct formatting.
     record: bool,
+    /// The authored run properties read so far, by the `w:rPr` written: runs written alike share them.
+    interned: HashMap<Rc<str>, Rc<CharProps>>,
     /// The paragraph being read: elements that produced units ([`ParaSrc::segs`]), and whether any can't be mapped.
     segs: Vec<(std::ops::Range<usize>, usize)>,
     /// [`ParaSrc::simple`].
@@ -2082,7 +2085,17 @@ impl Reader {
         let Some(n) = rpr.filter(|_| self.record) else { return RunDirect::typed(Some(Rc::new(props))) };
         let tracked = |c: &Node| c.is_element() && matches!(c.tag_name().name(), "ins" | "del" | "moveFrom" | "moveTo" | "rPrChange");
         if !n.children().any(|c| tracked(&c)) {
-            return RunDirect::read(props, raw(n));
+            // Written alike and reading alike: shared
+            let plain = n.namespaces().len() <= n.document().root_element().namespaces().len();
+            let text = &n.document().input_text()[n.range()];
+            if let Some((x, p)) = self.interned.get_key_value(text).filter(|(_, p)| plain && ***p == props) {
+                return RunDirect::shared(p.clone(), x.clone());
+            }
+            let (x, p) = (raw(n), Rc::new(props));
+            if plain {
+                self.interned.insert(x.clone(), p.clone());
+            }
+            return RunDirect::shared(p, x);
         }
         let text = n.document().input_text();
         let open = &text[n.range().start..n.first_child().map_or(n.range().end, |c| c.range().start)];
