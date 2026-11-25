@@ -4,6 +4,7 @@
 pub mod api;
 pub(crate) mod clock;
 pub(crate) mod docx;
+pub(crate) use twip_document as document;
 pub(crate) mod drawing;
 pub(crate) mod editing;
 #[cfg(any(test, not(target_family = "wasm")))]
@@ -23,6 +24,9 @@ mod tests;
 pub mod internal {
     pub mod clock {
         pub use crate::clock::*;
+    }
+    pub mod document {
+        pub use twip_document::*;
     }
     pub mod docx {
         pub use crate::docx::*;

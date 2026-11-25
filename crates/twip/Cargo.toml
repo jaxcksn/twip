@@ -31,6 +31,9 @@ aes = "0.8.4"
 sha1 = { version = "0.10.6", default-features = false }
 sha2 = { version = "0.10.9", default-features = false }
 getrandom = "0.4.3"
+# Twip's document model (crates/twip-document). Published with Twip at exactly its version (release-please keeps the
+# pin in step).
+twip-document = { path = "../twip-document", version = "=0.2.1" } # x-release-please-version
 # Twip's 2D graphics (crates/twip-graphics): the screen, image decoding and PDF. Published
 # with Twip at exactly its version (release-please keeps the pin in step).
 twip-graphics = { path = "../twip-graphics", version = "=0.2.1", features = ["pdf"] } # x-release-please-version

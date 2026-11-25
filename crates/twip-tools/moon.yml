@@ -6,7 +6,7 @@ tasks:
   # A protected PDF with keywords opened by qpdf and poppler (pdf-readers.sh). Linux only: CI installs both there.
   pdf-readers:
     command: sh crates/twip-tools/pdf-readers.sh
-    inputs: ['/crates/twip/src/**/*', '/crates/twip/build.rs', '/crates/twip/Cargo.toml', '/crates/twip-graphics/src/**/*', '/crates/twip-graphics/Cargo.toml', '/crates/twip-tools/src/**/*', '/crates/twip-tools/Cargo.toml', '/crates/twip-tools/pdf-readers.sh']
+    inputs: ['/crates/twip/src/**/*', '/crates/twip/build.rs', '/crates/twip/Cargo.toml', '/crates/twip-graphics/src/**/*', '/crates/twip-graphics/Cargo.toml', '/crates/twip-document/src/**/*', '/crates/twip-document/Cargo.toml', '/crates/twip-tools/src/**/*', '/crates/twip-tools/Cargo.toml', '/crates/twip-tools/pdf-readers.sh']
     options:
       runFromWorkspaceRoot: true
       os: linux
@@ -15,7 +15,7 @@ tasks:
   pdf-ua:
     command: sh crates/twip-tools/verapdf.sh
     inputs:
-      ['/crates/twip/src/**/*', '/crates/twip/build.rs', '/crates/twip/Cargo.toml', '/crates/twip-graphics/src/**/*', '/crates/twip-graphics/Cargo.toml', '/crates/twip-tools/src/**/*', '/crates/twip-tools/Cargo.toml', '/crates/twip-tools/verapdf.sh', '/crates/twip-tools/verapdf-known.txt', '/crates/twip/tests/fixtures/*.docx', '/crates/twip/tests/fixtures/render/pdf-accessible.docx']
+      ['/crates/twip/src/**/*', '/crates/twip/build.rs', '/crates/twip/Cargo.toml', '/crates/twip-graphics/src/**/*', '/crates/twip-graphics/Cargo.toml', '/crates/twip-document/src/**/*', '/crates/twip-document/Cargo.toml', '/crates/twip-tools/src/**/*', '/crates/twip-tools/Cargo.toml', '/crates/twip-tools/verapdf.sh', '/crates/twip-tools/verapdf-known.txt', '/crates/twip/tests/fixtures/*.docx', '/crates/twip/tests/fixtures/render/pdf-accessible.docx']
     options:
       runFromWorkspaceRoot: true
       os: linux

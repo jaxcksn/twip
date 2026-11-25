@@ -1,0 +1,22 @@
+[package]
+name = "twip-document"
+description = "Internal part of Twip (its document model). No stable API; use the `twip` crate."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+readme = "README.md"
+# The package is the library.
+include = ["src/**/*", "Cargo.toml", "README.md"]
+
+# No XML, archive or layout dependency: what a document holds, independent of any file format.
+[dependencies]
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+needless_range_loop = "allow"
+too_many_arguments = "allow"
+type_complexity = "allow"

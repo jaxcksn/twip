@@ -37,6 +37,7 @@ message that isn't a conventional commit is rejected locally instead of in CI.
 | `crates/twip` | The engine: layout, editing, rendering. `twip::api` is the contract every SDK follows. |
 | `crates/twip-capi` | The C ABI over `twip::api` (internal, `include/twip.h`): the native library `twip` the .NET SDK loads. |
 | `crates/twip-wasm` | Builds the C ABI as the web's WebAssembly module (`wasm32-unknown-unknown`, with wasm-bindgen's glue); its `test` runs the layout snapshots in WebAssembly (`wasm32-wasip1` under Node's WASI). |
+| `crates/twip-document` | The document model: what a document holds, with no XML, package or layout dependency. Internal; published with `twip` at its exact version. |
 | `crates/twip-graphics` | The 2D renderer: pictures recorded once, drawn on the CPU (and the GPU and PDF). Internal; published with `twip` at its exact version. |
 | `crates/twip-tools` | Developer tools: golden comparisons, dumps, round trips, renders (`cargo run -p twip-tools`). |
 | `bindings/web` | `@twip/web`, the TypeScript SDK, written by hand over the wasm module. |

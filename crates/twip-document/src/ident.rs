@@ -1,0 +1,60 @@
+//! Identities
+
+use std::sync::atomic::{AtomicU64, Ordering};
+
+/// A paragraph's identity: process-local, kept through edits, undo and redo; new on every read and paste.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct ParaId(pub u64);
+
+/// A table's identity, as a paragraph's.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct TableId(pub u64);
+
+/// A floating object's identity, as a paragraph's.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct FloatId(pub u64);
+
+/// An offset in a paragraph: one unit per character and per inline object; markers take none.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct Unit(pub u32);
+
+/// A field's identity: its begin, separator and end markers share it. Process-local, kept
+/// through edits, undo and redo; new on every read and paste.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct FieldId(pub u64);
+
+impl FieldId {
+    /// A new id (unique in the process).
+    pub fn next() -> FieldId {
+        FieldId(next_para_id())
+    }
+}
+
+/// A content control's or custom XML wrapper's identity: process-local, kept through edits,
+/// undo and redo.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct ControlId(pub u64);
+
+impl ControlId {
+    /// A new id (unique in the process).
+    pub fn next() -> ControlId {
+        ControlId(next_para_id())
+    }
+}
+
+/// A new paragraph id (unique in the process). Fields, controls, tables and floats draw from the same counter.
+pub fn next_para_id() -> u64 {
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    NEXT.fetch_add(1, Ordering::Relaxed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ControlId, FieldId, next_para_id};
+
+    #[test]
+    fn ids_come_from_one_counter_and_are_never_reused() {
+        let (a, f, c, b) = (next_para_id(), FieldId::next(), ControlId::next(), next_para_id());
+        assert!(a < f.0 && f.0 < c.0 && c.0 < b);
+    }
+}

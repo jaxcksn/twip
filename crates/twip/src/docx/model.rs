@@ -1,5 +1,7 @@
 //! The layout engine's input: a document with every style resolved (the STYLE rules). Lengths are points.
 
+pub use crate::document::ident::{ControlId, FieldId, next_para_id};
+
 use super::font_table::GenericFamily;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -378,18 +380,6 @@ impl BreakKind {
 pub enum NoteKind {
     Foot,
     End,
-}
-
-/// A field's identity: its begin, separator and end markers share it. Process-local, kept
-/// through edits, undo and redo; new on every read and paste.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct FieldId(pub u64);
-
-impl FieldId {
-    /// A new id (unique in the process).
-    pub fn next() -> FieldId {
-        FieldId(next_para_id())
-    }
 }
 
 /// A field or content control: what the host names (`f12` / `c7` in JSON).
@@ -1015,12 +1005,6 @@ impl Paragraph {
     }
 }
 
-/// A new paragraph id (unique in the process).
-pub fn next_para_id() -> u64 {
-    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
-    NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-}
-
 /// A body paragraph's place in the main part's XML ([`Source::xml`] byte offsets), for lossless saving.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ParaSrc {
@@ -1246,18 +1230,6 @@ pub enum PartState {
     AsRead,
     Added,
     Removed,
-}
-
-/// A content control's or custom XML wrapper's identity: process-local, kept through edits,
-/// undo and redo.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct ControlId(pub u64);
-
-impl ControlId {
-    /// A new id (unique in the process).
-    pub fn next() -> ControlId {
-        ControlId(next_para_id())
-    }
 }
 
 /// A content control (`w:sdt`) or custom XML wrapper: its properties, and the markup it was read
