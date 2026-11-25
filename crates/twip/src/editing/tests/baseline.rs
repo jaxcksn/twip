@@ -11,12 +11,12 @@ use crate::api::command::{Command as C, DeleteOptions, FontChoice, Indents, Inse
 use crate::api::drawing::{ColourTransform, ColourValue, ThemeColour, TransformKind};
 use crate::api::styles::{StyleChange, StyleModification};
 use crate::api::value::{Alignment, AutoOr, Bytes, Direction, HighlightColor, Points, StyleId, UnderlineStyle};
-use crate::docx::char_props;
 use crate::docx::props::{ParaProps, RunProps, ThemeColours};
 use crate::docx::resolve::Resolver;
 use crate::docx::styles::Region;
 use crate::docx::write::props::{Cx, Props};
 use crate::docx::{Block, Document, Inline, Paragraph, Run, RunStyle};
+use crate::docx::{char_props, para_props, para_xml};
 use crate::format::resolve::{self, RunEnv};
 use crate::format::{CharProps, Color};
 use crate::layout::{ParaId, Unit};
@@ -580,6 +580,67 @@ fn typed_round_trip(rpr: roxmltree::Node, cx: &Cx, colours: &ThemeColours, what:
     assert_eq!(char_props::from_run_props(&read), typed, "{what}: converted from the XML path");
 }
 
+/// `ppr`'s typed properties, written again by the typed serializer with the children other nodes own, parse to the
+/// same typed properties, and to the same properties on the XML path, and the writing holds every element, text and
+/// attribute value of `ppr`; converting the XML path's properties gives the typed ones but for what that path doesn't
+/// read.
+fn typed_ppr_round_trip(ppr: roxmltree::Node, cx: &Cx, colours: &ThemeColours, what: &str) {
+    let typed = para_props::parse(ppr);
+    let text = ppr.document().input_text();
+    let own = |name| crate::docx::xml::child(ppr, name).map(|c| &text[c.range()]);
+    let owned = para_props::Owned { mark: own("rPr"), section: own("sectPr"), change: own("pPrChange") };
+    let xml = para_props::serialize(&typed, owned, colours, cx);
+    let again = cx.parse(&xml, |_, el| para_props::parse(el)).unwrap_or_else(|| panic!("{what}: written as {xml}, parses"));
+    assert_eq!(again, typed, "{what}: typed, written as {xml}");
+    let lost = cx.parse(&xml, |_, el| char_props::tests::lost(ppr, el)).unwrap_or_default();
+    assert!(lost.is_empty(), "{what}: written as {xml}, loses {lost:?}");
+    let read = ParaProps::parse(Some(ppr), colours);
+    assert_eq!(cx.parse(&xml, |_, el| ParaProps::parse(Some(el), colours)), Some(read.clone()), "{what}: on the XML path, written as {xml}");
+    let mut typed = typed;
+    typed.foreign = None;
+    let auto = |c: &mut Option<Color>| *c = c.filter(|c| *c != Color::Auto);
+    if let Some(s) = &mut typed.shading {
+        auto(&mut s.color);
+        auto(&mut s.fill);
+    }
+    let b = &mut typed.borders;
+    for side in [&mut b.top, &mut b.bottom, &mut b.left, &mut b.right, &mut b.between].into_iter().flatten() {
+        auto(&mut side.color);
+    }
+    assert_eq!(para_props::from_para_props(&read), typed, "{what}: converted from the XML path");
+}
+
+/// Every paragraph property element in every fixture (the main part's, its tracked changes' earlier ones, a style's,
+/// a table style region's, a list level's and the document defaults') round trips through the typed parse and
+/// serializer.
+#[test]
+fn paragraph_property_xml_round_trips_through_the_typed_writer() {
+    let mut n = 0;
+    for (path, d) in fixtures() {
+        let res = d.resolver.as_deref().expect("a resolver");
+        let cx = cx(&d);
+        let colours = &res.styles.colours;
+        let what = |raw: &str| format!("{}: {raw}", path.display());
+        let src = &d.source.as_ref().expect("a source").xml;
+        let doc = roxmltree::Document::parse(src).expect("the main part parses");
+        for p in doc.descendants().filter(|n| crate::docx::xml::is_w(*n, "pPr")) {
+            typed_ppr_round_trip(p, &cx, colours, &what(&src[p.range()]));
+            n += 1;
+        }
+        let scx = res.styles.cx();
+        let mut styles: Vec<&str> = res.styles.by_id.values().map(|s| s.raw.as_str()).collect();
+        styles.extend(res.styles.defaults_raw.as_deref());
+        for raw in styles {
+            let k = scx.parse(raw, |_, el| {
+                let pprs = el.descendants().filter(|n| crate::docx::xml::is_w(*n, "pPr"));
+                pprs.map(|p| typed_ppr_round_trip(p, &scx, colours, &what(raw))).count()
+            });
+            n += k.unwrap_or_else(|| panic!("{}: parses", what(raw)));
+        }
+    }
+    assert!(n > 7_000, "only {n} paragraph property elements checked");
+}
+
 /// Every paragraph's property XML in every fixture, written again by the property writer, parses to the same
 /// properties, whatever prefix (or default namespace) the element names its namespace with; every run property
 /// element (a run's, a mark's and a formatting change's earlier one, as held and as written in the main part, with
@@ -728,6 +789,60 @@ fn resolve_blocks(
                 for (ri, row) in t.rows.iter().enumerate() {
                     for (ci, c) in row.cells.iter().enumerate() {
                         resolve_blocks(res, env, cx, &c.blocks, Some(&res.region_of(t, ri, ci)), what, counts);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Every body paragraph, and its tracked change's earlier formatting, resolved by the typed paragraph resolver from
+/// the typed parse of its property XML in its table style region gives the format reading gave.
+#[test]
+fn typed_paragraph_resolution_gives_what_reading_resolved() {
+    let (mut paras, mut changes) = (0, 0);
+    for (path, d) in fixtures() {
+        let res = d.resolver.as_deref().expect("a resolver");
+        let cx = cx(&d);
+        for s in &d.sections {
+            resolve_paras(res, &cx, &s.blocks, None, &path.display().to_string(), &mut (&mut paras, &mut changes));
+        }
+    }
+    assert!(paras > 10_000 && changes >= 2, "only {paras} paragraphs and {changes} property changes checked");
+}
+
+fn resolve_paras(res: &Resolver, cx: &Cx, blocks: &[Block], region: Option<&Region>, what: &str, counts: &mut (&mut usize, &mut usize)) {
+    for b in blocks {
+        match b {
+            Block::Para(p) => {
+                if p.src.as_ref().is_some_and(|s| s.ranges.len() > 1) {
+                    continue;
+                }
+                let typed = |raw: Option<&str>| {
+                    let direct = raw.and_then(|x| cx.parse(x, |_, el| para_props::parse(el))).unwrap_or_default();
+                    let mark = raw.and_then(|x| {
+                        cx.parse(x, |_, el| crate::docx::xml::child(el, "rPr").map(|r| char_props::parse(r).0)).flatten().and_then(|m| m.size)
+                    });
+                    para_xml::resolve(res, &direct, mark, region).style
+                };
+                let mut again = typed(p.style.direct.0.as_deref());
+                (again.change, again.in_frame) = (p.style.change.clone(), p.style.in_frame);
+                if p.style.in_frame {
+                    again.frame = p.style.frame.clone();
+                }
+                assert!(p.style.layout_eq(&again), "{what}: paragraph {:?}: {:?} against {again:?}", p.id, p.style);
+                *counts.0 += 1;
+                if let Some(c) = p.style.change.as_ref().filter(|c| c.previous_raw.0.is_some()) {
+                    let mut was = typed(c.previous_raw.0.as_deref());
+                    (was.in_frame, was.frame) = (c.previous.in_frame, c.previous.frame.clone());
+                    assert!(c.previous.layout_eq(&was), "{what}: the earlier formatting of {:?}: {:?} against {was:?}", p.id, c.previous);
+                    *counts.1 += 1;
+                }
+            }
+            Block::Table(t) => {
+                for (ri, row) in t.rows.iter().enumerate() {
+                    for (ci, c) in row.cells.iter().enumerate() {
+                        resolve_paras(res, cx, &c.blocks, Some(&res.region_of(t, ri, ci)), what, counts);
                     }
                 }
             }
