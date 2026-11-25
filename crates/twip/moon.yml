@@ -20,6 +20,10 @@ tasks:
     env:
       TWIP_FIDELITY_OUT: '../../target/fidelity'
     inputs: ['src/**/*', 'tests/fidelity/**/*', '!tests/fidelity/validate/bin/**', '!tests/fidelity/validate/obj/**', 'Cargo.toml', '/crates/twip-capi/build-native.mjs']
+  # Every comparison of a model type that holds formatting, against the relations tests/equality/sites.txt names.
+  equality-audit:
+    command: python3 -I tests/equality/audit.py
+    inputs: ['src/**/*', 'tests/equality/**/*', 'Cargo.toml', '/Cargo.lock']
   example:
     command: node ../twip-capi/build-native.mjs run -p twip --example session
     inputs: ['src/**/*', 'examples/**/*', 'Cargo.toml', '/crates/twip-capi/build-native.mjs']
