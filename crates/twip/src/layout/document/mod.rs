@@ -29,6 +29,7 @@ use super::units::EPS;
 mod compose;
 mod notes;
 
+pub use compose::Found;
 pub(crate) use compose::{finish_page, hf_fields, hf_parts};
 pub use notes::JobNotes;
 
@@ -499,21 +500,32 @@ impl LayoutJob {
             let mut memos = Memos { cache, meter: &mut meter };
             let run = &mut self.run;
             let n = run.pages.len();
-            let nsec = doc.sections.len();
-            run.info = Some(PassInfo {
-                num_pages: Some(n.max(pages).to_string()),
-                section_pages: section_pages(&run.pages, nsec),
-                page_refs: Rc::new(bookmark_pages(doc, cx.facts.chapters.body.as_deref(), &run.pages)),
-                para_at: Rc::new(para_at(&run.pages)),
-            });
-            for i in 0..n {
-                let pg = &run.pages[i];
-                if (pg.bodies.is_empty() && !pg.blank) || pg.composed {
-                    continue;
+            let waiting = |pg: &PageRecord| !pg.composed && (pg.blank || !pg.bodies.is_empty());
+            if run.pages[run.composed_to.min(n)..].iter().any(waiting) {
+                let num_pages = n.max(pages).to_string();
+                let chapters = facts.chapters.body.as_deref();
+                let info = run.provisional.info(doc, chapters, &run.pages, num_pages);
+                #[cfg(test)]
+                {
+                    let all = PassInfo {
+                        num_pages: info.num_pages.clone(),
+                        section_pages: Rc::new(section_pages(&run.pages, doc.sections.len())),
+                        page_refs: Rc::new(bookmark_pages(doc, chapters, &run.pages)),
+                        para_at: Rc::new(para_at(&run.pages)),
+                    };
+                    assert_eq!(info, all, "the pass's pages so far, kept as they are added, are as read again");
                 }
-                let _ = compose_page(run, &cx, i, &mut memos);
+                run.info = Some(info);
+                for i in run.composed_to..n {
+                    if waiting(&run.pages[i]) {
+                        let _ = compose_page(run, &cx, i, &mut memos);
+                    }
+                }
+                run.info = None;
             }
-            run.info = None;
+            while run.composed_to < n && run.pages[run.composed_to].composed {
+                run.composed_to += 1;
+            }
         }
         self.notes = notes;
     }
@@ -526,6 +538,7 @@ impl LayoutJob {
     /// The document changed in what layout reads, though nothing needs laying out again.
     pub fn document_changed(&mut self) {
         self.facts = None;
+        self.run.found = Default::default();
     }
 
     fn end_pass(&mut self, doc: &Document, notes: &JobNotes) -> bool {
@@ -629,9 +642,90 @@ pub(crate) fn excluded(records: &[PageRecord]) -> Vec<(usize, ParaId, std::ops::
 fn pass_info(cx: &PassCx, pages: &[PageRecord]) -> PassInfo {
     PassInfo {
         num_pages: Some(pages.len().to_string()),
-        section_pages: section_pages(pages, cx.doc.sections.len()),
+        section_pages: Rc::new(section_pages(pages, cx.doc.sections.len())),
         page_refs: Rc::new(bookmark_pages(cx.doc, cx.facts.chapters.body.as_deref(), pages)),
         para_at: Rc::new(para_at(pages)),
+    }
+}
+
+/// [`PassInfo`] of a pass's pages so far, for the headers and footers composed before it ends, kept as pages are added:
+/// the pages before the last are folded in once, and the last, which can still change, each time, what it changed
+/// undone before the next.
+#[derive(Default)]
+pub struct Provisional {
+    /// The pages folded in for good.
+    settled: usize,
+    section_pages: Rc<Vec<String>>,
+    page_refs: Rc<HashMap<String, PageRef>>,
+    para_at: Rc<HashMap<ParaId, (usize, usize)>>,
+    /// What the last page replaced: its section's count, each bookmark's page before it, the paragraphs it added.
+    undo: (Option<(usize, String)>, Vec<(String, Option<PageRef>)>, Vec<ParaId>),
+}
+
+impl Provisional {
+    /// [`pass_info`] of `pages`, with `num_pages`.
+    pub(super) fn info(&mut self, doc: &Document, chapters: Option<&HashMap<ParaId, String>>, pages: &[PageRecord], num_pages: String) -> PassInfo {
+        let nsec = doc.sections.len();
+        if self.section_pages.len() != nsec || self.settled > pages.len() {
+            *self = Provisional { section_pages: Rc::new(vec!["0".to_string(); nsec]), ..Provisional::default() };
+        }
+        let (counts, refs, at) = (Rc::make_mut(&mut self.section_pages), Rc::make_mut(&mut self.page_refs), Rc::make_mut(&mut self.para_at));
+        let (count, earlier, added) = &mut self.undo;
+        if let Some((s, c)) = count.take() {
+            counts[s] = c;
+        }
+        for (name, was) in earlier.drain(..).rev() {
+            match was {
+                Some(r) => refs.insert(name, r),
+                None => refs.remove(&name),
+            };
+        }
+        for p in added.drain(..) {
+            at.remove(&p);
+        }
+        let settled = pages.len().saturating_sub(1);
+        let mut fold = |k: usize, last: bool| {
+            let pg = &pages[k];
+            if !pg.blank
+                && let Some(c) = counts.get_mut(pg.section)
+            {
+                let was = std::mem::replace(c, pg.in_section.to_string());
+                if last {
+                    *count = Some((pg.section, was));
+                }
+            }
+            let fmt = doc.sections.get(pg.section).and_then(|s| s.pg_fmt.as_ref());
+            for (name, para) in &pg.effects.bookmarks {
+                let chapter = chapters.and_then(|c| c.get(para)).cloned();
+                let was = refs.insert(name.clone(), PageRef { number: pg.number, fmt: fmt.cloned(), chapter, page: k, para: *para });
+                if last {
+                    earlier.push((name.clone(), was));
+                }
+            }
+            if pg.effects.relative > 0 {
+                for (j, p) in pg.effects.paras.iter().enumerate() {
+                    if !at.contains_key(p) {
+                        at.insert(*p, (k, j));
+                        if last {
+                            added.push(*p);
+                        }
+                    }
+                }
+            }
+        };
+        for k in self.settled..settled {
+            fold(k, false);
+        }
+        if settled < pages.len() {
+            fold(settled, true);
+        }
+        self.settled = settled;
+        PassInfo {
+            num_pages: Some(num_pages),
+            section_pages: self.section_pages.clone(),
+            page_refs: self.page_refs.clone(),
+            para_at: self.para_at.clone(),
+        }
     }
 }
 

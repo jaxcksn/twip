@@ -124,6 +124,14 @@ impl JobNotes {
         let of = |k: NoteKind| all.iter().filter(move |r| r.0 == k).map(|r| r.1);
         let (foot_starts, foot_end) = story_starts(&doc.footnotes, of(NoteKind::Foot));
         let (end_starts, _) = story_starts(&doc.endnotes, of(NoteKind::End));
+        let index = |v: &[(i64, i64)]| -> HashMap<i64, i64> {
+            let mut m = HashMap::new();
+            for &(id, start) in v {
+                m.entry(id).or_insert(start);
+            }
+            m
+        };
+        let (foot_at, end_at) = (index(&foot_starts), index(&end_starts));
         for (si, s) in doc.sections.iter().enumerate() {
             let from = refs.len();
             collect_refs(&s.blocks, &mut refs, &mut seen);
@@ -142,12 +150,14 @@ impl JobNotes {
                         // Keys are looked up among the footnotes: an endnote's reference finds none and shows 8, as
                         // does a mark that resolves to none.
                         let foot_fmt = s.notes[0].fmt.as_deref().unwrap_or("decimal");
-                        let start_of = |v: &[(i64, i64)], id: i64| v.iter().find(|e| e.0 == id).map(|e| e.1);
+                        // The footnote stories' starts ascend.
                         let key = match kind {
-                            NoteKind::Foot => start_of(&foot_starts, id),
-                            NoteKind::End => start_of(&end_starts, id)
+                            NoteKind::Foot => foot_at.get(&id).copied(),
+                            NoteKind::End => end_at
+                                .get(&id)
+                                .copied()
                                 .filter(|&cp| cp < foot_end)
-                                .and_then(|cp| foot_starts.iter().rev().find(|e| e.1 <= cp).map(|e| e.1)),
+                                .and_then(|cp| foot_starts.partition_point(|e| e.1 <= cp).checked_sub(1).map(|j| foot_starts[j].1)),
                         };
                         if kind == NoteKind::End {
                             number = crate::docx::numbering::format_number(8, foot_fmt);
@@ -206,7 +216,23 @@ impl JobNotes {
             return None;
         }
         // A footnote's first part is drawn on its reference's page; an endnote's reference is shown there.
-        let page_of = |kind, id| pages.iter().position(|pg| pg.effects.notes_shown.iter().any(|n| (n.0, n.1) == (kind, id)));
+        let mut first: HashMap<(NoteKind, i64), usize> = HashMap::new();
+        for (pi, pg) in pages.iter().enumerate() {
+            for n in &pg.effects.notes_shown {
+                first.entry((n.0, n.1)).or_insert(pi);
+            }
+        }
+        let page_of = |kind, id| first.get(&(kind, id)).copied();
+        // The first page of each endnote mark's paragraph.
+        let marks: HashSet<ParaId> = self.keyed.iter().filter_map(|k| k.mark).collect();
+        let mut mark_page: HashMap<ParaId, usize> = HashMap::new();
+        if !marks.is_empty() {
+            for (pi, pg) in pages.iter().enumerate() {
+                for p in pg.effects.paras.iter().filter(|p| marks.contains(p)) {
+                    mark_page.entry(*p).or_insert(pi);
+                }
+            }
+        }
         let mut count: HashMap<(NoteKind, usize), i64> = HashMap::new();
         let mut changed = HashMap::new();
         for &(kind, id, start, ref fmt) in &self.paged {
@@ -223,15 +249,23 @@ impl JobNotes {
             .keyed
             .iter()
             .map(|k| match k.mark {
-                Some(p) => pages.iter().position(|pg| pg.effects.paras.contains(&p)),
+                Some(p) => mark_page.get(&p).copied(),
                 None => page_of(k.kind, k.id),
             })
             .collect();
+        // Each page's keys, in order.
+        let mut keys: HashMap<usize, Vec<i64>> = HashMap::new();
         for (k, pi) in self.keyed.iter().zip(&on) {
-            let Some(pi) = pi else { continue };
-            let mut keys: Vec<i64> = self.keyed.iter().zip(&on).filter(|(_, p)| **p == Some(*pi)).map(|(k, _)| k.key).collect();
-            keys.sort_unstable();
-            keys.dedup();
+            if let Some(pi) = pi {
+                keys.entry(*pi).or_default().push(k.key);
+            }
+        }
+        for v in keys.values_mut() {
+            v.sort_unstable();
+            v.dedup();
+        }
+        for (k, pi) in self.keyed.iter().zip(&on) {
+            let Some(keys) = pi.and_then(|pi| keys.get(&pi)) else { continue };
             let n = crate::docx::numbering::format_number(keys.partition_point(|&x| x < k.key) as i64 + 1, &k.fmt);
             let at = if k.mark.is_some() { mark_key(k.kind, k.id) } else { (k.kind, k.id) };
             if self.numbers.get(&at) != Some(&n) {

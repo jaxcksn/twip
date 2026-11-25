@@ -26,7 +26,7 @@ use body::{BodyEnv, layout_body};
 #[derive(Clone, Default, PartialEq, Debug)]
 pub struct PassInfo {
     pub num_pages: Option<String>,
-    pub section_pages: Vec<String>,
+    pub section_pages: Rc<Vec<String>>,
     pub page_refs: Rc<HashMap<String, crate::layout::text::PageRef>>,
     /// The page and place on it of each paragraph on the pages holding reference fields with `\p`.
     pub para_at: Rc<HashMap<super::ids::ParaId, (usize, usize)>>,
@@ -255,6 +255,12 @@ pub struct PassRun {
     pub memo: PassMemo,
     pub cursor: Cursor,
     pub info: Option<PassInfo>,
+    /// The pages found holding what each header and footer field looks for.
+    pub found: std::cell::RefCell<crate::layout::document::Found>,
+    /// What the headers and footers composed before the pass ends see of its pages.
+    pub provisional: crate::layout::document::Provisional,
+    /// The pages before it are composed or blank.
+    pub composed_to: usize,
 }
 
 impl PassRun {
@@ -269,6 +275,9 @@ impl PassRun {
             memo: PassMemo::default(),
             cursor: Cursor::Section { si: 0, carry: FlowState::default(), y: None },
             info: None,
+            found: Default::default(),
+            provisional: Default::default(),
+            composed_to: 0,
         }
     }
 }

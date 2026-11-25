@@ -1037,6 +1037,7 @@ impl Editor {
         self.sync_expansions(fonts);
         let snapshot = self.layout.snapshot();
         let stale = snapshot.revision() != self.layout.revision();
+        // Pages past the laid-out ones are pending too
         let pending = match snapshot.status() {
             _ if stale => Some(0),
             crate::layout::LayoutStatus::Pending { stale_from } => Some(*stale_from),
@@ -1055,7 +1056,7 @@ impl Editor {
         let step = self.with_flow(|l, d| l.run(d, fonts, Budget::Until(t + IDLE_BUDGET)));
         let snapshot = self.layout.snapshot();
         self.pages.sync(&snapshot);
-        step == LayoutStep::Yielded || snapshot.info().iter().any(|i| i.provisional)
+        step == LayoutStep::Yielded || snapshot.stale_from().is_some()
     }
 
     pub fn ensure_current(&mut self, fonts: &Fonts) {

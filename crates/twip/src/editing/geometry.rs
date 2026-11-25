@@ -865,6 +865,8 @@ pub struct Pages {
     by_page: Vec<Option<Rc<PageGeometry>>>,
     cache: std::collections::HashMap<crate::layout::FragmentId, Rc<PageGeometry>>,
     lines: LineMemo,
+    /// The line memo's size when it last let go of the lines no page holds.
+    lines_kept: usize,
 }
 
 // Line memo
@@ -879,15 +881,36 @@ struct Memo {
 }
 
 impl Pages {
+    /// Follows `snapshot`: only the pages it changed from the last one are looked at.
     pub fn sync(&mut self, snapshot: &Rc<crate::layout::Snapshot>) {
         if self.snapshot.as_ref().is_some_and(|s| Rc::ptr_eq(s, snapshot)) {
             return;
         }
-        let ids: HashSet<crate::layout::FragmentId> = snapshot.pages().iter().map(|p| p.id).collect();
-        self.cache.retain(|id, _| ids.contains(id));
-        self.by_page = vec![None; snapshot.pages().len()];
+        let pages = snapshot.pages();
+        let changed = match &self.snapshot {
+            Some(old) => snapshot.changed_from(old),
+            None => std::iter::once(0..pages.len()).collect(),
+        };
+        // The geometry of the pages gone; a page that moved keeps its own.
+        if let Some(old) = &self.snapshot {
+            let ids = |p: &crate::layout::pvec::Pvec<Rc<crate::layout::fragment::PageFragment>>| -> HashSet<crate::layout::FragmentId> {
+                changed.iter().flat_map(|r| r.clone()).filter_map(|i| p.get(i).map(|f| f.id)).collect()
+            };
+            let (gone, shown) = (ids(old.pages()), ids(pages));
+            self.cache.retain(|id, _| !gone.contains(id) || shown.contains(id));
+        } else {
+            let ids: HashSet<crate::layout::FragmentId> = pages.iter().map(|p| p.id).collect();
+            self.cache.retain(|id, _| ids.contains(id));
+        }
+        self.by_page.resize(pages.len(), None);
+        for i in changed.iter().flat_map(|r| r.clone()).take_while(|&i| i < pages.len()) {
+            self.by_page[i] = None;
+        }
         self.snapshot = Some(snapshot.clone());
-        self.lines.0.retain(|_, m| Rc::strong_count(&m.pinned) > 1);
+        if self.lines.0.len() > 2 * self.lines_kept + 64 {
+            self.lines.0.retain(|_, m| Rc::strong_count(&m.pinned) > 1);
+            self.lines_kept = self.lines.0.len();
+        }
     }
 
     #[cfg(test)]

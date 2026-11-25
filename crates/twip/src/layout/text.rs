@@ -1805,6 +1805,9 @@ impl CacheKey for ShapeKey {
                 t.hash(&mut h);
             }
         }
+        // A header's paragraph is shaped again on each page its field values change on.
+        p.space.fields.hash(&mut h);
+        p.space.notes.hash(&mut h);
         h.finish()
     }
 

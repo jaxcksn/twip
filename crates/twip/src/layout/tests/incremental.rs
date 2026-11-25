@@ -333,3 +333,56 @@ fn laying_out_to_a_page_after_a_header_edit_stops_there() {
     dl.complete(&d, &fonts);
     assert_matches_full(&dl, &d);
 }
+
+/// Sections going on on a page and starting on an odd one (a blank page before), a bookmark, and a header of
+/// `PAGEREF`, `NUMPAGES` and `SECTIONPAGES`, laid out a page a run: each run publishes its pages as the tests' checks
+/// in composing and publishing find them, and the last a full layout's.
+#[test]
+fn a_layout_published_page_by_page_ends_as_a_full_one() {
+    use crate::layout::{Budget, Step};
+    let fonts = fonts();
+    let field = |code: &str| {
+        format!(
+            r#"<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> {code} </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>0</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>"#
+        )
+    };
+    let header = format!(r#"<w:hdr {W}><w:p>{}{}{}</w:p></w:hdr>"#, field("PAGEREF mark"), field("NUMPAGES"), field("SECTIONPAGES"));
+    let r = r#" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships""#;
+    let hdr = r#"<w:headerReference w:type="default" r:id="rId2"/>"#;
+    let para = |t: &str| format!("<w:p><w:r><w:t>{t}</w:t></w:r></w:p>");
+    let brk = r#"<w:p><w:r><w:br w:type="page"/></w:r></w:p>"#;
+    let sect = |kind: &str| format!(r#"<w:p><w:pPr><w:sectPr>{hdr}<w:type w:val="{kind}"/>{PAGE}</w:sectPr></w:pPr></w:p>"#);
+    let mut body = String::new();
+    for s in 0..6 {
+        for k in 0..3 {
+            body += &para(&format!("S{s} P{k}"));
+            if s == 2 && k == 1 {
+                body += r#"<w:p><w:bookmarkStart w:id="0" w:name="mark"/><w:r><w:t>Mark</w:t></w:r><w:bookmarkEnd w:id="0"/></w:p>"#;
+            }
+            body += brk;
+        }
+        body += &sect(["continuous", "oddPage", "nextPage"][s % 3]);
+    }
+    let ct = CT.replace(
+        "</Types>",
+        r#"<Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/></Types>"#,
+    );
+    let rels = r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/></Relationships>"#;
+    let d = package(&[
+        ("[Content_Types].xml", &ct),
+        ("_rels/.rels", RELS),
+        ("word/_rels/document.xml.rels", rels),
+        ("word/document.xml", &format!("<w:document {W}{r}><w:body>{body}<w:sectPr>{hdr}{PAGE}</w:sectPr></w:body></w:document>")),
+        ("word/header1.xml", &header),
+    ])
+    .expect("document");
+    let mut dl = DocumentLayout::new();
+    dl.edit(Revision(1), None);
+    let mut runs = 0;
+    while dl.run(&d, &fonts, Budget::Pages(1)) != Step::Done {
+        runs += 1;
+    }
+    let full = layout(&d, &fonts);
+    assert!(runs + 1 >= full.pages().len() && full.info().iter().any(|i| i.blank), "a run a page, a blank page among them: {runs} runs");
+    assert_matches_full(&dl, &d);
+}
