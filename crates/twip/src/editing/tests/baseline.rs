@@ -32,6 +32,12 @@ fn cx(d: &Document) -> Cx {
 
 // Re-resolution from the property XML each node holds
 
+/// A run's `w:rPr` as the document writes it: as read while its authored properties are those, else written from
+/// them (a typed command's result, whose properties the edit's own check holds against the hand-written patch).
+fn written(res: &Resolver, cx: &Cx, r: &RunStyle) -> Option<String> {
+    r.direct.xml(&res.styles.colours, cx).map(std::borrow::Cow::into_owned)
+}
+
 /// Every body paragraph, mark and text run resolved again from its own property XML gives the format it holds.
 /// Paragraphs joined through vanished marks are skipped, as the as-read harness skips them (`docx::resolve`).
 fn check(d: &Document, what: &str) -> usize {
@@ -57,11 +63,11 @@ fn check_blocks(res: &Resolver, cx: &Cx, blocks: &[Block], region: Option<&Regio
                 r.style.frame = p.style.frame.clone();
                 assert_eq!(*p.style, r.style, "{what}: paragraph {:?}", p.id);
                 let with_rev = |again: Run, read: &Run| RunStyle { rev: read.rev.clone(), ..(*again).clone() };
-                let mark = with_rev(res.run_from_xml(&r.base, p.mark.direct.as_read().map(|x| &**x), cx), &p.mark);
+                let mark = with_rev(res.run_from_xml(&r.base, written(res, cx, &p.mark).as_deref(), cx), &p.mark);
                 assert!(p.mark.layout_eq(&mark), "{what}: the mark of {:?}: {:?} against {mark:?}", p.id, p.mark);
                 for i in &p.inlines {
                     if let Inline::Text(t, run) = i {
-                        let again = res.rerun(&r.base, run, cx);
+                        let again = res.rerun_xml(&r.base, run, written(res, cx, run).as_deref(), cx);
                         assert!(run.layout_eq(&again), "{what}: run {t:?} of {:?}: {run:?} against {again:?}", p.id);
                         *checked += 1;
                     }
@@ -82,21 +88,23 @@ fn check_blocks(res: &Resolver, cx: &Cx, blocks: &[Block], region: Option<&Regio
 type Authored = Vec<(u64, Option<Rc<str>>, Option<Rc<str>>, Vec<Option<Rc<str>>>)>;
 
 fn authored(d: &Document) -> Authored {
-    fn walk(blocks: &[Block], out: &mut Authored) {
+    fn walk(res: &Resolver, cx: &Cx, blocks: &[Block], out: &mut Authored) {
+        let rpr = |r: &RunStyle| written(res, cx, r).map(|x| Rc::from(x.as_str()));
         for b in blocks {
             match b {
                 Block::Para(p) => out.push((
                     p.id,
                     p.style.direct.0.clone(),
-                    p.mark.direct.as_read().cloned(),
-                    p.inlines.iter().filter_map(|i| if let Inline::Text(_, r) = i { Some(r.direct.as_read().cloned()) } else { None }).collect(),
+                    rpr(&p.mark),
+                    p.inlines.iter().filter_map(|i| if let Inline::Text(_, r) = i { Some(rpr(r)) } else { None }).collect(),
                 )),
-                Block::Table(t) => t.rows.iter().flat_map(|r| &r.cells).for_each(|c| walk(&c.blocks, out)),
+                Block::Table(t) => t.rows.iter().flat_map(|r| &r.cells).for_each(|c| walk(res, cx, &c.blocks, out)),
             }
         }
     }
+    let (res, cx) = (d.resolver.as_deref().expect("a resolver"), cx(d));
     let mut out = Vec::new();
-    d.sections.iter().for_each(|s| walk(&s.blocks, &mut out));
+    d.sections.iter().for_each(|s| walk(res, &cx, &s.blocks, &mut out));
     out
 }
 
@@ -363,7 +371,7 @@ fn run_props(res: &Resolver, cx: &Cx, p: &Paragraph, patch: Option<Patch>) -> Ve
                     f(&mut props, cx);
                     props.xml()
                 }
-                None => r.direct.as_read().map(|x| &**x).map(str::to_string),
+                None => written(res, cx, r),
             };
             std::iter::repeat_n(parse(raw.as_deref()), t.chars().count())
         })

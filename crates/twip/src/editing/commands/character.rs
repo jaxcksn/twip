@@ -4,10 +4,10 @@ use crate::api::command::{CaseChange, CharacterEffects, Language, Ligatures, Num
 use crate::api::drawing::{ColourValue, TextEffectsChange};
 use crate::api::value::{AutoOr, Color, HighlightColor, Points, StyleId, UnderlineStyle};
 use crate::docx::Inline;
-use crate::docx::line_style::underline_val;
 use crate::docx::write::props::Props;
 use crate::docx::{RunStyle, ThemeFont, Underline};
 use crate::font::Fonts;
+use crate::format::{CharEdit, FontRef, Prop, ScriptClass, ThemeFace, UnderlineProps};
 use crate::layout::Unit;
 
 use super::Outcome;
@@ -16,73 +16,7 @@ use crate::editing::format::{Format, Toggle};
 use crate::editing::step::Step;
 use crate::editing::{Editor, Tx};
 
-/// A run toggle as written: on, or explicitly off (over a style's).
-fn toggle_xml(w: &str, name: &str, on: bool) -> String {
-    if on { format!("<{w}{name}/>") } else { format!("<{w}{name} {w}val=\"0\"/>") }
-}
-
-/// The span of attribute `name` in `tag` as `(start of its leading space, start of its value, end of its value)`,
-/// written with either quote; other attributes' values are skipped.
-fn attr_span(tag: &str, name: &str) -> Option<(usize, usize, usize)> {
-    let b = tag.as_bytes();
-    let mut k = 0;
-    while k < b.len() {
-        match b[k] {
-            q @ (b'"' | b'\'') => k = tag[k + 1..].find(q as char).map_or(b.len(), |e| k + e + 2),
-            _ if k > 0 && b[k - 1].is_ascii_whitespace() && b[k..].starts_with(name.as_bytes()) => {
-                let after = k + name.len();
-                if let Some(v) = tag[after..].trim_start().strip_prefix('=').map(str::trim_start)
-                    && let Some(q) = v.chars().next().filter(|c| matches!(c, '"' | '\''))
-                {
-                    let start = tag.len() - v.len() + 1;
-                    let end = tag[start..].find(q).map_or(tag.len(), |e| start + e);
-                    return Some((tag[..k].trim_end().len(), start, end));
-                }
-                k = after;
-            }
-            _ => k += 1,
-        }
-    }
-    None
-}
-
-/// `tag` without the attribute `name`.
-fn strip(tag: &str, name: &str) -> String {
-    let Some((lead, _, end)) = attr_span(tag, name) else { return tag.to_string() };
-    format!("{}{}", &tag[..lead], &tag[(end + 1).min(tag.len())..])
-}
-
-/// `tag` (one start tag or empty element) with the attribute `name` set.
-pub(crate) fn with_attr(tag: &str, name: &str, value: &str) -> String {
-    let v = crate::docx::write::props::esc(value);
-    if let Some((_, from, to)) = attr_span(tag, name) {
-        // Its own quotes kept: a single-quoted value's apostrophes escaped
-        let v = if tag[..from].ends_with('\'') { v.replace('\'', "&apos;") } else { v };
-        return format!("{}{v}{}", &tag[..from], &tag[to..]);
-    }
-    let at = tag.rfind("/>").or_else(|| tag.rfind('>')).unwrap_or(tag.len());
-    format!("{} {name}=\"{v}\"{}", &tag[..at], &tag[at..])
-}
-
-/// `w14:ligatures` values by their bits: 1 standard, 2 contextual, 4 historical, 8 discretionary.
-const LIGATURES: [&str; 16] = [
-    "none",
-    "standard",
-    "contextual",
-    "standardContextual",
-    "historical",
-    "standardHistorical",
-    "contextualHistorical",
-    "standardContextualHistorical",
-    "discretional",
-    "standardDiscretional",
-    "contextualDiscretional",
-    "standardContextualDiscretional",
-    "historicalDiscretional",
-    "standardHistoricalDiscretional",
-    "contextualHistoricalDiscretional",
-    "all",
-];
+pub(crate) use crate::docx::char_props::with_attr;
 
 pub use crate::api::command::LigatureFlags;
 
@@ -178,6 +112,28 @@ pub(crate) fn highlight_color(name: &str) -> Option<HighlightColor> {
     .find(|&h| highlight_value(h) == name)
 }
 
+/// A highlight colour as authored properties hold it.
+pub(crate) fn highlight(c: HighlightColor) -> crate::format::Highlight {
+    use crate::format::Highlight as H;
+    match c {
+        HighlightColor::Yellow => H::Yellow,
+        HighlightColor::BrightGreen => H::Green,
+        HighlightColor::Turquoise => H::Cyan,
+        HighlightColor::Pink => H::Magenta,
+        HighlightColor::Blue => H::Blue,
+        HighlightColor::Red => H::Red,
+        HighlightColor::DarkBlue => H::DarkBlue,
+        HighlightColor::Teal => H::DarkCyan,
+        HighlightColor::Green => H::DarkGreen,
+        HighlightColor::Violet => H::DarkMagenta,
+        HighlightColor::DarkRed => H::DarkRed,
+        HighlightColor::DarkYellow => H::DarkYellow,
+        HighlightColor::Gray50 => H::DarkGray,
+        HighlightColor::Gray25 => H::LightGray,
+        HighlightColor::Black => H::Black,
+    }
+}
+
 pub(crate) fn highlight_value(c: HighlightColor) -> &'static str {
     match c {
         HighlightColor::Yellow => "yellow",
@@ -206,18 +162,44 @@ pub(crate) fn rgb_value(c: AutoOr<Color>) -> AutoOr<ColourValue> {
     }
 }
 
+/// An on/off property a command sets.
+#[derive(Clone, Copy)]
+pub(in crate::editing) enum Flag {
+    /// One of the toggles.
+    Toggle(crate::format::Toggle),
+    /// Double strikethrough.
+    DoubleStrike,
+}
+
 impl Editor {
     pub(in crate::editing) fn set_toggle(&mut self, t: Toggle, on: bool, fonts: &Fonts) -> Outcome {
         self.format(&Format::Set(t, on), fonts)
     }
 
-    pub(in crate::editing) fn set_flag(&mut self, label: &'static str, name: &'static str, on: bool, fonts: &Fonts) -> Outcome {
-        self.format_runs(label, &|p, w, _| p.set(name, if on { format!("<{w}{name}/>") } else { format!("<{w}{name} {w}val=\"0\"/>") }), fonts)
+    pub(in crate::editing) fn set_flag(&mut self, label: &'static str, flag: Flag, on: bool, fonts: &Fonts) -> Outcome {
+        self.format_runs_typed(
+            label,
+            &|e, _| match flag {
+                Flag::Toggle(t) => e.toggle(t, on),
+                Flag::DoubleStrike => {
+                    e.double_strike = Some(on);
+                    e.whole(Prop::DoubleStrike);
+                }
+            },
+            fonts,
+        )
     }
 
     pub(in crate::editing) fn set_underline(&mut self, style: UnderlineStyle, fonts: &Fonts) -> Outcome {
-        let v = underline_val(underline(style));
-        self.format_runs("Underline", &|p, w, _| p.set("u", format!("<{w}u {w}val=\"{v}\"/>")), fonts)
+        let style = underline(style);
+        self.format_runs_typed(
+            "Underline",
+            &|e, _| {
+                e.underline = Some(UnderlineProps { style, color: None });
+                e.whole(Prop::Underline);
+            },
+            fonts,
+        )
     }
 
     /// Sets the text's colour: an RGB colour, a theme colour with a tint or shade, or automatic.
@@ -233,30 +215,40 @@ impl Editor {
     }
 
     pub(in crate::editing) fn set_highlight(&mut self, h: Option<HighlightColor>, fonts: &Fonts) -> Outcome {
-        self.format(&Format::Highlight(h.map(|h| highlight_value(h).to_string())), fonts)
+        self.format(&Format::Highlight(h.map(highlight)), fonts)
     }
 
     pub(in crate::editing) fn set_character_spacing(&mut self, s: Points, fonts: &Fonts) -> Outcome {
-        let tw = (s.0 * 20.0).round() as i64;
-        self.format_runs(
+        let tw = (s.0 * 20.0).round();
+        self.format_runs_typed(
             "Character Spacing",
-            &|p, w, _| if tw == 0 { p.remove("spacing") } else { p.set("spacing", format!("<{w}spacing {w}val=\"{tw}\"/>")) },
+            &|e, _| {
+                e.spacing = (tw != 0.0).then_some(tw / 20.0);
+                e.whole(Prop::Spacing);
+            },
             fonts,
         )
     }
 
     pub(in crate::editing) fn set_character_position(&mut self, s: Points, fonts: &Fonts) -> Outcome {
-        let hp = (s.0 * 2.0).round() as i64;
-        self.format_runs(
+        let hp = (s.0 * 2.0).round();
+        self.format_runs_typed(
             "Position",
-            &|p, w, _| if hp == 0 { p.remove("position") } else { p.set("position", format!("<{w}position {w}val=\"{hp}\"/>")) },
+            &|e, _| {
+                e.position = (hp != 0.0).then_some(hp / 2.0);
+                e.whole(Prop::Position);
+            },
             fonts,
         )
     }
 
     pub(in crate::editing) fn apply_character_style(&mut self, id: Option<StyleId>, fonts: &Fonts) -> Outcome {
         use crate::docx::styles::StyleKind;
-        let Some(id) = id else { return self.format_runs("Style", &|p, _, _| p.remove("rStyle"), fonts) };
+        let unstyle = |e: &mut CharEdit, _: &RunStyle| {
+            e.style = None;
+            e.whole(Prop::Style);
+        };
+        let Some(id) = id else { return self.format_runs_typed("Style", &unstyle, fonts) };
         let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
         // A linked paragraph style's character half.
         let id = match res.styles.by_id.get(&id.0) {
@@ -281,16 +273,17 @@ impl Editor {
         {
             return Outcome::invalid("a stylistic set is 1…20");
         }
-        let cx = self.formatted_part_cx();
-        self.format_runs(
+        self.format_runs_typed(
             "Advanced Font",
-            &|p, w, _| {
+            &|p, _| {
                 if let Some(s) = t.scale {
-                    let pct = s.round() as i64;
-                    if pct == 100 { p.remove("w") } else { p.set("w", format!("<{w}w {w}val=\"{pct}\"/>")) }
+                    let pct = s.round();
+                    p.scale = (pct != 100.0).then_some(pct);
+                    p.whole(Prop::Scale);
                 }
                 if let Some(k) = t.kerning {
-                    p.set("kern", format!("<{w}kern {w}val=\"{}\"/>", (k.0 * 2.0).round() as i64));
+                    p.kern = Some((k.0 * 2.0).round() / 2.0);
+                    p.whole(Prop::Kern);
                 }
                 let preset = t.ligatures.map(|l| match l {
                     Ligatures::None => 0,
@@ -300,34 +293,36 @@ impl Editor {
                     Ligatures::All => 15,
                 });
                 if let Some(bits) = more.ligatures.map(LigatureFlags::bits).or(preset) {
-                    p.set("w14:ligatures", cx.w14("ligatures", &[("val", LIGATURES[usize::from(bits)])], ""));
+                    p.typography.ligatures = Some(bits);
+                    p.whole(Prop::Ligatures);
                 }
                 if let Some(n) = t.number_spacing {
-                    let v = match n {
-                        NumberSpacing::Default => "default",
-                        NumberSpacing::Proportional => "proportional",
-                        NumberSpacing::Tabular => "tabular",
-                    };
-                    p.set("w14:numSpacing", cx.w14("numSpacing", &[("val", v)], ""));
+                    use crate::format::NumberSpacing as N;
+                    p.whole(Prop::NumberSpacing);
+                    p.typography.number_spacing = Some(match n {
+                        NumberSpacing::Default => N::Default,
+                        NumberSpacing::Proportional => N::Proportional,
+                        NumberSpacing::Tabular => N::Tabular,
+                    });
                 }
                 if let Some(n) = t.number_form {
-                    let v = match n {
-                        NumberForm::Default => "default",
-                        NumberForm::Lining => "lining",
-                        NumberForm::OldStyle => "oldStyle",
-                    };
-                    p.set("w14:numForm", cx.w14("numForm", &[("val", v)], ""));
+                    use crate::format::NumberForm as N;
+                    p.whole(Prop::NumberForm);
+                    p.typography.number_form = Some(match n {
+                        NumberForm::Default => N::Default,
+                        NumberForm::Lining => N::Lining,
+                        NumberForm::OldStyle => N::OldStyle,
+                    });
                 }
                 let sets = more.stylistic_sets.clone().or_else(|| t.stylistic_set.map(|n| if n == 0 { Vec::new() } else { vec![n] }));
-                if let Some(mut sets) = sets {
-                    sets.sort_unstable();
-                    sets.dedup();
-                    // None: an empty element, so a style's sets don't apply
-                    let inner: String = sets.iter().map(|n| format!("<{{w14}}styleSet {{w14}}id=\"{n}\"/>")).collect();
-                    p.set("w14:stylisticSets", cx.w14("stylisticSets", &[], &inner));
+                if let Some(sets) = sets {
+                    // None: no sets, so a style's don't apply
+                    p.typography.stylistic_sets = Some(sets.iter().filter(|n| (1..=20).contains(*n)).fold(0, |m, n| m | 1 << (n - 1)));
+                    p.whole(Prop::StylisticSets);
                 }
                 if let Some(on) = t.contextual_alternates {
-                    p.set("w14:cntxtAlts", cx.w14("cntxtAlts", &[("val", if on { "1" } else { "0" })], ""));
+                    p.typography.contextual_alternates = Some(on);
+                    p.whole(Prop::ContextualAlternates);
                 }
             },
             fonts,
@@ -336,17 +331,17 @@ impl Editor {
 
     /// Sets the text's font to the theme's heading or body font (`+Headings`, `+Body`): it follows the theme.
     pub fn set_theme_font(&mut self, f: ThemeFont, fonts: &Fonts) -> Outcome {
-        let v = match f {
-            ThemeFont::Major => "majorHAnsi",
-            ThemeFont::Minor => "minorHAnsi",
+        let face = match f {
+            ThemeFont::Major => ThemeFace::Major,
+            ThemeFont::Minor => ThemeFace::Minor,
         };
-        self.format_runs(
+        let theme = Some(FontRef::Theme { face, script: ScriptClass::LatinExtended });
+        self.format_runs_typed(
             "Font",
-            &|p, w, _| {
-                let now = p.get("rFonts").map_or_else(|| format!("<{w}rFonts/>"), str::to_string);
-                let now = ["ascii", "hAnsi", "asciiTheme", "hAnsiTheme"].iter().fold(now, |t, a| strip(&t, &format!("{w}{a}")));
-                let now = with_attr(&now, &format!("{w}asciiTheme"), v);
-                p.set("rFonts", with_attr(&now, &format!("{w}hAnsiTheme"), v));
+            &|e, _| {
+                (e.fonts.latin, e.fonts.latin_extended) = (theme.clone(), theme.clone());
+                e.part(Prop::Font(ScriptClass::Latin));
+                e.part(Prop::Font(ScriptClass::LatinExtended));
             },
             fonts,
         )
@@ -374,12 +369,12 @@ impl Editor {
         used.sort_unstable();
         used.dedup();
         let id = (1..).find(|n| used.binary_search(n).is_err()).unwrap_or(1);
-        let tw = width.map(|w| (w.0 * 20.0).round() as i64);
-        self.format_runs(
+        let tw = width.map(|w| (w.0 * 20.0).round());
+        self.format_runs_typed(
             "Fit Text",
-            &|p, w, _| match tw {
-                Some(tw) => p.set("fitText", format!("<{w}fitText {w}val=\"{tw}\" {w}id=\"{id}\"/>")),
-                None => p.remove("fitText"),
+            &|e, _| {
+                e.fit_text = tw.map(|tw| (tw / 20.0, id));
+                e.whole(Prop::FitText);
             },
             fonts,
         )
@@ -480,15 +475,16 @@ impl Editor {
     }
 
     pub(in crate::editing) fn set_language(&mut self, l: Language, fonts: &Fonts) -> Outcome {
-        self.format_runs(
+        self.format_runs_typed(
             "Language",
-            &|p, w, _| {
+            &|p, _| {
                 if let Some(tag) = &l.language {
-                    let now = p.get("lang").map_or_else(|| format!("<{w}lang/>"), str::to_string);
-                    p.set("lang", with_attr(&now, &format!("{w}val"), tag));
+                    p.lang.latin = Some(tag.as_str().into());
+                    p.part(Prop::Lang(ScriptClass::Latin));
                 }
                 if let Some(off) = l.no_proof {
-                    p.set("noProof", toggle_xml(w, "noProof", off));
+                    p.no_proof = Some(off);
+                    p.whole(Prop::NoProof);
                 }
             },
             fonts,
@@ -499,13 +495,14 @@ impl Editor {
         // Emboss and engrave exclude each other, as in Word.
         let engrave = e.engrave.or(e.emboss.filter(|on| *on).map(|_| false));
         let emboss = e.emboss.or(e.engrave.filter(|on| *on).map(|_| false));
-        let flags = [("emboss", emboss), ("imprint", engrave), ("outline", e.outline), ("shadow", e.shadow)];
-        self.format_runs(
+        use crate::format::Toggle as T;
+        let flags = [(T::EMBOSS, emboss), (T::IMPRINT, engrave), (T::OUTLINE, e.outline), (T::SHADOW, e.shadow)];
+        self.format_runs_typed(
             "Font Effects",
-            &|p, w, _| {
-                for (name, on) in flags {
+            &|p, _| {
+                for (t, on) in flags {
                     if let Some(on) = on {
-                        p.set(name, toggle_xml(w, name, on));
+                        p.toggle(t, on);
                     }
                 }
             },
@@ -522,14 +519,15 @@ impl Editor {
                 Err(why) => return Outcome::invalid(&why),
             },
         };
-        self.format_runs(
+        let color = c.map_or(crate::format::Color::Auto, crate::editing::format::colour);
+        self.format_runs_typed(
             "Underline Color",
-            &|p, w, run| {
+            &|p, run| {
                 // Only underlined text has an underline colour: its underline written with it.
                 let Some(u) = run.underline else { return };
-                let now = p.get("u").map_or_else(|| format!("<{w}u {w}val=\"{}\"/>", underline_val(u)), str::to_string);
-                let now = THEME_COLOR.iter().fold(now, |t, a| strip(&t, &format!("{w}{a}")));
-                p.set("u", colour_attrs(&now, w, "color", THEME_COLOR, c));
+                let style = p.underline.map_or(u, |own| own.style);
+                p.underline = Some(UnderlineProps { style, color: Some(color) });
+                p.part(Prop::UnderlineColor);
             },
             fonts,
         )
@@ -866,7 +864,6 @@ mod tests {
     fn an_attribute_is_found_outside_other_attributes_values() {
         let tag = r#"<w:lang w:eastAsia='x w:val="ja-JP"' w:val = "fr-FR"/>"#;
         assert_eq!(super::with_attr(tag, "w:val", "en-US"), r#"<w:lang w:eastAsia='x w:val="ja-JP"' w:val = "en-US"/>"#);
-        assert_eq!(super::strip(tag, "w:val"), r#"<w:lang w:eastAsia='x w:val="ja-JP"'/>"#);
         assert_eq!(super::with_attr("<w:lang/>", "w:val", "en-US"), r#"<w:lang w:val="en-US"/>"#);
     }
 

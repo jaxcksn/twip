@@ -350,12 +350,12 @@ impl Editor {
             Command::SetItalic(on) => self.set_toggle(super::format::Toggle::Italic, on, fonts),
             Command::SetUnderline(style) => self.set_underline(style, fonts),
             Command::SetStrikethrough(on) => self.set_toggle(super::format::Toggle::Strike, on, fonts),
-            Command::SetDoubleStrikethrough(on) => self.set_flag("Double Strikethrough", "dstrike", on, fonts),
+            Command::SetDoubleStrikethrough(on) => self.set_flag("Double Strikethrough", character::Flag::DoubleStrike, on, fonts),
             Command::SetSubscript(on) => self.set_toggle(super::format::Toggle::Subscript, on, fonts),
             Command::SetSuperscript(on) => self.set_toggle(super::format::Toggle::Superscript, on, fonts),
-            Command::SetSmallCaps(on) => self.set_flag("Small Caps", "smallCaps", on, fonts),
-            Command::SetAllCaps(on) => self.set_flag("All Caps", "caps", on, fonts),
-            Command::SetHidden(on) => self.set_flag("Hidden", "vanish", on, fonts),
+            Command::SetSmallCaps(on) => self.set_flag("Small Caps", character::Flag::Toggle(crate::format::Toggle::SMALL_CAPS), on, fonts),
+            Command::SetAllCaps(on) => self.set_flag("All Caps", character::Flag::Toggle(crate::format::Toggle::CAPS), on, fonts),
+            Command::SetHidden(on) => self.set_flag("Hidden", character::Flag::Toggle(crate::format::Toggle::HIDDEN), on, fonts),
             Command::SetFont(crate::api::command::FontChoice::Name(family)) => self.format(&super::format::Format::FontFamily(family), fonts),
             Command::SetFont(crate::api::command::FontChoice::Theme { theme }) => self.set_theme_font(
                 match theme {

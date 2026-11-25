@@ -211,6 +211,12 @@ fn first_run(p: &Paragraph) -> &Run {
     p.inlines.iter().find_map(|i| i.run()).expect("a run")
 }
 
+/// A run's `w:rPr` as saving writes it, in a part that binds the main namespace to `w`.
+fn written(r: &crate::docx::RunStyle) -> String {
+    let cx = crate::docx::write::props::Cx::of_xml(r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">"#);
+    r.direct.xml(&Default::default(), &cx).map(std::borrow::Cow::into_owned).unwrap_or_default()
+}
+
 fn direct(raw: &crate::docx::Raw) -> &str {
     raw.0.as_deref().unwrap_or("")
 }
@@ -218,8 +224,8 @@ fn direct(raw: &crate::docx::Raw) -> &str {
 /// The target's authored XML.
 fn authored(p: &Paragraph, t: Target) -> String {
     match t {
-        Target::Run => first_run(p).direct.as_read().map_or("", |x| &**x).to_owned(),
-        Target::Mark => p.mark.direct.as_read().map_or("", |x| &**x).to_owned(),
+        Target::Run => written(first_run(p)),
+        Target::Mark => written(&p.mark),
         Target::Paragraph => direct(&p.style.direct).to_owned(),
     }
 }
@@ -471,7 +477,7 @@ fn an_autocorrection_keeps_each_characters_authored_formatting() {
     let runs: Vec<(String, String)> = para(e.document(), 0)
         .inlines
         .iter()
-        .filter_map(|i| if let Inline::Text(t, r) = i { Some((t.to_string(), r.direct.as_read().map_or("", |x| &**x).to_owned())) } else { None })
+        .filter_map(|i| if let Inline::Text(t, r) = i { Some((t.to_string(), written(r))) } else { None })
         .collect();
     assert_eq!(runs.iter().map(|r| r.0.as_str()).collect::<String>(), "the ");
     let last_e = runs.iter().find(|(t, _)| t.contains('e')).expect("the e");

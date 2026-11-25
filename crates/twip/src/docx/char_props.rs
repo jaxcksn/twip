@@ -1207,8 +1207,13 @@ pub(crate) fn strip(tag: &str, name: &str) -> String {
     format!("{}{}", &tag[..lead], &tag[(end + 1).min(tag.len())..])
 }
 
-/// `tag` (one start tag or empty element) with the attribute `name` set to `quoted`, a value written in double quotes
-/// (escaped).
+/// `tag` (one start tag or empty element) with the attribute `name` set to `value`.
+pub(crate) fn with_attr(tag: &str, name: &str, value: &str) -> String {
+    let v = super::write::props::esc(value);
+    with_attr_text(tag, name, &v)
+}
+
+/// [`with_attr`] with `quoted`, a value written in double quotes (escaped).
 fn with_attr_written(tag: &str, name: &str, quoted: &str) -> String {
     with_attr_text(tag, name, quoted.strip_prefix('"').and_then(|v| v.strip_suffix('"')).unwrap_or(quoted))
 }

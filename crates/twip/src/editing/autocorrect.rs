@@ -910,10 +910,10 @@ impl Editor {
         let res = self.doc.resolver.clone()?;
         let cx = self.cx();
         let base = self.run_base(para, at, &res, &cx)?;
-        let mut p = crate::docx::write::props::Props::parse(run_xml::rpr(&res, run, &cx).as_deref(), "rPr", &cx);
-        let w = cx.w.clone();
-        p.set("vertAlign", format!("<{w}vertAlign {w}val=\"superscript\"/>"));
-        Some(run_xml::rerun_xml(&res, &base, run, p.xml().as_deref(), &cx))
+        let mut e = crate::format::CharEdit::new(run.direct.props().map_or_else(crate::format::CharProps::default, |p| (**p).clone()));
+        e.vertical = Some(crate::docx::props::VertAlign::Superscript);
+        e.whole(crate::format::Prop::Vertical);
+        Some(run_xml::again(&res, &run_xml::base(&base), run, run.direct.edit(e)))
     }
 }
 
