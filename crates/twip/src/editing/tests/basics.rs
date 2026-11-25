@@ -944,8 +944,8 @@ fn wrapping_and_the_anchor_lock_save() {
     e.set_caret_for_benchmark(Selection::Object(ObjectRef::Floating(ids[2])));
     e.execute(Command::SetObjectWrap(crate::api::value::ObjectWrap::Square), fonts());
     let now = body_floats(&e);
-    assert_eq!((now[0].wrap.as_str(), now[0].locked), ("tight", !was[0].locked));
-    assert_eq!((now[1].wrap.as_str(), now[1].behind), ("none", true));
+    assert_eq!((now[0].wrap, now[0].locked), (crate::docx::FloatWrap::Tight, !was[0].locked));
+    assert_eq!((now[1].wrap, now[1].behind), (crate::docx::FloatWrap::None, true));
     let bytes = crate::docx::write::save(e.document()).expect("saves");
     if let Some(d) = std::env::var_os("RT_KEEP") {
         std::fs::write(std::path::Path::new(&d).join("FX-OBJ.wrap.docx"), &bytes).expect("writes");
@@ -1112,7 +1112,10 @@ fn an_inline_picture_floats_where_it_is_and_goes_back_in_line() {
     // Off its paragraph's first line, it goes the quarter point below the paragraph's top that Word's conversion does.
     assert!(was.iter().zip(&now).all(|(a, b)| (a - b).abs() < 0.3), "stays where it was: {was:?} -> {now:?}");
     let f = body_floats(&r.e).into_iter().find(|f| f.src.is_none()).expect("the new float");
-    assert_eq!((f.wrap.as_str(), f.h_relative.as_str(), f.v_relative.as_str(), f.image.is_some()), ("square", "column", "paragraph", true));
+    assert_eq!(
+        (f.wrap, f.h_relative.as_str(), f.v_relative.as_str(), f.image.is_some()),
+        (crate::docx::FloatWrap::Square, "column", "paragraph", true)
+    );
     let bytes = crate::docx::write::save(r.e.document()).expect("saves");
     if let Some(d) = std::env::var_os("RT_KEEP") {
         std::fs::write(std::path::Path::new(&d).join("FX-OBJ.inline-to-float.docx"), &bytes).expect("writes");

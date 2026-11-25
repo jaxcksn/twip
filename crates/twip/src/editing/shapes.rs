@@ -620,7 +620,7 @@ impl Editor {
             v_relative: "paragraph".into(),
             v_align: None,
             v_offset: twips(rect[1]),
-            wrap: "none".into(),
+            wrap: crate::docx::FloatWrap::None,
             wrap_text: crate::docx::WrapText::BothSides,
             dist: [0.0, 0.0, 9.0, 9.0],
             effect: [0.0; 4],

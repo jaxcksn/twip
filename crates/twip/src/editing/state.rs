@@ -17,7 +17,7 @@ use crate::api::value::{
     RowHeight, StyleId, TableWidth, UnderlineStyle,
 };
 use crate::docx::props::{Jc, LineRule, VertAlign};
-use crate::docx::{ParaStyle, Run, RunStyle};
+use crate::docx::{FloatWrap, ParaStyle, Run, RunStyle};
 use crate::layout::{ParaId, TableId};
 
 use super::Editor;
@@ -39,7 +39,7 @@ pub struct SelectedObject {
     pub height: f64,
     pub alt: Rc<str>,
     pub decorative: bool,
-    pub wrap: Option<(String, bool)>,
+    pub wrap: Option<(FloatWrap, bool)>,
     pub locked: Option<bool>,
 }
 
@@ -419,7 +419,7 @@ impl Editor {
                         height: fl.h,
                         alt: fl.alt.clone(),
                         decorative: fl.shape.as_ref().is_some_and(|s| s.nv.decorative),
-                        wrap: Some((fl.wrap.clone(), fl.behind)),
+                        wrap: Some((fl.wrap, fl.behind)),
                         locked: Some(fl.locked),
                     }),
                     _ => None,
@@ -870,14 +870,14 @@ impl Editor {
 
     pub fn object_selection(&self) -> Option<ObjectSelection> {
         let o = self.selected_object()?;
-        let wrap = match o.wrap.as_ref().map(|(w, behind)| (w.as_str(), *behind)) {
+        let wrap = match o.wrap {
             None => ObjectWrap::Inline,
-            Some(("square", _)) => ObjectWrap::Square,
-            Some(("tight", _)) => ObjectWrap::Tight,
-            Some(("through", _)) => ObjectWrap::Through,
-            Some(("topAndBottom", _)) => ObjectWrap::TopAndBottom,
-            Some((_, true)) => ObjectWrap::BehindText,
-            Some((_, false)) => ObjectWrap::InFrontOfText,
+            Some((FloatWrap::Square, _)) => ObjectWrap::Square,
+            Some((FloatWrap::Tight, _)) => ObjectWrap::Tight,
+            Some((FloatWrap::Through, _)) => ObjectWrap::Through,
+            Some((FloatWrap::TopAndBottom, _)) => ObjectWrap::TopAndBottom,
+            Some((FloatWrap::None, true)) => ObjectWrap::BehindText,
+            Some((FloatWrap::None, false)) => ObjectWrap::InFrontOfText,
         };
         let shape = self.shape_info().unwrap_or_default();
         Some(ObjectSelection {

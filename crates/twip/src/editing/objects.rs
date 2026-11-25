@@ -1,7 +1,7 @@
 //! Object selection
 
-use crate::api::value::{ObjectVerticalAlignment, WrapSide};
-use crate::docx::{Inline, VerticalAlign, WrapText};
+use crate::api::value::{ObjectVerticalAlignment, ObjectWrap, WrapSide};
+use crate::docx::{FloatWrap, Inline, VerticalAlign, WrapText};
 use crate::font::Fonts;
 use crate::layout::{FloatId, Unit};
 
@@ -302,7 +302,7 @@ pub(super) struct ObjectDrag {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ObjectCmd {
-    Wrap(String),
+    Wrap(ObjectWrap),
     LockAnchor(bool),
     /// A width and height, and the axes the command set: a set axis loses its relative size.
     Size(f64, f64, [bool; 2]),
@@ -314,6 +314,18 @@ pub enum ObjectCmd {
 pub(super) struct ToggledCheckbox {
     pub face: Position,
     pub after: Position,
+}
+
+/// A float's wrapping and whether it is behind the text, for `w` (inline handled before).
+fn float_wrap(w: ObjectWrap) -> (FloatWrap, bool) {
+    match w {
+        ObjectWrap::Square => (FloatWrap::Square, false),
+        ObjectWrap::Tight => (FloatWrap::Tight, false),
+        ObjectWrap::Through => (FloatWrap::Through, false),
+        ObjectWrap::TopAndBottom => (FloatWrap::TopAndBottom, false),
+        ObjectWrap::BehindText => (FloatWrap::None, true),
+        ObjectWrap::Inline | ObjectWrap::InFrontOfText => (FloatWrap::None, false),
+    }
 }
 
 fn ooxml<T: serde::Serialize>(v: T) -> String {
@@ -850,7 +862,7 @@ impl Editor {
             v_relative: "paragraph".into(),
             v_align: None,
             v_offset: 0.0,
-            wrap: "none".into(),
+            wrap: FloatWrap::None,
             wrap_text: WrapText::BothSides,
             dist: [3.6, 3.6, 9.0, 9.0],
             effect: [0.0; 4],
@@ -946,24 +958,20 @@ impl Editor {
                         Some(s) => s,
                         None => return Outcome::Unchanged("no image size"),
                     },
-                    ObjectCmd::Wrap(w) if w == "inline" => return Outcome::Unchanged("already inline"),
+                    ObjectCmd::Wrap(ObjectWrap::Inline) => return Outcome::Unchanged("already inline"),
                     ObjectCmd::Wrap(_) if self.object_fixed(o) => return Outcome::Unchanged("fixed picture"),
-                    ObjectCmd::Wrap(w) => return self.float_inline(para, offset, &w, fonts),
+                    ObjectCmd::Wrap(w) => return self.float_inline(para, offset, w, fonts),
                     ObjectCmd::LockAnchor(_) => return Outcome::Unchanged("inline picture"),
                     ObjectCmd::AltText(..) => return Outcome::Unchanged("handled above"),
                 };
                 self.set_picture_size(para, offset, w, h, fonts)
             }
-            ObjectRef::Floating(f) if matches!(&c, ObjectCmd::Wrap(w) if w == "inline") => self.inline_float(f, fonts),
+            ObjectRef::Floating(f) if c == ObjectCmd::Wrap(ObjectWrap::Inline) => self.inline_float(f, fonts),
             ObjectRef::Floating(f) => {
                 let Some(mut n) = self.float_of(f).cloned() else { return Outcome::Unchanged("no float") };
                 let label = match &c {
-                    ObjectCmd::Wrap(w) => {
-                        (n.wrap, n.behind) = match w.as_str() {
-                            "behind" => ("none".into(), true),
-                            "front" => ("none".into(), false),
-                            other => (other.into(), false),
-                        };
+                    &ObjectCmd::Wrap(w) => {
+                        (n.wrap, n.behind) = float_wrap(w);
                         "Wrap Text"
                     }
                     &ObjectCmd::LockAnchor(on) => {
@@ -1167,7 +1175,7 @@ impl Editor {
         })
     }
 
-    fn float_inline(&mut self, para: crate::layout::ParaId, offset: Unit, wrap: &str, fonts: &Fonts) -> Outcome {
+    fn float_inline(&mut self, para: crate::layout::ParaId, offset: Unit, wrap: ObjectWrap, fonts: &Fonts) -> Outcome {
         let Some(Inline::Picture(pic, run)) = self.index.para(&self.doc, para).and_then(|p| inline_at(p, offset)).cloned() else {
             return Outcome::Unchanged("no picture");
         };
@@ -1188,11 +1196,7 @@ impl Editor {
                 Some((page, l.region.rect([x0, y0 + dy, x1, y1 + dy])))
             })
         });
-        let (wrap, behind) = match wrap {
-            "behind" => ("none", true),
-            "front" => ("none", false),
-            w => (w, false),
-        };
+        let (wrap, behind) = float_wrap(wrap);
         let id = crate::docx::next_para_id();
         // A picture that is all of a picture control floats with its control, in a box of its own.
         let control = self.whole_picture_control(para, offset);
@@ -1225,7 +1229,7 @@ impl Editor {
             v_relative: "paragraph".into(),
             v_align: None,
             v_offset: 0.0,
-            wrap: wrap.into(),
+            wrap,
             wrap_text: WrapText::BothSides,
             dist: [0.0, 0.0, 9.0, 9.0],
             effect: pic.effect,
@@ -1249,7 +1253,7 @@ impl Editor {
         if let Some(deg) = float.shape.as_ref().map(|s| s.xfrm.rot.normalized().degrees()) {
             super::shapes::rotate_to(&mut float, &[], deg, self.doc.settings.policy.mode);
         }
-        let unwrapped = crate::docx::Float { wrap: "none".into(), ..float.clone() };
+        let unwrapped = crate::docx::Float { wrap: FloatWrap::None, ..float.clone() };
         self.rewrap(&unwrapped, &mut float);
         self.begin_batch(Some("Wrap Text".into()));
         let mut tx = self.begin("Wrap Text");

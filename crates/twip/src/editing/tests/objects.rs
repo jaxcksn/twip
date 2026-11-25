@@ -687,7 +687,7 @@ fn wrap_points_drag_add_and_remove_as_one_step_each_and_save() {
     assert_eq!(e.history.undo_depth(), depth + 1, "one step");
     assert_eq!(poly(&e), Some(vec![(20, 20), (0, 100), (100, 100), (100, 0), (20, 20)]));
     let f = FloatId(all_floats(&e)[0]);
-    assert_eq!(e.float_of(f).map(|f| f.wrap.as_str()), Some("tight"), "a square wrap becomes tight");
+    assert_eq!(e.float_of(f).map(|f| f.wrap), Some(crate::docx::FloatWrap::Tight), "a square wrap becomes tight");
     assert!(e.editing_wrap_points(), "still editing");
     // A point added on the bottom edge
     let pts = wrap_points(&mut e);
@@ -822,7 +822,7 @@ fn the_default_picture_wrap_floats_an_inserted_picture_in_one_step() {
     let f = all_floats(&e);
     assert_eq!(f.len(), 1, "floating");
     let fl = e.float_of(FloatId(f[0])).expect("the float");
-    assert_eq!((fl.wrap.as_str(), &*fl.alt), ("square", "A"));
+    assert_eq!((fl.wrap, &*fl.alt), (crate::docx::FloatWrap::Square, "A"));
     e.execute(Command::Undo(Default::default()), fonts());
     assert!(all_floats(&e).is_empty());
 }

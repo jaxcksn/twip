@@ -2,7 +2,7 @@
 
 use std::rc::Rc;
 
-use super::model::{Block, Compat, Document, Float, Inline, Paragraph, TextBox, VerticalAlign};
+use super::model::{Block, Compat, Document, Float, FloatWrap, Inline, Paragraph, TextBox, VerticalAlign};
 
 pub fn convert(doc: &mut Document) {
     let legacy = doc.settings.compat() == Compat::Legacy;
@@ -109,7 +109,7 @@ pub(crate) fn float(group: Vec<Paragraph>, legacy: bool) -> Float {
         v_relative: String::new(),
         v_align: None,
         v_offset: 0.0,
-        wrap: String::new(),
+        wrap: FloatWrap::None,
         wrap_text: crate::docx::WrapText::BothSides,
         dist: [0.0; 4],
         effect: [0.0; 4],
@@ -224,10 +224,9 @@ pub fn place(f: &mut Float, fr: &super::props::FramePr, sides: [f64; 2], legacy:
     f.v_align = if fr.y.is_some() { y_code } else { fr.y_align.as_deref().filter(|a| *a != "inline").map(super::anchor::v_align) };
     f.v_offset = y_at.unwrap_or(0.0);
     f.wrap = match fr.wrap.as_deref() {
-        Some("notBeside") => "topAndBottom",
-        Some("none") => "none",
-        _ => "square",
-    }
-    .into();
+        Some("notBeside") => FloatWrap::TopAndBottom,
+        Some("none") => FloatWrap::None,
+        _ => FloatWrap::Square,
+    };
     f.dist = [fr.v_space, fr.v_space, fr.h_space + sides[0], fr.h_space + sides[1]];
 }

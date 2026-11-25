@@ -308,7 +308,7 @@ pub fn inspect(e: &mut Editor, what: &str, settled: bool) -> Value {
                 let p = e.index().para(e.document(), anchor)?;
                 p.inlines.iter().find_map(|i| match i {
                     crate::docx::Inline::Float(fl, _) if crate::layout::FloatId(fl.id) == f => Some(json!({
-                        "anchor": o.paras.get(&anchor), "text_box": fl.text_box.is_some(), "wrap": fl.wrap,
+                        "anchor": o.paras.get(&anchor), "text_box": fl.text_box.is_some(), "wrap": crate::docx::anchor::wrap_name(fl.wrap),
                         "x": r2(fl.h_offset), "y": r2(fl.v_offset), "w": r2(fl.w), "h": r2(fl.h),
                     })),
                     _ => None,

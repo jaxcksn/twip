@@ -1,6 +1,6 @@
 //! The layout engine's input: a document with every style resolved (the STYLE rules). Lengths are points.
 
-pub use crate::document::anchor::{VerticalAlign, WrapText};
+pub use crate::document::anchor::{FloatWrap, VerticalAlign, WrapText};
 pub use crate::document::content::{BreakKind, NoteKind};
 pub use crate::document::ident::{ControlId, FieldId, next_para_id};
 pub use crate::document::policy::{Compat, LayoutPolicy};
@@ -616,8 +616,7 @@ pub struct Float {
     pub v_relative: String,
     pub v_align: Option<VerticalAlign>,
     pub v_offset: f64,
-    /// `square`, `tight`, `through`, `topAndBottom`, `none`.
-    pub wrap: String,
+    pub wrap: FloatWrap,
     pub wrap_text: WrapText,
     pub dist: [f64; 4],
     pub effect: [f64; 4],

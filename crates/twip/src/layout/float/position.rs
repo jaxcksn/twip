@@ -1,7 +1,7 @@
 //! Float positioning
 
 use crate::docx::Compat;
-use crate::docx::model::{Float, VerticalAlign};
+use crate::docx::model::{Float, FloatWrap, VerticalAlign};
 
 use super::Frames;
 
@@ -210,11 +210,11 @@ pub fn v_pos(f: &Float, h: f64, fr: &Frames, para_top: f64, line_top: f64) -> f6
 /// extents moves left off the right edge and up off the bottom, then right of the left edge and below the top.
 /// In a cell, both modes, a wrapping float stays inside the cell's box horizontally, its left edge first.
 pub fn page_clamp(f: &Float, (x, y): (f64, f64), h: f64, fr: &Frames) -> (f64, f64) {
-    if fr.cell && f.wrap != "none" {
+    if fr.cell && f.wrap != FloatWrap::None {
         let [l, _, r, _] = f.effect;
         return ((x - (x + f.w + r - fr.page_w).max(0.0)).max(l), y);
     }
-    if fr.compat != Compat::Legacy || fr.cell || f.wrap == "none" || !(f.h_relative == "column" || f.v_relative == "paragraph") {
+    if fr.compat != Compat::Legacy || fr.cell || f.wrap == FloatWrap::None || !(f.h_relative == "column" || f.v_relative == "paragraph") {
         return (x, y);
     }
     let [l, t, r, b] = f.effect;

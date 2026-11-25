@@ -814,7 +814,10 @@ impl<'d> PageFill<'d, '_> {
                 .flat_map(|(r, p)| p.inlines.iter().map(move |i| (r, para_id(p), i)))
                 .filter_map(|(r, id, i)| if let Inline::Float(f, _) = i { page_floats.get(&f.id).map(|f| (*f, id, r)) } else { None })
                 .filter(|(f, ..)| {
-                    f.wrap != "none" && matches!(f.v_relative.as_str(), "paragraph" | "margin" | "page") && f.h_align.is_none() && f.v_align.is_none()
+                    f.wrap != crate::docx::FloatWrap::None
+                        && matches!(f.v_relative.as_str(), "paragraph" | "margin" | "page")
+                        && f.h_align.is_none()
+                        && f.v_align.is_none()
                 })
                 .map(|(f, id, r)| (f, id, r, f.v_offset - f.dist[0], f.v_offset + f.h + f.dist[1]))
                 .collect(),

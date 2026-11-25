@@ -2988,10 +2988,7 @@ impl Reader {
             _ => "paragraph",
         };
         let (wrap, side) = v.wrap.unwrap_or_default();
-        let wrap = match wrap.as_str() {
-            "square" | "tight" | "through" | "topAndBottom" => wrap,
-            _ => "none".into(),
-        };
+        let wrap = super::anchor::wrap(&wrap);
         let wrap_text = super::anchor::wrap_text(&side);
         // A style length goes to the nearest twip, halves up (the products of decimal points land just below).
         let tw = |v: f64| (v * 20.0 + 0.5 + 1e-7).floor();
@@ -2999,8 +2996,8 @@ impl Reader {
         let dflt = [0.0, 0.0, 9.0, 9.0];
         let dist = std::array::from_fn(|i| (st.wrap_dist[i].unwrap_or(dflt[i]) * 20.0).round() / 20.0);
         // Compat 15: a VML float is behind the text only without wrapping.
-        let behind = st.z < 0 && (self.res.styles.compat != Compat::Generic || wrap == "none");
-        let poly = v.wrap_coords.filter(|_| matches!(wrap.as_str(), "tight" | "through")).map(|p| Rc::from(super::bounded_polygon(p)));
+        let behind = st.z < 0 && (self.res.styles.compat != Compat::Generic || wrap == FloatWrap::None);
+        let poly = v.wrap_coords.filter(|_| matches!(wrap, FloatWrap::Tight | FloatWrap::Through)).map(|p| Rc::from(super::bounded_polygon(p)));
         let line = shape.sp().and_then(|s| s.line.as_ref()).or_else(|| shape.pic().and_then(|p| p.line.as_ref()));
         let pen = line.filter(|l| !matches!(l.fill, Some(crate::drawing::paint::Fill::None))).map(|l| l.width.map_or(15.0, |w| w.0 as f64 / 635.0));
         let (h_align, v_align) =
@@ -3124,11 +3121,11 @@ impl Reader {
                 && matches!(c.tag_name().name(), "wrapSquare" | "wrapTight" | "wrapThrough" | "wrapTopAndBottom" | "wrapNone")
         });
         let wrap = match wrap_el.map(|w| w.tag_name().name()) {
-            Some("wrapSquare") => "square",
-            Some("wrapTight") => "tight",
-            Some("wrapThrough") => "through",
-            Some("wrapTopAndBottom") => "topAndBottom",
-            _ => "none",
+            Some("wrapSquare") => FloatWrap::Square,
+            Some("wrapTight") => FloatWrap::Tight,
+            Some("wrapThrough") => FloatWrap::Through,
+            Some("wrapTopAndBottom") => FloatWrap::TopAndBottom,
+            _ => FloatWrap::None,
         };
         let wrap_text = wrap_el.and_then(|w| w.attribute("wrapText")).map_or(WrapText::BothSides, super::anchor::wrap_text);
         let dist = |n: &str| emu(item.attribute(n)).unwrap_or(0.0);
@@ -3158,7 +3155,7 @@ impl Reader {
                 v_relative: v_rel,
                 v_align,
                 v_offset: v_off,
-                wrap: wrap.into(),
+                wrap,
                 wrap_text,
                 dist: [dist("distT"), dist("distB"), dist("distL"), dist("distR")],
                 effect: {
@@ -3169,7 +3166,7 @@ impl Reader {
                 poly_edited: wrap_el
                     .and_then(|w| w.children().find(|c| is(*c, WP, "wrapPolygon")))
                     .is_some_and(|p| p.attribute("edited").is_some_and(|v| on_off_str(Some(v)))),
-                poly: wrap_el.filter(|_| matches!(wrap, "tight" | "through")).and_then(|w| {
+                poly: wrap_el.filter(|_| matches!(wrap, FloatWrap::Tight | FloatWrap::Through)).and_then(|w| {
                     let pts: Vec<(f64, f64)> = w
                         .children()
                         .filter(|c| is(*c, WP, "wrapPolygon"))

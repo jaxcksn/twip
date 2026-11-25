@@ -75,16 +75,7 @@ impl Editor {
         if !matches!(self.selection, Selection::Object(_)) {
             return Outcome::unavailable("no object selected");
         }
-        let name = match w {
-            ObjectWrap::Inline => "inline",
-            ObjectWrap::Square => "square",
-            ObjectWrap::Tight => "tight",
-            ObjectWrap::Through => "through",
-            ObjectWrap::TopAndBottom => "topAndBottom",
-            ObjectWrap::BehindText => "behind",
-            ObjectWrap::InFrontOfText => "front",
-        };
-        self.object_cmd(ObjectCmd::Wrap(name.into()), fonts)
+        self.object_cmd(ObjectCmd::Wrap(w), fonts)
     }
 
     pub(in crate::editing) fn set_anchor_locked(&mut self, on: bool, fonts: &Fonts) -> Outcome {

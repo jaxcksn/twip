@@ -275,7 +275,7 @@ pub fn float(m: &Watermark, size: [f64; 2], spid: u32, image: Option<usize>) -> 
         v_relative: "margin".into(),
         v_align: Some(crate::docx::VerticalAlign::Center),
         v_offset: 0.0,
-        wrap: "none".into(),
+        wrap: crate::docx::FloatWrap::None,
         wrap_text: crate::docx::WrapText::BothSides,
         dist: [0.0, 0.0, 9.0, 9.0],
         effect: [0.0; 4],

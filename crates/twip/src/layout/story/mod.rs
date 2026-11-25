@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::docx::review::MarkupView;
-use crate::docx::{Block, Float, Inline, NoteKind, ParaStyle, Paragraph, Table};
+use crate::docx::{Block, Float, FloatWrap, Inline, NoteKind, ParaStyle, Paragraph, Table};
 use crate::font::Fonts;
 
 use super::LayoutCtx;
@@ -379,7 +379,7 @@ fn stack_para<'b>(w: &StoryIn<'b, '_>, st: &mut Stack<'b>, bi: usize, laid: &'b 
     // A wrapping float laid out in the cell doesn't start above the cell's content top.
     let v_pos = |f: &Float, h: f64, line_top: f64| {
         let y = float::v_pos(f, h, &fr, origin, line_top);
-        if f.wrap != "none" && f.in_cell(text.compat) { y.max(0.0) } else { y }
+        if f.wrap != FloatWrap::None && f.in_cell(text.compat) { y.max(0.0) } else { y }
     };
     // Wrapping floats
     let mut own: Vec<(usize, Placed)> = Vec::new();
@@ -387,7 +387,7 @@ fn stack_para<'b>(w: &StoryIn<'b, '_>, st: &mut Stack<'b>, bi: usize, laid: &'b 
         for (k, q) in lines.pieces().iter().enumerate() {
             let (Kind::Anchor, Some(Object::Float(f))) = (q.kind, lines.shaped.object(lines.from + k)) else { continue };
             if !f.in_cell(text.compat)
-                || f.wrap == "none"
+                || f.wrap == FloatWrap::None
                 || !matches!(f.v_relative.as_str(), "paragraph" | "line" | "margin" | "page") && f.v_align.is_none()
             {
                 continue;
@@ -445,7 +445,7 @@ fn stack_para<'b>(w: &StoryIn<'b, '_>, st: &mut Stack<'b>, bi: usize, laid: &'b 
                 // piece its line leaves beside the line's own wrapping floats.
                 let fx = match own.iter().filter(|(o, _)| (start..end).contains(o)).map(|(_, a)| a.clone()).collect::<Vec<_>>() {
                     line_own
-                        if f.wrap == "none"
+                        if f.wrap == FloatWrap::None
                             && text.compat == Compat::Legacy
                             && f.h_relative == "column"
                             && f.h_align.is_none()
@@ -461,20 +461,20 @@ fn stack_para<'b>(w: &StoryIn<'b, '_>, st: &mut Stack<'b>, bi: usize, laid: &'b 
                     // adds nothing). A float that doesn't wrap counts for the alignment only when it
                     // reaches across the cell's text, and never holds the row.
                     let shape = match &f.poly {
-                        Some(p) if text.compat == Compat::Generic && matches!(f.wrap.as_str(), "tight" | "through") => {
+                        Some(p) if text.compat == Compat::Generic && matches!(f.wrap, FloatWrap::Tight | FloatWrap::Through) => {
                             p.iter().map(|q| q.1).fold(0.0, f64::max).clamp(0.0, 1.0) * h
                         }
                         _ => h,
                     };
-                    if f.wrap != "none" || fx < width && fx + f.w > 0.0 {
+                    if f.wrap != FloatWrap::None || fx < width && fx + f.w > 0.0 {
                         float_bottom = float_bottom.max(y + fy + shape);
                     }
-                    if f.wrap != "none" {
+                    if f.wrap != FloatWrap::None {
                         held = held.max(y + fy + shape);
                         hold = hold.max(fy + shape);
                     }
                 }
-                if f.wrap != "none" && own.iter().all(|(o, _)| *o != k) {
+                if f.wrap != FloatWrap::None && own.iter().all(|(o, _)| *o != k) {
                     wrapping.push((units.len(), content.len(), y + fy - f.dist[0], y + fy + h + f.dist[1]));
                 }
                 let anchor = super::join::piece_para(&lines.shaped, lines.from + k, id);
@@ -697,7 +697,8 @@ fn wrap_bands(
         }
         // Compat ≤ 14 steps down by the text's height past square-wrapped floats; a floating table that leaves no piece
         // sends the line to its bottom.
-        let square = floats.iter().filter(|f| f.in_band(yy, yy + h)).all(|f| f.float.wrap == "square" && !(no_room && f.key.2 == float::TABLE_PIECE));
+        let square =
+            floats.iter().filter(|f| f.in_band(yy, yy + h)).all(|f| f.float.wrap == FloatWrap::Square && !(no_room && f.key.2 == float::TABLE_PIECE));
         // A first line that goes below a floating table keeps its space before below it.
         let table = bands.is_empty() && floats.iter().any(|f| f.key.2 == float::TABLE_PIECE && f.in_band(yy, yy + h));
         yy = match trial.filter(|&t| ps.env.compat == Compat::Legacy && square && t > EPS) {
@@ -757,7 +758,7 @@ pub fn tight_lines(f: &Float, env: &StoryEnv, memos: &mut Memos) -> Result<Optio
     use crate::drawing::paint::Fill;
     let (Some(tb), Some(shape)) = (&f.text_box, f.shape.as_deref()) else { return Ok(None) };
     let bare = shape.sp().is_some_and(|sp| sp.fill == Some(Fill::None) && sp.line.as_ref().and_then(|l| l.fill.as_ref()) == Some(&Fill::None));
-    if !bare || !matches!(f.wrap.as_str(), "tight" | "through") || shape.xfrm.rot.0 != 0 {
+    if !bare || !matches!(f.wrap, FloatWrap::Tight | FloatWrap::Through) || shape.xfrm.rot.0 != 0 {
         return Ok(None);
     }
     let fr = inner_frame(tb, Some(shape), [0.0, 0.0, f.w, f.h]);

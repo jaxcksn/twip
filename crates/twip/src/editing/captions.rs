@@ -426,7 +426,7 @@ impl Editor {
             v_relative: obj.v_relative.clone(),
             v_align: None,
             v_offset,
-            wrap: obj.wrap.clone(),
+            wrap: obj.wrap,
             wrap_text: obj.wrap_text,
             dist: obj.dist,
             effect: [0.0; 4],

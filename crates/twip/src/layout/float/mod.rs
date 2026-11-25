@@ -3,7 +3,7 @@
 use std::rc::Rc;
 
 use crate::docx::Compat;
-use crate::docx::model::{Float, WrapText};
+use crate::docx::model::{Float, FloatWrap, WrapText};
 
 use super::ids::ParaId;
 use super::units::{EPS, LU_PER_PT};
@@ -83,10 +83,10 @@ impl Placed {
     pub fn new(key: (usize, usize, usize), anchor: ParaId, f: &Rc<Float>, x: f64, y: f64, h: f64) -> Placed {
         let rect = [x, y, x + f.w, y + h];
         let [dt, db, dl, dr] = f.dist;
-        let wrap = match f.wrap.as_str() {
-            "square" | "tight" | "through" => Wrap::Square,
-            "topAndBottom" => Wrap::TopAndBottom,
-            _ => Wrap::None,
+        let wrap = match f.wrap {
+            FloatWrap::Square | FloatWrap::Tight | FloatWrap::Through => Wrap::Square,
+            FloatWrap::TopAndBottom => Wrap::TopAndBottom,
+            FloatWrap::None => Wrap::None,
         };
         let side = match f.wrap_text {
             WrapText::BothSides => Side::Both,
@@ -107,7 +107,7 @@ impl Placed {
             .poly
             .as_ref()
             .filter(|_| wrap == Wrap::Square)
-            .map(|p| Contour { points: p.iter().copied().map(point).collect(), through: f.wrap == "through" });
+            .map(|p| Contour { points: p.iter().copied().map(point).collect(), through: f.wrap == FloatWrap::Through });
         let wrap_box = match &contour {
             Some(c) => {
                 let b =
@@ -144,7 +144,7 @@ impl Placed {
     /// Compat ≤ 14 keeps no distance above or below a tight or through float, and none below a frame.
     pub fn legacy_dist(mut self) -> Placed {
         let frame = self.float.text_box.is_some() && self.float.shape.is_none() && self.key.2 != TABLE_PIECE;
-        if matches!(self.float.wrap.as_str(), "tight" | "through") {
+        if matches!(self.float.wrap, FloatWrap::Tight | FloatWrap::Through) {
             let [dt, db, ..] = self.dist;
             self.excl[1] += dt;
             self.excl[3] -= db;
@@ -164,7 +164,7 @@ impl Placed {
         match () {
             _ if !legacy => 18.0,
             _ if frame => 72.0,
-            _ if self.key.2 != TABLE_PIECE && matches!(self.float.wrap.as_str(), "tight" | "through") => 9.0,
+            _ if self.key.2 != TABLE_PIECE && matches!(self.float.wrap, FloatWrap::Tight | FloatWrap::Through) => 9.0,
             _ => 18.0,
         }
     }
@@ -346,7 +346,7 @@ pub fn table_float(id: u64, w: f64, h: f64, dist: [f64; 4], allow_overlap: bool)
         v_relative: "paragraph".into(),
         v_align: None,
         v_offset: 0.0,
-        wrap: "square".into(),
+        wrap: FloatWrap::Square,
         wrap_text: crate::docx::WrapText::BothSides,
         dist,
         effect: [0.0; 4],
@@ -390,7 +390,7 @@ mod tests {
             v_relative: "paragraph".into(),
             v_align: None,
             v_offset: 0.0,
-            wrap: "square".into(),
+            wrap: FloatWrap::Square,
             wrap_text: crate::docx::WrapText::BothSides,
             dist: [0.0; 4],
             effect: [0.0; 4],
@@ -577,9 +577,9 @@ mod tests {
         assert!((v_pos(&f, 20.0, &fr, 0.0, 0.0) - 97.42).abs() < 0.05);
     }
 
-    fn polygon(wrap: &str, pts: &[(f64, f64)], dist: [f64; 4]) -> Placed {
+    fn polygon(wrap: FloatWrap, pts: &[(f64, f64)], dist: [f64; 4]) -> Placed {
         let mut f = (*fl(0.0, 200.0, Side::Both).float).clone();
-        f.wrap = wrap.into();
+        f.wrap = wrap;
         f.poly = Some(pts.iter().map(|&(x, y)| (x / 21600.0, y / 21600.0)).collect());
         f.dist = dist;
         Placed::new((0, 0, 0), ParaId(1), &Rc::new(f), 72.0, 72.0, 100.0)
@@ -588,18 +588,18 @@ mod tests {
     #[test]
     fn a_polygon_wraps_by_its_widest_point_over_the_band() {
         let tri = [(0.0, 0.0), (0.0, 21600.0), (21600.0, 21600.0)];
-        let starts = |dist| intervals(&[polygon("tight", &tri, dist)], 72.0, 540.0, 72.0, 83.49, false).unwrap();
+        let starts = |dist| intervals(&[polygon(FloatWrap::Tight, &tri, dist)], 72.0, 540.0, 72.0, 83.49, false).unwrap();
         let free = starts([0.0; 4]);
         assert!((free[0].0 - 94.98).abs() < 1e-6 && free.len() == 1, "{free:?}");
         let free = starts([0.0, 0.0, 0.0, 18.0]);
         assert!((free[0].0 - 112.98).abs() < 1e-6, "{free:?}");
-        assert_eq!(intervals(&[polygon("tight", &tri, [0.0; 4])], 72.0, 540.0, 180.0, 190.0, false).unwrap(), vec![(72.0, 540.0)]);
+        assert_eq!(intervals(&[polygon(FloatWrap::Tight, &tri, [0.0; 4])], 72.0, 540.0, 180.0, 190.0, false).unwrap(), vec![(72.0, 540.0)]);
     }
 
     #[test]
     fn a_polygon_turns_with_its_shape_about_the_box_centre() {
         let mut f = (*fl(0.0, 200.0, Side::Both).float).clone();
-        f.wrap = "tight".into();
+        f.wrap = FloatWrap::Tight;
         f.poly = Some([(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)].into_iter().collect());
         let xfrm = crate::drawing::Xfrm { rot: crate::drawing::units::Angle(90 * 60000), ..Default::default() };
         let kind = crate::drawing::ShapeKind::Raw(crate::drawing::RawGraphic { uri: String::new() });
@@ -613,7 +613,7 @@ mod tests {
 
     #[test]
     fn a_vertical_flip_mirrors_the_polygon_top_to_bottom() {
-        let mut f = (*polygon("tight", &[(0.0, 0.0), (0.0, 21600.0), (21600.0, 21600.0)], [0.0; 4]).float).clone();
+        let mut f = (*polygon(FloatWrap::Tight, &[(0.0, 0.0), (0.0, 21600.0), (21600.0, 21600.0)], [0.0; 4]).float).clone();
         let xfrm = crate::drawing::Xfrm { flip_v: true, ..Default::default() };
         let kind = crate::drawing::ShapeKind::Raw(crate::drawing::RawGraphic { uri: String::new() });
         f.shape = Some(Box::new(crate::drawing::Shape { nv: Default::default(), xfrm, kind, spans: Default::default() }));
@@ -643,10 +643,10 @@ mod tests {
             [(0.0, 0.0), (7200.0, 0.0), (7200.0, 14400.0), (14400.0, 14400.0), (14400.0, 0.0), (21600.0, 0.0), (21600.0, 21600.0), (0.0, 21600.0)];
         let band = |wrap, top: f64| intervals(&[polygon(wrap, &u, [0.0; 4])], 0.0, 540.0, top, top + 11.49, false).unwrap();
         let notch = (72.0 + 200.0 / 3.0, 72.0 + 400.0 / 3.0);
-        let through = band("through", 80.0);
+        let through = band(FloatWrap::Through, 80.0);
         assert!(through.iter().any(|&(a, b)| (a - notch.0).abs() < 1e-6 && (b - notch.1).abs() < 1e-6), "{through:?}");
-        assert!(!band("tight", 80.0).iter().any(|&(a, _)| a > 72.0 && a < 272.0));
-        assert!(!band("through", 135.0).iter().any(|&(a, _)| a > 72.0 && a < 272.0), "the band over the notch bottom");
+        assert!(!band(FloatWrap::Tight, 80.0).iter().any(|&(a, _)| a > 72.0 && a < 272.0));
+        assert!(!band(FloatWrap::Through, 135.0).iter().any(|&(a, _)| a > 72.0 && a < 272.0), "the band over the notch bottom");
     }
 
     #[test]
@@ -699,30 +699,30 @@ mod tests {
 
     #[test]
     fn a_piece_narrower_than_its_floats_gap_gets_no_text() {
-        let with = |wrap: &str, frame: bool| {
+        let with = |wrap: FloatWrap, frame: bool| {
             let mut f = (*fl(135.0, 300.0, Side::Both).float).clone();
-            f.wrap = wrap.into();
+            f.wrap = wrap;
             if frame {
                 f.text_box = Some(crate::docx::TextBox { blocks: Vec::new(), insets: [0.0; 4], outline: 0.0, auto_fit: false, v_anchor: 0, flow: 0 });
             }
             [Placed::new((0, 0, 0), ParaId(1), &Rc::new(f), 135.0, 0.0, 100.0)]
         };
         let left = |f: &[Placed], legacy| intervals(f, 72.0, 540.0, 10.0, 20.0, legacy).unwrap()[0];
-        assert_eq!(left(&with("square", false), true), (72.0, 135.0));
-        assert_eq!(left(&with("square", true), true), (300.0, 540.0), "an inch beside a compat 14 frame");
-        assert_eq!(left(&with("square", true), false), (72.0, 135.0));
-        let narrow = |wrap: &str, legacy| intervals(&with(wrap, false), 120.0, 540.0, 10.0, 20.0, legacy).unwrap()[0];
-        assert_eq!(narrow("tight", true), (120.0, 135.0), "9 pt beside a compat 14 tight float");
-        assert_eq!(narrow("tight", false), (300.0, 540.0));
+        assert_eq!(left(&with(FloatWrap::Square, false), true), (72.0, 135.0));
+        assert_eq!(left(&with(FloatWrap::Square, true), true), (300.0, 540.0), "an inch beside a compat 14 frame");
+        assert_eq!(left(&with(FloatWrap::Square, true), false), (72.0, 135.0));
+        let narrow = |wrap: FloatWrap, legacy| intervals(&with(wrap, false), 120.0, 540.0, 10.0, 20.0, legacy).unwrap()[0];
+        assert_eq!(narrow(FloatWrap::Tight, true), (120.0, 135.0), "9 pt beside a compat 14 tight float");
+        assert_eq!(narrow(FloatWrap::Tight, false), (300.0, 540.0));
     }
 
     #[test]
     fn compat_14_keeps_no_distance_above_or_below_a_tight_float() {
         let square = [(0.0, 0.0), (21600.0, 0.0), (21600.0, 21600.0), (0.0, 21600.0)];
-        let p = polygon("tight", &square, [10.0, 10.0, 5.0, 5.0]).legacy_dist();
+        let p = polygon(FloatWrap::Tight, &square, [10.0, 10.0, 5.0, 5.0]).legacy_dist();
         assert_eq!(p.excl, [67.0, 72.0, 277.0, 172.0]);
         assert!(intervals(&[p], 0.0, 540.0, 175.0, 185.0, true).unwrap() == vec![(0.0, 540.0)]);
-        let q = polygon("square", &square, [10.0, 10.0, 5.0, 5.0]).legacy_dist();
+        let q = polygon(FloatWrap::Square, &square, [10.0, 10.0, 5.0, 5.0]).legacy_dist();
         assert_eq!(q.excl[1], 62.0);
     }
 }

@@ -27,3 +27,18 @@ pub enum VerticalAlign {
     /// At the outside edge.
     Outside,
 }
+
+/// How text wraps a float.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FloatWrap {
+    /// Around its box.
+    Square,
+    /// Around its outline.
+    Tight,
+    /// Around its outline and through its open parts.
+    Through,
+    /// Above and below it, not beside it.
+    TopAndBottom,
+    /// Not at all.
+    None,
+}

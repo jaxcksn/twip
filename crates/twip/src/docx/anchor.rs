@@ -1,6 +1,6 @@
 //! Float anchoring and wrapping: the DOCX literals of the model's values
 
-use super::model::{VerticalAlign, WrapText};
+use super::model::{FloatWrap, VerticalAlign, WrapText};
 
 /// `wrapText`, or a VML wrap's `side`; anything else wraps both sides.
 pub fn wrap_text(s: &str) -> WrapText {
@@ -41,5 +41,27 @@ pub fn v_align_name(a: VerticalAlign) -> &'static str {
         VerticalAlign::Bottom => "bottom",
         VerticalAlign::Inside => "inside",
         VerticalAlign::Outside => "outside",
+    }
+}
+
+/// A VML wrap's `type`; anything else doesn't wrap.
+pub fn wrap(s: &str) -> FloatWrap {
+    match s {
+        "square" => FloatWrap::Square,
+        "tight" => FloatWrap::Tight,
+        "through" => FloatWrap::Through,
+        "topAndBottom" => FloatWrap::TopAndBottom,
+        _ => FloatWrap::None,
+    }
+}
+
+/// The VML wrap `type` of `w`.
+pub fn wrap_name(w: FloatWrap) -> &'static str {
+    match w {
+        FloatWrap::Square => "square",
+        FloatWrap::Tight => "tight",
+        FloatWrap::Through => "through",
+        FloatWrap::TopAndBottom => "topAndBottom",
+        FloatWrap::None => "none",
     }
 }

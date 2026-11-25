@@ -827,7 +827,10 @@ impl<'d> PageFill<'d, '_> {
                         continue;
                     }
                     // A vertical section's table moves the line to its far side whole.
-                    let square = here.iter().filter(|f| f.in_band(yy, yy + h)).all(|f| f.float.wrap == "square" && f.key.2 != float::UPRIGHT_TABLE);
+                    let square = here
+                        .iter()
+                        .filter(|f| f.in_band(yy, yy + h))
+                        .all(|f| f.float.wrap == crate::docx::FloatWrap::Square && f.key.2 != float::UPRIGHT_TABLE);
                     // Compat ≤ 14: a line whose content fits no piece retries lower in steps of its height. One left no
                     // piece at all first goes to the top of a float starting inside it, then down by its height or to
                     // the bottom of the floats over its top, whichever is nearer.
@@ -922,7 +925,7 @@ impl<'d> PageFill<'d, '_> {
                         let drawing = f.text_box.is_none() || f.shape.is_some();
                         let segs = &bands[b].1;
                         let line = pb.from + segs[0].start..pb.from + segs.last().map_or(segs[0].end, |l| l.end).max(segs[0].start + 1);
-                        let unwrapped = f.wrap == "none";
+                        let unwrapped = f.wrap == crate::docx::FloatWrap::None;
                         let others: Vec<Placed> = floats
                             .iter()
                             .chain(&self.at.found)

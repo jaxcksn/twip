@@ -2,6 +2,7 @@
 
 use std::rc::Rc;
 
+use crate::docx::FloatWrap;
 use crate::font::Fonts;
 use crate::layout::FloatId;
 
@@ -320,8 +321,8 @@ impl Editor {
         }
         n.poly = Some(Rc::from(poly));
         n.poly_edited = true;
-        if !matches!(n.wrap.as_str(), "tight" | "through") {
-            (n.wrap, n.behind) = ("tight".into(), false);
+        if !matches!(n.wrap, FloatWrap::Tight | FloatWrap::Through) {
+            (n.wrap, n.behind) = (FloatWrap::Tight, false);
         }
         let out = self.set_float(n, "Edit Wrap Points", fonts);
         self.selection = Selection::Object(ObjectRef::Floating(f));
@@ -438,7 +439,7 @@ impl Editor {
         let fl = self.float_of(f)?;
         match fl.poly.as_deref().map(open).filter(|p| p.len() >= MIN_POINTS) {
             Some(p) => Some(WrapPolygon { points: p.to_vec(), edited: fl.poly_edited }),
-            None if matches!(fl.wrap.as_str(), "tight" | "through") => Some(WrapPolygon { points: BOX.to_vec(), edited: false }),
+            None if matches!(fl.wrap, FloatWrap::Tight | FloatWrap::Through) => Some(WrapPolygon { points: BOX.to_vec(), edited: false }),
             None => None,
         }
     }
@@ -491,7 +492,7 @@ impl Editor {
     /// `n`'s wrap polygon made again from its outline when it wraps tight or through, wasn't edited by hand and its
     /// outline may have changed since `was` (its wrap, shape, size or picture), as Word does.
     pub(super) fn rewrap(&self, was: &crate::docx::Float, n: &mut crate::docx::Float) {
-        if !matches!(n.wrap.as_str(), "tight" | "through") || n.poly_edited {
+        if !matches!(n.wrap, FloatWrap::Tight | FloatWrap::Through) || n.poly_edited {
             return;
         }
         fn inputs(f: &crate::docx::Float) -> impl PartialEq + '_ {
@@ -500,7 +501,7 @@ impl Editor {
             let geom = s.and_then(|s| Some((&s.sp()?.geom, s.xfrm.ext)));
             (geom, s.and_then(|s| s.pic()).map(|p| (&p.blip.src, p.blip.image)), f.image)
         }
-        let fresh = !matches!(was.wrap.as_str(), "tight" | "through") || n.poly.is_none();
+        let fresh = !matches!(was.wrap, FloatWrap::Tight | FloatWrap::Through) || n.poly.is_none();
         if !fresh && inputs(was) == inputs(n) {
             return;
         }

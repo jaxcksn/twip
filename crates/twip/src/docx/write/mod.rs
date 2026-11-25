@@ -5684,7 +5684,7 @@ impl Saver<'_, '_> {
             v = pos("positionV", &f.v_relative, f.v_align.map(anchor::v_align_name), f.v_offset),
             cx = cx,
             cy = cy,
-            wrap = wrap_xml("wp:", &f.wrap, f.wrap_text, f.poly.as_deref(), f.poly_edited),
+            wrap = wrap_xml("wp:", f.wrap, f.wrap_text, f.poly.as_deref(), f.poly_edited),
             name = match f.shape.as_deref().map(|s| s.nv.name.as_str()).filter(|n| !n.is_empty()) {
                 Some(n) => props::esc(n),
                 None => format!("{} {id}", if f.text_box.is_some() { "Text Box" } else { "Picture" }),
@@ -6089,7 +6089,7 @@ struct Placement {
     v: Option<(String, Option<String>, f64)>,
     size: Option<(f64, f64)>,
     /// Wrapping (`wrap`, `wrap_text`, behind the text, the wrap polygon and whether it was edited), when changed.
-    wrap: Option<(String, WrapText, bool, Option<Rc<[(f64, f64)]>>, bool)>,
+    wrap: Option<(FloatWrap, WrapText, bool, Option<Rc<[(f64, f64)]>>, bool)>,
     locked: Option<bool>,
     z: Option<u32>,
     /// The alternative text (`wp:docPr/@descr`).
@@ -6153,7 +6153,7 @@ impl Placement {
             ),
             size: (ne(a.w, b.w) || ne(a.h, b.h)).then_some((b.w, b.h)),
             wrap: (a.wrap != b.wrap || a.wrap_text != b.wrap_text || a.behind != b.behind || a.poly != b.poly || a.poly_edited != b.poly_edited)
-                .then(|| (b.wrap.clone(), b.wrap_text, b.behind, b.poly.clone(), b.poly_edited)),
+                .then(|| (b.wrap, b.wrap_text, b.behind, b.poly.clone(), b.poly_edited)),
             locked: (a.locked != b.locked).then_some(b.locked),
             z: (a.z != b.z).then_some(b.z),
             alt: (a.alt != b.alt).then(|| b.alt.to_string()),
@@ -6270,7 +6270,7 @@ impl Placement {
                 .map_or(String::new(), |(p, _)| format!("{p}:"));
             s.replace_range(start..end, &tag);
             if let Some((wrap, text, _, poly, edited)) = &self.wrap {
-                let x = wrap_xml(&p, wrap, *text, poly.as_deref(), *edited);
+                let x = wrap_xml(&p, *wrap, *text, poly.as_deref(), *edited);
                 let old = ["wrapSquare", "wrapTight", "wrapThrough", "wrapTopAndBottom", "wrapNone"].iter().find_map(|n| element(&s, n));
                 match old {
                     Some(r) => s.replace_range(r, &x),
@@ -6485,15 +6485,15 @@ fn find_tag(s: &str, local: &str, from: usize) -> Option<(usize, usize)> {
 
 /// A drawing's wrap element (`p`: the drawing prefix with its colon): a tight or through wrap's polygon is `poly` (box
 /// fractions), or the object's box; `edited` marks one the user changed.
-fn wrap_xml(p: &str, wrap: &str, text: WrapText, poly: Option<&[(f64, f64)]>, edited: bool) -> String {
+fn wrap_xml(p: &str, wrap: FloatWrap, text: WrapText, poly: Option<&[(f64, f64)]>, edited: bool) -> String {
     let text = anchor::wrap_text_name(text);
     match wrap {
-        "square" => format!("<{p}wrapSquare wrapText=\"{text}\"/>"),
-        "tight" | "through" => {
+        FloatWrap::Square => format!("<{p}wrapSquare wrapText=\"{text}\"/>"),
+        FloatWrap::Tight | FloatWrap::Through => {
             use std::fmt::Write as _;
             // 21600 is the whole of each side.
             const BOX: [(f64, f64); 5] = [(0.0, 0.0), (0.0, 1.0), (1.0, 1.0), (1.0, 0.0), (0.0, 0.0)];
-            let n = if wrap == "tight" { "wrapTight" } else { "wrapThrough" };
+            let n = if wrap == FloatWrap::Tight { "wrapTight" } else { "wrapThrough" };
             let (points, edited) = match poly.filter(|q| q.len() >= 2) {
                 Some(q) => (q, edited),
                 None => (&BOX[..], false),
@@ -6507,8 +6507,8 @@ fn wrap_xml(p: &str, wrap: &str, text: WrapText, poly: Option<&[(f64, f64)]>, ed
             let _ = write!(s, "</{p}wrapPolygon></{p}{n}>");
             s
         }
-        "topAndBottom" => format!("<{p}wrapTopAndBottom/>"),
-        _ => format!("<{p}wrapNone/>"),
+        FloatWrap::TopAndBottom => format!("<{p}wrapTopAndBottom/>"),
+        FloatWrap::None => format!("<{p}wrapNone/>"),
     }
 }
 
