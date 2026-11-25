@@ -1,5 +1,4 @@
-//! Run formatting through its property XML: the typed resolution of a run's authored properties, and the bridge for
-//! code that edits a run's `w:rPr` as XML (written from the typed properties, edited, parsed back)
+//! Run resolution: a run's typed authored properties over its paragraph's run base
 
 use std::borrow::Cow;
 use std::rc::Rc;
@@ -9,7 +8,6 @@ use super::model::{Run, RunStyle};
 use super::props::RunProps;
 use super::resolve::Resolver;
 use super::review::{FormatChange, RunRevisions};
-use super::write::props::Cx;
 use crate::format::CharProps;
 use crate::format::resolve::{self, RunEnv};
 
@@ -60,20 +58,6 @@ pub fn label(res: &Resolver, under: &CharProps, level: Option<&CharProps>) -> Ru
     Rc::new(resolve::run_style(&env(res), &p))
 }
 
-/// A run's `w:rPr` to edit as XML in the part `cx` describes: as read, else written from its typed properties.
-pub fn rpr<'r>(res: &Resolver, run: &'r RunStyle, cx: &Cx) -> Option<Cow<'r, str>> {
-    run.direct.xml(&res.styles.colours, cx)
-}
-
-/// A run from its direct `w:rPr` as written (in the part `cx` describes) over `base`: what an edit of a run's direct
-/// formatting gives.
-pub fn run_from_xml(res: &Resolver, base: &RunProps, rpr: Option<&str>, cx: &Cx) -> Run {
-    let direct = RunDirect::from_xml(rpr, cx);
-    #[cfg(test)]
-    written_as(res, None, &direct, rpr, cx);
-    Rc::new(resolve(res, &self::base(base), direct, false))
-}
-
 /// A run with no authored properties of its own over `base`.
 pub fn plain(res: &Resolver, base: &RunProps) -> Run {
     Rc::new(resolve(res, &self::base(base), RunDirect::default(), false))
@@ -93,43 +77,6 @@ pub fn edit_of(run: &RunStyle) -> crate::format::CharEdit {
 /// without the Hyperlink character style, as the reader resolved it, its review marks kept.
 pub fn rerun(res: &Resolver, base: &RunProps, run: &RunStyle) -> Run {
     again(res, &self::base(base), run, run.direct.clone())
-}
-
-/// `rpr` resolved over `base` in `run`'s place, as reading gives a run with that `w:rPr` there: in a table of
-/// contents' result without the Hyperlink character style, and with `run`'s revisions (a format change's previous
-/// properties resolved again over `base`).
-pub fn rerun_xml(res: &Resolver, base: &RunProps, run: &RunStyle, rpr: Option<&str>, cx: &Cx) -> Run {
-    let direct = RunDirect::from_xml(rpr, cx);
-    #[cfg(test)]
-    written_as(res, Some(run), &direct, rpr, cx);
-    again(res, &self::base(base), run, direct)
-}
-
-/// What an edit of a run's `w:rPr` as XML wrote (`rpr`, over `run`'s as read) is what writing its typed properties
-/// over the same writes, byte for byte; `TWIP_RPR_BYTES_OUT` names a file to list each one that isn't in, runs made
-/// from XML included, in place of failing.
-#[cfg(test)]
-fn written_as(res: &Resolver, run: Option<&RunStyle>, direct: &RunDirect, rpr: Option<&str>, cx: &Cx) {
-    let origin = run.and_then(|r| r.direct.read_from()).map(|(p, x)| (&**p, &**x));
-    // A run made from XML copied from elsewhere keeps that XML as written: compared on request only.
-    let report = std::env::var_os("TWIP_RPR_BYTES_OUT");
-    if run.is_none() && report.is_none() || run.is_some_and(|r| r.direct.props().is_some() && r.direct.as_read().is_none()) {
-        return;
-    }
-    let got = direct.props().and_then(|p| super::char_props::written_over(p, &Default::default(), &res.styles.colours, cx, origin, &[]));
-    if got.as_deref() == rpr {
-        return;
-    }
-    let what = format!("over {:?}\n  wrote {rpr:?}\n  typed {got:?}\n", origin.map(|o| o.1));
-    match report {
-        Some(path) => {
-            use std::io::Write;
-            let mut f = std::fs::OpenOptions::new().create(true).append(true).open(path).expect("the report");
-            let test = std::thread::current().name().unwrap_or_default().to_string();
-            let _ = writeln!(f, "{} {test} {what}", if run.is_some() { "edit" } else { "new" });
-        }
-        None => panic!("an edit's w:rPr is not what its typed properties write: {what}"),
-    }
 }
 
 /// Authored properties `direct` resolved over typed `base` in `run`'s place.

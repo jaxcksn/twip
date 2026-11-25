@@ -8,7 +8,9 @@ use std::rc::Rc;
 use super::model::*;
 use super::numbering::{Level, Numbering};
 use super::props::*;
-use super::review::{FormatChange, ParaChange, RunRevisions};
+use super::review::ParaChange;
+#[cfg(test)]
+use super::review::{FormatChange, RunRevisions};
 use super::styles::{Region, Styles, ThemeFonts};
 use super::write::props::Cx;
 
@@ -377,6 +379,7 @@ impl Resolver {
         self.cell_region(t.style_id.as_deref(), look, t.bands, (row, cell), (t.rows.len(), ncols), headers)
     }
 
+    #[cfg(test)]
     /// A run resolved from its direct `w:rPr` as written (namespaces as `cx` names them) over `base`: what an edit of
     /// a run's direct formatting gives.
     pub fn run_from_xml(&self, base: &RunProps, rpr: Option<&str>, cx: &Cx) -> Run {
@@ -386,12 +389,14 @@ impl Resolver {
         Rc::new(s)
     }
 
+    #[cfg(test)]
     /// `run` resolved again from its direct `w:rPr` over `base`, where it is: in a table of contents' result without the
     /// Hyperlink character style, as the reader resolved it, its review marks kept.
     pub fn rerun(&self, base: &RunProps, run: &RunStyle, cx: &Cx) -> Run {
         self.rerun_xml(base, run, run.direct.as_read().map(|x| &**x), cx)
     }
 
+    #[cfg(test)]
     /// `rpr` resolved over `base` in `run`'s place, as reading gives a run with that `w:rPr` there: in a table of
     /// contents' result without the Hyperlink character style, and with `run`'s revisions (a format change's previous
     /// properties resolved again over `base`).
