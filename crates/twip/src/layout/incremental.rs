@@ -511,7 +511,9 @@ impl Reuse {
             if let Some(r) = in_table {
                 let (Some(old), Some(Block::Table(table))) = (&body.start_table, doc.sections[si].blocks.get(token.flow.block)) else { continue };
                 let Some(new) = run.memo.table(table, space.columns[0].width) else { continue };
-                let same = old.same_rows_from(&new, r)
+                // A live drag's table laid out only in part holds no rows to compare past its part.
+                let same = new.rows.len() == table.rows.len()
+                    && old.same_rows_from(&new, r)
                     && new.rows.get(r).is_some_and(|row| row.cells.iter().all(|c| c.v_merge != VMerge::Continue))
                     && self.span.filter(|s| s.row.is_some()).is_some_and(|s| s.first_row >= new.rows.iter().take_while(|row| row.header).count())
                     && old.rows.iter().take_while(|row| row.header).eq(new.rows.iter().take_while(|row| row.header));
@@ -625,6 +627,8 @@ pub struct DocumentLayout {
     env: Option<Rc<LayoutEnv>>,
     /// The text box chains the last environment found.
     chains: Option<Rc<[super::env::Chain]>>,
+    /// The tables a live drag lays out.
+    live: Rc<[u64]>,
 }
 
 type Frame = (Rc<PageFragment>, PageMeta, [Option<HfRecord>; 2]);
@@ -653,7 +657,14 @@ impl DocumentLayout {
             expansions: None,
             env: None,
             chains: None,
+            live: Rc::from([]),
         }
+    }
+
+    /// The tables (model ids) a live drag lays out as it would leave them: each is laid out only as far as the pages
+    /// laid out need, the rest of it as later pages do.
+    pub fn set_live_tables(&mut self, tables: Rc<[u64]>) {
+        self.live = tables;
     }
 
     /// The document changed: its environment is read again, though nothing needs laying out again.
@@ -954,6 +965,7 @@ impl DocumentLayout {
         let running = self.job.as_mut().expect("started above");
         let before = running.job.committed().len();
         self.cache.store_tables = !running.incremental;
+        running.job.live.clone_from(&self.live);
         let step = crate::prof::time("layout:run", || running.job.run(doc, &ctx, &mut self.cache, running.reuse.as_mut(), budget));
         self.cache.store_tables = true;
         if step == Step::Done && running.seeded && running.job.finished().is_some_and(|f| f.passes != 1) {

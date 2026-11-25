@@ -864,6 +864,19 @@ impl Editor {
             }
         }
         hints.dedup();
+        // The previewed tables and those holding them
+        let mut live = Vec::new();
+        for p in &tables {
+            let mut at = Some(p.id);
+            while let Some(id) = at.filter(|id| !live.contains(&id.0)) {
+                live.push(id.0);
+                at = self.index.table_slot(id).and_then(|s| match s.container {
+                    index::Container::Cell { table, .. } => Some(table),
+                    _ => None,
+                });
+            }
+        }
+        self.layout.set_live_tables(live.into());
         self.table_preview = tables;
         self.relayout_parts(hints, parts);
     }

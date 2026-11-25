@@ -94,7 +94,7 @@ fn sides_box(tb: &TableLayout, left: fn(f64) -> f64, right: fn(f64) -> f64) -> (
 
 pub fn nested_shift(t: &Table, single: bool) -> f64 {
     if rtl(t) {
-        let edges = cell_edges(t, grid_columns(t), single, &|_| None);
+        let edges = cell_edges(t, grid_columns(t), single, &|_| None, usize::MAX);
         let res = rtl_sides(edges.first().into_iter().flatten().map(|c| &*c.edges));
         return rtl_x0(t, 0.0, 0.0, res, false) - rtl_x0(t, 0.0, 0.0, res, true);
     }
@@ -220,7 +220,8 @@ pub(super) struct CellEdges {
 }
 
 /// Each cell's resolved edges. A shared edge goes to the conflict winner of the two cells' borders, or with `single`
-/// to the right or lower cell's border, the left or upper one's when that is nil.
+/// to the right or lower cell's border, the left or upper one's when that is nil. The rows from `upto` on but the
+/// last, which only autofit reads, get their left and right edges only.
 struct Side<'a> {
     b: Option<&'a Border>,
     cell: bool,
@@ -249,7 +250,7 @@ pub fn shared_edge(first: (&Option<Border>, &Option<Border>), second: (&Option<B
     shared_side(&side(first.0, first.1), &side(second.0, second.1), false, single)
 }
 
-pub(super) fn cell_edges<'k>(t: &Table, ncols: usize, single: bool, kept: &dyn Fn(usize) -> Option<&'k RowBox>) -> Vec<Vec<CellEdges>> {
+pub(super) fn cell_edges<'k>(t: &Table, ncols: usize, single: bool, kept: &dyn Fn(usize) -> Option<&'k RowBox>, upto: usize) -> Vec<Vec<CellEdges>> {
     let nrows = t.rows.len();
     let shared = |own: &Side, other: &Side, later: bool| shared_side(own, other, later, single);
     let mut grid_cells: Vec<Vec<(usize, usize)>> = Vec::new();
@@ -265,6 +266,7 @@ pub(super) fn cell_edges<'k>(t: &Table, ncols: usize, single: bool, kept: &dyn F
     let mut out = Vec::new();
     for (ri, r) in t.rows.iter().enumerate() {
         let alone = framed(t, ri);
+        let sides_only = ri >= upto && ri + 1 < nrows;
         if let Some(k) = kept(ri).filter(|k| k.cells.iter().all(|c| c.index < r.cells.len())) {
             out.push(k.cells.iter().map(|c| CellEdges { ci: c.index, col: c.col, span: c.span, edges: c.edges.clone() }).collect());
             continue;
@@ -285,14 +287,18 @@ pub(super) fn cell_edges<'k>(t: &Table, ncols: usize, single: bool, kept: &dyn F
             let neighbour = |rr: usize, cc: usize| -> Option<&Cell> {
                 t.rows.get(rr).and_then(|row| covering(&grid_cells[rr], cc, |&g| g).map(|i| &row.cells[i]))
             };
-            let top_e = if ri == 0 || alone || framed(t, ri - 1) {
+            let top_e = if sides_only {
+                None
+            } else if ri == 0 || alone || framed(t, ri - 1) {
                 conflict((top.b, top.cell), (None, false))
             } else {
                 let above = neighbour(ri - 1, col);
                 let ab = above.map_or(Side { b: None, cell: false }, |a| side(&a.bottom, &row_borders(t, ri - 1)[4]));
                 shared(&top, &ab, true)
             };
-            let bot_e = if ri + 1 == nrows || alone || framed(t, ri + 1) {
+            let bot_e = if sides_only {
+                None
+            } else if ri + 1 == nrows || alone || framed(t, ri + 1) {
                 conflict((bottom.b, bottom.cell), (None, false))
             } else {
                 let below = neighbour(ri + 1, col);
@@ -409,6 +415,7 @@ pub(super) fn assemble(
     closings: &[Option<(ParaId, f64)>],
     fit: Rc<[FitRow]>,
     nested: bool,
+    bottom: f64,
     memos: &mut Memos,
 ) -> Result<TableLayout, Yield> {
     let total: f64 = cols.iter().sum();
@@ -606,7 +613,7 @@ pub(super) fn assemble(
         });
     }
     fit_merged(&mut rows, t, geo, env, memos)?;
-    let mut bottom_border = rows.last().map(|r| r.cells.iter().map(|c| space_h(&c.edges[2])).fold(0.0, f64::max)).unwrap_or(0.0);
+    let mut bottom_border = bottom;
     if framed(t, t.rows.len().saturating_sub(1)) {
         bottom_border = space_h(&row_borders(t, t.rows.len() - 1)[2]);
     }

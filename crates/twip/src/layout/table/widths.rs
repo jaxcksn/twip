@@ -250,7 +250,7 @@ pub(super) struct Fit {
 }
 
 fn fit(t: &Table, text_w: f64, env: &StoryEnv, avail: Option<i64>, memos: &mut Memos) -> Result<Fit, Yield> {
-    let edges = cell_edges(t, grid_columns(t), env.ctx.env.text.single_cell_borders, &|_| None);
+    let edges = cell_edges(t, grid_columns(t), env.ctx.env.text.single_cell_borders, &|_| None, usize::MAX);
     let inputs = fit_inputs(t, env, memos, &edges, &|_| None)?;
     Ok(resolve_fit(t, text_w, env, avail, false, &inputs))
 }
