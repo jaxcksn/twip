@@ -849,7 +849,7 @@ fn w14_colour_xml(c: &Colour) -> String {
 }
 
 /// A text fill or a text outline's fill (`w14:noFill`, `w14:solidFill`, `w14:gradFill`), `{w14}` for the prefix.
-fn w14_fill_xml(f: &Fill) -> String {
+pub(crate) fn w14_fill_xml(f: &Fill) -> String {
     match f {
         Fill::Solid(c) => format!("<{{w14}}solidFill>{}</{{w14}}solidFill>", w14_colour_xml(c)),
         Fill::Gradient(g) => {

@@ -3,6 +3,7 @@
 pub(crate) mod anchor;
 pub mod binding;
 pub mod blank;
+pub mod char_props;
 pub mod comments;
 pub mod diagnostics;
 pub mod fields;

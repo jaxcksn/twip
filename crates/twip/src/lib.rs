@@ -11,6 +11,7 @@ pub(crate) mod editing;
 #[cfg(any(test, not(target_family = "wasm")))]
 pub(crate) mod features;
 pub(crate) mod font;
+pub(crate) mod format;
 pub(crate) mod layout;
 pub mod pdf;
 pub(crate) mod prof;
@@ -44,6 +45,9 @@ pub mod internal {
     }
     pub mod font {
         pub use crate::font::*;
+    }
+    pub mod format {
+        pub use crate::format::*;
     }
     pub mod layout {
         pub use crate::layout::*;
