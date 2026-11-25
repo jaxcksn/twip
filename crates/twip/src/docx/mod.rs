@@ -18,6 +18,8 @@ pub mod line_style;
 pub mod model;
 pub mod numbering;
 pub mod package;
+pub mod para_props;
+pub mod para_xml;
 pub mod paragraph;
 mod prop_xml;
 pub mod properties;

@@ -27,12 +27,12 @@ use std::rc::Rc;
 
 use roxmltree::Node;
 
-use super::line_style::{border_style, border_val, emphasis, emphasis_val, shading_pattern, shading_val, underline, underline_val};
+use super::line_style::{emphasis, emphasis_val, shading_pattern, shading_val, underline, underline_val};
 use super::model::ThemeColourRef;
 pub use super::prop_xml::RevisionAttrs;
 use super::prop_xml::{
-    COLOUR, Compare, FILL, HalfPoints, LINE_COLOUR, Out, Sink, Twips, attr_list, colour, colour_attrs, emit_revision, foreign_child, props_key,
-    push_esc, revision_attrs, with_attr_written,
+    COLOUR, Compare, FILL, HalfPoints, LINE_COLOUR, Out, Sink, Twips, attr_list, border, border_attrs, colour, colour_attrs, emit_revision,
+    foreign_child, props_key, push_esc, revision_attrs, with_attr_written,
 };
 pub(crate) use super::prop_xml::{strip, with_attr};
 use super::props::{self as xml_props, RunProps, ThemeColours};
@@ -478,22 +478,6 @@ fn revision(rev: &mut RprRevisions, e: Node, key: &str, scratch: &mut String) {
     *slot = Some(revision_attrs(e, scratch));
 }
 
-fn border(e: Node) -> TextBorder {
-    // Eighths of a point
-    let sz = match num(attr(e, "sz")) {
-        Some(v) if v > 0.0 && v < 1.0 => 1.0,
-        Some(v) => v.clamp(0.0, 1584.0 * 8.0),
-        None => 0.0,
-    };
-    TextBorder {
-        style: val(e).map_or(crate::document::line::BorderStyle::None, border_style),
-        width: sz / 8.0,
-        space: num(attr(e, "space")).unwrap_or(0.0),
-        shadow: matches!(attr(e, "shadow"), Some("1" | "true" | "on")),
-        color: colour(e, LINE_COLOUR),
-    }
-}
-
 /// An `ST_Theme` value: by its set's prefix and its script's suffix, as the theme resolves it.
 fn theme_font(t: &str) -> FontRef {
     let face = if t.starts_with("major") {
@@ -697,22 +681,7 @@ fn emit(p: &CharProps, key: &str, s: &mut dyn Sink) -> bool {
                 }
             })
             .is_some(),
-        "bdr" => p
-            .border
-            .map(|b| {
-                val(s, &border_val(b.style));
-                s.attr(W, "sz", &(b.width * 8.0));
-                s.attr(W, "space", &b.space);
-                if let Some(c) = b.color {
-                    colour_attrs(s, c, LINE_COLOUR);
-                }
-                if b.shadow {
-                    s.attr(W, "shadow", &1);
-                } else {
-                    s.implied("shadow", "0");
-                }
-            })
-            .is_some(),
+        "bdr" => p.border.map(|b| border_attrs(s, &b)).is_some(),
         "shd" => p
             .shading
             .map(|sh| {

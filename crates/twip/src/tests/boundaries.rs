@@ -107,7 +107,7 @@ fn authored_formatting_names_no_xml() {
     sources(&Path::new(env!("CARGO_MANIFEST_DIR")).join("src/format"), &mut files);
     for f in files {
         let text = fs::read_to_string(&f).unwrap_or_default();
-        for word in ["roxmltree", "Node", "<w:", "RunProps", "docx::xml", "docx::reader", "docx::write", "layout::", "api::"] {
+        for word in ["roxmltree", "Node", "<w:", "RunProps", "props::ParaProps", "docx::xml", "docx::reader", "docx::write", "layout::", "api::"] {
             assert!(!text.contains(word), "{} names {word}", f.display());
         }
     }

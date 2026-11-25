@@ -2,7 +2,10 @@
 //! document defaults) sets, with unset, explicitly off and automatic kept apart and theme references kept as
 //! references. [`resolve`] folds levels into the effective [`crate::docx::RunStyle`].
 
+mod para;
 pub mod resolve;
+
+pub use para::*;
 
 use std::rc::Rc;
 

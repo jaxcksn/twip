@@ -11,8 +11,8 @@ use roxmltree::Node;
 use super::model::ThemeColourRef;
 use super::props::{ThemeColours, theme_name, theme_ref};
 use super::write::props::Cx;
-use super::xml::{W, W14, W15, attr, color};
-use crate::format::{Color, ForeignAttr, ForeignChild, ForeignProps, QName};
+use super::xml::{W, W14, W15, attr, color, num, val};
+use crate::format::{Color, ForeignAttr, ForeignChild, ForeignProps, QName, TextBorder};
 
 pub(super) const XML_NS: &str = "http://www.w3.org/XML/1998/namespace";
 
@@ -33,6 +33,38 @@ pub struct RevisionAttrs {
     pub date: Option<Rc<str>>,
     /// Its unmodelled attributes, and the modelled ones written otherwise.
     pub foreign: Vec<ForeignAttr>,
+}
+
+/// A border around text or a paragraph (`w:bdr`, a side of `w:pBdr`).
+pub(super) fn border(e: Node) -> TextBorder {
+    // Eighths of a point
+    let sz = match num(attr(e, "sz")) {
+        Some(v) if v > 0.0 && v < 1.0 => 1.0,
+        Some(v) => v.clamp(0.0, 1584.0 * 8.0),
+        None => 0.0,
+    };
+    TextBorder {
+        style: val(e).map_or(crate::document::line::BorderStyle::None, super::line_style::border_style),
+        width: sz / 8.0,
+        space: num(attr(e, "space")).unwrap_or(0.0),
+        shadow: matches!(attr(e, "shadow"), Some("1" | "true" | "on")),
+        color: colour(e, LINE_COLOUR),
+    }
+}
+
+/// A border's attributes.
+pub(super) fn border_attrs(s: &mut dyn Sink, b: &TextBorder) {
+    s.attr(W, "val", &super::line_style::border_val(b.style));
+    s.attr(W, "sz", &(b.width * 8.0));
+    s.attr(W, "space", &b.space);
+    if let Some(c) = b.color {
+        colour_attrs(s, c, LINE_COLOUR);
+    }
+    if b.shadow {
+        s.attr(W, "shadow", &1);
+    } else {
+        s.implied("shadow", "0");
+    }
 }
 
 /// The colour attributes of a colour: value, theme colour, tint, shade.

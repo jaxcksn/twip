@@ -1,14 +1,15 @@
-//! Run resolution on typed levels: folding, toggles, and the effective format
+//! Resolution on typed levels: folding, toggles, and the effective format of runs and paragraphs
 
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use super::{CharProps, Color, FontHint, FontRef, ScriptClass, ThemeFace, Toggle};
-use crate::document::format::{Emphasis, ShadingPattern, VertAlign};
+use super::{CharProps, Color, FontHint, FontRef, ParaFlag, ParaProps, ScriptClass, TextBorder, ThemeFace, TightWrap, Toggle};
+use crate::document::format::{Emphasis, Jc, LineRule, ShadingPattern, TabKind, VertAlign};
 use crate::document::line::{BorderStyle, Underline};
+use crate::document::paragraph::{ListJc, TextAlignment};
 use crate::docx::font_table::GenericFamily;
-use crate::docx::model::{RunStyle, TextEffects, ThemeColourRef, ThemeFont, Typography};
-use crate::docx::props::{Border, Shd, ThemeColours};
+use crate::docx::model::{ParaStyle, RunStyle, TextEffects, ThemeColourRef, ThemeFont, Typography};
+use crate::docx::props::{Border, Shd, Tab, ThemeColours};
 use crate::docx::styles::ThemeFonts;
 
 /// What resolving a run needs from its document.
@@ -263,5 +264,147 @@ pub fn run_style(env: &RunEnv, p: &CharProps) -> RunStyle {
         direct: Default::default(),
         rev: Default::default(),
         categories,
+    }
+}
+
+impl ParaProps {
+    /// Overrides everything `o` sets; tab stops accumulate (a cleared one removes the stop inherited there).
+    /// `foreign` stays this level's.
+    pub fn merge(&mut self, o: &ParaProps) {
+        macro_rules! take {
+            ($($f:ident).+) => { if o.$($f).+.is_some() { self.$($f).+ = o.$($f).+.clone(); } };
+        }
+        take!(style);
+        take!(align);
+        take!(indent_left);
+        take!(indent_right);
+        take!(indent_first);
+        take!(space_before);
+        take!(space_after);
+        take!(space_before_auto);
+        take!(space_after_auto);
+        take!(line);
+        take!(line_rule);
+        take!(tight_wrap);
+        take!(division);
+        take!(list);
+        take!(list_level);
+        take!(borders.top);
+        take!(borders.bottom);
+        take!(borders.left);
+        take!(borders.right);
+        take!(borders.between);
+        take!(shading);
+        take!(frame);
+        take!(text_flow);
+        take!(text_alignment);
+        take!(outline_level);
+        take!(collapsed);
+        let f = &mut self.flags;
+        f.on = (f.on & !o.flags.set) | (o.flags.on & o.flags.set);
+        f.set |= o.flags.set;
+        self.tabs.extend(o.tabs.iter().copied());
+    }
+
+    /// The effective tab stops: later levels replace stops at the same position; a cleared one removes them.
+    pub fn resolved_tabs(&self) -> Vec<Tab> {
+        let mut out: Vec<Tab> = Vec::new();
+        for t in &self.tabs {
+            out.retain(|x| (x.pos - t.pos).abs() >= 0.025);
+            if t.kind != TabKind::Clear {
+                out.push(Tab { pos: t.pos, kind: t.kind, leader: t.leader });
+            }
+        }
+        out.sort_by(|a, b| a.pos.total_cmp(&b.pos));
+        out
+    }
+}
+
+/// The effective format of a paragraph whose folded levels are `p`, before its list, its run base and its divisions;
+/// a theme colour as `colours` resolve it.
+pub fn para_style(colours: &ThemeColours, p: &ParaProps) -> ParaStyle {
+    let line_rule = p.line_rule.unwrap_or(LineRule::Auto);
+    let line = match (p.line, line_rule) {
+        (Some(l), LineRule::Auto) => l / 240.0,
+        (Some(l), _) => l / 20.0,
+        (None, _) => 1.0,
+    };
+    let env = |c| para_colour(colours, c);
+    let bdr = |b: &Option<TextBorder>| {
+        b.filter(|b| !matches!(b.style, BorderStyle::None | BorderStyle::Nil)).map(|b| {
+            let (color, color_theme) = env(b.color);
+            Border { style: b.style, width: b.width, space: b.space, shadow: b.shadow, color, color_theme }
+        })
+    };
+    let shd = p.shading.map(|s| {
+        let (color, color_theme) = env(s.color);
+        let (fill, fill_theme) = env(s.fill);
+        Shd { pattern: s.pattern, color, fill, color_theme, fill_theme }
+    });
+    let flag = |f: ParaFlag| p.flags.get(f);
+    ParaStyle {
+        style_id: p.style.as_deref().map(str::to_string),
+        jc: p.align.unwrap_or(Jc::Left),
+        bidi: flag(ParaFlag::BIDI).unwrap_or(false),
+        ind_left: p.indent_left.unwrap_or(0.0),
+        ind_right: p.indent_right.unwrap_or(0.0),
+        ind_first: p.indent_first.unwrap_or(0.0),
+        space_before: p.space_before.unwrap_or(0.0),
+        space_after: p.space_after.unwrap_or(0.0),
+        before_auto: p.space_before_auto.unwrap_or(false),
+        after_auto: p.space_after_auto.unwrap_or(false),
+        line,
+        line_rule: if p.line.is_some() { line_rule } else { LineRule::Auto },
+        contextual: flag(ParaFlag::CONTEXTUAL).unwrap_or(false),
+        snap_to_grid: flag(ParaFlag::SNAP_TO_GRID).unwrap_or(true),
+        keep_next: flag(ParaFlag::KEEP_NEXT).unwrap_or(false),
+        keep_lines: flag(ParaFlag::KEEP_LINES).unwrap_or(false),
+        page_break_before: flag(ParaFlag::PAGE_BREAK_BEFORE).unwrap_or(false),
+        widow_control: flag(ParaFlag::WIDOW_CONTROL).unwrap_or(true),
+        suppress_auto_hyphens: flag(ParaFlag::SUPPRESS_AUTO_HYPHENS).unwrap_or(false),
+        no_kinsoku: flag(ParaFlag::KINSOKU) == Some(false),
+        no_overflow_punct: flag(ParaFlag::OVERFLOW_PUNCT) == Some(false),
+        no_auto_space_de: flag(ParaFlag::AUTO_SPACE_DE) == Some(false),
+        no_auto_space_dn: flag(ParaFlag::AUTO_SPACE_DN) == Some(false),
+        top_line_punct: flag(ParaFlag::TOP_LINE_PUNCT).unwrap_or(false),
+        no_word_wrap: flag(ParaFlag::WORD_WRAP) == Some(false),
+        tight_wrap: p.tight_wrap.map_or(0, TightWrap::code),
+        suppress_overlap: flag(ParaFlag::SUPPRESS_OVERLAP).unwrap_or(false),
+        suppress_line_numbers: flag(ParaFlag::SUPPRESS_LINE_NUMBERS).unwrap_or(false),
+        mirror_indents: flag(ParaFlag::MIRROR_INDENTS).unwrap_or(false),
+        div: p.division,
+        div_boxes: Rc::from([]),
+        tabs: p.resolved_tabs(),
+        border_top: bdr(&p.borders.top),
+        border_bottom: bdr(&p.borders.bottom),
+        border_left: bdr(&p.borders.left),
+        border_right: bdr(&p.borders.right),
+        border_between: bdr(&p.borders.between),
+        shading: shd.as_ref().and_then(Shd::flat),
+        shd: shd.filter(|s| s.pattern != ShadingPattern::Nil),
+        frame: p.frame.clone(),
+        text_flow: p.text_flow.unwrap_or(0),
+        in_frame: false,
+        text_alignment: p.text_alignment.unwrap_or(TextAlignment::Auto),
+        outline_lvl: p.outline_level,
+        collapsed: p.collapsed.unwrap_or(false),
+        list_jc: ListJc::Left,
+        num: None,
+        list_fmt: None,
+        list: None,
+        mark_size: None,
+        direct: Default::default(),
+        change: None,
+        joined: Rc::from([]),
+        parts: Rc::from([]),
+    }
+}
+
+/// An authored colour as shown, with the theme colour it is.
+fn para_colour(colours: &ThemeColours, c: Option<Color>) -> (Option<u32>, Option<ThemeColourRef>) {
+    match c {
+        Some(Color::Rgb(v)) => (Some(v), None),
+        Some(Color::Theme(r)) => (Some(colours.resolve(r)), Some(r)),
+        Some(Color::Auto) | None => (None, None),
     }
 }
