@@ -2,6 +2,7 @@
 
 mod authored;
 mod backgrounds;
+mod baseline;
 mod basics;
 mod bindings;
 mod checkboxes;
