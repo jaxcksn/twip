@@ -1,6 +1,7 @@
 //! Object selection
 
-use crate::docx::Inline;
+use crate::api::value::WrapSide;
+use crate::docx::{Inline, WrapText};
 use crate::font::Fonts;
 use crate::layout::{FloatId, Unit};
 
@@ -850,7 +851,7 @@ impl Editor {
             v_align: None,
             v_offset: 0.0,
             wrap: "none".into(),
-            wrap_text: "bothSides".into(),
+            wrap_text: WrapText::BothSides,
             dist: [3.6, 3.6, 9.0, 9.0],
             effect: [0.0; 4],
             poly: None,
@@ -1091,7 +1092,12 @@ impl Editor {
         let Selection::Object(ObjectRef::Floating(f)) = self.selection else { return Outcome::unavailable("no floating object selected") };
         let Some(mut n) = self.float_of(f).cloned() else { return Outcome::Unchanged("no float") };
         if let Some(s) = w.side {
-            n.wrap_text = ooxml(s);
+            n.wrap_text = match s {
+                WrapSide::BothSides => WrapText::BothSides,
+                WrapSide::Left => WrapText::Left,
+                WrapSide::Right => WrapText::Right,
+                WrapSide::Largest => WrapText::Largest,
+            };
         }
         for (k, v) in [w.top, w.bottom, w.left, w.right].into_iter().enumerate() {
             if let Some(v) = v {
@@ -1121,7 +1127,12 @@ impl Editor {
             },
             allow_overlap: fl.allow_overlap,
             layout_in_cell: fl.layout_in_cell,
-            wrap_side: from_ooxml(&fl.wrap_text),
+            wrap_side: match fl.wrap_text {
+                WrapText::BothSides => WrapSide::BothSides,
+                WrapText::Left => WrapSide::Left,
+                WrapText::Right => WrapSide::Right,
+                WrapText::Largest => WrapSide::Largest,
+            },
             distance: crate::api::state::TextDistance { top, bottom, left, right },
         })
     }
@@ -1200,7 +1211,7 @@ impl Editor {
             v_align: None,
             v_offset: 0.0,
             wrap: wrap.into(),
-            wrap_text: "bothSides".into(),
+            wrap_text: WrapText::BothSides,
             dist: [0.0, 0.0, 9.0, 9.0],
             effect: pic.effect,
             poly: None,

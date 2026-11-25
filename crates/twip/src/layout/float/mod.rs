@@ -3,7 +3,7 @@
 use std::rc::Rc;
 
 use crate::docx::Compat;
-use crate::docx::model::Float;
+use crate::docx::model::{Float, WrapText};
 
 use super::ids::ParaId;
 use super::units::{EPS, LU_PER_PT};
@@ -88,11 +88,11 @@ impl Placed {
             "topAndBottom" => Wrap::TopAndBottom,
             _ => Wrap::None,
         };
-        let side = match f.wrap_text.as_str() {
-            "left" => Side::Left,
-            "right" => Side::Right,
-            "largest" => Side::Largest,
-            _ => Side::Both,
+        let side = match f.wrap_text {
+            WrapText::BothSides => Side::Both,
+            WrapText::Left => Side::Left,
+            WrapText::Right => Side::Right,
+            WrapText::Largest => Side::Largest,
         };
         // The polygon spans the unturned box about the same centre, mirrored by its flips, and turns with the shape.
         let xfrm = f.shape.as_ref().map(|s| s.xfrm).unwrap_or_default();
@@ -347,7 +347,7 @@ pub fn table_float(id: u64, w: f64, h: f64, dist: [f64; 4], allow_overlap: bool)
         v_align: None,
         v_offset: 0.0,
         wrap: "square".into(),
-        wrap_text: "bothSides".into(),
+        wrap_text: crate::docx::WrapText::BothSides,
         dist,
         effect: [0.0; 4],
         poly: None,
@@ -390,7 +390,7 @@ mod tests {
             v_align: None,
             v_offset: 0.0,
             wrap: "square".into(),
-            wrap_text: "bothSides".into(),
+            wrap_text: crate::docx::WrapText::BothSides,
             dist: [0.0; 4],
             effect: [0.0; 4],
             poly: None,

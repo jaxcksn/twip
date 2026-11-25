@@ -2993,12 +2993,7 @@ impl Reader {
             "square" | "tight" | "through" | "topAndBottom" => wrap,
             _ => "none".into(),
         };
-        let wrap_text = match side.as_str() {
-            "left" => "left",
-            "right" => "right",
-            "largest" => "largest",
-            _ => "bothSides",
-        };
+        let wrap_text = super::anchor::wrap_text(&side);
         // A style length goes to the nearest twip, halves up (the products of decimal points land just below).
         let tw = |v: f64| (v * 20.0 + 0.5 + 1e-7).floor();
         let twips = |v: f64| tw(v) / 20.0;
@@ -3036,7 +3031,7 @@ impl Reader {
                 v_align,
                 v_offset: twips(st.y),
                 wrap,
-                wrap_text: wrap_text.into(),
+                wrap_text,
                 dist,
                 effect,
                 poly,
@@ -3134,7 +3129,7 @@ impl Reader {
             Some("wrapTopAndBottom") => "topAndBottom",
             _ => "none",
         };
-        let wrap_text = wrap_el.and_then(|w| w.attribute("wrapText")).unwrap_or("bothSides").to_string();
+        let wrap_text = wrap_el.and_then(|w| w.attribute("wrapText")).map_or(WrapText::BothSides, super::anchor::wrap_text);
         let dist = |n: &str| emu(item.attribute(n)).unwrap_or(0.0);
         // Group shape
         let group = item.descendants().find(|n| n.tag_name().name() == "wgp");

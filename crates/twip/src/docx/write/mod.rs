@@ -5683,7 +5683,7 @@ impl Saver<'_, '_> {
             v = pos("positionV", &f.v_relative, &f.v_align, f.v_offset),
             cx = cx,
             cy = cy,
-            wrap = wrap_xml("wp:", &f.wrap, &f.wrap_text, f.poly.as_deref(), f.poly_edited),
+            wrap = wrap_xml("wp:", &f.wrap, f.wrap_text, f.poly.as_deref(), f.poly_edited),
             name = match f.shape.as_deref().map(|s| s.nv.name.as_str()).filter(|n| !n.is_empty()) {
                 Some(n) => props::esc(n),
                 None => format!("{} {id}", if f.text_box.is_some() { "Text Box" } else { "Picture" }),
@@ -6088,7 +6088,7 @@ struct Placement {
     v: Option<(String, Option<String>, f64)>,
     size: Option<(f64, f64)>,
     /// Wrapping (`wrap`, `wrap_text`, behind the text, the wrap polygon and whether it was edited), when changed.
-    wrap: Option<(String, String, bool, Option<Rc<[(f64, f64)]>>, bool)>,
+    wrap: Option<(String, WrapText, bool, Option<Rc<[(f64, f64)]>>, bool)>,
     locked: Option<bool>,
     z: Option<u32>,
     /// The alternative text (`wp:docPr/@descr`).
@@ -6149,7 +6149,7 @@ impl Placement {
             v: pos((&a.v_relative, &a.v_align, a.v_offset), (&b.v_relative, &b.v_align, b.v_offset)),
             size: (ne(a.w, b.w) || ne(a.h, b.h)).then_some((b.w, b.h)),
             wrap: (a.wrap != b.wrap || a.wrap_text != b.wrap_text || a.behind != b.behind || a.poly != b.poly || a.poly_edited != b.poly_edited)
-                .then(|| (b.wrap.clone(), b.wrap_text.clone(), b.behind, b.poly.clone(), b.poly_edited)),
+                .then(|| (b.wrap.clone(), b.wrap_text, b.behind, b.poly.clone(), b.poly_edited)),
             locked: (a.locked != b.locked).then_some(b.locked),
             z: (a.z != b.z).then_some(b.z),
             alt: (a.alt != b.alt).then(|| b.alt.to_string()),
@@ -6266,7 +6266,7 @@ impl Placement {
                 .map_or(String::new(), |(p, _)| format!("{p}:"));
             s.replace_range(start..end, &tag);
             if let Some((wrap, text, _, poly, edited)) = &self.wrap {
-                let x = wrap_xml(&p, wrap, text, poly.as_deref(), *edited);
+                let x = wrap_xml(&p, wrap, *text, poly.as_deref(), *edited);
                 let old = ["wrapSquare", "wrapTight", "wrapThrough", "wrapTopAndBottom", "wrapNone"].iter().find_map(|n| element(&s, n));
                 match old {
                     Some(r) => s.replace_range(r, &x),
@@ -6481,7 +6481,8 @@ fn find_tag(s: &str, local: &str, from: usize) -> Option<(usize, usize)> {
 
 /// A drawing's wrap element (`p`: the drawing prefix with its colon): a tight or through wrap's polygon is `poly` (box
 /// fractions), or the object's box; `edited` marks one the user changed.
-fn wrap_xml(p: &str, wrap: &str, text: &str, poly: Option<&[(f64, f64)]>, edited: bool) -> String {
+fn wrap_xml(p: &str, wrap: &str, text: WrapText, poly: Option<&[(f64, f64)]>, edited: bool) -> String {
+    let text = crate::docx::anchor::wrap_text_name(text);
     match wrap {
         "square" => format!("<{p}wrapSquare wrapText=\"{text}\"/>"),
         "tight" | "through" => {

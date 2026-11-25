@@ -1,5 +1,6 @@
 //! The layout engine's input: a document with every style resolved (the STYLE rules). Lengths are points.
 
+pub use crate::document::anchor::WrapText;
 pub use crate::document::content::{BreakKind, NoteKind};
 pub use crate::document::ident::{ControlId, FieldId, next_para_id};
 pub use crate::document::policy::{Compat, LayoutPolicy};
@@ -617,8 +618,7 @@ pub struct Float {
     pub v_offset: f64,
     /// `square`, `tight`, `through`, `topAndBottom`, `none`.
     pub wrap: String,
-    /// `bothSides`, `left`, `right`, `largest`.
-    pub wrap_text: String,
+    pub wrap_text: WrapText,
     pub dist: [f64; 4],
     pub effect: [f64; 4],
     /// The wrap polygon of a tight or through float, as fractions of its box.
