@@ -30,8 +30,7 @@ fn cx(d: &Document) -> Cx {
 // Re-resolution from the property XML each node holds
 
 /// Every body paragraph, mark and text run resolved again from its own property XML gives the format it holds.
-/// Paragraphs joined through vanished marks and paragraphs written in the default namespace are skipped, as the
-/// as-read harness skips them (`docx::resolve`).
+/// Paragraphs joined through vanished marks are skipped, as the as-read harness skips them (`docx::resolve`).
 fn check(d: &Document, what: &str) -> usize {
     let res = d.resolver.as_deref().expect("a resolver");
     let cx = cx(d);
@@ -46,7 +45,7 @@ fn check_blocks(res: &Resolver, cx: &Cx, blocks: &[Block], region: Option<&Regio
     for b in blocks {
         match b {
             Block::Para(p) => {
-                if p.src.as_ref().is_some_and(|s| s.ranges.len() > 1) || p.style.direct.0.as_deref().is_some_and(|x| x.starts_with("<pPr")) {
+                if p.src.as_ref().is_some_and(|s| s.ranges.len() > 1) {
                     continue;
                 }
                 let mut r = res.para_from_xml(p.style.direct.0.as_deref(), region, cx);
@@ -499,8 +498,7 @@ fn with_html_chunk(body: &str, html: &[u8]) -> Vec<u8> {
 }
 
 /// Every paragraph's, mark's and text run's property XML in every fixture, written again by the property writer,
-/// parses to the same properties. Known gap: the writer knows only the prefix the part's root gives the main
-/// namespace, so property XML under another prefix (bound on the paragraph, or the default namespace) is skipped.
+/// parses to the same properties, whatever prefix (or default namespace) the element names its namespace with.
 #[test]
 fn property_xml_round_trips_through_the_writer() {
     let mut paths = Vec::new();
@@ -512,7 +510,7 @@ fn property_xml_round_trips_through_the_writer() {
         let cx = cx(&d);
         let colours = &res.styles.colours;
         let mut each = |raw: Option<&str>, local: &str| {
-            let Some(raw) = raw.filter(|x| x.starts_with(&format!("<{}{local}", cx.w))) else { return };
+            let Some(raw) = raw else { return };
             let again = Props::parse(Some(raw), local, &cx).xml();
             let what = format!("{}: {raw}", path.display());
             if local == "rPr" {

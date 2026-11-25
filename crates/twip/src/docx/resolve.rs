@@ -523,9 +523,7 @@ mod tests {
         for b in blocks {
             match b {
                 Block::Para(p) => {
-                    // Known gap: the stored XML of a paragraph written in the default namespace keeps no binding for
-                    // it (the reader copies prefixed declarations only), so it parses as nothing.
-                    if p.src.as_ref().is_some_and(|s| s.ranges.len() > 1) || p.style.direct.0.as_deref().is_some_and(|x| x.starts_with("<pPr")) {
+                    if p.src.as_ref().is_some_and(|s| s.ranges.len() > 1) {
                         continue;
                     }
                     // Revisions aren't formatting: they come from the elements around the direct XML, so they're

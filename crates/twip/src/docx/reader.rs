@@ -278,10 +278,19 @@ fn raw(n: Node) -> Rc<str> {
     let extra: String = n
         .namespaces()
         .filter(|ns| !root.namespaces().any(|r| r.name() == ns.name() && r.uri() == ns.uri()))
-        .filter_map(|ns| ns.name().filter(|p| !own(p)).map(|p| format!(" xmlns:{p}=\"{}\"", ns.uri().replace('&', "&amp;").replace('"', "&quot;"))))
+        .filter_map(|ns| match ns.name() {
+            Some(p) if !own(p) => Some(format!(" xmlns:{p}=\"{}\"", esc_attr(ns.uri()))),
+            // The default namespace, which the element itself or an ancestor below the root declares.
+            None if !text.split('>').next().is_some_and(|tag| tag.contains("xmlns=")) => Some(format!(" xmlns=\"{}\"", esc_attr(ns.uri()))),
+            _ => None,
+        })
         .collect();
     let at = text.find(|c: char| c.is_whitespace() || c == '>' || c == '/').unwrap_or(text.len());
     format!("{}{extra}{}", &text[..at], &text[at..]).into()
+}
+
+fn esc_attr(v: &str) -> String {
+    v.replace('&', "&amp;").replace('"', "&quot;")
 }
 
 /// The run line numbers draw with: the document defaults and the LineNumber character style.
