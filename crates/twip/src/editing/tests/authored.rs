@@ -37,7 +37,7 @@ fn section(blocks: Vec<Block>) -> Section {
         pg_fmt: None,
         chapter: None,
         line_numbers: None,
-        v_align: "top".into(),
+        v_align: crate::docx::VerticalAlignment::Top,
         page_borders: None,
         page_borders_xml: None,
         line_grid: None,

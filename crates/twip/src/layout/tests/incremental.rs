@@ -227,7 +227,7 @@ fn a_section_setting_changed_outside_steps_lays_out_again() {
     dl.edit(Revision(1), None);
     dl.complete(&d, &fonts);
     d.sections[0].left += 72.0;
-    d.sections[0].v_align = "center".into();
+    d.sections[0].v_align = crate::docx::VerticalAlignment::Center;
     dl.edit(Revision(2), Some(Change { section: 0, first: 0, old_end: 1, new_end: 1, row: None }));
     dl.complete(&d, &fonts);
     assert_matches_full(&dl, &d);

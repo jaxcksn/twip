@@ -1052,11 +1052,11 @@ impl Editor {
                 };
                 Some(crate::api::command::ChapterNumbers { level: u8::try_from(*level).ok()?, separator })
             }),
-            vertical_alignment: match s.v_align.as_str() {
-                "center" => PageVerticalAlignment::Center,
-                "both" => PageVerticalAlignment::Justified,
-                "bottom" => PageVerticalAlignment::Bottom,
-                _ => PageVerticalAlignment::Top,
+            vertical_alignment: match s.v_align {
+                crate::docx::VerticalAlignment::Center => PageVerticalAlignment::Center,
+                crate::docx::VerticalAlignment::Both => PageVerticalAlignment::Justified,
+                crate::docx::VerticalAlignment::Bottom => PageVerticalAlignment::Bottom,
+                crate::docx::VerticalAlignment::Top => PageVerticalAlignment::Top,
             },
             line_numbers: s.line_numbers.as_ref().map(|l| crate::api::command::LineNumbers {
                 start: u32::try_from(l.start + 1).ok(),

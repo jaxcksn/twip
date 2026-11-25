@@ -47,7 +47,7 @@ pub fn of(doc: &Document) -> BTreeSet<&'static str> {
         if s.line_numbers.is_some() {
             f.insert("line_numbers");
         }
-        if !s.v_align.is_empty() && s.v_align != "top" {
+        if s.v_align != crate::docx::VerticalAlignment::Top {
             f.insert("valign");
         }
         let referenced = s.headers.iter().chain(&s.footers).flatten();

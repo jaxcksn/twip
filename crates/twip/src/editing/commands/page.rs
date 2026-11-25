@@ -193,13 +193,14 @@ impl Editor {
     }
 
     pub(in crate::editing) fn set_page_vertical_alignment(&mut self, a: PageVerticalAlignment, fonts: &Fonts) -> Outcome {
+        use crate::docx::VerticalAlignment as V;
         let v = match a {
-            PageVerticalAlignment::Top => "top",
-            PageVerticalAlignment::Center => "center",
-            PageVerticalAlignment::Justified => "both",
-            PageVerticalAlignment::Bottom => "bottom",
+            PageVerticalAlignment::Top => V::Top,
+            PageVerticalAlignment::Center => V::Center,
+            PageVerticalAlignment::Justified => V::Both,
+            PageVerticalAlignment::Bottom => V::Bottom,
         };
-        self.set_page("Vertical Alignment", |p| p.v_align = v.into(), fonts)
+        self.set_page("Vertical Alignment", |p| p.v_align = v, fonts)
     }
 
     pub(in crate::editing) fn set_line_numbering(&mut self, l: Option<LineNumbers>, fonts: &Fonts) -> Outcome {

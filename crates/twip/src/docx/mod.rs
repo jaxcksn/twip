@@ -22,6 +22,7 @@ pub mod props;
 mod reader;
 pub mod resolve;
 pub mod review;
+pub mod section;
 pub mod styles;
 pub mod watermark;
 pub mod xml;

@@ -1184,7 +1184,8 @@ fn sect_with_page(sect: &str, w: &str, p: &SectionPage, was: Option<&SectionPage
             put(&mut s, "lnNumType", tag);
         }
         if was.v_align != p.v_align {
-            put(&mut s, "vAlign", (p.v_align != "top").then(|| format!("<{w}vAlign {w}val=\"{}\"/>", props::esc(&p.v_align))));
+            let v = super::section::v_align_literal(p.v_align);
+            put(&mut s, "vAlign", (p.v_align != VerticalAlignment::Top).then(|| format!("<{w}vAlign {w}val=\"{v}\"/>")));
         }
         if was.text_flow != p.text_flow {
             let v = match p.text_flow {

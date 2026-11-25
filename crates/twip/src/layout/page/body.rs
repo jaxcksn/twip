@@ -435,7 +435,7 @@ pub fn layout_body(
         let bottom = bottoms.first().copied().unwrap_or(page_top) + if done { carry.prev_after } else { 0.0 };
         body.extend(floats.iter().cloned());
         if !fill.at.notes_drawn && !fill.at.starts.is_empty() {
-            body = v_align(&s.v_align, &fill.at.starts, &space.area, bottom, body);
+            body = v_align(s.v_align, &fill.at.starts, &space.area, bottom, body);
         }
     } else {
         body.extend(floats.iter().cloned());
@@ -572,23 +572,23 @@ fn note_columns(n: u32, area: &BodyArea, cols: &[ColumnSpace]) -> Vec<(f64, f64)
 }
 
 // Vertical alignment
-fn v_align(va: &str, starts: &[(f64, bool)], geo: &BodyArea, bottom: f64, body: Vec<Child>) -> Vec<Child> {
-    if va == "top" || starts.is_empty() {
+fn v_align(va: VerticalAlignment, starts: &[(f64, bool)], geo: &BodyArea, bottom: f64, body: Vec<Child>) -> Vec<Child> {
+    if va == VerticalAlignment::Top || starts.is_empty() {
         return body;
     }
     let top = starts[0].0;
     let (geo_top, geo_bottom) = (geo.top.to_pt(), geo.bottom.to_pt());
     let free = geo_bottom - geo_top - (bottom - top);
     match va {
-        "center" => {
+        VerticalAlignment::Center => {
             let dy = geo_top + free / 2.0 - top;
             body.iter().map(|c| child_down(c, &|_| dy)).collect()
         }
-        "bottom" => {
+        VerticalAlignment::Bottom => {
             let dy = geo_bottom - bottom;
             body.iter().map(|c| child_down(c, &|_| dy)).collect()
         }
-        "both" => {
+        VerticalAlignment::Both => {
             let gaps: Vec<f64> = starts[1..].iter().filter(|s| s.1).map(|s| s.0).collect();
             if gaps.is_empty() {
                 return body;
@@ -597,7 +597,7 @@ fn v_align(va: &str, starts: &[(f64, bool)], geo: &BodyArea, bottom: f64, body: 
             let shift = |y: f64| each * gaps.iter().filter(|&&g| g < y).count() as f64;
             body.iter().map(|c| child_down(c, &shift)).collect()
         }
-        _ => body,
+        VerticalAlignment::Top => body,
     }
 }
 

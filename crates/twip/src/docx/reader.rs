@@ -1912,7 +1912,7 @@ impl Reader {
             pg_fmt: None,
             chapter: None,
             line_numbers: None,
-            v_align: "top".into(),
+            v_align: VerticalAlignment::Top,
             page_borders: None,
             page_borders_xml: None,
             line_grid: None,
@@ -2026,7 +2026,7 @@ impl Reader {
         }
         sec.no_endnote = flag(s, "noEndnote").unwrap_or(false);
         if let Some(v) = child(s, "vAlign").and_then(val) {
-            sec.v_align = v.to_string();
+            sec.v_align = super::section::section_v_align(v);
         }
         if let Some(g) = child(s, "docGrid").filter(|g| matches!(attr(*g, "type"), Some("lines" | "linesAndChars" | "snapToChars"))) {
             sec.line_grid = Some((int(attr(g, "linePitch")).unwrap_or(0).max(1) * 2048 / 10) as i32);

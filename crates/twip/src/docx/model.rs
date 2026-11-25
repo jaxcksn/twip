@@ -5,6 +5,7 @@ pub use crate::document::content::{BreakKind, NoteKind};
 pub use crate::document::ident::{ControlId, FieldId, next_para_id};
 pub use crate::document::paragraph::{ListJc, ListSuffix, TextAlignment};
 pub use crate::document::policy::{Compat, LayoutPolicy};
+pub use crate::document::section::VerticalAlignment;
 
 use super::font_table::GenericFamily;
 use std::collections::HashMap;
@@ -1603,7 +1604,7 @@ pub struct SectionPage {
     pub pg_fmt: Option<String>,
     pub chapter: Option<(i64, String)>,
     pub line_numbers: Option<LineNumbering>,
-    pub v_align: String,
+    pub v_align: VerticalAlignment,
     pub text_flow: u8,
     pub notes: [NoteProps; 2],
     pub no_endnote: bool,
@@ -1668,7 +1669,7 @@ impl Section {
             pg_fmt: self.pg_fmt.clone(),
             chapter: self.chapter.clone(),
             line_numbers: self.line_numbers.clone(),
-            v_align: self.v_align.clone(),
+            v_align: self.v_align,
             text_flow: self.text_flow,
             notes: self.notes.clone(),
             no_endnote: self.no_endnote,
@@ -1705,7 +1706,7 @@ impl Section {
             pg_fmt: self.pg_fmt.clone(),
             chapter: self.chapter.clone(),
             line_numbers: self.line_numbers.clone(),
-            v_align: self.v_align.clone(),
+            v_align: self.v_align,
             page_borders: self.page_borders.clone(),
             page_borders_xml: self.page_borders_xml.clone(),
             line_grid: self.line_grid,
@@ -1818,7 +1819,7 @@ pub struct Section {
     /// then this separator.
     pub chapter: Option<(i64, String)>,
     pub line_numbers: Option<LineNumbering>,
-    pub v_align: String,
+    pub v_align: VerticalAlignment,
     pub page_borders: Option<Rc<PageBorders>>,
     /// The `w:pgBorders` as written, or as last set.
     pub page_borders_xml: Option<String>,
