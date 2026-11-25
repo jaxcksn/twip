@@ -400,6 +400,9 @@ fn mark_range(p: &Paragraph, name: &str) -> Option<(u32, u32)> {
     from.map(|f| (f, at))
 }
 
+/// A note copy staged for a `REF \f` result: its kind, id, text, and the controls its text holds.
+type NoteCopy = (NoteKind, i64, Vec<crate::docx::Block>, Vec<(crate::docx::ControlId, crate::docx::Control)>);
+
 /// Adds `by` to the count of each note reference in `blocks` (a note's text).
 fn count_note_refs(blocks: &[crate::docx::Block], counts: &mut HashMap<(NoteKind, i64), isize>, by: isize) {
     for b in blocks {
@@ -471,7 +474,7 @@ impl Editor {
             let src = src.clone();
             // The bookmarked inlines as they show, each note reference to a copy of its note.
             let mut with: Vec<Inline> = Vec::new();
-            let mut notes: Vec<(NoteKind, i64, Vec<crate::docx::Block>)> = Vec::new();
+            let mut notes: Vec<NoteCopy> = Vec::new();
             let mut at = 0u32;
             for (i, shown) in src.inlines.iter().zip(fields::shown(&src.inlines)) {
                 let n = i.units() as u32;
@@ -490,9 +493,9 @@ impl Editor {
                     (Inline::NoteRef { kind, id, custom, run }, fields::Shown::Itself) => {
                         let body = if *kind == NoteKind::Foot { self.doc.footnotes.get(id) } else { self.doc.endnotes.get(id) };
                         let Some(body) = body else { continue };
-                        // A field whose notes don't all fit keeps its result.
+                        // A field whose notes don't all fit keeps its result; later ones may still fit.
                         if copies + notes.len() >= MAX_NOTE_COPIES {
-                            break 'fields;
+                            continue 'fields;
                         }
                         let map = if *kind == NoteKind::Foot { &self.doc.footnotes } else { &self.doc.endnotes };
                         let k = usize::from(*kind == NoteKind::End);
@@ -503,8 +506,10 @@ impl Editor {
                             low[k] = to_id + 1;
                         }
                         let mut copy: Vec<crate::docx::Block> = body.iter().map(super::clipboard::fresh).collect();
+                        // Its fields and controls their own.
+                        let controls = super::clipboard::adopt(&mut copy, &self.doc.controls);
                         renumber_marks(&mut copy, *kind, to_id);
-                        notes.push((*kind, to_id, copy));
+                        notes.push((*kind, to_id, copy, controls));
                         with.push(Inline::NoteRef { kind: *kind, id: to_id, custom: *custom, run: run.clone() });
                     }
                     _ => {}
@@ -525,7 +530,10 @@ impl Editor {
                 .iter()
                 .filter_map(|i| if let Inline::NoteRef { kind, id, .. } = i { Some((*kind, *id)) } else { None })
                 .collect();
-            for (kind, id, blocks) in notes {
+            for (kind, id, blocks, controls) in notes {
+                for (c, k) in controls {
+                    let _ = self.step(&mut tx, Step::Control { id: c, control: Some(k) });
+                }
                 count_note_refs(&blocks, &mut counts, 1);
                 let _ = self.step(&mut tx, Step::Note { kind, id, blocks: Some(blocks) });
             }
@@ -537,8 +545,28 @@ impl Editor {
             for k in made {
                 *counts.entry(k).or_default() += 1;
             }
+            // What the result still holds of the old: tracked, a deletion a rejection brings back.
+            let left: Vec<(NoteKind, i64)> = self
+                .index
+                .para(&self.doc, para)
+                .filter(|_| tx.tracked)
+                .and_then(|p| {
+                    let s =
+                        fields::spans(&p.inlines).into_iter().find(|s| matches!(&p.inlines[s.begin], Inline::FieldBegin { id, .. } if *id == f))?;
+                    Some(
+                        p.inlines[s.begin..s.end]
+                            .iter()
+                            .filter_map(|i| if let Inline::NoteRef { kind, id, .. } = i { Some((*kind, *id)) } else { None })
+                            .filter(|k| old.contains(k))
+                            .collect(),
+                    )
+                })
+                .unwrap_or_default();
             for k in &old {
                 *counts.entry(*k).or_default() -= 1;
+            }
+            for k in left {
+                *counts.entry(k).or_default() += 1;
             }
             // Its result is what it shows now, not a value read before.
             if let Some(p) = self.index.para(&self.doc, para)

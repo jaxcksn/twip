@@ -486,6 +486,14 @@ fn sequence_prefixes_and_kept_tabs_and_breaks() {
 }
 
 #[test]
+fn text_wrapping_breaks_count_as_line_breaks() {
+    let body = r#"<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Alpha</w:t><w:br w:clear="left"/><w:t>Beta</w:t></w:r></w:p>"#;
+    let names = |code: &str| entries(body, code).into_iter().map(|x| x.1).collect::<Vec<_>>();
+    assert_eq!(names(r#" TOC \o "1-1" "#), ["Alpha Beta"]);
+    assert_eq!(names(r#" TOC \o "1-1" \x "#), ["Alpha\nBeta"]);
+}
+
+#[test]
 fn marking_an_entry_puts_a_hidden_entry_field() {
     let mut e = Editor::open(&doc_with(&para("Normal", "Here"), HEADINGS), fonts()).unwrap();
     let p = texts_ids(&e)[0];
@@ -1549,6 +1557,16 @@ fn alt_f9_shows_a_tables_code_on_one_line_with_its_result_folded() {
 }
 
 #[test]
+fn a_hidden_codes_braces_are_hidden_with_it() {
+    let hidden = READ_TOC
+        .replacen(r#"<w:r><w:fldChar w:fldCharType="begin"/>"#, r#"<w:r><w:rPr><w:vanish/></w:rPr><w:fldChar w:fldCharType="begin"/>"#, 1)
+        .replacen("<w:r><w:instrText", "<w:r><w:rPr><w:vanish/></w:rPr><w:instrText", 1);
+    let mut e = Editor::open(&doc_with(&hidden, HEADINGS), fonts()).unwrap();
+    assert!(matches!(show_codes(&mut e, true), Outcome::Changed(_)));
+    assert_eq!(drawn_lines(&mut e), ["One"]);
+}
+
+#[test]
 fn shift_f9_in_a_table_toggles_it_and_undo_leaves_the_view() {
     let mut e = Editor::open(&doc_with(READ_TOC, HEADINGS), fonts()).unwrap();
     let two = texts_ids(&e)[1];
@@ -1890,28 +1908,75 @@ fn note_copies_take_ids_no_note_has_past_the_largest() {
 }
 
 #[test]
-fn a_reference_whose_notes_dont_all_fit_keeps_its_result() {
+fn a_note_copy_has_fields_of_its_own() {
+    let body = [
+        format!(r#"<w:p><w:bookmarkStart w:id="1" w:name="Mark"/><w:r><w:t>A</w:t></w:r>{}<w:bookmarkEnd w:id="1"/></w:p>"#, foot_ref(1)),
+        format!("<w:p>{}</w:p>", field("REF Mark \\f", "old")),
+    ]
+    .concat();
+    let page = r#"a</w:t></w:r><w:fldSimple w:instr=" PAGE "><w:r><w:t>1</w:t></w:r></w:fldSimple><w:r><w:t>b"#;
+    let mut e = Editor::open(&with_notes(&body, &[(1, page)], &[]), fonts()).unwrap();
+    update_all(&mut e);
+    assert_eq!(e.document().footnotes.len(), 2);
+    let ids: Vec<crate::docx::FieldId> = e
+        .document()
+        .footnotes
+        .values()
+        .flatten()
+        .filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None })
+        .flat_map(|p| &p.inlines)
+        .filter_map(|i| if let Inline::FieldBegin { id, .. } = i { Some(*id) } else { None })
+        .collect();
+    assert_eq!(ids.len(), 2);
+    assert_ne!(ids[0], ids[1]);
+}
+
+#[test]
+fn a_tracked_update_keeps_the_note_its_old_result_still_holds() {
+    let old = format!(
+        r#"<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> REF Mark \f </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>{}<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>"#,
+        foot_ref(5)
+    );
+    let mark = format!(r#"<w:p><w:bookmarkStart w:id="1" w:name="Mark"/><w:r><w:t>A</w:t></w:r>{}<w:bookmarkEnd w:id="1"/></w:p>"#, foot_ref(1));
+    let body = mark + &old;
+    for tracked in [false, true] {
+        let mut e = Editor::open(&with_notes(&body, &[(1, "one"), (5, "five")], &[]), fonts()).unwrap();
+        e.execute(Command::SetTrackChanges(tracked), fonts());
+        update_all(&mut e);
+        assert_eq!(e.document().footnotes.contains_key(&5), tracked, "tracked {tracked}");
+        if tracked {
+            e.execute(Command::RejectAllRevisions(Default::default()), fonts());
+            assert!(note_ids(body_paras(&e)[1]).contains(&5));
+            assert_eq!(note_text(&e, 5), "five");
+        }
+    }
+}
+
+#[test]
+fn a_reference_whose_notes_dont_all_fit_keeps_its_result_and_later_ones_fill() {
     let limit = super::super::xref::MAX_NOTE_COPIES;
     let mark = |name: &str, id: u32, refs: &[i64]| {
         let refs: String = refs.iter().map(|&r| foot_ref(r)).collect();
         format!(r#"<w:p><w:bookmarkStart w:id="{id}" w:name="{name}"/><w:r><w:t>{name}</w:t></w:r>{refs}<w:bookmarkEnd w:id="{id}"/></w:p>"#)
     };
-    // One copy, then two each: the last field has one copy left of the two it needs.
+    // One copy, then two each: the last of those has one copy left of the two it needs, which a field of one takes.
     let pairs = limit / 2;
     let body = [
         mark("One", 1, &[1]),
         mark("Two", 2, &[2, 3]),
         format!("<w:p>{}</w:p>", field("REF One \\f", "old")),
         format!("<w:p>{}</w:p>", field("REF Two \\f", "old")).repeat(pairs),
+        format!("<w:p>{}</w:p>", field("REF One \\f", "old")),
     ]
     .concat();
     let mut e = Editor::open(&with_notes(&body, &[(1, "a"), (2, "b"), (3, "c")], &[]), fonts()).unwrap();
     update_all(&mut e);
     let ps = body_paras(&e);
-    assert_eq!(note_ids(ps[ps.len() - 2]).len(), 2);
-    let last = ps[ps.len() - 1];
-    assert!(note_ids(last).is_empty() && shown(last) == "old", "{}", shown(last));
-    assert_eq!(e.document().footnotes.len(), 3 + limit - 1);
+    assert_eq!(note_ids(ps[ps.len() - 3]).len(), 2);
+    let full = ps[ps.len() - 2];
+    assert!(note_ids(full).is_empty() && shown(full) == "old", "{}", shown(full));
+    assert_eq!(note_ids(ps[ps.len() - 1]).len(), 1);
+    assert_eq!(e.document().footnotes.len(), 3 + limit);
 }
 
 #[test]
@@ -2056,6 +2121,8 @@ fn a_percent_placed_floats_caption_takes_its_place_across() {
     let f = ids[0];
     e.select_float(f);
     let (_, pic) = e.float_box(f, fonts()).unwrap();
+    // 40% across the 468pt between the 72pt margins.
+    assert!((pic[0] - (72.0 + 0.4 * 468.0)).abs() < 0.1, "picture {pic:?}");
     assert!(matches!(e.insert_caption(&caption_opts("Figure", ""), fonts()), Outcome::Changed(_)));
     e.complete(fonts());
     let mut ids = Vec::new();
@@ -2113,4 +2180,95 @@ fn a_deletion_into_a_table_leaves_a_fields_start_before_it_out_of_the_cell() {
     assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
     assert_eq!(balance(&saved(&e)), (1, 1, 1));
     assert_eq!(e.tables_of_contents().len(), 1, "{:?}", edges(&e));
+}
+
+/// A table of contents in one paragraph whose one entry reads page `page` of bookmark `mark`.
+fn inline_toc(mark: &str, page: &str) -> String {
+    format!(
+        concat!(
+            r#"<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> TOC \o "1-3" </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>"#,
+            r#"<w:r><w:t xml:space="preserve">{mark} </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> PAGEREF {mark} </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>{page}</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>"#,
+            r#"<w:r><w:fldChar w:fldCharType="end"/></w:r>"#
+        ),
+        mark = mark,
+        page = page
+    )
+}
+
+fn marked(style: &str, mark: &str) -> String {
+    format!(
+        r#"<w:p><w:pPr><w:pStyle w:val="{style}"/></w:pPr><w:bookmarkStart w:id="{mark}0" w:name="{mark}"/><w:r><w:t>{mark}</w:t></w:r><w:bookmarkEnd w:id="{mark}0"/></w:p>"#
+    )
+}
+
+#[test]
+fn a_page_update_fills_the_table_it_names_in_a_shared_paragraph() {
+    let body =
+        [format!("<w:p>{}{}</w:p>", inline_toc("A", "9"), inline_toc("B", "9")), marked("Heading1", "A"), PAGE.into(), marked("Heading1", "B")]
+            .concat();
+    let mut e = Editor::open(&doc_with(&body, HEADINGS), fonts()).unwrap();
+    let t = e.tables_of_contents();
+    assert_eq!(t.len(), 2);
+    assert!(matches!(e.update_toc(&t[1], TocUpdate::Pages, fonts()), Outcome::Changed(_)));
+    assert_eq!(page_results(body_paras(&e)[0]), ["9", "2"]);
+}
+
+#[test]
+fn a_table_starting_after_another_ends_in_its_paragraph_is_found() {
+    let start = |code: &str| {
+        format!(
+            r#"<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve">{code}</w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>"#
+        )
+    };
+    let end = r#"<w:r><w:fldChar w:fldCharType="end"/></w:r>"#;
+    let body = [
+        format!(r#"<w:p>{}<w:r><w:t>One</w:t></w:r></w:p>"#, start(r#" TOC \o "1-3" "#)),
+        format!(r#"<w:p>{end}{}<w:r><w:t>Two</w:t></w:r></w:p>"#, start(r#" TOC \c "Figure" "#)),
+        format!(r#"<w:p>{end}</w:p>"#),
+    ]
+    .concat();
+    let e = Editor::open(&doc_with(&body, HEADINGS), fonts()).unwrap();
+    let t = e.tables_of_contents();
+    assert_eq!(t.iter().map(|t| (t.first, t.last, t.code.trim())).collect::<Vec<_>>(), [(0, 1, r#"TOC \o "1-3""#), (1, 2, r#"TOC \c "Figure""#)]);
+}
+
+#[test]
+fn a_handle_doesnt_name_the_table_that_takes_its_place() {
+    let p = format!("<w:p>{}</w:p>", inline_toc("A", "1"));
+    let body = [p.clone(), p, marked("Heading1", "A")].concat();
+    let mut e = Editor::open(&doc_with(&body, HEADINGS), fonts()).unwrap();
+    let old = e.tables_of_contents().remove(0);
+    let ps = texts_ids(&e);
+    e.select_between((ps[0], Unit(0)), (ps[1], Unit(0)), fonts());
+    e.execute(super::del(Dir::Back, false), fonts());
+    assert_eq!(e.tables_of_contents().len(), 1);
+    assert!(!matches!(e.remove_table_of_contents(&old, fonts()), Outcome::Changed(_)));
+    assert_eq!(e.tables_of_contents().len(), 1);
+}
+
+#[test]
+fn a_deletion_across_sections_keeps_a_fields_end_with_its_start() {
+    let sect = r#"<w:p><w:pPr><w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:pPr><w:r><w:t>Plain</w:t></w:r></w:p>"#;
+    let mut e = Editor::open(&doc_with(&format!("{sect}{READ_TOC}"), HEADINGS), fonts()).unwrap();
+    assert_eq!(e.document().sections.len(), 2);
+    let ps = texts_ids(&e);
+    e.select_between((ps[0], Unit(0)), (ps[2], Unit(0)), fonts());
+    assert!(matches!(e.execute(super::del(Dir::Back, false), fonts()), Outcome::Changed(_)));
+    assert_eq!(texts(&e)[0], "Two");
+    assert_eq!(balance(&saved(&e)), (1, 1, 1), "{:?}", edges(&e));
+    assert_eq!(e.tables_of_contents().len(), 1);
+}
+
+#[test]
+fn an_entire_update_keeps_a_mark_a_locked_reference_reads() {
+    let toc = READ_TOC.replacen("<w:r><w:t>Two</w:t></w:r>", &format!("<w:r><w:t>Two</w:t></w:r>{}", field("PAGEREF _Toc000000005 \\h", "1")), 1);
+    let locked = r#"<w:p><w:r><w:fldChar w:fldCharType="begin" w:fldLock="1"/></w:r><w:r><w:instrText xml:space="preserve"> REF _Toc000000005 </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>x</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>"#;
+    let mark = r#"<w:p><w:bookmarkStart w:id="5" w:name="_Toc000000005"/><w:r><w:t>x</w:t></w:r><w:bookmarkEnd w:id="5"/></w:p>"#;
+    for lock in [false, true] {
+        let body = [toc.as_str(), mark, if lock { locked } else { "" }].concat();
+        let mut e = Editor::open(&doc_with(&body, HEADINGS), fonts()).unwrap();
+        let t = e.tables_of_contents().remove(0);
+        assert!(matches!(e.update_toc(&t, TocUpdate::Entire, fonts()), Outcome::Changed(_)));
+        assert_eq!(e.bookmarks().iter().any(|b| b.name == "_Toc000000005"), lock, "locked {lock}");
+    }
 }

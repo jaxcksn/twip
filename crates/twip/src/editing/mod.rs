@@ -1875,7 +1875,17 @@ impl Editor {
         self.take_placeholder(tx)?;
         let end = self.selection.ordered(&self.index).map(|(_, b)| b).filter(|_| tx.tracked && matches!(self.selection, Selection::Text { .. }));
         let cut = match self.selection.ordered(&self.index) {
-            Some((a, b)) if !a.same_place(&b) && matches!(self.selection, Selection::Text { .. }) => self.edges_in(a, b),
+            Some((a, b)) if !a.same_place(&b) && matches!(self.selection, Selection::Text { .. }) => {
+                // Untracked across sections: merged first, its edges read in the one section left.
+                if !tx.tracked
+                    && let Some((i, j)) = self.sections_of(&a, &b)
+                {
+                    for _ in i..j {
+                        self.merge_section(tx, i)?;
+                    }
+                }
+                self.edges_in(a, b)
+            }
             _ => Vec::new(),
         };
         let from = tx.maps.len();
@@ -1889,6 +1899,19 @@ impl Editor {
             (Some(_), Some(b)) => Some(tx.maps[from..].iter().fold(b, |p, m| m.apply(p))),
             _ => at,
         })
+    }
+
+    /// The sections `a` and `b` are in, when `a`'s is before `b`'s.
+    fn sections_of(&self, a: &Position, b: &Position) -> Option<(usize, usize)> {
+        let section_of = |p: &Position| {
+            let s = match p.place {
+                Place::Text { para, .. } => self.index.para_slot(para)?,
+                Place::RowEnd { table, .. } => self.index.table_slot(table)?,
+            };
+            self.index.top_block(s.container, s.block).map(|t| t.0)
+        };
+        let (i, j) = (section_of(a)?, section_of(b)?);
+        (i < j).then_some((i, j))
     }
 
     /// Merges section `section` into the next, which keeps its page, headers and footers. Its own headers and
@@ -1939,16 +1962,7 @@ impl Editor {
             return Ok(Some(a));
         }
         self.remove_comments_within(tx, a, b)?;
-        let section_of = |e: &Editor, p: &Position| {
-            let s = match p.place {
-                Place::Text { para, .. } => e.index.para_slot(para)?,
-                Place::RowEnd { table, .. } => e.index.table_slot(table)?,
-            };
-            e.index.top_block(s.container, s.block).map(|t| t.0)
-        };
-        if let (Some(i), Some(j)) = (section_of(self, &a), section_of(self, &b))
-            && i < j
-        {
+        if let Some((i, j)) = self.sections_of(&a, &b) {
             if !tx.tracked {
                 for _ in i..j {
                     self.merge_section(tx, i)?;
@@ -2276,6 +2290,10 @@ impl Editor {
         for (k, line) in text.split('\n').map(|l| l.strip_suffix('\r').unwrap_or(l)).enumerate() {
             if k > 0 {
                 single = false;
+                // A code a field across paragraphs shows stays on its line, as with Enter.
+                if self.index.para(&self.doc, para).is_some_and(|p| span_codes::in_code(p, at)) {
+                    return Err("in a field's code");
+                }
                 let Some(second) = self.split_template(para) else { break };
                 let id = ParaId(second.id);
                 if self.step(tx, Step::Split { para, at, second, kept: Vec::new() }).is_err() {

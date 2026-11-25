@@ -968,7 +968,9 @@ impl<'a> Builder<'a> {
                 continue;
             }
             // A code's brace of a field across paragraphs showing its code: in its edge's run.
-            if let (Inline::Opaque(o), Shown::Value(v)) = (inl, &shown[k]) {
+            if let (Inline::Opaque(o), Shown::Value(v)) = (inl, &shown[k])
+                && !o.run.as_ref().is_some_and(|r| (r.hidden && !space.show_hidden) || space.markup.hides(view, &r.rev))
+            {
                 self.flush_text(&mut pend, &mut pend_runs, &mut pend_units)?;
                 let first = self.pieces.len();
                 let run = o.run.as_ref().map(|r| marked_run(run_in(r, view), view, &space.markup));

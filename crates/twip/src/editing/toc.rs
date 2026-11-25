@@ -136,6 +136,9 @@ pub struct TocField {
     /// Its field is locked: updates leave it.
     pub lock: bool,
     shape: Shape,
+    /// Its first paragraph, and an inline field's own id: a handle names this field, not whatever takes its place.
+    para: ParaId,
+    field: Option<FieldId>,
 }
 
 impl TocField {
@@ -487,7 +490,7 @@ fn entry_piece(i: &Inline, s: Shown, o: &TocOptions, review: &crate::docx::revie
                 (EntryPiece::Text(" ".into()), run)
             }
         }
-        (Shown::Itself, Inline::Break(crate::docx::BreakKind::Line, _)) => {
+        (Shown::Itself, Inline::Break(k, _)) if k.is_line() => {
             if o.keep_breaks {
                 (EntryPiece::Break, run)
             } else {
@@ -571,13 +574,17 @@ fn after_label(
     out
 }
 
-/// The bookmark a `HYPERLINK \l` code links to, without case.
-fn link_mark(code: &str) -> Option<String> {
+/// The bookmark field code `code` reads, without case: a reference's (`PAGEREF`, `REF`, `NOTEREF`, a bookmark's
+/// name) or a link's (`HYPERLINK \l`).
+fn read_mark(code: &str) -> Option<String> {
     let c = fields::parse(code);
-    if c.name != "HYPERLINK" {
-        return None;
+    if c.name == "HYPERLINK" {
+        return c.switches.into_iter().find(|s| s.flag == 'l').and_then(|s| s.arg).map(|a| a.to_ascii_lowercase());
     }
-    c.switches.into_iter().find(|s| s.flag == 'l').and_then(|s| s.arg).map(|a| a.to_ascii_lowercase())
+    match c.kind()? {
+        FieldKind::PageRef(n) | FieldKind::Ref(n) | FieldKind::NoteRef(n, _) | FieldKind::Bookmark(n) => Some(n.to_ascii_lowercase()),
+        _ => None,
+    }
 }
 
 /// A `_Toc` bookmark name Word would give: `_Toc` and nine digits, past `taken`'s.
@@ -622,41 +629,62 @@ impl Editor {
 
     fn tocs_in(&self, container: Container, blocks: &[Block], out: &mut Vec<TocField>) {
         let pairs = edge_pairs(blocks);
-        let mut covered = 0usize;
+        // The end of the last table across paragraphs: what starts before it is inside it.
+        let mut covered: Option<(usize, usize)> = None;
         // Pairs are sorted by start: a cursor finds a block's first.
         let mut at = 0usize;
         for (b, block) in blocks.iter().enumerate() {
             while pairs.get(at).is_some_and(|((sb, _), _)| *sb < b) {
                 at += 1;
             }
-            // The first table among the fields across paragraphs starting here.
-            if b >= covered
-                && let Block::Para(p) = block
-                && let Some(t) = pairs[at..].iter().take_while(|((sb, _), _)| *sb == b).find_map(|&((_, si), (eb, ei))| {
-                    let Some(FieldEdge::Start { lock, .. }) = edge(&p.inlines[si]) else { return None };
-                    let code = fields::span_code(&p.inlines, si);
-                    is_toc(&code).then(|| TocField {
-                        container,
-                        first: b,
-                        last: eb,
-                        code: code.into_owned(),
-                        lock: *lock,
-                        shape: Shape::Spanning { start: si, end: ei },
-                    })
-                })
-            {
-                covered = t.last + 1;
-                out.push(t);
-                continue;
-            }
             match block {
                 Block::Para(p) => {
-                    for s in fields::spans(&p.inlines) {
+                    // The first table among the fields across paragraphs starting here.
+                    let spanning = pairs[at..].iter().take_while(|((sb, _), _)| *sb == b).find_map(|&((_, si), (eb, ei))| {
+                        if covered.is_some_and(|c| (b, si) < c) {
+                            return None;
+                        }
+                        let Some(FieldEdge::Start { lock, .. }) = edge(&p.inlines[si]) else { return None };
+                        let code = fields::span_code(&p.inlines, si);
+                        is_toc(&code).then(|| {
+                            (
+                                si,
+                                TocField {
+                                    container,
+                                    first: b,
+                                    last: eb,
+                                    code: code.into_owned(),
+                                    lock: *lock,
+                                    shape: Shape::Spanning { start: si, end: ei },
+                                    para: ParaId(p.id),
+                                    field: None,
+                                },
+                            )
+                        })
+                    });
+                    // Fields in this paragraph alone, before that table's start.
+                    let before = spanning.as_ref().map_or(usize::MAX, |(si, _)| *si);
+                    for s in fields::spans(&p.inlines).into_iter().take_while(|s| s.begin < before) {
                         let code = fields::code_text(&p.inlines, s);
                         if is_toc(&code) {
-                            let lock = matches!(p.inlines[s.begin], Inline::FieldBegin { lock: true, .. });
-                            out.push(TocField { container, first: b, last: b, code, lock, shape: Shape::Inline { begin: s.begin, end: s.end } });
+                            let Inline::FieldBegin { id, lock, .. } = &p.inlines[s.begin] else { continue };
+                            out.push(TocField {
+                                container,
+                                first: b,
+                                last: b,
+                                code,
+                                lock: *lock,
+                                shape: Shape::Inline { begin: s.begin, end: s.end },
+                                para: ParaId(p.id),
+                                field: Some(*id),
+                            });
                         }
+                    }
+                    if let Some((_, t)) = spanning {
+                        if let Shape::Spanning { end, .. } = t.shape {
+                            covered = Some((t.last, end));
+                        }
+                        out.push(t);
                     }
                 }
                 Block::Table(t) => {
@@ -867,7 +895,12 @@ impl Editor {
     fn toc_result_shown(&mut self, t: &TocField, fonts: &Fonts) -> TocField {
         let Some(span) = self.toc_span(t).filter(|s| self.span_shows_code(s)) else { return t.clone() };
         self.set_span_views(&[span], false, fonts);
-        self.tables_of_contents().into_iter().find(|x| x.container == t.container && x.first == t.first).unwrap_or_else(|| t.clone())
+        self.toc_starting(t.container, t.first).unwrap_or_else(|| t.clone())
+    }
+
+    /// The table across paragraphs whose start is in block `first` of `container`.
+    fn toc_starting(&self, container: Container, first: usize) -> Option<TocField> {
+        self.tables_of_contents().into_iter().find(|x| x.container == container && x.first == first && matches!(x.shape, Shape::Spanning { .. }))
     }
 
     /// Which of `all` the selection is in: its result's paragraphs, or a building block control's title above them.
@@ -1210,8 +1243,7 @@ impl Editor {
                 self.begin_batch(Some(label.into()));
                 // An updated field shows its result.
                 let t = &self.toc_result_shown(t, fonts);
-                self.complete(fonts);
-                self.fill_toc_pages(t.container, t.first, fonts);
+                self.fill_pages(std::slice::from_ref(t), fonts);
                 self.undirty(t, fonts);
                 self.end_batch(true, fonts)
             }
@@ -1223,10 +1255,7 @@ impl Editor {
                     self.end_batch(false, fonts);
                     return out;
                 }
-                let Some(again) = self.tables_of_contents().into_iter().find(|x| x.container == t.container && x.first == t.first) else {
-                    return self.end_batch(true, fonts);
-                };
-                self.fill_toc_pages(again.container, again.first, fonts);
+                self.fill_toc_pages(t.container, t.first, fonts);
                 self.end_batch(true, fonts)
             }
         }
@@ -1387,25 +1416,28 @@ impl Editor {
         let mut read: HashSet<String> = HashSet::new();
         for para in self.paras_in_order() {
             let Some(p) = self.index.para(&self.doc, para) else { continue };
-            let mut links = false;
+            let mut unread = false;
             for i in &p.inlines {
                 match i {
-                    Inline::FieldBegin { kind: Some(FieldKind::PageRef(n) | FieldKind::Ref(n) | FieldKind::NoteRef(n, _)), .. } => {
+                    Inline::FieldBegin {
+                        kind: Some(FieldKind::PageRef(n) | FieldKind::Ref(n) | FieldKind::NoteRef(n, _) | FieldKind::Bookmark(n)),
+                        ..
+                    } => {
                         read.insert(n.to_ascii_lowercase());
                     }
-                    Inline::FieldBegin { kind: None, .. } => links = true,
+                    Inline::FieldBegin { kind: None, .. } => unread = true,
                     i => {
                         if let Some(FieldEdge::Start { code, .. }) = edge(i) {
-                            read.extend(link_mark(code));
+                            read.extend(read_mark(code));
                         }
                     }
                 }
             }
-            // Links to a bookmark (`HYPERLINK \l`)
-            if links {
+            // Links to a bookmark (`HYPERLINK \l`), and locked references
+            if unread {
                 for s in fields::spans(&p.inlines) {
                     if matches!(p.inlines[s.begin], Inline::FieldBegin { kind: None, .. }) {
-                        read.extend(link_mark(&fields::code_text(&p.inlines, s)));
+                        read.extend(read_mark(&fields::code_text(&p.inlines, s)));
                     }
                 }
             }
@@ -1680,10 +1712,10 @@ impl Editor {
         out
     }
 
-    /// Writes the layout's page numbers into the `PAGEREF` results of the table starting at `first` in `container`
-    /// (lays the document out first).
+    /// Writes the layout's page numbers into the `PAGEREF` results of the table across paragraphs starting at `first`
+    /// in `container` (lays the document out first).
     fn fill_toc_pages(&mut self, container: Container, first: usize, fonts: &Fonts) {
-        let Some(t) = self.tables_of_contents().into_iter().find(|t| t.container == container && t.first == first) else { return };
+        let Some(t) = self.toc_starting(container, first) else { return };
         self.fill_pages(std::slice::from_ref(&t), fonts);
     }
 

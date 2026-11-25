@@ -494,9 +494,8 @@ impl Editor {
 
     /// Sets the values (and cached results) of the body's fields of the kinds `want` takes to what evaluating the
     /// document gives now: sequence numbers after a caption, references after their targets changed, the note a
-    /// `NOTEREF` reads. One read-only evaluation of the body; returns how many changed: those whose value and cached
-    /// result were both written. One whose result can't be written (a result across paragraphs) still shows its new
-    /// value.
+    /// `NOTEREF` reads. One read-only evaluation of the body; returns how many values changed. One whose result can't
+    /// be written (a result across paragraphs) still shows its new value.
     pub fn refresh_values(&mut self, want: &dyn Fn(crate::docx::FieldId, &FieldKind) -> bool, fonts: &Fonts) -> usize {
         type Note = Option<(crate::docx::NoteKind, i64)>;
         let (now, _) = fields::field_changes(&self.doc, crate::docx::now_local());
@@ -544,10 +543,11 @@ impl Editor {
                     }
                 }
             }
-            if self.step(&mut tx, Step::Restyle { para: *para, inlines }).is_ok()
-                && v.as_ref().is_none_or(|v| self.set_result(&mut tx, *f, &Body::Text(v.clone())))
-            {
+            if self.step(&mut tx, Step::Restyle { para: *para, inlines }).is_ok() {
                 n += 1;
+                if let Some(v) = v {
+                    self.set_result(&mut tx, *f, &Body::Text(v.clone()));
+                }
             }
         }
         self.commit(tx, None, fonts);

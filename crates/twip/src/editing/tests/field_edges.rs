@@ -206,6 +206,17 @@ fn enter_in_a_second_shown_code_of_a_paragraph_leaves_it_whole() {
 }
 
 #[test]
+fn text_of_two_lines_in_a_shown_code_leaves_it_whole() {
+    let mut e = joined_codes();
+    let p = texts_ids(&e)[0];
+    let at = braces(&e).0[1];
+    e.select_between((p, Unit(at + 3)), (p, Unit(at + 3)), fonts());
+    assert!(!matches!(e.execute(Command::InsertText("a\nb".into()), fonts()), Outcome::Changed(_)));
+    assert_eq!(texts_ids(&e).len(), 1);
+    assert_eq!(braces(&e).1.len(), 2);
+}
+
+#[test]
 fn right_from_a_fields_end_steps_on_into_what_follows() {
     let mut e = joined_codes();
     let p = texts_ids(&e)[0];
