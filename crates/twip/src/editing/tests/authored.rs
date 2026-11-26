@@ -501,7 +501,12 @@ enum Piece {
 
 /// A paragraph in paragraph style `style` whose runs carry typed authored properties alone, resolved over its base.
 fn typed(res: &Resolver, style: Option<&str>, pieces: Vec<(Piece, CharProps)>) -> Paragraph {
-    let p = res.paragraph(&ParaProps { style: style.map(str::to_string), ..Default::default() }, None);
+    typed_para(res, crate::format::ParaProps { style: style.map(Into::into), ..Default::default() }, pieces)
+}
+
+/// A paragraph with typed authored properties `props` whose runs carry typed authored properties alone.
+fn typed_para(res: &Resolver, props: crate::format::ParaProps, pieces: Vec<(Piece, CharProps)>) -> Paragraph {
+    let p = crate::docx::para_xml::with(res, crate::docx::para_props::ParaDirect::typed(Rc::new(props)), None, None);
     let run = |props: CharProps| {
         let own = (props != CharProps::default()).then(|| Rc::new(props));
         crate::docx::run_xml::run_of(res, &p.base, RunDirect::typed(own))
@@ -532,11 +537,46 @@ fn on(t: Toggle) -> CharProps {
     p
 }
 
-/// Styled text built from typed properties, in a new document's styles (with "Strong") and settings: bold, italic,
-/// a size, an RGB colour, a theme colour and a theme font, tabs, a line break and a page break.
+/// A list definition: decimal numbers at its first level.
+const NUMBERING: &str = r#"<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="720" w:hanging="360"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num></w:numbering>"#;
+
+/// Styled text built from typed properties, in a new document's styles (with "Strong"), a list definition and
+/// settings: bold, italic, a size, an RGB colour, a theme colour and a theme font, tabs, a line break and a page break,
+/// direct paragraph formatting of every kind the paragraph commands set, and two list items.
 fn built() -> Document {
+    use crate::document::format::{Leader, LineRule, ShadingPattern, TabKind};
+    use crate::document::line::BorderStyle;
+    use crate::document::paragraph::ListId;
+    use crate::format::{ListChoice, ParaBorders, ParaFlag, ParaProps as Typed, Shading, TabStop, TextBorder};
     let new = crate::docx::read(&with_strong_style("<w:p/>")).expect("reads");
-    let res = new.resolver.clone().expect("styles");
+    let mut res = (**new.resolver.as_ref().expect("styles")).clone();
+    res.numbering = Numbering::parse(Some(NUMBERING), &res.styles.colours);
+    res.compute_style_links();
+    let res = Rc::new(res);
+    let mut flags = crate::format::ParaFlags::default();
+    flags.put(ParaFlag::KEEP_NEXT, true);
+    flags.put(ParaFlag::WIDOW_CONTROL, false);
+    let line = TextBorder { style: BorderStyle::Single, width: 0.5, space: 1.0, shadow: false, color: Some(Color::Auto) };
+    let formatted = Typed {
+        align: Some(crate::document::format::Jc::Right),
+        indent_left: Some(36.0),
+        indent_right: Some(18.0),
+        indent_first: Some(-18.0),
+        space_before: Some(6.0),
+        space_after: Some(12.0),
+        line: Some(360.0),
+        line_rule: Some(LineRule::Auto),
+        flags,
+        tabs: vec![TabStop { pos: 144.0, kind: TabKind::Center, leader: Leader::Dot }],
+        borders: ParaBorders { bottom: Some(line), ..ParaBorders::default() },
+        shading: Some(Shading { pattern: ShadingPattern::Clear, color: Some(Color::Auto), fill: Some(Color::Rgb(0xEE_EEEE)) }),
+        outline_level: Some(1),
+        ..Typed::default()
+    };
+    let item = |text| {
+        let props = Typed { list: Some(ListChoice::In(ListId(1))), list_level: Some(0), ..Typed::default() };
+        typed_para(&res, props, vec![(Piece::Text(text), CharProps::default())])
+    };
     let accent = Color::Theme(ThemeColourRef { slot: SchemeSlot::Accent(1), tint: None, shade: None });
     let heading = FontRef::Theme { face: ThemeFace::Major, script: ScriptClass::Latin };
     let paras = vec![
@@ -560,6 +600,9 @@ fn built() -> Document {
                 (Piece::Text("After the page break"), CharProps::default()),
             ],
         ),
+        typed_para(&res, formatted, vec![(Piece::Text("Formatted"), CharProps::default()), (Piece::Tab, CharProps::default())]),
+        item("First item"),
+        item("Second item"),
     ];
     Document {
         sections: vec![section(paras.into_iter().map(Block::Para).collect())],
@@ -567,6 +610,19 @@ fn built() -> Document {
         settings: new.settings,
         ..Default::default()
     }
+}
+
+/// An editor on `doc` with its list labels derived, as reading derives them.
+fn labelled(mut doc: Document, fonts: &crate::font::Fonts) -> Editor {
+    let labels = Editor::with_document(doc.clone(), fonts).labels_changed(|_| true);
+    for b in &mut doc.sections[0].blocks {
+        if let Block::Para(p) = b
+            && let Some((_, label)) = labels.iter().find(|(id, _)| id.0 == p.id)
+        {
+            p.list = label.clone();
+        }
+    }
+    Editor::with_document(doc, fonts)
 }
 
 /// The document dump, then every laid-out page.
@@ -593,6 +649,20 @@ fn reads_back_as_built(e: &mut Editor) -> Vec<Run> {
     for (a, b) in built.iter().zip(&read) {
         assert!(authored(a) == authored(b) && a.layout_eq(b), "{a:?}\nreads back as\n{b:?}");
     }
+    let paras = |d: &Document| -> Vec<Paragraph> {
+        d.sections[0].blocks.iter().filter_map(|b| if let Block::Para(p) = b { Some(p.clone()) } else { None }).collect()
+    };
+    let (built, back) = (paras(e.document()), paras(back.document()));
+    assert_eq!(built.len(), back.len(), "as many paragraphs");
+    for (a, b) in built.iter().zip(&back) {
+        let mut own = (**a.style.direct.get()).clone();
+        if own.style.is_none() {
+            own.style = a.style.style_id.as_deref().filter(|id| *id != "Normal").map(Into::into);
+        }
+        let read = crate::format::ParaProps { foreign: None, ..(**b.style.direct.get()).clone() };
+        assert!(own == read && a.style.layout_eq(&b.style), "{:?}\nreads back as\n{:?}", a.style, b.style);
+        assert_eq!(a.list.as_ref().map(|l| &l.text), b.list.as_ref().map(|l| &l.text), "the list label");
+    }
     read
 }
 
@@ -606,7 +676,7 @@ fn a_document_built_from_typed_properties_generates_a_package_that_reads_back_th
     let fonts = fonts();
     let doc = built();
     assert!(doc.source.is_none(), "no package");
-    let mut e = Editor::with_document(doc, fonts);
+    let mut e = labelled(doc, fonts);
     e.complete(fonts);
     let read = reads_back_as_built(&mut e);
     assert!(read.iter().any(|r| r.color_theme.is_some()) && read.iter().any(|r| r.font_theme.is_some()), "a theme colour and a theme font");
@@ -635,7 +705,7 @@ fn generating_names_what_it_cannot_write() {
     let res = doc.resolver.clone().expect("styles");
     let centred = paragraph(&res, &ParaProps { jc: Some(Jc::Center), ..Default::default() }, &[("centred", RunProps::default())], next_para_id());
     let doc = Document { sections: vec![section(vec![Block::Para(centred)])], ..built() };
-    assert_eq!(unsupported(&doc), GenerateError::Unsupported("direct paragraph formatting"));
+    assert_eq!(unsupported(&doc), GenerateError::Unsupported("paragraph formatting that is not its own"));
     let bold = RunProps { toggles_set: toggle::B, toggles: toggle::B, ..Default::default() };
     let bold = paragraph(&res, &ParaProps::default(), &[("bold", bold)], next_para_id());
     let doc = Document { sections: vec![section(vec![Block::Para(bold)])], ..built() };

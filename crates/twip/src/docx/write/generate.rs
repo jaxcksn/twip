@@ -4,10 +4,11 @@ use std::fmt;
 use std::rc::Rc;
 
 use super::super::model::{Block, Document, Inline, Paragraph, Run, RunStyle};
+use super::super::para_props::ParaDirect;
 use super::super::resolve::Resolver;
 use super::super::review::RangeKind;
 use super::super::run_xml;
-use super::props::{Cx, Props, esc};
+use super::props::Cx;
 
 /// What [`generate`] cannot write.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -30,7 +31,8 @@ impl fmt::Display for GenerateError {
 impl std::error::Error for GenerateError {}
 
 /// `doc` as a new package, written from the model alone, whatever it was read from: body paragraphs of text, tabs and
-/// breaks, their character formatting and paragraph style, on a new document's page. Anything else is an error that
+/// breaks, their character and paragraph formatting and paragraph style, in the lists the document defines, on a new
+/// document's page. Anything else is an error that
 /// names it; nothing is left out.
 pub fn generate(doc: &Document) -> Result<Vec<u8>, GenerateError> {
     let blank = super::super::read_editable(&super::super::blank::blank_docx()).map_err(GenerateError::Write)?;
@@ -115,8 +117,8 @@ fn covered(doc: &Document, blank: &Document, res: &Resolver, new_res: &Resolver)
 /// is written.
 fn paragraph(p: &Paragraph, res: &Resolver, cx: &Cx) -> Result<Paragraph, GenerateError> {
     let fail = |what| Err(GenerateError::Unsupported(what));
-    if p.list.is_some() {
-        return fail("a list");
+    if p.style.num.is_some_and(|n| !res.numbering.nums.contains_key(&n.list.0)) {
+        return fail("a list without its definition");
     }
     if p.div.is_some() {
         return fail("an HTML division");
@@ -127,22 +129,21 @@ fn paragraph(p: &Paragraph, res: &Resolver, cx: &Cx) -> Result<Paragraph, Genera
     if p.style.change.is_some() {
         return fail("a tracked change");
     }
-    let direct = p.style.direct.xml(&res.styles.colours, cx);
-    let mut ppr = Props::parse(direct.as_deref(), "pPr", cx);
-    if ppr.kids.iter().any(|(name, _)| name != "pStyle" && name != "rPr") {
-        return fail("direct paragraph formatting");
+    let mut props = (**p.style.direct.get()).clone();
+    if props.frame.is_some() || props.frame_locked.is_some() {
+        return fail("a frame");
     }
-    if ppr.get("pStyle").is_none()
+    if props.style.is_none()
         && let Some(id) = p.style.style_id.as_deref().filter(|id| Some(*id) != res.styles.default_paragraph.as_deref())
     {
-        ppr.set("pStyle", format!("<{w}pStyle {w}val=\"{}\"/>", esc(id), w = cx.w));
+        props.style = Some(id.into());
     }
-    let written = ppr.xml();
-    let again = crate::docx::para_xml::from_xml(res, written.as_deref(), None, cx);
+    let mark = p.mark.direct.props().and_then(|m| m.size);
+    let again = crate::docx::para_xml::with(res, ParaDirect::typed(Rc::new(props)), mark, None);
     let mut style = (*p.style).clone();
     style.direct = again.style.direct.clone();
     if !style.layout_eq(&again.style) {
-        return fail("direct paragraph formatting");
+        return fail("paragraph formatting that is not its own");
     }
     let base = run_xml::base(&again.base);
     let inlines = p
@@ -158,7 +159,7 @@ fn paragraph(p: &Paragraph, res: &Resolver, cx: &Cx) -> Result<Paragraph, Genera
     Ok(Paragraph {
         style: Rc::new(again.style),
         mark: run(&p.mark, res, &base, cx)?,
-        list: None,
+        list: p.list.clone(),
         inlines,
         src: None,
         id: p.id,
