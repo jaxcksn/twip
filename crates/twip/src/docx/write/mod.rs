@@ -1036,7 +1036,8 @@ fn section_pages(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(
     for k in edited {
         let r = sects[k].clone();
         let s = &doc.sections[k];
-        let new = sect_with_page(&xml[r.clone()], &w, &s.page(), s.read.as_deref(), s.change.as_deref(), &doc.people, &cx, &colours);
+        let page = SectPage { page: &s.page(), was: s.read.as_deref(), grid: Some((s.line_grid, s.rtl_gutter)) };
+        let new = sect_with_page(&xml[r.clone()], &w, page, s.change.as_deref(), &doc.people, &cx, &colours);
         xml.replace_range(r, &new);
     }
     match parts.iter_mut().find(|(n, _)| *n == src.main) {
@@ -1046,19 +1047,30 @@ fn section_pages(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(
     Ok(())
 }
 
-/// A `w:sectPr` with `p`'s page size, margins, columns and different first page, and `change` as its tracked change.
-/// Only those differing from `was` (the page as read) when given. Typed page borders are written in the part `cx`
+/// The page a `w:sectPr` is written with: its settings, those as read, and its line grid and right-to-left gutter.
+#[derive(Clone, Copy)]
+struct SectPage<'a> {
+    page: &'a SectionPage,
+    was: Option<&'a SectionPage>,
+    /// The line grid ([`Section::line_grid`]) and right-to-left gutter, written where the `w:sectPr` as read has others.
+    grid: Option<(Option<i32>, bool)>,
+}
+
+/// The `w:docGrid` line pitch (twentieths of a point) that reads as line grid `g`.
+pub(super) fn line_pitch(g: i32) -> i64 {
+    (i64::from(g) * 10 + 2047) / 2048
+}
+
+/// The line grid a `w:docGrid` with line pitch `pitch` reads as.
+pub(super) fn line_grid_of(pitch: i64) -> i32 {
+    (pitch.max(1) * 2048 / 10) as i32
+}
+
+/// A `w:sectPr` with the page size, margins, columns and different first page of `page`, and `change` as its tracked
+/// change. Only those differing from the page as read when given. Typed page borders are written in the part `cx`
 /// describes, a theme colour's value as `colours` resolve it.
-fn sect_with_page(
-    sect: &str,
-    w: &str,
-    p: &SectionPage,
-    was: Option<&SectionPage>,
-    change: Option<&SectionChange>,
-    people: &People,
-    cx: &Cx,
-    colours: &ThemeColours,
-) -> String {
+fn sect_with_page(sect: &str, w: &str, page: SectPage, change: Option<&SectionChange>, people: &People, cx: &Cx, colours: &ThemeColours) -> String {
+    let (p, was) = (page.page, page.was);
     // CT_SectPr's children in schema order.
     const ORDER: [&str; 22] = [
         "headerReference",
@@ -1115,7 +1127,7 @@ fn sect_with_page(
                 put(&mut base, local, None);
             }
         }
-        Raw(Some(sect_with_page(&base, w, &c.previous, None, None, people, cx, colours).into()))
+        Raw(Some(sect_with_page(&base, w, SectPage { page: &c.previous, was: None, grid: None }, None, people, cx, colours).into()))
     });
     let existing = |s: &str, local: &str| find_tag(s, local, open_end).map(|(a, e)| s[a..e].to_string());
     let changed = |f: &dyn Fn(&SectionPage) -> bool| was.is_none_or(f);
@@ -1279,6 +1291,27 @@ fn sect_with_page(
                         at = end;
                     }
                 }
+            }
+        }
+    }
+    if let Some((line_grid, rtl_gutter)) = page.grid {
+        let read = cx.parse(sect, |_, el| {
+            let grid = child(el, "docGrid")
+                .filter(|g| matches!(attr(*g, "type"), Some("lines" | "linesAndChars" | "snapToChars")))
+                .map(|g| line_grid_of(crate::docx::xml::int(attr(g, "linePitch")).unwrap_or(0)));
+            (grid, crate::docx::xml::flag(el, "rtlGutter").unwrap_or(false))
+        });
+        if let Some((grid, rtl)) = read {
+            if grid != line_grid {
+                let g = existing(&s, "docGrid").unwrap_or_else(|| format!("<{w}docGrid/>"));
+                let g = match line_grid {
+                    Some(v) => set_attr(&set_attr(&g, &format!("{w}type"), "lines"), &format!("{w}linePitch"), &line_pitch(v).to_string()),
+                    None => set_attr(&g, &format!("{w}type"), "default"),
+                };
+                put(&mut s, "docGrid", Some(g));
+            }
+            if rtl != rtl_gutter {
+                put(&mut s, "rtlGutter", rtl_gutter.then(|| format!("<{w}rtlGutter/>")));
             }
         }
     }
@@ -1962,7 +1995,8 @@ pub fn main_xml(doc: &Document) -> Result<Option<String>, String> {
             for j in made.drain(..) {
                 let new = &doc.sections[j];
                 let Some(Block::Para(last)) = new.blocks.last() else { return Err("a new section that doesn't end in a paragraph".into()) };
-                edits.made.insert(last.id, sect_with_page(base, &w, &new.page(), s.read.as_deref(), None, &doc.people, &cx, &colours));
+                let page = SectPage { page: &new.page(), was: s.read.as_deref(), grid: None };
+                edits.made.insert(last.id, sect_with_page(base, &w, page, None, &doc.people, &cx, &colours));
                 blocks.extend(new.blocks.iter().cloned());
             }
             blocks.extend(s.blocks.iter().cloned());
@@ -7289,7 +7323,15 @@ mod tests {
         let mut now = was.clone();
         now.headers[0] = None;
         let sect = r#"<w:sectPr><w:headerReference w:type = 'default' r:id="rId1"/><w:headerReference w:type="first" r:id="rId2"/></w:sectPr>"#;
-        let out = sect_with_page(sect, "w:", &now, Some(&was), None, &People::default(), &Cx::of_xml(sect), &ThemeColours::default());
+        let out = sect_with_page(
+            sect,
+            "w:",
+            SectPage { page: &now, was: Some(&was), grid: None },
+            None,
+            &People::default(),
+            &Cx::of_xml(sect),
+            &ThemeColours::default(),
+        );
         assert!(!out.contains("rId1") && out.contains(r#"<w:headerReference w:type="first" r:id="rId2"/>"#), "{out}");
     }
 

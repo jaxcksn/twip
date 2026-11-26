@@ -710,13 +710,96 @@ fn typed_paragraph_formatting_with_no_xml_survives_a_paragraph_command() {
     reads_back_as_built(&mut e);
 }
 
+/// The first table in `d`'s body.
+fn first_table(d: &Document) -> &crate::docx::Table {
+    d.sections[0].blocks.iter().find_map(|b| if let Block::Table(t) = b { Some(t) } else { None }).expect("a table")
+}
+
+/// A table's fields as laid out: every one but the identity of what it was read from and of its paragraphs.
+fn bare(t: &crate::docx::Table) -> crate::docx::Table {
+    use crate::docx::{Cell, Row, Table};
+    let rows =
+        t.rows.iter().map(|r| Row { src: None, cells: r.cells.iter().map(|c| Cell { blocks: Vec::new(), ..c.clone() }).collect(), ..r.clone() });
+    Table { src: None, id: 0, rows: rows.collect(), ..t.clone() }
+}
+
+/// A table built through the table commands, with no XML behind it (a header row, row heights, cell widths and a
+/// merged cell, cell borders and shading, the table's width, indent and cell margins, a row's exceptions), on a page
+/// set up through the page commands (landscape, margins, columns, page borders, line numbers): the generated package
+/// reads back with the same tables, page and layout.
+#[test]
+fn a_built_table_and_page_setup_generate_a_package_that_reads_back_the_same() {
+    use serde_json::json;
+    let fonts = fonts();
+    let mut doc = built();
+    // The line numbers' run, as reading derives it
+    doc.line_number_run = doc.resolver.as_deref().map(crate::docx::line_number_run);
+    let mut e = labelled(doc, fonts);
+    e.complete(fonts);
+    let run = |e: &mut Editor, v: serde_json::Value| {
+        let c: Command = serde_json::from_value(v.clone()).expect("a command");
+        assert!(matches!(e.execute(c, fonts), Outcome::Changed(_)), "{v}");
+    };
+    let last = para(e.document(), 4);
+    let (id, end) = (ParaId(last.id), Unit(last.inlines.iter().map(|i| i.units()).sum::<usize>() as u32));
+    e.select_range(id, end, end, fonts);
+    run(&mut e, json!({ "type": "insertTable", "rows": 3, "columns": 3 }));
+    let cell_para = |e: &Editor, r: usize, c: usize| {
+        let Block::Para(p) = &first_table(e.document()).rows[r].cells[c].blocks[0] else { panic!("a paragraph") };
+        ParaId(p.id)
+    };
+    let at = |e: &mut Editor, r: usize, c: usize| {
+        let p = cell_para(e, r, c);
+        e.select_range(p, Unit(0), Unit(0), fonts);
+    };
+    at(&mut e, 0, 0);
+    run(&mut e, json!({ "type": "insertText", "value": "Head" }));
+    run(&mut e, json!({ "type": "setHeaderRow", "value": true }));
+    run(&mut e, json!({ "type": "setRowHeight", "value": { "height": 30.0, "rule": "exact" } }));
+    run(&mut e, json!({ "type": "setCellShading", "value": { "rgb": "#DDEBF7" } }));
+    run(&mut e, json!({ "type": "setCellBorders", "edges": "outside", "border": { "color": "auto", "style": "double", "width": 1.5 } }));
+    run(&mut e, json!({ "type": "setCellProperties", "width": { "kind": "points", "value": 120.0 } }));
+    run(&mut e, json!({ "type": "setTableWidth", "kind": "points", "value": 400.0 }));
+    run(&mut e, json!({ "type": "setTableIndent", "value": 18.0 }));
+    run(&mut e, json!({ "type": "setTableCellMargins", "left": 6.0, "right": 6.0 }));
+    at(&mut e, 2, 0);
+    run(&mut e, json!({ "type": "setRowProperties", "exceptions": { "alignment": "center", "cellSpacing": 1.5 } }));
+    let (a, b) = (cell_para(&e, 1, 0), cell_para(&e, 1, 1));
+    e.select_between((a, Unit(0)), (b, Unit(0)), fonts);
+    run(&mut e, json!({ "type": "mergeCells" }));
+    run(&mut e, json!({ "type": "setOrientation", "value": "landscape" }));
+    run(&mut e, json!({ "type": "setMargins", "top": 54.0, "bottom": 54.0, "left": 63.0, "right": 63.0 }));
+    run(&mut e, json!({ "type": "setColumns", "count": 2, "spacing": 24.0 }));
+    run(&mut e, json!({ "type": "setPageBorders", "top": { "color": { "rgb": "#7030A0" }, "space": 24.0, "style": "single", "width": 0.75 } }));
+    run(&mut e, json!({ "type": "setLineNumbering", "value": { "countBy": 5, "start": 1 } }));
+    e.complete(fonts);
+    let t = first_table(e.document());
+    assert!(t.rows[0].header && t.rows[0].height.is_some() && t.rows[1].cells.len() == 2 && t.rows[2].cell_spacing.is_some(), "{t:?}");
+    let s = &e.document().sections[0];
+    assert!(s.page_w > s.page_h && s.columns.num == 2 && s.page_borders.is_some() && s.line_numbers.is_some(), "{:?}", s.page());
+
+    let bytes = crate::docx::write::generate(e.document()).expect("generates");
+    let mut again = Editor::open(&bytes, fonts).expect("reads back");
+    assert_eq!(dump(&mut e), dump(&mut again), "the same document, laid out alike");
+    let back = again.document();
+    assert_eq!(bare(first_table(back)), bare(first_table(e.document())), "the table reads back");
+    let (was, now) = (&e.document().sections[0], &back.sections[0]);
+    let typed = |s: &crate::docx::Section| {
+        let mut p = s.page();
+        p.page_borders_direct = crate::docx::page_borders::PageBordersDirect::typed(p.page_borders_direct.get().map(|b| (**b).clone()));
+        p
+    };
+    assert_eq!(typed(now), typed(was), "the page reads back");
+    assert_eq!((now.line_grid, now.rtl_gutter), (was.line_grid, was.rtl_gutter));
+}
+
 #[test]
 fn generating_names_what_it_cannot_write() {
     let unsupported = |d: &Document| crate::docx::write::generate(d).expect_err("not generated");
-    let table = r#"<w:tbl><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:tc><w:p/></w:tc></w:tr></w:tbl><w:p/>"#;
+    let table = r#"<w:tbl><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:trPr><w:ins w:id="1" w:author="A"/></w:trPr><w:tc><w:p/></w:tc></w:tr></w:tbl><w:p/>"#;
     let mut doc = crate::docx::read(&with_strong_style(table)).expect("reads");
     doc.source = None;
-    assert_eq!(unsupported(&doc), GenerateError::Unsupported("a table"));
+    assert_eq!(unsupported(&doc), GenerateError::Unsupported("a tracked change"));
 
     let mut doc = built();
     doc.sections[0].headers[0] = Some("word/header1.xml".into());
