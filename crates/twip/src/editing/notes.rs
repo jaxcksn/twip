@@ -3,12 +3,13 @@
 use std::rc::Rc;
 
 use crate::docx::char_props::RunDirect;
+use crate::docx::para_props::ParaDirect;
 use crate::docx::props::RunProps;
 use crate::docx::resolve::Resolver;
-use crate::docx::write::props::{Cx, Props};
+use crate::docx::write::props::Cx;
 use crate::docx::{Block, Inline, NoteKind, Paragraph, Run};
 use crate::font::Fonts;
-use crate::format::{CharEdit, Prop};
+use crate::format::{CharEdit, ParaEdit, ParaProp, ParaProps, Prop};
 use crate::layout::{ParaId, Unit};
 
 use super::commands::Outcome;
@@ -66,13 +67,11 @@ fn restyle_note_para(res: &Resolver, cx: &Cx, p: &mut Paragraph, from: NoteKind,
     let (old, new) = (note_styles(from).1, note_styles(to).1);
     let mut changed = false;
     if p.style.style_id.as_deref() == Some(old) {
-        let mut pp = Props::parse(crate::docx::para_xml::ppr(Some(res), &p.style.direct, cx).as_deref(), "pPr", cx);
-        if res.styles.by_id.contains_key(new) {
-            pp.set("pStyle", format!("<{w}pStyle {w}val=\"{new}\"/>", w = cx.w));
-        } else {
-            pp.remove("pStyle");
-        }
-        p.style = Rc::new(crate::docx::para_xml::edited(res, &p.style.direct, pp.xml().as_deref(), None, cx).style);
+        let mut e = ParaEdit::new((**p.style.direct.get()).clone());
+        e.style = res.styles.by_id.contains_key(new).then(|| new.into());
+        e.whole(ParaProp::Style);
+        let direct = p.style.direct.edit(e);
+        p.style = Rc::new(crate::docx::para_xml::of(res, &direct, None, cx).style);
         changed = true;
     }
     let base = crate::docx::para_xml::of(res, &p.style.direct, None, cx).base;
@@ -148,7 +147,6 @@ impl Editor {
         }
         let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
         let cx = self.cx();
-        let w = cx.w.clone();
         let (ref_style, text_style) = note_styles(kind);
         let has = |s: &str| res.styles.by_id.contains_key(s);
         let mark_prop = |e: &mut CharEdit| {
@@ -193,11 +191,8 @@ impl Editor {
             self.abort(tx);
             return Outcome::Unchanged("stale caret");
         }
-        let mut pp = Props::parse(None, "pPr", &cx);
-        if has(text_style) {
-            pp.set("pStyle", format!("<{w}pStyle {w}val=\"{text_style}\"/>"));
-        }
-        let r = crate::docx::para_xml::from_xml(&res, pp.xml().as_deref(), None, &cx);
+        let props = ParaProps { style: has(text_style).then(|| text_style.into()), ..ParaProps::default() };
+        let r = crate::docx::para_xml::with(&res, ParaDirect::typed(Rc::new(props)), None, None);
         let text_run = run_xml::plain(&res, &r.base);
         let mut e = CharEdit::default();
         mark_prop(&mut e);
