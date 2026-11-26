@@ -5,9 +5,11 @@
 mod para;
 pub mod resolve;
 mod section;
+mod table;
 
 pub use para::*;
 pub use section::*;
+pub use table::*;
 
 use std::rc::Rc;
 

@@ -1,9 +1,13 @@
-//! Resolution on typed levels: folding, toggles, and the effective format of runs and paragraphs
+//! Resolution on typed levels: folding, toggles, and the effective format of runs and paragraphs; table, row and cell
+//! levels folded
 
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use super::{CharProps, Color, FontHint, FontRef, ParaFlag, ParaProps, ScriptClass, TextBorder, ThemeFace, TightWrap, Toggle};
+use super::{
+    CellMargins, CellProps, CharProps, Color, FontHint, FontRef, ParaFlag, ParaProps, RowProps, ScriptClass, TableBorders, TableProps, TextBorder,
+    ThemeFace, TightWrap, Toggle,
+};
 use crate::document::format::{Emphasis, Jc, LineRule, ShadingPattern, TabKind, VertAlign};
 use crate::document::line::{BorderStyle, Underline};
 use crate::document::paragraph::{ListJc, TextAlignment};
@@ -407,5 +411,65 @@ fn para_colour(colours: &ThemeColours, c: Option<Color>) -> (Option<u32>, Option
         Some(Color::Rgb(v)) => (Some(v), None),
         Some(Color::Theme(r)) => (Some(colours.resolve(r)), Some(r)),
         Some(Color::Auto) | None => (None, None),
+    }
+}
+
+// Tables
+
+impl TableBorders {
+    /// Overrides each side `o` sets.
+    pub fn merge(&mut self, o: &TableBorders) {
+        macro_rules! take {
+            ($($f:ident),*) => { $( if o.$f.is_some() { self.$f = o.$f; } )* };
+        }
+        take!(top, left, bottom, right, inside_h, inside_v, tl2br, tr2bl);
+    }
+}
+
+impl CellMargins {
+    /// Overrides each side `o` sets.
+    pub fn merge(&mut self, o: &CellMargins) {
+        macro_rules! take {
+            ($($f:ident),*) => { $( if o.$f.is_some() { self.$f = o.$f; } )* };
+        }
+        take!(top, left, bottom, right);
+    }
+}
+
+impl TableProps {
+    /// Overrides everything `o` sets, borders and margins side by side. A floating position comes with its level's
+    /// overlap (set or not), and an overlap without one at its level does nothing. `foreign` stays this level's.
+    pub fn merge(&mut self, o: &TableProps) {
+        macro_rules! take {
+            ($($f:ident),*) => { $( if o.$f.is_some() { self.$f = o.$f.clone(); } )* };
+        }
+        take!(style, width, align, indent, layout, look, cell_spacing, row_band, col_band, shading, bidi_visual, caption, description);
+        if o.floating.is_some() {
+            (self.floating, self.overlap) = (o.floating, o.overlap);
+        }
+        self.borders.merge(&o.borders);
+        self.margins.merge(&o.margins);
+    }
+}
+
+impl RowProps {
+    /// Overrides everything `o` sets. `foreign` stays this level's.
+    pub fn merge(&mut self, o: &RowProps) {
+        macro_rules! take {
+            ($($f:ident),*) => { $( if o.$f.is_some() { self.$f = o.$f; } )* };
+        }
+        take!(division, grid_before, grid_after, width_before, width_after, cant_split, height, header, cell_spacing, align, hidden);
+    }
+}
+
+impl CellProps {
+    /// Overrides everything `o` sets, borders and margins side by side. `foreign` stays this level's.
+    pub fn merge(&mut self, o: &CellProps) {
+        macro_rules! take {
+            ($($f:ident),*) => { $( if o.$f.is_some() { self.$f = o.$f; } )* };
+        }
+        take!(width, grid_span, h_merge, v_merge, shading, no_wrap, text_flow, fit_text, v_align, hide_mark);
+        self.borders.merge(&o.borders);
+        self.margins.merge(&o.margins);
     }
 }

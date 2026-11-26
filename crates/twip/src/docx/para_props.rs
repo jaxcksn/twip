@@ -98,7 +98,7 @@ const OWNED: [&str; 3] = ["rPr", "sectPr", "pPrChange"];
 const WHOLE: [&str; 3] = ["tabs", "numPr", "pBdr"];
 
 /// The text flow codes and their `ST_TextDirection` values, as written (the first) or read.
-const FLOWS: [(&str, u8); 11] =
+pub(super) const FLOWS: [(&str, u8); 11] =
     [("lrTb", 0), ("tbRl", 1), ("rl", 1), ("btLr", 3), ("lr", 3), ("lrTbV", 4), ("tbV", 4), ("tbRlV", 5), ("rlV", 5), ("tbLrV", 7), ("lrV", 7)];
 
 const TIGHT: [(&str, TightWrap); 5] = [

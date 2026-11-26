@@ -31,6 +31,7 @@ pub mod review;
 pub mod run_xml;
 pub mod section;
 pub mod styles;
+pub mod table_props;
 pub mod watermark;
 pub mod xml;
 
