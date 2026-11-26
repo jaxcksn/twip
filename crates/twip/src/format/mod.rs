@@ -3,6 +3,7 @@
 //! references. [`resolve`] folds levels into the effective [`crate::docx::RunStyle`].
 
 pub mod cascade;
+pub mod counters;
 mod list;
 mod para;
 pub mod resolve;
