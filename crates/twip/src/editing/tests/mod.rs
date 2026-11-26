@@ -31,6 +31,7 @@ mod into_tables;
 mod json;
 mod keys;
 mod list_definitions;
+mod list_parts;
 mod marks;
 mod merge;
 mod multisel;
