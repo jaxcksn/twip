@@ -1291,23 +1291,16 @@ fn inferred_set<K: Kind>(p: &K::Props, was: &str, now: &str, colours: &ThemeColo
 }
 
 /// What an edit of a properties element of kind `K` as XML wrote (`now`, over `was` as read) is what writing its typed
-/// properties over the same writes, byte for byte, but for two differences the typed writer makes: it places a child
-/// it writes in schema order (the cell commands place one after the others), and it keeps an element with no
-/// children that nothing changed. `TWIP_TABLE_BYTES_OUT` names a file to list each one that isn't in, in place of
-/// failing.
+/// properties over the same writes, byte for byte, but that the typed writer keeps an element with no children that
+/// nothing changed. `TWIP_TABLE_BYTES_OUT` names a file to list each one that isn't in, in place of failing.
 #[cfg(test)]
 fn written_as<K: Kind>(was: &Holder<K>, next: &Holder<K>, now: Option<&str>, colours: &ThemeColours, cx: &Cx) {
     let Some((read, xml)) = was.read_from() else { return };
     let set = now.map_or_else(Vec::new, |now| inferred_set::<K>(&next.props, xml, now, colours, cx));
     let got = written_over::<K>(&next.props, colours, cx, Some((read, xml)), &set);
-    let kids = |x: &str| {
-        let mut k = Props::parse(Some(x), K::NAME, cx).kids;
-        k.sort();
-        (x[..x.find('>').unwrap_or(x.len())].to_string(), k)
-    };
     let same = match (got.as_deref(), now) {
-        (Some(a), Some(b)) => a == b || kids(a) == kids(b),
-        (Some(a), None) => kids(a).1.is_empty(),
+        (Some(a), Some(b)) => a == b,
+        (Some(a), None) => Props::parse(Some(a), K::NAME, cx).kids.is_empty(),
         (None, None) => true,
         (None, Some(_)) => false,
     };

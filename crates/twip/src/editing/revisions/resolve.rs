@@ -623,6 +623,7 @@ impl Editor {
                     let colours = self.colours();
                     let now = crate::docx::write::props::Props::parse(r.direct.xml(&colours, &cx).as_deref(), "trPr", &cx);
                     let mut was = crate::docx::write::props::Props::parse(c.previous_direct.xml(&colours, &cx).as_deref(), "trPr", &cx);
+                    was.reorder(crate::docx::write::props::TRPR);
                     for (name, xml) in now.kids.iter().filter(|(n, _)| matches!(n.as_str(), "ins" | "del")) {
                         was.set(name, xml.clone());
                     }

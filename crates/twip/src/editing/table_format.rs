@@ -347,6 +347,7 @@ pub(super) fn set_cell_sides(
     }
     let xml = tc_borders(colours, cx, cell, sides);
     let mut p = crate::docx::write::props::Props::parse(cell.direct.xml(colours, cx).as_deref(), "tcPr", cx);
+    p.reorder(crate::docx::write::props::TCPR);
     p.set("tcBorders", xml);
     let w = &cx.w;
     let xml = p.xml().unwrap_or_else(|| format!("<{w}tcPr/>"));
@@ -530,6 +531,7 @@ impl Editor {
         let w = cx.w.clone();
         let set_direct = |cell: &mut crate::docx::Cell, local: &str, xml: String| {
             let mut p = crate::docx::write::props::Props::parse(cell.direct.xml(&colours, &cx).as_deref(), "tcPr", &cx);
+            p.reorder(crate::docx::write::props::TCPR);
             p.set(local, xml);
             let xml = p.xml().unwrap_or_else(|| format!("<{w}tcPr/>"));
             cell.direct = cell.direct.rewritten(Some(&xml), &colours, &cx);
@@ -723,6 +725,7 @@ impl Editor {
                 for row in &mut rows[r0..=r1] {
                     if let Some(h) = *hidden {
                         let mut p = crate::docx::write::props::Props::parse(row.direct.xml(&colours, &cx).as_deref(), "trPr", &cx);
+                        p.reorder(crate::docx::write::props::TRPR);
                         p.set("hidden", if h { format!("<{w}hidden/>") } else { String::new() });
                         row.direct = row.direct.rewritten(p.xml().as_deref(), &colours, &cx);
                         row.hidden = h;
