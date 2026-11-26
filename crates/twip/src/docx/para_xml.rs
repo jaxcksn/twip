@@ -150,21 +150,27 @@ pub fn again(res: &Resolver, was: &ParaStyle, mut again: ParaStyle, region: Opti
 }
 
 /// A paragraph resolved again from its authored properties `d`, in `region` when it is in a cell, its mark's size from
-/// the `w:rPr` its `w:pPr` holds.
+/// the `w:rPr` the `w:pPr` they were read from holds.
 pub fn of(res: &Resolver, d: &ParaDirect, region: Option<&Region>, cx: &Cx) -> ParaResolved {
-    let size = mark_size_of(ppr(Some(res), d, cx).as_deref(), cx);
+    let size = mark_size_of(d.origin_xml().map(|x| &**x), cx);
     with(res, d.clone(), size, region)
+}
+
+/// The authored properties `ppr` holds, the `w:pPr` an edit of `was` wrote (in the part `cx` describes): parsed, the
+/// XML kept beside them.
+pub fn edited_direct(res: &Resolver, was: &ParaDirect, ppr: Option<&str>, cx: &Cx) -> ParaDirect {
+    let direct = ParaDirect::from_xml(ppr, cx);
+    #[cfg(test)]
+    written_as(res, was, &direct, ppr, cx);
+    #[cfg(not(test))]
+    let _ = (res, was);
+    direct
 }
 
 /// A paragraph whose authored properties were `was`, resolved from `ppr`, the `w:pPr` an edit of them wrote (in the
 /// part `cx` describes), in `region` when it is in a cell: its properties parsed, the XML kept beside them.
 pub fn edited(res: &Resolver, was: &ParaDirect, ppr: Option<&str>, region: Option<&Region>, cx: &Cx) -> ParaResolved {
-    let direct = ParaDirect::from_xml(ppr, cx);
-    #[cfg(test)]
-    written_as(res, was, &direct, ppr, cx);
-    #[cfg(not(test))]
-    let _ = was;
-    with(res, direct, mark_size_of(ppr, cx), region)
+    with(res, edited_direct(res, was, ppr, cx), mark_size_of(ppr, cx), region)
 }
 
 /// What an edit of a paragraph's `w:pPr` as XML wrote (`ppr`, over `was` as read) is what writing its typed properties

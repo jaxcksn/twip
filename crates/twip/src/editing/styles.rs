@@ -10,6 +10,7 @@ use crate::docx::styles::{StyleEditError, StyleKind, Styles};
 use crate::docx::write::props::{Cx, Props, STYLE};
 use crate::docx::{Paragraph, RunStyle};
 use crate::font::Fonts;
+use crate::format::ParaEdit;
 
 use super::Editor;
 use super::commands::Outcome;
@@ -245,6 +246,41 @@ impl Editor {
             None => with_child(&raw, "rPr", &cx, typed),
         });
         Outcome::Moved
+    }
+
+    /// Runs a paragraph formatting command's typed edit on the target style's `w:pPr`: the style's own, or its table
+    /// part's (`style_part`).
+    pub(super) fn format_style_ppr(&mut self, edit: &dyn Fn(&mut ParaEdit, &Paragraph)) -> Outcome {
+        let Some((para, _, cx)) = self.style_target_formatting() else { return Outcome::Unchanged("no style") };
+        let Some(raw) = self.style_target.take() else { return Outcome::Unchanged("no style") };
+        let colours = self.doc.resolver.as_deref().map_or_else(Default::default, |r| r.styles.colours);
+        let typed = |x: Option<&str>| {
+            super::format::edit_ppr_xml(x, &colours, &cx, |e| {
+                edit(e, &para);
+                true
+            })
+        };
+        self.style_target = Some(match self.style_part {
+            Some(region) => with_table_part_child(&raw, region, "pPr", &cx, typed),
+            None => with_child(&raw, "pPr", &cx, typed),
+        });
+        Outcome::Moved
+    }
+
+    /// Paragraph formatting as a typed edit on paragraphs in an automatically updating style: the style changes
+    /// instead, as one undo step.
+    pub(super) fn format_auto_redefined_typed(&mut self, id: &str, edit: &dyn Fn(&mut ParaEdit, &Paragraph), fonts: &Fonts) -> Outcome {
+        let Some(raw) = self.doc.resolver.as_ref().and_then(|r| r.styles.get(id)).map(|s| s.raw.clone()) else {
+            return Outcome::Unchanged("no style");
+        };
+        self.style_target = Some(raw.clone());
+        let _ = self.format_style_ppr(edit);
+        let Some(now) = self.style_target.take() else { return Outcome::Unchanged("no style") };
+        // The formatting it has already, as for paragraphs formatted directly: no undo step.
+        if now == raw || self.style_formatting(&now).zip(self.style_formatting(&raw)).is_some_and(|(a, b)| a.0.style.layout_eq(&b.0.style)) {
+            return Outcome::Unchanged("the style already has it");
+        }
+        self.edit_styles("Modify Style", |s| s.set_xml(now), fonts)
     }
 
     /// The target style's tab stops, and those it inherits from its base, when commands edit a style: the one

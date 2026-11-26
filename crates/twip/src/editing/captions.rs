@@ -357,7 +357,8 @@ impl Editor {
             let cx = self.cx();
             let mut pr = crate::docx::write::props::Props::parse(self.ppr(&q.style.direct, &cx).as_deref(), "pPr", &cx);
             pr.set("keepNext", format!("<{w}keepNext/>"));
-            if let Some(r) = self.para_again(pic, Some(pr.xml().as_deref()), &res, &cx)
+            if let Some(r) =
+                self.para_again(pic, Some(crate::docx::para_xml::edited_direct(&res, &q.style.direct, pr.xml().as_deref(), &cx)), &res, &cx)
                 && let Some(q) = self.index.para(&self.doc, pic)
             {
                 let (mark, list) = (q.mark.clone(), q.list.clone());

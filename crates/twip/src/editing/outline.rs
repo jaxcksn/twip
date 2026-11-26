@@ -491,7 +491,11 @@ impl Editor {
                     None => pr.remove("pStyle"),
                 }
             }
-            let Some(r) = self.para_again(para, Some(pr.xml().as_deref()), &res, &cx) else { continue };
+            let Some(r) =
+                self.para_again(para, Some(crate::docx::para_xml::edited_direct(&res, &p.style.direct, pr.xml().as_deref(), &cx)), &res, &cx)
+            else {
+                continue;
+            };
             let Some(p) = self.index.para(&self.doc, para) else { continue };
             if r.style.layout_eq(&p.style) && r.style.authored_eq(&p.style) {
                 continue;

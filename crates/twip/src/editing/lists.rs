@@ -37,7 +37,10 @@ impl Editor {
         let Some(p) = self.index.para(&self.doc, para) else { return false };
         let mut pr = Props::parse(self.ppr(&p.style.direct, &cx).as_deref(), "pPr", &cx);
         edit(&mut pr, &cx.w);
-        let Some(r) = self.para_again(para, Some(pr.xml().as_deref()), &res, &cx) else { return false };
+        let Some(r) = self.para_again(para, Some(crate::docx::para_xml::edited_direct(&res, &p.style.direct, pr.xml().as_deref(), &cx)), &res, &cx)
+        else {
+            return false;
+        };
         let Some(p) = self.index.para(&self.doc, para) else { return false };
         let (mark, list) = (p.mark.clone(), p.list.clone());
         tx.stale_paras.push(para);

@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::docx::model::Compat;
-use crate::docx::para_props::ParaDirect;
+use crate::docx::para_props::{self, ParaDirect};
 use crate::docx::para_xml;
 use crate::docx::props::RunProps;
 use crate::docx::resolve::{Resolver, joined_style};
@@ -18,10 +18,12 @@ use super::commands::Outcome;
 use super::index::Container;
 use super::step::{Step, TableProps};
 use super::{Editor, Tx};
+use crate::document::format::ShadingPattern;
+use crate::document::line::BorderStyle;
 use crate::document::paragraph::{ListId, ListRef};
 use crate::docx::char_props::RunDirect;
 use crate::docx::run_xml;
-use crate::format::{CharEdit, CharProps, Prop, ScriptClass};
+use crate::format::{CharEdit, CharProps, Color, ParaBorders, ParaEdit, ParaProp, Prop, ScriptClass, Shading, TextBorder};
 
 const NEW_ROOT: &str = r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">"#;
 
@@ -87,6 +89,11 @@ fn sized(e: &mut CharEdit, pt: f64) {
     (e.size, e.complex_size) = (Some(pt), Some(pt));
     e.whole(Prop::Size);
     e.whole(Prop::ComplexSize);
+}
+
+/// Points to the nearest twip, as the paragraph commands write lengths.
+pub(in crate::editing) fn twip(pt: f64) -> f64 {
+    (pt * 20.0).round() / 20.0
 }
 
 /// A colour as a command chose it: its theme colour when it is one.
@@ -199,6 +206,22 @@ pub(super) fn edit_rpr_xml(
 ) -> Option<String> {
     let direct = RunDirect::from_xml(xml, cx);
     let mut e = CharEdit::new(direct.props().map_or_else(CharProps::default, |q| (**q).clone()));
+    if !edit(&mut e) {
+        return xml.map(str::to_string);
+    }
+    direct.edit(e).xml(colours, cx).map(std::borrow::Cow::into_owned)
+}
+
+/// `xml` (a `w:pPr`, or none) with `edit`'s typed edit of the properties it holds, written over it; as it is when
+/// `edit` returns false.
+pub(super) fn edit_ppr_xml(
+    xml: Option<&str>,
+    colours: &crate::docx::props::ThemeColours,
+    cx: &Cx,
+    edit: impl FnOnce(&mut ParaEdit) -> bool,
+) -> Option<String> {
+    let direct = ParaDirect::from_xml(xml, cx);
+    let mut e = ParaEdit::new((**direct.get()).clone());
     if !edit(&mut e) {
         return xml.map(str::to_string);
     }
@@ -510,15 +533,12 @@ impl Editor {
         Some(again.bases.swap_remove(k).1)
     }
 
-    /// `para` resolved again from its direct `w:pPr` (`ppr` in place of it, when given) and, for a paragraph vanished
-    /// marks joined onto its start, from those paragraphs' too, joined as reading joins them.
-    pub(super) fn para_again(&self, para: ParaId, ppr: Option<Option<&str>>, res: &Resolver, cx: &Cx) -> Option<Again> {
+    /// `para` resolved again from its authored properties (`direct` in place of them, when given) and, for a
+    /// paragraph vanished marks joined onto its start, from those paragraphs' too, joined as reading joins them.
+    pub(super) fn para_again(&self, para: ParaId, direct: Option<ParaDirect>, res: &Resolver, cx: &Cx) -> Option<Again> {
         let p = self.index.para(&self.doc, para)?;
         let region = self.region_of_para(para, res);
-        let last = match ppr {
-            Some(x) => para_xml::edited(res, &p.style.direct, x, region.as_ref(), cx),
-            None => para_xml::of(res, &p.style.direct, region.as_ref(), cx),
-        };
+        let last = para_xml::of(res, direct.as_ref().unwrap_or(&p.style.direct), region.as_ref(), cx);
         let parts = p.src.as_ref().filter(|s| s.joined.len() + 1 == s.ranges.len()).map_or(&[][..], |s| &s.joined[..]);
         if parts.is_empty() {
             let style = crate::docx::para_xml::again(res, &p.style, last.style, region.as_ref(), cx);
@@ -828,6 +848,58 @@ impl Editor {
         self.format_paras_direct(label, edit, fonts)
     }
 
+    /// Paragraph formatting as a typed edit of each selected paragraph's authored properties; of the style being
+    /// formatted instead, or of the selection's style when it updates automatically.
+    pub(super) fn format_paras_typed(
+        &mut self,
+        label: &'static str,
+        edit: &dyn Fn(&mut ParaEdit, &crate::docx::Paragraph),
+        fonts: &Fonts,
+    ) -> Outcome {
+        if self.style_target.is_some() {
+            return self.format_style_ppr(edit);
+        }
+        if let Some(id) = self.auto_redefined() {
+            return self.format_auto_redefined_typed(&id, edit, fonts);
+        }
+        self.format_paras_direct_typed(label, edit, fonts)
+    }
+
+    /// [`Self::format_paras_typed`] on the paragraphs themselves, even in a style that updates automatically: for
+    /// what isn't direct formatting (applying a style).
+    pub(super) fn format_paras_direct_typed(
+        &mut self,
+        label: &'static str,
+        edit: &dyn Fn(&mut ParaEdit, &crate::docx::Paragraph),
+        fonts: &Fonts,
+    ) -> Outcome {
+        if self.refuse_expanded() || self.refuse_locked_content() {
+            return Outcome::Unchanged("locked");
+        }
+        let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
+        let cx = self.cx();
+        let paras = self.selected_paras();
+        let mut tx = self.begin(label);
+        for para in paras {
+            let Some(p) = self.index.para(&self.doc, para) else { continue };
+            let mut e = ParaEdit::new((**p.style.direct.get()).clone());
+            edit(&mut e, p);
+            let direct = p.style.direct.edit(e);
+            let Some(r) = self.para_again(para, Some(direct), &res, &cx) else { continue };
+            let Some(p) = self.index.para(&self.doc, para) else { continue };
+            if r.style.layout_eq(&p.style) && r.style.authored_eq(&p.style) {
+                continue;
+            }
+            let (mark, list) = (p.mark.clone(), p.list.clone());
+            if self.step(&mut tx, Step::Para { para, style: Rc::new(r.style), mark, list }).is_err() {
+                self.abort(tx);
+                return Outcome::Unchanged("formatting failed");
+            }
+            tx.stale_paras.push(para);
+        }
+        self.commit(tx, None, fonts)
+    }
+
     /// [`Self::format_paras`] on the paragraphs themselves, even in a style that updates automatically: for what
     /// isn't direct formatting (applying a style).
     pub(super) fn format_paras_direct(
@@ -847,7 +919,8 @@ impl Editor {
             let Some(p) = self.index.para(&self.doc, para) else { continue };
             let mut pr = Props::parse(self.ppr(&p.style.direct, &cx).as_deref(), "pPr", &cx);
             edit(&mut pr, &cx, p);
-            let Some(r) = self.para_again(para, Some(pr.xml().as_deref()), &res, &cx) else { continue };
+            let direct = para_xml::edited_direct(&res, &p.style.direct, pr.xml().as_deref(), &cx);
+            let Some(r) = self.para_again(para, Some(direct), &res, &cx) else { continue };
             let Some(p) = self.index.para(&self.doc, para) else { continue };
             if r.style.layout_eq(&p.style) && r.style.authored_eq(&p.style) {
                 continue;
@@ -863,7 +936,6 @@ impl Editor {
     }
 
     pub(super) fn format(&mut self, f: &Format, fonts: &Fonts) -> Outcome {
-        let twips = |pt: f64| ((pt * 20.0).round() as i64).to_string();
         match f {
             &Format::Set(t, on) => self.format_runs_typed(t.label(), &|e, _| t.set(e, on), fonts),
             Format::FontSize(pt) => {
@@ -917,15 +989,17 @@ impl Editor {
             }
             Format::Hanging(more) => {
                 let (more, tab) = (*more, self.tab_grid());
-                self.format_paras(
+                self.format_paras_typed(
                     "Hanging Indent",
-                    &|p, cx, q| {
+                    &|e, q| {
                         // The first line stays where it is; the other lines move to the next or last tab stop.
                         let first_line = q.style.ind_left + q.style.ind_first;
                         let left = grid_step(q.style.ind_left, tab, more);
                         let first = first_line - left;
-                        let (first, hanging) = if first < 0.0 { (None, Some(twips(-first))) } else { (Some(twips(first)), None) };
-                        p.attrs("ind", &[("left", Some(twips(left))), ("start", None), ("firstLine", first), ("hanging", hanging)], cx)
+                        e.indent_left = Some(twip(left));
+                        e.indent_first = Some(if first < 0.0 { -twip(-first) } else { twip(first) });
+                        e.part(ParaProp::IndentLeft);
+                        e.part(ParaProp::IndentFirst);
                     },
                     fonts,
                 )
@@ -933,37 +1007,30 @@ impl Editor {
             &Format::StepFont(grow) => {
                 self.format_runs_typed("Font Size", &|p, run| sized(p, half_points(if grow { run.size + 1.0 } else { run.size - 1.0 })), fonts)
             }
-            Format::ClearParagraph => self.format_paras_direct(
-                "Reset Paragraph",
-                &|p, _, _| p.kids.retain(|(n, _)| matches!(n.as_str(), "pStyle" | "rPr" | "sectPr" | "pPrChange" | "cnfStyle" | "divId")),
-                fonts,
-            ),
+            Format::ClearParagraph => self.format_paras_direct_typed("Reset Paragraph", &|e, _| e.props = para_props::reset(&e.props, true), fonts),
             Format::ParaBorders(which) => {
                 let which = which.clone();
-                self.format_paras(
+                self.format_paras_typed(
                     "Borders",
-                    &|p, cx, _| {
-                        let w = &cx.w;
-                        let line = |side: &str| format!("<{w}{side} {w}val=\"single\" {w}sz=\"4\" {w}space=\"1\" {w}color=\"auto\"/>");
-                        match which.as_str() {
-                            "box" => p.set("pBdr", format!("<{w}pBdr>{}{}{}{}</{w}pBdr>", line("top"), line("left"), line("bottom"), line("right"))),
-                            "bottom" => p.set("pBdr", format!("<{w}pBdr>{}</{w}pBdr>", line("bottom"))),
-                            _ => p.remove("pBdr"),
-                        }
+                    &|e, _| {
+                        let line = Some(TextBorder { style: BorderStyle::Single, width: 0.5, space: 1.0, shadow: false, color: Some(Color::Auto) });
+                        e.borders = match which.as_str() {
+                            "box" => ParaBorders { top: line, left: line, bottom: line, right: line, between: None },
+                            "bottom" => ParaBorders { bottom: line, ..ParaBorders::default() },
+                            _ => ParaBorders::default(),
+                        };
+                        e.whole(ParaProp::Borders);
                     },
                     fonts,
                 )
             }
             Format::ParaShading(c) => {
                 let c = *c;
-                self.format_paras(
+                self.format_paras_typed(
                     "Shading",
-                    &|p, cx, _| match c {
-                        Some(c) => {
-                            let tag = format!("<{w}shd {w}val=\"clear\" {w}color=\"auto\"/>", w = cx.w);
-                            p.set("shd", super::commands::colour_attrs(&tag, &cx.w, "fill", super::commands::THEME_FILL, Some(c)))
-                        }
-                        None => p.remove("shd"),
+                    &|e, _| {
+                        e.shading = c.map(|c| Shading { pattern: ShadingPattern::Clear, color: Some(Color::Auto), fill: Some(colour(c)) });
+                        e.whole(ParaProp::Shading);
                     },
                     fonts,
                 )
@@ -973,8 +1040,15 @@ impl Editor {
                 if !res.styles.by_id.get(id).is_some_and(|s| s.kind == crate::docx::styles::StyleKind::Paragraph) {
                     return Outcome::Unchanged("no such paragraph style");
                 }
-                let v = crate::docx::write::props::esc(id);
-                self.format_paras_direct("Style", &|p, cx, _| p.set("pStyle", format!("<{w}pStyle {w}val=\"{v}\"/>", w = cx.w)), fonts)
+                let id: Rc<str> = id.as_str().into();
+                self.format_paras_direct_typed(
+                    "Style",
+                    &|e, _| {
+                        e.style = Some(id.clone());
+                        e.whole(ParaProp::Style);
+                    },
+                    fonts,
+                )
             }
             Format::CharStyle(id) => {
                 let id: Rc<str> = id.as_str().into();
@@ -1002,12 +1076,12 @@ impl Editor {
     /// last) default tab stop.
     fn indent_plain(&mut self, more: bool, fonts: &Fonts) -> Outcome {
         let tab = self.tab_grid();
-        let twips = |pt: f64| ((pt * 20.0).round() as i64).to_string();
-        self.format_paras(
+        self.format_paras_typed(
             "Indent",
-            &|p, cx, q| {
+            &|e, q| {
                 if q.style.num.is_none_or(|ListRef { list: ListId(id), level: _ }| id == 0) {
-                    p.attrs("ind", &[("left", Some(twips(grid_step(q.style.ind_left, tab, more)))), ("start", None)], cx);
+                    e.indent_left = Some(twip(grid_step(q.style.ind_left, tab, more)));
+                    e.part(ParaProp::IndentLeft);
                 }
             },
             fonts,
@@ -1160,11 +1234,7 @@ impl Editor {
             if matches!(runs, Outcome::Refused(_)) {
                 return runs;
             }
-            let paras = e.format_paras_direct(
-                "Clear Formatting",
-                &|p, _, _| p.kids.retain(|(n, _)| matches!(n.as_str(), "rPr" | "sectPr" | "pPrChange" | "cnfStyle" | "divId")),
-                fonts,
-            );
+            let paras = e.format_paras_direct_typed("Clear Formatting", &|e, _| e.props = para_props::reset(&e.props, false), fonts);
             if matches!(paras, Outcome::Changed(_)) { paras } else { runs }
         })
     }

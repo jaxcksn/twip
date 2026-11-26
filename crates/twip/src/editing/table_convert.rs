@@ -226,7 +226,12 @@ impl Editor {
         } else {
             pr.remove("numPr");
         }
-        let again = self.para_again(crate::layout::ParaId(p.id), Some(pr.xml().as_deref()), &res, &cx)?;
+        let again = self.para_again(
+            crate::layout::ParaId(p.id),
+            Some(crate::docx::para_xml::edited_direct(&res, &p.style.direct, pr.xml().as_deref(), &cx)),
+            &res,
+            &cx,
+        )?;
         Some(std::rc::Rc::new(again.style))
     }
 

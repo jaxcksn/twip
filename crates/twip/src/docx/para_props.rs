@@ -265,6 +265,23 @@ impl ParaDirect {
     }
 }
 
+/// `p` reset: nothing but its style (when `style`), its HTML division and its table style conditional formatting
+/// record (`w:cnfStyle`, which is not formatting of its own).
+pub fn reset(p: &ParaProps, style: bool) -> ParaProps {
+    let foreign = p.foreign.as_deref().and_then(|f| {
+        // What is written of the children kept: the record whole, the style and division as written
+        let stays = |q: &QName| &*q.ns == W && (q.local.as_ref() == "cnfStyle" || &*q.local == "divId" || style && &*q.local == "pStyle");
+        let cnf = |q: &QName| &*q.ns == W && &*q.local == "cnfStyle";
+        let kept = ForeignProps {
+            children: f.children.iter().filter(|c| cnf(&c.name)).cloned().collect(),
+            attributes: f.attributes.iter().filter(|a| a.on.as_ref().is_none_or(stays)).cloned().collect(),
+            kept: f.kept.iter().filter(|c| stays(&c.name)).cloned().collect(),
+        };
+        (kept != ForeignProps::default()).then(|| Rc::new(kept))
+    });
+    ParaProps { style: p.style.clone().filter(|_| style), division: p.division, foreign, ..ParaProps::default() }
+}
+
 // Parse
 
 /// A `w:pPr` as typed properties, without the children other nodes own.
@@ -852,7 +869,7 @@ pub fn written_over(p: &ParaProps, colours: &ThemeColours, cx: &Cx, origin: Opti
             continue;
         }
         if !whole && !parts.is_empty() {
-            let attrs: Vec<(&str, Option<String>)> = parts.iter().flat_map(|p| part_attrs(*p, &now)).collect();
+            let attrs: Vec<(&str, Option<String>)> = parts.iter().flat_map(|q| part_attrs(*q, p)).collect();
             props.attrs(key, &attrs, cx);
             continue;
         }
@@ -882,26 +899,36 @@ pub fn written_over(p: &ParaProps, colours: &ThemeColours, cx: &Cx, origin: Opti
     props.xml()
 }
 
-/// The attributes property `p`, set in part, sets on its child: each with its value in `now`, the child as the
-/// properties write it, or removed; the other names of the property's value removed.
-fn part_attrs(p: ParaProp, now: &str) -> Vec<(&'static str, Option<String>)> {
-    let list = super::prop_xml::attr_list(now).map(|(_, l)| l).unwrap_or_default();
-    let value = |local: &str| {
-        list.iter().find(|(q, _)| q.rsplit(':').next() == Some(local)).map(|(_, v)| v.trim_matches(|c| c == '"' || c == '\'').to_string())
-    };
-    let names: &[&'static str] = match p {
-        ParaProp::IndentLeft => &["left", "start"],
-        ParaProp::IndentRight => &["right", "end"],
-        ParaProp::IndentFirst => &["firstLine", "hanging"],
-        ParaProp::SpaceBefore => &["before"],
-        ParaProp::SpaceBeforeAuto => &["beforeAutospacing"],
-        ParaProp::SpaceAfter => &["after"],
-        ParaProp::SpaceAfterAuto => &["afterAutospacing"],
-        ParaProp::Line => &["line"],
-        ParaProp::LineRule => &["lineRule"],
-        _ => &[],
-    };
-    names.iter().map(|n| (*n, value(n))).collect()
+/// The attributes property `prop`, set in part, sets on its child, each with its value in `p` (written as the
+/// serializer writes it) or removed, the other names of the value removed.
+fn part_attrs(prop: ParaProp, p: &ParaProps) -> Vec<(&'static str, Option<String>)> {
+    let length = |v: Option<f64>| v.map(|v| Twips(v).to_string());
+    let on = |b: Option<bool>| b.map(|b| if b { "1" } else { "0" }.to_string());
+    match prop {
+        ParaProp::IndentLeft => vec![("left", length(p.indent_left)), ("start", None)],
+        ParaProp::IndentRight => vec![("right", length(p.indent_right)), ("end", None)],
+        ParaProp::IndentFirst => match p.indent_first {
+            Some(v) if v.is_sign_negative() => vec![("hanging", length(Some(-v))), ("firstLine", None)],
+            v => vec![("firstLine", length(v)), ("hanging", None)],
+        },
+        ParaProp::SpaceBefore => vec![("before", length(p.space_before))],
+        ParaProp::SpaceBeforeAuto => vec![("beforeAutospacing", on(p.space_before_auto))],
+        ParaProp::SpaceAfter => vec![("after", length(p.space_after))],
+        ParaProp::SpaceAfterAuto => vec![("afterAutospacing", on(p.space_after_auto))],
+        ParaProp::Line => vec![("line", p.line.map(|v| v.to_string()))],
+        ParaProp::LineRule => vec![(
+            "lineRule",
+            p.line_rule.map(|r| {
+                match r {
+                    LineRule::Auto => "auto",
+                    LineRule::Exact => "exact",
+                    LineRule::AtLeast => "atLeast",
+                }
+                .to_string()
+            }),
+        )],
+        _ => Vec::new(),
+    }
 }
 
 /// The child of CT_PPr a property is written in.
