@@ -1,7 +1,7 @@
 //! Font rewrite
 
 use crate::api::command::{CommandResult, ReplaceFont, ReplaceScope};
-use crate::docx::font_table::{FontRename, rename_tables};
+use crate::docx::font_table::FontRename;
 use crate::docx::{Inline, RunStyle};
 use crate::font::Fonts;
 use crate::format::{CharEdit, CharProps, FontRef, Prop};
@@ -118,7 +118,7 @@ impl Editor {
                 let mut props = authored(&p.mark);
                 if patch(&mut props, &p.mark, r, filtered) && tally(1, para_locked) {
                     let direct = p.mark.direct.edit(props);
-                    let mark = run_xml::again(&res, &run_xml::base(again.mark_base()), &p.mark, direct);
+                    let mark = run_xml::again(&res, again.mark_base(), &p.mark, direct);
                     steps.push(Step::Para { para, style: p.style.clone(), mark, list: p.list.clone() });
                 }
             }
@@ -141,7 +141,7 @@ impl Editor {
                 let restyled = own
                     .then(|| {
                         let mut props = authored(run);
-                        patch(&mut props, run, r, filtered).then(|| run_xml::again(&res, &run_xml::base(base), run, run.direct.edit(props)))
+                        patch(&mut props, run, r, filtered).then(|| run_xml::again(&res, base, run, run.direct.edit(props)))
                     })
                     .flatten();
                 let symbol = matches!(i, Inline::Sym { font, .. } if own && font.eq_ignore_ascii_case(&r.from));
@@ -177,7 +177,7 @@ impl Editor {
         if !filtered {
             let rename = FontRename { from: r.from.clone(), to: r.to.clone() };
             let mut renamed = (*res).clone();
-            let mut n = rename_tables(&mut renamed, &rename);
+            let mut n = renamed.rename_fonts(&rename);
             n += u32::from(self.doc.font_descriptions.contains_key(&r.from.to_lowercase()));
             if n > 0 {
                 changed += n;

@@ -13,7 +13,8 @@ use super::numbering::{Counters, Numbering};
 use super::para_props::{self, ParaDirect};
 use super::para_xml;
 use super::props::*;
-use super::resolve::{ParaResolved, Resolver, div_chain};
+use super::resolve::{Resolver, div_chain};
+use super::resolvers::Resolvers;
 use super::review::{
     AuthorId, CellMarkKind, CellRevisions, Comment, CommentId, FormatChange, GridChange, IdCounter, Identity, MarkKind, ParaChange, People,
     PreviousProps, Protection, ProtectionKind, RangeKind, RangeMark, RevisionId, RevisionMark, RowRevisions, RunRevisions, SectionChange, ShowMarkup,
@@ -312,8 +313,8 @@ fn break_kind(kind: Option<&str>, clear: Option<&str>) -> BreakKind {
 }
 
 /// The run line numbers draw with: the document defaults and the LineNumber character style.
-pub(crate) fn line_number_run(res: &Resolver) -> super::model::Run {
-    let mut p = run_xml::base(&res.styles.doc_rpr);
+pub(crate) fn line_number_run(res: &Resolvers) -> super::model::Run {
+    let mut p = res.cascade().doc_char().clone();
     if res.styles.get("LineNumber").is_some() {
         p.merge_level(&run_xml::character_style(res, "LineNumber"));
     }
@@ -326,8 +327,8 @@ struct Base {
 }
 
 impl Base {
-    fn new(xml: RunProps) -> Base {
-        Base { typed: run_xml::base(&xml) }
+    fn new(typed: CharProps) -> Base {
+        Base { typed }
     }
 }
 
@@ -2213,7 +2214,7 @@ impl Reader {
         let mark_direct = self.direct(mark_rpr_node);
         let mark_own = mark_direct.props().cloned();
         let ppr = self.para_direct(ppr_node);
-        let ParaResolved { style: mut para_style, base, level, num_id, ilvl, from_style, style_id } =
+        let para_xml::Resolved { style: mut para_style, base, level, num_id, ilvl, from_style, style_id } =
             para_xml::resolve(&self.res, ppr.get(), mark_own.as_ref().and_then(|m| m.size), table.map(|t| &*t.region));
         let base = Base::new(base);
         if self.record {

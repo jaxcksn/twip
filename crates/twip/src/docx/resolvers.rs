@@ -10,6 +10,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use super::font_table::{FontRename, rename_char};
 use super::list_xml::{ListDefDirect, ListDirect, NumberingXml, PictureDirect};
 use super::numbering::{AbstractNum, Num, Numbering};
 use super::resolve::Resolver;
@@ -210,6 +211,69 @@ impl TypedDefs {
         defs
     }
 
+    /// These definitions with `rename` applied as [`super::font_table::rename_tables`] applies it to the XML path's
+    /// tables (`f`, the resolver it renamed): in each style's and region's, the defaults' and each definition's
+    /// levels' character properties; the holders keep the elements they were read from.
+    fn renamed(&self, rename: &FontRename, f: &Resolver) -> TypedDefs {
+        let mut part = (*self.styles).clone();
+        let style = |s: &crate::format::Style| -> Option<crate::format::Style> {
+            let mut s = s.clone();
+            let mut n = rename_char(&mut s.format.char, rename);
+            for r in &mut s.regions {
+                n += rename_char(&mut r.format.char, rename);
+            }
+            (n > 0).then_some(s)
+        };
+        let ids: Vec<Rc<str>> = part.sheet.styles.keys().cloned().collect();
+        for id in ids {
+            let Some(e) = part.sheet.styles.get_mut(&id) else { continue };
+            let Some(s) = style(&e.style) else { continue };
+            match part.styles.get(&id) {
+                Some(d) => {
+                    let d = d.edited(s, &[]);
+                    e.style = d.get().clone();
+                    part.styles.insert(id, d);
+                }
+                None => e.style = Rc::new(s),
+            }
+        }
+        if let Some(d) = &part.defaults {
+            let mut v = (**d.get()).clone();
+            if v.char.as_mut().is_some_and(|c| rename_char(c, rename) > 0) {
+                let d = d.edited(v, &[]);
+                part.sheet.defaults = Some(d.get().clone());
+                part.defaults = Some(d);
+            }
+        }
+        let def = |d: &ListDef| -> Option<ListDef> {
+            let mut d = d.clone();
+            let mut n = 0;
+            for l in d.levels.iter_mut().flatten() {
+                let mut v = (**l).clone();
+                let k = rename_char(&mut v.char, rename);
+                if k > 0 {
+                    *l = Rc::new(v);
+                    n += k;
+                }
+            }
+            (n > 0).then_some(d)
+        };
+        let mut numbering = (*self.numbering).clone();
+        for d in numbering.defs.values_mut() {
+            if let Some(v) = def(d.get()) {
+                *d = d.edited(v, &[]);
+            }
+        }
+        let mut lists = (*self.cascade.lists).clone();
+        for d in lists.defs.values_mut() {
+            if let Some(v) = def(d) {
+                *d = Rc::new(v);
+            }
+        }
+        let c = cascade(Rc::new(part.sheet.clone()), Rc::new(lists), f);
+        TypedDefs { cascade: Rc::new(c), styles: Rc::new(part), numbering: Rc::new(numbering), glossary: self.glossary.clone() }
+    }
+
     /// In a debug build, that the typed definitions are in step with `f`: the same styles, in the same order and
     /// places, the same frozen table styles and default styles, the same lists and definitions.
     fn check(&self, f: &Resolver) {
@@ -362,6 +426,16 @@ impl Resolvers {
     /// The typed cascade, in step with the resolver.
     pub fn cascade(&self) -> Rc<Cascade> {
         self.typed().cascade.clone()
+    }
+
+    /// Renames `rename.from` to `rename.to` in the tables below the text, on both sides; returns the places that
+    /// changed, as [`super::font_table::rename_tables`] counts them.
+    pub fn rename_fonts(&mut self, rename: &FontRename) -> u32 {
+        let typed = self.typed();
+        let n = super::font_table::rename_tables(&mut self.frozen, rename);
+        *self.typed.borrow_mut() = Rc::new(typed.renamed(rename, &self.frozen));
+        self.stale.set(false);
+        n
     }
 
     /// The XML path's resolver.

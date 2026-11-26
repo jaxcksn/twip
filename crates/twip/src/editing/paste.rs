@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use crate::docx::resolvers::Resolvers;
 use crate::docx::{Block, Inline, Paragraph, Run, RunStyle};
 use crate::font::Fonts;
 
@@ -999,7 +1000,7 @@ impl Editor {
 
     /// Pasted paragraphs from another document whose style differs here (`from`'s of the same name) given their own
     /// look as formatting applied directly, as Keep Source Formatting gives it: what they showed there, they show here.
-    pub(super) fn keep_para_looks(&self, blocks: &mut [Block], from: &crate::docx::resolve::Resolver) {
+    pub(super) fn keep_para_looks(&self, blocks: &mut [Block], from: &Resolvers) {
         let Some(res) = self.doc.resolver.clone() else { return };
         let cx = self.cx();
         // A style this document lacks comes with the paste, its look with it.
@@ -1127,8 +1128,8 @@ fn para_look(src: &crate::docx::ParaStyle, here: &crate::docx::ParaStyle, e: &mu
 /// A run of pasted text merged into where it lands: the formatting at the caret (`at`), with `src`'s bold, italic and
 /// underline unless all of the text had it (`all`), and its Hyperlink style.
 fn merged_run(
-    res: &crate::docx::resolve::Resolver,
-    base: &crate::docx::props::RunProps,
+    res: &Resolvers,
+    base: &crate::format::CharProps,
     at: &Run,
     src: &Run,
     all: [bool; 3],
@@ -1156,7 +1157,7 @@ fn merged_run(
         e.style = Some("Hyperlink".into());
         e.whole(Prop::Style);
     }
-    let mut r = run_xml::resolve(res, &run_xml::base(base), at.direct.edit(e), false);
+    let mut r = run_xml::resolve(res, base, at.direct.edit(e), false);
     if !src.rev.is_empty() {
         r.rev = src.rev.clone();
     }

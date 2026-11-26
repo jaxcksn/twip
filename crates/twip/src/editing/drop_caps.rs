@@ -214,8 +214,9 @@ impl Editor {
         (e.size, e.complex_size) = (Some(half), Some(half));
         e.whole(Prop::Size);
         e.whole(Prop::ComplexSize);
-        let mut base = res.styles.doc_rpr.clone();
-        base.merge_level(&res.styles.chain_rpr(res.styles.paragraph_style(p.style.style_id.as_deref())));
+        let c = res.cascade();
+        let mut base = c.doc_char().clone();
+        base.merge_level(&c.chain_char(c.paragraph_style(p.style.style_id.as_deref())));
         let big = run_xml::run_of(&res, &base, run.direct.edit(e));
         let para = Paragraph {
             style: Rc::new(frame),

@@ -14,7 +14,6 @@ use crate::api::value::{Alignment, AutoOr, Bytes, Direction, HighlightColor, Poi
 use crate::document::paragraph::ListId;
 use crate::docx::list_xml::NumberingXml;
 use crate::docx::props::{ParaProps, RunProps, ThemeColours};
-use crate::docx::resolve::Resolver;
 use crate::docx::style_xml::StylesPart;
 use crate::docx::styles::{Region, Styles};
 use crate::docx::write::props::{Cx, Props};
@@ -39,7 +38,7 @@ fn cx(d: &Document) -> Cx {
 
 /// A run's `w:rPr` as the document writes it: as read while its authored properties are those, else written from
 /// them (a typed command's result, whose properties the edit's own check holds against the hand-written patch).
-fn written(res: &Resolver, cx: &Cx, r: &RunStyle) -> Option<String> {
+fn written(res: &crate::docx::resolvers::Resolvers, cx: &Cx, r: &RunStyle) -> Option<String> {
     r.direct.xml(&res.styles.colours, cx).map(std::borrow::Cow::into_owned)
 }
 
@@ -71,7 +70,7 @@ fn carried_matches(d: &Document, what: &str) -> CascadeCounts {
     n
 }
 
-fn check_blocks(res: &Resolver, cx: &Cx, blocks: &[Block], region: Option<&Region>, what: &str, checked: &mut usize) {
+fn check_blocks(res: &crate::docx::resolvers::Resolvers, cx: &Cx, blocks: &[Block], region: Option<&Region>, what: &str, checked: &mut usize) {
     for b in blocks {
         match b {
             Block::Para(p) => {
@@ -109,7 +108,7 @@ fn check_blocks(res: &Resolver, cx: &Cx, blocks: &[Block], region: Option<&Regio
 type Authored = Vec<(u64, Option<Rc<str>>, Option<Rc<str>>, Vec<Option<Rc<str>>>)>;
 
 fn authored(d: &Document) -> Authored {
-    fn walk(res: &Resolver, cx: &Cx, blocks: &[Block], out: &mut Authored) {
+    fn walk(res: &crate::docx::resolvers::Resolvers, cx: &Cx, blocks: &[Block], out: &mut Authored) {
         let rpr = |r: &RunStyle| written(res, cx, r).map(|x| Rc::from(x.as_str()));
         for b in blocks {
             match b {
@@ -380,7 +379,7 @@ fn select(e: &mut Editor, at: At) -> u64 {
 }
 
 /// The run properties at each character of the paragraph's text, parsed from their XML (after `patch`).
-fn run_props(res: &Resolver, cx: &Cx, p: &Paragraph, patch: Option<Patch>) -> Vec<RunProps> {
+fn run_props(res: &crate::docx::resolvers::Resolvers, cx: &Cx, p: &Paragraph, patch: Option<Patch>) -> Vec<RunProps> {
     let parse = |raw: Option<&str>| raw.and_then(|x| cx.parse(x, |_, el| RunProps::parse(Some(el), &res.styles.colours))).unwrap_or_default();
     p.inlines
         .iter()
@@ -399,7 +398,7 @@ fn run_props(res: &Resolver, cx: &Cx, p: &Paragraph, patch: Option<Patch>) -> Ve
         .collect()
 }
 
-fn para_props(res: &Resolver, cx: &Cx, p: &Paragraph, patch: Option<Patch>) -> ParaProps {
+fn para_props(res: &crate::docx::resolvers::Resolvers, cx: &Cx, p: &Paragraph, patch: Option<Patch>) -> ParaProps {
     let raw = match patch {
         Some(f) => {
             let mut props = Props::parse(p.style.direct.as_read().map(|x| &**x), "pPr", cx);
@@ -838,7 +837,7 @@ fn typed_table_resolution_gives_what_reading_resolved() {
     );
 }
 
-fn resolve_tables(res: &Resolver, cx: &Cx, blocks: &[Block], what: &str, n: &mut [usize; 4]) {
+fn resolve_tables(res: &crate::docx::resolvers::Resolvers, cx: &Cx, blocks: &[Block], what: &str, n: &mut [usize; 4]) {
     use crate::docx::props::{TblProps, TcProps, TrProps};
     use crate::docx::table_props::{self as tp, CellDirect, ExceptionsDirect, RowDirect, TableDirect};
     let colours = &res.styles.colours;
@@ -986,7 +985,7 @@ fn typed_resolution_gives_what_reading_resolved() {
 }
 
 fn resolve_blocks(
-    res: &Resolver,
+    res: &crate::docx::resolvers::Resolvers,
     env: &RunEnv,
     cx: &Cx,
     blocks: &[Block],
@@ -1062,7 +1061,14 @@ fn typed_paragraph_resolution_gives_what_reading_resolved() {
     assert!(paras > 10_000 && changes >= 2, "only {paras} paragraphs and {changes} property changes checked");
 }
 
-fn resolve_paras(res: &Resolver, cx: &Cx, blocks: &[Block], region: Option<&Region>, what: &str, counts: &mut (&mut usize, &mut usize)) {
+fn resolve_paras(
+    res: &crate::docx::resolvers::Resolvers,
+    cx: &Cx,
+    blocks: &[Block],
+    region: Option<&Region>,
+    what: &str,
+    counts: &mut (&mut usize, &mut usize),
+) {
     for b in blocks {
         match b {
             Block::Para(p) => {
@@ -1241,7 +1247,7 @@ struct CascadeCounts {
 
 /// The definitions: every style's chain and its folds, its dependants, every table style's base and single regions
 /// and what it defines, every list's definition and levels, the style links.
-fn definitions_match(res: &Resolver, c: &Cascade, numbering: &NumberingXml, what: &str, n: &mut CascadeCounts) {
+fn definitions_match(res: &crate::docx::resolvers::Resolvers, c: &Cascade, numbering: &NumberingXml, what: &str, n: &mut CascadeCounts) {
     let colours = &res.styles.colours;
     let mut ids: Vec<&String> = res.styles.by_id.keys().collect();
     ids.sort();
@@ -1326,7 +1332,7 @@ fn definitions_match(res: &Resolver, c: &Cascade, numbering: &NumberingXml, what
 /// properties give what reading resolved; its lists' labels counted in order give the XML path's.
 #[allow(clippy::too_many_arguments)]
 fn document_matches(
-    res: &Resolver,
+    res: &crate::docx::resolvers::Resolvers,
     c: &Cascade,
     cx: &Cx,
     blocks: &[Block],

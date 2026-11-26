@@ -2,7 +2,7 @@
 
 use crate::api::command::Command;
 use crate::docx::char_props::RunDirect;
-use crate::docx::resolve::Resolver;
+use crate::docx::resolvers::Resolvers;
 use crate::docx::write::props::{Cx, Props};
 use crate::docx::{Run, RunStyle};
 use crate::font::Fonts;
@@ -264,7 +264,7 @@ pub(super) struct LabelTarget {
 
 impl LabelTarget {
     /// The number as it draws with `rpr` as its level's formatting.
-    fn run(&self, res: &Resolver, rpr: Option<&str>) -> Run {
+    fn run(&self, res: &Resolvers, rpr: Option<&str>) -> Run {
         crate::docx::run_xml::label(res, &self.base, RunDirect::from_xml(rpr, &self.cx).props().map(|p| &**p))
     }
 }

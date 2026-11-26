@@ -5,7 +5,7 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::docx::para_props::ParaDirect;
-use crate::docx::resolve::Resolver;
+use crate::docx::resolvers::Resolvers;
 use crate::docx::review::{AuthorId, FormatChange, People, RevisionMark, TableChange};
 use crate::docx::write::props::Cx;
 use crate::docx::{Block, Inline, Opaque, Paragraph, Raw, Run, RunStyle};
@@ -569,7 +569,7 @@ impl Editor {
     /// it is based on, linked to and followed by, a list's definitions under new ids (its paragraphs and styles
     /// renumbered). A style this document has keeps its own definition, as Word's default (destination styles) does.
     /// `main`: how the paragraphs' own XML is written there (`None`: as its styles are).
-    fn import_styles(&mut self, tx: &mut Tx, blocks: &mut [Block], refs: &mut Refs, from: &Resolver, main: Option<&Cx>, brought: &mut Lists) {
+    fn import_styles(&mut self, tx: &mut Tx, blocks: &mut [Block], refs: &mut Refs, from: &Resolvers, main: Option<&Cx>, brought: &mut Lists) {
         let Some(res) = self.doc.resolver.clone() else { return };
         let (scx, ncx) = (from.styles.cx(), from.numbering.cx());
         let pcx = main.unwrap_or(&scx);

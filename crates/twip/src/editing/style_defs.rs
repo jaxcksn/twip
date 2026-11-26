@@ -797,7 +797,7 @@ impl Editor {
                 next.styles = styles.clone();
                 let region = next.styles.table_region(Some(&style.id), &[]);
                 let para = crate::docx::para_xml::resolve(&next, &Default::default(), None, Some(&region));
-                let run = Rc::new(run_xml::resolve(&next, &run_xml::base(&para.base), Default::default(), false));
+                let run = Rc::new(run_xml::resolve(&next, &para.base, Default::default(), false));
                 let tabs = para
                     .style
                     .tabs
@@ -885,7 +885,7 @@ impl Editor {
                 let region = part.region();
                 let r = next.styles.table_region(Some(id), &region.into_iter().collect::<Vec<_>>());
                 let para = crate::docx::para_xml::resolve(&next, &Default::default(), None, Some(&r));
-                let run = Rc::new(run_xml::resolve(&next, &run_xml::base(&para.base), Default::default(), false));
+                let run = Rc::new(run_xml::resolve(&next, &para.base, Default::default(), false));
                 let mut b = borders(&r.tc.borders);
                 if region.is_none() {
                     b = TableBorders { diagonal_down: b.diagonal_down, diagonal_up: b.diagonal_up, ..borders(&whole.tbl.borders) };

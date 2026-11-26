@@ -3,10 +3,10 @@
 use std::borrow::Cow;
 use std::rc::Rc;
 
-use super::char_props::{RunDirect, from_run_props};
+use super::char_props::RunDirect;
 use super::model::{Run, RunStyle};
-use super::props::RunProps;
 use super::resolve::Resolver;
+use super::resolvers::Resolvers;
 use super::review::{FormatChange, RunRevisions};
 use crate::format::CharProps;
 use crate::format::cascade::Cascade;
@@ -17,19 +17,14 @@ pub fn env(res: &Resolver) -> RunEnv<'_> {
     RunEnv { colours: &res.styles.colours, fonts: &res.theme, categories: &res.categories, open_type: res.styles.open_type }
 }
 
-/// A paragraph's run base as typed properties.
-pub fn base(base: &RunProps) -> CharProps {
-    from_run_props(base)
-}
-
 /// Character style `id`'s chain, folded.
-pub fn character_style(res: &Resolver, id: &str) -> CharProps {
-    from_run_props(&res.styles.chain_rpr(Some(id)))
+pub fn character_style(res: &Resolvers, id: &str) -> CharProps {
+    res.cascade().chain_char(Some(id))
 }
 
 /// A run's levels folded: its own properties `own` over a paragraph's typed `base` through its character style; in a
 /// table of contents' result (`toc`) without the Hyperlink character style.
-pub fn folded(res: &Resolver, base: &CharProps, own: Option<&CharProps>, toc: bool) -> CharProps {
+pub fn folded(res: &Resolvers, base: &CharProps, own: Option<&CharProps>, toc: bool) -> CharProps {
     let id = own.and_then(|p| p.style.as_deref()).filter(|id| !(toc && *id == "Hyperlink"));
     let style = id.map(|id| character_style(res, id));
     let own = match own {
@@ -42,7 +37,7 @@ pub fn folded(res: &Resolver, base: &CharProps, own: Option<&CharProps>, toc: bo
 
 /// A run with authored properties `direct` over a paragraph's typed `base`: in a table of contents' result (`toc`)
 /// without the Hyperlink character style. No revisions.
-pub fn resolve(res: &Resolver, base: &CharProps, direct: RunDirect, toc: bool) -> RunStyle {
+pub fn resolve(res: &Resolvers, base: &CharProps, direct: RunDirect, toc: bool) -> RunStyle {
     let p = folded(res, base, direct.props().map(|p| &**p), toc);
     let mut s = resolve::run_style(&env(res), &p);
     s.direct = direct;
@@ -51,7 +46,7 @@ pub fn resolve(res: &Resolver, base: &CharProps, direct: RunDirect, toc: bool) -
 }
 
 /// A list number's run: its level's formatting `level` over `under`, what its paragraph mark's levels fold to.
-pub fn label(res: &Resolver, under: &CharProps, level: Option<&CharProps>) -> Run {
+pub fn label(res: &Resolvers, under: &CharProps, level: Option<&CharProps>) -> Run {
     let mut p = under.clone();
     if let Some(l) = level {
         p.merge(l);
@@ -60,13 +55,13 @@ pub fn label(res: &Resolver, under: &CharProps, level: Option<&CharProps>) -> Ru
 }
 
 /// A run with no authored properties of its own over `base`.
-pub fn plain(res: &Resolver, base: &RunProps) -> Run {
-    Rc::new(resolve(res, &self::base(base), RunDirect::default(), false))
+pub fn plain(res: &Resolvers, base: &CharProps) -> Run {
+    Rc::new(resolve(res, base, RunDirect::default(), false))
 }
 
 /// A run with authored properties `direct` over `base`.
-pub fn run_of(res: &Resolver, base: &RunProps, direct: RunDirect) -> Run {
-    Rc::new(resolve(res, &self::base(base), direct, false))
+pub fn run_of(res: &Resolvers, base: &CharProps, direct: RunDirect) -> Run {
+    Rc::new(resolve(res, base, direct, false))
 }
 
 /// `run`'s authored properties, to edit.
@@ -76,12 +71,12 @@ pub fn edit_of(run: &RunStyle) -> crate::format::CharEdit {
 
 /// `run` resolved again from its authored properties over `base`, where it is: in a table of contents' result
 /// without the Hyperlink character style, as the reader resolved it, its review marks kept.
-pub fn rerun(res: &Resolver, base: &RunProps, run: &RunStyle) -> Run {
-    again(res, &self::base(base), run, run.direct.clone())
+pub fn rerun(res: &Resolvers, base: &CharProps, run: &RunStyle) -> Run {
+    again(res, base, run, run.direct.clone())
 }
 
 /// Authored properties `direct` resolved over typed `base` in `run`'s place.
-pub fn again(res: &Resolver, base: &CharProps, run: &RunStyle, direct: RunDirect) -> Run {
+pub fn again(res: &Resolvers, base: &CharProps, run: &RunStyle, direct: RunDirect) -> Run {
     let mut s = resolve(res, base, direct, run.toc);
     s.rev = RunRevisions {
         ins: run.rev.ins.clone(),

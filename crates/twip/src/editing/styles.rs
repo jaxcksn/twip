@@ -5,6 +5,7 @@ use std::rc::Rc;
 use crate::api::command::Command;
 use crate::api::error::Error;
 use crate::docx::props::{Tab, TabKind};
+use crate::docx::resolvers::Resolvers;
 use crate::docx::styles::{StyleEditError, StyleKind, Styles};
 use crate::docx::write::props::{Cx, Props, STYLE};
 use crate::docx::{Paragraph, RunStyle};
@@ -201,7 +202,7 @@ impl Editor {
         let region = (style.kind == StyleKind::Table).then(|| next.styles.table_region(Some(&style.id), self.style_part.as_slice()));
         let ppr = crate::format::ParaProps { style: ppr.map(Into::into), ..Default::default() };
         let para = crate::docx::para_xml::resolve(&next, &ppr, None, region.as_ref());
-        let run = Rc::new(run_xml::resolve(&next, &run_xml::base(&para.base), direct, false));
+        let run = Rc::new(run_xml::resolve(&next, &para.base, direct, false));
         let p = Paragraph {
             style: Rc::new(para.style),
             mark: run.clone(),
@@ -605,7 +606,7 @@ impl Editor {
 
     /// The paragraphs, marks, runs (a ruby's too) and tables whose direct formatting names style `id`, with the name
     /// taken out, as stale.
-    fn drop_style_refs(&mut self, tx: &mut super::Tx, id: &str, res: &crate::docx::resolve::Resolver) {
+    fn drop_style_refs(&mut self, tx: &mut super::Tx, id: &str, res: &Resolvers) {
         use crate::docx::Inline;
         let cx = self.cx();
         let named = |r: &crate::docx::Run| r.style_id.as_deref() == Some(id);

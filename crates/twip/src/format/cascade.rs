@@ -118,7 +118,7 @@ fn default_table_format() -> StyleFormat {
 }
 
 /// A division and its ancestors, innermost first.
-fn div_chain(divs: &HashMap<i64, Division>, id: Option<i64>) -> Vec<i64> {
+pub fn div_chain(divs: &HashMap<i64, Division>, id: Option<i64>) -> Vec<i64> {
     let mut out = Vec::new();
     let mut at = id.filter(|i| divs.contains_key(i));
     while let Some(i) = at.filter(|i| !out.contains(i)) {

@@ -1056,12 +1056,12 @@ impl Editor {
         Some(Fragment { id, blocks: out, open_end: true, ..Default::default() })
     }
 
-    pub(super) fn keep_look(&self, src: &Run, base: &crate::docx::props::RunProps, cache: &mut HashMap<*const RunStyle, Run>) -> Run {
+    pub(super) fn keep_look(&self, src: &Run, base: &crate::format::CharProps, cache: &mut HashMap<*const RunStyle, Run>) -> Run {
         if let Some(r) = cache.get(&Rc::as_ptr(src)) {
             return r.clone();
         }
         let Some(res) = self.doc.resolver.clone() else { return src.clone() };
-        let base = run_xml::base(base);
+        let base = base.clone();
         let mut out = Rc::new(run_xml::resolve(&res, &base, src.direct.clone(), false));
         if !out.layout_eq(src) {
             use crate::format::Toggle as T;

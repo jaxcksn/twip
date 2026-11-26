@@ -225,7 +225,7 @@ impl Editor {
     fn empty_story(&self) -> Option<crate::docx::Paragraph> {
         let res = self.doc.resolver.clone()?;
         let r = crate::docx::para_xml::with(&res, Default::default(), None, None);
-        let mark = std::rc::Rc::new(run_xml::resolve(&res, &run_xml::base(&r.base), Default::default(), false));
+        let mark = std::rc::Rc::new(run_xml::resolve(&res, &r.base, Default::default(), false));
         Some(crate::docx::Paragraph {
             style: std::rc::Rc::new(r.style),
             mark,

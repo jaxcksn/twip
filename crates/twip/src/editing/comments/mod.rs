@@ -6,7 +6,7 @@ use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
-use crate::docx::resolve::Resolver;
+use crate::docx::resolvers::Resolvers;
 use crate::docx::review::{Comment, CommentId, RangeKind, RangeMark, Timestamp};
 use crate::docx::write::props::Cx;
 use crate::docx::{Block, Inline, Paragraph, Raw, Run};
@@ -504,7 +504,7 @@ impl Editor {
         Some(Step::Text { para, range: Unit(at)..Unit(at), with, edges: Edges { under, ..Edges::default() } })
     }
 
-    fn new_comment(&mut self, id: CommentId, parent: Option<CommentId>, body: &RichText, author: &str, res: &Resolver) -> Comment {
+    fn new_comment(&mut self, id: CommentId, parent: Option<CommentId>, body: &RichText, author: &str, res: &Resolvers) -> Comment {
         let who = self.doc.people.author(author, None);
         let initials = self.doc.people.get(who).and_then(|p| p.initials.clone()).unwrap_or_else(|| initials(author).into());
         let secs = crate::clock::unix_secs();
@@ -524,12 +524,12 @@ impl Editor {
         }
     }
 
-    fn reference_run(&self, para: ParaId, at: Unit, res: &Resolver, cx: &Cx) -> Option<Run> {
+    fn reference_run(&self, para: ParaId, at: Unit, res: &Resolvers, cx: &Cx) -> Option<Run> {
         if res.styles.by_id.contains_key("CommentReference") {
             let base = self.run_base(para, at, res, cx)?;
             let p = crate::format::CharProps { style: Some("CommentReference".into()), ..Default::default() };
             let direct = crate::docx::char_props::RunDirect::typed(Some(Rc::new(p)));
-            return Some(Rc::new(run_xml::resolve(res, &run_xml::base(&base), direct, false)));
+            return Some(Rc::new(run_xml::resolve(res, &base, direct, false)));
         }
         Some(run_before(self.index.para(&self.doc, para)?, at))
     }
@@ -602,7 +602,7 @@ impl Editor {
         out
     }
 
-    fn reply_markers(&mut self, tx: &mut Tx, root: CommentId, id: CommentId, res: &Resolver, cx: &Cx) -> Result<(), StepError> {
+    fn reply_markers(&mut self, tx: &mut Tx, root: CommentId, id: CommentId, res: &Resolvers, cx: &Cx) -> Result<(), StepError> {
         let m = self.comment_marks().get(&root).copied().unwrap_or_default();
         let ranged = m.start.is_some() && m.end.is_some();
         if let Some(after) = m.reference.or(m.end) {

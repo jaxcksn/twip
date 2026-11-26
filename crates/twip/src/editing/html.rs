@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use crate::docx::resolvers::Resolvers;
 use crate::docx::{AltContent, Block, Inline, Paragraph, VMerge};
 use crate::font::Fonts;
 
@@ -869,7 +870,7 @@ impl Editor {
     fn html_blocks(
         &mut self,
         blocks: &[HBlock],
-        res: &crate::docx::resolve::Resolver,
+        res: &Resolvers,
         nums: &[(usize, i64)],
         template: &Paragraph,
         width: f64,
@@ -897,7 +898,7 @@ impl Editor {
                     }
                     pp.align = p.align;
                     let para = crate::docx::para_xml::with(res, ParaDirect::typed(Rc::new(pp)), None, None);
-                    let base = run_xml::base(&para.base);
+                    let base = para.base.clone();
                     let mark = Rc::new(run_xml::resolve(res, &base, RunDirect::default(), false));
                     let mut inlines = Vec::new();
                     for r in &p.runs {

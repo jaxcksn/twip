@@ -60,23 +60,19 @@ fn section(blocks: Vec<Block>) -> Section {
 }
 
 /// A resolver with no styles, numbering or theme part: the application defaults.
-fn bare_resolver() -> Resolver {
-    Resolver::new(Styles::parse(None, ThemeColours::default()), Numbering::default(), ThemeFonts::parse(None))
+fn bare_resolver() -> crate::docx::resolvers::Resolvers {
+    Resolver::new(Styles::parse(None, ThemeColours::default()), Numbering::default(), ThemeFonts::parse(None)).into()
 }
 
 /// A paragraph from authored properties alone; the resolver gives the effective formatting.
-fn paragraph(res: &Resolver, ppr: &ParaProps, runs: &[(&str, RunProps)], id: u64) -> Paragraph {
+fn paragraph(res: &crate::docx::resolvers::Resolvers, ppr: &ParaProps, runs: &[(&str, RunProps)], id: u64) -> Paragraph {
     let p = res.paragraph(ppr, None);
     let inlines = runs.iter().map(|(t, rpr)| Inline::Text((*t).into(), res.run_style(&res.run_props(&p.base, rpr)))).collect();
     Paragraph { mark: res.run_style(&p.base), style: Rc::new(p.style), list: None, inlines, src: None, id, controls: Vec::new(), div: None }
 }
 
-fn sourceless(paras: Vec<Paragraph>, res: &Resolver) -> Document {
-    Document {
-        sections: vec![section(paras.into_iter().map(Block::Para).collect())],
-        resolver: Some(Rc::new(res.clone().into())),
-        ..Default::default()
-    }
+fn sourceless(paras: Vec<Paragraph>, res: &crate::docx::resolvers::Resolvers) -> Document {
+    Document { sections: vec![section(paras.into_iter().map(Block::Para).collect())], resolver: Some(Rc::new(res.clone())), ..Default::default() }
 }
 
 fn runs(d: &Document, para: usize) -> Vec<(String, Run)> {
@@ -504,12 +500,12 @@ enum Piece {
 }
 
 /// A paragraph in paragraph style `style` whose runs carry typed authored properties alone, resolved over its base.
-fn typed(res: &Resolver, style: Option<&str>, pieces: Vec<(Piece, CharProps)>) -> Paragraph {
+fn typed(res: &crate::docx::resolvers::Resolvers, style: Option<&str>, pieces: Vec<(Piece, CharProps)>) -> Paragraph {
     typed_para(res, crate::format::ParaProps { style: style.map(Into::into), ..Default::default() }, pieces)
 }
 
 /// A paragraph with typed authored properties `props` whose runs carry typed authored properties alone.
-fn typed_para(res: &Resolver, props: crate::format::ParaProps, pieces: Vec<(Piece, CharProps)>) -> Paragraph {
+fn typed_para(res: &crate::docx::resolvers::Resolvers, props: crate::format::ParaProps, pieces: Vec<(Piece, CharProps)>) -> Paragraph {
     let p = crate::docx::para_xml::with(res, crate::docx::para_props::ParaDirect::typed(Rc::new(props)), None, None);
     let run = |props: CharProps| {
         let own = (props != CharProps::default()).then(|| Rc::new(props));
@@ -737,7 +733,7 @@ fn a_built_table_and_page_setup_generate_a_package_that_reads_back_the_same() {
     let fonts = fonts();
     let mut doc = built();
     // The line numbers' run, as reading derives it
-    doc.line_number_run = doc.resolver.as_deref().map(|r| crate::docx::line_number_run(r));
+    doc.line_number_run = doc.resolver.as_deref().map(crate::docx::line_number_run);
     let mut e = labelled(doc, fonts);
     e.complete(fonts);
     let run = |e: &mut Editor, v: serde_json::Value| {

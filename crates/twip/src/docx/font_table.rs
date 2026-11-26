@@ -176,6 +176,21 @@ pub fn rename_props(p: &mut super::props::RunProps, rename: &FontRename) -> u32 
     n
 }
 
+/// Renames `from` to `to` in a level of typed character properties; returns how many slots changed.
+pub fn rename_char(p: &mut crate::format::CharProps, rename: &FontRename) -> u32 {
+    let mut n = 0;
+    let f = &mut p.fonts;
+    for slot in [&mut f.latin, &mut f.latin_extended, &mut f.east_asian, &mut p.east_asian_below, &mut f.complex] {
+        if let Some(crate::format::FontRef::Family(name)) = slot
+            && name.eq_ignore_ascii_case(&rename.from)
+        {
+            *name = rename.to.as_str().into();
+            n += 1;
+        }
+    }
+    n
+}
+
 /// Renames `from` to `to` in the style, numbering and theme tables a resolver holds, and in its categories. Returns
 /// the places that changed: styles, document defaults, numbering levels and theme slots.
 pub fn rename_tables(res: &mut super::resolve::Resolver, rename: &FontRename) -> u32 {

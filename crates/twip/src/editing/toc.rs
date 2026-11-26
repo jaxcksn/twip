@@ -8,6 +8,7 @@ use std::rc::Rc;
 use crate::api::review::Body;
 use crate::docx::fields::{self, Shown, Switch};
 use crate::docx::props::Leader;
+use crate::docx::resolvers::Resolvers;
 use crate::docx::{Block, FieldEdge, FieldId, FieldKind, FieldView, Inline, Paragraph, Run};
 use crate::font::Fonts;
 use crate::layout::{ParaId, Unit};
@@ -1630,7 +1631,7 @@ impl Editor {
                         e.toggle(Toggle::BOLD_COMPLEX, true);
                     }
                     let direct = src.map_or_else(RunDirect::default, |s| s.direct.clone()).edit(e);
-                    Rc::new(run_xml::resolve(r, &run_xml::base(b), direct, false))
+                    Rc::new(run_xml::resolve(r, b, direct, false))
                 }
                 _ => src.cloned().unwrap_or_else(|| like.mark.clone()),
             }
@@ -1650,11 +1651,11 @@ impl Editor {
         let base = crate::docx::para_xml::resolve(&r, ppr, None, self.region_in(container, &r).as_ref()).base;
         let mut p = CharProps::default();
         char_props::put_unmodelled_flag(&mut p, "webHidden", &cx);
-        Rc::new(run_xml::resolve(&r, &run_xml::base(&base), RunDirect::typed(Some(Rc::new(p))), false))
+        Rc::new(run_xml::resolve(&r, &base, RunDirect::typed(Some(Rc::new(p))), false))
     }
 
     /// The table region a paragraph in `container` takes its table style's formatting from.
-    fn region_in(&self, container: Container, r: &crate::docx::resolve::Resolver) -> Option<crate::docx::styles::Region> {
+    fn region_in(&self, container: Container, r: &Resolvers) -> Option<crate::docx::styles::Region> {
         let Container::Cell { table, row, cell } = container else { return None };
         self.index.table(&self.doc, table).map(|t| r.region_of(t, row, cell))
     }
@@ -1824,7 +1825,7 @@ impl Editor {
                     (Some(r), Some(b)) => {
                         let mut e = entry_format(Some(&run));
                         e.toggle(Toggle::HIDDEN, true);
-                        Rc::new(run_xml::resolve(r, &run_xml::base(b), run.direct.edit(e), false))
+                        Rc::new(run_xml::resolve(r, b, run.direct.edit(e), false))
                     }
                     _ => run.clone(),
                 };

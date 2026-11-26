@@ -232,7 +232,7 @@ impl Editor {
             let para = crate::docx::para_xml::resolve(&next, &ppr, None, None);
             let text = counters.next(&next.numbering, &next.styles, num_id, ilvl)?;
             let level = next.numbering.level(num_id, ilvl, &next.styles)?.clone();
-            let under = run_xml::folded(&next, &run_xml::base(&para.base), None, false);
+            let under = run_xml::folded(&next, &para.base, None, false);
             let picture = next.numbering.bullet_image(&level);
             let label = ListLabel {
                 text,
@@ -242,7 +242,7 @@ impl Editor {
                 picture,
                 legacy: level.legacy,
             };
-            let base = Rc::new(run_xml::resolve(&next, &run_xml::base(&para.base), Default::default(), false));
+            let base = Rc::new(run_xml::resolve(&next, &para.base, Default::default(), false));
             let grey = Rc::new(RunStyle { color: Some(0x80_8080), ..(*base).clone() });
             out.push(Block::Para(Paragraph {
                 style: Rc::new(para.style),

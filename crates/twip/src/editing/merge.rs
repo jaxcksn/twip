@@ -2339,7 +2339,7 @@ impl Editor {
                             e.underline = Some(crate::format::UnderlineProps { style, color: None });
                             e.whole(crate::format::Prop::Underline);
                         }
-                        Rc::new(run_xml::resolve(res, &run_xml::base(base), run.direct.edit(e), false))
+                        Rc::new(run_xml::resolve(res, base, run.direct.edit(e), false))
                     }
                     _ => run.clone(),
                 };

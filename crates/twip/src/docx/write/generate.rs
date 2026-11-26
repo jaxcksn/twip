@@ -1,5 +1,6 @@
 //! A package from the model alone: the writer against a new document's package, every node unanchored
 
+use crate::docx::resolvers::Resolvers;
 use std::fmt;
 use std::rc::Rc;
 
@@ -66,7 +67,7 @@ pub fn generate(doc: &Document) -> Result<Vec<u8>, GenerateError> {
 }
 
 /// Body content unanchored: paragraphs (in `region` when they are in a cell) and tables.
-fn blocks(blocks: &[Block], res: &Resolver, cx: &Cx, region: Option<&Region>) -> Result<Vec<Block>, GenerateError> {
+fn blocks(blocks: &[Block], res: &Resolvers, cx: &Cx, region: Option<&Region>) -> Result<Vec<Block>, GenerateError> {
     blocks
         .iter()
         .map(|b| match b {
@@ -79,7 +80,7 @@ fn blocks(blocks: &[Block], res: &Resolver, cx: &Cx, region: Option<&Region>) ->
 /// `t` unanchored: its table style reference among its own properties, which the writer writes, as it does a new
 /// table's, from its resolved properties; its rows' properties, exceptions and cells' properties as their typed
 /// properties write them; its cells' content in their table style regions.
-fn table(t: &Table, res: &Resolver, cx: &Cx) -> Result<Table, GenerateError> {
+fn table(t: &Table, res: &Resolvers, cx: &Cx) -> Result<Table, GenerateError> {
     let fail = |what| Err(GenerateError::Unsupported(what));
     if t.change.is_some() || t.grid_change.is_some() {
         return fail("a tracked change");
@@ -194,7 +195,7 @@ fn same_tables(a: &[Block], b: &[Block]) -> bool {
 
 /// The document-wide state generating writes, or keeps as a new document has it: one section, with no headers or
 /// footers, and nothing outside the body.
-fn covered(doc: &Document, blank: &Document, res: &Resolver, new_res: &Resolver) -> Result<(), GenerateError> {
+fn covered(doc: &Document, blank: &Document, res: &Resolvers, new_res: &Resolvers) -> Result<(), GenerateError> {
     let fail = |what| Err(GenerateError::Unsupported(what));
     let [s] = doc.sections.as_slice() else { return fail("more than one section") };
     if s.headers.iter().chain(&s.footers).any(Option::is_some) || !doc.stories.is_empty() {
@@ -237,7 +238,7 @@ fn covered(doc: &Document, blank: &Document, res: &Resolver, new_res: &Resolver)
 
 /// `p` unanchored (in `region` when it is in a cell), its style reference written as direct formatting, once its
 /// formatting is known to follow from what is written.
-fn paragraph(p: &Paragraph, res: &Resolver, cx: &Cx, region: Option<&Region>) -> Result<Paragraph, GenerateError> {
+fn paragraph(p: &Paragraph, res: &Resolvers, cx: &Cx, region: Option<&Region>) -> Result<Paragraph, GenerateError> {
     let fail = |what| Err(GenerateError::Unsupported(what));
     if p.style.num.is_some_and(|n| !res.numbering.nums.contains_key(&n.list.0)) {
         return fail("a list without its definition");
@@ -267,7 +268,7 @@ fn paragraph(p: &Paragraph, res: &Resolver, cx: &Cx, region: Option<&Region>) ->
     if !style.layout_eq(&again.style) {
         return fail("paragraph formatting that is not its own");
     }
-    let base = run_xml::base(&again.base);
+    let base = again.base.clone();
     let inlines = p
         .inlines
         .iter()
@@ -292,7 +293,7 @@ fn paragraph(p: &Paragraph, res: &Resolver, cx: &Cx, region: Option<&Region>) ->
 
 /// `r` with its authored properties written where `cx` describes, once its formatting is known to follow from them
 /// over `base`.
-fn run(r: &Run, res: &Resolver, base: &crate::format::CharProps, cx: &Cx) -> Result<Run, GenerateError> {
+fn run(r: &Run, res: &Resolvers, base: &crate::format::CharProps, cx: &Cx) -> Result<Run, GenerateError> {
     if !r.rev.is_empty() {
         return Err(GenerateError::Unsupported("a tracked change"));
     }

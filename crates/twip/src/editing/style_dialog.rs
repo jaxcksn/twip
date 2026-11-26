@@ -209,7 +209,7 @@ impl Editor {
         let (c, p): (CharacterFormatting, ParagraphFormatting) = match &region {
             Some(region) => {
                 let para = crate::docx::para_xml::resolve(&next, &Default::default(), None, Some(region));
-                let run = Rc::new(run_xml::resolve(&next, &run_xml::base(&para.base), Default::default(), false));
+                let run = Rc::new(run_xml::resolve(&next, &para.base, Default::default(), false));
                 (super::state::character(&[&run]), super::state::paragraph(&[(&para.style, None)]))
             }
             None => {

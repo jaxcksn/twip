@@ -928,7 +928,7 @@ impl Editor {
         let mut e = crate::format::CharEdit::new(run.direct.props().map_or_else(crate::format::CharProps::default, |p| (**p).clone()));
         e.vertical = Some(crate::docx::props::VertAlign::Superscript);
         e.whole(crate::format::Prop::Vertical);
-        Some(run_xml::again(&res, &run_xml::base(&base), run, run.direct.edit(e)))
+        Some(run_xml::again(&res, &base, run, run.direct.edit(e)))
     }
 }
 

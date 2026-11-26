@@ -6,8 +6,8 @@ use std::rc::Rc;
 use crate::docx::model::Compat;
 use crate::docx::para_props::{self, ParaDirect};
 use crate::docx::para_xml;
-use crate::docx::props::RunProps;
-use crate::docx::resolve::{Resolver, joined_style};
+use crate::docx::resolve::joined_style;
+use crate::docx::resolvers::Resolvers;
 use crate::docx::styles::Region;
 use crate::docx::write::props::Cx;
 use crate::docx::{Inline, ParaStyle, Row, Ruby, Run, RunStyle, Table};
@@ -233,7 +233,7 @@ pub(super) fn edit_ppr_xml(
 pub(super) struct Again {
     pub style: ParaStyle,
     /// Each part's first unit and base: one part, or one per paragraph a vanished mark joined onto it.
-    bases: Vec<(u32, RunProps)>,
+    bases: Vec<(u32, CharProps)>,
 }
 
 impl Again {
@@ -242,12 +242,12 @@ impl Again {
         self.bases.iter().rposition(|(s, _)| *s <= at).unwrap_or(0)
     }
 
-    pub fn base(&self, at: u32) -> &RunProps {
+    pub fn base(&self, at: u32) -> &CharProps {
         &self.bases[self.part(at)].1
     }
 
     /// What the paragraph mark resolves over: the last part's base.
-    pub fn mark_base(&self) -> &RunProps {
+    pub fn mark_base(&self) -> &CharProps {
         &self.bases[self.bases.len() - 1].1
     }
 }
@@ -257,7 +257,7 @@ impl Again {
 /// indent, width and spacing, its rows' heights, splitting and header flags, and every cell's borders, shading, margins
 /// and alignment, when they changed. A table joined from several as read keeps the alignment, indent and width its
 /// first row took from them.
-fn table_again(t: &Table, res: &Resolver) -> Option<(TableProps, Option<Vec<Row>>)> {
+fn table_again(t: &Table, res: &Resolvers) -> Option<(TableProps, Option<Vec<Row>>)> {
     use crate::docx::props::Borders;
     use crate::docx::table_props::{cell_over, row_over, table_over, tbl_props};
     let colours = &res.styles.colours;
@@ -335,7 +335,7 @@ fn table_again(t: &Table, res: &Resolver) -> Option<(TableProps, Option<Vec<Row>
 /// A ruby's base and annotation text resolved again over `base` from the authored properties its XML holds, `edit`
 /// first giving the base text's runs new ones (from their own and their formatting), the annotation's too when it says
 /// so, written into the XML. `None` when it stays as it is.
-pub(super) fn ruby_again(r: &Ruby, base: &RunProps, edit: Option<(&RubyEdit, bool)>, res: &Resolver, cx: &Cx) -> Option<Rc<Ruby>> {
+pub(super) fn ruby_again(r: &Ruby, base: &CharProps, edit: Option<(&RubyEdit, bool)>, res: &Resolvers, cx: &Cx) -> Option<Rc<Ruby>> {
     use crate::docx::xml::is_w;
     let raw = r.xml.0.as_deref()?;
     let (mut splices, parts) = cx.parse(raw, |text, el| {
@@ -374,7 +374,7 @@ pub(super) fn ruby_again(r: &Ruby, base: &RunProps, edit: Option<(&RubyEdit, boo
         }
         (splices, parts)
     })?;
-    let typed = run_xml::base(base);
+    let typed = base.clone();
     let again = |old: &[(String, Run)], new: Vec<(String, RunDirect)>| -> Vec<(String, Run)> {
         new.into_iter()
             .enumerate()
@@ -516,14 +516,14 @@ impl Editor {
         }
     }
 
-    pub(super) fn region_of_para(&self, para: ParaId, res: &Resolver) -> Option<Region> {
+    pub(super) fn region_of_para(&self, para: ParaId, res: &Resolvers) -> Option<Region> {
         let slot = self.index.para_slot(para)?;
         let Container::Cell { table, row, cell } = slot.container else { return None };
         Some(res.region_of(self.index.table(&self.doc, table)?, row, cell))
     }
 
     /// What the runs at unit `at` of `para` resolve over.
-    pub(super) fn run_base(&self, para: ParaId, at: Unit, res: &Resolver, cx: &Cx) -> Option<RunProps> {
+    pub(super) fn run_base(&self, para: ParaId, at: Unit, res: &Resolvers, cx: &Cx) -> Option<CharProps> {
         let mut again = self.para_again(para, None, res, cx)?;
         let k = again.part(at.0);
         Some(again.bases.swap_remove(k).1)
@@ -531,7 +531,7 @@ impl Editor {
 
     /// `para` resolved again from its authored properties (`direct` in place of them, when given) and, for a
     /// paragraph vanished marks joined onto its start, from those paragraphs' too, joined as reading joins them.
-    pub(super) fn para_again(&self, para: ParaId, direct: Option<ParaDirect>, res: &Resolver, cx: &Cx) -> Option<Again> {
+    pub(super) fn para_again(&self, para: ParaId, direct: Option<ParaDirect>, res: &Resolvers, cx: &Cx) -> Option<Again> {
         let p = self.index.para(&self.doc, para)?;
         let region = self.region_of_para(para, res);
         let last = para_xml::of(res, direct.as_ref().unwrap_or(&p.style.direct), region.as_ref(), cx);
@@ -665,7 +665,7 @@ impl Editor {
         let Some(base) = self.run_base(para, at, &res, &cx) else { return };
         let mut e = CharEdit::new(run.direct.props().map_or_else(CharProps::default, |p| (**p).clone()));
         edit(&mut e);
-        self.pending = Some(run_xml::again(&res, &run_xml::base(&base), &run, run.direct.edit(e)));
+        self.pending = Some(run_xml::again(&res, &base, &run, run.direct.edit(e)));
     }
 
     pub(super) fn runs_in(&self, (para, a, b): (ParaId, Unit, Unit)) -> Vec<Run> {
@@ -723,11 +723,11 @@ impl Editor {
             settle(&mut e, &new);
             direct.edit(e)
         };
-        let patch_as = |run: &RunStyle, base: &RunProps, mark: bool| -> Run {
-            let base = run_xml::base(base);
+        let patch_as = |run: &RunStyle, base: &CharProps, mark: bool| -> Run {
+            let base = base.clone();
             run_xml::again(&res, &base, run, typed(&run.direct, run, &base, mark))
         };
-        let patch = |run: &RunStyle, base: &RunProps| patch_as(run, base, false);
+        let patch = |run: &RunStyle, base: &CharProps| patch_as(run, base, false);
         let mut ranges: Vec<(ParaId, Unit, Unit)> = Vec::new();
         // The paragraphs whose marks are in the selection.
         let mut marks: Vec<ParaId> = Vec::new();
@@ -791,7 +791,7 @@ impl Editor {
                         with.push(Inline::Text(part, new));
                     }
                     Inline::Ruby(r, _) => {
-                        let typed_base = run_xml::base(base);
+                        let typed_base = base.clone();
                         let edit = |d: &RunDirect, run: &RunStyle| Some(typed(d, run, &typed_base, false));
                         with.push(Inline::Ruby(ruby_again(r, base, Some((&edit, false)), &res, &cx).unwrap_or_else(|| r.clone()), new));
                     }
@@ -1150,7 +1150,7 @@ impl Editor {
         e.toggle(crate::format::Toggle::HIDDEN, true);
         e.spec_vanish = Some(true);
         e.whole(Prop::SpecVanish);
-        let mark = run_xml::again(&res, &run_xml::base(again.mark_base()), &p.mark, p.mark.direct.edit(e));
+        let mark = run_xml::again(&res, again.mark_base(), &p.mark, p.mark.direct.edit(e));
         let (style, list) = (p.style.clone(), p.list.clone());
         let mut tx = self.begin("Style Separator");
         if self.step(&mut tx, Step::Para { para, style, mark, list }).is_err() {

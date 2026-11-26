@@ -7,7 +7,7 @@ use std::rc::Rc;
 use crate::docx::char_props::from_run_props;
 use crate::docx::numbering::Counters;
 use crate::docx::props::ParaProps;
-use crate::docx::resolve::Resolver;
+use crate::docx::resolvers::Resolvers;
 use crate::docx::write::props::Cx;
 use crate::docx::{Block, Document, Inline, ListLabel, Paragraph};
 use crate::font::Fonts;
@@ -324,10 +324,10 @@ impl Editor {
 
     /// What paragraph `p`'s list number is formatted over, its level's own formatting aside: the paragraph's style
     /// chain and its mark's formatting.
-    pub(super) fn label_base(&self, para: ParaId, p: &Paragraph, res: &Resolver, cx: &Cx) -> CharProps {
+    pub(super) fn label_base(&self, para: ParaId, p: &Paragraph, res: &Resolvers, cx: &Cx) -> CharProps {
         let region = self.region_of_para(para, res);
         let base = crate::docx::para_xml::of(res, &p.style.direct, region.as_ref(), cx).base;
-        run_xml::folded(res, &run_xml::base(&base), p.mark.direct.props().map(|m| &**m), false)
+        run_xml::folded(res, &base, p.mark.direct.props().map(|m| &**m), false)
     }
 
     /// The labels that change: those whose text changed, or, for the paragraphs `full` names, any part of them.
@@ -401,7 +401,7 @@ pub(super) fn written(p: &crate::format::ParaProps, local: &str) -> bool {
 }
 
 /// The list and level a paragraph's label counts in, when it shows one.
-pub(super) fn counted(res: &Resolver, p: &Paragraph, uncounted: bool, cx: &Cx) -> Option<(i64, i64)> {
+pub(super) fn counted(res: &Resolvers, p: &Paragraph, uncounted: bool, cx: &Cx) -> Option<(i64, i64)> {
     let ListRef { list: ListId(id), level: ilvl } = p.style.num.filter(|ListRef { list: ListId(id), level: _ }| *id != 0 && !uncounted)?;
     let from_style = !direct_num(crate::docx::para_xml::ppr(Some(res), &p.style.direct, cx).as_deref(), cx);
     res.label_shows(id, ilvl, from_style, p.style.style_id.as_deref()).then_some((id, ilvl))
