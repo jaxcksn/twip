@@ -47,7 +47,6 @@ impl Editor {
         let mut next = (**res).clone();
         next.styles.set_xml(raw.to_string()).ok()?;
         let id = next.styles.by_id.values().find(|s| s.raw == raw)?.id.clone();
-        let cx = next.styles.cx();
         let look = crate::docx::props::Look { first_row: true, last_row: true, first_col: true, last_col: true, no_h_band: false, no_v_band: false };
         let whole = next.styles.table_region(Some(&id), &[]);
         let bands = (whole.tbl.row_band.unwrap_or(1).max(1), whole.tbl.col_band.unwrap_or(1).max(1));
@@ -80,7 +79,7 @@ impl Editor {
                     .enumerate()
                     .map(|(ci, t)| {
                         let region = next.cell_region(Some(&id), look, bands, (ri, ci), (5, 5), 1);
-                        let para = next.para_from_xml(None, Some(&region), &cx);
+                        let para = crate::docx::para_xml::resolve(&next, &Default::default(), None, Some(&region));
                         let run = run_xml::plain(&next, &para.base);
                         let tc = &region.tc;
                         Cell {
@@ -142,7 +141,7 @@ impl Editor {
             change: None,
             grid_change: None,
         };
-        let plain = next.para_from_xml(None, None, &cx);
+        let plain = crate::docx::para_xml::resolve(&next, &Default::default(), None, None);
         let base = run_xml::plain(&next, &plain.base);
         // A table is followed by a paragraph.
         Some(vec![Block::Table(table), paragraph(Rc::new(plain.style), base, String::new())])
@@ -164,7 +163,6 @@ impl Editor {
         let mut next = (**res).clone();
         next.styles.set_xml(raw.to_string()).ok()?;
         let style = next.styles.by_id.values().find(|s| s.raw == raw)?;
-        let cx = next.styles.cx();
         let (ppr, direct) = match style.kind {
             StyleKind::Character => {
                 let mut e = crate::format::CharEdit::new(crate::format::CharProps { style: Some(style.id.as_str().into()), ..Default::default() });
@@ -177,10 +175,10 @@ impl Editor {
         let run = run_xml::run_of(&next, &para.base, direct);
         if tile {
             // A tile shows the character formatting on a plain paragraph.
-            let plain = next.para_from_xml(None, None, &cx);
+            let plain = crate::docx::para_xml::resolve(&next, &Default::default(), None, None);
             return Some(vec![paragraph(Rc::new(plain.style), run, TILE.to_string())]);
         }
-        let around = next.para_from_xml(None, None, &cx);
+        let around = crate::docx::para_xml::resolve(&next, &Default::default(), None, None);
         let grey = {
             let base = run_xml::plain(&next, &around.base);
             Rc::new(RunStyle { color: Some(0x80_8080), ..(*base).clone() })

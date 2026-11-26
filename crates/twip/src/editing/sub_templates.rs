@@ -157,9 +157,9 @@ fn each_para(blocks: &mut [Block], f: &mut dyn FnMut(&mut Paragraph)) {
     }
 }
 
-fn empty_para(doc: &Document, cx: &crate::docx::write::props::Cx) -> Option<Paragraph> {
+fn empty_para(doc: &Document) -> Option<Paragraph> {
     let res = doc.resolver.as_ref()?;
-    let r = crate::docx::para_xml::from_xml(res, None, None, cx);
+    let r = crate::docx::para_xml::resolve(res, &Default::default(), None, None);
     let mark = run_xml::plain(res, &r.base);
     Some(Paragraph {
         style: Rc::new(r.style),
@@ -648,7 +648,7 @@ impl Editor {
             _ => None,
         };
         let mut im = match copied.as_deref().or(c.from.as_ref().map(|b| b.0.as_slice())) {
-            None => Imported { blocks: empty_para(&self.doc, &self.cx()).map(Block::Para).into_iter().collect(), ..Imported::default() },
+            None => Imported { blocks: empty_para(&self.doc).map(Block::Para).into_iter().collect(), ..Imported::default() },
             Some(bytes) => match self.imported_body(bytes) {
                 Some(b) => b,
                 None => return invalid("not a DOCX"),
@@ -688,7 +688,7 @@ impl Editor {
         self.pending_images.append(&mut read.images);
         detach(&mut blocks, base);
         if !matches!(blocks.last(), Some(Block::Para(_))) {
-            blocks.extend(empty_para(&self.doc, &self.cx()).map(Block::Para));
+            blocks.extend(empty_para(&self.doc).map(Block::Para));
         }
         let refs = super::clipboard::refs_of(&read, &blocks);
         let numbering = read.resolver.as_ref().map(|r| r.numbering.clone()).unwrap_or_default();
@@ -744,9 +744,10 @@ impl Editor {
         let cx = self.cx();
         let w = cx.w.clone();
         let num_of = |p: &Paragraph| -> Option<i64> {
-            let pr = Props::parse(self.ppr(&p.style.direct, &cx).as_deref(), "pPr", &cx);
-            let num = Props::parse(pr.get("numPr"), "numPr", &cx);
-            crate::docx::write::props::attr_of(num.get("numId")?, "val")?.trim().parse().ok().filter(|n| *n != 0)
+            match p.style.direct.get().list {
+                Some(crate::format::ListChoice::In(id)) => Some(id.0),
+                _ => None,
+            }
         };
         let mut used: Vec<i64> = Vec::new();
         let mut note = |blocks: &mut [Block]| each_para(blocks, &mut |p| used.extend(num_of(p)));
@@ -803,13 +804,10 @@ impl Editor {
         let renumber = |blocks: &mut [Block]| {
             each_para(blocks, &mut |p| {
                 let Some(to) = num_of(p).and_then(|n| nums.get(&n)) else { return };
-                let mut pr = Props::parse(self.ppr(&p.style.direct, &cx).as_deref(), "pPr", &cx);
-                let mut num = Props::parse(pr.get("numPr"), "numPr", &cx);
-                num.set("numId", format!("<{w}numId {w}val=\"{to}\"/>"));
-                if let Some(x) = num.xml() {
-                    pr.set("numPr", x);
-                }
-                let direct = crate::docx::para_props::ParaDirect::from_xml(pr.xml().as_deref(), &cx);
+                let mut e = crate::format::ParaEdit::new((**p.style.direct.get()).clone());
+                e.list = Some(crate::format::ListChoice::In(crate::document::paragraph::ListId(*to)));
+                e.part(crate::format::ParaProp::List);
+                let direct = p.style.direct.edit(e);
                 p.style = Rc::new(crate::docx::ParaStyle { direct, ..(*p.style).clone() });
             })
         };

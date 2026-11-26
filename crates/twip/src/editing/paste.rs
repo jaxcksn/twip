@@ -3,7 +3,6 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use crate::docx::write::props::{Cx, Props};
 use crate::docx::{Block, Inline, Paragraph, Run, RunStyle};
 use crate::font::Fonts;
 
@@ -707,12 +706,10 @@ impl Editor {
     /// applied to only part of `f` kept; hyperlinks keep their style. Its structure, pictures and fields stay.
     pub(super) fn merged(&self, f: &Fragment) -> Option<Fragment> {
         let res = self.doc.resolver.clone()?;
-        let cx = self.cx();
         let caret = self.selection.ordered(&self.index).map(|(a, _)| a)?;
         let (para, _) = caret.para_offset()?;
         let dest = self.index.para(&self.doc, para)?;
         let run = self.run_at(&caret)?;
-        let w = cx.w.clone();
         // Bold, italic and underline over all of the text are dropped, as Word does.
         let (mut all, mut any) = ([true; 3], false);
         each_para(&f.blocks, &mut |p| {
@@ -726,27 +723,22 @@ impl Editor {
         if !any {
             all = [false; 3];
         }
-        let dest_ppr = {
-            let mut p = Props::parse(self.ppr(&dest.style.direct, &cx).as_deref(), "pPr", &cx);
-            p.remove("numPr");
-            p.remove("rPr");
-            p.remove("sectPr");
-            p.remove("pPrChange");
-            p
-        };
+        // The destination's own formatting, not its list
+        let dest_props = crate::format::ParaProps { list: None, list_level: None, ..(**dest.style.direct.get()).clone() };
         let mut out = f.clone();
         out.look = Look::Destination;
         each_para_mut(&mut out.blocks, &mut |p| {
             // Per paragraph: its base is its own.
             let mut cache: HashMap<(*const RunStyle, [bool; 3]), Run> = HashMap::new();
-            let mut pp = Props::parse(dest_ppr.xml().as_deref(), "pPr", &cx);
+            let mut props = dest_props.clone();
             if let Some(dest_id) = &dest.style.style_id {
-                pp.set("pStyle", format!("<{w}pStyle {w}val=\"{}\"/>", crate::docx::write::props::esc(dest_id)));
+                props.style = Some(dest_id.as_str().into());
             }
-            if let Some(ListRef { list: ListId(num), level: lvl }) = p.style.num {
-                pp.set("numPr", format!("<{w}numPr><{w}ilvl {w}val=\"{lvl}\"/><{w}numId {w}val=\"{num}\"/></{w}numPr>"));
+            if let Some(ListRef { list, level }) = p.style.num {
+                (props.list, props.list_level) = (Some(ListChoice::In(list)), Some(level));
             }
-            let resolved = crate::docx::para_xml::from_xml(&res, pp.xml().as_deref(), None, &cx);
+            let direct = crate::docx::para_props::ParaDirect::typed(Rc::new(props));
+            let resolved = crate::docx::para_xml::with(&res, direct, None, None);
             let base = resolved.base.clone();
             p.style = Rc::new(resolved.style);
             let mark_src = p.mark.clone();
@@ -965,7 +957,7 @@ impl Editor {
             _ => return None,
         };
         // Where it lands on the line is cut away: what it draws is what's kept.
-        let style = self.doc.resolver.as_ref()?.para_from_xml(None, None, &self.cx()).style;
+        let style = crate::docx::para_xml::resolve(self.doc.resolver.as_ref()?, &Default::default(), None, None).style;
         let para = Paragraph {
             style: Rc::new(style),
             mark: run,
@@ -1027,136 +1019,109 @@ impl Editor {
                 return;
             }
             let here = crate::docx::para_xml::of(&res, &p.style.direct, None, &cx);
-            let Some(direct) = para_look(&p.style, &here.style, self.ppr(&p.style.direct, &cx).as_deref(), &cx) else { return };
-            let again = crate::docx::para_xml::edited(&res, &p.style.direct, Some(&direct), None, &cx);
+            let mut e = ParaEdit::new((**p.style.direct.get()).clone());
+            if !para_look(&p.style, &here.style, &mut e) {
+                return;
+            }
+            let again = crate::docx::para_xml::of(&res, &p.style.direct.edit(e), None, &cx);
             p.mark = self.keep_look(&p.mark, &again.base, &mut looks);
             p.style = Rc::new(again.style);
         });
     }
 }
 
-/// `direct` (a paragraph's `w:pPr`) with what `src` shows that `here` (its look under this document's styles)
-/// doesn't set directly, `None` when they look the same.
-fn para_look(src: &crate::docx::ParaStyle, here: &crate::docx::ParaStyle, direct: Option<&str>, cx: &Cx) -> Option<String> {
-    use crate::docx::props::{Jc, Leader, LineRule, TabKind};
-    let w = &cx.w;
-    let mut p = Props::parse(direct, "pPr", cx);
-    let tw = |v: f64| (v * 20.0).round() as i64;
-    let flag = |name: &str, on: bool| if on { format!("<{w}{name}/>") } else { format!("<{w}{name} {w}val=\"0\"/>") };
+/// What `src` shows that `here` (its look under this document's styles) doesn't, set on the paragraph's authored
+/// properties `e`; whether anything was.
+fn para_look(src: &crate::docx::ParaStyle, here: &crate::docx::ParaStyle, e: &mut ParaEdit) -> bool {
+    use crate::docx::props::LineRule;
+    use crate::format::{Color, ParaBorders, ParaFlag, Shading, TabStop, TextBorder};
+    let twip = super::format::twip;
     let mut changed = false;
     if src.jc != here.jc {
-        let v = match src.jc {
-            Jc::Left => "left",
-            Jc::Center => "center",
-            Jc::Right => "right",
-            Jc::Both => "both",
-            Jc::Distribute => "distribute",
-        };
-        p.set("jc", format!("<{w}jc {w}val=\"{v}\"/>"));
+        e.align = Some(src.jc);
+        e.whole(ParaProp::Align);
         changed = true;
     }
     if (src.ind_left, src.ind_right, src.ind_first) != (here.ind_left, here.ind_right, here.ind_first) {
-        let first =
-            if src.ind_first < 0.0 { format!("{w}hanging=\"{}\"", tw(-src.ind_first)) } else { format!("{w}firstLine=\"{}\"", tw(src.ind_first)) };
-        p.set("ind", format!("<{w}ind {w}left=\"{}\" {w}right=\"{}\" {first}/>", tw(src.ind_left), tw(src.ind_right)));
+        (e.indent_left, e.indent_right) = (Some(twip(src.ind_left)), Some(twip(src.ind_right)));
+        e.indent_first = Some(if src.ind_first < 0.0 { -twip(-src.ind_first) } else { twip(src.ind_first) });
+        e.whole(ParaProp::IndentLeft);
         changed = true;
     }
     let spacing = |s: &crate::docx::ParaStyle| (s.space_before, s.space_after, s.before_auto, s.after_auto, s.line, s.line_rule);
     if spacing(src) != spacing(here) {
-        let (line, rule) = match src.line_rule {
-            LineRule::Auto => ((src.line * 240.0).round() as i64, "auto"),
-            LineRule::Exact => (tw(src.line), "exact"),
-            LineRule::AtLeast => (tw(src.line), "atLeast"),
+        let line = match src.line_rule {
+            LineRule::Auto => (src.line * 240.0).round(),
+            LineRule::Exact | LineRule::AtLeast => (src.line * 20.0).round(),
         };
-        p.set(
-            "spacing",
-            format!(
-                "<{w}spacing {w}before=\"{}\" {w}beforeAutospacing=\"{}\" {w}after=\"{}\" {w}afterAutospacing=\"{}\" {w}line=\"{line}\" {w}lineRule=\"{rule}\"/>",
-                tw(src.space_before),
-                u8::from(src.before_auto),
-                tw(src.space_after),
-                u8::from(src.after_auto)
-            ),
-        );
+        (e.space_before, e.space_after) = (Some(twip(src.space_before)), Some(twip(src.space_after)));
+        (e.space_before_auto, e.space_after_auto) = (Some(src.before_auto), Some(src.after_auto));
+        (e.line, e.line_rule) = (Some(line), Some(src.line_rule));
+        e.whole(ParaProp::SpaceBefore);
         changed = true;
     }
-    for (name, a, b) in [
-        ("keepNext", src.keep_next, here.keep_next),
-        ("keepLines", src.keep_lines, here.keep_lines),
-        ("pageBreakBefore", src.page_break_before, here.page_break_before),
-        ("widowControl", src.widow_control, here.widow_control),
-        ("contextualSpacing", src.contextual, here.contextual),
-        ("suppressAutoHyphens", src.suppress_auto_hyphens, here.suppress_auto_hyphens),
-        ("bidi", src.bidi, here.bidi),
+    for (flag, a, b) in [
+        (ParaFlag::KEEP_NEXT, src.keep_next, here.keep_next),
+        (ParaFlag::KEEP_LINES, src.keep_lines, here.keep_lines),
+        (ParaFlag::PAGE_BREAK_BEFORE, src.page_break_before, here.page_break_before),
+        (ParaFlag::WIDOW_CONTROL, src.widow_control, here.widow_control),
+        (ParaFlag::CONTEXTUAL, src.contextual, here.contextual),
+        (ParaFlag::SUPPRESS_AUTO_HYPHENS, src.suppress_auto_hyphens, here.suppress_auto_hyphens),
+        (ParaFlag::BIDI, src.bidi, here.bidi),
     ] {
         if a != b {
-            p.set(name, flag(name, a));
+            e.flag(flag, a);
             changed = true;
         }
     }
     if src.outline_lvl != here.outline_lvl {
-        p.set("outlineLvl", format!("<{w}outlineLvl {w}val=\"{}\"/>", src.outline_lvl.unwrap_or(9)));
+        e.outline_level = Some(src.outline_lvl.unwrap_or(9));
+        e.whole(ParaProp::OutlineLevel);
         changed = true;
     }
     if src.shading != here.shading {
-        let fill = src.shading.map_or_else(|| "auto".to_string(), |c| format!("{c:06X}"));
-        p.set("shd", format!("<{w}shd {w}val=\"clear\" {w}color=\"auto\" {w}fill=\"{fill}\"/>"));
+        let fill = src.shading.map_or(Color::Auto, Color::Rgb);
+        e.shading = Some(Shading { pattern: crate::docx::props::ShadingPattern::Clear, color: Some(Color::Auto), fill: Some(fill) });
+        e.whole(ParaProp::Shading);
         changed = true;
     }
     let sides = |s: &crate::docx::ParaStyle| {
         [s.border_top.clone(), s.border_left.clone(), s.border_bottom.clone(), s.border_right.clone(), s.border_between.clone()]
     };
     if sides(src) != sides(here) {
-        let nil = crate::docx::props::Border {
-            style: crate::docx::props::BorderStyle::Nil,
-            width: 0.0,
-            space: 0.0,
-            shadow: false,
-            color: None,
-            color_theme: None,
+        // A side `src` doesn't draw is set to none, over the style's.
+        let side = |b: &Option<crate::docx::props::Border>| {
+            Some(match b.as_ref().filter(|b| b.visible()) {
+                Some(b) => TextBorder {
+                    style: b.style,
+                    width: (b.width * 8.0).round() / 8.0,
+                    space: b.space.round(),
+                    shadow: b.shadow,
+                    color: b.color_theme.map(Color::Theme).or(b.color.map(Color::Rgb)).or(Some(Color::Auto)),
+                },
+                None => TextBorder { style: crate::docx::props::BorderStyle::Nil, width: 0.0, space: 0.0, shadow: false, color: None },
+            })
         };
-        let inner: String = ["top", "left", "bottom", "right", "between"]
-            .iter()
-            .zip(sides(src))
-            .map(|(name, b)| super::table_format::border_xml(w, name, b.as_ref().unwrap_or(&nil)))
-            .collect();
-        p.set("pBdr", format!("<{w}pBdr>{inner}</{w}pBdr>"));
+        e.borders = ParaBorders {
+            top: side(&src.border_top),
+            left: side(&src.border_left),
+            bottom: side(&src.border_bottom),
+            right: side(&src.border_right),
+            between: side(&src.border_between),
+        };
+        e.whole(ParaProp::Borders);
         changed = true;
     }
     if src.tabs != here.tabs {
-        let kind = |k: TabKind| match k {
-            TabKind::Left => "left",
-            TabKind::Center => "center",
-            TabKind::Right => "right",
-            TabKind::Decimal => "decimal",
-            TabKind::Bar => "bar",
-            TabKind::Num => "num",
-            TabKind::Clear => "clear",
-        };
-        let leader = |l: Leader| match l {
-            Leader::None => "none",
-            Leader::Dot => "dot",
-            Leader::Hyphen => "hyphen",
-            Leader::Underscore => "underscore",
-            Leader::Heavy => "heavy",
-            Leader::MiddleDot => "middleDot",
-        };
-        let mut inner: String = src
-            .tabs
-            .iter()
-            .map(|t| format!("<{w}tab {w}val=\"{}\" {w}leader=\"{}\" {w}pos=\"{}\"/>", kind(t.kind), leader(t.leader), tw(t.pos)))
-            .collect();
+        let mut tabs: Vec<TabStop> = src.tabs.iter().map(|t| TabStop { pos: twip(t.pos), kind: t.kind, leader: t.leader }).collect();
         for t in here.tabs.iter().filter(|t| !src.tabs.iter().any(|s| (s.pos - t.pos).abs() < 0.05)) {
-            inner.push_str(&format!("<{w}tab {w}val=\"clear\" {w}pos=\"{}\"/>", tw(t.pos)));
+            tabs.push(TabStop { pos: twip(t.pos), kind: crate::docx::props::TabKind::Clear, leader: crate::docx::props::Leader::None });
         }
-        if inner.is_empty() {
-            p.remove("tabs");
-        } else {
-            p.set("tabs", format!("<{w}tabs>{inner}</{w}tabs>"));
-        }
+        e.tabs = tabs;
+        e.whole(ParaProp::Tabs);
         changed = true;
     }
-    changed.then(|| p.xml()).flatten()
+    changed
 }
 
 /// A run of pasted text merged into where it lands: the formatting at the caret (`at`), with `src`'s bold, italic and

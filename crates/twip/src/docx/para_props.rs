@@ -898,6 +898,29 @@ pub fn written_over(p: &ParaProps, colours: &ThemeColours, cx: &Cx, origin: Opti
             props.remove(key);
             continue;
         }
+        if !whole && !parts.is_empty() && key == "numPr" {
+            // The list's id alone, its level and what else the element holds as written
+            let mut num = Props::parse(props.get(key), "numPr", cx);
+            let w = &cx.w;
+            match p.list {
+                Some(c) => num.set(
+                    "numId",
+                    format!(
+                        "<{w}numId {w}val=\"{}\"/>",
+                        match c {
+                            ListChoice::None => 0,
+                            ListChoice::In(id) => id.0,
+                        }
+                    ),
+                ),
+                None => num.remove("numId"),
+            }
+            match num.xml() {
+                Some(x) => props.set(key, x),
+                None => props.remove(key),
+            }
+            continue;
+        }
         if !whole && !parts.is_empty() && key == "pBdr" {
             match borders_over(props.get(key), p, &parts, &mut out) {
                 Some(x) => props.set(key, x),
