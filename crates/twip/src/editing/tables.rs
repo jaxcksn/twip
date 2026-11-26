@@ -994,17 +994,44 @@ impl Editor {
         let w = ((width / ncols as f64 * 20.0).floor() / 20.0).max(1.0);
         // Its style, or without one its grid lines and cell margins, as re-resolving and reading find them.
         let direct = {
-            let w = self.cx().w;
-            let own = match &style {
-                Some(id) => format!("<{w}tblStyle {w}val=\"{}\"/>", crate::docx::write::props::esc(id)),
+            use crate::format::{CellMargins, Color, TableBorders, TableProps, TextBorder};
+            let props = match &style {
+                Some(id) => TableProps { style: Some(id.as_str().into()), ..TableProps::default() },
                 None => {
-                    let line = |side: &str| format!("<{w}{side} {w}val=\"single\" {w}sz=\"4\" {w}space=\"0\" {w}color=\"auto\"/>");
-                    let sides: String = ["top", "left", "bottom", "right", "insideH", "insideV"].into_iter().map(line).collect();
-                    let mar = |side: &str| format!("<{w}{side} {w}w=\"108\" {w}type=\"dxa\"/>");
-                    format!("<{w}tblBorders>{sides}</{w}tblBorders><{w}tblCellMar>{}{}</{w}tblCellMar>", mar("left"), mar("right"))
+                    let line = Some(TextBorder {
+                        style: crate::docx::props::BorderStyle::Single,
+                        width: 0.5,
+                        space: 0.0,
+                        shadow: false,
+                        color: Some(Color::Auto),
+                    });
+                    let borders =
+                        TableBorders { top: line, left: line, bottom: line, right: line, inside_h: line, inside_v: line, ..TableBorders::default() };
+                    let mar = Some(crate::docx::props::Width::Dxa(5.4));
+                    TableProps { borders, margins: CellMargins { left: mar, right: mar, ..CellMargins::default() }, ..TableProps::default() }
                 }
             };
-            crate::docx::table_props::TableDirect::from_xml(Some(&format!("<{w}tblPr>{own}</{w}tblPr>")), &self.cx())
+            let direct = crate::docx::table_props::TableDirect::typed(Rc::new(props));
+            #[cfg(test)]
+            {
+                let cx = self.cx();
+                let w = &cx.w;
+                let own = match &style {
+                    Some(id) => format!("<{w}tblStyle {w}val=\"{}\"/>", crate::docx::write::props::esc(id)),
+                    None => {
+                        let line = |side: &str| format!("<{w}{side} {w}val=\"single\" {w}sz=\"4\" {w}space=\"0\" {w}color=\"auto\"/>");
+                        let sides: String = ["top", "left", "bottom", "right", "insideH", "insideV"].into_iter().map(line).collect();
+                        let mar = |side: &str| format!("<{w}{side} {w}w=\"108\" {w}type=\"dxa\"/>");
+                        format!("<{w}tblBorders>{sides}</{w}tblBorders><{w}tblCellMar>{}{}</{w}tblCellMar>", mar("left"), mar("right"))
+                    }
+                };
+                assert_eq!(
+                    direct.xml(&self.colours(), &cx).as_deref(),
+                    Some(format!("<{w}tblPr>{own}</{w}tblPr>").as_str()),
+                    "a new table's properties"
+                );
+            }
+            direct
         };
         Table {
             style_id: style,

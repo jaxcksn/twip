@@ -353,7 +353,7 @@ impl Editor {
                 let cx = self.cx();
                 let colours = self.colours();
                 let mut props = super::step::TableProps::of(&table);
-                super::table_format::set_own(&mut props, "tblLayout", format!("<{w}tblLayout {w}type=\"fixed\"/>", w = cx.w), &colours, &cx);
+                super::table_format::set_layout(&mut props, true, &colours, &cx);
                 (table.fixed, table.direct) = (true, props.direct);
             }
             ConvertFit::Fixed(None) => {}

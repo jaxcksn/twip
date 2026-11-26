@@ -679,9 +679,18 @@ impl Editor {
         let tables: Vec<_> = self.index.table_ids().collect();
         for table in tables {
             let Some(t) = self.index.table(&self.doc, table).filter(|t| t.style_id.as_deref() == Some(id)) else { continue };
-            if let Some(x) = without(t.direct.xml(&self.colours(), &cx).as_deref(), "tblPr", "tblStyle") {
+            if t.direct.get().style.as_deref() == Some(id) {
                 let mut props = super::step::TableProps::of(t);
-                props.direct = t.direct.rewritten(x.as_deref(), &self.colours(), &cx);
+                super::table_format::edit_table(
+                    &mut props,
+                    &self.colours(),
+                    &cx,
+                    |e| {
+                        e.style = None;
+                        e.whole(crate::format::TableProp::Style);
+                    },
+                    |p| without(Some(&p.xml().unwrap_or_default()), "tblPr", "tblStyle").flatten(),
+                );
                 let _ = self.step(tx, Step::TableProps { table, props });
             }
             tx.stale_tables.push(table);

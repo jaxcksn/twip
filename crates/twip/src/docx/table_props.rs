@@ -310,7 +310,7 @@ impl Kind for Tr {
             "gridAfter" => p.grid_after.map(|v| s.attr(W, "val", &v)).is_some(),
             "wBefore" => p.width_before.map(|w| width_attrs(s, w)).is_some(),
             "wAfter" => p.width_after.map(|w| width_attrs(s, w)).is_some(),
-            "cantSplit" => on_off_attrs(s, p.cant_split),
+            "cantSplit" => explicit_on_off(s, p.cant_split),
             "trHeight" => p
                 .height
                 .map(|h| {
@@ -318,7 +318,7 @@ impl Kind for Tr {
                     s.attr(W, "hRule", &super::section::height_rule_literal(h.rule));
                 })
                 .is_some(),
-            "tblHeader" => on_off_attrs(s, p.header),
+            "tblHeader" => explicit_on_off(s, p.header),
             "tblCellSpacing" => p.cell_spacing.map(|w| width_attrs(s, w)).is_some(),
             "jc" => p.align.map(|j| s.attr(W, "val", &jc_val(j))).is_some(),
             "hidden" => on_off_attrs(s, p.hidden),
@@ -756,6 +756,11 @@ fn on_off_attrs(s: &mut dyn Sink, v: Option<bool>) -> bool {
         None => return false,
     }
     true
+}
+
+/// An on/off child written with its value, as the row commands write it.
+fn explicit_on_off(s: &mut dyn Sink, v: Option<bool>) -> bool {
+    v.map(|on| s.attr(W, "val", &if on { "1" } else { "0" })).is_some()
 }
 
 fn jc_val(j: Jc) -> &'static str {
@@ -1981,7 +1986,7 @@ mod tests {
             [("trPrChange", "<w:trPrChange w:id=\"3\"><w:trPr/></w:trPrChange>"), ("ins", "<w:ins w:id=\"1\"/>"), ("del", "<w:del w:id=\"2\"/>")];
         assert_eq!(
             RowDirect::serialize(&row, &owned, &colours, &cx),
-            r#"<w:trPr><w:cantSplit/><w:trHeight w:val="360" w:hRule="exact"/><w:hidden/><w:ins w:id="1"/><w:del w:id="2"/><w:trPrChange w:id="3"><w:trPr/></w:trPrChange></w:trPr>"#
+            r#"<w:trPr><w:cantSplit w:val="1"/><w:trHeight w:val="360" w:hRule="exact"/><w:hidden/><w:ins w:id="1"/><w:del w:id="2"/><w:trPrChange w:id="3"><w:trPr/></w:trPrChange></w:trPr>"#
         );
         let x = r#"<w:tcPr><w:tcPrChange w:id="5"><w:tcPr/></w:tcPrChange><w:cellMerge w:id="4" w:vMerge="rest"/><w:gridSpan w:val="2"/></w:tcPr>"#;
         let c = cell(x);
