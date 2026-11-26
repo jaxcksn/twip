@@ -797,7 +797,7 @@ impl Editor {
                 next.styles = styles.clone();
                 let region = next.styles.table_region(Some(&style.id), &[]);
                 let cx = next.styles.cx();
-                let para = next.para_from_xml(None, Some(&region), &cx);
+                let para = crate::docx::para_xml::from_xml(&next, None, Some(&region), &cx);
                 let run = Rc::new(run_xml::resolve(&next, &run_xml::base(&para.base), Default::default(), false));
                 let tabs = para
                     .style
@@ -886,7 +886,7 @@ impl Editor {
             .map(|&part| {
                 let region = part.region();
                 let r = next.styles.table_region(Some(id), &region.into_iter().collect::<Vec<_>>());
-                let para = next.para_from_xml(None, Some(&r), &cx);
+                let para = crate::docx::para_xml::from_xml(&next, None, Some(&r), &cx);
                 let run = Rc::new(run_xml::resolve(&next, &run_xml::base(&para.base), Default::default(), false));
                 let mut b = borders(&r.tc.borders);
                 if region.is_none() {

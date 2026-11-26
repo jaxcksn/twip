@@ -1659,7 +1659,7 @@ impl Reader {
         if matches!(blocks.last(), Some(Block::Para(_))) {
             return;
         }
-        let r = self.res.paragraph(&ParaProps::default(), None);
+        let r = para_xml::resolve(&self.res, &Default::default(), None, None);
         let mark = self.typed_run(&Base::new(r.base), RunDirect::default(), false);
         let src = self
             .record
@@ -1866,7 +1866,7 @@ impl Reader {
             let content = if html { AltContent::Html(text) } else { AltContent::Text(text) };
             self.alt_chunks.push(AltChunk { para: id, content });
         }
-        let r = self.res.paragraph(&ParaProps::default(), None);
+        let r = para_xml::resolve(&self.res, &Default::default(), None, None);
         let mark = self.typed_run(&Base::new(r.base), RunDirect::default(), false);
         // Written from the model in its place once it holds the content; kept as read while it doesn't.
         let src = self.record.then(|| {

@@ -226,7 +226,7 @@ impl Editor {
         let mut out = Vec::new();
         for ilvl in ilvls {
             let ppr = format!("<{w}pPr><{w}numPr><{w}ilvl {w}val=\"{ilvl}\"/><{w}numId {w}val=\"{num_id}\"/></{w}numPr></{w}pPr>");
-            let para = next.para_from_xml(Some(&ppr), None, &scx);
+            let para = crate::docx::para_xml::from_xml(&next, Some(&ppr), None, &scx);
             let text = counters.next(&next.numbering, &next.styles, num_id, ilvl)?;
             let level = next.numbering.level(num_id, ilvl, &next.styles)?.clone();
             let under = run_xml::folded(&next, &run_xml::base(&para.base), None, false);

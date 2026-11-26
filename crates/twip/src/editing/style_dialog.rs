@@ -209,7 +209,7 @@ impl Editor {
         let (c, p): (CharacterFormatting, ParagraphFormatting) = match &region {
             Some(region) => {
                 let cx = next.styles.cx();
-                let para = next.para_from_xml(None, Some(region), &cx);
+                let para = crate::docx::para_xml::from_xml(&next, None, Some(region), &cx);
                 let run = Rc::new(run_xml::resolve(&next, &run_xml::base(&para.base), Default::default(), false));
                 (super::state::character(&[&run]), super::state::paragraph(&[(&para.style, None)]))
             }

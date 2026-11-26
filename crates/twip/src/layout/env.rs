@@ -280,7 +280,7 @@ impl LayoutEnv {
             line_number_run: doc.line_number_run.clone(),
             chains: chains.unwrap_or_else(|| self::chains(doc)),
             notes_like_ww8: s.compat() == Compat::Legacy && s.policy.footnote_layout_like_ww8,
-            normal: doc.resolver.as_ref().map(|r| Rc::new(r.paragraph(&Default::default(), None).style)),
+            normal: doc.resolver.as_ref().map(|r| Rc::new(crate::docx::para_xml::resolve(r, &Default::default(), None, None).style)),
         }
     }
 }

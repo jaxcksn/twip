@@ -201,7 +201,7 @@ impl Editor {
         };
         // A table style's text: in the part being formatted, else the whole table.
         let region = (style.kind == StyleKind::Table).then(|| next.styles.table_region(Some(&style.id), self.style_part.as_slice()));
-        let para = next.para_from_xml(ppr.as_deref(), region.as_ref(), &cx);
+        let para = crate::docx::para_xml::from_xml(&next, ppr.as_deref(), region.as_ref(), &cx);
         let run = Rc::new(run_xml::resolve(&next, &run_xml::base(&para.base), direct, false));
         let p = Paragraph {
             style: Rc::new(para.style),

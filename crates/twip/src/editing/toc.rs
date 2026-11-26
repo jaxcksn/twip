@@ -1625,7 +1625,7 @@ impl Editor {
         // Without styles, `like`'s.
         let (style, base) = match &res {
             Some(r) => {
-                let x = r.para_from_xml(Some(ppr), region.as_ref(), &cx);
+                let x = crate::docx::para_xml::from_xml(r, Some(ppr), region.as_ref(), &cx);
                 (Rc::new(x.style), Some(x.base))
             }
             None => (like.style.clone(), None),
@@ -1656,7 +1656,7 @@ impl Editor {
     fn web_hidden(&self, ppr: &str, container: Container, run: &Run) -> Run {
         let Some(r) = self.doc.resolver.clone() else { return run.clone() };
         let cx = self.cx();
-        let base = r.para_from_xml(Some(ppr), self.region_in(container, &r).as_ref(), &cx).base;
+        let base = crate::docx::para_xml::from_xml(&r, Some(ppr), self.region_in(container, &r).as_ref(), &cx).base;
         let mut p = CharProps::default();
         char_props::put_unmodelled_flag(&mut p, "webHidden", &cx);
         Rc::new(run_xml::resolve(&r, &run_xml::base(&base), RunDirect::typed(Some(Rc::new(p))), false))
