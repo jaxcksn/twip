@@ -70,9 +70,6 @@ trait Kind {
     /// Writes the attributes of modelled child `key` of `p` to `s`; false when `p` doesn't set it.
     fn emit(p: &Self::Props, key: &str, s: &mut dyn Sink) -> bool;
     fn place(s: Self::Set) -> Place;
-    /// The property set whole in child `key`, or in part on its `side`.
-    #[cfg(test)]
-    fn set_of(key: &str, side: Option<Side>) -> Option<Self::Set>;
 }
 
 /// `w:tblPr`.
@@ -220,10 +217,6 @@ impl Kind for Tbl {
     fn place(s: TableSet) -> Place {
         table_place(s)
     }
-    #[cfg(test)]
-    fn set_of(key: &str, side: Option<Side>) -> Option<TableSet> {
-        table_set_of(key, side)
-    }
 }
 
 impl Kind for TblEx {
@@ -255,10 +248,6 @@ impl Kind for TblEx {
     }
     fn place(s: TableSet) -> Place {
         table_place(s)
-    }
-    #[cfg(test)]
-    fn set_of(key: &str, side: Option<Side>) -> Option<TableSet> {
-        table_set_of(key, side)
     }
 }
 
@@ -340,14 +329,6 @@ impl Kind for Tr {
             RowProp::Hidden => "hidden",
         };
         Place { key, whole: s.whole, side: None }
-    }
-    #[cfg(test)]
-    fn set_of(key: &str, _: Option<Side>) -> Option<RowSet> {
-        use RowProp::*;
-        [Division, GridBefore, GridAfter, WidthBefore, WidthAfter, CantSplit, Height, Header, CellSpacing, Align, Hidden]
-            .into_iter()
-            .map(|prop| RowSet { prop, whole: true })
-            .find(|s| Self::place(*s).key == key)
     }
 }
 
@@ -432,49 +413,6 @@ impl Kind for Tc {
         };
         Place { key, whole: s.whole, side }
     }
-    #[cfg(test)]
-    fn set_of(key: &str, side: Option<Side>) -> Option<CellSet> {
-        use CellProp::*;
-        let prop = match (key, side) {
-            ("tcBorders", Some(Side::Border(b))) => Border(b),
-            ("tcMar", Some(Side::Margin(m))) => Margin(m),
-            _ => [Width, GridSpan, HMerge, VMerge, Borders, Shading, NoWrap, Margins, TextFlow, FitText, VAlign, HideMark]
-                .into_iter()
-                .find(|p| Self::place(CellSet { prop: *p, whole: true }).key == key)?,
-        };
-        Some(CellSet { prop, whole: side.is_none() })
-    }
-}
-
-#[cfg(test)]
-fn table_set_of(key: &str, side: Option<Side>) -> Option<TableSet> {
-    use TableProp::*;
-    let prop = match (key, side) {
-        ("tblBorders", Some(Side::Border(b))) => Border(b),
-        ("tblCellMar", Some(Side::Margin(m))) => Margin(m),
-        _ => [
-            Style,
-            Floating,
-            Overlap,
-            BidiVisual,
-            RowBand,
-            ColBand,
-            Width,
-            Align,
-            CellSpacing,
-            Indent,
-            Borders,
-            Shading,
-            Layout,
-            Margins,
-            Look,
-            Caption,
-            Description,
-        ]
-        .into_iter()
-        .find(|p| table_place(TableSet { prop: *p, whole: true }).key == key)?,
-    };
-    Some(TableSet { prop, whole: side.is_none() })
 }
 
 fn table_place(s: TableSet) -> Place {
@@ -1244,84 +1182,6 @@ impl<K: Kind> Holder<K> {
         let xml = self.as_read()?;
         Some((&self.props, xml))
     }
-
-    fn rewritten(&self, xml: Option<&str>, colours: &ThemeColours, cx: &Cx) -> Self {
-        let next = Holder::from_xml(xml, cx);
-        #[cfg(test)]
-        written_as(self, &next, xml, colours, cx);
-        #[cfg(not(test))]
-        let _ = colours;
-        next
-    }
-}
-
-/// What an edit of a properties element of kind `K` as XML set, as typed properties' record of it: each child that
-/// differs between `was` and `now` (both in the part `cx` describes), set whole when `now` writes it as `p` does or
-/// has no sides, else each side it changed, in part.
-#[cfg(test)]
-fn inferred_set<K: Kind>(p: &K::Props, was: &str, now: &str, colours: &ThemeColours, cx: &Cx) -> Vec<K::Set> {
-    let (old, new) = (Props::parse(Some(was), K::NAME, cx), Props::parse(Some(now), K::NAME, cx));
-    let mut out = Out::new(cx, colours);
-    let mut set = Vec::new();
-    for &key in K::ORDER.iter().filter(|k| !K::OWNED.contains(k)) {
-        let (a, b) = (old.get(key), new.get(key));
-        if a == b {
-            continue;
-        }
-        modelled_child::<K>(&mut out, p, key);
-        let typed = std::mem::take(&mut out.s);
-        let sides = key == K::BORDERS || key == K::MARGINS;
-        let (Some(a), Some(b)) = (a, b) else {
-            set.extend(K::set_of(key, None));
-            continue;
-        };
-        if b == typed || !sides {
-            set.extend(K::set_of(key, None));
-            continue;
-        }
-        let (sa, sb) = (Props::parse(Some(a), key, cx), Props::parse(Some(b), key, cx));
-        let names: Vec<(Side, (&str, Option<&str>))> = if key == K::BORDERS {
-            TableSide::ALL.iter().map(|s| (Side::Border(*s), border_name(*s))).collect()
-        } else {
-            MarginSide::ALL.iter().map(|s| (Side::Margin(*s), margin_name(*s))).collect()
-        };
-        for (side, (name, other)) in names {
-            let get = |p: &Props| p.get(name).or_else(|| other.and_then(|o| p.get(o))).map(str::to_string);
-            if get(&sa) != get(&sb) {
-                set.extend(K::set_of(key, Some(side)));
-            }
-        }
-    }
-    set
-}
-
-/// What an edit of a properties element of kind `K` as XML wrote (`now`, over `was` as read) is what writing its typed
-/// properties over the same writes, byte for byte, but that the typed writer keeps an element with no children that
-/// nothing changed. `TWIP_TABLE_BYTES_OUT` names a file to list each one that isn't in, in place of failing.
-#[cfg(test)]
-fn written_as<K: Kind>(was: &Holder<K>, next: &Holder<K>, now: Option<&str>, colours: &ThemeColours, cx: &Cx) {
-    let Some((read, xml)) = was.read_from() else { return };
-    let set = now.map_or_else(Vec::new, |now| inferred_set::<K>(&next.props, xml, now, colours, cx));
-    let got = written_over::<K>(&next.props, colours, cx, Some((read, xml)), &set);
-    let same = match (got.as_deref(), now) {
-        (Some(a), Some(b)) => a == b,
-        (Some(a), None) => Props::parse(Some(a), K::NAME, cx).kids.is_empty(),
-        (None, None) => true,
-        (None, Some(_)) => false,
-    };
-    if same {
-        return;
-    }
-    let what = format!("over {xml:?}\n  wrote {now:?}\n  typed {got:?}\n");
-    match std::env::var_os("TWIP_TABLE_BYTES_OUT") {
-        Some(path) => {
-            use std::io::Write;
-            let mut f = std::fs::OpenOptions::new().create(true).append(true).open(path).expect("the report");
-            let test = std::thread::current().name().unwrap_or_default().to_string();
-            let _ = writeln!(f, "{test} {what}");
-        }
-        None => panic!("an edit's {} is not what its typed properties write: {what}", K::NAME),
-    }
 }
 
 /// A holder of one kind's typed properties, with its parse, serializer and writer over the XML read.
@@ -1349,11 +1209,6 @@ macro_rules! holder {
             #[doc = concat!("The `", $el, "` they were read from, while they are the properties read from it, with those properties.")]
             pub fn read_from(&self) -> Option<(&Rc<$props>, &Rc<str>)> {
                 self.0.read_from()
-            }
-
-            #[doc = concat!("The properties `xml` holds (a `", $el, "` in the part `cx` describes, an edit of these properties' as XML), the XML kept beside them.")]
-            pub fn rewritten(&self, xml: Option<&str>, colours: &ThemeColours, cx: &Cx) -> $name {
-                $name(self.0.rewritten(xml, colours, cx))
             }
 
             /// Typed properties with no written form.

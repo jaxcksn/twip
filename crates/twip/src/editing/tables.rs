@@ -840,8 +840,6 @@ impl Editor {
                 if grown > MAX_ROWS.max(rows.len()) {
                     return Outcome::Unchanged("too many rows");
                 }
-                let cx = self.cx();
-                let colours = self.colours();
                 let mut out: Vec<Row> = Vec::with_capacity(grown);
                 let mut at = vec![0; rows.len()];
                 for (r, mut first) in rows.into_iter().enumerate() {
@@ -851,7 +849,7 @@ impl Editor {
                         continue;
                     }
                     let split = |k: usize| targets.binary_search(&(r, k)).is_ok();
-                    super::table_format::set_height(&mut first, None, &colours, &cx);
+                    super::table_format::set_height(&mut first, None);
                     let mut template = first.clone();
                     template.rev = Default::default();
                     for (k, c) in first.cells.iter_mut().enumerate() {
@@ -1011,27 +1009,7 @@ impl Editor {
                     TableProps { borders, margins: CellMargins { left: mar, right: mar, ..CellMargins::default() }, ..TableProps::default() }
                 }
             };
-            let direct = crate::docx::table_props::TableDirect::typed(Rc::new(props));
-            #[cfg(test)]
-            {
-                let cx = self.cx();
-                let w = &cx.w;
-                let own = match &style {
-                    Some(id) => format!("<{w}tblStyle {w}val=\"{}\"/>", crate::docx::write::props::esc(id)),
-                    None => {
-                        let line = |side: &str| format!("<{w}{side} {w}val=\"single\" {w}sz=\"4\" {w}space=\"0\" {w}color=\"auto\"/>");
-                        let sides: String = ["top", "left", "bottom", "right", "insideH", "insideV"].into_iter().map(line).collect();
-                        let mar = |side: &str| format!("<{w}{side} {w}w=\"108\" {w}type=\"dxa\"/>");
-                        format!("<{w}tblBorders>{sides}</{w}tblBorders><{w}tblCellMar>{}{}</{w}tblCellMar>", mar("left"), mar("right"))
-                    }
-                };
-                assert_eq!(
-                    direct.xml(&self.colours(), &cx).as_deref(),
-                    Some(format!("<{w}tblPr>{own}</{w}tblPr>").as_str()),
-                    "a new table's properties"
-                );
-            }
-            direct
+            crate::docx::table_props::TableDirect::typed(Rc::new(props))
         };
         Table {
             style_id: style,

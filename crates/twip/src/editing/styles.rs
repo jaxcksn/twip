@@ -607,16 +607,7 @@ impl Editor {
     /// taken out, as stale.
     fn drop_style_refs(&mut self, tx: &mut super::Tx, id: &str, res: &crate::docx::resolve::Resolver) {
         use crate::docx::Inline;
-        use crate::docx::write::props::attr_of;
         let cx = self.cx();
-        // The XML without `name` when it names the style
-        let without = |xml: Option<&str>, local: &str, name: &str| -> Option<Option<String>> {
-            let mut p = Props::parse(xml, local, &cx);
-            p.get(name).and_then(|x| attr_of(x, "val")).is_some_and(|v| v == id).then(|| {
-                p.remove(name);
-                p.xml()
-            })
-        };
         let named = |r: &crate::docx::Run| r.style_id.as_deref() == Some(id);
         // The properties without the character style when they name it
         let unstyle = |e: &mut CharEdit| {
@@ -681,16 +672,10 @@ impl Editor {
             let Some(t) = self.index.table(&self.doc, table).filter(|t| t.style_id.as_deref() == Some(id)) else { continue };
             if t.direct.get().style.as_deref() == Some(id) {
                 let mut props = super::step::TableProps::of(t);
-                super::table_format::edit_table(
-                    &mut props,
-                    &self.colours(),
-                    &cx,
-                    |e| {
-                        e.style = None;
-                        e.whole(crate::format::TableProp::Style);
-                    },
-                    |p| without(Some(&p.xml().unwrap_or_default()), "tblPr", "tblStyle").flatten(),
-                );
+                super::table_format::edit_table(&mut props, |e| {
+                    e.style = None;
+                    e.whole(crate::format::TableProp::Style);
+                });
                 let _ = self.step(tx, Step::TableProps { table, props });
             }
             tx.stale_tables.push(table);

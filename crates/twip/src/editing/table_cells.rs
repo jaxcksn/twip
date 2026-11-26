@@ -330,10 +330,8 @@ impl Editor {
         let Some(t) = self.index.table(&self.doc, tg.table) else { return Outcome::Unchanged("no table") };
         let avg = heights[r0..=r1].iter().sum::<f64>() / (r1 - r0 + 1) as f64;
         let mut rows = t.rows.clone();
-        let cx = self.cx();
-        let colours = self.colours();
         for row in &mut rows[r0..=r1] {
-            super::table_format::set_height(row, Some((avg, crate::docx::HeightRule::AtLeast)), &colours, &cx);
+            super::table_format::set_height(row, Some((avg, crate::docx::HeightRule::AtLeast)));
         }
         let grid = t.grid.clone();
         self.rebuild("Distribute Rows", tg.table, rows, grid, (tg.rows.0, tg.cols.0), fonts)

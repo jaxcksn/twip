@@ -489,8 +489,6 @@ impl Editor {
         let old_sum: f64 = t.grid.iter().sum();
         let (n, sized) = (t.rows.len(), !matches!(t.width, Width::Auto | Width::Nil));
         let mut rows = t.rows.clone();
-        let cx = self.cx();
-        let colours = self.colours();
         let grid_of = Grid::of(t);
         let g = &grid_of;
         let mut grid = d.base.grid.clone();
@@ -668,7 +666,7 @@ impl Editor {
                             Some((_, HeightRule::Exact)) => HeightRule::Exact,
                             _ => HeightRule::AtLeast,
                         };
-                        super::table_format::set_height(row, Some(((h * sy).min(MAX.max(h)).max(1.0), rule)), &colours, &cx);
+                        super::table_format::set_height(row, Some(((h * sy).min(MAX.max(h)).max(1.0), rule)));
                     }
                 }
             }
@@ -701,13 +699,13 @@ impl Editor {
                 props.floating = floating;
             }
             if resized {
-                super::table_format::set_width(&mut props, Width::Dxa(new_sum), &colours, &cx);
+                super::table_format::set_width(&mut props, Width::Dxa(new_sum));
             }
             if indent_by != 0.0 {
                 let compat = self.doc.resolver.as_ref().map_or(crate::docx::Compat::Generic, |r| r.styles.compat);
                 let nested = self.index.table_slot(d.table).is_some_and(|s| matches!(s.container, Container::Cell { .. }));
                 let from = if nested { t.ind } else { crate::layout::table::placed_indent(t, compat) };
-                super::table_format::set_indent(&mut props, from + indent_by, &colours, &cx);
+                super::table_format::set_indent(&mut props, from + indent_by);
             }
             steps.push(Step::TableProps { table: d.table, props });
         }
@@ -769,7 +767,7 @@ impl Editor {
             Some((_, HeightRule::Exact)) => HeightRule::Exact,
             _ => HeightRule::AtLeast,
         };
-        super::table_format::set_height(&mut row, Some((h, rule)), &self.colours(), &self.cx());
+        super::table_format::set_height(&mut row, Some((h, rule)));
         Ok(("Row Height", vec![Step::Rows { table: d.table, range: r..r + 1, with: vec![row], grid: None }]))
     }
 

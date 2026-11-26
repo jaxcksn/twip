@@ -350,10 +350,8 @@ impl Editor {
             ConvertFit::Window => self.fit_to_window(&mut table),
             ConvertFit::Contents => table.width = crate::docx::props::Width::Auto,
             ConvertFit::Fixed(Some(_)) => {
-                let cx = self.cx();
-                let colours = self.colours();
                 let mut props = super::step::TableProps::of(&table);
-                super::table_format::set_layout(&mut props, true, &colours, &cx);
+                super::table_format::set_layout(&mut props, true);
                 (table.fixed, table.direct) = (true, props.direct);
             }
             ConvertFit::Fixed(None) => {}
@@ -388,10 +386,8 @@ impl Editor {
 
     /// A new table as AutoFit to Window makes it: 100% of the width it is in, its columns fitted.
     fn fit_to_window(&self, t: &mut crate::docx::Table) {
-        let cx = self.cx();
-        let colours = self.colours();
         let mut props = super::step::TableProps::of(t);
-        super::table_format::set_width(&mut props, crate::docx::props::Width::Pct(1.0), &colours, &cx);
+        super::table_format::set_width(&mut props, crate::docx::props::Width::Pct(1.0));
         (t.width, t.direct) = (props.width, props.direct);
     }
 
