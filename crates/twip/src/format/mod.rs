@@ -2,11 +2,13 @@
 //! document defaults) sets, with unset, explicitly off and automatic kept apart and theme references kept as
 //! references. [`resolve`] folds levels into the effective [`crate::docx::RunStyle`].
 
+mod list;
 mod para;
 pub mod resolve;
 mod section;
 mod table;
 
+pub use list::*;
 pub use para::*;
 pub use section::*;
 pub use table::*;
