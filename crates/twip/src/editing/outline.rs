@@ -4,7 +4,6 @@ use std::collections::HashSet;
 use std::rc::Rc;
 
 use crate::api::command::CommandId;
-use crate::docx::write::props::Props;
 use crate::docx::{Block, ControlId, Inline, Paragraph};
 use crate::font::Fonts;
 use crate::layout::{ParaId, Unit};
@@ -111,8 +110,8 @@ fn failed(out: &Outcome) -> bool {
 }
 
 /// Whether `p` has a direct outline level.
-fn direct_level(ppr: Option<&str>, cx: &crate::docx::write::props::Cx) -> bool {
-    Props::parse(ppr, "pPr", cx).get("outlineLvl").is_some()
+fn direct_level(p: &crate::format::ParaProps) -> bool {
+    p.outline_level.is_some() || super::lists::written(p, "outlineLvl")
 }
 
 /// Every paragraph in `blocks` in order (tables' cells too) until `f` answers false; false then.
@@ -441,14 +440,7 @@ impl Editor {
                 self.events.push(super::input::Notice::Refused { sub_template: None, element: None });
                 return Outcome::Unchanged("locked");
             }
-            plan.push((
-                para,
-                if let Target::Level(n) = t {
-                    if direct_level(self.ppr(&p.style.direct, &cx).as_deref(), &cx) { t } else { Target::Heading(n) }
-                } else {
-                    t
-                },
-            ));
+            plan.push((para, if let Target::Level(n) = t { if direct_level(p.style.direct.get()) { t } else { Target::Heading(n) } } else { t }));
         }
         let mut wanted: Vec<u32> = plan.iter().filter_map(|&(_, t)| if let Target::Heading(n) = t { Some(n) } else { None }).collect();
         wanted.sort_unstable();
@@ -474,26 +466,23 @@ impl Editor {
         let mut tx = self.begin(label);
         for (para, t) in plan {
             let Some(p) = self.index.para(&self.doc, para) else { continue };
-            let mut pr = Props::parse(self.ppr(&p.style.direct, &cx).as_deref(), "pPr", &cx);
-            let w = &cx.w;
+            let mut e = crate::format::ParaEdit::new((**p.style.direct.get()).clone());
             let style = match t {
                 Target::Level(n) => {
-                    pr.set("outlineLvl", format!("<{w}outlineLvl {w}val=\"{}\"/>", n - 1));
+                    e.outline_level = Some(i64::from(n) - 1);
                     None
                 }
-                Target::Heading(n) => styles[n as usize - 1].clone(),
-                Target::Body => body.clone(),
+                Target::Heading(n) => Some(&styles[n as usize - 1]),
+                Target::Body => Some(&body),
             };
-            if !matches!(t, Target::Level(_)) {
-                pr.remove("outlineLvl");
-                match style {
-                    Some(id) => pr.set("pStyle", format!("<{w}pStyle {w}val=\"{}\"/>", crate::docx::write::props::esc(&id))),
-                    None => pr.remove("pStyle"),
-                }
+            e.whole(crate::format::ParaProp::OutlineLevel);
+            if let Some(id) = style {
+                e.outline_level = None;
+                e.style = id.as_deref().map(Into::into);
+                e.whole(crate::format::ParaProp::Style);
             }
-            let Some(r) =
-                self.para_again(para, Some(crate::docx::para_xml::edited_direct(&res, &p.style.direct, pr.xml().as_deref(), &cx)), &res, &cx)
-            else {
+            let direct = p.style.direct.edit(e);
+            let Some(r) = self.para_again(para, Some(direct), &res, &cx) else {
                 continue;
             };
             let Some(p) = self.index.para(&self.doc, para) else { continue };
