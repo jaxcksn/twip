@@ -6,8 +6,8 @@ use crate::api::command::{AddTabStop, MoveTabStop};
 use crate::api::services::TabStopInfo;
 use crate::api::value::{Points, TabAlignment, TabLeader};
 use crate::docx::props::{Leader, Tab, TabKind};
-use crate::docx::write::props::Props;
 use crate::font::Fonts;
+use crate::format::{ParaEdit, ParaProp, TabStop};
 use crate::layout::ParaId;
 
 use super::Outcome;
@@ -63,42 +63,15 @@ fn tab(a: &AddTabStop) -> Tab {
     Tab { pos: twips(a.position.0), kind, leader }
 }
 
-fn own_xml(own: &[Tab], w: &str) -> String {
-    let tabs: String = own
-        .iter()
-        .map(|t| {
-            let val = match t.kind {
-                TabKind::Left => "left",
-                TabKind::Center => "center",
-                TabKind::Right => "right",
-                TabKind::Decimal => "decimal",
-                TabKind::Bar => "bar",
-                TabKind::Num => "num",
-                TabKind::Clear => "clear",
-            };
-            let leader = match t.leader {
-                Leader::None => "",
-                Leader::Dot => "dot",
-                Leader::Hyphen => "hyphen",
-                Leader::Underscore => "underscore",
-                Leader::Heavy => "heavy",
-                Leader::MiddleDot => "middleDot",
-            };
-            let leader = if leader.is_empty() { String::new() } else { format!(" {w}leader=\"{leader}\"") };
-            format!("<{w}tab {w}val=\"{val}\"{leader} {w}pos=\"{}\"/>", (t.pos * 20.0).round() as i64)
-        })
-        .collect();
-    format!("<{w}tabs>{tabs}</{w}tabs>")
-}
-
 impl Editor {
     fn inherited_tabs(&self, para: ParaId) -> Vec<Tab> {
         let (Some(res), Some(p)) = (self.doc.resolver.clone(), self.index.para(&self.doc, para)) else { return Vec::new() };
         let cx = self.cx();
-        let mut pr = Props::parse(self.ppr(&p.style.direct, &cx).as_deref(), "pPr", &cx);
-        pr.remove("tabs");
+        let mut e = ParaEdit::new((**p.style.direct.get()).clone());
+        e.tabs.clear();
+        e.whole(ParaProp::Tabs);
         let region = self.region_of_para(para, &res);
-        crate::docx::para_xml::edited(&res, &p.style.direct, pr.xml().as_deref(), region.as_ref(), &cx).style.tabs
+        crate::docx::para_xml::of(&res, &p.style.direct.edit(e), region.as_ref(), &cx).style.tabs
     }
 
     pub(crate) fn tab_stops(&self, para: ParaId) -> Vec<TabStopInfo> {
@@ -156,12 +129,13 @@ impl Editor {
         if own.is_empty() {
             return Outcome::unavailable(none);
         }
-        self.format_paras(
+        self.format_paras_typed(
             label,
-            &|pr, cx, p| match own.get(&p.id) {
-                Some(mine) if mine.is_empty() => pr.remove("tabs"),
-                Some(mine) => pr.set("tabs", own_xml(mine, &cx.w)),
-                None => {}
+            &|e, p| {
+                if let Some(mine) = own.get(&p.id) {
+                    e.tabs = mine.iter().map(|t| TabStop { pos: t.pos, kind: t.kind, leader: t.leader }).collect();
+                    e.whole(ParaProp::Tabs);
+                }
             },
             fonts,
         )
