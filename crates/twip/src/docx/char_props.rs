@@ -609,6 +609,92 @@ pub fn from_run_props(r: &RunProps) -> CharProps {
     }
 }
 
+/// Typed properties of one level as the XML path holds them, a theme colour's value as `colours` resolve it; a theme
+/// font and a hint as written while they are the values read.
+pub fn to_run_props(p: &CharProps, colours: &ThemeColours) -> RunProps {
+    use super::table_props::{xml_colour, xml_shd};
+    let attrs = p.foreign.as_deref().map_or(&[][..], |f| &f.attributes);
+    // Font literals as written
+    let literal = |names: &[&str], value: &str| {
+        let on_fonts = |a: &&crate::format::ForeignAttr| a.on.as_ref().is_some_and(|q| &*q.ns == W && &*q.local == "rFonts");
+        let read = attrs
+            .iter()
+            .filter(on_fonts)
+            .find(|a| matches!(&*a.name.ns, "" | W) && names.contains(&&*a.name.local) && a.stands_for.as_deref() == Some(value));
+        read.map_or_else(|| value.to_string(), |a| a.value.to_string())
+    };
+    let font = |f: &Option<FontRef>, names: &[&str]| {
+        f.as_ref().map(|f| match f {
+            FontRef::Family(n) => xml_props::FontRef::Name(n.to_string()),
+            FontRef::Theme { face, script } => xml_props::FontRef::Theme(literal(names, theme_font_name(*face, *script))),
+        })
+    };
+    let toggles = |bits: u16| {
+        let mut out = 0;
+        for (name, t) in TOGGLES {
+            if bits & t.0 != 0 {
+                out |= xml_props::toggle::NAMES.iter().find(|(n, _)| *n == name).map_or(0, |(_, b)| *b);
+            }
+        }
+        out
+    };
+    let shd = p.shading.as_ref().map(|s| xml_shd(s, colours));
+    let (color, color_theme) = xml_colour(p.color, colours);
+    let underline_colour = p.underline.map(|u| xml_colour(u.color, colours));
+    RunProps {
+        ascii: font(&p.fonts.latin, &["asciiTheme"]),
+        h_ansi: font(&p.fonts.latin_extended, &["hAnsiTheme"]),
+        east_asia: font(&p.fonts.east_asian, &["eastAsiaTheme"]),
+        east_asia_below: font(&p.east_asian_below, &[]),
+        east_asia_theme: font(&p.east_asian_theme, &[]),
+        cs: font(&p.fonts.complex, &["csTheme", "cstheme"]),
+        hint: p.hint.map(|h| {
+            let v = match h {
+                FontHint::Default => "default",
+                FontHint::EastAsia => "eastAsia",
+                FontHint::Complex => "cs",
+            };
+            literal(&["hint"], v)
+        }),
+        size: p.size,
+        size_cs: p.complex_size,
+        complex: p.complex,
+        toggles_set: toggles(p.toggles.set),
+        toggles: toggles(p.toggles.on & p.toggles.set),
+        dstrike: p.double_strike,
+        no_proof: p.no_proof,
+        underline: p.underline.map(|u| u.style),
+        underline_color: underline_colour.map(|c| c.0),
+        underline_color_theme: underline_colour.and_then(|c| c.1),
+        color: p.color.map(|_| color),
+        color_theme,
+        highlight: p.highlight.map(|h| h.map(Highlight::rgb)),
+        shading: shd.as_ref().map(xml_props::Shd::flat),
+        shd,
+        border: p.border.as_ref().map(|b| {
+            let (color, color_theme) = xml_colour(b.color, colours);
+            xml_props::Border { style: b.style, width: b.width, space: b.space, shadow: b.shadow, color, color_theme }
+        }),
+        vert_align: p.vertical,
+        position: p.position,
+        spacing: p.spacing,
+        scale: p.scale,
+        kern: p.kern,
+        ligatures: p.typography.ligatures,
+        cntxt_alts: p.typography.contextual_alternates,
+        num_form: p.typography.number_form.map(NumberForm::bits),
+        num_spacing: p.typography.number_spacing.map(NumberSpacing::bits),
+        style_sets: p.typography.stylistic_sets,
+        em: p.emphasis,
+        lang: p.lang.latin.as_deref().map(str::to_string),
+        lang_east_asia: p.lang.east_asian.as_deref().map(str::to_string),
+        style: p.style.as_deref().map(str::to_string),
+        rtl: p.rtl,
+        fit_text: p.fit_text,
+        effects: p.effects.clone(),
+    }
+}
+
 // The attributes a modelled child is written with
 
 /// Writes modelled child `key` of `p` to `s`; false when `p` doesn't set it. Its content, if any, is written apart.
@@ -982,7 +1068,7 @@ fn in_part(old: &str, now: &str, parts: &[Prop], w: &str) -> Option<String> {
 
 /// What `p` keeps beside each modelled child `set` sets whole, or that it changes and doesn't set in part: nothing, as
 /// writing the child anew keeps nothing of it as written; beside one set in part, no value written otherwise.
-fn drop_replaced(was: &CharProps, p: &mut CharProps, set: &[Set]) {
+pub(super) fn drop_replaced(was: &CharProps, p: &mut CharProps, set: &[Set]) {
     let cx = Cx::of_xml(&format!("<w:document xmlns:w=\"{W}\" xmlns:w14=\"{W14}\">"));
     let colours = ThemeColours::default();
     let mut out = Out::new(&cx, &colours);

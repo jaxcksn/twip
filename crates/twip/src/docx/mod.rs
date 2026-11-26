@@ -31,6 +31,7 @@ pub mod resolve;
 pub mod review;
 pub mod run_xml;
 pub mod section;
+pub mod style_xml;
 pub mod styles;
 pub mod table_props;
 pub mod watermark;
@@ -50,6 +51,8 @@ pub use reader::{now_local, now_utc, read, read_at, read_editable};
 mod merge_tests;
 #[cfg(test)]
 mod review_read_tests;
+#[cfg(test)]
+pub(crate) mod style_xml_tests;
 #[cfg(test)]
 mod styles_tests;
 pub mod write;

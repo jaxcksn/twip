@@ -1129,6 +1129,21 @@ fn drop_replaced<K: Kind>(was: &K::Props, p: &mut K::Props, set: &[K::Set]) {
     }
 }
 
+/// [`drop_replaced`] of table properties.
+pub(super) fn drop_replaced_table(was: &TableProps, p: &mut TableProps, set: &[TableSet]) {
+    drop_replaced::<Tbl>(was, p, set);
+}
+
+/// [`drop_replaced`] of row properties.
+pub(super) fn drop_replaced_row(was: &RowProps, p: &mut RowProps, set: &[RowSet]) {
+    drop_replaced::<Tr>(was, p, set);
+}
+
+/// [`drop_replaced`] of cell properties.
+pub(super) fn drop_replaced_cell(was: &CellProps, p: &mut CellProps, set: &[CellSet]) {
+    drop_replaced::<Tc>(was, p, set);
+}
+
 // Holders
 
 /// Typed properties with the element they were read from (or last written as) beside them, and what edits since
@@ -1449,7 +1464,7 @@ fn authored_colour(rgb: Option<u32>, theme: Option<super::model::ThemeColourRef>
 
 /// An authored colour as the XML path holds it: its value (a theme colour's as `colours` resolve it) and its theme
 /// colour.
-fn xml_colour(c: Option<Color>, colours: &ThemeColours) -> (Option<u32>, Option<super::model::ThemeColourRef>) {
+pub(super) fn xml_colour(c: Option<Color>, colours: &ThemeColours) -> (Option<u32>, Option<super::model::ThemeColourRef>) {
     match c {
         Some(Color::Rgb(v)) => (Some(v), None),
         Some(Color::Theme(r)) => (Some(colours.resolve(r)), Some(r)),
@@ -1513,7 +1528,7 @@ fn authored_shading(s: &xml_props::Shd) -> Shading {
     Shading { pattern: s.pattern, color: authored_colour(s.color, s.color_theme), fill: authored_colour(s.fill, s.fill_theme) }
 }
 
-fn xml_shd(s: &Shading, colours: &ThemeColours) -> xml_props::Shd {
+pub(super) fn xml_shd(s: &Shading, colours: &ThemeColours) -> xml_props::Shd {
     let (color, color_theme) = xml_colour(s.color, colours);
     let (fill, fill_theme) = xml_colour(s.fill, colours);
     xml_props::Shd { pattern: s.pattern, color, fill, color_theme, fill_theme }

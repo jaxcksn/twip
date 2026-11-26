@@ -116,6 +116,21 @@ pub(super) fn colour(e: Node, [hex, theme, tint, shade]: ColourAttrs) -> Option<
     }
 }
 
+/// `f` of an element holding `c` alone, with the bindings its names use.
+pub(super) fn reread<T>(c: &ForeignChild, f: impl FnOnce(Node) -> T) -> Option<T> {
+    let mut wrapper = String::from("<x");
+    for (p, u) in c.bindings.iter() {
+        wrapper.push_str(if p.is_empty() { " xmlns" } else { " xmlns:" });
+        wrapper.push_str(p);
+        wrapper.push_str("=\"");
+        push_esc(&mut wrapper, u);
+        wrapper.push('"');
+    }
+    let _ = write!(wrapper, ">{}</x>", c.payload);
+    let doc = roxmltree::Document::parse(&wrapper).ok()?;
+    Some(f(doc.root_element()))
+}
+
 /// Where a modelled child's attributes go: written, or compared with an element as read.
 pub(super) trait Sink {
     /// Attribute `local` in namespace `ns` (WordprocessingML's or an extension's) with value `v`.

@@ -6,11 +6,13 @@ mod list;
 mod para;
 pub mod resolve;
 mod section;
+mod style;
 mod table;
 
 pub use list::*;
 pub use para::*;
 pub use section::*;
+pub use style::*;
 pub use table::*;
 
 use std::rc::Rc;

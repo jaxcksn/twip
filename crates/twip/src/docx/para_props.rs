@@ -519,6 +519,78 @@ pub fn from_para_props(r: &xml_props::ParaProps) -> ParaProps {
     }
 }
 
+/// Typed properties of one level as the XML path holds them, a theme colour's value as `colours` resolve it; the
+/// mark's size from the last `w:rPr` kept among the unmodelled children.
+pub fn to_para_props(p: &ParaProps, colours: &ThemeColours) -> xml_props::ParaProps {
+    use super::table_props::{xml_colour, xml_shd};
+    let flag = |f| p.flags.get(f);
+    let side = |b: &Option<TextBorder>| {
+        b.as_ref().map(|b| {
+            let (color, color_theme) = xml_colour(b.color, colours);
+            xml_props::Border { style: b.style, width: b.width, space: b.space, shadow: b.shadow, color, color_theme }
+        })
+    };
+    let shd = p.shading.as_ref().map(|s| xml_shd(s, colours));
+    let mark = p.foreign.as_deref().and_then(|f| f.children.iter().rev().find(|c| &*c.name.ns == W && &*c.name.local == "rPr"));
+    xml_props::ParaProps {
+        style: p.style.as_deref().map(str::to_string),
+        jc: p.align,
+        ind_left: p.indent_left,
+        ind_right: p.indent_right,
+        ind_first: p.indent_first,
+        space_before: p.space_before,
+        space_after: p.space_after,
+        before_auto: p.space_before_auto,
+        after_auto: p.space_after_auto,
+        line: p.line,
+        line_rule: p.line_rule,
+        contextual: flag(ParaFlag::CONTEXTUAL),
+        snap_to_grid: flag(ParaFlag::SNAP_TO_GRID),
+        keep_next: flag(ParaFlag::KEEP_NEXT),
+        keep_lines: flag(ParaFlag::KEEP_LINES),
+        page_break_before: flag(ParaFlag::PAGE_BREAK_BEFORE),
+        widow_control: flag(ParaFlag::WIDOW_CONTROL),
+        suppress_auto_hyphens: flag(ParaFlag::SUPPRESS_AUTO_HYPHENS),
+        kinsoku: flag(ParaFlag::KINSOKU),
+        overflow_punct: flag(ParaFlag::OVERFLOW_PUNCT),
+        auto_space_de: flag(ParaFlag::AUTO_SPACE_DE),
+        auto_space_dn: flag(ParaFlag::AUTO_SPACE_DN),
+        top_line_punct: flag(ParaFlag::TOP_LINE_PUNCT),
+        word_wrap: flag(ParaFlag::WORD_WRAP),
+        tight_wrap: p.tight_wrap.map(TightWrap::code),
+        suppress_overlap: flag(ParaFlag::SUPPRESS_OVERLAP),
+        suppress_line_numbers: flag(ParaFlag::SUPPRESS_LINE_NUMBERS),
+        mirror_indents: flag(ParaFlag::MIRROR_INDENTS),
+        bidi: flag(ParaFlag::BIDI),
+        div_id: p.division,
+        tabs: p.tabs.iter().map(|t| xml_props::Tab { pos: t.pos, kind: t.kind, leader: t.leader }).collect(),
+        num_id: p.list.map(|c| match c {
+            ListChoice::None => 0,
+            ListChoice::In(id) => id.0,
+        }),
+        ilvl: p.list_level,
+        border_top: side(&p.borders.top),
+        border_bottom: side(&p.borders.bottom),
+        border_left: side(&p.borders.left),
+        border_right: side(&p.borders.right),
+        border_between: side(&p.borders.between),
+        shading: shd.as_ref().map(xml_props::Shd::flat),
+        shd,
+        frame: p.frame.clone(),
+        text_flow: p.text_flow,
+        text_alignment: p.text_alignment,
+        outline_lvl: p.outline_level,
+        collapsed: p.collapsed,
+        mark_size: mark.and_then(mark_size),
+    }
+}
+
+/// The size a mark's `w:rPr`, as written, sets.
+fn mark_size(c: &ForeignChild) -> Option<f64> {
+    let sz = |x: Node| super::xml::child(x, "rPr").and_then(|r| super::xml::child(r, "sz")).and_then(|s| super::xml::half_points(val(s)));
+    super::prop_xml::reread(c, sz).flatten()
+}
+
 // The attributes a modelled child is written with
 
 /// Writes modelled child `key` of `p` to `s`; false when `p` doesn't set it. The content of a child with content is
@@ -778,17 +850,7 @@ fn modelled_child(out: &mut Out, p: &ParaProps, key: &'static str) {
 
 /// The typed value read from kept child `c` alone.
 fn read_as(c: &ForeignChild) -> Option<ParaProps> {
-    let mut wrapper = String::from("<x");
-    for (p, u) in c.bindings.iter() {
-        wrapper.push_str(if p.is_empty() { " xmlns" } else { " xmlns:" });
-        wrapper.push_str(p);
-        wrapper.push_str("=\"");
-        super::prop_xml::push_esc(&mut wrapper, u);
-        wrapper.push('"');
-    }
-    let _ = write!(wrapper, ">{}</x>", c.payload);
-    let doc = roxmltree::Document::parse(&wrapper).ok()?;
-    Some(parse(doc.root_element()))
+    super::prop_xml::reread(c, parse)
 }
 
 /// Modelled child `key` of `p` from its typed value.
@@ -1046,7 +1108,7 @@ fn key_of(p: ParaProp) -> &'static str {
 
 /// What `p` keeps beside each modelled child `set` sets whole, or that it changes and doesn't set in part: nothing, as
 /// writing the child anew keeps nothing of it as written; beside one set in part, no value written otherwise.
-fn drop_replaced(was: &ParaProps, p: &mut ParaProps, set: &[ParaSet]) {
+pub(super) fn drop_replaced(was: &ParaProps, p: &mut ParaProps, set: &[ParaSet]) {
     let cx = Cx::of_xml(&format!("<w:document xmlns:w=\"{W}\" xmlns:w15=\"{W15}\">"));
     let colours = ThemeColours::default();
     let mut out = Out::new(&cx, &colours);
