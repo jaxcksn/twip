@@ -3,16 +3,18 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use crate::docx::write::props::{Cx, Props};
 use crate::docx::{AltContent, Block, Inline, Paragraph, VMerge};
 use crate::font::Fonts;
 
 use super::Editor;
 use super::clipboard::Fragment;
 use super::commands::Outcome;
+use crate::document::format::Jc;
+use crate::document::paragraph::ListId;
 use crate::docx::char_props::RunDirect;
+use crate::docx::para_props::ParaDirect;
 use crate::docx::run_xml;
-use crate::format::CharProps;
+use crate::format::{CharProps, ListChoice, ParaProps};
 
 /// The most HTML read; more pastes as text.
 pub(super) const MAX_HTML: usize = 8 << 20;
@@ -70,7 +72,7 @@ enum Kind {
 #[derive(Clone, Debug, PartialEq)]
 struct Para {
     kind: Kind,
-    align: Option<&'static str>,
+    align: Option<Jc>,
     runs: Vec<Run>,
 }
 
@@ -106,7 +108,7 @@ struct Open {
     name: String,
     fmt: Fmt,
     link: Option<String>,
-    align: Option<&'static str>,
+    align: Option<Jc>,
 }
 
 struct Reader {
@@ -362,7 +364,7 @@ fn css(style: &str, property: &str) -> Option<String> {
 }
 
 impl Reader {
-    fn fmt(&self) -> (Fmt, Option<String>, Option<&'static str>) {
+    fn fmt(&self) -> (Fmt, Option<String>, Option<Jc>) {
         self.open.last().map_or((Fmt::default(), None, None), |o| (o.fmt, o.link.clone(), o.align))
     }
 
@@ -494,9 +496,9 @@ impl Reader {
         }
         if let Some(a) = css(&style, "text-align").or_else(|| attr(tag, "align").map(|a| a.to_ascii_lowercase())) {
             align = match a.as_str() {
-                "center" => Some("center"),
-                "right" | "end" => Some("right"),
-                "justify" => Some("both"),
+                "center" => Some(Jc::Center),
+                "right" | "end" => Some(Jc::Right),
+                "justify" => Some(Jc::Both),
                 _ => None,
             };
         }
@@ -592,7 +594,7 @@ impl Reader {
         self.push_open(name, fmt, link, align);
     }
 
-    fn push_open(&mut self, name: &str, fmt: Fmt, link: Option<String>, align: Option<&'static str>) {
+    fn push_open(&mut self, name: &str, fmt: Fmt, link: Option<String>, align: Option<Jc>) {
         if self.open.len() < MAX_OPEN {
             self.open.push(Open { name: name.to_string(), fmt, link, align });
         } else {
@@ -840,9 +842,8 @@ impl Editor {
                 self.commit(tx, None, fonts);
             }
             let Some(res) = self.doc.resolver.clone() else { break 'paste Outcome::Unchanged("no styles") };
-            let cx = self.cx();
             let mut images = Vec::new();
-            let blocks = self.html_blocks(&read, &res, &cx, &nums, &template, width, &mut images);
+            let blocks = self.html_blocks(&read, &res, &nums, &template, width, &mut images);
             // A last paragraph of a kind or alignment of its own is pasted with its mark; plain text joins the caret's.
             let open_end = matches!(read.last(), Some(HBlock::Para(p)) if p.kind == Kind::Body && p.align.is_none());
             let mut f = Fragment { id: 0, blocks, open_end, ..Default::default() };
@@ -865,38 +866,37 @@ impl Editor {
         if matches!(end, Outcome::Changed(_)) { end } else { out }
     }
 
-    #[allow(clippy::too_many_arguments, reason = "the blocks, how they resolve, their lists, template and width, and their pictures")]
     fn html_blocks(
         &mut self,
         blocks: &[HBlock],
         res: &crate::docx::resolve::Resolver,
-        cx: &Cx,
         nums: &[(usize, i64)],
         template: &Paragraph,
         width: f64,
         images: &mut Vec<(usize, Vec<u8>)>,
     ) -> Vec<Block> {
-        let w = &cx.w;
         let mut out = Vec::new();
         for b in blocks {
             match b {
                 HBlock::Para(p) => {
-                    let mut pp = Props::parse(None, "pPr", cx);
+                    let mut pp = ParaProps::default();
                     match p.kind {
-                        Kind::Heading(n) if res.styles.by_id.contains_key(&format!("Heading{n}")) => {
-                            pp.set("pStyle", format!("<{w}pStyle {w}val=\"Heading{n}\"/>"));
+                        Kind::Heading(n) => {
+                            let id = format!("Heading{n}");
+                            if res.styles.by_id.contains_key(&id) {
+                                pp.style = Some(id.into());
+                            }
                         }
                         Kind::Item { list, level, .. } => {
                             if let Some(&(_, num)) = nums.iter().find(|(l, _)| *l == list) {
-                                pp.set("numPr", format!("<{w}numPr><{w}ilvl {w}val=\"{level}\"/><{w}numId {w}val=\"{num}\"/></{w}numPr>"));
+                                pp.list = Some(if num == 0 { ListChoice::None } else { ListChoice::In(ListId(num)) });
+                                pp.list_level = Some(i64::from(level));
                             }
                         }
-                        _ => {}
+                        Kind::Body => {}
                     }
-                    if let Some(jc) = p.align {
-                        pp.set("jc", format!("<{w}jc {w}val=\"{jc}\"/>"));
-                    }
-                    let para = crate::docx::para_xml::from_xml(res, pp.xml().as_deref(), None, cx);
+                    pp.align = p.align;
+                    let para = crate::docx::para_xml::with(res, ParaDirect::typed(Rc::new(pp)), None, None);
                     let base = run_xml::base(&para.base);
                     let mark = Rc::new(run_xml::resolve(res, &base, RunDirect::default(), false));
                     let mut inlines = Vec::new();
@@ -986,7 +986,7 @@ impl Editor {
                             cell.span = s.span;
                             cell.v_merge = s.merge;
                             cell.width = Some(crate::docx::props::Width::Dxa(col * s.span as f64));
-                            let blocks = self.html_blocks(&s.blocks, res, cx, nums, template, col * s.span as f64, images);
+                            let blocks = self.html_blocks(&s.blocks, res, nums, template, col * s.span as f64, images);
                             if !blocks.is_empty() {
                                 let end = std::mem::replace(&mut cell.blocks, blocks);
                                 // A cell ends in a paragraph
@@ -1067,7 +1067,6 @@ impl Editor {
             (self.doc.alt_chunks, self.doc.settings.track_revisions) = (chunks, tracking);
             return;
         };
-        let cx = self.cx();
         let mut tx = self.begin("Open");
         let mut taken = super::clipboard::Taken::default();
         // One step a container: its blocks from its first placeholder to its last, each placeholder its HTML's.
@@ -1093,7 +1092,7 @@ impl Editor {
                     Chunk::Html(read) => {
                         let mut images = Vec::new();
                         let blocks =
-                            self.html_blocks(read, &res, &cx, &nums[j], template, width, &mut images).iter().map(super::clipboard::fresh).collect();
+                            self.html_blocks(read, &res, &nums[j], template, width, &mut images).iter().map(super::clipboard::fresh).collect();
                         if !images.is_empty() {
                             let o = super::import::Origin {
                                 key: super::import::next_key(),
