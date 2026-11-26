@@ -345,7 +345,6 @@ fn explicit_bold_on_a_paragraph_mark_holds_when_its_style_loses_bold() {
 }
 
 #[test]
-#[should_panic(expected = "a step is recorded for Paragraph")]
 fn explicit_centring_holds_when_the_paragraph_style_loses_it() {
     inherited_then_explicit_then_base_change(Target::Paragraph);
 }
@@ -461,7 +460,6 @@ fn a_mark_edit_reads_the_documents_format_not_the_cached_one() {
 }
 
 #[test]
-#[should_panic(expected = "a step is recorded for Paragraph")]
 fn a_paragraph_edit_reads_the_documents_format_not_the_cached_one() {
     stale_formats_in_the_cache(Target::Paragraph);
 }
