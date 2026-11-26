@@ -1878,8 +1878,9 @@ pub struct SectionPage {
     pub columns: Columns,
     pub title_pg: bool,
     pub page_borders: Option<Rc<PageBorders>>,
-    /// The `w:pgBorders` as written (what isn't modelled, art borders' ids, is kept), or as last set.
-    pub page_borders_xml: Option<String>,
+    /// The authored `w:pgBorders`: typed (what isn't modelled, art borders' ids, kept beside), with the element as
+    /// written while they are the borders read from it.
+    pub page_borders_direct: super::page_borders::PageBordersDirect,
     pub break_kind: SectionBreak,
     pub pg_start: Option<i64>,
     pub pg_fmt: Option<String>,
@@ -1944,7 +1945,7 @@ impl Section {
             columns: self.columns.clone(),
             title_pg: self.title_pg,
             page_borders: self.page_borders.clone(),
-            page_borders_xml: self.page_borders_xml.clone(),
+            page_borders_direct: self.page_borders_direct.clone(),
             break_kind: self.break_kind,
             pg_start: self.pg_start,
             pg_fmt: self.pg_fmt.clone(),
@@ -1989,7 +1990,7 @@ impl Section {
             line_numbers: self.line_numbers.clone(),
             v_align: self.v_align,
             page_borders: self.page_borders.clone(),
-            page_borders_xml: self.page_borders_xml.clone(),
+            page_borders_direct: self.page_borders_direct.clone(),
             line_grid: self.line_grid,
             notes: self.notes.clone(),
             no_endnote: self.no_endnote,
@@ -2006,7 +2007,7 @@ impl Section {
     pub fn set_page(&mut self, p: SectionPage) {
         (self.page_w, self.page_h, self.top, self.bottom, self.left, self.right) = (p.page_w, p.page_h, p.top, p.bottom, p.left, p.right);
         (self.header, self.footer, self.gutter, self.columns, self.title_pg) = (p.header, p.footer, p.gutter, p.columns, p.title_pg);
-        (self.page_borders, self.page_borders_xml) = (p.page_borders, p.page_borders_xml);
+        (self.page_borders, self.page_borders_direct) = (p.page_borders, p.page_borders_direct);
         (self.break_kind, self.pg_start, self.pg_fmt, self.chapter, self.line_numbers) =
             (p.break_kind, p.pg_start, p.pg_fmt, p.chapter, p.line_numbers);
         (self.v_align, self.text_flow, self.notes, self.no_endnote) = (p.v_align, p.text_flow, p.notes, p.no_endnote);
@@ -2102,8 +2103,8 @@ pub struct Section {
     pub line_numbers: Option<LineNumbering>,
     pub v_align: VerticalAlignment,
     pub page_borders: Option<Rc<PageBorders>>,
-    /// The `w:pgBorders` as written, or as last set.
-    pub page_borders_xml: Option<String>,
+    /// The authored `w:pgBorders`, typed, with the element as written while they are the borders read from it.
+    pub page_borders_direct: super::page_borders::PageBordersDirect,
     pub line_grid: Option<i32>,
     /// Footnote and endnote properties, by [`NoteKind`] (foot, end).
     pub notes: [NoteProps; 2],

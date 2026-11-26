@@ -4,8 +4,10 @@
 
 mod para;
 pub mod resolve;
+mod section;
 
 pub use para::*;
+pub use section::*;
 
 use std::rc::Rc;
 

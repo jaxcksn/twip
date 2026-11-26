@@ -1030,12 +1030,13 @@ fn section_pages(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(
     };
     let sects = section_props(&dom);
     drop(dom);
+    let (cx, colours) = (Cx::of_xml(&xml), colours_of(doc));
     let mut edited: Vec<usize> = doc.edited_sections.iter().copied().filter(|&k| k < sects.len().min(doc.sections.len())).collect();
     edited.sort_unstable_by(|a, b| b.cmp(a));
     for k in edited {
         let r = sects[k].clone();
         let s = &doc.sections[k];
-        let new = sect_with_page(&xml[r.clone()], &w, &s.page(), s.read.as_deref(), s.change.as_deref(), &doc.people);
+        let new = sect_with_page(&xml[r.clone()], &w, &s.page(), s.read.as_deref(), s.change.as_deref(), &doc.people, &cx, &colours);
         xml.replace_range(r, &new);
     }
     match parts.iter_mut().find(|(n, _)| *n == src.main) {
@@ -1046,8 +1047,18 @@ fn section_pages(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(
 }
 
 /// A `w:sectPr` with `p`'s page size, margins, columns and different first page, and `change` as its tracked change.
-/// Only those differing from `was` (the page as read) when given.
-fn sect_with_page(sect: &str, w: &str, p: &SectionPage, was: Option<&SectionPage>, change: Option<&SectionChange>, people: &People) -> String {
+/// Only those differing from `was` (the page as read) when given. Typed page borders are written in the part `cx`
+/// describes, a theme colour's value as `colours` resolve it.
+fn sect_with_page(
+    sect: &str,
+    w: &str,
+    p: &SectionPage,
+    was: Option<&SectionPage>,
+    change: Option<&SectionChange>,
+    people: &People,
+    cx: &Cx,
+    colours: &ThemeColours,
+) -> String {
     // CT_SectPr's children in schema order.
     const ORDER: [&str; 22] = [
         "headerReference",
@@ -1104,12 +1115,12 @@ fn sect_with_page(sect: &str, w: &str, p: &SectionPage, was: Option<&SectionPage
                 put(&mut base, local, None);
             }
         }
-        Raw(Some(sect_with_page(&base, w, &c.previous, None, None, people).into()))
+        Raw(Some(sect_with_page(&base, w, &c.previous, None, None, people, cx, colours).into()))
     });
     let existing = |s: &str, local: &str| find_tag(s, local, open_end).map(|(a, e)| s[a..e].to_string());
     let changed = |f: &dyn Fn(&SectionPage) -> bool| was.is_none_or(f);
     if changed(&|q| q.page_borders != p.page_borders) {
-        put(&mut s, "pgBorders", p.page_borders_xml.clone());
+        put(&mut s, "pgBorders", p.page_borders_direct.xml(colours, cx).map(std::borrow::Cow::into_owned));
     }
     let mut sz = existing(&s, "pgSz").unwrap_or_else(|| format!("<{w}pgSz/>"));
     sz = set_attr(&sz, &format!("{w}w"), &twips(p.page_w).to_string());
@@ -1922,6 +1933,7 @@ pub fn main_xml(doc: &Document) -> Result<Option<String>, String> {
         (section_props(&dom), w)
     };
     let sect = |k: usize| sects.get(k).cloned().ok_or("a section without its sectPr");
+    let (cx, colours) = (Cx::of_xml(&src.xml), colours_of(doc));
     // A section holding several as read (their breaks deleted) is compared with their blocks together, and the
     // `w:sectPr`s of the breaks deleted go. A section made since reading is compared with the one after it, its last
     // paragraph taking a `w:sectPr` made from that one's as read.
@@ -1950,7 +1962,7 @@ pub fn main_xml(doc: &Document) -> Result<Option<String>, String> {
             for j in made.drain(..) {
                 let new = &doc.sections[j];
                 let Some(Block::Para(last)) = new.blocks.last() else { return Err("a new section that doesn't end in a paragraph".into()) };
-                edits.made.insert(last.id, sect_with_page(base, &w, &new.page(), s.read.as_deref(), None, &doc.people));
+                edits.made.insert(last.id, sect_with_page(base, &w, &new.page(), s.read.as_deref(), None, &doc.people, &cx, &colours));
                 blocks.extend(new.blocks.iter().cloned());
             }
             blocks.extend(s.blocks.iter().cloned());
@@ -7254,7 +7266,7 @@ mod tests {
         let mut now = was.clone();
         now.headers[0] = None;
         let sect = r#"<w:sectPr><w:headerReference w:type = 'default' r:id="rId1"/><w:headerReference w:type="first" r:id="rId2"/></w:sectPr>"#;
-        let out = sect_with_page(sect, "w:", &now, Some(&was), None, &People::default());
+        let out = sect_with_page(sect, "w:", &now, Some(&was), None, &People::default(), &Cx::of_xml(sect), &ThemeColours::default());
         assert!(!out.contains("rId1") && out.contains(r#"<w:headerReference w:type="first" r:id="rId2"/>"#), "{out}");
     }
 

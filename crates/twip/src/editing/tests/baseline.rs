@@ -16,7 +16,7 @@ use crate::docx::resolve::Resolver;
 use crate::docx::styles::Region;
 use crate::docx::write::props::{Cx, Props};
 use crate::docx::{Block, Document, Inline, Paragraph, Run, RunStyle};
-use crate::docx::{char_props, para_props, para_xml};
+use crate::docx::{char_props, page_borders, para_props, para_xml};
 use crate::format::resolve::{self, RunEnv};
 use crate::format::{CharProps, Color};
 use crate::layout::{ParaId, Unit};
@@ -608,6 +608,43 @@ fn typed_ppr_round_trip(ppr: roxmltree::Node, cx: &Cx, colours: &ThemeColours, w
         auto(&mut side.color);
     }
     assert_eq!(para_props::from_para_props(&read), typed, "{what}: converted from the XML path");
+}
+
+/// Every `w:pgBorders` in every fixture's main part (a section's, and a tracked change's earlier one) is the one its
+/// section writes while unchanged; its typed borders, written again by the typed serializer, parse to the same typed
+/// borders and draw the same borders, and the writing holds every element, text and attribute value of it.
+#[test]
+fn page_border_xml_round_trips_through_the_typed_writer() {
+    let mut n = 0;
+    for (path, d) in fixtures() {
+        let res = d.resolver.as_deref().expect("a resolver");
+        let cx = cx(&d);
+        let colours = &res.styles.colours;
+        let src = &d.source.as_ref().expect("a source").xml;
+        let doc = roxmltree::Document::parse(src).expect("the main part parses");
+        let what = |raw: &str| format!("{}: {raw}", path.display());
+        let (mut body, mut earlier) = (Vec::new(), Vec::new());
+        for b in doc.descendants().filter(|n| crate::docx::xml::is_w(*n, "pgBorders")) {
+            let raw = &src[b.range()];
+            let typed = page_borders::parse(b);
+            let xml = page_borders::serialize(&typed, colours, &cx);
+            let again = cx.parse(&xml, |_, el| page_borders::parse(el)).unwrap_or_else(|| panic!("{}: written as {xml}, parses", what(raw)));
+            assert_eq!(again, typed, "{}: typed, written as {xml}", what(raw));
+            let lost = cx.parse(&xml, |_, el| char_props::tests::lost(b, el)).unwrap_or_default();
+            assert!(lost.is_empty(), "{}: written as {xml}, loses {lost:?}", what(raw));
+            let drawn = cx.parse(&xml, |_, el| page_borders::effective(el, colours, true, true));
+            assert_eq!(drawn, Some(page_borders::effective(b, colours, true, true)), "{}: drawn, written as {xml}", what(raw));
+            let tracked = b.ancestors().any(|a| crate::docx::xml::is_w(a, "sectPrChange"));
+            if tracked { &mut earlier } else { &mut body }.push(raw);
+            n += 1;
+        }
+        let held = |p: &crate::docx::SectionPage| p.page_borders_direct.xml(colours, &cx).map(|x| x.into_owned());
+        let sections: Vec<String> = d.sections.iter().filter_map(|s| held(&s.page())).collect();
+        assert_eq!(sections, body, "{}: each section's as read", path.display());
+        let changes: Vec<String> = d.sections.iter().filter_map(|s| s.change.as_ref().and_then(|c| held(&c.previous))).collect();
+        assert_eq!(changes, earlier, "{}: each tracked change's earlier one as read", path.display());
+    }
+    assert!(n >= 4, "only {n} page border elements checked");
 }
 
 /// Every paragraph property element in every fixture (the main part's, its tracked changes' earlier ones, a style's,

@@ -1935,7 +1935,7 @@ impl Reader {
             line_numbers: None,
             v_align: VerticalAlignment::Top,
             page_borders: None,
-            page_borders_xml: None,
+            page_borders_direct: Default::default(),
             line_grid: None,
             notes: Default::default(),
             no_endnote: false,
@@ -2054,19 +2054,9 @@ impl Reader {
         }
         sec.text_flow = child(s, "textDirection").and_then(val).map_or(0, |v| if v == "tbLrV" { 5 } else { crate::docx::model::text_flow(v) });
         if let Some(b) = child(s, "pgBorders") {
-            sec.page_borders_xml = Some(raw(b).to_string());
-            let side = |n| child(b, n).map(|n| Border::parse(n, &self.res.styles.colours));
-            sec.page_borders = Some(Rc::new(PageBorders {
-                top: side("top"),
-                left: side("left"),
-                bottom: side("bottom"),
-                right: side("right"),
-                offset_from_page: attr(b, "offsetFrom") == Some("page"),
-                display: attr(b, "display").map_or(PageBorderDisplay::AllPages, super::section::page_border_display),
-                surround_header: !self.settings.borders_do_not_surround_header,
-                surround_footer: !self.settings.borders_do_not_surround_footer,
-                behind_text: attr(b, "zOrder") == Some("back"),
-            }));
+            sec.page_borders_direct = super::page_borders::PageBordersDirect::read(super::page_borders::parse(b), raw(b));
+            let (header, footer) = (!self.settings.borders_do_not_surround_header, !self.settings.borders_do_not_surround_footer);
+            sec.page_borders = Some(Rc::new(super::page_borders::effective(b, &self.res.styles.colours, header, footer)));
         }
         if let Some(c) = child(s, "sectPrChange") {
             let mark = self.mark(c, MarkKind::Format);

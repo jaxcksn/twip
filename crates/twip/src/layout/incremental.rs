@@ -132,7 +132,7 @@ fn same_props(a: &Section, b: &Section) -> bool {
         line_numbers,
         v_align,
         page_borders,
-        page_borders_xml,
+        page_borders_direct,
         line_grid,
         notes,
         no_endnote,
@@ -157,7 +157,7 @@ fn same_props(a: &Section, b: &Section) -> bool {
         && *line_numbers == b.line_numbers
         && *v_align == b.v_align
         && *page_borders == b.page_borders
-        && *page_borders_xml == b.page_borders_xml
+        && *page_borders_direct == b.page_borders_direct
         && *line_grid == b.line_grid
         && *notes == b.notes
         && *no_endnote == b.no_endnote

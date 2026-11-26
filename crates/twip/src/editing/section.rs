@@ -366,7 +366,7 @@ impl Editor {
             v
         };
         let cx = self.cx();
-        let w = cx.w.clone();
+        let theme = self.doc.resolver.as_deref().map_or_else(crate::docx::props::ThemeColours::default, |r| r.styles.colours);
         let mut tx = self.begin("Page Borders");
         let mut changed = false;
         for section in 0..self.doc.sections.len() {
@@ -456,25 +456,12 @@ impl Editor {
             b.bottom = set(&b.bottom, &c.bottom, 2, "bottom", true);
             b.right = set(&b.right, &c.right, 3, "right", true);
             let any = [&b.top, &b.left, &b.bottom, &b.right].iter().any(|x| x.is_some());
-            let line = |side: &str, x: &Option<crate::docx::props::Border>| {
-                x.as_ref().map_or(String::new(), |x| super::readback::border_element(&w, side, x))
-            };
-            let xml = any.then(|| {
-                let z = if b.behind_text { format!(" {w}zOrder=\"back\"") } else { String::new() };
-                let offset = if b.offset_from_page { format!(" {w}offsetFrom=\"page\"") } else { String::new() };
-                let display = match b.display {
-                    crate::docx::PageBorderDisplay::AllPages => String::new(),
-                    d => format!(" {w}display=\"{}\"", crate::docx::section::page_border_display_literal(d)),
-                };
-                format!(
-                    "<{w}pgBorders{offset}{display}{z}>{}{}{}{}</{w}pgBorders>",
-                    line("top", &b.top),
-                    line("left", &b.left),
-                    line("bottom", &b.bottom),
-                    line("right", &b.right)
-                )
-            });
-            (page.page_borders, page.page_borders_xml) = (any.then(|| std::rc::Rc::new(b)), xml);
+            // Written alike: the borders as they are
+            let set = crate::docx::page_borders::PageBordersDirect::typed(any.then(|| authored(&b)));
+            if set.xml(&theme, &cx) != page.page_borders_direct.xml(&theme, &cx) {
+                page.page_borders_direct = set;
+            }
+            page.page_borders = any.then(|| std::rc::Rc::new(b));
             if page == s.page() {
                 continue;
             }
@@ -531,6 +518,35 @@ impl Editor {
                 self.set_page("Size", |p| (p.page_w, p.page_h) = size(p.page_w, p.page_h), fonts)
             }
         }
+    }
+}
+
+/// Page borders `b` as authored: each edge's width in whole eighths of a point and its distance in whole points,
+/// automatic where it has no colour; placed from the text, on every page and in front unless otherwise.
+fn authored(b: &crate::docx::PageBorders) -> crate::format::PageBorderProps {
+    use crate::format::{Color, PageBorderOffset, PageBorderProps, PageBorderZOrder, TextBorder};
+    let edge = |x: &Option<crate::docx::props::Border>| {
+        x.as_ref().map(|x| TextBorder {
+            style: x.style,
+            width: ((x.width * 8.0).round() as i64) as f64 / 8.0,
+            space: x.space.round() as i64 as f64,
+            shadow: x.shadow,
+            color: Some(match (x.color, x.color_theme) {
+                (None, _) => Color::Auto,
+                (Some(_), Some(r)) => Color::Theme(r),
+                (Some(rgb), None) => Color::Rgb(rgb),
+            }),
+        })
+    };
+    PageBorderProps {
+        top: edge(&b.top),
+        left: edge(&b.left),
+        bottom: edge(&b.bottom),
+        right: edge(&b.right),
+        offset_from: b.offset_from_page.then_some(PageBorderOffset::Page),
+        display: (b.display != crate::docx::PageBorderDisplay::AllPages).then_some(b.display),
+        z_order: b.behind_text.then_some(PageBorderZOrder::Back),
+        foreign: None,
     }
 }
 

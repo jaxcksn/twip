@@ -151,11 +151,6 @@ pub fn element(w: &str, name: &str, style: Line, width: f64, space: f64, shadow:
     if shadow { super::commands::with_attr(&tag, &format!("{w}shadow"), "1") } else { tag }
 }
 
-/// A model border's element, its colour as written.
-pub fn border_element(w: &str, name: &str, b: &Border) -> String {
-    element(w, name, b.style, b.width, b.space, b.shadow, b.color.map(|rgb| WordColour { rgb, theme: b.color_theme }))
-}
-
 /// A paragraph's border edges to set: each set, removed (`Some(None)`) or kept (`None`).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ParagraphBorderEdges {

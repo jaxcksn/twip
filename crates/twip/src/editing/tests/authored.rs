@@ -45,7 +45,7 @@ fn section(blocks: Vec<Block>) -> Section {
         line_numbers: None,
         v_align: crate::docx::VerticalAlignment::Top,
         page_borders: None,
-        page_borders_xml: None,
+        page_borders_direct: Default::default(),
         line_grid: None,
         notes: Default::default(),
         no_endnote: false,
