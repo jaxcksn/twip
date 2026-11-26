@@ -1655,9 +1655,9 @@ impl Editor {
     }
 
     /// The table region a paragraph in `container` takes its table style's formatting from.
-    fn region_in(&self, container: Container, r: &Resolvers) -> Option<crate::docx::styles::Region> {
+    fn region_in(&self, container: Container, r: &Resolvers) -> Option<crate::format::cascade::TableRegion> {
         let Container::Cell { table, row, cell } = container else { return None };
-        self.index.table(&self.doc, table).map(|t| r.region_of(t, row, cell))
+        self.index.table(&self.doc, table).map(|t| r.cascade().region_of(t, row, cell))
     }
 
     /// The building block control Word's built-in tables of contents are in.

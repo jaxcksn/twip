@@ -132,8 +132,8 @@ impl Editor {
         });
         let headers = t.rows.iter().enumerate().take_while(|(i, r)| r.header || *i == 0 && look.first_row).count();
         let ncols = t.rows.get(r).map_or(0, |row| row.cells.len());
-        let region = res.cell_region(t.style_id.as_deref(), look, t.bands, (r, k), (t.rows.len(), ncols), headers);
-        let tcp = crate::docx::table_props::cell_over(&region.tc, cell.direct.get(), &res.styles.colours);
+        let region = res.cascade().cell_region(t.style_id.as_deref(), look, t.bands, (r, k), (t.rows.len(), ncols), headers);
+        let tcp = crate::docx::table_props::cell_on(&region.format.cell, cell.direct.get(), &res.styles.colours);
         tcp.shd.or_else(flat)
     }
 

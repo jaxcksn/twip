@@ -9,9 +9,9 @@ use super::super::para_props::ParaDirect;
 use super::super::resolve::Resolver;
 use super::super::review::RangeKind;
 use super::super::run_xml;
-use super::super::styles::Region;
 use super::super::table_props::{CellDirect, ExceptionsDirect, RowDirect, TableDirect};
 use super::props::Cx;
+use crate::format::cascade::TableRegion;
 
 /// What [`generate`] cannot write.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -67,7 +67,7 @@ pub fn generate(doc: &Document) -> Result<Vec<u8>, GenerateError> {
 }
 
 /// Body content unanchored: paragraphs (in `region` when they are in a cell) and tables.
-fn blocks(blocks: &[Block], res: &Resolvers, cx: &Cx, region: Option<&Region>) -> Result<Vec<Block>, GenerateError> {
+fn blocks(blocks: &[Block], res: &Resolvers, cx: &Cx, region: Option<&TableRegion>) -> Result<Vec<Block>, GenerateError> {
     blocks
         .iter()
         .map(|b| match b {
@@ -116,7 +116,7 @@ fn table(t: &Table, res: &Resolvers, cx: &Cx) -> Result<Table, GenerateError> {
             if !cell.controls.is_empty() {
                 return fail("a content control");
             }
-            let region = res.region_of(t, ri, ci);
+            let region = res.cascade().region_of(t, ri, ci);
             let content = blocks(&cell.blocks, res, cx, Some(&region))?;
             // Its own properties, an empty element for none: the writer adds its width, span and merge to them.
             let props = cell.direct.get();
@@ -238,7 +238,7 @@ fn covered(doc: &Document, blank: &Document, res: &Resolvers, new_res: &Resolver
 
 /// `p` unanchored (in `region` when it is in a cell), its style reference written as direct formatting, once its
 /// formatting is known to follow from what is written.
-fn paragraph(p: &Paragraph, res: &Resolvers, cx: &Cx, region: Option<&Region>) -> Result<Paragraph, GenerateError> {
+fn paragraph(p: &Paragraph, res: &Resolvers, cx: &Cx, region: Option<&TableRegion>) -> Result<Paragraph, GenerateError> {
     let fail = |what| Err(GenerateError::Unsupported(what));
     if p.style.num.is_some_and(|n| !res.numbering.nums.contains_key(&n.list.0)) {
         return fail("a list without its definition");

@@ -8,10 +8,10 @@ use crate::docx::para_props::{self, ParaDirect};
 use crate::docx::para_xml;
 use crate::docx::resolve::joined_style;
 use crate::docx::resolvers::Resolvers;
-use crate::docx::styles::Region;
 use crate::docx::write::props::Cx;
 use crate::docx::{Inline, ParaStyle, Row, Ruby, Run, RunStyle, Table};
 use crate::font::Fonts;
+use crate::format::cascade::TableRegion;
 use crate::layout::{ParaId, Unit};
 
 use super::commands::Outcome;
@@ -259,11 +259,12 @@ impl Again {
 /// first row took from them.
 fn table_again(t: &Table, res: &Resolvers) -> Option<(TableProps, Option<Vec<Row>>)> {
     use crate::docx::props::Borders;
-    use crate::docx::table_props::{cell_over, row_over, table_over, tbl_props};
+    use crate::docx::table_props::{cell_on, row_on, table_on, tbl_props};
     let colours = &res.styles.colours;
-    let style_id = res.styles.table_style(t.direct.get().style.as_deref()).map(str::to_string);
-    let style_region = res.styles.table_region(style_id.as_deref(), &[]);
-    let tbl = table_over(&style_region.tbl, t.direct.get(), colours);
+    let c = res.cascade();
+    let style_id = c.table_style(t.direct.get().style.as_deref()).map(str::to_string);
+    let style_region = c.table_region(style_id.as_deref(), &[]);
+    let tbl = table_on(&style_region.format.table, t.direct.get(), colours);
     let b = &tbl.borders;
     let mut props = TableProps::of(t);
     props.style_id = style_id.clone();
@@ -279,7 +280,7 @@ fn table_again(t: &Table, res: &Resolvers) -> Option<(TableProps, Option<Vec<Row
         let mut row_jc: Option<Option<crate::docx::props::Jc>> = None;
         let (mut first_jc, mut first_width, mut first_ind) = (None, None, None);
         for (ri, row) in t.rows.iter().enumerate() {
-            let mut trp = row_over(&style_region.tr, row.direct.get());
+            let mut trp = row_on(&style_region.format.row, row.direct.get());
             let ex = tbl_props(row.exceptions.get(), colours);
             trp.jc = trp.jc.or(ex.jc);
             row_jc = Some(if ri == 0 || row_jc == Some(trp.jc) { trp.jc } else { None });
@@ -307,12 +308,12 @@ fn table_again(t: &Table, res: &Resolvers) -> Option<(TableProps, Option<Vec<Row
         .rows
         .iter()
         .enumerate()
-        .take_while(|(i, r)| row_over(&style_region.tr, r.direct.get()).header == Some(true) || *i == 0 && look.first_row)
+        .take_while(|(i, r)| row_on(&style_region.format.row, r.direct.get()).header == Some(true) || *i == 0 && look.first_row)
         .count();
     let unset = if style_id.is_none() { 0.5 } else { 0.0 };
     let mut rows = t.rows.clone();
     for (ri, row) in rows.iter_mut().enumerate() {
-        let trp = row_over(&style_region.tr, row.direct.get());
+        let trp = row_on(&style_region.format.row, row.direct.get());
         (row.height, row.cant_split, row.header) = (trp.height, trp.cant_split.unwrap_or(false), trp.header.unwrap_or(false));
         let ex = tbl_props(row.exceptions.get(), colours);
         let mut row_tbl = tbl.clone();
@@ -322,10 +323,10 @@ fn table_again(t: &Table, res: &Resolvers) -> Option<(TableProps, Option<Vec<Row
         row.borders = (ex.borders != Borders::default())
             .then(|| Rc::new([rb.top.clone(), rb.left.clone(), rb.bottom.clone(), rb.right.clone(), rb.inside_h.clone(), rb.inside_v.clone()]));
         let ncols = row.cells.len();
-        for (ci, c) in row.cells.iter_mut().enumerate() {
-            let region = res.cell_region(style_id.as_deref(), look, props.bands, (ri, ci), (nrows, ncols), headers);
-            let tcp = cell_over(&region.tc, c.direct.get(), colours);
-            crate::docx::style_cell(c, &tcp, &row_tbl.margins, unset);
+        for (ci, cell) in row.cells.iter_mut().enumerate() {
+            let region = c.cell_region(style_id.as_deref(), look, props.bands, (ri, ci), (nrows, ncols), headers);
+            let tcp = cell_on(&region.format.cell, cell.direct.get(), colours);
+            crate::docx::style_cell(cell, &tcp, &row_tbl.margins, unset);
         }
     }
     let rows = (rows != t.rows).then_some(rows);
@@ -516,10 +517,10 @@ impl Editor {
         }
     }
 
-    pub(super) fn region_of_para(&self, para: ParaId, res: &Resolvers) -> Option<Region> {
+    pub(super) fn region_of_para(&self, para: ParaId, res: &Resolvers) -> Option<TableRegion> {
         let slot = self.index.para_slot(para)?;
         let Container::Cell { table, row, cell } = slot.container else { return None };
-        Some(res.region_of(self.index.table(&self.doc, table)?, row, cell))
+        Some(res.cascade().region_of(self.index.table(&self.doc, table)?, row, cell))
     }
 
     /// What the runs at unit `at` of `para` resolve over.

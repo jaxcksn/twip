@@ -199,7 +199,8 @@ impl Editor {
             _ => (Some(style.id.as_str()), RunDirect::default()),
         };
         // A table style's text: in the part being formatted, else the whole table.
-        let region = (style.kind == StyleKind::Table).then(|| next.styles.table_region(Some(&style.id), self.style_part.as_slice()));
+        let region = (style.kind == StyleKind::Table)
+            .then(|| next.cascade().table_region(Some(&style.id), &crate::docx::style_xml::region_kinds(self.style_part.iter().copied())));
         let ppr = crate::format::ParaProps { style: ppr.map(Into::into), ..Default::default() };
         let para = crate::docx::para_xml::resolve(&next, &ppr, None, region.as_ref());
         let run = Rc::new(run_xml::resolve(&next, &para.base, direct, false));

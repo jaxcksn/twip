@@ -1739,6 +1739,30 @@ pub fn tc_props(p: &CellProps, colours: &ThemeColours) -> TcProps {
 
 // Resolution over the XML path's style levels
 
+/// A table's typed authored properties `direct` over `base` (a typed table style region's), folded, as the XML path
+/// holds them.
+pub fn table_on(base: &TableProps, direct: &TableProps, colours: &ThemeColours) -> TblProps {
+    let mut t = base.clone();
+    t.merge(direct);
+    tbl_props(&t, colours)
+}
+
+/// A row's typed authored properties `direct` over `base` (a typed table style region's), folded, as the XML path
+/// holds them.
+pub fn row_on(base: &RowProps, direct: &RowProps) -> TrProps {
+    let mut r = base.clone();
+    r.merge(direct);
+    tr_props(&r)
+}
+
+/// A cell's typed authored properties `direct` over `base` (its typed table style region's), folded, as the XML path
+/// holds them.
+pub fn cell_on(base: &CellProps, direct: &CellProps, colours: &ThemeColours) -> TcProps {
+    let mut c = base.clone();
+    c.merge(direct);
+    tc_props(&c, colours)
+}
+
 /// A table's typed authored properties `direct` over `base` (a table style region's, as the XML path holds them),
 /// folded, as the XML path holds them.
 pub fn table_over(base: &TblProps, direct: &TableProps, colours: &ThemeColours) -> TblProps {

@@ -207,8 +207,9 @@ impl Editor {
         let region =
             (style.kind == StyleKind::Table).then(|| next.styles.table_region(Some(&style.id), &part.region().into_iter().collect::<Vec<_>>()));
         let (c, p): (CharacterFormatting, ParagraphFormatting) = match &region {
-            Some(region) => {
-                let para = crate::docx::para_xml::resolve(&next, &Default::default(), None, Some(region));
+            Some(_) => {
+                let typed = next.cascade().table_region(Some(&style.id), &crate::docx::style_xml::region_kinds(part.region()));
+                let para = crate::docx::para_xml::resolve(&next, &Default::default(), None, Some(&typed));
                 let run = Rc::new(run_xml::resolve(&next, &para.base, Default::default(), false));
                 (super::state::character(&[&run]), super::state::paragraph(&[(&para.style, None)]))
             }

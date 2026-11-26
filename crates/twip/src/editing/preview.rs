@@ -79,7 +79,8 @@ impl Editor {
                     .enumerate()
                     .map(|(ci, t)| {
                         let region = next.cell_region(Some(&id), look, bands, (ri, ci), (5, 5), 1);
-                        let para = crate::docx::para_xml::resolve(&next, &Default::default(), None, Some(&region));
+                        let typed = next.cascade().cell_region(Some(&id), look, bands, (ri, ci), (5, 5), 1);
+                        let para = crate::docx::para_xml::resolve(&next, &Default::default(), None, Some(&typed));
                         let run = run_xml::plain(&next, &para.base);
                         let tc = &region.tc;
                         Cell {

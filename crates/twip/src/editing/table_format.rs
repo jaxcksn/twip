@@ -755,7 +755,7 @@ impl Editor {
             }
             TableFormat::RowProps { hidden, exceptions } => {
                 let style_jc = match (exceptions, &self.doc.resolver) {
-                    (Some(x), Some(res)) if x.reset => res.styles.table_region(t.style_id.as_deref(), &[]).tr.jc,
+                    (Some(x), Some(res)) if x.reset => res.cascade().table_region(t.style_id.as_deref(), &[]).format.row.align,
                     _ => None,
                 };
                 for row in &mut rows[r0..=r1] {
@@ -868,8 +868,9 @@ impl Editor {
                         e.whole(crate::format::TableProp::ColBand);
                     }
                 });
-                let tbl = crate::docx::table_props::table_over(
-                    &res.styles.table_region(res.styles.table_style(t.style_id.as_deref()), &[]).tbl,
+                let c = res.cascade();
+                let tbl = crate::docx::table_props::table_on(
+                    &c.table_region(c.table_style(t.style_id.as_deref()), &[]).format.table,
                     props.direct.get(),
                     &colours,
                 );
@@ -891,7 +892,7 @@ impl Editor {
                         e.style = Some(id.as_str().into());
                         e.whole(crate::format::TableProp::Style);
                     });
-                    let tbl = crate::docx::table_props::table_over(&res.styles.table_region(Some(id), &[]).tbl, t.direct.get(), &colours);
+                    let tbl = crate::docx::table_props::table_on(&res.cascade().table_region(Some(id), &[]).format.table, t.direct.get(), &colours);
                     let direct = t.direct.get();
                     let b = &tbl.borders;
                     props.borders = [b.top.clone(), b.left.clone(), b.bottom.clone(), b.right.clone(), b.inside_h.clone(), b.inside_v.clone()];

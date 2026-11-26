@@ -98,6 +98,11 @@ pub fn region_kind(v: Option<&str>) -> Option<RegionKind> {
     v.and_then(|v| REGIONS.iter().find(|(n, _)| *n == v)).map(|(_, k)| *k)
 }
 
+/// The regions `names` (`w:tblStylePr` type literals) name, those of other names left out.
+pub fn region_kinds<'a>(names: impl IntoIterator<Item = &'a str>) -> Vec<RegionKind> {
+    names.into_iter().filter_map(|n| region_kind(Some(n))).collect()
+}
+
 /// A region's `w:type` literal.
 pub fn region_literal(k: RegionKind) -> &'static str {
     REGIONS.iter().find(|(_, x)| *x == k).map_or("wholeTable", |(n, _)| n)

@@ -3,14 +3,12 @@
 
 use std::rc::Rc;
 
-use super::char_props::from_run_props;
 use super::model::{ListId, ListJc, ListRef, ParaStyle};
 use super::numbering::Level;
 use super::para_props::{ParaDirect, from_para_props};
 use super::resolve::Resolver;
 use super::resolvers::Resolvers;
 use super::review::ParaChange;
-use super::styles::Region;
 use super::write::props::Cx;
 use crate::format::cascade::{Cascade, ParaCascade, TableRegion};
 use crate::format::resolve::para_style;
@@ -51,7 +49,7 @@ pub struct Resolved {
 /// A paragraph with authored properties `direct`, its mark's size `mark_size` (points, when its mark sets one), in
 /// `region` when it is in a cell: its style chain and the defaults typed. The effective format's authored properties
 /// are left default.
-pub fn resolve(res: &Resolvers, direct: &ParaProps, mark_size: Option<f64>, region: Option<&Region>) -> Resolved {
+pub fn resolve(res: &Resolvers, direct: &ParaProps, mark_size: Option<f64>, region: Option<&TableRegion>) -> Resolved {
     let c = res.cascade();
     let style_id = c.paragraph_style(direct.style.as_deref()).map(str::to_string);
     let style_ppr = c.chain_para(style_id.as_deref());
@@ -68,7 +66,7 @@ pub fn resolve(res: &Resolvers, direct: &ParaProps, mark_size: Option<f64>, regi
 
     let mut ppr = c.doc_para().clone();
     if let Some(t) = region {
-        ppr.merge(&from_para_props(&t.ppr));
+        ppr.merge(&t.format.para);
     }
     match (&level, from_style) {
         (Some(l), true) => {
@@ -99,7 +97,7 @@ pub fn resolve(res: &Resolvers, direct: &ParaProps, mark_size: Option<f64>, regi
 
     let mut base = c.doc_char().clone();
     if let Some(t) = region {
-        base.merge_level(&from_run_props(&t.rpr));
+        base.merge_level(&t.format.char);
     }
     base.merge_level(&c.chain_char(style_id.as_deref()));
     if let Some(size) = region.and_then(|t| t.size_over_normal) {
@@ -129,7 +127,7 @@ pub fn resolve(res: &Resolvers, direct: &ParaProps, mark_size: Option<f64>, regi
 }
 
 /// A paragraph with authored properties `direct` (its mark's size `mark_size`), in `region` when it is in a cell.
-pub fn with(res: &Resolvers, direct: ParaDirect, mark_size: Option<f64>, region: Option<&Region>) -> Resolved {
+pub fn with(res: &Resolvers, direct: ParaDirect, mark_size: Option<f64>, region: Option<&TableRegion>) -> Resolved {
     let mut r = resolve(res, direct.get(), mark_size, region);
     r.style.direct = direct;
     r
@@ -148,13 +146,13 @@ fn mark_size_of(ppr: Option<&str>, cx: &Cx) -> Option<f64> {
 
 /// A paragraph resolved from its `w:pPr` as written (`ppr`, in the part `cx` describes), in `region` when it is in
 /// a cell: its properties parsed, the XML kept beside them.
-pub fn from_xml(res: &Resolvers, ppr: Option<&str>, region: Option<&Region>, cx: &Cx) -> Resolved {
+pub fn from_xml(res: &Resolvers, ppr: Option<&str>, region: Option<&TableRegion>, cx: &Cx) -> Resolved {
     with(res, ParaDirect::from_xml(ppr, cx), mark_size_of(ppr, cx), region)
 }
 
 /// `again`, a paragraph's properties resolved again in `region`, with what reading gave `was` beyond them: its
 /// tracked property change (the earlier properties resolved again too) and its place in a frame.
-pub fn again(res: &Resolvers, was: &ParaStyle, mut again: ParaStyle, region: Option<&Region>, cx: &Cx) -> ParaStyle {
+pub fn again(res: &Resolvers, was: &ParaStyle, mut again: ParaStyle, region: Option<&TableRegion>, cx: &Cx) -> ParaStyle {
     if was.in_frame {
         (again.frame, again.in_frame) = (None, true);
     }
@@ -177,7 +175,7 @@ pub fn again(res: &Resolvers, was: &ParaStyle, mut again: ParaStyle, region: Opt
 
 /// A paragraph resolved again from its authored properties `d`, in `region` when it is in a cell, its mark's size from
 /// the `w:rPr` the `w:pPr` they were read from holds.
-pub fn of(res: &Resolvers, d: &ParaDirect, region: Option<&Region>, cx: &Cx) -> Resolved {
+pub fn of(res: &Resolvers, d: &ParaDirect, region: Option<&TableRegion>, cx: &Cx) -> Resolved {
     let size = mark_size_of(d.origin_xml().map(|x| &**x), cx);
     with(res, d.clone(), size, region)
 }

@@ -21,10 +21,11 @@ use super::review::{
     TableChange, Timestamp,
 };
 use super::run_xml;
-use super::styles::{Region, Styles, ThemeFonts};
+use super::styles::{Styles, ThemeFonts};
 use super::table_props::{self, CellDirect, ExceptionsDirect, PreviousDirect, RowDirect, TableDirect};
 use super::xml::*;
 use crate::format::CharProps;
+use crate::format::cascade::TableRegion;
 
 struct Package {
     zip: zip::ZipArchive<Cursor<Vec<u8>>>,
@@ -1167,7 +1168,7 @@ pub(crate) fn read_settings(xml: Option<&str>) -> Settings {
 
 #[derive(Clone)]
 struct TableCtx {
-    region: Rc<Region>,
+    region: Rc<TableRegion>,
 }
 
 /// An open complex field.
@@ -1514,7 +1515,7 @@ impl Reader {
     /// A paragraph's property change (`w:pPrChange`, the previous properties resolved as the paragraph is), and its
     /// list's numbering change (`w:numberingChange`, kept as written). A numbering change alone keeps the
     /// paragraph's properties as the previous ones.
-    fn para_change(&mut self, ppr: Option<Node>, region: Option<&Region>, current: &ParaStyle) -> Option<Rc<ParaChange>> {
+    fn para_change(&mut self, ppr: Option<Node>, region: Option<&TableRegion>, current: &ParaStyle) -> Option<Rc<ParaChange>> {
         let ppr = ppr?;
         let numbering = child(ppr, "numPr").and_then(|n| child(n, "numberingChange"));
         let change = child(ppr, "pPrChange");
@@ -3443,8 +3444,8 @@ impl Reader {
     fn joins(&self, run: &[Node], m: Node) -> bool {
         let kind = |t: Node| {
             let direct = child(t, "tblPr").map(TableDirect::parse).unwrap_or_default();
-            let style = self.res.styles.table_style(direct.style.as_deref()).map(str::to_string);
-            let tbl = table_props::table_over(&self.res.styles.table_region(style.as_deref(), &[]).tbl, &direct, &self.res.styles.colours);
+            let style = self.res.cascade().table_style(direct.style.as_deref()).map(str::to_string);
+            let tbl = table_props::table_on(&self.res.cascade().table_region(style.as_deref(), &[]).format.table, &direct, &self.res.styles.colours);
             (tbl.floating, style, tbl.bidi_visual.unwrap_or(false))
         };
         let grids: Vec<Vec<f64>> = run.iter().copied().chain([m]).map(table_grid).collect();
@@ -3459,9 +3460,9 @@ impl Reader {
         let colours = self.res.styles.colours;
         let held = self.table_direct(child(t, "tblPr"));
         let direct = held.get().clone();
-        let style_id = self.res.styles.table_style(direct.style.as_deref()).map(str::to_string);
-        let style_region = self.res.styles.table_region(style_id.as_deref(), &[]);
-        let mut tbl = table_props::table_over(&style_region.tbl, &direct, &colours);
+        let style_id = self.res.cascade().table_style(direct.style.as_deref()).map(str::to_string);
+        let style_region = self.res.cascade().table_region(style_id.as_deref(), &[]);
+        let mut tbl = table_props::table_on(&style_region.format.table, &direct, &colours);
         // Compat ≤ 14: a floating table at vertical position 0 stands in the flow, whatever it is anchored to.
         if self.res.styles.compat == Compat::Legacy
             && let Some(fp) = tbl.floating.as_mut()
@@ -3478,8 +3479,8 @@ impl Reader {
         let now = &tbl.borders;
         let change = self.table_change(child(t, "tblPr"), "tblPrChange", |r, before| {
             let prev = before.map(TableDirect::parse).unwrap_or_default();
-            let style_id = r.res.styles.table_style(prev.style.as_deref()).map(str::to_string);
-            let tbl = table_props::table_over(&r.res.styles.table_region(style_id.as_deref(), &[]).tbl, &prev, &colours);
+            let style_id = r.res.cascade().table_style(prev.style.as_deref()).map(str::to_string);
+            let tbl = table_props::table_on(&r.res.cascade().table_region(style_id.as_deref(), &[]).format.table, &prev, &colours);
             let b = if before.and_then(|n| child(n, "tblBorders")).is_some() { &tbl.borders } else { now };
             Some(PreviousProps::Table {
                 style_id,
@@ -3515,7 +3516,7 @@ impl Reader {
         let headers = row_props
             .iter()
             .enumerate()
-            .take_while(|(i, (tr, _))| table_props::row_over(&style_region.tr, tr.get()).header == Some(true) || *i == 0 && look.first_row)
+            .take_while(|(i, (tr, _))| table_props::row_on(&style_region.format.row, tr.get()).header == Some(true) || *i == 0 && look.first_row)
             .count();
         let col_band = tbl.col_band.unwrap_or(0);
         let mut rows = Vec::new();
@@ -3525,14 +3526,15 @@ impl Reader {
         let mut first_row_ind: Option<Width> = None;
         let mut left_margins: Vec<i64> = Vec::new();
         for (ri, ((rn, row_controls), (row_direct, row_ex))) in row_nodes.iter().zip(row_props).enumerate() {
-            let mut trp = table_props::row_over(&style_region.tr, row_direct.get());
+            let mut trp = table_props::row_on(&style_region.format.row, row_direct.get());
             let mut ex = table_props::tbl_props(row_ex.get(), &colours);
             // A later table's rows keep its own alignment and cell margins as their exceptions.
             let mut table_shading = None;
             if row_table[ri] > 0 {
                 let own = table_props::tbl_props(&child(ts[row_table[ri]], "tblPr").map(TableDirect::parse).unwrap_or_default(), &colours);
                 // Its own shading over its style's, which joined tables share (Word shows the style's under one without).
-                let shd = own.shd.as_ref().or(style_region.tbl.shd.as_ref());
+                let style_shd = style_region.format.table.shading.as_ref().map(|s| table_props::xml_shd(s, &colours));
+                let shd = own.shd.as_ref().or(style_shd.as_ref());
                 table_shading = Some((shd.and_then(Shd::flat), shd.and_then(Shd::hatch)));
                 let mut later = TblProps { jc: own.jc, margins: own.margins, ..Default::default() };
                 later.merge(&ex);
@@ -3561,13 +3563,14 @@ impl Reader {
             let ncols = cell_nodes.len();
             let mut cells = Vec::new();
             for (ci, (cn, cell_controls)) in cell_nodes.iter().enumerate() {
-                let region = Rc::new(self.res.cell_region(style_id.as_deref(), look, (row_band, col_band), (ri, ci), (nrows, ncols), headers));
+                let region =
+                    Rc::new(self.res.cascade().cell_region(style_id.as_deref(), look, (row_band, col_band), (ri, ci), (nrows, ncols), headers));
                 let tm = &row_tbl.margins;
-                let rev = self.cell_revisions(child(*cn, "tcPr"), &region.tc, tm, unset);
+                let rev = self.cell_revisions(child(*cn, "tcPr"), &region.format.cell, tm, unset);
                 let ctx = TableCtx { region: region.clone() };
                 let direct = self.cell_direct(child(*cn, "tcPr"));
                 let blocks = self.read_blocks(*cn, pkg, Some(&ctx));
-                cells.push(self.cell(*cn, direct, &region.tc, tm, unset, blocks, cell_controls.clone(), rev));
+                cells.push(self.cell(*cn, direct, &region.format.cell, tm, unset, blocks, cell_controls.clone(), rev));
             }
             rows.push(self.row(*rn, (row_direct, row_ex), &trp, &ex, &tbl, &row_tbl, &style_region, cells, row_controls.clone()));
             if let Some(r) = rows.last_mut() {
@@ -3647,7 +3650,7 @@ impl Reader {
         &self,
         cn: Node,
         direct: CellDirect,
-        base: &TcProps,
+        base: &crate::format::CellProps,
         tm: &Margins,
         unset: f64,
         blocks: Vec<Block>,
@@ -3655,7 +3658,7 @@ impl Reader {
         rev: CellRevisions,
     ) -> Cell {
         let tc_pr = child(cn, "tcPr");
-        let tcp = table_props::cell_over(base, direct.get(), &self.res.styles.colours);
+        let tcp = table_props::cell_on(base, direct.get(), &self.res.styles.colours);
         let mut c = Cell {
             width: tcp.width,
             span: tcp.grid_span.unwrap_or(1).max(1) as usize,
@@ -3699,7 +3702,7 @@ impl Reader {
         ex: &TblProps,
         tbl: &TblProps,
         row_tbl: &TblProps,
-        style_region: &Region,
+        style_region: &TableRegion,
         cells: Vec<Cell>,
         controls: Vec<ControlId>,
     ) -> Row {
@@ -3708,7 +3711,7 @@ impl Reader {
             ins: self.mark_at(tr_pr, "ins", MarkKind::Insert),
             del: self.mark_at(tr_pr, "del", MarkKind::Delete),
             change: self.table_change(tr_pr, "trPrChange", |_, before| {
-                let tr = table_props::row_over(&style_region.tr, &before.map(RowDirect::parse).unwrap_or_default());
+                let tr = table_props::row_on(&style_region.format.row, &before.map(RowDirect::parse).unwrap_or_default());
                 Some(PreviousProps::Row { height: tr.height, cant_split: tr.cant_split.unwrap_or(false), header: tr.header.unwrap_or(false) })
             }),
             ex_change: self.table_change(child(rn, "tblPrEx"), "tblPrExChange", |_, _| None),
@@ -3756,7 +3759,7 @@ impl Reader {
 
     /// A cell's tracked insertion, deletion or merge (`w:cellIns`, `w:cellDel`, `w:cellMerge`), and its property
     /// change, its earlier properties resolved over `base` (the cell's style region) and the table's cell margins `tm`.
-    fn cell_revisions(&mut self, tc_pr: Option<Node>, base: &TcProps, tm: &Margins, unset: f64) -> CellRevisions {
+    fn cell_revisions(&mut self, tc_pr: Option<Node>, base: &crate::format::CellProps, tm: &Margins, unset: f64) -> CellRevisions {
         let merge = |v: Option<&str>| match v {
             Some("rest") => Some(VMerge::Restart),
             Some("cont") => Some(VMerge::Continue),
@@ -3780,7 +3783,7 @@ impl Reader {
             (self.mark(e, mark_kind), kind)
         });
         let change = self.table_change(tc_pr, "tcPrChange", |r, before| {
-            let tcp = table_props::cell_over(base, &before.map(CellDirect::parse).unwrap_or_default(), &r.res.styles.colours);
+            let tcp = table_props::cell_on(base, &before.map(CellDirect::parse).unwrap_or_default(), &r.res.styles.colours);
             let b = &tcp.borders;
             Some(PreviousProps::Cell {
                 width: tcp.width,

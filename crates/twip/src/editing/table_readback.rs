@@ -314,8 +314,15 @@ impl Editor {
         let parse_tbl = |p: &crate::format::TableProps| -> TblProps {
             res.map_or_else(TblProps::default, |res| crate::docx::table_props::tbl_props(p, &res.styles.colours))
         };
-        let mut tbl = res.map(|res| res.styles.table_region(t.style_id.as_deref(), &[]).tbl.clone()).unwrap_or_default();
-        tbl.merge(&parse_tbl(t.direct.get()));
+        let tbl = res
+            .map(|res| {
+                crate::docx::table_props::table_on(
+                    &res.cascade().table_region(t.style_id.as_deref(), &[]).format.table,
+                    t.direct.get(),
+                    &res.styles.colours,
+                )
+            })
+            .unwrap_or_default();
         // A side neither the table nor its style sets: as cells resolve it.
         let unset = if t.style_id.is_none() { 0.5 } else { 0.0 };
         let m = &tbl.margins;

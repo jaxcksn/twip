@@ -1065,7 +1065,7 @@ fn resolve_paras(
     res: &crate::docx::resolvers::Resolvers,
     cx: &Cx,
     blocks: &[Block],
-    region: Option<&Region>,
+    region: Option<&TableRegion>,
     what: &str,
     counts: &mut (&mut usize, &mut usize),
 ) {
@@ -1099,7 +1099,7 @@ fn resolve_paras(
             Block::Table(t) => {
                 for (ri, row) in t.rows.iter().enumerate() {
                     for (ci, c) in row.cells.iter().enumerate() {
-                        resolve_paras(res, cx, &c.blocks, Some(&res.region_of(t, ri, ci)), what, counts);
+                        resolve_paras(res, cx, &c.blocks, Some(&res.cascade().region_of(t, ri, ci)), what, counts);
                     }
                 }
             }
