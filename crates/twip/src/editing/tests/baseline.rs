@@ -678,6 +678,194 @@ fn paragraph_property_xml_round_trips_through_the_typed_writer() {
     assert!(n > 7_000, "only {n} paragraph property elements checked");
 }
 
+/// What the table property round trip checked: elements of each kind, and cells whose text flow the XML path keeps as
+/// written where the typed path takes Word's value for it.
+#[derive(Default)]
+struct TableCounts {
+    tables: usize,
+    exceptions: usize,
+    rows: usize,
+    cells: usize,
+    strict_flows: usize,
+}
+
+/// `el`, a table's, a row's exceptions', a row's or a cell's property element: its holder writes it as read; its typed
+/// properties, written again by the typed serializer with the children other nodes own, parse to the same typed
+/// properties and to the same properties on the XML path, and the writing holds every element, text and attribute
+/// value of `el`; written over itself with nothing set it is as read; and the XML path's properties built from the
+/// typed ones are the XML path's parse of `el`, and survive a conversion to typed properties and back.
+fn typed_table_round_trip(el: roxmltree::Node, cx: &Cx, colours: &ThemeColours, what: &str, counts: &mut TableCounts) {
+    use crate::docx::props::{TblProps, TcProps, TrProps};
+    use crate::docx::table_props::{self as tp, CellDirect, ExceptionsDirect, RowDirect, TableDirect};
+    let text = &el.document().input_text()[el.range()];
+    let owned = |names: &[&'static str]| -> Vec<(&'static str, &str)> {
+        names.iter().filter_map(|n| crate::docx::xml::child(el, n).map(|c| (*n, &el.document().input_text()[c.range()]))).collect()
+    };
+    macro_rules! round_trip {
+        ($holder:ty, $owned:expr, $frozen:expr) => {{
+            let typed = <$holder>::parse(el);
+            let held = <$holder>::read(typed.clone(), text.into());
+            assert_eq!(held.xml(colours, cx).as_deref(), Some(text), "{what}: as read");
+            let xml = <$holder>::serialize(&typed, &owned($owned), colours, cx);
+            let again = cx.parse(&xml, |_, e| <$holder>::parse(e)).unwrap_or_else(|| panic!("{what}: written as {xml}, parses"));
+            assert_eq!(again, typed, "{what}: typed, written as {xml}");
+            let lost = cx.parse(&xml, |_, e| char_props::tests::lost(el, e)).unwrap_or_default();
+            assert!(lost.is_empty(), "{what}: written as {xml}, loses {lost:?}");
+            let frozen = $frozen(el);
+            assert_eq!(cx.parse(&xml, |_, e| $frozen(e)).as_ref(), Some(&frozen), "{what}: on the XML path, written as {xml}");
+            assert_eq!(<$holder>::written_over(&typed, colours, cx, Some((&typed, text)), &[]).as_deref(), Some(text), "{what}: written over itself");
+            (typed, frozen)
+        }};
+    }
+    match el.tag_name().name() {
+        "tblPr" | "tblPrEx" => {
+            let (typed, frozen) = if el.tag_name().name() == "tblPr" {
+                counts.tables += 1;
+                round_trip!(TableDirect, &["tblPrChange"], |e| TblProps::parse(Some(e), colours))
+            } else {
+                counts.exceptions += 1;
+                round_trip!(ExceptionsDirect, &["tblPrExChange"], |e| TblProps::parse(Some(e), colours))
+            };
+            assert_eq!(tp::tbl_props(&typed, colours), frozen, "{what}: as the XML path holds it");
+            assert_eq!(tp::tbl_props(&tp::from_tbl_props(&frozen), colours), frozen, "{what}: converted from the XML path and back");
+            let first = |name| crate::docx::xml::child(el, name).and_then(crate::docx::xml::val);
+            assert_eq!(typed.caption.as_deref(), first("tblCaption"), "{what}: caption");
+            assert_eq!(typed.description.as_deref(), first("tblDescription"), "{what}: description");
+        }
+        "trPr" => {
+            counts.rows += 1;
+            let (typed, frozen) = round_trip!(RowDirect, &["ins", "del", "trPrChange"], |e| TrProps::parse(Some(e)));
+            assert_eq!(tp::tr_props(&typed), frozen, "{what}: as the XML path holds it");
+            assert_eq!(tp::tr_props(&tp::from_tr_props(&frozen)), frozen, "{what}: converted from the XML path and back");
+            let first = |name| crate::docx::xml::child(el, name);
+            assert_eq!(typed.division, first("divId").and_then(|n| crate::docx::xml::int(crate::docx::xml::val(n))), "{what}: division");
+            assert_eq!(typed.hidden.unwrap_or(false), first("hidden").is_some_and(crate::docx::xml::on_off), "{what}: hidden");
+        }
+        "tcPr" => {
+            counts.cells += 1;
+            let (typed, mut frozen) =
+                round_trip!(CellDirect, &["cellIns", "cellDel", "cellMerge", "tcPrChange"], |e| TcProps::parse(Some(e), colours));
+            let first = crate::docx::xml::child(el, "hideMark");
+            assert_eq!(typed.hide_mark.unwrap_or(false), first.is_some_and(crate::docx::xml::on_off), "{what}: hidden mark");
+            // A strict or unknown text direction as Word writes its flow
+            let flow = frozen.text_direction.as_deref().map(|v| tp::flow_literal(crate::docx::model::text_flow(v)));
+            if flow != frozen.text_direction.as_deref() {
+                counts.strict_flows += 1;
+                frozen.text_direction = flow.map(str::to_string);
+            }
+            assert_eq!(tp::tc_props(&typed, colours), frozen, "{what}: as the XML path holds it");
+            assert_eq!(tp::tc_props(&tp::from_tc_props(&frozen), colours), frozen, "{what}: converted from the XML path and back");
+        }
+        _ => {}
+    }
+}
+
+/// Every table, row exceptions, row and cell property element in every fixture (the main part's, its tracked changes'
+/// earlier ones, a table style's and its regions') round trips through the typed parse and serializer, and its typed
+/// properties are what the XML path reads.
+#[test]
+fn table_property_xml_round_trips_through_the_typed_writer() {
+    let mut counts = TableCounts::default();
+    let table = |n: &roxmltree::Node| ["tblPr", "tblPrEx", "trPr", "tcPr"].iter().any(|name| crate::docx::xml::is_w(*n, name));
+    for (path, d) in fixtures() {
+        let res = d.resolver.as_deref().expect("a resolver");
+        let cx = cx(&d);
+        let colours = &res.styles.colours;
+        let what = |raw: &str| format!("{}: {raw}", path.display());
+        let src = &d.source.as_ref().expect("a source").xml;
+        let doc = roxmltree::Document::parse(src).expect("the main part parses");
+        for p in doc.descendants().filter(table) {
+            typed_table_round_trip(p, &cx, colours, &what(&src[p.range()]), &mut counts);
+        }
+        let scx = res.styles.cx();
+        let mut styles: Vec<&str> = res.styles.by_id.values().map(|s| s.raw.as_str()).collect();
+        styles.extend(res.styles.defaults_raw.as_deref());
+        for raw in styles {
+            let parsed = scx.parse(raw, |_, el| {
+                for p in el.descendants().filter(table) {
+                    typed_table_round_trip(p, &scx, colours, &what(raw), &mut counts);
+                }
+            });
+            assert!(parsed.is_some(), "{}: parses", what(raw));
+        }
+    }
+    let TableCounts { tables, exceptions, rows, cells, strict_flows } = counts;
+    eprintln!("checked {tables} tables, {exceptions} row exceptions, {rows} rows, {cells} cells; {strict_flows} strict text flows");
+    assert!(
+        tables > 0 && exceptions > 0 && rows > 0 && cells > 0,
+        "only {tables} tables, {exceptions} exceptions, {rows} rows and {cells} cells checked"
+    );
+}
+
+/// Every table, row exceptions, row and cell in every fixture: its typed properties over its style region's (converted
+/// from the XML path's) fold to what the XML path folds.
+#[test]
+fn typed_table_resolution_gives_what_reading_resolved() {
+    let mut n = [0usize; 4];
+    for (path, d) in fixtures() {
+        let res = d.resolver.as_deref().expect("a resolver");
+        let cx = cx(&d);
+        for s in &d.sections {
+            resolve_tables(res, &cx, &s.blocks, &path.display().to_string(), &mut n);
+        }
+    }
+    let [tables, exceptions, rows, cells] = n;
+    eprintln!("resolved {tables} tables, {exceptions} row exceptions, {rows} rows, {cells} cells");
+    assert!(
+        tables > 100 && exceptions > 0 && rows > 100 && cells > 1000,
+        "only {tables} tables, {exceptions} exceptions, {rows} rows and {cells} cells"
+    );
+}
+
+fn resolve_tables(res: &Resolver, cx: &Cx, blocks: &[Block], what: &str, n: &mut [usize; 4]) {
+    use crate::docx::props::{TblProps, TcProps, TrProps};
+    use crate::docx::table_props::{self as tp, CellDirect, ExceptionsDirect, RowDirect, TableDirect};
+    let colours = &res.styles.colours;
+    for b in blocks {
+        let Block::Table(t) = b else { continue };
+        let xml = |raw: &crate::docx::Raw| raw.0.clone();
+        let parse = |raw: &crate::docx::Raw, f: &mut dyn FnMut(roxmltree::Node)| {
+            if let Some(x) = raw.0.as_deref() {
+                cx.parse(x, |_, el| f(el)).unwrap_or_else(|| panic!("{what}: {x} parses"));
+            }
+        };
+        let style = res.styles.table_region(t.style_id.as_deref(), &[]);
+        let mut tbl = style.tbl.clone();
+        let direct = TableDirect::from_xml(xml(&t.direct).as_deref(), cx);
+        parse(&t.direct, &mut |el| tbl.merge(&TblProps::parse(Some(el), colours)));
+        let mut typed = tp::from_tbl_props(&style.tbl);
+        typed.merge(direct.get());
+        assert_eq!(tp::tbl_props(&typed, colours), tbl, "{what}: table {:?}", t.direct.0);
+        n[0] += 1;
+        for (ri, row) in t.rows.iter().enumerate() {
+            let mut tr = style.tr.clone();
+            parse(&row.direct, &mut |el| tr.merge(&TrProps::parse(Some(el))));
+            let mut typed_tr = tp::from_tr_props(&style.tr);
+            typed_tr.merge(RowDirect::from_xml(xml(&row.direct).as_deref(), cx).get());
+            assert_eq!(tp::tr_props(&typed_tr), tr, "{what}: row {:?}", row.direct.0);
+            n[2] += 1;
+            if row.exceptions.0.is_some() {
+                let mut ex = tbl.clone();
+                parse(&row.exceptions, &mut |el| ex.merge(&TblProps::parse(Some(el), colours)));
+                let mut typed_ex = typed.clone();
+                typed_ex.merge(ExceptionsDirect::from_xml(xml(&row.exceptions).as_deref(), cx).get());
+                assert_eq!(tp::tbl_props(&typed_ex, colours), ex, "{what}: row exceptions {:?}", row.exceptions.0);
+                n[1] += 1;
+            }
+            for (ci, c) in row.cells.iter().enumerate() {
+                let region = res.region_of(t, ri, ci);
+                let mut tc = region.tc.clone();
+                parse(&c.direct, &mut |el| tc.merge(&TcProps::parse(Some(el), colours)));
+                let mut typed_tc = tp::from_tc_props(&region.tc);
+                typed_tc.merge(CellDirect::from_xml(xml(&c.direct).as_deref(), cx).get());
+                assert_eq!(tp::tc_props(&typed_tc, colours), tc, "{what}: cell {:?}", c.direct.0);
+                n[3] += 1;
+                resolve_tables(res, cx, &c.blocks, what, n);
+            }
+        }
+    }
+}
+
 /// Every paragraph's property XML in every fixture, written again by the property writer, parses to the same
 /// properties, whatever prefix (or default namespace) the element names its namespace with; every run property
 /// element (a run's, a mark's and a formatting change's earlier one, as held and as written in the main part, with
