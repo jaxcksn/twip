@@ -8,8 +8,8 @@ use super::position::StoryId;
 use super::step::{Edges, Step};
 use crate::api::command::{DropCap, DropCapPosition};
 use crate::api::value::Points;
+use crate::docx::props::FramePr;
 use crate::docx::run_xml;
-use crate::docx::write::props::esc;
 use crate::docx::{Block, Inline, Paragraph};
 use crate::font::Fonts;
 use crate::layout::{FloatId, ParaId, Unit};
@@ -154,8 +154,6 @@ impl Editor {
         fonts: &Fonts,
     ) -> Option<crate::docx::Float> {
         let res = self.doc.resolver.clone()?;
-        let cx = self.cx();
-        let w = &cx.w;
         // One line of the paragraph's text, as layout sets it.
         let face = fonts.face(&run.ascii, None, run.bold, run.italic);
         let line = face.map_or(run.size * 1.2, |f| {
@@ -168,15 +166,39 @@ impl Editor {
         // At most Word's largest font size.
         let size = ((drop * 4.0 / 3.0 * 2.0).round() / 2.0).min(1638.0);
         let lower = (size / 12.0 * 2.0).round();
-        let twips = |pt: f64| (pt * 20.0).round() as i64;
+        let twip = super::format::twip;
         let (kind, h_anchor) = if d.position == DropCapPosition::InMargin { ("margin", "page") } else { ("drop", "text") };
-        let style = p.style.style_id.as_deref().map_or(String::new(), |s| format!("<{w}pStyle {w}val=\"{}\"/>", esc(s)));
-        let space = d.distance.map_or(String::new(), |x| format!(" {w}hSpace=\"{}\"", twips(x.0)));
-        let ppr = format!(
-            "<{w}pPr>{style}<{w}keepNext/><{w}framePr {w}dropCap=\"{kind}\" {w}lines=\"{lines}\" {w}wrap=\"around\" {w}vAnchor=\"text\" {w}hAnchor=\"{h_anchor}\"{space}/><{w}spacing {w}after=\"0\" {w}line=\"{}\" {w}lineRule=\"exact\"/><{w}textAlignment {w}val=\"baseline\"/></{w}pPr>",
-            twips(drop)
-        );
-        let frame = crate::docx::para_xml::from_xml(&res, Some(&ppr), None, &cx).style;
+        let mut fr = FramePr {
+            w: None,
+            h: None,
+            h_rule: None,
+            x: None,
+            y: None,
+            x_align: None,
+            y_align: None,
+            h_anchor: Some(h_anchor.to_string()),
+            v_anchor: Some("text".to_string()),
+            wrap: Some("around".to_string()),
+            h_space: d.distance.map_or(0.0, |x| twip(x.0)),
+            v_space: 0.0,
+            drop_cap: Some(kind.to_string()),
+            lines: Some(i64::from(lines)),
+            key: String::new(),
+        };
+        fr.key = crate::docx::para_props::frame_key(&fr, None);
+        let mut flags = crate::format::ParaFlags::default();
+        flags.put(crate::format::ParaFlag::KEEP_NEXT, true);
+        let props = crate::format::ParaProps {
+            style: p.style.style_id.as_deref().map(Into::into),
+            flags,
+            frame: Some(fr),
+            space_after: Some(0.0),
+            line: Some((drop * 20.0).round()),
+            line_rule: Some(crate::document::format::LineRule::Exact),
+            text_alignment: Some(crate::document::paragraph::TextAlignment::Baseline),
+            ..Default::default()
+        };
+        let frame = crate::docx::para_xml::with(&res, crate::docx::para_props::ParaDirect::typed(Rc::new(props)), None, None).style;
         use crate::format::{FontRef, Prop, ScriptClass, ScriptFonts};
         let mut e = run_xml::edit_of(run);
         if let Some(font) = d.font.as_deref().filter(|f| !f.is_empty()) {

@@ -10,9 +10,34 @@ use crate::docx::{Inline, SectionPage};
 use crate::font::Fonts;
 
 use super::Outcome;
+use crate::docx::props::FramePr;
 use crate::editing::Editor;
 use crate::editing::step::{PageSettings, Step};
 use crate::layout::Unit;
+
+/// A frame wrapped around by text, of width `w` (points) when given, placed across by its anchor and alignment `h`,
+/// down by its anchor and alignment `v` or offset `y` (points).
+fn frame(w: Option<f64>, h: (&str, &str), v: (&str, Option<&str>), y: Option<f64>) -> FramePr {
+    let mut f = FramePr {
+        w,
+        h: None,
+        h_rule: None,
+        x: None,
+        y,
+        x_align: Some(h.1.to_string()),
+        y_align: v.1.map(str::to_string),
+        h_anchor: Some(h.0.to_string()),
+        v_anchor: Some(v.0.to_string()),
+        wrap: Some("around".to_string()),
+        h_space: 0.0,
+        v_space: 0.0,
+        drop_cap: None,
+        lines: None,
+        key: String::new(),
+    };
+    f.key = crate::docx::para_props::frame_key(&f, None);
+    f
+}
 
 impl Editor {
     /// Edits the page setup of each of the selection's sections, in one transaction.
@@ -358,7 +383,7 @@ impl Editor {
                 (PageNumberSpot::Margin(side), _) => Some(e.margin_frame(side)),
                 (PageNumberSpot::Header | PageNumberSpot::Footer, Some(a @ (PageNumberAlign::Inside | PageNumberAlign::Outside))) => {
                     let side = if a == PageNumberAlign::Inside { "inside" } else { "outside" };
-                    Some(format!("wrap=\"around\" vAnchor=\"text\" hAnchor=\"margin\" xAlign=\"{side}\" y=\"1\""))
+                    Some(frame(None, ("margin", side), ("text", None), Some(0.05)))
                 }
                 _ => None,
             };
@@ -434,9 +459,8 @@ impl Editor {
         if matches!(end, Outcome::Changed(_)) { end } else { out }
     }
 
-    /// The `w:framePr` attributes (unprefixed) of a frame filling the margin on `side` of the caret's section's
-    /// pages, centred down the page.
-    fn margin_frame(&self, side: MarginSide) -> String {
+    /// The frame filling the margin on `side` of the caret's section's pages, centred down the page.
+    fn margin_frame(&self, side: MarginSide) -> FramePr {
         let s = &self.doc.sections[self.focus_section().min(self.doc.sections.len().saturating_sub(1))];
         let gutter = if self.doc.settings.gutter_at_top { 0.0 } else { s.gutter };
         let (width, align) = match side {
@@ -445,19 +469,16 @@ impl Editor {
             MarginSide::Inside => (s.left + gutter, "inside"),
             MarginSide::Outside => (s.right, "outside"),
         };
-        let tw = |v: f64| (v * 20.0).round().max(0.0) as i64;
-        format!("w=\"{}\" wrap=\"around\" hAnchor=\"page\" xAlign=\"{align}\" vAnchor=\"page\" yAlign=\"center\"", tw(width))
+        frame(Some((width * 20.0).round().max(0.0) / 20.0), ("page", align), ("page", Some("center")), None)
     }
 
     /// A frame of the attributes `frame` holding one centred paragraph of `inlines`, anchored to the caret's
     /// paragraph.
-    fn insert_framed(&mut self, frame: &str, inlines: &dyn Fn(&crate::docx::Run) -> Vec<Inline>, fonts: &Fonts) -> Outcome {
+    fn insert_framed(&mut self, frame: &FramePr, inlines: &dyn Fn(&crate::docx::Run) -> Vec<Inline>, fonts: &Fonts) -> Outcome {
         if self.refuse_replacing() {
             return Outcome::Unchanged("locked");
         }
         let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
-        let cx = self.cx();
-        let w = &cx.w;
         let Some(caret) = self.selection.focus() else { return Outcome::Unchanged("no caret") };
         let Some((para, _)) = caret.para_offset() else { return Outcome::Unchanged("caret at a row end") };
         if matches!(caret.story, crate::editing::position::StoryId::TextBox(_)) {
@@ -465,11 +486,15 @@ impl Editor {
         }
         let Some(p) = self.index.para(&self.doc, para) else { return Outcome::Unchanged("no paragraph") };
         let Some(run) = self.run_at(&caret) else { return Outcome::Unchanged("no run") };
-        let attrs: String = frame.split(' ').map(|a| format!(" {w}{a}")).collect();
-        let style = p.style.style_id.as_deref().map_or(String::new(), |id| format!("<{w}pStyle {w}val=\"{}\"/>", crate::docx::write::props::esc(id)));
-        let ppr = format!("<{w}pPr>{style}<{w}framePr{attrs}/><{w}jc {w}val=\"center\"/></{w}pPr>");
+        let props = crate::format::ParaProps {
+            style: p.style.style_id.as_deref().map(Into::into),
+            frame: Some(frame.clone()),
+            align: Some(crate::document::format::Jc::Center),
+            ..Default::default()
+        };
         let region = self.region_of_para(para, &res);
-        let r = crate::docx::para_xml::from_xml(&res, Some(&ppr), region.as_ref(), &cx);
+        let direct = crate::docx::para_props::ParaDirect::typed(std::rc::Rc::new(props));
+        let r = crate::docx::para_xml::with(&res, direct, None, region.as_ref());
         let inner = crate::docx::Paragraph {
             style: std::rc::Rc::new(r.style),
             mark: run.clone(),
