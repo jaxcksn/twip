@@ -70,6 +70,17 @@ trait Kind {
     /// Writes the attributes of modelled child `key` of `p` to `s`; false when `p` doesn't set it.
     fn emit(p: &Self::Props, key: &str, s: &mut dyn Sink) -> bool;
     fn place(s: Self::Set) -> Place;
+    /// No properties, shared.
+    fn empty() -> Rc<Self::Props>;
+}
+
+thread_local! {
+    /// No table properties, shared.
+    static NO_TABLE: Rc<TableProps> = Rc::new(TableProps::default());
+    /// No row properties, shared.
+    static NO_ROW: Rc<RowProps> = Rc::new(RowProps::default());
+    /// No cell properties, shared.
+    static NO_CELL: Rc<CellProps> = Rc::new(CellProps::default());
 }
 
 /// `w:tblPr`.
@@ -217,6 +228,9 @@ impl Kind for Tbl {
     fn place(s: TableSet) -> Place {
         table_place(s)
     }
+    fn empty() -> Rc<TableProps> {
+        NO_TABLE.with(Rc::clone)
+    }
 }
 
 impl Kind for TblEx {
@@ -248,6 +262,9 @@ impl Kind for TblEx {
     }
     fn place(s: TableSet) -> Place {
         table_place(s)
+    }
+    fn empty() -> Rc<TableProps> {
+        NO_TABLE.with(Rc::clone)
     }
 }
 
@@ -329,6 +346,9 @@ impl Kind for Tr {
             RowProp::Hidden => "hidden",
         };
         Place { key, whole: s.whole, side: None }
+    }
+    fn empty() -> Rc<RowProps> {
+        NO_ROW.with(Rc::clone)
     }
 }
 
@@ -412,6 +432,9 @@ impl Kind for Tc {
             CellProp::HideMark => ("hideMark", None),
         };
         Place { key, whole: s.whole, side }
+    }
+    fn empty() -> Rc<CellProps> {
+        NO_CELL.with(Rc::clone)
     }
 }
 
@@ -1124,7 +1147,7 @@ impl<K: Kind> Clone for Holder<K> {
 
 impl<K: Kind> Default for Holder<K> {
     fn default() -> Self {
-        Holder { props: Rc::new(K::Props::default()), origin: None, set: Vec::new() }
+        Holder { props: K::empty(), origin: None, set: Vec::new() }
     }
 }
 
