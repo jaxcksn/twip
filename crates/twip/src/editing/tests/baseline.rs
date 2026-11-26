@@ -11,6 +11,8 @@ use crate::api::command::{Command as C, DeleteOptions, FontChoice, Indents, Inse
 use crate::api::drawing::{ColourTransform, ColourValue, ThemeColour, TransformKind};
 use crate::api::styles::{StyleChange, StyleModification};
 use crate::api::value::{Alignment, AutoOr, Bytes, Direction, HighlightColor, Points, StyleId, UnderlineStyle};
+use crate::document::paragraph::ListId;
+use crate::docx::list_xml::NumberingXml;
 use crate::docx::props::{ParaProps, RunProps, ThemeColours};
 use crate::docx::resolve::Resolver;
 use crate::docx::style_xml::StylesPart;
@@ -18,9 +20,10 @@ use crate::docx::styles::{Region, Styles};
 use crate::docx::write::props::{Cx, Props};
 use crate::docx::xml::{attr, is_w};
 use crate::docx::{Block, Document, Inline, Paragraph, Run, RunStyle};
-use crate::docx::{char_props, page_borders, para_props, para_xml, style_xml_tests};
+use crate::docx::{char_props, page_borders, para_props, para_xml, run_xml, style_xml_tests};
+use crate::format::cascade::{Cascade, Rules, TableRegion};
 use crate::format::resolve::{self, RunEnv};
-use crate::format::{CharProps, Color};
+use crate::format::{CharProps, Color, RegionKind, StyleKind, StyleProp, StyleSet};
 use crate::layout::{ParaId, Unit};
 
 fn model(name: &str) -> Vec<u8> {
@@ -1176,4 +1179,277 @@ fn bold_on_a_run_under_a_locally_bound_prefix_keeps_its_underline() {
     holds(e.document());
     let saved = crate::docx::write::save(e.document()).expect("saves");
     holds(&crate::docx::read_editable(&saved).expect("the saved package reads"));
+}
+
+// Typed cascade
+
+/// Fixture `d`'s typed definitions, read from its package's parts apart from the reader: the styles and numbering
+/// parts and the glossary's, merged as the reader merges them; picture bullets' images, the theme, the settings'
+/// rules, the font categories and the divisions as the reader's resolver holds them.
+fn typed_cascade(d: &Document) -> (Cascade, StylesPart, NumberingXml) {
+    let res = d.resolver.as_deref().expect("a resolver");
+    let src = d.source.as_ref().expect("a source");
+    let pkg = &src.package;
+    let read = |name: Option<String>| name.and_then(|n| crate::docx::package::read(pkg, &[], &n).ok().flatten());
+    let styles = StylesPart::parse(read(related(pkg, &src.main, "styles")).as_deref());
+    let numbering = NumberingXml::parse(read(related(pkg, &src.main, "numbering")).as_deref());
+    let (mut sheet, mut lists) = (styles.sheet.clone(), numbering.lists());
+    if let Some(g) = related(pkg, &src.main, "glossaryDocument") {
+        let gstyles = StylesPart::parse(read(related(pkg, &g, "styles")).as_deref());
+        let glists = NumberingXml::parse(read(related(pkg, &g, "numbering")).as_deref()).lists();
+        crate::docx::glossary::merge_definitions(&mut sheet, &mut lists, &gstyles.sheet, &glists);
+    }
+    for (id, p) in lists.pictures.iter_mut() {
+        Rc::make_mut(p).image = res.numbering.pic_bullets.get(id).and_then(|b| b.image);
+    }
+    let rules = Rules { word2002_rules: res.styles.word2002_rules, cell_size_rules: res.styles.cell_size_rules, open_type: res.styles.open_type };
+    let mut c = Cascade::new(Rc::new(sheet), Rc::new(lists), res.theme.clone(), res.styles.colours, rules);
+    (c.categories, c.divisions) = (res.categories.clone(), res.divisions.clone());
+    (c, styles, numbering)
+}
+
+/// What the typed cascade was compared on.
+#[derive(Default, Debug)]
+struct CascadeCounts {
+    styles: usize,
+    table_regions: usize,
+    lists: usize,
+    levels: usize,
+    links: usize,
+    counted: usize,
+    paragraphs: usize,
+    runs: usize,
+    labels: usize,
+    cells: usize,
+}
+
+/// The definitions: every style's chain and its folds, its dependants, every table style's base and single regions
+/// and what it defines, every list's definition and levels, the style links.
+fn definitions_match(res: &Resolver, c: &Cascade, numbering: &NumberingXml, what: &str, n: &mut CascadeCounts) {
+    let colours = &res.styles.colours;
+    let mut ids: Vec<&String> = res.styles.by_id.keys().collect();
+    ids.sort();
+    let mut typed_ids: Vec<String> = c.styles.styles.keys().map(|k| k.to_string()).collect();
+    typed_ids.sort();
+    assert_eq!(ids.iter().map(|s| s.to_string()).collect::<Vec<_>>(), typed_ids, "{what}: style ids");
+    for key in &ids {
+        let (key, id) = (key.as_str(), Some(key.as_str()));
+        let frozen_chain: Vec<String> = res.styles.chain(id).iter().map(|s| s.id.clone()).collect();
+        let typed_chain: Vec<String> = c.chain(id).iter().map(|s| s.style.id.to_string()).collect();
+        assert_eq!(typed_chain, frozen_chain, "{what}: {id:?}: chain");
+        assert_eq!(para_props::to_para_props(&c.chain_para(id), colours), res.styles.chain_ppr(id), "{what}: {id:?}: paragraph chain");
+        assert_eq!(char_props::to_run_props(&c.chain_char(id), colours), res.styles.chain_rpr(id), "{what}: {id:?}: run chain");
+        let deps: Vec<String> = c.dependants(key).iter().map(|s| s.to_string()).collect();
+        assert_eq!(deps, res.styles.dependants(key), "{what}: {id:?}: dependants");
+        assert_eq!(c.paragraph_style(id), res.styles.paragraph_style(id), "{what}: {id:?}: as a paragraph style");
+        assert_eq!(c.table_style(id), res.styles.table_style(id), "{what}: {id:?}: as a table style");
+        let (e, f) = (&c.styles.styles[key], &res.styles.by_id[key]);
+        let origin = matches!(e.origin, crate::format::Origin::Glossary) == (f.origin == crate::docx::styles::StyleOrigin::Glossary);
+        assert!(origin && e.order == f.order && e.frozen == f.frozen, "{what}: {id:?}: origin, order and frozen");
+        n.styles += 1;
+        if c.styles.styles[key].style.kind != StyleKind::Table {
+            continue;
+        }
+        style_xml_tests::regions_match(&res.styles.table_region(id, &[]), &c.table_region(id, &[]), colours, &format!("{what}: {id:?}: base"));
+        for kind in RegionKind::ALL {
+            let name = crate::docx::style_xml::region_literal(kind);
+            style_xml_tests::regions_match(
+                &res.styles.table_region(id, &[name]),
+                &c.table_region(id, &[kind]),
+                colours,
+                &format!("{what}: {id:?}: {name}"),
+            );
+            assert_eq!(c.table_defines(id, kind), res.styles.table_defines(id, name), "{what}: {id:?}: defines {name}");
+            n.table_regions += 1;
+        }
+    }
+    let order: Vec<String> = c.styles.paragraph_order.iter().map(|s| s.to_string()).collect();
+    assert_eq!(order, res.styles.paragraph_order, "{what}: paragraph styles' order");
+    let text = |v: &Option<Rc<str>>| v.as_deref().map(str::to_string);
+    assert_eq!(text(&c.styles.default_paragraph), res.styles.default_paragraph, "{what}: default paragraph style");
+    assert_eq!(text(&c.styles.default_table), res.styles.default_table, "{what}: default table style");
+    let ncx = numbering.cx();
+    let mut lists: Vec<i64> = res.numbering.nums.keys().copied().collect();
+    lists.sort();
+    let mut typed_lists: Vec<i64> = c.lists.lists.keys().map(|k| k.0).collect();
+    typed_lists.sort();
+    assert_eq!(typed_lists, lists, "{what}: lists");
+    let level = |l: Option<&Rc<crate::format::ListLevel>>| l.map(|l| crate::docx::list_xml::to_level(l, colours, &ncx));
+    let same = |a: Option<crate::docx::numbering::Level>, b: Option<&crate::docx::numbering::Level>, of: &str| match (a, b) {
+        (Some(a), Some(b)) => {
+            assert!(crate::docx::list_xml::tests::level_diff(&a, b).is_empty(), "{what}: {of}: {:?}", crate::docx::list_xml::tests::level_diff(&a, b))
+        }
+        (a, b) => assert_eq!(a.is_some(), b.is_some(), "{what}: {of}"),
+    };
+    for id in lists {
+        let list = ListId(id);
+        assert_eq!(c.abstract_of(list).map(|a| a.0), res.numbering.abstract_of(id, &res.styles), "{what}: list {id}: definition");
+        let (typed, frozen) = (c.levels(list), res.numbering.levels(id, &res.styles));
+        assert_eq!(typed.is_some(), frozen.is_some(), "{what}: list {id}: levels");
+        for k in 0..9i64 {
+            same(level(c.level(list, k)), res.numbering.level(id, k, &res.styles), &format!("list {id} level {k}"));
+            if let (Some(t), Some(f)) = (&typed, &frozen) {
+                same(level(t[k as usize]), f[k as usize], &format!("list {id} levels {k}"));
+                if let (Some(t), Some(f)) = (t[k as usize], f[k as usize]) {
+                    assert_eq!(c.bullet_image(t), res.numbering.bullet_image(f), "{what}: list {id} level {k}: bullet image");
+                }
+            }
+            n.levels += 1;
+        }
+        n.lists += 1;
+    }
+    let mut links: Vec<((i64, i64), String)> = c.style_links.iter().map(|((a, l), s)| ((a.0, *l), s.to_string())).collect();
+    links.sort();
+    let mut frozen: Vec<((i64, i64), String)> = res.style_links.iter().map(|(k, s)| (*k, s.clone())).collect();
+    frozen.sort();
+    assert_eq!(links, frozen, "{what}: style links");
+    n.links += links.len();
+}
+
+/// The document's paragraphs, marks, text runs, labels and cells resolved by the typed cascade from their typed
+/// properties give what reading resolved; its lists' labels counted in order give the XML path's.
+#[allow(clippy::too_many_arguments)]
+fn document_matches(
+    res: &Resolver,
+    c: &Cascade,
+    cx: &Cx,
+    blocks: &[Block],
+    region: Option<&TableRegion>,
+    counters: &mut (crate::docx::numbering::Counters, crate::format::counters::Counters),
+    what: &str,
+    n: &mut CascadeCounts,
+) {
+    for b in blocks {
+        match b {
+            Block::Para(p) => {
+                if let Some(r) = p.style.num {
+                    let (from_style, style_id) = {
+                        let direct = p.style.direct.get();
+                        let typed = c.paragraph(direct, None, region);
+                        (typed.from_style, typed.style_id.as_deref().map(str::to_string))
+                    };
+                    let shows = res.label_shows(r.list.0, r.level, from_style, style_id.as_deref());
+                    assert_eq!(c.label_shows(r.list, r.level, from_style, style_id.as_deref()), shows, "{what}: {:?}: label shows", p.id);
+                    if shows {
+                        let frozen = counters.0.next(&res.numbering, &res.styles, r.list.0, r.level);
+                        assert_eq!(counters.1.next(c, r.list, r.level), frozen, "{what}: {:?}: label", p.id);
+                        let vals = counters.0.values(&res.numbering, &res.styles, r.list.0);
+                        assert_eq!(counters.1.values(c, r.list), vals, "{what}: {:?}: counters", p.id);
+                        assert_eq!(counters.1.value(c, r.list, r.level), counters.0.value(&res.numbering, &res.styles, r.list.0, r.level));
+                        n.counted += 1;
+                    }
+                }
+                if p.src.as_ref().is_some_and(|s| s.ranges.len() > 1) {
+                    continue;
+                }
+                let raw = p.style.direct.as_read().map(|x| &**x);
+                let typed = para_xml::from_xml_typed(c, raw, region, cx);
+                let again = para_xml::again_typed(c, &p.style, typed.style.clone(), region, cx);
+                assert!(p.style.layout_eq(&again), "{what}: paragraph {:?}: {:?} against {again:?}", p.id, p.style);
+                if let (Some(was), Some(now)) = (&p.style.change, &again.change) {
+                    assert!(was.previous.layout_eq(&now.previous), "{what}: the earlier formatting of {:?}", p.id);
+                }
+                n.paragraphs += 1;
+                let same = |read: &RunStyle, again: &RunStyle, of: &str| {
+                    assert!(read.layout_eq(again), "{what}: {of} of {:?}: {read:?} against {again:?}", p.id);
+                    let refs = |s: &RunStyle| (s.color_theme, s.underline_color_theme, s.font_theme);
+                    assert_eq!(refs(read), refs(again), "{what}: the theme references of {of} of {:?}", p.id);
+                    if let (Some(a), Some(b)) = (&read.rev.fmt, &again.rev.fmt) {
+                        assert!(a.previous.layout_eq(&b.previous), "{what}: the earlier formatting of {of} of {:?}", p.id);
+                    }
+                };
+                let mark = RunStyle { rev: p.mark.rev.clone(), ..(*run_xml::rerun_typed(c, &typed.base, &p.mark)).clone() };
+                same(&p.mark, &mark, "the mark");
+                for i in &p.inlines {
+                    if let Inline::Text(t, r) = i {
+                        same(r, &run_xml::rerun_typed(c, &typed.base, r), &format!("run {t:?}"));
+                        n.runs += 1;
+                    }
+                }
+                let mark_own = p.mark.direct.props().map(|m| (**m).clone());
+                if let (Some(label), Some(level)) = (&p.list, &typed.level) {
+                    let under = c.run_props(&typed.base, &mark_own.clone().unwrap_or_default());
+                    same(&label.run, &c.label(&under, Some(&level.char)), "the label");
+                    assert_eq!(label.picture, c.bullet_image(level), "{what}: the label picture of {:?}", p.id);
+                    n.labels += 1;
+                }
+            }
+            Block::Table(t) => {
+                for (ri, row) in t.rows.iter().enumerate() {
+                    for (ci, cell) in row.cells.iter().enumerate() {
+                        let typed = c.region_of(t, ri, ci);
+                        style_xml_tests::regions_match(&res.region_of(t, ri, ci), &typed, &res.styles.colours, &format!("{what}: cell {ri} {ci}"));
+                        n.cells += 1;
+                        document_matches(res, c, cx, &cell.blocks, Some(&typed), counters, what, n);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Every fixture's typed definitions, read apart from the reader, cascade as the reader's resolver does: every style
+/// chain, table style region, list level and style link, and every paragraph, mark, text run, label and cell of the
+/// document; its lists counted in order label alike.
+#[test]
+fn typed_cascade_gives_what_the_resolver_gives() {
+    let mut n = CascadeCounts::default();
+    for (path, d) in fixtures() {
+        let res = d.resolver.as_deref().expect("a resolver");
+        let (c, _, numbering) = typed_cascade(&d);
+        let what = path.display().to_string();
+        definitions_match(res, &c, &numbering, &what, &mut n);
+        let cx = cx(&d);
+        let mut counters = Default::default();
+        for s in &d.sections {
+            document_matches(res, &c, &cx, &s.blocks, None, &mut counters, &what, &mut n);
+        }
+    }
+    eprintln!("cascaded {n:?}");
+    assert!(n.styles > 2000 && n.paragraphs > 10_000 && n.runs > 20_000 && n.cells > 1000 && n.counted > 100, "only {n:?}");
+}
+
+/// After each of a few style edits (a table style based on another, a style deleted), both readings of every
+/// fixture's styles part work out again alike what depends on the styles together.
+#[test]
+fn style_edits_work_the_read_order_rule_out_again_alike() {
+    let (mut sets, mut deletes) = (0, 0);
+    for (what, xml, colours) in styles_parts() {
+        let mut frozen = Styles::parse(Some(&xml), colours);
+        let mut typed = StylesPart::parse(Some(&xml));
+        let cx = typed.cx();
+        let order: Vec<Rc<str>> = typed.sheet.in_order().iter().map(|e| e.style.id.clone()).collect();
+        let tables: Vec<Rc<str>> = order.iter().filter(|id| typed.sheet.styles[*id].style.kind == StyleKind::Table).cloned().collect();
+        // Each table style based on the last one, unless that comes from it; the last on none
+        for (k, id) in tables.iter().enumerate() {
+            let last = tables.last().filter(|l| *l != id);
+            let c = Cascade::new(Rc::new(typed.sheet.clone()), Rc::default(), Default::default(), colours, Rules::default());
+            if last.is_some_and(|l| c.dependants(id).contains(l)) || k + 1 < tables.len() && last.is_none() {
+                continue;
+            }
+            let held = &typed.styles[id];
+            let mut s = (**held.get()).clone();
+            s.based_on = last.cloned();
+            let edited = held.edited(s, &[StyleSet::Style(StyleProp::BasedOn)]);
+            let raw = edited.xml(&colours, &cx).into_owned();
+            frozen.set_xml(raw).unwrap_or_else(|e| panic!("{what}: {e:?}"));
+            typed.set(edited, &colours);
+            style_xml_tests::sheet_matches(&frozen, &typed, &colours, &format!("{what}: {id} based on {last:?}"));
+            sets += 1;
+        }
+        // The style the most others are based on, and the first table style
+        let based = |id: &str| typed.sheet.styles.values().filter(|e| e.style.based_on.as_deref() == Some(id)).count();
+        let busiest = order.iter().max_by_key(|id| based(id)).cloned();
+        for id in busiest.into_iter().chain(tables.first().cloned()) {
+            if !typed.sheet.styles.contains_key(&id) {
+                continue;
+            }
+            frozen.delete(&id).unwrap_or_else(|e| panic!("{what}: {e:?}"));
+            assert!(typed.delete(&id, &colours));
+            style_xml_tests::sheet_matches(&frozen, &typed, &colours, &format!("{what}: {id} deleted"));
+            deletes += 1;
+        }
+    }
+    eprintln!("{sets} table styles based anew, {deletes} styles deleted");
+    assert!(sets > 300 && deletes > 300, "only {sets} styles based anew and {deletes} deleted");
 }
