@@ -220,13 +220,16 @@ impl Editor {
             &colours,
         )?;
         next.numbering.set_num_xml(format!("<{w}num {w}numId=\"{num_id}\"><{w}abstractNumId {w}val=\"{abstract_id}\"/></{w}num>"), &colours)?;
-        let scx = next.styles.cx();
         let mut counters = crate::docx::numbering::Counters::default();
         let ilvls: [i64; 3] = if multilevel { [0, 1, 2] } else { [0, 0, 0] };
         let mut out = Vec::new();
         for ilvl in ilvls {
-            let ppr = format!("<{w}pPr><{w}numPr><{w}ilvl {w}val=\"{ilvl}\"/><{w}numId {w}val=\"{num_id}\"/></{w}numPr></{w}pPr>");
-            let para = crate::docx::para_xml::from_xml(&next, Some(&ppr), None, &scx);
+            let ppr = crate::format::ParaProps {
+                list: Some(crate::format::ListChoice::In(crate::document::paragraph::ListId(num_id))),
+                list_level: Some(ilvl),
+                ..Default::default()
+            };
+            let para = crate::docx::para_xml::resolve(&next, &ppr, None, None);
             let text = counters.next(&next.numbering, &next.styles, num_id, ilvl)?;
             let level = next.numbering.level(num_id, ilvl, &next.styles)?.clone();
             let under = run_xml::folded(&next, &run_xml::base(&para.base), None, false);

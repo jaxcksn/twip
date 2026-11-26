@@ -190,18 +190,17 @@ impl Editor {
         next.styles.set_xml(raw.clone()).ok()?;
         let style = next.styles.by_id.values().find(|s| s.raw == *raw)?;
         let cx = next.styles.cx();
-        let w = &cx.w;
-        let id = crate::docx::write::props::esc(&style.id);
         let (ppr, direct) = match style.kind {
             StyleKind::Character => {
                 (None, RunDirect::typed(Some(Rc::new(CharProps { style: Some(style.id.as_str().into()), ..Default::default() }))))
             }
             StyleKind::Table => (None, RunDirect::default()),
-            _ => (Some(format!("<{w}pPr><{w}pStyle {w}val=\"{id}\"/></{w}pPr>")), RunDirect::default()),
+            _ => (Some(style.id.as_str()), RunDirect::default()),
         };
         // A table style's text: in the part being formatted, else the whole table.
         let region = (style.kind == StyleKind::Table).then(|| next.styles.table_region(Some(&style.id), self.style_part.as_slice()));
-        let para = crate::docx::para_xml::from_xml(&next, ppr.as_deref(), region.as_ref(), &cx);
+        let ppr = crate::format::ParaProps { style: ppr.map(Into::into), ..Default::default() };
+        let para = crate::docx::para_xml::resolve(&next, &ppr, None, region.as_ref());
         let run = Rc::new(run_xml::resolve(&next, &run_xml::base(&para.base), direct, false));
         let p = Paragraph {
             style: Rc::new(para.style),
@@ -292,16 +291,10 @@ impl Editor {
                 self.doc.resolver.as_ref()?.styles.get(&id)?.raw.clone()
             }
         };
-        let (para, _, cx) = self.style_formatting(&raw)?;
+        let (para, _, _) = self.style_formatting(&raw)?;
         let res = self.doc.resolver.as_ref()?;
-        let base = res
-            .styles
-            .by_id
-            .values()
-            .find(|s| s.raw == raw)
-            .and_then(|s| s.based_on.clone())
-            .map(|b| format!("<{w}pPr><{w}pStyle {w}val=\"{}\"/></{w}pPr>", crate::docx::write::props::esc(&b), w = cx.w));
-        let inherited = crate::docx::para_xml::from_xml(res, base.as_deref(), None, &cx)
+        let base = res.styles.by_id.values().find(|s| s.raw == raw).and_then(|s| s.based_on.clone()).map(|b| b.as_str().into());
+        let inherited = crate::docx::para_xml::resolve(res, &crate::format::ParaProps { style: base, ..Default::default() }, None, None)
             .style
             .tabs
             .iter()
