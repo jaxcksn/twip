@@ -10,7 +10,7 @@ use crate::docx::props::RunProps;
 use crate::docx::resolve::{Resolver, joined_style};
 use crate::docx::styles::Region;
 use crate::docx::write::props::Cx;
-use crate::docx::{Inline, ParaStyle, Raw, Row, Ruby, Run, RunStyle, Table};
+use crate::docx::{Inline, ParaStyle, Row, Ruby, Run, RunStyle, Table};
 use crate::font::Fonts;
 use crate::layout::{ParaId, Unit};
 
@@ -252,20 +252,18 @@ impl Again {
     }
 }
 
-/// `t`'s properties a table style gives, resolved again from its and its rows' and cells' direct XML as reading resolves
-/// them: its style (the default one for one it names that's gone), borders, shading, band sizes, layout, alignment,
+/// `t`'s properties a table style gives, resolved again from its and its rows' and cells' authored properties as reading
+/// resolves them: its style (the default one for one it names that's gone), borders, shading, band sizes, layout, alignment,
 /// indent, width and spacing, its rows' heights, splitting and header flags, and every cell's borders, shading, margins
 /// and alignment, when they changed. A table joined from several as read keeps the alignment, indent and width its
 /// first row took from them.
-fn table_again(t: &Table, res: &Resolver, cx: &Cx) -> Option<(TableProps, Option<Vec<Row>>)> {
-    use crate::docx::props::{Borders, TblProps, TcProps, TrProps};
+fn table_again(t: &Table, res: &Resolver) -> Option<(TableProps, Option<Vec<Row>>)> {
+    use crate::docx::props::Borders;
+    use crate::docx::table_props::{cell_over, row_over, table_over, tbl_props};
     let colours = &res.styles.colours;
-    let parse_tbl = |raw: &Raw| raw.0.as_deref().and_then(|x| cx.parse(x, |_, n| TblProps::parse(Some(n), colours))).unwrap_or_default();
-    let direct = parse_tbl(&t.direct);
-    let style_id = res.styles.table_style(direct.style.as_deref()).map(str::to_string);
+    let style_id = res.styles.table_style(t.direct.get().style.as_deref()).map(str::to_string);
     let style_region = res.styles.table_region(style_id.as_deref(), &[]);
-    let mut tbl = style_region.tbl.clone();
-    tbl.merge(&direct);
+    let tbl = table_over(&style_region.tbl, t.direct.get(), colours);
     let b = &tbl.borders;
     let mut props = TableProps::of(t);
     props.style_id = style_id.clone();
@@ -275,16 +273,14 @@ fn table_again(t: &Table, res: &Resolver, cx: &Cx) -> Option<(TableProps, Option
     props.fixed = tbl.fixed.unwrap_or(false);
     props.cell_spacing = tbl.cell_spacing.unwrap_or(0.0);
     let generic = res.styles.compat == Compat::Generic;
-    let parse_tr = |raw: &Raw| raw.0.as_deref().and_then(|x| cx.parse(x, |_, n| TrProps::parse(Some(n)))).unwrap_or_default();
     // Joined tables' rows carry the shading of their own table: their first row's alignment came from that table.
     let joined = t.rows.iter().any(|r| r.table_shading.is_some());
     if !joined {
         let mut row_jc: Option<Option<crate::docx::props::Jc>> = None;
         let (mut first_jc, mut first_width, mut first_ind) = (None, None, None);
         for (ri, row) in t.rows.iter().enumerate() {
-            let mut trp = style_region.tr.clone();
-            trp.merge(&parse_tr(&row.direct));
-            let ex = parse_tbl(&row.exceptions);
+            let mut trp = row_over(&style_region.tr, row.direct.get());
+            let ex = tbl_props(row.exceptions.get(), colours);
             trp.jc = trp.jc.or(ex.jc);
             row_jc = Some(if ri == 0 || row_jc == Some(trp.jc) { trp.jc } else { None });
             if ri == 0 {
@@ -311,19 +307,14 @@ fn table_again(t: &Table, res: &Resolver, cx: &Cx) -> Option<(TableProps, Option
         .rows
         .iter()
         .enumerate()
-        .take_while(|(i, r)| {
-            let mut trp = style_region.tr.clone();
-            trp.merge(&r.direct.0.as_deref().and_then(|x| cx.parse(x, |_, n| TrProps::parse(Some(n)))).unwrap_or_default());
-            trp.header == Some(true) || *i == 0 && look.first_row
-        })
+        .take_while(|(i, r)| row_over(&style_region.tr, r.direct.get()).header == Some(true) || *i == 0 && look.first_row)
         .count();
     let unset = if style_id.is_none() { 0.5 } else { 0.0 };
     let mut rows = t.rows.clone();
     for (ri, row) in rows.iter_mut().enumerate() {
-        let mut trp = style_region.tr.clone();
-        trp.merge(&parse_tr(&row.direct));
+        let trp = row_over(&style_region.tr, row.direct.get());
         (row.height, row.cant_split, row.header) = (trp.height, trp.cant_split.unwrap_or(false), trp.header.unwrap_or(false));
-        let ex = parse_tbl(&row.exceptions);
+        let ex = tbl_props(row.exceptions.get(), colours);
         let mut row_tbl = tbl.clone();
         row_tbl.borders.merge(&ex.borders);
         row_tbl.margins.merge(&ex.margins);
@@ -333,8 +324,7 @@ fn table_again(t: &Table, res: &Resolver, cx: &Cx) -> Option<(TableProps, Option
         let ncols = row.cells.len();
         for (ci, c) in row.cells.iter_mut().enumerate() {
             let region = res.cell_region(style_id.as_deref(), look, props.bands, (ri, ci), (nrows, ncols), headers);
-            let mut tcp = region.tc.clone();
-            tcp.merge(&c.direct.0.as_deref().and_then(|x| cx.parse(x, |_, n| TcProps::parse(Some(n), colours))).unwrap_or_default());
+            let tcp = cell_over(&region.tc, c.direct.get(), colours);
             crate::docx::style_cell(c, &tcp, &row_tbl.margins, unset);
         }
     }
@@ -423,7 +413,7 @@ impl Editor {
         let cx = self.cx();
         for &table in &tx.stale_tables.clone() {
             let Some(t) = self.index.table(&self.doc, table) else { continue };
-            if let Some((props, rows)) = table_again(t, &res, &cx) {
+            if let Some((props, rows)) = table_again(t, &res) {
                 if props != TableProps::of(t) {
                     let _ = self.step(tx, Step::TableProps { table, props });
                 }
@@ -504,6 +494,11 @@ impl Editor {
     /// Authored paragraph properties `d` as the `w:pPr` written in the part `cx` describes.
     pub(super) fn ppr<'d>(&self, d: &'d ParaDirect, cx: &Cx) -> Option<std::borrow::Cow<'d, str>> {
         para_xml::ppr(self.doc.resolver.as_deref(), d, cx)
+    }
+
+    /// The theme colours a theme colour's value is written as.
+    pub(super) fn colours(&self) -> crate::docx::props::ThemeColours {
+        self.doc.resolver.as_ref().map_or_else(Default::default, |r| r.styles.colours)
     }
 
     pub(super) fn cx(&self) -> Cx {

@@ -471,7 +471,9 @@ fn table_row_and_cell_revisions_are_written() {
     t.grid_change = Some(Rc::new(GridChange { mark: grid, previous: vec![100.0; t.grid.len()] }));
     t.change = Some(Rc::new(TableChange {
         mark: tbl,
-        previous_raw: Raw(Some("<w:tblPr><w:tblW w:w=\"0\" w:type=\"auto\"/></w:tblPr>".into())),
+        previous_direct: crate::docx::table_props::PreviousDirect::Table(crate::docx::table_props::TableDirect::in_w(
+            "<w:tblPr><w:tblW w:w=\"0\" w:type=\"auto\"/></w:tblPr>",
+        )),
         previous: None,
     }));
     t.rows[1].rev = RowRevisions { ins: Some(row), ..Default::default() };

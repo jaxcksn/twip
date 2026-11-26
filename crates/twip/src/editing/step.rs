@@ -247,8 +247,8 @@ pub struct TableProps {
     /// The table's shading, its own over its style's.
     pub shd: Option<crate::docx::props::Shd>,
     pub alt: Option<Rc<crate::docx::TableAlt>>,
-    /// Its `w:tblPr` as written, its own shading in it.
-    pub direct: crate::docx::Raw,
+    /// Its authored properties, its own shading among them.
+    pub direct: crate::docx::table_props::TableDirect,
 }
 
 impl Step {

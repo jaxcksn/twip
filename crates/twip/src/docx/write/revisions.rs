@@ -99,8 +99,8 @@ pub(super) fn grid_change(w: &str, g: &GridChange, people: &People) -> String {
 }
 
 /// A table-level change element (`w:tblPrChange`, `w:trPrChange`, `w:tcPrChange`, `w:tblPrExChange`).
-pub(super) fn table_change(w: &str, name: &str, inner: &str, c: &TableChange, people: &People) -> String {
-    change(w, name, inner, &c.mark, &c.previous_raw, people)
+pub(super) fn table_change(w: &str, name: &str, inner: &str, c: &TableChange, colours: &ThemeColours, cx: &Cx, people: &People) -> String {
+    change(w, name, inner, &c.mark, &Raw(c.previous_direct.xml(colours, cx).map(|x| x.into())), people)
 }
 
 /// CT_TrPr's children in schema order (the base properties are a choice group: any order before the marks).
@@ -154,23 +154,23 @@ pub(super) fn before<'o>(order: &'o [&'o str], name: &str) -> &'o [&'o str] {
 }
 
 /// A row's revision children (`w:ins`, `w:del`, `w:trPrChange`) by name, as written from the model (empty: none).
-pub(super) fn row_marks(w: &str, r: &RowRevisions, people: &People) -> [(&'static str, String); 3] {
+pub(super) fn row_marks(w: &str, r: &RowRevisions, people: &People, colours: &ThemeColours, cx: &Cx) -> [(&'static str, String); 3] {
     let el = |m: &Option<std::rc::Rc<RevisionMark>>, name: &str| m.as_ref().map_or(String::new(), |m| format!("<{w}{name}{}/>", attrs(w, m, people)));
     [
         ("ins", el(&r.ins, "ins")),
         ("del", el(&r.del, "del")),
-        ("trPrChange", r.change.as_ref().map_or(String::new(), |c| table_change(w, "trPrChange", "trPr", c, people))),
+        ("trPrChange", r.change.as_ref().map_or(String::new(), |c| table_change(w, "trPrChange", "trPr", c, colours, cx, people))),
     ]
 }
 
 /// A row's `w:tblPrExChange`, as written from the model (empty: none).
-pub(super) fn ex_change(w: &str, r: &RowRevisions, people: &People) -> String {
-    r.ex_change.as_ref().map_or(String::new(), |c| table_change(w, "tblPrExChange", "tblPrEx", c, people))
+pub(super) fn ex_change(w: &str, r: &RowRevisions, people: &People, colours: &ThemeColours, cx: &Cx) -> String {
+    r.ex_change.as_ref().map_or(String::new(), |c| table_change(w, "tblPrExChange", "tblPrEx", c, colours, cx, people))
 }
 
 /// A cell's revision children (`w:cellIns`, `w:cellDel`, `w:cellMerge`, `w:tcPrChange`) by name, as written from the
 /// model (empty: none).
-pub(super) fn cell_marks(w: &str, c: &CellRevisions, people: &People) -> [(&'static str, String); 4] {
+pub(super) fn cell_marks(w: &str, c: &CellRevisions, people: &People, colours: &ThemeColours, cx: &Cx) -> [(&'static str, String); 4] {
     let mut out = [("cellIns", String::new()), ("cellDel", String::new()), ("cellMerge", String::new()), ("tcPrChange", String::new())];
     if let Some((m, kind)) = &c.structural {
         let a = attrs(w, m, people);
@@ -188,7 +188,7 @@ pub(super) fn cell_marks(w: &str, c: &CellRevisions, people: &People) -> [(&'sta
         }
     }
     if let Some(ch) = &c.change {
-        out[3].1 = table_change(w, "tcPrChange", "tcPr", ch, people);
+        out[3].1 = table_change(w, "tcPrChange", "tcPr", ch, colours, cx, people);
     }
     out
 }
@@ -273,7 +273,7 @@ mod tests {
             )),
             change: None,
         };
-        let m = cell_marks("w:", &c, &people());
+        let m = cell_marks("w:", &c, &people(), &ThemeColours::default(), &Cx::of_xml(&format!("<w:document xmlns:w=\"{}\">", crate::docx::xml::W)));
         assert_eq!(m[2].1, r#"<w:cellMerge w:id="4" w:author="Author A" w:date="2026-01-02T10:00:00Z" w:vMerge="cont" w:vMergeOrig="rest"/>"#);
         assert!(m[0].1.is_empty() && m[1].1.is_empty() && m[3].1.is_empty());
         let g = grid_change("w:", &GridChange { mark: mark(9, 0, MarkKind::Insert), previous: vec![72.0, 144.0] }, &people());

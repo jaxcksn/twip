@@ -617,7 +617,6 @@ impl Editor {
                 p.xml()
             })
         };
-        let raw = |x: Option<String>| crate::docx::Raw(x.map(|x| Rc::from(x.as_str())));
         let named = |r: &crate::docx::Run| r.style_id.as_deref() == Some(id);
         // The properties without the character style when they name it
         let unstyle = |e: &mut CharEdit| {
@@ -680,9 +679,9 @@ impl Editor {
         let tables: Vec<_> = self.index.table_ids().collect();
         for table in tables {
             let Some(t) = self.index.table(&self.doc, table).filter(|t| t.style_id.as_deref() == Some(id)) else { continue };
-            if let Some(x) = without(t.direct.0.as_deref(), "tblPr", "tblStyle") {
+            if let Some(x) = without(t.direct.xml(&self.colours(), &cx).as_deref(), "tblPr", "tblStyle") {
                 let mut props = super::step::TableProps::of(t);
-                props.direct = raw(x);
+                props.direct = t.direct.rewritten(x.as_deref(), &self.colours(), &cx);
                 let _ = self.step(tx, Step::TableProps { table, props });
             }
             tx.stale_tables.push(table);

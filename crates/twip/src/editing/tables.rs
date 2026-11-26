@@ -841,6 +841,7 @@ impl Editor {
                     return Outcome::Unchanged("too many rows");
                 }
                 let cx = self.cx();
+                let colours = self.colours();
                 let mut out: Vec<Row> = Vec::with_capacity(grown);
                 let mut at = vec![0; rows.len()];
                 for (r, mut first) in rows.into_iter().enumerate() {
@@ -850,7 +851,7 @@ impl Editor {
                         continue;
                     }
                     let split = |k: usize| targets.binary_search(&(r, k)).is_ok();
-                    super::table_format::set_height(&mut first, None, &cx);
+                    super::table_format::set_height(&mut first, None, &colours, &cx);
                     let mut template = first.clone();
                     template.rev = Default::default();
                     for (k, c) in first.cells.iter_mut().enumerate() {
@@ -1003,7 +1004,7 @@ impl Editor {
                     format!("<{w}tblBorders>{sides}</{w}tblBorders><{w}tblCellMar>{}{}</{w}tblCellMar>", mar("left"), mar("right"))
                 }
             };
-            crate::docx::Raw(Some(std::rc::Rc::from(format!("<{w}tblPr>{own}</{w}tblPr>").as_str())))
+            crate::docx::table_props::TableDirect::from_xml(Some(&format!("<{w}tblPr>{own}</{w}tblPr>")), &self.cx())
         };
         Table {
             style_id: style,

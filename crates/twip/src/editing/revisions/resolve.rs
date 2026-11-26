@@ -5,7 +5,7 @@ use std::ops::Range;
 use std::rc::Rc;
 
 use crate::docx::review::{AuthorId, CellMarkKind, RangeKind, RevisionId, RevisionMark};
-use crate::docx::{Block, Document, Inline, Paragraph, Raw, Row, Run, RunStyle, Table, VMerge};
+use crate::docx::{Block, Document, Inline, Paragraph, Row, Run, RunStyle, Table, VMerge};
 use crate::font::Fonts;
 use crate::layout::{ParaId, TableId, Unit};
 
@@ -620,12 +620,13 @@ impl Editor {
                         p.restore_row(&mut r);
                     }
                     // Its properties as written before, its own revisions kept
-                    let now = crate::docx::write::props::Props::parse(r.direct.0.as_deref(), "trPr", &cx);
-                    let mut was = crate::docx::write::props::Props::parse(c.previous_raw.0.as_deref(), "trPr", &cx);
+                    let colours = self.colours();
+                    let now = crate::docx::write::props::Props::parse(r.direct.xml(&colours, &cx).as_deref(), "trPr", &cx);
+                    let mut was = crate::docx::write::props::Props::parse(c.previous_direct.xml(&colours, &cx).as_deref(), "trPr", &cx);
                     for (name, xml) in now.kids.iter().filter(|(n, _)| matches!(n.as_str(), "ins" | "del")) {
                         was.set(name, xml.clone());
                     }
-                    r.direct = Raw(was.xml().map(|x| Rc::from(x.as_str())));
+                    r.direct = crate::docx::table_props::RowDirect::from_xml(was.xml().as_deref(), &cx);
                     restyle = true;
                 }
             }
@@ -643,8 +644,10 @@ impl Editor {
                         if let Some(p) = &ch.previous {
                             p.restore_cell(c);
                         }
-                        let raw = ch.previous_raw.0.clone().unwrap_or_else(|| Rc::from(format!("<{}tcPr/>", cx.w).as_str()));
-                        c.direct = Raw(Some(raw));
+                        c.direct = match &ch.previous_direct {
+                            crate::docx::table_props::PreviousDirect::Cell(d) if d.origin_xml().is_some() => d.clone(),
+                            _ => crate::docx::table_props::CellDirect::from_xml(Some(&format!("<{}tcPr/>", cx.w)), &cx),
+                        };
                         restyle = true;
                     }
                 }
@@ -689,7 +692,10 @@ impl Editor {
                 if let Some(p) = &c.previous {
                     p.restore_table(&mut x);
                 }
-                x.direct = c.previous_raw.clone();
+                x.direct = match &c.previous_direct {
+                    crate::docx::table_props::PreviousDirect::Table(d) => d.clone(),
+                    _ => Default::default(),
+                };
                 restyle = true;
             }
             x

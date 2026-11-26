@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use super::*;
 use crate::api::session::PdfOptions;
-use crate::docx::{CellIds, Raw};
+use crate::docx::CellIds;
 use crate::layout::tests::output::{bundled_fonts, root};
 
 const W: &str = r#"xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships""#;
@@ -150,7 +150,7 @@ fn cell_ids_and_headers_are_written_back() {
     let t = d.sections[0].blocks.iter_mut().find_map(|b| if let crate::docx::Block::Table(t) = b { Some(t) } else { None }).expect("the table");
     // One cell's headers changed as read, another's properties written from the model.
     t.rows[1].cells[0].ids = Some(Rc::new(CellIds { id: Some("n1".into()), headers: vec!["h1".into(), "h2".into()] }));
-    t.rows[2].cells[0].direct = Raw::default();
+    t.rows[2].cells[0].direct = Default::default();
     let again = crate::docx::read_editable(&crate::docx::write::save(&d).expect("saves")).expect("reads again");
     let t = again.sections[0].blocks.iter().find_map(|b| if let crate::docx::Block::Table(t) = b { Some(t) } else { None }).expect("the table");
     let ids = |r: usize| t.rows[r].cells[0].ids.as_deref().cloned().unwrap_or_default();

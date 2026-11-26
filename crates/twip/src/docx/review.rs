@@ -267,8 +267,8 @@ pub struct SectionChange {
 #[derive(Clone, Debug, PartialEq)]
 pub struct TableChange {
     pub mark: Rc<RevisionMark>,
-    /// The earlier properties as written, for saving.
-    pub previous_raw: Raw,
+    /// The earlier authored properties, for saving.
+    pub previous_direct: super::table_props::PreviousDirect,
     /// The earlier properties resolved as the table, row or cell holding the change is: what Original shows and
     /// rejecting restores. `None` for a row's table exceptions (`w:tblPrExChange`), which the model doesn't hold.
     pub previous: Option<PreviousProps>,

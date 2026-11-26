@@ -1734,9 +1734,9 @@ pub struct Cell {
     pub hide_mark: bool,
     /// The diagonal borders, top left to bottom right and top right to bottom left (`w:tl2br`, `w:tr2bl`).
     pub diagonals: Option<Rc<[Option<Border>; 2]>>,
-    /// The cell's `w:tcPr` as read (or as table formatting changed it): what re-resolution merges over the cell's
-    /// table-style region when its place in the table changes.
-    pub direct: Raw,
+    /// The cell's authored properties (its `w:tcPr` as read, or as table formatting changed it): what re-resolution
+    /// merges over the cell's table-style region when its place in the table changes.
+    pub direct: super::table_props::CellDirect,
     pub blocks: Vec<Block>,
     /// The cell-level controls around it, outermost first ([`Document::controls`]).
     pub controls: Vec<ControlId>,
@@ -1794,10 +1794,10 @@ pub struct Row {
     /// The `w:tr` element's byte range in [`Source::xml`] (editable reads only): saving keeps a row it still has. A
     /// copied row needs `None`, or it would be written as the row it was copied from.
     pub src: Option<Rc<std::ops::Range<usize>>>,
-    /// The row's `w:trPr` and `w:tblPrEx` as read (editable reads only): what a rewritten row's properties are patched
-    /// from.
-    pub direct: Raw,
-    pub exceptions: Raw,
+    /// The row's authored properties and its exceptions to its table's (its `w:trPr` and `w:tblPrEx`; editable reads
+    /// only): what a rewritten row's properties are written from.
+    pub direct: super::table_props::RowDirect,
+    pub exceptions: super::table_props::ExceptionsDirect,
     /// Tracked insertion or deletion of the row, and tracked changes of its properties.
     pub rev: RowRevisions,
 }
@@ -1837,8 +1837,9 @@ pub struct Table {
     pub src: Option<Rc<std::ops::Range<usize>>>,
     /// Identity in layouts ([`next_para_id`]): drawn rows name their table (table handles, border dragging).
     pub id: u64,
-    /// The table's `w:tblPr` as read: what re-resolution merges over a new table style's properties.
-    pub direct: Raw,
+    /// The table's authored properties (its `w:tblPr` as read): what re-resolution merges over a new table style's
+    /// properties.
+    pub direct: super::table_props::TableDirect,
     /// The block-level content controls around it, outermost first.
     pub controls: Vec<ControlId>,
     /// A tracked change of the table's properties, and of its column grid.

@@ -307,7 +307,7 @@ impl Editor {
         let mut rows = t.rows.clone();
         let (grid, cx) = (t.grid.clone(), self.cx());
         let Some(cell) = rows.get_mut(row).and_then(|r| r.cells.get_mut(k)) else { return Outcome::Unchanged("no cell there") };
-        set_cell_sides(cell, if down { DIAGONAL_DOWN } else { DIAGONAL_UP }, &self.table_pen, &cx);
+        set_cell_sides(cell, if down { DIAGONAL_DOWN } else { DIAGONAL_UP }, &self.table_pen, &self.colours(), &cx);
         let col = Grid::of(t).col_of(row, k).unwrap_or(0);
         self.rebuild(DRAW_TABLE, table, rows, grid, (row, col), fonts)
     }
@@ -326,6 +326,7 @@ impl Editor {
         };
         let pen = self.table_pen.clone();
         let cx = self.cx();
+        let colours = self.colours();
         let band = d.rows.iter().find(|&&(_, top, bottom, _)| y > top + REACH && y < bottom - REACH).map(|&(r, top, bottom, _)| (r, top, bottom));
         let Some((r, top, bottom)) = band else {
             // Along the border over row `b`: a row's top or bottom, not where a page cuts it
@@ -353,10 +354,10 @@ impl Editor {
                 if cell.v_merge == VMerge::Continue {
                     cell.v_merge = VMerge::Restart;
                 }
-                set_cell_sides(cell, TOP, &pen, &cx);
+                set_cell_sides(cell, TOP, &pen, &colours, &cx);
             }
             for &k in &above {
-                set_cell_sides(&mut rows[b - 1].cells[k], BOTTOM, &pen, &cx);
+                set_cell_sides(&mut rows[b - 1].cells[k], BOTTOM, &pen, &colours, &cx);
             }
             let caret = (b.min(rows.len() - 1), g.rows[b.min(rows.len() - 1)].first().map_or(0, |x| x.0));
             return self.rebuild(DRAW_TABLE, table, rows, grid, caret, fonts);
@@ -381,8 +382,8 @@ impl Editor {
             *cell = empty_cell(upper);
             if crossed.binary_search(&k).is_ok() {
                 cell.v_merge = if upper.v_merge != VMerge::None && continued { VMerge::Restart } else { VMerge::None };
-                set_cell_sides(upper, BOTTOM, &pen, &cx);
-                set_cell_sides(cell, TOP, &pen, &cx);
+                set_cell_sides(upper, BOTTOM, &pen, &colours, &cx);
+                set_cell_sides(cell, TOP, &pen, &colours, &cx);
             } else {
                 cell.v_merge = VMerge::Continue;
                 if upper.v_merge == VMerge::None {
@@ -391,8 +392,8 @@ impl Editor {
             }
         }
         if let Some((u, l)) = heights {
-            set_height(&mut rows[r], Some(u), &cx);
-            set_height(&mut lower, Some(l), &cx);
+            set_height(&mut rows[r], Some(u), &colours, &cx);
+            set_height(&mut lower, Some(l), &colours, &cx);
         }
         rows.insert(r + 1, lower);
         self.rebuild(DRAW_TABLE, table, rows, grid, (r, g.rows[r][first].0), fonts)
@@ -457,9 +458,10 @@ impl Editor {
         whole_merges(&g, &mut crossed);
         let pen = self.table_pen.clone();
         let cx = self.cx();
+        let colours = self.colours();
         let mut rows = t.rows.clone();
         for &(r, k, starts) in &along {
-            set_cell_sides(&mut rows[r].cells[k], if starts { LEFT } else { RIGHT }, &pen, &cx);
+            set_cell_sides(&mut rows[r].cells[k], if starts { LEFT } else { RIGHT }, &pen, &colours, &cx);
         }
         let Some(&(r, k)) = crossed.first() else {
             let (r, k, _) = along[0];
@@ -528,8 +530,8 @@ impl Editor {
             // The two halves' widths; the cells not split keep theirs
             let width = |a: usize, b: usize| Some(Width::Dxa(grid[a.min(grid.len())..b.min(grid.len())].iter().sum()));
             (cell.width, new.width) = (width(from, at), width(at, to));
-            set_cell_sides(cell, RIGHT, &pen, &cx);
-            set_cell_sides(&mut new, LEFT, &pen, &cx);
+            set_cell_sides(cell, RIGHT, &pen, &colours, &cx);
+            set_cell_sides(&mut new, LEFT, &pen, &colours, &cx);
             rows[r].cells.insert(k + 1, new);
             rows[r].src = None;
         }

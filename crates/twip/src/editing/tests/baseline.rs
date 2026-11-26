@@ -823,42 +823,47 @@ fn resolve_tables(res: &Resolver, cx: &Cx, blocks: &[Block], what: &str, n: &mut
     let colours = &res.styles.colours;
     for b in blocks {
         let Block::Table(t) = b else { continue };
-        let xml = |raw: &crate::docx::Raw| raw.0.clone();
-        let parse = |raw: &crate::docx::Raw, f: &mut dyn FnMut(roxmltree::Node)| {
-            if let Some(x) = raw.0.as_deref() {
+        let parse = |raw: Option<&Rc<str>>, f: &mut dyn FnMut(roxmltree::Node)| {
+            if let Some(x) = raw {
                 cx.parse(x, |_, el| f(el)).unwrap_or_else(|| panic!("{what}: {x} parses"));
             }
         };
         let style = res.styles.table_region(t.style_id.as_deref(), &[]);
         let mut tbl = style.tbl.clone();
-        let direct = TableDirect::from_xml(xml(&t.direct).as_deref(), cx);
-        parse(&t.direct, &mut |el| tbl.merge(&TblProps::parse(Some(el), colours)));
+        let read = t.direct.as_read();
+        assert!(t.direct.authored_eq(&TableDirect::from_xml(read.map(|x| &**x), cx)), "{what}: table {read:?} as held");
+        parse(read, &mut |el| tbl.merge(&TblProps::parse(Some(el), colours)));
         let mut typed = tp::from_tbl_props(&style.tbl);
-        typed.merge(direct.get());
-        assert_eq!(tp::tbl_props(&typed, colours), tbl, "{what}: table {:?}", t.direct.0);
+        typed.merge(t.direct.get());
+        assert_eq!(tp::tbl_props(&typed, colours), tbl, "{what}: table {read:?}");
         n[0] += 1;
         for (ri, row) in t.rows.iter().enumerate() {
             let mut tr = style.tr.clone();
-            parse(&row.direct, &mut |el| tr.merge(&TrProps::parse(Some(el))));
+            let read = row.direct.as_read();
+            assert!(row.direct.authored_eq(&RowDirect::from_xml(read.map(|x| &**x), cx)), "{what}: row {read:?} as held");
+            parse(read, &mut |el| tr.merge(&TrProps::parse(Some(el))));
             let mut typed_tr = tp::from_tr_props(&style.tr);
-            typed_tr.merge(RowDirect::from_xml(xml(&row.direct).as_deref(), cx).get());
-            assert_eq!(tp::tr_props(&typed_tr), tr, "{what}: row {:?}", row.direct.0);
+            typed_tr.merge(row.direct.get());
+            assert_eq!(tp::tr_props(&typed_tr), tr, "{what}: row {read:?}");
             n[2] += 1;
-            if row.exceptions.0.is_some() {
+            if let Some(read) = row.exceptions.as_read() {
+                assert!(row.exceptions.authored_eq(&ExceptionsDirect::from_xml(Some(read), cx)), "{what}: row exceptions {read:?} as held");
                 let mut ex = tbl.clone();
-                parse(&row.exceptions, &mut |el| ex.merge(&TblProps::parse(Some(el), colours)));
+                parse(Some(read), &mut |el| ex.merge(&TblProps::parse(Some(el), colours)));
                 let mut typed_ex = typed.clone();
-                typed_ex.merge(ExceptionsDirect::from_xml(xml(&row.exceptions).as_deref(), cx).get());
-                assert_eq!(tp::tbl_props(&typed_ex, colours), ex, "{what}: row exceptions {:?}", row.exceptions.0);
+                typed_ex.merge(row.exceptions.get());
+                assert_eq!(tp::tbl_props(&typed_ex, colours), ex, "{what}: row exceptions {read:?}");
                 n[1] += 1;
             }
             for (ci, c) in row.cells.iter().enumerate() {
                 let region = res.region_of(t, ri, ci);
                 let mut tc = region.tc.clone();
-                parse(&c.direct, &mut |el| tc.merge(&TcProps::parse(Some(el), colours)));
+                let read = c.direct.as_read();
+                assert!(c.direct.authored_eq(&CellDirect::from_xml(read.map(|x| &**x), cx)), "{what}: cell {read:?} as held");
+                parse(read, &mut |el| tc.merge(&TcProps::parse(Some(el), colours)));
                 let mut typed_tc = tp::from_tc_props(&region.tc);
-                typed_tc.merge(CellDirect::from_xml(xml(&c.direct).as_deref(), cx).get());
-                assert_eq!(tp::tc_props(&typed_tc, colours), tc, "{what}: cell {:?}", c.direct.0);
+                typed_tc.merge(c.direct.get());
+                assert_eq!(tp::tc_props(&typed_tc, colours), tc, "{what}: cell {read:?}");
                 n[3] += 1;
                 resolve_tables(res, cx, &c.blocks, what, n);
             }

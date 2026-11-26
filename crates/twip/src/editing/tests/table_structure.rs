@@ -607,7 +607,7 @@ fn setting_one_cell_edge_keeps_the_cells_other_borders_as_written() {
     caret_in(&mut e, 0, 0);
     let out = e.execute(cmd(serde_json::json!({"type":"setCellBorders","edges":"top"})), fonts());
     assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
-    let raw = table(&e).rows[0].cells[0].direct.0.as_deref().unwrap_or_default().to_string();
+    let raw = table(&e).rows[0].cells[0].direct.as_read().map(|x| x.to_string()).unwrap_or_default();
     assert!(raw.contains("<w:top "), "{raw}");
     assert!(raw.contains("<w:start ") && raw.contains("<w:insideH "), "the cell's own borders stay: {raw}");
     assert!(!raw.contains("<w:left ") && !raw.contains("<w:bottom ") && !raw.contains("<w:right "), "only the edge set is written: {raw}");

@@ -2279,17 +2279,17 @@ impl<'a, 'i> Saver<'a, 'i> {
 
     /// The table's own default cell margins, as its properties hold them.
     fn direct_cell_margins(&self, t: &Table) -> Option<String> {
-        Props::parse(t.direct.0.as_deref(), "tblPr", &self.cx).get("tblCellMar").map(str::to_string)
+        Props::parse(t.direct.xml(&self.colours, &self.cx).as_deref(), "tblPr", &self.cx).get("tblCellMar").map(str::to_string)
     }
 
     /// A table's own `w:shd` as written in its `w:tblPr` (not its style's).
     fn direct_shd(&self, t: &Table) -> Option<String> {
-        Props::parse(t.direct.0.as_deref(), "tblPr", &self.cx).get("shd").map(str::to_string)
+        Props::parse(t.direct.xml(&self.colours, &self.cx).as_deref(), "tblPr", &self.cx).get("shd").map(str::to_string)
     }
 
     /// A table's own band sizes as written in its `w:tblPr` (not its style's).
     fn direct_bands(&self, t: &Table) -> [Option<String>; 2] {
-        let p = Props::parse(t.direct.0.as_deref(), "tblPr", &self.cx);
+        let p = Props::parse(t.direct.xml(&self.colours, &self.cx).as_deref(), "tblPr", &self.cx);
         ["tblStyleRowBandSize", "tblStyleColBandSize"].map(|n| p.get(n).map(str::to_string))
     }
 
@@ -2302,13 +2302,14 @@ impl<'a, 'i> Saver<'a, 'i> {
                     && same_src(&x.src, &y.src)
                     && x.height == y.height
                     && (x.header, x.cant_split, x.hidden, x.jc) == (y.header, y.cant_split, y.hidden, y.jc)
-                    && (&x.direct.0, &x.exceptions.0) == (&y.direct.0, &y.exceptions.0)
+                    && x.direct.authored_eq(&y.direct)
+                    && x.exceptions.authored_eq(&y.exceptions)
                     && (x.grid_before, x.grid_after) == (y.grid_before, y.grid_after)
                     && x.rev == y.rev
                     && x.cells.iter().zip(&y.cells).all(|(c, d)| {
                         c.width == d.width
                             && c.span == d.span
-                            && c.direct.0 == d.direct.0
+                            && c.direct.authored_eq(&d.direct)
                             && c.v_merge == d.v_merge
                             && c.rev == d.rev
                             && c.ids == d.ids
@@ -2671,7 +2672,7 @@ impl<'a, 'i> Saver<'a, 'i> {
                             fix.push(("tblLook", tag, before("tblLook")));
                         }
                         if a.change != t.change {
-                            let tag = t.change.as_ref().map_or(String::new(), |c| revisions::table_change(&w, "tblPrChange", "tblPr", c, self.people));
+                            let tag = t.change.as_ref().map_or(String::new(), |c| revisions::table_change(&w, "tblPrChange", "tblPr", c, &self.colours, &self.cx, self.people));
                             fix.push(("tblPrChange", tag, before("tblPrChange")));
                         }
                         // One rewrite of them all: a self-closing `w:tblPr` is rewritten whole, in schema order.
@@ -2680,14 +2681,23 @@ impl<'a, 'i> Saver<'a, 'i> {
                         if fix.is_empty() { self.xml[p.range()].to_string() } else { self.spliced(p.range(), fix)? }
                     }
                     (Some(p), None) => self.xml[p.range()].to_string(),
-                    (None, _) => tbl_pr(&w, t, self.direct_shd(t).as_deref(), &self.direct_bands(t), self.direct_cell_margins(t).as_deref(), self.people),
+                    (None, _) => tbl_pr(&w, t, self.direct_shd(t).as_deref(), &self.direct_bands(t), self.direct_cell_margins(t).as_deref(), self.people, &self.colours, &self.cx),
                 });
                 close
             }
             None => {
                 out.push_str(&format!("<{w}tbl>"));
                 let shd = self.direct_shd(t);
-                out.push_str(&tbl_pr(&w, t, shd.as_deref(), &self.direct_bands(t), self.direct_cell_margins(t).as_deref(), self.people));
+                out.push_str(&tbl_pr(
+                    &w,
+                    t,
+                    shd.as_deref(),
+                    &self.direct_bands(t),
+                    self.direct_cell_margins(t).as_deref(),
+                    self.people,
+                    &self.colours,
+                    &self.cx,
+                ));
                 format!("</{w}tbl>")
             }
         };
@@ -2788,7 +2798,7 @@ impl<'a, 'i> Saver<'a, 'i> {
                         }
                         wrap(&mut out, &c.controls, &mut cells_open, self);
                         let id = c.ids.as_ref().and_then(|i| i.id.as_deref()).map(|id| format!(" {w}id=\"{}\"", props::esc(id))).unwrap_or_default();
-                        out.push_str(&format!("<{w}tc{id}>{}", tc_pr(&w, c, self.people, &self.cx)));
+                        out.push_str(&format!("<{w}tc{id}>{}", tc_pr(&w, c, self.people, &self.colours, &self.cx)));
                         let mut cell_loose = Vec::new();
                         if let Some(tc) = tc {
                             let mut paras = Vec::new();
@@ -3025,17 +3035,14 @@ impl<'a, 'i> Saver<'a, 'i> {
         let same = was.is_some_and(|k| k.rev == row.rev);
         let later = n.map(|n| self.later_table_ex(n, row, table)).unwrap_or_default();
         // Exceptions the API set are the row's, whole.
-        let set_ex = was.is_some_and(|k| k.exceptions.0 != row.exceptions.0);
+        let set_ex = was.is_some_and(|k| !k.exceptions.authored_eq(&row.exceptions));
+        let (own_ex, own_tr) = (row.exceptions.xml(&self.colours, &self.cx), row.direct.xml(&self.colours, &self.cx));
         // A row rewritten from the model (its cells changed) patches the properties it was read with.
         let src = |name: &str| {
             if name == "tblPrEx" && set_ex {
-                return row.exceptions.0.as_deref();
+                return own_ex.as_deref();
             }
-            n.and_then(|n| child(n, name)).map(|p| &self.xml[p.range()]).or(if name == "trPr" {
-                row.direct.0.as_deref()
-            } else {
-                row.exceptions.0.as_deref()
-            })
+            n.and_then(|n| child(n, name)).map(|p| &self.xml[p.range()]).or(if name == "trPr" { own_tr.as_deref() } else { own_ex.as_deref() })
         };
         let mut out = String::new();
         match src("tblPrEx") {
@@ -3049,7 +3056,7 @@ impl<'a, 'i> Saver<'a, 'i> {
                     }
                 }
                 p.remove("tblPrExChange");
-                let change = revisions::ex_change(w, &row.rev, self.people);
+                let change = revisions::ex_change(w, &row.rev, self.people, &self.colours, &self.cx);
                 if !change.is_empty() {
                     p.set("tblPrExChange", change);
                 }
@@ -3066,7 +3073,7 @@ impl<'a, 'i> Saver<'a, 'i> {
                 for (name, tag) in fixes {
                     p.set(name, tag);
                 }
-                for (name, tag) in revisions::row_marks(w, &row.rev, self.people).into_iter().filter(|_| !same) {
+                for (name, tag) in revisions::row_marks(w, &row.rev, self.people, &self.colours, &self.cx).into_iter().filter(|_| !same) {
                     p.remove(name);
                     if !tag.is_empty() {
                         p.set(name, tag);
@@ -3074,7 +3081,7 @@ impl<'a, 'i> Saver<'a, 'i> {
                 }
                 out.push_str(&p.xml().unwrap_or_default());
             }
-            None => out.push_str(&tr_pr(w, row, self.people)),
+            None => out.push_str(&tr_pr(w, row, self.people, &self.colours, &self.cx)),
         }
         out
     }
@@ -3122,11 +3129,15 @@ impl<'a, 'i> Saver<'a, 'i> {
         let mut later = self.later_table_ex(n, now, table);
         later.retain(|(name, _, _)| ex.is_none_or(|e| child(e, name).is_none()));
         // The table exceptions' tracked change.
-        let change = if was.rev.ex_change != now.rev.ex_change { Some(revisions::ex_change(&w, &now.rev, self.people)) } else { None };
+        let change = if was.rev.ex_change != now.rev.ex_change {
+            Some(revisions::ex_change(&w, &now.rev, self.people, &self.colours, &self.cx))
+        } else {
+            None
+        };
         match ex {
             // Exceptions the API set: the row's, whole.
-            _ if was.exceptions.0 != now.exceptions.0 => {
-                let mut p = Props::parse(now.exceptions.0.as_deref(), "tblPrEx", &self.cx);
+            _ if !was.exceptions.authored_eq(&now.exceptions) => {
+                let mut p = Props::parse(now.exceptions.xml(&self.colours, &self.cx).as_deref(), "tblPrEx", &self.cx);
                 p.reorder(revisions::TBLPREX);
                 for (name, tag, _) in later {
                     if p.get(name).is_none() {
@@ -3134,7 +3145,7 @@ impl<'a, 'i> Saver<'a, 'i> {
                     }
                 }
                 p.remove("tblPrExChange");
-                let change = revisions::ex_change(&w, &now.rev, self.people);
+                let change = revisions::ex_change(&w, &now.rev, self.people, &self.colours, &self.cx);
                 if !change.is_empty() {
                     p.set("tblPrExChange", change);
                 }
@@ -3166,7 +3177,7 @@ impl<'a, 'i> Saver<'a, 'i> {
             tr_changes(&w, Some(grid_gaps(child(n, "trPr"))), Some(was), now).into_iter().map(|(name, tag)| (name, tag, BASE)).collect();
         // The row's insertion, deletion and property change, after its base properties.
         if was.rev != now.rev {
-            for (name, tag) in revisions::row_marks(&w, &now.rev, self.people) {
+            for (name, tag) in revisions::row_marks(&w, &now.rev, self.people, &self.colours, &self.cx) {
                 tr.push((name, tag, revisions::before(revisions::TRPR, name)));
             }
         }
@@ -3204,7 +3215,10 @@ impl<'a, 'i> Saver<'a, 'i> {
                 }
                 // Shading and vertical alignment that table formatting set as direct properties (resolved values that
                 // a style region gives aren't written).
-                let (da, db) = (Props::parse(a.direct.0.as_deref(), "tcPr", &self.cx), Props::parse(b.direct.0.as_deref(), "tcPr", &self.cx));
+                let (da, db) = (
+                    Props::parse(a.direct.xml(&self.colours, &self.cx).as_deref(), "tcPr", &self.cx),
+                    Props::parse(b.direct.xml(&self.colours, &self.cx).as_deref(), "tcPr", &self.cx),
+                );
                 for name in ["tcBorders", "shd", "noWrap", "tcMar", "textDirection", "tcFitText", "vAlign", "hideMark"] {
                     if da.get(name) != db.get(name) {
                         fix.push((name, db.get(name).unwrap_or("").to_string(), revisions::before(revisions::TCPR, name)));
@@ -3226,7 +3240,7 @@ impl<'a, 'i> Saver<'a, 'i> {
                 }
                 // The cell's insertion, deletion or merge, and its property change.
                 if a.rev != b.rev {
-                    for (name, tag) in revisions::cell_marks(&w, &b.rev, self.people) {
+                    for (name, tag) in revisions::cell_marks(&w, &b.rev, self.people, &self.colours, &self.cx) {
                         fix.push((name, tag, revisions::before(revisions::TCPR, name)));
                     }
                 }
@@ -6703,7 +6717,16 @@ fn shading(w: &str, fill: Option<u32>) -> String {
 
 /// A table's `w:tblPr` from the model (its resolved properties written as direct ones, its tracked change last), in
 /// CT_TblPr order.
-fn tbl_pr(w: &str, t: &Table, shd: Option<&str>, bands: &[Option<String>; 2], cell_mar: Option<&str>, people: &People) -> String {
+fn tbl_pr(
+    w: &str,
+    t: &Table,
+    shd: Option<&str>,
+    bands: &[Option<String>; 2],
+    cell_mar: Option<&str>,
+    people: &People,
+    colours: &ThemeColours,
+    cx: &Cx,
+) -> String {
     let mut s = format!("<{w}tblPr>");
     if let Some(id) = &t.style_id {
         s.push_str(&format!("<{w}tblStyle {w}val=\"{}\"/>", props::esc(id)));
@@ -6761,7 +6784,7 @@ fn tbl_pr(w: &str, t: &Table, shd: Option<&str>, bands: &[Option<String>; 2], ce
     }
     s.push_str(&alt_xml(w, t.alt.as_deref()));
     if let Some(c) = &t.change {
-        s.push_str(&revisions::table_change(w, "tblPrChange", "tblPr", c, people));
+        s.push_str(&revisions::table_change(w, "tblPrChange", "tblPr", c, colours, cx, people));
     }
     s.push_str(&format!("</{w}tblPr>"));
     s
@@ -6783,7 +6806,7 @@ fn row_height_rule(w: &str, rule: HeightRule) -> String {
     }
 }
 
-fn tr_pr(w: &str, r: &Row, people: &People) -> String {
+fn tr_pr(w: &str, r: &Row, people: &People, colours: &ThemeColours, cx: &Cx) -> String {
     let mut s = String::new();
     if r.grid_before > 0 {
         s.push_str(&format!("<{w}gridBefore {w}val=\"{}\"/>", r.grid_before));
@@ -6805,7 +6828,7 @@ fn tr_pr(w: &str, r: &Row, people: &People) -> String {
         s.push_str(&format!("<{w}hidden/>"));
     }
     s.push_str(&row_jc(w, r.jc));
-    for (_, tag) in revisions::row_marks(w, &r.rev, people) {
+    for (_, tag) in revisions::row_marks(w, &r.rev, people, colours, cx) {
         s.push_str(&tag);
     }
     if s.is_empty() { s } else { format!("<{w}trPr>{s}</{w}trPr>") }
@@ -6872,9 +6895,9 @@ fn tr_changes(w: &str, gaps: Option<[usize; 2]>, was: Option<&Row>, now: &Row) -
 /// A cell's `w:tcPr` from the model, in CT_TcPr order.
 /// A cell's `w:tcPr`: the properties it was read with (which table formatting keeps current), its width, span,
 /// vertical merge and revisions as the model has them now; else written from the model.
-fn tc_pr(w: &str, c: &Cell, people: &People, cx: &Cx) -> String {
-    if let Some(raw) = c.direct.0.as_deref() {
-        let mut p = Props::parse(Some(raw), "tcPr", cx);
+fn tc_pr(w: &str, c: &Cell, people: &People, colours: &ThemeColours, cx: &Cx) -> String {
+    if let Some(raw) = c.direct.xml(colours, cx) {
+        let mut p = Props::parse(Some(&raw), "tcPr", cx);
         p.reorder(props::TCPR);
         match &c.width {
             Some(x) => p.set("tcW", width(w, "tcW", x)),
@@ -6900,7 +6923,7 @@ fn tc_pr(w: &str, c: &Cell, people: &People, cx: &Cx) -> String {
             VMerge::Continue => p.set("vMerge", format!("<{w}vMerge/>")),
             VMerge::None => p.remove("vMerge"),
         }
-        for (name, tag) in revisions::cell_marks(w, &c.rev, people) {
+        for (name, tag) in revisions::cell_marks(w, &c.rev, people, colours, cx) {
             p.remove(name);
             if !tag.is_empty() {
                 p.set(name, tag);
@@ -6956,7 +6979,7 @@ fn tc_pr(w: &str, c: &Cell, people: &People, cx: &Cx) -> String {
         s.push_str(&format!("<{w}hideMark/>"));
     }
     s.push_str(&header_refs(w, c).unwrap_or_default());
-    for (_, tag) in revisions::cell_marks(w, &c.rev, people) {
+    for (_, tag) in revisions::cell_marks(w, &c.rev, people, colours, cx) {
         s.push_str(&tag);
     }
     s.push_str(&format!("</{w}tcPr>"));
@@ -7339,7 +7362,7 @@ mod tests {
         let mut doc = body_doc(&body);
         let t = first_table(&mut doc);
         assert_eq!(t.rows[1].table_shading, Some((None, None)));
-        t.direct = Raw(Some(Rc::from(r#"<w:tblPr><w:shd w:val="clear" w:color="auto" w:fill="00FF00"/></w:tblPr>"#)));
+        t.direct = crate::docx::table_props::TableDirect::in_w(r#"<w:tblPr><w:shd w:val="clear" w:color="auto" w:fill="00FF00"/></w:tblPr>"#);
         let saved = save(&doc).expect("saves");
         let mut again = crate::docx::read_editable(&saved).expect("reads again");
         let t = first_table(&mut again);
@@ -7373,7 +7396,7 @@ mod tests {
         let mut doc = body_doc(body);
         let t = first_table(&mut doc);
         t.width = Width::Dxa(144.0);
-        t.direct = Raw(Some(Rc::from(r#"<w:tblPr><w:shd w:val="clear" w:color="auto" w:fill="00FF00"/></w:tblPr>"#)));
+        t.direct = crate::docx::table_props::TableDirect::in_w(r#"<w:tblPr><w:shd w:val="clear" w:color="auto" w:fill="00FF00"/></w:tblPr>"#);
         let saved = save(&doc).expect("saves");
         let xml = part_text(&saved, "word/document.xml");
         assert!(

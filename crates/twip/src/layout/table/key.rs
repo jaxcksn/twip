@@ -262,8 +262,8 @@ fn shell(t: &Table) -> Table {
                 nudge: *nudge,
                 cells,
                 src: None,
-                direct: Raw(None),
-                exceptions: Raw(None),
+                direct: Default::default(),
+                exceptions: Default::default(),
                 controls: Vec::new(),
                 rev: rev.clone(),
             }

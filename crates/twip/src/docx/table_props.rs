@@ -1,10 +1,12 @@
 //! Typed table, row and cell properties from and to `w:tblPr`, `w:tblPrEx`, `w:trPr` and `w:tcPr`
 //!
 //! As for paragraph properties ([`super::para_props`]), the parse keeps in [`ForeignProps`] what the typed value does
-//! not hold, so that writing the value again loses nothing of what was read: unmodelled children whole, earlier
-//! duplicates of a modelled child (the last one counts), a modelled child its value doesn't keep whole, unmodelled
-//! attributes of modelled children and of the element itself, modelled attributes written otherwise than the writer
-//! writes their value, and the children with sides (borders, margins) whole beside their typed value.
+//! not hold, so that writing the value again loses nothing of what was read: unmodelled children whole, the other
+//! duplicates of a modelled child (the last one counts, but the first for those the reader reads the first of: a
+//! row's division and hidden mark, a cell's hidden mark, a table's title and description), a modelled child its
+//! value doesn't keep whole, unmodelled attributes of modelled children and of the element itself, modelled
+//! attributes written otherwise than the writer writes their value, and the children with sides (borders, margins)
+//! whole beside their typed value.
 //!
 //! Children another node owns are not part of the typed value: the tracked property changes (`w:tblPrChange`,
 //! `w:tblPrExChange`, `w:trPrChange`, `w:tcPrChange`), a row's tracked insertion and deletion (`w:ins`, `w:del`) and
@@ -53,6 +55,8 @@ trait Kind {
     const NAME: &'static str;
     const ORDER: &'static [&'static str];
     const OWNED: &'static [&'static str];
+    /// The modelled children read from the first of their name, as the reader reads them; the others from the last.
+    const FIRST: &'static [&'static str];
     /// The child holding the borders, if it has one.
     const BORDERS: &'static str;
     /// The child holding the cell margins, if it has one.
@@ -66,6 +70,9 @@ trait Kind {
     /// Writes the attributes of modelled child `key` of `p` to `s`; false when `p` doesn't set it.
     fn emit(p: &Self::Props, key: &str, s: &mut dyn Sink) -> bool;
     fn place(s: Self::Set) -> Place;
+    /// The property set whole in child `key`, or in part on its `side`.
+    #[cfg(test)]
+    fn set_of(key: &str, side: Option<Side>) -> Option<Self::Set>;
 }
 
 /// `w:tblPr`.
@@ -189,6 +196,7 @@ impl Kind for Tbl {
     const NAME: &'static str = "tblPr";
     const ORDER: &'static [&'static str] = &TBL_ORDER;
     const OWNED: &'static [&'static str] = &["tblPrChange"];
+    const FIRST: &'static [&'static str] = &["tblCaption", "tblDescription"];
     const BORDERS: &'static str = "tblBorders";
     const MARGINS: &'static str = "tblCellMar";
     fn foreign(p: &TableProps) -> Option<&Rc<ForeignProps>> {
@@ -211,6 +219,10 @@ impl Kind for Tbl {
     }
     fn place(s: TableSet) -> Place {
         table_place(s)
+    }
+    #[cfg(test)]
+    fn set_of(key: &str, side: Option<Side>) -> Option<TableSet> {
+        table_set_of(key, side)
     }
 }
 
@@ -220,6 +232,7 @@ impl Kind for TblEx {
     const NAME: &'static str = "tblPrEx";
     const ORDER: &'static [&'static str] = &EX_ORDER;
     const OWNED: &'static [&'static str] = &["tblPrExChange"];
+    const FIRST: &'static [&'static str] = &[];
     const BORDERS: &'static str = "tblBorders";
     const MARGINS: &'static str = "tblCellMar";
     fn foreign(p: &TableProps) -> Option<&Rc<ForeignProps>> {
@@ -243,6 +256,10 @@ impl Kind for TblEx {
     fn place(s: TableSet) -> Place {
         table_place(s)
     }
+    #[cfg(test)]
+    fn set_of(key: &str, side: Option<Side>) -> Option<TableSet> {
+        table_set_of(key, side)
+    }
 }
 
 impl Kind for Tr {
@@ -251,6 +268,7 @@ impl Kind for Tr {
     const NAME: &'static str = "trPr";
     const ORDER: &'static [&'static str] = &TR_ORDER;
     const OWNED: &'static [&'static str] = &["ins", "del", "trPrChange"];
+    const FIRST: &'static [&'static str] = &["divId", "hidden"];
     const BORDERS: &'static str = "";
     const MARGINS: &'static str = "";
     fn foreign(p: &RowProps) -> Option<&Rc<ForeignProps>> {
@@ -323,6 +341,14 @@ impl Kind for Tr {
         };
         Place { key, whole: s.whole, side: None }
     }
+    #[cfg(test)]
+    fn set_of(key: &str, _: Option<Side>) -> Option<RowSet> {
+        use RowProp::*;
+        [Division, GridBefore, GridAfter, WidthBefore, WidthAfter, CantSplit, Height, Header, CellSpacing, Align, Hidden]
+            .into_iter()
+            .map(|prop| RowSet { prop, whole: true })
+            .find(|s| Self::place(*s).key == key)
+    }
 }
 
 impl Kind for Tc {
@@ -331,6 +357,7 @@ impl Kind for Tc {
     const NAME: &'static str = "tcPr";
     const ORDER: &'static [&'static str] = &TC_ORDER;
     const OWNED: &'static [&'static str] = &["cellIns", "cellDel", "cellMerge", "tcPrChange"];
+    const FIRST: &'static [&'static str] = &["hideMark"];
     const BORDERS: &'static str = "tcBorders";
     const MARGINS: &'static str = "tcMar";
     fn foreign(p: &CellProps) -> Option<&Rc<ForeignProps>> {
@@ -405,6 +432,49 @@ impl Kind for Tc {
         };
         Place { key, whole: s.whole, side }
     }
+    #[cfg(test)]
+    fn set_of(key: &str, side: Option<Side>) -> Option<CellSet> {
+        use CellProp::*;
+        let prop = match (key, side) {
+            ("tcBorders", Some(Side::Border(b))) => Border(b),
+            ("tcMar", Some(Side::Margin(m))) => Margin(m),
+            _ => [Width, GridSpan, HMerge, VMerge, Borders, Shading, NoWrap, Margins, TextFlow, FitText, VAlign, HideMark]
+                .into_iter()
+                .find(|p| Self::place(CellSet { prop: *p, whole: true }).key == key)?,
+        };
+        Some(CellSet { prop, whole: side.is_none() })
+    }
+}
+
+#[cfg(test)]
+fn table_set_of(key: &str, side: Option<Side>) -> Option<TableSet> {
+    use TableProp::*;
+    let prop = match (key, side) {
+        ("tblBorders", Some(Side::Border(b))) => Border(b),
+        ("tblCellMar", Some(Side::Margin(m))) => Margin(m),
+        _ => [
+            Style,
+            Floating,
+            Overlap,
+            BidiVisual,
+            RowBand,
+            ColBand,
+            Width,
+            Align,
+            CellSpacing,
+            Indent,
+            Borders,
+            Shading,
+            Layout,
+            Margins,
+            Look,
+            Caption,
+            Description,
+        ]
+        .into_iter()
+        .find(|p| table_place(TableSet { prop: *p, whole: true }).key == key)?,
+    };
+    Some(TableSet { prop, whole: side.is_none() })
 }
 
 fn table_place(s: TableSet) -> Place {
@@ -568,11 +638,11 @@ fn parse<K: Kind>(el: Node) -> K::Props {
     let mut scratch = String::new();
     Compare::new(el, &mut scratch).finish(None, &mut f.attributes);
     let elements = || el.children().filter(|c| c.is_element());
-    // The child each name is read from: the last, but the first of those other nodes own.
+    // The child each name is read from: the last, but the first of those other nodes own and of those read first.
     let mut pick = [None::<usize>; MAX_ORDER];
     for (i, e) in elements().enumerate() {
         if let Some(k) = rank_of::<K>(e.tag_name().namespace().unwrap_or_default(), e.tag_name().name())
-            && (!K::OWNED.contains(&K::ORDER[k]) || pick[k].is_none())
+            && (!(K::OWNED.contains(&K::ORDER[k]) || K::FIRST.contains(&K::ORDER[k])) || pick[k].is_none())
         {
             pick[k] = Some(i);
         }
@@ -738,17 +808,18 @@ fn shading_attrs(s: &mut dyn Sink, sh: &Shading) {
     }
 }
 
-/// A table or cell border side's attributes: a side of no line written as its line alone.
+/// A table or cell border side's attributes, as the table commands write them: whole eighths of a point and points, a
+/// side of no line written as its line alone.
 fn side_attrs(s: &mut dyn Sink, b: &TextBorder) {
     s.attr(W, "val", &super::line_style::border_val(b.style));
     let lined = !matches!(b.style, BorderStyle::None | BorderStyle::Nil);
     if lined || b.width != 0.0 {
-        s.attr(W, "sz", &(b.width * 8.0));
+        s.attr(W, "sz", &((b.width * 8.0).round() as i64));
     } else {
         s.implied("sz", "0");
     }
     if lined || b.space != 0.0 {
-        s.attr(W, "space", &b.space);
+        s.attr(W, "space", &(b.space.round() as i64));
     } else {
         s.implied("space", "0");
     }
@@ -1163,6 +1234,96 @@ impl<K: Kind> Holder<K> {
         }
         Some(Holder { props: self.props.clone(), origin: None, set: self.set.clone() })
     }
+
+    fn read_from(&self) -> Option<(&Rc<K::Props>, &Rc<str>)> {
+        let xml = self.as_read()?;
+        Some((&self.props, xml))
+    }
+
+    fn rewritten(&self, xml: Option<&str>, colours: &ThemeColours, cx: &Cx) -> Self {
+        let next = Holder::from_xml(xml, cx);
+        #[cfg(test)]
+        written_as(self, &next, xml, colours, cx);
+        #[cfg(not(test))]
+        let _ = colours;
+        next
+    }
+}
+
+/// What an edit of a properties element of kind `K` as XML set, as typed properties' record of it: each child that
+/// differs between `was` and `now` (both in the part `cx` describes), set whole when `now` writes it as `p` does or
+/// has no sides, else each side it changed, in part.
+#[cfg(test)]
+fn inferred_set<K: Kind>(p: &K::Props, was: &str, now: &str, colours: &ThemeColours, cx: &Cx) -> Vec<K::Set> {
+    let (old, new) = (Props::parse(Some(was), K::NAME, cx), Props::parse(Some(now), K::NAME, cx));
+    let mut out = Out::new(cx, colours);
+    let mut set = Vec::new();
+    for &key in K::ORDER.iter().filter(|k| !K::OWNED.contains(k)) {
+        let (a, b) = (old.get(key), new.get(key));
+        if a == b {
+            continue;
+        }
+        modelled_child::<K>(&mut out, p, key);
+        let typed = std::mem::take(&mut out.s);
+        let sides = key == K::BORDERS || key == K::MARGINS;
+        let (Some(a), Some(b)) = (a, b) else {
+            set.extend(K::set_of(key, None));
+            continue;
+        };
+        if b == typed || !sides {
+            set.extend(K::set_of(key, None));
+            continue;
+        }
+        let (sa, sb) = (Props::parse(Some(a), key, cx), Props::parse(Some(b), key, cx));
+        let names: Vec<(Side, (&str, Option<&str>))> = if key == K::BORDERS {
+            TableSide::ALL.iter().map(|s| (Side::Border(*s), border_name(*s))).collect()
+        } else {
+            MarginSide::ALL.iter().map(|s| (Side::Margin(*s), margin_name(*s))).collect()
+        };
+        for (side, (name, other)) in names {
+            let get = |p: &Props| p.get(name).or_else(|| other.and_then(|o| p.get(o))).map(str::to_string);
+            if get(&sa) != get(&sb) {
+                set.extend(K::set_of(key, Some(side)));
+            }
+        }
+    }
+    set
+}
+
+/// What an edit of a properties element of kind `K` as XML wrote (`now`, over `was` as read) is what writing its typed
+/// properties over the same writes, byte for byte, but for two differences the typed writer makes: it places a child
+/// it writes in schema order (the cell commands place one after the others), and it keeps an element with no
+/// children that nothing changed. `TWIP_TABLE_BYTES_OUT` names a file to list each one that isn't in, in place of
+/// failing.
+#[cfg(test)]
+fn written_as<K: Kind>(was: &Holder<K>, next: &Holder<K>, now: Option<&str>, colours: &ThemeColours, cx: &Cx) {
+    let Some((read, xml)) = was.read_from() else { return };
+    let set = now.map_or_else(Vec::new, |now| inferred_set::<K>(&next.props, xml, now, colours, cx));
+    let got = written_over::<K>(&next.props, colours, cx, Some((read, xml)), &set);
+    let kids = |x: &str| {
+        let mut k = Props::parse(Some(x), K::NAME, cx).kids;
+        k.sort();
+        (x[..x.find('>').unwrap_or(x.len())].to_string(), k)
+    };
+    let same = match (got.as_deref(), now) {
+        (Some(a), Some(b)) => a == b || kids(a) == kids(b),
+        (Some(a), None) => kids(a).1.is_empty(),
+        (None, None) => true,
+        (None, Some(_)) => false,
+    };
+    if same {
+        return;
+    }
+    let what = format!("over {xml:?}\n  wrote {now:?}\n  typed {got:?}\n");
+    match std::env::var_os("TWIP_TABLE_BYTES_OUT") {
+        Some(path) => {
+            use std::io::Write;
+            let mut f = std::fs::OpenOptions::new().create(true).append(true).open(path).expect("the report");
+            let test = std::thread::current().name().unwrap_or_default().to_string();
+            let _ = writeln!(f, "{test} {what}");
+        }
+        None => panic!("an edit's {} is not what its typed properties write: {what}", K::NAME),
+    }
 }
 
 /// A holder of one kind's typed properties, with its parse, serializer and writer over the XML read.
@@ -1176,16 +1337,25 @@ macro_rules! holder {
         #[derive(Clone, Debug, Default)]
         pub struct $name(Holder<$kind>);
 
-        impl PartialEq for $name {
-            fn eq(&self, _: &$name) -> bool {
-                true
-            }
-        }
-
         impl $name {
             #[doc = concat!("Properties read from `xml`, the `", $el, "` they were parsed from.")]
             pub fn read(props: $props, xml: Rc<str>) -> $name {
                 $name(Holder::read(props, xml))
+            }
+
+            #[doc = concat!("Properties read from `xml`, shared with other elements read alike.")]
+            pub fn shared(props: Rc<$props>, xml: Rc<str>) -> $name {
+                $name(Holder { origin: Some((props.clone(), xml)), props, set: Vec::new() })
+            }
+
+            #[doc = concat!("The `", $el, "` they were read from, while they are the properties read from it, with those properties.")]
+            pub fn read_from(&self) -> Option<(&Rc<$props>, &Rc<str>)> {
+                self.0.read_from()
+            }
+
+            #[doc = concat!("The properties `xml` holds (a `", $el, "` in the part `cx` describes, an edit of these properties' as XML), the XML kept beside them.")]
+            pub fn rewritten(&self, xml: Option<&str>, colours: &ThemeColours, cx: &Cx) -> $name {
+                $name(self.0.rewritten(xml, colours, cx))
             }
 
             /// Typed properties with no written form.
@@ -1211,6 +1381,12 @@ macro_rules! holder {
             #[doc = concat!("The `", $el, "` they were read from (or last written as), whatever they are now.")]
             pub fn origin_xml(&self) -> Option<&Rc<str>> {
                 self.0.origin.as_ref().map(|(_, x)| x)
+            }
+
+            #[doc = concat!("These properties with `xml` in place of the `", $el, "` they were read from: the same element, written otherwise (its namespaces declared on it).")]
+            pub fn with_origin_xml(&self, xml: Rc<str>) -> $name {
+                let origin = self.0.origin.as_ref().map(|(p, _)| (p.clone(), xml));
+                $name(Holder { props: self.0.props.clone(), origin, set: self.0.set.clone() })
             }
 
             #[doc = concat!("The `", $el, "` to write in the part `cx` describes: as read while the properties are those, else written over it from them (a theme colour's value as `colours` resolve it), the children other nodes own as they were read; `None` when nothing is left.")]
@@ -1272,6 +1448,122 @@ holder!(
     /// A cell's authored properties: typed, with the `w:tcPr` they were read from beside them.
     CellDirect, Tc, CellProps, CellSet, CellEdit, "w:tcPr"
 );
+
+impl PartialEq for TableDirect {
+    fn eq(&self, _: &TableDirect) -> bool {
+        true
+    }
+}
+
+impl PartialEq for ExceptionsDirect {
+    fn eq(&self, _: &ExceptionsDirect) -> bool {
+        true
+    }
+}
+
+impl PartialEq for RowDirect {
+    fn eq(&self, _: &RowDirect) -> bool {
+        true
+    }
+}
+
+impl PartialEq for CellDirect {
+    fn eq(&self, _: &CellDirect) -> bool {
+        true
+    }
+}
+
+impl TableDirect {
+    /// The properties of `xml`, a `w:tblPr` with the main namespace bound to `w`.
+    #[cfg(test)]
+    pub(crate) fn in_w(xml: &str) -> TableDirect {
+        TableDirect::from_xml(Some(xml), &Cx::of_xml(&format!("<w:document xmlns:w=\"{W}\">")))
+    }
+}
+
+/// The earlier properties a tracked change of a table's, a row's exceptions', a row's or a cell's properties records.
+/// Its `==` is always true, as its holders' is: use [`PreviousDirect::authored_eq`] for authored equality.
+#[derive(Clone, Debug)]
+pub enum PreviousDirect {
+    /// A `w:tblPrChange`'s `w:tblPr`.
+    Table(TableDirect),
+    /// A `w:tblPrExChange`'s `w:tblPrEx`.
+    Exceptions(ExceptionsDirect),
+    /// A `w:trPrChange`'s `w:trPr`.
+    Row(RowDirect),
+    /// A `w:tcPrChange`'s `w:tcPr`.
+    Cell(CellDirect),
+}
+
+impl PartialEq for PreviousDirect {
+    fn eq(&self, _: &PreviousDirect) -> bool {
+        true
+    }
+}
+
+impl PreviousDirect {
+    /// The earlier properties of the change element `name` (`w:tblPrChange`, `w:tblPrExChange`, `w:trPrChange` or
+    /// `w:tcPrChange`) from `xml`, the properties element it holds, as written in the part `cx` describes.
+    pub fn from_xml(name: &str, xml: Option<&str>, cx: &Cx) -> PreviousDirect {
+        match name {
+            "tblPrChange" => PreviousDirect::Table(TableDirect::from_xml(xml, cx)),
+            "tblPrExChange" => PreviousDirect::Exceptions(ExceptionsDirect::from_xml(xml, cx)),
+            "trPrChange" => PreviousDirect::Row(RowDirect::from_xml(xml, cx)),
+            _ => PreviousDirect::Cell(CellDirect::from_xml(xml, cx)),
+        }
+    }
+
+    /// The properties element to write in the part `cx` describes, as its holder writes it.
+    pub fn xml(&self, colours: &ThemeColours, cx: &Cx) -> Option<std::borrow::Cow<'_, str>> {
+        match self {
+            PreviousDirect::Table(d) => d.xml(colours, cx),
+            PreviousDirect::Exceptions(d) => d.xml(colours, cx),
+            PreviousDirect::Row(d) => d.xml(colours, cx),
+            PreviousDirect::Cell(d) => d.xml(colours, cx),
+        }
+    }
+
+    /// The properties element they were read from (or last written as), whatever they are now.
+    pub fn origin_xml(&self) -> Option<&Rc<str>> {
+        match self {
+            PreviousDirect::Table(d) => d.origin_xml(),
+            PreviousDirect::Exceptions(d) => d.origin_xml(),
+            PreviousDirect::Row(d) => d.origin_xml(),
+            PreviousDirect::Cell(d) => d.origin_xml(),
+        }
+    }
+
+    /// These properties with `xml` in place of the element they were read from.
+    pub fn with_origin_xml(&self, xml: Rc<str>) -> PreviousDirect {
+        match self {
+            PreviousDirect::Table(d) => PreviousDirect::Table(d.with_origin_xml(xml)),
+            PreviousDirect::Exceptions(d) => PreviousDirect::Exceptions(d.with_origin_xml(xml)),
+            PreviousDirect::Row(d) => PreviousDirect::Row(d.with_origin_xml(xml)),
+            PreviousDirect::Cell(d) => PreviousDirect::Cell(d.with_origin_xml(xml)),
+        }
+    }
+
+    /// The properties element as read, while the properties are the ones read from it.
+    pub fn as_read(&self) -> Option<&Rc<str>> {
+        match self {
+            PreviousDirect::Table(d) => d.as_read(),
+            PreviousDirect::Exceptions(d) => d.as_read(),
+            PreviousDirect::Row(d) => d.as_read(),
+            PreviousDirect::Cell(d) => d.as_read(),
+        }
+    }
+
+    /// Authored equality: the same kind, with the same typed properties.
+    pub fn authored_eq(&self, o: &PreviousDirect) -> bool {
+        match (self, o) {
+            (PreviousDirect::Table(a), PreviousDirect::Table(b)) => a.authored_eq(b),
+            (PreviousDirect::Exceptions(a), PreviousDirect::Exceptions(b)) => a.authored_eq(b),
+            (PreviousDirect::Row(a), PreviousDirect::Row(b)) => a.authored_eq(b),
+            (PreviousDirect::Cell(a), PreviousDirect::Cell(b)) => a.authored_eq(b),
+            _ => false,
+        }
+    }
+}
 
 // Conversion from and to the XML path's properties
 
@@ -1554,6 +1846,32 @@ pub fn tc_props(p: &CellProps, colours: &ThemeColours) -> TcProps {
     }
 }
 
+// Resolution over the XML path's style levels
+
+/// A table's typed authored properties `direct` over `base` (a table style region's, as the XML path holds them),
+/// folded, as the XML path holds them.
+pub fn table_over(base: &TblProps, direct: &TableProps, colours: &ThemeColours) -> TblProps {
+    let mut t = from_tbl_props(base);
+    t.merge(direct);
+    tbl_props(&t, colours)
+}
+
+/// A row's typed authored properties `direct` over `base` (a table style region's), folded, as the XML path holds
+/// them.
+pub fn row_over(base: &TrProps, direct: &RowProps) -> TrProps {
+    let mut r = from_tr_props(base);
+    r.merge(direct);
+    tr_props(&r)
+}
+
+/// A cell's typed authored properties `direct` over `base` (its table style region's), folded, as the XML path holds
+/// them.
+pub fn cell_over(base: &TcProps, direct: &CellProps, colours: &ThemeColours) -> TcProps {
+    let mut c = from_tc_props(base);
+    c.merge(direct);
+    tc_props(&c, colours)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1697,7 +2015,7 @@ mod tests {
         e.layout = Some(TableLayout::Fixed);
         e.whole(TableProp::Layout);
         let edited = held.edit(e);
-        assert!(edited == held && !edited.authored_eq(&held), "equal as a container's field, not as authored");
+        assert!(!edited.authored_eq(&held));
         assert_eq!(edited.as_read(), None);
         let mut props = Props::parse(Some(x), "tblPr", &cx);
         props.reorder(super::super::write::props::TBLPR);

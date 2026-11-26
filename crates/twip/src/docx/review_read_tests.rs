@@ -137,7 +137,7 @@ fn table_rows_and_grid_changes() {
     let doc = read("FX-REVIEW-TABLES");
     let t = tables(&doc)[0];
     assert_eq!(t.change.as_ref().map(|c| who(&doc, &c.mark)), Some(C.into()));
-    assert!(t.change.as_ref().and_then(|c| c.previous_raw.0.as_deref()).is_some_and(|x| x.starts_with("<w:tblPr")));
+    assert!(t.change.as_ref().and_then(|c| c.previous_direct.as_read()).is_some_and(|x| x.starts_with("<w:tblPr")));
     let grid = t.grid_change.as_ref().expect("a grid change");
     assert_eq!(grid.previous, t.grid.iter().rev().copied().collect::<Vec<_>>());
     assert_eq!(t.rows.len(), 5);
@@ -146,10 +146,10 @@ fn table_rows_and_grid_changes() {
     assert_eq!(row(1), (Some((MarkKind::Insert, A.into())), None));
     assert_eq!(row(3), (None, Some((MarkKind::Delete, B.into()))));
     let change = t.rows[2].rev.change.as_ref().expect("a row property change");
-    assert!(change.previous_raw.0.as_deref().is_some_and(|x| x.contains("w:val=\"360\"")));
+    assert!(change.previous_direct.as_read().is_some_and(|x| x.contains("w:val=\"360\"")));
     assert_eq!(t.rows[2].height.as_ref().map(|h| h.0), Some(36.0));
     let cell = t.rows[4].cells[0].rev.change.as_ref().expect("a cell property change");
-    assert!(cell.previous_raw.0.as_deref().is_some_and(|x| x.starts_with("<w:tcPr")));
+    assert!(cell.previous_direct.as_read().is_some_and(|x| x.starts_with("<w:tcPr")));
     assert_eq!(t.rows[4].cells[0].shading, Some(0xD9E2F3));
     assert!(doc.diagnostics.warnings.is_empty(), "{:?}", doc.diagnostics);
     integrity("FX-REVIEW-TABLES");

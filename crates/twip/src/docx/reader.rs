@@ -21,6 +21,7 @@ use super::review::{
 };
 use super::run_xml;
 use super::styles::{Region, Styles, ThemeFonts};
+use super::table_props::{self, CellDirect, ExceptionsDirect, PreviousDirect, RowDirect, TableDirect};
 use super::xml::*;
 use crate::format::CharProps;
 
@@ -440,6 +441,8 @@ fn read_package(bytes: &[u8], pkg: &mut Package, editable: bool, now: i64, depth
         record: false,
         interned: HashMap::new(),
         interned_ppr: HashMap::new(),
+        interned_tr: HashMap::new(),
+        interned_tc: HashMap::new(),
         segs: Vec::new(),
         simple: Vec::new(),
         lossy: false,
@@ -1257,6 +1260,9 @@ struct Reader {
     interned: HashMap<Rc<str>, Rc<CharProps>>,
     /// The authored paragraph properties read so far, by the `w:pPr` written, likewise.
     interned_ppr: HashMap<Rc<str>, Rc<crate::format::ParaProps>>,
+    /// Rows' and cells' authored properties by the `w:trPr` and `w:tcPr` they were read from, for elements written alike.
+    interned_tr: HashMap<Rc<str>, Rc<crate::format::RowProps>>,
+    interned_tc: HashMap<Rc<str>, Rc<crate::format::CellProps>>,
     /// The paragraph being read: elements that produced units ([`ParaSrc::segs`]), and whether any can't be mapped.
     segs: Vec<(std::ops::Range<usize>, usize)>,
     /// [`ParaSrc::simple`].
@@ -1441,8 +1447,15 @@ impl Reader {
     ) -> Option<Rc<TableChange>> {
         let c = child(e?, name)?;
         let before = c.children().find(|n| n.is_element());
-        let (previous_raw, previous) = (Raw(before.map(raw)), previous(self, before));
-        Some(Rc::new(TableChange { mark: self.mark(c, MarkKind::Format), previous_raw, previous }))
+        let previous_direct = match name {
+            "tblPrChange" => PreviousDirect::Table(before.map_or_else(TableDirect::default, |n| TableDirect::read(TableDirect::parse(n), raw(n)))),
+            "tblPrExChange" => PreviousDirect::Exceptions(
+                before.map_or_else(ExceptionsDirect::default, |n| ExceptionsDirect::read(ExceptionsDirect::parse(n), raw(n))),
+            ),
+            "trPrChange" => PreviousDirect::Row(before.map_or_else(RowDirect::default, |n| RowDirect::read(RowDirect::parse(n), raw(n)))),
+            _ => PreviousDirect::Cell(before.map_or_else(CellDirect::default, |n| CellDirect::read(CellDirect::parse(n), raw(n)))),
+        };
+        Some(Rc::new(TableChange { mark: self.mark(c, MarkKind::Format), previous_direct, previous: previous(self, before) }))
     }
 
     /// A move mark with no move yet, named by the move range of its kind open now; `None` for any other mark.
@@ -2117,6 +2130,53 @@ impl Reader {
             self.interned_ppr.insert(x.clone(), props.clone());
         }
         ParaDirect::shared(props, x)
+    }
+
+    /// A table's authored properties from its `w:tblPr`, with the element they were read from.
+    fn table_direct(&self, n: Option<Node>) -> TableDirect {
+        n.map_or_else(TableDirect::default, |n| TableDirect::read(TableDirect::parse(n), raw(n)))
+    }
+
+    /// A row's exceptions to its table's properties from its `w:tblPrEx`, with (editable reads) the element they were
+    /// read from.
+    fn exceptions_direct(&self, n: Option<Node>) -> ExceptionsDirect {
+        let Some(n) = n else { return ExceptionsDirect::default() };
+        let props = ExceptionsDirect::parse(n);
+        if self.record { ExceptionsDirect::read(props, raw(n)) } else { ExceptionsDirect::typed(Rc::new(props)) }
+    }
+
+    /// A row's authored properties from its `w:trPr`, with (editable reads) the element they were read from: rows
+    /// whose `w:trPr` is written alike share them.
+    fn row_direct(&mut self, n: Option<Node>) -> RowDirect {
+        let Some(n) = n else { return RowDirect::default() };
+        let plain = n.namespaces().len() <= n.document().root_element().namespaces().len();
+        let text = &n.document().input_text()[n.range()];
+        if let Some((x, p)) = self.interned_tr.get_key_value(text).filter(|_| plain) {
+            return if self.record { RowDirect::shared(p.clone(), x.clone()) } else { RowDirect::typed(p.clone()) };
+        }
+        let props = Rc::new(RowDirect::parse(n));
+        let x = raw(n);
+        if plain {
+            self.interned_tr.insert(x.clone(), props.clone());
+        }
+        if self.record { RowDirect::shared(props, x) } else { RowDirect::typed(props) }
+    }
+
+    /// A cell's authored properties from its `w:tcPr`, with the element they were read from: cells whose `w:tcPr` is
+    /// written alike share them.
+    fn cell_direct(&mut self, n: Option<Node>) -> CellDirect {
+        let Some(n) = n else { return CellDirect::default() };
+        let plain = n.namespaces().len() <= n.document().root_element().namespaces().len();
+        let text = &n.document().input_text()[n.range()];
+        if let Some((x, p)) = self.interned_tc.get_key_value(text).filter(|_| plain) {
+            return CellDirect::shared(p.clone(), x.clone());
+        }
+        let props = Rc::new(CellDirect::parse(n));
+        let x = raw(n);
+        if plain {
+            self.interned_tc.insert(x.clone(), props.clone());
+        }
+        CellDirect::shared(props, x)
     }
 
     /// The authored properties `rpr` holds.
@@ -3370,10 +3430,9 @@ impl Reader {
     /// merge).
     fn joins(&self, run: &[Node], m: Node) -> bool {
         let kind = |t: Node| {
-            let direct = TblProps::parse(child(t, "tblPr"), &self.res.styles.colours);
+            let direct = child(t, "tblPr").map(TableDirect::parse).unwrap_or_default();
             let style = self.res.styles.table_style(direct.style.as_deref()).map(str::to_string);
-            let mut tbl = self.res.styles.table_region(style.as_deref(), &[]).tbl.clone();
-            tbl.merge(&direct);
+            let tbl = table_props::table_over(&self.res.styles.table_region(style.as_deref(), &[]).tbl, &direct, &self.res.styles.colours);
             (tbl.floating, style, tbl.bidi_visual.unwrap_or(false))
         };
         let grids: Vec<Vec<f64>> = run.iter().copied().chain([m]).map(table_grid).collect();
@@ -3385,11 +3444,12 @@ impl Reader {
     /// rows in order.
     fn read_table(&mut self, ts: &[Node], pkg: &mut Package) -> Table {
         let t = ts[0];
-        let direct = TblProps::parse(child(t, "tblPr"), &self.res.styles.colours);
+        let colours = self.res.styles.colours;
+        let held = self.table_direct(child(t, "tblPr"));
+        let direct = held.get().clone();
         let style_id = self.res.styles.table_style(direct.style.as_deref()).map(str::to_string);
         let style_region = self.res.styles.table_region(style_id.as_deref(), &[]);
-        let mut tbl = style_region.tbl.clone();
-        tbl.merge(&direct);
+        let mut tbl = table_props::table_over(&style_region.tbl, &direct, &colours);
         // Compat ≤ 14: a floating table at vertical position 0 stands in the flow, whatever it is anchored to.
         if self.res.styles.compat == Compat::Legacy
             && let Some(fp) = tbl.floating.as_mut()
@@ -3405,10 +3465,9 @@ impl Reader {
         // properties without borders leave the table's borders as they are (FX-REVIEW-TABLES and its rejected twin).
         let now = &tbl.borders;
         let change = self.table_change(child(t, "tblPr"), "tblPrChange", |r, before| {
-            let prev = TblProps::parse(before, &r.res.styles.colours);
+            let prev = before.map(TableDirect::parse).unwrap_or_default();
             let style_id = r.res.styles.table_style(prev.style.as_deref()).map(str::to_string);
-            let mut tbl = r.res.styles.table_region(style_id.as_deref(), &[]).tbl.clone();
-            tbl.merge(&prev);
+            let tbl = table_props::table_over(&r.res.styles.table_region(style_id.as_deref(), &[]).tbl, &prev, &colours);
             let b = if before.and_then(|n| child(n, "tblBorders")).is_some() { &tbl.borders } else { now };
             Some(PreviousProps::Table {
                 style_id,
@@ -3436,15 +3495,15 @@ impl Reader {
             row_nodes.extend(rows);
         }
         let nrows = row_nodes.len();
+        let mut row_props = Vec::with_capacity(nrows);
+        for (rn, _) in &row_nodes {
+            row_props.push((self.row_direct(child(*rn, "trPr")), self.exceptions_direct(child(*rn, "tblPrEx"))));
+        }
         let row_band = tbl.row_band.unwrap_or(0);
-        let headers = row_nodes
+        let headers = row_props
             .iter()
             .enumerate()
-            .take_while(|(i, (rn, _))| {
-                let mut trp = style_region.tr.clone();
-                trp.merge(&TrProps::parse(child(*rn, "trPr")));
-                trp.header == Some(true) || *i == 0 && look.first_row
-            })
+            .take_while(|(i, (tr, _))| table_props::row_over(&style_region.tr, tr.get()).header == Some(true) || *i == 0 && look.first_row)
             .count();
         let col_band = tbl.col_band.unwrap_or(0);
         let mut rows = Vec::new();
@@ -3453,14 +3512,13 @@ impl Reader {
         let mut first_row_width: Option<Width> = None;
         let mut first_row_ind: Option<Width> = None;
         let mut left_margins: Vec<i64> = Vec::new();
-        for (ri, (rn, row_controls)) in row_nodes.iter().enumerate() {
-            let mut trp = style_region.tr.clone();
-            trp.merge(&TrProps::parse(child(*rn, "trPr")));
-            let mut ex = TblProps::parse(child(*rn, "tblPrEx"), &self.res.styles.colours);
+        for (ri, ((rn, row_controls), (row_direct, row_ex))) in row_nodes.iter().zip(row_props).enumerate() {
+            let mut trp = table_props::row_over(&style_region.tr, row_direct.get());
+            let mut ex = table_props::tbl_props(row_ex.get(), &colours);
             // A later table's rows keep its own alignment and cell margins as their exceptions.
             let mut table_shading = None;
             if row_table[ri] > 0 {
-                let own = TblProps::parse(child(ts[row_table[ri]], "tblPr"), &self.res.styles.colours);
+                let own = table_props::tbl_props(&child(ts[row_table[ri]], "tblPr").map(TableDirect::parse).unwrap_or_default(), &colours);
                 // Its own shading over its style's, which joined tables share (Word shows the style's under one without).
                 let shd = own.shd.as_ref().or(style_region.tbl.shd.as_ref());
                 table_shading = Some((shd.and_then(Shd::flat), shd.and_then(Shd::hatch)));
@@ -3495,10 +3553,11 @@ impl Reader {
                 let tm = &row_tbl.margins;
                 let rev = self.cell_revisions(child(*cn, "tcPr"), &region.tc, tm, unset);
                 let ctx = TableCtx { region: region.clone() };
+                let direct = self.cell_direct(child(*cn, "tcPr"));
                 let blocks = self.read_blocks(*cn, pkg, Some(&ctx));
-                cells.push(self.cell(*cn, &region.tc, tm, unset, blocks, cell_controls.clone(), rev));
+                cells.push(self.cell(*cn, direct, &region.tc, tm, unset, blocks, cell_controls.clone(), rev));
             }
-            rows.push(self.row(*rn, &trp, &ex, &tbl, &row_tbl, &style_region, cells, row_controls.clone()));
+            rows.push(self.row(*rn, (row_direct, row_ex), &trp, &ex, &tbl, &row_tbl, &style_region, cells, row_controls.clone()));
             if let Some(r) = rows.last_mut() {
                 r.table_shading = table_shading;
                 bound_spans(r);
@@ -3562,7 +3621,7 @@ impl Reader {
             rows,
             src: self.record.then(|| Rc::new(t.range().start..ts[ts.len() - 1].range().end)),
             id: next_para_id(),
-            direct: Raw(child(t, "tblPr").map(|n| Rc::from(&n.document().input_text()[n.range()]))),
+            direct: held,
             controls: Vec::new(),
             change,
             grid_change,
@@ -3572,10 +3631,19 @@ impl Reader {
     /// A table cell: its properties over its style region's `base`, the table's cell margins `tm`, and its content.
     #[allow(clippy::too_many_arguments, reason = "the cell, its properties' context and the content read before it")]
     #[inline(never)]
-    fn cell(&self, cn: Node, base: &TcProps, tm: &Margins, unset: f64, blocks: Vec<Block>, controls: Vec<ControlId>, rev: CellRevisions) -> Cell {
+    fn cell(
+        &self,
+        cn: Node,
+        direct: CellDirect,
+        base: &TcProps,
+        tm: &Margins,
+        unset: f64,
+        blocks: Vec<Block>,
+        controls: Vec<ControlId>,
+        rev: CellRevisions,
+    ) -> Cell {
         let tc_pr = child(cn, "tcPr");
-        let mut tcp = base.clone();
-        tcp.merge(&TcProps::parse(tc_pr, &self.res.styles.colours));
+        let tcp = table_props::cell_over(base, direct.get(), &self.res.styles.colours);
         let mut c = Cell {
             width: tcp.width,
             span: tcp.grid_span.unwrap_or(1).max(1) as usize,
@@ -3597,7 +3665,7 @@ impl Reader {
             fit_text: false,
             hide_mark: tc_pr.and_then(|p| child(p, "hideMark")).is_some_and(|n| !matches!(attr(n, "val"), Some("0" | "false" | "off"))),
             diagonals: None,
-            direct: Raw(tc_pr.map(|n| Rc::from(&n.document().input_text()[n.range()]))),
+            direct,
             blocks,
             controls,
             rev,
@@ -3607,13 +3675,14 @@ impl Reader {
         c
     }
 
-    /// A table row: its properties `trp` and exceptions `ex` over the table's `tbl` (`row_tbl` with the exceptions),
-    /// and its cells.
+    /// A table row: its authored properties and exceptions (`direct`), resolved as `trp` and `ex` over the table's
+    /// `tbl` (`row_tbl` with the exceptions), and its cells.
     #[allow(clippy::too_many_arguments, reason = "the row, the table properties it resolves over and its cells")]
     #[inline(never)]
     fn row(
         &mut self,
         rn: Node,
+        (direct, exceptions): (RowDirect, ExceptionsDirect),
         trp: &TrProps,
         ex: &TblProps,
         tbl: &TblProps,
@@ -3627,8 +3696,7 @@ impl Reader {
             ins: self.mark_at(tr_pr, "ins", MarkKind::Insert),
             del: self.mark_at(tr_pr, "del", MarkKind::Delete),
             change: self.table_change(tr_pr, "trPrChange", |_, before| {
-                let mut tr = style_region.tr.clone();
-                tr.merge(&TrProps::parse(before));
+                let tr = table_props::row_over(&style_region.tr, &before.map(RowDirect::parse).unwrap_or_default());
                 Some(PreviousProps::Row { height: tr.height, cant_split: tr.cant_split.unwrap_or(false), header: tr.header.unwrap_or(false) })
             }),
             ex_change: self.table_change(child(rn, "tblPrEx"), "tblPrExChange", |_, _| None),
@@ -3667,8 +3735,8 @@ impl Reader {
             }),
             cells,
             controls,
-            direct: Raw(tr_pr.filter(|_| self.record).map(raw)),
-            exceptions: Raw(child(rn, "tblPrEx").filter(|_| self.record).map(raw)),
+            direct,
+            exceptions,
             src: self.record.then(|| Rc::new(rn.range())),
             rev,
         }
@@ -3700,8 +3768,7 @@ impl Reader {
             (self.mark(e, mark_kind), kind)
         });
         let change = self.table_change(tc_pr, "tcPrChange", |r, before| {
-            let mut tcp = base.clone();
-            tcp.merge(&TcProps::parse(before, &r.res.styles.colours));
+            let tcp = table_props::cell_over(base, &before.map(CellDirect::parse).unwrap_or_default(), &r.res.styles.colours);
             let b = &tcp.borders;
             Some(PreviousProps::Cell {
                 width: tcp.width,

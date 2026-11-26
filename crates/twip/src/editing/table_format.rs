@@ -74,10 +74,15 @@ pub(super) fn v_align_xml(w: &str, v: crate::docx::VerticalAlignment) -> String 
 }
 
 /// Sets `row`'s height (`None`: auto) on the model and in its `w:trPr`.
-pub(super) fn set_height(row: &mut crate::docx::Row, h: Option<(f64, crate::docx::HeightRule)>, cx: &crate::docx::write::props::Cx) {
+pub(super) fn set_height(
+    row: &mut crate::docx::Row,
+    h: Option<(f64, crate::docx::HeightRule)>,
+    colours: &crate::docx::props::ThemeColours,
+    cx: &crate::docx::write::props::Cx,
+) {
     use crate::docx::write::props::Props;
     let w = &cx.w;
-    let mut p = Props::parse(row.direct.0.as_deref(), "trPr", cx);
+    let mut p = Props::parse(row.direct.xml(colours, cx).as_deref(), "trPr", cx);
     p.reorder(crate::docx::write::props::TRPR);
     match &h {
         Some((v, rule)) => p.set(
@@ -86,7 +91,7 @@ pub(super) fn set_height(row: &mut crate::docx::Row, h: Option<(f64, crate::docx
         ),
         None => p.remove("trHeight"),
     }
-    row.direct = crate::docx::Raw(p.xml().map(|x| std::rc::Rc::from(x.as_str())));
+    row.direct = row.direct.rewritten(p.xml().as_deref(), colours, cx);
     row.height = h;
 }
 
@@ -102,36 +107,48 @@ fn width_xml(w: &str, name: &str, v: &Width) -> String {
 }
 
 /// `xml` as the table's own `name` in its `w:tblPr` (empty: none).
-pub(super) fn set_own(props: &mut TableProps, name: &str, xml: String, cx: &crate::docx::write::props::Cx) {
+pub(super) fn set_own(
+    props: &mut TableProps,
+    name: &str,
+    xml: String,
+    colours: &crate::docx::props::ThemeColours,
+    cx: &crate::docx::write::props::Cx,
+) {
     use crate::docx::write::props::{Props, TBLPR};
-    let mut p = Props::parse(props.direct.0.as_deref(), "tblPr", cx);
+    let mut p = Props::parse(props.direct.xml(colours, cx).as_deref(), "tblPr", cx);
     p.reorder(TBLPR);
     match xml.is_empty() {
         true => p.remove(name),
         false => p.set(name, xml),
     }
     let xml = p.xml().unwrap_or_else(|| format!("<{}tblPr/>", cx.w));
-    props.direct = crate::docx::Raw(Some(std::rc::Rc::from(xml.as_str())));
+    props.direct = props.direct.rewritten(Some(&xml), colours, cx);
 }
 
 /// `width` as the table's on the model and in its `w:tblPr`.
-pub(super) fn set_width(props: &mut TableProps, width: Width, cx: &crate::docx::write::props::Cx) {
+pub(super) fn set_width(props: &mut TableProps, width: Width, colours: &crate::docx::props::ThemeColours, cx: &crate::docx::write::props::Cx) {
     props.width = width;
-    set_own(props, "tblW", width_xml(&cx.w, "tblW", &width), cx);
+    set_own(props, "tblW", width_xml(&cx.w, "tblW", &width), colours, cx);
 }
 
 /// `ind` (points) as the table's indent on the model and in its `w:tblPr`.
-pub(super) fn set_indent(props: &mut TableProps, ind: f64, cx: &crate::docx::write::props::Cx) {
+pub(super) fn set_indent(props: &mut TableProps, ind: f64, colours: &crate::docx::props::ThemeColours, cx: &crate::docx::write::props::Cx) {
     (props.ind, props.ind_pct, props.ind_set) = ((ind * 20.0).round() / 20.0, None, true);
-    set_own(props, "tblInd", width_xml(&cx.w, "tblInd", &Width::Dxa(props.ind)), cx);
+    set_own(props, "tblInd", width_xml(&cx.w, "tblInd", &Width::Dxa(props.ind)), colours, cx);
 }
 
 /// What table formatting `f` set on the model, written into the table's `w:tblPr` (`props`) and the `w:trPr` of its
 /// `rows` it changed (from `was`) as their own.
-fn own_xml(f: &TableFormat, props: &mut TableProps, rows: &mut [crate::docx::Row], was: &[crate::docx::Row], cx: &crate::docx::write::props::Cx) {
+fn own_xml(
+    f: &TableFormat,
+    props: &mut TableProps,
+    rows: &mut [crate::docx::Row],
+    was: &[crate::docx::Row],
+    colours: &crate::docx::props::ThemeColours,
+    cx: &crate::docx::write::props::Cx,
+) {
     use crate::docx::write::props::Props;
     let w = &cx.w;
-    let raw = |x: Option<String>| crate::docx::Raw(x.map(|x| std::rc::Rc::from(x.as_str())));
     let table = match f {
         TableFormat::TableAlign(_) => {
             let v = match props.jc {
@@ -148,7 +165,7 @@ fn own_xml(f: &TableFormat, props: &mut TableProps, rows: &mut [crate::docx::Row
         _ => None,
     };
     if let Some((name, xml)) = table {
-        set_own(props, name, xml, cx);
+        set_own(props, name, xml, colours, cx);
     }
     let row = |r: &crate::docx::Row| -> Option<(&'static str, String)> {
         match f {
@@ -162,13 +179,13 @@ fn own_xml(f: &TableFormat, props: &mut TableProps, rows: &mut [crate::docx::Row
             continue;
         }
         let Some((name, xml)) = row(r) else { continue };
-        let mut p = Props::parse(r.direct.0.as_deref(), "trPr", cx);
+        let mut p = Props::parse(r.direct.xml(colours, cx).as_deref(), "trPr", cx);
         p.reorder(crate::docx::write::props::TRPR);
         match xml.is_empty() {
             true => p.remove(name),
             false => p.set(name, xml),
         }
-        r.direct = raw(p.xml());
+        r.direct = r.direct.rewritten(p.xml().as_deref(), colours, cx);
     }
 }
 
@@ -270,10 +287,10 @@ pub(super) fn border_xml(w: &str, name: &str, b: &Border) -> String {
 
 /// A cell's `w:tcBorders` as written, with the sides in `sides` (bits: top, left, bottom, right, then the two
 /// diagonals) set from its model borders: the others stay as they were, a style's staying its style's.
-fn tc_borders(cx: &crate::docx::write::props::Cx, cell: &crate::docx::Cell, sides: u8) -> String {
+fn tc_borders(colours: &crate::docx::props::ThemeColours, cx: &crate::docx::write::props::Cx, cell: &crate::docx::Cell, sides: u8) -> String {
     use crate::docx::write::props::{Props, TC_BORDERS};
     let w = &cx.w;
-    let tcpr = Props::parse(cell.direct.0.as_deref(), "tcPr", cx);
+    let tcpr = Props::parse(cell.direct.xml(colours, cx).as_deref(), "tcPr", cx);
     let mut p = Props::parse(tcpr.get("tcBorders"), "tcBorders", cx);
     p.reorder(TC_BORDERS);
     let [tl2br, tr2bl] = cell.diagonals.as_deref().cloned().unwrap_or_default();
@@ -307,7 +324,13 @@ pub(super) const DIAGONAL_DOWN: u8 = 16;
 pub(super) const DIAGONAL_UP: u8 = 32;
 
 /// Sets a cell's `sides` to `b`, in the model and in its `w:tcBorders`.
-pub(super) fn set_cell_sides(cell: &mut crate::docx::Cell, sides: u8, b: &Border, cx: &crate::docx::write::props::Cx) {
+pub(super) fn set_cell_sides(
+    cell: &mut crate::docx::Cell,
+    sides: u8,
+    b: &Border,
+    colours: &crate::docx::props::ThemeColours,
+    cx: &crate::docx::write::props::Cx,
+) {
     for (i, side) in [&mut cell.top, &mut cell.left, &mut cell.bottom, &mut cell.right].into_iter().enumerate() {
         if sides & (1 << i) != 0 {
             *side = Some(b.clone());
@@ -322,11 +345,12 @@ pub(super) fn set_cell_sides(cell: &mut crate::docx::Cell, sides: u8, b: &Border
         }
         cell.diagonals = Some(std::rc::Rc::new(d));
     }
-    let xml = tc_borders(cx, cell, sides);
-    let mut p = crate::docx::write::props::Props::parse(cell.direct.0.as_deref(), "tcPr", cx);
+    let xml = tc_borders(colours, cx, cell, sides);
+    let mut p = crate::docx::write::props::Props::parse(cell.direct.xml(colours, cx).as_deref(), "tcPr", cx);
     p.set("tcBorders", xml);
     let w = &cx.w;
-    cell.direct = crate::docx::Raw(Some(std::rc::Rc::from(p.xml().unwrap_or_else(|| format!("<{w}tcPr/>")).as_str())));
+    let xml = p.xml().unwrap_or_else(|| format!("<{w}tcPr/>"));
+    cell.direct = cell.direct.rewritten(Some(&xml), colours, cx);
 }
 
 /// Every character of the row is hidden: with its end mark, the row hides.
@@ -340,16 +364,24 @@ fn row_text_hidden(row: &crate::docx::Row) -> bool {
 }
 
 /// Sets a row's exceptions (`w:tblPrEx`) and what the model reads from them.
-fn set_exceptions(row: &mut crate::docx::Row, ex: &RowEx, t: &crate::docx::Table, style_jc: Option<Jc>, cx: &crate::docx::write::props::Cx) {
+fn set_exceptions(
+    row: &mut crate::docx::Row,
+    ex: &RowEx,
+    t: &crate::docx::Table,
+    style_jc: Option<Jc>,
+    colours: &crate::docx::props::ThemeColours,
+    cx: &crate::docx::write::props::Cx,
+) {
     let table = &t.borders;
     let w = &cx.w;
-    let mut p = crate::docx::write::props::Props::parse(if ex.reset { None } else { row.exceptions.0.as_deref() }, "tblPrEx", cx);
+    let was = if ex.reset { None } else { row.exceptions.xml(colours, cx) };
+    let mut p = crate::docx::write::props::Props::parse(was.as_deref(), "tblPrEx", cx);
     // CT_TblPrEx's children are CT_TblPr's, in its order.
     p.reorder(crate::docx::write::props::TBLPR);
     if ex.reset {
         (row.shading, row.hatch, row.cell_spacing, row.borders, row.ind, row.run) = (None, None, None, None, None, None);
         // Its own row properties' alignment, or its style's
-        let own = row.direct.0.as_deref().and_then(|x| cx.parse(x, |_, n| crate::docx::props::TrProps::parse(Some(n)).jc)).flatten();
+        let own = row.direct.get().align;
         row.jc = own.or(style_jc);
     }
     if let Some(j) = ex.jc {
@@ -402,7 +434,7 @@ fn set_exceptions(row: &mut crate::docx::Row, ex: &RowEx, t: &crate::docx::Table
         p.set("tblBorders", format!("<{w}tblBorders>{x}</{w}tblBorders>"));
         row.borders = Some(std::rc::Rc::new(now));
     }
-    row.exceptions = crate::docx::Raw(p.xml().map(|x| std::rc::Rc::from(x.as_str())));
+    row.exceptions = row.exceptions.rewritten(p.xml().as_deref(), colours, cx);
 }
 
 impl TableFormat {
@@ -439,13 +471,8 @@ impl Editor {
         let tg = self.table_target()?;
         let t = self.index.table(&self.doc, tg.table)?;
         let res = self.doc.resolver.as_ref()?;
-        let cx = self.cx();
-        let own = t
-            .direct
-            .0
-            .as_deref()
-            .and_then(|raw| cx.parse(raw, |_, n| crate::docx::props::TblProps::parse(Some(n), &res.styles.colours)))
-            .unwrap_or_default();
+        let _ = res;
+        let own = t.direct.get();
         let size = |v: i64| v.clamp(1, u32::MAX as i64) as u32;
         Some(TableBands { rows: size(t.bands.0), columns: size(t.bands.1), own_rows: own.row_band.map(size), own_columns: own.col_band.map(size) })
     }
@@ -499,11 +526,13 @@ impl Editor {
         let mut props = TableProps::of(t);
         let mut restyle = false;
         let cx = self.cx();
+        let colours = self.colours();
         let w = cx.w.clone();
         let set_direct = |cell: &mut crate::docx::Cell, local: &str, xml: String| {
-            let mut p = crate::docx::write::props::Props::parse(cell.direct.0.as_deref(), "tcPr", &cx);
+            let mut p = crate::docx::write::props::Props::parse(cell.direct.xml(&colours, &cx).as_deref(), "tcPr", &cx);
             p.set(local, xml);
-            cell.direct = crate::docx::Raw(Some(std::rc::Rc::from(p.xml().unwrap_or_else(|| format!("<{w}tcPr/>")).as_str())));
+            let xml = p.xml().unwrap_or_else(|| format!("<{w}tcPr/>"));
+            cell.direct = cell.direct.rewritten(Some(&xml), &colours, &cx);
         };
         let in_one = |tg: &super::tables::Target, r: usize, c: usize, s: usize| {
             (tg.rows.0..=tg.rows.1).contains(&r) && c + s.max(1) > tg.cols.0 && c <= tg.cols.1
@@ -524,7 +553,7 @@ impl Editor {
                                 set_direct(cell, "vAlign", v_align_xml(&w, *v));
                             }
                             TableFormat::CellShading(sh) => {
-                                let p = crate::docx::write::props::Props::parse(cell.direct.0.as_deref(), "tcPr", &cx);
+                                let p = crate::docx::write::props::Props::parse(cell.direct.xml(&colours, &cx).as_deref(), "tcPr", &cx);
                                 let inherited = if sh.pattern.is_none() { self.cell_shd(t, (r, k), cell) } else { None };
                                 let shd = sh.shd(p.get("shd"), inherited.as_ref());
                                 (cell.shading, cell.hatch) = (shd.flat(), shd.hatch());
@@ -561,7 +590,7 @@ impl Editor {
                         let mut d = cell.diagonals.as_deref().cloned().unwrap_or_default();
                         d[k] = Some(b.clone());
                         cell.diagonals = Some(std::rc::Rc::new(d));
-                        let xml = tc_borders(&cx, cell, 16 << k);
+                        let xml = tc_borders(&colours, &cx, cell, 16 << k);
                         set_direct(cell, "tcBorders", xml);
                     }
                 }
@@ -644,7 +673,7 @@ impl Editor {
                         if *edges == Edges::None && in_block(r, g.rows[r][k].0, g.rows[r][k].1) {
                             cell.diagonals = None;
                         }
-                        let xml = tc_borders(&cx, cell, bits);
+                        let xml = tc_borders(&colours, &cx, cell, bits);
                         set_direct(cell, "tcBorders", xml);
                     }
                 }
@@ -693,31 +722,31 @@ impl Editor {
                 };
                 for row in &mut rows[r0..=r1] {
                     if let Some(h) = *hidden {
-                        let mut p = crate::docx::write::props::Props::parse(row.direct.0.as_deref(), "trPr", &cx);
+                        let mut p = crate::docx::write::props::Props::parse(row.direct.xml(&colours, &cx).as_deref(), "trPr", &cx);
                         p.set("hidden", if h { format!("<{w}hidden/>") } else { String::new() });
-                        row.direct = crate::docx::Raw(p.xml().map(|x| std::rc::Rc::from(x.as_str())));
+                        row.direct = row.direct.rewritten(p.xml().as_deref(), &colours, &cx);
                         row.hidden = h;
                         row.vanished = h && row_text_hidden(row);
                     }
                     if let Some(ex) = exceptions {
-                        set_exceptions(row, ex, t, style_jc, &cx);
+                        set_exceptions(row, ex, t, style_jc, &colours, &cx);
                     }
                 }
             }
             TableFormat::TableShading(sh) => {
                 // Written as the table's own: its style's shading stays its style's.
-                let mut p = crate::docx::write::props::Props::parse(t.direct.0.as_deref(), "tblPr", &cx);
+                let mut p = crate::docx::write::props::Props::parse(t.direct.xml(&colours, &cx).as_deref(), "tblPr", &cx);
                 p.reorder(crate::docx::write::props::TBLPR);
                 let shd = sh.shd(p.get("shd"), t.shd.as_ref());
                 p.set("shd", shd_xml(&w, &shd));
-                props.direct = crate::docx::Raw(Some(std::rc::Rc::from(p.xml().unwrap_or_default().as_str())));
+                props.direct = t.direct.rewritten(Some(&p.xml().unwrap_or_default()), &colours, &cx);
                 props.shd = Some(shd);
                 // The whole table takes it, rows read from tables joined to it too.
                 rows.iter_mut().for_each(|r| r.table_shading = None);
             }
             TableFormat::TableCellMargins(m) => {
                 use crate::docx::write::props::Props;
-                let own = Props::parse(props.direct.0.as_deref(), "tblPr", &cx);
+                let own = Props::parse(props.direct.xml(&colours, &cx).as_deref(), "tblPr", &cx);
                 let mut mar = Props::parse(own.get("tblCellMar"), "tblCellMar", &cx);
                 mar.reorder(&["top", "start", "left", "bottom", "end", "right"]);
                 // A side written as `start` or `end` stays so
@@ -727,7 +756,7 @@ impl Editor {
                         mar.set(side, format!("<{w}{side} {w}w=\"{}\" {w}type=\"dxa\"/>", (v * 20.0).round() as i64));
                     }
                 }
-                set_own(&mut props, "tblCellMar", mar.xml().unwrap_or_default(), &cx);
+                set_own(&mut props, "tblCellMar", mar.xml().unwrap_or_default(), &colours, &cx);
                 restyle = true;
             }
             &TableFormat::CellSpacing(v) => {
@@ -754,7 +783,7 @@ impl Editor {
             }
             TableFormat::RowHeight(h) => {
                 let h = h.as_ref().map(|(v, rule)| ((v * 20.0).round() / 20.0, *rule));
-                rows[r0..=r1].iter_mut().for_each(|r| set_height(r, h, &cx));
+                rows[r0..=r1].iter_mut().for_each(|r| set_height(r, h, &colours, &cx));
             }
             &TableFormat::RowCantSplit(on) => {
                 rows[r0..=r1].iter_mut().for_each(|r| r.cant_split = on);
@@ -788,14 +817,14 @@ impl Editor {
                 }
                 // As its own too: a style's layout or width doesn't come back when it is resolved again.
                 props.fixed = *fixed;
-                set_width(&mut props, *width, &cx);
+                set_width(&mut props, *width, &colours, &cx);
                 let layout = if *fixed { "fixed" } else { "autofit" };
-                set_own(&mut props, "tblLayout", format!("<{w}tblLayout {w}type=\"{layout}\"/>"), &cx);
+                set_own(&mut props, "tblLayout", format!("<{w}tblLayout {w}type=\"{layout}\"/>"), &colours, &cx);
                 grid = Some(gr);
             }
             TableFormat::Bands(rows_n, cols_n) => {
                 let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
-                let mut p = crate::docx::write::props::Props::parse(t.direct.0.as_deref(), "tblPr", &cx);
+                let mut p = crate::docx::write::props::Props::parse(t.direct.xml(&colours, &cx).as_deref(), "tblPr", &cx);
                 p.reorder(crate::docx::write::props::TBLPR);
                 for (n, name) in [(rows_n, "tblStyleRowBandSize"), (cols_n, "tblStyleColBandSize")] {
                     match n {
@@ -804,15 +833,12 @@ impl Editor {
                         None => {}
                     }
                 }
-                props.direct = crate::docx::Raw(p.xml().map(|x| std::rc::Rc::from(x.as_str())));
-                let mut tbl = res.styles.table_region(res.styles.table_style(t.style_id.as_deref()), &[]).tbl.clone();
-                let direct = props
-                    .direct
-                    .0
-                    .as_deref()
-                    .and_then(|raw| cx.parse(raw, |_, n| crate::docx::props::TblProps::parse(Some(n), &res.styles.colours)))
-                    .unwrap_or_default();
-                tbl.merge(&direct);
+                props.direct = t.direct.rewritten(p.xml().as_deref(), &colours, &cx);
+                let tbl = crate::docx::table_props::table_over(
+                    &res.styles.table_region(res.styles.table_style(t.style_id.as_deref()), &[]).tbl,
+                    props.direct.get(),
+                    &colours,
+                );
                 props.bands = (tbl.row_band.unwrap_or(0), tbl.col_band.unwrap_or(0));
                 restyle = true;
             }
@@ -827,18 +853,12 @@ impl Editor {
                     }
                     props.style_id = Some(id.clone());
                     // Named in its properties too: re-resolving takes the style from them.
-                    let mut p = crate::docx::write::props::Props::parse(t.direct.0.as_deref(), "tblPr", &cx);
+                    let mut p = crate::docx::write::props::Props::parse(t.direct.xml(&colours, &cx).as_deref(), "tblPr", &cx);
                     p.reorder(crate::docx::write::props::TBLPR);
                     p.set("tblStyle", format!("<{w}tblStyle {w}val=\"{}\"/>", crate::docx::write::props::esc(id)));
-                    props.direct = crate::docx::Raw(p.xml().map(|x| std::rc::Rc::from(x.as_str())));
-                    let mut tbl = res.styles.table_region(Some(id), &[]).tbl.clone();
-                    let direct = t
-                        .direct
-                        .0
-                        .as_deref()
-                        .and_then(|raw| cx.parse(raw, |_, n| crate::docx::props::TblProps::parse(Some(n), &res.styles.colours)))
-                        .unwrap_or_default();
-                    tbl.merge(&direct);
+                    props.direct = t.direct.rewritten(p.xml().as_deref(), &colours, &cx);
+                    let tbl = crate::docx::table_props::table_over(&res.styles.table_region(Some(id), &[]).tbl, t.direct.get(), &colours);
+                    let direct = t.direct.get();
                     let b = &tbl.borders;
                     props.borders = [b.top.clone(), b.left.clone(), b.bottom.clone(), b.right.clone(), b.inside_h.clone(), b.inside_v.clone()];
                     props.bands = (tbl.row_band.unwrap_or(0), tbl.col_band.unwrap_or(0));
@@ -854,13 +874,15 @@ impl Editor {
             }
         }
         // The table's and rows' own properties as written too: re-resolving after a style edit takes them from there.
-        own_xml(f, &mut props, &mut rows, &t.rows, &cx);
-        // `Raw` compares equal whatever it holds: the properties as written count too.
-        let same_raw = rows.iter().zip(&t.rows).all(|(a, b)| {
-            a.direct.0 == b.direct.0 && a.exceptions.0 == b.exceptions.0 && a.cells.iter().zip(&b.cells).all(|(c, d)| c.direct.0 == d.direct.0)
+        own_xml(f, &mut props, &mut rows, &t.rows, &colours, &cx);
+        // Authored properties compare equal whatever they hold: they count too.
+        let same_authored = rows.iter().zip(&t.rows).all(|(a, b)| {
+            a.direct.authored_eq(&b.direct)
+                && a.exceptions.authored_eq(&b.exceptions)
+                && a.cells.iter().zip(&b.cells).all(|(c, d)| c.direct.authored_eq(&d.direct))
         });
-        let rows_changed = rows != t.rows || !same_raw || grid.is_some();
-        let props_changed = props != TableProps::of(t) || props.direct.0 != t.direct.0;
+        let rows_changed = rows != t.rows || !same_authored || grid.is_some();
+        let props_changed = props != TableProps::of(t) || !props.direct.authored_eq(&t.direct);
         if !rows_changed && !props_changed {
             return Outcome::Unchanged("already so");
         }

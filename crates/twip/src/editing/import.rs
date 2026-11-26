@@ -298,11 +298,18 @@ impl Rebind {
     /// Pasted `blocks` and the bodies of the notes and comments they refer to: their paragraphs', tables', rows' and
     /// cells' properties and their tracked changes, and the elements kept as read (rubies, form fields' data, others).
     pub(super) fn blocks(&self, blocks: &mut [Block], refs: &mut Refs) {
+        macro_rules! own {
+            ($d:expr) => {
+                if let Some(x) = $d.origin_xml().and_then(|x| self.element(x)) {
+                    $d = $d.with_origin_xml(x.into());
+                }
+            };
+        }
         let change = |c: &mut Option<Rc<TableChange>>| {
             if let Some(c) = c
-                && c.previous_raw.0.as_deref().is_some_and(|x| self.element(x).is_some())
+                && c.previous_direct.origin_xml().is_some_and(|x| self.element(x).is_some())
             {
-                self.raw(&mut Rc::make_mut(c).previous_raw);
+                own!(Rc::make_mut(c).previous_direct);
             }
         };
         each_block_of(blocks, refs, &mut |b| match b {
@@ -333,15 +340,15 @@ impl Rebind {
                 }
             }
             Block::Table(t) => {
-                self.raw(&mut t.direct);
+                own!(t.direct);
                 change(&mut t.change);
                 for r in &mut t.rows {
-                    self.raw(&mut r.direct);
-                    self.raw(&mut r.exceptions);
+                    own!(r.direct);
+                    own!(r.exceptions);
                     change(&mut r.rev.change);
                     change(&mut r.rev.ex_change);
                     for c in &mut r.cells {
-                        self.raw(&mut c.direct);
+                        own!(c.direct);
                         change(&mut c.rev.change);
                     }
                 }

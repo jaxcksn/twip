@@ -132,10 +132,8 @@ impl Editor {
         });
         let headers = t.rows.iter().enumerate().take_while(|(i, r)| r.header || *i == 0 && look.first_row).count();
         let ncols = t.rows.get(r).map_or(0, |row| row.cells.len());
-        let mut tcp = res.cell_region(t.style_id.as_deref(), look, t.bands, (r, k), (t.rows.len(), ncols), headers).tc.clone();
-        if let Some(raw) = cell.direct.0.as_deref() {
-            tcp.merge(&self.cx().parse(raw, |_, n| crate::docx::props::TcProps::parse(Some(n), &res.styles.colours)).unwrap_or_default());
-        }
+        let region = res.cell_region(t.style_id.as_deref(), look, t.bands, (r, k), (t.rows.len(), ncols), headers);
+        let tcp = crate::docx::table_props::cell_over(&region.tc, cell.direct.get(), &res.styles.colours);
         tcp.shd.or_else(flat)
     }
 

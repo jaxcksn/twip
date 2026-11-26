@@ -1,5 +1,6 @@
 //! Revision recording
 
+use crate::docx::table_props::PreviousDirect;
 use std::collections::{HashMap, HashSet};
 use std::mem::Discriminant;
 use std::ops::Range;
@@ -300,7 +301,7 @@ impl Recording {
                 if self.track_formatting && t.change.is_none() {
                     t.change = Some(Rc::new(TableChange {
                         mark: self.fmt_mark(ids),
-                        previous_raw: t.direct.clone(),
+                        previous_direct: PreviousDirect::Table(t.direct.clone()),
                         previous: Some(PreviousProps::of_table(&t)),
                     }));
                 }
@@ -359,7 +360,7 @@ impl Recording {
                 if self.track_formatting && n.change.is_none() {
                     n.change = Some(Rc::new(TableChange {
                         mark: self.fmt_mark(ids),
-                        previous_raw: t.direct.clone(),
+                        previous_direct: PreviousDirect::Table(t.direct.clone()),
                         previous: Some(PreviousProps::of_table(t)),
                     }));
                 }
@@ -800,7 +801,11 @@ impl Recording {
         let props = (o.height, o.cant_split, o.header) != (r.height, r.cant_split, r.header);
         if props && self.track_formatting && r.rev.change.is_none() && !self.new_here_row(o) {
             let previous = PreviousProps::Row { height: o.height, cant_split: o.cant_split, header: o.header };
-            r.rev.change = Some(Rc::new(TableChange { mark: self.fmt_mark(ids), previous_raw: o.direct.clone(), previous: Some(previous) }));
+            r.rev.change = Some(Rc::new(TableChange {
+                mark: self.fmt_mark(ids),
+                previous_direct: PreviousDirect::Row(o.direct.clone()),
+                previous: Some(previous),
+            }));
         }
         let skips = (o.grid_before, o.grid_after, o.w_before, o.w_after) != (r.grid_before, r.grid_after, r.w_before, r.w_after);
         if o.cells.len() != n.cells.len() {
@@ -850,7 +855,11 @@ impl Recording {
                     text_direction: oc.text_direction.clone(),
                     no_wrap: oc.no_wrap,
                 };
-                c.rev.change = Some(Rc::new(TableChange { mark: self.fmt_mark(ids), previous_raw: oc.direct.clone(), previous: Some(previous) }));
+                c.rev.change = Some(Rc::new(TableChange {
+                    mark: self.fmt_mark(ids),
+                    previous_direct: PreviousDirect::Cell(oc.direct.clone()),
+                    previous: Some(previous),
+                }));
             }
             if c.v_merge != oc.v_merge && self.track_formatting && c.rev.structural.is_none() && !fresh {
                 let kind = CellMarkKind::Merge { v_merge: Some(c.v_merge), v_merge_orig: Some(oc.v_merge) };
@@ -916,8 +925,11 @@ impl Recording {
         }
         let mut n = t.clone();
         if change {
-            n.change =
-                Some(Rc::new(TableChange { mark: self.fmt_mark(ids), previous_raw: t.direct.clone(), previous: Some(PreviousProps::of_table(t)) }));
+            n.change = Some(Rc::new(TableChange {
+                mark: self.fmt_mark(ids),
+                previous_direct: PreviousDirect::Table(t.direct.clone()),
+                previous: Some(PreviousProps::of_table(t)),
+            }));
         }
         if grid {
             n.grid_change = Some(Rc::new(GridChange { mark: self.fmt_mark(ids), previous: t.grid.clone() }));
@@ -1412,7 +1424,8 @@ mod tests {
         assert_eq!(kinds(&e), ["TableProperty"]);
         e.execute(Command::RejectAllRevisions(Default::default()), fonts());
         let now = &first_table(&e).rows[0].cells[0];
-        assert_eq!((now.shading, &now.direct), (was.shading, &was.direct));
+        assert_eq!(now.shading, was.shading);
+        assert!(now.direct.authored_eq(&was.direct), "{:?} against {:?}", now.direct, was.direct);
     }
 
     #[test]
