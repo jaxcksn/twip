@@ -1,5 +1,7 @@
 //! Tables of contents and tables of figures
 
+use crate::document::format::TabKind;
+use crate::format::ParaProps;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
@@ -608,15 +610,9 @@ pub(super) fn first_free<'a>(prefix: &str, names: impl Iterator<Item = &'a str>)
     names.filter_map(|n| n.strip_prefix(prefix).and_then(|d| d.parse::<u64>().ok())).max().map_or(100_000_000, |n| n.checked_add(1).unwrap_or(0))
 }
 
-fn leader_xml(l: Leader) -> &'static str {
-    match l {
-        Leader::None => "none",
-        Leader::Dot => "dot",
-        Leader::Hyphen => "hyphen",
-        Leader::Underscore => "underscore",
-        Leader::Heavy => "heavy",
-        Leader::MiddleDot => "middleDot",
-    }
+/// A tab stop at `pos` twips.
+fn tab(pos: i64, kind: TabKind, leader: Leader) -> crate::format::TabStop {
+    crate::format::TabStop { pos: pos as f64 / 20.0, kind, leader }
 }
 
 impl Editor {
@@ -1174,7 +1170,7 @@ impl Editor {
         let end = FieldEdge::End.inline(&self.cx().w, here.mark.clone());
         // In a building block control the end has its own paragraph inside it (Word's gallery tables).
         let end = if frame.control {
-            let mut p = self.new_para(&format!("<{}pPr/>", self.cx().w), &[], slot.container, &here);
+            let mut p = self.new_para(ParaProps::default(), &[], slot.container, &here);
             p.inlines = vec![end];
             blocks.push(Block::Para(p));
             None
@@ -1239,15 +1235,13 @@ impl Editor {
             self.end_batch(false, fonts);
             return Outcome::unavailable("no caret");
         };
-        let w = self.cx().w;
         let right = ((self.text_width(slot.container) * 20.0).round() as i64 - 10).max(0);
         let id = crate::docx::ControlId::next();
         let mut blocks = vec![Block::Para(self.plain_para("TOCHeading", "Table of Contents", slot.container, &here))];
         for (k, level) in [1u8, 2, 3, 1, 2, 3].into_iter().enumerate() {
-            let ppr = format!(
-                "<{w}pPr><{w}pStyle {w}val=\"TOC{level}\"/><{w}tabs><{w}tab {w}val=\"right\" {w}leader=\"dot\" {w}pos=\"{right}\"/></{w}tabs></{w}pPr>"
-            );
-            let mut p = self.new_para(&ppr, &[(format!("Type chapter title (level {level})"), None, false)], slot.container, &here);
+            let ppr =
+                ParaProps { style: Some(format!("TOC{level}").into()), tabs: vec![tab(right, TabKind::Right, Leader::Dot)], ..Default::default() };
+            let mut p = self.new_para(ppr, &[(format!("Type chapter title (level {level})"), None, false)], slot.container, &here);
             let run = p.mark.clone();
             p.inlines.push(Inline::Tab(run.clone()));
             p.inlines.push(Inline::Text((k + 1).to_string(), run));
@@ -1611,21 +1605,18 @@ impl Editor {
 
     /// A paragraph in style `style` holding `text`, for `container`.
     fn plain_para(&self, style: &str, text: &str, container: Container, like: &Paragraph) -> Paragraph {
-        let cx = self.cx();
-        let w = &cx.w;
-        let ppr = format!("<{w}pPr><{w}pStyle {w}val=\"{}\"/></{w}pPr>", crate::docx::write::props::esc(style));
-        self.new_para(&ppr, &[(text.to_string(), None, false)], container, like)
+        self.new_para(ParaProps { style: Some(style.into()), ..Default::default() }, &[(text.to_string(), None, false)], container, like)
     }
 
-    /// A new paragraph from its `w:pPr` and its texts (each with its source run's direct formatting, and bold).
-    pub(super) fn new_para(&self, ppr: &str, texts: &[(String, Option<&Run>, bool)], container: Container, like: &Paragraph) -> Paragraph {
-        let cx = self.cx();
+    /// A new paragraph from its authored properties and its texts (each with its source run's direct formatting, and
+    /// bold).
+    pub(super) fn new_para(&self, ppr: ParaProps, texts: &[(String, Option<&Run>, bool)], container: Container, like: &Paragraph) -> Paragraph {
         let res = self.doc.resolver.clone();
         let region = res.as_ref().and_then(|r| self.region_in(container, r));
         // Without styles, `like`'s.
         let (style, base) = match &res {
             Some(r) => {
-                let x = crate::docx::para_xml::from_xml(r, Some(ppr), region.as_ref(), &cx);
+                let x = crate::docx::para_xml::with(r, crate::docx::para_props::ParaDirect::typed(Rc::new(ppr)), None, region.as_ref());
                 (Rc::new(x.style), Some(x.base))
             }
             None => (like.style.clone(), None),
@@ -1652,11 +1643,11 @@ impl Editor {
         Paragraph { style, mark, list: None, inlines, src: None, id: crate::docx::next_para_id(), controls: Vec::new(), div: None }
     }
 
-    /// A run of a new paragraph (`w:pPr` `ppr`, in `container`) hidden in a web view (`w:webHidden`).
-    fn web_hidden(&self, ppr: &str, container: Container, run: &Run) -> Run {
+    /// A run of a new paragraph (authored properties `ppr`, in `container`) hidden in a web view (`w:webHidden`).
+    fn web_hidden(&self, ppr: &ParaProps, container: Container, run: &Run) -> Run {
         let Some(r) = self.doc.resolver.clone() else { return run.clone() };
         let cx = self.cx();
-        let base = crate::docx::para_xml::from_xml(&r, Some(ppr), self.region_in(container, &r).as_ref(), &cx).base;
+        let base = crate::docx::para_xml::resolve(&r, ppr, None, self.region_in(container, &r).as_ref()).base;
         let mut p = CharProps::default();
         char_props::put_unmodelled_flag(&mut p, "webHidden", &cx);
         Rc::new(run_xml::resolve(&r, &run_xml::base(&base), RunDirect::typed(Some(Rc::new(p))), false))
@@ -1699,20 +1690,19 @@ impl Editor {
         for e in entries {
             let style = if figures && !e.from_field { "TableofFigures".to_string() } else { format!("TOC{}", e.level.clamp(1, 9)) };
             let numbered = e.runs.first().is_some_and(|(_, r)| r.is_none()) && e.runs.get(1).is_some_and(|(p, _)| *p == EntryPiece::Tab);
-            let mut tabs = String::new();
+            let mut tabs = Vec::new();
             if numbered {
-                tabs.push_str(&format!("<{w}tab {w}val=\"left\" {w}pos=\"{}\"/>", 440 * i64::from(e.level)));
+                tabs.push(tab(440 * i64::from(e.level), TabKind::Left, Leader::None));
             }
             if look.right_align && e.page && o.separator.is_none() {
-                tabs.push_str(&format!("<{w}tab {w}val=\"right\" {w}leader=\"{}\" {w}pos=\"{right}\"/>", leader_xml(look.leader)));
+                tabs.push(tab(right, TabKind::Right, look.leader));
             }
-            let tabs = if tabs.is_empty() { String::new() } else { format!("<{w}tabs>{tabs}</{w}tabs>") };
-            let ppr = format!("<{w}pPr><{w}pStyle {w}val=\"{style}\"/>{tabs}</{w}pPr>");
-            let mut p = self.new_para(&ppr, &[], container, like);
+            let ppr = ParaProps { style: Some(style.as_str().into()), tabs, ..Default::default() };
+            let mut p = self.new_para(ppr.clone(), &[], container, like);
             let base = p.mark.clone();
             let run_for = |src: &Option<Run>| -> Run {
                 let Some(src) = src else { return base.clone() };
-                let mut q = self.new_para(&ppr, &[(String::new(), Some(src), false)], container, like);
+                let mut q = self.new_para(ppr.clone(), &[(String::new(), Some(src), false)], container, like);
                 match q.inlines.pop() {
                     Some(Inline::Text(_, r)) => r,
                     _ => base.clone(),
@@ -1759,8 +1749,7 @@ impl Editor {
             out.push(Block::Para(p));
         }
         if out.is_empty() {
-            let ppr = format!("<{w}pPr/>");
-            let mut p = self.new_para(&ppr, &[(none_found(figures).to_string(), None, true)], container, like);
+            let mut p = self.new_para(ParaProps::default(), &[(none_found(figures).to_string(), None, true)], container, like);
             p.inlines.insert(0, start);
             out.push(Block::Para(p));
         }

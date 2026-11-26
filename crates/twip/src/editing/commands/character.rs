@@ -4,7 +4,6 @@ use crate::api::command::{CaseChange, CharacterEffects, Language, Ligatures, Num
 use crate::api::drawing::{ColourValue, TextEffectsChange};
 use crate::api::value::{AutoOr, Color, HighlightColor, Points, StyleId, UnderlineStyle};
 use crate::docx::Inline;
-use crate::docx::write::props::Props;
 use crate::docx::{RunStyle, ThemeFont, Underline};
 use crate::font::Fonts;
 use crate::format::{CharEdit, CharProps, FontRef, Prop, ScriptClass, ThemeFace, UnderlineProps};
@@ -681,11 +680,7 @@ impl Editor {
         if !whole && own.style.is_none() {
             own = paragraph_style_props(&res.styles, p.style.style_id.as_deref(), own, &cx);
         }
-        let ppr = whole.then(|| {
-            let mut props = Props::parse(self.ppr(&p.style.direct, &cx).as_deref(), "pPr", &cx);
-            props.kids.retain(|(n, _)| !["sectPr", "rPr", "pPrChange"].contains(&n.as_str()));
-            props.xml()
-        });
+        let ppr = whole.then(|| p.style.direct.get().clone());
         self.painter = Some((std::rc::Rc::new(own), ppr));
         self.painter_claim = Some(None);
         Outcome::Moved
@@ -737,28 +732,18 @@ impl Editor {
     /// Gives the selection the held formatting in place of its own: its runs' (the word at a collapsed caret), and its
     /// paragraphs' when the painter took a paragraph's. One undo step.
     pub(in crate::editing) fn paste_formatting(&mut self, fonts: &Fonts) -> Outcome {
-        use crate::docx::write::props::PPR;
-        let Some((held, ppr)) = self.painter.clone() else { return Outcome::unavailable("no formatting held") };
-        let Some(res) = self.doc.resolver.clone() else { return Outcome::unavailable("no styles") };
-        let cx = res.styles.cx();
-        let held_ppr = ppr.map(|x| Props::parse(x.as_deref(), "pPr", &cx));
+        let Some((held, held_ppr)) = self.painter.clone() else { return Outcome::unavailable("no formatting held") };
+        if self.doc.resolver.is_none() {
+            return Outcome::unavailable("no styles");
+        }
         self.joined("Paste Formatting", fonts, |e| {
             let runs = e.format_runs_typed("Paste Formatting", &|p, _| p.props = (*held).clone(), fonts);
             let Some(held) = &held_ppr else { return runs };
             if matches!(runs, Outcome::Refused(_)) {
                 return runs;
             }
-            e.format_paras_direct(
-                "Paste Formatting",
-                &|p, _, _| {
-                    p.kids.retain(|(n, _)| matches!(n.as_str(), "sectPr" | "rPr" | "pPrChange"));
-                    for (n, x) in &held.kids {
-                        p.set(n, x.clone());
-                    }
-                    p.reorder(PPR);
-                },
-                fonts,
-            )
+            // The source paragraph's properties in place of these; their section break, mark and change stay
+            e.format_paras_direct_typed("Paste Formatting", &|e, _| e.props = (**held).clone(), fonts)
         })
     }
 }

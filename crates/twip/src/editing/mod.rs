@@ -147,7 +147,7 @@ struct Drag {
     column: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Correction {
     pub para: ParaId,
     pub range: std::ops::Range<Unit>,
@@ -156,24 +156,23 @@ pub struct Correction {
     pub to: String,
     pub typed: usize,
     pub kind: CorrectionKind,
-    /// For an indent or border line: the paragraph property (`w:ind`, `w:pBdr`) as AutoFormat wrote it, so a later change
-    /// to it ends the correction.
-    pub(crate) applied: Option<Option<String>>,
+    /// For an indent or border line: the paragraph's indents or borders as AutoFormat set them, so a later change to
+    /// them ends the correction.
+    pub(crate) applied: Option<crate::format::ParaProps>,
 }
 
 /// What an automatic change made, which its AutoCorrect Options offer to undo or stop.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum CorrectionKind {
     /// AutoCorrect replaced the text typed (`from`) in the range.
     Text,
     /// AutoFormat made the address typed (`from`) a link: the range is the link's field.
     Hyperlink,
-    /// AutoFormat made the characters typed (`from`) the paragraph's bottom border; the paragraph's borders before it, as
-    /// written (`w:pBdr`).
-    BorderLine { borders: Option<String> },
-    /// AutoFormat made the Tab typed at the paragraph's start an indent; the paragraph's indents before it, as written
-    /// (`w:ind`).
-    Indent { ind: Option<String> },
+    /// AutoFormat made the characters typed (`from`) the paragraph's bottom border; the paragraph's own borders before
+    /// it.
+    BorderLine { borders: crate::format::ParaProps },
+    /// AutoFormat made the Tab typed at the paragraph's start an indent; the paragraph's own indents before it.
+    Indent { ind: crate::format::ParaProps },
 }
 
 pub struct Editor {
@@ -187,7 +186,7 @@ pub struct Editor {
     pending: Option<Run>,
     /// The format painter's formatting: a run's authored properties, and a paragraph's `w:pPr` when it took the
     /// paragraph's too.
-    painter: Option<(Rc<crate::format::CharProps>, Option<Option<String>>)>,
+    painter: Option<(Rc<crate::format::CharProps>, Option<Rc<crate::format::ParaProps>>)>,
     /// Ctrl+Shift+V pastes the painter's formatting: since Copy Formatting, with the clipboard it first saw then (its
     /// fingerprint), until the clipboard changes.
     painter_claim: Option<Option<u64>>,

@@ -778,7 +778,7 @@ fn autoformat_changes_offer_their_undo_and_stop() {
     let mut e = edit("<w:p><w:r><w:t>above</w:t></w:r></w:p><w:p/>");
     caret(&mut e, 1, 0);
     type_in(&mut e, "---\n");
-    assert!(matches!(e.auto_format_change().map(|c| &c.kind), Some(K::BorderLine { borders: None })));
+    assert!(matches!(e.auto_format_change().map(|c| &c.kind), Some(K::BorderLine { borders }) if borders.borders.is_empty()));
     assert!(e.correction_view(0..1).is_some_and(|v| v.button.is_some()), "its button, the caret in the next paragraph");
     type_in(&mut e, "y");
     e.revert_correction(fonts());
@@ -793,7 +793,7 @@ fn autoformat_changes_offer_their_undo_and_stop() {
     let mut e = edit("<w:p><w:r><w:t>text</w:t></w:r></w:p>");
     caret(&mut e, 0, 0);
     type_in(&mut e, "\t");
-    assert!(matches!(e.auto_format_change().map(|c| &c.kind), Some(K::Indent { ind: None })));
+    assert!(matches!(e.auto_format_change().map(|c| &c.kind), Some(K::Indent { ind }) if ind.indent_left.is_none() && ind.indent_first.is_none()));
     type_in(&mut e, "z");
     e.revert_correction(fonts());
     assert_eq!((texts(&e)[0].as_str(), para(&e, 0).style.ind_first), ("\tztext", 0.0));

@@ -321,11 +321,12 @@ impl Editor {
         }) else {
             return Outcome::unavailable("no paragraph");
         };
-        let w = self.cx().w;
+        let mut ppr = crate::format::ParaProps { style: Some("Caption".into()), ..Default::default() };
         // Above, it keeps with what it captions.
-        let keep = if position == CaptionPosition::Above { format!("<{w}keepNext/>") } else { String::new() };
-        let ppr = format!("<{w}pPr><{w}pStyle {w}val=\"Caption\"/>{keep}</{w}pPr>");
-        let mut p = self.new_para(&ppr, &[], container, &like);
+        if position == CaptionPosition::Above {
+            ppr.flags.put(crate::format::ParaFlag::KEEP_NEXT, true);
+        }
+        let mut p = self.new_para(ppr, &[], container, &like);
         let run = p.mark.clone();
         p.inlines = self.caption_inlines(c, &run);
         let at = if position == CaptionPosition::Above { block } else { block + 1 };
@@ -381,9 +382,8 @@ impl Editor {
         }) else {
             return Outcome::unavailable("no object");
         };
-        let w = self.cx().w;
-        let ppr = format!("<{w}pPr><{w}pStyle {w}val=\"Caption\"/></{w}pPr>");
-        let mut inner = self.new_para(&ppr, &[], Container::Section(0), &p);
+        let ppr = crate::format::ParaProps { style: Some("Caption".into()), ..Default::default() };
+        let mut inner = self.new_para(ppr, &[], Container::Section(0), &p);
         let r = inner.mark.clone();
         inner.inlines = self.caption_inlines(c, &r);
         let inner_id = inner.id;
