@@ -16,6 +16,9 @@ use super::numbering::Numbering;
 use super::props::{ParaProps, RunProps};
 use super::styles::{StyleKind, StyleOrigin, Styles};
 use super::xml::*;
+use crate::document::paragraph::ListId;
+use crate::format::{ListChoice, ListDefId, Lists, Origin, StyleSheet};
+use std::rc::Rc;
 
 /// Ids as the glossary's parts write them, and the ids the document's tables hold them under. Ids that are the same
 /// in both aren't stored.
@@ -179,6 +182,84 @@ pub fn merge_tables(styles: &mut Styles, numbering: &mut Numbering, glossary_sty
         n.abstract_id = map.abstracts.view(&n.abstract_id);
         n.origin = StyleOrigin::Glossary;
         numbering.nums.insert(map.nums.view(&g), n);
+    }
+    map
+}
+
+/// Adds the glossary's typed styles and list definitions to the document's, as [`merge_tables`] adds them to the XML
+/// path's tables, and returns how their ids map: a style named as one of the document's maps to it, another joins
+/// under its own id (`~g~` before it when the document has that id), its base, next style, paragraph style, list and
+/// character style mapped; the definitions and lists join under ids past the document's.
+pub fn merge_definitions(styles: &mut StyleSheet, lists: &mut Lists, glossary_styles: &StyleSheet, glossary_lists: &Lists) -> GlossaryMap {
+    let mut map = GlossaryMap::default();
+    let fresh = |mut ids: Vec<i64>, from: i64, m: &mut IdMap<i64>| {
+        ids.sort_unstable();
+        for (k, g) in ids.into_iter().enumerate() {
+            m.insert(g, from + k as i64);
+        }
+    };
+    let next_def = lists.defs.keys().max().map_or(0, |m| m.0 + 1);
+    fresh(glossary_lists.defs.keys().map(|k| k.0).collect(), next_def, &mut map.abstracts);
+    let next_list = lists.lists.keys().max().map_or(1, |m| m.0 + 1).max(1);
+    fresh(glossary_lists.lists.keys().map(|k| k.0).collect(), next_list, &mut map.nums);
+
+    // Style names compare as names do in the styles part: without case
+    let name = |s: &crate::format::Style| match s.name.as_deref().filter(|n| !n.is_empty()) {
+        Some(n) => n.to_lowercase(),
+        None => s.id.to_lowercase(),
+    };
+    let by_name: HashMap<String, String> = styles.styles.values().map(|e| (name(&e.style), e.style.id.to_string())).collect();
+    let mut ids: Vec<&Rc<str>> = glossary_styles.styles.keys().collect();
+    ids.sort();
+    let mut own = Vec::new();
+    for id in ids {
+        let g = &glossary_styles.styles[id].style;
+        match by_name.get(&name(g)) {
+            Some(doc_id) => map.styles.insert(g.id.to_string(), doc_id.clone()),
+            None => {
+                let view = if styles.styles.contains_key(&g.id) { format!("~g~{}", g.id) } else { g.id.to_string() };
+                map.styles.insert(g.id.to_string(), view);
+                own.push(id.clone());
+            }
+        }
+    }
+    let style = |v: &Rc<str>| -> Rc<str> { map.styles.view(&v.to_string()).into() };
+    for id in &own {
+        let mut e = glossary_styles.styles[id].clone();
+        let s = Rc::make_mut(&mut e.style);
+        s.id = style(&s.id);
+        s.based_on = s.based_on.as_ref().map(style);
+        s.next = s.next.as_ref().map(style);
+        s.format.para.style = s.format.para.style.as_ref().map(style);
+        if let Some(ListChoice::In(n)) = &mut s.format.para.list {
+            n.0 = map.nums.view(&n.0);
+        }
+        s.format.char.style = s.format.char.style.as_ref().map(style);
+        e.origin = Origin::Glossary;
+        if s.kind == crate::format::StyleKind::Paragraph {
+            styles.paragraph_order.push(s.id.clone());
+        }
+        styles.styles.insert(s.id.clone(), e);
+    }
+    for (g, d) in &glossary_lists.defs {
+        let mut d = (**d).clone();
+        for l in d.levels.iter_mut().flatten() {
+            if l.style.is_some() {
+                let l = Rc::make_mut(l);
+                l.style = l.style.as_ref().map(style);
+            }
+        }
+        d.num_style_link = d.num_style_link.as_ref().map(style);
+        d.origin = Origin::Glossary;
+        d.id = ListDefId(map.abstracts.view(&g.0));
+        lists.defs.insert(d.id, Rc::new(d));
+    }
+    for (g, n) in &glossary_lists.lists {
+        let mut n = (**n).clone();
+        n.def = n.def.map(|d| ListDefId(map.abstracts.view(&d.0)));
+        n.origin = Origin::Glossary;
+        n.id = ListId(map.nums.view(&g.0));
+        lists.lists.insert(n.id, Rc::new(n));
     }
     map
 }

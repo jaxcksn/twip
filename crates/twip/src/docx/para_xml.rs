@@ -9,6 +9,7 @@ use super::resolve::{ParaResolved, Resolver, div_chain};
 use super::review::ParaChange;
 use super::styles::Region;
 use super::write::props::Cx;
+use crate::format::cascade::{Cascade, ParaCascade, TableRegion};
 use crate::format::resolve::para_style;
 use crate::format::{ListChoice, ParaProps};
 
@@ -154,4 +155,48 @@ pub fn again(res: &Resolver, was: &ParaStyle, mut again: ParaStyle, region: Opti
 pub fn of(res: &Resolver, d: &ParaDirect, region: Option<&Region>, cx: &Cx) -> ParaResolved {
     let size = mark_size_of(d.origin_xml().map(|x| &**x), cx);
     with(res, d.clone(), size, region)
+}
+
+// On typed definitions
+
+/// A paragraph with authored properties `direct` (its mark's size `mark_size`), in `region` when it is in a cell,
+/// resolved by the typed cascade `c`.
+pub fn with_typed(c: &Cascade, direct: ParaDirect, mark_size: Option<f64>, region: Option<&TableRegion>) -> ParaCascade {
+    let mut r = c.paragraph(direct.get(), mark_size, region);
+    r.style.direct = direct;
+    r
+}
+
+/// A paragraph resolved by the typed cascade `c` from its `w:pPr` as written (`ppr`, in the part `cx` describes), in
+/// `region` when it is in a cell.
+pub fn from_xml_typed(c: &Cascade, ppr: Option<&str>, region: Option<&TableRegion>, cx: &Cx) -> ParaCascade {
+    with_typed(c, ParaDirect::from_xml(ppr, cx), mark_size_of(ppr, cx), region)
+}
+
+/// [`again`] on the typed cascade `c`.
+pub fn again_typed(c: &Cascade, was: &ParaStyle, mut again: ParaStyle, region: Option<&TableRegion>, cx: &Cx) -> ParaStyle {
+    if was.in_frame {
+        (again.frame, again.in_frame) = (None, true);
+    }
+    again.change = was.change.as_ref().map(|ch| {
+        let mut previous = match (ch.properties, &ch.numbering_change.0) {
+            (false, Some(_)) => ParaStyle { change: None, ..again.clone() },
+            (false, None) => c.paragraph(&ParaProps::default(), None, region).style,
+            (true, _) => {
+                let d = &ch.previous.direct;
+                with_typed(c, d.clone(), mark_size_of(d.as_read().map(|x| &**x), cx), region).style
+            }
+        };
+        if was.in_frame {
+            (previous.frame, previous.in_frame) = (None, true);
+        }
+        if previous.layout_eq(&ch.previous) { ch.clone() } else { Rc::new(ParaChange { previous: Rc::new(previous), ..(**ch).clone() }) }
+    });
+    again
+}
+
+/// [`of`] on the typed cascade `c`.
+pub fn of_typed(c: &Cascade, d: &ParaDirect, region: Option<&TableRegion>, cx: &Cx) -> ParaCascade {
+    let size = mark_size_of(d.origin_xml().map(|x| &**x), cx);
+    with_typed(c, d.clone(), size, region)
 }

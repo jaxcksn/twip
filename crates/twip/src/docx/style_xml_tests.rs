@@ -9,6 +9,7 @@ use super::style_xml::{self as sx, DefaultsDef, LatentDef, StyleDef, StylesPart}
 use super::styles::{self, Styles};
 use super::write::props::Cx;
 use super::xml::W;
+use crate::format::cascade::{Cascade, Rules, TableRegion};
 use crate::format::{Color, ParaProp, ParaSet, RegionKind, StyleKind, StyleProp, StyleSet};
 
 const NS: &str = r#"xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" xmlns:x="urn:x""#;
@@ -158,6 +159,7 @@ fn style_matches(a: &styles::Style, b: &styles::Style, what: &str) {
 /// `typed`, a styles part read by the typed reader, converts to what the XML path's reader holds of the same part.
 pub(crate) fn sheet_matches(frozen: &Styles, typed: &StylesPart, colours: &ThemeColours, what: &str) -> SheetCounts {
     let sheet = &typed.sheet;
+    let cx = typed.cx();
     let mut ids: Vec<&String> = frozen.by_id.keys().collect();
     ids.sort();
     let mut typed_ids: Vec<String> = sheet.styles.keys().map(|k| k.to_string()).collect();
@@ -168,7 +170,15 @@ pub(crate) fn sheet_matches(frozen: &Styles, typed: &StylesPart, colours: &Theme
         let e = &sheet.styles[id.as_str()];
         let held = &typed.styles[id.as_str()];
         assert!(Rc::ptr_eq(&e.style, held.get()), "{what}: {id}: the sheet's style is its holder's");
-        style_matches(&sx::frozen_style(e, held.as_read().expect("as read"), colours), &frozen.by_id[id], &format!("{what}: {id}"));
+        let mut converted = sx::frozen_style(e, &held.xml(colours, &cx), colours);
+        let was = &frozen.by_id[id];
+        if converted.raw != was.raw {
+            // Rewritten otherwise by an edit: alike
+            let again = cx.parse(&was.raw, |_, el| sx::parse(el)).flatten();
+            assert_eq!(again.as_ref(), Some(&*e.style), "{what}: {id}: written as {} where the XML path writes {}", converted.raw, was.raw);
+            converted.raw.clone_from(&was.raw);
+        }
+        style_matches(&converted, was, &format!("{what}: {id}"));
         n.styles += 1;
         n.regions += e.style.regions.len();
         n.table_styles += usize::from(e.style.kind == StyleKind::Table);
@@ -182,13 +192,41 @@ pub(crate) fn sheet_matches(frozen: &Styles, typed: &StylesPart, colours: &Theme
     let (rpr, ppr) = sx::frozen_defaults(sheet.defaults.as_deref(), colours);
     assert_eq!(rpr, frozen.doc_rpr, "{what}: run defaults");
     assert_eq!(ppr, frozen.doc_ppr, "{what}: paragraph defaults");
-    let defaults_raw = typed.defaults.as_ref().and_then(|d| d.as_read()).map(|x| x.to_string());
+    let defaults_raw = typed.defaults.as_ref().map(|d| d.xml(colours, &cx).into_owned());
     assert_eq!(defaults_raw, frozen.defaults_raw, "{what}: defaults as written");
-    let latent_raw = typed.latent.as_ref().and_then(|d| d.as_read()).map(|x| &**x);
-    assert_eq!(sx::frozen_latent(sheet.latent.as_deref(), latent_raw), frozen.latent, "{what}: latent styles");
+    let latent_raw = typed.latent.as_ref().map(|d| d.xml(colours, &cx));
+    assert_eq!(sx::frozen_latent(sheet.latent.as_deref(), latent_raw.as_deref()), frozen.latent, "{what}: latent styles");
     n.exceptions += frozen.latent.exceptions.len();
     assert_eq!(&*typed.root, frozen.root, "{what}: root");
     n
+}
+
+/// A typed table style region as the XML path holds it; a cell's text flow as Word writes it.
+pub(crate) fn region_as_read(r: &TableRegion, colours: &ThemeColours) -> styles::Region {
+    use super::table_props as tp;
+    styles::Region {
+        ppr: super::para_props::to_para_props(&r.format.para, colours),
+        rpr: super::char_props::to_run_props(&r.format.char, colours),
+        tbl: tp::tbl_props(&r.format.table, colours),
+        tc: tp::tc_props(&r.format.cell, colours),
+        tr: tp::tr_props(&r.format.row),
+        size_over_normal: r.size_over_normal,
+        sets_text: false,
+        mark_at_style: r.mark_at_style,
+    }
+}
+
+pub(crate) fn regions_match(frozen: &styles::Region, typed: &TableRegion, colours: &ThemeColours, what: &str) {
+    use super::table_props as tp;
+    let mut frozen = frozen.clone();
+    frozen.tc.text_direction = frozen.tc.text_direction.as_deref().map(|v| tp::flow_literal(super::model::text_flow(v)).to_string());
+    let typed = region_as_read(typed, colours);
+    assert_eq!(typed.ppr, frozen.ppr, "{what}: paragraph properties");
+    assert_eq!(typed.rpr, frozen.rpr, "{what}: run properties");
+    assert_eq!(typed.tbl, frozen.tbl, "{what}: table properties");
+    assert_eq!(typed.tc, frozen.tc, "{what}: cell properties");
+    assert_eq!(typed.tr, frozen.tr, "{what}: row properties");
+    assert_eq!((typed.size_over_normal, typed.mark_at_style), (frozen.size_over_normal, frozen.mark_at_style), "{what}: cell sizes");
 }
 
 // The reader's rules
@@ -271,7 +309,7 @@ fn a_table_style_read_before_its_base_is_frozen_and_one_with_run_properties_take
     assert_eq!(child.style.format.char.size, None, "the typed style holds what it sets");
     assert_eq!(frozen.by_id["Child"].base.rpr.size, Some(10.0));
     let normal = &typed.sheet.styles["TableNormal"];
-    assert!(!normal.frozen && sx::word_table_normal(&normal.style));
+    assert!(!normal.frozen && normal.style.word_default_table());
     assert_eq!(normal.style.based_on.as_deref(), Some("Base"), "as written");
     assert_eq!((typed.sheet.default_table.as_deref(), typed.sheet.default_paragraph.as_deref()), (Some("TableNormal"), Some("Normal")));
 }
@@ -417,4 +455,70 @@ fn a_style_moved_to_a_part_that_reads_it_otherwise_is_written_from_its_value() {
     assert!(held.moved_to(&cx()).is_none());
     let other = Cx::of_xml(&format!("<w:styles xmlns:w=\"{W}\" xmlns:x=\"urn:other\">"));
     assert!(held.moved_to(&other).is_some());
+}
+
+#[test]
+fn table_styles_read_in_any_order_work_out_alike_after_edits() {
+    let colours = ThemeColours::default();
+    let bodies = [
+        r#"<w:rPr><w:b/></w:rPr><w:tblStylePr w:type="firstRow"><w:rPr><w:i/></w:rPr></w:tblStylePr>"#,
+        r#"<w:tblPr><w:tblInd w:w="10" w:type="dxa"/></w:tblPr><w:tblStylePr w:type="band1Horz"><w:tcPr><w:noWrap/></w:tcPr></w:tblStylePr>"#,
+        r#"<w:pPr><w:jc w:val="center"/></w:pPr><w:rPr><w:sz w:val="30"/></w:rPr>"#,
+    ];
+    let mut n = 0;
+    let normal = r#"<w:docDefaults><w:rPrDefault><w:rPr><w:sz w:val="22"/></w:rPr></w:rPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:rPr><w:sz w:val="24"/></w:rPr></w:style>"#;
+    for code in 0..4 * 27 * 27 {
+        let (named, bases, kinds) = (code % 4, code / 4 % 27, code / 108);
+        let style = |k: usize| {
+            let base = (bases / 3usize.pow(k as u32)) % 3;
+            let name = if named == k + 1 { "Normal Table".to_string() } else { format!("T{k}") };
+            let based = if base == k { String::new() } else { format!(r#"<w:basedOn w:val="T{base}"/>"#) };
+            let body = bodies[(kinds / 3usize.pow(k as u32)) % 3];
+            format!(r#"<w:style w:type="table" w:styleId="T{k}"><w:name w:val="{name}"/>{based}{body}</w:style>"#)
+        };
+        let xml = part(&(normal.to_string() + &(0..3).map(style).collect::<String>()));
+        let (mut frozen, typed) = both(&xml, &colours);
+        frozen.cell_size_rules = true;
+        cascades_alike(&frozen, &typed, &colours, &xml);
+        for k in 0..3 {
+            let id = format!("T{k}");
+            let (mut f, mut t) = (frozen.clone(), typed.clone());
+            let raw = t.styles[id.as_str()].xml(&colours, &t.cx()).into_owned();
+            if f.set_xml(raw.clone()).is_ok() {
+                t.set(StyleDef::from_xml(&raw, &t.cx()), &colours);
+                sheet_matches(&f, &t, &colours, &format!("{xml}: {id} set"));
+                cascades_alike(&f, &t, &colours, &format!("{xml}: {id} set"));
+                n += 1;
+            }
+            let (mut f, mut t) = (frozen.clone(), typed.clone());
+            if f.delete(&id).is_ok() {
+                assert!(t.delete(&id, &colours));
+                sheet_matches(&f, &t, &colours, &format!("{xml}: {id} deleted"));
+                cascades_alike(&f, &t, &colours, &format!("{xml}: {id} deleted"));
+                n += 1;
+            }
+        }
+    }
+    assert!(n > 4000, "only {n} edits");
+}
+
+/// The typed cascade of `typed` gives what the XML path's styles `frozen` give for every style's chain and folds, and
+/// every table style's base and single regions, with the cell size rules on.
+fn cascades_alike(frozen: &Styles, typed: &StylesPart, colours: &ThemeColours, what: &str) {
+    let rules = Rules { cell_size_rules: frozen.cell_size_rules, ..Rules::default() };
+    let c = Cascade::new(Rc::new(typed.sheet.clone()), Rc::default(), Default::default(), *colours, rules);
+    for id in frozen.by_id.keys() {
+        let id = Some(id.as_str());
+        let chain: Vec<String> = c.chain(id).iter().map(|e| e.style.id.to_string()).collect();
+        assert_eq!(chain, frozen.chain(id).iter().map(|s| s.id.clone()).collect::<Vec<_>>(), "{what}: {id:?}: chain");
+        assert_eq!(super::para_props::to_para_props(&c.chain_para(id), colours), frozen.chain_ppr(id), "{what}: {id:?}: paragraph chain");
+        assert_eq!(super::char_props::to_run_props(&c.chain_char(id), colours), frozen.chain_rpr(id), "{what}: {id:?}: run chain");
+        regions_match(&frozen.table_region(id, &[]), &c.table_region(id, &[]), colours, &format!("{what}: {id:?}: base"));
+        for kind in RegionKind::ALL {
+            let name = sx::region_literal(kind);
+            regions_match(&frozen.table_region(id, &[name]), &c.table_region(id, &[kind]), colours, &format!("{what}: {id:?}: {name}"));
+            assert_eq!(c.table_defines(id, kind), frozen.table_defines(id, name), "{what}: {id:?}: defines {name}");
+        }
+    }
+    regions_match(&frozen.table_region(None, &[]), &c.table_region(None, &[]), colours, &format!("{what}: no style"));
 }

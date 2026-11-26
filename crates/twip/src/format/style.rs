@@ -5,7 +5,9 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use super::{CellProps, CellSet, CharProps, FontRef, ForeignProps, ParaProps, ParaSet, RowProps, RowSet, ScriptFonts, Set, TableProps, TableSet};
+use super::{
+    CellProps, CellSet, CharProps, FontRef, ForeignProps, Origin, ParaProps, ParaSet, RowProps, RowSet, ScriptFonts, Set, TableProps, TableSet,
+};
 use crate::document::format::LineRule;
 
 /// What a style formats.
@@ -20,17 +22,6 @@ pub enum StyleKind {
     Table,
     /// Lists: it names a list definition.
     Numbering,
-}
-
-/// Which styles part a style was read from: the document's, or the glossary's (a style only a building block body
-/// uses, kept in the document's sheet under an id that doesn't collide).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum StyleOrigin {
-    /// The document's.
-    #[default]
-    Document,
-    /// The glossary's.
-    Glossary,
 }
 
 /// A table style's conditional region: the cells it formats.
@@ -156,6 +147,11 @@ impl Style {
     pub fn region(&self, kind: RegionKind) -> Option<&Region> {
         self.regions.iter().find(|r| r.kind == kind)
     }
+
+    /// A table style named as Word's built-in default one, which is that style whatever the part defines for it.
+    pub fn word_default_table(&self) -> bool {
+        self.kind == StyleKind::Table && matches!(self.name.as_deref(), Some("Normal Table" | "Table Normal"))
+    }
 }
 
 /// The document defaults: the character and paragraph properties under every style.
@@ -237,7 +233,7 @@ pub struct StyleEntry {
     /// Its place in the styles part as read; `None` for one made since, which comes after them by id.
     pub order: Option<u32>,
     /// Which styles part it came from.
-    pub origin: StyleOrigin,
+    pub origin: Origin,
     /// A table style whose properties start from Word's defaults, not its base: it was worked out before its base
     /// was read and kept what it had then.
     pub frozen: bool,

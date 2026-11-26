@@ -31,8 +31,8 @@ use super::write::props::{Cx, W_NS};
 use super::xml::{R, W, attr, attr_twips, child, children, int, on_off, on_off_str, val};
 use crate::document::paragraph::{ListId, ListJc, ListSuffix};
 use crate::format::{
-    CharProps, ForeignChild, ForeignProps, LegacyLabel, LevelOverride, LevelProp, List, ListDef, ListDefId, ListDefProp, ListLevel, ListOrigin,
-    ListProp, Lists, Literal, MultiLevelType, NumberFormat, OverrideProp, ParaProps, ParaSet, PictureBullet, QName, Set,
+    CharProps, ForeignChild, ForeignProps, LegacyLabel, LevelOverride, LevelProp, List, ListDef, ListDefId, ListDefProp, ListLevel, ListProp, Lists,
+    Literal, MultiLevelType, NumberFormat, Origin, OverrideProp, ParaProps, ParaSet, PictureBullet, QName, Set,
 };
 
 /// CT_Lvl's children in schema order.
@@ -161,6 +161,16 @@ fn literal_name<'a, T: Copy + PartialEq>(l: &'a Literal<T>, table: &[(&'static s
         Literal::Known(v) => table.iter().find(|(_, t)| t == v).map_or("", |(n, _)| *n),
         Literal::Other(s) => s,
     }
+}
+
+/// The name a level's number format is written as; `decimal`, the reader's, when it sets none.
+pub fn format_name(f: Option<&Literal<NumberFormat>>) -> &str {
+    f.map_or("decimal", |f| literal_name(f, &FORMATS))
+}
+
+/// The name a level's label alignment is written as; `left`, the reader's, when it sets none.
+pub fn jc_name(j: Option<&Literal<ListJc>>) -> &str {
+    j.map_or("left", |j| literal_name(j, &JCS))
 }
 
 /// An ST_LongHexNumber.
@@ -653,7 +663,7 @@ impl Overrides<'_, '_> {
 }
 
 fn empty_list() -> List {
-    List { id: ListId(0), def: None, overrides: Vec::new(), origin: ListOrigin::Document, foreign: None }
+    List { id: ListId(0), def: None, overrides: Vec::new(), origin: Origin::Document, foreign: None }
 }
 
 /// A `w:num` as a typed list; `None` without a `w:numId`.
@@ -1477,10 +1487,10 @@ impl NumberingXml {
 
 // Conversion to the XML path's numbering
 
-fn origin_of(o: ListOrigin) -> StyleOrigin {
+fn origin_of(o: Origin) -> StyleOrigin {
     match o {
-        ListOrigin::Document => StyleOrigin::Document,
-        ListOrigin::Glossary => StyleOrigin::Glossary,
+        Origin::Document => StyleOrigin::Document,
+        Origin::Glossary => StyleOrigin::Glossary,
     }
 }
 
@@ -1497,9 +1507,9 @@ pub fn to_level(l: &ListLevel, colours: &ThemeColours, cx: &Cx) -> Level {
     let name = |v: &Option<Rc<str>>| v.as_deref().map(str::to_string);
     Level {
         start: l.start.unwrap_or(0),
-        fmt: l.format.as_ref().map_or("decimal", |f| literal_name(f, &FORMATS)).to_string(),
+        fmt: format_name(l.format.as_ref()).to_string(),
         text: l.text.as_deref().unwrap_or_default().to_string(),
-        jc: l.jc.as_ref().map_or("left", |j| literal_name(j, &JCS)).to_string(),
+        jc: jc_name(l.jc.as_ref()).to_string(),
         suff: l.suffix.as_ref().map_or("tab", |s| literal_name(s, &SUFFIXES)).to_string(),
         is_lgl: l.legal.unwrap_or(false),
         restart: l.restart,

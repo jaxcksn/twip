@@ -2,6 +2,7 @@
 //! document defaults) sets, with unset, explicitly off and automatic kept apart and theme references kept as
 //! references. [`resolve`] folds levels into the effective [`crate::docx::RunStyle`].
 
+pub mod cascade;
 mod list;
 mod para;
 pub mod resolve;
@@ -20,6 +21,17 @@ use std::rc::Rc;
 use crate::document::format::{Emphasis, ShadingPattern, VertAlign};
 use crate::document::line::{BorderStyle, Underline};
 use crate::docx::model::{TextEffects, ThemeColourRef};
+
+/// Which part of the source a definition was read from: the document's, or its glossary's (a style or list only a
+/// building block uses, kept beside the document's under an id that doesn't collide).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Origin {
+    /// The document's.
+    #[default]
+    Document,
+    /// The glossary's.
+    Glossary,
+}
 
 /// Authored character properties at one level. `None` means "not set here". Its `==` is authored equality.
 #[derive(Clone, Debug, Default, PartialEq)]

@@ -9,6 +9,7 @@ use super::props::RunProps;
 use super::resolve::Resolver;
 use super::review::{FormatChange, RunRevisions};
 use crate::format::CharProps;
+use crate::format::cascade::Cascade;
 use crate::format::resolve::{self, RunEnv};
 
 /// What resolving a run in `res`'s document needs.
@@ -91,4 +92,46 @@ pub fn again(res: &Resolver, base: &CharProps, run: &RunStyle, direct: RunDirect
         }),
     };
     Rc::new(s)
+}
+
+// On typed definitions
+
+/// [`folded`] on the typed cascade `c`.
+pub fn folded_typed(c: &Cascade, base: &CharProps, own: Option<&CharProps>, toc: bool) -> CharProps {
+    let id = own.and_then(|p| p.style.as_deref()).filter(|id| !(toc && *id == "Hyperlink"));
+    let style = id.map(|id| c.chain_char(Some(id)));
+    let own = match own {
+        Some(p) if toc && p.style.as_deref() == Some("Hyperlink") => Cow::Owned(CharProps { style: None, ..p.clone() }),
+        Some(p) => Cow::Borrowed(p),
+        None => Cow::Owned(CharProps::default()),
+    };
+    resolve::run_props(base, style.as_ref(), &own)
+}
+
+/// [`resolve`] on the typed cascade `c`.
+pub fn resolve_typed(c: &Cascade, base: &CharProps, direct: RunDirect, toc: bool) -> RunStyle {
+    let p = folded_typed(c, base, direct.props().map(|p| &**p), toc);
+    let mut s = c.run_style(&p);
+    s.direct = direct;
+    s.toc = toc;
+    s
+}
+
+/// [`again`] on the typed cascade `c`.
+pub fn again_typed(c: &Cascade, base: &CharProps, run: &RunStyle, direct: RunDirect) -> Run {
+    let mut s = resolve_typed(c, base, direct, run.toc);
+    s.rev = RunRevisions {
+        ins: run.rev.ins.clone(),
+        del: run.rev.del.clone(),
+        fmt: run.rev.fmt.as_ref().map(|f| {
+            let previous = resolve_typed(c, base, f.previous.direct.clone(), false);
+            if previous.layout_eq(&f.previous) { f.clone() } else { Rc::new(FormatChange { previous: Rc::new(previous), ..(**f).clone() }) }
+        }),
+    };
+    Rc::new(s)
+}
+
+/// [`rerun`] on the typed cascade `c`, over a typed `base`.
+pub fn rerun_typed(c: &Cascade, base: &CharProps, run: &RunStyle) -> Run {
+    again_typed(c, base, run, run.direct.clone())
 }

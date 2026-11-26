@@ -4,23 +4,12 @@
 use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
 
-use super::{CharProps, ForeignProps, ParaProps, ParaSet, Set};
+use super::{CharProps, ForeignProps, Origin, ParaProps, ParaSet, Set};
 use crate::document::paragraph::{ListId, ListJc, ListSuffix};
 
 /// A list definition, by the id its source format gives it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ListDefId(pub i64);
-
-/// Which part of the source a definition was read from: the document's, or its glossary's (a definition only a
-/// building block uses, kept beside the document's under an id that doesn't collide).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum ListOrigin {
-    /// The document's.
-    #[default]
-    Document,
-    /// The glossary's.
-    Glossary,
-}
 
 /// A value a source format names: one this model knows, or a name it doesn't, kept as written.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -264,7 +253,7 @@ pub struct ListDef {
     /// Its levels, by index; `None`: no such level.
     pub levels: [Option<Rc<ListLevel>>; 9],
     /// The part it was read from.
-    pub origin: ListOrigin,
+    pub origin: Origin,
     /// What the source format wrote that this struct does not model. Owned by the adapter that read it.
     pub foreign: Option<Rc<ForeignProps>>,
 }
@@ -292,7 +281,7 @@ pub struct List {
     /// What it overrides, one per level, in level order.
     pub overrides: Vec<LevelOverride>,
     /// The part it was read from.
-    pub origin: ListOrigin,
+    pub origin: Origin,
     /// What the source format wrote that this struct does not model. Owned by the adapter that read it.
     pub foreign: Option<Rc<ForeignProps>>,
 }

@@ -35,8 +35,8 @@ use super::table_props::{self as tp, CellDirect, RowDirect, TableDirect};
 use super::write::props::{Cx, STYLE};
 use super::xml::{W, attr, child, children, is_w, on_off, on_off_str, val};
 use crate::format::{
-    CellSet, CharProps, Defaults, DefaultsSet, ForeignChild, ForeignProps, LatentStyle, LatentStyles, ParaProps, ParaSet, QName, Region, RegionKind,
-    RowSet, Set, Style, StyleEntry, StyleFormat, StyleKind, StyleOrigin, StyleProp, StyleSet, StyleSheet, TableSet,
+    CellSet, CharProps, Defaults, DefaultsSet, ForeignChild, ForeignProps, LatentStyle, LatentStyles, Origin, ParaProps, ParaSet, QName, Region,
+    RegionKind, RowSet, Set, Style, StyleEntry, StyleFormat, StyleKind, StyleProp, StyleSet, StyleSheet, TableSet,
 };
 
 // Names
@@ -1467,11 +1467,6 @@ impl Expansions {
     }
 }
 
-/// A table style named as Word's built-in default one, which is that style whatever the part defines for it.
-pub fn word_table_normal(s: &Style) -> bool {
-    s.kind == StyleKind::Table && matches!(s.name.as_deref(), Some("Normal Table" | "Table Normal"))
-}
-
 /// A styles part read: its definitions, each style's, the defaults' and the latent styles' holders, and its root start
 /// tag.
 #[derive(Clone, Debug, Default)]
@@ -1515,16 +1510,18 @@ impl StylesPart {
             part.styles.insert(id.clone(), StyleDef::read(style, text[n.range()].into()));
             nodes.insert(id, (k as u32, n));
         }
-        let mut ids: Vec<(u32, Rc<str>, Node)> = nodes.into_iter().map(|(id, (k, n))| (k, id, n)).collect();
-        ids.sort_unstable_by_key(|e| e.0);
-        part.sheet.styles = ids
+        part.sheet.styles = nodes
             .iter()
-            .map(|(k, id, _)| {
+            .map(|(id, (k, _))| {
                 let style = part.styles[id].get().clone();
-                (id.clone(), StyleEntry { style, order: Some(*k), origin: StyleOrigin::Document, frozen: false, word_run_defaults: false })
+                (id.clone(), StyleEntry { style, order: Some(*k), origin: Origin::Document, frozen: false, word_run_defaults: false })
             })
             .collect();
-        finish(&mut part.sheet, &ids);
+        finish(&mut part.sheet, None, &mut |id, f| {
+            if let Some((_, n)) = nodes.get(id) {
+                f(*n);
+            }
+        });
         part
     }
 
@@ -1537,20 +1534,115 @@ impl StylesPart {
     }
 }
 
-/// What depends on the styles together, worked out as reading the part in order does (`ids`: each style's place, id
-/// and element, in order): the table styles' read-order facts, the default styles and the paragraph styles' order.
-fn finish(sheet: &mut StyleSheet, ids: &[(u32, Rc<str>, Node)]) {
+impl StylesPart {
+    /// What depends on the styles together worked out again, as Word reads the part again after an edit: over each
+    /// style's XML as it writes it now, `fresh` (the styles an edit has just set) read as written and the others as
+    /// the last working out left them (Word's built-in default table style without a base).
+    pub fn refinish(&mut self, colours: &ThemeColours, fresh: &[&str]) {
+        let cx = self.cx();
+        let styles = &self.styles;
+        finish(&mut self.sheet, Some(fresh), &mut |id, f| {
+            if let Some(d) = styles.get(id) {
+                cx.parse(&d.xml(colours, &cx), |_, n| f(n));
+            }
+        });
+    }
+
+    /// `def` in place of the style with its id (at its place in the part, from its part), or added after the styles
+    /// read; then what depends on the styles together worked out again.
+    pub fn set(&mut self, def: StyleDef, colours: &ThemeColours) {
+        let id = def.get().id.clone();
+        self.put(def);
+        self.refinish(colours, &[&id]);
+    }
+
+    fn put(&mut self, def: StyleDef) {
+        let id = def.get().id.clone();
+        let (order, origin) = self.sheet.styles.get(&id).map_or((None, Origin::Document), |e| (e.order, e.origin));
+        let entry = StyleEntry { style: def.get().clone(), order, origin, frozen: false, word_run_defaults: false };
+        self.sheet.styles.insert(id.clone(), entry);
+        self.styles.insert(id, def);
+    }
+
+    /// Removes style `id`: the styles based on it take its base, and references to it from a next style or a link
+    /// go; then what depends on the styles together is worked out again. False when there is no such style.
+    pub fn delete(&mut self, id: &str, colours: &ThemeColours) -> bool {
+        let Some(gone) = self.sheet.styles.get(id) else { return false };
+        // The base as the last working out left it
+        let base = gone.style.based_on.clone().filter(|_| !gone.style.word_default_table());
+        let based = |s: &Style| s.based_on.as_deref() == Some(id) && !s.word_default_table();
+        let mut refs: Vec<Rc<str>> = self
+            .sheet
+            .styles
+            .values()
+            .map(|e| &*e.style)
+            .filter(|s| &*s.id != id && (based(s) || s.next.as_deref() == Some(id) || s.link.as_deref() == Some(id)))
+            .map(|s| s.id.clone())
+            .collect();
+        refs.sort();
+        for r in &refs {
+            let Some(e) = self.sheet.styles.get(r) else { continue };
+            let mut s = (*e.style).clone();
+            let mut set = Vec::new();
+            if based(&s) {
+                s.based_on = base.clone();
+                set.push(StyleSet::Style(StyleProp::BasedOn));
+            }
+            if s.next.as_deref() == Some(id) {
+                s.next = None;
+                set.push(StyleSet::Style(StyleProp::Next));
+            }
+            if s.link.as_deref() == Some(id) {
+                s.link = None;
+                set.push(StyleSet::Style(StyleProp::Link));
+            }
+            match self.styles.get(r) {
+                Some(d) => {
+                    let d = d.edited(s, &set);
+                    self.put(d);
+                }
+                None => {
+                    if let Some(e) = self.sheet.styles.get_mut(r) {
+                        e.style = Rc::new(s);
+                    }
+                }
+            }
+        }
+        self.sheet.styles.remove(id);
+        self.styles.remove(id);
+        let fresh: Vec<&str> = refs.iter().map(|r| &**r).collect();
+        self.refinish(colours, &fresh);
+        true
+    }
+}
+
+/// What depends on the styles together, worked out as reading the part in order does: the table styles' read-order
+/// facts, the default styles and the paragraph styles' order, the glossary's after the document's. `fresh`: `None`
+/// on first reading, else the styles just set on working it out again; `xml_of` gives each table style's element.
+fn finish(sheet: &mut StyleSheet, fresh: Option<&[&str]>, xml_of: &mut dyn FnMut(&str, &mut dyn FnMut(Node))) {
+    let mut ids: Vec<(Option<u32>, Rc<str>)> =
+        sheet.styles.values().filter(|e| e.origin == Origin::Document).map(|e| (e.order, e.style.id.clone())).collect();
+    ids.sort_unstable_by(|a, b| (a.0.is_none(), a.0, &a.1).cmp(&(b.0.is_none(), b.0, &b.1)));
+    let glossary: Vec<Rc<str>> =
+        sheet.paragraph_order.iter().filter(|id| sheet.styles.get(*id).is_some_and(|e| e.origin == Origin::Glossary)).cloned().collect();
     let mut expansions = Expansions::default();
     let (mut order, mut paragraph, mut table, mut character, mut numbering) = (Vec::new(), None, None, None, None);
-    for (_, id, n) in ids {
+    for (_, id) in &ids {
         let Some(e) = sheet.styles.get_mut(id) else { continue };
         let s = e.style.clone();
-        let base = s.based_on.clone().filter(|b| b != id && expansions.read.contains_key(b));
+        // Word's built-in default table style read before without a base, unless just set
+        let unbased = fresh.is_some_and(|f| !f.contains(&&**id)) && s.word_default_table();
+        let base = s.based_on.clone().filter(|b| !unbased && b != id && expansions.read.contains_key(b));
         expansions.read.entry(id.clone()).or_insert((base, false));
         let default = s.default == Some(true);
+        (e.frozen, e.word_run_defaults) = (false, false);
         match s.kind {
             StyleKind::Table => {
-                e.word_run_defaults = expansions.table_style(*n, id);
+                let mut builtin = false;
+                xml_of(id, &mut |n| builtin = expansions.table_style(n, id));
+                if let Some(e) = sheet.styles.get_mut(id) {
+                    e.word_run_defaults = builtin;
+                }
                 if default && table.is_none() {
                     table = Some(id.clone());
                 }
@@ -1572,26 +1664,38 @@ fn finish(sheet: &mut StyleSheet, ids: &[(u32, Rc<str>, Node)]) {
     // Frozen table styles
     for (id, (base, done)) in expansions.read {
         if let Some(e) =
-            sheet.styles.get_mut(&id).filter(|e| e.style.kind == StyleKind::Table && e.style.based_on.is_some() && !word_table_normal(&e.style))
+            sheet.styles.get_mut(&id).filter(|e| e.style.kind == StyleKind::Table && e.style.based_on.is_some() && !e.style.word_default_table())
         {
             e.frozen = done && base.is_none();
         }
     }
+    order.extend(glossary);
     (sheet.paragraph_order, sheet.default_paragraph, sheet.default_table, sheet.default_character, sheet.default_numbering) =
         (order, paragraph, table, character, numbering);
 }
 
 // Conversion to the XML path's structures
 
-/// Whether a level's property element of paragraph or run properties holds a child, as written.
-fn holds_children(foreign: Option<&ForeignProps>, unset: bool) -> bool {
-    !unset || foreign.is_some_and(|f| !f.children.is_empty() || !f.kept.is_empty())
+/// Whether a level's paragraph or run properties hold a child, as written: what it sets, or a child the typed
+/// properties don't model.
+pub fn sets_text(f: &StyleFormat) -> bool {
+    let unmodelled = |x: Option<&ForeignProps>| x.is_some_and(|x| !x.children.is_empty() || !x.kept.is_empty());
+    let para = ParaProps { foreign: None, ..f.para.clone() } != ParaProps::default();
+    let char = CharProps { foreign: None, ..f.char.clone() } != CharProps::default();
+    para || char || unmodelled(f.para.foreign.as_deref()) || unmodelled(f.char.foreign.as_deref())
+}
+
+/// Whether `s` writes conditional regions of a type none of [`RegionKind`]'s names: they format nothing, but count as
+/// regions it has.
+pub fn other_regions(s: &Style) -> bool {
+    let regions = s.foreign.as_deref().map_or(&[][..], |f| &f.children).iter().filter(|c| &*c.name.ns == W && &*c.name.local == "tblStylePr");
+    regions
+        .into_iter()
+        .any(|c| reread(c, |x| x.first_element_child().and_then(|r| attr(r, "type")).is_some_and(|t| region_kind(Some(t)).is_none())) == Some(true))
 }
 
 /// A level as the XML path holds it, a theme colour's value as `colours` resolve it.
 fn frozen_region(f: &StyleFormat, colours: &ThemeColours) -> styles::Region {
-    let unset_para = ParaProps { foreign: None, ..f.para.clone() } == ParaProps::default();
-    let unset_char = CharProps { foreign: None, ..f.char.clone() } == CharProps::default();
     let mut tc = tp::tc_props(&f.cell, colours);
     // Text flow as written
     let flow = f.cell.foreign.as_deref().and_then(|x| {
@@ -1611,7 +1715,7 @@ fn frozen_region(f: &StyleFormat, colours: &ThemeColours) -> styles::Region {
         tc,
         tr: tp::tr_props(&f.row),
         size_over_normal: None,
-        sets_text: holds_children(f.para.foreign.as_deref(), unset_para) || holds_children(f.char.foreign.as_deref(), unset_char),
+        sets_text: sets_text(f),
         mark_at_style: false,
     }
 }
@@ -1650,7 +1754,7 @@ pub fn frozen_style(e: &StyleEntry, raw: &str, colours: &ThemeColours) -> styles
         r.scale = r.scale.or(Some(100.0));
     }
     let mut based_on = s.based_on.as_deref().map(str::to_string);
-    if word_table_normal(s) {
+    if s.word_default_table() {
         let margins = xml_props::Margins { top: Some(0.0), left: Some(5.4), bottom: Some(0.0), right: Some(5.4) };
         let tbl = xml_props::TblProps { ind: Some(crate::document::format::Width::Dxa(0.0)), margins, ..xml_props::TblProps::default() };
         base = styles::Region { tbl, ..styles::Region::default() };
@@ -1686,8 +1790,8 @@ pub fn frozen_style(e: &StyleEntry, raw: &str, colours: &ThemeColours) -> styles
         base,
         regions,
         origin: match e.origin {
-            StyleOrigin::Document => styles::StyleOrigin::Document,
-            StyleOrigin::Glossary => styles::StyleOrigin::Glossary,
+            Origin::Document => styles::StyleOrigin::Document,
+            Origin::Glossary => styles::StyleOrigin::Glossary,
         },
         raw: raw.to_string(),
         frozen: e.frozen,
