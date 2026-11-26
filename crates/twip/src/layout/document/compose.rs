@@ -59,7 +59,7 @@ mod scanned {
 
     pub(super) fn style_refs(cx: &PassCx, pages: &[PageRecord], i: usize) -> Vec<(String, String)> {
         let on = |k: usize| pages.get(k).map(|p| &p.effects.paras[..]).unwrap_or(&[]);
-        let resolver = cx.doc.resolver.as_deref();
+        let resolver = cx.doc.resolver.as_deref().map(|r| r.frozen());
         cx.facts
             .wanted
             .iter()
@@ -352,7 +352,7 @@ pub(crate) fn finish_page(pg: &PageRecord, section_page: usize) -> (Rc<PageFragm
 fn style_refs(cx: &PassCx, run: &PassRun, i: usize) -> Vec<(String, String)> {
     let pages = &run.pages;
     let on = |k: usize| pages.get(k).map(|p| &p.effects.paras[..]).unwrap_or(&[]);
-    let resolver = cx.doc.resolver.as_deref();
+    let resolver = cx.doc.resolver.as_deref().map(|r| r.frozen());
     cx.facts
         .wanted
         .iter()

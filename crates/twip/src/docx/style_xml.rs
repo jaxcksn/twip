@@ -1537,11 +1537,12 @@ impl StylesPart {
 impl StylesPart {
     /// What depends on the styles together worked out again, as Word reads the part again after an edit: over each
     /// style's XML as it writes it now, `fresh` (the styles an edit has just set) read as written and the others as
-    /// the last working out left them (Word's built-in default table style without a base).
-    pub fn refinish(&mut self, colours: &ThemeColours, fresh: &[&str]) {
+    /// the last working out left them (Word's built-in default table style without a base); with no `fresh`, as on
+    /// first reading.
+    pub fn refinish(&mut self, colours: &ThemeColours, fresh: Option<&[&str]>) {
         let cx = self.cx();
         let styles = &self.styles;
-        finish(&mut self.sheet, Some(fresh), &mut |id, f| {
+        finish(&mut self.sheet, fresh, &mut |id, f| {
             if let Some(d) = styles.get(id) {
                 cx.parse(&d.xml(colours, &cx), |_, n| f(n));
             }
@@ -1553,7 +1554,7 @@ impl StylesPart {
     pub fn set(&mut self, def: StyleDef, colours: &ThemeColours) {
         let id = def.get().id.clone();
         self.put(def);
-        self.refinish(colours, &[&id]);
+        self.refinish(colours, Some(&[&id]));
     }
 
     fn put(&mut self, def: StyleDef) {
@@ -1611,7 +1612,7 @@ impl StylesPart {
         self.sheet.styles.remove(id);
         self.styles.remove(id);
         let fresh: Vec<&str> = refs.iter().map(|r| &**r).collect();
-        self.refinish(colours, &fresh);
+        self.refinish(colours, Some(&fresh));
         true
     }
 }

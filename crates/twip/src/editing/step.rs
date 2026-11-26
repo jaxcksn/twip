@@ -117,12 +117,12 @@ pub enum Step {
     },
     /// The styles and numbering tables, and the lists added since reading.
     Resolver {
-        resolver: Option<Rc<crate::docx::resolve::Resolver>>,
+        resolver: Option<Rc<crate::docx::resolvers::Resolvers>>,
         added: Vec<crate::docx::AddedList>,
     },
     /// The style, numbering and theme tables with a family renamed, and the renames the save applies.
     Fonts {
-        resolver: Option<Rc<crate::docx::resolve::Resolver>>,
+        resolver: Option<Rc<crate::docx::resolvers::Resolvers>>,
         renames: Vec<crate::docx::font_table::FontRename>,
     },
     DefaultTab(f64),
@@ -1041,12 +1041,14 @@ impl Step {
             }
             Step::Resolver { resolver, added } => {
                 let resolver = std::mem::replace(&mut doc.resolver, resolver);
+                in_step(doc);
                 let added = std::mem::replace(&mut doc.added_lists, added);
                 refresh_line_number_run(doc);
                 Ok(Applied { inverse: Step::Resolver { resolver, added }, map: Map::Same, hint: None })
             }
             Step::Fonts { resolver, renames } => {
                 let resolver = std::mem::replace(&mut doc.resolver, resolver);
+                in_step(doc);
                 let renames = std::mem::replace(&mut doc.font_renames, renames);
                 refresh_line_number_run(doc);
                 Ok(Applied { inverse: Step::Fonts { resolver, renames }, map: Map::Same, hint: None })
@@ -1356,6 +1358,15 @@ fn join_sections(doc: &mut Document, section: usize, count: usize, names: Vec<St
     doc.edited_sections = doc.edited_sections.iter().filter(|&&k| k < section || k >= end).map(|&k| if k >= end { k - count } else { k }).collect();
     let stories = names.into_iter().filter_map(|k| doc.stories.remove(&k).map(|b| (k, b))).collect();
     Ok(Split::Apart { backs, stories })
+}
+
+/// In a debug build, the document's typed definitions brought in step with its resolver, which checks they agree.
+fn in_step(doc: &Document) {
+    if cfg!(debug_assertions)
+        && let Some(r) = &doc.resolver
+    {
+        r.typed();
+    }
 }
 
 #[cfg(test)]

@@ -48,14 +48,14 @@ pub fn generate(doc: &Document) -> Result<Vec<u8>, GenerateError> {
     let mut styles = res.styles.clone();
     // Application defaults: empty written ones.
     styles.defaults_raw.get_or_insert_with(|| format!("<{}docDefaults/>", cx.w));
-    let res = Resolver { styles, ..res.clone() };
+    let res = Resolver { styles, ..(**res).clone() };
     let edited = section.read.as_deref().is_some_and(|was| *was != section.page())
         || (section.line_grid, section.rtl_gutter) != (blank.sections[0].line_grid, blank.sections[0].rtl_gutter);
     let out = Document {
         sections: vec![section],
         properties: doc.properties.clone(),
         settings: doc.settings.clone(),
-        resolver: Some(Rc::new(res)),
+        resolver: Some(Rc::new(res.into())),
         source: Some(src),
         edited_sections: if edited { [0].into() } else { Default::default() },
         ..Default::default()

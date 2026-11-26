@@ -379,15 +379,20 @@ fn read_package(bytes: &[u8], pkg: &mut Package, editable: bool, now: i64, depth
     let colour_map = crate::drawing::theme::ColourMap::parse(settings_root);
     let opening = settings_root.map(opening_view);
     let colours = ThemeColours::new(&drawing_theme, &colour_map);
-    let mut styles = Styles::parse(part_of("styles").and_then(|p| pkg.read_str(&p)).as_deref(), colours);
-    let mut numbering = Numbering::parse(part_of("numbering").and_then(|p| pkg.read_str(&p)).as_deref(), &colours);
+    let styles_xml = part_of("styles").and_then(|p| pkg.read_str(&p));
+    let numbering_xml = part_of("numbering").and_then(|p| pkg.read_str(&p));
+    let mut styles = Styles::parse(styles_xml.as_deref(), colours);
+    let mut numbering = Numbering::parse(numbering_xml.as_deref(), &colours);
     // The glossary's styles and lists join the document's tables before anything resolves with them.
     let glossary_part = part_of("glossaryDocument");
+    let mut glossary_xml = None;
     let glossary_map = glossary_part.as_deref().map(|path| {
         let grels = pkg.rels(path);
         let mut gpart = |kind: &str| grels.values().find(|(k, _)| k == kind).and_then(|(_, t)| pkg.read_str(t));
-        let gstyles = gpart("styles").map_or_else(Styles::default, |x| Styles::parse(Some(&x), colours));
-        let gnumbering = Numbering::parse(gpart("numbering").as_deref(), &colours);
+        let (gs, gn) = (gpart("styles"), gpart("numbering"));
+        let gstyles = gs.as_deref().map_or_else(Styles::default, |x| Styles::parse(Some(x), colours));
+        let gnumbering = Numbering::parse(gn.as_deref(), &colours);
+        glossary_xml = Some((gs, gn));
         super::glossary::merge_tables(&mut styles, &mut numbering, gstyles, gnumbering)
     });
     styles.compat = settings.compat();
@@ -419,6 +424,9 @@ fn read_package(bytes: &[u8], pkg: &mut Package, editable: bool, now: i64, depth
     let mut res = Resolver::new(styles, numbering, theme);
     res.categories = Rc::new(super::font_table::categories(&font_descriptions));
     res.divisions = Rc::new(read_divs(part_of("webSettings").and_then(|p| pkg.read_str(&p)).as_deref(), &colours));
+    let glossary = glossary_xml.as_ref().map(|(s, n)| (s.as_deref(), n.as_deref()));
+    let typed = super::resolvers::TypedDefs::read(styles_xml.as_deref(), numbering_xml.as_deref(), glossary, &res);
+    let res = super::resolvers::Resolvers::new(res, typed);
     let numbering_part = part_of("numbering");
     let mut r = Reader {
         res,
@@ -688,6 +696,9 @@ fn read_package(bytes: &[u8], pkg: &mut Package, editable: bool, now: i64, depth
     doc.people = r.people;
     doc.review_ids = r.ids;
     doc.diagnostics = r.diagnostics;
+    if cfg!(debug_assertions) {
+        r.res.typed();
+    }
     doc.resolver = Some(Rc::new(r.res));
     doc.font_descriptions = font_descriptions;
     let mut prop = |kind: &str| root_rels.values().find(|(k, _)| k == kind).and_then(|(_, t)| pkg.read_str(t));
@@ -1229,7 +1240,7 @@ fn form_data(ff: Node) -> Option<(FieldKind, Option<String>)> {
 }
 
 struct Reader {
-    res: Resolver,
+    res: super::resolvers::Resolvers,
     /// The theme, for the outline widths text boxes take from their style.
     theme: Rc<crate::drawing::theme::Theme>,
     settings: Settings,

@@ -72,7 +72,11 @@ fn paragraph(res: &Resolver, ppr: &ParaProps, runs: &[(&str, RunProps)], id: u64
 }
 
 fn sourceless(paras: Vec<Paragraph>, res: &Resolver) -> Document {
-    Document { sections: vec![section(paras.into_iter().map(Block::Para).collect())], resolver: Some(Rc::new(res.clone())), ..Default::default() }
+    Document {
+        sections: vec![section(paras.into_iter().map(Block::Para).collect())],
+        resolver: Some(Rc::new(res.clone().into())),
+        ..Default::default()
+    }
 }
 
 fn runs(d: &Document, para: usize) -> Vec<(String, Run)> {
@@ -733,7 +737,7 @@ fn a_built_table_and_page_setup_generate_a_package_that_reads_back_the_same() {
     let fonts = fonts();
     let mut doc = built();
     // The line numbers' run, as reading derives it
-    doc.line_number_run = doc.resolver.as_deref().map(crate::docx::line_number_run);
+    doc.line_number_run = doc.resolver.as_deref().map(|r| crate::docx::line_number_run(r));
     let mut e = labelled(doc, fonts);
     e.complete(fonts);
     let run = |e: &mut Editor, v: serde_json::Value| {

@@ -28,6 +28,7 @@ pub mod properties;
 pub mod props;
 mod reader;
 pub mod resolve;
+pub mod resolvers;
 pub mod review;
 pub mod run_xml;
 pub mod section;

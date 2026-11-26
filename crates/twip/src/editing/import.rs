@@ -25,7 +25,7 @@ pub struct Origin {
     /// The bytes of each image the fragment shows, by its index there.
     pub images: Vec<(usize, Vec<u8>)>,
     /// Its styles and lists.
-    pub resolver: Option<Rc<Resolver>>,
+    pub resolver: Option<Rc<crate::docx::resolvers::Resolvers>>,
     /// Its people.
     pub people: People,
     /// Its main part's root start tag, whose namespace declarations its paragraphs' XML is written under (empty for a

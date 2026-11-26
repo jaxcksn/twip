@@ -493,7 +493,7 @@ impl Editor {
 
     /// Authored paragraph properties `d` as the `w:pPr` written in the part `cx` describes.
     pub(super) fn ppr<'d>(&self, d: &'d ParaDirect, cx: &Cx) -> Option<std::borrow::Cow<'d, str>> {
-        para_xml::ppr(self.doc.resolver.as_deref(), d, cx)
+        para_xml::ppr(self.doc.resolver.as_deref().map(|r| r.frozen()), d, cx)
     }
 
     /// The theme colours a theme colour's value is written as.

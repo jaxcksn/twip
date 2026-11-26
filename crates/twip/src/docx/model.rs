@@ -2285,7 +2285,7 @@ pub struct Document {
     pub source: Option<Rc<Source>>,
     /// The styles, numbering and theme it resolves with. `Rc`: clipboard fragments carry their source
     /// document's resolver to resolve pasted formatting.
-    pub resolver: Option<Rc<super::resolve::Resolver>>,
+    pub resolver: Option<Rc<super::resolvers::Resolvers>>,
     /// The font table's description of each family, by lowercase name: what a resolver is told about a missing one.
     pub font_descriptions: HashMap<String, super::font_table::FontDescription>,
     /// Families the style, numbering, theme and font table parts were rewritten from and to, in order: the save

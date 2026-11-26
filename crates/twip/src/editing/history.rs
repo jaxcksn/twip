@@ -329,10 +329,10 @@ pub fn step_bytes(s: &Step) -> usize {
         | Step::Protection(_)
         | Step::SectionBreak { .. } => 32,
         Step::Resolver { resolver, added } => {
-            32 + resolver.as_deref().map_or(0, resolver_bytes)
+            32 + resolver.as_deref().map_or(0, |r| resolver_bytes(r))
                 + added.iter().map(|a| std::mem::size_of::<crate::docx::AddedList>() + a.abstract_xml.len()).sum::<usize>()
         }
-        Step::Fonts { resolver, .. } => 32 + resolver.as_deref().map_or(0, resolver_bytes),
+        Step::Fonts { resolver, .. } => 32 + resolver.as_deref().map_or(0, |r| resolver_bytes(r)),
         Step::PageBackground(_) => 64,
         Step::ImageData { data, .. } => 32 + data.len(),
         Step::AddImage { data, .. } => 32 + data.as_ref().map_or(0, Vec::len),
