@@ -14,7 +14,7 @@ use super::position::Position;
 use super::selection::{ObjectRef, Selection};
 use crate::document::paragraph::{ListId, ListRef};
 use crate::docx::run_xml;
-use crate::format::{CharEdit, CharProps, Prop};
+use crate::format::{CharEdit, CharProps, ListChoice, ParaEdit, ParaProp, Prop};
 use crate::layout::{FloatId, Unit};
 
 /// The most bytes a pasted picture has: the most a part of an opened document may.
@@ -766,15 +766,17 @@ impl Editor {
     pub(super) fn join_list(&self, blocks: &mut [Block], num: i64) {
         let Some(res) = self.doc.resolver.clone() else { return };
         let cx = self.cx();
-        let w = cx.w.clone();
         for b in blocks {
             let Block::Para(p) = b else { continue };
             let Some(ListRef { list: ListId(_), level: lvl }) = p.style.num.filter(|&ListRef { list: ListId(n), level: _ }| n != num) else {
                 continue;
             };
-            let mut pp = Props::parse(self.ppr(&p.style.direct, &cx).as_deref(), "pPr", &cx);
-            pp.set("numPr", format!("<{w}numPr><{w}ilvl {w}val=\"{lvl}\"/><{w}numId {w}val=\"{num}\"/></{w}numPr>"));
-            p.style = Rc::new(crate::docx::para_xml::edited(&res, &p.style.direct, pp.xml().as_deref(), None, &cx).style);
+            let mut e = ParaEdit::new((**p.style.direct.get()).clone());
+            e.list = Some(if num == 0 { ListChoice::None } else { ListChoice::In(ListId(num)) });
+            e.list_level = Some(lvl);
+            e.whole(ParaProp::List);
+            let direct = p.style.direct.edit(e);
+            p.style = Rc::new(crate::docx::para_xml::of(&res, &direct, None, &cx).style);
         }
     }
 }
