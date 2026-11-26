@@ -804,7 +804,6 @@ impl Editor {
 
     pub(super) fn insert_text_box(&mut self, fonts: &Fonts) -> Outcome {
         let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
-        let cx = self.cx();
         let Some(caret) = self.selection.focus() else { return Outcome::Unchanged("no caret") };
         let Some((para, _)) = caret.para_offset() else { return Outcome::Unchanged("caret at a row end") };
         if matches!(caret.story, StoryId::TextBox(_)) {
@@ -819,7 +818,7 @@ impl Editor {
         let Some(run) = self.run_at(&caret) else { return Outcome::Unchanged("no run") };
         let name = self.new_object_name("Text Box");
         let Some(p) = self.index.para(&self.doc, para) else { return Outcome::Unchanged("no paragraph") };
-        let r = crate::docx::para_xml::from_xml(&res, None, None, &cx);
+        let r = crate::docx::para_xml::with(&res, Default::default(), None, None);
         let text_run = run_xml::plain(&res, &r.base);
         let pid = crate::docx::next_para_id();
         let inner = crate::docx::Paragraph {

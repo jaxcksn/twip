@@ -2,12 +2,13 @@
 
 use std::rc::Rc;
 
+use crate::docx::para_props::ParaDirect;
 use crate::docx::styles::StyleKind;
-use crate::docx::write::props::esc;
 use crate::docx::{Block, Inline, Paragraph, RunStyle, next_para_id};
 
 use super::Editor;
 use crate::docx::run_xml;
+use crate::format::ParaProps;
 
 /// The style dialog's preview texts.
 const PREVIOUS: &str = "Previous Paragraph ";
@@ -150,8 +151,7 @@ impl Editor {
     /// A character in a font, for a symbol picker's tile.
     pub fn character_preview(&self, family: &str, c: char) -> Option<Vec<Block>> {
         let res = self.doc.resolver.as_ref()?;
-        let cx = res.styles.cx();
-        let para = crate::docx::para_xml::from_xml(res, None, None, &cx);
+        let para = crate::docx::para_xml::with(res, Default::default(), None, None);
         let base = run_xml::plain(res, &para.base);
         let run = Rc::new(RunStyle { ascii: family.to_string(), h_ansi: family.to_string(), cs: family.to_string(), ..(*base).clone() });
         Some(vec![paragraph(Rc::new(para.style), run, c.to_string())])
@@ -165,17 +165,15 @@ impl Editor {
         next.styles.set_xml(raw.to_string()).ok()?;
         let style = next.styles.by_id.values().find(|s| s.raw == raw)?;
         let cx = next.styles.cx();
-        let w = &cx.w;
-        let id = esc(&style.id);
         let (ppr, direct) = match style.kind {
             StyleKind::Character => {
                 let mut e = crate::format::CharEdit::new(crate::format::CharProps { style: Some(style.id.as_str().into()), ..Default::default() });
                 e.whole(crate::format::Prop::Style);
-                (None, crate::docx::char_props::RunDirect::default().edit(e))
+                (ParaProps::default(), crate::docx::char_props::RunDirect::default().edit(e))
             }
-            _ => (Some(format!("<{w}pPr><{w}pStyle {w}val=\"{id}\"/></{w}pPr>")), Default::default()),
+            _ => (ParaProps { style: Some(style.id.as_str().into()), ..ParaProps::default() }, Default::default()),
         };
-        let para = next.para_from_xml(ppr.as_deref(), None, &cx);
+        let para = crate::docx::para_xml::with(&next, ParaDirect::typed(Rc::new(ppr)), None, None);
         let run = run_xml::run_of(&next, &para.base, direct);
         if tile {
             // A tile shows the character formatting on a plain paragraph.

@@ -507,8 +507,8 @@ impl Editor {
             return false;
         }
         let Some(res) = self.doc.resolver.clone() else { return false };
-        let cx = self.cx();
-        let style = crate::docx::para_xml::from_xml(&res, Some(r#"<w:pPr><w:jc w:val="center"/></w:pPr>"#), None, &cx);
+        let props = crate::format::ParaProps { align: Some(crate::document::format::Jc::Center), ..Default::default() };
+        let style = crate::docx::para_xml::with(&res, crate::docx::para_props::ParaDirect::typed(std::rc::Rc::new(props)), None, None);
         let mark = run_xml::plain(&res, &style.base);
         let pid = crate::docx::next_para_id();
         let para = crate::docx::Paragraph {

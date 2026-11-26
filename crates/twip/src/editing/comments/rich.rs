@@ -3,11 +3,11 @@
 use std::rc::Rc;
 
 use crate::docx::char_props::RunDirect;
+use crate::docx::para_props::ParaDirect;
 use crate::docx::resolve::Resolver;
 use crate::docx::run_xml;
-use crate::docx::write::props::{Cx, Props};
 use crate::docx::{Block, BreakKind, Inline, Paragraph, Run};
-use crate::format::CharProps;
+use crate::format::{CharProps, ParaProps};
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct RichText {
@@ -49,13 +49,9 @@ impl RichText {
         self.paragraphs.iter().map(|p| p.runs.iter().map(|r| r.text.as_str()).collect::<String>()).collect::<Vec<_>>().join("\n")
     }
 
-    pub fn to_blocks(&self, res: &Resolver, cx: &Cx) -> Vec<Block> {
-        let w = &cx.w;
-        let mut pp = Props::parse(None, "pPr", cx);
-        if res.styles.by_id.contains_key("CommentText") {
-            pp.set("pStyle", format!("<{w}pStyle {w}val=\"CommentText\"/>"));
-        }
-        let para = crate::docx::para_xml::from_xml(res, pp.xml().as_deref(), None, cx);
+    pub fn to_blocks(&self, res: &Resolver) -> Vec<Block> {
+        let props = ParaProps { style: res.styles.by_id.contains_key("CommentText").then(|| "CommentText".into()), ..ParaProps::default() };
+        let para = crate::docx::para_xml::with(res, ParaDirect::typed(Rc::new(props)), None, None);
         let style = Rc::new(para.style);
         let base = run_xml::base(&para.base);
         let plain = Rc::new(run_xml::resolve(res, &base, RunDirect::default(), false));

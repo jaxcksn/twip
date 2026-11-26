@@ -504,7 +504,7 @@ impl Editor {
         Some(Step::Text { para, range: Unit(at)..Unit(at), with, edges: Edges { under, ..Edges::default() } })
     }
 
-    fn new_comment(&mut self, id: CommentId, parent: Option<CommentId>, body: &RichText, author: &str, res: &Resolver, cx: &Cx) -> Comment {
+    fn new_comment(&mut self, id: CommentId, parent: Option<CommentId>, body: &RichText, author: &str, res: &Resolver) -> Comment {
         let who = self.doc.people.author(author, None);
         let initials = self.doc.people.get(who).and_then(|p| p.initials.clone()).unwrap_or_else(|| initials(author).into());
         let secs = crate::clock::unix_secs();
@@ -515,7 +515,7 @@ impl Editor {
             initials: Some(initials),
             date: Some(now.clone()),
             date_utc: Some(now),
-            body: body.to_blocks(res, cx),
+            body: body.to_blocks(res),
             para_id: self.doc.review_ids.next_para_id(),
             durable_id: Some(self.doc.review_ids.next_para_id()),
             parent,
@@ -563,7 +563,7 @@ impl Editor {
                 return Outcome::Unchanged("stale selection");
             }
         }
-        let comment = self.new_comment(id, None, body, author, &res, &cx);
+        let comment = self.new_comment(id, None, body, author, &res);
         if self.step(&mut tx, Step::Comment { id, after: Some(comment) }).is_err() {
             self.abort(tx);
             return Outcome::Unchanged("comment failed");
@@ -584,7 +584,7 @@ impl Editor {
         let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
         let cx = self.cx();
         let id = CommentId(self.doc.review_ids.next_revision_id());
-        let mut reply = self.new_comment(id, Some(root), body, author, &res, &cx);
+        let mut reply = self.new_comment(id, Some(root), body, author, &res);
         reply.done = self.doc.comments.by_id.get(&root).is_some_and(|c| c.done);
         let mut tx = self.begin("Reply");
         if self
@@ -628,9 +628,8 @@ impl Editor {
 
     pub fn edit_comment(&mut self, id: CommentId, body: &RichText, fonts: &Fonts) -> Outcome {
         let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
-        let cx = self.cx();
         let Some(mut c) = self.doc.comments.by_id.get(&id).cloned() else { return self.comment_refused("no such comment") };
-        c.body = body.to_blocks(&res, &cx);
+        c.body = body.to_blocks(&res);
         let mut tx = self.begin("Edit Comment");
         if self.step(&mut tx, Step::Comment { id, after: Some(c) }).is_err() {
             self.abort(tx);
