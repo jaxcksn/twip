@@ -52,7 +52,23 @@ fn check(d: &Document, what: &str) -> usize {
     for s in &d.sections {
         check_blocks(res, &cx, &s.blocks, None, what, &mut checked);
     }
+    carried_matches(d, what);
     checked
+}
+
+/// The document's carried typed definitions cascade as its carried resolver does: every definition, and every
+/// paragraph, run, label and cell of it.
+fn carried_matches(d: &Document, what: &str) -> CascadeCounts {
+    let res = d.resolver.as_deref().expect("a resolver");
+    let typed = res.typed();
+    let mut n = CascadeCounts::default();
+    let what = format!("{what}: carried");
+    definitions_match(res, &typed.cascade, &typed.numbering, &what, &mut n);
+    let (cx, mut counters) = (cx(d), Default::default());
+    for s in &d.sections {
+        document_matches(res, &typed.cascade, &cx, &s.blocks, None, &mut counters, &what, &mut n);
+    }
+    n
 }
 
 fn check_blocks(res: &Resolver, cx: &Cx, blocks: &[Block], region: Option<&Region>, what: &str, checked: &mut usize) {
@@ -1342,8 +1358,7 @@ fn document_matches(
                 if p.src.as_ref().is_some_and(|s| s.ranges.len() > 1) {
                     continue;
                 }
-                let raw = p.style.direct.as_read().map(|x| &**x);
-                let typed = para_xml::from_xml_typed(c, raw, region, cx);
+                let typed = para_xml::of_typed(c, &p.style.direct, region, cx);
                 let again = para_xml::again_typed(c, &p.style, typed.style.clone(), region, cx);
                 assert!(p.style.layout_eq(&again), "{what}: paragraph {:?}: {:?} against {again:?}", p.id, p.style);
                 if let (Some(was), Some(now)) = (&p.style.change, &again.change) {
@@ -1452,4 +1467,76 @@ fn style_edits_work_the_read_order_rule_out_again_alike() {
     }
     eprintln!("{sets} table styles based anew, {deletes} styles deleted");
     assert!(sets > 300 && deletes > 300, "only {sets} styles based anew and {deletes} deleted");
+}
+
+/// After each style, defaults, list and font edit, its undo and its redo, the document's carried typed definitions
+/// cascade as its carried resolver does.
+#[test]
+fn carried_cascade_matches_after_edits() {
+    use crate::api::command::{DocumentDefaults, LevelChange, ListKind, ReplaceFont};
+    use crate::api::styles::{NewStyle, StyleChange};
+    let change = |id: &str, change: StyleChange| C::ModifyStyle(StyleModification { id: StyleId(id.into()), change });
+    let edits: Vec<(&str, &str, At, Vec<Command>)> = vec![
+        ("a style's formatting", TOGGLES, At::Start("Bold paragraph style alone"), vec![style("BoldPara", C::SetBold(false))]),
+        (
+            "a style's base",
+            TOGGLES,
+            At::Start("Bold paragraph style alone"),
+            vec![change("BoldPara", StyleChange { based_on: Some(None), ..Default::default() })],
+        ),
+        (
+            "a new style",
+            OFF,
+            At::Whole("Underlined character style"),
+            vec![C::CreateStyle(NewStyle { from_selection: true, apply: true, ..Default::default() })],
+        ),
+        (
+            "a new style deleted",
+            OFF,
+            At::Whole("Underlined character style"),
+            vec![C::CreateStyle(NewStyle { from_selection: true, apply: true, ..Default::default() }), C::DeleteStyle(StyleId("Style1".into()))],
+        ),
+        (
+            "the defaults",
+            OFF,
+            At::Whole("Underlined character style"),
+            vec![C::SetDocumentDefaults(DocumentDefaults { size: Some(Points(13.0)), ..Default::default() })],
+        ),
+        ("a bulleted list", OFF, At::Whole("Underlined character style"), vec![C::SetList(Some(ListKind::Bullet))]),
+        (
+            "a numbered list, a level deeper, restarted",
+            OFF,
+            At::Whole("Underlined character style"),
+            vec![C::SetList(Some(ListKind::Numbered)), C::SetListLevel(LevelChange::Increase), C::RestartNumbering],
+        ),
+        ("a table style", THEME, At::Start("Cell borders in accent 2"), vec![C::SetTableStyle(StyleId("ThemeGrid".into()))]),
+        (
+            "a font replaced",
+            OFF,
+            At::Whole("Underlined character style"),
+            vec![C::ReplaceFont(ReplaceFont { from: "Calibri".into(), to: "Arial".into(), scope: Default::default(), bold: None, italic: None })],
+        ),
+    ];
+    for (what, fixture, at, commands) in edits {
+        let mut e = Editor::open(&model(fixture), fonts()).expect("opens");
+        e.complete(fonts());
+        carried_matches(e.document(), &format!("{what}: as read"));
+        select(&mut e, at);
+        let (mut steps, commands_len) = (0, commands.len());
+        for c in commands {
+            if let Outcome::Changed(_) = e.execute(c.clone(), fonts()) {
+                steps += 1;
+            }
+            carried_matches(e.document(), &format!("{what}: {c:?}"));
+        }
+        assert!(steps == commands_len, "{what}: only {steps} of {commands_len} changed");
+        for _ in 0..steps {
+            e.execute(Command::Undo(Default::default()), fonts());
+            carried_matches(e.document(), &format!("{what}: undone"));
+        }
+        for _ in 0..steps {
+            e.execute(Command::Redo(Default::default()), fonts());
+            carried_matches(e.document(), &format!("{what}: redone"));
+        }
+    }
 }
