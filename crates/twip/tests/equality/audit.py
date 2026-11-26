@@ -34,9 +34,9 @@ REPO = HERE.parents[3]
 WORK = REPO / "target" / "equality-audit"
 COPY = WORK / "workspace"
 RELATIONS = {"L", "A", "AL", "none", "derive", "?"}
-# Formats no site may compare with `==`: each has named equality operations (`layout_eq`, `authored_eq`,
-# `same_run`). The frozen XML resolution baseline keeps its comparisons as they were.
-FORBIDDEN = {"RunStyle", "ParaStyle"}
+# Formats and authored properties no site may compare with `==`: each has named equality operations (`layout_eq`,
+# `authored_eq`, `same_run`). The frozen XML resolution baseline keeps its comparisons as they were.
+FORBIDDEN = {"RunStyle", "ParaStyle", "TableDirect", "ExceptionsDirect", "RowDirect", "CellDirect", "PreviousDirect"}
 BASELINE = {"crates/twip/src/docx/resolve.rs", "crates/twip/src/docx/props.rs", "crates/twip/src/docx/styles.rs", "crates/twip/src/docx/numbering.rs"}
 COMPARISON = re.compile(r"^binary operation `[!=]=` cannot be applied|^can't compare|`(?:Partial)?Eq`|trait bounds were not satisfied")
 ITEM = re.compile(r"^\s*(?:pub(?:\([^)]*\))?\s+)?(?:struct|enum)\s+(\w+)")

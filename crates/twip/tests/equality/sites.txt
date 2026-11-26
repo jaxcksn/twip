@@ -11,7 +11,7 @@ L	crates/twip/src/docx/resolve.rs	rerun_xml	Rc<RunStyle>	if previous == f.previo
 derive	crates/twip/src/docx/write/mod.rs	-	Marker	#[derive(PartialEq)]
 A	crates/twip/src/docx/write/mod.rs	group_as	Marker	a.eq(b) && now_ids.iter().all(|id| s.controls.get(id).is_some_and(|k| k.as_read() || sdt_of(id).is_some()))
 A	crates/twip/src/docx/write/mod.rs	headers	CellRevisions	if a.rev != b.rev {
-A	crates/twip/src/docx/write/mod.rs	row_fixes	Option<Rc<TableChange>>	let change = if was.rev.ex_change != now.rev.ex_change { Some(revisions::ex_change(&w, &now.rev, self.people)) } else { None };
+A	crates/twip/src/docx/write/mod.rs	row_fixes	Option<Rc<TableChange>>	let change = if was.rev.ex_change != now.rev.ex_change {
 A	crates/twip/src/docx/write/mod.rs	row_fixes	RowRevisions	if was.rev != now.rev {
 A	crates/twip/src/docx/write/mod.rs	row_props	RowRevisions	let same = was.is_some_and(|k| k.rev == row.rev);
 A	crates/twip/src/docx/write/mod.rs	separator_edits	Option<&Vec<Block>>	(now != src.separators.get(&key)).then(|| (t, now.map(Vec::as_slice)))
@@ -20,6 +20,7 @@ A	crates/twip/src/docx/write/mod.rs	table	CellRevisions	&& c.rev == d.rev
 A	crates/twip/src/docx/write/mod.rs	table	RowRevisions	&& x.rev == y.rev
 A	crates/twip/src/docx/write/mod.rs	table_xml	Option<Rc<TableChange>>	if a.change != t.change {
 none	crates/twip/src/editing/elements.rs	para	Inline	let end = p.inlines[k..].iter().position(|x| *x == Inline::ControlEnd(*c)).map_or(p.inlines.len(), |e| k + e);
+L	crates/twip/src/editing/format.rs	reresolve_stale	TableProps	if props != TableProps::of(t) {
 L	crates/twip/src/editing/format.rs	table_again	Vec<Row>	let rows = (rows != t.rows).then_some(rows);
 A	crates/twip/src/editing/interaction.rs	still_carried	Vec<Block>	f.blocks == blocks
 L	crates/twip/src/editing/lists.rs	labels_changed	Option<&ListLabel>	if p.list.as_ref() == Some(&label) {
@@ -45,8 +46,10 @@ A	crates/twip/src/editing/shapes.rs	edit_floats	Float	if n == **fl {
 A	crates/twip/src/editing/shapes.rs	shape_release	Picture	Some(p) => self.edit_inline(label, |q| std::mem::replace(q, p) != *q, fonts),
 none	crates/twip/src/editing/state.rs	element_context_of	Inline	let end = p.inlines[k..].iter().position(|i| *i == crate::docx::Inline::ControlEnd(c)).map_or(p.inlines.len(), |e| k + e);
 none	crates/twip/src/editing/state.rs	element_context_of	Inline	let k = p.inlines.iter().position(|i| *i == crate::docx::Inline::ControlStart(c))?;
+derive	crates/twip/src/editing/step.rs	-	TableProps	#[derive(PartialEq)]
 A	crates/twip/src/editing/step.rs	apply	Inline	let keep = p.inlines.iter().rposition(|i| i.units() > 0 || !second.inlines.contains(i)).map_or(0, |k| k + 1);
-A	crates/twip/src/editing/table_format.rs	table_format_blocks	Vec<Row>	let rows_changed = rows != t.rows || !same_raw || grid.is_some();
+L	crates/twip/src/editing/table_format.rs	table_format_blocks	TableProps	let props_changed = props != TableProps::of(t) || !props.direct.authored_eq(&t.direct);
+A	crates/twip/src/editing/table_format.rs	table_format_blocks	Vec<Row>	let rows_changed = rows != t.rows || !same_authored || grid.is_some();
 none	crates/twip/src/editing/tables.rs	unmarked	RunRevisions	if r.rev == RunRevisions::default() { r.clone() } else { Rc::new(RunStyle { rev: RunRevisions::default(), ..(**r).clone() }) }
 A	crates/twip/src/editing/tests/basics.rs	escape_from_select_objects_ends_an_object_drag	Vec<Float>	assert_eq!(body_floats(&r.e), was, "the release moves nothing");
 A	crates/twip/src/editing/tests/basics.rs	live_layout_lays_the_dragged_float_out_where_the_pointer_is	Vec<Float>	assert_eq!(body_floats(&r.e), was);
