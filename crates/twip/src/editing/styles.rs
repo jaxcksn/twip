@@ -4,7 +4,6 @@ use std::rc::Rc;
 
 use crate::api::command::Command;
 use crate::api::error::Error;
-use crate::docx::para_props::ParaDirect;
 use crate::docx::props::{Tab, TabKind};
 use crate::docx::styles::{StyleEditError, StyleKind, Styles};
 use crate::docx::write::props::{Cx, Props, STYLE};
@@ -444,21 +443,21 @@ impl Editor {
                 }
             }
         }
-        self.format_paras(
+        use crate::format::{BorderSide, Color, ParaProp, TextBorder};
+        let sides = [BorderSide::Top, BorderSide::Left, BorderSide::Bottom, BorderSide::Right, BorderSide::Between];
+        self.format_paras_typed(
             "Borders",
-            &|p, cx, _| {
-                let mut bdr = Props::parse(p.get("pBdr"), "pBdr", cx);
-                bdr.reorder(&["top", "left", "bottom", "right", "between", "bar"]);
-                for (k, (side, v)) in edges.iter().enumerate() {
-                    match v {
-                        Some(Some(v)) => bdr.set(side, v.xml(&cx.w, side, colours[k])),
-                        Some(None) => bdr.remove(side),
-                        None => {}
-                    }
-                }
-                match bdr.xml() {
-                    Some(x) => p.set("pBdr", x),
-                    None => p.remove("pBdr"),
+            &|e, _| {
+                for (k, (_, v)) in edges.iter().enumerate() {
+                    let Some(v) = v else { continue };
+                    *e.borders.side_mut(sides[k]) = v.as_ref().map(|line| TextBorder {
+                        style: super::readback::border_style(line.style),
+                        width: (line.width.0 * 8.0).round() / 8.0,
+                        space: line.space.0.round(),
+                        shadow: line.shadow,
+                        color: Some(colours[k].map_or(Color::Auto, super::format::colour)),
+                    });
+                    e.part(ParaProp::Border(sides[k]));
                 }
             },
             fonts,
@@ -563,7 +562,24 @@ impl Editor {
             });
         }
         match target {
-            ShadingTarget::Paragraph => self.format_paras("Shading", &|p, cx, para| edit(p, &cx.w, para.style.shd.as_ref()), fonts),
+            ShadingTarget::Paragraph => self.format_paras_typed(
+                "Shading",
+                &|e, para| {
+                    use crate::format::{Color, ParaProp};
+                    e.shading = (!none).then(|| {
+                        let inherited = para.style.shd.as_ref().map(|s| s.pattern).filter(|p| *p != crate::docx::props::ShadingPattern::Nil);
+                        let pattern = sh.pattern.map(crate::docx::line_style::shading_pattern).or(e.shading.map(|s| s.pattern)).or(inherited);
+                        let c = |c: Option<crate::editing::theme::WordColour>| Some(c.map_or(Color::Auto, super::format::colour));
+                        crate::format::Shading {
+                            pattern: pattern.unwrap_or(crate::docx::props::ShadingPattern::Clear),
+                            color: c(sh.color),
+                            fill: c(sh.fill),
+                        }
+                    });
+                    e.whole(ParaProp::Shading);
+                },
+                fonts,
+            ),
             ShadingTarget::Text => self.format_runs_typed("Shading", &|e, run| text_shading(e, &sh, none, run), fonts),
             ShadingTarget::Cell => self.table_format(&TableFormat::CellShading(sh.clone()), fonts),
             ShadingTarget::Table => self.table_format(&TableFormat::TableShading(sh.clone()), fonts),
@@ -632,10 +648,13 @@ impl Editor {
             if !in_style && !named(&p.mark) && !p.inlines.iter().any(|i| i.run().is_some_and(named) || in_ruby(i)) {
                 continue;
             }
-            let style = in_style
-                .then(|| without(self.ppr(&p.style.direct, &cx).as_deref(), "pPr", "pStyle"))
-                .flatten()
-                .map(|x| Rc::new(crate::docx::ParaStyle { direct: ParaDirect::from_xml(x.as_deref(), &cx), ..(*p.style).clone() }));
+            let d = &p.style.direct;
+            let style = (in_style && d.get().style.as_deref() == Some(id)).then(|| {
+                let mut e = ParaEdit::new((**d.get()).clone());
+                e.style = None;
+                e.whole(crate::format::ParaProp::Style);
+                Rc::new(crate::docx::ParaStyle { direct: d.edit(e), ..(*p.style).clone() })
+            });
             let mark = if named(&p.mark) { unstyled(&p.mark) } else { None };
             let mut inlines: Option<Vec<Inline>> = None;
             let mut at = 0;

@@ -22,8 +22,8 @@ use super::xml::{W, W15, attr, attr_twips, children, int, num, on_off, on_off_st
 use crate::document::format::{Jc, Leader, LineRule, TabKind};
 use crate::document::paragraph::{ListId, TextAlignment};
 use crate::format::{
-    ForeignChild, ForeignProps, ListChoice, ParaBorders, ParaEdit, ParaFlag, ParaFlags, ParaProp, ParaProps, ParaSet, QName, Shading, TabStop,
-    TextBorder, TightWrap,
+    BorderSide, ForeignChild, ForeignProps, ListChoice, ParaBorders, ParaEdit, ParaFlag, ParaFlags, ParaProp, ParaProps, ParaSet, QName, Shading,
+    TabStop, TextBorder, TightWrap,
 };
 
 /// CT_PPr's children in schema order, Word 2012's collapsed flag before the tracked change.
@@ -412,7 +412,10 @@ fn modelled(p: &mut ParaProps, e: Node, key: &str) -> bool {
             let pattern = val(e).map_or(crate::document::format::ShadingPattern::Clear, super::line_style::shading_pattern);
             p.shading = Some(Shading { pattern, color: colour(e, LINE_COLOUR), fill: colour(e, FILL) });
         }
-        "framePr" => p.frame = Some(frame(e)),
+        "framePr" => {
+            p.frame = Some(frame(e));
+            p.frame_locked = attr(e, "anchorLock").map(|v| on_off_str(Some(v)));
+        }
         "textAlignment" => p.text_alignment = val(e).map(super::paragraph::text_alignment),
         "textDirection" => p.text_flow = val(e).map(super::model::text_flow),
         "outlineLvl" => p.outline_level = int(val(e)),
@@ -507,6 +510,7 @@ pub fn from_para_props(r: &xml_props::ParaProps) -> ParaProps {
         },
         shading: r.shd.as_ref().map(|s| Shading { pattern: s.pattern, color: rgb(s.color, s.color_theme), fill: rgb(s.fill, s.fill_theme) }),
         frame: r.frame.clone(),
+        frame_locked: r.frame.as_ref().and_then(|f| f.key.split(' ').find_map(|a| a.strip_prefix("anchorLock=")).map(|v| on_off_str(Some(v)))),
         text_flow: r.text_flow,
         text_alignment: r.text_alignment,
         outline_level: r.outline_lvl,
@@ -612,7 +616,15 @@ fn emit(p: &ParaProps, key: &str, s: &mut dyn Sink) -> bool {
                 }
             })
             .is_some(),
-        "framePr" => p.frame.as_ref().map(|f| frame_attrs(f, s)).is_some(),
+        "framePr" => {
+            if let Some(f) = &p.frame {
+                frame_attrs(f, s);
+            }
+            if let Some(on) = p.frame_locked {
+                s.attr(W, "anchorLock", &if on { "1" } else { "0" });
+            }
+            p.frame.is_some() || p.frame_locked.is_some()
+        }
         "textDirection" => p.text_flow.map(|c| val(s, &FLOWS.iter().find(|(_, x)| *x == c).map_or("lrTb", |(n, _)| n))).is_some(),
         "textAlignment" => p
             .text_alignment
@@ -673,6 +685,24 @@ fn frame_attrs(f: &FramePr, s: &mut dyn Sink) {
     length(s, "x", f.x);
     text(s, "yAlign", &f.y_align);
     length(s, "y", f.y);
+}
+
+/// What tells frame `f` (its anchor locked when `locked`) apart from its neighbours' as a source written by the
+/// serializer reads: each attribute written, by name and value, sorted.
+pub fn frame_key(f: &FramePr, locked: Option<bool>) -> String {
+    struct Names(Vec<String>);
+    impl Sink for Names {
+        fn attr(&mut self, _: &'static str, local: &'static str, v: &dyn std::fmt::Display) {
+            self.0.push(format!("{local}={v}"));
+        }
+        fn implied(&mut self, _: &'static str, _: &'static str) {}
+        fn decided(&mut self, _: &'static str, _: &'static str, _: Option<super::model::ThemeColourRef>) {}
+    }
+    let p = ParaProps { frame: Some(f.clone()), frame_locked: locked, ..ParaProps::default() };
+    let mut names = Names(Vec::new());
+    emit(&p, "framePr", &mut names);
+    names.0.sort();
+    names.0.join(" ")
 }
 
 // Serialize
@@ -868,6 +898,13 @@ pub fn written_over(p: &ParaProps, colours: &ThemeColours, cx: &Cx, origin: Opti
             props.remove(key);
             continue;
         }
+        if !whole && !parts.is_empty() && key == "pBdr" {
+            match borders_over(props.get(key), p, &parts, &mut out) {
+                Some(x) => props.set(key, x),
+                None => props.remove(key),
+            }
+            continue;
+        }
         if !whole && !parts.is_empty() {
             let attrs: Vec<(&str, Option<String>)> = parts.iter().flat_map(|q| part_attrs(*q, p)).collect();
             props.attrs(key, &attrs, cx);
@@ -897,6 +934,35 @@ pub fn written_over(p: &ParaProps, colours: &ThemeColours, cx: &Cx, origin: Opti
         }
     }
     props.xml()
+}
+
+/// `w:pBdr` as written (`was`) with the sides `parts` set written from `p`, or removed, the others as they are there.
+fn borders_over(was: Option<&str>, p: &ParaProps, parts: &[ParaProp], out: &mut Out) -> Option<String> {
+    use super::write::props::Props;
+    let mut bdr = Props::parse(was, "pBdr", out.cx);
+    bdr.reorder(&["top", "left", "bottom", "right", "between", "bar"]);
+    let b = &p.borders;
+    for side in parts.iter().filter_map(|q| if let ParaProp::Border(s) = q { Some(*s) } else { None }) {
+        let (name, v) = match side {
+            BorderSide::Top => ("top", b.top),
+            BorderSide::Left => ("left", b.left),
+            BorderSide::Bottom => ("bottom", b.bottom),
+            BorderSide::Right => ("right", b.right),
+            BorderSide::Between => ("between", b.between),
+        };
+        match v {
+            Some(v) => {
+                let w = out.cx.w.clone();
+                let at = out.s.len();
+                let _ = write!(out.s, "<{w}{name}");
+                let _ = out.attrs(W, &[], None, |s| border_attrs(s, &v));
+                out.s.push_str("/>");
+                bdr.set(name, out.s.split_off(at));
+            }
+            None => bdr.remove(name),
+        }
+    }
+    bdr.xml()
 }
 
 /// The attributes property `prop`, set in part, sets on its child, each with its value in `p` (written as the
@@ -945,7 +1011,7 @@ fn key_of(p: ParaProp) -> &'static str {
         ParaProp::Division => "divId",
         ParaProp::Tabs => "tabs",
         ParaProp::List => "numPr",
-        ParaProp::Borders => "pBdr",
+        ParaProp::Borders | ParaProp::Border(_) => "pBdr",
         ParaProp::Shading => "shd",
         ParaProp::Frame => "framePr",
         ParaProp::TextFlow => "textDirection",

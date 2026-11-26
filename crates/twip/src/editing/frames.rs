@@ -15,9 +15,9 @@ use crate::api::value::Points;
 use crate::docx::Block;
 use crate::docx::Inline;
 use crate::docx::props::FramePr;
-use crate::docx::write::props::Props;
 use crate::editing::position::{Position, StoryId};
 use crate::font::Fonts;
+use crate::format::{ParaEdit, ParaFlag, ParaProp};
 use crate::layout::{FloatId, ParaId, Unit};
 
 /// The Frame dialog's properties of a `w:framePr`.
@@ -70,44 +70,10 @@ pub fn properties(fr: &FramePr) -> FrameProperties {
     }
 }
 
-/// The `w:framePr` of `p`, keeping a drop cap's `dropCap` and `lines` from `old`, in the order the attributes are
-/// written in.
-pub fn frame_xml(w: &str, p: &FrameProperties, old: Option<&FramePr>) -> String {
-    let twips = |v: Points| ((v.0 * 20.0).round() as i64).to_string();
-    let mut a: Vec<(&str, String)> = Vec::new();
-    if let Some(d) = old.and_then(|o| o.drop_cap.clone()) {
-        a.push(("dropCap", d));
-    }
-    if let Some(l) = old.and_then(|o| o.lines) {
-        a.push(("lines", l.to_string()));
-    }
-    if p.width_rule == FrameWidthRule::Exactly {
-        a.push(("w", twips(p.width)));
-    }
-    if p.height_rule != FrameHeightRule::Auto {
-        a.push(("h", twips(p.height)));
-    }
-    if p.height_rule == FrameHeightRule::Exactly {
-        a.push(("hRule", "exact".into()));
-    }
-    if p.horizontal_distance.0 > 0.0 {
-        a.push(("hSpace", twips(p.horizontal_distance)));
-    }
-    if p.vertical_distance.0 > 0.0 {
-        a.push(("vSpace", twips(p.vertical_distance)));
-    }
-    a.push(("wrap", if p.wrap == FrameWrap::None { "notBeside" } else { "around" }.into()));
-    match p.vertical_relative {
-        FrameVerticalRelative::Margin => a.push(("vAnchor", "margin".into())),
-        FrameVerticalRelative::Page => a.push(("vAnchor", "page".into())),
-        FrameVerticalRelative::Paragraph => a.push(("vAnchor", "text".into())),
-    }
-    let h = match p.horizontal_relative {
-        FrameHorizontalRelative::Margin => "margin",
-        FrameHorizontalRelative::Page => "page",
-        FrameHorizontalRelative::Column => "text",
-    };
-    a.push(("hAnchor", h.into()));
+/// The frame of `p`, keeping a drop cap's kind and lines from `old`, and whether its anchor is locked.
+pub fn frame_of(p: &FrameProperties, old: Option<&FramePr>) -> (FramePr, Option<bool>) {
+    let twips = |v: Points| (v.0 * 20.0).round() / 20.0;
+    let text = |v: &str| Some(v.to_string());
     let ha = |x: FrameHorizontalAlign| match x {
         FrameHorizontalAlign::Left => "left",
         FrameHorizontalAlign::Center => "center",
@@ -115,10 +81,6 @@ pub fn frame_xml(w: &str, p: &FrameProperties, old: Option<&FramePr>) -> String 
         FrameHorizontalAlign::Inside => "inside",
         FrameHorizontalAlign::Outside => "outside",
     };
-    match p.horizontal_align {
-        Some(x) => a.push(("xAlign", ha(x).into())),
-        None => a.push(("x", twips(p.horizontal))),
-    }
     let va = |y: FrameVerticalAlign| match y {
         FrameVerticalAlign::Top => "top",
         FrameVerticalAlign::Center => "center",
@@ -126,15 +88,40 @@ pub fn frame_xml(w: &str, p: &FrameProperties, old: Option<&FramePr>) -> String 
         FrameVerticalAlign::Inside => "inside",
         FrameVerticalAlign::Outside => "outside",
     };
-    match p.vertical_align {
-        Some(y) => a.push(("yAlign", va(y).into())),
-        None => a.push(("y", twips(p.vertical))),
-    }
-    if p.lock_anchor {
-        a.push(("anchorLock", "1".into()));
-    }
-    let attrs: String = a.iter().map(|(k, v)| format!(" {w}{k}=\"{}\"", crate::docx::write::props::esc(v))).collect();
-    format!("<{w}framePr{attrs}/>")
+    let mut f = FramePr {
+        w: (p.width_rule == FrameWidthRule::Exactly).then(|| twips(p.width)),
+        h: (p.height_rule != FrameHeightRule::Auto).then(|| twips(p.height)),
+        h_rule: (p.height_rule == FrameHeightRule::Exactly).then(|| "exact".to_string()),
+        x: p.horizontal_align.is_none().then(|| twips(p.horizontal)),
+        y: p.vertical_align.is_none().then(|| twips(p.vertical)),
+        x_align: p.horizontal_align.map(|x| ha(x).to_string()),
+        y_align: p.vertical_align.map(|y| va(y).to_string()),
+        h_anchor: text(match p.horizontal_relative {
+            FrameHorizontalRelative::Margin => "margin",
+            FrameHorizontalRelative::Page => "page",
+            FrameHorizontalRelative::Column => "text",
+        }),
+        v_anchor: text(match p.vertical_relative {
+            FrameVerticalRelative::Margin => "margin",
+            FrameVerticalRelative::Page => "page",
+            FrameVerticalRelative::Paragraph => "text",
+        }),
+        wrap: text(if p.wrap == FrameWrap::None { "notBeside" } else { "around" }),
+        h_space: if p.horizontal_distance.0 > 0.0 { twips(p.horizontal_distance) } else { 0.0 },
+        v_space: if p.vertical_distance.0 > 0.0 { twips(p.vertical_distance) } else { 0.0 },
+        drop_cap: old.and_then(|o| o.drop_cap.clone()),
+        lines: old.and_then(|o| o.lines),
+        key: String::new(),
+    };
+    let locked = p.lock_anchor.then_some(true);
+    f.key = crate::docx::para_props::frame_key(&f, locked);
+    (f, locked)
+}
+
+/// Sets frame `f` on a paragraph's authored properties.
+fn set_frame(e: &mut ParaEdit, (f, locked): (FramePr, Option<bool>)) {
+    (e.frame, e.frame_locked) = (Some(f), locked);
+    e.whole(ParaProp::Frame);
 }
 
 /// A `w:x` or `w:y` of `v` points a twip further off when it rounds to one of `codes`, the twips that stand for an
@@ -184,7 +171,7 @@ impl Editor {
 
     /// The frame's paragraphs with their `w:framePr` edited, and the first one's new `w:framePr`; `framed`: whether
     /// they stay in the frame.
-    fn frame_paras(&self, f: FloatId, framed: bool, edit: &dyn Fn(&mut Props, &str, Option<&FramePr>)) -> Option<(Vec<Block>, Option<FramePr>)> {
+    fn frame_paras(&self, f: FloatId, framed: bool, edit: &dyn Fn(&mut ParaEdit, Option<&FramePr>)) -> Option<(Vec<Block>, Option<FramePr>)> {
         let res = self.doc.resolver.clone()?;
         let cx = self.cx();
         let mut first = None;
@@ -198,9 +185,9 @@ impl Editor {
             .map(|b| match b {
                 Block::Para(mut p) => {
                     let old = crate::docx::para_xml::of(&res, &p.style.direct, None, &cx).style.frame;
-                    let mut pr = Props::parse(self.ppr(&p.style.direct, &cx).as_deref(), "pPr", &cx);
-                    edit(&mut pr, &cx.w, old.as_ref());
-                    let mut style = crate::docx::para_xml::edited(&res, &p.style.direct, pr.xml().as_deref(), None, &cx).style;
+                    let mut e = ParaEdit::new((**p.style.direct.get()).clone());
+                    edit(&mut e, old.as_ref());
+                    let mut style = crate::docx::para_xml::of(&res, &p.style.direct.edit(e), None, &cx).style;
                     let frame = style.frame.take();
                     if first.is_none() {
                         first = Some(frame);
@@ -224,22 +211,22 @@ impl Editor {
 
     /// [`Editor::set_frame_with_overlap`], as one undo step named `label`.
     fn set_frame_as(&mut self, props: FrameProperties, allow_overlap: Option<bool>, label: &'static str, fonts: &Fonts) -> Outcome {
-        let overlap = |p: &mut Props, w: &str| match allow_overlap {
+        let overlap = |e: &mut ParaEdit| {
             // Off over a style's on.
-            Some(true) => p.set("suppressOverlap", format!("<{w}suppressOverlap {w}val=\"0\"/>")),
-            Some(false) => p.set("suppressOverlap", format!("<{w}suppressOverlap/>")),
-            None => {}
+            if let Some(allow) = allow_overlap {
+                e.flag(ParaFlag::SUPPRESS_OVERLAP, !allow);
+            }
         };
         if self.style_target.is_some() {
-            return self.format_style_part("pPr", &|p, cx, para, _| {
-                p.set("framePr", frame_xml(&cx.w, &props, para.style.frame.as_ref()));
-                overlap(p, &cx.w);
+            return self.format_style_ppr(&|e, para| {
+                set_frame(e, frame_of(&props, para.style.frame.as_ref()));
+                overlap(e);
             });
         }
         let Some(f) = self.frame_here() else { return Outcome::unavailable("the selection isn't in a frame") };
-        let edit = |p: &mut Props, w: &str, old: Option<&FramePr>| {
-            p.set("framePr", frame_xml(w, &props, old));
-            overlap(p, w);
+        let edit = |e: &mut ParaEdit, old: Option<&FramePr>| {
+            set_frame(e, frame_of(&props, old));
+            overlap(e);
         };
         let Some((blocks, Some(fr))) = self.frame_paras(f, true, &edit) else {
             return Outcome::Unchanged("no frame");
@@ -327,11 +314,15 @@ impl Editor {
     /// Removes the frame: its paragraphs, without their `w:framePr`, go where they were beside the paragraph it was
     /// anchored to.
     pub(super) fn remove_frame(&mut self, fonts: &Fonts) -> Outcome {
+        let unframed = |e: &mut ParaEdit| {
+            (e.frame, e.frame_locked) = (None, None);
+            e.whole(ParaProp::Frame);
+        };
         if self.style_target.is_some() {
-            return self.format_style_part("pPr", &|p, _, _, _| p.remove("framePr"));
+            return self.format_style_ppr(&|e, _| unframed(e));
         }
         let Some(f) = self.frame_here() else { return Outcome::unavailable("the selection isn't in a frame") };
-        let Some((mut blocks, _)) = self.frame_paras(f, false, &|p, _, _| p.remove("framePr")) else { return Outcome::Unchanged("no frame") };
+        let Some((mut blocks, _)) = self.frame_paras(f, false, &|e, _| unframed(e)) else { return Outcome::Unchanged("no frame") };
         let Some(anchor) = self.index.float_anchor(f) else { return Outcome::Unchanged("no anchor") };
         let Some(slot) = self.index.para_slot(anchor) else { return Outcome::Unchanged("no anchor") };
         let Some(p) = self.index.para(&self.doc, anchor) else { return Outcome::Unchanged("no anchor") };

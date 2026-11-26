@@ -296,6 +296,7 @@ impl ParaProps {
         take!(borders.between);
         take!(shading);
         take!(frame);
+        take!(frame_locked);
         take!(text_flow);
         take!(text_alignment);
         take!(outline_level);

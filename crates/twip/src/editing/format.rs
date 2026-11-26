@@ -493,10 +493,11 @@ impl Editor {
         let id = p.style.style_id.as_deref()?;
         let next = res.styles.by_id.get(id)?.next.clone().filter(|n| n != id && res.styles.by_id.contains_key(n))?;
         let cx = self.cx();
-        let mut pr = Props::parse(self.ppr(&p.style.direct, &cx).as_deref(), "pPr", &cx);
-        pr.set("pStyle", format!("<{w}pStyle {w}val=\"{}\"/>", crate::docx::write::props::esc(&next), w = cx.w));
+        let mut e = ParaEdit::new((**p.style.direct.get()).clone());
+        e.style = Some(next.as_str().into());
+        e.whole(ParaProp::Style);
         let region = self.region_of_para(para, &res);
-        second.style = Rc::new(para_xml::edited(&res, &p.style.direct, pr.xml().as_deref(), region.as_ref(), &cx).style);
+        second.style = Rc::new(para_xml::of(&res, &p.style.direct.edit(e), region.as_ref(), &cx).style);
         Some(second)
     }
 

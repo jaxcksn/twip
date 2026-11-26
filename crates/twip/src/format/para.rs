@@ -52,6 +52,8 @@ pub struct ParaProps {
     pub shading: Option<Shading>,
     /// The frame the paragraph is placed in.
     pub frame: Option<FramePr>,
+    /// The frame's anchor is locked to the paragraph.
+    pub frame_locked: Option<bool>,
     /// The text flow: 0 left to right and top to bottom, else the flow's code (`docx::model::text_flow`).
     pub text_flow: Option<u8>,
     /// How a line's runs sit on it vertically.
@@ -93,6 +95,34 @@ impl ParaBorders {
     /// Whether no border is set.
     pub fn is_empty(&self) -> bool {
         *self == ParaBorders::default()
+    }
+}
+
+/// A paragraph border's side.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BorderSide {
+    /// Above.
+    Top,
+    /// At the start.
+    Left,
+    /// Below.
+    Bottom,
+    /// At the end.
+    Right,
+    /// Between paragraphs.
+    Between,
+}
+
+impl ParaBorders {
+    /// The border on `side`.
+    pub fn side_mut(&mut self, side: BorderSide) -> &mut Option<TextBorder> {
+        match side {
+            BorderSide::Top => &mut self.top,
+            BorderSide::Left => &mut self.left,
+            BorderSide::Bottom => &mut self.bottom,
+            BorderSide::Right => &mut self.right,
+            BorderSide::Between => &mut self.between,
+        }
     }
 }
 
@@ -245,6 +275,8 @@ pub enum ParaProp {
     List,
     /// The borders.
     Borders,
+    /// One border, among the others as written.
+    Border(BorderSide),
     /// The shading.
     Shading,
     /// The frame.
