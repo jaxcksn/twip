@@ -199,14 +199,14 @@ impl Editor {
         let styles = self.doc.resolver.as_ref().map(|r| &r.styles);
         let paragraph = |id: &str| styles.and_then(|s| s.by_id.get(id)).is_some_and(|s| s.kind == crate::docx::styles::StyleKind::Paragraph);
         let style = style.filter(|s| paragraph(s) && styles.and_then(|st| st.default_paragraph.as_deref()) != Some(*s));
-        let pstyle = style.map(crate::docx::write::props::esc);
-        let edit = |p: &mut crate::docx::write::props::Props, cx: &crate::docx::write::props::Cx, _: &crate::docx::Paragraph| {
-            p.kids.retain(|(k, _)| k == "rPr" || k == "sectPr");
-            if let Some(v) = &pstyle {
-                p.set("pStyle", format!("<{w}pStyle {w}val=\"{v}\"/>", w = cx.w));
+        let style: Option<std::rc::Rc<str>> = style.map(Into::into);
+        let edit = |e: &mut crate::format::ParaEdit, _: &crate::docx::Paragraph| {
+            e.props = crate::format::ParaProps { style: style.clone(), ..Default::default() };
+            if style.is_some() {
+                e.whole(crate::format::ParaProp::Style);
             }
         };
-        !matches!(self.format_paras_direct("Style", &edit, fonts), Outcome::Refused(_))
+        !matches!(self.format_paras_direct_typed("Style", &edit, fonts), Outcome::Refused(_))
     }
 
     fn tab_out(&mut self, alignment: TabAlignment, at: f64, fonts: &Fonts) -> bool {
