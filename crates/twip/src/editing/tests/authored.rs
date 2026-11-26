@@ -223,8 +223,10 @@ fn written(r: &crate::docx::RunStyle) -> String {
     r.direct.xml(&Default::default(), &cx).map(std::borrow::Cow::into_owned).unwrap_or_default()
 }
 
-fn direct(raw: &crate::docx::Raw) -> &str {
-    raw.0.as_deref().unwrap_or("")
+/// A paragraph's `w:pPr` as saving writes it, in a part that binds the main namespace to `w`.
+fn direct(d: &crate::docx::para_props::ParaDirect) -> String {
+    let cx = crate::docx::write::props::Cx::of_xml(r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">"#);
+    d.xml(&Default::default(), &cx).map(std::borrow::Cow::into_owned).unwrap_or_default()
 }
 
 /// The target's authored XML.
@@ -232,7 +234,7 @@ fn authored(p: &Paragraph, t: Target) -> String {
     match t {
         Target::Run => written(first_run(p)),
         Target::Mark => written(&p.mark),
-        Target::Paragraph => direct(&p.style.direct).to_owned(),
+        Target::Paragraph => direct(&p.style.direct),
     }
 }
 

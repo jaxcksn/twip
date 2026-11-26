@@ -3520,7 +3520,7 @@ impl<'a, 'i> Saver<'a, 'i> {
     fn edited_ppr(&self, node: Option<Node>, p: &Paragraph, mark: bool, sect: Option<&str>) -> String {
         let base = match node {
             Some(n) => child(n, "pPr").map(|x| self.xml[x.range()].to_string()),
-            None => p.style.direct.0.as_deref().map(str::to_string),
+            None => p.style.direct.xml(&self.colours, &self.cx).map(std::borrow::Cow::into_owned),
         };
         let mut pr = Props::parse(base.as_deref(), "pPr", &self.cx);
         if mark {
@@ -3538,7 +3538,9 @@ impl<'a, 'i> Saver<'a, 'i> {
             // Its own properties (not its source's): its tracked change is the model's.
             pr.remove("pPrChange");
             if let Some(c) = &p.style.change {
-                pr.set("pPrChange", revisions::change(&self.w, "pPrChange", "pPr", &c.mark, &c.previous_raw, self.people));
+                let earlier = c.properties.then(|| c.previous.direct.xml(&self.colours, &self.cx)).flatten();
+                let earlier = super::model::Raw(earlier.map(|x| Rc::from(&*x)));
+                pr.set("pPrChange", revisions::change(&self.w, "pPrChange", "pPr", &c.mark, &earlier, self.people));
                 if let (Some(nc), Some(num)) = (c.numbering_change.0.as_deref(), pr.get("numPr")) {
                     let mut n = Props::parse(Some(num), "numPr", &self.cx);
                     n.set("numberingChange", nc.to_string());

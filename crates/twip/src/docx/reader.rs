@@ -10,6 +10,8 @@ use super::char_props::{self, RunDirect};
 use super::diagnostics::{Diagnostics, WarningCode};
 use super::model::*;
 use super::numbering::{Counters, Numbering};
+use super::para_props::{self, ParaDirect};
+use super::para_xml;
 use super::props::*;
 use super::resolve::{ParaResolved, Resolver, div_chain};
 use super::review::{
@@ -437,6 +439,7 @@ fn read_package(bytes: &[u8], pkg: &mut Package, editable: bool, now: i64, depth
         in_endnotes: false,
         record: false,
         interned: HashMap::new(),
+        interned_ppr: HashMap::new(),
         segs: Vec::new(),
         simple: Vec::new(),
         lossy: false,
@@ -1252,6 +1255,8 @@ struct Reader {
     record: bool,
     /// The authored run properties read so far, by the `w:rPr` written: runs written alike share them.
     interned: HashMap<Rc<str>, Rc<CharProps>>,
+    /// The authored paragraph properties read so far, by the `w:pPr` written, likewise.
+    interned_ppr: HashMap<Rc<str>, Rc<crate::format::ParaProps>>,
     /// The paragraph being read: elements that produced units ([`ParaSrc::segs`]), and whether any can't be mapped.
     segs: Vec<(std::ops::Range<usize>, usize)>,
     /// [`ParaSrc::simple`].
@@ -1496,15 +1501,16 @@ impl Reader {
         let before = change.and_then(|c| child(c, "pPr"));
         let previous = match change {
             Some(_) => {
-                let mut s = self.res.paragraph(&ParaProps::parse(before, &self.res.styles.colours), region).style;
-                if self.record {
-                    s.direct = Raw(before.map(raw));
+                let typed = before.map(para_props::parse).unwrap_or_default();
+                let mut s = para_xml::resolve(&self.res, &typed, before.and_then(para_xml::mark_size), region).style;
+                if let Some(b) = before.filter(|_| self.record) {
+                    s.direct = ParaDirect::read(typed, raw(b));
                 }
                 s
             }
             None => current.clone(),
         };
-        Some(Rc::new(ParaChange { mark, previous: Rc::new(previous), previous_raw: Raw(before.map(raw)), numbering_change: Raw(numbering.map(raw)) }))
+        Some(Rc::new(ParaChange { mark, previous: Rc::new(previous), properties: change.is_some(), numbering_change: Raw(numbering.map(raw)) }))
     }
 
     /// Whether comment `id` exists; a missing one is reported once.
@@ -2103,6 +2109,26 @@ impl Reader {
         RunDirect::read(props, format!("{}>{kept}</{name}>", open.trim_end_matches('>').trim_end_matches('/')).into())
     }
 
+    /// The authored properties `ppr` holds, with (editable reads) the `w:pPr` they were read from: paragraphs whose
+    /// `w:pPr` is written alike share them.
+    fn para_direct(&mut self, ppr: Option<Node>) -> ParaDirect {
+        let Some(n) = ppr else { return ParaDirect::default() };
+        let plain = n.namespaces().len() <= n.document().root_element().namespaces().len();
+        let text = &n.document().input_text()[n.range()];
+        if let Some((x, p)) = self.interned_ppr.get_key_value(text).filter(|_| plain && self.record) {
+            return ParaDirect::shared(p.clone(), x.clone());
+        }
+        let props = Rc::new(para_props::parse(n));
+        if !self.record {
+            return ParaDirect::typed(props);
+        }
+        let x = raw(n);
+        if plain {
+            self.interned_ppr.insert(x.clone(), props.clone());
+        }
+        ParaDirect::shared(props, x)
+    }
+
     /// The authored properties `rpr` holds.
     fn direct(&mut self, rpr: Option<Node>) -> RunDirect {
         self.direct_of(rpr, rpr.map(|n| char_props::parse(n).0))
@@ -2122,19 +2148,20 @@ impl Reader {
 
     fn read_paragraph(&mut self, n: Node, pkg: &mut Package, table: Option<&TableCtx>) -> Option<Paragraph> {
         let ppr_node = child(n, "pPr");
-        let direct = ParaProps::parse(ppr_node, &self.res.styles.colours);
+        let mark_rpr_node = ppr_node.and_then(|p| child(p, "rPr"));
+        let mark_direct = self.direct(mark_rpr_node);
+        let mark_own = mark_direct.props().cloned();
+        let ppr = self.para_direct(ppr_node);
         let ParaResolved { style: mut para_style, base, level, num_id, ilvl, from_style, style_id } =
-            self.res.paragraph(&direct, table.map(|t| &*t.region));
+            para_xml::resolve(&self.res, ppr.get(), mark_own.as_ref().and_then(|m| m.size), table.map(|t| &*t.region));
         let base = Base::new(base);
         if self.record {
-            para_style.direct = Raw(ppr_node.map(raw));
+            para_style.direct = ppr;
         }
         para_style.change = self.para_change(ppr_node, table.map(|t| &*t.region), &para_style);
         let para_style = Rc::new(para_style);
 
-        let mark_rpr_node = ppr_node.and_then(|p| child(p, "rPr"));
-        let direct = self.direct(mark_rpr_node);
-        let mark_own = direct.props().cloned();
+        let direct = mark_direct;
         let mut mark = self.typed_run(&base, direct, false);
         let mark_rev = self.mark_revisions(&base, mark_rpr_node);
         if !mark_rev.is_empty() {

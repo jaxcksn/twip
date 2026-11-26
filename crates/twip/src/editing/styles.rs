@@ -4,6 +4,7 @@ use std::rc::Rc;
 
 use crate::api::command::Command;
 use crate::api::error::Error;
+use crate::docx::para_props::ParaDirect;
 use crate::docx::props::{Tab, TabKind};
 use crate::docx::styles::{StyleEditError, StyleKind, Styles};
 use crate::docx::write::props::{Cx, Props, STYLE};
@@ -265,7 +266,13 @@ impl Editor {
             .find(|s| s.raw == raw)
             .and_then(|s| s.based_on.clone())
             .map(|b| format!("<{w}pPr><{w}pStyle {w}val=\"{}\"/></{w}pPr>", crate::docx::write::props::esc(&b), w = cx.w));
-        let inherited = res.para_from_xml(base.as_deref(), None, &cx).style.tabs.iter().filter(|t| t.kind != TabKind::Clear).copied().collect();
+        let inherited = crate::docx::para_xml::from_xml(res, base.as_deref(), None, &cx)
+            .style
+            .tabs
+            .iter()
+            .filter(|t| t.kind != TabKind::Clear)
+            .copied()
+            .collect();
         Some((para.style.tabs.clone(), inherited))
     }
 
@@ -282,7 +289,9 @@ impl Editor {
             }
             p.xml()
         };
-        let ppr = para.and_then(|p| p.style.direct.0.as_deref()).and_then(|x| strip(x, "pPr", &["pStyle", "numPr", "sectPr", "rPr", "pPrChange"]));
+        let main = self.cx();
+        let ppr =
+            para.and_then(|p| self.ppr(&p.style.direct, &main)).and_then(|x| strip(&x, "pPr", &["pStyle", "numPr", "sectPr", "rPr", "pPrChange"]));
         let run = self.caret().and_then(|c| self.run_at(&c));
         let colours = self.doc.resolver.as_deref().map_or_else(Default::default, |r| r.styles.colours);
         let rpr = run.and_then(|r| {
@@ -588,9 +597,9 @@ impl Editor {
                 continue;
             }
             let style = in_style
-                .then(|| without(p.style.direct.0.as_deref(), "pPr", "pStyle"))
+                .then(|| without(self.ppr(&p.style.direct, &cx).as_deref(), "pPr", "pStyle"))
                 .flatten()
-                .map(|x| Rc::new(crate::docx::ParaStyle { direct: raw(x), ..(*p.style).clone() }));
+                .map(|x| Rc::new(crate::docx::ParaStyle { direct: ParaDirect::from_xml(x.as_deref(), &cx), ..(*p.style).clone() }));
             let mark = if named(&p.mark) { unstyled(&p.mark) } else { None };
             let mut inlines: Option<Vec<Inline>> = None;
             let mut at = 0;

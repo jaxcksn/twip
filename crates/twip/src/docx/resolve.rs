@@ -272,7 +272,7 @@ impl Resolver {
             list_fmt: None,
             list: None,
             mark_size: None,
-            direct: Raw::default(),
+            direct: Default::default(),
             change: None,
             joined: Rc::from([]),
             parts: Rc::from([]),
@@ -426,9 +426,9 @@ impl Resolver {
             (again.frame, again.in_frame) = (None, true);
         }
         again.change = was.change.as_ref().map(|c| {
-            let mut previous = match (&c.previous_raw.0, &c.numbering_change.0) {
-                (None, Some(_)) => ParaStyle { change: None, ..again.clone() },
-                (raw, _) => self.para_from_xml(raw.as_deref(), region, cx).style,
+            let mut previous = match (c.properties, &c.numbering_change.0) {
+                (false, Some(_)) => ParaStyle { change: None, ..again.clone() },
+                _ => self.para_from_xml(c.properties.then(|| c.previous.direct.as_read().map(|x| &**x)).flatten(), region, cx).style,
             };
             if was.in_frame {
                 (previous.frame, previous.in_frame) = (None, true);
@@ -442,7 +442,7 @@ impl Resolver {
     pub fn para_from_xml(&self, ppr: Option<&str>, region: Option<&Region>, cx: &Cx) -> ParaResolved {
         let direct = ppr.and_then(|x| cx.parse(x, |_, el| ParaProps::parse(Some(el), &self.styles.colours))).unwrap_or_default();
         let mut r = self.paragraph(&direct, region);
-        r.style.direct = Raw(ppr.map(Rc::from));
+        r.style.direct = super::para_props::ParaDirect::from_xml(ppr, cx);
         r
     }
 
@@ -533,7 +533,7 @@ mod tests {
                     }
                     // Revisions aren't formatting: they come from the elements around the direct XML, so they're
                     // carried over before comparing.
-                    let mut r = res.para_from_xml(p.style.direct.0.as_deref(), region, cx);
+                    let mut r = res.para_from_xml(p.style.direct.as_read().map(|x| &**x), region, cx);
                     r.style.change = p.style.change.clone();
                     assert_eq!(*p.style, r.style, "{what}: paragraph {:?}", p.id);
                     let with_rev = |again: Run, read: &Run| RunStyle { rev: read.rev.clone(), ..(*again).clone() };

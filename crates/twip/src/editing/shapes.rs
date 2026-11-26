@@ -508,7 +508,7 @@ impl Editor {
         }
         let Some(res) = self.doc.resolver.clone() else { return false };
         let cx = self.cx();
-        let style = res.para_from_xml(Some(r#"<w:pPr><w:jc w:val="center"/></w:pPr>"#), None, &cx);
+        let style = crate::docx::para_xml::from_xml(&res, Some(r#"<w:pPr><w:jc w:val="center"/></w:pPr>"#), None, &cx);
         let mark = run_xml::plain(&res, &style.base);
         let pid = crate::docx::next_para_id();
         let para = crate::docx::Paragraph {

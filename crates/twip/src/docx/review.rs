@@ -240,8 +240,10 @@ pub struct FormatChange {
 #[derive(Clone, Debug, PartialEq)]
 pub struct ParaChange {
     pub mark: Rc<RevisionMark>,
+    /// The formatting before the change; its authored properties are those the change records.
     pub previous: Rc<ParaStyle>,
-    pub previous_raw: Raw,
+    /// It records earlier properties (a `w:pPrChange`), not only a list's numbering change.
+    pub properties: bool,
     /// `w:numberingChange` in the paragraph's `w:numPr`, as written.
     pub numbering_change: Raw,
 }
@@ -249,7 +251,7 @@ pub struct ParaChange {
 impl ParaChange {
     /// Whether it is a list's numbering change alone, without a `w:pPrChange`.
     pub fn numbering_only(&self) -> bool {
-        self.previous_raw.0.is_none() && self.numbering_change.0.is_some()
+        !self.properties && self.numbering_change.0.is_some()
     }
 }
 

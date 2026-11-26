@@ -159,7 +159,7 @@ fn each_para(blocks: &mut [Block], f: &mut dyn FnMut(&mut Paragraph)) {
 
 fn empty_para(doc: &Document, cx: &crate::docx::write::props::Cx) -> Option<Paragraph> {
     let res = doc.resolver.as_ref()?;
-    let r = res.para_from_xml(None, None, cx);
+    let r = crate::docx::para_xml::from_xml(res, None, None, cx);
     let mark = run_xml::plain(res, &r.base);
     Some(Paragraph {
         style: Rc::new(r.style),
@@ -744,7 +744,7 @@ impl Editor {
         let cx = self.cx();
         let w = cx.w.clone();
         let num_of = |p: &Paragraph| -> Option<i64> {
-            let pr = Props::parse(p.style.direct.0.as_deref(), "pPr", &cx);
+            let pr = Props::parse(self.ppr(&p.style.direct, &cx).as_deref(), "pPr", &cx);
             let num = Props::parse(pr.get("numPr"), "numPr", &cx);
             crate::docx::write::props::attr_of(num.get("numId")?, "val")?.trim().parse().ok().filter(|n| *n != 0)
         };
@@ -803,13 +803,13 @@ impl Editor {
         let renumber = |blocks: &mut [Block]| {
             each_para(blocks, &mut |p| {
                 let Some(to) = num_of(p).and_then(|n| nums.get(&n)) else { return };
-                let mut pr = Props::parse(p.style.direct.0.as_deref(), "pPr", &cx);
+                let mut pr = Props::parse(self.ppr(&p.style.direct, &cx).as_deref(), "pPr", &cx);
                 let mut num = Props::parse(pr.get("numPr"), "numPr", &cx);
                 num.set("numId", format!("<{w}numId {w}val=\"{to}\"/>"));
                 if let Some(x) = num.xml() {
                     pr.set("numPr", x);
                 }
-                let direct = crate::docx::Raw(pr.xml().map(|x| Rc::from(x.as_str())));
+                let direct = crate::docx::para_props::ParaDirect::from_xml(pr.xml().as_deref(), &cx);
                 p.style = Rc::new(crate::docx::ParaStyle { direct, ..(*p.style).clone() });
             })
         };

@@ -439,13 +439,10 @@ fn paragraph_marks_and_property_changes_are_written_in_schema_order() {
     let p = para_mut(&mut doc, at);
     p.mark = with_rev(&p.mark, |r| r.ins = Some(ins));
     let mut style = (*p.style).clone();
-    style.direct = Raw(Some("<w:pPr><w:jc w:val=\"center\"/></w:pPr>".into()));
-    style.change = Some(Rc::new(ParaChange {
-        mark: change,
-        previous: p.style.clone(),
-        previous_raw: Raw(Some("<w:pPr><w:jc w:val=\"left\"/></w:pPr>".into())),
-        numbering_change: Raw(None),
-    }));
+    style.direct = crate::docx::para_props::ParaDirect::in_w("<w:pPr><w:jc w:val=\"center\"/></w:pPr>");
+    let previous =
+        crate::docx::ParaStyle { direct: crate::docx::para_props::ParaDirect::in_w("<w:pPr><w:jc w:val=\"left\"/></w:pPr>"), ..(*p.style).clone() };
+    style.change = Some(Rc::new(ParaChange { mark: change, previous: Rc::new(previous), properties: true, numbering_change: Raw(None) }));
     p.style = Rc::new(style);
     let saved = write::save(&doc).expect("saves");
     let xml = main_part(&doc, &saved);

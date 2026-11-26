@@ -727,7 +727,7 @@ impl Editor {
             all = [false; 3];
         }
         let dest_ppr = {
-            let mut p = Props::parse(dest.style.direct.0.as_deref(), "pPr", &cx);
+            let mut p = Props::parse(self.ppr(&dest.style.direct, &cx).as_deref(), "pPr", &cx);
             p.remove("numPr");
             p.remove("rPr");
             p.remove("sectPr");
@@ -746,7 +746,7 @@ impl Editor {
             if let Some(ListRef { list: ListId(num), level: lvl }) = p.style.num {
                 pp.set("numPr", format!("<{w}numPr><{w}ilvl {w}val=\"{lvl}\"/><{w}numId {w}val=\"{num}\"/></{w}numPr>"));
             }
-            let resolved = res.para_from_xml(pp.xml().as_deref(), None, &cx);
+            let resolved = crate::docx::para_xml::from_xml(&res, pp.xml().as_deref(), None, &cx);
             let base = resolved.base.clone();
             p.style = Rc::new(resolved.style);
             let mark_src = p.mark.clone();
@@ -772,9 +772,9 @@ impl Editor {
             let Some(ListRef { list: ListId(_), level: lvl }) = p.style.num.filter(|&ListRef { list: ListId(n), level: _ }| n != num) else {
                 continue;
             };
-            let mut pp = Props::parse(p.style.direct.0.as_deref(), "pPr", &cx);
+            let mut pp = Props::parse(self.ppr(&p.style.direct, &cx).as_deref(), "pPr", &cx);
             pp.set("numPr", format!("<{w}numPr><{w}ilvl {w}val=\"{lvl}\"/><{w}numId {w}val=\"{num}\"/></{w}numPr>"));
-            p.style = Rc::new(res.para_from_xml(pp.xml().as_deref(), None, &cx).style);
+            p.style = Rc::new(crate::docx::para_xml::edited(&res, &p.style.direct, pp.xml().as_deref(), None, &cx).style);
         }
     }
 }
@@ -1024,13 +1024,11 @@ impl Editor {
             if !*seen.entry(id.clone()).or_insert_with(|| differs(id.as_deref())) {
                 return;
             }
-            let here = res.para_from_xml(p.style.direct.0.as_deref(), None, &cx);
-            let Some(direct) = para_look(&p.style, &here.style, p.style.direct.0.as_deref(), &cx) else { return };
-            let again = res.para_from_xml(Some(&direct), None, &cx);
+            let here = crate::docx::para_xml::of(&res, &p.style.direct, None, &cx);
+            let Some(direct) = para_look(&p.style, &here.style, self.ppr(&p.style.direct, &cx).as_deref(), &cx) else { return };
+            let again = crate::docx::para_xml::edited(&res, &p.style.direct, Some(&direct), None, &cx);
             p.mark = self.keep_look(&p.mark, &again.base, &mut looks);
-            let mut style = again.style;
-            style.direct = crate::docx::Raw(Some(direct.into()));
-            p.style = Rc::new(style);
+            p.style = Rc::new(again.style);
         });
     }
 }

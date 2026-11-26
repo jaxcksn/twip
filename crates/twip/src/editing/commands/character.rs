@@ -682,7 +682,7 @@ impl Editor {
             own = paragraph_style_props(&res.styles, p.style.style_id.as_deref(), own, &cx);
         }
         let ppr = whole.then(|| {
-            let mut props = Props::parse(p.style.direct.0.as_deref(), "pPr", &cx);
+            let mut props = Props::parse(self.ppr(&p.style.direct, &cx).as_deref(), "pPr", &cx);
             props.kids.retain(|(n, _)| !["sectPr", "rPr", "pPrChange"].contains(&n.as_str()));
             props.xml()
         });

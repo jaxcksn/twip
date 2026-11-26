@@ -127,7 +127,7 @@ fn paragraph_marks_and_property_changes() {
     assert_eq!(who(&doc, &right.mark), C);
     let after = ps[7].style.change.as_ref().expect("a paragraph property change");
     assert_eq!((ps[7].style.space_after, after.previous.space_after), (24.0, 0.0));
-    assert!(after.previous_raw.0.as_deref().is_some_and(|x| x.contains("w:after=\"0\"")));
+    assert!(after.properties && after.previous.direct.as_read().is_some_and(|x| x.contains("w:after=\"0\"")));
     assert!(doc.diagnostics.warnings.is_empty(), "{:?}", doc.diagnostics);
     integrity("FX-REVIEW-MARKS");
 }
@@ -222,7 +222,7 @@ fn moves_pair_by_name() {
     // A numbering change alone.
     let n = ps[5].style.change.as_ref().expect("a numbering change");
     assert!(n.numbering_change.0.as_deref().is_some_and(|x| x.contains("w:original=\"%1.\"")));
-    assert!(n.previous_raw.0.is_none());
+    assert!(!n.properties);
     assert_eq!(who(&doc, &n.mark), C);
     assert!(doc.diagnostics.warnings.is_empty(), "{:?}", doc.diagnostics);
     integrity("FX-REVIEW-MOVES");

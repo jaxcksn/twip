@@ -896,7 +896,7 @@ impl Editor {
                     if let Some(jc) = p.align {
                         pp.set("jc", format!("<{w}jc {w}val=\"{jc}\"/>"));
                     }
-                    let para = res.para_from_xml(pp.xml().as_deref(), None, cx);
+                    let para = crate::docx::para_xml::from_xml(res, pp.xml().as_deref(), None, cx);
                     let base = run_xml::base(&para.base);
                     let mark = Rc::new(run_xml::resolve(res, &base, RunDirect::default(), false));
                     let mut inlines = Vec::new();

@@ -55,7 +55,7 @@ impl RichText {
         if res.styles.by_id.contains_key("CommentText") {
             pp.set("pStyle", format!("<{w}pStyle {w}val=\"CommentText\"/>"));
         }
-        let para = res.para_from_xml(pp.xml().as_deref(), None, cx);
+        let para = crate::docx::para_xml::from_xml(res, pp.xml().as_deref(), None, cx);
         let style = Rc::new(para.style);
         let base = run_xml::base(&para.base);
         let plain = Rc::new(run_xml::resolve(res, &base, RunDirect::default(), false));

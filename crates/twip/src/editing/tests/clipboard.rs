@@ -514,7 +514,7 @@ fn a_list_from_a_document_writing_its_own_prefix_comes_with_a_paste() {
     b.paste_fragment(&frag, fonts());
     let nums: Vec<i64> = b.document().resolver.as_ref().map(|r| r.numbering.nums.keys().copied().collect()).unwrap_or_default();
     assert_eq!(nums.len(), 1, "the list's definition came: {nums:?}");
-    let direct = paras(&b)[1].style.direct.0.as_deref().unwrap_or_default().to_string();
+    let direct = paras(&b)[1].style.direct.origin_xml().map(|x| x.to_string()).unwrap_or_default();
     assert!(direct.contains(&format!("numId v:val=\"{}\"", nums[0])), "the pasted paragraph is in it: {direct}");
 }
 

@@ -648,7 +648,8 @@ impl Editor {
     /// The direct paragraph property `local` of `para` (in its `w:pPr`), as written.
     fn direct_ppr(&self, para: crate::layout::ParaId, local: &str) -> Option<String> {
         let p = self.index.para(&self.doc, para)?;
-        crate::docx::write::props::Props::parse(p.style.direct.0.as_deref(), "pPr", &self.cx()).get(local).map(str::to_string)
+        let cx = self.cx();
+        crate::docx::write::props::Props::parse(self.ppr(&p.style.direct, &cx).as_deref(), "pPr", &cx).get(local).map(str::to_string)
     }
 
     /// The AutoFormat change just made, which its AutoCorrect Options undo or stop.

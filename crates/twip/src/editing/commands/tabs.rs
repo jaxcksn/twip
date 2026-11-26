@@ -95,10 +95,10 @@ impl Editor {
     fn inherited_tabs(&self, para: ParaId) -> Vec<Tab> {
         let (Some(res), Some(p)) = (self.doc.resolver.clone(), self.index.para(&self.doc, para)) else { return Vec::new() };
         let cx = self.cx();
-        let mut pr = Props::parse(p.style.direct.0.as_deref(), "pPr", &cx);
+        let mut pr = Props::parse(self.ppr(&p.style.direct, &cx).as_deref(), "pPr", &cx);
         pr.remove("tabs");
         let region = self.region_of_para(para, &res);
-        res.para_from_xml(pr.xml().as_deref(), region.as_ref(), &cx).style.tabs
+        crate::docx::para_xml::edited(&res, &p.style.direct, pr.xml().as_deref(), region.as_ref(), &cx).style.tabs
     }
 
     pub(crate) fn tab_stops(&self, para: ParaId) -> Vec<TabStopInfo> {

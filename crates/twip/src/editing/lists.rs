@@ -35,7 +35,7 @@ impl Editor {
         let Some(res) = self.doc.resolver.clone() else { return false };
         let cx = self.cx();
         let Some(p) = self.index.para(&self.doc, para) else { return false };
-        let mut pr = Props::parse(p.style.direct.0.as_deref(), "pPr", &cx);
+        let mut pr = Props::parse(self.ppr(&p.style.direct, &cx).as_deref(), "pPr", &cx);
         edit(&mut pr, &cx.w);
         let Some(r) = self.para_again(para, Some(pr.xml().as_deref()), &res, &cx) else { return false };
         let Some(p) = self.index.para(&self.doc, para) else { return false };
@@ -78,7 +78,7 @@ impl Editor {
                 p.set("ind", format!("<{w}ind {w}left=\"{l}\" {w}firstLine=\"0\"/>"));
             })
         } else {
-            let direct_ind = Props::parse(p.style.direct.0.as_deref(), "pPr", &self.cx()).get("ind").is_some();
+            let direct_ind = Props::parse(self.ppr(&p.style.direct, &self.cx()).as_deref(), "pPr", &self.cx()).get("ind").is_some();
             let first = p.style.ind_first;
             if !self.indent_keys || !direct_ind || !((left > 0.0 && first >= 0.0) || first > 0.0) {
                 self.abort(tx);
@@ -317,7 +317,7 @@ impl Editor {
     /// chain and its mark's formatting.
     pub(super) fn label_base(&self, para: ParaId, p: &Paragraph, res: &Resolver, cx: &Cx) -> CharProps {
         let region = self.region_of_para(para, res);
-        let base = res.para_from_xml(p.style.direct.0.as_deref(), region.as_ref(), cx).base;
+        let base = crate::docx::para_xml::of(res, &p.style.direct, region.as_ref(), cx).base;
         run_xml::folded(res, &run_xml::base(&base), p.mark.direct.props().map(|m| &**m), false)
     }
 
@@ -367,7 +367,7 @@ impl Editor {
 /// The list and level a paragraph's label counts in, when it shows one.
 pub(super) fn counted(res: &Resolver, p: &Paragraph, uncounted: bool, cx: &Cx) -> Option<(i64, i64)> {
     let ListRef { list: ListId(id), level: ilvl } = p.style.num.filter(|ListRef { list: ListId(id), level: _ }| *id != 0 && !uncounted)?;
-    let from_style = !direct_num(p.style.direct.0.as_deref(), cx);
+    let from_style = !direct_num(crate::docx::para_xml::ppr(Some(res), &p.style.direct, cx).as_deref(), cx);
     res.label_shows(id, ilvl, from_style, p.style.style_id.as_deref()).then_some((id, ilvl))
 }
 

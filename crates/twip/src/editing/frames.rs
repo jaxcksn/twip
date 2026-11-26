@@ -169,7 +169,7 @@ impl Editor {
         let cx = self.cx();
         let tb = self.float_of(f)?.text_box.as_ref()?;
         tb.blocks.iter().find_map(|b| match b {
-            Block::Para(p) => res.para_from_xml(p.style.direct.0.as_deref(), None, &cx).style.frame,
+            Block::Para(p) => crate::docx::para_xml::of(res, &p.style.direct, None, &cx).style.frame,
             _ => None,
         })
     }
@@ -197,15 +197,15 @@ impl Editor {
             .cloned()
             .map(|b| match b {
                 Block::Para(mut p) => {
-                    let old = res.para_from_xml(p.style.direct.0.as_deref(), None, &cx).style.frame;
-                    let mut pr = Props::parse(p.style.direct.0.as_deref(), "pPr", &cx);
+                    let old = crate::docx::para_xml::of(&res, &p.style.direct, None, &cx).style.frame;
+                    let mut pr = Props::parse(self.ppr(&p.style.direct, &cx).as_deref(), "pPr", &cx);
                     edit(&mut pr, &cx.w, old.as_ref());
-                    let mut style = res.para_from_xml(pr.xml().as_deref(), None, &cx).style;
+                    let mut style = crate::docx::para_xml::edited(&res, &p.style.direct, pr.xml().as_deref(), None, &cx).style;
                     let frame = style.frame.take();
                     if first.is_none() {
                         first = Some(frame);
                     }
-                    let mut again = res.para_again(&p.style, style, None, &cx);
+                    let mut again = crate::docx::para_xml::again(&res, &p.style, style, None, &cx);
                     again.in_frame = framed;
                     p.style = Rc::new(again);
                     Block::Para(p)
@@ -310,8 +310,10 @@ impl Editor {
         let res = self.doc.resolver.as_ref()?;
         let cx = self.cx();
         let tb = self.float_of(f)?.text_box.as_ref()?;
-        let apart =
-            tb.blocks.iter().any(|b| matches!(b, Block::Para(p) if res.para_from_xml(p.style.direct.0.as_deref(), None, &cx).style.suppress_overlap));
+        let apart = tb
+            .blocks
+            .iter()
+            .any(|b| matches!(b, Block::Para(p) if crate::docx::para_xml::of(res, &p.style.direct, None, &cx).style.suppress_overlap));
         Some(!apart)
     }
 

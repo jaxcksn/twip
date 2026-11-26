@@ -221,7 +221,7 @@ fn ours_para(doc: &Document, p: &Paragraph) -> Value {
     }
     let runs = merged(runs);
     let (ins, del, mv) = flags(doc, &p.mark);
-    let pchange = p.style.change.as_ref().filter(|c| c.previous_raw.0.is_some()).map_or(Value::Null, |c| author(doc, c.mark.author));
+    let pchange = p.style.change.as_ref().filter(|c| c.properties).map_or(Value::Null, |c| author(doc, c.mark.author));
     let text: String = runs.iter().filter_map(|r| r["text"].as_str()).collect();
     json!({ "text": text, "runs": runs, "mark": { "ins": ins, "del": del, "move": mv }, "pchange": pchange })
 }

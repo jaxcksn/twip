@@ -170,7 +170,7 @@ impl Editor {
         if res.styles.by_id.contains_key(style) {
             pp.set("pStyle", format!("<{w}pStyle {w}val=\"{style}\"/>"));
         }
-        let r = res.para_from_xml(pp.xml().as_deref(), None, &cx);
+        let r = crate::docx::para_xml::from_xml(&res, pp.xml().as_deref(), None, &cx);
         let run = run_xml::plain(&res, &r.base);
         Some(crate::docx::Paragraph {
             style: std::rc::Rc::new(r.style),

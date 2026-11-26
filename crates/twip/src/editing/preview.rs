@@ -151,7 +151,7 @@ impl Editor {
     pub fn character_preview(&self, family: &str, c: char) -> Option<Vec<Block>> {
         let res = self.doc.resolver.as_ref()?;
         let cx = res.styles.cx();
-        let para = res.para_from_xml(None, None, &cx);
+        let para = crate::docx::para_xml::from_xml(res, None, None, &cx);
         let base = run_xml::plain(res, &para.base);
         let run = Rc::new(RunStyle { ascii: family.to_string(), h_ansi: family.to_string(), cs: family.to_string(), ..(*base).clone() });
         Some(vec![paragraph(Rc::new(para.style), run, c.to_string())])

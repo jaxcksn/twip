@@ -66,16 +66,16 @@ fn restyle_note_para(res: &Resolver, cx: &Cx, p: &mut Paragraph, from: NoteKind,
     let (old, new) = (note_styles(from).1, note_styles(to).1);
     let mut changed = false;
     if p.style.style_id.as_deref() == Some(old) {
-        let mut pp = Props::parse(p.style.direct.0.as_deref(), "pPr", cx);
+        let mut pp = Props::parse(crate::docx::para_xml::ppr(Some(res), &p.style.direct, cx).as_deref(), "pPr", cx);
         if res.styles.by_id.contains_key(new) {
             pp.set("pStyle", format!("<{w}pStyle {w}val=\"{new}\"/>", w = cx.w));
         } else {
             pp.remove("pStyle");
         }
-        p.style = Rc::new(res.para_from_xml(pp.xml().as_deref(), None, cx).style);
+        p.style = Rc::new(crate::docx::para_xml::edited(res, &p.style.direct, pp.xml().as_deref(), None, cx).style);
         changed = true;
     }
-    let base = res.para_from_xml(p.style.direct.0.as_deref(), None, cx).base;
+    let base = crate::docx::para_xml::of(res, &p.style.direct, None, cx).base;
     for i in &mut p.inlines {
         if let Some(run) = i.run().and_then(|r| restyled_ref(res, &base, r, from, to)) {
             *i = super::format::with_run(i, &run);
@@ -197,7 +197,7 @@ impl Editor {
         if has(text_style) {
             pp.set("pStyle", format!("<{w}pStyle {w}val=\"{text_style}\"/>"));
         }
-        let r = res.para_from_xml(pp.xml().as_deref(), None, &cx);
+        let r = crate::docx::para_xml::from_xml(&res, pp.xml().as_deref(), None, &cx);
         let text_run = run_xml::plain(&res, &r.base);
         let mut e = CharEdit::default();
         mark_prop(&mut e);

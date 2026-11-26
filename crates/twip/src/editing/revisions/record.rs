@@ -243,12 +243,12 @@ impl Recording {
         let change = if !self.track_formatting || same_para(old, &new) {
             old.change.clone()
         } else {
-            let (previous, previous_raw) = match &old.change {
-                Some(c) => (c.previous.clone(), c.previous_raw.clone()),
-                None => (Rc::new(ParaStyle { change: None, ..(**old).clone() }), old.direct.clone()),
+            let (previous, properties) = match &old.change {
+                Some(c) => (c.previous.clone(), c.properties),
+                None => (Rc::new(ParaStyle { change: None, ..(**old).clone() }), true),
             };
             (!same_para(&previous, &new))
-                .then(|| Rc::new(ParaChange { mark: self.fmt_mark(ids), previous, previous_raw, numbering_change: Raw::default() }))
+                .then(|| Rc::new(ParaChange { mark: self.fmt_mark(ids), previous, properties, numbering_change: Raw::default() }))
         };
         if new.change == change { new } else { Rc::new(ParaStyle { change, ..(*new).clone() }) }
     }

@@ -57,7 +57,7 @@ fn check_blocks(res: &Resolver, cx: &Cx, blocks: &[Block], region: Option<&Regio
                 if p.src.as_ref().is_some_and(|s| s.ranges.len() > 1) {
                     continue;
                 }
-                let mut r = res.para_from_xml(p.style.direct.0.as_deref(), region, cx);
+                let mut r = res.para_from_xml(p.style.direct.xml(&res.styles.colours, cx).as_deref(), region, cx);
                 r.style.change = p.style.change.clone();
                 r.style.in_frame = p.style.in_frame;
                 r.style.frame = p.style.frame.clone();
@@ -94,7 +94,7 @@ fn authored(d: &Document) -> Authored {
             match b {
                 Block::Para(p) => out.push((
                     p.id,
-                    p.style.direct.0.clone(),
+                    p.style.direct.xml(&res.styles.colours, cx).map(|x| Rc::from(&*x)),
                     rpr(&p.mark),
                     p.inlines.iter().filter_map(|i| if let Inline::Text(_, r) = i { Some(rpr(r)) } else { None }).collect(),
                 )),
@@ -381,11 +381,11 @@ fn run_props(res: &Resolver, cx: &Cx, p: &Paragraph, patch: Option<Patch>) -> Ve
 fn para_props(res: &Resolver, cx: &Cx, p: &Paragraph, patch: Option<Patch>) -> ParaProps {
     let raw = match patch {
         Some(f) => {
-            let mut props = Props::parse(p.style.direct.0.as_deref(), "pPr", cx);
+            let mut props = Props::parse(p.style.direct.as_read().map(|x| &**x), "pPr", cx);
             f(&mut props, cx);
             props.xml()
         }
-        None => p.style.direct.0.as_deref().map(str::to_string),
+        None => p.style.direct.xml(&res.styles.colours, cx).map(String::from),
     };
     raw.and_then(|x| cx.parse(&x, |_, el| ParaProps::parse(Some(el), &res.styles.colours))).unwrap_or_default()
 }
@@ -749,7 +749,7 @@ fn resolve_blocks(
                 if p.src.as_ref().is_some_and(|s| s.ranges.len() > 1) {
                     continue;
                 }
-                let base = char_props::from_run_props(&res.para_from_xml(p.style.direct.0.as_deref(), region, cx).base);
+                let base = char_props::from_run_props(&res.para_from_xml(p.style.direct.xml(&res.styles.colours, cx).as_deref(), region, cx).base);
                 let typed = |raw: Option<&str>, toc: bool| {
                     let mut direct = raw.and_then(|x| cx.parse(x, |_, el| char_props::parse(el).0)).unwrap_or_default();
                     if toc && direct.style.as_deref() == Some("Hyperlink") {
@@ -825,15 +825,15 @@ fn resolve_paras(res: &Resolver, cx: &Cx, blocks: &[Block], region: Option<&Regi
                     });
                     para_xml::resolve(res, &direct, mark, region).style
                 };
-                let mut again = typed(p.style.direct.0.as_deref());
+                let mut again = typed(p.style.direct.as_read().map(|x| &**x));
                 (again.change, again.in_frame) = (p.style.change.clone(), p.style.in_frame);
                 if p.style.in_frame {
                     again.frame = p.style.frame.clone();
                 }
                 assert!(p.style.layout_eq(&again), "{what}: paragraph {:?}: {:?} against {again:?}", p.id, p.style);
                 *counts.0 += 1;
-                if let Some(c) = p.style.change.as_ref().filter(|c| c.previous_raw.0.is_some()) {
-                    let mut was = typed(c.previous_raw.0.as_deref());
+                if let Some(c) = p.style.change.as_ref().filter(|c| c.properties && c.previous.direct.as_read().is_some()) {
+                    let mut was = typed(c.previous.direct.as_read().map(|x| &**x));
                     (was.in_frame, was.frame) = (c.previous.in_frame, c.previous.frame.clone());
                     assert!(c.previous.layout_eq(&was), "{what}: the earlier formatting of {:?}: {:?} against {was:?}", p.id, c.previous);
                     *counts.1 += 1;

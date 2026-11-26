@@ -1,12 +1,21 @@
 //! Paragraph resolution: a paragraph's typed authored properties over its style chain, its list level, its table
 //! style region and the document defaults
 
-use super::model::{ListId, ListJc, ListRef};
-use super::para_props::from_para_props;
+use std::rc::Rc;
+
+use super::model::{ListId, ListJc, ListRef, ParaStyle};
+use super::para_props::{ParaDirect, from_para_props};
 use super::resolve::{ParaResolved, Resolver, div_chain};
+use super::review::ParaChange;
 use super::styles::Region;
+use super::write::props::Cx;
 use crate::format::resolve::para_style;
 use crate::format::{ListChoice, ParaProps};
+
+/// The size (points) a `w:pPr`'s mark sets, from its `w:rPr`.
+pub fn mark_size(ppr: roxmltree::Node) -> Option<f64> {
+    super::xml::child(ppr, "rPr").and_then(|r| super::char_props::parse(r).0.size)
+}
 
 /// A list choice as the list's id: 0 for none.
 fn list_id(c: ListChoice) -> i64 {
@@ -91,4 +100,92 @@ pub fn resolve(res: &Resolver, direct: &ParaProps, mark_size: Option<f64>, regio
         style.ind_right += sum(1);
     }
     ParaResolved { style, base, level, num_id, ilvl, from_style, style_id }
+}
+
+/// A paragraph with authored properties `direct` (its mark's size `mark_size`), in `region` when it is in a cell.
+pub fn with(res: &Resolver, direct: ParaDirect, mark_size: Option<f64>, region: Option<&Region>) -> ParaResolved {
+    let mut r = resolve(res, direct.get(), mark_size, region);
+    r.style.direct = direct;
+    r
+}
+
+/// Authored paragraph properties `d` as the `w:pPr` written in the part `cx` describes, a theme colour's value as
+/// `res`'s theme resolves it.
+pub fn ppr<'d>(res: Option<&Resolver>, d: &'d ParaDirect, cx: &Cx) -> Option<std::borrow::Cow<'d, str>> {
+    d.xml(&res.map_or_else(Default::default, |r| r.styles.colours), cx)
+}
+
+/// The mark size a paragraph's `w:pPr` as written (in the part `cx` describes) sets.
+fn mark_size_of(ppr: Option<&str>, cx: &Cx) -> Option<f64> {
+    ppr.and_then(|x| cx.parse(x, |_, el| mark_size(el))).flatten()
+}
+
+/// A paragraph resolved from its `w:pPr` as written (`ppr`, in the part `cx` describes), in `region` when it is in
+/// a cell: its properties parsed, the XML kept beside them.
+pub fn from_xml(res: &Resolver, ppr: Option<&str>, region: Option<&Region>, cx: &Cx) -> ParaResolved {
+    with(res, ParaDirect::from_xml(ppr, cx), mark_size_of(ppr, cx), region)
+}
+
+/// `again`, a paragraph's properties resolved again in `region`, with what reading gave `was` beyond them: its
+/// tracked property change (the earlier properties resolved again too) and its place in a frame.
+pub fn again(res: &Resolver, was: &ParaStyle, mut again: ParaStyle, region: Option<&Region>, cx: &Cx) -> ParaStyle {
+    if was.in_frame {
+        (again.frame, again.in_frame) = (None, true);
+    }
+    again.change = was.change.as_ref().map(|c| {
+        let mut previous = match (c.properties, &c.numbering_change.0) {
+            (false, Some(_)) => ParaStyle { change: None, ..again.clone() },
+            (false, None) => resolve(res, &ParaProps::default(), None, region).style,
+            (true, _) => {
+                let d = &c.previous.direct;
+                with(res, d.clone(), mark_size_of(d.as_read().map(|x| &**x), cx), region).style
+            }
+        };
+        if was.in_frame {
+            (previous.frame, previous.in_frame) = (None, true);
+        }
+        if previous.layout_eq(&c.previous) { c.clone() } else { Rc::new(ParaChange { previous: Rc::new(previous), ..(**c).clone() }) }
+    });
+    again
+}
+
+/// A paragraph resolved again from its authored properties `d`, in `region` when it is in a cell, its mark's size from
+/// the `w:rPr` its `w:pPr` holds.
+pub fn of(res: &Resolver, d: &ParaDirect, region: Option<&Region>, cx: &Cx) -> ParaResolved {
+    let size = mark_size_of(ppr(Some(res), d, cx).as_deref(), cx);
+    with(res, d.clone(), size, region)
+}
+
+/// A paragraph whose authored properties were `was`, resolved from `ppr`, the `w:pPr` an edit of them wrote (in the
+/// part `cx` describes), in `region` when it is in a cell: its properties parsed, the XML kept beside them.
+pub fn edited(res: &Resolver, was: &ParaDirect, ppr: Option<&str>, region: Option<&Region>, cx: &Cx) -> ParaResolved {
+    let direct = ParaDirect::from_xml(ppr, cx);
+    #[cfg(test)]
+    written_as(res, was, &direct, ppr, cx);
+    #[cfg(not(test))]
+    let _ = was;
+    with(res, direct, mark_size_of(ppr, cx), region)
+}
+
+/// What an edit of a paragraph's `w:pPr` as XML wrote (`ppr`, over `was` as read) is what writing its typed properties
+/// over the same writes, byte for byte; `TWIP_PPR_BYTES_OUT` names a file to list each one that isn't in, in place of
+/// failing.
+#[cfg(test)]
+fn written_as(res: &Resolver, was: &ParaDirect, direct: &ParaDirect, ppr: Option<&str>, cx: &Cx) {
+    let Some((read, xml)) = was.read_from() else { return };
+    let set = ppr.map_or_else(Vec::new, |now| super::para_props::inferred_set(direct.get(), xml, now, &res.styles.colours, cx));
+    let got = super::para_props::written_over(direct.get(), &res.styles.colours, cx, Some((read, xml)), &set);
+    if got.as_deref() == ppr {
+        return;
+    }
+    let what = format!("over {xml:?}\n  wrote {ppr:?}\n  typed {got:?}\n");
+    match std::env::var_os("TWIP_PPR_BYTES_OUT") {
+        Some(path) => {
+            use std::io::Write;
+            let mut f = std::fs::OpenOptions::new().create(true).append(true).open(path).expect("the report");
+            let test = std::thread::current().name().unwrap_or_default().to_string();
+            let _ = writeln!(f, "{test} {what}");
+        }
+        None => panic!("an edit's w:pPr is not what its typed properties write: {what}"),
+    }
 }

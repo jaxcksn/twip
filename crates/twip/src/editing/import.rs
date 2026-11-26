@@ -4,6 +4,7 @@ use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use crate::docx::para_props::ParaDirect;
 use crate::docx::resolve::Resolver;
 use crate::docx::review::{AuthorId, FormatChange, People, RevisionMark, TableChange};
 use crate::docx::write::props::Cx;
@@ -269,6 +270,13 @@ impl Rebind {
         (!decls.is_empty()).then(|| format!("{}{decls}{}", &raw[..at], &raw[at..]))
     }
 
+    /// Authored paragraph properties, the `w:pPr` they were read from declaring what it needs here.
+    fn direct(&self, d: &mut ParaDirect) {
+        if let Some(x) = d.origin_xml().and_then(|x| self.element(x)) {
+            *d = d.with_origin_xml(x.into());
+        }
+    }
+
     fn raw(&self, r: &mut Raw) {
         if let Some(x) = r.0.as_deref().and_then(|x| self.element(x)) {
             r.0 = Some(x.into());
@@ -300,13 +308,14 @@ impl Rebind {
         each_block_of(blocks, refs, &mut |b| match b {
             Block::Para(p) => {
                 let needs = |r: &Raw| r.0.as_deref().is_some_and(|x| self.element(x).is_some());
-                let change = p.style.change.as_ref().is_some_and(|c| needs(&c.previous_raw) || needs(&c.numbering_change));
-                if needs(&p.style.direct) || change {
+                let needs_direct = |d: &ParaDirect| d.origin_xml().is_some_and(|x| self.element(x).is_some());
+                let change = p.style.change.as_ref().is_some_and(|c| needs_direct(&c.previous.direct) || needs(&c.numbering_change));
+                if needs_direct(&p.style.direct) || change {
                     let s = Rc::make_mut(&mut p.style);
-                    self.raw(&mut s.direct);
+                    self.direct(&mut s.direct);
                     if let Some(c) = &mut s.change {
                         let c = Rc::make_mut(c);
-                        self.raw(&mut c.previous_raw);
+                        self.direct(&mut Rc::make_mut(&mut c.previous).direct);
                         self.raw(&mut c.numbering_change);
                     }
                 }
@@ -566,8 +575,9 @@ impl Editor {
                 want.extend(p.style.style_id.iter().cloned());
                 want.extend(p.mark.style_id.iter().cloned());
                 want.extend(p.inlines.iter().filter_map(|i| i.run()?.style_id.clone()));
-                if let Some(x) = p.style.direct.0.as_deref() {
-                    nums.extend(num_ids(x, pcx));
+                // Theme colours don't change the list ids written.
+                if let Some(x) = p.style.direct.xml(&Default::default(), pcx) {
+                    nums.extend(num_ids(&x, pcx));
                 }
             }
             Block::Table(t) => {
@@ -694,12 +704,13 @@ fn renumber_blocks(blocks: &mut [Block], refs: &mut Refs, cx: &Cx, map: &HashMap
 
 /// A pasted paragraph's own list ids mapped.
 fn renumber_para(p: &mut Paragraph, cx: &Cx, map: &HashMap<i64, i64>) {
-    let Some(x) = p.style.direct.0.as_deref() else { return };
-    if !num_ids(x, cx).iter().any(|k| map.contains_key(k)) {
+    // Theme colours don't change the list ids written.
+    let Some(x) = p.style.direct.xml(&Default::default(), cx) else { return };
+    if !num_ids(&x, cx).iter().any(|k| map.contains_key(k)) {
         return;
     }
-    if let Some(raw) = renumber(x, cx, map) {
-        Rc::make_mut(&mut p.style).direct = crate::docx::Raw(Some(raw.into()));
+    if let Some(raw) = renumber(&x, cx, map) {
+        Rc::make_mut(&mut p.style).direct = ParaDirect::from_xml(Some(&raw), cx);
     }
 }
 

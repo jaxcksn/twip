@@ -225,7 +225,7 @@ fn increase_indent_on_list_items_and_plain_paragraphs_together() {
     );
     e.execute(C::IncreaseIndent, fonts());
     assert_eq!(level(&e, 1), Some(1), "the item goes a level down");
-    assert!(para(&e, 1).style.direct.0.as_deref().is_none_or(|x| !x.contains("w:ind ")), "no direct indent on the item");
+    assert!(para(&e, 1).style.direct.origin_xml().is_none_or(|x| !x.contains("w:ind ")), "no direct indent on the item");
     assert_eq!(para(&e, 2).style.ind_left, 36.0, "the plain paragraph steps to the next tab stop");
     e.execute(C::Undo(Default::default()), fonts());
     assert_eq!((level(&e, 1), para(&e, 1).style.ind_left, para(&e, 2).style.ind_left), (Some(0), item_left, 0.0), "one undo step");
@@ -657,7 +657,7 @@ fn border_lines_typed_then_enter_become_a_bottom_border() {
         let p = para(&e, 1);
         assert_eq!(texts(&e), ["above", "", ""], "{typed}");
         let b = p.style.border_bottom.as_ref().unwrap_or_else(|| panic!("{typed}: a border"));
-        let xml = p.style.direct.0.as_deref().unwrap_or_default();
+        let xml = p.style.direct.origin_xml().map(|x| x.to_string()).unwrap_or_default();
         assert!(xml.contains(&format!(r#"w:val="{line}" w:sz="{size}""#)), "{typed}: {xml}");
         let _ = b;
         assert!(para(&e, 2).style.border_bottom.is_none(), "the new paragraph has none");

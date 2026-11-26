@@ -127,7 +127,8 @@ fn paragraph(p: &Paragraph, res: &Resolver, cx: &Cx) -> Result<Paragraph, Genera
     if p.style.change.is_some() {
         return fail("a tracked change");
     }
-    let mut ppr = Props::parse(p.style.direct.0.as_deref(), "pPr", cx);
+    let direct = p.style.direct.xml(&res.styles.colours, cx);
+    let mut ppr = Props::parse(direct.as_deref(), "pPr", cx);
     if ppr.kids.iter().any(|(name, _)| name != "pStyle" && name != "rPr") {
         return fail("direct paragraph formatting");
     }
@@ -137,7 +138,7 @@ fn paragraph(p: &Paragraph, res: &Resolver, cx: &Cx) -> Result<Paragraph, Genera
         ppr.set("pStyle", format!("<{w}pStyle {w}val=\"{}\"/>", esc(id), w = cx.w));
     }
     let written = ppr.xml();
-    let again = res.para_from_xml(written.as_deref(), None, cx);
+    let again = crate::docx::para_xml::from_xml(res, written.as_deref(), None, cx);
     let mut style = (*p.style).clone();
     style.direct = again.style.direct.clone();
     if !style.layout_eq(&again.style) {

@@ -219,7 +219,7 @@ impl Editor {
         let res = self.doc.resolver.clone()?;
         let cx = self.cx();
         let w = &cx.w;
-        let mut pr = Props::parse(p.style.direct.0.as_deref(), "pPr", &cx);
+        let mut pr = Props::parse(self.ppr(&p.style.direct, &cx).as_deref(), "pPr", &cx);
         let styled = res.styles.chain_ppr(res.styles.paragraph_style(p.style.style_id.as_deref())).num_id.is_some_and(|n| n != 0);
         if styled {
             pr.set("numPr", format!("<{w}numPr><{w}ilvl {w}val=\"0\"/><{w}numId {w}val=\"0\"/></{w}numPr>"));

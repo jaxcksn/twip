@@ -176,7 +176,7 @@ impl Editor {
             "<{w}pPr>{style}<{w}keepNext/><{w}framePr {w}dropCap=\"{kind}\" {w}lines=\"{lines}\" {w}wrap=\"around\" {w}vAnchor=\"text\" {w}hAnchor=\"{h_anchor}\"{space}/><{w}spacing {w}after=\"0\" {w}line=\"{}\" {w}lineRule=\"exact\"/><{w}textAlignment {w}val=\"baseline\"/></{w}pPr>",
             twips(drop)
         );
-        let frame = res.para_from_xml(Some(&ppr), None, &cx).style;
+        let frame = crate::docx::para_xml::from_xml(&res, Some(&ppr), None, &cx).style;
         use crate::format::{FontRef, Prop, ScriptClass, ScriptFonts};
         let mut e = run_xml::edit_of(run);
         if let Some(font) = d.font.as_deref().filter(|f| !f.is_empty()) {

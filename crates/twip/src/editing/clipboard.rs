@@ -1119,7 +1119,7 @@ impl Editor {
         let cx = self.cx();
         let Some(p) = self.index.para(&self.doc, para) else { return inlines.to_vec() };
         let region = self.region_of_para(para, &res);
-        let base = res.para_from_xml(p.style.direct.0.as_deref(), region.as_ref(), &cx).base;
+        let base = crate::docx::para_xml::of(&res, &p.style.direct, region.as_ref(), &cx).base;
         let mut cache = HashMap::new();
         inlines
             .iter()

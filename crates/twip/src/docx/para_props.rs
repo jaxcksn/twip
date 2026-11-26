@@ -167,6 +167,35 @@ impl ParaDirect {
         ParaDirect { origin: Some((props.clone(), xml)), props, set: Vec::new() }
     }
 
+    /// The properties of `xml`, a `w:pPr` with the main namespace bound to `w`.
+    #[cfg(test)]
+    pub(crate) fn in_w(xml: &str) -> ParaDirect {
+        ParaDirect::from_xml(Some(xml), &Cx::of_xml(&format!("<w:document xmlns:w=\"{W}\">")))
+    }
+
+    /// Properties read from `xml`, shared with other paragraphs read alike.
+    pub fn shared(props: Rc<ParaProps>, xml: Rc<str>) -> ParaDirect {
+        ParaDirect { origin: Some((props.clone(), xml)), props, set: Vec::new() }
+    }
+
+    /// The `w:pPr` they were read from, while they are the properties read from it, with those properties.
+    pub fn read_from(&self) -> Option<(&Rc<ParaProps>, &Rc<str>)> {
+        let xml = self.as_read()?;
+        Some((&self.props, xml))
+    }
+
+    /// The `w:pPr` they were read from (or last written as), whatever they are now.
+    pub fn origin_xml(&self) -> Option<&Rc<str>> {
+        self.origin.as_ref().map(|(_, x)| x)
+    }
+
+    /// These properties with `xml` in place of the `w:pPr` they were read from: the same element, written otherwise
+    /// (its namespaces declared on it).
+    pub fn with_origin_xml(&self, xml: Rc<str>) -> ParaDirect {
+        let origin = self.origin.as_ref().map(|(p, _)| (p.clone(), xml));
+        ParaDirect { props: self.props.clone(), origin, set: self.set.clone() }
+    }
+
     /// Typed properties with no written form.
     pub fn typed(props: Rc<ParaProps>) -> ParaDirect {
         ParaDirect { props, origin: None, set: Vec::new() }
@@ -594,31 +623,24 @@ fn emit(p: &ParaProps, key: &str, s: &mut dyn Sink) -> bool {
     }
 }
 
+/// A frame's attributes, in the order the frame commands write them.
 fn frame_attrs(f: &FramePr, s: &mut dyn Sink) {
     let text = |s: &mut dyn Sink, local: &'static str, v: &Option<String>| {
         if let Some(v) = v {
             s.attr(W, local, &v.as_str());
         }
     };
+    let length = |s: &mut dyn Sink, local: &'static str, v: Option<f64>| {
+        if let Some(v) = v {
+            s.attr(W, local, &Twips(v));
+        }
+    };
     text(s, "dropCap", &f.drop_cap);
     if let Some(n) = f.lines {
         s.attr(W, "lines", &n);
     }
-    text(s, "wrap", &f.wrap);
-    text(s, "vAnchor", &f.v_anchor);
-    text(s, "hAnchor", &f.h_anchor);
-    for (local, v) in [("x", f.x), ("y", f.y)] {
-        if let Some(v) = v {
-            s.attr(W, local, &Twips(v));
-        }
-    }
-    text(s, "xAlign", &f.x_align);
-    text(s, "yAlign", &f.y_align);
-    for (local, v) in [("w", f.w), ("h", f.h)] {
-        if let Some(v) = v {
-            s.attr(W, local, &Twips(v));
-        }
-    }
+    length(s, "w", f.w);
+    length(s, "h", f.h);
     text(s, "hRule", &f.h_rule);
     for (local, v) in [("hSpace", f.h_space), ("vSpace", f.v_space)] {
         if v == 0.0 {
@@ -627,6 +649,13 @@ fn frame_attrs(f: &FramePr, s: &mut dyn Sink) {
             s.attr(W, local, &Twips(v));
         }
     }
+    text(s, "wrap", &f.wrap);
+    text(s, "vAnchor", &f.v_anchor);
+    text(s, "hAnchor", &f.h_anchor);
+    text(s, "xAlign", &f.x_align);
+    length(s, "x", f.x);
+    text(s, "yAlign", &f.y_align);
+    length(s, "y", f.y);
 }
 
 // Serialize
@@ -897,6 +926,74 @@ fn key_of(p: ParaProp) -> &'static str {
         ParaProp::OutlineLevel => "outlineLvl",
         ParaProp::Collapsed => COLLAPSED,
     }
+}
+
+/// What an edit of `w:pPr` XML set, as typed properties' record of it: each child that differs between `was` and
+/// `now` (both in the part `cx` describes), set whole when `now` writes it as `p` does, else, for the indents and
+/// spacing, the attributes it changed in part, in the order the edit set them.
+#[cfg(test)]
+pub(crate) fn inferred_set(p: &ParaProps, was: &str, now: &str, colours: &ThemeColours, cx: &Cx) -> Vec<ParaSet> {
+    use super::write::props::Props;
+    let (old, new) = (Props::parse(Some(was), "pPr", cx), Props::parse(Some(now), "pPr", cx));
+    let mut out = Out::new(cx, colours);
+    let mut set = Vec::new();
+    for &key in ORDER.iter().filter(|k| !OWNED.contains(k)) {
+        let (a, b) = (old.get(key), new.get(key));
+        if a == b {
+            continue;
+        }
+        modelled_child(&mut out, p, key);
+        let typed = std::mem::take(&mut out.s);
+        let whole = || {
+            let prop = match key {
+                "ind" => ParaProp::IndentLeft,
+                "spacing" => ParaProp::SpaceBefore,
+                _ => FLAGS.iter().find(|(n, _)| *n == key).map_or_else(|| prop_of(key), |(_, f)| ParaProp::Flag(*f)),
+            };
+            ParaSet { prop, whole: true }
+        };
+        let (Some(a), Some(b)) = (a, b) else {
+            set.push(whole());
+            continue;
+        };
+        if b == typed || !matches!(key, "ind" | "spacing") {
+            set.push(whole());
+            continue;
+        }
+        let attrs = |x: &str| super::prop_xml::attr_list(x).map(|(_, l)| l).unwrap_or_default();
+        let (was_attrs, now_attrs) = (attrs(a), attrs(b));
+        let local = |q: &str| q.rsplit(':').next().unwrap_or(q).to_string();
+        let mut changed: Vec<String> = now_attrs.iter().filter(|n| !was_attrs.contains(n)).map(|(q, _)| local(q)).collect();
+        changed.extend(was_attrs.iter().filter(|w| !now_attrs.iter().any(|n| local(&n.0) == local(&w.0))).map(|(q, _)| local(q)));
+        for name in changed {
+            let prop = match name.as_str() {
+                "left" | "start" => ParaProp::IndentLeft,
+                "right" | "end" => ParaProp::IndentRight,
+                "firstLine" | "hanging" => ParaProp::IndentFirst,
+                "before" => ParaProp::SpaceBefore,
+                "beforeAutospacing" => ParaProp::SpaceBeforeAuto,
+                "after" => ParaProp::SpaceAfter,
+                "afterAutospacing" => ParaProp::SpaceAfterAuto,
+                "line" => ParaProp::Line,
+                "lineRule" => ParaProp::LineRule,
+                _ => continue,
+            };
+            if !set.iter().any(|s: &ParaSet| s.prop == prop) {
+                set.push(ParaSet { prop, whole: false });
+            }
+        }
+    }
+    set
+}
+
+/// The property written in child `key`, one that isn't an on/off flag.
+#[cfg(test)]
+fn prop_of(key: &str) -> ParaProp {
+    use ParaProp::*;
+    [Style, Align, TightWrap, Division, Tabs, List, Borders, Shading, Frame, TextFlow, TextAlignment, OutlineLevel, Collapsed]
+        .into_iter()
+        .find(|p| key_of(*p) == key)
+        .unwrap_or(Style)
 }
 
 /// What `p` keeps beside each modelled child `set` sets whole, or that it changes and doesn't set in part: nothing, as

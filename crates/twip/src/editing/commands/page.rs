@@ -469,7 +469,7 @@ impl Editor {
         let style = p.style.style_id.as_deref().map_or(String::new(), |id| format!("<{w}pStyle {w}val=\"{}\"/>", crate::docx::write::props::esc(id)));
         let ppr = format!("<{w}pPr>{style}<{w}framePr{attrs}/><{w}jc {w}val=\"center\"/></{w}pPr>");
         let region = self.region_of_para(para, &res);
-        let r = res.para_from_xml(Some(&ppr), region.as_ref(), &cx);
+        let r = crate::docx::para_xml::from_xml(&res, Some(&ppr), region.as_ref(), &cx);
         let inner = crate::docx::Paragraph {
             style: std::rc::Rc::new(r.style),
             mark: run.clone(),

@@ -355,7 +355,7 @@ impl Editor {
             && !q.style.keep_next
         {
             let cx = self.cx();
-            let mut pr = crate::docx::write::props::Props::parse(q.style.direct.0.as_deref(), "pPr", &cx);
+            let mut pr = crate::docx::write::props::Props::parse(self.ppr(&q.style.direct, &cx).as_deref(), "pPr", &cx);
             pr.set("keepNext", format!("<{w}keepNext/>"));
             if let Some(r) = self.para_again(pic, Some(pr.xml().as_deref()), &res, &cx)
                 && let Some(q) = self.index.para(&self.doc, pic)

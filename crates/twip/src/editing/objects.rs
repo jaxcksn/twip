@@ -819,7 +819,7 @@ impl Editor {
         let Some(run) = self.run_at(&caret) else { return Outcome::Unchanged("no run") };
         let name = self.new_object_name("Text Box");
         let Some(p) = self.index.para(&self.doc, para) else { return Outcome::Unchanged("no paragraph") };
-        let r = res.para_from_xml(None, None, &cx);
+        let r = crate::docx::para_xml::from_xml(&res, None, None, &cx);
         let text_run = run_xml::plain(&res, &r.base);
         let pid = crate::docx::next_para_id();
         let inner = crate::docx::Paragraph {

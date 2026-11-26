@@ -4,6 +4,8 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::docx::model::Compat;
+use crate::docx::para_props::ParaDirect;
+use crate::docx::para_xml;
 use crate::docx::props::RunProps;
 use crate::docx::resolve::{Resolver, joined_style};
 use crate::docx::styles::Region;
@@ -468,11 +470,16 @@ impl Editor {
         let id = p.style.style_id.as_deref()?;
         let next = res.styles.by_id.get(id)?.next.clone().filter(|n| n != id && res.styles.by_id.contains_key(n))?;
         let cx = self.cx();
-        let mut pr = Props::parse(p.style.direct.0.as_deref(), "pPr", &cx);
+        let mut pr = Props::parse(self.ppr(&p.style.direct, &cx).as_deref(), "pPr", &cx);
         pr.set("pStyle", format!("<{w}pStyle {w}val=\"{}\"/>", crate::docx::write::props::esc(&next), w = cx.w));
         let region = self.region_of_para(para, &res);
-        second.style = Rc::new(res.para_from_xml(pr.xml().as_deref(), region.as_ref(), &cx).style);
+        second.style = Rc::new(para_xml::edited(&res, &p.style.direct, pr.xml().as_deref(), region.as_ref(), &cx).style);
         Some(second)
+    }
+
+    /// Authored paragraph properties `d` as the `w:pPr` written in the part `cx` describes.
+    pub(super) fn ppr<'d>(&self, d: &'d ParaDirect, cx: &Cx) -> Option<std::borrow::Cow<'d, str>> {
+        para_xml::ppr(self.doc.resolver.as_deref(), d, cx)
     }
 
     pub(super) fn cx(&self) -> Cx {
@@ -508,10 +515,13 @@ impl Editor {
     pub(super) fn para_again(&self, para: ParaId, ppr: Option<Option<&str>>, res: &Resolver, cx: &Cx) -> Option<Again> {
         let p = self.index.para(&self.doc, para)?;
         let region = self.region_of_para(para, res);
-        let last = res.para_from_xml(ppr.unwrap_or(p.style.direct.0.as_deref()), region.as_ref(), cx);
+        let last = match ppr {
+            Some(x) => para_xml::edited(res, &p.style.direct, x, region.as_ref(), cx),
+            None => para_xml::of(res, &p.style.direct, region.as_ref(), cx),
+        };
         let parts = p.src.as_ref().filter(|s| s.joined.len() + 1 == s.ranges.len()).map_or(&[][..], |s| &s.joined[..]);
         if parts.is_empty() {
-            let style = res.para_again(&p.style, last.style, region.as_ref(), cx);
+            let style = crate::docx::para_xml::again(res, &p.style, last.style, region.as_ref(), cx);
             return Some(Again { style, bases: vec![(0, last.base)] });
         }
         let (legacy, generic) = (res.styles.compat == Compat::Legacy, res.styles.compat == Compat::Generic);
@@ -520,7 +530,7 @@ impl Editor {
         let (mut joined, mut spec): (Option<Rc<ParaStyle>>, Option<Rc<ParaStyle>>) = (None, None);
         let mut start = 0;
         for part in parts {
-            let r = res.para_from_xml(part.ppr.0.as_deref(), region.as_ref(), cx);
+            let r = crate::docx::para_xml::of(res, &part.ppr, region.as_ref(), cx);
             let taken = spec.take();
             let style = match joined.take() {
                 None => Rc::new(r.style),
@@ -536,7 +546,7 @@ impl Editor {
         }
         let style = joined_style(joined.as_ref()?, &Rc::new(last.style), start, spec.as_deref(), legacy);
         bases.push((start.min(len), last.base));
-        Some(Again { style: res.para_again(&p.style, style, region.as_ref(), cx), bases })
+        Some(Again { style: crate::docx::para_xml::again(res, &p.style, style, region.as_ref(), cx), bases })
     }
 
     pub(crate) fn selected_ranges(&mut self) -> Vec<(ParaId, Unit, Unit)> {
@@ -835,7 +845,7 @@ impl Editor {
         let mut tx = self.begin(label);
         for para in paras {
             let Some(p) = self.index.para(&self.doc, para) else { continue };
-            let mut pr = Props::parse(p.style.direct.0.as_deref(), "pPr", &cx);
+            let mut pr = Props::parse(self.ppr(&p.style.direct, &cx).as_deref(), "pPr", &cx);
             edit(&mut pr, &cx, p);
             let Some(r) = self.para_again(para, Some(pr.xml().as_deref()), &res, &cx) else { continue };
             let Some(p) = self.index.para(&self.doc, para) else { continue };

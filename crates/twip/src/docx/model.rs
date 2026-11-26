@@ -470,8 +470,8 @@ pub struct ParaStyle {
     pub list_fmt: Option<String>,
     pub list: Option<i64>,
     pub mark_size: Option<f64>,
-    /// The `w:pPr` as written (editable reads only), what formatting edits change and saving writes back.
-    pub direct: Raw,
+    /// The authored properties (editable reads only), what formatting edits change and saving writes back.
+    pub direct: super::para_props::ParaDirect,
     /// A tracked change of the paragraph's properties.
     pub change: Option<Rc<ParaChange>>,
     /// Paragraphs joined onto this one's start through vanished marks, when each line takes its indents, alignment and
@@ -601,13 +601,17 @@ impl ParaStyle {
             && parts.iter().zip(o.parts.iter()).all(|(a, b)| a.layout_eq(b))
     }
 
-    /// Authored equality: the direct formatting as written, and the tracked property change with the formatting it
-    /// records as written.
+    /// Authored equality: the direct formatting, and the tracked property change with the formatting it records.
     pub fn authored_eq(&self, o: &ParaStyle) -> bool {
-        self.direct.0 == o.direct.0
+        self.direct.authored_eq(&o.direct)
             && match (&self.change, &o.change) {
                 (None, None) => true,
-                (Some(x), Some(y)) => x.mark == y.mark && x.previous_raw.0 == y.previous_raw.0 && x.numbering_change.0 == y.numbering_change.0,
+                (Some(x), Some(y)) => {
+                    x.mark == y.mark
+                        && x.properties == y.properties
+                        && (!x.properties || x.previous.direct.authored_eq(&y.previous.direct))
+                        && x.numbering_change.0 == y.numbering_change.0
+                }
                 _ => false,
             }
     }
@@ -1261,15 +1265,22 @@ pub struct ParaSrc {
     pub joined: Vec<JoinedPart>,
 }
 
-/// A paragraph joined onto the next one's start through its vanished mark, as read.
-#[derive(Clone, Debug, PartialEq)]
+/// A paragraph joined onto the next one's start through its vanished mark, as read. Its `==` leaves its authored
+/// properties out, as a source anchor's are.
+#[derive(Clone, Debug)]
 pub struct JoinedPart {
     /// The unit its content ends at in the joined paragraph.
     pub end: u32,
-    /// Its `w:pPr` as written.
-    pub ppr: Raw,
+    /// Its authored properties.
+    pub ppr: super::para_props::ParaDirect,
     /// Its mark is a style separator (`w:specVanish`).
     pub spec_vanish: bool,
+}
+
+impl PartialEq for JoinedPart {
+    fn eq(&self, o: &JoinedPart) -> bool {
+        self.end == o.end && self.spec_vanish == o.spec_vanish
+    }
 }
 
 /// The package an editable document was read from ([`super::read_editable`]).
