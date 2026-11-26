@@ -689,6 +689,27 @@ fn a_document_built_from_typed_properties_generates_a_package_that_reads_back_th
     reads_back_as_built(&mut e);
 }
 
+/// A paragraph command on a paragraph built from typed properties, through the editor: what it doesn't set stays,
+/// with no XML behind any of it, and the generated package holds both.
+#[test]
+fn typed_paragraph_formatting_with_no_xml_survives_a_paragraph_command() {
+    let fonts = fonts();
+    let res = built().resolver.expect("styles");
+    let indented = crate::format::ParaProps { indent_left: Some(36.0), ..Default::default() };
+    let p = typed_para(&res, indented, vec![(Piece::Text("Indented"), CharProps::default())]);
+    let doc = Document { sections: vec![section(vec![Block::Para(p)])], ..built() };
+    let mut e = labelled(doc, fonts);
+    e.complete(fonts);
+    let id = ParaId(para(e.document(), 0).id);
+    e.select_range(id, Unit(0), Unit(3), fonts);
+    assert!(matches!(e.execute(C::SetAlignment(Alignment::Center), fonts), Outcome::Changed(_)), "centred");
+    let p = para(e.document(), 0);
+    assert_eq!((p.style.ind_left, p.style.jc), (36.0, Jc::Center), "both show");
+    let own = p.style.direct.get();
+    assert_eq!((own.indent_left, own.align), (Some(36.0), Some(Jc::Center)), "both are authored");
+    reads_back_as_built(&mut e);
+}
+
 #[test]
 fn generating_names_what_it_cannot_write() {
     let unsupported = |d: &Document| crate::docx::write::generate(d).expect_err("not generated");
