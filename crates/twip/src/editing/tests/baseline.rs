@@ -13,10 +13,12 @@ use crate::api::styles::{StyleChange, StyleModification};
 use crate::api::value::{Alignment, AutoOr, Bytes, Direction, HighlightColor, Points, StyleId, UnderlineStyle};
 use crate::docx::props::{ParaProps, RunProps, ThemeColours};
 use crate::docx::resolve::Resolver;
-use crate::docx::styles::Region;
+use crate::docx::style_xml::StylesPart;
+use crate::docx::styles::{Region, Styles};
 use crate::docx::write::props::{Cx, Props};
+use crate::docx::xml::{attr, is_w};
 use crate::docx::{Block, Document, Inline, Paragraph, Run, RunStyle};
-use crate::docx::{char_props, page_borders, para_props, para_xml};
+use crate::docx::{char_props, page_borders, para_props, para_xml, style_xml_tests};
 use crate::format::resolve::{self, RunEnv};
 use crate::format::{CharProps, Color};
 use crate::layout::{ParaId, Unit};
@@ -1078,6 +1080,85 @@ fn resolve_paras(res: &Resolver, cx: &Cx, blocks: &[Block], region: Option<&Regi
             }
         }
     }
+}
+
+// Style definitions
+
+/// A relationship target of `from` of the kind its type ends with.
+fn related(pkg: &[u8], from: &str, kind: &str) -> Option<String> {
+    let rels = crate::docx::package::read(pkg, &[], &crate::docx::package::rels_name(from)).ok()??;
+    let dom = roxmltree::Document::parse(&rels).ok()?;
+    let target = dom
+        .root_element()
+        .children()
+        .filter(|r| r.attribute("Type").is_some_and(|t| t.ends_with(&format!("/{kind}"))) && r.attribute("TargetMode") != Some("External"))
+        .find_map(|r| r.attribute("Target"))?;
+    Some(crate::docx::package::resolve(from, target))
+}
+
+/// Every styles part of every fixture (the document's and the glossary's), with its document's theme colours.
+fn styles_parts() -> Vec<(String, String, ThemeColours)> {
+    let mut paths = Vec::new();
+    crate::layout::tests::output::fixtures(&crate::layout::tests::output::root().join("fixtures"), &mut paths);
+    let mut out = Vec::new();
+    for path in paths {
+        let Ok(pkg) = std::fs::read(&path) else { continue };
+        let Some(main) = related(&pkg, "", "officeDocument") else { continue };
+        let read = |name: Option<String>| name.and_then(|n| crate::docx::package::read(&pkg, &[], &n).ok().flatten());
+        let theme = crate::drawing::theme::Theme::parse(read(related(&pkg, &main, "theme")).as_deref());
+        let settings = read(related(&pkg, &main, "settings"));
+        let tree = settings.as_deref().and_then(|x| roxmltree::Document::parse(x).ok());
+        let colours = ThemeColours::new(&theme, &crate::drawing::theme::ColourMap::parse(tree.as_ref().map(|d| d.root_element())));
+        let mut sources = vec![main.clone()];
+        sources.extend(related(&pkg, &main, "glossaryDocument"));
+        for from in sources {
+            if let Some(xml) = read(related(&pkg, &from, "styles")) {
+                out.push((format!("{}: {from}", path.display()), xml, colours));
+            }
+        }
+    }
+    out
+}
+
+/// Every `w:style` (with an id), `w:docDefaults` and `w:latentStyles` of every fixture's styles parts round trips
+/// through the typed parse, serializer and holders.
+#[test]
+fn style_definitions_round_trip_through_the_typed_writer() {
+    let mut n = style_xml_tests::Counts::default();
+    for (what, xml, colours) in styles_parts() {
+        let doc = roxmltree::Document::parse(&xml).unwrap_or_else(|e| panic!("{what}: {e}"));
+        let cx = StylesPart::parse(Some(&xml)).cx();
+        for el in doc.root_element().children().filter(|c| c.is_element()) {
+            let style = is_w(el, "style") && attr(el, "styleId").is_some();
+            if style || is_w(el, "docDefaults") || is_w(el, "latentStyles") {
+                style_xml_tests::round_trip(el, &cx, &colours, &format!("{what}: {}", &xml[el.range()]), &mut n);
+            }
+        }
+    }
+    eprintln!("round tripped {n:?}");
+    assert!(n.styles > 2000 && n.regions > 700 && n.defaults > 200 && n.latent > 0, "only {n:?}");
+}
+
+/// The typed reading of every fixture's styles parts converts to the XML path's reading of the same part: every style
+/// (its fields, base and regions as read, a table style's run properties from Word's built-in table defaults where it
+/// takes them, Word's built-in default table style's fixed properties), the default styles, the paragraph styles'
+/// order, the document defaults, the latent styles and the frozen table styles.
+#[test]
+fn typed_style_sheets_convert_to_what_reading_resolved() {
+    let (mut n, mut parts) = (style_xml_tests::SheetCounts::default(), 0);
+    for (what, xml, colours) in styles_parts() {
+        let frozen = Styles::parse(Some(&xml), colours);
+        let k = style_xml_tests::sheet_matches(&frozen, &StylesPart::parse(Some(&xml)), &colours, &what);
+        parts += 1;
+        n.styles += k.styles;
+        n.table_styles += k.table_styles;
+        n.regions += k.regions;
+        n.frozen += k.frozen;
+        n.run_defaults += k.run_defaults;
+        n.exceptions += k.exceptions;
+    }
+    eprintln!("converted {parts} parts: {n:?}");
+    assert!(parts > 200 && n.styles > 2000 && n.table_styles > 300 && n.regions > 700, "only {parts} parts: {n:?}");
 }
 
 #[test]
