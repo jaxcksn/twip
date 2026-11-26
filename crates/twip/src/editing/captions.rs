@@ -355,10 +355,10 @@ impl Editor {
             && !q.style.keep_next
         {
             let cx = self.cx();
-            let mut pr = crate::docx::write::props::Props::parse(self.ppr(&q.style.direct, &cx).as_deref(), "pPr", &cx);
-            pr.set("keepNext", format!("<{w}keepNext/>"));
-            if let Some(r) =
-                self.para_again(pic, Some(crate::docx::para_xml::edited_direct(&res, &q.style.direct, pr.xml().as_deref(), &cx)), &res, &cx)
+            let mut e = crate::format::ParaEdit::new((**q.style.direct.get()).clone());
+            e.flag(crate::format::ParaFlag::KEEP_NEXT, true);
+            let direct = q.style.direct.edit(e);
+            if let Some(r) = self.para_again(pic, Some(direct), &res, &cx)
                 && let Some(q) = self.index.para(&self.doc, pic)
             {
                 let (mark, list) = (q.mark.clone(), q.list.clone());

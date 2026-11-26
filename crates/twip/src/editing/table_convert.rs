@@ -214,24 +214,19 @@ fn row_and_cell_controls(t: &crate::docx::Table, rows: std::ops::RangeInclusive<
 impl Editor {
     /// `p`'s formatting without its numbering, re-resolved: the cells after a numbered paragraph's first.
     fn unnumbered(&self, p: &Paragraph) -> Option<std::rc::Rc<ParaStyle>> {
-        use crate::docx::write::props::Props;
         p.style.num.filter(|&ListRef { list: ListId(id), level: _ }| id != 0)?;
         let res = self.doc.resolver.clone()?;
         let cx = self.cx();
-        let w = &cx.w;
-        let mut pr = Props::parse(self.ppr(&p.style.direct, &cx).as_deref(), "pPr", &cx);
         let styled = res.styles.chain_ppr(res.styles.paragraph_style(p.style.style_id.as_deref())).num_id.is_some_and(|n| n != 0);
+        let mut e = crate::format::ParaEdit::new((**p.style.direct.get()).clone());
         if styled {
-            pr.set("numPr", format!("<{w}numPr><{w}ilvl {w}val=\"0\"/><{w}numId {w}val=\"0\"/></{w}numPr>"));
+            super::lists::in_list(&mut e, 0, 0);
         } else {
-            pr.remove("numPr");
+            (e.list, e.list_level) = (None, None);
+            e.whole(crate::format::ParaProp::List);
         }
-        let again = self.para_again(
-            crate::layout::ParaId(p.id),
-            Some(crate::docx::para_xml::edited_direct(&res, &p.style.direct, pr.xml().as_deref(), &cx)),
-            &res,
-            &cx,
-        )?;
+        let direct = p.style.direct.edit(e);
+        let again = self.para_again(crate::layout::ParaId(p.id), Some(direct), &res, &cx)?;
         Some(std::rc::Rc::new(again.style))
     }
 
