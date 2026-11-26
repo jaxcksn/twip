@@ -8,9 +8,10 @@ use crate::docx::char_props::from_run_props;
 use crate::docx::numbering::Counters;
 use crate::docx::props::ParaProps;
 use crate::docx::resolve::Resolver;
-use crate::docx::write::props::{Cx, Props};
+use crate::docx::write::props::Cx;
 use crate::docx::{Block, Document, Inline, ListLabel, Paragraph};
 use crate::font::Fonts;
+use crate::format::{ListChoice, ParaEdit, ParaProp};
 use crate::layout::{ParaId, Unit};
 
 use super::commands::Outcome;
@@ -31,16 +32,14 @@ impl Editor {
         p.style.num.filter(|ListRef { list: ListId(id), level: _ }| *id != 0).map(|n| (para, n))
     }
 
-    pub(super) fn repara(&mut self, tx: &mut Tx, para: ParaId, edit: &dyn Fn(&mut Props, &str)) -> bool {
+    pub(super) fn repara(&mut self, tx: &mut Tx, para: ParaId, edit: &dyn Fn(&mut ParaEdit)) -> bool {
         let Some(res) = self.doc.resolver.clone() else { return false };
         let cx = self.cx();
         let Some(p) = self.index.para(&self.doc, para) else { return false };
-        let mut pr = Props::parse(self.ppr(&p.style.direct, &cx).as_deref(), "pPr", &cx);
-        edit(&mut pr, &cx.w);
-        let Some(r) = self.para_again(para, Some(crate::docx::para_xml::edited_direct(&res, &p.style.direct, pr.xml().as_deref(), &cx)), &res, &cx)
-        else {
-            return false;
-        };
+        let mut e = ParaEdit::new((**p.style.direct.get()).clone());
+        edit(&mut e);
+        let direct = p.style.direct.edit(e);
+        let Some(r) = self.para_again(para, Some(direct), &res, &cx) else { return false };
         let Some(p) = self.index.para(&self.doc, para) else { return false };
         let (mark, list) = (p.mark.clone(), p.list.clone());
         tx.stale_paras.push(para);
@@ -53,9 +52,9 @@ impl Editor {
             return None;
         }
         let mut tx = self.begin("Numbering");
-        let ok = self.repara(&mut tx, para, &|p, w| {
-            p.set("numPr", format!("<{w}numPr><{w}ilvl {w}val=\"0\"/><{w}numId {w}val=\"0\"/></{w}numPr>"));
-            p.set("ind", format!("<{w}ind {w}left=\"0\" {w}firstLine=\"0\"/>"));
+        let ok = self.repara(&mut tx, para, &|e| {
+            in_list(e, 0, 0);
+            indents(e, Some(0.0), Some(0.0));
         });
         if !ok {
             self.abort(tx);
@@ -71,17 +70,17 @@ impl Editor {
             return None;
         }
         let p = self.index.para(&self.doc, para)?;
-        let twips = |pt: f64| (pt * 20.0).round() as i64;
         let left = p.style.ind_left;
         let mut tx = self.begin("Paragraph Formatting");
         let ok = if p.style.num.is_some_and(|ListRef { list: ListId(id), level: _ }| id != 0) {
             let l = twips(left);
-            self.repara(&mut tx, para, &|p, w| {
-                p.set("numPr", format!("<{w}numPr><{w}ilvl {w}val=\"0\"/><{w}numId {w}val=\"0\"/></{w}numPr>"));
-                p.set("ind", format!("<{w}ind {w}left=\"{l}\" {w}firstLine=\"0\"/>"));
+            self.repara(&mut tx, para, &|e| {
+                in_list(e, 0, 0);
+                indents(e, Some(l), Some(0.0));
             })
         } else {
-            let direct_ind = Props::parse(self.ppr(&p.style.direct, &self.cx()).as_deref(), "pPr", &self.cx()).get("ind").is_some();
+            let d = p.style.direct.get();
+            let direct_ind = d.indent_left.is_some() || d.indent_right.is_some() || d.indent_first.is_some() || written(d, "ind");
             let first = p.style.ind_first;
             if !self.indent_keys || !direct_ind || !((left > 0.0 && first >= 0.0) || first > 0.0) {
                 self.abort(tx);
@@ -89,17 +88,21 @@ impl Editor {
             }
             // Back the way Tab came: the left indent a tab stop back, then the first line's indent.
             if first > 0.0 {
-                let cx = self.cx();
-                let ind = if left > 0.0 {
-                    let tab = self.tab_grid();
-                    vec![("left", Some(twips(super::format::grid_step(left, tab, false)).to_string())), ("start", None)]
-                } else {
-                    vec![("firstLine", Some("0".to_string()))]
-                };
-                self.repara(&mut tx, para, &|p, _| p.attrs("ind", &ind, &cx))
+                let tab = self.tab_grid();
+                let back = (left > 0.0).then(|| twips(super::format::grid_step(left, tab, false)));
+                self.repara(&mut tx, para, &|e| match back {
+                    Some(l) => {
+                        e.indent_left = Some(l);
+                        e.part(ParaProp::IndentLeft);
+                    }
+                    None => {
+                        e.indent_first = Some(0.0);
+                        e.part(ParaProp::IndentFirst);
+                    }
+                })
             } else {
                 let l = twips((((left - 0.01) / 18.0).floor() * 18.0).max(0.0));
-                self.repara(&mut tx, para, &|p, w| p.set("ind", format!("<{w}ind {w}left=\"{l}\" {w}firstLine=\"0\"/>")))
+                self.repara(&mut tx, para, &|e| indents(e, Some(l), Some(0.0)))
             }
         };
         if !ok {
@@ -139,9 +142,7 @@ impl Editor {
             if !(0..=8).contains(&to) {
                 continue;
             }
-            if !self
-                .repara(&mut tx, para, &|p, w| p.set("numPr", format!("<{w}numPr><{w}ilvl {w}val=\"{to}\"/><{w}numId {w}val=\"{num}\"/></{w}numPr>")))
-            {
+            if !self.repara(&mut tx, para, &|e| in_list(e, num, to)) {
                 self.abort(tx);
                 return Outcome::Unchanged("numbering failed");
             }
@@ -173,18 +174,22 @@ impl Editor {
                 let lvl = res.numbering.level(id, ilvl, &res.styles);
                 let left = lvl.and_then(|l| l.ppr.ind_left).unwrap_or(36.0) + lvl.and_then(|l| l.ppr.ind_first).unwrap_or(-18.0).min(0.0);
                 let style_id = self.index.para(&self.doc, para).and_then(|p| p.style.style_id.clone());
-                let ok = self.repara(&mut tx, para, &|p, w| {
-                    if p.get("pStyle").is_some_and(|s| s.contains("\"ListParagraph\"")) {
-                        p.remove("pStyle");
+                let ok = self.repara(&mut tx, para, &|e| {
+                    let list_paragraph = e.style.as_deref() == Some("ListParagraph");
+                    if list_paragraph {
+                        e.style = None;
+                        e.whole(ParaProp::Style);
                     }
-                    let style = res.styles.paragraph_style(if p.get("pStyle").is_some() { style_id.as_deref() } else { None });
+                    let styled = !list_paragraph && (e.style.is_some() || written(e, "pStyle"));
+                    let style = res.styles.paragraph_style(if styled { style_id.as_deref() } else { None });
                     let numbered = res.styles.chain_ppr(style).num_id.is_some_and(|n| n != 0);
-                    if p.get("numPr").is_some() && !numbered {
-                        p.remove("numPr");
+                    if (e.list.is_some() || e.list_level.is_some() || written(e, "numPr")) && !numbered {
+                        (e.list, e.list_level) = (None, None);
+                        e.whole(ParaProp::List);
                     } else {
-                        p.set("numPr", format!("<{w}numPr><{w}ilvl {w}val=\"0\"/><{w}numId {w}val=\"0\"/></{w}numPr>"));
+                        in_list(e, 0, 0);
                     }
-                    p.set("ind", format!("<{w}ind {w}left=\"{}\"/>", (left * 20.0).round() as i64));
+                    indents(e, Some(twips(left)), None);
                 });
                 if !ok {
                     self.abort(tx);
@@ -210,11 +215,12 @@ impl Editor {
             // A paragraph in a list keeps its level, where the list has it.
             let defined = |l: i64| self.doc.resolver.as_ref().is_some_and(|r| r.numbering.level(num, l, &r.styles).is_some());
             let ilvl = kind(self, para).map(|(_, (_, own))| own.clamp(0, 8)).filter(|&own| defined(own)).unwrap_or(ilvl);
-            let ok = self.repara(&mut tx, para, &|p, w| {
-                p.set("numPr", format!("<{w}numPr><{w}ilvl {w}val=\"{ilvl}\"/><{w}numId {w}val=\"{num}\"/></{w}numPr>"));
-                p.remove("ind");
-                if list_style && p.get("pStyle").is_none() {
-                    p.set("pStyle", format!("<{w}pStyle {w}val=\"ListParagraph\"/>"));
+            let ok = self.repara(&mut tx, para, &|e| {
+                in_list(e, num, ilvl);
+                indents(e, None, None);
+                if list_style && !(e.style.is_some() || written(e, "pStyle")) {
+                    e.style = Some("ListParagraph".into());
+                    e.whole(ParaProp::Style);
                 }
             });
             if !ok {
@@ -365,6 +371,33 @@ impl Editor {
         }
         changes
     }
+}
+
+/// Puts a paragraph in list `num` (0: none) at level `ilvl`.
+pub(super) fn in_list(e: &mut ParaEdit, num: i64, ilvl: i64) {
+    e.list = Some(if num == 0 { ListChoice::None } else { ListChoice::In(ListId(num)) });
+    e.list_level = Some(ilvl);
+    e.whole(ParaProp::List);
+}
+
+/// Sets a paragraph's indents whole: its start and first line's, no end indent.
+fn indents(e: &mut ParaEdit, left: Option<f64>, first: Option<f64>) {
+    (e.indent_left, e.indent_right, e.indent_first) = (left, None, first);
+    e.whole(ParaProp::IndentLeft);
+}
+
+/// Points to the nearest twip, zero unsigned.
+pub(super) fn twips(pt: f64) -> f64 {
+    super::format::twip(pt) + 0.0
+}
+
+/// Whether authored properties `p` hold child `local` of their `w:pPr` as written: one they don't model, or one kept
+/// beside its value.
+pub(super) fn written(p: &crate::format::ParaProps, local: &str) -> bool {
+    p.foreign.as_deref().is_some_and(|f| {
+        let named = |c: &&crate::format::ForeignChild| &*c.name.local == local && matches!(&*c.name.ns, "" | crate::docx::xml::W);
+        f.children.iter().chain(&f.kept).any(|c| named(&c))
+    })
 }
 
 /// The list and level a paragraph's label counts in, when it shows one.

@@ -625,16 +625,19 @@ impl Editor {
             return None;
         }
         let tab = self.tab_grid();
-        let twips = |pt: f64| ((pt * 20.0).round() as i64).to_string();
-        let cx = self.cx();
-        let set: Vec<(&str, Option<String>)> = if first > 0.0 {
-            vec![("left", Some(twips(super::format::grid_step(left, tab, true)))), ("start", None)]
-        } else {
-            vec![("firstLine", Some(twips(tab))), ("hanging", None)]
-        };
+        let twips = super::lists::twips;
+        let (to_left, to_first) = if first > 0.0 { (Some(twips(super::format::grid_step(left, tab, true))), None) } else { (None, Some(twips(tab))) };
         let mut tx = self.begin("AutoFormat");
         let ok = self.step(&mut tx, Step::Text { para, range: Unit(0)..Unit(1), with: Vec::new(), edges: Default::default() }).is_ok()
-            && self.repara(&mut tx, para, &|p, _| p.attrs("ind", &set, &cx));
+            && self.repara(&mut tx, para, &|e| {
+                if to_left.is_some() {
+                    e.indent_left = to_left;
+                    e.part(crate::format::ParaProp::IndentLeft);
+                } else {
+                    e.indent_first = to_first;
+                    e.part(crate::format::ParaProp::IndentFirst);
+                }
+            });
         if !ok {
             self.abort(tx);
             return Some(Outcome::Unchanged("the indent didn't change"));
@@ -678,10 +681,18 @@ impl Editor {
         let borders = self.direct_ppr(para, "pBdr");
         let typed = self.index.para(&self.doc, para).map(|p| super::text::UnitText::of(p).text.chars().take(n).collect()).unwrap_or_default();
         let mut tx = self.begin("AutoFormat");
-        let line = crate::docx::line_style::border_val(line);
-        let bottom = |w: &str| format!("<{w}pBdr><{w}bottom {w}val=\"{line}\" {w}sz=\"{size}\" {w}space=\"1\" {w}color=\"auto\"/></{w}pBdr>");
+        let border = crate::format::TextBorder {
+            style: line,
+            width: f64::from(size) / 8.0,
+            space: 1.0,
+            shadow: false,
+            color: Some(crate::format::Color::Auto),
+        };
         let ok = self.step(&mut tx, Step::Text { para, range: Unit(0)..Unit(n as u32), with: Vec::new(), edges: Default::default() }).is_ok()
-            && self.repara(&mut tx, para, &|p, w| p.set("pBdr", bottom(w)));
+            && self.repara(&mut tx, para, &|e| {
+                e.borders = crate::format::ParaBorders { bottom: Some(border), ..Default::default() };
+                e.whole(crate::format::ParaProp::Borders);
+            });
         if !ok {
             self.abort(tx);
             return Outcome::Unchanged("the line stayed");
@@ -896,7 +907,7 @@ impl Editor {
         let with = if text == "\t" { vec![crate::docx::Inline::Tab(run)] } else { vec![crate::docx::Inline::Text(text, run)] };
         let mut tx = self.begin("AutoFormat");
         let ok = self.step(&mut tx, Step::Text { para: c.para, range: c.range.start..c.range.start, with, edges: Default::default() }).is_ok()
-            && self.repara(&mut tx, c.para, &|p, _| match &was {
+            && self.repara_xml(&mut tx, c.para, &|p, _| match &was {
                 Some(x) => p.set(local, x.clone()),
                 None => p.remove(local),
             });
@@ -905,6 +916,21 @@ impl Editor {
             return Outcome::Unchanged("the change stayed");
         }
         self.commit(tx, None, fonts)
+    }
+
+    /// Writes `edit` over `para`'s `w:pPr` as XML: what an AutoFormat change replaced put back as it was written.
+    fn repara_xml(&mut self, tx: &mut super::Tx, para: crate::layout::ParaId, edit: &dyn Fn(&mut crate::docx::write::props::Props, &str)) -> bool {
+        let Some(res) = self.doc.resolver.clone() else { return false };
+        let cx = self.cx();
+        let Some(p) = self.index.para(&self.doc, para) else { return false };
+        let mut pr = crate::docx::write::props::Props::parse(self.ppr(&p.style.direct, &cx).as_deref(), "pPr", &cx);
+        edit(&mut pr, &cx.w);
+        let direct = crate::docx::para_xml::edited_direct(&res, &p.style.direct, pr.xml().as_deref(), &cx);
+        let Some(r) = self.para_again(para, Some(direct), &res, &cx) else { return false };
+        let Some(p) = self.index.para(&self.doc, para) else { return false };
+        let (mark, list) = (p.mark.clone(), p.list.clone());
+        tx.stale_paras.push(para);
+        self.step(tx, Step::Para { para, style: std::rc::Rc::new(r.style), mark, list }).is_ok()
     }
 
     fn raised(&self, para: crate::layout::ParaId, at: Unit, run: &crate::docx::Run) -> Option<crate::docx::Run> {

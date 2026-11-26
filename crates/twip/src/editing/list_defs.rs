@@ -560,10 +560,11 @@ impl Editor {
             } else {
                 self.index.para(&self.doc, para).and_then(|p| p.style.num).map_or(0, |ListRef { list: ListId(_), level: l }| l.max(0))
             };
-            let ok = self.repara(&mut tx, para, &|p, w| {
-                p.set("numPr", format!("<{w}numPr><{w}ilvl {w}val=\"{ilvl}\"/><{w}numId {w}val=\"{num}\"/></{w}numPr>"));
-                if list_style && p.get("pStyle").is_none() {
-                    p.set("pStyle", format!("<{w}pStyle {w}val=\"ListParagraph\"/>"));
+            let ok = self.repara(&mut tx, para, &|e| {
+                super::lists::in_list(e, num, ilvl);
+                if list_style && !(e.style.is_some() || super::lists::written(e, "pStyle")) {
+                    e.style = Some("ListParagraph".into());
+                    e.whole(crate::format::ParaProp::Style);
                 }
             });
             if !ok {
