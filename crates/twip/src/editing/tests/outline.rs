@@ -182,6 +182,22 @@ fn a_direct_outline_level_is_a_heading_level() {
     assert!(!changed(&e.execute(C::SetOutline(crate::api::command::Outline { level: Some(10), collapsed: None }), fonts())), "levels end at 9");
 }
 
+/// Body Text on a paragraph whose style is the default one by omission names the style: the step is recorded though
+/// nothing shows differently, and the saved paragraph names it.
+#[test]
+fn body_text_on_a_default_paragraph_names_its_style() {
+    let mut e = doc(&[("Heading1", "A"), ("", "a1")]);
+    let was = e.index().para(e.document(), id(&e, "a1")).expect("a1").style.clone();
+    caret(&mut e, "a1");
+    assert!(changed(&e.change_outline(OutlineChange::BodyText, false, fonts())), "a step is recorded");
+    let p = e.index().para(e.document(), id(&e, "a1")).expect("a1");
+    assert!(p.style.layout_eq(&was), "nothing shows differently");
+    assert_eq!(p.style.direct.get().style.as_deref(), Some("Normal"), "the style is named");
+    let reopened = reopened(&e);
+    let q = reopened.index().para(reopened.document(), id(&reopened, "a1")).expect("a1");
+    assert_eq!(q.style.direct.get().style.as_deref(), Some("Normal"), "the saved file names it");
+}
+
 #[test]
 fn a_heading_s_content_runs_to_the_next_heading_of_its_level() {
     let e = outline();
