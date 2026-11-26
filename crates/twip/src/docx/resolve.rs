@@ -8,10 +8,10 @@ use std::rc::Rc;
 use super::model::*;
 use super::numbering::{Level, Numbering};
 use super::props::*;
-use super::review::ParaChange;
 #[cfg(test)]
-use super::review::{FormatChange, RunRevisions};
+use super::review::{FormatChange, ParaChange, RunRevisions};
 use super::styles::{Region, Styles, ThemeFonts};
+#[cfg(test)]
 use super::write::props::Cx;
 
 #[derive(Clone)]
@@ -213,6 +213,7 @@ impl Resolver {
         })
     }
 
+    #[cfg(test)]
     pub fn para_style(&self, p: &ParaProps) -> ParaStyle {
         let line_rule = p.line_rule.unwrap_or(LineRule::Auto);
         let line = match (p.line, line_rule) {
@@ -289,6 +290,7 @@ impl Resolver {
         p
     }
 
+    #[cfg(test)]
     pub fn paragraph(&self, direct: &ParaProps, region: Option<&Region>) -> ParaResolved {
         let style_id = self.styles.paragraph_style(direct.style.as_deref()).map(str::to_string);
         let style_ppr = self.styles.chain_ppr(style_id.as_deref());
@@ -419,6 +421,7 @@ impl Resolver {
         Rc::new(s)
     }
 
+    #[cfg(test)]
     /// `again`, a paragraph's properties resolved again in `region`, with what reading gave `was` beyond them: its
     /// tracked property change (the previous properties resolved again too) and its place in a frame.
     pub fn para_again(&self, was: &ParaStyle, mut again: ParaStyle, region: Option<&Region>, cx: &Cx) -> ParaStyle {
@@ -438,6 +441,7 @@ impl Resolver {
         again
     }
 
+    #[cfg(test)]
     /// A paragraph resolved from its direct `w:pPr` as written, in `region` when it is in a cell.
     pub fn para_from_xml(&self, ppr: Option<&str>, region: Option<&Region>, cx: &Cx) -> ParaResolved {
         let direct = ppr.and_then(|x| cx.parse(x, |_, el| ParaProps::parse(Some(el), &self.styles.colours))).unwrap_or_default();

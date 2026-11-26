@@ -858,22 +858,6 @@ impl Editor {
         res.styles.get(&first).filter(|s| s.meta.auto_redefine).map(|s| s.id.clone())
     }
 
-    /// Paragraph formatting on paragraphs in an automatically updating style: the style changes instead, as one undo
-    /// step.
-    pub(super) fn format_auto_redefined(&mut self, id: &str, edit: &dyn Fn(&mut Props, &Cx, &Paragraph), fonts: &Fonts) -> Outcome {
-        let Some(raw) = self.doc.resolver.as_ref().and_then(|r| r.styles.get(id)).map(|s| s.raw.clone()) else {
-            return Outcome::Unchanged("no style");
-        };
-        self.style_target = Some(raw.clone());
-        let _ = self.format_style_part("pPr", &|p, cx, para, _| edit(p, cx, para));
-        let Some(now) = self.style_target.take() else { return Outcome::Unchanged("no style") };
-        // The formatting it has already, as for paragraphs formatted directly: no undo step.
-        if now == raw || self.style_formatting(&now).zip(self.style_formatting(&raw)).is_some_and(|(a, b)| a.0.style.layout_eq(&b.0.style)) {
-            return Outcome::Unchanged("the style already has it");
-        }
-        self.edit_styles("Modify Style", |s| s.set_xml(now), fonts)
-    }
-
     /// The paragraphs in one of the styles `changed`, or with a run in one: its mark, its list label, a ruby's text
     /// too.
     pub(super) fn styled_paras(&self, changed: &[String]) -> Vec<crate::layout::ParaId> {

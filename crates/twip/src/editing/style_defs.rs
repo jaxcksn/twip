@@ -796,8 +796,7 @@ impl Editor {
                 let mut next = (**res).clone();
                 next.styles = styles.clone();
                 let region = next.styles.table_region(Some(&style.id), &[]);
-                let cx = next.styles.cx();
-                let para = crate::docx::para_xml::from_xml(&next, None, Some(&region), &cx);
+                let para = crate::docx::para_xml::resolve(&next, &Default::default(), None, Some(&region));
                 let run = Rc::new(run_xml::resolve(&next, &run_xml::base(&para.base), Default::default(), false));
                 let tabs = para
                     .style
@@ -862,7 +861,6 @@ impl Editor {
         let res = self.doc.resolver.as_ref()?;
         let mut next = (**res).clone();
         next.styles = styles.clone();
-        let cx = next.styles.cx();
         let whole = next.styles.table_region(Some(id), &[]);
         let line = |b: &Option<crate::docx::props::Border>| super::borders_dialog::line(b);
         let borders = |b: &crate::docx::props::Borders| TableBorders {
@@ -886,7 +884,7 @@ impl Editor {
             .map(|&part| {
                 let region = part.region();
                 let r = next.styles.table_region(Some(id), &region.into_iter().collect::<Vec<_>>());
-                let para = crate::docx::para_xml::from_xml(&next, None, Some(&r), &cx);
+                let para = crate::docx::para_xml::resolve(&next, &Default::default(), None, Some(&r));
                 let run = Rc::new(run_xml::resolve(&next, &run_xml::base(&para.base), Default::default(), false));
                 let mut b = borders(&r.tc.borders);
                 if region.is_none() {

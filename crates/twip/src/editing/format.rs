@@ -9,7 +9,7 @@ use crate::docx::para_xml;
 use crate::docx::props::RunProps;
 use crate::docx::resolve::{Resolver, joined_style};
 use crate::docx::styles::Region;
-use crate::docx::write::props::{Cx, Props};
+use crate::docx::write::props::Cx;
 use crate::docx::{Inline, ParaStyle, Raw, Row, Ruby, Run, RunStyle, Table};
 use crate::font::Fonts;
 use crate::layout::{ParaId, Unit};
@@ -839,16 +839,6 @@ impl Editor {
         out
     }
 
-    pub(super) fn format_paras(&mut self, label: &'static str, edit: &dyn Fn(&mut Props, &Cx, &crate::docx::Paragraph), fonts: &Fonts) -> Outcome {
-        if self.style_target.is_some() {
-            return self.format_style_part("pPr", &|p, cx, para, _| edit(p, cx, para));
-        }
-        if let Some(id) = self.auto_redefined() {
-            return self.format_auto_redefined(&id, edit, fonts);
-        }
-        self.format_paras_direct(label, edit, fonts)
-    }
-
     /// Paragraph formatting as a typed edit of each selected paragraph's authored properties; of the style being
     /// formatted instead, or of the selection's style when it updates automatically.
     pub(super) fn format_paras_typed(
@@ -886,41 +876,6 @@ impl Editor {
             let mut e = ParaEdit::new((**p.style.direct.get()).clone());
             edit(&mut e, p);
             let direct = p.style.direct.edit(e);
-            let Some(r) = self.para_again(para, Some(direct), &res, &cx) else { continue };
-            let Some(p) = self.index.para(&self.doc, para) else { continue };
-            if r.style.layout_eq(&p.style) && r.style.authored_eq(&p.style) {
-                continue;
-            }
-            let (mark, list) = (p.mark.clone(), p.list.clone());
-            if self.step(&mut tx, Step::Para { para, style: Rc::new(r.style), mark, list }).is_err() {
-                self.abort(tx);
-                return Outcome::Unchanged("formatting failed");
-            }
-            tx.stale_paras.push(para);
-        }
-        self.commit(tx, None, fonts)
-    }
-
-    /// [`Self::format_paras`] on the paragraphs themselves, even in a style that updates automatically: for what
-    /// isn't direct formatting (applying a style).
-    pub(super) fn format_paras_direct(
-        &mut self,
-        label: &'static str,
-        edit: &dyn Fn(&mut Props, &Cx, &crate::docx::Paragraph),
-        fonts: &Fonts,
-    ) -> Outcome {
-        if self.refuse_expanded() || self.refuse_locked_content() {
-            return Outcome::Unchanged("locked");
-        }
-        let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
-        let cx = self.cx();
-        let paras = self.selected_paras();
-        let mut tx = self.begin(label);
-        for para in paras {
-            let Some(p) = self.index.para(&self.doc, para) else { continue };
-            let mut pr = Props::parse(self.ppr(&p.style.direct, &cx).as_deref(), "pPr", &cx);
-            edit(&mut pr, &cx, p);
-            let direct = para_xml::edited_direct(&res, &p.style.direct, pr.xml().as_deref(), &cx);
             let Some(r) = self.para_again(para, Some(direct), &res, &cx) else { continue };
             let Some(p) = self.index.para(&self.doc, para) else { continue };
             if r.style.layout_eq(&p.style) && r.style.authored_eq(&p.style) {
