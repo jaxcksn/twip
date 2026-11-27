@@ -4,13 +4,15 @@ use std::fmt::Write;
 
 use roxmltree::Node;
 
-use super::colour::{Colour, ColourMod};
-use super::geom::{CustomGeom, Geometry, Preset};
-use super::paint::{self, Fill, Line};
+use super::Spans;
+use super::geom::custom_geom;
 use super::read::Ctx;
-use super::text::{BodyProps, TextDirection, VAnchor};
-use super::units::{Angle, Emu, Pct};
-use super::{GroupShape, NonVisual, PicShape, Shape, ShapeKind, ShapeText, SpShape, Spans, TextPath, Xfrm};
+use crate::drawing::colour::{Colour, ColourBase, ColourMod, darken, lighten, preset_colour};
+use crate::drawing::geom::{Geometry, Preset};
+use crate::drawing::paint::{self, Fill, Line, two_colour};
+use crate::drawing::text::{BodyProps, TextDirection, VAnchor};
+use crate::drawing::units::{Angle, Emu, Pct};
+use crate::drawing::{GroupShape, NonVisual, PicShape, Shape, ShapeKind, ShapeText, SpShape, TextPath, Xfrm};
 
 const V: &str = "urn:schemas-microsoft-com:vml";
 const O: &str = "urn:schemas-microsoft-com:office:office";
@@ -208,7 +210,7 @@ pub fn colour(v: &str) -> Option<Colour> {
         "blue" => 0x0000FF,
         "teal" => 0x008080,
         "aqua" => 0x00FFFF,
-        _ => return super::colour::preset_colour(token).map(Colour::srgb),
+        _ => return preset_colour(token).map(Colour::srgb),
     };
     Some(Colour::srgb(html))
 }
@@ -369,7 +371,7 @@ fn fill_over(el: Node, dflt: Colour, image: &mut dyn FnMut(&str) -> Option<usize
 /// A colour of the fill's own (`fill`, `fill darken(n)`, `fill lighten(n)`: a one-colour gradient's second colour).
 fn derived(v: &str, base: &Colour) -> Option<Colour> {
     let rest = v.trim().strip_prefix("fill")?.trim();
-    let super::colour::ColourBase::Srgb(rgb) = base.base else { return None };
+    let ColourBase::Srgb(rgb) = base.base else { return None };
     if rest.is_empty() {
         return Some(Colour::srgb(rgb));
     }
@@ -380,67 +382,6 @@ fn derived(v: &str, base: &Colour) -> Option<Colour> {
         "lighten" => lighten(rgb, n),
         _ => return None,
     }))
-}
-
-/// VML's `darken(n)`: each channel scaled by `n`/255.
-pub fn darken(c: u32, n: u8) -> u32 {
-    [16, 8, 0].iter().map(|s| ((((c >> s) & 0xFF) * u32::from(n) + 127) / 255) << s).sum()
-}
-
-/// VML's `lighten(n)`: each channel's distance from white scaled by `n`/255.
-pub fn lighten(c: u32, n: u8) -> u32 {
-    0xFF_FFFF - darken(0xFF_FFFF - c, n)
-}
-
-/// The `darken(n)` (`false`) or `lighten(n)` (`true`) that makes `to` of `from`, when one does.
-pub fn shade_of(from: u32, to: u32) -> Option<(bool, u8)> {
-    (0..=255u8).rev().find_map(|n| {
-        if darken(from, n) == to {
-            Some((false, n))
-        } else if lighten(from, n) == to {
-            Some((true, n))
-        } else {
-            None
-        }
-    })
-}
-
-/// A two-colour gradient's stops as Word draws one: each channel runs from its lower value to its higher along the
-/// two-stop blend, gamma encoded, whichever way it runs (measured), so the blend is the same for every pair.
-pub(crate) fn two_colour(from: &Colour, to: &Colour) -> Vec<(Pct, Colour)> {
-    use super::colour::{ColourBase, TWO_STOP_BLEND, linear_to_srgb};
-    let parts = |c: &Colour| {
-        let v = match c.base {
-            ColourBase::Srgb(v) => v,
-            _ => 0,
-        };
-        let alpha = c.mods.iter().fold(1.0, |a: f64, m| match m {
-            ColourMod::Alpha(p) => p.fraction().clamp(0.0, 1.0),
-            ColourMod::AlphaOff(p) => (a + p.fraction()).clamp(0.0, 1.0),
-            ColourMod::AlphaMod(p) => (a * p.fraction()).clamp(0.0, 1.0),
-            _ => a,
-        });
-        ([16, 8, 0].map(|s| f64::from((v >> s) & 0xFF)), alpha)
-    };
-    let ((a, aa), (b, ba)) = (parts(from), parts(to));
-    (0..=16)
-        .map(|k| {
-            let (up, down) = (linear_to_srgb(TWO_STOP_BLEND[k]), 1.0 - linear_to_srgb(TWO_STOP_BLEND[16 - k]));
-            let ch = |i: usize| {
-                let e = if b[i] >= a[i] { up } else { down };
-                ((a[i] + (b[i] - a[i]) * e).round().clamp(0.0, 255.0) as u32) << (16 - 8 * i)
-            };
-            let c = Colour::srgb(ch(0) | ch(1) | ch(2));
-            let alpha = aa + (ba - aa) * k as f64 / 16.0;
-            (Pct(k as i32 * 100000 / 16), if alpha < 1.0 { with_alpha(c, Some(alpha)) } else { c })
-        })
-        .collect()
-}
-
-/// Whether a page gradient is two colours as Word blends them, which VML writes as its two colours and opacities.
-pub(crate) fn is_two_colour(g: &paint::Gradient) -> bool {
-    matches!(g.kind, paint::GradientKind::Linear { .. })
-        && matches!((g.stops.first(), g.stops.last()), (Some(a), Some(b)) if g.stops == two_colour(&a.1, &b.1))
 }
 
 /// The most `colors` entries a gradient reads.
@@ -942,7 +883,7 @@ fn tokens(path: &str) -> Vec<Tok> {
 
 fn custom(xml: &str) -> Geometry {
     match roxmltree::Document::parse(xml) {
-        Ok(d) => Geometry::Custom(std::rc::Rc::new(CustomGeom::parse(d.root_element()))),
+        Ok(d) => Geometry::Custom(std::rc::Rc::new(custom_geom(d.root_element()))),
         Err(_) => Geometry::Preset { preset: Preset::Rect, adj: Vec::new() },
     }
 }
@@ -1415,7 +1356,7 @@ mod tests {
         assert_eq!(g.tile, [Pct(50000), Pct(0), Pct(0), Pct(50000)]);
         // Each channel blends the same way between any two colours: halfway is 73% of the way up from its low end.
         let mid = |c: &Colour| match c.base {
-            super::super::colour::ColourBase::Srgb(v) => v,
+            ColourBase::Srgb(v) => v,
             _ => panic!(),
         };
         assert_eq!(mid(&gradient("").stops[8].1), 0xBA_00BA);

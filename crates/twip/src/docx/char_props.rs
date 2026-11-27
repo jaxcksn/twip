@@ -446,15 +446,15 @@ fn w14(p: &mut CharProps, e: Node, name: &str) -> bool {
             t.stylistic_sets = Some(ids.filter(|n| (1..=20).contains(n)).fold(0, |m, n| m | 1 << (n - 1)));
         }
         "textFill" | "textOutline" | "shadow" | "glow" | "reflection" => {
-            use crate::drawing::colour::Ns;
-            use crate::drawing::paint::{Fill, Glow, Line, OuterShadow, Reflection};
+            use crate::docx::drawing::colour::Ns;
+            use crate::docx::drawing::paint::{child_fill_in, glow, line_in, outer_shadow, reflection};
             let fx = Rc::make_mut(p.effects.get_or_insert_with(Default::default));
             match name {
-                "textFill" => fx.fill = Fill::child_of_in(e, Ns::W14, &mut |_| None).or(fx.fill.take()),
-                "textOutline" => fx.outline = Some(Line::parse_in(e, Ns::W14, &mut |_| None)),
-                "shadow" => fx.shadow = Some(OuterShadow::parse(e, Ns::W14)),
-                "glow" => fx.glow = Some(Glow::parse(e, Ns::W14)),
-                _ => fx.reflection = Some(Reflection::parse(e, Ns::W14)),
+                "textFill" => fx.fill = child_fill_in(e, Ns::W14, &mut |_| None).or(fx.fill.take()),
+                "textOutline" => fx.outline = Some(line_in(e, Ns::W14, &mut |_| None)),
+                "shadow" => fx.shadow = Some(outer_shadow(e, Ns::W14)),
+                "glow" => fx.glow = Some(glow(e, Ns::W14)),
+                _ => fx.reflection = Some(reflection(e, Ns::W14)),
             }
         }
         _ => return false,

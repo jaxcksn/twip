@@ -8,6 +8,7 @@ pub mod blank;
 pub mod char_props;
 pub mod comments;
 pub mod diagnostics;
+pub mod drawing;
 pub mod fields;
 pub mod font_table;
 pub mod forms;

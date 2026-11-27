@@ -340,14 +340,14 @@ impl RunProps {
 /// Reads a Word 2010 text effect element (`w14:textFill`, `w14:textOutline`, `w14:shadow`, `w14:glow`,
 /// `w14:reflection`) into `t`, with DrawingML's readers in the `w14` namespace.
 fn read_text_effect(e: Node, t: &mut super::model::TextEffects) {
-    use crate::drawing::colour::Ns;
-    use crate::drawing::paint::{Fill, Glow, Line, OuterShadow, Reflection};
+    use crate::docx::drawing::colour::Ns;
+    use crate::docx::drawing::paint::{child_fill_in, glow, line_in, outer_shadow, reflection};
     match e.tag_name().name() {
-        "textFill" => t.fill = Fill::child_of_in(e, Ns::W14, &mut |_| None).or(t.fill.take()),
-        "textOutline" => t.outline = Some(Line::parse_in(e, Ns::W14, &mut |_| None)),
-        "shadow" => t.shadow = Some(OuterShadow::parse(e, Ns::W14)),
-        "glow" => t.glow = Some(Glow::parse(e, Ns::W14)),
-        "reflection" => t.reflection = Some(Reflection::parse(e, Ns::W14)),
+        "textFill" => t.fill = child_fill_in(e, Ns::W14, &mut |_| None).or(t.fill.take()),
+        "textOutline" => t.outline = Some(line_in(e, Ns::W14, &mut |_| None)),
+        "shadow" => t.shadow = Some(outer_shadow(e, Ns::W14)),
+        "glow" => t.glow = Some(glow(e, Ns::W14)),
+        "reflection" => t.reflection = Some(reflection(e, Ns::W14)),
         _ => {}
     }
 }
@@ -1363,8 +1363,8 @@ mod tests {
         ));
         let e = r.effects.expect("effects");
         let Some(crate::drawing::paint::Fill::Gradient(g)) = &e.fill else { panic!("a gradient") };
-        assert_eq!(g.stops.len(), crate::drawing::paint::MAX_W14_STOPS);
-        assert_eq!(e.glow.as_ref().expect("a glow").colour.mods.len(), crate::drawing::colour::MAX_W14_MODS);
+        assert_eq!(g.stops.len(), crate::docx::drawing::paint::MAX_W14_STOPS);
+        assert_eq!(e.glow.as_ref().expect("a glow").colour.mods.len(), crate::docx::drawing::colour::MAX_W14_MODS);
         assert_eq!(e.outline.as_ref().expect("an outline").dash, None, "no custom dash in the w14 schema");
         // The drawn glow is bounded as a shape's is.
         let (t, m) = (crate::drawing::theme::Theme::default(), crate::drawing::theme::ColourMap::default());

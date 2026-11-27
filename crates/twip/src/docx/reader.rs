@@ -348,11 +348,11 @@ pub fn frozen_resolver(bytes: &[u8]) -> Option<super::resolve::Resolver> {
     let part_of = |kind: &str| rels.values().find(|(k, _)| k == kind).map(|(_, t)| t.clone());
     let theme_xml = part_of("theme").and_then(|p| pkg.read_str(&p));
     let theme = ThemeFonts::parse(theme_xml.as_deref());
-    let drawing_theme = crate::drawing::theme::Theme::parse(theme_xml.as_deref());
+    let drawing_theme = crate::docx::drawing::theme::theme(theme_xml.as_deref());
     let settings_xml = part_of("settings").and_then(|p| pkg.read_str(&p));
     let settings = read_settings(settings_xml.as_deref());
     let settings_tree = settings_xml.as_deref().and_then(|x| roxmltree::Document::parse(x).ok());
-    let colour_map = crate::drawing::theme::ColourMap::parse(settings_tree.as_ref().map(|d| d.root_element()));
+    let colour_map = crate::docx::drawing::theme::colour_map(settings_tree.as_ref().map(|d| d.root_element()));
     let colours = ThemeColours::new(&drawing_theme, &colour_map);
     let mut styles = Styles::parse(part_of("styles").and_then(|p| pkg.read_str(&p)).as_deref(), colours);
     let mut numbering = Numbering::parse(part_of("numbering").and_then(|p| pkg.read_str(&p)).as_deref(), &colours);
@@ -414,12 +414,12 @@ fn read_package(bytes: &[u8], pkg: &mut Package, editable: bool, now: i64, depth
 
     let theme_xml = part_of("theme").and_then(|p| pkg.read_str(&p));
     let theme = ThemeFonts::parse(theme_xml.as_deref());
-    let drawing_theme = Rc::new(crate::drawing::theme::Theme::parse(theme_xml.as_deref()));
+    let drawing_theme = Rc::new(crate::docx::drawing::theme::theme(theme_xml.as_deref()));
     let settings_xml = part_of("settings").and_then(|p| pkg.read_str(&p));
     let settings = read_settings(settings_xml.as_deref());
     let settings_tree = settings_xml.as_deref().and_then(|x| roxmltree::Document::parse(x).ok());
     let settings_root = settings_tree.as_ref().map(|d| d.root_element());
-    let colour_map = crate::drawing::theme::ColourMap::parse(settings_root);
+    let colour_map = crate::docx::drawing::theme::colour_map(settings_root);
     let opening = settings_root.map(opening_view);
     let colours = ThemeColours::new(&drawing_theme, &colour_map);
     let styles_xml = part_of("styles").and_then(|p| pkg.read_str(&p));
@@ -557,7 +557,8 @@ fn read_package(bytes: &[u8], pkg: &mut Package, editable: bool, now: i64, depth
             doc.page_colour = colours.colour(b, "color", "themeColor", "themeTint", "themeShade");
             doc.page_colour_theme = crate::docx::props::theme_ref(b, "themeColor", "themeTint", "themeShade");
             let mut src = DrawingSource { reader: &mut r, pkg: &mut *pkg };
-            doc.page_fill = crate::drawing::vml::background_fill(b, doc.page_colour, &mut |rid| crate::drawing::read::Source::image(&mut src, rid));
+            doc.page_fill =
+                crate::docx::drawing::vml::background_fill(b, doc.page_colour, &mut |rid| crate::docx::drawing::read::Source::image(&mut src, rid));
         }
         r.record = editable;
         doc.sections = r.read_body(body, &mut *pkg);
@@ -3104,8 +3105,8 @@ impl Reader {
 
     fn read_pict(&mut self, pict: Node, run: &Run, pkg: &mut Package, out: &mut Vec<Inline>) {
         let mut src = DrawingSource { reader: self, pkg };
-        let mut ctx = crate::drawing::read::Ctx { source: &mut src, unknown_presets: Vec::new() };
-        let Some(v) = crate::drawing::vml::read(pict, &mut ctx) else { return };
+        let mut ctx = crate::docx::drawing::read::Ctx { source: &mut src, unknown_presets: Vec::new() };
+        let Some(v) = crate::docx::drawing::vml::read(pict, &mut ctx) else { return };
         let st = &v.style;
         let mut shape = v.shape;
         shape.xfrm.ext = [crate::drawing::units::Emu((st.w * 12700.0).round() as i64), crate::drawing::units::Emu((st.h * 12700.0).round() as i64)];
@@ -3253,7 +3254,7 @@ impl Reader {
         let w = extent.and_then(|e| emu(e.attribute("cx"))).unwrap_or(0.0);
         let h = extent.and_then(|e| emu(e.attribute("cy"))).unwrap_or(0.0);
         let blip = item.descendants().find(|n| is(*n, A, "blip"));
-        let image = blip.and_then(crate::drawing::paint::blip_embed).map(str::to_string).and_then(|rid| self.image(&rid, pkg));
+        let image = blip.and_then(crate::docx::drawing::paint::blip_embed).map(str::to_string).and_then(|rid| self.image(&rid, pkg));
         let txbx = item.descendants().find(|n| is_w(*n, "txbxContent"));
         let shape = self.drawing_shape(item, pkg);
         let alt: Rc<str> = item
@@ -3262,7 +3263,7 @@ impl Reader {
             .and_then(|p| p.attribute("descr").filter(|s| !s.is_empty()).or(p.attribute("title")))
             .unwrap_or("")
             .into();
-        let lock_aspect = crate::drawing::read::aspect_locked(item);
+        let lock_aspect = crate::docx::drawing::read::aspect_locked(item);
         if is(item, WP, "inline") {
             let ee = item.children().find(|c| is(*c, WP, "effectExtent"));
             // Negative where a turned picture's bounds are narrower than its box (Word writes a quarter-turned
@@ -3402,8 +3403,8 @@ impl Reader {
 
     fn drawing_shape(&mut self, item: Node, pkg: &mut Package) -> crate::drawing::Shape {
         let mut src = DrawingSource { reader: self, pkg };
-        let mut ctx = crate::drawing::read::Ctx { source: &mut src, unknown_presets: Vec::new() };
-        let shape = crate::drawing::read::read(item, &mut ctx);
+        let mut ctx = crate::docx::drawing::read::Ctx { source: &mut src, unknown_presets: Vec::new() };
+        let shape = crate::docx::drawing::read::read(item, &mut ctx);
         for name in ctx.unknown_presets {
             self.warn(WarningCode::UnknownPreset, || format!("preset geometry {name} isn't one the engine draws; it is drawn as a rectangle"));
         }
@@ -3466,7 +3467,7 @@ impl Reader {
                 }
                 "pic" => {
                     if let Some(f) = child_xfrm(c, "spPr") {
-                        let rid = c.descendants().find(|n| is(*n, A, "blip")).and_then(crate::drawing::paint::blip_embed).map(str::to_string);
+                        let rid = c.descendants().find(|n| is(*n, A, "blip")).and_then(crate::docx::drawing::paint::blip_embed).map(str::to_string);
                         let image = rid.and_then(|r| self.image(&r, pkg));
                         out.push(GroupPart { rect: map.rect(&f), image, text_box: None, path: path.clone() });
                     }
@@ -4130,7 +4131,7 @@ struct DrawingSource<'r, 'p> {
     pkg: &'p mut Package,
 }
 
-impl crate::drawing::read::Source for DrawingSource<'_, '_> {
+impl crate::docx::drawing::read::Source for DrawingSource<'_, '_> {
     fn image(&mut self, rid: &str) -> Option<usize> {
         self.reader.image(rid, self.pkg)
     }
@@ -4144,7 +4145,7 @@ impl crate::drawing::read::Source for DrawingSource<'_, '_> {
         let xml = self.pkg.read_str(&drawing)?;
         // The drawing's pictures are relative to its own part: they are not looked up.
         struct NoImages;
-        impl crate::drawing::read::Source for NoImages {
+        impl crate::docx::drawing::read::Source for NoImages {
             fn image(&mut self, _: &str) -> Option<usize> {
                 None
             }
@@ -4152,8 +4153,8 @@ impl crate::drawing::read::Source for DrawingSource<'_, '_> {
                 None
             }
         }
-        let mut ctx = crate::drawing::read::Ctx { source: &mut NoImages, unknown_presets: Vec::new() };
-        crate::drawing::read::diagram_drawing(&xml, &mut ctx)
+        let mut ctx = crate::docx::drawing::read::Ctx { source: &mut NoImages, unknown_presets: Vec::new() };
+        crate::docx::drawing::read::diagram_drawing(&xml, &mut ctx)
     }
 }
 

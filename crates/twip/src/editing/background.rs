@@ -435,11 +435,11 @@ fn one_colour(f: Fill, palette: crate::drawing::paint::Palette) -> Fill {
     let (Some((light, p)), crate::drawing::paint::GradientKind::Linear { .. }) = (derived, g.kind) else { return Fill::Gradient(g) };
     let first = a.resolve(palette.theme, palette.map, None).to_rgb();
     let n = (p.fraction().clamp(0.0, 1.0) * 255.0).round() as u8;
-    let second = if light { crate::drawing::vml::lighten(first, n) } else { crate::drawing::vml::darken(first, n) };
+    let second = if light { crate::drawing::colour::lighten(first, n) } else { crate::drawing::colour::darken(first, n) };
     let opacity: Vec<ColourMod> =
         a.mods.iter().filter(|m| matches!(m, ColourMod::Alpha(_) | ColourMod::AlphaOff(_) | ColourMod::AlphaMod(_))).cloned().collect();
     let at = |rgb: u32| Colour { mods: opacity.clone(), ..Colour::srgb(rgb) };
-    g.stops = crate::drawing::vml::two_colour(&at(first), &at(second));
+    g.stops = crate::drawing::paint::two_colour(&at(first), &at(second));
     Fill::Gradient(g)
 }
 
@@ -459,7 +459,7 @@ fn page_gradient(f: Fill, palette: crate::drawing::paint::Palette) -> Result<Fil
         }
     }
     let clear = g.stops.iter().any(|(_, c)| c.resolve(palette.theme, palette.map, None).a < 255);
-    if clear && !crate::drawing::vml::is_two_colour(&g) {
+    if clear && !crate::drawing::paint::is_two_colour(&g) {
         return Err("a page gradient's colours are opaque, or two of them blended".into());
     }
     Ok(Fill::Gradient(g))

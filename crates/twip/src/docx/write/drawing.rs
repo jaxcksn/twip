@@ -1053,7 +1053,7 @@ mod tests {
         assert_eq!(xml, r#"<a:solidFill><a:schemeClr val="accent1"><a:lumMod val="75000"/></a:schemeClr></a:solidFill>"#);
         let wrapped = format!(r#"<r xmlns:a="{}">{xml}</r>"#, crate::docx::xml::A);
         let d = roxmltree::Document::parse(&wrapped).unwrap();
-        assert_eq!(Fill::child_of(d.root_element(), &mut |_| None), Some(f));
+        assert_eq!(crate::docx::drawing::paint::child_fill(d.root_element(), &mut |_| None), Some(f));
         let l = Line {
             width: Some(crate::drawing::units::Emu(12700)),
             fill: Some(Fill::Solid(Colour::srgb(0xFF0000))),
@@ -1062,7 +1062,7 @@ mod tests {
         };
         let wrapped = format!(r#"<r xmlns:a="{}">{}</r>"#, crate::docx::xml::A, line_xml(&l));
         let d = roxmltree::Document::parse(&wrapped).unwrap();
-        assert_eq!(Line::parse(d.root_element().first_element_child().unwrap()), l);
+        assert_eq!(crate::docx::drawing::paint::line(d.root_element().first_element_child().unwrap()), l);
     }
 
     #[test]
@@ -1203,7 +1203,7 @@ mod round_trip {
     #[test]
     fn a_written_reflection_reads_as_it_was() {
         let xml = r#"<a:effectLst xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:reflection blurRad="6350" stA="50000" stPos="1000" endA="300" endPos="35000" dist="12700" dir="5400000" fadeDir="2700000" sx="90000" sy="-100000" kx="60000" ky="120000" algn="bl" rotWithShape="0"/></a:effectLst>"#;
-        let read = |x: &str| crate::drawing::paint::EffectList::parse(roxmltree::Document::parse(x).expect("xml").root_element());
+        let read = |x: &str| crate::docx::drawing::paint::effect_list(roxmltree::Document::parse(x).expect("xml").root_element());
         let e = read(xml);
         assert!(e.reflection.is_some() && !e.kept);
         let written =

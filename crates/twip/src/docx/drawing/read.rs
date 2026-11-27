@@ -4,12 +4,15 @@ use std::rc::Rc;
 
 use roxmltree::Node;
 
-use super::geom::{CustomGeom, Geometry, Preset};
-use super::paint::{BlipFill, EffectList, Fill, Line, StyleRefs};
-use super::text::BodyProps;
-use super::units::{Angle, Emu};
-use super::{GroupShape, NonVisual, PicShape, RawGraphic, Shape, ShapeKind, ShapeText, SpShape, Spans, Xfrm};
+use super::Spans;
+use super::geom::custom_geom;
+use super::paint;
+use super::text::body_props;
 use crate::docx::xml::{A, R, W, WP};
+use crate::drawing::geom::{Geometry, Preset};
+use crate::drawing::paint::{EffectList, Fill, Line};
+use crate::drawing::units::{Angle, Emu};
+use crate::drawing::{GroupShape, NonVisual, PicShape, RawGraphic, Shape, ShapeKind, ShapeText, SpShape, Xfrm};
 
 pub trait Source {
     fn image(&mut self, rid: &str) -> Option<usize>;
@@ -93,7 +96,7 @@ fn geometry(sp_pr: Option<Node>, ctx: &mut Ctx) -> Geometry {
         return Geometry::Preset { preset, adj };
     }
     if let Some(g) = a(p, "custGeom") {
-        return Geometry::Custom(Rc::new(CustomGeom::parse(g)));
+        return Geometry::Custom(Rc::new(custom_geom(g)));
     }
     Geometry::default()
 }
@@ -112,13 +115,13 @@ fn props(sp_pr: Option<Node>, ctx: &mut Ctx, spans: &mut Spans) -> Props {
             && matches!(c.tag_name().name(), "noFill" | "solidFill" | "gradFill" | "pattFill" | "blipFill" | "grpFill")
     });
     spans.fill = fill_el.map(|n| n.range());
-    let fill = fill_el.and_then(|f| Fill::parse_with(f, &mut |r| ctx.source.image(r)));
+    let fill = fill_el.and_then(|f| paint::fill_with(f, &mut |r| ctx.source.image(r)));
     let ln = a(p, "ln");
     spans.line = ln.map(|n| n.range());
-    let line = ln.map(|l| Line::parse_with(l, &mut |r| ctx.source.image(r)));
+    let line = ln.map(|l| paint::line_with(l, &mut |r| ctx.source.image(r)));
     let eff = a(p, "effectLst");
     spans.effects = eff.or_else(|| a(p, "effectDag")).map(|n| n.range());
-    let effects = eff.map(EffectList::parse);
+    let effects = eff.map(paint::effect_list);
     let kept_3d = a(p, "scene3d").is_some() || a(p, "sp3d").is_some() || a(p, "effectDag").is_some();
     Props { fill, line, effects, kept_3d }
 }
@@ -159,8 +162,8 @@ fn sp(n: Node, ctx: &mut Ctx) -> Shape {
             fill,
             line,
             effects,
-            style: style.map(StyleRefs::parse),
-            body: body.map(BodyProps::parse).unwrap_or_default(),
+            style: style.map(paint::style_refs),
+            body: body.map(body_props).unwrap_or_default(),
             text,
             chain,
             text_box: nv_sp.is_some_and(|c| on(c.attribute("txBox"))),
@@ -184,7 +187,7 @@ fn pic(n: Node, ctx: &mut Ctx) -> Shape {
     let Props { line, effects, kept_3d, .. } = props(sp_pr, ctx, &mut spans);
     let blip_fill = named(n, "blipFill");
     spans.blip = blip_fill.map(|b| b.range());
-    let blip = blip_fill.map_or_else(|| BlipFill::parse(n, &mut |_| None), |b| BlipFill::parse(b, &mut |r| ctx.source.image(r)));
+    let blip = blip_fill.map_or_else(|| paint::blip_fill(n, &mut |_| None), |b| paint::blip_fill(b, &mut |r| ctx.source.image(r)));
     let nv = named(n, "nvPicPr");
     let mut nonvisual = nv_of(nv.and_then(|v| named(v, "cNvPr")));
     nonvisual.lock_aspect =
@@ -196,7 +199,7 @@ fn group(n: Node, canvas: bool, ctx: &mut Ctx) -> Shape {
     let gp = named(n, "grpSpPr").or_else(|| named(n, "bg"));
     let x = gp.and_then(|p| a(p, "xfrm"));
     let (xfrm, child_off, child_ext) = xfrm_of(x);
-    let fill = gp.and_then(|p| Fill::child_of(p, &mut |r| ctx.source.image(r)));
+    let fill = gp.and_then(|p| paint::child_fill(p, &mut |r| ctx.source.image(r)));
     let children = n.children().filter(|c| c.is_element()).filter_map(|c| child(c, ctx)).collect::<Vec<_>>();
     let spans = Spans { shape: Some(n.range()), sp_pr: gp.map(|p| p.range()), xfrm: x.map(|e| e.range()), ..Spans::default() };
     let nv = nv_of(named(n, "cNvPr"));

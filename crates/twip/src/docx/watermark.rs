@@ -244,7 +244,7 @@ pub fn float(m: &Watermark, size: [f64; 2], spid: u32, image: Option<usize>) -> 
     let dom = roxmltree::Document::parse(&xml).ok()?;
     let pict = dom.root_element().children().find(|c| c.tag_name().name() == "pict")?;
     struct One(&'static str, Option<usize>);
-    impl crate::drawing::read::Source for One {
+    impl crate::docx::drawing::read::Source for One {
         fn image(&mut self, rid: &str) -> Option<usize> {
             if rid == self.0 { self.1 } else { None }
         }
@@ -253,8 +253,8 @@ pub fn float(m: &Watermark, size: [f64; 2], spid: u32, image: Option<usize>) -> 
         }
     }
     let mut src = One(rid, image);
-    let mut ctx = crate::drawing::read::Ctx { source: &mut src, unknown_presets: Vec::new() };
-    let v = crate::drawing::vml::read(pict, &mut ctx)?;
+    let mut ctx = crate::docx::drawing::read::Ctx { source: &mut src, unknown_presets: Vec::new() };
+    let v = crate::docx::drawing::vml::read(pict, &mut ctx)?;
     let mut shape = v.shape;
     let emu = |p: f64| crate::drawing::units::Emu((p * 12700.0).round() as i64);
     shape.xfrm.ext = [emu(v.style.w), emu(v.style.h)];

@@ -1136,10 +1136,10 @@ fn styles_parts() -> Vec<(String, String, ThemeColours)> {
         let Ok(pkg) = std::fs::read(&path) else { continue };
         let Some(main) = related(&pkg, "", "officeDocument") else { continue };
         let read = |name: Option<String>| name.and_then(|n| crate::docx::package::read(&pkg, &[], &n).ok().flatten());
-        let theme = crate::drawing::theme::Theme::parse(read(related(&pkg, &main, "theme")).as_deref());
+        let theme = crate::docx::drawing::theme::theme(read(related(&pkg, &main, "theme")).as_deref());
         let settings = read(related(&pkg, &main, "settings"));
         let tree = settings.as_deref().and_then(|x| roxmltree::Document::parse(x).ok());
-        let colours = ThemeColours::new(&theme, &crate::drawing::theme::ColourMap::parse(tree.as_ref().map(|d| d.root_element())));
+        let colours = ThemeColours::new(&theme, &crate::docx::drawing::theme::colour_map(tree.as_ref().map(|d| d.root_element())));
         let mut sources = vec![main.clone()];
         sources.extend(related(&pkg, &main, "glossaryDocument"));
         for from in sources {

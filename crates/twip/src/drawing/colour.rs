@@ -1,39 +1,7 @@
 //! DrawingML colours
 
-use roxmltree::Node;
-
 use super::theme::{ColourMap, Theme};
 use super::units::{Angle, Pct};
-use crate::docx::xml::{A, W14};
-
-/// The namespace a DrawingML reader reads: DrawingML's own, its attributes unqualified, or Word 2010's copy of it for
-/// text effects (`w14:`), its attributes qualified too.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Ns {
-    A,
-    W14,
-}
-
-impl Ns {
-    pub fn uri(self) -> &'static str {
-        match self {
-            Ns::A => A,
-            Ns::W14 => W14,
-        }
-    }
-
-    pub fn attr<'a>(self, n: Node<'a, '_>, k: &str) -> Option<&'a str> {
-        match self {
-            Ns::A => n.attribute(k),
-            Ns::W14 => n.attribute((W14, k)),
-        }
-    }
-
-    /// `n`'s first child element `name` in this namespace.
-    pub fn child<'a, 'i>(self, n: Node<'a, 'i>, name: &str) -> Option<Node<'a, 'i>> {
-        n.children().find(|c| c.is_element() && c.tag_name().name() == name && c.tag_name().namespace() == Some(self.uri()))
-    }
-}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Rgba {
@@ -170,51 +138,6 @@ pub enum ColourMod {
     InvGamma,
 }
 
-impl ColourMod {
-    fn parse(n: Node, ns: Ns) -> Option<ColourMod> {
-        use ColourMod::*;
-        if ns == Ns::W14 && n.tag_name().namespace() != Some(W14) {
-            return None;
-        }
-        let pct = || ns.attr(n, "val").and_then(Pct::parse);
-        let ang = || ns.attr(n, "val").and_then(Angle::parse);
-        Some(match n.tag_name().name() {
-            "tint" => Tint(pct()?),
-            "shade" => Shade(pct()?),
-            "comp" => Comp,
-            "inv" => Inv,
-            "gray" => Gray,
-            "alpha" => Alpha(pct()?),
-            "alphaOff" => AlphaOff(pct()?),
-            "alphaMod" => AlphaMod(pct()?),
-            "hue" => Hue(ang()?),
-            "hueOff" => HueOff(ang()?),
-            "hueMod" => HueMod(pct()?),
-            "sat" => Sat(pct()?),
-            "satOff" => SatOff(pct()?),
-            "satMod" => SatMod(pct()?),
-            "lum" => Lum(pct()?),
-            "lumOff" => LumOff(pct()?),
-            "lumMod" => LumMod(pct()?),
-            "red" => Red(pct()?),
-            "redOff" => RedOff(pct()?),
-            "redMod" => RedMod(pct()?),
-            "green" => Green(pct()?),
-            "greenOff" => GreenOff(pct()?),
-            "greenMod" => GreenMod(pct()?),
-            "blue" => Blue(pct()?),
-            "blueOff" => BlueOff(pct()?),
-            "blueMod" => BlueMod(pct()?),
-            "gamma" => Gamma,
-            "invGamma" => InvGamma,
-            _ => return None,
-        })
-    }
-}
-
-/// The most colour changes a `w14:` colour keeps: Word writes at most four.
-pub const MAX_W14_MODS: usize = 16;
-
 #[derive(Clone, Debug, PartialEq)]
 pub struct Colour {
     pub base: ColourBase,
@@ -233,48 +156,6 @@ impl Colour {
     pub fn with(mut self, m: ColourMod) -> Colour {
         self.mods.push(m);
         self
-    }
-
-    pub fn parse(n: Node) -> Option<Colour> {
-        Colour::parse_in(n, Ns::A)
-    }
-
-    /// [`Colour::parse`] in `ns`. A `w14:` colour keeps at most [`MAX_W14_MODS`] changes: a run's colours are
-    /// resolved for every line it is drawn on.
-    pub fn parse_in(n: Node, ns: Ns) -> Option<Colour> {
-        if n.tag_name().namespace() != Some(ns.uri()) {
-            return None;
-        }
-        let hex = |k: &str| ns.attr(n, k).and_then(|v| u32::from_str_radix(v.trim(), 16).ok());
-        let pct = |k: &str| ns.attr(n, k).and_then(Pct::parse).unwrap_or_default();
-        let base = match n.tag_name().name() {
-            "srgbClr" => ColourBase::Srgb(hex("val")?),
-            "scrgbClr" => ColourBase::ScRgb([pct("r"), pct("g"), pct("b")]),
-            "hslClr" => ColourBase::Hsl { hue: ns.attr(n, "hue").and_then(Angle::parse).unwrap_or_default(), sat: pct("sat"), lum: pct("lum") },
-            "sysClr" => {
-                let name = ns.attr(n, "val").unwrap_or("").to_string();
-                let last = hex("lastClr").unwrap_or_else(|| system_colour(&name));
-                ColourBase::Sys { name, last }
-            }
-            "prstClr" => {
-                let name = ns.attr(n, "val")?.to_string();
-                let value = preset_colour(&name)?;
-                ColourBase::Preset { name, value }
-            }
-            "schemeClr" => ColourBase::Scheme(SchemeSlot::parse(ns.attr(n, "val")?)?),
-            _ => return None,
-        };
-        let most = if ns == Ns::W14 { MAX_W14_MODS } else { usize::MAX };
-        let mods = n.children().filter(|c| c.is_element()).filter_map(|c| ColourMod::parse(c, ns)).take(most).collect();
-        Some(Colour { base, mods })
-    }
-
-    pub fn child_of(n: Node) -> Option<Colour> {
-        Colour::child_of_in(n, Ns::A)
-    }
-
-    pub fn child_of_in(n: Node, ns: Ns) -> Option<Colour> {
-        n.children().filter(|c| c.is_element()).find_map(|c| Colour::parse_in(c, ns))
     }
 
     pub fn resolve(&self, theme: &Theme, map: &ColourMap, placeholder: Option<Rgba>) -> Rgba {
@@ -309,6 +190,29 @@ pub fn srgb_to_linear(c: f64) -> f64 {
 
 pub fn linear_to_srgb(c: f64) -> f64 {
     if c <= 0.003_130_8 { c * 12.92 } else { 1.055 * c.powf(1.0 / 2.4) - 0.055 }
+}
+
+/// Word's `darken(n)` of a one-colour gradient: each channel scaled by `n`/255.
+pub fn darken(c: u32, n: u8) -> u32 {
+    [16, 8, 0].iter().map(|s| ((((c >> s) & 0xFF) * u32::from(n) + 127) / 255) << s).sum()
+}
+
+/// Word's `lighten(n)` of a one-colour gradient: each channel's distance from white scaled by `n`/255.
+pub fn lighten(c: u32, n: u8) -> u32 {
+    0xFF_FFFF - darken(0xFF_FFFF - c, n)
+}
+
+/// The `darken(n)` (`false`) or `lighten(n)` (`true`) that makes `to` of `from`, when one does.
+pub fn shade_of(from: u32, to: u32) -> Option<(bool, u8)> {
+    (0..=255u8).rev().find_map(|n| {
+        if darken(from, n) == to {
+            Some((false, n))
+        } else if lighten(from, n) == to {
+            Some((true, n))
+        } else {
+            None
+        }
+    })
 }
 
 fn rgb_to_hsl(r: f64, g: f64, b: f64) -> (f64, f64, f64) {
@@ -417,18 +321,6 @@ fn apply(base: Rgba, mods: &[ColourMod]) -> Rgba {
         };
     }
     Rgba { r: unit(c[0]), g: unit(c[1]), b: unit(c[2]), a: unit(a) }
-}
-
-fn system_colour(name: &str) -> u32 {
-    match name {
-        "window" | "highlightText" | "btnHighlight" | "3dLight" | "menu" | "infoBk" => 0xFFFFFF,
-        "highlight" | "menuHighlight" => 0x0078D7,
-        "btnFace" | "menuBar" | "scrollBar" => 0xF0F0F0,
-        "grayText" | "btnShadow" => 0xA0A0A0,
-        "activeCaption" | "gradientActiveCaption" => 0x99B4D1,
-        "inactiveCaption" | "gradientInactiveCaption" => 0xBFCDDB,
-        _ => 0x000000,
-    }
 }
 
 pub fn preset_colour(name: &str) -> Option<u32> {
@@ -596,16 +488,6 @@ const CSS: &[(&str, u32)] = &[
 mod tests {
     use super::*;
 
-    fn parse(xml: &str) -> Colour {
-        let xml = format!(r#"<r xmlns:a="{A}">{xml}</r>"#);
-        let doc = roxmltree::Document::parse(&xml).unwrap();
-        Colour::child_of(doc.root_element()).unwrap()
-    }
-
-    fn rgb(xml: &str) -> u32 {
-        parse(xml).resolve(&Theme::default(), &ColourMap::default(), None).to_rgb()
-    }
-
     #[test]
     fn the_preset_colour_table_is_sorted_and_reads_abbreviations() {
         assert!(CSS.windows(2).all(|w| w[0].0 < w[1].0));
@@ -614,36 +496,5 @@ mod tests {
         assert_eq!(preset_colour("ltGray"), Some(0xD3D3D3));
         assert_eq!(preset_colour("coral"), Some(0xFF7F50));
         assert_eq!(preset_colour("nope"), None);
-    }
-
-    #[test]
-    fn colour_models_resolve() {
-        assert_eq!(rgb(r#"<a:srgbClr val="FF8000"/>"#), 0xFF8000);
-        assert_eq!(rgb(r#"<a:hslClr hue="7200000" sat="100000" lum="50000"/>"#), 0x00FF00);
-        assert_eq!(rgb(r#"<a:scrgbClr r="100000" g="0" b="0"/>"#), 0xFF0000);
-        assert_eq!(rgb(r#"<a:sysClr val="windowText" lastClr="123456"/>"#), 0x123456);
-        assert_eq!(rgb(r#"<a:prstClr val="navy"/>"#), 0x000080);
-    }
-
-    #[test]
-    fn hsl_transforms_change_luminance_and_hue() {
-        assert_eq!(rgb(r#"<a:srgbClr val="FF0000"><a:lumMod val="50000"/></a:srgbClr>"#), 0x800000);
-        assert_eq!(rgb(r#"<a:srgbClr val="FF0000"><a:lumMod val="60000"/><a:lumOff val="40000"/></a:srgbClr>"#), 0xFF6666);
-        assert_eq!(rgb(r#"<a:srgbClr val="FF0000"><a:comp/></a:srgbClr>"#), 0x00FFFF);
-        assert_eq!(rgb(r#"<a:srgbClr val="156082"><a:inv/></a:srgbClr>"#), 0xFEF1E4);
-        assert_eq!(rgb(r#"<a:srgbClr val="156082"><a:gray/></a:srgbClr>"#), 0x535353);
-        assert_eq!(rgb(r#"<a:srgbClr val="C04020"><a:satMod val="150000"/></a:srgbClr>"#) >> 16, 232);
-    }
-
-    #[test]
-    fn tint_and_shade_work_in_linear_rgb() {
-        assert_eq!(rgb(r#"<a:srgbClr val="FFFFFF"><a:shade val="50000"/></a:srgbClr>"#), 0xBCBCBC);
-        assert_eq!(rgb(r#"<a:srgbClr val="000000"><a:tint val="50000"/></a:srgbClr>"#), 0xBCBCBC);
-    }
-
-    #[test]
-    fn alpha_transforms_compose() {
-        let c = parse(r#"<a:srgbClr val="000000"><a:alpha val="50000"/><a:alphaMod val="50000"/></a:srgbClr>"#);
-        assert_eq!(c.resolve(&Theme::default(), &ColourMap::default(), None).a, 64);
     }
 }

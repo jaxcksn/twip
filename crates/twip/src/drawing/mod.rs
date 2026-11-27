@@ -4,19 +4,18 @@ pub mod colour;
 pub mod geom;
 pub mod paint;
 pub mod patterns;
-pub mod read;
 pub mod text;
 pub mod theme;
 pub mod units;
-pub mod vml;
 
-use std::ops::Range;
 use std::rc::Rc;
 
 use geom::Geometry;
 use paint::{BlipFill, EffectList, Fill, Line, StyleRefs};
 use text::BodyProps;
 use units::{Angle, Emu};
+
+pub use crate::docx::drawing::Spans;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Xfrm {
@@ -37,21 +36,6 @@ pub struct NonVisual {
     pub hidden: bool,
     pub lock_aspect: bool,
     pub decorative: bool,
-}
-
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct Spans {
-    pub shape: Option<Range<usize>>,
-    pub sp_pr: Option<Range<usize>>,
-    pub xfrm: Option<Range<usize>>,
-    pub geom: Option<Range<usize>>,
-    pub fill: Option<Range<usize>>,
-    /// A picture's `pic:blipFill`, beside its properties.
-    pub blip: Option<Range<usize>>,
-    pub line: Option<Range<usize>>,
-    pub effects: Option<Range<usize>>,
-    pub body: Option<Range<usize>>,
-    pub style: Option<Range<usize>>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]

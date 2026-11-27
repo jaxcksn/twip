@@ -1,12 +1,12 @@
 //! `twip presets <presetShapeDefinitions.xml> <out.rs>`: the engine's preset geometry table
 //! (`crates/twip/src/drawing/geom/presets.rs`) generated from the standard's definitions (ECMA-376 Part 1, the
 //! `OfficeOpenXML-DrawingMLGeometries.zip` insert). Each preset is compiled as a custom geometry is
-//! (`CustomGeom::parse`) and written as a static `GeomDef`.
+//! (`custom_geom`) and written as a static `GeomDef`.
 
 use std::fmt::Write;
 use std::path::Path;
 
-use twip::internal::drawing::geom::CustomGeom;
+use twip::internal::docx::drawing::geom::custom_geom;
 
 /// `rect` → `Rect`, `flowChartAlternateProcess` → `FlowChartAlternateProcess`.
 fn variant(name: &str) -> String {
@@ -65,7 +65,7 @@ pub fn run(xml: &Path, out: &Path) -> Result<(), String> {
         .filter(|c| c.is_element())
         .map(|el| {
             let name = el.tag_name().name().to_string();
-            let def = CustomGeom::parse(el).to_bytes();
+            let def = custom_geom(el).to_bytes();
             (name, def)
         })
         .collect();
@@ -73,7 +73,7 @@ pub fn run(xml: &Path, out: &Path) -> Result<(), String> {
     // where it would): keep one `upDownArrow`, and make `upArrow` as `downArrow` mirrored top to bottom.
     if !presets.iter().any(|p| p.0 == "upArrow") {
         let up = roxmltree::Document::parse(UP_ARROW).map_err(|e| format!("upArrow: {e}"))?;
-        presets.push(("upArrow".into(), CustomGeom::parse(up.root_element()).to_bytes()));
+        presets.push(("upArrow".into(), custom_geom(up.root_element()).to_bytes()));
     }
     presets.sort();
     presets.dedup_by(|a, b| a.0 == b.0);

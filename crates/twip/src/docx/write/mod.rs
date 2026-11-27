@@ -605,7 +605,7 @@ fn page_background(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result
         _ => None,
     };
     let kept = old
-        .filter(|b| doc.page_fill.is_some() && crate::drawing::vml::background_fill(*b, doc.page_colour, &mut |_| image) == doc.page_fill)
+        .filter(|b| doc.page_fill.is_some() && crate::docx::drawing::vml::background_fill(*b, doc.page_colour, &mut |_| image) == doc.page_fill)
         .and_then(|b| b.children().find(|c| c.is_element() && c.tag_name().name() == "background" && c.tag_name().namespace() == Some(VML)))
         .map(|v| xml[v.range()].to_string());
     // The prefixes the kept markup has from its `w:background` and not from the root, declared on the new one.
@@ -752,7 +752,7 @@ fn vml_background(
             };
             let (first, last) = (&stops[0], &stops[stops.len() - 1]);
             // Two colours as Word blends them are written as the two; any other stops as a list.
-            let two = crate::drawing::vml::is_two_colour(g);
+            let two = crate::drawing::paint::is_two_colour(g);
             let colors = if two {
                 String::new()
             } else {
@@ -772,7 +772,7 @@ fn vml_background(
             let (o1, o2) = (opacity("opacity", first.2), opacity(&format!("{o}:opacity2"), last.2));
             // One colour darkened or lightened is written as the fill's own, as Word writes it.
             let rgb = |c: &crate::drawing::colour::Colour| c.resolve(palette.theme, palette.map, None).to_rgb();
-            let color2 = match two.then(|| crate::drawing::vml::shade_of(rgb(&g.stops[0].1), rgb(&g.stops[g.stops.len() - 1].1))).flatten() {
+            let color2 = match two.then(|| crate::drawing::colour::shade_of(rgb(&g.stops[0].1), rgb(&g.stops[g.stops.len() - 1].1))).flatten() {
                 Some((light, n)) => format!("fill {}({n})", if light { "lighten" } else { "darken" }),
                 None => last.1.clone(),
             };

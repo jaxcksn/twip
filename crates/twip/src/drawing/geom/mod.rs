@@ -186,13 +186,13 @@ pub struct GeomDef<'a> {
 
 #[derive(Debug, PartialEq)]
 pub struct CustomGeom {
-    av_names: Vec<String>,
-    av: Vec<i64>,
-    gd: Vec<Op>,
-    ah: Vec<HandleDef>,
-    cxn: Vec<CxnDef>,
-    rect: Option<[Arg; 4]>,
-    paths: Vec<(i64, i64, PathFill, bool, Vec<Cmd>, Vec<Arg>)>,
+    pub av_names: Vec<String>,
+    pub av: Vec<i64>,
+    pub gd: Vec<Op>,
+    pub ah: Vec<HandleDef>,
+    pub cxn: Vec<CxnDef>,
+    pub rect: Option<[Arg; 4]>,
+    pub paths: Vec<(i64, i64, PathFill, bool, Vec<Cmd>, Vec<Arg>)>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
