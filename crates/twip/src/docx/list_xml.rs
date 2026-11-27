@@ -1422,6 +1422,16 @@ impl<T: Element> Direct<T> {
         Direct { value: Rc::new(value), origin: self.origin.clone(), set: all }
     }
 
+    /// This value where `cx` describes the part it is written in: `None` while the element it was read from reads the
+    /// same there, else without it, to be written from the value.
+    pub fn moved_to(&self, cx: &Cx) -> Option<Direct<T>> {
+        let (read, xml) = self.origin.as_ref()?;
+        if cx.parse(xml, |_, el| T::parse(el)).flatten().is_some_and(|v| v == **read) {
+            return None;
+        }
+        Some(Direct { value: self.value.clone(), origin: None, set: self.set.clone() })
+    }
+
     /// Authored equality: the typed values.
     pub fn authored_eq(&self, o: &Direct<T>) -> bool {
         Rc::ptr_eq(&self.value, &o.value) || self.value == o.value

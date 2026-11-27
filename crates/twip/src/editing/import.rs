@@ -5,14 +5,17 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::document::paragraph::ListId;
+use crate::docx::list_xml::{ListDefDirect, ListDirect};
 use crate::docx::para_props::ParaDirect;
-use crate::docx::resolvers::Resolvers;
+use crate::docx::resolvers::{Resolvers, TypedDefs};
 use crate::docx::review::{AuthorId, FormatChange, People, RevisionMark, TableChange};
+use crate::docx::style_xml::StyleDef;
+use crate::docx::styles::StyleEditError;
 use crate::docx::write::props::Cx;
 use crate::docx::{Block, Inline, Opaque, Paragraph, Raw, Run, RunStyle};
 use crate::drawing::paint::Fill;
 use crate::drawing::{Shape, ShapeKind};
-use crate::format::ListDefId;
+use crate::format::{LevelProp, ListChoice, ListDef, ListDefId, ListDefProp, ListProp, ParaProp, ParaSet, Style, StyleProp, StyleSet};
 use crate::layout::{ParaId, TableId};
 
 use super::clipboard::{Fragment, Refs};
@@ -63,6 +66,7 @@ fn used_images(f: &mut Fragment) -> Vec<usize> {
 /// The lists a paste has brought from another document so far, so its later pieces share them: each `w:num` and
 /// `w:abstractNum` id there and the one it took here (0, a list that couldn't come).
 #[derive(Default)]
+#[cfg_attr(test, derive(Clone, Debug))]
 pub(super) struct Lists {
     nums: HashMap<i64, i64>,
     abstracts: HashMap<i64, i64>,
@@ -443,39 +447,10 @@ fn is_w(n: roxmltree::Node, local: &str) -> bool {
     n.tag_name().name() == local && n.tag_name().namespace() == Some(crate::docx::xml::W)
 }
 
-/// The `w:numId` values `raw` (a `w:pPr` or a `w:style`) names.
+/// The `w:numId` values `raw` (a `w:pPr`) names.
 fn num_ids(raw: &str, cx: &Cx) -> Vec<i64> {
     cx.parse(raw, |_, el| el.descendants().filter(|n| is_w(*n, "numId")).filter_map(|n| attr_range(n, "val").map(|a| a.1)).collect())
         .unwrap_or_default()
-}
-
-/// A `w:style`'s `w:default` taken out.
-fn not_default(n: roxmltree::Node) -> Option<(std::ops::Range<usize>, String)> {
-    let a = n.attributes().find(|a| a.name() == "default" && a.namespace() == Some(crate::docx::xml::W)).filter(|_| is_w(n, "style"))?;
-    Some((a.range(), String::new()))
-}
-
-/// `raw`, an element as `from` writes one, declaring the namespaces it has from `from`'s root that `to`'s root
-/// doesn't bind as it does, so it reads the same where `to` writes it.
-fn rebound(raw: &str, from: &Cx, to: &Cx) -> Option<String> {
-    let have: Vec<(Option<String>, String)> =
-        to.parse("<y/>", |_, el| el.namespaces().map(|n| (n.name().map(str::to_string), n.uri().to_string())).collect())?;
-    let decls = from.parse(raw, |text, el| {
-        let head = &text[el.range().start..el.first_child().map_or(el.range().end, |c| c.range().start)];
-        let declared = |name: &str| head.match_indices(name).any(|(i, m)| head[i + m.len()..].starts_with(|c: char| c == '=' || c.is_whitespace()));
-        el.namespaces()
-            .filter(|n| n.name() != Some("xml") && !have.iter().any(|(p, u)| p.as_deref() == n.name() && u == n.uri()))
-            .filter_map(|n| {
-                let name = n.name().map_or_else(|| "xmlns".to_string(), |p| format!("xmlns:{p}"));
-                (!declared(&name)).then(|| format!(" {name}=\"{}\"", crate::docx::write::props::esc(n.uri())))
-            })
-            .collect::<String>()
-    })?;
-    if decls.is_empty() {
-        return Some(raw.to_string());
-    }
-    let at = raw.find(|c: char| c.is_whitespace() || c == '/' || c == '>')?;
-    Some(format!("{}{decls}{}", &raw[..at], &raw[at..]))
 }
 
 /// `raw` with its `w:numId` values mapped.
@@ -574,7 +549,7 @@ impl Editor {
     fn import_styles(&mut self, tx: &mut Tx, blocks: &mut [Block], refs: &mut Refs, from: &Resolvers, main: Option<&Cx>, brought: &mut Lists) {
         let Some(res) = self.doc.resolver.clone() else { return };
         let theirs = from.typed();
-        let (scx, ncx) = (theirs.styles.cx(), theirs.numbering.cx());
+        let scx = theirs.styles.cx();
         let (their_styles, their_lists) = (&theirs.cascade.styles, &theirs.cascade.lists);
         let def_of = |n: i64| their_lists.lists.get(&ListId(n)).map(|l| l.def.map_or(-1, |d| d.0));
         let pcx = main.unwrap_or(&scx);
@@ -609,9 +584,7 @@ impl Editor {
                 let Some(s) = their_styles.get(&id) else { continue };
                 let based_on = s.based_on.as_ref().filter(|_| !s.word_default_table());
                 want.extend([based_on, s.link.as_ref(), s.next.as_ref()].into_iter().flatten().map(|x| x.to_string()));
-                if let Some(raw) = theirs.style_xml(&id) {
-                    nums.extend(num_ids(&raw, &scx));
-                }
+                nums.extend(style_lists(s));
                 styles.push(id);
             }
             while let Some(n) = nums.pop() {
@@ -625,9 +598,8 @@ impl Editor {
                 }
             }
         }
-        let Lists { nums: num_map, abstracts: abstract_map } = brought;
         if styles.is_empty() && lists.is_empty() {
-            renumber_blocks(blocks, refs, pcx, num_map);
+            renumber_blocks(blocks, refs, pcx, &brought.nums);
             return;
         }
         let mut next = (*res).clone();
@@ -636,71 +608,131 @@ impl Editor {
             free_abstract = free_abstract.max(l.abstract_id + 1);
             free_num = free_num.max(l.num_id + 1);
         }
-        // Each list's `w:num` and its `w:abstractNum` (one per definition), under new ids; a picture bullet's
-        // reference goes (the bullet's picture isn't brought), so the level shows its text.
-        for n in lists {
-            let Some(a) = def_of(n) else { continue };
-            let new_a = match abstract_map.get(&a) {
-                Some(&x) => Some(x),
-                None => theirs.def_xml(a).and_then(|abs| {
-                    let raw = rewrite(&abs, &ncx, &|e| {
-                        if is_w(e, "abstractNum") {
-                            attr_range(e, "abstractNumId").map(|(r, _)| (r, free_abstract.to_string()))
-                        } else if is_w(e, "lvlPicBulletId") {
-                            Some((e.range(), String::new()))
-                        } else {
-                            None
-                        }
-                    })?;
-                    let id = next.set_abstract_xml(raw)?;
-                    abstract_map.insert(a, id);
-                    free_abstract += 1;
-                    Some(id)
-                }),
-            };
-            let Some(new_a) = new_a else {
-                num_map.insert(n, 0);
-                continue;
-            };
-            let Some(num) = theirs.list_xml(n) else { continue };
-            let raw = rewrite(&num, &ncx, &|e| {
-                if is_w(e, "num") {
-                    attr_range(e, "numId").map(|(r, _)| (r, free_num.to_string()))
-                } else if is_w(e, "abstractNumId") {
-                    attr_range(e, "val").map(|(r, _)| (r, new_a.to_string()))
-                } else {
-                    None
-                }
-            });
-            match raw.and_then(|raw| next.set_num_xml(raw)) {
-                Some(id) => {
-                    num_map.insert(n, id);
-                    free_num += 1;
-                }
-                None => {
-                    num_map.insert(n, 0);
-                }
-            }
-        }
-        // Each style under this document's namespaces, not its default (this document's stays). One based on itself
-        // through its chain comes without its base; one that isn't a style doesn't come, and what uses it shows as
-        // the default style does.
-        let dcx = next.cx();
-        for id in &styles {
-            let Some(raw) = theirs.style_xml(id) else { continue };
-            let raw = if num_map.is_empty() { Some(raw.into_owned()) } else { renumber(&raw, &scx, num_map) };
-            let Some(raw) = raw.and_then(|r| rewrite(&r, &scx, &not_default)).and_then(|r| rebound(&r, &scx, &dcx)) else { continue };
-            if let Err(crate::docx::styles::StyleEditError::Loop) = next.set_style_xml(raw.clone())
-                && let Some(raw) = rewrite(&raw, &dcx, &|n| is_w(n, "basedOn").then(|| (n.range(), String::new())))
-            {
-                let _ = next.set_style_xml(raw);
-            }
-        }
-        renumber_blocks(blocks, refs, pcx, num_map);
+        let copy = Copied { theirs: &theirs, styles: &styles, lists: &lists, free: (free_abstract, free_num) };
+        #[cfg(test)]
+        let was = (next.clone(), brought.clone());
+        copy.apply(&mut next, brought);
+        #[cfg(test)]
+        xml_route::check(&copy, was, &next, brought);
+        renumber_blocks(blocks, refs, pcx, &brought.nums);
         let added = self.doc.added_lists.clone();
         if self.step(tx, Step::Resolver { resolver: Some(Rc::new(next)), added }).is_ok() {
             tx.stale_paras.extend(paras);
             tx.stale_tables.extend(tables);
+        }
+    }
+}
+
+/// The lists style `s` (its regions too) puts its paragraphs in, in the order it writes them.
+fn style_lists(s: &Style) -> impl Iterator<Item = i64> + '_ {
+    std::iter::once(&s.format.para.list).chain(s.regions.iter().map(|r| &r.format.para.list)).filter_map(|l| match l {
+        Some(ListChoice::In(n)) => Some(n.0),
+        _ => None,
+    })
+}
+
+/// `list` mapped through `map` (0: no list); whether it changed.
+fn renumbered(list: &mut Option<ListChoice>, map: &HashMap<i64, i64>) -> bool {
+    let Some(ListChoice::In(n)) = *list else { return false };
+    let Some(&to) = map.get(&n.0).filter(|to| **to != n.0) else { return false };
+    *list = Some(if to == 0 { ListChoice::None } else { ListChoice::In(ListId(to)) });
+    true
+}
+
+/// List definition `a` of `theirs` (another document's definitions) to set as definition `id` of a numbering part `cx`
+/// describes: its holder there, as read where that reads the same here, else to be written from the definition; and
+/// the definition with its id and part, to edit further.
+pub(super) fn copied_def(theirs: &TypedDefs, a: i64, id: i64, cx: &Cx) -> Option<(ListDefDirect, ListDef)> {
+    let d = theirs.cascade.lists.defs.get(&ListDefId(a))?;
+    let held = theirs.numbering.defs.get(&ListDefId(a)).cloned().unwrap_or_else(|| ListDefDirect::typed(d.clone()));
+    let held = held.moved_to(cx).unwrap_or(held);
+    let mut v = (**held.get()).clone();
+    (v.id, v.origin) = (ListDefId(id), crate::format::Origin::Document);
+    Some((held, v))
+}
+
+/// List `n` of `theirs`, as [`copied_def`], set as list `id` numbering with definition `def`.
+pub(super) fn copied_list(theirs: &TypedDefs, n: i64, id: i64, def: i64, cx: &Cx) -> Option<ListDirect> {
+    let l = theirs.cascade.lists.lists.get(&ListId(n))?;
+    let held = theirs.numbering.lists.get(&ListId(n)).cloned().unwrap_or_else(|| ListDirect::typed(l.clone()));
+    let held = held.moved_to(cx).unwrap_or(held);
+    let mut v = (**held.get()).clone();
+    (v.id, v.origin) = (ListId(id), crate::format::Origin::Document);
+    let set: &[ListProp] = if v.def == Some(ListDefId(def)) { &[] } else { &[ListProp::Def] };
+    v.def = Some(ListDefId(def));
+    Some(held.edited(v, set))
+}
+
+/// What a paste copies of another document's definitions: its lists and styles, by their ids there, and the
+/// definition and list ids free here from which they take theirs.
+struct Copied<'a> {
+    theirs: &'a TypedDefs,
+    styles: &'a [String],
+    lists: &'a [i64],
+    free: (i64, i64),
+}
+
+impl Copied<'_> {
+    /// The lists and styles set in `next`, each definition once: a picture bullet's reference goes (the bullet's
+    /// picture isn't brought), so the level shows its text. Each style comes with its lists renumbered, not its
+    /// kind's default (this document's stays); one based on itself through its chain comes without its base. Each is
+    /// written as read where that reads the same in this document's part, else from its definition. `brought` takes
+    /// each list's and definition's id here (a list's 0 when it couldn't come).
+    fn apply(&self, next: &mut Resolvers, brought: &mut Lists) {
+        let (mut free_abstract, mut free_num) = self.free;
+        let ncx = next.typed().numbering.cx();
+        let (theirs, their) = (self.theirs, &self.theirs.cascade.lists);
+        for &n in self.lists {
+            let Some(list) = their.lists.get(&ListId(n)) else { continue };
+            let a = list.def.map_or(-1, |d| d.0);
+            let new_a = match brought.abstracts.get(&a) {
+                Some(&x) => Some(x),
+                None => copied_def(theirs, a, free_abstract, &ncx).map(|(held, mut v)| {
+                    let mut set = Vec::new();
+                    for (il, l) in v.levels.iter_mut().enumerate() {
+                        if let Some(l) = l.as_mut().filter(|l| l.pic_bullet.is_some()) {
+                            Rc::make_mut(l).pic_bullet = None;
+                            set.push(ListDefProp::Level(il as u8, LevelProp::PicBullet));
+                        }
+                    }
+                    let id = next.set_list_def(held.edited(v, &set)).0;
+                    brought.abstracts.insert(a, id);
+                    free_abstract += 1;
+                    id
+                }),
+            };
+            let Some(new_a) = new_a else {
+                brought.nums.insert(n, 0);
+                continue;
+            };
+            let Some(held) = copied_list(theirs, n, free_num, new_a, &ncx) else { continue };
+            brought.nums.insert(n, next.set_list(held).0);
+            free_num += 1;
+        }
+        let scx = next.cx();
+        for id in self.styles {
+            let Some(e) = theirs.cascade.styles.styles.get(id.as_str()) else { continue };
+            let held = theirs.styles.styles.get(id.as_str()).cloned().unwrap_or_else(|| StyleDef::typed(e.style.clone()));
+            let held = held.moved_to(&scx).unwrap_or(held);
+            let mut s = (**held.get()).clone();
+            let mut set = Vec::new();
+            let list = ParaSet { prop: ParaProp::List, whole: false };
+            if renumbered(&mut s.format.para.list, &brought.nums) {
+                set.push(StyleSet::Para(None, list));
+            }
+            for r in &mut s.regions {
+                if renumbered(&mut r.format.para.list, &brought.nums) {
+                    set.push(StyleSet::Para(Some(r.kind), list));
+                }
+            }
+            if s.default.take().is_some() {
+                set.push(StyleSet::Style(StyleProp::Default));
+            }
+            let held = if set.is_empty() { held } else { held.edited(s.clone(), &set) };
+            if let Err(StyleEditError::Loop) = next.set_style(held.clone()) {
+                s.based_on = None;
+                let _ = next.set_style(held.edited(s, &[StyleSet::Style(StyleProp::BasedOn)]));
+            }
         }
     }
 }
@@ -728,6 +760,279 @@ fn renumber_para(p: &mut Paragraph, cx: &Cx, map: &HashMap<i64, i64>) {
     }
 }
 
+/// Copying definitions by rewriting their XML, as copies were made before they were copied typed: each copy made
+/// typed is made this way too and the two compared.
+#[cfg(test)]
+pub(super) mod xml_route {
+    use std::cell::RefCell;
+
+    use super::*;
+
+    /// A copied element whose bytes differ between the routes.
+    #[derive(Clone, Debug)]
+    pub struct Difference {
+        /// The element: `style X`, `definition N`, `list N`.
+        pub what: String,
+        /// As the XML route writes it.
+        pub xml: String,
+        /// As the typed route writes it.
+        pub typed: String,
+    }
+
+    thread_local! {
+        static SEEN: RefCell<(usize, Vec<Difference>)> = const { RefCell::new((0, Vec::new())) };
+        static CONTEXT: RefCell<String> = const { RefCell::new(String::new()) };
+    }
+
+    /// The elements compared on this thread so far, and those whose bytes differed; both taken.
+    pub fn take() -> (usize, Vec<Difference>) {
+        SEEN.with(|s| std::mem::take(&mut *s.borrow_mut()))
+    }
+
+    /// What this thread copies from now on, for the comparisons' messages and differences.
+    pub fn context(what: &str) {
+        CONTEXT.with(|c| *c.borrow_mut() = what.to_string());
+    }
+
+    /// Elements `what` the XML route refused where the typed route copied them (one of them as read, `xml`), noted.
+    pub fn refused(what: &str, xml: String) {
+        let what = CONTEXT.with(|c| format!("{}: {what} refused by the XML route", c.borrow()));
+        SEEN.with(|s| s.borrow_mut().1.push(Difference { what, xml, typed: String::new() }));
+    }
+
+    /// `n` with its names expanded, its attributes in order, and no whitespace-only text: what an XML reader reads of
+    /// it whatever its prefixes, namespace declarations, attribute order and spacing between elements.
+    fn expanded(n: roxmltree::Node, out: &mut String) {
+        use std::fmt::Write;
+        if n.is_text() {
+            if let Some(t) = n.text().filter(|t| !t.trim().is_empty()) {
+                out.push_str(t);
+            }
+            return;
+        }
+        if !n.is_element() {
+            return;
+        }
+        let name = |ns: Option<&str>, local: &str| format!("{{{}}}{local}", ns.unwrap_or_default());
+        let _ = write!(out, "<{}", name(n.tag_name().namespace(), n.tag_name().name()));
+        let mut attrs: Vec<(String, &str)> = n.attributes().map(|a| (name(a.namespace(), a.name()), a.value())).collect();
+        attrs.sort();
+        for (k, v) in attrs {
+            let _ = write!(out, " {k}={v:?}");
+        }
+        out.push('>');
+        n.children().for_each(|c| expanded(c, out));
+        out.push_str("</>");
+    }
+
+    /// `x`, an element in the part `cx` describes, as [`expanded`] reads it.
+    pub fn read_as(x: &str, cx: &Cx) -> String {
+        cx.parse(x, |_, el| {
+            let mut s = String::new();
+            expanded(el, &mut s);
+            s
+        })
+        .unwrap_or_else(|| panic!("{x} reads"))
+    }
+
+    /// One copied element compared, each route's as its holder writes it in the part `cx` describes and as its
+    /// definition writes it with nothing as read: copied by both or neither, and each pair read alike
+    /// ([`read_as`]); a byte difference between the holders' is noted.
+    pub fn compare(what: &str, xml: Option<(String, String)>, typed: Option<(String, String)>, cx: &Cx) {
+        let what = CONTEXT.with(|c| format!("{}: {what}", c.borrow()));
+        assert_eq!(xml.is_some(), typed.is_some(), "{what}: copied by both routes or neither");
+        let (Some((xml, xml_fresh)), Some((typed, typed_fresh))) = (xml, typed) else { return };
+        assert_eq!(read_as(&xml, cx), read_as(&typed, cx), "{what}: written alike\n xml:   {xml}\n typed: {typed}");
+        assert_eq!(read_as(&xml_fresh, cx), read_as(&typed_fresh, cx), "{what}: the same definition\n xml:   {xml_fresh}\n typed: {typed_fresh}");
+        SEEN.with(|s| {
+            let mut s = s.borrow_mut();
+            s.0 += 1;
+            if xml != typed {
+                s.1.push(Difference { what, xml, typed });
+            }
+        });
+    }
+
+    /// A `w:style`'s `w:default` taken out.
+    fn not_default(n: roxmltree::Node) -> Option<(std::ops::Range<usize>, String)> {
+        let a = n.attributes().find(|a| a.name() == "default" && a.namespace() == Some(crate::docx::xml::W)).filter(|_| is_w(n, "style"))?;
+        Some((a.range(), String::new()))
+    }
+
+    /// `raw`, an element as `from` writes one, declaring the namespaces it has from `from`'s root that `to`'s root
+    /// doesn't bind as it does, so it reads the same where `to` writes it.
+    pub fn rebound(raw: &str, from: &Cx, to: &Cx) -> Option<String> {
+        let have: Vec<(Option<String>, String)> =
+            to.parse("<y/>", |_, el| el.namespaces().map(|n| (n.name().map(str::to_string), n.uri().to_string())).collect())?;
+        let decls = from.parse(raw, |text, el| {
+            let head = &text[el.range().start..el.first_child().map_or(el.range().end, |c| c.range().start)];
+            let declared =
+                |name: &str| head.match_indices(name).any(|(i, m)| head[i + m.len()..].starts_with(|c: char| c == '=' || c.is_whitespace()));
+            el.namespaces()
+                .filter(|n| n.name() != Some("xml") && !have.iter().any(|(p, u)| p.as_deref() == n.name() && u == n.uri()))
+                .filter_map(|n| {
+                    let name = n.name().map_or_else(|| "xmlns".to_string(), |p| format!("xmlns:{p}"));
+                    (!declared(&name)).then(|| format!(" {name}=\"{}\"", crate::docx::write::props::esc(n.uri())))
+                })
+                .collect::<String>()
+        })?;
+        if decls.is_empty() {
+            return Some(raw.to_string());
+        }
+        let at = raw.find(|c: char| c.is_whitespace() || c == '/' || c == '>')?;
+        Some(format!("{}{decls}{}", &raw[..at], &raw[at..]))
+    }
+
+    /// [`Copied::apply`] over the definitions' XML: each element as written there rewritten and set from its XML;
+    /// with `rebind`, a definition's and a list's declaring the namespaces they have there that this document's
+    /// numbering part lacks, as a style's do.
+    fn apply(c: &Copied, next: &mut Resolvers, brought: &mut Lists, rebind: bool) {
+        let theirs = c.theirs;
+        let (scx, ncx) = (theirs.styles.cx(), theirs.numbering.cx());
+        let here = next.typed().numbering.cx();
+        let rebound_here = |raw: String| if rebind { rebound(&raw, &ncx, &here) } else { Some(raw) };
+        let their_lists = &theirs.cascade.lists;
+        let def_of = |n: i64| their_lists.lists.get(&ListId(n)).map(|l| l.def.map_or(-1, |d| d.0));
+        let Lists { nums: num_map, abstracts: abstract_map } = brought;
+        let (mut free_abstract, mut free_num) = c.free;
+        for &n in c.lists {
+            let Some(a) = def_of(n) else { continue };
+            let new_a = match abstract_map.get(&a) {
+                Some(&x) => Some(x),
+                None => theirs.def_xml(a).and_then(|abs| {
+                    let raw = rewrite(&abs, &ncx, &|e| {
+                        if is_w(e, "abstractNum") {
+                            attr_range(e, "abstractNumId").map(|(r, _)| (r, free_abstract.to_string()))
+                        } else if is_w(e, "lvlPicBulletId") {
+                            Some((e.range(), String::new()))
+                        } else {
+                            None
+                        }
+                    })?;
+                    let id = next.set_abstract_xml(rebound_here(raw)?)?;
+                    abstract_map.insert(a, id);
+                    free_abstract += 1;
+                    Some(id)
+                }),
+            };
+            let Some(new_a) = new_a else {
+                num_map.insert(n, 0);
+                continue;
+            };
+            let Some(num) = theirs.list_xml(n) else { continue };
+            let raw = rewrite(&num, &ncx, &|e| {
+                if is_w(e, "num") {
+                    attr_range(e, "numId").map(|(r, _)| (r, free_num.to_string()))
+                } else if is_w(e, "abstractNumId") {
+                    attr_range(e, "val").map(|(r, _)| (r, new_a.to_string()))
+                } else {
+                    None
+                }
+            });
+            match raw.and_then(rebound_here).and_then(|raw| next.set_num_xml(raw)) {
+                Some(id) => {
+                    num_map.insert(n, id);
+                    free_num += 1;
+                }
+                None => {
+                    num_map.insert(n, 0);
+                }
+            }
+        }
+        let dcx = next.cx();
+        for id in c.styles {
+            let Some(raw) = theirs.style_xml(id) else { continue };
+            let raw = if num_map.is_empty() { Some(raw.into_owned()) } else { renumber(&raw, &scx, num_map) };
+            let Some(raw) = raw.and_then(|r| rewrite(&r, &scx, &not_default)).and_then(|r| rebound(&r, &scx, &dcx)) else { continue };
+            if let Err(StyleEditError::Loop) = next.set_style_xml(raw.clone())
+                && let Some(raw) = rewrite(&raw, &dcx, &|n| is_w(n, "basedOn").then(|| (n.range(), String::new())))
+            {
+                let _ = next.set_style_xml(raw);
+            }
+        }
+    }
+
+    /// The copy `c` made over the XML from `was` (the definitions before it, and the lists brought before it) set
+    /// against `next` and `brought`, the typed route's: the same lists each style names, the same ids taken, and
+    /// each copied element compared.
+    pub(super) fn check(c: &Copied, was: (Resolvers, Lists), next: &Resolvers, brought: &Lists) {
+        let (mut old, mut old_brought) = was;
+        let theirs = c.theirs;
+        let context = CONTEXT.with(|c| c.borrow().clone());
+        // A glossary style's XML names its ids as the glossary does: the XML route copied it under those
+        let mut glossary = Vec::new();
+        for id in c.styles {
+            let Some(e) = theirs.cascade.styles.styles.get(id.as_str()) else { continue };
+            let Some(x) = theirs.style_xml(id) else { continue };
+            let cx = theirs.styles.cx();
+            let from_xml: Vec<i64> = num_ids(&x, &cx).into_iter().filter(|n| *n != 0).collect();
+            let named = StyleDef::from_xml(&x, &cx).get().id.clone();
+            if e.origin == crate::format::Origin::Glossary && (*named != **id || from_xml != style_lists(&e.style).collect::<Vec<_>>()) {
+                let typed = next.style_xml(id).unwrap_or_default();
+                SEEN.with(|s| {
+                    s.borrow_mut().1.push(Difference { what: format!("{context}: glossary style {id} as {named}"), xml: x.into_owned(), typed })
+                });
+                glossary.push(id.clone());
+                continue;
+            }
+            assert_eq!(from_xml, style_lists(&e.style).collect::<Vec<_>>(), "{context}: style {id}: the lists it names");
+        }
+        let (mut rebound, mut rebound_brought) = (old.clone(), old_brought.clone());
+        apply(c, &mut old, &mut old_brought, false);
+        if (&old_brought.nums, &old_brought.abstracts) != (&brought.nums, &brought.abstracts) {
+            // Lists whose XML doesn't read in this document's numbering part: the XML route refused them
+            let mut refused: Vec<i64> =
+                old_brought.nums.iter().filter(|(k, v)| **v == 0 && brought.nums.get(*k).is_some_and(|t| *t != 0)).map(|(k, _)| *k).collect();
+            refused.sort_unstable();
+            assert!(!refused.is_empty(), "{context}: the same ids taken\n xml:   {old_brought:?}\n typed: {:?}", (&brought.nums, &brought.abstracts));
+            apply(c, &mut rebound, &mut rebound_brought, true);
+            assert_eq!(
+                (&rebound_brought.nums, &rebound_brought.abstracts),
+                (&brought.nums, &brought.abstracts),
+                "{context}: the same ids taken, rebound"
+            );
+            let def = theirs.cascade.lists.lists.get(&ListId(refused[0])).and_then(|l| l.def).map_or(-1, |d| d.0);
+            let first = theirs.def_xml(def).map(|x| x.into_owned()).unwrap_or_default();
+            self::refused(&format!("lists {refused:?}"), first);
+            old = rebound;
+        }
+        let styles: Vec<String> = c.styles.iter().filter(|s| !glossary.contains(s)).cloned().collect();
+        if glossary.is_empty() {
+            assert_eq!(old.typed().cascade.styles.styles.len(), next.typed().cascade.styles.styles.len(), "{context}: the same styles");
+        }
+        compare_parts(&old, next, &styles, &brought.nums, &brought.abstracts);
+    }
+
+    /// The styles `styles`, the definitions `abstracts` maps to and the lists `nums` maps to compared between `old` and
+    /// `next`.
+    pub fn compare_parts(old: &Resolvers, next: &Resolvers, styles: &[String], nums: &HashMap<i64, i64>, abstracts: &HashMap<i64, i64>) {
+        let (a, b) = (old.typed(), next.typed());
+        let colours = next.colours();
+        let (scx, ncx) = (b.styles.cx(), b.numbering.cx());
+        let style = |d: &StyleDef| (d.xml(&colours, &scx).into_owned(), StyleDef::typed(d.get().clone()).xml(&colours, &scx).into_owned());
+        for id in styles {
+            let (x, y) = (a.styles.styles.get(id.as_str()), b.styles.styles.get(id.as_str()));
+            compare(&format!("style {id}"), x.map(style), y.map(style), &scx);
+        }
+        let ids = |m: &HashMap<i64, i64>| {
+            let mut v: Vec<i64> = m.values().copied().filter(|n| *n > 0).collect();
+            v.sort_unstable();
+            v.dedup();
+            v
+        };
+        let def = |d: &ListDefDirect| (d.xml(&colours, &ncx).into_owned(), ListDefDirect::typed(d.get().clone()).xml(&colours, &ncx).into_owned());
+        for n in abstracts.values().copied().collect::<HashSet<_>>() {
+            let (x, y) = (a.numbering.defs.get(&ListDefId(n)), b.numbering.defs.get(&ListDefId(n)));
+            compare(&format!("definition {n}"), x.map(def), y.map(def), &ncx);
+        }
+        let list = |d: &ListDirect| (d.xml(&colours, &ncx).into_owned(), ListDirect::typed(d.get().clone()).xml(&colours, &ncx).into_owned());
+        for n in ids(nums) {
+            let (x, y) = (a.numbering.lists.get(&ListId(n)), b.numbering.lists.get(&ListId(n)));
+            compare(&format!("list {n}"), x.map(list), y.map(list), &ncx);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -746,5 +1051,147 @@ mod tests {
         let got = r.element(&format!(r#"<w:permEnd xmlns:w="{w}" w:id="1"/>"#));
         assert_eq!(got, None, "declared on itself");
         assert_eq!(Rebind::between(&from, &from).element("<w:pPr/>"), None, "the same root");
+    }
+
+    /// `docx` with its styles part's main namespace bound to prefix `x`.
+    fn with_x_prefix(docx: &[u8]) -> Vec<u8> {
+        use std::io::{Read, Write};
+        let mut z = zip::ZipArchive::new(std::io::Cursor::new(docx)).expect("a zip");
+        let mut out = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        for i in 0..z.len() {
+            let mut f = z.by_index(i).expect("an entry");
+            let name = f.name().expect("a name").to_string();
+            let mut data = Vec::new();
+            f.read_to_end(&mut data).expect("reads");
+            if name == "word/styles.xml" {
+                let x = String::from_utf8(data).expect("utf-8");
+                data = x.replace("<w:", "<x:").replace("</w:", "</x:").replace(" w:", " x:").replace("xmlns:w=", "xmlns:x=").into_bytes();
+            }
+            out.start_file(name, zip::write::SimpleFileOptions::default()).expect("starts");
+            out.write_all(&data).expect("writes");
+        }
+        out.finish().expect("finishes").into_inner()
+    }
+
+    /// Every fixture's body inserted in a document with few namespaces, in one with lists and styles of its own, and in
+    /// one whose styles part binds the main namespace to another prefix; and copied whole and pasted in the first: each
+    /// style, definition and list copied is the definition the XML route copied, and written as it wrote it.
+    #[test]
+    fn copied_definitions_are_written_as_their_xml_was() {
+        use crate::api::command::{Command as C, InsertFile};
+        use crate::api::value::Bytes;
+        use crate::editing::commands::Command;
+        use crate::editing::tests::{blank_body, fonts, par_map, texts_ids};
+        let mut paths = Vec::new();
+        crate::layout::tests::output::fixtures(&crate::layout::tests::output::root().join("fixtures"), &mut paths);
+        let fixture = |n: &str| std::fs::read(crate::layout::tests::output::root().join("fixtures").join(n)).expect("reads");
+        let blank = blank_body("<w:p/>");
+        let dests = [blank.clone(), fixture("lists.docx"), with_x_prefix(&blank)];
+        let caret = |e: &mut Editor| {
+            let first = texts_ids(e)[0];
+            e.select_range(first, crate::layout::Unit(0), crate::layout::Unit(0), fonts());
+        };
+        // Its comment ranges fail the editor's integrity check on insertion and paste, whichever route copies
+        paths.retain(|p| !p.ends_with("FX-REVIEW-STORIES.docx"));
+        let seen = par_map(&paths, |path| {
+            let bytes = std::fs::read(path).expect("reads");
+            if crate::docx::read_editable(&bytes).ok().and_then(|d| d.resolver).is_none() {
+                return (0, Vec::new());
+            }
+            let name = path.strip_prefix(crate::layout::tests::output::root()).unwrap_or(path).display().to_string();
+            for (d, into) in dests.iter().zip(["blank", "lists", "x prefix"]) {
+                xml_route::context(&format!("{name} inserted in {into}"));
+                let mut e = Editor::open(d, fonts()).expect("opens");
+                caret(&mut e);
+                e.execute(C::InsertFile(InsertFile { from: Bytes(bytes.clone()) }), fonts());
+            }
+            for (d, into) in dests.iter().zip(["blank", "lists"]) {
+                xml_route::context(&format!("{name} the body of {into}"));
+                Editor::open(d, fonts()).expect("opens").replace_body(&bytes, fonts());
+            }
+            if let Ok(mut src) = Editor::open(&bytes, fonts()) {
+                src.execute(Command::SelectAll, fonts());
+                if let Some(frag) = src.copy() {
+                    xml_route::context(&format!("{name} pasted in blank"));
+                    let mut e = Editor::open(&blank, fonts()).expect("opens");
+                    caret(&mut e);
+                    e.paste_fragment(&frag, fonts());
+                }
+            }
+            xml_route::take()
+        });
+        // Each sub-template's body, copied where it is edited (its styles the glossary's) and pasted in the first
+        let mut e = Editor::open(&fixture("editor/FX-SUBTEMPLATES.docx"), fonts()).expect("opens");
+        e.execute(crate::editing::sub_templates::rules("SUBTEMPLATE", "Sub-templates"), fonts());
+        for name in ["Violation", "FeeRow", "Appeals notice"] {
+            e.execute(C::EditSubTemplate(crate::api::command::SubTemplateName { name: name.into(), category: None }), fonts());
+            e.execute(Command::SelectAll, fonts());
+            let frag = e.copy().expect("copies");
+            xml_route::context(&format!("sub-template {name} pasted in blank"));
+            let mut b = Editor::open(&blank, fonts()).expect("opens");
+            caret(&mut b);
+            b.paste_fragment(&frag, fonts());
+        }
+        let seen: Vec<(usize, Vec<xml_route::Difference>)> = seen.into_iter().chain([xml_route::take()]).collect();
+        let compared: usize = seen.iter().map(|s| s.0).sum();
+        let differences: Vec<&xml_route::Difference> = seen.iter().flat_map(|s| &s.1).collect();
+        let mut kinds: std::collections::BTreeMap<String, (usize, &xml_route::Difference)> = Default::default();
+        for d in &differences {
+            let kind = difference_kind(d);
+            assert!(
+                kind != "prefixes" || d.what.contains("x prefix"),
+                "{}: prefixes differ only where the part binds others\n xml:   {}\n typed: {}",
+                d.what,
+                d.xml,
+                d.typed
+            );
+            assert!(kind != "refused" || !d.what.contains("lists:"), "{}: refused only where there is no numbering part", d.what);
+            let element = d.what.rsplit(": ").next().and_then(|w| w.split(' ').next()).unwrap_or_default();
+            kinds.entry(format!("{kind} {element}")).or_insert((0, d)).0 += 1;
+        }
+        for (k, (n, d)) in &kinds {
+            eprintln!("{k}: {n}, as {}\n  xml:   {}\n  typed: {}", d.what, d.xml, d.typed);
+        }
+        eprintln!("{compared} compared, {} differ", differences.len());
+        assert!(compared > 1000, "definitions are copied");
+    }
+
+    /// What a byte difference between the routes is, in the first of these that tells them apart no more: spacing
+    /// in tags and between elements; namespace declarations; attribute order; prefixes (what [`xml_route::read_as`]
+    /// already reads alike).
+    fn difference_kind(d: &xml_route::Difference) -> &'static str {
+        if d.typed.is_empty() {
+            return "refused";
+        }
+        if d.what.contains(": glossary style ") {
+            return "glossary ids";
+        }
+        let spacing = |x: &str| {
+            let x = regex_lite::Regex::new(r">\s+<").expect("a pattern").replace_all(x, "><").into_owned();
+            let x = regex_lite::Regex::new(r#"\s+"#).expect("a pattern").replace_all(&x, " ").into_owned();
+            x.replace(" />", "/>").replace(" >", ">")
+        };
+        let undeclared = |x: &str| regex_lite::Regex::new(r#" xmlns(:[\w.-]+)?="[^"]*""#).expect("a pattern").replace_all(x, "").into_owned();
+        let sorted = |x: &str| {
+            let tag = regex_lite::Regex::new(r"<([^/!?][^>]*?)(/?)>").expect("a pattern");
+            tag.replace_all(x, |c: &regex_lite::Captures| {
+                let mut parts: Vec<&str> = c[1].split(' ').collect();
+                parts[1..].sort_unstable();
+                format!("<{}{}>", parts.join(" "), &c[2])
+            })
+            .into_owned()
+        };
+        let (a, b) = (spacing(&d.xml), spacing(&d.typed));
+        if a == b {
+            return "spacing";
+        }
+        let (a, b) = (undeclared(&a), undeclared(&b));
+        if a == b {
+            return "declarations";
+        }
+        if sorted(&a) == sorted(&b) {
+            return "attribute order";
+        }
+        "prefixes"
     }
 }
