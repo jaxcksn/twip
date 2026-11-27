@@ -150,7 +150,7 @@ pub struct Joined {
 
 impl Joined {
     /// `paras` as one paragraph. A deleted mark's paragraph takes the next one's properties; a vanished mark's joins
-    /// the next as reading joins them ([`crate::docx::resolve::joined_style`]; `legacy`: compat ≤ 14).
+    /// the next as reading joins them ([`crate::format::resolve::joined_style`]; `legacy`: compat ≤ 14).
     fn new(paras: &[&Paragraph], legacy: bool) -> Option<Joined> {
         let (&last, before) = paras.split_last()?;
         let &first = before.first()?;
@@ -173,7 +173,7 @@ impl Joined {
                     spec = spec.or_else(|| Some(p.style.clone()));
                 }
                 let from = if shown == 0 { 0 } else { at };
-                style = Rc::new(crate::docx::resolve::joined_style(&style, &next.style, from, spec.take().as_deref(), legacy));
+                style = Rc::new(crate::format::resolve::joined_style(&style, &next.style, from, spec.take().as_deref(), legacy));
                 list = list.or_else(|| next.list.clone());
             } else {
                 (style, list) = (next.style.clone(), next.list.clone());

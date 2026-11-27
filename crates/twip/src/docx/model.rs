@@ -479,7 +479,7 @@ pub struct ParaStyle {
     /// style. Empty otherwise.
     pub joined: Rc<[(u32, Rc<ParaStyle>)]>,
     /// Paragraphs joined onto this one's start through vanished marks: each one's own style, this one's last, as they
-    /// show while hidden text does. Empty otherwise; a chain longer than [`super::resolve::MAX_PARTS`] keeps its first
+    /// show while hidden text does. Empty otherwise; a chain longer than [`crate::format::resolve::MAX_PARTS`] keeps its first
     /// ones only, fewer than its joins, and so shows joined.
     pub parts: Rc<[Rc<ParaStyle>]>,
 }

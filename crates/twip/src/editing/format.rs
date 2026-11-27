@@ -6,12 +6,12 @@ use std::rc::Rc;
 use crate::docx::model::Compat;
 use crate::docx::para_props::{self, ParaDirect};
 use crate::docx::para_xml;
-use crate::docx::resolve::joined_style;
 use crate::docx::resolvers::Resolvers;
 use crate::docx::write::props::Cx;
 use crate::docx::{Inline, ParaStyle, Row, Ruby, Run, RunStyle, Table};
 use crate::font::Fonts;
 use crate::format::cascade::TableRegion;
+use crate::format::resolve::joined_style;
 use crate::layout::{ParaId, Unit};
 
 use super::commands::Outcome;

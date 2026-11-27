@@ -180,12 +180,12 @@ fn a_mark_hidden_by_editing_shows_its_paragraphs_apart_while_hidden_text_shows()
 
 #[test]
 fn a_chain_of_joins_longer_than_the_parts_bound_stops_adding_parts_and_shows_joined() {
-    let n = crate::docx::resolve::MAX_PARTS + 40;
+    let n = crate::format::resolve::MAX_PARTS + 40;
     let joined = r#"<w:p><w:pPr><w:rPr><w:vanish/></w:rPr></w:pPr><w:r><w:t>a</w:t></w:r></w:p>"#.repeat(n);
     let mut e = lay(&format!("{joined}<w:p><w:r><w:t>end</w:t></w:r></w:p>"));
     let Some(crate::docx::Block::Para(p)) = e.document().sections[0].blocks.first() else { panic!("a paragraph") };
     assert_eq!(p.src.as_ref().map(|s| s.joined.len()), Some(n), "one paragraph");
-    assert_eq!(p.style.parts.len(), crate::docx::resolve::MAX_PARTS, "the parts stop growing");
+    assert_eq!(p.style.parts.len(), crate::format::resolve::MAX_PARTS, "the parts stop growing");
     e.set_mark_options(MarkOptions { hidden: true, ..MarkOptions::default() });
     e.complete(fonts());
     let lines = e.page_geometries().into_iter().map(|(_, g)| g.lines.len()).sum::<usize>();

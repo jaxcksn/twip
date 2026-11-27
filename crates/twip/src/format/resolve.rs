@@ -482,3 +482,43 @@ impl CellProps {
         self.margins.merge(&o.margins);
     }
 }
+
+// Paragraphs joined through vanished marks
+
+/// The most paragraphs a paragraph's [`ParaStyle::parts`] keep.
+pub const MAX_PARTS: usize = 256;
+
+/// The style of `later` joined onto `first`, the paragraph before it (`at` units long) whose mark is vanished: the
+/// first one's indents, alignment, tabs and space before (unless it is empty), the first one's borders and shading,
+/// the last one's other properties. An empty first paragraph gives nothing but a style separator's (`spec`, in compat
+/// 15) alignment and indents. In compat ≤ 14 (`legacy`) each later line takes its indents, alignment, tabs, borders and
+/// shading from the paragraph of its first character, so `joined` keeps the later one's own.
+pub fn joined_style(first: &ParaStyle, later: &Rc<ParaStyle>, at: u32, spec: Option<&ParaStyle>, legacy: bool) -> ParaStyle {
+    let mut style = (**later).clone();
+    style.parts = match first.parts.len() {
+        // Parts, at most MAX_PARTS
+        MAX_PARTS.. => first.parts.clone(),
+        0 => Rc::from([Rc::new(first.clone()), later.clone()]),
+        _ => first.parts.iter().cloned().chain([later.clone()]).collect(),
+    };
+    if let (0, Some(s)) = (at, spec) {
+        (style.ind_left, style.ind_right, style.ind_first, style.jc) = (s.ind_left, s.ind_right, s.ind_first, s.jc);
+    }
+    if at > 0 {
+        (style.ind_left, style.ind_right, style.ind_first, style.jc) = (first.ind_left, first.ind_right, first.ind_first, first.jc);
+        (style.space_before, style.before_auto) = (first.space_before, first.before_auto);
+        style.tabs = first.tabs.clone();
+        if legacy {
+            style.joined = first.joined.iter().cloned().chain([(at, later.clone())]).collect();
+        }
+        (style.border_top, style.border_bottom, style.border_left, style.border_right, style.border_between) = (
+            first.border_top.clone(),
+            first.border_bottom.clone(),
+            first.border_left.clone(),
+            first.border_right.clone(),
+            first.border_between.clone(),
+        );
+        (style.shading, style.shd) = (first.shading, first.shd.clone());
+    }
+    style
+}

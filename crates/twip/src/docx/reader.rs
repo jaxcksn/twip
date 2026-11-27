@@ -2280,8 +2280,13 @@ impl Reader {
             // character (a line starting at a vanished mark is the mark's).
             Some(mut prev) => {
                 let at = prev.inlines.iter().map(Inline::units).sum::<usize>() as u32;
-                let style =
-                    super::resolve::joined_style(&prev.style, &para.style, at, spec.as_deref(), self.res.cascade().rules.compat == Compat::Legacy);
+                let style = crate::format::resolve::joined_style(
+                    &prev.style,
+                    &para.style,
+                    at,
+                    spec.as_deref(),
+                    self.res.cascade().rules.compat == Compat::Legacy,
+                );
                 prev.inlines.extend(para.inlines);
                 let src = match (prev.src, para.src) {
                     (Some(a), Some(b)) => Some(Rc::new(ParaSrc {
