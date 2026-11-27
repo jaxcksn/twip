@@ -525,6 +525,27 @@ impl Resolvers {
         self.cascade().styles.get(id).map(|s| s.kind)
     }
 
+    /// The theme colours the definitions resolve with.
+    pub fn colours(&self) -> super::props::ThemeColours {
+        self.cascade().colours
+    }
+
+    /// The styles part's namespaces, as its elements are written.
+    pub fn cx(&self) -> Cx {
+        self.typed().styles.cx()
+    }
+
+    /// The `w:style` of style `id` as it is written.
+    pub fn style_xml(&self, id: &str) -> Option<String> {
+        self.typed().style_xml(id).map(std::borrow::Cow::into_owned)
+    }
+
+    /// The `w:docDefaults` as it is written.
+    pub fn defaults_xml(&self) -> Option<String> {
+        let t = self.typed();
+        t.styles.defaults.as_ref().map(|d| d.xml(&t.cascade.colours, &t.styles.cx()).into_owned())
+    }
+
     /// The XML path's resolver.
     pub fn frozen(&self) -> &Resolver {
         &self.frozen

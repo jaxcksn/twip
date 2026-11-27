@@ -233,7 +233,7 @@ impl Editor {
     pub(super) fn format_style_rpr(&mut self, edit: &dyn Fn(&mut CharEdit, &RunStyle)) -> Outcome {
         let Some((_, run, cx)) = self.style_target_formatting() else { return Outcome::Unchanged("no style") };
         let Some(raw) = self.style_target.take() else { return Outcome::Unchanged("no style") };
-        let colours = self.doc.resolver.as_deref().map_or_else(Default::default, |r| r.styles.colours);
+        let colours = self.doc.resolver.as_deref().map_or_else(Default::default, |r| r.colours());
         let typed = |x: Option<&str>| {
             super::format::edit_rpr_xml(x, &colours, &cx, |e| {
                 edit(e, &run);
@@ -252,7 +252,7 @@ impl Editor {
     pub(super) fn format_style_ppr(&mut self, edit: &dyn Fn(&mut ParaEdit, &Paragraph)) -> Outcome {
         let Some((para, _, cx)) = self.style_target_formatting() else { return Outcome::Unchanged("no style") };
         let Some(raw) = self.style_target.take() else { return Outcome::Unchanged("no style") };
-        let colours = self.doc.resolver.as_deref().map_or_else(Default::default, |r| r.styles.colours);
+        let colours = self.doc.resolver.as_deref().map_or_else(Default::default, |r| r.colours());
         let typed = |x: Option<&str>| {
             super::format::edit_ppr_xml(x, &colours, &cx, |e| {
                 edit(e, &para);
@@ -269,7 +269,7 @@ impl Editor {
     /// Paragraph formatting as a typed edit on paragraphs in an automatically updating style: the style changes
     /// instead, as one undo step.
     pub(super) fn format_auto_redefined_typed(&mut self, id: &str, edit: &dyn Fn(&mut ParaEdit, &Paragraph), fonts: &Fonts) -> Outcome {
-        let Some(raw) = self.doc.resolver.as_ref().and_then(|r| r.styles.get(id)).map(|s| s.raw.clone()) else {
+        let Some(raw) = self.doc.resolver.as_ref().and_then(|r| r.style_xml(id)) else {
             return Outcome::Unchanged("no style");
         };
         self.style_target = Some(raw.clone());
@@ -289,12 +289,20 @@ impl Editor {
             Some(raw) => raw.clone(),
             None => {
                 let id = self.auto_redefined()?;
-                self.doc.resolver.as_ref()?.styles.get(&id)?.raw.clone()
+                self.doc.resolver.as_ref()?.style_xml(&id)?
             }
         };
         let (para, _, _) = self.style_formatting(&raw)?;
         let res = self.doc.resolver.as_ref()?;
-        let base = res.styles.by_id.values().find(|s| s.raw == raw).and_then(|s| s.based_on.clone()).map(|b| b.as_str().into());
+        let typed = res.typed();
+        let base = typed
+            .cascade
+            .styles
+            .styles
+            .values()
+            .find(|e| typed.style_xml(&e.style.id).is_some_and(|x| x == raw))
+            .filter(|e| !e.style.word_default_table())
+            .and_then(|e| e.style.based_on.clone());
         let inherited = crate::docx::para_xml::resolve(res, &crate::format::ParaProps { style: base, ..Default::default() }, None, None)
             .style
             .tabs
@@ -309,7 +317,7 @@ impl Editor {
     /// without what isn't formatting (the style, list, section break, tracked changes).
     pub(super) fn selection_formatting(&self) -> (Option<String>, Option<String>) {
         let Some(res) = self.doc.resolver.as_ref() else { return (None, None) };
-        let cx = res.styles.cx();
+        let cx = res.cx();
         let para = self.selection.focus().and_then(|p| p.para_offset()).and_then(|(p, _)| self.index.para(&self.doc, p));
         let strip = |x: &str, part: &str, drop: &[&str]| {
             let mut p = Props::parse(Some(x), part, &cx);
@@ -322,7 +330,7 @@ impl Editor {
         let ppr =
             para.and_then(|p| self.ppr(&p.style.direct, &main)).and_then(|x| strip(&x, "pPr", &["pStyle", "numPr", "sectPr", "rPr", "pPrChange"]));
         let run = self.caret().and_then(|c| self.run_at(&c));
-        let colours = self.doc.resolver.as_deref().map_or_else(Default::default, |r| r.styles.colours);
+        let colours = self.doc.resolver.as_deref().map_or_else(Default::default, |r| r.colours());
         let rpr = run.and_then(|r| {
             let mut e = CharEdit::new((**r.direct.props()?).clone());
             e.style = None;
@@ -342,8 +350,7 @@ impl Editor {
             Command::UpdateStyleToSelection(id) => (id, None),
             _ => return None,
         };
-        let styles = &self.doc.resolver.as_ref()?.styles;
-        if styles.by_id.contains_key(&id.0) {
+        if self.doc.resolver.as_ref()?.has_style(&id.0) {
             return None;
         }
         crate::services::styles::builtin::BUILT_IN.iter().find(|b| b.id == id.0 && kind.is_none_or(|k| k == b.kind))
@@ -356,7 +363,7 @@ impl Editor {
 
     /// Adds built-in style `b` from its definition, as one undo step.
     pub(super) fn add_built_in(&mut self, b: &crate::services::styles::builtin::BuiltIn, fonts: &Fonts) -> Outcome {
-        let Some(cx) = self.doc.resolver.as_ref().map(|r| r.styles.cx()) else { return Outcome::Unchanged("no styles") };
+        let Some(cx) = self.doc.resolver.as_ref().map(|r| r.cx()) else { return Outcome::Unchanged("no styles") };
         let w = cx.w.clone();
         let mut raw = crate::services::styles::builtin::definition(b, &w);
         // List Bullet comes with its own bullet list.
@@ -386,13 +393,14 @@ impl Editor {
     /// Changes a style to the selection's formatting.
     pub(super) fn update_style_to_selection(&mut self, id: &str, fonts: &Fonts) -> Outcome {
         let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
-        let Some(style) = res.styles.get(id) else { return Outcome::Refused(Error::unavailable("no such style")) };
-        let cx = res.styles.cx();
+        let Some(was) = res.style_xml(id) else { return Outcome::Refused(Error::unavailable("no such style")) };
+        let character = res.style_kind(id) == Some(crate::format::StyleKind::Character);
+        let cx = res.cx();
         let (ppr, rpr) = self.selection_formatting();
-        let mut raw = style.raw.clone();
+        let mut raw = was.clone();
         for (part, own) in [("pPr", ppr), ("rPr", rpr)] {
             let Some(own) = own else { continue };
-            if part == "pPr" && style.kind == StyleKind::Character {
+            if part == "pPr" && character {
                 continue;
             }
             let theirs = Props::parse(Some(&own), part, &cx);
@@ -402,7 +410,7 @@ impl Editor {
                 }
             });
         }
-        if raw == style.raw {
+        if raw == was {
             return Outcome::Unchanged("the style already matches");
         }
         self.edit_styles("Update Style", |s| s.set_xml(raw), fonts)
@@ -542,7 +550,7 @@ impl Editor {
         if let Some(raw) = &self.style_target
             && matches!(target, ShadingTarget::Cell | ShadingTarget::Table)
         {
-            let cx = self.doc.resolver.as_ref().map(|r| r.styles.cx());
+            let cx = self.doc.resolver.as_ref().map(|r| r.cx());
             if !cx.and_then(|cx| cx.parse(raw, |_, n| crate::docx::xml::attr(n, "type") == Some("table"))).unwrap_or(false) {
                 return Outcome::Refused(Error::invalid("only a table style has cell or table shading"));
             }
@@ -595,10 +603,9 @@ impl Editor {
 
     /// Deletes a style the document made.
     pub(super) fn delete_style(&mut self, id: &str, fonts: &Fonts) -> Outcome {
-        let Some(style) = self.doc.resolver.as_ref().and_then(|r| r.styles.get(id)).cloned() else {
-            return Outcome::Refused(Error::unavailable("no such style"));
-        };
-        if !style.custom || self.doc.resolver.as_ref().is_some_and(|r| r.styles.default_paragraph.as_deref() == Some(id)) {
+        let Some(c) = self.doc.resolver.as_ref().map(|r| r.cascade()) else { return Outcome::Refused(Error::unavailable("no such style")) };
+        let Some(style) = c.styles.get(id) else { return Outcome::Refused(Error::unavailable("no such style")) };
+        if !style.custom.unwrap_or(false) || c.styles.default_paragraph.as_deref() == Some(id) {
             return Outcome::Refused(Error::new(crate::api::error::ErrorCode::NotAllowed, "built-in styles can't be deleted"));
         }
         self.edit_styles("Delete Style", |s| s.delete(id), fonts)
@@ -687,10 +694,10 @@ impl Editor {
     pub(super) fn set_style_meta(&mut self, m: crate::api::command::StyleMetaChange, fonts: &Fonts) -> Outcome {
         use crate::api::services::StyleVisibility;
         let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
-        let Some(style) = res.styles.get(&m.id.0) else { return self.set_latent_meta(&m, fonts) };
-        let cx = res.styles.cx();
+        let Some(was) = res.style_xml(&m.id.0) else { return self.set_latent_meta(&m, fonts) };
+        let cx = res.cx();
         let w = cx.w.clone();
-        let mut el = Props::parse(Some(&style.raw), "style", &cx);
+        let mut el = Props::parse(Some(&was), "style", &cx);
         let flag = |el: &mut Props, name: &str, on: bool| if on { el.set(name, format!("<{w}{name}/>")) } else { el.remove(name) };
         if let Some(v) = m.visibility {
             let (semi, unhide) = match v {
@@ -712,7 +719,7 @@ impl Editor {
         }
         el.reorder(STYLE);
         let Some(raw) = el.xml() else { return Outcome::Unchanged("no style") };
-        if raw == style.raw {
+        if raw == was {
             return Outcome::Unchanged("already so");
         }
         self.edit_styles("Style Options", |s| s.set_xml(raw), fonts)
@@ -721,9 +728,9 @@ impl Editor {
     /// The document defaults as a paragraph style's XML: its `w:pPr` and `w:rPr`.
     fn defaults_stand_in(&self) -> Option<String> {
         let res = self.doc.resolver.as_ref()?;
-        let cx = res.styles.cx();
+        let cx = res.cx();
         let w = cx.w.clone();
-        let defaults = res.styles.defaults_raw.clone().unwrap_or_else(|| format!("<{w}docDefaults/>"));
+        let defaults = res.defaults_xml().unwrap_or_else(|| format!("<{w}docDefaults/>"));
         let parts = Props::parse(Some(&defaults), "docDefaults", &cx);
         let inner = |wrapper: &str, part: &str| {
             parts.get(wrapper).and_then(|x| Props::parse(Some(x), wrapper, &cx).get(part).map(str::to_string)).unwrap_or_default()
@@ -739,15 +746,17 @@ impl Editor {
     /// defaults set themselves (the rest unavailable: the application's apply).
     pub fn document_defaults(&self) -> Option<super::style_defs::DefaultsDefinition> {
         let raw = self.defaults_stand_in()?;
-        let own = self.doc.resolver.as_ref()?.styles.style_from_xml(&raw)?;
+        let res = self.doc.resolver.as_ref()?;
+        let own = res.typed().styles.style_from_xml(&raw)?;
+        let colours = res.colours();
         // Text in a style that sets nothing: the defaults alone.
-        let w = self.doc.resolver.as_ref()?.styles.cx().w;
+        let w = res.cx().w;
         let (character, paragraph, tabs) = self.style_formatting_state(&format!(
             "<{w}style {w}type=\"paragraph\" {w}styleId=\"DocumentDefaults\"><{w}name {w}val=\"Document Defaults\"/></{w}style>"
         ))?;
         Some(super::style_defs::DefaultsDefinition {
-            own_character: super::style_defs::own_character(&own.base.rpr, &character),
-            own_paragraph: super::style_defs::own_paragraph(&own.base.ppr, &paragraph),
+            own_character: super::style_defs::own_character(&crate::docx::char_props::to_run_props(&own.format.char, &colours), &character),
+            own_paragraph: super::style_defs::own_paragraph(&crate::docx::para_props::to_para_props(&own.format.para, &colours), &paragraph),
             character,
             paragraph,
             tabs,
@@ -795,9 +804,9 @@ impl Editor {
         }
         let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
         let Some(stand_in) = self.defaults_stand_in() else { return Outcome::Unchanged("no styles") };
-        let cx = res.styles.cx();
+        let cx = res.cx();
         let w = cx.w.clone();
-        let defaults = res.styles.defaults_raw.clone().unwrap_or_else(|| format!("<{w}docDefaults/>"));
+        let defaults = res.defaults_xml().unwrap_or_else(|| format!("<{w}docDefaults/>"));
         let parts = Props::parse(Some(&defaults), "docDefaults", &cx);
         let inner = |wrapper: &str, part: &str| {
             parts.get(wrapper).and_then(|x| Props::parse(Some(x), wrapper, &cx).get(part).map(str::to_string)).unwrap_or_default()
@@ -833,22 +842,25 @@ impl Editor {
 
     /// The paragraph style every selected paragraph is in, when it updates automatically (`w:autoRedefine`).
     pub(super) fn auto_redefined(&mut self) -> Option<String> {
-        let res = self.doc.resolver.clone()?;
+        let res = self.doc.resolver.as_ref()?.cascade();
         let paras = self.selected_paras();
-        let mut ids = paras
-            .iter()
-            .map(|&p| self.index.para(&self.doc, p).and_then(|q| q.style.style_id.clone()).or_else(|| res.styles.default_paragraph.clone()));
+        let mut ids = paras.iter().map(|&p| {
+            self.index
+                .para(&self.doc, p)
+                .and_then(|q| q.style.style_id.clone())
+                .or_else(|| res.styles.default_paragraph.as_deref().map(str::to_string))
+        });
         let first = ids.next()??;
         if !ids.all(|i| i.as_deref() == Some(first.as_str())) {
             return None;
         }
-        res.styles.get(&first).filter(|s| s.meta.auto_redefine).map(|s| s.id.clone())
+        res.styles.get(&first).filter(|s| s.meta.auto_redefine.unwrap_or(false)).map(|s| s.id.to_string())
     }
 
     /// The paragraphs in one of the styles `changed`, or with a run in one: its mark, its list label, a ruby's text
     /// too.
     pub(super) fn styled_paras(&self, changed: &[String]) -> Vec<crate::layout::ParaId> {
-        let default = self.doc.resolver.as_ref().and_then(|r| r.styles.default_paragraph.clone());
+        let default = self.doc.resolver.as_ref().and_then(|r| r.cascade().styles.default_paragraph.clone());
         let changed: std::collections::HashSet<&str> = changed.iter().map(String::as_str).collect();
         let uses = |id: Option<&str>| id.or(default.as_deref()).is_some_and(|id| changed.contains(id));
         let styled = |r: &crate::docx::Run| r.style_id.as_deref().is_some_and(|s| changed.contains(s));
@@ -904,13 +916,9 @@ impl Editor {
             return Outcome::Unchanged("the styles didn't change");
         }
         // The styles it deleted: the document's references to them go, untracked
-        let gone: Vec<&str> = res
-            .styles
-            .by_id
-            .keys()
-            .filter(|id| !self.doc.resolver.as_ref().is_some_and(|r| r.styles.by_id.contains_key(*id)))
-            .map(String::as_str)
-            .collect();
+        let before = res.cascade();
+        let gone: Vec<&str> =
+            before.styles.styles.keys().filter(|id| !self.doc.resolver.as_ref().is_some_and(|r| r.has_style(id))).map(|id| &**id).collect();
         let tracked = std::mem::replace(&mut tx.tracked, false);
         for id in gone {
             self.drop_style_refs(&mut tx, id, &res);
