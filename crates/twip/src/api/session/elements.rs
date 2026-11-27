@@ -91,18 +91,17 @@ fn options(s: &Session, e: &Element) -> Option<ControlOptions> {
                 store_as: d.map(|d| d.storage.to_api()),
             })
         }
-        ControlKind::Other => match p.kept_kind()? {
+        ControlKind::Other => match p.kept.clone()? {
             crate::docx::KeptKind::Gallery { gallery, category } => ControlOptions::Gallery(crate::api::value::GalleryOptions { gallery, category }),
             _ => return None,
         },
         ControlKind::DropDown => {
-            let xml = p.kind_xml.as_deref().unwrap_or("");
-            let items = xml
-                .split("<w:listItem")
-                .skip(1)
-                .map(|item| {
-                    let text = attribute(item, "w:displayText").unwrap_or_default();
-                    ListItem { value: attribute(item, "w:value").unwrap_or_else(|| text.clone()), text }
+            let items = p
+                .items
+                .iter()
+                .map(|i| {
+                    let text = i.text.clone().unwrap_or_default();
+                    ListItem { value: i.value.clone().unwrap_or_else(|| text.clone()), text }
                 })
                 .collect();
             ControlOptions::List(ListOptions { items })

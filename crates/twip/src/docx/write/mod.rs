@@ -7167,7 +7167,12 @@ pub(crate) fn control_open(w: &str, id: ControlId, c: &Control) -> String {
     if let Some(x) = &p.placeholder {
         pr.push_str(x);
     }
-    pr.push_str(&rest("temporary"));
+    // `w:temporary` as read while it is, else from the flag.
+    match &c.read {
+        Some(r) if r.temporary == p.temporary => pr.push_str(&rest("temporary")),
+        _ if p.temporary => pr.push_str(&format!("<{w}temporary/>")),
+        _ => {}
+    }
     if p.showing_placeholder {
         pr.push_str(&format!("<{w}showingPlcHdr/>"));
     }
@@ -7181,6 +7186,9 @@ pub(crate) fn control_open(w: &str, id: ControlId, c: &Control) -> String {
     }
     let w15 = "http://schemas.microsoft.com/office/word/2012/wordml";
     let kind = match (&p.kind_xml, &p.kind) {
+        (_, ControlKind::DropDown) => list_xml(w, c),
+        (Some(x), ControlKind::Other) if c.read.as_ref().is_some_and(|r| r.kept == p.kept) => x.clone(),
+        (x, ControlKind::Other) => p.kept.as_ref().and_then(|k| kept_part_xml(k, w)).or_else(|| x.clone()).unwrap_or_default(),
         (Some(x), _) => x.clone(),
         (None, ControlKind::PlainText { multi_line: true }) => format!("<{w}text {w}multiLine=\"1\"/>"),
         (None, ControlKind::PlainText { .. }) => format!("<{w}text/>"),
@@ -7194,9 +7202,62 @@ pub(crate) fn control_open(w: &str, id: ControlId, c: &Control) -> String {
         (None, ControlKind::Group) => format!("<{w}group/>"),
         (None, ControlKind::RepeatingSection) => format!("<w15:repeatingSection xmlns:w15=\"{w15}\"/>"),
         (None, ControlKind::RepeatingItem) => format!("<w15:repeatingSectionItem xmlns:w15=\"{w15}\"/>"),
-        (None, ControlKind::Checkbox { .. } | ControlKind::DropDown | ControlKind::Other) => String::new(),
+        (None, ControlKind::Checkbox { .. }) => String::new(),
     };
     format!("<{w}sdt><{w}sdtPr>{pr}{kind}</{w}sdtPr><{w}sdtContent>")
+}
+
+/// A drop-down's kind element: as read while its entries and kind are; else its entries in the element as read (its
+/// attributes, such as its last value, kept) when that is of its kind, or in a new one.
+fn list_xml(w: &str, c: &Control) -> String {
+    let p = &c.props;
+    if let Some(x) = &p.kind_xml
+        && c.read.as_ref().is_some_and(|r| r.items == p.items && r.combo == p.combo)
+    {
+        return x.clone();
+    }
+    let esc = props::esc;
+    let mut items = String::new();
+    for i in &p.items {
+        items += &format!("<{w}listItem");
+        if let Some(t) = &i.text {
+            items += &format!(" {w}displayText=\"{}\"", esc(t));
+        }
+        if let Some(v) = &i.value {
+            items += &format!(" {w}value=\"{}\"", esc(v));
+        }
+        items += "/>";
+    }
+    let name = if p.combo { "comboBox" } else { "dropDownList" };
+    let head = p.kind_xml.as_deref().and_then(|x| Some(x[..crate::docx::binding::tag_end(x)?].trim_end_matches('/')));
+    let qname = head.and_then(|h| h.get(1..)).and_then(|h| h.split(|c: char| c.is_whitespace() || c == '/').next());
+    match (head, qname) {
+        (Some(head), Some(q)) if q.rsplit(':').next() == Some(name) => format!("{head}>{items}</{q}>"),
+        _ => format!("<{w}{name}>{items}</{w}{name}>"),
+    }
+}
+
+/// A building block gallery's (or building block's) kind element in the main namespace's prefix `w`: `None` for the
+/// other kept kinds.
+fn kept_part_xml(k: &super::model::KeptKind, w: &str) -> Option<String> {
+    let esc = props::esc;
+    let (name, gallery, category, unique) = match k {
+        super::model::KeptKind::Gallery { gallery, category } => ("docPartList", gallery, category, false),
+        super::model::KeptKind::BuildingBlock { gallery, category, unique } => ("docPartObj", gallery, category, *unique),
+        _ => return None,
+    };
+    let mut x = format!("<{w}{name}>");
+    if let Some(g) = gallery {
+        x += &format!("<{w}docPartGallery {w}val=\"{}\"/>", esc(g));
+    }
+    if let Some(c) = category {
+        x += &format!("<{w}docPartCategory {w}val=\"{}\"/>", esc(c));
+    }
+    if unique {
+        x += &format!("<{w}docPartUnique/>");
+    }
+    x += &format!("</{w}{name}>");
+    Some(x)
 }
 
 /// The end markup matching [`control_open`].

@@ -1215,7 +1215,7 @@ impl Editor {
 
     /// A building block's body, to fill gallery control `props` with.
     fn building_block_fragment(&self, name: &str, props: &ControlProps) -> Result<super::clipboard::Fragment, Refused> {
-        let Some(crate::docx::KeptKind::Gallery { gallery, category }) = props.kept_kind() else { return Err(bad("id")) };
+        let Some(crate::docx::KeptKind::Gallery { gallery, category }) = props.kept.clone() else { return Err(bad("id")) };
         let mut named = self.gallery_entries(gallery.as_deref(), category.as_deref()).filter(|b| b.name == name);
         let part = named.next().ok_or_else(|| bad("buildingBlock"))?;
         // A name two categories share can't say which entry was chosen: refuse rather than insert the wrong one.
@@ -2582,9 +2582,9 @@ impl Editor {
     // Content controls
     fn control_insert(&mut self, c: InsertControl, fonts: &Fonts) -> Result<Outcome, Refused> {
         let w = self.cx().w;
-        let esc = crate::docx::write::props::esc;
         let mut checked_now = false;
         let mut kind_xml = None;
+        let (mut items, mut combo, mut kept) = (Vec::new(), false, None);
         let mut size = (144.0, 108.0);
         let placeholder_image = match &c.placeholder_image {
             Some(_) if c.kind != KindArg::Picture => return Err(Error::invalid("placeholderImage is for picture controls")),
@@ -2615,14 +2615,10 @@ impl Editor {
             }
             (KindArg::Date, _) => ControlKind::Date { format: "M/d/yyyy".into(), lid: None },
             (k @ (KindArg::DropDown | KindArg::ComboBox), o) => {
-                let name = if k == KindArg::DropDown { "dropDownList" } else { "comboBox" };
-                let items = match o {
-                    Some(ControlOptions::List(l)) => l.items.clone(),
-                    _ => Vec::new(),
-                };
-                let items: String =
-                    items.iter().map(|i| format!("<{w}listItem {w}displayText=\"{}\" {w}value=\"{}\"/>", esc(&i.text), esc(&i.value))).collect();
-                kind_xml = Some(format!("<{w}{name}>{items}</{w}{name}>"));
+                combo = k == KindArg::ComboBox;
+                if let Some(ControlOptions::List(l)) = o {
+                    items = list_entries(&l.items);
+                }
                 ControlKind::DropDown
             }
             (KindArg::Group, _) => ControlKind::Group,
@@ -2633,7 +2629,7 @@ impl Editor {
                     _ => (None, None),
                 };
                 let some = |v: Option<String>| v.filter(|v| !v.is_empty());
-                kind_xml = crate::docx::KeptKind::Gallery { gallery: some(gallery), category: some(category) }.part_xml(&w);
+                kept = Some(crate::docx::KeptKind::Gallery { gallery: some(gallery), category: some(category) });
                 ControlKind::Other
             }
             (KindArg::BuildingBlock | KindArg::Citation | KindArg::Bibliography | KindArg::Equation, _) => {
@@ -2662,6 +2658,9 @@ impl Editor {
             lock: c.lock.map(lock_of).unwrap_or_default(),
             binding: c.binding.as_ref().map(|b| binding_xml(b, &w)),
             kind_xml,
+            items,
+            combo,
+            kept,
             ..Default::default()
         };
         if matches!(
@@ -2883,9 +2882,8 @@ impl Editor {
 
     fn gallery_insert(&mut self, gallery: Option<String>, category: Option<String>, fonts: &Fonts) -> Result<Outcome, Refused> {
         self.editable_target()?;
-        let w = self.cx().w;
-        let kind_xml = crate::docx::KeptKind::Gallery { gallery, category }.part_xml(&w);
-        let props = ControlProps { kind: ControlKind::Other, kind_xml, showing_placeholder: true, ..Default::default() };
+        let kept = Some(crate::docx::KeptKind::Gallery { gallery, category });
+        let props = ControlProps { kind: ControlKind::Other, kept, showing_placeholder: true, ..Default::default() };
         let id = ControlId::next();
         self.pending_controls.push((id, Control::new(props)));
         let out = self.insert_inlines(
@@ -2911,13 +2909,12 @@ impl Editor {
             let (e, _) = self.element(id)?;
             let ElementId::Control(c) = e else { return Err(bad("id")) };
             let mut control = self.doc.controls.get(&c).cloned().ok_or_else(no_element)?;
-            let Some(crate::docx::KeptKind::Gallery { gallery: g, category: k }) = control.props.kept_kind() else { return Err(bad("id")) };
-            let kind = crate::docx::KeptKind::Gallery { gallery: gallery.unwrap_or(g), category: category.unwrap_or(k) };
-            let xml = kind.part_xml(&self.cx().w);
-            if control.props.kind_xml == xml {
+            let Some(crate::docx::KeptKind::Gallery { gallery: g, category: k }) = control.props.kept.clone() else { return Err(bad("id")) };
+            let kind = Some(crate::docx::KeptKind::Gallery { gallery: gallery.unwrap_or(g), category: category.unwrap_or(k) });
+            if control.props.kept == kind {
                 return Ok(Outcome::Unchanged("already so"));
             }
-            control.props.kind_xml = xml;
+            control.props.kept = kind;
             let mut tx = self.begin("Content Control Properties");
             if self.step(&mut tx, Step::Control { id: c, control: Some(control) }).is_err() {
                 self.abort(tx);
@@ -3034,20 +3031,7 @@ impl Editor {
                         p.kind_xml = Some(date_storage_xml(p.kind_xml.as_deref(), format, lid.as_deref(), calendar, storage, &prefix));
                     }
                 }
-                (ControlKind::DropDown, ControlOptions::List(l)) => {
-                    let esc = crate::docx::write::props::esc;
-                    let items: String = l
-                        .items
-                        .iter()
-                        .map(|i| format!("<{prefix}listItem {prefix}displayText=\"{}\" {prefix}value=\"{}\"/>", esc(&i.text), esc(&i.value)))
-                        .collect();
-                    // The element as read (a drop-down list or a combo box, its last value) with the new entries.
-                    let was = p.kind_xml.clone().unwrap_or_else(|| format!("<{prefix}dropDownList/>"));
-                    let end = crate::docx::binding::tag_end(&was).ok_or_else(|| Error::invalid("a drop-down without its element"))?;
-                    let head = was[..end].trim_end_matches('/');
-                    let name = head.get(1..).and_then(|h| h.split(|c: char| c.is_whitespace() || c == '/').next()).unwrap_or_default();
-                    p.kind_xml = Some(format!("{head}>{items}</{name}>"));
-                }
+                (ControlKind::DropDown, ControlOptions::List(l)) => p.items = list_entries(&l.items),
                 (ControlKind::Checkbox { checked, unchecked }, ControlOptions::Checkbox(o)) => {
                     if o.checked_symbol.is_some() || o.unchecked_symbol.is_some() {
                         let (was_checked, was_unchecked) = (*checked, *unchecked);
@@ -3117,12 +3101,11 @@ impl Editor {
                 }
                 (ControlKind::Picture, ControlOptions::Picture(o)) => resize = Some(o.clone()),
                 (ControlKind::Other, ControlOptions::Gallery(o)) => {
-                    let Some(crate::docx::KeptKind::Gallery { gallery, category }) = p.kept_kind() else {
+                    let Some(crate::docx::KeptKind::Gallery { gallery, category }) = p.kept.clone() else {
                         return Err(Error::invalid("options for another kind of control"));
                     };
                     let pick = |set: &Option<String>, was: Option<String>| set.as_ref().map_or(was, |v| Some(v.clone()).filter(|v| !v.is_empty()));
-                    let kind = crate::docx::KeptKind::Gallery { gallery: pick(&o.gallery, gallery), category: pick(&o.category, category) };
-                    p.kind_xml = kind.part_xml(&prefix);
+                    p.kept = Some(crate::docx::KeptKind::Gallery { gallery: pick(&o.gallery, gallery), category: pick(&o.category, category) });
                 }
                 _ => return Err(Error::invalid("options for another kind of control")),
             }
@@ -3162,7 +3145,7 @@ impl Editor {
             rest("color", xml);
         }
         if let Some(t) = set.temporary {
-            rest("temporary", t.then(|| format!("<{prefix}temporary/>")));
+            p.temporary = t;
         }
         if let Some(s) = &set.style {
             let xml = match s {
@@ -3503,7 +3486,7 @@ impl Editor {
         if tx.label == CHANGE_CONTROL {
             return;
         }
-        let temporary = |c: &ControlId| self.doc.controls.get(c).is_some_and(|k| k.props.temporary());
+        let temporary = |c: &ControlId| self.doc.controls.get(c).is_some_and(|k| k.props.temporary);
         let mut gone: Vec<ControlId> = Vec::new();
         for s in &tx.undo {
             let Step::Text { para, range, .. } = s else { continue };
@@ -3678,6 +3661,11 @@ pub struct DateSettings {
     pub calendar: String,
     /// What it stores in its data (`w:storeMappedDataAs`); [`DateStorage::DateTime`] when the control doesn't say.
     pub storage: DateStorage,
+}
+
+/// A drop-down's entries from the API's items: each with its text and value.
+fn list_entries(items: &[crate::api::value::ListItem]) -> Vec<crate::docx::ListEntry> {
+    items.iter().map(|i| crate::docx::ListEntry { text: Some(i.text.clone()), value: Some(i.value.clone()) }).collect()
 }
 
 /// A date control's `w:date` (`kind_xml` as kept, or one of `format`) with its calendar and storage set where given.

@@ -266,16 +266,7 @@ pub fn write(xml: &str, path: &Path, value: &str) -> Option<String> {
 
 /// A drop-down's or combo box's items (`w:listItem`): their text and value.
 fn items(props: &ControlProps) -> Vec<(String, String)> {
-    let Some(x) = props.kind_xml.as_deref() else { return Vec::new() };
-    x.split("listItem")
-        .skip(1)
-        .filter_map(|tag| {
-            let tag = &tag[..tag.find('>').unwrap_or(tag.len())];
-            let value = attr_of(tag, "value").map(unescape);
-            let text = attr_of(tag, "displayText").map(unescape);
-            Some((text.clone().or_else(|| value.clone())?, value.or(text)?))
-        })
-        .collect()
+    props.items.iter().filter_map(|i| Some((i.text.clone().or_else(|| i.value.clone())?, i.value.clone().or_else(|| i.text.clone())?))).collect()
 }
 
 /// What a control bound to `value` shows: a drop-down's item for it, a date in the control's format.

@@ -331,8 +331,10 @@ fn setting_a_drop_downs_entries_replaces_them() {
     let c = by_alias(&e, "C");
     let items = json!({ "items": [{ "text": "One", "value": "1" }, { "text": "Two & more", "value": "2" }] });
     ok(&cmd(&mut e, json!({ "type": "setControl", "id": api(c), "options": items })));
-    let x = e.document().controls[&c].props.kind_xml.clone().unwrap_or_default();
-    assert!(x.starts_with(r#"<w:comboBox w:lastValue="b">"#) && x.ends_with("</w:comboBox>"), "a combo box still: {x}");
+    let x = crate::docx::write::main_xml(e.document()).expect("writes").expect("changed");
+    let x = &x[x.find("<w:comboBox").expect("a combo box still")..];
+    let x = &x[..x.find("</w:comboBox>").expect("its end")];
+    assert!(x.starts_with(r#"<w:comboBox w:lastValue="b">"#), "its last value kept: {x}");
     assert!(x.contains(r#"w:displayText="One" w:value="1""#) && x.contains(r#"w:displayText="Two &amp; more" w:value="2""#), "{x}");
     assert!(!x.contains(r#"w:value="a""#), "the old entries are gone: {x}");
     let again = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");

@@ -167,7 +167,7 @@ fn a_new_placeholder_on_a_temporary_control_keeps_the_control() {
     let out = e.execute(Command::SetControl(serde_json::from_value(set).unwrap()), fonts());
     assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
     assert_eq!(control_marks(&e, 0), (1, 1), "the control stays: {:?}", inlines(&e, 0));
-    assert!(e.document().controls.get(&c).is_some_and(|k| k.props.temporary()));
+    assert!(e.document().controls.get(&c).is_some_and(|k| k.props.temporary));
 }
 
 #[test]

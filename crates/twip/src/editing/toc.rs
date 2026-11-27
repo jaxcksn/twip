@@ -991,8 +991,13 @@ impl Editor {
         self.doc
             .controls
             .get(c)
-            .and_then(|k| k.props.kind_xml.as_deref())
-            .is_some_and(|x| x.contains("docPartGallery") && x.contains("\"Table of Contents\""))
+            .and_then(|k| match &k.props.kept {
+                Some(crate::docx::KeptKind::Gallery { gallery, category } | crate::docx::KeptKind::BuildingBlock { gallery, category, .. }) => {
+                    Some((gallery.as_deref()?, category.as_deref()))
+                }
+                _ => None,
+            })
+            .is_some_and(|(g, c)| g == "Table of Contents" || c == Some("Table of Contents"))
     }
 
     /// Removes table `t` (Word's Remove Table of Contents): its field and result, with the building block control and
@@ -1674,9 +1679,8 @@ impl Editor {
 
     /// The building block control Word's built-in tables of contents are in.
     fn toc_control(&self) -> crate::docx::Control {
-        let w = self.cx().w;
-        let kind_xml = format!("<{w}docPartObj><{w}docPartGallery {w}val=\"Table of Contents\"/><{w}docPartUnique/></{w}docPartObj>");
-        let props = crate::docx::ControlProps { kind: crate::docx::ControlKind::Other, kind_xml: Some(kind_xml), ..Default::default() };
+        let kept = Some(crate::docx::KeptKind::BuildingBlock { gallery: Some("Table of Contents".into()), category: None, unique: true });
+        let props = crate::docx::ControlProps { kind: crate::docx::ControlKind::Other, kept, ..Default::default() };
         crate::docx::Control { props, open: String::new(), close: String::new(), read: None, at: None }
     }
 

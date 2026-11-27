@@ -79,7 +79,7 @@ impl Element {
         if let Some(p) = &self.props {
             (kind_name(&p.kind), &p.tag, &p.alias, p.lock.val(), p.showing_placeholder, &p.binding).hash(&mut h);
             // Its kind's settings: a gallery's gallery and category, a date's calendar and storage, a list's items
-            p.kind_xml.hash(&mut h);
+            (&p.kind_xml, &p.items, p.combo, &p.kept, p.temporary).hash(&mut h);
         }
         h.finish()
     }

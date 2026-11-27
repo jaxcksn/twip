@@ -4115,17 +4115,50 @@ fn control_props(pr: Option<Node>, xml: &str) -> ControlProps {
                 let lid = child(c, "lid").and_then(|l| attr(l, "val")).map(str::to_string);
                 kind = Some((ControlKind::Date { format, lid }, raw()));
             }
-            "dropDownList" | "comboBox" => kind = Some((ControlKind::DropDown, raw())),
+            "dropDownList" | "comboBox" => {
+                p.combo = name == "comboBox";
+                p.items = c
+                    .children()
+                    .filter(|i| is_w(*i, "listItem"))
+                    .map(|i| ListEntry { text: attr(i, "displayText").map(str::to_string), value: attr(i, "value").map(str::to_string) })
+                    .collect();
+                kind = Some((ControlKind::DropDown, raw()));
+            }
             "group" => kind = Some((ControlKind::Group, raw())),
             "repeatingSection" if c.tag_name().namespace() == Some(W15) => kind = Some((ControlKind::RepeatingSection, raw())),
             "repeatingSectionItem" if c.tag_name().namespace() == Some(W15) => kind = Some((ControlKind::RepeatingItem, raw())),
             // Kinds the editor doesn't know (bibliography, citation, equation, document part galleries, ...).
-            "docPartObj" | "docPartList" | "bibliography" | "citation" | "equation" => kind = Some((ControlKind::Other, raw())),
+            "docPartObj" | "docPartList" | "bibliography" | "citation" | "equation" => {
+                let part = |n| child(c, n).and_then(|x| attr(x, "val")).filter(|v| !v.is_empty()).map(str::to_string);
+                p.kept = Some(match name {
+                    "docPartList" => KeptKind::Gallery { gallery: part("docPartGallery"), category: part("docPartCategory") },
+                    "docPartObj" => KeptKind::BuildingBlock {
+                        gallery: part("docPartGallery"),
+                        category: part("docPartCategory"),
+                        unique: child(c, "docPartUnique").is_some_and(on_off),
+                    },
+                    "citation" => KeptKind::Citation,
+                    "bibliography" => KeptKind::Bibliography,
+                    _ => KeptKind::Equation,
+                });
+                kind = Some((ControlKind::Other, raw()));
+            }
+            "temporary" => {
+                p.temporary = attr(c, "val").is_none_or(|v| v != "0" && v != "false");
+                p.rest.push((name.to_string(), raw()));
+            }
             _ => p.rest.push((name.to_string(), raw())),
         }
     }
     // No kind element: a rich-text control (Word's default).
     let (k, x) = kind.unwrap_or((ControlKind::RichText, String::new()));
+    // The last kind element is the control's.
+    if k != ControlKind::Other {
+        p.kept = None;
+    }
+    if k != ControlKind::DropDown {
+        (p.items, p.combo) = (Vec::new(), false);
+    }
     p.kind = k;
     p.kind_xml = (!x.is_empty()).then_some(x);
     p

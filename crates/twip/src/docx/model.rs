@@ -1480,13 +1480,14 @@ pub struct Control {
 }
 
 /// A content control kind the editor keeps as written (`ControlKind::Other`), as its kind element names it.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum KeptKind {
     /// `w:docPartList`: a building block gallery, offering the building blocks of its gallery (by Word's name for it,
     /// `Quick Parts`, `Custom 1`, ...) and category (`None`: any).
     Gallery { gallery: Option<String>, category: Option<String> },
-    /// `w:docPartObj`: a building block inserted from a gallery (a cover page, a table of contents).
-    BuildingBlock { gallery: Option<String>, category: Option<String> },
+    /// `w:docPartObj`: a building block inserted from a gallery (a cover page, a table of contents); `unique`:
+    /// `w:docPartUnique`, one of its kind in the document.
+    BuildingBlock { gallery: Option<String>, category: Option<String>, unique: bool },
     /// `w:citation`.
     Citation,
     /// `w:bibliography`.
@@ -1495,82 +1496,22 @@ pub enum KeptKind {
     Equation,
 }
 
-impl KeptKind {
-    /// A building block gallery's (or building block's) kind element, `w` its prefix: `None` for the other kinds.
-    pub fn part_xml(&self, w: &str) -> Option<String> {
-        use super::write::props::esc;
-        let (name, gallery, category) = match self {
-            KeptKind::Gallery { gallery, category } => ("docPartList", gallery, category),
-            KeptKind::BuildingBlock { gallery, category } => ("docPartObj", gallery, category),
-            _ => return None,
-        };
-        let mut x = format!("<{w}{name}>");
-        if let Some(g) = gallery {
-            x += &format!("<{w}docPartGallery {w}val=\"{}\"/>", esc(g));
-        }
-        if let Some(c) = category {
-            x += &format!("<{w}docPartCategory {w}val=\"{}\"/>", esc(c));
-        }
-        x += &format!("</{w}{name}>");
-        Some(x)
-    }
-}
-
-/// The value of the `val` attribute of `xml`'s first element named `local` (any prefix), unescaped.
-fn child_val(xml: &str, local: &str) -> Option<String> {
-    let at = xml.match_indices(local).map(|(k, _)| k).find(|&k| {
-        let before = xml[..k].chars().next_back();
-        let after = xml[k + local.len()..].chars().next();
-        matches!(before, Some('<' | ':')) && after.is_some_and(|c| c.is_whitespace() || c == '/' || c == '>')
-    })?;
-    let rest = &xml[at..];
-    let head = &rest[..super::binding::tag_end(rest)?];
-    super::binding::tag_attrs(head).find(|(n, ..)| n.rsplit(':').next() == Some("val")).map(|(_, v, _)| super::binding::unescape(v))
+/// A drop-down's or combo box's entry (`w:listItem`), its attributes as given.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct ListEntry {
+    /// `w:displayText`: what it shows.
+    pub text: Option<String>,
+    /// `w:value`: what choosing it stores.
+    pub value: Option<String>,
 }
 
 impl ControlProps {
     /// A building block gallery (`w:docPartList`): `Some` of its category (`None`: any).
     pub fn gallery(&self) -> Option<Option<String>> {
-        match self.kept_kind()? {
-            KeptKind::Gallery { category, .. } => Some(category),
+        match &self.kept {
+            Some(KeptKind::Gallery { category, .. }) => Some(category.clone()),
             _ => None,
         }
-    }
-
-    /// What a control the editor keeps as written is, from its kind element.
-    pub fn kept_kind(&self) -> Option<KeptKind> {
-        let x = self.kind_xml.as_deref()?.trim_start().strip_prefix('<')?;
-        let name = &x[..x.find(|c: char| c.is_whitespace() || c == '>' || c == '/').unwrap_or(x.len())];
-        let part = || {
-            let v = |n| child_val(x, n).filter(|v| !v.is_empty());
-            (v("docPartGallery"), v("docPartCategory"))
-        };
-        Some(match name.rsplit(':').next()? {
-            "docPartList" => {
-                let (gallery, category) = part();
-                KeptKind::Gallery { gallery, category }
-            }
-            "docPartObj" => {
-                let (gallery, category) = part();
-                KeptKind::BuildingBlock { gallery, category }
-            }
-            "citation" => KeptKind::Citation,
-            "bibliography" => KeptKind::Bibliography,
-            "equation" => KeptKind::Equation,
-            _ => return None,
-        })
-    }
-
-    /// Whether a drop-down's kind element is `w:comboBox` (`w:dropDownList` otherwise).
-    pub fn combo_box(&self) -> bool {
-        let Some(x) = self.kind_xml.as_deref().and_then(|x| x.trim_start().strip_prefix('<')) else { return false };
-        let name = &x[..x.find(|c: char| c.is_whitespace() || c == '>' || c == '/').unwrap_or(x.len())];
-        name.rsplit(':').next() == Some("comboBox")
-    }
-
-    /// `w:temporary`: the control goes when its content is edited, leaving the content.
-    pub fn temporary(&self) -> bool {
-        self.rest.iter().any(|(n, x)| n == "temporary" && !x.contains("val=\"0\"") && !x.contains("val=\"false\""))
     }
 }
 
@@ -1601,9 +1542,18 @@ pub struct ControlProps {
     pub placeholder: Option<String>,
     /// `w:dataBinding` as read: kept, not evaluated.
     pub binding: Option<String>,
-    /// The kind's element as read (`w:date` with its children, `w:dropDownList`, ...): written back unchanged.
+    /// The kind's element as read (`w:date` with its children, `w:dropDownList`, ...): written back unchanged, a
+    /// drop-down's and a kept kind's while their typed settings are as read.
     pub kind_xml: Option<String>,
-    /// Every other `w:sdtPr` child (`w:rPr`, `w:id`, `w:temporary`, ...), by local name, in reading order.
+    /// A drop-down's entries.
+    pub items: Vec<ListEntry>,
+    /// A drop-down is a combo box (`w:comboBox`, else `w:dropDownList`): its entries suggest, any text goes.
+    pub combo: bool,
+    /// What a control the editor keeps as written is (`ControlKind::Other`).
+    pub kept: Option<KeptKind>,
+    /// `w:temporary`: the control goes when its content is edited, leaving the content.
+    pub temporary: bool,
+    /// Every other `w:sdtPr` child (`w:rPr`, `w:id`, `w:temporary` as read, ...), by local name, in reading order.
     pub rest: Vec<(String, String)>,
 }
 
@@ -1661,7 +1611,7 @@ pub enum ControlKind {
     Checkbox { checked: char, unchecked: char },
     /// `w:date`: its display format and language.
     Date { format: String, lid: Option<String> },
-    /// `w:dropDownList` or `w:comboBox` (its items in `kind_xml`).
+    /// `w:dropDownList` or `w:comboBox` (its entries in `ControlProps::items`).
     DropDown,
     /// `w:group`.
     Group,

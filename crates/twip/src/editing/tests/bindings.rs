@@ -89,7 +89,7 @@ fn a_gallery_control_takes_a_building_block_of_its_category() {
     .expect("repackages");
     let mut e = Editor::open(&bytes, fonts()).expect("opens");
     let (c, id) = control(&e, "Pick");
-    let Some(crate::docx::KeptKind::Gallery { gallery, category }) = e.document().controls[&c].props.kept_kind() else { panic!("a gallery") };
+    let Some(crate::docx::KeptKind::Gallery { gallery, category }) = e.document().controls[&c].props.kept.clone() else { panic!("a gallery") };
     assert_eq!((gallery.as_deref(), category.as_deref()), (Some("Custom 1"), Some("Sub-templates")));
     let names: Vec<String> = e.gallery_entries(gallery.as_deref(), category.as_deref()).map(|b| b.name.clone()).collect();
     assert!(names.iter().any(|n| n == "Violation"), "{names:?}");
@@ -378,14 +378,14 @@ fn a_gallery_control_is_inserted_set_and_kept_with_its_gallery_and_category() {
     let out = e.insert_gallery_control(Some("Custom 1".into()), None, fonts());
     assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
     let kept = |e: &Editor| {
-        let found = e.document().controls.values().find_map(|c| match c.props.kept_kind() {
+        let found = e.document().controls.values().find_map(|c| match c.props.kept.clone() {
             Some(k @ KeptKind::Gallery { .. }) => Some((k, c.props.showing_placeholder)),
             _ => None,
         });
         found.expect("a gallery control")
     };
     assert_eq!(kept(&e), (KeptKind::Gallery { gallery: Some("Custom 1".into()), category: None }, true));
-    let c = *e.document().controls.iter().find(|(_, c)| c.props.kept_kind().is_some()).map(|(k, _)| k).expect("the control");
+    let c = *e.document().controls.iter().find(|(_, c)| c.props.kept.clone().is_some()).map(|(k, _)| k).expect("the control");
     let id = super::super::merge::api_id(crate::docx::ElementId::Control(c));
     assert!(e.gallery_entries(Some("Custom 1"), None).any(|b| b.name == "Violation"), "a Custom 1 entry");
     assert_eq!(e.gallery_entries(Some("Cover Pages"), None).count(), 0, "not another gallery's");
@@ -415,11 +415,11 @@ fn citation_bibliography_and_equation_controls_are_told_apart() {
     ]
     .concat();
     let e = Editor::open(&super::blank_body(&body), fonts()).expect("opens");
-    let kind = |a: &str| e.document().controls[&control(&e, a).0].props.kept_kind();
+    let kind = |a: &str| e.document().controls[&control(&e, a).0].props.kept.clone();
     assert_eq!(kind("C"), Some(KeptKind::Citation));
     assert_eq!(kind("Bib"), Some(KeptKind::Bibliography));
     assert_eq!(kind("Equa"), Some(KeptKind::Equation));
-    assert_eq!(kind("Cover"), Some(KeptKind::BuildingBlock { gallery: Some("Cover Pages".into()), category: None }));
+    assert_eq!(kind("Cover"), Some(KeptKind::BuildingBlock { gallery: Some("Cover Pages".into()), category: None, unique: true }));
 }
 
 #[test]

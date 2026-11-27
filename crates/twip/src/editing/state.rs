@@ -951,7 +951,7 @@ impl Editor {
                 let props = self.doc.controls.get(&c).map(|k| k.props.clone()).unwrap_or_default();
                 let kind = control_kind(&props);
                 let mut info = control_info(&props);
-                if let Some(crate::docx::KeptKind::Gallery { gallery, category }) = props.kept_kind() {
+                if let Some(crate::docx::KeptKind::Gallery { gallery, category }) = props.kept.clone() {
                     info.building_blocks = self.gallery_entries(gallery.as_deref(), category.as_deref()).map(|b| b.name.clone()).collect();
                 }
                 // A date control's date, from the text it shows
@@ -1142,13 +1142,13 @@ pub fn control_kind(p: &crate::docx::ControlProps) -> ElementKind {
         K::Picture => ElementKind::Picture,
         K::Checkbox { .. } => ElementKind::Checkbox,
         K::Date { .. } => ElementKind::Date,
-        K::DropDown if p.combo_box() => ElementKind::ComboBox,
+        K::DropDown if p.combo => ElementKind::ComboBox,
         K::DropDown => ElementKind::DropDown,
         K::Group => ElementKind::Group,
         K::RepeatingSection => ElementKind::RepeatingSection,
         K::RepeatingItem => ElementKind::RepeatingItem,
         K::RichText => ElementKind::RichText,
-        K::Other => match p.kept_kind() {
+        K::Other => match p.kept {
             Some(KeptKind::Gallery { .. }) => ElementKind::BuildingBlockGallery,
             Some(KeptKind::BuildingBlock { .. }) => ElementKind::BuildingBlock,
             Some(KeptKind::Citation) => ElementKind::Citation,
@@ -1174,7 +1174,7 @@ pub fn control_info(p: &crate::docx::ControlProps) -> crate::api::state::Control
     let mut info = crate::api::state::ControlInfo {
         appearance,
         color: rest("color").and_then(|x| val(x, "val=\"")).and_then(|v| u32::from_str_radix(&v, 16).ok()).map(Color),
-        temporary: p.temporary(),
+        temporary: p.temporary,
         style: rest("rPr").and_then(|x| val(&x[x.find("rStyle")?..], "val=\"")).map(StyleId),
         ..Default::default()
     };
@@ -1194,10 +1194,10 @@ pub fn control_info(p: &crate::docx::ControlProps) -> crate::api::state::Control
             }
         }
         crate::docx::ControlKind::Other => {
-            if let Some(crate::docx::KeptKind::Gallery { gallery, category } | crate::docx::KeptKind::BuildingBlock { gallery, category }) =
-                p.kept_kind()
+            if let Some(crate::docx::KeptKind::Gallery { gallery, category } | crate::docx::KeptKind::BuildingBlock { gallery, category, .. }) =
+                &p.kept
             {
-                (info.gallery, info.category) = (gallery, category);
+                (info.gallery, info.category) = (gallery.clone(), category.clone());
             }
         }
         _ => {}
