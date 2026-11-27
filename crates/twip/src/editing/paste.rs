@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use crate::docx::resolvers::Resolvers;
+use crate::docx::resolvers::{Resolvers, TypedDefs};
 use crate::docx::{Block, Inline, Paragraph, Run, RunStyle};
 use crate::font::Fonts;
 
@@ -281,12 +281,12 @@ impl Editor {
         ids.sort_unstable();
         ids.dedup();
         // Compared as they resolve: a style based on one that differs differs.
+        let (from, here) = (from.typed(), here.typed());
         let differs = ids.iter().any(|&id| {
-            if from.styles.get(id).is_none() || here.styles.get(id).is_none() {
+            if from.cascade.styles.get(id).is_none() || here.cascade.styles.get(id).is_none() {
                 return false;
             }
-            let (a, b) = (from.styles.chain(Some(id)), here.styles.chain(Some(id)));
-            a.len() != b.len() || a.iter().zip(&b).any(|(x, y)| x.raw != y.raw)
+            chains_differ(&from, &here, Some(id), Some(id))
         });
         if differs { PasteFrom::Conflict } else { PasteFrom::Between }
     }
@@ -1003,14 +1003,14 @@ impl Editor {
     pub(super) fn keep_para_looks(&self, blocks: &mut [Block], from: &Resolvers) {
         let Some(res) = self.doc.resolver.clone() else { return };
         let cx = self.cx();
+        let (theirs, ours) = (from.typed(), res.typed());
         // A style this document lacks comes with the paste, its look with it.
         let differs = |id: Option<&str>| {
-            if id.is_some_and(|id| res.styles.get(id).is_none()) {
+            if id.is_some_and(|id| ours.cascade.styles.get(id).is_none()) {
                 return false;
             }
-            let (a, b) = (from.styles.paragraph_style(id), res.styles.paragraph_style(id));
-            let (ca, cb) = (from.styles.chain(a), res.styles.chain(b));
-            !cb.is_empty() && (ca.len() != cb.len() || ca.iter().zip(&cb).any(|(x, y)| x.raw != y.raw))
+            let (a, b) = (theirs.cascade.paragraph_style(id), ours.cascade.paragraph_style(id));
+            !ours.cascade.chain(b).is_empty() && chains_differ(&theirs, &ours, a, b)
         };
         let mut seen: HashMap<Option<String>, bool> = HashMap::new();
         let mut looks: HashMap<*const RunStyle, Run> = HashMap::new();
@@ -1153,7 +1153,7 @@ fn merged_run(
         e.underline = Some(crate::format::UnderlineProps { style, color: None });
         e.whole(Prop::Underline);
     }
-    if src.style_id.as_deref() == Some("Hyperlink") && res.styles.by_id.contains_key("Hyperlink") {
+    if src.style_id.as_deref() == Some("Hyperlink") && res.has_style("Hyperlink") {
         e.style = Some("Hyperlink".into());
         e.whole(Prop::Style);
     }
@@ -1233,6 +1233,12 @@ fn each_para_mut(blocks: &mut [Block], f: &mut dyn FnMut(&mut Paragraph)) {
             Block::Table(t) => t.rows.iter_mut().flat_map(|r| r.cells.iter_mut()).for_each(|c| each_para_mut(&mut c.blocks, f)),
         }
     }
+}
+
+/// Whether style `a`'s chain in `from` and `b`'s in `here` differ: in length, or in a style written differently.
+fn chains_differ(from: &TypedDefs, here: &TypedDefs, a: Option<&str>, b: Option<&str>) -> bool {
+    let (ca, cb) = (from.cascade.chain(a), here.cascade.chain(b));
+    ca.len() != cb.len() || ca.iter().zip(&cb).any(|(x, y)| from.style_xml(&x.style.id) != here.style_xml(&y.style.id))
 }
 
 /// Tests: the id of every float of `blocks`, in document order.
