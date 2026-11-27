@@ -540,6 +540,31 @@ impl Resolvers {
         self.typed().style_xml(id).map(std::borrow::Cow::into_owned)
     }
 
+    /// The holder of style `id`, to edit: a document style's (a glossary style has none).
+    pub fn style_def(&self, id: &str) -> Option<StyleDef> {
+        self.typed().styles.styles.get(id).cloned()
+    }
+
+    /// The holder of the document defaults, to edit.
+    pub fn defaults_def(&self) -> Option<DefaultsDef> {
+        self.typed().styles.defaults.clone()
+    }
+
+    /// The holder of the latent styles, to edit.
+    pub fn latent_def(&self) -> Option<LatentDef> {
+        self.typed().styles.latent.clone()
+    }
+
+    /// The holder of list definition `id`, to edit: a document definition's.
+    pub fn list_def(&self, id: ListDefId) -> Option<ListDefDirect> {
+        self.typed().numbering.defs.get(&id).cloned()
+    }
+
+    /// The holder of list `id`, to edit: a document list's.
+    pub fn list(&self, id: ListId) -> Option<ListDirect> {
+        self.typed().numbering.lists.get(&id).cloned()
+    }
+
     /// The `w:docDefaults` as it is written.
     pub fn defaults_xml(&self) -> Option<String> {
         let t = self.typed();
@@ -605,17 +630,22 @@ impl Resolvers {
         changed
     }
 
-    /// Adds or replaces a style from its `w:style` XML: the typed style set (refused when it would be based on
-    /// itself), then the XML path's. Returns the styles whose properties changed.
+    /// Adds or replaces a style from its `w:style` XML, as [`Self::set_style`] sets it.
     pub fn set_style_xml(&mut self, raw: String) -> Result<Vec<String>, styles::StyleEditError> {
         let cx = self.frozen.styles.cx();
         let style = cx.parse(&raw, |_, el| (alone(el) && super::xml::is_w(el, "style")).then(|| super::style_xml::parse(el)).flatten()).flatten();
         let style = style.ok_or(styles::StyleEditError::Malformed)?;
-        let id = style.id.clone();
+        self.set_style(StyleDef::read(style, raw.into()))
+    }
+
+    /// Adds or replaces style `def`: the typed style set (refused when it would be based on itself), then the XML
+    /// path's from the `w:style` it writes. Returns the styles whose properties changed.
+    pub fn set_style(&mut self, def: StyleDef) -> Result<Vec<String>, styles::StyleEditError> {
+        let id = def.get().id.clone();
         let colours = self.frozen.styles.colours;
+        let raw = def.xml(&colours, &self.typed().styles.cx()).into_owned();
         let before = self.cascade();
         let existed = before.styles.styles.contains_key(&id);
-        let def = StyleDef::read(style, raw.as_str().into());
         self.edit_typed(|part, _, _| part.set(def, &colours))?;
         let changed = Self::changed_with(&before, &self.cascade(), &id, existed);
         let frozen = self.frozen.styles.set_xml(raw);
@@ -664,7 +694,13 @@ impl Resolvers {
             para: parsed.para.clone().or_else(|| was.as_ref().and_then(|d| d.para.clone())),
             foreign: parsed.foreign.clone(),
         };
-        let def = DefaultsDef::read(merged, raw.as_str().into());
+        self.set_defaults(DefaultsDef::read(merged, raw.into()))
+    }
+
+    /// Replaces the document defaults with `def`, then the XML path's from the `w:docDefaults` it writes. Returns
+    /// every style, by id.
+    pub fn set_defaults(&mut self, def: DefaultsDef) -> Result<Vec<String>, styles::StyleEditError> {
+        let raw = def.xml(&self.frozen.styles.colours, &self.typed().styles.cx()).into_owned();
         self.edit_typed(|part, _, _| {
             part.sheet.defaults = Some(def.get().clone());
             part.defaults = Some(def);
@@ -679,7 +715,12 @@ impl Resolvers {
         let cx = self.frozen.styles.cx();
         let parsed =
             cx.parse(&raw, |_, el| (alone(el) && super::xml::is_w(el, "latentStyles")).then(|| super::style_xml::parse_latent(el))).flatten();
-        let def = LatentDef::read(parsed.ok_or(styles::StyleEditError::Malformed)?, raw.as_str().into());
+        self.set_latent(LatentDef::read(parsed.ok_or(styles::StyleEditError::Malformed)?, raw.into()))
+    }
+
+    /// Replaces the latent styles with `def`, then the XML path's from the `w:latentStyles` it writes.
+    pub fn set_latent(&mut self, def: LatentDef) -> Result<(), styles::StyleEditError> {
+        let raw = def.xml(&self.frozen.styles.colours, &self.typed().styles.cx()).into_owned();
         self.edit_typed(|part, _, _| {
             part.sheet.latent = Some(def.get().clone());
             part.latent = Some(def);
@@ -693,31 +734,43 @@ impl Resolvers {
     /// or `None` when it isn't one.
     pub fn set_abstract_xml(&mut self, raw: String) -> Option<i64> {
         let d = ListDefDirect::from_xml(&raw, &self.frozen.numbering.cx())?;
+        Some(self.set_list_def(d).0)
+    }
+
+    /// Adds or replaces list definition `d`, then the XML path's from the `w:abstractNum` it writes. Its id.
+    pub fn set_list_def(&mut self, d: ListDefDirect) -> ListDefId {
         let id = d.get().id;
+        let colours = self.frozen.styles.colours;
+        let raw = d.xml(&colours, &self.typed().numbering.cx()).into_owned();
         self.edit_typed(|_, numbering, lists| {
             lists.defs.insert(id, d.get().clone());
             numbering.defs.insert(id, d);
         });
-        let colours = self.frozen.styles.colours;
         let frozen = self.frozen.numbering.set_abstract_xml(raw, &colours);
         debug_assert_eq!(frozen, Some(id.0), "definition {}: the XML path set alike", id.0);
         self.edited();
-        Some(id.0)
+        id
     }
 
     /// Adds or replaces a list from its `w:num` XML, as [`Self::set_abstract_xml`].
     pub fn set_num_xml(&mut self, raw: String) -> Option<i64> {
         let d = ListDirect::from_xml(&raw, &self.frozen.numbering.cx())?;
+        Some(self.set_list(d).0)
+    }
+
+    /// Adds or replaces list `d`, as [`Self::set_list_def`].
+    pub fn set_list(&mut self, d: ListDirect) -> ListId {
         let id = d.get().id;
+        let colours = self.frozen.styles.colours;
+        let raw = d.xml(&colours, &self.typed().numbering.cx()).into_owned();
         self.edit_typed(|_, numbering, lists| {
             lists.lists.insert(id, d.get().clone());
             numbering.lists.insert(id, d);
         });
-        let colours = self.frozen.styles.colours;
         let frozen = self.frozen.numbering.set_num_xml(raw, &colours);
         debug_assert_eq!(frozen, Some(id.0), "list {}: the XML path set alike", id.0);
         self.edited();
-        Some(id.0)
+        id
     }
 
     /// Adds picture bullet `id` from its `w:numPicBullet` XML, its image read through relationship `rel` at `image`.
@@ -827,6 +880,26 @@ impl std::ops::Deref for StyleEdits<'_> {
 }
 
 impl StyleEdits<'_> {
+    /// [`Resolvers::set_style`].
+    pub fn set(&mut self, def: StyleDef) -> Result<Vec<String>, styles::StyleEditError> {
+        self.0.set_style(def)
+    }
+
+    /// [`Resolvers::set_defaults`].
+    pub fn set_defaults(&mut self, def: DefaultsDef) -> Result<Vec<String>, styles::StyleEditError> {
+        self.0.set_defaults(def)
+    }
+
+    /// [`Resolvers::set_latent`].
+    pub fn set_latent(&mut self, def: LatentDef) -> Result<(), styles::StyleEditError> {
+        self.0.set_latent(def)
+    }
+
+    /// The typed definitions as the edits so far leave them.
+    pub fn typed(&self) -> Rc<TypedDefs> {
+        self.0.typed()
+    }
+
     /// [`Resolvers::set_style_xml`].
     pub fn set_xml(&mut self, raw: String) -> Result<Vec<String>, styles::StyleEditError> {
         self.0.set_style_xml(raw)
@@ -860,6 +933,21 @@ impl std::ops::Deref for NumberingEdits<'_> {
 }
 
 impl NumberingEdits<'_> {
+    /// [`Resolvers::set_list_def`].
+    pub fn set_list_def(&mut self, d: ListDefDirect) -> ListDefId {
+        self.0.set_list_def(d)
+    }
+
+    /// [`Resolvers::set_list`].
+    pub fn set_list(&mut self, d: ListDirect) -> ListId {
+        self.0.set_list(d)
+    }
+
+    /// The typed definitions as the edits so far leave them.
+    pub fn typed(&self) -> Rc<TypedDefs> {
+        self.0.typed()
+    }
+
     /// [`Resolvers::set_abstract_xml`].
     pub fn set_abstract_xml(&mut self, raw: String, _colours: &super::props::ThemeColours) -> Option<i64> {
         self.0.set_abstract_xml(raw)
