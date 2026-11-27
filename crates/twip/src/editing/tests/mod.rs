@@ -63,6 +63,7 @@ mod stories_and_steps;
 mod stripped;
 mod style_definitions;
 mod style_model;
+mod style_xml_route;
 mod styles;
 mod sub_template_settings;
 mod sub_templates;

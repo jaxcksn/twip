@@ -212,6 +212,23 @@ pub(super) fn edit_rpr_xml(
     direct.edit(e).xml(colours, cx).map(std::borrow::Cow::into_owned)
 }
 
+/// `xml` (a `w:pPr`, or none) with `edit`'s typed edit of the properties it holds, written over it; as it is when
+/// `edit` returns false.
+#[cfg(test)]
+pub(super) fn edit_ppr_xml(
+    xml: Option<&str>,
+    colours: &crate::docx::props::ThemeColours,
+    cx: &Cx,
+    edit: impl FnOnce(&mut ParaEdit) -> bool,
+) -> Option<String> {
+    let direct = ParaDirect::from_xml(xml, cx);
+    let mut e = ParaEdit::new((**direct.get()).clone());
+    if !edit(&mut e) {
+        return xml.map(str::to_string);
+    }
+    direct.edit(e).xml(colours, cx).map(std::borrow::Cow::into_owned)
+}
+
 /// A paragraph's formatting resolved again from its direct XML, with what reading gave it beyond that
 /// ([`Resolver::para_again`]), and what its runs resolve over.
 pub(super) struct Again {

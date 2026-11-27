@@ -118,41 +118,6 @@ pub(super) fn edit_child(raw: &str, child: &str, cx: &Cx, edit: impl FnOnce(&mut
     el.xml().unwrap_or_else(|| raw.to_string())
 }
 
-/// CT_TblStylePr's children in schema order.
-const TBL_STYLE_PR: &[&str] = &["pPr", "rPr", "tblPr", "trPr", "tcPr"];
-
-/// A table style's XML with `child` of its part `region` (a `w:tblStylePr`) edited, made when it has none.
-pub(super) fn edit_table_part(raw: &str, region: &str, child: &str, cx: &Cx, edit: impl FnOnce(&mut Props)) -> String {
-    let w = &cx.w;
-    let mut el = Props::parse(Some(raw), "style", cx);
-    let at =
-        el.kids.iter().position(|(n, x)| n == "tblStylePr" && cx.parse(x, |_, p| crate::docx::xml::attr(p, "type") == Some(region)) == Some(true));
-    let blank = format!("<{w}tblStylePr {w}type=\"{region}\"><{w}pPr/></{w}tblStylePr>");
-    let mut part = Props::parse(Some(at.map_or(blank.as_str(), |i| el.kids[i].1.as_str())), "tblStylePr", cx);
-    part.reorder(TBL_STYLE_PR);
-    if at.is_none() {
-        part.remove("pPr");
-    }
-    let mut props = Props::parse(part.get(child), child, cx);
-    match child {
-        "tcPr" => props.reorder(crate::docx::write::props::TCPR),
-        "tblPr" => props.reorder(crate::docx::write::props::TBLPR),
-        _ => {}
-    }
-    edit(&mut props);
-    match props.xml() {
-        Some(x) => part.set(child, x),
-        None => part.remove(child),
-    }
-    let xml = part.xml().unwrap_or_else(|| format!("<{w}tblStylePr {w}type=\"{region}\"/>"));
-    match at {
-        Some(i) => el.kids[i].1 = xml,
-        None => el.add("tblStylePr", xml),
-    }
-    el.reorder(crate::docx::write::props::STYLE);
-    el.xml().unwrap_or_else(|| raw.to_string())
-}
-
 // Typed edits of a style
 
 /// A style being formatted: the holder it started from, its definition now, and what the formatting set, in order.
@@ -489,6 +454,7 @@ impl Editor {
     }
 
     /// [`Self::format_style`] on a style's XML, its XML after.
+    #[cfg(test)]
     pub(crate) fn format_style_xml(&mut self, raw: &str, commands: Vec<Command>, fonts: &Fonts) -> Result<String, Error> {
         formats_style(&commands)?;
         let def = self.style_of_xml(raw).ok_or_else(|| Error::invalid("not a style"))?;
@@ -652,18 +618,6 @@ impl Editor {
         let para = self.selection.focus().and_then(|p| p.para_offset()).and_then(|(p, _)| self.index.para(&self.doc, p));
         let run = self.caret().and_then(|c| self.run_at(&c));
         selection_props(para.map(|p| &**p.style.direct.get()), run.as_ref().and_then(|r| r.direct.props()).map(|r| &**r))
-    }
-
-    /// [`Self::selection_formatting`] as the styles part writes it: its paragraph's `w:pPr` and its run's `w:rPr`.
-    pub(super) fn selection_formatting_xml(&self) -> (Option<String>, Option<String>) {
-        let Some(res) = self.doc.resolver.as_deref() else { return (None, None) };
-        let (cx, colours) = (res.cx(), res.colours());
-        let (ppr, rpr) = self.selection_formatting();
-        let ppr = ppr.and_then(|p| {
-            crate::docx::para_xml::ppr(Some(res), &crate::docx::para_props::ParaDirect::typed(Rc::new(p)), &cx).map(|x| x.into_owned())
-        });
-        let rpr = rpr.and_then(|r| RunDirect::typed(Some(Rc::new(r))).xml(&colours, &cx).map(|x| x.into_owned()));
-        (ppr, rpr)
     }
 
     /// The built-in style `cmd` applies (or updates) when the document doesn't define it, and it is of the kind `cmd`
