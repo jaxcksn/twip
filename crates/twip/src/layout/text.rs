@@ -969,20 +969,28 @@ impl<'a> Builder<'a> {
                 continue;
             }
             // A code's brace of a field across paragraphs showing its code: in its edge's run.
-            if let (Inline::Opaque(o), Shown::Value(v)) = (inl, &shown[k])
-                && !o.run.as_ref().is_some_and(|r| (r.hidden && !space.show_hidden) || space.markup.hides(view, &r.rev))
+            if let (Inline::FieldEdge { run: r, .. }, Shown::Value(v)) = (inl, &shown[k])
+                && !((r.hidden && !space.show_hidden) || space.markup.hides(view, &r.rev))
             {
                 self.flush_text(&mut pend, &mut pend_runs, &mut pend_units)?;
                 let first = self.pieces.len();
-                let run = o.run.as_ref().map(|r| marked_run(run_in(r, view), view, &space.markup));
-                self.text(v, run.as_ref().unwrap_or_else(|| para.mark_in(view)))?;
+                let run = marked_run(run_in(r, view), view, &space.markup);
+                self.text(v, &run)?;
                 for i in first..self.pieces.len() {
                     self.pieces[i].src = Some(Unit(at));
                 }
                 at += inl.units() as u32;
                 continue;
             }
-            if matches!(inl, Inline::Opaque(_) | Inline::Range(_) | Inline::CommentRef { .. } | Inline::ControlStart(_) | Inline::ControlEnd(_)) {
+            if matches!(
+                inl,
+                Inline::Opaque(_)
+                    | Inline::FieldEdge { .. }
+                    | Inline::Range(_)
+                    | Inline::CommentRef { .. }
+                    | Inline::ControlStart(_)
+                    | Inline::ControlEnd(_)
+            ) {
                 at += inl.units() as u32;
                 continue;
             }
@@ -1937,7 +1945,9 @@ fn continues_after_break(para: &Paragraph, space: &ShapeSpace) -> bool {
         && para
             .inlines
             .iter()
-            .find(|i| !matches!(i, Inline::Opaque(_) | Inline::Range(_)) && !matches!(i, Inline::Text(t, _) if t.is_empty()))
+            .find(|i| {
+                !matches!(i, Inline::Opaque(_) | Inline::FieldEdge { .. } | Inline::Range(_)) && !matches!(i, Inline::Text(t, _) if t.is_empty())
+            })
             .is_some_and(|i| matches!(i, Inline::Break(BreakKind::Page | BreakKind::Column, _)))
 }
 

@@ -127,8 +127,7 @@ fn decide(r: &Run, accept: bool, take: impl Fn(&RevisionMark) -> bool) -> Option
 
 /// Whether the field edge at `p.inlines[k]` goes with what `pick` resolves.
 fn edge_goes(p: &Paragraph, k: usize, pick: &Pick, accept: bool) -> bool {
-    let Some(Inline::Opaque(o)) = p.inlines.get(k) else { return false };
-    let Some(r) = o.run.as_ref().filter(|_| o.field.is_some()) else { return false };
+    let Some(Inline::FieldEdge { run: r, .. }) = p.inlines.get(k) else { return false };
     let para = ParaId(p.id);
     let at: u32 = p.inlines[..k].iter().map(|i| i.units() as u32).sum();
     let in_range = pick.covers(para, at, p.inlines[k].units() as u32);
@@ -175,9 +174,9 @@ fn resolve_inlines(p: &Paragraph, pick: &Pick, accept: bool) -> Option<(Vec<Inli
                 continue;
             }
             // A field edge's changes are on its run.
-            let edge = matches!(&piece, Inline::Opaque(o) if o.field.is_some());
+            let edge = matches!(&piece, Inline::FieldEdge { .. });
             let r = match &piece {
-                Inline::Opaque(o) if edge => o.run.as_ref(),
+                Inline::FieldEdge { run, .. } => Some(run),
                 _ => piece.run(),
             };
             let Some(r) = r else {

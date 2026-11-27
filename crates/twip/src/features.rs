@@ -176,7 +176,7 @@ fn para(p: &Paragraph, depth: usize, f: &mut BTreeSet<&'static str>) {
                 f.insert("comments");
                 run(r, f);
             }
-            Inline::Range(_) | Inline::ControlStart(_) | Inline::ControlEnd(_) | Inline::Opaque(_) => {}
+            Inline::Range(_) | Inline::ControlStart(_) | Inline::ControlEnd(_) | Inline::FieldEdge { .. } | Inline::Opaque(_) => {}
         }
     }
 }

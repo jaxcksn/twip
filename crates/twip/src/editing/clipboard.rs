@@ -560,7 +560,7 @@ fn without_revisions(r: &Run) -> Run {
 /// The run holding `i`'s tracked changes: a field edge's is its markers'.
 fn marked_run(i: &Inline) -> Option<&Run> {
     match i {
-        Inline::Opaque(o) if o.field.is_some() => o.run.as_ref(),
+        Inline::FieldEdge { run, .. } => Some(run),
         _ => i.run(),
     }
 }
@@ -1384,12 +1384,12 @@ pub(super) fn drop_unpaired(blocks: &mut [Block]) {
                 perm_ends.insert(id);
             }
         }
-        Inline::Opaque(o) => any |= o.field.is_some(),
+        Inline::FieldEdge { .. } => any = true,
         Inline::Range(r) if !matches!(r.kind, RangeKind::CommentStart | RangeKind::CommentEnd) => any = true,
         _ => {}
     });
     // Fields across paragraphs: both edges, each paired in its own container (the top level, cells, text boxes).
-    let mut paired: HashSet<*const crate::docx::Opaque> = HashSet::new();
+    let mut paired: HashSet<*const crate::docx::Edge> = HashSet::new();
     if any {
         edges_paired(blocks, &mut paired);
     }
@@ -1408,7 +1408,7 @@ pub(super) fn drop_unpaired(blocks: &mut [Block]) {
                 perm_starts.contains(&id)
             }
         }
-        Inline::Opaque(o) if o.field.is_some() => paired.contains(&Rc::as_ptr(o)),
+        Inline::FieldEdge { edge, .. } => paired.contains(&Rc::as_ptr(edge)),
         Inline::Range(r) => matches!(r.kind, RangeKind::CommentStart | RangeKind::CommentEnd),
         _ => true,
     };
@@ -1416,10 +1416,10 @@ pub(super) fn drop_unpaired(blocks: &mut [Block]) {
 }
 
 /// The field edges of `blocks` that pair within their container, and within each container they hold.
-fn edges_paired(blocks: &[Block], out: &mut HashSet<*const crate::docx::Opaque>) {
+fn edges_paired(blocks: &[Block], out: &mut HashSet<*const crate::docx::Edge>) {
     let ptr = |(b, k): (usize, usize)| match &blocks[b] {
         Block::Para(p) => match &p.inlines[k] {
-            Inline::Opaque(o) => Some(Rc::as_ptr(o)),
+            Inline::FieldEdge { edge, .. } => Some(Rc::as_ptr(edge)),
             _ => None,
         },
         Block::Table(_) => None,

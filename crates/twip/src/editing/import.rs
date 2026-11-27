@@ -334,9 +334,17 @@ impl Rebind {
                 }
                 for i in &mut p.inlines {
                     match i {
+                        Inline::FieldEdge { edge, .. } => {
+                            if let Some(src) = &edge.src
+                                && let Some(xml) = self.element(&src.xml)
+                            {
+                                let src = crate::docx::EdgeSource { xml: xml.into(), at: src.at.clone() };
+                                *edge = Rc::new(crate::docx::Edge { kind: edge.kind.clone(), src: Some(src) });
+                            }
+                        }
                         Inline::Opaque(o) => {
                             if let Some(xml) = o.xml.0.as_deref().and_then(|x| self.element(x)) {
-                                *o = Rc::new(Opaque { xml: Raw(Some(xml.into())), field: o.field.clone(), src: o.src.clone(), run: o.run.clone() });
+                                *o = Rc::new(Opaque { xml: Raw(Some(xml.into())) });
                             }
                         }
                         Inline::Range(r) if let Some(p) = r.permission.as_deref().filter(|p| needs(&p.xml)) => {

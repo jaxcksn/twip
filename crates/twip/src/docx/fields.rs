@@ -329,7 +329,7 @@ fn show_at(inlines: &[Inline], views: bool, keep: &dyn Fn(&Run) -> bool, stand_i
 /// The edge of a field across paragraphs an inline is, its code view's markers included.
 pub fn span_edge(i: &Inline) -> Option<&FieldEdge> {
     match i {
-        Inline::Opaque(o) => o.field.as_ref(),
+        Inline::FieldEdge { edge, .. } => Some(&edge.kind),
         _ => None,
     }
 }
@@ -427,8 +427,8 @@ pub fn show_span_results(inlines: &mut Vec<Inline>) {
             }
             Some(FieldEdge::Start { view: FieldView::Code, .. }) => {
                 let code = span_code_text(inlines, k);
-                let Inline::Opaque(o) = &inlines[k] else { unreachable!("an edge") };
-                inlines[k] = start_in_view(o, code, FieldView::Result);
+                let Inline::FieldEdge { edge, run } = &inlines[k] else { unreachable!("an edge") };
+                inlines[k] = start_in_view(edge, run, code, FieldView::Result);
                 let mut j = k + 1;
                 // The code's runs go; its markers stay
                 while j < inlines.len() && span_edge(&inlines[j]).is_none() {
@@ -448,21 +448,12 @@ pub fn show_span_results(inlines: &mut Vec<Inline>) {
     }
 }
 
-/// Start edge `o` in `view` with `code`: its runs written again in the prefix they were in, its source left (written
-/// anew).
-pub fn start_in_view(o: &super::model::Opaque, code: String, view: FieldView) -> Inline {
-    let Some(FieldEdge::Start { lock, dirty, .. }) = &o.field else {
-        return Inline::Opaque(std::rc::Rc::new(super::model::Opaque {
-            xml: o.xml.clone(),
-            field: o.field.clone(),
-            src: o.src.clone(),
-            run: o.run.clone(),
-        }));
+/// Start edge `e` (in `run`) in `view` with `code`: a new edge, its markers written anew.
+pub fn start_in_view(e: &super::model::Edge, run: &Run, code: String, view: FieldView) -> Inline {
+    let FieldEdge::Start { lock, dirty, .. } = &e.kind else {
+        return Inline::FieldEdge { edge: std::rc::Rc::new(e.clone()), run: run.clone() };
     };
-    let edge = FieldEdge::Start { code, lock: *lock, dirty: *dirty, view };
-    let w = edge_prefix(o.xml.0.as_deref().unwrap_or(""));
-    let xml = super::model::Raw(Some(edge.xml(w).into()));
-    Inline::Opaque(std::rc::Rc::new(super::model::Opaque { xml, field: Some(edge), src: None, run: o.run.clone() }))
+    FieldEdge::Start { code, lock: *lock, dirty: *dirty, view }.inline(run.clone())
 }
 
 /// The code of the start edge at `inlines[k]` as it reads now: its runs' in its code view, else its own.
@@ -472,15 +463,6 @@ pub fn span_code(inlines: &[Inline], k: usize) -> std::borrow::Cow<'_, str> {
         Some(FieldEdge::Start { code, .. }) => std::borrow::Cow::Borrowed(code),
         _ => std::borrow::Cow::Borrowed(""),
     }
-}
-
-/// The main namespace prefix an edge's runs were written in (`w:`).
-pub(crate) fn edge_prefix(xml: &str) -> &str {
-    xml.strip_prefix('<')
-        .and_then(|x| x.split(|c: char| c.is_whitespace() || c == '>' || c == '/').next())
-        .and_then(|name| name.strip_suffix('r'))
-        .filter(|w| w.is_empty() || w.ends_with(':'))
-        .unwrap_or("w:")
 }
 
 /// The text of `inlines` as results show it: codes left out, an evaluated field as its value (or its result).
@@ -2697,13 +2679,5 @@ mod tests {
         assert_eq!(next(r" SEQ Figure \h \* ROMAN ", false), "IV", "a format switch shows a hidden one");
         assert_eq!(next(&format!(r" SEQ Figure \r {} ", i64::MAX), false), i64::MAX.to_string());
         assert!(next(" SEQ Figure ", false).starts_with("Error! "), "no number past the largest");
-    }
-
-    #[test]
-    fn an_edge_prefix_is_its_runs_tag_prefix() {
-        assert_eq!(edge_prefix(r#"<w:r w:rsidR="00AB"><w:fldChar w:fldCharType="begin"/></w:r>"#), "w:");
-        assert_eq!(edge_prefix("<x:r><x:fldChar/></x:r>"), "x:");
-        assert_eq!(edge_prefix("<r><fldChar/></r>"), "");
-        assert_eq!(edge_prefix("<w:fldSimple/>"), "w:");
     }
 }

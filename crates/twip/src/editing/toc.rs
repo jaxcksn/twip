@@ -446,7 +446,7 @@ pub(super) fn partner(blocks: &[Block], (b, k): (usize, usize)) -> Option<(usize
 /// The field edge an inline is: a start or an end (not a code view's markers).
 pub(crate) fn edge(i: &Inline) -> Option<&FieldEdge> {
     match i {
-        Inline::Opaque(o) => o.field.as_ref().filter(|f| matches!(f, FieldEdge::Start { .. } | FieldEdge::End)),
+        Inline::FieldEdge { edge, .. } => Some(&edge.kind).filter(|f| matches!(f, FieldEdge::Start { .. } | FieldEdge::End)),
         _ => None,
     }
 }
@@ -1175,7 +1175,7 @@ impl Editor {
             return Outcome::unavailable("no caret");
         };
         let mut blocks = self.toc_blocks(o, look, &code, &entries, &marks, slot.container, &here);
-        let end = FieldEdge::End.inline(&self.cx().w, here.mark.clone());
+        let end = FieldEdge::End.inline(here.mark.clone());
         // In a building block control the end has its own paragraph inside it (Word's gallery tables).
         let end = if frame.control {
             let mut p = self.new_para(ParaProps::default(), &[], slot.container, &here);
@@ -1319,11 +1319,10 @@ impl Editor {
     fn undirty(&mut self, t: &TocField, fonts: &Fonts) {
         let Shape::Spanning { start, .. } = t.shape else { return };
         let Some(Block::Para(p)) = self.index.blocks(&self.doc, t.container).and_then(|b| b.get(t.first)) else { return };
-        let Some(Inline::Opaque(o)) = p.inlines.get(start) else { return };
-        let Some(FieldEdge::Start { code, lock, dirty: true, view }) = &o.field else { return };
+        let Some(Inline::FieldEdge { edge, run }) = p.inlines.get(start) else { return };
+        let FieldEdge::Start { code, lock, dirty: true, view } = &edge.kind else { return };
         let mut inlines = p.inlines.clone();
-        inlines[start] = FieldEdge::Start { code: code.clone(), lock: *lock, dirty: false, view: *view }
-            .inline(&self.cx().w, o.run.clone().unwrap_or_else(|| p.mark.clone()));
+        inlines[start] = FieldEdge::Start { code: code.clone(), lock: *lock, dirty: false, view: *view }.inline(run.clone());
         let para = ParaId(p.id);
         let mut tx = self.begin("Update Table");
         // A flag, not content: never a tracked change.
@@ -1345,7 +1344,6 @@ impl Editor {
         let entries = self.toc_entries(&o);
         let marks = self.mark_sources(&mut tx, &entries);
         // Unused `_Toc` bookmarks the old entries linked to go.
-        let w = self.cx().w;
         // The table's blocks (offset by `t.first`).
         let Some(blocks) = self.index.blocks(&self.doc, t.container).and_then(|b| b.get(t.first..=t.last)).map(<[Block]>::to_vec) else {
             self.abort(tx);
@@ -1356,7 +1354,7 @@ impl Editor {
             return Outcome::unavailable("no table");
         };
         // Tracked, an end left in place goes too, and a new one comes: each field whole, deleted or inserted.
-        let mut end_kept: Option<Rc<crate::docx::Opaque>> = None;
+        let mut end_kept: Option<(Rc<crate::docx::Edge>, Run)> = None;
         let mut new = self.toc_blocks(&o, look, &t.code, &entries, &marks, t.container, first);
         // In the controls the table was in.
         for b in &mut new {
@@ -1369,15 +1367,14 @@ impl Editor {
                 let end_only = last.inlines[..end].iter().all(|i| i.units() == 0 && edge(i).is_none());
                 let after = (!end_only).then(|| last.inlines[end..].to_vec());
                 let range = if end_only { t.first..t.last } else { t.first..t.last + 1 };
-                if let (true, Some(Inline::Opaque(o))) = (end_only, last.inlines.get(end)) {
-                    end_kept = Some(o.clone());
+                if let (true, Some(Inline::FieldEdge { edge, run })) = (end_only, last.inlines.get(end)) {
+                    end_kept = Some((edge.clone(), run.clone()));
                 }
                 // Updated, it is no longer dirty.
                 let edge = match &first.inlines[start] {
-                    Inline::Opaque(o) => match &o.field {
-                        Some(FieldEdge::Start { code, lock, dirty: true, view }) => {
-                            let run = o.run.clone().unwrap_or_else(|| first.mark.clone());
-                            FieldEdge::Start { code: code.clone(), lock: *lock, dirty: false, view: *view }.inline(&w, run)
+                    Inline::FieldEdge { edge, run } => match &edge.kind {
+                        FieldEdge::Start { code, lock, dirty: true, view } => {
+                            FieldEdge::Start { code: code.clone(), lock: *lock, dirty: false, view: *view }.inline(run.clone())
                         }
                         _ => first.inlines[start].clone(),
                     },
@@ -1390,9 +1387,8 @@ impl Editor {
                     self.abort(tx);
                     return Outcome::unavailable("no table");
                 };
-                let edge =
-                    FieldEdge::Start { code: t.code.clone(), lock: *lock, dirty: false, view: FieldView::Result }.inline(&w, first.mark.clone());
-                let mut after = vec![FieldEdge::End.inline(&w, first.mark.clone())];
+                let edge = FieldEdge::Start { code: t.code.clone(), lock: *lock, dirty: false, view: FieldView::Result }.inline(first.mark.clone());
+                let mut after = vec![FieldEdge::End.inline(first.mark.clone())];
                 after.extend(first.inlines[end + 1..].iter().cloned());
                 (t.first..t.first + 1, edge, first.inlines[..begin].to_vec(), Some(after))
             }
@@ -1430,12 +1426,11 @@ impl Editor {
             self.abort(tx);
             return Outcome::Unchanged("the table couldn't be updated");
         }
-        if let Some(o) = end_kept.filter(|_| tx.tracked)
+        if let Some((kept, run)) = end_kept.filter(|_| tx.tracked)
             && let Some(rest) = self.index.para(&self.doc, rest)
         {
             let para = ParaId(rest.id);
-            let run = o.run.clone().unwrap_or_else(|| rest.mark.clone());
-            let cut = vec![CutEdge { edge: o, keep: false, para, container: t.container, block: t.last }];
+            let cut = vec![CutEdge { edge: kept, run: run.clone(), keep: false, para, container: t.container, block: t.last }];
             let deleted = self.delete_whole_fields(&mut tx, cut, None).is_ok();
             // The new end right after the deleted one.
             let under = self.index.para(&self.doc, para).map_or(0, |p| {
@@ -1443,7 +1438,7 @@ impl Editor {
                 let k = lead.iter().position(|i| edge(i).is_some()).map_or(0, |k| k + 1);
                 (lead.len() - k) as u32
             });
-            let end = FieldEdge::End.inline(&w, run);
+            let end = FieldEdge::End.inline(run);
             if !deleted
                 || self
                     .step(
@@ -1697,12 +1692,10 @@ impl Editor {
         container: Container,
         like: &Paragraph,
     ) -> Vec<Block> {
-        let cx = self.cx();
-        let w = cx.w.clone();
         let width = self.text_width(container);
         let right = ((width * 20.0).round() as i64 - 10).max(0);
         let figures = o.captions.is_some();
-        let start = FieldEdge::Start { code: code.to_string(), lock: false, dirty: false, view: FieldView::Result }.inline(&w, like.mark.clone());
+        let start = FieldEdge::Start { code: code.to_string(), lock: false, dirty: false, view: FieldView::Result }.inline(like.mark.clone());
         let mut out: Vec<Block> = Vec::with_capacity(entries.len().max(1));
         for e in entries {
             let style = if figures && !e.from_field { "TableofFigures".to_string() } else { format!("TOC{}", e.level.clamp(1, 9)) };
@@ -1870,7 +1863,8 @@ fn blocks_para_at(e: &Editor, container: Container, k: usize) -> Option<ParaId> 
 
 /// A field edge a deletion reaches: kept (its partner is outside the range) or gone with its field.
 pub(super) struct CutEdge {
-    edge: Rc<crate::docx::Opaque>,
+    edge: Rc<crate::docx::Edge>,
+    run: Run,
     keep: bool,
     /// The paragraph it was in.
     para: ParaId,
@@ -1905,11 +1899,18 @@ impl Editor {
         for &place in &inside {
             let Some(partner) = partner(blocks, place) else { continue };
             let Block::Para(p) = &blocks[place.0] else { continue };
-            let Inline::Opaque(o) = &p.inlines[place.1] else { continue };
-            out.push(CutEdge { edge: o.clone(), keep: !inside.contains(&partner), para: ParaId(p.id), container, block: from.0 });
+            let Inline::FieldEdge { edge, run } = &p.inlines[place.1] else { continue };
+            out.push(CutEdge {
+                edge: edge.clone(),
+                run: run.clone(),
+                keep: !inside.contains(&partner),
+                para: ParaId(p.id),
+                container,
+                block: from.0,
+            });
         }
         // Ends before starts: an earlier field's end comes before a later one's start where both are kept.
-        out.sort_by_key(|c| matches!(c.edge.field, Some(FieldEdge::Start { .. })));
+        out.sort_by_key(|c| matches!(c.edge.kind, FieldEdge::Start { .. }));
         out
     }
 
@@ -1937,12 +1938,14 @@ impl Editor {
         let caret = at.and_then(|p| p.para_offset()).map(|(p, _)| p);
         for c in cut.into_iter().filter(|c| !c.keep) {
             let holds = |e: &Editor, p: ParaId| {
-                e.index.para(&e.doc, p).and_then(|q| q.inlines.iter().position(|i| matches!(i, Inline::Opaque(x) if Rc::ptr_eq(x, &c.edge))))
+                e.index
+                    .para(&e.doc, p)
+                    .and_then(|q| q.inlines.iter().position(|i| matches!(i, Inline::FieldEdge { edge, .. } if Rc::ptr_eq(edge, &c.edge))))
             };
             let Some((para, k)) = std::iter::once(c.para).chain(caret).find_map(|p| Some((p, holds(self, p)?))) else { continue };
             let Some(rec) = tx.rec.as_mut() else { continue };
             let mut ids = std::mem::take(&mut self.doc.review_ids);
-            let now = rec.delete_edge(&c.edge, &mut ids);
+            let now = rec.delete_edge(&c.edge, &c.run, &mut ids);
             self.doc.review_ids = ids;
             let Some(p) = self.index.para(&self.doc, para) else { continue };
             let mut inlines = p.inlines.clone();
@@ -1973,7 +1976,7 @@ impl Editor {
         if slot.container != container
             && let Some(q) = self.index.para(&self.doc, para)
         {
-            let moved = |i: &Inline| matches!(i, Inline::Opaque(x) if cut.iter().any(|c| Rc::ptr_eq(x, &c.edge)));
+            let moved = |i: &Inline| matches!(i, Inline::FieldEdge { edge, .. } if cut.iter().any(|c| Rc::ptr_eq(edge, &c.edge)));
             if q.inlines.iter().any(moved) {
                 let inlines: Vec<Inline> = q.inlines.iter().filter(|i| !moved(i)).cloned().collect();
                 self.step(tx, Step::Restyle { para, inlines })?;
@@ -2006,19 +2009,19 @@ impl Editor {
                     .collect()
             })
             .unwrap_or_default();
-        let found = |e: &Editor, o: &Rc<crate::docx::Opaque>| -> Option<ParaId> {
-            near.iter()
-                .copied()
-                .find(|p| e.index.para(&e.doc, *p).is_some_and(|q| q.inlines.iter().any(|i| matches!(i, Inline::Opaque(x) if Rc::ptr_eq(x, o)))))
+        let found = |e: &Editor, o: &Rc<crate::docx::Edge>| -> Option<ParaId> {
+            near.iter().copied().find(|p| {
+                e.index.para(&e.doc, *p).is_some_and(|q| q.inlines.iter().any(|i| matches!(i, Inline::FieldEdge { edge, .. } if Rc::ptr_eq(edge, o))))
+            })
         };
         let mut back = Vec::new();
         for c in cut {
             match (c.keep, found(self, &c.edge)) {
-                (true, None) => back.push(Inline::Opaque(c.edge)),
+                (true, None) => back.push(Inline::FieldEdge { edge: c.edge, run: c.run }),
                 (false, Some(p)) => {
                     let Some(q) = self.index.para(&self.doc, p) else { continue };
                     let inlines: Vec<Inline> =
-                        q.inlines.iter().filter(|i| !matches!(i, Inline::Opaque(x) if Rc::ptr_eq(x, &c.edge))).cloned().collect();
+                        q.inlines.iter().filter(|i| !matches!(i, Inline::FieldEdge { edge, .. } if Rc::ptr_eq(edge, &c.edge))).cloned().collect();
                     self.step(tx, Step::Restyle { para: p, inlines })?;
                 }
                 _ => {}

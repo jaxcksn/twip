@@ -961,7 +961,9 @@ impl Float {
         let content: Vec<&Inline> = p
             .inlines
             .iter()
-            .filter(|i| !matches!(i, Inline::Opaque(..) | Inline::Range(..)) && !matches!(i, Inline::Text(t, _) if t.is_empty()))
+            .filter(|i| {
+                !matches!(i, Inline::Opaque(..) | Inline::FieldEdge { .. } | Inline::Range(..)) && !matches!(i, Inline::Text(t, _) if t.is_empty())
+            })
             .collect();
         match content.as_slice() {
             [Inline::ControlStart(a), Inline::Picture(..), Inline::ControlEnd(b)] if a == b && picture(a) => Some(*a),
@@ -1084,6 +1086,12 @@ pub enum Inline {
     /// A date block (`w:dayShort`, `w:dayLong`, `w:monthShort`, `w:monthLong`, `w:yearShort`, `w:yearLong`, by its
     /// element name) and the date it shows, filled in when fields are evaluated: one unit.
     DateBlock(&'static str, String, Run),
+    /// An edge of a field whose result runs across paragraphs, in the run of its markers (their formatting and
+    /// tracked changes): no units but a code's braces ([`FieldEdge::units`]).
+    FieldEdge {
+        edge: Rc<Edge>,
+        run: Run,
+    },
     /// Content the engine doesn't model, between runs (an equation, a subdocument): no units, nothing drawn, saved as
     /// read wherever it moves. No units.
     Opaque(Rc<Opaque>),
@@ -1104,12 +1112,24 @@ pub struct FormField {
 pub struct Opaque {
     /// The element as read.
     pub xml: Raw,
-    /// The edge of a field across paragraphs these runs are.
-    pub field: Option<FieldEdge>,
-    /// Where an edge's runs are in its part as read.
-    pub src: Option<std::ops::Range<usize>>,
-    /// An edge's run: its markers' formatting and tracked changes.
-    pub run: Option<Run>,
+}
+
+/// A field edge marker ([`Inline::FieldEdge`]): one allocation for each edge made, which its copies share.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Edge {
+    /// What edge it is.
+    pub kind: FieldEdge,
+    /// Its markers' runs as read (`None`: an edge made since, or one read from runs holding more than its markers).
+    pub src: Option<EdgeSource>,
+}
+
+/// A field edge's markers' runs as read: written back from there.
+#[derive(Clone, Debug, PartialEq)]
+pub struct EdgeSource {
+    /// The runs' XML.
+    pub xml: Rc<str>,
+    /// Where they are in their part.
+    pub at: std::ops::Range<usize>,
 }
 
 /// An edge of a field whose result runs across paragraphs (a table of contents): its start (its begin marker, code
@@ -1137,22 +1157,6 @@ pub enum FieldEdge {
 }
 
 impl FieldEdge {
-    /// The markers' runs in the main namespace's prefix `w` (`w:`).
-    pub fn xml(&self, w: &str) -> String {
-        match self {
-            FieldEdge::Start { code, lock, dirty, .. } => {
-                let lock = if *lock { format!(" {w}fldLock=\"1\"") } else { String::new() };
-                let dirty = if *dirty { format!(" {w}dirty=\"1\"") } else { String::new() };
-                let code = code.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
-                format!(
-                    "<{w}r><{w}fldChar {w}fldCharType=\"begin\"{lock}{dirty}/></{w}r><{w}r><{w}instrText xml:space=\"preserve\">{code}</{w}instrText></{w}r><{w}r><{w}fldChar {w}fldCharType=\"separate\"/></{w}r>"
-                )
-            }
-            FieldEdge::End => format!("<{w}r><{w}fldChar {w}fldCharType=\"end\"/></{w}r>"),
-            FieldEdge::Code | FieldEdge::Fold => String::new(),
-        }
-    }
-
     /// The units the edge takes: a code's braces one each, other edges none.
     pub fn units(&self) -> usize {
         match self {
@@ -1161,10 +1165,9 @@ impl FieldEdge {
         }
     }
 
-    /// The marker inline in `run`: its runs written in prefix `w`.
-    pub fn inline(self, w: &str, run: Run) -> Inline {
-        let xml = self.xml(w);
-        Inline::Opaque(Rc::new(Opaque { xml: Raw(Some(xml.into())), field: Some(self), src: None, run: Some(run) }))
+    /// A new marker of this edge in `run`.
+    pub fn inline(self, run: Run) -> Inline {
+        Inline::FieldEdge { edge: Rc::new(Edge { kind: self, src: None }), run }
     }
 }
 
@@ -2338,7 +2341,8 @@ impl Inline {
             | Inline::FieldSep { run, .. }
             | Inline::FieldEnd { run, .. }
             | Inline::CommentRef { run, .. } => Some(run),
-            Inline::Range(_) | Inline::ControlStart(_) | Inline::ControlEnd(_) | Inline::Opaque(_) => None,
+            // A field edge's run is its markers', not text's.
+            Inline::Range(_) | Inline::ControlStart(_) | Inline::ControlEnd(_) | Inline::FieldEdge { .. } | Inline::Opaque(_) => None,
         }
     }
 
@@ -2364,7 +2368,8 @@ impl Inline {
         match self {
             Inline::Text(s, _) => s.chars().count(),
             Inline::Range(_) | Inline::CommentRef { .. } | Inline::Float(..) | Inline::ControlStart(_) | Inline::ControlEnd(_) => 0,
-            Inline::Opaque(o) => o.field.as_ref().map_or(0, FieldEdge::units),
+            Inline::FieldEdge { edge, .. } => edge.kind.units(),
+            Inline::Opaque(_) => 0,
             _ => 1,
         }
     }

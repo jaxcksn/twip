@@ -63,6 +63,7 @@ pub fn vanished(p: &crate::docx::Paragraph, show_hidden: bool) -> bool {
             Inline::Text(t, r) => t.is_empty() || r.hidden,
             Inline::Tab(r) | Inline::Break(_, r) => r.hidden,
             Inline::Opaque(_)
+            | Inline::FieldEdge { .. }
             | Inline::Range(_)
             | Inline::ControlStart(_)
             | Inline::ControlEnd(_)
@@ -83,8 +84,13 @@ pub fn shows_nothing(p: &crate::docx::Paragraph, review: &crate::docx::review::R
     p.inlines.iter().all(|i| match i {
         Inline::Text(t, r) => t.is_empty() || hidden(r),
         // A shown code's brace
-        Inline::Opaque(o) if o.field.as_ref().is_some_and(|e| e.units() > 0) => o.run.as_ref().is_some_and(hidden),
-        Inline::Opaque(_) | Inline::Range(_) | Inline::ControlStart(_) | Inline::ControlEnd(_) | Inline::CommentRef { .. } => true,
+        Inline::FieldEdge { edge, run } if edge.kind.units() > 0 => hidden(run),
+        Inline::FieldEdge { .. }
+        | Inline::Opaque(_)
+        | Inline::Range(_)
+        | Inline::ControlStart(_)
+        | Inline::ControlEnd(_)
+        | Inline::CommentRef { .. } => true,
         i => i.run().is_some_and(hidden),
     })
 }

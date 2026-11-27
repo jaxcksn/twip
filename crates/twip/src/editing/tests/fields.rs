@@ -229,18 +229,17 @@ fn spanning_fields_ending_in_one_run_keep_each_its_own_end() {
         begin("b")
     );
     let doc = crate::docx::read_editable(&blank_body(&body)).expect("reads");
-    let ends: Vec<String> = doc.sections[0]
+    let ends: Vec<usize> = doc.sections[0]
         .blocks
         .iter()
         .filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None })
         .flat_map(|p| p.inlines.iter())
         .filter_map(|i| match i {
-            Inline::Opaque(o) if o.field == Some(crate::docx::FieldEdge::End) => o.xml.0.as_deref().map(str::to_string),
+            Inline::FieldEdge { edge, .. } if edge.kind == crate::docx::FieldEdge::End => {
+                Some(edge.src.as_ref().map_or(1, |s| s.xml.matches("fldCharType=\"end\"").count()))
+            }
             _ => None,
         })
         .collect();
-    assert_eq!(ends.len(), 2);
-    for xml in &ends {
-        assert_eq!(xml.matches("fldCharType=\"end\"").count(), 1, "{xml}");
-    }
+    assert_eq!(ends, [1, 1], "each written with its own marker");
 }

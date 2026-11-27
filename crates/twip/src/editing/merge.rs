@@ -2074,13 +2074,13 @@ impl Editor {
             for (k, i) in inlines.iter_mut().enumerate() {
                 match i {
                     Inline::FieldBegin { id, lock: l, .. } if *l != lock && fields.iter().any(|(f, _)| f == id) => *l = lock,
-                    Inline::Opaque(o) if spans.contains(&(para, k)) => {
-                        let Some(FieldEdge::Start { code, lock: l, dirty, view }) = &o.field else { continue };
+                    Inline::FieldEdge { edge: e, run } if spans.contains(&(para, k)) => {
+                        let FieldEdge::Start { code, lock: l, dirty, view } = &e.kind else { continue };
                         if *l == lock {
                             continue;
                         }
                         let edge = FieldEdge::Start { code: code.clone(), lock, dirty: *dirty, view: *view };
-                        *i = edge.inline(&self.cx().w, o.run.clone().unwrap_or_else(|| p.mark.clone()));
+                        *i = edge.inline(run.clone());
                     }
                     _ => continue,
                 }

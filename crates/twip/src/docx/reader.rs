@@ -1248,11 +1248,6 @@ struct OpenField {
     form: Option<(FieldKind, Option<String>)>,
 }
 
-/// The main namespace's prefix where `n` is (`w:`, or empty when it is the default namespace).
-fn prefix_of(n: Node) -> String {
-    n.lookup_prefix(W).filter(|p| !p.is_empty()).map_or_else(String::new, |p| format!("{p}:"))
-}
-
 /// The part's bytes from the run holding `from` (where a field's first marker starts) to the end of run `r` (holding
 /// its last, `last`), when `r` and the elements before it back to that run are runs holding only field markers and
 /// code (one parent) and no marker before `from` or after `last`: what a field's edge keeps.
@@ -2514,7 +2509,7 @@ impl Reader {
     /// An element between runs the engine doesn't model, kept as read (editable reads).
     fn opaque(&mut self, e: Node, out: &mut Vec<Inline>) {
         if self.record {
-            out.push(Inline::Opaque(Rc::new(Opaque { xml: Raw(Some(raw(e))), field: None, src: None, run: None })));
+            out.push(Inline::Opaque(Rc::new(Opaque { xml: Raw(Some(raw(e))) })));
         }
     }
 
@@ -2529,7 +2524,7 @@ impl Reader {
         let name = &open[1..open.find(|ch: char| ch.is_whitespace() || ch == '>' || ch == '/').unwrap_or(1)];
         let rpr = child(r, "rPr").map_or_else(String::new, |p| raw(p).to_string());
         let xml = format!("{open}{rpr}{}</{name}>", raw(c));
-        out.push(Inline::Opaque(Rc::new(Opaque { xml: Raw(Some(xml.into())), field: None, src: None, run: None })));
+        out.push(Inline::Opaque(Rc::new(Opaque { xml: Raw(Some(xml.into())) })));
     }
 
     /// [`Reader::opaque`], reported as content that isn't drawn.
@@ -2649,20 +2644,10 @@ impl Reader {
                                 let style = self.typed_run(base, RunDirect::default(), false);
                                 self.close_field(out, f, &run, &style);
                             } else if f.edge && self.record {
-                                let at = marker_runs(r, c, c.range().start);
-                                let xml = match &at {
-                                    Some(at) => Rc::from(&r.document().input_text()[at.clone()]),
-                                    None => {
-                                        self.lossy = true;
-                                        Rc::from(FieldEdge::End.xml(&prefix_of(r)).as_str())
-                                    }
-                                };
-                                out.push(Inline::Opaque(Rc::new(Opaque {
-                                    xml: Raw(Some(xml)),
-                                    field: Some(FieldEdge::End),
-                                    src: at,
-                                    run: Some(run.clone()),
-                                })));
+                                let src = marker_runs(r, c, c.range().start)
+                                    .map(|at| EdgeSource { xml: Rc::from(&r.document().input_text()[at.clone()]), at });
+                                self.lossy |= src.is_none();
+                                out.push(Inline::FieldEdge { edge: Rc::new(Edge { kind: FieldEdge::End, src }), run: run.clone() });
                             }
                         }
                     }
@@ -3054,16 +3039,10 @@ impl Reader {
         };
         let begin_run = out[begin].run().cloned();
         out.drain(begin..stop);
-        if let Some(edge) = edge {
-            let at = self.fields[first].marker_runs.clone();
-            let xml = match &at {
-                Some(at) => Rc::from(&n.document().input_text()[at.clone()]),
-                None => {
-                    self.lossy = true;
-                    Rc::from(edge.xml(&prefix_of(n)).as_str())
-                }
-            };
-            out.insert(begin, Inline::Opaque(Rc::new(Opaque { xml: Raw(Some(xml)), field: Some(edge), src: at, run: begin_run })));
+        if let (Some(kind), Some(run)) = (edge, begin_run) {
+            let src = self.fields[first].marker_runs.clone().map(|at| EdgeSource { xml: Rc::from(&n.document().input_text()[at.clone()]), at });
+            self.lossy |= src.is_none();
+            out.insert(begin, Inline::FieldEdge { edge: Rc::new(Edge { kind, src }), run });
             self.fields[first].edge = true;
         }
         for f in &mut self.fields[first..] {

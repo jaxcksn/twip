@@ -411,7 +411,12 @@ impl<'d> PageFill<'d, '_> {
     fn bare_closing_para(&self, bi: usize, prev: fn(&Block) -> bool) -> bool {
         let bare = |i: &Inline| match i {
             Inline::Text(t, _) => t.is_empty(),
-            Inline::Opaque(_) | Inline::Range(_) | Inline::ControlStart(_) | Inline::ControlEnd(_) | Inline::CommentRef { .. } => true,
+            Inline::Opaque(_)
+            | Inline::FieldEdge { .. }
+            | Inline::Range(_)
+            | Inline::ControlStart(_)
+            | Inline::ControlEnd(_)
+            | Inline::CommentRef { .. } => true,
             _ => false,
         };
         self.sec.breaks

@@ -3431,6 +3431,10 @@ impl<'a, 'i> Saver<'a, 'i> {
                 let raw = o.xml.0.as_deref()?;
                 srcs.iter().flat_map(|x| x.ranges.iter()).find_map(|r| self.xml[r.clone()].find(raw).map(|k| r.start + k..r.start + k + raw.len()))
             }
+            Marker::Edge(e, _) => {
+                let raw = edge_xml(&self.w, e);
+                srcs.iter().flat_map(|x| x.ranges.iter()).find_map(|r| self.xml[r.clone()].find(&*raw).map(|k| r.start + k..r.start + k + raw.len()))
+            }
             Marker::Permission(p) => {
                 let raw = permission_xml(&self.w, p);
                 srcs.iter().flat_map(|x| x.ranges.iter()).find_map(|r| self.xml[r.clone()].find(&raw).map(|k| r.start + k..r.start + k + raw.len()))
@@ -3712,6 +3716,8 @@ enum Marker {
     Comment(CommentId, Run),
     /// Content kept as read ([`Inline::Opaque`]).
     Opaque(Rc<super::model::Opaque>),
+    /// A field edge ([`Inline::FieldEdge`]) in its markers' run.
+    Edge(Rc<super::model::Edge>, Run),
     /// An editing permission's start or end.
     Permission(RangeMark),
     /// A bookmark's start (`true`) or end, by its name.
@@ -3722,7 +3728,7 @@ impl Marker {
     /// The element it is in the source, and the id that names it there.
     fn element(&self) -> Option<(&'static str, i64)> {
         match self {
-            Marker::Control(..) | Marker::Opaque(_) | Marker::Permission(_) | Marker::Bookmark(..) => None,
+            Marker::Control(..) | Marker::Opaque(_) | Marker::Edge(..) | Marker::Permission(_) | Marker::Bookmark(..) => None,
             Marker::Range(r) => Some((range_element(r.kind), r.id)),
             Marker::Comment(id, _) => Some(("commentReference", id.0)),
         }
@@ -3737,6 +3743,7 @@ impl Marker {
             Marker::Range(r) => (2 + r.kind as u8, r.id),
             Marker::Comment(id, _) => (u8::MAX, id.0),
             Marker::Opaque(o) => (u8::MAX - 1, Rc::as_ptr(o) as usize as i64),
+            Marker::Edge(e, _) => (u8::MAX - 1, Rc::as_ptr(e) as usize as i64),
             Marker::Permission(p) => (u8::MAX - 1, permission_ptr(p) as usize as i64),
             Marker::Bookmark(n, start) => {
                 use std::hash::{Hash, Hasher};
@@ -3822,6 +3829,7 @@ fn marker(i: &Inline, pend: &mut Vec<Marker>) {
         }),
         Inline::CommentRef { id, run } => pend.push(Marker::Comment(*id, run.clone())),
         Inline::Opaque(o) => pend.push(Marker::Opaque(o.clone())),
+        Inline::FieldEdge { edge, run } => pend.push(Marker::Edge(edge.clone(), run.clone())),
         _ => {}
     }
 }
@@ -3830,6 +3838,7 @@ fn same_inline(x: &Inline, y: &Inline) -> bool {
     match (x, y) {
         (Inline::Text(s, r), Inline::Text(t, q)) => s == t && Rc::ptr_eq(r, q),
         (Inline::Opaque(a), Inline::Opaque(b)) => Rc::ptr_eq(a, b),
+        (Inline::FieldEdge { edge: a, run: r }, Inline::FieldEdge { edge: b, run: q }) => Rc::ptr_eq(a, b) && Rc::ptr_eq(r, q),
         (Inline::NoteRef { kind: k, id: a, custom: c, run: r }, Inline::NoteRef { kind: l, id: b, custom: d, run: q }) => {
             (k, a, c) == (l, b, d) && Rc::ptr_eq(r, q)
         }
@@ -3886,7 +3895,13 @@ fn unit_keys(i: &Inline, out: &mut Vec<(u64, char)>) {
         Inline::Break(BreakKind::ClearAll, _) => out.push((ATOM | BreakKind::ClearAll as u64, '\u{3}')),
         Inline::Break(BreakKind::Column, _) => out.push((ATOM | BreakKind::Column as u64, '\u{e}')),
         Inline::Break(k, _) => out.push((ATOM | *k as u64, '\u{c}')),
-        Inline::Opaque(_) | Inline::Range(_) | Inline::CommentRef { .. } | Inline::Float(..) | Inline::ControlStart(_) | Inline::ControlEnd(_) => {}
+        Inline::Opaque(_)
+        | Inline::FieldEdge { .. }
+        | Inline::Range(_)
+        | Inline::CommentRef { .. }
+        | Inline::Float(..)
+        | Inline::ControlStart(_)
+        | Inline::ControlEnd(_) => {}
         other => {
             let mut h = std::hash::DefaultHasher::new();
             // By what the object is, not its formatting: reformatting keeps it.
@@ -4206,9 +4221,38 @@ struct Emit<'s, 'a, 'i> {
     fresh_written: usize,
 }
 
+/// The main namespace prefix an edge's runs were written in (`w:`).
+fn edge_prefix(xml: &str) -> &str {
+    xml.strip_prefix('<')
+        .and_then(|x| x.split(|c: char| c.is_whitespace() || c == '>' || c == '/').next())
+        .and_then(|name| name.strip_suffix('r'))
+        .filter(|w| w.is_empty() || w.ends_with(':'))
+        .unwrap_or("w:")
+}
+
+/// A field edge's markers' runs: as read, else written from the edge in the main namespace's prefix `w` (`w:`).
+fn edge_xml<'e>(w: &str, e: &'e super::model::Edge) -> std::borrow::Cow<'e, str> {
+    use super::model::FieldEdge;
+    if let Some(s) = &e.src {
+        return std::borrow::Cow::Borrowed(&s.xml);
+    }
+    std::borrow::Cow::Owned(match &e.kind {
+        FieldEdge::Start { code, lock, dirty, .. } => {
+            let lock = if *lock { format!(" {w}fldLock=\"1\"") } else { String::new() };
+            let dirty = if *dirty { format!(" {w}dirty=\"1\"") } else { String::new() };
+            let code = code.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
+            format!(
+                "<{w}r><{w}fldChar {w}fldCharType=\"begin\"{lock}{dirty}/></{w}r><{w}r><{w}instrText xml:space=\"preserve\">{code}</{w}instrText></{w}r><{w}r><{w}fldChar {w}fldCharType=\"separate\"/></{w}r>"
+            )
+        }
+        FieldEdge::End => format!("<{w}r><{w}fldChar {w}fldCharType=\"end\"/></{w}r>"),
+        FieldEdge::Code | FieldEdge::Fold => String::new(),
+    })
+}
+
 /// A field edge's runs `xml` with their code as deleted (`w:delInstrText`) or not, in the prefix the runs are in.
 fn edge_runs(xml: &str, deleted: bool) -> String {
-    let w = crate::docx::fields::edge_prefix(xml);
+    let w = edge_prefix(xml);
     let (from, to) = if deleted { ("instrText", "delInstrText") } else { ("delInstrText", "instrText") };
     xml.replace(&format!("<{w}{from}"), &format!("<{w}{to}")).replace(&format!("</{w}{from}>"), &format!("</{w}{to}>"))
 }
@@ -4216,10 +4260,11 @@ fn edge_runs(xml: &str, deleted: bool) -> String {
 /// Where the runs are of the field edges ([`super::model::FieldEdge`]) paragraphs `qs` were read with that paragraphs
 /// `ps` don't hold now.
 fn gone_edges<'q>(qs: &'q [&Paragraph], ps: &'q [&Paragraph]) -> impl Iterator<Item = Range<usize>> + 'q {
-    let held =
-        move |o: &Rc<super::model::Opaque>| ps.iter().flat_map(|p| p.inlines.iter()).any(|i| matches!(i, Inline::Opaque(x) if Rc::ptr_eq(x, o)));
+    let held = move |e: &Rc<super::model::Edge>| {
+        ps.iter().flat_map(|p| p.inlines.iter()).any(|i| matches!(i, Inline::FieldEdge { edge, .. } if Rc::ptr_eq(edge, e)))
+    };
     qs.iter().flat_map(|p| p.inlines.iter()).filter_map(move |i| match i {
-        Inline::Opaque(o) if o.field.is_some() && !held(o) => o.src.clone(),
+        Inline::FieldEdge { edge, .. } if !held(edge) => edge.src.as_ref().map(|s| s.at.clone()),
         _ => None,
     })
 }
@@ -4621,11 +4666,12 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
             qs.iter().flat_map(|q| q.inlines.iter()).for_each(|i| marker(i, &mut read));
             marker_outside = read.iter().filter_map(Marker::element).filter(|k| !marker_src.contains_key(k)).collect();
             // A field edge the reader made (not its source's) is its paragraph's.
-            let made = |m: &Marker| matches!(m, Marker::Opaque(o) if o.field.is_some() && o.src.is_none());
+            let made = |m: &Marker| matches!(m, Marker::Edge(e, _) if e.src.is_none());
             for m in read.iter().filter(|m| !made(m) && s.marker_range(m, srcs).is_none()) {
                 match m {
                     Marker::Bookmark(n, start) => marks_outside.0.push((n.clone(), *start)),
                     Marker::Opaque(o) => marks_outside.1.push(Rc::as_ptr(o).cast()),
+                    Marker::Edge(e, _) => marks_outside.1.push(Rc::as_ptr(e).cast()),
                     Marker::Permission(p) => marks_outside.1.push(permission_ptr(p)),
                     _ => {}
                 }
@@ -5097,6 +5143,7 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
             match &m {
                 Marker::Bookmark(n, start) if self.marks_outside.0.iter().any(|(m, s)| m == n && s == start) => continue,
                 Marker::Opaque(o) if self.marks_outside.1.contains(&Rc::as_ptr(o).cast()) => continue,
+                Marker::Edge(e, _) if self.marks_outside.1.contains(&Rc::as_ptr(e).cast()) => continue,
                 Marker::Permission(p) if self.marks_outside.1.contains(&permission_ptr(p)) => continue,
                 _ => {}
             }
@@ -5129,15 +5176,14 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                     self.out.push_str(&x);
                 }
                 // A field edge in the wrappers of its tracked changes.
-                Marker::Opaque(o) if o.field.is_some() && o.run.is_some() => {
-                    let Some(run) = o.run.clone() else { continue };
+                Marker::Edge(e, run) => {
                     self.flush();
                     self.close_wrap();
                     let (level, ins, del) = self.own_level(&run);
                     self.open_to(level);
                     let (open, close) = revisions::wrappers(&self.s.w, ins.as_deref(), del.as_deref(), self.s.people);
                     let deleted = run.rev.del.as_ref().is_some_and(|m| m.kind != crate::docx::review::MarkKind::MoveFrom);
-                    let x = edge_runs(o.xml.0.as_deref().unwrap_or(""), deleted);
+                    let x = edge_runs(&edge_xml(&self.s.w, &e), deleted);
                     self.out.push_str(&open);
                     self.out.push_str(&x);
                     self.out.push_str(&close);
@@ -7268,6 +7314,14 @@ pub(crate) fn control_close(w: &str, c: &Control) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_edge_prefix_is_its_runs_tag_prefix() {
+        assert_eq!(edge_prefix(r#"<w:r w:rsidR="00AB"><w:fldChar w:fldCharType="begin"/></w:r>"#), "w:");
+        assert_eq!(edge_prefix("<x:r><x:fldChar/></x:r>"), "x:");
+        assert_eq!(edge_prefix("<r><fldChar/></r>"), "");
+        assert_eq!(edge_prefix("<w:fldSimple/>"), "w:");
+    }
 
     #[test]
     fn diff_keeps_common_units() {

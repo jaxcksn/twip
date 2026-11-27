@@ -146,9 +146,7 @@ pub(super) fn with_run(i: &Inline, run: &Run) -> Inline {
         Inline::Ruby(r, _) => Inline::Ruby(r.clone(), run),
         Inline::DateBlock(name, text, _) => Inline::DateBlock(name, text.clone(), run),
         // A field edge's run carries its tracked changes.
-        Inline::Opaque(o) if o.field.is_some() => {
-            Inline::Opaque(Rc::new(crate::docx::Opaque { xml: o.xml.clone(), field: o.field.clone(), src: o.src.clone(), run: Some(run) }))
-        }
+        Inline::FieldEdge { edge, .. } => Inline::FieldEdge { edge: Rc::new((**edge).clone()), run },
         Inline::Range(_) | Inline::ControlStart(_) | Inline::ControlEnd(_) | Inline::Opaque(_) => i.clone(),
     }
 }

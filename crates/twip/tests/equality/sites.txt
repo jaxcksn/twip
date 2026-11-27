@@ -1,5 +1,6 @@
 # relation	file	function	type	line (see audit.py for the relations)
 none	crates/twip/src/docx/merge_tests.rs	controls_read_with_their_properties	Inline	assert!(p.iter().any(|p| p.inlines.contains(&Inline::ControlStart(name)) && p.inlines.contains(&Inline::ControlEnd(name))));
+derive	crates/twip/src/docx/model.rs	-	Edge	#[derive(PartialEq)]
 L	crates/twip/src/docx/model.rs	layout_eq	Option<Rc<ParaChange>>	&& *change == o.change
 L	crates/twip/src/docx/model.rs	layout_eq	RunRevisions	&& *rev == o.rev
 L	crates/twip/src/docx/model.rs	same_but_story	Vec<GroupPart>	&& *parts == o.parts
@@ -59,7 +60,7 @@ A	crates/twip/src/editing/tests/basics.rs	live_layout_lays_the_dragged_float_out
 A	crates/twip/src/editing/tests/basics.rs	live_layout_lays_the_dragged_float_out_where_the_pointer_is	Vec<Float>	assert_eq!(body_floats(&r.e), was, "the document is unchanged until the release");
 A	crates/twip/src/editing/tests/basics.rs	live_layout_lays_the_dragged_float_out_where_the_pointer_is	Vec<Float>	assert_ne!(body_floats(&r.e), was);
 A	crates/twip/src/editing/tests/field_control_edits.rs	an_argument_holding_a_nested_field_is_not_rewritten	Vec<Inline>	assert_eq!(inlines(&e, 0), before);
-none	crates/twip/src/editing/tests/fields.rs	spanning_fields_ending_in_one_run_keep_each_its_own_end	Option<FieldEdge>	Inline::Opaque(o) if o.field == Some(crate::docx::FieldEdge::End) => o.xml.0.as_deref().map(str::to_string),
+none	crates/twip/src/editing/tests/fields.rs	spanning_fields_ending_in_one_run_keep_each_its_own_end	FieldEdge	Inline::FieldEdge { edge, .. } if edge.kind == crate::docx::FieldEdge::End => {
 A	crates/twip/src/editing/tests/objects.rs	object_property_setters_respect_protection	Option<&Picture>	assert_eq!(selected_picture(&e), Some(&was));
 A	crates/twip/src/editing/tests/objects.rs	object_property_setters_respect_protection	Option<Float>	assert_eq!(e.float_of(FloatId(f)).cloned(), was);
 A	crates/twip/src/editing/tests/readback.rs	a_page_number_in_the_first_pages_own_header_can_t_be_left_off_the_first_page	(usize, &Vec<Block>)	assert_eq!((e.history().undo_depth(), &e.document().stories[&first]), (depth, &kept), "nothing changed");
