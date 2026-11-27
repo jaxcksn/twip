@@ -19,14 +19,14 @@ pub(super) fn numbering(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> R
     let Some(res) = doc.resolver.as_ref() else { return Ok(()) };
     let typed = res.typed();
     let n = &typed.numbering;
-    let (colours, cx) = (res.styles.colours, n.cx());
+    let (colours, cx) = (typed.cascade.colours, n.cx());
     // Each of the document's own definitions, lists and picture bullets as its holder writes it
     let abstracts: BTreeMap<i64, String> = n.defs.iter().map(|(k, d)| (k.0, d.xml(&colours, &cx).into_owned())).collect();
     let nums: BTreeMap<i64, String> = n.lists.iter().map(|(k, d)| (k.0, d.xml(&colours, &cx).into_owned())).collect();
     let pics: BTreeMap<i64, String> = n.pictures.iter().map(|(k, d)| (*k, d.xml(&colours, &cx).into_owned())).collect();
     if cfg!(debug_assertions) {
         // Written as the XML path's tables hold them
-        let f = &res.numbering;
+        let f = &res.frozen().numbering;
         let doc = |o: StyleOrigin| o == StyleOrigin::Document;
         let theirs: BTreeMap<i64, &str> = f.abstracts.iter().filter(|(_, a)| doc(a.origin)).map(|(k, a)| (*k, a.raw.as_str())).collect();
         assert_eq!(abstracts.iter().map(|(k, v)| (*k, v.as_str())).collect::<BTreeMap<_, _>>(), theirs, "the definitions written alike");

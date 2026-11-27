@@ -19,7 +19,7 @@ pub(super) fn styles(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Resu
     let Some(res) = doc.resolver.as_ref() else { return Ok(()) };
     let typed = res.typed();
     let part = &typed.styles;
-    let (colours, cx) = (res.styles.colours, part.cx());
+    let (colours, cx) = (typed.cascade.colours, part.cx());
     // Each of the document's own styles as its holder writes it
     let written: HashMap<&str, String> = part
         .sheet
@@ -32,7 +32,7 @@ pub(super) fn styles(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Resu
     let latent_raw = part.latent.as_ref().map(|d| d.xml(&colours, &cx).into_owned());
     if cfg!(debug_assertions) {
         // Written as the XML path's tables hold them
-        let frozen = &res.styles;
+        let frozen = &res.frozen().styles;
         let theirs: HashMap<&str, &str> =
             frozen.by_id.values().filter(|s| s.origin == StyleOrigin::Document).map(|s| (s.id.as_str(), s.raw.as_str())).collect();
         let ours: HashMap<&str, &str> = written.iter().map(|(k, v)| (*k, v.as_str())).collect();

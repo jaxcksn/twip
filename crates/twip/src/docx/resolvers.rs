@@ -552,6 +552,7 @@ impl Resolvers {
     }
 }
 
+#[cfg(test)]
 impl std::ops::Deref for Resolvers {
     type Target = Resolver;
     fn deref(&self) -> &Resolver {
@@ -817,6 +818,7 @@ impl Resolvers {
 /// path's follows.
 pub struct StyleEdits<'a>(&'a mut Resolvers);
 
+#[cfg(test)]
 impl std::ops::Deref for StyleEdits<'_> {
     type Target = Styles;
     fn deref(&self) -> &Styles {
@@ -849,6 +851,7 @@ impl StyleEdits<'_> {
 /// A document's numbering being edited, as [`StyleEdits`].
 pub struct NumberingEdits<'a>(&'a mut Resolvers);
 
+#[cfg(test)]
 impl std::ops::Deref for NumberingEdits<'_> {
     type Target = Numbering;
     fn deref(&self) -> &Numbering {
