@@ -2970,13 +2970,10 @@ impl<'a, 'i> Saver<'a, 'i> {
     /// A marker's key: a bookmark's start (0) or end (1) by its id in the part, a comment's or move's range by its
     /// kind and id. A start's and its end's differ in the lowest bit only.
     fn mark_key(&self, i: &Inline) -> Option<(u8, i64)> {
-        match i {
-            Inline::Bookmark(n) => {
-                let (name, end) = n.strip_prefix('/').map_or((n.as_str(), false), |n| (n, true));
-                Some((u8::from(end), self.bookmark_id(name)))
-            }
-            Inline::Range(r) => Some((2 + r.kind as u8, r.id)),
-            _ => None,
+        let Inline::Range(r) = i else { return None };
+        match r.bookmark() {
+            Some((name, start)) => Some((u8::from(!start), self.bookmark_id(name))),
+            None => r.is_review().then_some((2 + r.kind as u8, r.id)),
         }
     }
 
@@ -3414,8 +3411,8 @@ impl<'a, 'i> Saver<'a, 'i> {
     fn marker_range(&self, m: &Marker, srcs: &[&ParaSrc]) -> Option<Range<usize>> {
         let mut nodes = srcs.iter().flat_map(|x| x.ranges.iter()).filter_map(|r| self.paras.get(&r.start));
         match m {
-            Marker::Bookmark(n) => {
-                let (name, start) = n.strip_prefix('/').map_or((n.as_str(), true), |n| (n, false));
+            Marker::Bookmark(name, start) => {
+                let (name, start) = (&**name, *start);
                 let id = self.bookmark_id(name);
                 let (el, by) = if start { ("bookmarkStart", None) } else { ("bookmarkEnd", Some(id.to_string())) };
                 nodes.find_map(|p| {
@@ -3433,6 +3430,10 @@ impl<'a, 'i> Saver<'a, 'i> {
             Marker::Opaque(o) => {
                 let raw = o.xml.0.as_deref()?;
                 srcs.iter().flat_map(|x| x.ranges.iter()).find_map(|r| self.xml[r.clone()].find(raw).map(|k| r.start + k..r.start + k + raw.len()))
+            }
+            Marker::Permission(p) => {
+                let raw = permission_xml(&self.w, p);
+                srcs.iter().flat_map(|x| x.ranges.iter()).find_map(|r| self.xml[r.clone()].find(&raw).map(|k| r.start + k..r.start + k + raw.len()))
             }
             _ => {
                 let (name, id) = m.element()?;
@@ -3711,15 +3712,17 @@ enum Marker {
     Comment(CommentId, Run),
     /// Content kept as read ([`Inline::Opaque`]).
     Opaque(Rc<super::model::Opaque>),
-    /// A bookmark's start, or (`/` and its name) end.
-    Bookmark(String),
+    /// An editing permission's start or end.
+    Permission(RangeMark),
+    /// A bookmark's start (`true`) or end, by its name.
+    Bookmark(Rc<str>, bool),
 }
 
 impl Marker {
     /// The element it is in the source, and the id that names it there.
     fn element(&self) -> Option<(&'static str, i64)> {
         match self {
-            Marker::Control(..) | Marker::Opaque(_) | Marker::Bookmark(_) => None,
+            Marker::Control(..) | Marker::Opaque(_) | Marker::Permission(_) | Marker::Bookmark(..) => None,
             Marker::Range(r) => Some((range_element(r.kind), r.id)),
             Marker::Comment(id, _) => Some(("commentReference", id.0)),
         }
@@ -3734,10 +3737,11 @@ impl Marker {
             Marker::Range(r) => (2 + r.kind as u8, r.id),
             Marker::Comment(id, _) => (u8::MAX, id.0),
             Marker::Opaque(o) => (u8::MAX - 1, Rc::as_ptr(o) as usize as i64),
-            Marker::Bookmark(n) => {
+            Marker::Permission(p) => (u8::MAX - 1, permission_ptr(p) as usize as i64),
+            Marker::Bookmark(n, start) => {
                 use std::hash::{Hash, Hasher};
                 let mut h = std::hash::DefaultHasher::new();
-                n.hash(&mut h);
+                (n, start).hash(&mut h);
                 (u8::MAX - 2, h.finish() as i64)
             }
         }
@@ -3763,7 +3767,47 @@ fn range_element(k: RangeKind) -> &'static str {
         RangeKind::MoveFromEnd => "moveFromRangeEnd",
         RangeKind::MoveToStart => "moveToRangeStart",
         RangeKind::MoveToEnd => "moveToRangeEnd",
+        RangeKind::BookmarkStart => "bookmarkStart",
+        RangeKind::BookmarkEnd => "bookmarkEnd",
+        RangeKind::PermissionStart => "permStart",
+        RangeKind::PermissionEnd => "permEnd",
     }
+}
+
+/// What names an editing permission marker in a save: its settings' allocation, which its copies share.
+fn permission_ptr(r: &RangeMark) -> *const () {
+    r.permission.as_ref().map_or(std::ptr::null(), |p| Rc::as_ptr(p).cast())
+}
+
+/// An editing permission marker's element in the main namespace's prefix `w`: as read, with the marker's id; one
+/// made since from its settings.
+fn permission_xml(w: &str, r: &RangeMark) -> String {
+    let p = r.permission.as_deref();
+    if let Some(x) = p.and_then(|p| p.xml.0.as_deref()) {
+        return with_perm_id(x, r.id).unwrap_or_else(|| x.to_string());
+    }
+    let el = range_element(r.kind);
+    let mut a = format!(" {w}id=\"{}\"", r.id);
+    match p.and_then(|p| p.editor.as_ref()) {
+        Some(super::review::RangeEditor::Group(g)) => a += &format!(" {w}edGrp=\"{}\"", props::esc(g)),
+        Some(super::review::RangeEditor::User(u)) => a += &format!(" {w}ed=\"{}\"", props::esc(u)),
+        None => {}
+    }
+    let (first, last) = p.map_or((None, None), |p| p.columns);
+    if let Some(c) = first {
+        a += &format!(" {w}colFirst=\"{c}\"");
+    }
+    if let Some(c) = last {
+        a += &format!(" {w}colLast=\"{c}\"");
+    }
+    format!("<{w}{el}{a}/>")
+}
+
+/// A permission marker's XML with its id `to`; `None` when it has it already, or no id.
+fn with_perm_id(x: &str, to: i64) -> Option<String> {
+    let at = x.find(":id=\"").map(|k| k + 5).or_else(|| x.find(" id=\"").map(|k| k + 5))?;
+    let end = at + x[at..].find('"')?;
+    (x[at..end].trim().parse::<i64>().ok() != Some(to)).then(|| format!("{}{to}{}", &x[..at], &x[end..]))
 }
 
 /// An inline's marker (a control's, a range's, a comment reference), onto the markers waiting for the next unit.
@@ -3771,10 +3815,13 @@ fn marker(i: &Inline, pend: &mut Vec<Marker>) {
     match i {
         Inline::ControlStart(c) => pend.push(Marker::Control(*c, true)),
         Inline::ControlEnd(c) => pend.push(Marker::Control(*c, false)),
-        Inline::Range(r) => pend.push(Marker::Range(r.clone())),
+        Inline::Range(r) => pend.push(match (r.bookmark(), &r.name) {
+            (Some((_, start)), Some(name)) => Marker::Bookmark(name.clone(), start),
+            _ if r.is_review() => Marker::Range(r.clone()),
+            _ => Marker::Permission(r.clone()),
+        }),
         Inline::CommentRef { id, run } => pend.push(Marker::Comment(*id, run.clone())),
         Inline::Opaque(o) => pend.push(Marker::Opaque(o.clone())),
-        Inline::Bookmark(n) => pend.push(Marker::Bookmark(n.clone())),
         _ => {}
     }
 }
@@ -3782,12 +3829,11 @@ fn marker(i: &Inline, pend: &mut Vec<Marker>) {
 fn same_inline(x: &Inline, y: &Inline) -> bool {
     match (x, y) {
         (Inline::Text(s, r), Inline::Text(t, q)) => s == t && Rc::ptr_eq(r, q),
-        (Inline::Bookmark(a), Inline::Bookmark(b)) => a == b,
         (Inline::Opaque(a), Inline::Opaque(b)) => Rc::ptr_eq(a, b),
         (Inline::NoteRef { kind: k, id: a, custom: c, run: r }, Inline::NoteRef { kind: l, id: b, custom: d, run: q }) => {
             (k, a, c) == (l, b, d) && Rc::ptr_eq(r, q)
         }
-        (Inline::Range(a), Inline::Range(b)) => a == b,
+        (Inline::Range(a), Inline::Range(b)) => a == b && permission_ptr(a) == permission_ptr(b),
         (Inline::CommentRef { id: a, run: r }, Inline::CommentRef { id: b, run: q }) => a == b && Rc::ptr_eq(r, q),
         (Inline::ControlStart(a), Inline::ControlStart(b)) | (Inline::ControlEnd(a), Inline::ControlEnd(b)) => a == b,
         // A toggled checkbox keeps its run and changes its face.
@@ -3840,13 +3886,7 @@ fn unit_keys(i: &Inline, out: &mut Vec<(u64, char)>) {
         Inline::Break(BreakKind::ClearAll, _) => out.push((ATOM | BreakKind::ClearAll as u64, '\u{3}')),
         Inline::Break(BreakKind::Column, _) => out.push((ATOM | BreakKind::Column as u64, '\u{e}')),
         Inline::Break(k, _) => out.push((ATOM | *k as u64, '\u{c}')),
-        Inline::Bookmark(_)
-        | Inline::Opaque(_)
-        | Inline::Range(_)
-        | Inline::CommentRef { .. }
-        | Inline::Float(..)
-        | Inline::ControlStart(_)
-        | Inline::ControlEnd(_) => {}
+        Inline::Opaque(_) | Inline::Range(_) | Inline::CommentRef { .. } | Inline::Float(..) | Inline::ControlStart(_) | Inline::ControlEnd(_) => {}
         other => {
             let mut h = std::hash::DefaultHasher::new();
             // By what the object is, not its formatting: reformatting keeps it.
@@ -4147,9 +4187,9 @@ struct Emit<'s, 'a, 'i> {
     marker_src: HashMap<(&'static str, i64), Range<usize>>,
     /// Those the group's paragraphs were read with that sit outside them (between blocks): kept there.
     marker_outside: Vec<(&'static str, i64)>,
-    /// Bookmarks (`/` and its name for an end) and kept content the group's paragraphs were read with that sit
-    /// outside them: kept there too.
-    marks_outside: (Vec<String>, Vec<*const super::model::Opaque>),
+    /// Bookmarks (by name, and whether a start) and kept content and editing permissions (by allocation) the group's
+    /// paragraphs were read with that sit outside them: kept there too.
+    marks_outside: (Vec<(Rc<str>, bool)>, Vec<*const ()>),
     /// The move marks of the group's runs, for new move ranges' authors and dates.
     moves: Vec<Rc<RevisionMark>>,
     /// Gaps whose insertions split by the markers in them: how many go before the unit before's end (see `split`).
@@ -4584,8 +4624,9 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
             let made = |m: &Marker| matches!(m, Marker::Opaque(o) if o.field.is_some() && o.src.is_none());
             for m in read.iter().filter(|m| !made(m) && s.marker_range(m, srcs).is_none()) {
                 match m {
-                    Marker::Bookmark(n) => marks_outside.0.push(n.clone()),
-                    Marker::Opaque(o) => marks_outside.1.push(Rc::as_ptr(o)),
+                    Marker::Bookmark(n, start) => marks_outside.0.push((n.clone(), *start)),
+                    Marker::Opaque(o) => marks_outside.1.push(Rc::as_ptr(o).cast()),
+                    Marker::Permission(p) => marks_outside.1.push(permission_ptr(p)),
                     _ => {}
                 }
             }
@@ -5054,8 +5095,9 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                 continue;
             }
             match &m {
-                Marker::Bookmark(n) if self.marks_outside.0.contains(n) => continue,
-                Marker::Opaque(o) if self.marks_outside.1.contains(&Rc::as_ptr(o)) => continue,
+                Marker::Bookmark(n, start) if self.marks_outside.0.iter().any(|(m, s)| m == n && s == start) => continue,
+                Marker::Opaque(o) if self.marks_outside.1.contains(&Rc::as_ptr(o).cast()) => continue,
+                Marker::Permission(p) if self.marks_outside.1.contains(&permission_ptr(p)) => continue,
                 _ => {}
             }
             match m {
@@ -5074,14 +5116,13 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                     let x = self.range_xml(&r);
                     self.out.push_str(&x);
                 }
-                Marker::Bookmark(n) => {
+                Marker::Bookmark(name, start) => {
                     self.flush();
                     let level = self.stack.iter().rposition(|o| o.run).unwrap_or(self.stack.len());
                     self.open_to(level);
-                    let (name, start) = n.strip_prefix('/').map_or((n.as_str(), true), |n| (n, false));
-                    let id = self.s.bookmark_id(name);
+                    let id = self.s.bookmark_id(&name);
                     let x = if start {
-                        format!("<{w}bookmarkStart {w}id=\"{id}\" {w}name=\"{}\"/>", props::esc(name))
+                        format!("<{w}bookmarkStart {w}id=\"{id}\" {w}name=\"{}\"/>", props::esc(&name))
                     } else {
                         format!("<{w}bookmarkEnd {w}id=\"{id}\"/>")
                     };
@@ -5106,6 +5147,12 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                     let level = self.stack.iter().rposition(|o| o.run).unwrap_or(self.stack.len());
                     self.open_to(level);
                     self.out.push_str(o.xml.0.as_deref().unwrap_or(""));
+                }
+                Marker::Permission(p) => {
+                    self.flush();
+                    let level = self.stack.iter().rposition(|o| o.run).unwrap_or(self.stack.len());
+                    self.open_to(level);
+                    self.out.push_str(&permission_xml(&w, &p));
                 }
                 Marker::Comment(id, run) => {
                     self.add(To::Own(run), None, None);

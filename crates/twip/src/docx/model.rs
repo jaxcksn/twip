@@ -961,9 +961,7 @@ impl Float {
         let content: Vec<&Inline> = p
             .inlines
             .iter()
-            .filter(|i| {
-                !matches!(i, Inline::Bookmark(..) | Inline::Opaque(..) | Inline::Range(..)) && !matches!(i, Inline::Text(t, _) if t.is_empty())
-            })
+            .filter(|i| !matches!(i, Inline::Opaque(..) | Inline::Range(..)) && !matches!(i, Inline::Text(t, _) if t.is_empty()))
             .collect();
         match content.as_slice() {
             [Inline::ControlStart(a), Inline::Picture(..), Inline::ControlEnd(b)] if a == b && picture(a) => Some(*a),
@@ -1070,11 +1068,7 @@ pub enum Inline {
         id: FieldId,
         run: Run,
     },
-    /// Start of a bookmark (for PAGEREF/REF); `/` and its name: its end (no bookmark name starts with `/`).
-    // ponytail: the end shares the start's variant so every no-unit marker rule covers it; its own variant if
-    // anything but REF ever needs the end.
-    Bookmark(String),
-    /// Where a comment's or a move's range starts or ends. No units.
+    /// Where a comment's, a move's, a bookmark's or an editing permission's range starts or ends. No units.
     Range(RangeMark),
     /// A comment's reference mark (`w:commentReference`): where the comment is anchored. No units.
     CommentRef {
@@ -1090,25 +1084,9 @@ pub enum Inline {
     /// A date block (`w:dayShort`, `w:dayLong`, `w:monthShort`, `w:monthLong`, `w:yearShort`, `w:yearLong`, by its
     /// element name) and the date it shows, filled in when fields are evaluated: one unit.
     DateBlock(&'static str, String, Run),
-    /// Content the engine doesn't model, between runs (an equation, a subdocument, an editing permission's start or
-    /// end): no units, nothing drawn, saved as read wherever it moves. No units.
+    /// Content the engine doesn't model, between runs (an equation, a subdocument): no units, nothing drawn, saved as
+    /// read wherever it moves. No units.
     Opaque(Rc<Opaque>),
-}
-
-impl Opaque {
-    /// An editing permission's start (`true`) or end, and its id.
-    pub fn permission(&self) -> Option<(bool, i64)> {
-        let x = self.xml.0.as_deref()?;
-        let name = x.strip_prefix('<')?.split(|c: char| c.is_whitespace() || c == '/' || c == '>').next()?;
-        let start = match name.rsplit(':').next()? {
-            "permStart" => true,
-            "permEnd" => false,
-            _ => return None,
-        };
-        let at = x.find(":id=\"").or_else(|| x.find(" id=\""))?;
-        let v = x[at..].split('"').nth(1)?;
-        Some((start, v.trim().parse().ok()?))
-    }
 }
 
 /// A legacy form field's data: what saving writes back.
@@ -2410,7 +2388,23 @@ impl Inline {
             | Inline::FieldSep { run, .. }
             | Inline::FieldEnd { run, .. }
             | Inline::CommentRef { run, .. } => Some(run),
-            Inline::Bookmark(_) | Inline::Range(_) | Inline::ControlStart(_) | Inline::ControlEnd(_) | Inline::Opaque(_) => None,
+            Inline::Range(_) | Inline::ControlStart(_) | Inline::ControlEnd(_) | Inline::Opaque(_) => None,
+        }
+    }
+
+    /// A bookmark marker's name, and whether it starts the bookmark.
+    pub fn bookmark(&self) -> Option<(&str, bool)> {
+        match self {
+            Inline::Range(r) => r.bookmark(),
+            _ => None,
+        }
+    }
+
+    /// An editing permission marker: whether it starts the permission's range, and the permission's id.
+    pub fn permission(&self) -> Option<(bool, i64)> {
+        match self {
+            Inline::Range(r) => r.permission(),
+            _ => None,
         }
     }
 
@@ -2419,12 +2413,7 @@ impl Inline {
     pub fn units(&self) -> usize {
         match self {
             Inline::Text(s, _) => s.chars().count(),
-            Inline::Bookmark(_)
-            | Inline::Range(_)
-            | Inline::CommentRef { .. }
-            | Inline::Float(..)
-            | Inline::ControlStart(_)
-            | Inline::ControlEnd(_) => 0,
+            Inline::Range(_) | Inline::CommentRef { .. } | Inline::Float(..) | Inline::ControlStart(_) | Inline::ControlEnd(_) => 0,
             Inline::Opaque(o) => o.field.as_ref().map_or(0, FieldEdge::units),
             _ => 1,
         }

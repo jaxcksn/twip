@@ -982,15 +982,7 @@ impl<'a> Builder<'a> {
                 at += inl.units() as u32;
                 continue;
             }
-            if matches!(
-                inl,
-                Inline::Bookmark(_)
-                    | Inline::Opaque(_)
-                    | Inline::Range(_)
-                    | Inline::CommentRef { .. }
-                    | Inline::ControlStart(_)
-                    | Inline::ControlEnd(_)
-            ) {
+            if matches!(inl, Inline::Opaque(_) | Inline::Range(_) | Inline::CommentRef { .. } | Inline::ControlStart(_) | Inline::ControlEnd(_)) {
                 at += inl.units() as u32;
                 continue;
             }
@@ -1945,7 +1937,7 @@ fn continues_after_break(para: &Paragraph, space: &ShapeSpace) -> bool {
         && para
             .inlines
             .iter()
-            .find(|i| !matches!(i, Inline::Bookmark(_) | Inline::Opaque(_) | Inline::Range(_)) && !matches!(i, Inline::Text(t, _) if t.is_empty()))
+            .find(|i| !matches!(i, Inline::Opaque(_) | Inline::Range(_)) && !matches!(i, Inline::Text(t, _) if t.is_empty()))
             .is_some_and(|i| matches!(i, Inline::Break(BreakKind::Page | BreakKind::Column, _)))
 }
 
@@ -2099,7 +2091,9 @@ impl PageRef {
     /// (`order`: paragraphs' pages and places on them, for the pages holding such fields).
     pub fn above(&self, name: &str, para: &Paragraph, k: usize, here: Option<usize>, order: Option<&HashMap<ParaId, (usize, usize)>>) -> bool {
         if self.para == ParaId(para.id) {
-            return para.inlines[..k.min(para.inlines.len())].iter().any(|i| matches!(i, Inline::Bookmark(b) if b.eq_ignore_ascii_case(name)));
+            return para.inlines[..k.min(para.inlines.len())]
+                .iter()
+                .any(|i| i.bookmark().is_some_and(|(b, start)| start && b.eq_ignore_ascii_case(name)));
         }
         match here {
             Some(h) if h != self.page => self.page < h,

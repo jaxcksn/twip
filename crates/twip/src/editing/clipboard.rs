@@ -276,8 +276,8 @@ fn range_markers(p: &Paragraph, comments: bool) -> Vec<(usize, u32, Key<'_>, boo
     let mut marks = Vec::new();
     for (k, i) in p.inlines.iter().enumerate() {
         let m = match i {
-            Inline::Bookmark(n) => Some(n.strip_prefix('/').map_or((Key::Bookmark(n), true), |n| (Key::Bookmark(n), false))),
-            Inline::Opaque(o) => o.permission().map(|(start, id)| (Key::Perm(id), start)),
+            Inline::Range(r) if let Some((n, start)) = r.bookmark() => Some((Key::Bookmark(n), start)),
+            Inline::Range(r) if let Some((start, id)) = r.permission() => Some((Key::Perm(id), start)),
             Inline::Range(r) if comments && r.kind == RangeKind::CommentStart => Some((Key::Comment(r.id), true)),
             Inline::Range(r) if comments && r.kind == RangeKind::CommentEnd => Some((Key::Comment(r.id), false)),
             Inline::CommentRef { id, .. } if comments => Some((Key::Comment(id.0), false)),
@@ -792,10 +792,9 @@ impl Editor {
     fn unique_markers(&self, blocks: &mut [Block], moved: bool, taken: &mut Taken) {
         let mut bookmarks = false;
         let mut perms: HashSet<i64> = HashSet::new();
-        each_inline(blocks, &mut |i| match i {
-            Inline::Bookmark(_) => bookmarks = true,
-            Inline::Opaque(o) => perms.extend(o.permission().map(|(_, id)| id)),
-            _ => {}
+        each_inline(blocks, &mut |i| {
+            bookmarks |= i.bookmark().is_some();
+            perms.extend(i.permission().map(|(_, id)| id));
         });
         if !bookmarks && perms.is_empty() {
             return;
@@ -805,13 +804,10 @@ impl Editor {
             for para in self.index.para_ids().filter(|p| !taken.replaced.contains(p)) {
                 let Some(p) = self.index.para(&self.doc, para) else { continue };
                 for i in &p.inlines {
-                    match i {
-                        Inline::Bookmark(n) if !n.starts_with('/') => {
-                            taken.names.insert(n.to_lowercase());
-                        }
-                        Inline::Opaque(o) => taken.ids.extend(o.permission().map(|(_, id)| id)),
-                        _ => {}
+                    if let Some((n, true)) = i.bookmark() {
+                        taken.names.insert(n.to_lowercase());
                     }
+                    taken.ids.extend(i.permission().map(|(_, id)| id));
                 }
             }
         }
@@ -824,21 +820,21 @@ impl Editor {
         let mut given: HashSet<i64> = HashSet::new();
         each_inlines(blocks, &mut |inlines| {
             if bookmarks {
-                inlines.retain(|i| match i {
-                    Inline::Bookmark(n) => {
-                        let name = n.trim_start_matches('/').to_lowercase();
+                inlines.retain(|i| match i.bookmark() {
+                    Some((n, start)) => {
+                        let name = n.to_lowercase();
                         let keep = moved || !names.contains(&name);
-                        if keep && !n.starts_with('/') {
+                        if keep && start {
                             kept.push(name);
                         }
                         keep
                     }
-                    _ => true,
+                    None => true,
                 });
             }
             for i in inlines.iter_mut() {
-                let Inline::Opaque(o) = i else { continue };
-                let Some((_, id)) = o.permission() else { continue };
+                let Inline::Range(r) = i else { continue };
+                let Some((_, id)) = r.permission() else { continue };
                 let to = *map.entry(id).or_insert_with(|| {
                     if !ids.contains(&id) {
                         return id;
@@ -858,10 +854,10 @@ impl Editor {
                     given.insert(to);
                     to
                 });
-                if to != id
-                    && let Some(x) = o.xml.0.as_deref().and_then(|x| with_perm_id(x, to))
-                {
-                    *i = Inline::Opaque(Rc::new(crate::docx::Opaque { xml: crate::docx::Raw(Some(x.into())), field: None, src: None, run: None }));
+                // A permission of its own: the copy's settings, apart from the original's.
+                if to != id {
+                    r.id = to;
+                    r.permission = r.permission.as_deref().map(|p| Rc::new(p.clone()));
                 }
             }
         });
@@ -1372,24 +1368,23 @@ pub(super) fn drop_unpaired(blocks: &mut [Block]) {
     let (mut perm_starts, mut perm_ends): (HashSet<i64>, HashSet<i64>) = (HashSet::new(), HashSet::new());
     let mut any = false;
     each_inline(blocks, &mut |i| match i {
-        Inline::Bookmark(n) => {
+        Inline::Range(r) if let Some((n, start)) = r.bookmark() => {
             any = true;
-            match n.strip_prefix('/') {
-                Some(n) => ends.insert(n.to_lowercase()),
-                None => starts.insert(n.to_lowercase()),
+            if start {
+                starts.insert(n.to_lowercase())
+            } else {
+                ends.insert(n.to_lowercase())
             };
         }
-        Inline::Opaque(o) => {
-            any |= o.field.is_some();
-            if let Some((start, id)) = o.permission() {
-                any = true;
-                if start {
-                    perm_starts.insert(id);
-                } else {
-                    perm_ends.insert(id);
-                }
+        Inline::Range(r) if let Some((start, id)) = r.permission() => {
+            any = true;
+            if start {
+                perm_starts.insert(id);
+            } else {
+                perm_ends.insert(id);
             }
         }
+        Inline::Opaque(o) => any |= o.field.is_some(),
         Inline::Range(r) if !matches!(r.kind, RangeKind::CommentStart | RangeKind::CommentEnd) => any = true,
         _ => {}
     });
@@ -1399,12 +1394,21 @@ pub(super) fn drop_unpaired(blocks: &mut [Block]) {
         edges_paired(blocks, &mut paired);
     }
     let keep = |i: &Inline| match i {
-        Inline::Bookmark(n) => match n.strip_prefix('/') {
-            Some(n) => starts.contains(&n.to_lowercase()),
-            None => ends.contains(&n.to_lowercase()),
-        },
+        Inline::Range(r) if let Some((n, start)) = r.bookmark() => {
+            if start {
+                ends.contains(&n.to_lowercase())
+            } else {
+                starts.contains(&n.to_lowercase())
+            }
+        }
+        Inline::Range(r) if let Some((start, id)) = r.permission() => {
+            if start {
+                perm_ends.contains(&id)
+            } else {
+                perm_starts.contains(&id)
+            }
+        }
         Inline::Opaque(o) if o.field.is_some() => paired.contains(&Rc::as_ptr(o)),
-        Inline::Opaque(o) => o.permission().is_none_or(|(start, id)| if start { perm_ends.contains(&id) } else { perm_starts.contains(&id) }),
         Inline::Range(r) => matches!(r.kind, RangeKind::CommentStart | RangeKind::CommentEnd),
         _ => true,
     };
@@ -1602,11 +1606,4 @@ pub(super) fn drop_partial(blocks: &mut [Block], index: &super::index::DocIndex)
 /// The highest id given so far to notes of `kind`.
 fn map_max(map: &HashMap<(crate::docx::NoteKind, i64), i64>, kind: crate::docx::NoteKind) -> i64 {
     map.iter().filter(|(k, _)| k.0 == kind).map(|(_, v)| *v).max().unwrap_or(0)
-}
-
-/// A permission marker's XML with its id `to`.
-fn with_perm_id(x: &str, to: i64) -> Option<String> {
-    let at = x.find(":id=\"").map(|k| k + 5).or_else(|| x.find(" id=\"").map(|k| k + 5))?;
-    let end = at + x[at..].find('"')?;
-    Some(format!("{}{to}{}", &x[..at], &x[end..]))
 }

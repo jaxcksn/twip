@@ -696,7 +696,7 @@ impl Editor {
             .filter_map(|p| self.index.para(&self.doc, p))
             .flat_map(|p| p.inlines.iter())
             .filter_map(|i| match i {
-                Inline::Bookmark(n) if !n.starts_with('/') => Some(n.to_lowercase()),
+                Inline::Range(r) if let Some((n, true)) = r.bookmark() => Some(n.to_lowercase()),
                 _ => None,
             })
             .collect();
@@ -704,7 +704,7 @@ impl Editor {
         each_para(&mut im.blocks, &mut |p| {
             paras.insert(ParaId(p.id));
             p.inlines.retain(|i| match i {
-                Inline::Bookmark(n) => !taken.contains(&n.trim_start_matches('/').to_lowercase()),
+                Inline::Range(r) if let Some((n, _)) = r.bookmark() => !taken.contains(&n.to_lowercase()),
                 Inline::Range(r) if glossary => !matches!(r.kind, RangeKind::CommentStart | RangeKind::CommentEnd),
                 Inline::CommentRef { .. } => !glossary,
                 _ => true,

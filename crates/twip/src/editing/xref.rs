@@ -357,8 +357,18 @@ impl Editor {
         let name = super::toc::free_name("_Ref", &taken, &mut next);
         let back = self.selection;
         let mut tx = self.begin("Insert Cross-reference");
-        let end = Step::Text { para, range: Unit(b)..Unit(b), with: vec![Inline::Bookmark(format!("/{name}"))], edges: Default::default() };
-        let start = Step::Text { para, range: Unit(a)..Unit(a), with: vec![Inline::Bookmark(name.clone())], edges: Default::default() };
+        let end = Step::Text {
+            para,
+            range: Unit(b)..Unit(b),
+            with: vec![Inline::Range(crate::docx::review::RangeMark::bookmark_end(&*name))],
+            edges: Default::default(),
+        };
+        let start = Step::Text {
+            para,
+            range: Unit(a)..Unit(a),
+            with: vec![Inline::Range(crate::docx::review::RangeMark::bookmark_start(&*name))],
+            edges: Default::default(),
+        };
         if self.step(&mut tx, end).is_err() || self.step(&mut tx, start).is_err() {
             self.abort(tx);
             return None;
@@ -385,8 +395,8 @@ fn mark_range(p: &Paragraph, name: &str) -> Option<(u32, u32)> {
     let mut at = 0u32;
     let mut from = None;
     for i in &p.inlines {
-        if let Inline::Bookmark(b) = i {
-            let (n, end) = b.strip_prefix('/').map_or((b.as_str(), false), |n| (n, true));
+        if let Some((n, start)) = i.bookmark() {
+            let end = !start;
             if n.eq_ignore_ascii_case(name) {
                 match (from, end) {
                     (None, false) => from = Some(at),

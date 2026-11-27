@@ -547,7 +547,7 @@ fn commented(doc: &mut Document) -> Vec<u8> {
         doc.comments.by_id.insert(x.id, x);
     }
     let p = para_mut(doc, at);
-    let range = |kind| Inline::Range(RangeMark { kind, id: 40, name: None });
+    let range = |kind| Inline::Range(RangeMark { kind, id: 40, name: None, permission: None });
     p.inlines.insert(0, range(RangeKind::CommentStart));
     p.inlines.push(range(RangeKind::CommentEnd));
     p.inlines.push(Inline::CommentRef { id: CommentId(40), run: base });
@@ -666,7 +666,7 @@ fn moved_text_is_written_with_its_range() {
     let mut to = (*mark(&mut doc, 9401, "Author A", MarkKind::MoveTo)).clone();
     to.move_name = Some("move1".into());
     let moved = with_rev(&base, |r| r.ins = Some(Rc::new(to)));
-    let range = |kind| Inline::Range(RangeMark { kind, id: 9400, name: Some("move1".into()) });
+    let range = |kind| Inline::Range(RangeMark { kind, id: 9400, name: Some("move1".into()), permission: None });
     let p = para_mut(&mut doc, at);
     p.inlines = vec![range(RangeKind::MoveToStart), Inline::Text("Moved here.".into(), moved), range(RangeKind::MoveToEnd)];
     let saved = write::save(&doc).expect("saves");
@@ -712,8 +712,8 @@ fn a_reviewed_paragraph_rewritten_from_the_model_reads_back() {
     // After the move range start read from between the paragraphs: markers at one place keep the order they are
     // written in, and that one stays outside the paragraph.
     let first = p.inlines.iter().take_while(|i| matches!(i, Inline::Range(_))).count();
-    p.inlines.insert(first, Inline::Range(RangeMark { kind: RangeKind::CommentStart, id: 500, name: None }));
-    p.inlines.push(Inline::Range(RangeMark { kind: RangeKind::CommentEnd, id: 500, name: None }));
+    p.inlines.insert(first, Inline::Range(RangeMark { kind: RangeKind::CommentStart, id: 500, name: None, permission: None }));
+    p.inlines.push(Inline::Range(RangeMark { kind: RangeKind::CommentEnd, id: 500, name: None, permission: None }));
     p.inlines.push(Inline::CommentRef { id: CommentId(500), run });
     let saved = write::save(&doc).expect("saves");
     let again = read_editable(&saved).expect("reads back");

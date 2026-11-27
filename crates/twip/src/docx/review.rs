@@ -386,16 +386,86 @@ pub enum RangeKind {
     MoveFromEnd,
     MoveToStart,
     MoveToEnd,
+    /// `w:bookmarkStart`.
+    BookmarkStart,
+    /// `w:bookmarkEnd`.
+    BookmarkEnd,
+    /// `w:permStart`: an editing permission's start.
+    PermissionStart,
+    /// `w:permEnd`.
+    PermissionEnd,
 }
 
-/// Where a comment's or move's range starts or ends: no units.
+/// Where a comment's, move's, bookmark's or editing permission's range starts or ends: no units.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RangeMark {
     pub kind: RangeKind,
-    /// The comment's id, or the move range's `w:id`.
+    /// The comment's id, or the move range's or editing permission's `w:id`; 0 for a bookmark, which is known by its
+    /// name (the writer numbers bookmarks).
     pub id: i64,
-    /// A move range's `w:name`.
+    /// A move range's `w:name`, a bookmark's name.
     pub name: Option<Rc<str>>,
+    /// An editing permission marker's settings: every permission marker has them, a marker read or made once (its
+    /// copies share them).
+    pub permission: Option<Rc<Permission>>,
+}
+
+impl RangeMark {
+    /// A bookmark's start.
+    pub fn bookmark_start(name: impl Into<Rc<str>>) -> RangeMark {
+        RangeMark { kind: RangeKind::BookmarkStart, id: 0, name: Some(name.into()), permission: None }
+    }
+
+    /// A bookmark's end.
+    pub fn bookmark_end(name: impl Into<Rc<str>>) -> RangeMark {
+        RangeMark { kind: RangeKind::BookmarkEnd, id: 0, name: Some(name.into()), permission: None }
+    }
+
+    /// A bookmark marker's name, and whether it starts the bookmark.
+    pub fn bookmark(&self) -> Option<(&str, bool)> {
+        let start = match self.kind {
+            RangeKind::BookmarkStart => true,
+            RangeKind::BookmarkEnd => false,
+            _ => return None,
+        };
+        Some((self.name.as_deref()?, start))
+    }
+
+    /// An editing permission marker: whether it starts the permission's range, and the permission's id.
+    pub fn permission(&self) -> Option<(bool, i64)> {
+        match self.kind {
+            RangeKind::PermissionStart => Some((true, self.id)),
+            RangeKind::PermissionEnd => Some((false, self.id)),
+            _ => None,
+        }
+    }
+
+    /// A comment's or move's range marker (not a bookmark's or permission's).
+    pub fn is_review(&self) -> bool {
+        !matches!(self.kind, RangeKind::BookmarkStart | RangeKind::BookmarkEnd | RangeKind::PermissionStart | RangeKind::PermissionEnd)
+    }
+}
+
+/// An editing permission marker's settings (`w:permStart`, `w:permEnd`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Permission {
+    /// Who may edit the range: a start's `w:edGrp`, else its `w:ed`.
+    pub editor: Option<RangeEditor>,
+    /// `w:colFirst`, `w:colLast`: the first and last table column a start's range covers.
+    pub columns: (Option<u32>, Option<u32>),
+    /// The element as read (`None`: a marker made since): what is written, with the marker's id, for one read. A
+    /// permission whose settings change is a new one, without it.
+    pub xml: Raw,
+}
+
+/// Who an editable range lets edit it.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum RangeEditor {
+    /// A group (`w:edGrp`): `everyone`, or `administrators`, `contributors`, `editors`, `owners`, `current` and the
+    /// like, which the host says the author is in.
+    Group(String),
+    /// One person (`w:ed`): a name or email address.
+    User(String),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]

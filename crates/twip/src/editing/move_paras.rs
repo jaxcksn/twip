@@ -26,7 +26,8 @@ pub(super) enum Span {
 
 pub(super) fn span_of(i: &Inline) -> Option<Span> {
     match i {
-        Inline::Bookmark(name) => Some(Span::Bookmark(name.trim_start_matches('/').to_string())),
+        Inline::Range(r) if let Some((name, _)) = r.bookmark() => Some(Span::Bookmark(name.to_string())),
+        Inline::Range(r) if r.permission().is_some() => None,
         Inline::Range(r) if matches!(r.kind, RangeKind::CommentStart | RangeKind::CommentEnd) => Some(Span::Comment(r.id)),
         Inline::Range(r) => Some(Span::Move(r.id)),
         Inline::FieldBegin { id, .. } | Inline::FieldEnd { id, .. } => Some(Span::Field(id.0)),

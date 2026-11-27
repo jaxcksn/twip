@@ -50,7 +50,7 @@ fn a_pasted_copy_leaves_its_bookmark_with_the_original() {
     assert!(text.starts_with("here") && text.ends_with("See here"), "{text:?}");
     let marks: Vec<(usize, String)> = e.bookmarks().into_iter().map(|b| (b.start.unit.0 as usize, b.name)).collect();
     assert_eq!(marks, [(text.chars().count() - 4, "Target".to_string())], "one Target, at the original");
-    let n = paras(&e)[0].inlines.iter().filter(|i| matches!(i, Inline::Bookmark(n) if n.trim_start_matches('/') == "Target")).count();
+    let n = paras(&e)[0].inlines.iter().filter(|i| i.bookmark().is_some_and(|(n, _)| n == "Target")).count();
     assert_eq!(n, 2, "its start and end only");
 }
 
@@ -61,7 +61,7 @@ fn a_copy_holding_half_a_bookmark_leaves_it_out() {
     select(&mut e, (0, 2), (0, 7));
     let f = e.copy().expect("copies");
     assert!(
-        !f.blocks.iter().any(|b| matches!(b, Block::Para(p) if p.inlines.iter().any(|i| matches!(i, Inline::Bookmark(_))))),
+        !f.blocks.iter().any(|b| matches!(b, Block::Para(p) if p.inlines.iter().any(|i| i.bookmark().is_some()))),
         "no lone bookmark end in the copy"
     );
 }
@@ -121,8 +121,7 @@ fn a_pasted_editing_permission_takes_an_id_of_its_own() {
     let f = e.copy().expect("copies");
     caret(&mut e, (1, 0));
     e.paste_fragment(&f, fonts());
-    let ids: Vec<(bool, i64)> =
-        paras(&e).iter().flat_map(|p| p.inlines.iter()).filter_map(|i| if let Inline::Opaque(o) = i { o.permission() } else { None }).collect();
+    let ids: Vec<(bool, i64)> = paras(&e).iter().flat_map(|p| p.inlines.iter()).filter_map(|i| i.permission()).collect();
     assert_eq!(ids.len(), 4, "{ids:?}");
     assert_eq!(ids[0].1, ids[1].1);
     assert_eq!(ids[2].1, ids[3].1);
@@ -654,12 +653,7 @@ fn a_pasted_permission_past_the_highest_id_takes_a_free_one() {
     let f = e.copy().expect("copies");
     caret(&mut e, (2, 0));
     e.paste_fragment(&f, fonts());
-    let ids: Vec<i64> = paras(&e)
-        .iter()
-        .flat_map(|p| p.inlines.iter())
-        .filter_map(|i| if let Inline::Opaque(o) = i { o.permission() } else { None })
-        .map(|p| p.1)
-        .collect();
+    let ids: Vec<i64> = paras(&e).iter().flat_map(|p| p.inlines.iter()).filter_map(|i| i.permission()).map(|p| p.1).collect();
     assert_eq!(ids.len(), 6, "{ids:?}");
     assert!(ids.iter().all(|&id| id >= 0), "{ids:?}");
     let mut u = ids.clone();

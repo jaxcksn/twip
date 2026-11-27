@@ -937,11 +937,11 @@ fn an_editable_range_goes_on_every_range() {
     let mut r = two_ranges();
     r.e.execute(Command::AddEditableRange(Default::default()), fonts());
     let crate::docx::Block::Para(p) = &r.e.document().sections[0].blocks[0] else { panic!() };
-    let perms: Vec<_> = p.inlines.iter().filter_map(|i| if let crate::docx::Inline::Opaque(o) = i { o.permission() } else { None }).collect();
+    let perms: Vec<_> = p.inlines.iter().filter_map(|i| i.permission()).collect();
     assert_eq!(perms.len(), 4, "a start and an end on each range: {perms:?}");
     r.e.execute(Command::RemoveEditableRanges, fonts());
     let crate::docx::Block::Para(p) = &r.e.document().sections[0].blocks[0] else { panic!() };
-    assert!(!p.inlines.iter().any(|i| matches!(i, crate::docx::Inline::Opaque(o) if o.permission().is_some())), "and both go again");
+    assert!(!p.inlines.iter().any(|i| i.permission().is_some()), "and both go again");
 }
 
 #[test]

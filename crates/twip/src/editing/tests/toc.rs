@@ -235,7 +235,7 @@ fn inserting_a_table_lists_headings_with_links_and_page_numbers() {
     let pages: Vec<String> = ps[..4].iter().flat_map(|p| page_results(p)).collect();
     assert_eq!(pages, ["1", "2", "2", "3"]);
     let heading = ps.iter().find(|p| shown(p) == "Intro" && style_of(p) == "Heading1").unwrap();
-    assert!(matches!(heading.inlines.first(), Some(Inline::Bookmark(n)) if n.starts_with("_Toc")));
+    assert!(heading.inlines.first().and_then(Inline::bookmark).is_some_and(|(n, start)| start && n.starts_with("_Toc")));
     // A right tab with dots at the margin.
     let tab = ps[0].style.tabs.iter().find(|t| t.kind == crate::docx::props::TabKind::Right).expect("a right tab");
     assert_eq!(tab.leader, crate::docx::props::Leader::Dot);
@@ -249,7 +249,7 @@ fn inserting_a_table_lists_headings_with_links_and_page_numbers() {
     // One undo step.
     e.execute(Command::Undo(Default::default()), fonts());
     assert!(e.tables_of_contents().is_empty());
-    assert!(!body_paras(&e).iter().any(|p| p.inlines.iter().any(|i| matches!(i, Inline::Bookmark(_)))));
+    assert!(!body_paras(&e).iter().any(|p| p.inlines.iter().any(|i| i.bookmark().is_some())));
 }
 
 #[test]

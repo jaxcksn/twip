@@ -339,6 +339,11 @@ impl Rebind {
                                 *o = Rc::new(Opaque { xml: Raw(Some(xml.into())), field: o.field.clone(), src: o.src.clone(), run: o.run.clone() });
                             }
                         }
+                        Inline::Range(r) if let Some(p) = r.permission.as_deref().filter(|p| needs(&p.xml)) => {
+                            let mut p = p.clone();
+                            self.raw(&mut p.xml);
+                            r.permission = Some(Rc::new(p));
+                        }
                         Inline::Ruby(r, _) if needs(&r.xml) => self.raw(&mut Rc::make_mut(r).xml),
                         Inline::FieldBegin { form: Some(f), .. } if needs(&f.xml) => self.raw(&mut Rc::make_mut(f).xml),
                         _ => {}

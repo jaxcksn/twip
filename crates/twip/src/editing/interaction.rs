@@ -455,7 +455,7 @@ impl Editor {
             }
         }
         let [Some(to_end), Some(from_end)] = ends else { return false };
-        let range = |kind: RangeKind, id: i64| Inline::Range(RangeMark { kind, id, name: Some(name.clone()) });
+        let range = |kind: RangeKind, id: i64| Inline::Range(RangeMark { kind, id, name: Some(name.clone()), permission: None });
         let (to_id, from_id) = (self.doc.review_ids.next_revision_id(), self.doc.review_ids.next_revision_id());
         for ((para, u), marker) in [
             (to_end.0, range(RangeKind::MoveToStart, to_id)),

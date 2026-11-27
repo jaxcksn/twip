@@ -1081,8 +1081,7 @@ pub(crate) fn field_changes(doc: &Document, now: i64) -> (Vec<FieldChange>, Vec<
             });
             if !mark_at.is_empty() {
                 for i in &p.inlines {
-                    if let Inline::Bookmark(b) = i
-                        && let Some(n) = b.strip_prefix('/')
+                    if let Some((n, false)) = i.bookmark()
                         && let Some((name, _)) = mark_at.get_key_value(n.to_ascii_lowercase().as_str())
                         && !mark_end.contains_key(name)
                     {
@@ -1142,13 +1141,8 @@ pub(crate) fn field_changes(doc: &Document, now: i64) -> (Vec<FieldChange>, Vec<
                         let side = w.iter().any(|x| x.eq_ignore_ascii_case("\\p")).then(|| {
                             // In the field's own paragraph: by the bookmark's start (and end) before the field or after it.
                             let before = |k: Option<&usize>, end: bool| {
-                                let is_mark = |x: &String| match x.strip_prefix('/') {
-                                    Some(n) => end && n.eq_ignore_ascii_case(&name),
-                                    None => !end && x.eq_ignore_ascii_case(&name),
-                                };
-                                k.is_some_and(|&k| {
-                                    k < at || (k == at && p.inlines[..sp.begin].iter().any(|i| matches!(i, Inline::Bookmark(x) if is_mark(x))))
-                                })
+                                let is_mark = |(x, start): (&str, bool)| start != end && x.eq_ignore_ascii_case(&name);
+                                k.is_some_and(|&k| k < at || (k == at && p.inlines[..sp.begin].iter().any(|i| i.bookmark().is_some_and(is_mark))))
                             };
                             let started = before(mark_at.get(&name), false);
                             let ended = mark_end.get(&name).map_or(started, |k| before(Some(k), true));
@@ -1460,7 +1454,7 @@ fn bookmark_texts(
     marks: &mut HashMap<String, String>,
     found: &mut dyn FnMut(&str, Option<&Run>, Option<(NoteKind, i64)>),
 ) {
-    if !p.inlines.iter().any(|i| matches!(i, Inline::Bookmark(_))) {
+    if !p.inlines.iter().any(|i| i.bookmark().is_some()) {
         return;
     }
     let mut whole: Option<Whole> = None;
@@ -1472,10 +1466,7 @@ fn bookmark_texts(
     // The fields begun before the bookmark read last, by where they begin: the code ends of those whose codes may hold it.
     let (mut next_field, mut codes) = (0, Vec::new());
     for (k, i) in p.inlines.iter().enumerate() {
-        let Inline::Bookmark(name) = i else { continue };
-        if name.starts_with('/') {
-            continue;
-        }
+        let Some((name, true)) = i.bookmark() else { continue };
         let key = name.to_ascii_lowercase();
         names.insert(key.clone());
         if !wanted.contains(&key) || marks.contains_key(&key) {
@@ -1494,15 +1485,13 @@ fn bookmark_texts(
         let ends = ends.get_or_insert_with(|| {
             let mut m: HashMap<&str, Vec<usize>> = HashMap::new();
             for (e, i) in p.inlines.iter().enumerate() {
-                if let Inline::Bookmark(n) = i
-                    && let Some(n) = n.strip_prefix('/')
-                {
+                if let Some((n, false)) = i.bookmark() {
                     m.entry(n).or_default().push(e);
                 }
             }
             m
         });
-        let stop = ends.get(name.as_str()).and_then(|v| v.get(v.partition_point(|&e| e < start)).copied()).unwrap_or(p.inlines.len());
+        let stop = ends.get(name).and_then(|v| v.get(v.partition_point(|&e| e < start)).copied()).unwrap_or(p.inlines.len());
         let start = start.min(stop);
         let after = |v: &[usize]| v.get(v.partition_point(|&x| x < start)).copied().filter(|&x| x < stop);
         let note = after(&whole.notes).and_then(|x| if let Inline::NoteRef { kind, id, .. } = &p.inlines[x] { Some((*kind, *id)) } else { None });
@@ -2401,10 +2390,10 @@ mod tests {
         let [b, sep, end] = markers(&run)(1, Some(FieldKind::Page), Some("1"));
         let names: Vec<String> = (0..32).map(|k| format!("m{k}")).collect();
         let mut v = vec![b, Inline::Text(" PAGE ".into(), run.clone()), sep];
-        v.extend(names.iter().map(|n| Inline::Bookmark(n.clone())));
+        v.extend(names.iter().map(|n| Inline::Range(crate::docx::review::RangeMark::bookmark_start(n.as_str()))));
         v.extend((0..1000).map(|k| Inline::Text(char::from(b'a' + (k % 26) as u8).to_string(), run.clone())));
         v.push(end);
-        v.extend(names.iter().map(|n| Inline::Bookmark(format!("/{n}"))));
+        v.extend(names.iter().map(|n| Inline::Range(crate::docx::review::RangeMark::bookmark_end(n.as_str()))));
         let want: String = (0..1000).map(|k| char::from(b'a' + (k % 26) as u8)).collect();
         let wanted: Vec<&str> = names.iter().map(String::as_str).collect();
         let marks = marks_of(v, &wanted);
@@ -2420,7 +2409,12 @@ mod tests {
         let run = p.mark.clone();
         let f = markers(&run);
         let t = |s: &str| Inline::Text(s.into(), run.clone());
-        let bm = |n: &str| Inline::Bookmark(n.into());
+        let bm = |n: &str| {
+            Inline::Range(match n.strip_prefix('/') {
+                Some(n) => crate::docx::review::RangeMark::bookmark_end(n),
+                None => crate::docx::review::RangeMark::bookmark_start(n),
+            })
+        };
         let ([b1, s1, e1], [b2, s2, e2]) = (f(1, None, None), f(2, None, None));
         // {IF {PAGE [x} 5 [y} = 1 r} [z] q, every one ending at the end
         let v = vec![

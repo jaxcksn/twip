@@ -100,7 +100,7 @@ fn marker(i: &Inline) -> Option<(CommentId, Which)> {
 }
 
 fn range_mark(kind: RangeKind, id: CommentId) -> Inline {
-    Inline::Range(RangeMark { kind, id: id.0, name: None })
+    Inline::Range(RangeMark { kind, id: id.0, name: None, permission: None })
 }
 
 fn markers_at(p: &Paragraph, u: Unit) -> u32 {

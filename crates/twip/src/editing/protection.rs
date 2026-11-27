@@ -6,8 +6,8 @@ use std::rc::Rc;
 use crate::api::command::{Command, CommandId, DeleteOptions, DeleteUnit, DocumentProtection, EditableRange, ProtectionKind as Kind};
 use crate::api::error::{Error, ErrorCode};
 use crate::api::value::Direction;
-use crate::docx::review::{Password, Protection, ProtectionKind};
-use crate::docx::{Inline, Opaque, Raw};
+use crate::docx::review::{Password, Permission, Protection, ProtectionKind, RangeKind, RangeMark};
+use crate::docx::{Inline, Raw};
 use crate::font::Fonts;
 use crate::layout::{ParaId, Unit};
 
@@ -16,15 +16,7 @@ use super::commands::Outcome;
 use super::position::Position;
 use super::step::{Edges, Step};
 
-/// Who an editable range lets edit it.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum RangeEditor {
-    /// A group (`w:edGrp`): `everyone`, or `administrators`, `contributors`, `editors`, `owners`, `current` and the
-    /// like, which the host says the author is in.
-    Group(String),
-    /// One person (`w:ed`): a name or email address.
-    User(String),
-}
+pub use crate::docx::review::RangeEditor;
 
 /// The `w:edGrp` values (`ST_EdGrp`).
 const GROUPS: [&str; 7] = ["none", "everyone", "administrators", "contributors", "editors", "owners", "current"];
@@ -86,19 +78,10 @@ pub struct EditableRangeInfo {
 }
 
 /// An editing permission marker: `w:permStart` (its id, and who: `w:edGrp` or `w:ed`) or `w:permEnd`.
-fn perm(i: &Inline) -> Option<(bool, String, Option<RangeEditor>)> {
-    let Inline::Opaque(o) = i else { return None };
-    let x = o.xml.0.as_deref()?;
-    let attr = |k: &str| {
-        let at = x.find(&format!(":{k}=\""))? + k.len() + 3;
-        Some(crate::docx::binding::unescape(&x[at..at + x[at..].find('"')?]))
-    };
-    let start = x.contains("permStart");
-    if !start && !x.contains("permEnd") {
-        return None;
-    }
-    let who = if start { attr("edGrp").map(RangeEditor::Group).or_else(|| attr("ed").map(RangeEditor::User)) } else { None };
-    Some((start, attr("id")?, who))
+fn perm(i: &Inline) -> Option<(bool, i64, Option<RangeEditor>)> {
+    let Inline::Range(r) = i else { return None };
+    let (start, id) = r.permission()?;
+    Some((start, id, r.permission.as_ref().and_then(|p| p.editor.clone())))
 }
 
 /// `who` (a `w:edGrp` or `w:ed`) lets `author` edit, a member of `groups`: everyone does, a group its members, a
@@ -119,7 +102,7 @@ fn api_kind(k: ProtectionKind) -> Kind {
 
 /// One editing permission: its id, who it lets edit (`w:edGrp` or `w:ed`), its start and end.
 struct Perm {
-    id: String,
+    id: i64,
     editor: Option<RangeEditor>,
     start: Position,
     end: Position,
@@ -147,7 +130,7 @@ pub(crate) struct Openings {
 }
 
 /// The permission markers' `(start, id, who)` in `inlines`, each with its unit.
-fn perms(inlines: &[Inline]) -> impl Iterator<Item = (Unit, (bool, String, Option<RangeEditor>))> + '_ {
+fn perms(inlines: &[Inline]) -> impl Iterator<Item = (Unit, (bool, i64, Option<RangeEditor>))> + '_ {
     inlines.iter().scan(0u32, |unit, i| Some((Unit(std::mem::replace(unit, *unit + i.units() as u32)), i))).filter_map(|(u, i)| Some((u, perm(i)?)))
 }
 
@@ -162,7 +145,7 @@ impl Editor {
             return r.clone();
         }
         // Each open `w:permStart` by id; a later start with the same id replaces it.
-        let mut open: HashMap<String, (Position, Option<RangeEditor>)> = HashMap::new();
+        let mut open: HashMap<i64, (Position, Option<RangeEditor>)> = HashMap::new();
         let mut ranges = Vec::new();
         for para in self.paras_in_order() {
             let Some(p) = self.index.para(&self.doc, para) else { continue };
@@ -193,7 +176,7 @@ impl Editor {
                 list_keys.push(keys[k].clone());
             }
             let Some(l) = list.last_mut() else { continue };
-            l.ids.push(r.id.clone());
+            l.ids.push(r.id.to_string());
             // One editor, however many permissions name them
             if let Some(e) = &r.editor
                 && !l.editors.iter().any(|x| x.same(e))
@@ -277,7 +260,7 @@ impl Editor {
         let author: &str = &self.author.0;
         let (mut at, mut markers) = (0u32, 0u32);
         let mut inside: Option<u32> = None;
-        let mut started: Option<String> = None;
+        let mut started: Option<i64> = None;
         for i in &p.inlines {
             let w = i.units() as u32;
             if at > u.0 || (at == u.0 && w > 0) {
@@ -285,8 +268,8 @@ impl Editor {
             }
             if at == u.0 && !matches!(i, Inline::Text(..)) {
                 match perm(i) {
-                    Some((false, id, _)) if started.as_deref() == Some(id.as_str()) => inside = Some(markers),
-                    Some((false, id, _)) if inside.is_none() && may(&self.range_who(&id), author, &self.editing_groups) => inside = Some(markers),
+                    Some((false, id, _)) if started == Some(id) => inside = Some(markers),
+                    Some((false, id, _)) if inside.is_none() && may(&self.range_who(id), author, &self.editing_groups) => inside = Some(markers),
                     Some((true, id, who)) if may(&who, author, &self.editing_groups) => {
                         inside = Some(markers + 1);
                         started = Some(id);
@@ -302,9 +285,9 @@ impl Editor {
 
     /// Who may edit range `id`: its `w:permStart`'s `w:edGrp` or `w:ed`. Not from [`Self::editable_ranges`], which is
     /// found once per revision and a transaction's steps move.
-    fn range_who(&self, id: &str) -> Option<RangeEditor> {
+    fn range_who(&self, id: i64) -> Option<RangeEditor> {
         self.paras_in_order().into_iter().find_map(|para| {
-            self.index.para(&self.doc, para)?.inlines.iter().find_map(|i| perm(i).filter(|(start, o, _)| *start && o == id).and_then(|(.., w)| w))
+            self.index.para(&self.doc, para)?.inlines.iter().find_map(|i| perm(i).filter(|(start, o, _)| *start && *o == id).and_then(|(.., w)| w))
         })
     }
 
@@ -840,7 +823,7 @@ impl Editor {
             .para_ids()
             .filter_map(|p| self.index.para(&self.doc, p))
             .flat_map(|p| p.inlines.iter().filter_map(perm))
-            .filter_map(|(_, id, _)| id.parse().ok())
+            .map(|(_, id, _)| id)
             .collect();
         // Ids Word reads (a signed 32-bit number): on from the greatest, else the first unused
         const MAX: i64 = i32::MAX as i64;
@@ -851,18 +834,15 @@ impl Editor {
         if fresh.len() < ends.len() {
             return Outcome::unavailable("no free permission id");
         }
-        let w = self.cx().w;
-        let esc = crate::docx::write::props::esc;
-        let who = match &who {
-            RangeEditor::Group(g) => format!("{w}edGrp=\"{}\"", esc(g)),
-            RangeEditor::User(u) => format!("{w}ed=\"{}\"", esc(u)),
+        let marker = |kind, id, editor| {
+            let permission = Some(Rc::new(Permission { editor, columns: (None, None), xml: Raw(None) }));
+            Inline::Range(RangeMark { kind, id, name: None, permission })
         };
-        let marker = |x: String| Inline::Opaque(Rc::new(Opaque { xml: Raw(Some(Rc::from(x.as_str()))), field: None, src: None, run: None }));
         let mut tx = self.begin("Editable Range");
         // Ranges, last first
         for (k, &((pa, oa), (pb, ob))) in ends.iter().enumerate().rev() {
             let id = fresh[k];
-            let (start, end) = (marker(format!("<{w}permStart {w}id=\"{id}\" {who}/>")), marker(format!("<{w}permEnd {w}id=\"{id}\"/>")));
+            let (start, end) = (marker(RangeKind::PermissionStart, id, Some(who.clone())), marker(RangeKind::PermissionEnd, id, None));
             let steps = if pa == pb && oa == ob {
                 vec![Step::Text { para: pa, range: oa..oa, with: vec![start, end], edges: Edges::default() }]
             } else {
@@ -1005,13 +985,13 @@ impl Editor {
             return self.add_permission(editor, &missing, fonts);
         }
         // The editor's own permissions reaching the selection
-        let theirs: std::collections::HashSet<String> = self
+        let theirs: std::collections::HashSet<i64> = self
             .editable_ranges()
             .ranges
             .iter()
             .filter(|r| r.editor.as_ref().is_some_and(|e| e.same(&editor)))
             .filter(|r| ranges.iter().any(|(a, b)| self.index.cmp(&r.start, b).is_le() && self.index.cmp(a, &r.end).is_le()))
-            .map(|r| r.id.clone())
+            .map(|r| r.id)
             .collect();
         if theirs.is_empty() {
             return Outcome::Unchanged("not an editor here");
@@ -1026,14 +1006,14 @@ impl Editor {
             return Outcome::Unchanged("no selection");
         }
         // The ids of the ranges around the selection, whoever may edit them.
-        let gone: std::collections::HashSet<String> = self
+        let gone: std::collections::HashSet<i64> = self
             .editable_ranges()
             .ranges
             .iter()
             .filter(|r| {
                 ranges.get(ranges.partition_point(|x| self.index.cmp(&x.1, &r.start).is_lt())).is_some_and(|(a, _)| self.index.cmp(a, &r.end).is_le())
             })
-            .map(|r| r.id.clone())
+            .map(|r| r.id)
             .collect();
         if gone.is_empty() {
             return Outcome::Unchanged("no editable range here");
@@ -1042,7 +1022,7 @@ impl Editor {
     }
 
     /// Takes the permissions `gone` (by id) out, both their markers.
-    fn drop_permissions(&mut self, gone: &std::collections::HashSet<String>, label: &'static str, fonts: &Fonts) -> Outcome {
+    fn drop_permissions(&mut self, gone: &std::collections::HashSet<i64>, label: &'static str, fonts: &Fonts) -> Outcome {
         let edits: Vec<(ParaId, Vec<Inline>)> = self
             .index
             .para_ids()

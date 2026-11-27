@@ -32,7 +32,7 @@ fn discarded_attempt_leaves_no_effects() {
     let Some(mut doc) = fixture(r"K1\K1b_keepnext.docx") else { return };
     let heading = doc.sections[0].blocks.iter().position(|b| matches!(b, Block::Para(p) if p.style.keep_next)).expect("K1b has a keepNext heading");
     let Block::Para(p) = &mut doc.sections[0].blocks[heading] else { unreachable!() };
-    p.inlines.insert(0, Inline::Bookmark("moved".into()));
+    p.inlines.insert(0, Inline::Range(crate::docx::review::RangeMark::bookmark_start("moved")));
     let id = ParaId(p.id);
     let (snapshot, records) = layout_records(&doc, &fonts(), &mut LayoutCache::new());
     let effects: Vec<_> = records.iter().map(|r| &r.effects).collect();

@@ -564,7 +564,7 @@ fn bookmarks_and_comments_into_the_paragraph_passed_keep_their_text_there() {
             .inlines
             .iter()
             .filter_map(|i| match i {
-                Inline::Bookmark(b) => Some(b.clone()),
+                Inline::Range(r) if let Some((b, start)) = r.bookmark() => Some(if start { b.to_string() } else { format!("/{b}") }),
                 Inline::Range(r) => Some(format!("{:?}", r.kind)),
                 _ => None,
             })
@@ -935,9 +935,9 @@ fn link_here_bookmarks_the_text_and_links_to_it() {
     e.right_release();
     e.choose_drop(super::super::move_to::DropChoice::Link, fonts());
     assert_eq!(link_codes(&e, 1), [r#"LINK Word.Document.12 "Report.docx" "OLE_LINK1" \a \r"#]);
-    assert!(para(&e, 0).inlines.iter().any(|i| matches!(i, Inline::Bookmark(n) if n == "OLE_LINK1")));
+    assert!(para(&e, 0).inlines.iter().any(|i| i.bookmark() == Some(("OLE_LINK1", true))));
     e.execute(C::Undo(Default::default()), fonts());
-    assert!(link_codes(&e, 1).is_empty() && !para(&e, 0).inlines.iter().any(|i| matches!(i, Inline::Bookmark(_))), "one undo step");
+    assert!(link_codes(&e, 1).is_empty() && !para(&e, 0).inlines.iter().any(|i| i.bookmark().is_some()), "one undo step");
 }
 
 #[test]

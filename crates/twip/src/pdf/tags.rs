@@ -362,9 +362,13 @@ impl<'c> Tags<'c> {
                 None => kids.push(node),
             };
             match inline {
-                Inline::Bookmark(name) if !self.in_instance && !name.starts_with('/') && self.bookmark_count < MAX_BOOKMARKS => {
+                Inline::Range(r)
+                    if let Some((name, true)) = r.bookmark()
+                        && !self.in_instance
+                        && self.bookmark_count < MAX_BOOKMARKS =>
+                {
                     self.bookmark_count += 1;
-                    self.bookmarks.entry(p.id).or_default().push((u, name.clone()));
+                    self.bookmarks.entry(p.id).or_default().push((u, name.to_string()));
                 }
                 Inline::Picture(pic, _) => match (&pic.text, alt(&pic.alt, pic.shape.as_deref())) {
                     (Some(t), _) => {

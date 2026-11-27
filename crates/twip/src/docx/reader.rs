@@ -15,8 +15,8 @@ use super::props::*;
 use super::resolvers::Resolvers;
 use super::review::{
     AuthorId, CellMarkKind, CellRevisions, Comment, CommentId, FormatChange, GridChange, IdCounter, Identity, MarkKind, ParaChange, People,
-    PreviousProps, Protection, ProtectionKind, RangeKind, RangeMark, RevisionId, RevisionMark, RowRevisions, RunRevisions, SectionChange, ShowMarkup,
-    TableChange, Timestamp,
+    Permission, PreviousProps, Protection, ProtectionKind, RangeEditor, RangeKind, RangeMark, RevisionId, RevisionMark, RowRevisions, RunRevisions,
+    SectionChange, ShowMarkup, TableChange, Timestamp,
 };
 use super::run_xml;
 use super::styles::ThemeFonts;
@@ -1304,7 +1304,7 @@ struct Reader {
     images: Resources,
     image_index: HashMap<String, ResourceId>,
     /// Bookmark names by `w:id`, for their ends.
-    bookmarks: HashMap<String, String>,
+    bookmarks: HashMap<String, Rc<str>>,
     fields: Vec<OpenField>,
     /// The paragraph being read (a number unique in the read), and the last number given.
     para_no: u64,
@@ -1623,13 +1623,33 @@ impl Reader {
         }
         let id = attr(e, "id");
         if e.tag_name().name() == "bookmarkEnd" {
-            return id.and_then(|id| self.bookmarks.get(id)).map(|name| Inline::Bookmark(format!("/{name}")));
+            return id.and_then(|id| self.bookmarks.get(id)).map(|name| Inline::Range(RangeMark::bookmark_end(name.clone())));
         }
-        let name = attr(e, "name").filter(|n| !n.is_empty() && !n.starts_with('/'))?;
+        let name: Rc<str> = attr(e, "name").filter(|n| !n.is_empty() && !n.starts_with('/'))?.into();
         if let Some(id) = id {
-            self.bookmarks.insert(id.to_string(), name.to_string());
+            self.bookmarks.insert(id.to_string(), name.clone());
         }
-        Some(Inline::Bookmark(name.to_string()))
+        Some(Inline::Range(RangeMark::bookmark_start(name)))
+    }
+
+    /// A `w:permStart`'s or `w:permEnd`'s marker (editable reads); one whose id isn't a number is kept as read.
+    fn permission(&mut self, e: Node, out: &mut Vec<Inline>) {
+        if !self.record {
+            return;
+        }
+        let Some(id) = attr(e, "id").and_then(|v| v.trim().parse::<i64>().ok()) else { return self.opaque(e, out) };
+        let start = e.tag_name().name() == "permStart";
+        let editor = match (attr(e, "edGrp"), attr(e, "ed")) {
+            _ if !start => None,
+            (Some(g), _) => Some(RangeEditor::Group(g.to_string())),
+            (None, Some(u)) => Some(RangeEditor::User(u.to_string())),
+            (None, None) => None,
+        };
+        let col = |n| attr(e, n).and_then(|v| v.trim().parse::<u32>().ok());
+        let columns = if start { (col("colFirst"), col("colLast")) } else { (None, None) };
+        let permission = Some(Rc::new(Permission { editor, columns, xml: Raw(Some(raw(e))) }));
+        let kind = if start { RangeKind::PermissionStart } else { RangeKind::PermissionEnd };
+        out.push(Inline::Range(RangeMark { kind, id, name: None, permission }));
     }
 
     fn range(&mut self, e: Node) -> Option<RangeMark> {
@@ -1668,7 +1688,7 @@ impl Reader {
                 self.moves.push((kind, n.clone(), id));
             }
             self.open_ranges.push((kind, id));
-            return Some(RangeMark { kind, id, name });
+            return Some(RangeMark { kind, id, name, permission: None });
         }
         // The end of a range whose start was left out goes with it (an orphan's, or a glossary comment's).
         if kind == RangeKind::CommentEnd && (self.orphans.contains(&id) || self.glossary_comments.as_ref().is_some_and(|g| g.contains(&id))) {
@@ -1680,7 +1700,7 @@ impl Reader {
         };
         self.open_ranges.remove(k);
         self.moves.retain(|m| (m.0, m.2) != (start, id));
-        Some(RangeMark { kind, id, name: None })
+        Some(RangeMark { kind, id, name: None, permission: None })
     }
 
     /// The end of a story: range starts it never ended are reported and taken out of its blocks.
@@ -2467,8 +2487,7 @@ impl Reader {
                     "bookmarkStart" | "bookmarkEnd" => out.extend(self.bookmark(e)),
                     // Properties, read with their element; Word's spelling state, rebuilt by Word.
                     "pPr" | "rPr" | "customXmlPr" | "smartTagPr" | "sdtPr" | "sdtEndPr" | "proofErr" => {}
-                    // Editing permissions: kept until protection reads them.
-                    "permStart" | "permEnd" => self.opaque(e, out),
+                    "permStart" | "permEnd" => self.permission(e, out),
                     _ => self.unsupported(e, out),
                 }
             } else if is(e, MC, "AlternateContent")

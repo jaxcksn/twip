@@ -115,7 +115,7 @@ fn fingerprint(p: &Paragraph, open: &[CommentId], notes: usize, context: u64) ->
             Inline::Float(f, _) => (&*f.alt, f.shape.as_ref().is_some_and(|s| s.nv.decorative)).hash(&mut h),
             Inline::NoteRef { kind, id, .. } => (matches!(kind, NoteKind::End), id).hash(&mut h),
             Inline::FieldBegin { view, value, .. } => (std::mem::discriminant(view), value).hash(&mut h),
-            Inline::Range(m) => (std::mem::discriminant(&m.kind), m.id).hash(&mut h),
+            Inline::Range(m) if m.is_review() => (std::mem::discriminant(&m.kind), m.id).hash(&mut h),
             // The rest read the same whatever else they hold.
             _ => {}
         }

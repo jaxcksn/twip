@@ -190,7 +190,9 @@ impl Editor {
             .flat_map(|p| p.inlines.iter())
             .filter_map(|i| match i {
                 // Bookmark names are without case: `ole_link1` is OLE_LINK1's.
-                Inline::Bookmark(n) => n.get(..8).filter(|p| p.eq_ignore_ascii_case("OLE_LINK")).and_then(|_| n[8..].parse::<u32>().ok()),
+                Inline::Range(r) if let Some((n, true)) = r.bookmark() => {
+                    n.get(..8).filter(|p| p.eq_ignore_ascii_case("OLE_LINK")).and_then(|_| n[8..].parse::<u32>().ok())
+                }
                 _ => None,
             })
             .max()

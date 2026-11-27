@@ -51,7 +51,7 @@ fn undo_cannot_lift_enforced_protection_or_its_edits() {
 #[test]
 fn typing_at_an_editable_ranges_end_stays_in_it() {
     let read_only = DocumentProtection { kind: Some(ProtectionKind::ReadOnly), enforce: Some(true), ..Default::default() };
-    let perm_end_last = |e: &Editor| matches!(inlines(e).last(), Some(Inline::Opaque(o)) if o.permission() == Some((false, 1)));
+    let perm_end_last = |e: &Editor| inlines(e).last().and_then(Inline::permission) == Some((false, 1));
     let range = r#"<w:p><w:permStart w:id="1" w:edGrp="everyone"/><w:r><w:t>abc</w:t></w:r><w:permEnd w:id="1"/></w:p>"#;
     with_session(Some(blank_body(range)), |s| {
         s.run(Command::SetDocumentProtection(read_only.clone())).expect("protects");
@@ -87,7 +87,7 @@ fn typing_between_two_editable_ranges_goes_in_the_one_the_author_may_edit() {
         s.run(Command::InsertText("Z".into())).expect("types at the second range's start");
         s.with_editor(|e| {
             let inl = inlines(e);
-            let start2 = inl.iter().position(|i| matches!(i, Inline::Opaque(o) if o.permission() == Some((true, 2)))).expect("range 2");
+            let start2 = inl.iter().position(|i| i.permission() == Some((true, 2))).expect("range 2");
             let z = inl.iter().position(|i| matches!(i, Inline::Text(t, _) if t.contains('Z'))).expect("typed");
             assert!(z > start2, "the text is in range 2, not range 1: {inl:?}");
             assert_eq!(texts(e), vec!["abcZdef".to_string()]);
@@ -166,7 +166,7 @@ fn deleting_a_bookmarks_end_shrinks_it() {
     assert_eq!((b.start.unit, b.end.map(|x| x.unit)), (Unit(4), Some(Unit(9))), "its end moves to the deletion point");
     delete(&mut e, 2, 12);
     assert!(e.bookmark("B").is_none(), "deleted whole, it goes");
-    assert!(!inlines(&e).iter().any(|i| matches!(i, Inline::Bookmark(_))), "no marker left");
+    assert!(!inlines(&e).iter().any(|i| i.bookmark().is_some()), "no marker left");
 }
 
 #[test]
@@ -182,7 +182,7 @@ fn deleting_an_editable_ranges_end_shrinks_it() {
     let p = r#"<w:p><w:r><w:t xml:space="preserve">aaa </w:t></w:r><w:permStart w:id="1" w:edGrp="everyone"/><w:r><w:t>bbbb</w:t></w:r><w:permEnd w:id="1"/><w:r><w:t xml:space="preserve"> cccc</w:t></w:r></w:p>"#;
     let mut e = Editor::open(&blank_body(p), fonts()).expect("opens");
     delete(&mut e, 6, 11);
-    let ends = inlines(&e).iter().filter(|i| matches!(i, Inline::Opaque(o) if o.permission().is_some_and(|(s, _)| !s))).count();
+    let ends = inlines(&e).iter().filter(|i| matches!(i.permission(), Some((false, _)))).count();
     assert_eq!(ends, 1, "the permission end survives");
     e.selection = Selection::Caret(at(&e, 0, 5));
     assert!(e.in_editable_range("someone"), "what is left of the range is editable");
@@ -281,7 +281,7 @@ fn grant_doc() -> Editor {
 }
 
 fn markers(e: &Editor) -> usize {
-    inlines(e).iter().filter(|i| matches!(i, Inline::Opaque(_))).count()
+    inlines(e).iter().filter(|i| i.permission().is_some()).count()
 }
 
 #[test]
@@ -306,10 +306,11 @@ fn a_group_grant_writes_a_canonical_group_and_refuses_others() {
     use crate::editing::protection::RangeEditor;
     let mut e = grant_doc();
     assert!(matches!(e.set_range_editor(RangeEditor::Group("Editors".into()), true, fonts()), Outcome::Changed(_)));
-    let xml = inlines(&e)
-        .iter()
-        .find_map(|i| if let Inline::Opaque(o) = i { o.xml.0.as_deref().filter(|x| x.contains("permStart")).map(str::to_string) } else { None });
-    assert!(xml.is_some_and(|x| x.contains(r#"edGrp="editors""#)));
+    let who = inlines(&e).iter().find_map(|i| match i {
+        Inline::Range(r) if matches!(r.permission(), Some((true, _))) => r.permission.as_ref().and_then(|p| p.editor.clone()),
+        _ => None,
+    });
+    assert_eq!(who, Some(RangeEditor::Group("editors".into())));
     let before = markers(&e);
     assert!(!matches!(e.set_range_editor(RangeEditor::Group("Marketing".into()), true, fonts()), Outcome::Changed(_)));
     assert_eq!(markers(&e), before, "no markers for a group the format doesn't have");
@@ -359,7 +360,7 @@ fn a_new_permission_takes_an_id_word_reads() {
     e.complete(fonts());
     e.select_ranges(&[(at(&e, 0, 3), at(&e, 0, 6)), (at(&e, 0, 7), at(&e, 0, 10))]);
     assert!(matches!(e.set_range_editor(RangeEditor::User("Ada".into()), true, fonts()), Outcome::Changed(_)));
-    let mut ids: Vec<i64> = inlines(&e).iter().filter_map(|i| if let Inline::Opaque(o) = i { o.permission() } else { None }).map(|p| p.1).collect();
+    let mut ids: Vec<i64> = inlines(&e).iter().filter_map(|i| i.permission()).map(|p| p.1).collect();
     ids.sort_unstable();
     ids.dedup();
     assert_eq!(ids, [1, 2, i64::from(i32::MAX), i64::MAX], "the free ids from the first, past none Word reads");

@@ -149,7 +149,7 @@ pub(super) fn with_run(i: &Inline, run: &Run) -> Inline {
         Inline::Opaque(o) if o.field.is_some() => {
             Inline::Opaque(Rc::new(crate::docx::Opaque { xml: o.xml.clone(), field: o.field.clone(), src: o.src.clone(), run: Some(run) }))
         }
-        Inline::Bookmark(_) | Inline::Range(_) | Inline::ControlStart(_) | Inline::ControlEnd(_) | Inline::Opaque(_) => i.clone(),
+        Inline::Range(_) | Inline::ControlStart(_) | Inline::ControlEnd(_) | Inline::Opaque(_) => i.clone(),
     }
 }
 

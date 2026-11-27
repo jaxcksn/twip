@@ -369,7 +369,10 @@ impl Editor {
                     {
                         Some(Land::Caret)
                     }
-                    (GoToWhat::Bookmark, Inline::Bookmark(n)) if !n.starts_with('/') && !n.starts_with('_') => {
+                    (GoToWhat::Bookmark, Inline::Range(r))
+                        if let Some((n, true)) = r.bookmark()
+                            && !n.starts_with('_') =>
+                    {
                         let end = ends.get(&n.to_ascii_lowercase()).copied().flatten().map(|e| Position::text(story, e.para, e.unit));
                         Some(end.filter(|e| e.story == story).map_or(Land::Caret, Land::Range))
                     }

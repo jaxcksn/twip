@@ -166,7 +166,7 @@ fn para(p: &Paragraph, depth: usize, f: &mut BTreeSet<&'static str>) {
                 run(r, f);
             }
             Inline::FieldSep { run: r, .. } | Inline::FieldEnd { run: r, .. } => run(r, f),
-            Inline::Range(m) => {
+            Inline::Range(m) if m.is_review() => {
                 f.insert(match m.kind {
                     RangeKind::CommentStart | RangeKind::CommentEnd => "comments",
                     _ => "revisions",
@@ -176,7 +176,7 @@ fn para(p: &Paragraph, depth: usize, f: &mut BTreeSet<&'static str>) {
                 f.insert("comments");
                 run(r, f);
             }
-            Inline::Bookmark(_) | Inline::ControlStart(_) | Inline::ControlEnd(_) | Inline::Opaque(_) => {}
+            Inline::Range(_) | Inline::ControlStart(_) | Inline::ControlEnd(_) | Inline::Opaque(_) => {}
         }
     }
 }

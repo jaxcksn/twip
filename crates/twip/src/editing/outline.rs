@@ -1060,8 +1060,7 @@ impl Editor {
         // The editable ranges the content's last paragraph ends go on through the new one
         let ends: Vec<Inline> = match (place, self.part_block(&parts, c.last)) {
             (NewHeading::After | NewHeading::Subheading, Some(Block::Para(p))) => {
-                let n =
-                    p.inlines.iter().rev().take_while(|i| matches!(i, Inline::Opaque(o) if o.permission().is_some_and(|(start, _)| !start))).count();
+                let n = p.inlines.iter().rev().take_while(|i| matches!(i.permission(), Some((false, _)))).count();
                 p.inlines[p.inlines.len() - n..].to_vec()
             }
             _ => Vec::new(),

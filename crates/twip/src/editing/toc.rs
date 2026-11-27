@@ -1055,7 +1055,7 @@ impl Editor {
                 }
             };
         }
-        let shows = |inl: &[Inline]| inl.iter().any(|i| i.units() > 0 || matches!(i, Inline::Bookmark(_)));
+        let shows = |inl: &[Inline]| inl.iter().any(|i| i.units() > 0 || i.bookmark().is_some());
         // The paragraph left: what came before the field in its first, then what follows it in its last, whose mark
         // is after the field (unless a building block control holds it).
         let in_control = last.controls.iter().any(|c| self.is_toc_control(c));
@@ -1505,7 +1505,7 @@ impl Editor {
         }
         paras.sort_unstable_by_key(|p| p.0);
         paras.dedup();
-        let dropped = |i: &Inline| matches!(i, Inline::Bookmark(b) if gone.contains(b.trim_start_matches('/').to_ascii_lowercase().as_str()));
+        let dropped = |i: &Inline| i.bookmark().is_some_and(|(b, _)| gone.contains(b.to_ascii_lowercase().as_str()));
         for para in paras {
             let Some(p) = self.index.para(&self.doc, para) else { continue };
             if p.inlines.iter().any(dropped) {
@@ -1597,8 +1597,18 @@ impl Editor {
             let Some(p) = self.index.para(&self.doc, e.para) else { continue };
             let len = para_len(p);
             let name = free_name("_Toc", &taken, &mut next);
-            let end = Step::Text { para: e.para, range: len..len, with: vec![Inline::Bookmark(format!("/{name}"))], edges: Default::default() };
-            let start = Step::Text { para: e.para, range: Unit(0)..Unit(0), with: vec![Inline::Bookmark(name.clone())], edges: Default::default() };
+            let end = Step::Text {
+                para: e.para,
+                range: len..len,
+                with: vec![Inline::Range(crate::docx::review::RangeMark::bookmark_end(&*name))],
+                edges: Default::default(),
+            };
+            let start = Step::Text {
+                para: e.para,
+                range: Unit(0)..Unit(0),
+                with: vec![Inline::Range(crate::docx::review::RangeMark::bookmark_start(&*name))],
+                edges: Default::default(),
+            };
             if self.step(tx, end).is_ok() && self.step(tx, start).is_ok() {
                 out.insert(e.para, name);
             }
