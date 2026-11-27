@@ -6,7 +6,6 @@ use std::rc::Rc;
 
 use super::super::model::{Block, Cell, Document, Inline, Paragraph, Row, Run, RunStyle, Section, Table};
 use super::super::para_props::ParaDirect;
-use super::super::resolve::Resolver;
 use super::super::review::RangeKind;
 use super::super::run_xml;
 use super::super::table_props::{CellDirect, ExceptionsDirect, RowDirect, TableDirect};
@@ -46,17 +45,18 @@ pub fn generate(doc: &Document) -> Result<Vec<u8>, GenerateError> {
     covered(doc, &blank, res, new_res)?;
     let cx = Cx::of(&src);
     let section = page(&doc.sections[0], &blank.sections[0], blocks(&doc.sections[0].blocks, res, &cx, None)?)?;
-    let mut styles = res.styles.clone();
+    let mut res = res.clone();
     // Application defaults: empty written ones.
-    styles.defaults_raw.get_or_insert_with(|| format!("<{}docDefaults/>", cx.w));
-    let res = Resolver { styles, ..(**res).clone() };
+    if res.typed().styles.defaults.is_none() {
+        res.set_defaults_xml(format!("<{}docDefaults/>", cx.w)).map_err(|_| GenerateError::Write("the defaults don't read".into()))?;
+    }
     let edited = section.read.as_deref().is_some_and(|was| *was != section.page())
         || (section.line_grid, section.rtl_gutter) != (blank.sections[0].line_grid, blank.sections[0].rtl_gutter);
     let out = Document {
         sections: vec![section],
         properties: doc.properties.clone(),
         settings: doc.settings.clone(),
-        resolver: Some(Rc::new(res.into())),
+        resolver: Some(Rc::new(res)),
         source: Some(src),
         edited_sections: if edited { [0].into() } else { Default::default() },
         ..Default::default()
@@ -225,12 +225,12 @@ fn covered(doc: &Document, blank: &Document, res: &Resolvers, new_res: &Resolver
     if doc.page_colour.is_some() || doc.page_fill.is_some() {
         return fail("a page background");
     }
-    if res.styles.colours != new_res.styles.colours || res.theme != new_res.theme {
+    let (c, new) = (res.cascade(), new_res.cascade());
+    if c.colours != new.colours || c.theme != new.theme {
         return fail("a theme");
     }
     // Settings by their debug form, which shows every field; the styles' rules that follow from them.
-    let rules = |s: &super::super::styles::Styles| (s.compat, s.word2002_rules, s.cell_size_rules, s.open_type);
-    if format!("{:?}", doc.settings) != format!("{:?}", blank.settings) || rules(&res.styles) != rules(&new_res.styles) {
+    if format!("{:?}", doc.settings) != format!("{:?}", blank.settings) || c.rules != new.rules {
         return fail("document settings");
     }
     Ok(())
@@ -240,7 +240,8 @@ fn covered(doc: &Document, blank: &Document, res: &Resolvers, new_res: &Resolver
 /// formatting is known to follow from what is written.
 fn paragraph(p: &Paragraph, res: &Resolvers, cx: &Cx, region: Option<&TableRegion>) -> Result<Paragraph, GenerateError> {
     let fail = |what| Err(GenerateError::Unsupported(what));
-    if p.style.num.is_some_and(|n| !res.numbering.nums.contains_key(&n.list.0)) {
+    let c = res.cascade();
+    if p.style.num.is_some_and(|n| !c.lists.lists.contains_key(&n.list)) {
         return fail("a list without its definition");
     }
     if p.div.is_some() {
@@ -257,7 +258,7 @@ fn paragraph(p: &Paragraph, res: &Resolvers, cx: &Cx, region: Option<&TableRegio
         return fail("a frame");
     }
     if props.style.is_none()
-        && let Some(id) = p.style.style_id.as_deref().filter(|id| Some(*id) != res.styles.default_paragraph.as_deref())
+        && let Some(id) = p.style.style_id.as_deref().filter(|id| Some(*id) != c.styles.default_paragraph.as_deref())
     {
         props.style = Some(id.into());
     }
