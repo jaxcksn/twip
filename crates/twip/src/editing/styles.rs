@@ -11,7 +11,7 @@ use crate::docx::styles::{StyleEditError, StyleKind};
 use crate::docx::write::props::{Cx, Props};
 use crate::docx::{Paragraph, RunStyle};
 use crate::font::Fonts;
-use crate::format::{CellEdit, DefaultsSet, ParaEdit, ParaProps, Region, RegionKind, Style, StyleFormat, StyleProp, StyleSet, TableEdit};
+use crate::format::{CellEdit, DefaultsSet, ParaEdit, ParaProps, Region, RegionKind, RowEdit, Style, StyleFormat, StyleProp, StyleSet, TableEdit};
 
 use super::Editor;
 use super::commands::Outcome;
@@ -240,6 +240,15 @@ pub(super) fn edit_tables(s: &mut Style, set: &mut Vec<StyleSet>, region: Option
     set.extend(e.set.into_iter().map(|x| StyleSet::Table(region, x)));
 }
 
+/// The row properties of `s` at its base or in `region` edited by `edit`, what it sets noted.
+pub(super) fn edit_rows(s: &mut Style, set: &mut Vec<StyleSet>, region: Option<RegionKind>, edit: impl FnOnce(&mut RowEdit)) {
+    let f = level_mut(s, region);
+    let mut e = RowEdit::new(std::mem::take(&mut f.row));
+    edit(&mut e);
+    f.row = e.props;
+    set.extend(e.set.into_iter().map(|x| StyleSet::Row(region, x)));
+}
+
 /// The cell properties of `s` at its base or in `region` edited by `edit`, what it sets noted.
 pub(super) fn edit_cells(s: &mut Style, set: &mut Vec<StyleSet>, region: Option<RegionKind>, edit: impl FnOnce(&mut CellEdit)) {
     let f = level_mut(s, region);
@@ -279,6 +288,14 @@ pub(super) fn flag_mut(s: &mut Style, p: StyleProp) -> &mut Option<bool> {
 pub(super) fn set_flag(s: &mut Style, set: &mut Vec<StyleSet>, p: StyleProp, on: bool) {
     *flag_mut(s, p) = on.then_some(true);
     set.push(StyleSet::Style(p));
+}
+
+/// `s`'s names from `names` as a style's name is written: its name, then aliases, comma separated; noted.
+pub(super) fn set_names(s: &mut Style, set: &mut Vec<StyleSet>, names: &str) {
+    let mut names = names.split(',').map(str::trim);
+    s.name = names.next().map(Rc::from);
+    s.aliases = names.filter(|a| !a.is_empty()).map(Rc::from).collect();
+    set.push(StyleSet::Style(StyleProp::Name));
 }
 
 /// The on/off paragraph properties, by bit, as their children are named.

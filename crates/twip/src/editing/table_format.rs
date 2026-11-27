@@ -324,21 +324,6 @@ fn nil() -> Border {
     Border { style: crate::docx::props::BorderStyle::Nil, width: 0.0, space: 0.0, shadow: false, color: None, color_theme: None }
 }
 
-pub(super) fn border_xml(w: &str, name: &str, b: &Border) -> String {
-    if !b.visible() {
-        return format!("<{w}{name} {w}val=\"nil\"/>");
-    }
-    let tag = format!(
-        "<{w}{name} {w}val=\"{}\" {w}sz=\"{}\" {w}space=\"{}\"{}/>",
-        crate::docx::line_style::border_val(b.style),
-        (b.width * 8.0).round() as i64,
-        b.space.round() as i64,
-        if b.shadow { format!(" {w}shadow=\"1\"") } else { String::new() }
-    );
-    let c = b.color.map(|rgb| WordColour { rgb, theme: b.color_theme });
-    super::commands::colour_attrs(&tag, w, "color", super::commands::THEME_COLOR, c)
-}
-
 /// The sides in `sides` (bits: top, left, bottom, right, then the two diagonals) of a cell's own borders set from its
 /// model borders: the others stay as they were, a style's staying its style's.
 fn set_own_sides(cell: &mut crate::docx::Cell, sides: u8) {
