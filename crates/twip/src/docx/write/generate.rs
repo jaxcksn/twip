@@ -34,7 +34,8 @@ impl std::error::Error for GenerateError {}
 
 /// `doc` as a new package, written from the model alone, whatever it was read from: body paragraphs of text, tabs and
 /// breaks, their character and paragraph formatting and paragraph style, in the lists the document defines, tables of
-/// them (their table style, table, row and cell properties), on one section's page setup. Anything else is an error
+/// them (their table style, table, row and cell properties), on one section's page setup; the styles, document
+/// defaults, latent styles, list definitions and lists, each written from its definition. Anything else is an error
 /// that names it; nothing is left out.
 pub fn generate(doc: &Document) -> Result<Vec<u8>, GenerateError> {
     let blank = super::super::read_editable(&super::super::blank::blank_docx()).map_err(GenerateError::Write)?;
@@ -51,6 +52,8 @@ pub fn generate(doc: &Document) -> Result<Vec<u8>, GenerateError> {
         let empty = super::super::style_xml::DefaultsDef::typed(Rc::default());
         res.set_defaults(empty).map_err(|_| GenerateError::Write("the defaults don't read".into()))?;
     }
+    let new = new_res.typed();
+    let res = res.unanchored(new.styles.root.clone(), new.numbering.root.clone());
     let edited = section.read.as_deref().is_some_and(|was| *was != section.page())
         || (section.line_grid, section.rtl_gutter) != (blank.sections[0].line_grid, blank.sections[0].rtl_gutter);
     let out = Document {
@@ -63,7 +66,9 @@ pub fn generate(doc: &Document) -> Result<Vec<u8>, GenerateError> {
         ..Default::default()
     };
     let bytes = super::save(&out).map_err(GenerateError::Write)?;
-    reads_back(&out.sections[0], &bytes)?;
+    let back = super::super::read_editable(&bytes).map_err(GenerateError::Write)?;
+    reads_back(&out.sections[0], &back)?;
+    definitions_read_back(out.resolver.as_deref(), back.resolver.as_deref())?;
     Ok(bytes)
 }
 
@@ -150,9 +155,8 @@ fn page(s: &Section, blank: &Section, blocks: Vec<Block>) -> Result<Section, Gen
     })
 }
 
-/// The package `bytes` reads back with `s`'s page setup and its tables as they are.
-fn reads_back(s: &Section, bytes: &[u8]) -> Result<(), GenerateError> {
-    let back = super::super::read_editable(bytes).map_err(GenerateError::Write)?;
+/// `back`, the package written, reads back with `s`'s page setup and its tables as they are.
+fn reads_back(s: &Section, back: &Document) -> Result<(), GenerateError> {
     let [b] = back.sections.as_slice() else { return Err(GenerateError::Write("the package reads back without its section".into())) };
     // The page borders by their typed value: what is read back holds the element written too
     let typed = |s: &Section| {
@@ -165,6 +169,32 @@ fn reads_back(s: &Section, bytes: &[u8]) -> Result<(), GenerateError> {
     }
     if !same_tables(&s.blocks, &b.blocks) {
         return Err(GenerateError::Unsupported("table formatting that is not its own"));
+    }
+    Ok(())
+}
+
+/// The definitions `back` read from the package written are `ours`, those written: every style (whether Word's read
+/// order leaves it as it was, and its run defaults), the default styles, the document defaults, the latent styles,
+/// the list definitions and lists, and the style links the paragraph styles' order decides, so text resolves as it
+/// did. The styles' order in the part is the writer's (new ones after the part's own, by id), which nothing resolves
+/// by but those links.
+fn definitions_read_back(ours: Option<&Resolvers>, back: Option<&Resolvers>) -> Result<(), GenerateError> {
+    let (Some(ours), Some(back)) = (ours, back) else { return Err(GenerateError::Write("the package reads back without its styles".into())) };
+    let (a, b) = (ours.cascade(), back.cascade());
+    let (x, y) = (&*a.styles, &*b.styles);
+    let entry_same = |e: &crate::format::StyleEntry, f: &crate::format::StyleEntry| {
+        *e.style == *f.style && e.origin == f.origin && e.frozen == f.frozen && e.word_run_defaults == f.word_run_defaults
+    };
+    let styles = x.styles.len() == y.styles.len() && x.styles.iter().all(|(id, e)| y.styles.get(id).is_some_and(|f| entry_same(e, f)));
+    let sheet = (&x.default_paragraph, &x.default_table, &x.default_character, &x.default_numbering)
+        == (&y.default_paragraph, &y.default_table, &y.default_character, &y.default_numbering)
+        && x.defaults == y.defaults
+        && x.latent == y.latent;
+    if !styles || !sheet {
+        return Err(GenerateError::Unsupported("styles that read back otherwise"));
+    }
+    if *a.lists != *b.lists || a.style_links != b.style_links {
+        return Err(GenerateError::Unsupported("lists that read back otherwise"));
     }
     Ok(())
 }

@@ -1,5 +1,6 @@
-//! Generated export: each fixture read, its source anchors dropped so every paragraph, table, row and section is
-//! written from the model, saved, read back and compared with the original. A report of what generation loses
+//! Generated export: each fixture read, its source anchors dropped so every paragraph, table, row and section, and
+//! every style, document default, latent style, list definition, list and picture bullet is written from the model,
+//! saved, read back and compared with the original. A report of what generation loses
 //! today, not a gate: `TWIP_STRIPPED_OUT=file` writes it
 
 use std::fmt::Write;
@@ -9,9 +10,14 @@ use super::super::clipboard::fresh;
 use super::super::inspect::inspect;
 use super::fonts;
 
-/// The document with no source anchors: blocks as a paste writes them, sections without their as-read page.
+/// The document with no source anchors: blocks as a paste writes them, sections without their as-read page,
+/// definitions with nothing as read.
 fn stripped(d: &crate::docx::Document) -> crate::docx::Document {
     let mut d = d.clone();
+    d.resolver = d.resolver.map(|r| {
+        let t = r.typed();
+        std::rc::Rc::new(r.unanchored(t.styles.root.clone(), t.numbering.root.clone()))
+    });
     for s in &mut d.sections {
         s.blocks = s.blocks.iter().map(fresh).collect();
         s.read = None;

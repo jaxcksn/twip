@@ -516,6 +516,32 @@ impl Resolvers {
         self.typed = Rc::new(TypedDefs { cascade: Rc::new(c), ..(*self.typed).clone() });
     }
 
+    /// These definitions with nothing as read: each style, the defaults, the latent styles, each definition, list and
+    /// picture bullet written from its typed value, in parts whose roots are `styles_root` and `numbering_root`.
+    pub fn unanchored(&self, styles_root: Rc<str>, numbering_root: String) -> Resolvers {
+        let t = &self.typed;
+        let mut part = (*t.styles).clone();
+        part.root = styles_root;
+        for d in part.styles.values_mut() {
+            *d = StyleDef::typed(d.get().clone());
+        }
+        part.defaults = part.defaults.as_ref().map(|d| DefaultsDef::typed(d.get().clone()));
+        part.latent = part.latent.as_ref().map(|d| LatentDef::typed(d.get().clone()));
+        let mut numbering = (*t.numbering).clone();
+        numbering.root = numbering_root;
+        for d in numbering.defs.values_mut() {
+            *d = ListDefDirect::typed(d.get().clone());
+        }
+        for d in numbering.lists.values_mut() {
+            *d = ListDirect::typed(d.get().clone());
+        }
+        for d in numbering.pictures.values_mut() {
+            *d = PictureDirect::typed(d.get().clone());
+        }
+        let defs = TypedDefs { styles: Rc::new(part), numbering: Rc::new(numbering), ..(**t).clone() };
+        Resolvers { typed: Rc::new(defs) }
+    }
+
     /// The styles, to edit.
     pub fn style_edits(&mut self) -> StyleEdits<'_> {
         StyleEdits(self)
