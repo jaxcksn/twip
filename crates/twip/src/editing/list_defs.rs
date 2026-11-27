@@ -28,6 +28,11 @@ use super::commands::Outcome;
 use super::step::Step;
 use crate::document::paragraph::{ListId, ListRef};
 
+#[cfg(test)]
+mod tests;
+#[cfg(test)]
+mod xml;
+
 /// A list level's number or bullet formatting of its own (`None`: not set, so the paragraph's applies). The font is
 /// the level's [`ListLevel::font`].
 #[derive(Clone, Debug, Default, PartialEq)]
