@@ -42,7 +42,20 @@ impl ControlId {
     }
 }
 
-/// A new paragraph id (unique in the process). Fields, controls, tables and floats draw from the same counter.
+/// A header's or footer's identity: process-local, kept through edits, undo and redo; new on every read. A read
+/// numbers its headers and footers in the order its format keeps them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct HeaderFooterId(pub u64);
+
+impl HeaderFooterId {
+    /// A new id (unique in the process, after every id before it).
+    pub fn next() -> HeaderFooterId {
+        HeaderFooterId(next_para_id())
+    }
+}
+
+/// A new paragraph id (unique in the process). Fields, controls, headers and footers, tables and floats draw from the
+/// same counter.
 pub fn next_para_id() -> u64 {
     static NEXT: AtomicU64 = AtomicU64::new(1);
     NEXT.fetch_add(1, Ordering::Relaxed)
@@ -50,11 +63,11 @@ pub fn next_para_id() -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{ControlId, FieldId, next_para_id};
+    use super::{ControlId, FieldId, HeaderFooterId, next_para_id};
 
     #[test]
     fn ids_come_from_one_counter_and_are_never_reused() {
-        let (a, f, c, b) = (next_para_id(), FieldId::next(), ControlId::next(), next_para_id());
-        assert!(a < f.0 && f.0 < c.0 && c.0 < b);
+        let (a, f, c, h, b) = (next_para_id(), FieldId::next(), ControlId::next(), HeaderFooterId::next(), next_para_id());
+        assert!(a < f.0 && f.0 < c.0 && c.0 < h.0 && h.0 < b);
     }
 }
