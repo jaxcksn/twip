@@ -147,9 +147,9 @@ impl TextEnv {
             compress_punctuation: s.compress_punctuation,
             review: doc.review.clone(),
             line_grid: None,
-            default_east_asia: doc.resolver.as_ref().and_then(|r| match &r.styles.doc_rpr.east_asia {
-                Some(crate::docx::props::FontRef::Theme(t)) if r.theme.ea_unset(t) => Some("".into()),
-                f => r.font(f).map(Into::into),
+            default_east_asia: doc.resolver.as_ref().and_then(|r| {
+                let c = r.cascade();
+                crate::format::resolve::default_east_asian(&c.theme, &c.doc_char().fonts.east_asian).map(Into::into)
             }),
             adjust_line_height_in_table: s.policy.adjust_line_height_in_table,
             theme: doc.theme.clone(),

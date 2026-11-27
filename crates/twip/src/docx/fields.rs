@@ -1072,9 +1072,10 @@ pub(crate) fn field_changes(doc: &Document, now: i64) -> (Vec<FieldChange>, Vec<
                     notes.entry(name.to_string()).or_insert(n);
                 }
                 if let (Some(r), Some(first)) = (resolver.as_deref(), first) {
-                    let mut base = r.styles.doc_rpr.clone();
-                    base.merge_level(&r.styles.chain_rpr(r.styles.paragraph_style(p.style.style_id.as_deref())));
-                    sources.entry(name.to_string()).or_insert((first.clone(), r.run_style(&base)));
+                    let c = r.cascade();
+                    let mut base = c.doc_char().clone();
+                    base.merge_level(&c.chain_char(c.paragraph_style(p.style.style_id.as_deref())));
+                    sources.entry(name.to_string()).or_insert((first.clone(), std::rc::Rc::new(c.run_style(&base))));
                 }
             });
             if !mark_at.is_empty() {

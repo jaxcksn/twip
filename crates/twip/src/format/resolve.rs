@@ -156,6 +156,15 @@ fn east_asian_unset(fonts: &ThemeFonts, f: &FontRef) -> bool {
     }
 }
 
+/// The East Asian family a level's East Asian font `f` names: none for an East Asian theme font whose slot has no
+/// typeface (empty).
+pub fn default_east_asian(fonts: &ThemeFonts, f: &Option<FontRef>) -> Option<String> {
+    match f {
+        Some(t) if east_asian_unset(fonts, t) => Some(String::new()),
+        f => family(fonts, f),
+    }
+}
+
 fn family(fonts: &ThemeFonts, f: &Option<FontRef>) -> Option<String> {
     match f {
         Some(FontRef::Theme { face, script }) => Some(theme_family(fonts, *face, *script)),
