@@ -250,7 +250,7 @@ fn a_font_size_past_words_limit_is_refused_wherever_it_comes_from() {
     let d = crate::api::command::DocumentDefaults { size: Some(Points(1e30)), ..Default::default() };
     assert!(matches!(e.execute(C::SetDocumentDefaults(d), fonts()), super::super::commands::Outcome::Refused(_)));
     let normal = e.document().resolver.as_ref().expect("styles").styles.get("Normal").expect("Normal").raw.clone();
-    assert!(e.format_style(&normal, vec![C::SetFontSize(Points(1e12))], fonts()).is_err());
+    assert!(e.format_style_xml(&normal, vec![C::SetFontSize(Points(1e12))], fonts()).is_err());
     let line = crate::api::command::Border {
         style: crate::api::command::BorderStyle::Single,
         width: Points(1e6),

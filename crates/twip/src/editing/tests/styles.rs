@@ -89,7 +89,7 @@ fn formatting_commands_edit_a_style_and_leave_the_document_alone() {
         C::SetAlignment(Alignment::Center),
         C::AddTabStop(AddTabStop { position: Points(144.0), alignment: None, leader: None }),
     ];
-    let xml = e.format_style(&raw, commands, fonts()).expect("formats the style");
+    let xml = e.format_style_xml(&raw, commands, fonts()).expect("formats the style");
     for part in [
         "<w:sz w:val=\"40\"/>",
         "<w:i/>",
@@ -102,7 +102,7 @@ fn formatting_commands_edit_a_style_and_leave_the_document_alone() {
         assert!(xml.contains(part), "{part} in {xml}");
     }
     assert_eq!((e.revision(), formatting(&e)), (revision, before), "the document didn't change");
-    assert!(e.format_style(&raw, vec![C::InsertText("x".into())], fonts()).is_err(), "only formatting commands");
+    assert!(e.format_style_xml(&raw, vec![C::InsertText("x".into())], fonts()).is_err(), "only formatting commands");
     e.edit_styles("Modify Style", |s| s.set_xml(xml), fonts());
     let heading = formatting(&e).into_iter().find(|f| f.starts_with("FX-STYLES")).expect("the heading");
     assert!(heading.contains("Center") && heading.contains("20/None/true/true"), "{heading}");
@@ -113,7 +113,7 @@ fn a_character_style_takes_character_formatting() {
     use crate::api::command::Command as C;
     let mut e = fixture();
     let raw = e.document().resolver.as_ref().expect("styles").styles.get("Emph").expect("Emph").raw.clone();
-    let xml = e.format_style(&raw, vec![C::SetBold(true), C::SetItalic(false)], fonts()).expect("formats it");
+    let xml = e.format_style_xml(&raw, vec![C::SetBold(true), C::SetItalic(false)], fonts()).expect("formats it");
     assert!(xml.contains("<w:b/>") && xml.contains("<w:i w:val=\"0\"/>"), "{xml}");
 }
 

@@ -343,9 +343,18 @@ fn name_error(e: NameRefusal) -> Error {
 type Written = Vec<String>;
 
 impl Editor {
-    /// The formatting state of text in a style's XML: what a style definition reads.
+    /// The formatting state of text in a style's XML, as the API carries a style being edited: what a style
+    /// definition reads.
     pub fn style_formatting_state(&self, raw: &str) -> Option<(CharacterFormatting, ParagraphFormatting, Vec<crate::api::services::TabStopInfo>)> {
-        let (para, run, _) = self.style_formatting(raw)?;
+        self.formatting_state_of(&self.style_of_xml(raw)?)
+    }
+
+    /// The formatting state of text in a style: what a style definition reads.
+    pub(super) fn formatting_state_of(
+        &self,
+        def: &crate::docx::style_xml::StyleDef,
+    ) -> Option<(CharacterFormatting, ParagraphFormatting, Vec<crate::api::services::TabStopInfo>)> {
+        let (para, run, _) = self.style_text(def)?;
         let tabs: Vec<_> =
             para.style.tabs.iter().filter(|t| t.kind != crate::docx::props::TabKind::Clear).map(|t| super::commands::tabs::info(t, false)).collect();
         // Its list, its own or a base style's: bulleted or numbered
@@ -435,8 +444,8 @@ impl Editor {
                 continue;
             }
             let end = commands[k..].iter().position(table_command).map_or(commands.len(), |e| k + e);
-            self.style_part = region;
-            let out = self.format_style(&raw, commands[k..end].to_vec(), fonts);
+            self.style_part = crate::docx::style_xml::region_kind(region);
+            let out = self.format_style_xml(&raw, commands[k..end].to_vec(), fonts);
             self.style_part = None;
             raw = out?;
             k = end;
@@ -707,7 +716,7 @@ impl Editor {
             StyleKind::Table => styles.default_table.as_deref().map(str::to_string),
             StyleKind::Numbering => None,
         };
-        let (ppr, rpr) = if new.from_selection { self.selection_formatting() } else { (None, None) };
+        let (ppr, rpr) = if new.from_selection { self.selection_formatting_xml() } else { (None, None) };
         let (ppr, rpr) = match kind {
             StyleKind::Paragraph => (ppr, rpr),
             StyleKind::Character => (None, rpr),

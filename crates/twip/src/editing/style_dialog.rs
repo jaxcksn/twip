@@ -174,7 +174,7 @@ impl Editor {
                 let name = next_new_name(styles);
                 let para = self.selection.focus().and_then(|p| p.para_offset()).and_then(|(p, _)| self.index.para(&self.doc, p));
                 let base = para.and_then(|p| p.style.style_id.clone()).or_else(|| styles.default_paragraph.as_deref().map(str::to_string));
-                let (ppr, rpr) = self.selection_formatting();
+                let (ppr, rpr) = self.selection_formatting_xml();
                 let base = base.map_or(String::new(), |b| format!("<{w}basedOn {w}val=\"{}\"/>", esc(&b)));
                 format!(
                     "<{w}style {w}type=\"paragraph\" {w}customStyle=\"1\" {w}styleId=\"{id}\"><{w}name {w}val=\"{n}\"/>{base}<{w}next {w}val=\"{id}\"/><{w}qFormat/>{}{}</{w}style>",
@@ -335,8 +335,8 @@ impl Editor {
         }
         // A table style's part: the formatting commands, fill, alignment and border edit it.
         let region = if table { was.table_part.region() } else { None };
-        self.style_part = region;
-        let formatted = if commands.is_empty() { Ok(was.pending.clone()) } else { self.format_style(&was.pending, commands, fonts) };
+        self.style_part = crate::docx::style_xml::region_kind(region);
+        let formatted = if commands.is_empty() { Ok(was.pending.clone()) } else { self.format_style_xml(&was.pending, commands, fonts) };
         self.style_part = None;
         let mut pending = formatted?;
         if table {
@@ -540,8 +540,8 @@ impl Editor {
     /// The style dialog after a Format menu dialog's commands: the style's XML changed by them, and the values read
     /// again.
     pub fn style_dialog_format(&mut self, v: &StyleDialog, commands: Vec<Command>, fonts: &Fonts) -> Result<StyleDialog, Error> {
-        self.style_part = if v.kind == StyleDialogType::Table { v.table_part.region() } else { None };
-        let formatted = self.format_style(&v.pending, commands, fonts);
+        self.style_part = if v.kind == StyleDialogType::Table { crate::docx::style_xml::region_kind(v.table_part.region()) } else { None };
+        let formatted = self.format_style_xml(&v.pending, commands, fonts);
         self.style_part = None;
         let pending = formatted?;
         self.doc.resolver.as_ref().ok_or_else(|| Error::unavailable("no styles"))?;

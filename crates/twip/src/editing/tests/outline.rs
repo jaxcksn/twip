@@ -645,7 +645,7 @@ fn headings_in_a_text_box_move_delete_and_change_level_in_their_story() {
 #[test]
 fn a_style_being_edited_keeps_the_pane_s_outline_off_the_document() {
     let mut e = outline();
-    e.style_target = Some(String::new());
+    e.style_target = Some(crate::editing::styles::StyleTarget::of(Default::default()));
     let b = id(&e, "B");
     assert!(matches!(e.change_heading_outline(b, OutlineChange::Promote, true, fonts()), Outcome::Refused(_)));
     e.style_target = None;

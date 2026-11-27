@@ -48,7 +48,8 @@ pub fn generate(doc: &Document) -> Result<Vec<u8>, GenerateError> {
     let mut res = res.clone();
     // Application defaults: empty written ones.
     if res.typed().styles.defaults.is_none() {
-        res.set_defaults_xml(format!("<{}docDefaults/>", cx.w)).map_err(|_| GenerateError::Write("the defaults don't read".into()))?;
+        let empty = super::super::style_xml::DefaultsDef::typed(Rc::default());
+        res.set_defaults(empty).map_err(|_| GenerateError::Write("the defaults don't read".into()))?;
     }
     let edited = section.read.as_deref().is_some_and(|was| *was != section.page())
         || (section.line_grid, section.rtl_gutter) != (blank.sections[0].line_grid, blank.sections[0].rtl_gutter);

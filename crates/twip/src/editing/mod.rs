@@ -352,10 +352,10 @@ pub struct Editor {
     balloon_lookups: usize,
     #[cfg(test)]
     mark_builds: usize,
-    /// A style's XML that formatting commands edit instead of the selection ([`Editor::format_style`]).
-    style_target: Option<String>,
+    /// The style formatting commands edit instead of the selection ([`Editor::format_style`]).
+    style_target: Option<styles::StyleTarget>,
     /// The table style part formatting commands edit, when they edit a table style.
-    style_part: Option<&'static str>,
+    style_part: Option<crate::format::RegionKind>,
     /// The list numbers a click selected.
     list_label: Option<list_labels::LabelHold>,
     /// A list level's number formatting that character formatting commands edit instead of the selection
