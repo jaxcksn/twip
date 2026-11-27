@@ -1434,7 +1434,7 @@ fn typed_cascade_gives_what_the_resolver_gives() {
 /// fixture's styles part work out again alike what depends on the styles together.
 #[test]
 fn style_edits_work_the_read_order_rule_out_again_alike() {
-    let (mut sets, mut deletes) = (0, 0);
+    let (mut sets, mut deletes, mut loops) = (0, 0, 0);
     for (what, xml, colours) in styles_parts() {
         let mut frozen = Styles::parse(Some(&xml), colours);
         let mut typed = StylesPart::parse(Some(&xml));
@@ -1454,9 +1454,26 @@ fn style_edits_work_the_read_order_rule_out_again_alike() {
             let edited = held.edited(s, &[StyleSet::Style(StyleProp::BasedOn)]);
             let raw = edited.xml(&colours, &cx).into_owned();
             frozen.set_xml(raw).unwrap_or_else(|e| panic!("{what}: {e:?}"));
-            typed.set(edited, &colours);
+            typed.set(edited, &colours).unwrap_or_else(|e| panic!("{what}: {e:?}"));
             style_xml_tests::sheet_matches(&frozen, &typed, &colours, &format!("{what}: {id} based on {last:?}"));
             sets += 1;
+        }
+        // Each style based on one of its dependants: refused alike, nothing changed
+        let c = Cascade::new(Rc::new(typed.sheet.clone()), Rc::default(), Default::default(), colours, Rules::default());
+        for id in &order {
+            let Some(dependant) = c.dependants(id).into_iter().find(|d| d != id) else { continue };
+            let held = &typed.styles[id];
+            let mut s = (**held.get()).clone();
+            s.based_on = Some(dependant.clone());
+            let edited = held.edited(s, &[StyleSet::Style(StyleProp::BasedOn)]);
+            let raw = edited.xml(&colours, &cx).into_owned();
+            let before = style_xml_tests::written(&typed, &colours);
+            let frozen_set = frozen.set_xml(raw);
+            let typed_set = typed.set(edited, &colours);
+            assert_eq!(typed_set, frozen_set.map(|_| ()), "{what}: {id} based on {dependant}");
+            assert!(typed_set.is_err(), "{what}: {id} based on {dependant} loops");
+            assert_eq!(style_xml_tests::written(&typed, &colours), before, "{what}: a refused set changes nothing");
+            loops += 1;
         }
         // The style the most others are based on, and the first table style
         let based = |id: &str| typed.sheet.styles.values().filter(|e| e.style.based_on.as_deref() == Some(id)).count();
@@ -1471,8 +1488,8 @@ fn style_edits_work_the_read_order_rule_out_again_alike() {
             deletes += 1;
         }
     }
-    eprintln!("{sets} table styles based anew, {deletes} styles deleted");
-    assert!(sets > 300 && deletes > 300, "only {sets} styles based anew and {deletes} deleted");
+    eprintln!("{sets} table styles based anew, {loops} loops refused, {deletes} styles deleted");
+    assert!(sets > 300 && deletes > 300 && loops > 100, "only {sets} styles based anew and {deletes} deleted");
 }
 
 /// After each style, defaults, list and font edit, its undo and its redo, the document's carried typed definitions

@@ -30,7 +30,7 @@ use super::char_props::{self, RprRevisions};
 use super::para_props::{self, Owned};
 use super::prop_xml::{Compare, Out, Sink, foreign_child, props_key, reread, strip, with_attr};
 use super::props::{self as xml_props, ThemeColours};
-use super::styles;
+use super::styles::{self, StyleEditError};
 use super::table_props::{self as tp, CellDirect, RowDirect, TableDirect};
 use super::write::props::{Cx, STYLE};
 use super::xml::{W, attr, child, children, is_w, on_off, on_off_str, val};
@@ -1555,11 +1555,31 @@ impl StylesPart {
     }
 
     /// `def` in place of the style with its id (at its place in the part, from its part), or added after the styles
-    /// read; then what depends on the styles together worked out again.
-    pub fn set(&mut self, def: StyleDef, colours: &ThemeColours) {
+    /// read; then what depends on the styles together worked out again. Refused, changing nothing, when it would be
+    /// based on itself through the styles as they are ([`Self::loops`]).
+    pub fn set(&mut self, def: StyleDef, colours: &ThemeColours) -> Result<(), StyleEditError> {
+        if self.loops(def.get()) {
+            return Err(StyleEditError::Loop);
+        }
         let id = def.get().id.clone();
         self.put(def);
         self.refinish(colours, Some(&[&id]));
+        Ok(())
+    }
+
+    /// Whether `s` would be based on itself: its bases through the sheet's styles (Word's built-in default table
+    /// style without one, as the last working out left it) reach its id, or go past 32 of them.
+    pub fn loops(&self, s: &Style) -> bool {
+        let mut base = s.based_on.as_deref();
+        let mut hops = 0;
+        while let Some(b) = base {
+            if b == &*s.id || hops > 32 {
+                return true;
+            }
+            base = self.sheet.styles.get(b).and_then(|e| e.style.based_on.as_deref().filter(|_| !e.style.word_default_table()));
+            hops += 1;
+        }
+        false
     }
 
     fn put(&mut self, def: StyleDef) {

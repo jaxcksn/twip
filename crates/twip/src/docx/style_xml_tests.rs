@@ -465,7 +465,7 @@ fn table_styles_read_in_any_order_work_out_alike_after_edits() {
         r#"<w:tblPr><w:tblInd w:w="10" w:type="dxa"/></w:tblPr><w:tblStylePr w:type="band1Horz"><w:tcPr><w:noWrap/></w:tcPr></w:tblStylePr>"#,
         r#"<w:pPr><w:jc w:val="center"/></w:pPr><w:rPr><w:sz w:val="30"/></w:rPr>"#,
     ];
-    let mut n = 0;
+    let (mut n, mut refused) = (0, 0);
     let normal = r#"<w:docDefaults><w:rPrDefault><w:rPr><w:sz w:val="22"/></w:rPr></w:rPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:rPr><w:sz w:val="24"/></w:rPr></w:style>"#;
     for code in 0..4 * 27 * 27 {
         let (named, bases, kinds) = (code % 4, code / 4 % 27, code / 108);
@@ -484,11 +484,16 @@ fn table_styles_read_in_any_order_work_out_alike_after_edits() {
             let id = format!("T{k}");
             let (mut f, mut t) = (frozen.clone(), typed.clone());
             let raw = t.styles[id.as_str()].xml(&colours, &t.cx()).into_owned();
-            if f.set_xml(raw.clone()).is_ok() {
-                t.set(StyleDef::from_xml(&raw, &t.cx()), &colours);
+            let frozen_set = f.set_xml(raw.clone());
+            let typed_set = t.set(StyleDef::from_xml(&raw, &t.cx()), &colours);
+            assert_eq!(typed_set.err(), frozen_set.err().filter(|e| *e == super::styles::StyleEditError::Loop), "{xml}: {id} set: refused alike");
+            if typed_set.is_ok() {
                 sheet_matches(&f, &t, &colours, &format!("{xml}: {id} set"));
                 cascades_alike(&f, &t, &colours, &format!("{xml}: {id} set"));
                 n += 1;
+            } else {
+                assert_eq!(written(&t, &colours), written(&typed, &colours), "{xml}: {id}: a refused set changes nothing");
+                refused += 1;
             }
             let (mut f, mut t) = (frozen.clone(), typed.clone());
             if f.delete(&id).is_ok() {
@@ -500,6 +505,7 @@ fn table_styles_read_in_any_order_work_out_alike_after_edits() {
         }
     }
     assert!(n > 4000, "only {n} edits");
+    assert!(refused > 0, "no loop refused");
 }
 
 /// The typed cascade of `typed` gives what the XML path's styles `frozen` give for every style's chain and folds, and
@@ -521,4 +527,84 @@ fn cascades_alike(frozen: &Styles, typed: &StylesPart, colours: &ThemeColours, w
         }
     }
     regions_match(&frozen.table_region(None, &[]), &c.table_region(None, &[]), colours, &format!("{what}: no style"));
+}
+
+/// What `p` writes and holds: each style's element as it writes it and its place in the sheet, in order, the paragraph
+/// styles' order, the default styles, the defaults and latent styles as written.
+pub(crate) fn written(p: &StylesPart, colours: &ThemeColours) -> String {
+    let cx = p.cx();
+    let mut out = String::new();
+    for e in p.sheet.in_order() {
+        let xml = p.styles.get(&e.style.id).map(|d| d.xml(colours, &cx).into_owned()).unwrap_or_default();
+        let ptr = p.styles.get(&e.style.id).is_none_or(|d| Rc::ptr_eq(d.get(), &e.style));
+        out += &format!("{xml} {:?} {:?} {} {} {ptr}\n", e.order, e.origin, e.frozen, e.word_run_defaults);
+    }
+    let sheet = &p.sheet;
+    out += &format!(
+        "{:?} {:?} {:?} {:?} {:?}\n",
+        sheet.paragraph_order, sheet.default_paragraph, sheet.default_table, sheet.default_character, sheet.default_numbering
+    );
+    if let Some(d) = &p.defaults {
+        out += &d.xml(colours, &cx);
+    }
+    if let Some(l) = &p.latent {
+        out += &l.xml(colours, &cx);
+    }
+    out
+}
+
+/// `styles` (a part's `w:style` elements) with style `id` set from `xml`: the typed set and the XML path's agree on
+/// refusing it, and a refused one leaves the part as it was.
+fn set_alike(styles: &str, xml: &str) -> Result<(), super::styles::StyleEditError> {
+    let colours = ThemeColours::default();
+    let (mut frozen, mut typed) = both(&part(styles), &colours);
+    let before = written(&typed, &colours);
+    let frozen_set = frozen.set_xml(xml.to_string());
+    let typed_set = typed.set(StyleDef::from_xml(xml, &typed.cx()), &colours);
+    assert_eq!(typed_set, frozen_set.map(|_| ()), "{xml}: refused alike");
+    match typed_set {
+        Ok(()) => sheet_matches(&frozen, &typed, &colours, xml),
+        Err(_) => {
+            assert_eq!(written(&typed, &colours), before, "{xml}: a refused set changes nothing");
+            SheetCounts::default()
+        }
+    };
+    typed_set
+}
+
+fn para(id: &str, base: Option<&str>) -> String {
+    let base = base.map(|b| format!(r#"<w:basedOn w:val="{b}"/>"#)).unwrap_or_default();
+    format!(r#"<w:style w:type="paragraph" w:styleId="{id}"><w:name w:val="{id}"/>{base}</w:style>"#)
+}
+
+#[test]
+fn a_style_based_on_itself_is_refused() {
+    use super::styles::StyleEditError::Loop;
+    assert_eq!(set_alike(&para("A", None), &para("A", Some("A"))), Err(Loop));
+    assert_eq!(set_alike(&(para("A", None) + &para("B", Some("A"))), &para("A", Some("B"))), Err(Loop), "two styles");
+    let three = para("A", None) + &para("B", Some("A")) + &para("C", Some("B"));
+    assert_eq!(set_alike(&three, &para("A", Some("C"))), Err(Loop), "three styles");
+    assert_eq!(set_alike(&three, &para("C", Some("A"))), Ok(()), "a legal base");
+    assert_eq!(set_alike(&three, &para("A", Some("Missing"))), Ok(()), "a base not defined");
+    assert_eq!(set_alike(&three, &para("D", Some("C"))), Ok(()), "a new style");
+}
+
+#[test]
+fn a_chain_past_32_bases_is_refused() {
+    use super::styles::StyleEditError::Loop;
+    let chain = |n: usize| (0..n).map(|k| para(&format!("S{k}"), (k > 0).then(|| format!("S{}", k - 1)).as_deref())).collect::<String>();
+    // The new style's base, then 32 more
+    assert_eq!(set_alike(&chain(33), &para("New", Some("S32"))), Ok(()));
+    assert_eq!(set_alike(&chain(34), &para("New", Some("S33"))), Err(Loop));
+}
+
+#[test]
+fn a_refused_set_leaves_the_part_as_it_was() {
+    let colours = ThemeColours::default();
+    let styles = para("A", None) + &para("B", Some("A"));
+    let typed = StylesPart::parse(Some(&part(&styles)));
+    let mut t = typed.clone();
+    assert!(t.set(StyleDef::from_xml(&para("A", Some("B")), &t.cx()), &colours).is_err());
+    assert_eq!(written(&t, &colours), written(&typed, &colours));
+    assert!(Rc::ptr_eq(&t.sheet.styles["A"].style, &typed.sheet.styles["A"].style), "the sheet's style kept");
 }
