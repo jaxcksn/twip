@@ -303,7 +303,7 @@ pub struct Editor {
     events: Vec<input::Notice>,
     made: Option<crate::api::command::CommandResult>,
     pending_controls: Vec<(crate::docx::ControlId, crate::docx::Control)>,
-    pending_images: Vec<Vec<u8>>,
+    pending_images: crate::docx::Resources,
     /// The editable ranges as of a [`Editor::perm_generation`] ([`Editor::editable_ranges`]).
     editable_cache: std::cell::RefCell<Option<(u64, Rc<protection::EditableRanges>)>>,
     /// Counts the steps that can have changed the editable ranges.
@@ -554,7 +554,7 @@ impl Editor {
             events: Vec::new(),
             made: None,
             pending_controls: Vec::new(),
-            pending_images: Vec::new(),
+            pending_images: Default::default(),
             editable_cache: Default::default(),
             perm_generation: 0,
             editing_groups: Vec::new(),
@@ -940,9 +940,8 @@ impl Editor {
         self.layout.hyphenation()
     }
 
-    fn pending_image(&mut self, data: Vec<u8>) -> usize {
-        self.pending_images.push(data);
-        self.doc.images.len() + self.pending_images.len() - 1
+    fn pending_image(&mut self, data: Vec<u8>) -> crate::docx::ResourceId {
+        self.pending_images.add(data)
     }
 
     fn refuse_read_only(&mut self) -> Outcome {
@@ -1438,7 +1437,7 @@ impl Editor {
         self.selection = tx.before.selection;
         self.restore_aside();
         self.pending_controls.clear();
-        self.pending_images.clear();
+        self.pending_images = Default::default();
         self.perm_generation += 1;
         for s in tx.undo.into_iter().rev() {
             let _ = s.apply(&mut self.doc, &mut self.index);
@@ -1496,9 +1495,8 @@ impl Editor {
         for (id, c) in std::mem::take(&mut self.pending_controls) {
             let _ = self.step(tx, Step::Control { id, control: Some(c) });
         }
-        for data in std::mem::take(&mut self.pending_images) {
-            let index = self.doc.images.len();
-            let _ = self.apply_step(tx, Step::AddImage { index, data: Some(data) });
+        for (image, data) in std::mem::take(&mut self.pending_images) {
+            let _ = self.apply_step(tx, Step::AddImage { image, data: Some(data) });
         }
         let mut edited: Vec<ParaId> = tx.undo.iter().filter_map(|s| if let Step::Text { para, .. } = s { Some(*para) } else { None }).collect();
         let mut seen = std::collections::HashSet::with_capacity(edited.len());

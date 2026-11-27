@@ -1824,7 +1824,7 @@ pub(crate) mod tests {
         let again = serialize_picture(held.get(), &ThemeColours::default(), &cx);
         assert_eq!(again, x);
         let mut with_image = (**held.get()).clone();
-        with_image.image = Some(3);
+        with_image.image = Some(crate::docx::ResourceId(3));
         assert_eq!(held.edited(with_image, &[]).as_read().map(|x| &**x), Some(x.as_str()), "its image isn't written");
     }
 

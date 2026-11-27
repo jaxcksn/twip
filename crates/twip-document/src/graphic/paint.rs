@@ -3,6 +3,7 @@
 use super::colour::{Colour, ColourBase, ColourMod, Rgba, TWO_STOP_BLEND, linear_to_srgb};
 use super::theme::{ColourMap, Theme};
 use super::units::{Angle, Emu, Pct};
+use crate::ident::ResourceId;
 
 // Fills
 
@@ -144,8 +145,8 @@ pub enum BlipAdjust {
 /// A picture fill.
 #[derive(Clone, Debug, PartialEq)]
 pub struct BlipFill {
-    /// The picture, an index into the document's images; `None` for one that couldn't be read.
-    pub image: Option<usize>,
+    /// The picture, a resource of the document's; `None` for one that couldn't be read.
+    pub image: Option<ResourceId>,
     /// The crop, as insets from the picture's left, top, right and bottom (negative ones pad it).
     pub src: [Pct; 4],
     /// How it fills its box.
@@ -600,8 +601,8 @@ pub enum Paint {
     },
     /// A picture.
     Picture {
-        /// The picture, an index into the document's images.
-        image: Option<usize>,
+        /// The picture, a resource of the document's.
+        image: Option<ResourceId>,
         /// The crop, as insets from the picture's left, top, right and bottom.
         src: [Pct; 4],
         /// How it fills its box.

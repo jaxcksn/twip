@@ -446,7 +446,7 @@ impl Resolvers {
     }
 
     /// Adds picture bullet `id` from its `w:numPicBullet` XML, its image read through relationship `rel` at `image`.
-    pub fn add_picture(&mut self, id: i64, raw: String, rel: String, image: usize) {
+    pub fn add_picture(&mut self, id: i64, raw: String, rel: String, image: crate::docx::ResourceId) {
         let _ = rel;
         if let Some(d) = PictureDirect::from_xml(&raw, &self.typed.numbering.cx()) {
             let mut v = (**d.get()).clone();
@@ -459,8 +459,8 @@ impl Resolvers {
         }
     }
 
-    /// Gives picture bullets their images as read: each id with its image's index in the document's images.
-    pub fn set_picture_images(&mut self, images: &[(i64, usize)]) {
+    /// Gives picture bullets their images as read: each id with its image in the document's images.
+    pub fn set_picture_images(&mut self, images: &[(i64, crate::docx::ResourceId)]) {
         if images.is_empty() {
             return;
         }
@@ -633,7 +633,7 @@ impl NumberingEdits<'_> {
     }
 
     /// [`Resolvers::add_picture`].
-    pub fn add_picture(&mut self, id: i64, raw: String, rel: String, image: usize) {
+    pub fn add_picture(&mut self, id: i64, raw: String, rel: String, image: crate::docx::ResourceId) {
         self.0.add_picture(id, raw, rel, image);
     }
 }

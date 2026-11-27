@@ -94,7 +94,7 @@ fn an_arrow_with_a_cell_range_selected_collapses_to_a_caret() {
 
 #[test]
 fn an_arrow_with_an_inline_picture_selected_steps_off_it() {
-    let data = open("FX-OBJ.docx").document().images.last().cloned().expect("an image");
+    let data = open("FX-OBJ.docx").document().images.last().map(|(_, d)| d.to_vec()).expect("an image");
     let mut e = Editor::open(&blank_body(r#"<w:p><w:r><w:t>text</w:t></w:r></w:p>"#), fonts()).expect("opens");
     let p = para_id(&e, 0);
     e.set_caret_for_benchmark(Selection::Caret(Position::text(StoryId::Body, p, Unit(2))));
@@ -110,7 +110,7 @@ fn an_arrow_with_an_inline_picture_selected_steps_off_it() {
 
 #[test]
 fn page_down_with_nowhere_to_go_keeps_an_object_selected() {
-    let data = open("FX-OBJ.docx").document().images.last().cloned().expect("an image");
+    let data = open("FX-OBJ.docx").document().images.last().map(|(_, d)| d.to_vec()).expect("an image");
     let sec = r#"<w:sectPr><w:headerReference w:type="default" r:id="rIdH"/><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr>"#;
     let mut e = super::stories::package(&format!("<w:p><w:r><w:t>body</w:t></w:r></w:p>{sec}"), Some(Some("<w:p><w:r><w:t>head</w:t></w:r></w:p>")));
     e.edit_header_footer(Some(0), false, fonts());

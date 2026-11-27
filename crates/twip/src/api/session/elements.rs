@@ -425,7 +425,7 @@ mod tests {
         let all = unfilled(s);
         assert!(!all.is_empty(), "{all:?}");
         let obj = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-OBJ.docx")).expect("fixture");
-        let png = crate::docx::read(&obj).expect("reads").images.last().cloned().expect("an image");
+        let png = crate::docx::read(&obj).expect("reads").images.last().map(|(_, d)| d.to_vec()).expect("an image");
         let fill = crate::api::command::FillControl {
             id: all[0].id.clone(),
             text: None,

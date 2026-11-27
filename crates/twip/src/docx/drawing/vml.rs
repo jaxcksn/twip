@@ -251,7 +251,7 @@ fn imagedata_adjust(d: Node) -> Vec<paint::BlipAdjust> {
 
 /// A `w:background`'s `v:background` fill over the page colour `page` (its first colour when it names none): its
 /// gradient, pattern or picture; `None` for a plain colour, which the page colour is.
-pub fn background_fill(background: Node, page: Option<u32>, image: &mut dyn FnMut(&str) -> Option<usize>) -> Option<Fill> {
+pub fn background_fill(background: Node, page: Option<u32>, image: &mut dyn FnMut(&str) -> Option<crate::docx::ResourceId>) -> Option<Fill> {
     let el = background.children().find(|c| is(*c, V, "background"))?;
     child(el, "fill")?;
     match fill_over(el, Colour::srgb(page.unwrap_or(0xFF_FFFF)), image) {
@@ -260,12 +260,12 @@ pub fn background_fill(background: Node, page: Option<u32>, image: &mut dyn FnMu
     }
 }
 
-fn fill(el: Node, image: &mut dyn FnMut(&str) -> Option<usize>) -> Fill {
+fn fill(el: Node, image: &mut dyn FnMut(&str) -> Option<crate::docx::ResourceId>) -> Fill {
     fill_over(el, Colour::srgb(0xFF_FFFF), image)
 }
 
 /// `el`'s fill, its first colour `dflt` when it names none.
-fn fill_over(el: Node, dflt: Colour, image: &mut dyn FnMut(&str) -> Option<usize>) -> Fill {
+fn fill_over(el: Node, dflt: Colour, image: &mut dyn FnMut(&str) -> Option<crate::docx::ResourceId>) -> Fill {
     let f = child(el, "fill");
     if !on(f.and_then(|f| f.attribute("on")).or(el.attribute("filled")), true) {
         return Fill::None;
@@ -1091,7 +1091,13 @@ fn element(el: Node, ctx: &mut Ctx) -> Option<Shape> {
     finish(el, &st, geom, rect, &mut image)
 }
 
-fn finish(el: Node, st: &Style, geom: Geometry, rect: Option<[f64; 4]>, image: &mut dyn FnMut(&str) -> Option<usize>) -> Option<Shape> {
+fn finish(
+    el: Node,
+    st: &Style,
+    geom: Geometry,
+    rect: Option<[f64; 4]>,
+    image: &mut dyn FnMut(&str) -> Option<crate::docx::ResourceId>,
+) -> Option<Shape> {
     let name = el.tag_name().name();
     let emu = |v: f64| Emu((v * 12700.0).round() as i64);
     let lines = matches!(name, "line" | "polyline" | "curve" | "arc");
@@ -1269,7 +1275,7 @@ mod tests {
     struct NoImages;
 
     impl super::super::read::Source for NoImages {
-        fn image(&mut self, _: &str) -> Option<usize> {
+        fn image(&mut self, _: &str) -> Option<crate::docx::ResourceId> {
             None
         }
 
@@ -1382,7 +1388,9 @@ mod tests {
     fn a_pattern_fill_draws_its_black_in_the_second_colour() {
         let xml =
             format!(r##"<v:rect xmlns:v="{V}" xmlns:r="{R}" fillcolor="#2e75b6"><v:fill type="pattern" r:id="rId1" color2="#ffe699"/></v:rect>"##);
-        let Fill::Blip(b) = super::fill(roxmltree::Document::parse(&xml).unwrap().root_element(), &mut |_| Some(0)) else { panic!() };
+        let Fill::Blip(b) = super::fill(roxmltree::Document::parse(&xml).unwrap().root_element(), &mut |_| Some(crate::docx::ResourceId(0))) else {
+            panic!()
+        };
         assert_eq!(b.adjust[0], paint::BlipAdjust::Duotone([Colour::srgb(0xFF_E699), Colour::srgb(0x2E_75B6)]));
         let paint::BlipMode::Tile { sx, sy, .. } = b.mode else { panic!() };
         assert_eq!((sx, sy), (Pct(100000), Pct(100000)), "a tile pixel to a pixel, as a picture tile");
@@ -1394,7 +1402,7 @@ mod tests {
             let xml = format!(
                 r#"<w:background xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:v="{V}" w:color="00FF00">{inner}</w:background>"#
             );
-            background_fill(roxmltree::Document::parse(&xml).unwrap().root_element(), Some(0x00_FF00), &mut |_| Some(2))
+            background_fill(roxmltree::Document::parse(&xml).unwrap().root_element(), Some(0x00_FF00), &mut |_| Some(crate::docx::ResourceId(2)))
         };
         assert_eq!(read(""), None);
         assert_eq!(read(r#"<v:background fillcolor="red"/>"#), None, "a colour alone is the page colour");

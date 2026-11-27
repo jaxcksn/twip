@@ -17,7 +17,7 @@ pub fn png(
     items: &[Item],
     fonts: &crate::font::Fonts,
     content_height: f64,
-    images: &[Vec<u8>],
+    images: &crate::docx::Resources,
     (width, height, scale): (f64, f64, f64),
     fit: bool,
     appearance: Appearance,
@@ -57,7 +57,7 @@ const MAX_OBJECT_SIDE: f64 = 4096.0;
 pub fn object_png(
     items: &[crate::layout::fragment::Clipped],
     fonts: &crate::font::Fonts,
-    images: &[Vec<u8>],
+    images: &crate::docx::Resources,
     max_pixels: u64,
 ) -> Option<(Vec<u8>, [u32; 2], [f64; 2])> {
     use twip_graphics::scene::Clip;

@@ -11,7 +11,7 @@ use crate::drawing::paint::{
 };
 use crate::drawing::units::{Angle, Emu, Pct};
 
-pub type ImageLookup<'a> = &'a mut dyn FnMut(&str) -> Option<usize>;
+pub type ImageLookup<'a> = &'a mut dyn FnMut(&str) -> Option<crate::docx::ResourceId>;
 
 fn a_child<'a, 'i>(n: Node<'a, 'i>, name: &str) -> Option<Node<'a, 'i>> {
     n.children().find(|c| c.is_element() && c.tag_name().name() == name && c.tag_name().namespace() == Some(A))

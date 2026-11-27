@@ -12,7 +12,7 @@ use crate::docx::review::{AuthorId, FormatChange, People, RevisionMark, TableCha
 use crate::docx::style_xml::StyleDef;
 use crate::docx::style_xml::StyleEditError;
 use crate::docx::write::props::Cx;
-use crate::docx::{Block, Inline, Opaque, Paragraph, Raw, Run, RunStyle};
+use crate::docx::{Block, Inline, Opaque, Paragraph, Raw, ResourceId, Resources, Run, RunStyle};
 use crate::drawing::paint::Fill;
 use crate::drawing::{Shape, ShapeKind};
 use crate::format::{LevelProp, ListChoice, ListDef, ListDefId, ListDefProp, ListProp, ParaProp, ParaSet, Style, StyleProp, StyleSet};
@@ -22,13 +22,13 @@ use super::clipboard::{Fragment, Refs};
 use super::step::Step;
 use super::{Editor, Tx};
 
-/// The document a fragment was copied from: what its image indices, style and list ids and authors are there.
+/// The document a fragment was copied from: what its image ids, style and list ids and authors are there.
 #[derive(Debug)]
 pub struct Origin {
     /// The document's identity among those open ([`next_key`]).
     pub key: u64,
-    /// The bytes of each image the fragment shows, by its index there.
-    pub images: Vec<(usize, Vec<u8>)>,
+    /// Each image the fragment shows, by its id there.
+    pub images: Resources,
     /// Its styles and lists.
     pub resolver: Option<Rc<crate::docx::resolvers::Resolvers>>,
     /// Its people.
@@ -41,7 +41,7 @@ pub struct Origin {
 impl Origin {
     /// The origin of `f`, read from `doc` (a document no editor has open): its images move into it.
     pub(super) fn of_document(mut doc: crate::docx::Document, f: &mut Fragment) -> Rc<Origin> {
-        let images = used_images(f).into_iter().filter_map(|k| Some((k, std::mem::take(doc.images.get_mut(k)?)))).collect();
+        let images = used_images(f).into_iter().filter_map(|k| Some((k, doc.images.remove(k)?))).collect();
         let main = root_tag(&doc);
         Rc::new(Origin { key: next_key(), images, resolver: doc.resolver, people: doc.people, main })
     }
@@ -54,8 +54,8 @@ fn root_tag(doc: &crate::docx::Document) -> String {
     x[start..x[start..].find('>').map_or(start, |e| start + e + 1)].to_string()
 }
 
-/// The image indices `f` (its notes and comments too) shows, in order.
-fn used_images(f: &mut Fragment) -> Vec<usize> {
+/// The images `f` (its notes and comments too) shows, in id order.
+fn used_images(f: &mut Fragment) -> Vec<ResourceId> {
     let mut used = Vec::new();
     each_block_of(&mut f.blocks, &mut f.refs, &mut |b| each_image(b, &mut |k| used.push(*k)));
     used.sort_unstable();
@@ -102,7 +102,7 @@ fn each_block_of(blocks: &mut [Block], refs: &mut Refs, f: &mut dyn FnMut(&mut B
     refs.comments.iter_mut().for_each(|c| each_block(&mut c.body, f));
 }
 
-fn fill_image(fill: Option<&mut Fill>, f: &mut dyn FnMut(&mut usize)) {
+fn fill_image(fill: Option<&mut Fill>, f: &mut dyn FnMut(&mut ResourceId)) {
     if let Some(Fill::Blip(b)) = fill
         && let Some(k) = &mut b.image
     {
@@ -110,8 +110,8 @@ fn fill_image(fill: Option<&mut Fill>, f: &mut dyn FnMut(&mut usize)) {
     }
 }
 
-/// The image indices of a shape's fills and pictures, its group's children included.
-fn shape_images(s: &mut Shape, f: &mut dyn FnMut(&mut usize)) {
+/// The images of a shape's fills and pictures, its group's children included.
+fn shape_images(s: &mut Shape, f: &mut dyn FnMut(&mut ResourceId)) {
     match &mut s.kind {
         ShapeKind::Sp(sp) => {
             fill_image(sp.fill.as_mut(), f);
@@ -131,8 +131,8 @@ fn shape_images(s: &mut Shape, f: &mut dyn FnMut(&mut usize)) {
     }
 }
 
-/// Every image index the paragraphs of `blocks` hold: pictures', floats' and their parts', and their shapes'.
-fn each_image(block: &mut Block, f: &mut dyn FnMut(&mut usize)) {
+/// Every image the paragraphs of `blocks` hold: pictures', floats' and their parts', and their shapes'.
+fn each_image(block: &mut Block, f: &mut dyn FnMut(&mut ResourceId)) {
     let Block::Para(p) = block else { return };
     for i in &mut p.inlines {
         match i {
@@ -464,7 +464,7 @@ fn renumber(raw: &str, cx: &Cx, map: &HashMap<i64, i64>) -> Option<String> {
 impl Editor {
     /// Where a fragment copied from this document comes from: this document, and the images it shows.
     pub(super) fn origin_of(&self, f: &mut Fragment) -> Rc<Origin> {
-        let images = used_images(f).into_iter().filter_map(|k| Some((k, self.doc.images.get(k)?.clone()))).collect();
+        let images = used_images(f).into_iter().filter_map(|k| Some((k, self.doc.images.get(k)?.to_vec()))).collect();
         Rc::new(Origin { key: self.key, images, resolver: self.doc.resolver.clone(), people: self.doc.people.clone(), main: root_tag(&self.doc) })
     }
 
@@ -473,19 +473,19 @@ impl Editor {
     /// people found or added, and what they were read from forgotten (another part's XML).
     /// `lists`: those earlier pieces of the same paste brought.
     pub(super) fn import(&mut self, tx: &mut Tx, blocks: &mut [Block], refs: &mut Refs, origin: &Origin, lists: &mut Lists) {
-        let mut moved: HashMap<usize, usize> = HashMap::new();
-        for (k, data) in &origin.images {
-            let to = if self.doc.images.get(*k) == Some(data) {
-                *k
-            } else if let Some(j) = self.doc.images.iter().position(|d| d == data) {
+        let mut moved: HashMap<ResourceId, ResourceId> = HashMap::new();
+        for (k, data) in origin.images.iter() {
+            let to = if self.doc.images.get(k) == Some(data) {
+                k
+            } else if let Some(j) = self.doc.images.find(data) {
                 j
-            } else if let Some(j) = self.pending_images.iter().position(|d| d == data) {
-                self.doc.images.len() + j
+            } else if let Some(j) = self.pending_images.find(data) {
+                j
             } else {
-                self.pending_image(data.clone())
+                self.pending_image(data.to_vec())
             };
-            if to != *k {
-                moved.insert(*k, to);
+            if to != k {
+                moved.insert(k, to);
             }
         }
         if !moved.is_empty() {

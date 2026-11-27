@@ -1031,7 +1031,7 @@ fn a_floating_picture_control() {
     let out = r.e.execute(Command::SetControl(serde_json::from_value(set).unwrap()), fonts());
     assert!(matches!(out, super::super::Outcome::Changed(_)), "{out:?}");
     let f = body_floats(&r.e).remove(0);
-    let image = |e: &super::super::Editor, f: &crate::docx::Float| e.document().images[f.image.unwrap()].clone();
+    let image = |e: &super::super::Editor, f: &crate::docx::Float| e.document().images.get(f.image.unwrap()).unwrap().to_vec();
     assert_eq!(((f.w, f.h), image(&r.e, &f)), ((144.0, 108.0), svg.as_bytes().to_vec()));
 
     r.e.execute(Command::SetMode(crate::api::state::Mode::Design), fonts());
@@ -1087,7 +1087,7 @@ fn reset_size_gives_a_picture_its_own_size() {
     assert_eq!((pic(&e).0, pic(&e).1), (20.0, 10.0));
     e.execute(Command::ResetObjectSize, fonts());
     let image = pic(&e).2;
-    let (w, h, dx, dy) = crate::docx::image::image_info(&e.document().images[image.expect("an image")]).expect("decodes");
+    let (w, h, dx, dy) = crate::docx::image::image_info(e.document().images.get(image.expect("an image")).unwrap()).expect("decodes");
     let want = ((w * 72.0 / dx * 20.0).round() / 20.0, (h * 72.0 / dy * 20.0).round() / 20.0);
     assert_eq!((pic(&e).0, pic(&e).1), want);
 }
@@ -1351,7 +1351,7 @@ fn position_commands_place_the_float_and_the_state_reports_it() {
 #[test]
 fn an_inserted_picture_saves_with_its_image() {
     use crate::editing::selection::ObjectRef;
-    let data = open("FX-OBJ.docx").document().images.last().cloned().expect("an image");
+    let data = open("FX-OBJ.docx").document().images.last().map(|(_, d)| d.to_vec()).expect("an image");
     let mut e = open("FX-STORIES.docx");
     let out =
         e.execute(Command::InsertPicture(crate::api::command::Picture { data: crate::api::value::Bytes(data.clone()), alt_text: None }), fonts());
@@ -1378,7 +1378,7 @@ fn an_inserted_picture_saves_with_its_image() {
             if let crate::docx::Block::Para(p) = b {
                 for i in &p.inlines {
                     if let crate::docx::Inline::Picture(pic, _) = i {
-                        out.push((pic.w, pic.h, pic.image.map(|k| d.images[k].clone()).unwrap_or_default()));
+                        out.push((pic.w, pic.h, pic.image.map(|k| d.images.get(k).unwrap().to_vec()).unwrap_or_default()));
                     }
                 }
             }
@@ -1414,7 +1414,7 @@ fn an_inserted_jpeg_xr_picture_saves_as_a_wdp_part() {
     let types = crate::docx::package::read(&bytes, &[], "[Content_Types].xml").expect("reads").expect("content types");
     assert!(types.contains(r#"Extension="wdp" ContentType="image/vnd.ms-photo""#), "{types}");
     let again = super::super::Editor::open(&bytes, fonts()).expect("reopens");
-    assert!(again.document().images.contains(&data));
+    assert!(again.document().images.find(&data).is_some());
 }
 
 #[test]
@@ -1677,7 +1677,7 @@ fn a_picture_control_activates_and_fills() {
     let out = r.e.apply_json(&json!({ "type": "pointer", "kind": "down", "x": x, "y": y, "clicks": 1, "seq": 1000 }).to_string(), fonts());
     assert!(out.contains("picture_control_activated"), "{out}");
     r.e.apply_json(&json!({ "type": "pointer", "kind": "up", "x": x, "y": y, "seq": 1001 }).to_string(), fonts());
-    let data = open("FX-OBJ.docx").document().images.last().cloned().expect("an image");
+    let data = open("FX-OBJ.docx").document().images.last().map(|(_, d)| d.to_vec()).expect("an image");
     let id = crate::api::value::ElementId(crate::editing::elements::id_str(crate::docx::ElementId::Control(c)));
     let out = r.e.execute(
         Command::FillControl(crate::api::command::FillControl {
@@ -1703,7 +1703,7 @@ fn a_picture_control_activates_and_fills() {
     assert!(xml.contains("Placeholder:Signature.Recipient Sig") && xml.contains("w:sdt"), "the control stays");
     assert!(!xml.contains("showingPlcHdr"), "no longer showing its placeholder");
     let again = super::super::Editor::open(&bytes, fonts()).expect("reopens");
-    assert!(again.document().images.contains(&data), "the filled image is saved");
+    assert!(again.document().images.find(&data).is_some(), "the filled image is saved");
     assert!(again.document().controls.values().all(|k| !k.props.showing_placeholder), "read back as filled");
     assert_eq!(texts(&again), texts(&r.e));
 }
@@ -2511,7 +2511,7 @@ fn a_float_dropped_on_the_next_page_between_idles_lands_there() {
     use super::super::input::PointerKind;
     use super::super::keymap::Mods;
     use serde_json::json;
-    let data = open("FX-OBJ.docx").document().images.last().cloned().expect("an image");
+    let data = open("FX-OBJ.docx").document().images.last().map(|(_, d)| d.to_vec()).expect("an image");
     let text: Vec<String> =
         (0..40).map(|i| format!("Paragraph {i} lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod.")).collect();
     let mut r = super::scenarios::Run::from_bytes(&super::blank_with(&text.join("\n")), "drop-next-page");
@@ -2560,7 +2560,7 @@ fn an_inserted_text_box_draws_as_it_reopens() {
 #[test]
 fn an_inserted_pictures_alt_text_and_aspect_lock_save_inline_and_floating() {
     use super::super::position::{Position, StoryId};
-    let data = open("FX-OBJ.docx").document().images.last().cloned().expect("an image");
+    let data = open("FX-OBJ.docx").document().images.last().map(|(_, d)| d.to_vec()).expect("an image");
     let mut e = super::super::Editor::open(&super::blank_with("Body text here"), fonts()).expect("opens");
     e.set_caret_for_benchmark(Selection::Caret(Position::text(StoryId::Body, super::para_id(&e, 0), Unit(2))));
     let alt = Some("A black \"square\"".to_string());
@@ -2592,7 +2592,7 @@ fn an_inserted_pictures_alt_text_and_aspect_lock_save_inline_and_floating() {
 fn a_picture_floated_from_its_paragraphs_first_line_stays_below_the_paragraph_before() {
     use super::super::position::{Position, StoryId};
     use crate::api::value::Points;
-    let data = open("FX-OBJ.docx").document().images.last().cloned().expect("an image");
+    let data = open("FX-OBJ.docx").document().images.last().map(|(_, d)| d.to_vec()).expect("an image");
     let long = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris.";
     let xml: String = [long; 4].iter().map(|t| format!("<w:p><w:pPr><w:spacing w:after=\"0\"/></w:pPr><w:r><w:t>{t}</w:t></w:r></w:p>")).collect();
     let mut e = super::super::Editor::open(&super::blank_body(&xml), fonts()).expect("opens");
@@ -2756,7 +2756,7 @@ fn insert_and_save_take_a_wmf() {
     let saved = crate::docx::write::save(e.document()).expect("saves");
     let types = crate::docx::package::read(&saved, &[], "[Content_Types].xml").expect("reads").expect("types");
     assert!(types.contains("Extension=\"wmf\"") && types.contains("image/x-wmf"), "{types}");
-    assert!(crate::docx::read(&saved).expect("reopens").images.iter().any(|i| i == &data));
+    assert!(crate::docx::read(&saved).expect("reopens").images.find(&data).is_some());
 }
 
 #[test]

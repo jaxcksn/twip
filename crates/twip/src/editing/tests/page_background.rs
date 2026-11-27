@@ -553,7 +553,7 @@ fn shown(e: &Editor) -> Vec<(String, Vec<u8>)> {
                 _ => None,
             })?;
             let crate::docx::watermark::Watermark::Picture(p) = crate::docx::watermark::of(&f)? else { return None };
-            Some((super::part_name(e, id), d.images[p.image?].clone()))
+            Some((super::part_name(e, id), d.images.get(p.image?).unwrap().to_vec()))
         })
         .collect()
 }
@@ -684,8 +684,8 @@ fn in_its_header_a_watermark_is_selected_resized_and_deleted() {
 #[test]
 fn a_picture_watermark_and_page_picture_read_back_their_bytes() {
     let images = super::open("FX-OBJ.docx").document().images.clone();
-    let data = images.last().cloned().expect("an image");
-    let fill = images.iter().rev().find(|i| **i != data).cloned().expect("a second image");
+    let data = images.last().map(|(_, d)| d.to_vec()).expect("an image");
+    let fill = images.iter().filter(|(_, d)| *d != data).last().map(|(_, d)| d.to_vec()).expect("a second image");
     let mut e = Editor::open(&crate::docx::blank::blank_docx(), fonts()).expect("opens");
     run(&mut e, Command::SetWatermark(Watermark::Picture(PictureWatermark { image: Bytes(data.clone()), scale: None, washout: Some(true) })));
     assert_eq!(e.watermark_image(0), Some(&data[..]));

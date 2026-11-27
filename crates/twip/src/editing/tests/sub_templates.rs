@@ -595,7 +595,7 @@ fn a_sub_template_exports_alone_and_copies_whole() {
     let alone = crate::docx::read_editable(&docx).expect("reads");
     assert_eq!(alone.sections.len(), 1);
     assert!(alone.glossary.as_ref().is_none_or(|g| g.parts.iter().all(|b| b.state == crate::docx::PartState::Removed) || g.parts.is_empty()));
-    assert!(alone.images.iter().any(|i| !i.is_empty()), "the picture's image");
+    assert!(alone.images.iter().any(|(_, i)| !i.is_empty()), "the picture's image");
     assert!(e.export_sub_template("Nope", None).is_err());
 
     let copy = |e: &mut Editor, name: &str, of: &str| {
@@ -904,7 +904,7 @@ fn picture_bytes(doc: &crate::docx::Document) -> Vec<Vec<u8>> {
             if let Some(drawn) = drawn {
                 assert_eq!(drawn, image, "the shape draws the picture's own image");
             }
-            out.extend(image.map(|k| doc.images[k].clone()));
+            out.extend(image.map(|k| doc.images.get(k).unwrap().to_vec()));
         }
     }
     out

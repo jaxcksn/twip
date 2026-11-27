@@ -184,7 +184,7 @@ fn protected_pictures_keep_their_picture() {
     let image = |e: &Editor| e.document().picture_controls().into_iter().find(|(_, c)| *c == control(e, "Placeholder:Signature.X").0).map(|(i, _)| i);
     let was = image(&r.e);
     pick(&mut r, "Placeholder:Signature.X");
-    let png = super::open("FX-OBJ.docx").document().images.last().cloned().expect("an image");
+    let png = super::open("FX-OBJ.docx").document().images.last().map(|(_, d)| d.to_vec()).expect("an image");
     r.e.execute(Command::InsertPicture(crate::api::command::Picture { data: crate::api::value::Bytes(png), alt_text: None }), fonts());
     assert_eq!((image(&r.e), pictures(&r.e)), (was, n), "inserting a picture over it doesn't swap it");
     pick(&mut r, "Placeholder:Signature.X");
@@ -297,7 +297,7 @@ fn floating_picture_control_round_trip() {
     let m = floats(&r.e).remove(0);
     assert!((m.h_offset - g.h_offset).abs() > 20.0, "moved: {} -> {}", g.h_offset, m.h_offset);
     let (c, _) = control(&r.e, "Placeholder:Float.Z");
-    let png = super::open("FX-OBJ.docx").document().images.last().cloned().expect("an image");
+    let png = super::open("FX-OBJ.docx").document().images.last().map(|(_, d)| d.to_vec()).expect("an image");
     let id = crate::api::value::ElementId(crate::editing::elements::id_str(crate::docx::ElementId::Control(c)));
     let out = r.e.execute(
         Command::FillControl(crate::api::command::FillControl {
@@ -413,12 +413,17 @@ fn fill_image(e: &mut Editor, c: ControlId, data: Vec<u8>) -> crate::editing::co
 
 /// An image none of `not` is.
 fn another_image(not: &[Vec<u8>]) -> Vec<u8> {
-    let mut all = super::open("FX-OBJ.docx").document().images.clone();
-    all.extend(super::open(FX).document().images.iter().cloned());
-    all.into_iter().find(|i| !not.contains(i) && crate::docx::image::image_type(i).is_some()).expect("a different image")
+    let (a, b) = (super::open("FX-OBJ.docx"), super::open(FX));
+    let mut all = a.document().images.iter().chain(b.document().images.iter()).map(|(_, d)| d);
+    all.find(|i| !not.iter().any(|n| n == i) && crate::docx::image::image_type(i).is_some()).expect("a different image").to_vec()
 }
 
-fn image_of(e: &Editor, c: ControlId) -> Option<usize> {
+/// Each image's bytes, in id order.
+fn bytes(images: &crate::docx::Resources) -> Vec<Vec<u8>> {
+    images.iter().map(|(_, d)| d.to_vec()).collect()
+}
+
+fn image_of(e: &Editor, c: ControlId) -> Option<crate::docx::ResourceId> {
     e.document().picture_controls().into_iter().find(|(_, k)| *k == c).map(|(i, _)| i)
 }
 
@@ -430,18 +435,18 @@ fn filling_a_picture_control_leaves_another_sharing_its_image() {
     let (a, b) = (control(&r.e, "Placeholder:Signature.X").0, control(&r.e, "Placeholder:Secure.Y").0);
     let shared = image_of(&r.e, a);
     assert!(shared.is_some() && shared == image_of(&r.e, b), "the two controls share an image: {shared:?}");
-    let before = r.e.document().images[shared.unwrap()].clone();
+    let before = r.e.document().images.get(shared.unwrap()).unwrap().to_vec();
     let (size_b, images) = (size_of(&r.e, b), r.e.document().images.len());
     let new = another_image(std::slice::from_ref(&before));
     let out = fill_image(&mut r.e, a, new.clone());
     assert!(matches!(out, crate::editing::commands::Outcome::Changed(_)), "{out:?}");
     assert_eq!(r.e.document().images.len(), images + 1, "an image of its own");
-    assert_eq!(r.e.document().images[image_of(&r.e, a).unwrap()], new);
-    assert_eq!(r.e.document().images[image_of(&r.e, b).unwrap()], before, "the other control's image is unchanged");
+    assert_eq!(r.e.document().images.get(image_of(&r.e, a).unwrap()).unwrap(), new);
+    assert_eq!(r.e.document().images.get(image_of(&r.e, b).unwrap()).unwrap(), before, "the other control's image is unchanged");
     assert_eq!(size_of(&r.e, b), size_b, "and its size");
     let saved = crate::docx::write::save(r.e.document()).expect("saves");
     let again = Editor::open(&saved, fonts()).expect("reopens");
-    let tags = |e: &Editor, tag: &str| image_of(e, control(e, tag).0).map(|i| e.document().images[i].clone());
+    let tags = |e: &Editor, tag: &str| image_of(e, control(e, tag).0).map(|i| e.document().images.get(i).unwrap().to_vec());
     assert_eq!(tags(&again, "Placeholder:Signature.X"), Some(new), "saved with its new image");
     assert_eq!(tags(&again, "Placeholder:Secure.Y"), Some(before), "the other saved with its own");
 }
@@ -505,9 +510,9 @@ fn an_anchored_picture_is_its_controls_picture() {
     assert_eq!(e.picture_control_at(crate::editing::selection::ObjectRef::Floating(f)), Some(c), "the float is the control's");
     let was = e.document().images.clone();
     let k = image_of(&e, c).expect("its image");
-    let out = fill_image(&mut e, c, another_image(&was));
+    let out = fill_image(&mut e, c, another_image(&bytes(&was)));
     assert!(changed(&out), "fill: {out:?}");
-    assert_ne!(e.document().images[image_of(&e, c).unwrap()], was[k], "its image is filled");
+    assert_ne!(e.document().images.get(image_of(&e, c).unwrap()).unwrap(), was.get(k).unwrap(), "its image is filled");
 }
 
 /// Filling an anchored picture control whose image another picture shows: its drawing shows the new image once
@@ -519,14 +524,14 @@ fn a_filled_anchored_picture_saves_its_own_image() {
     let mut e = Editor::open(&with_body(&body), fonts()).expect("opens");
     let c = self::control(&e, "Anchored").0;
     let was = e.document().images.clone();
-    let before = was[image_of(&e, c).expect("its image")].clone();
-    let new = another_image(&was);
+    let before = was.get(image_of(&e, c).expect("its image")).unwrap().to_vec();
+    let new = another_image(&bytes(&was));
     assert!(changed(&fill_image(&mut e, c, new.clone())));
-    let blips: Vec<(Option<usize>, Option<usize>)> =
+    let blips: Vec<(Option<crate::docx::ResourceId>, Option<crate::docx::ResourceId>)> =
         body_floats(&e).iter().map(|f| (f.image, f.shape.as_deref().and_then(|s| s.pic()).and_then(|p| p.blip.image))).collect();
     assert!(blips[0].0 != blips[1].0 && blips.iter().all(|(a, b)| a == b), "each drawing's picture shows its own image: {blips:?}");
     let again = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
-    let shown: Vec<Vec<u8>> = body_floats(&again).iter().filter_map(|f| f.image.map(|k| again.document().images[k].clone())).collect();
+    let shown: Vec<Vec<u8>> = body_floats(&again).iter().filter_map(|f| f.image.map(|k| again.document().images.get(k).unwrap().to_vec())).collect();
     assert_eq!(shown, vec![new, before], "the control's picture, then the other");
 }
 
@@ -546,10 +551,10 @@ fn filling_a_picture_control_leaves_a_grouped_picture_its_image() {
     let grouped = |e: &Editor| body_floats(e).iter().flat_map(|f| f.parts.iter().filter_map(|p| p.image)).collect::<Vec<_>>();
     assert_eq!(grouped(&e), vec![k], "the group's picture shares the control's image");
     let was = e.document().images.clone();
-    assert!(changed(&fill_image(&mut e, c, another_image(&was))));
+    assert!(changed(&fill_image(&mut e, c, another_image(&bytes(&was)))));
     let g = grouped(&e);
     assert_eq!(g.len(), 1);
-    assert_eq!(e.document().images[g[0]], was[k], "the grouped picture keeps its image");
+    assert_eq!(e.document().images.get(g[0]).unwrap(), was.get(k).unwrap(), "the grouped picture keeps its image");
 }
 
 /// A white 24-bit BMP of `w` × `h` pixels.
@@ -600,7 +605,10 @@ fn pasting_a_picture_over_a_picture_control_fills_it() {
         let out = r.e.paste_clip(crate::editing::paste::Clip { image: Some(png.clone()), ..Default::default() }, None, fonts());
         assert!(changed(&out), "protected {protected}: {out:?}");
         let now = image_of(&r.e, c);
-        assert!(now.is_some() && now != was && r.e.document().images[now.unwrap()] == png, "protected {protected}: the control shows it");
+        assert!(
+            now.is_some() && now != was && r.e.document().images.get(now.unwrap()).unwrap() == png,
+            "protected {protected}: the control shows it"
+        );
         assert_eq!(super::texts(&r.e).concat().matches('\u{FFFC}').count(), count, "the one picture");
         let s = size_of(&r.e, c).expect("a size");
         let w = size.expect("a size");

@@ -39,7 +39,7 @@ pub struct TextMark {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct PictureMark {
-    pub image: Option<usize>,
+    pub image: Option<crate::docx::ResourceId>,
     pub washout: bool,
 }
 
@@ -237,15 +237,15 @@ pub fn vml(m: &Watermark, w: &str, size: [f64; 2], spid: u32, image: &str, lang:
 
 /// A watermark's shape as a float, as the reader makes it of [`vml`]'s markup (`image` the picture, which `vml` names
 /// by `rid`): centred on the margins, behind the text, wrapping nothing.
-pub fn float(m: &Watermark, size: [f64; 2], spid: u32, image: Option<usize>) -> Option<Float> {
+pub fn float(m: &Watermark, size: [f64; 2], spid: u32, image: Option<crate::docx::ResourceId>) -> Option<Float> {
     const WML: &str = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
     let rid = "rIdWatermark";
     let xml = format!(r#"<w:r xmlns:w="{WML}">{}</w:r>"#, vml(m, "w:", size, spid, rid, ""));
     let dom = roxmltree::Document::parse(&xml).ok()?;
     let pict = dom.root_element().children().find(|c| c.tag_name().name() == "pict")?;
-    struct One(&'static str, Option<usize>);
+    struct One(&'static str, Option<crate::docx::ResourceId>);
     impl crate::docx::drawing::read::Source for One {
-        fn image(&mut self, rid: &str) -> Option<usize> {
+        fn image(&mut self, rid: &str) -> Option<crate::docx::ResourceId> {
             if rid == self.0 { self.1 } else { None }
         }
         fn diagram(&mut self, _: &str) -> Option<crate::drawing::Shape> {

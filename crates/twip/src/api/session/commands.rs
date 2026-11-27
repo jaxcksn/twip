@@ -271,8 +271,10 @@ impl Session {
                 Ok(())
             }
             C::InsertShape(i) => length("the width", i.width, 0.0, MAX).and(length("the height", i.height, 0.0, MAX)),
-            C::SetShapeFill(f) => f.to_model(&mut |data| crate::docx::image::image_info(data).map(|_| 0)).map(|_| ()).map_err(Error::invalid),
-            C::SetShapeLine(l) => l.apply(None, &mut |_| Some(0)).map(|_| ()).map_err(Error::invalid),
+            C::SetShapeFill(f) => {
+                f.to_model(&mut |data| crate::docx::image::image_info(data).map(|_| crate::docx::ResourceId(0))).map(|_| ()).map_err(Error::invalid)
+            }
+            C::SetShapeLine(l) => l.apply(None, &mut |_| Some(crate::docx::ResourceId(0))).map(|_| ()).map_err(Error::invalid),
             C::SetShapeEffects(e) => e.apply(None).map(|_| ()).map_err(Error::invalid),
             C::SetShapeText(t) => t.apply(&crate::drawing::text::BodyProps::default()).map(|_| ()).map_err(Error::invalid),
             C::SetPictureAdjust(a) => a.apply(&[]).map(|_| ()).map_err(Error::invalid),

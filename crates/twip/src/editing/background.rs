@@ -28,7 +28,7 @@ impl Editor {
         let now = match self.background_of(&v, &was) {
             Ok(b) => b,
             Err(why) => {
-                self.pending_images.clear();
+                self.pending_images = Default::default();
                 return Outcome::Refused(crate::api::error::Error::invalid(why));
             }
         };
@@ -73,8 +73,9 @@ impl Editor {
                             return kept;
                         }
                         crate::docx::image::image_type(bytes)?;
-                        added = Some(bytes.to_vec());
-                        Some(self.doc.images.len() + self.pending_images.len())
+                        let id = crate::docx::ResourceId::next();
+                        added = Some((id, bytes.to_vec()));
+                        Some(id)
                     })?
                     .ok_or("no fill")?;
                 let fill = page_gradient(one_colour(fill, palette), palette)?;
@@ -100,7 +101,7 @@ impl Editor {
             if let Fill::Blip(b) = f
                 && matches!(b.mode, BlipMode::Tile { .. })
                 && let Some(BlipAdjust::Duotone([fg, bg])) = b.adjust.iter().find(|a| matches!(a, BlipAdjust::Duotone(_)))
-                && let Some(p) = b.image.and_then(|i| self.doc.images.get(i)).and_then(|d| pattern_of_picture(d))
+                && let Some(p) = b.image.and_then(|i| self.doc.images.get(i)).and_then(pattern_of_picture)
             {
                 return Some(FillValue::Pattern {
                     preset: p.name().into(),
@@ -108,7 +109,7 @@ impl Editor {
                     background: ColourValue::of(bg, None),
                 });
             }
-            return Some(FillValue::of(f, None, &[]));
+            return Some(FillValue::of(f, None, &Default::default()));
         }
         let colour = self.doc.page_colour?;
         let value = super::theme::colour_value(colour, self.doc.page_colour_theme);
@@ -131,7 +132,7 @@ impl Editor {
     pub fn watermark_image(&self, section: usize) -> Option<&[u8]> {
         let (f, _) = self.shown_watermark(section)?;
         let wm::Watermark::Picture(p) = wm::of(f)? else { return None };
-        self.doc.images.get(p.image?).map(Vec::as_slice)
+        self.doc.images.get(p.image?)
     }
 
     /// The page background's picture (Fill Effects > Picture or Texture): its image's bytes.
@@ -140,7 +141,7 @@ impl Editor {
             crate::drawing::paint::Fill::Blip(b) => b.image?,
             _ => return None,
         };
-        self.doc.images.get(k).map(Vec::as_slice)
+        self.doc.images.get(k)
     }
 
     /// The watermark section `section`'s pages show: the first in its headers, else in any header.
@@ -159,7 +160,7 @@ impl Editor {
                 italic: Some(t.italic),
             }),
             wm::Watermark::Picture(p) => {
-                let natural = p.image.and_then(|i| self.doc.images.get(i)).and_then(|d| natural_size(d));
+                let natural = p.image.and_then(|i| self.doc.images.get(i)).and_then(natural_size);
                 // Auto: the size that fits the section's margins.
                 let auto = natural.map(|(w, h)| picture_size((w, h), None, self.margin_area(section)));
                 let scale = match (natural, auto) {
@@ -276,7 +277,10 @@ impl Editor {
     /// The watermark `w` describes, with a picture's own size and scale and its image (new, or the index of the one
     /// the watermark keeps); checked.
     #[allow(clippy::type_complexity)]
-    fn mark_of(&self, w: Watermark) -> Result<(wm::Watermark, Option<(f64, f64, Option<f64>)>, Option<Result<Vec<u8>, usize>>), String> {
+    fn mark_of(
+        &self,
+        w: Watermark,
+    ) -> Result<(wm::Watermark, Option<(f64, f64, Option<f64>)>, Option<Result<Vec<u8>, crate::docx::ResourceId>>), String> {
         Ok(match w {
             Watermark::Text(t) => {
                 let text: String = t.text.chars().map(|c| if c.is_control() { ' ' } else { c }).collect();
@@ -323,7 +327,7 @@ impl Editor {
                 };
                 let bytes = match &image {
                     Ok(d) => d.as_slice(),
-                    Err(k) => self.doc.images.get(*k).map_or(&[][..], Vec::as_slice),
+                    Err(k) => self.doc.images.get(*k).unwrap_or_default(),
                 };
                 let (w, h) = natural_size(bytes).ok_or("not a picture")?;
                 if crate::docx::image::is_svg(bytes) {
@@ -336,7 +340,7 @@ impl Editor {
     }
 
     /// The image of the picture watermark the edited section shows.
-    fn watermark_picture(&self) -> Option<usize> {
+    fn watermark_picture(&self) -> Option<crate::docx::ResourceId> {
         match wm::of(self.shown_watermark(self.selection_section())?.0)? {
             wm::Watermark::Picture(p) => p.image,
             wm::Watermark::Text(_) => None,

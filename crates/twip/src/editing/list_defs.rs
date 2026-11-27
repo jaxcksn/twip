@@ -486,7 +486,7 @@ impl Editor {
                         .and_then(|id| c.lists.pictures.get(&id))
                         .and_then(|p| p.image)
                         .and_then(|i| self.doc.images.get(i))
-                        .map(|img| crate::api::value::Bytes(img.clone()));
+                        .map(|img| crate::api::value::Bytes(img.to_vec()));
                     v
                 })
                 .collect(),
@@ -612,7 +612,7 @@ impl Editor {
 
     /// The picture bullet changes of `levels` against the list `num`'s (none: a new list), and the bullets to add:
     /// their ids and images (new images queued with the transaction).
-    fn picture_changes(&mut self, levels: &[ListLevel], num: Option<i64>) -> (Vec<PicChange>, Vec<(i64, usize)>) {
+    fn picture_changes(&mut self, levels: &[ListLevel], num: Option<i64>) -> (Vec<PicChange>, Vec<(i64, crate::docx::ResourceId)>) {
         let now = num.and_then(|n| self.list_levels(n)).unwrap_or_default();
         let mut next_id = self.doc.resolver.as_ref().and_then(|r| r.cascade().lists.pictures.keys().max().copied()).map_or(0, |m| m + 1);
         let mut add = Vec::new();
@@ -626,7 +626,7 @@ impl Editor {
                     (None, None) => None,
                     (None, Some(_)) => Some(None),
                     (Some(bytes), _) => {
-                        let image = match self.doc.images.iter().position(|i| *i == bytes.0) {
+                        let image = match self.doc.images.find(&bytes.0) {
                             Some(i) => i,
                             None => self.pending_image(bytes.0.clone()),
                         };
@@ -848,9 +848,9 @@ impl Editor {
 }
 
 /// Adds picture bullets: each a picture bullet of its image, which the writer gives its part.
-fn add_pictures(n: &mut crate::docx::resolvers::NumberingEdits, pics: &[(i64, usize)], cx: &Cx) {
+fn add_pictures(n: &mut crate::docx::resolvers::NumberingEdits, pics: &[(i64, crate::docx::ResourceId)], cx: &Cx) {
     for &(id, image) in pics {
-        let rel = format!("{}{image}", crate::docx::write::NEW_IMAGE);
+        let rel = format!("{}{}", crate::docx::write::NEW_IMAGE, image.0);
         n.add_picture(id, crate::docx::list_xml::new_picture_xml(id, &rel, cx), rel, image);
     }
 }

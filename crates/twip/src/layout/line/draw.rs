@@ -306,7 +306,7 @@ pub fn draw_line(o: &LineOrigin, line: &Line, src: &Paragraph, fonts: &Fonts) ->
                             }
                             out.extend(items.into_iter().map(Item::Shape))
                         }
-                        None => out.push(Item::Image { rect, key: ImageKey { index: pic.image, generation: 0 }, of }),
+                        None => out.push(Item::Image { rect, key: ImageKey { image: pic.image, generation: 0 }, of }),
                     }
                     if pic.text.is_some() {
                         texts.push((rect, pic.clone()));

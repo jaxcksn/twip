@@ -475,7 +475,7 @@ fn read_package(bytes: &[u8], pkg: &mut Package, editable: bool, now: i64, depth
         res,
         settings,
         counters: Counters::default(),
-        images: Vec::new(),
+        images: Resources::default(),
         image_index: HashMap::new(),
         bookmarks: HashMap::new(),
         fields: Vec::new(),
@@ -527,7 +527,7 @@ fn read_package(bytes: &[u8], pkg: &mut Package, editable: bool, now: i64, depth
         let mut found = Vec::new();
         for (id, rel) in wanted {
             let Some((_, target)) = rels.get(&rel).cloned() else { continue };
-            let index = match r.image_index.get(&target) {
+            let image = match r.image_index.get(&target) {
                 Some(&i) => i,
                 None => {
                     let Some(data) = pkg.read(&target) else { continue };
@@ -535,12 +535,12 @@ fn read_package(bytes: &[u8], pkg: &mut Package, editable: bool, now: i64, depth
                         r.diagnostics
                             .warn(WarningCode::PictureBulletUndecodable, Some(part), || format!("{target} isn't an image format the engine draws"));
                     }
-                    r.images.push(data);
-                    r.image_index.insert(target, r.images.len() - 1);
-                    r.images.len() - 1
+                    let image = r.images.add(data);
+                    r.image_index.insert(target, image);
+                    image
                 }
             };
-            found.push((id, index));
+            found.push((id, image));
         }
         r.res.set_picture_images(&found);
     }
@@ -721,10 +721,7 @@ fn read_package(bytes: &[u8], pkg: &mut Package, editable: bool, now: i64, depth
         r.record = false;
     }
     doc.line_number_run = Some(line_number_run(&r.res));
-    let mut image_parts = vec![String::new(); r.images.len()];
-    for (part, &i) in &r.image_index {
-        image_parts[i] = part.clone();
-    }
+    let image_parts = r.image_index.iter().map(|(part, &i)| (i, part.clone())).collect();
     doc.images = r.images;
     doc.alt_chunks = std::mem::take(&mut r.alt_chunks);
     doc.controls = std::mem::take(&mut r.controls);
@@ -1304,8 +1301,8 @@ struct Reader {
     theme: Rc<crate::drawing::theme::Theme>,
     settings: Settings,
     counters: Counters,
-    images: Vec<Vec<u8>>,
-    image_index: HashMap<String, usize>,
+    images: Resources,
+    image_index: HashMap<String, ResourceId>,
     /// Bookmark names by `w:id`, for their ends.
     bookmarks: HashMap<String, String>,
     fields: Vec<OpenField>,
@@ -3068,7 +3065,7 @@ impl Reader {
 
     // ---------------- drawings ----------------
 
-    fn image(&mut self, rid: &str, pkg: &mut Package) -> Option<usize> {
+    fn image(&mut self, rid: &str, pkg: &mut Package) -> Option<ResourceId> {
         let (_, target) = self.rels.get(rid)?.clone();
         if let Some(&i) = self.image_index.get(&target) {
             return Some(i);
@@ -3077,9 +3074,9 @@ impl Reader {
         if super::image::image_type(&data).is_none() {
             self.warn(WarningCode::ImageUndecodable, || format!("{target} isn't an image format the engine draws"));
         }
-        self.images.push(data);
-        self.image_index.insert(target, self.images.len() - 1);
-        Some(self.images.len() - 1)
+        let image = self.images.add(data);
+        self.image_index.insert(target, image);
+        Some(image)
     }
 
     /// A table's rows with the controls wrapping each (outermost first): row-level `w:sdt` and `w:customXml` are
@@ -4149,7 +4146,7 @@ struct DrawingSource<'r, 'p> {
 }
 
 impl crate::docx::drawing::read::Source for DrawingSource<'_, '_> {
-    fn image(&mut self, rid: &str) -> Option<usize> {
+    fn image(&mut self, rid: &str) -> Option<crate::docx::ResourceId> {
         self.reader.image(rid, self.pkg)
     }
 
@@ -4163,7 +4160,7 @@ impl crate::docx::drawing::read::Source for DrawingSource<'_, '_> {
         // The drawing's pictures are relative to its own part: they are not looked up.
         struct NoImages;
         impl crate::docx::drawing::read::Source for NoImages {
-            fn image(&mut self, _: &str) -> Option<usize> {
+            fn image(&mut self, _: &str) -> Option<crate::docx::ResourceId> {
                 None
             }
             fn diagram(&mut self, _: &str) -> Option<crate::drawing::Shape> {

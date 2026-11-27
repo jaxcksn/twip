@@ -548,7 +548,7 @@ mod tests {
     fn a_pictures_relative_axes_size_on_their_own_and_it_draws_scaled_evenly() {
         let fr = Frames { page_w: 612.0, page_h: 792.0, margin: [72.0; 4], column: (72.0, 468.0), compat: Compat::Generic, cell: false, odd: true };
         let mut f = (*fl(0.0, 72.0, Side::Both).float).clone();
-        (f.h, f.image) = (54.0, Some(0));
+        (f.h, f.image) = (54.0, Some(crate::docx::ResourceId(0)));
         f.relative.size = [Some(("margin".into(), 400)), Some(("margin".into(), 50))];
         let s = sized(&f, &fr).expect("sized");
         assert_eq!((s.w, s.h), (187.2, 32.4));

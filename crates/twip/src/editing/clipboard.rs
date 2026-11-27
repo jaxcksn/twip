@@ -658,14 +658,9 @@ impl Fragment {
         s
     }
 
-    /// The images its objects draw, by their index where it was copied (an index none of them draws holds none).
-    pub fn images(&self) -> Vec<Vec<u8>> {
-        let Some(o) = &self.origin else { return Vec::new() };
-        let mut v = vec![Vec::new(); o.images.iter().map(|(k, _)| k + 1).max().unwrap_or(0)];
-        for (k, data) in &o.images {
-            v[*k].clone_from(data);
-        }
-        v
+    /// The images its objects draw, by their id where it was copied.
+    pub fn images(&self) -> crate::docx::Resources {
+        self.origin.as_ref().map_or_else(Default::default, |o| o.images.clone())
     }
 
     /// Its HTML, its objects as their alternative text.

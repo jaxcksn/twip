@@ -160,6 +160,8 @@ pub fn page_text(snapshot: &Snapshot, doc: &Document) -> String {
     let ids = ids(doc);
     let in_box = box_paras(doc);
     let id = |v: u64| if v == 0 { 0 } else { ids.get(&v).copied().unwrap_or(usize::MAX) };
+    // Images by their place in the document's, in id order (the order read).
+    let images: HashMap<_, isize> = doc.images.iter().zip(0..).map(|((k, _), i)| (k, i)).collect();
     let mut s = String::new();
     let mut base = 0;
     let f = |v: f64| format!("{:.3}", v + 0.0);
@@ -242,7 +244,8 @@ pub fn page_text(snapshot: &Snapshot, doc: &Document) -> String {
                 }
                 Item::Rect { rect: b, colour: c, .. } => writeln!(s, "R {} {} {} {} {c:06x}", f(b[0]), f(b[1]), f(b[2]), f(b[3])).unwrap(),
                 Item::Image { rect: b, key, .. } => {
-                    writeln!(s, "I {} {} {} {} {}", f(b[0]), f(b[1]), f(b[2]), f(b[3]), key.index.map_or(-1, |i| i as isize)).unwrap()
+                    writeln!(s, "I {} {} {} {} {}", f(b[0]), f(b[1]), f(b[2]), f(b[3]), key.image.and_then(|k| images.get(&k)).map_or(-1, |&i| i))
+                        .unwrap()
                 }
                 Item::Gridline { line: b } => writeln!(s, "L {} {} {} {}", f(b[0]), f(b[1]), f(b[2]), f(b[3])).unwrap(),
                 Item::Turned(t) => {

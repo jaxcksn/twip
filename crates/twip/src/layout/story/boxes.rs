@@ -42,7 +42,7 @@ pub fn float_box(f: &Float, rect: [f64; 4], anchor: ParaId, env: &StoryEnv, memo
         }
         None => {
             if let Some(img) = f.image {
-                items.push(Item::Image { rect: shape_rect, key: ImageKey { index: Some(img), generation: 0 }, of: PictureOf::Float(FloatId(f.id)) });
+                items.push(Item::Image { rect: shape_rect, key: ImageKey { image: Some(img), generation: 0 }, of: PictureOf::Float(FloatId(f.id)) });
             }
         }
     }
@@ -76,7 +76,7 @@ pub fn float_box(f: &Float, rect: [f64; 4], anchor: ParaId, env: &StoryEnv, memo
         if f.shape.is_none()
             && let Some(img) = part.image
         {
-            items.push(Item::Image { rect: r, key: ImageKey { index: Some(img), generation: 0 }, of: PictureOf::Float(FloatId(f.id)) });
+            items.push(Item::Image { rect: r, key: ImageKey { image: Some(img), generation: 0 }, of: PictureOf::Float(FloatId(f.id)) });
         }
         if let Some(tb) = &part.text_box {
             let from = groups.len();

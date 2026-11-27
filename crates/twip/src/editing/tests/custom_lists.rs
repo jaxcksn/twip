@@ -219,14 +219,14 @@ fn galleries_list_the_library_recent_and_document_lists_and_apply_them() {
     assert!(e.list_entry_preview(&ListEntryId("library:bullet:9".into())).is_none());
 }
 
-/// The images the first page draws, by image index.
-fn drawn_images(doc: &crate::docx::Document) -> Vec<usize> {
+/// The images the first page draws.
+fn drawn_images(doc: &crate::docx::Document) -> Vec<crate::docx::ResourceId> {
     let snap = crate::layout::layout(doc, super::fonts());
     let page = &snap.pages()[0];
     crate::layout::traverse::paint_items(page)
         .into_iter()
         .filter_map(|i| match i {
-            crate::layout::fragment::Item::Image { key, .. } => key.index,
+            crate::layout::fragment::Item::Image { key, .. } => key.image,
             _ => None,
         })
         .collect()
@@ -241,7 +241,7 @@ fn picture_bullets_draw_their_image_and_a_new_one_saves_with_its_part() {
     let levels = levels_of(&mut e, 4);
     let png = levels[0].picture.clone().expect("the picture bullet's image");
     assert!(png.0.starts_with(b"\x89PNG"));
-    let image = e.document().images.iter().position(|i| *i == png.0).expect("an image");
+    let image = e.document().images.find(&png.0).expect("an image");
     assert!(drawn_images(e.document()).contains(&image), "the label draws the image");
     // A new picture bullet for the Wingdings list.
     let mut levels = levels_of(&mut e, 1);
@@ -254,7 +254,7 @@ fn picture_bullets_draw_their_image_and_a_new_one_saves_with_its_part() {
         Command::SetListDefinition(ListDefinitionChange { levels: levels[..1].to_vec(), apply_to: ListApplyTo::WholeList, name: None }),
         fonts(),
     );
-    let at = e.document().images.iter().position(|i| *i == picture).expect("the new image");
+    let at = e.document().images.find(&picture).expect("the new image");
     assert!(drawn_images(e.document()).contains(&at), "the new bullet draws");
     let saved = crate::docx::write::save(e.document()).expect("saves");
     let mut z = zip::ZipArchive::new(std::io::Cursor::new(saved.clone())).expect("a package");

@@ -368,7 +368,7 @@ mod tests {
         // The glossary's list 1 is held past the document's lists.
         assert_ne!(g.map.nums.view(&1), 1);
         let picture = body[5].inlines.iter().find_map(|i| if let Inline::Picture(p, _) = i { p.image } else { None }).expect("a picture");
-        assert!(doc.images[picture].starts_with(b"\x89PNG"));
+        assert!(doc.images.get(picture).unwrap().starts_with(b"\x89PNG"));
         assert!(text(body[1]).contains("again"));
         let inserted = body[1].inlines.iter().any(|i| matches!(i, Inline::Text(s, r) if s.contains("again") && r.rev.ins.is_some()));
         assert!(inserted, "the tracked insertion is a revision");

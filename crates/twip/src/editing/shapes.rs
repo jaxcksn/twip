@@ -1258,7 +1258,7 @@ impl Editor {
                 let fill = match v.to_model(&mut |data| {
                     crate::docx::image::image_info(data).map(|_| {
                         images.push(data.to_vec());
-                        0
+                        crate::docx::ResourceId(0)
                     })
                 }) {
                     Ok(f) => f,
@@ -1442,20 +1442,19 @@ impl Editor {
                 });
                 let refs = sp.style.as_ref();
                 let fill = match &sp.fill {
-                    Some(f) => FillState::Explicit(FillValue::of(f, None, &[])),
+                    Some(f) => FillState::Explicit(FillValue::of(f, None, &Default::default())),
                     None => FillState::FromStyle(match refs.and_then(|r| style(&r.fill)) {
-                        Some((i, c)) => {
-                            style_entry(&theme.fills, Some(&theme.bg_fills), i).map_or(FillValue::None, |f| FillValue::of(f, c.as_ref(), &[]))
-                        }
+                        Some((i, c)) => style_entry(&theme.fills, Some(&theme.bg_fills), i)
+                            .map_or(FillValue::None, |f| FillValue::of(f, c.as_ref(), &Default::default())),
                         None => FillValue::None,
                     }),
                 };
                 let none = crate::drawing::paint::Line { fill: Some(crate::drawing::paint::Fill::None), ..Default::default() };
                 let line = match &sp.line {
-                    Some(l) => LineState::Explicit(LineValue::of(l, None, &[])),
+                    Some(l) => LineState::Explicit(LineValue::of(l, None, &Default::default())),
                     None => LineState::FromStyle(match refs.and_then(|r| style(&r.line)) {
-                        Some((i, c)) => LineValue::of(style_entry(&theme.lines, None, i).unwrap_or(&none), c.as_ref(), &[]),
-                        None => LineValue::of(&none, None, &[]),
+                        Some((i, c)) => LineValue::of(style_entry(&theme.lines, None, i).unwrap_or(&none), c.as_ref(), &Default::default()),
+                        None => LineValue::of(&none, None, &Default::default()),
                     }),
                 };
                 let effects = match &sp.effects {
@@ -1480,13 +1479,13 @@ impl Editor {
                 info.state = Some(ShapeState {
                     preset: p.geom.preset().map(ShapePreset),
                     adjust: p.geom.adjust_values(),
-                    fill: FillState::Explicit(FillValue::of(&crate::drawing::paint::Fill::Blip(p.blip.clone()), None, &[])),
+                    fill: FillState::Explicit(FillValue::of(&crate::drawing::paint::Fill::Blip(p.blip.clone()), None, &Default::default())),
                     line: match &p.line {
-                        Some(l) => LineState::Explicit(LineValue::of(l, None, &[])),
+                        Some(l) => LineState::Explicit(LineValue::of(l, None, &Default::default())),
                         None => LineState::FromStyle(LineValue::of(
                             &crate::drawing::paint::Line { fill: Some(crate::drawing::paint::Fill::None), ..Default::default() },
                             None,
-                            &[],
+                            &Default::default(),
                         )),
                     },
                     effects: p.effects.as_ref().map(|e| EffectsValue::of(e, None)).unwrap_or_default(),
@@ -1499,11 +1498,14 @@ impl Editor {
                 info.state = Some(ShapeState {
                     preset: None,
                     adjust: Vec::new(),
-                    fill: g.fill.as_ref().map_or(FillState::FromStyle(FillValue::None), |f| FillState::Explicit(FillValue::of(f, None, &[]))),
+                    fill: g
+                        .fill
+                        .as_ref()
+                        .map_or(FillState::FromStyle(FillValue::None), |f| FillState::Explicit(FillValue::of(f, None, &Default::default()))),
                     line: LineState::FromStyle(LineValue::of(
                         &crate::drawing::paint::Line { fill: Some(crate::drawing::paint::Fill::None), ..Default::default() },
                         None,
-                        &[],
+                        &Default::default(),
                     )),
                     effects: EffectsValue::default(),
                     text: None,

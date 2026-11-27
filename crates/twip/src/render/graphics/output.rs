@@ -85,7 +85,7 @@ fn kept(name: &str, pages: usize) -> usize {
 }
 
 /// One page drawn on the CPU at `k` device pixels a point, light appearance, page only, on the document's page colour.
-fn draw(g: &mut Graphics, r: &Renderer, page: &crate::layout::fragment::PageFragment, images: &[Vec<u8>], k: f64) -> Rgba {
+fn draw(g: &mut Graphics, r: &Renderer, page: &crate::layout::fragment::PageFragment, images: &crate::docx::Resources, k: f64) -> Rgba {
     let picture = g.page_picture(r, page, images);
     let (w, h) = ((page.w * k).round().max(1.0) as u32, (page.h * k).round().max(1.0) as u32);
     let mut px = vec![0u8; w as usize * h as usize * 4];

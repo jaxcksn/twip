@@ -122,7 +122,7 @@ impl std::hash::Hash for GlyphPaint {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct ImageKey {
-    pub index: Option<usize>,
+    pub image: Option<crate::docx::ResourceId>,
     pub generation: u32,
 }
 

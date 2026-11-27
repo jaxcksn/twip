@@ -85,44 +85,26 @@ pub struct Surface {
     template_touched: bool,
 }
 
-/// Blocks from another part or package, written afresh: their source XML dropped, their pictures', floats' and
-/// shapes' image indices moved up by `base`, text boxes included.
-fn detach(blocks: &mut [Block], base: usize) {
-    let up = |k: &mut Option<usize>| *k = k.map(|k| k + base);
+/// Blocks from another part or package, written afresh: their source XML dropped, text boxes included.
+fn detach(blocks: &mut [Block]) {
     for b in blocks {
         match b {
             Block::Para(p) => {
                 p.src = None;
                 for i in &mut p.inlines {
-                    match i {
-                        Inline::Picture(pic, _) => {
-                            up(&mut pic.image);
-                            if let Some(s) = &mut pic.shape {
-                                s.rebase_images(base);
-                            }
+                    if let Inline::Float(f, _) = i {
+                        for tb in f.parts.iter_mut().filter_map(|part| part.text_box.as_mut()) {
+                            detach(&mut tb.blocks);
                         }
-                        Inline::Float(f, _) => {
-                            up(&mut f.image);
-                            if let Some(s) = &mut f.shape {
-                                s.rebase_images(base);
-                            }
-                            for part in &mut f.parts {
-                                up(&mut part.image);
-                                if let Some(tb) = &mut part.text_box {
-                                    detach(&mut tb.blocks, base);
-                                }
-                            }
-                        }
-                        _ => {}
                     }
                     if let Some(tb) = i.story_mut() {
-                        detach(&mut tb.blocks, base);
+                        detach(&mut tb.blocks);
                     }
                 }
             }
             Block::Table(t) => {
                 t.src = None;
-                t.rows.iter_mut().flat_map(|r| r.cells.iter_mut()).for_each(|c| detach(&mut c.blocks, base));
+                t.rows.iter_mut().flat_map(|r| r.cells.iter_mut()).for_each(|c| detach(&mut c.blocks));
             }
         }
     }
@@ -686,9 +668,8 @@ impl Editor {
     fn imported_body(&mut self, bytes: &[u8]) -> Option<Imported> {
         let mut read = crate::docx::read_editable(bytes).ok()?;
         let mut blocks: Vec<Block> = std::mem::take(&mut read.sections).into_iter().flat_map(|s| s.blocks).collect();
-        let base = self.doc.images.len() + self.pending_images.len();
-        self.pending_images.append(&mut read.images);
-        detach(&mut blocks, base);
+        self.pending_images.extend(std::mem::take(&mut read.images));
+        detach(&mut blocks);
         if !matches!(blocks.last(), Some(Block::Para(_))) {
             blocks.extend(empty_para(&self.doc).map(Block::Para));
         }
@@ -843,7 +824,7 @@ impl Editor {
         let g = doc.glossary.as_mut().ok_or_else(|| Error::invalid("no glossary"))?;
         let mut body = g.parts[k].body.clone();
         g.parts.iter_mut().for_each(|b| b.state = crate::docx::PartState::Removed);
-        detach(&mut body, 0);
+        detach(&mut body);
         let last = doc.sections.len().checked_sub(1).ok_or_else(|| failed("no section".into()))?;
         let mut sec = doc.sections.swap_remove(last);
         sec.blocks = body;

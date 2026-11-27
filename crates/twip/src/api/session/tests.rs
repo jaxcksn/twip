@@ -1415,7 +1415,7 @@ fn picture_control_placeholder_images() {
 
     let again = open(&mut engine, &saved);
     let a = engine.session(again).expect("a session");
-    assert!(a.editor.document().images.contains(&svg), "read back as the SVG");
+    assert!(a.editor.document().images.find(&svg).is_some(), "read back as the SVG");
     assert!(blue_pixels(a) > 1000, "drawn again from the DOCX");
 
     let s = engine.session(id).expect("a session");
@@ -1934,7 +1934,8 @@ fn an_activated_picture_control_names_it() {
     }
     s.set_read_only(false);
     let data = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-OBJ.docx")).expect("fixture");
-    let image = crate::editing::Editor::open(&data, &s.fonts.fonts()).expect("opens").document().images.last().cloned().expect("an image");
+    let image =
+        crate::editing::Editor::open(&data, &s.fonts.fonts()).expect("opens").document().images.last().map(|(_, d)| d.to_vec()).expect("an image");
     s.run(Command::FillControl(crate::api::command::FillControl {
         id: listed[0].element.clone(),
         text: None,

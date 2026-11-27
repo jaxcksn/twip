@@ -819,7 +819,7 @@ fn generating_names_what_it_cannot_write() {
     let mut doc = built();
     let mut res = (**doc.resolver.as_ref().expect("styles")).clone();
     let xml = crate::docx::list_xml::new_picture_xml(0, "rId99", &res.typed().numbering.cx());
-    res.add_picture(0, xml, "rId99".into(), 0);
+    res.add_picture(0, xml, "rId99".into(), crate::docx::ResourceId(0));
     doc.resolver = Some(Rc::new(res));
     assert_eq!(unsupported(&doc), GenerateError::Unsupported("a picture bullet"));
 

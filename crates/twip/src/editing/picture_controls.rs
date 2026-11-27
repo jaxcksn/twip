@@ -1,6 +1,6 @@
 //! Picture controls
 
-use crate::docx::{ControlId, ControlKind, Inline, Lock};
+use crate::docx::{ControlId, ControlKind, Inline, Lock, ResourceId};
 use crate::font::Fonts;
 use crate::layout::{ParaId, Unit};
 
@@ -90,14 +90,14 @@ impl Editor {
     /// A protected control that held a picture before this transaction lost it or holds another: it is still there
     /// without it, or, outside design mode, it is gone.
     pub(super) fn loses_protected_picture(&self) -> bool {
-        let before: Vec<(usize, ControlId)> =
+        let before: Vec<(ResourceId, ControlId)> =
             self.doc.controlled.iter().flat_map(|(i, cs)| cs.iter().map(move |c| (*i, *c))).filter(|(_, c)| self.control_protected(*c)).collect();
         if before.is_empty() {
             return false;
         }
         let now = self.doc.picture_controls();
         before.iter().any(|&(i, c)| {
-            let held: Vec<usize> = now.iter().filter(|(_, x)| *x == c).map(|(k, _)| *k).collect();
+            let held: Vec<ResourceId> = now.iter().filter(|(_, x)| *x == c).map(|(k, _)| *k).collect();
             match held.is_empty() {
                 true => self.doc.controls.contains_key(&c) || self.mode != super::Mode::Design,
                 false => !held.contains(&i),
@@ -245,7 +245,7 @@ impl Editor {
     }
 
     /// Whether an inline outside inlines `range` of `para` shows image `image`.
-    pub(super) fn image_shown_elsewhere(&self, image: usize, para: ParaId, range: std::ops::Range<usize>) -> bool {
+    pub(super) fn image_shown_elsewhere(&self, image: ResourceId, para: ParaId, range: std::ops::Range<usize>) -> bool {
         self.index
             .para_ids()
             .filter_map(|q| Some((q, self.index.para(&self.doc, q)?)))
@@ -260,7 +260,7 @@ impl Editor {
         c: ControlId,
         para: ParaId,
         range: std::ops::Range<usize>,
-        image: usize,
+        image: ResourceId,
         data: Vec<u8>,
         size: (f64, f64),
         label: &'static str,
@@ -297,7 +297,7 @@ impl Editor {
     /// can be deleted, leaving plain pictures.
     pub(super) fn fill_images(
         &mut self,
-        images: &[usize],
+        images: &[ResourceId],
         data: Vec<u8>,
         size: (f64, f64),
         label: &'static str,
@@ -334,8 +334,8 @@ impl Editor {
             restyles.push((para, inlines));
         }
         let mut tx = self.begin(label);
-        for &index in images {
-            if self.step(&mut tx, Step::ImageData { index, data: data.clone(), filled: true }).is_err() {
+        for &image in images {
+            if self.step(&mut tx, Step::ImageData { image, data: data.clone(), filled: true }).is_err() {
                 self.abort(tx);
                 return Outcome::Unchanged("fill failed");
             }
@@ -351,7 +351,7 @@ impl Editor {
 }
 
 /// The image an inline picture or a floating one shows.
-pub(super) fn picture_image(i: &Inline) -> Option<usize> {
+pub(super) fn picture_image(i: &Inline) -> Option<ResourceId> {
     match i {
         Inline::Picture(p, _) => p.image,
         Inline::Float(f, _) if f.text_box.is_none() => f.image,
@@ -360,11 +360,11 @@ pub(super) fn picture_image(i: &Inline) -> Option<usize> {
 }
 
 /// Whether inline `i` shows image `image`: as a picture, a float's group part, or a picture or fill of its shape.
-fn shows_image(i: &Inline, image: usize) -> bool {
+fn shows_image(i: &Inline, image: ResourceId) -> bool {
     use crate::drawing::paint::Fill;
     use crate::drawing::{Shape, ShapeKind};
     let fill = |f: Option<&Fill>| matches!(f, Some(Fill::Blip(b)) if b.image == Some(image));
-    fn shape(s: &Shape, fill: &dyn Fn(Option<&Fill>) -> bool, image: usize) -> bool {
+    fn shape(s: &Shape, fill: &dyn Fn(Option<&Fill>) -> bool, image: ResourceId) -> bool {
         match &s.kind {
             ShapeKind::Sp(sp) => fill(sp.fill.as_ref()) || fill(sp.line.as_ref().and_then(|l| l.fill.as_ref())),
             ShapeKind::Pic(p) => p.blip.image == Some(image) || fill(p.line.as_ref().and_then(|l| l.fill.as_ref())),

@@ -2,10 +2,11 @@
 
 pub use crate::document::anchor::{FloatWrap, HorizontalAlign, HorizontalRelation, VerticalAlign, VerticalRelation, WrapText};
 pub use crate::document::content::{BreakKind, NoteKind};
-pub use crate::document::ident::{ControlId, FieldId, HeaderFooterId, next_para_id};
+pub use crate::document::ident::{ControlId, FieldId, HeaderFooterId, ResourceId, next_para_id};
 pub use crate::document::line::Underline;
 pub use crate::document::paragraph::{ListId, ListJc, ListRef, ListSuffix, TextAlignment};
 pub use crate::document::policy::{Compat, LayoutPolicy};
+pub use crate::document::resource::Resources;
 pub use crate::document::section::{HeightRule, LineNumberingRestart, PageBorderDisplay, VerticalAlignment};
 
 use super::font_table::GenericFamily;
@@ -696,8 +697,8 @@ impl FieldKind {
 pub struct Picture {
     pub w: f64,
     pub h: f64,
-    /// Index into [`Document::images`].
-    pub image: Option<usize>,
+    /// A resource in [`Document::images`].
+    pub image: Option<ResourceId>,
     /// Its alternative text (`wp:docPr/@descr`).
     pub alt: Rc<str>,
     /// Lock aspect ratio (`a:graphicFrameLocks/@noChangeAspect` or `a:picLocks/@noChangeAspect`): corner handles keep
@@ -876,7 +877,7 @@ pub struct Float {
     pub w: f64,
     pub auto_w: bool,
     pub h: f64,
-    pub image: Option<usize>,
+    pub image: Option<ResourceId>,
     /// A picture's alternative text (`wp:docPr/@descr`).
     pub alt: Rc<str>,
     /// Lock aspect ratio, as for [`Picture::lock_aspect`].
@@ -934,7 +935,7 @@ pub struct Relative {
 #[derive(Clone, Debug, PartialEq)]
 pub struct GroupPart {
     pub rect: [f64; 4],
-    pub image: Option<usize>,
+    pub image: Option<ResourceId>,
     pub text_box: Option<TextBox>,
     /// The part's place in the float's shape tree.
     pub path: crate::drawing::ChildPath,
@@ -1214,8 +1215,8 @@ pub struct ListLabel {
     pub run: Run,
     pub jc: ListJc,
     pub suff: ListSuffix,
-    /// A picture bullet's image (an index into [`Document::images`]), drawn instead of the text.
-    pub picture: Option<usize>,
+    /// A picture bullet's image (a resource in [`Document::images`]), drawn instead of the text.
+    pub picture: Option<ResourceId>,
     /// A legacy level's space and indent ([`super::numbering::Level::legacy`]).
     pub legacy: Option<(f64, f64)>,
 }
@@ -1295,8 +1296,8 @@ pub struct Source {
     pub stories: HashMap<HeaderFooterId, (String, Vec<Block>)>,
     /// The part name of each header and footer the sections referred to as read, those that didn't load among them.
     pub story_parts: HashMap<HeaderFooterId, String>,
-    /// Each read image's part name, by index in [`Document::images`] (what a filled placeholder's image replaces).
-    pub image_parts: Vec<String>,
+    /// Each read image's part name, by its id in [`Document::images`] (what a filled placeholder's image replaces).
+    pub image_parts: HashMap<ResourceId, String>,
     /// The footnotes and endnotes parts: name, XML, and whether it holds footnotes.
     pub notes: Vec<(String, String, bool)>,
     /// Each note's blocks as read, by id.
@@ -2252,7 +2253,7 @@ pub struct Document {
     pub endnotes: HashMap<i64, Vec<Block>>,
     /// Footnote separator / continuation separator stories, when the document defines them.
     pub separators: HashMap<String, Vec<Block>>,
-    pub images: Vec<Vec<u8>>,
+    pub images: Resources,
     /// HTML imported in place (`w:altChunk`), each standing as an empty paragraph until the editor brings it in.
     pub alt_chunks: Vec<AltChunk>,
     /// The core, extended and custom document properties.
@@ -2268,19 +2269,18 @@ pub struct Document {
     pub glossary: Option<Glossary>,
     /// The item parts of data parts removed since reading (taken out of the package on save).
     pub removed_data: Vec<String>,
-    /// Placeholders filled since reading, by image index: drawn as their image, saved without
-    /// `w:showingPlcHdr`.
-    pub filled: std::collections::HashSet<usize>,
+    /// Placeholders filled since reading, by image: drawn as their image, saved without `w:showingPlcHdr`.
+    pub filled: std::collections::HashSet<ResourceId>,
     /// Sections whose page ([`SectionPage`]) was edited: saving writes their `w:sectPr` page properties.
     pub edited_sections: std::collections::HashSet<usize>,
     /// How many sections as read each section holds: more than one once section breaks were deleted. Empty: one
     /// each (nothing deleted).
     pub section_sources: Vec<usize>,
-    /// Pictures that can't be deleted, by image index: those in picture controls that can't be deleted (`w:lock`
+    /// Pictures that can't be deleted, by image: those in picture controls that can't be deleted (`w:lock`
     /// `sdtLocked` or `sdtContentLocked`).
-    pub undeletable: std::collections::HashSet<usize>,
-    /// Pictures in picture controls, by image index: the innermost picture control of each picture showing it.
-    pub controlled: HashMap<usize, Vec<ControlId>>,
+    pub undeletable: std::collections::HashSet<ResourceId>,
+    /// Pictures in picture controls, by image: the innermost picture control of each picture showing it.
+    pub controlled: HashMap<ResourceId, Vec<ControlId>>,
     pub settings: Settings,
     pub line_number_run: Option<Run>,
     /// What the document was read from, when read for editing.
@@ -2329,12 +2329,12 @@ impl Document {
         }
     }
 
-    /// Each picture in a picture control, by image index, with its innermost picture control.
-    pub fn picture_controls(&self) -> Vec<(usize, ControlId)> {
+    /// Each picture in a picture control, by image, with its innermost picture control.
+    pub fn picture_controls(&self) -> Vec<(ResourceId, ControlId)> {
         if !self.controls.values().any(|c| c.props.kind == ControlKind::Picture) {
             return Vec::new();
         }
-        type Found = Vec<(usize, ControlId)>;
+        type Found = Vec<(ResourceId, ControlId)>;
         // The innermost picture control around an inline: an open inline one, else the paragraph's.
         fn pick(open: &[ControlId], block: Option<ControlId>, controls: &HashMap<ControlId, Control>) -> Option<ControlId> {
             open.iter().rev().copied().find(|c| controls.get(c).is_some_and(|k| k.props.kind == ControlKind::Picture)).or(block)

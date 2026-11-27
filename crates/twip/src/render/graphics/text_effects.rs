@@ -162,11 +162,11 @@ impl Graphics {
         rec.push_transform(to_box);
         // The line as written, unless the appearance shows its colours otherwise.
         if inked_alike(&line.paint, ink) {
-            self.stroke(rec, &path, line, [bx.width(), bx.height()], 0.0, [bx.x0, bx.y0], &[]);
+            self.stroke(rec, &path, line, [bx.width(), bx.height()], 0.0, [bx.x0, bx.y0], &Default::default());
         } else {
             let mut line = line.clone();
             map_paint(&mut line.paint, ink);
-            self.stroke(rec, &path, &line, [bx.width(), bx.height()], 0.0, [bx.x0, bx.y0], &[]);
+            self.stroke(rec, &path, &line, [bx.width(), bx.height()], 0.0, [bx.x0, bx.y0], &Default::default());
         }
         rec.pop();
         self.fx_path = path;

@@ -300,8 +300,8 @@ pub struct PictureBullet {
     pub id: i64,
     /// The relationship its image is read through, as its picture names it.
     pub rel: Option<Rc<str>>,
-    /// Its image's index in the document's images, once read.
-    pub image: Option<usize>,
+    /// Its image in the document's images, once read.
+    pub image: Option<crate::docx::ResourceId>,
     /// The picture, as the source format wrote it. Owned by the adapter that read it.
     pub foreign: Option<Rc<ForeignProps>>,
 }
@@ -349,7 +349,7 @@ impl Lists {
     }
 
     /// The image a bullet level draws: its picture bullet's.
-    pub fn bullet_image(&self, level: &ListLevel) -> Option<usize> {
+    pub fn bullet_image(&self, level: &ListLevel) -> Option<crate::docx::ResourceId> {
         (level.format.as_ref().and_then(Literal::known) == Some(NumberFormat::Bullet)).then_some(())?;
         self.pictures.get(&level.pic_bullet?)?.image
     }

@@ -41,7 +41,12 @@ pub fn html(editor: &Editor, f: &Fragment, fonts: &Fonts) -> String {
 }
 
 /// Items drawn as a clipboard picture of at most `max_pixels`, with the pixels it takes.
-fn picture(items: &[crate::layout::fragment::Clipped], fonts: &Fonts, images: &[Vec<u8>], max_pixels: u64) -> Option<(ClipPicture, u64)> {
+fn picture(
+    items: &[crate::layout::fragment::Clipped],
+    fonts: &Fonts,
+    images: &crate::docx::Resources,
+    max_pixels: u64,
+) -> Option<(ClipPicture, u64)> {
     let (png, [w, h], size) = crate::render::preview::object_png(items, fonts, images, max_pixels)?;
     Some((ClipPicture { png, size }, u64::from(w) * u64::from(h)))
 }

@@ -58,8 +58,8 @@ pub struct Num {
 pub struct PicBullet {
     pub raw: String,
     pub rel: Option<String>,
-    /// Its image's index in the document's images, once read.
-    pub image: Option<usize>,
+    /// Its image in the document's images, once read.
+    pub image: Option<crate::docx::ResourceId>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -213,7 +213,7 @@ impl Numbering {
     }
 
     /// The image a bullet level draws: its picture bullet's.
-    pub fn bullet_image(&self, level: &Level) -> Option<usize> {
+    pub fn bullet_image(&self, level: &Level) -> Option<crate::docx::ResourceId> {
         (level.fmt == "bullet").then_some(())?;
         self.pic_bullets.get(&level.pic_bullet?)?.image
     }

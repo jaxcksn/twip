@@ -933,7 +933,7 @@ impl Editor {
             return Outcome::Unchanged("fixed size");
         }
         // The image's own size, times the share of it a crop shows.
-        let natural = |e: &Self, image: Option<usize>, shape: Option<&crate::drawing::Shape>| {
+        let natural = |e: &Self, image: Option<crate::docx::ResourceId>, shape: Option<&crate::drawing::Shape>| {
             let (w, h) = e.natural_size(image)?;
             let [l, t, r, b] = shape.and_then(|s| s.pic()).map_or([0.0; 4], |p| p.blip.src.map(crate::drawing::units::Pct::fraction));
             let shown = |a: f64, b: f64| (1.0 - a - b).max(0.001);
@@ -996,8 +996,8 @@ impl Editor {
     }
 
     /// An image's own size, points, at its resolution (96 dpi when it has none).
-    fn natural_size(&self, image: Option<usize>) -> Option<(f64, f64)> {
-        let (w, h, dx, dy) = image.and_then(|i| self.doc.images.get(i)).and_then(|b| crate::docx::image::image_info(b))?;
+    fn natural_size(&self, image: Option<crate::docx::ResourceId>) -> Option<(f64, f64)> {
+        let (w, h, dx, dy) = image.and_then(|i| self.doc.images.get(i)).and_then(crate::docx::image::image_info)?;
         Some((w * 72.0 / if dx > 1.0 { dx } else { 96.0 }, h * 72.0 / if dy > 1.0 { dy } else { 96.0 }))
     }
 

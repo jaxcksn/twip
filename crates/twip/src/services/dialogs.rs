@@ -1632,7 +1632,7 @@ pub fn issues(doc: &crate::docx::Document) -> Vec<AccessibilityIssue> {
     const TEXT: &str = "Picture without alt text: add a description.";
     // Nesting is bounded by the reader's XML depth.
     fn walk(doc: &crate::docx::Document, blocks: &[Block], out: &mut Vec<AccessibilityIssue>) {
-        let placeholder = |image: Option<usize>| {
+        let placeholder = |image: Option<crate::docx::ResourceId>| {
             image
                 .and_then(|k| doc.controlled.get(&k))
                 .is_some_and(|cs| cs.iter().any(|c| doc.controls.get(c).is_some_and(|k| k.props.showing_placeholder)))

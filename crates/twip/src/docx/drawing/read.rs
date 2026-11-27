@@ -15,7 +15,7 @@ use crate::drawing::units::{Angle, Emu};
 use crate::drawing::{GroupShape, NonVisual, PicShape, RawGraphic, Shape, ShapeKind, ShapeText, SpShape, Xfrm};
 
 pub trait Source {
-    fn image(&mut self, rid: &str) -> Option<usize>;
+    fn image(&mut self, rid: &str) -> Option<crate::docx::ResourceId>;
     fn diagram(&mut self, dm: &str) -> Option<Shape>;
 }
 
@@ -305,8 +305,8 @@ mod tests {
     struct Images;
 
     impl Source for Images {
-        fn image(&mut self, rid: &str) -> Option<usize> {
-            (rid == "rId5").then_some(3)
+        fn image(&mut self, rid: &str) -> Option<crate::docx::ResourceId> {
+            (rid == "rId5").then_some(crate::docx::ResourceId(3))
         }
 
         fn diagram(&mut self, _: &str) -> Option<Shape> {
@@ -351,7 +351,7 @@ mod tests {
         let gr = g.group().unwrap();
         assert_eq!((gr.child_ext, gr.children.len()), ([Emu(50), Emu(50)], 2));
         let p = gr.children[0].pic().unwrap();
-        assert_eq!(p.blip.image, Some(3));
+        assert_eq!(p.blip.image, Some(crate::docx::ResourceId(3)));
         assert!(matches!(gr.children[1].kind, ShapeKind::Raw(_)));
         let (r, _) = read_xml(r#"<c:chart xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" r:id="rId9"/>"#);
         assert!(matches!(r.kind, ShapeKind::Raw(_)));

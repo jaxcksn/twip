@@ -14,7 +14,7 @@ use super::step::Step;
 pub(super) struct PicEdit<'a> {
     pub w: &'a mut f64,
     pub h: &'a mut f64,
-    pub image: &'a mut Option<usize>,
+    pub image: &'a mut Option<crate::docx::ResourceId>,
     /// Its effect extents (`wp:effectExtent`).
     pub effect: &'a mut [f64; 4],
     pub shape: Option<&'a mut crate::drawing::Shape>,
@@ -198,7 +198,7 @@ impl Editor {
         );
         // Refused before a transaction began: the image isn't left for the next one.
         if !matches!(out, Outcome::Changed(_)) {
-            self.pending_images.clear();
+            self.pending_images = Default::default();
         }
         out
     }
@@ -464,7 +464,7 @@ mod tests {
                 .expect("a floating picture")
         };
         let mut e = open("FX-OBJ.docx");
-        let data = e.document().images.last().cloned().expect("an image");
+        let data = e.document().images.last().map(|(_, d)| d.to_vec()).expect("an image");
         let float = picture(&e);
         e.set_caret_for_benchmark(Selection::Object(ObjectRef::Floating(crate::layout::FloatId(float))));
         let w0 = e.object_selection().expect("selected").width.0;

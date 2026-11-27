@@ -109,8 +109,12 @@ fn draw_sized(graphic: &str, size: (i64, i64), image: Option<&[u8]>) -> Shot {
 
 /// [`draw_sized`] with the graphics `g`, as a session draws a second document with the first one's.
 fn draw_in(g: &mut Graphics, graphic: &str, size: (i64, i64), image: Option<&[u8]>) -> Shot {
-    let d = crate::docx::read(&package(graphic, size, image)).expect("the document reads");
-    let snap = crate::layout::layout(&d, &fonts());
+    draw_doc(g, &crate::docx::read(&package(graphic, size, image)).expect("the document reads"))
+}
+
+/// Document `d` drawn by `g`.
+fn draw_doc(g: &mut Graphics, d: &crate::docx::Document) -> Shot {
+    let snap = crate::layout::layout(d, &fonts());
     let picture = g.page_picture(&Renderer::default(), &snap.pages()[0], &d.images);
     let mut px = vec![0u8; SIZE.0 * SIZE.1 * 4];
     let mut target = Target::new(&mut px, SIZE.0 as u32, SIZE.1 as u32, SIZE.0 * 4, Format::Rgba8).expect("a target");
@@ -454,7 +458,7 @@ fn a_new_document_lets_the_last_ones_images_go() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-OBJ.docx");
     let doc = crate::docx::read(&std::fs::read(path).expect("fixture")).expect("reads");
     let mut g = super::Graphics::default();
-    let key = crate::layout::fragment::ImageKey { index: Some(0), generation: 0 };
+    let key = crate::layout::fragment::ImageKey { image: doc.images.iter().next().map(|(k, _)| k), generation: 0 };
     let id = g.image(key, &doc.images).expect("an image");
     g.clear_images();
     assert!(g.res.images.info(id).is_none(), "the registry holds the old document's bytes no longer");
@@ -506,9 +510,9 @@ fn a_picture_that_does_not_decode_keeps_its_colours() {
         !c
     };
     png[29..33].copy_from_slice(&crc.to_be_bytes());
-    let images = vec![png];
+    let mut images = crate::docx::Resources::default();
     let mut g = Graphics::default();
-    let key = crate::layout::fragment::ImageKey { index: Some(0), generation: 0 };
+    let key = crate::layout::fragment::ImageKey { image: Some(images.add(png)), generation: 0 };
     let plain = g.image(key, &images).expect("registered by its header");
     let from = crate::drawing::colour::Rgba::rgb(0xFF0000);
     assert_eq!(g.recoloured(key, from, from, true, &images), Some(plain));
@@ -639,13 +643,14 @@ fn a_new_document_does_not_draw_the_last_ones_changed_pictures() {
 fn changed_pictures_in_use_stay_over_the_cap_and_unused_ones_go() {
     let rect = wsp("rect", CLEAR_RED);
     let mut g = Graphics::default();
-    let first = draw_in(&mut g, &rect, (100, 60), Some(&picture()));
+    let d = crate::docx::read(&package(&rect, (100, 60), Some(&picture()))).expect("the document reads");
+    let first = draw_doc(&mut g, &d);
     assert_eq!((g.recolour_decodes, g.recoloured.len()), (1, 1));
     let id = g.recoloured.values().next().and_then(|r| r.id).expect("decoded");
     // Over the cap (0), frame after frame of the same pages: nothing is dropped, nothing is decoded again.
     for _ in 0..3 {
         g.trim_recoloured(0);
-        let again = draw_in(&mut g, &rect, (100, 60), Some(&picture()));
+        let again = draw_doc(&mut g, &d);
         assert_eq!(first.0, again.0);
     }
     assert_eq!((g.recolour_decodes, g.recoloured.len()), (1, 1), "kept while drawn");
@@ -653,7 +658,7 @@ fn changed_pictures_in_use_stay_over_the_cap_and_unused_ones_go() {
     g.trim_recoloured(0);
     g.trim_recoloured(0);
     assert!(g.recoloured.is_empty() && g.recoloured_bytes == 0 && g.res.images.info(id).is_none());
-    let back = draw_in(&mut g, &rect, (100, 60), Some(&picture()));
+    let back = draw_doc(&mut g, &d);
     assert_eq!((first.0, g.recolour_decodes), (back.0, 2));
 }
 
@@ -887,7 +892,7 @@ fn a_page_background_takes_its_theme_tint_or_shade_and_shows_only_when_word_show
     assert!(matches!(r.page_fill, Some(crate::drawing::paint::Paint::Gradient { .. })));
     let picture = fixture("page-picture.docx");
     let Some(crate::drawing::paint::Fill::Blip(b)) = &picture.page_fill else { panic!("{:?}", picture.page_fill) };
-    assert!(b.image.is_some_and(|i| i < picture.images.len()), "the tile's picture is read");
+    assert!(b.image.is_some_and(|i| picture.images.contains(i)), "the tile's picture is read");
 }
 
 #[test]
@@ -995,9 +1000,10 @@ fn a_tiled_fill_with_no_width_or_mirrored_tiles_leaves_no_gaps() {
     // An area with no width on a tile edge, a trillion points tall, draws nothing and returns.
     let mut g = Graphics::default();
     let mut rec = twip_graphics::scene::Recorder::new();
-    let key = crate::layout::fragment::ImageKey { index: Some(0), generation: 0 };
+    let mut images = crate::docx::Resources::default();
+    let key = crate::layout::fragment::ImageKey { image: Some(images.add(emf)), generation: 0 };
     let area = twip_graphics::kurbo::Rect::new(4.0, 0.0, 4.0, 1e12);
-    g.vector_tiles(&mut rec, key, &[emf], (0.0, 0.0, 2.0, 2.0), [0.0; 4], crate::drawing::paint::TileFlip::None, area);
+    g.vector_tiles(&mut rec, key, &images, (0.0, 0.0, 2.0, 2.0), [0.0; 4], crate::drawing::paint::TileFlip::None, area);
 }
 
 #[test]

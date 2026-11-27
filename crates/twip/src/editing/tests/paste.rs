@@ -56,7 +56,7 @@ fn base64(data: &[u8]) -> String {
     crate::api::value::base64(data)
 }
 
-fn pictures(e: &Editor) -> Vec<(f64, f64, Option<usize>)> {
+fn pictures(e: &Editor) -> Vec<(f64, f64, Option<crate::docx::ResourceId>)> {
     let mut out = Vec::new();
     for b in &e.document().sections[0].blocks {
         if let Block::Para(p) = b {
@@ -84,7 +84,8 @@ fn a_picture_on_the_clipboard_pastes_in_line_over_the_selection_as_one_step() {
     select(&mut e, (0, 4), (0, 7));
     let out = e.paste_clip(image_clip(png(96, 48)), None, fonts());
     assert!(changed(&out), "{out:?}");
-    assert_eq!(pictures(&e), [(72.0, 36.0, Some(0))], "its own size, 96 px a 72 pt inch");
+    let only = e.document().images.iter().next().map(|(k, _)| k);
+    assert_eq!(pictures(&e), [(72.0, 36.0, only)], "its own size, 96 px a 72 pt inch");
     assert_eq!(texts(&e)[0].chars().filter(|c| *c != crate::editing::text::OBJECT).collect::<String>(), "abc ", "the selection is replaced");
     assert_eq!(e.history().next_undo(), Some("Paste"));
     e.execute(Command::Undo(Default::default()), fonts());
@@ -203,7 +204,8 @@ fn html_pictures_come_in_line_and_remote_ones_as_their_text() {
         base64(&png(8, 8))
     );
     assert!(changed(&e.paste_html(&html, fonts())));
-    assert_eq!(pictures(&e), [(30.0, 15.0, Some(0))], "its given size, CSS px");
+    let only = e.document().images.iter().next().map(|(k, _)| k);
+    assert_eq!(pictures(&e), [(30.0, 15.0, only)], "its given size, CSS px");
     assert_eq!(e.document().images.len(), 1, "its bytes are the document's");
     let text: String = texts(&e)[0].chars().filter(|c| *c != crate::editing::text::OBJECT).collect();
     assert_eq!(text, "x abfar", "a remote picture is never fetched: its alternative text stands in");

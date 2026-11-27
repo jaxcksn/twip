@@ -140,7 +140,7 @@ impl Editor {
         };
         let revision = self.revision();
         let out = self.execute_editable(cmd, fonts);
-        self.pending_images.clear();
+        self.pending_images = Default::default();
         self.settle_provisional(fonts);
         // The correction mark stays through typing after it and caret moves onto it; anything else drops it.
         self.follow_correction(typed, self.revision() != revision);

@@ -750,7 +750,7 @@ fn a_relative_size_from_the_other_axis_is_refused() {
     use super::super::position::{Position, StoryId};
     use crate::api::command::{ObjectSize, RelativeSize, RelativeSizeReference};
     use crate::api::value::{NoneOr, ObjectWrap};
-    let data = super::open("FX-OBJ.docx").document().images.last().cloned().expect("an image");
+    let data = super::open("FX-OBJ.docx").document().images.last().map(|(_, d)| d.to_vec()).expect("an image");
     let mut e = Editor::open(&super::blank_body(r#"<w:p><w:r><w:t>text</w:t></w:r></w:p>"#), fonts()).expect("opens");
     let p = super::para_id(&e, 0);
     e.set_caret_for_benchmark(Selection::Caret(Position::text(StoryId::Body, p, crate::layout::Unit(0))));

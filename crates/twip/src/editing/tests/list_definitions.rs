@@ -416,7 +416,7 @@ fn duplicate_list_ids_are_saved_unchanged() {
 
 #[test]
 fn a_picture_bullet_definition_adds_its_image_once() {
-    let png = open("FX-CUSTOM-LISTS.docx").document().images[0].clone();
+    let png = open("FX-CUSTOM-LISTS.docx").document().images.iter().next().unwrap().1.to_vec();
     let nums = numbering(&(abstract_of(0, &levels("decimal", |i| format!("%{}.", i + 1))) + &num(1, 0)));
     let mut e = editor(&pkg(&np("A", 1, 0), Some(&nums), ""));
     let mut ls = e.list_levels(1).unwrap();

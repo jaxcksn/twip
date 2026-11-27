@@ -417,7 +417,7 @@ impl Cascade {
     }
 
     /// The image a bullet level draws: its picture bullet's.
-    pub fn bullet_image(&self, level: &ListLevel) -> Option<usize> {
+    pub fn bullet_image(&self, level: &ListLevel) -> Option<crate::docx::ResourceId> {
         self.lists.bullet_image(level)
     }
 

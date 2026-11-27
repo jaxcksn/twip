@@ -207,7 +207,7 @@ impl Graphics {
         &mut self,
         rec: &mut Recorder,
         key: ImageKey,
-        images: &[Vec<u8>],
+        images: &crate::docx::Resources,
         (x, y, w, h): (f64, f64, f64, f64),
         crop: [f64; 4],
         flip: crate::drawing::paint::TileFlip,
@@ -306,8 +306,8 @@ impl Graphics {
             g.set_fonts(f);
         }
         let mut rec = Recorder::new();
-        let key = ImageKey { index: Some(0), generation: 0 };
-        let images = [bytes.to_vec()];
+        let mut images = crate::docx::Resources::default();
+        let key = ImageKey { image: Some(images.add(bytes.to_vec())), generation: 0 };
         if !g.vector(&mut rec, key, &images, kurbo::Rect::new(0.0, 0.0, f64::from(w), f64::from(h)), [0.0; 4]) {
             return None;
         }
@@ -320,8 +320,8 @@ impl Graphics {
 
     /// Draws the picture `key` as vectors when it is an SVG or a metafile: the part `crop` leaves (the fractions cut
     /// off its left, top, right and bottom) filling `dst`, clipped to it. False when it is neither, or doesn't read.
-    fn vector(&mut self, rec: &mut Recorder, key: ImageKey, images: &[Vec<u8>], dst: kurbo::Rect, crop: [f64; 4]) -> bool {
-        let Some(bytes) = key.index.and_then(|i| images.get(i)) else { return false };
+    fn vector(&mut self, rec: &mut Recorder, key: ImageKey, images: &crate::docx::Resources, dst: kurbo::Rect, crop: [f64; 4]) -> bool {
+        let Some(bytes) = key.image.and_then(|i| images.get(i)) else { return false };
         let Some(kind) = crate::docx::image::vector(bytes) else { return false };
         let (kw, kh) = (1.0 - crop[0] - crop[2], 1.0 - crop[1] - crop[3]);
         if !(kw > 1e-9 && kh > 1e-9) {
@@ -361,7 +361,7 @@ impl Graphics {
 
     /// Records a frame: the visible pages, then the view's overlays over them, in device pixels. What the host draws
     /// over it goes into [`Graphics::frame`]; [`Graphics::present`] renders it.
-    pub fn draw(&mut self, r: &Renderer, view: &View, images: &[Vec<u8>], f: &Frame) {
+    pub fn draw(&mut self, r: &Renderer, view: &View, images: &crate::docx::Resources, f: &Frame) {
         self.trim_recoloured(shape::RECOLOUR_MAX_BYTES);
         let mut rec = std::mem::take(&mut self.frame);
         let k = f.px_per_pt;
@@ -475,7 +475,7 @@ impl Graphics {
     }
 
     /// One item recorded into `rec`, in the points it is in.
-    pub fn record_item(&mut self, rec: &mut Recorder, r: &Renderer, item: &Item, images: &[Vec<u8>]) {
+    pub fn record_item(&mut self, rec: &mut Recorder, r: &Renderer, item: &Item, images: &crate::docx::Resources) {
         self.item(rec, r, false, item, images);
     }
 
@@ -487,7 +487,7 @@ impl Graphics {
         r: &Renderer,
         page: &crate::layout::fragment::PageFragment,
         item: &Item,
-        images: &[Vec<u8>],
+        images: &crate::docx::Resources,
     ) {
         if let Item::Shape(s) = item
             && self.inline_reflection(rec, r, false, s, page, (0.0, 0.0), images)
@@ -507,7 +507,7 @@ impl Graphics {
         s: &crate::layout::fragment::ShapeItem,
         page: &crate::layout::fragment::PageFragment,
         shift: (f64, f64),
-        images: &[Vec<u8>],
+        images: &crate::docx::Resources,
     ) -> bool {
         if s.text_float == 0 || s.picture || s.effects.reflection.is_none() {
             return false;
@@ -528,7 +528,7 @@ impl Graphics {
         s: &crate::layout::fragment::ShapeItem,
         text: &[Clipped],
         shift: (f64, f64),
-        images: &[Vec<u8>],
+        images: &crate::docx::Resources,
     ) {
         self.shape_with_text(
             rec,
@@ -559,7 +559,12 @@ impl Graphics {
 
     /// Tests: `page`'s content as a picture in its points, recorded now.
     #[doc(hidden)]
-    pub fn page_picture(&mut self, r: &Renderer, page: &crate::layout::fragment::PageFragment, images: &[Vec<u8>]) -> twip_graphics::scene::Picture {
+    pub fn page_picture(
+        &mut self,
+        r: &Renderer,
+        page: &crate::layout::fragment::PageFragment,
+        images: &crate::docx::Resources,
+    ) -> twip_graphics::scene::Picture {
         let mut rec = Recorder::new();
         self.recolour_log.clear();
         self.page(&mut rec, r, page, images);
@@ -580,7 +585,7 @@ impl Graphics {
         &mut self,
         r: &Renderer,
         page: &crate::layout::fragment::PageFragment,
-        images: &[Vec<u8>],
+        images: &crate::docx::Resources,
         pixels: &mut [u8],
         (width, height): (u32, u32),
         clear: Color,
@@ -618,7 +623,7 @@ impl Graphics {
 
     /// Records `page`'s content (in its points) into `rec`. Items are recorded where layout keeps them, under a
     /// translation to their place (and their clip): no item is copied.
-    fn page(&mut self, rec: &mut Recorder, r: &Renderer, page: &crate::layout::fragment::PageFragment, images: &[Vec<u8>]) {
+    fn page(&mut self, rec: &mut Recorder, r: &Renderer, page: &crate::layout::fragment::PageFragment, images: &crate::docx::Resources) {
         self.page_fill(rec, r, [page.w, page.h], images);
         let mut at: Option<(f64, f64, Option<[f64; 4]>)> = None;
         let close = |rec: &mut Recorder, at: Option<(f64, f64, Option<[f64; 4]>)>| {
@@ -656,11 +661,11 @@ impl Graphics {
     }
 
     /// The document's picture `key`, registered on first use.
-    fn image(&mut self, key: ImageKey, images: &[Vec<u8>]) -> Option<ImageId> {
+    fn image(&mut self, key: ImageKey, images: &crate::docx::Resources) -> Option<ImageId> {
         let res = &mut self.res;
         *self.images.entry(key).or_insert_with(|| {
-            let bytes = key.index.and_then(|i| images.get(i))?;
-            res.images.add(Arc::new(bytes.clone()) as ImageData).ok()
+            let bytes = key.image.and_then(|i| images.get(i))?;
+            res.images.add(Arc::new(bytes.to_vec()) as ImageData).ok()
         })
     }
 
@@ -684,7 +689,7 @@ impl Graphics {
     }
 
     /// One page item, in the page's points.
-    fn item(&mut self, rec: &mut Recorder, r: &Renderer, own: bool, item: &Item, images: &[Vec<u8>]) {
+    fn item(&mut self, rec: &mut Recorder, r: &Renderer, own: bool, item: &Item, images: &crate::docx::Resources) {
         let ink = |c: u32| r.ink_for(own, c);
         match item {
             Item::Rect { rect: rc, colour, snap: false, dash: Dash::Solid, .. } => rec.fill_rect(rect(*rc), ink(*colour)),

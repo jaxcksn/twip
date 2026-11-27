@@ -4,7 +4,7 @@ use std::collections::HashSet;
 use std::ops::Range;
 use std::rc::Rc;
 
-use crate::docx::{Block, Document, HeaderFooterId, Inline, Paragraph, Row, Run};
+use crate::docx::{Block, Document, HeaderFooterId, Inline, Paragraph, ResourceId, Row, Run};
 use crate::layout::{Change, ParaId, TableId, Unit};
 
 use super::index::{Container, DocIndex};
@@ -61,7 +61,7 @@ pub enum Step {
         inlines: Vec<Inline>,
     },
     ImageData {
-        index: usize,
+        image: ResourceId,
         data: Vec<u8>,
         filled: bool,
     },
@@ -112,7 +112,7 @@ pub enum Step {
         views: Vec<(crate::docx::FieldId, crate::docx::FieldView)>,
     },
     AddImage {
-        index: usize,
+        image: ResourceId,
         data: Option<Vec<u8>>,
     },
     /// The styles and numbering tables, and the lists added since reading.
@@ -252,12 +252,12 @@ pub struct TableProps {
 }
 
 impl Step {
-    pub fn pictures_of(&self, images: &HashSet<usize>) -> i64 {
+    pub fn pictures_of(&self, images: &HashSet<ResourceId>) -> i64 {
         self.pictures_where(&|k| images.contains(&k))
     }
 
-    pub fn pictures_where(&self, images: &dyn Fn(usize) -> bool) -> i64 {
-        fn inlines(v: &[Inline], images: &dyn Fn(usize) -> bool) -> i64 {
+    pub fn pictures_where(&self, images: &dyn Fn(ResourceId) -> bool) -> i64 {
+        fn inlines(v: &[Inline], images: &dyn Fn(ResourceId) -> bool) -> i64 {
             v.iter()
                 .filter(|i| match i {
                     Inline::Picture(p, _) => p.image.is_some_and(images),
@@ -266,7 +266,7 @@ impl Step {
                 })
                 .count() as i64
         }
-        fn blocks(v: &[Block], images: &dyn Fn(usize) -> bool) -> i64 {
+        fn blocks(v: &[Block], images: &dyn Fn(ResourceId) -> bool) -> i64 {
             v.iter()
                 .map(|b| match b {
                     Block::Para(p) => inlines(&p.inlines, images),
@@ -923,11 +923,11 @@ impl Step {
                 };
                 Ok(Applied { inverse: Step::Separator { key, blocks: old }, map: Map::Same, hint: None })
             }
-            Step::ImageData { index, data, filled } => {
-                let slot = doc.images.get_mut(index).ok_or(StepError::Missing)?;
+            Step::ImageData { image, data, filled } => {
+                let slot = doc.images.get_mut(image).ok_or(StepError::Missing)?;
                 let old = std::mem::replace(slot, data);
-                let was = if filled { !doc.filled.insert(index) } else { doc.filled.remove(&index) };
-                Ok(Applied { inverse: Step::ImageData { index, data: old, filled: was }, map: Map::Same, hint: None })
+                let was = if filled { !doc.filled.insert(image) } else { doc.filled.remove(&image) };
+                Ok(Applied { inverse: Step::ImageData { image, data: old, filled: was }, map: Map::Same, hint: None })
             }
             Step::BuildingBlock { k, part } => {
                 let g = doc.glossary.get_or_insert_with(Default::default);
@@ -1025,19 +1025,16 @@ impl Step {
                 }
                 Ok(Applied { inverse: Step::FieldViews { para, views: old }, map: Map::Same, hint: para_hint(idx, para, 0) })
             }
-            Step::AddImage { index, data: Some(data) } => {
-                if index != doc.images.len() {
+            Step::AddImage { image, data: Some(data) } => {
+                if doc.images.contains(image) {
                     return Err(StepError::OutOfRange);
                 }
-                doc.images.push(data);
-                Ok(Applied { inverse: Step::AddImage { index, data: None }, map: Map::Same, hint: None })
+                doc.images.insert(image, data);
+                Ok(Applied { inverse: Step::AddImage { image, data: None }, map: Map::Same, hint: None })
             }
-            Step::AddImage { index, data: None } => {
-                if index + 1 != doc.images.len() {
-                    return Err(StepError::OutOfRange);
-                }
-                let data = doc.images.pop();
-                Ok(Applied { inverse: Step::AddImage { index, data }, map: Map::Same, hint: None })
+            Step::AddImage { image, data: None } => {
+                let data = Some(doc.images.remove(image).ok_or(StepError::Missing)?);
+                Ok(Applied { inverse: Step::AddImage { image, data }, map: Map::Same, hint: None })
             }
             Step::Resolver { resolver, added } => {
                 let resolver = std::mem::replace(&mut doc.resolver, resolver);

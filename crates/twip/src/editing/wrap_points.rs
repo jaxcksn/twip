@@ -415,7 +415,7 @@ fn simplified(pts: Vec<(f64, f64)>) -> Vec<(f64, f64)> {
 
 /// A float's outline as its wrap polygon, as Word makes one for a tight or through wrap: a shape's geometry, a
 /// picture's opaque pixels, else its box.
-pub(super) fn outline_polygon<'a>(image: &dyn Fn(usize) -> Option<&'a [u8]>, f: &crate::docx::Float) -> Vec<(f64, f64)> {
+pub(super) fn outline_polygon<'a>(image: &dyn Fn(crate::docx::ResourceId) -> Option<&'a [u8]>, f: &crate::docx::Float) -> Vec<(f64, f64)> {
     use crate::drawing::ShapeKind;
     let made = match f.shape.as_deref().map(|s| (&s.kind, s.xfrm.ext)) {
         Some((ShapeKind::Sp(sp), ext)) if ext[0].0 > 0 && ext[1].0 > 0 => {
@@ -482,11 +482,8 @@ impl Editor {
 
 impl Editor {
     /// Image `k`'s bytes: the document's, or one added in the transaction being built.
-    fn image_bytes(&self, k: usize) -> Option<&[u8]> {
-        match k.checked_sub(self.doc.images.len()) {
-            None => self.doc.images.get(k).map(Vec::as_slice),
-            Some(j) => self.pending_images.get(j).map(Vec::as_slice),
-        }
+    fn image_bytes(&self, k: crate::docx::ResourceId) -> Option<&[u8]> {
+        self.doc.images.get(k).or_else(|| self.pending_images.get(k))
     }
 
     /// `n`'s wrap polygon made again from its outline when it wraps tight or through, wasn't edited by hand and its

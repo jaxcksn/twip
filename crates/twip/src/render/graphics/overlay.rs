@@ -20,7 +20,7 @@ fn wave(x0: f64, x1: f64, y: f64, step: f64, amp: f64) -> impl Iterator<Item = (
 
 impl Graphics {
     /// Page `i`'s overlays, in its points.
-    pub(super) fn overlays(&mut self, rec: &mut Recorder, r: &Renderer, view: &View, images: &[Vec<u8>], i: usize, f: &Frame) {
+    pub(super) fn overlays(&mut self, rec: &mut Recorder, r: &Renderer, view: &View, images: &crate::docx::Resources, i: usize, f: &Frame) {
         let k = f.px_per_pt;
         let (page, palette) = (r.page_theme(), r.palette());
         let ink = |c: u32| r.ink_for(false, c);

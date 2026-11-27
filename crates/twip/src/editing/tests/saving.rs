@@ -158,7 +158,7 @@ fn blip_images(saved: &[u8]) -> Vec<Vec<u8>> {
 }
 
 fn a_picture() -> Vec<u8> {
-    open("FX-OBJ.docx").document().images.last().cloned().expect("an image")
+    open("FX-OBJ.docx").document().images.last().map(|(_, d)| d.to_vec()).expect("an image")
 }
 
 fn insert_picture(e: &mut Editor, data: &[u8]) {
@@ -183,7 +183,7 @@ fn a_new_picture_does_not_reuse_an_existing_relationship_id() {
 
 #[test]
 fn a_new_picture_beside_one_an_earlier_save_named_keeps_its_own_image() {
-    let (old, new) = (open("FX-OBJ.docx").document().images[0].clone(), a_picture());
+    let (old, new) = (open("FX-OBJ.docx").document().images.iter().next().unwrap().1.to_vec(), a_picture());
     assert_ne!(old, new);
     // An earlier save named its picture's relationship as a new one now would be (the next image's index).
     let rels = format!(r#"<Relationship Id="rIdCeImg1" Type="{REL}/image" Target="media/ceimage1.png"/>"#);

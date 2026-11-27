@@ -594,7 +594,7 @@ fn cells_pasted_over_a_larger_block_in_another_document_share_their_lists() {
 
 #[test]
 fn a_control_filled_from_a_docx_shows_its_pictures() {
-    let image = super::open("FX-OBJ.docx").document().images.last().cloned().expect("an image");
+    let image = super::open("FX-OBJ.docx").document().images.last().map(|(_, d)| d.to_vec()).expect("an image");
     let mut a = Editor::open(&blank_with(""), fonts()).unwrap();
     let pic = crate::api::command::Picture { data: crate::api::value::Bytes(image.clone()), alt_text: None };
     assert!(matches!(a.execute(Command::InsertPicture(pic), fonts()), crate::editing::commands::Outcome::Changed(_)));
@@ -616,7 +616,7 @@ fn a_control_filled_from_a_docx_shows_its_pictures() {
     };
     let out = b.execute(Command::FillControl(fill), fonts());
     assert!(matches!(out, crate::editing::commands::Outcome::Changed(_)), "{out:?}");
-    let shown: Vec<usize> =
+    let shown: Vec<crate::docx::ResourceId> =
         paras(&b).iter().flat_map(|p| p.inlines.iter().filter_map(|i| if let Inline::Picture(p, _) = i { p.image } else { None })).collect();
     assert_eq!(shown.len(), 1, "the picture is in the control");
     assert!(b.document().images.get(shown[0]).is_some_and(|d| !d.is_empty()), "with its image: {shown:?} of {}", b.document().images.len());

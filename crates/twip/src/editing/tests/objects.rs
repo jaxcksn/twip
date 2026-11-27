@@ -343,7 +343,7 @@ fn delete_removes_only_the_selected_group_child() {
 
 /// The blank document with a picture inserted in its first paragraph.
 fn with_inserted_picture() -> Editor {
-    let data = open("FX-OBJ.docx").document().images.last().cloned().expect("an image");
+    let data = open("FX-OBJ.docx").document().images.last().map(|(_, d)| d.to_vec()).expect("an image");
     let mut e = Editor::open(&super::blank_with("Body text here"), fonts()).expect("opens");
     e.set_caret_for_benchmark(Selection::Caret(Position::text(StoryId::Body, super::para_id(&e, 0), Unit(2))));
     let out = e.execute(Command::InsertPicture(Picture { data: Bytes(data), alt_text: None }), fonts());
@@ -403,7 +403,7 @@ fn an_inserted_picture_can_be_rotated_once_floating() {
 
 #[test]
 fn a_quarter_turned_new_picture_saves_its_unturned_extent() {
-    let data = open("FX-OBJ.docx").document().images.last().cloned().expect("an image");
+    let data = open("FX-OBJ.docx").document().images.last().map(|(_, d)| d.to_vec()).expect("an image");
     let mut doc = crate::docx::read_editable(&super::blank_with("Body text here")).unwrap();
     doc.settings.policy.mode = 15;
     let mut e = Editor::with_document(doc, fonts());
@@ -532,7 +532,7 @@ fn float_picture() -> (Editor, FloatId) {
 }
 
 fn natural(e: &Editor, f: &crate::docx::Float) -> (f64, f64) {
-    let (w, h, dx, dy) = crate::docx::image::image_info(&e.document().images[f.image.expect("image")]).expect("decodes");
+    let (w, h, dx, dy) = crate::docx::image::image_info(e.document().images.get(f.image.expect("image")).unwrap()).expect("decodes");
     (w * 72.0 / dx, h * 72.0 / dy)
 }
 
@@ -602,7 +602,7 @@ fn floating_objects_are_refused_in_a_footnote() {
         let out = e.execute(c, fonts());
         assert!(matches!(out, Outcome::Refused(_)), "{out:?}");
     }
-    let data = open("FX-OBJ.docx").document().images.last().cloned().expect("an image");
+    let data = open("FX-OBJ.docx").document().images.last().map(|(_, d)| d.to_vec()).expect("an image");
     assert!(changed(&e.execute(Command::InsertPicture(Picture { data: Bytes(data), alt_text: None }), fonts())));
     assert!(matches!(e.selection(), Selection::Object(ObjectRef::Inline { .. })), "{:?}", e.selection());
     let out = e.execute(Command::SetObjectWrap(ObjectWrap::Square), fonts());
@@ -793,7 +793,7 @@ fn regroup_groups_again_what_ungroup_made_until_one_is_gone() {
 
 #[test]
 fn the_default_picture_wrap_inserts_in_line_in_a_note() {
-    let data = open("FX-OBJ.docx").document().images.last().cloned().expect("an image");
+    let data = open("FX-OBJ.docx").document().images.last().map(|(_, d)| d.to_vec()).expect("an image");
     let mut e = Editor::open(&super::blank_with("Body text here"), fonts()).expect("opens");
     e.set_default_picture_wrap(ObjectWrap::Square);
     e.set_caret_for_benchmark(Selection::Caret(Position::text(StoryId::Body, super::para_id(&e, 0), Unit(2))));
@@ -810,7 +810,7 @@ fn the_default_picture_wrap_inserts_in_line_in_a_note() {
 
 #[test]
 fn the_default_picture_wrap_floats_an_inserted_picture_in_one_step() {
-    let data = open("FX-OBJ.docx").document().images.last().cloned().expect("an image");
+    let data = open("FX-OBJ.docx").document().images.last().map(|(_, d)| d.to_vec()).expect("an image");
     let mut e = Editor::open(&super::blank_with("Body text here"), fonts()).expect("opens");
     assert_eq!(e.default_picture_wrap(), ObjectWrap::Inline);
     e.set_default_picture_wrap(ObjectWrap::Square);
@@ -1254,11 +1254,11 @@ fn picture_recolor_reads_back_saves_and_replaces_the_one_before() {
 fn a_pictures_image_and_a_shapes_picture_fill_read_back() {
     use crate::drawing::paint::{BlipFill, BlipMode, Fill};
     use crate::drawing::units::Pct;
-    let data = open("FX-OBJ.docx").document().images.last().cloned().expect("an image");
+    let data = open("FX-OBJ.docx").document().images.last().map(|(_, d)| d.to_vec()).expect("an image");
     let mut e = with_inserted_picture();
     assert_eq!(e.object_image(), Some(&data[..]));
     assert_eq!(e.shape_fill_image(), None, "a picture has no fill");
-    let k = e.document().images.iter().position(|i| *i == data).expect("the image");
+    let k = e.document().images.find(&data).expect("the image");
     let _ = e.execute(Command::Escape, fonts());
     assert!(changed(
         &e.execute(Command::InsertShape(ShapeInsert { preset: ShapePreset::from_name("rect").unwrap(), width: None, height: None }), fonts())

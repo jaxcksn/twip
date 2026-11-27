@@ -646,7 +646,7 @@ fn blip_xml(b: &BlipFill, tag: &str) -> String {
             format!(r#"<a:tile tx="{}" ty="{}" sx="{}" sy="{}" flip="{}" algn="{}"/>"#, tx.0, ty.0, sx.0, sy.0, flip(*fl), align.name())
         }
     };
-    let embed = b.image.map_or(String::new(), |i| format!(r#" r:embed="{}{i}""#, super::NEW_IMAGE));
+    let embed = b.image.map_or(String::new(), |i| format!(r#" r:embed="{}{}""#, super::NEW_IMAGE, i.0));
     let adjust = adjust_xml(&b.adjust);
     let blip = if adjust.is_empty() { format!("<a:blip{embed}/>") } else { format!("<a:blip{embed}>{adjust}</a:blip>") };
     format!(r#"<{tag} rotWithShape="{}">{blip}{src}{mode}</{tag}>"#, u8::from(b.rot_with_shape))
@@ -1326,7 +1326,7 @@ mod round_trip {
         use crate::drawing::paint::{BlipAdjust, BlipFill, BlipMode};
         use crate::drawing::units::Pct;
         let a = crate::drawing::paint::BlipFill {
-            image: Some(0),
+            image: Some(crate::docx::ResourceId(0)),
             src: [Pct(0); 4],
             mode: BlipMode::Stretch([Pct(0); 4]),
             adjust: Vec::new(),

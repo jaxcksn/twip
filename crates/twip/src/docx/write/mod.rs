@@ -781,7 +781,7 @@ fn vml_background(
             format!(r#"<{v}:fill type="{kind}" color="{}" color2="{color2}"{colors} angle="{angle}"{focus}{o1}{o2}/>"#, first.1)
         }
         Fill::Blip(b) => {
-            let image = b.image?;
+            let image = b.image?.0;
             let (kind, colours) = match (&b.mode, b.adjust.iter().find_map(|a| if let BlipAdjust::Duotone(d) = a { Some(d) } else { None })) {
                 (BlipMode::Tile { .. }, Some([fg, bg])) => ("pattern", format!(r#" color2="{}" color="{}""#, hex(fg).0, hex(bg).0)),
                 (BlipMode::Tile { .. }, None) => ("tile", String::new()),
@@ -1343,7 +1343,7 @@ fn filled_placeholders(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Re
     };
     let base = |p: &str| p.rsplit('/').next().unwrap_or(p).to_string();
     // A filled image's size as shown: its first picture's.
-    fn size_of(blocks: &[Block], image: usize) -> Option<(f64, f64)> {
+    fn size_of(blocks: &[Block], image: ResourceId) -> Option<(f64, f64)> {
         blocks.iter().find_map(|b| match b {
             Block::Para(p) => p.inlines.iter().find_map(|i| match i {
                 Inline::Picture(pic, _) if pic.image == Some(image) => Some((pic.w, pic.h)),
@@ -1356,16 +1356,16 @@ fn filled_placeholders(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Re
     let mut types = read(parts, "[Content_Types].xml")?.ok_or("no content types")?;
     let mut xml_parts: Vec<String> = vec![src.main.clone()];
     xml_parts.extend(src.stories.keys().filter_map(|id| src.story_parts.get(id)).cloned());
-    let mut filled: Vec<usize> = doc.filled.iter().copied().collect();
+    let mut filled: Vec<ResourceId> = doc.filled.iter().copied().collect();
     filled.sort_unstable();
     for idx in filled {
-        let (Some(old), Some(data)) = (src.image_parts.get(idx).filter(|p| !p.is_empty()), doc.images.get(idx)) else { continue };
+        let (Some(old), Some(data)) = (src.image_parts.get(&idx), doc.images.get(idx)) else { continue };
         let Some((_, ext)) = super::image::image_type(data) else { continue };
         let old_ext = old.rsplit_once('.').map_or("", |(_, e)| e).to_ascii_lowercase();
         let same = old_ext == ext || (old_ext == "jpg" && ext == "jpeg");
         let new = if same { old.clone() } else { format!("{}.{ext}", old.rsplit_once('.').map_or(old.as_str(), |(s, _)| s)) };
         parts.retain(|(n, _)| n != &new);
-        parts.push((new.clone(), data.clone()));
+        parts.push((new.clone(), data.to_vec()));
         if !same && !types.to_ascii_lowercase().contains(&format!("extension=\"{ext}\"")) {
             let at = types.rfind("</Types>").ok_or("content types without their end tag")?;
             let mime = super::image::image_type(data).map_or("application/octet-stream", |(m, _)| m);
@@ -5623,7 +5623,7 @@ fn vml_run_child(src: &str) -> Option<Range<usize>> {
 }
 
 /// A VML picture's text naming image `now` when it shows another than `was`.
-fn picture_relinked(x: String, was: Option<usize>, now: Option<usize>) -> String {
+fn picture_relinked(x: String, was: Option<ResourceId>, now: Option<ResourceId>) -> String {
     let image = now.filter(|_| now != was);
     match (image, find_tag(&x, "imagedata", 0)) {
         // Its `r:id`, else the `o:relid` read when it has none.
@@ -5632,7 +5632,7 @@ fn picture_relinked(x: String, was: Option<usize>, now: Option<usize>) -> String
                 Some(a) => {
                     let v0 = start + a;
                     let v1 = x[v0..end].find('"').map_or(end, |e| v0 + e);
-                    format!("{}{NEW_IMAGE}{k}{}", &x[..v0], &x[v1..])
+                    format!("{}{NEW_IMAGE}{}{}", &x[..v0], k.0, &x[v1..])
                 }
                 None => x,
             }
@@ -5643,7 +5643,7 @@ fn picture_relinked(x: String, was: Option<usize>, now: Option<usize>) -> String
 
 /// A kept picture's drawing (`src`) as it is now: its extents, alternative text and, when it shows another image
 /// than it was read with, a blip naming that image.
-fn picture_patched(src: &str, p: Placement, was: Option<usize>, now: Option<usize>) -> String {
+fn picture_patched(src: &str, p: Placement, was: Option<ResourceId>, now: Option<ResourceId>) -> String {
     let image = now.filter(|_| now != was);
     if drawing::is_vml(src) {
         let (w, h) = p.size.unwrap_or_default();
@@ -5655,7 +5655,7 @@ fn picture_patched(src: &str, p: Placement, was: Option<usize>, now: Option<usiz
                     Some(a) => {
                         let v0 = start + a;
                         let v1 = x[v0..end].find('"').map_or(end, |e| v0 + e);
-                        format!("{}{NEW_IMAGE}{k}{}", &x[..v0], &x[v1..])
+                        format!("{}{NEW_IMAGE}{}{}", &x[..v0], k.0, &x[v1..])
                     }
                     None => x,
                 }
@@ -5672,7 +5672,7 @@ const PARA_LEVEL: &str = "\u{0}P";
 /// Where new drawings' `wp:docPr/@id`s start: above what Word gives a document's own drawings.
 const DRAWING_IDS: u32 = 0x4345_0000;
 
-/// What a new picture's image is embedded by until saving: this and its index in [`Document::images`].
+/// What a new picture's image is embedded by until saving: this and its id in [`Document::images`].
 /// [`add_images`] gives each part that names one the image, a relationship of its own and that relationship's id. It
 /// holds a colon, which a relationship id (an `xsd:ID`) can't: no id a package was read with is taken for one.
 pub(crate) const NEW_IMAGE: &str = "twip:image:";
@@ -5690,7 +5690,7 @@ impl Saver<'_, '_> {
         // A watermark is written as Word writes one, so Word's Watermark dialog finds it.
         if let Some(m) = super::watermark::of(f) {
             let spid = f.shape.as_ref().map_or(0, |s| s.nv.id).max(2049);
-            let image = f.image.map_or(String::new(), |i| format!("{NEW_IMAGE}{i}"));
+            let image = f.image.map_or(String::new(), |i| format!("{NEW_IMAGE}{}", i.0));
             return Some(super::watermark::vml(&m, &self.w, [f.w, f.h], spid, &image, &run.lang));
         }
         let f = &*unswapped(f);
@@ -5792,7 +5792,7 @@ impl Saver<'_, '_> {
                 id = id,
                 r = R,
                 new = NEW_IMAGE,
-                image = image,
+                image = image.0,
                 cx = cx,
                 cy = cy,
             ),
@@ -5968,7 +5968,7 @@ impl Saver<'_, '_> {
             cx = cx,
             cy = cy,
             id = id,
-            image = image,
+            image = image.0,
             descr = descr_attr(&p.alt),
             ee = effect_extent(p.effect),
         ))
@@ -5989,7 +5989,7 @@ fn descr_attr(alt: &str) -> String {
 /// Each made part that embeds a new picture's image ([`NEW_IMAGE`]): the image as a media part beside it, its
 /// relationship, and the content type of its extension.
 // shortcut: its relationship and content-type edits are its own; they move to `package::add_part` when next changed.
-fn add_images(package: &[u8], images: &[Vec<u8>], parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
+fn add_images(package: &[u8], images: &Resources, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
     let mut zin = zip::ZipArchive::new(Cursor::new(package)).map_err(|e| e.to_string())?;
     // Media part names the package and the parts written have: a new image's is free in both.
     let mut taken: std::collections::HashSet<String> =
@@ -6011,12 +6011,12 @@ fn add_images(package: &[u8], images: &[Vec<u8>], parts: &mut Vec<(String, Vec<u
     for name in names {
         let xml = String::from_utf8(parts.iter().find(|(n, _)| *n == name).map(|p| p.1.clone()).unwrap_or_default()).map_err(|e| e.to_string())?;
         // The images its relationship attributes name (`r:embed`, `r:id`, `o:relid`), not text that looks like one.
-        let mut used: Vec<usize> = {
+        let mut used: Vec<ResourceId> = {
             let dom = roxmltree::Document::parse(&xml).map_err(|e| e.to_string())?;
             dom.descendants()
                 .flat_map(|n| n.attributes())
                 .filter(|a| a.namespace() == Some(R) || a.namespace() == Some(O) && a.name() == "relid")
-                .filter_map(|a| a.value().strip_prefix(NEW_IMAGE)?.parse().ok())
+                .filter_map(|a| a.value().strip_prefix(NEW_IMAGE)?.parse().ok().map(ResourceId))
                 .collect()
         };
         used.sort_unstable();
@@ -6031,13 +6031,13 @@ fn add_images(package: &[u8], images: &[Vec<u8>], parts: &mut Vec<(String, Vec<u
         let mut media: Vec<(String, Vec<u8>)> = Vec::new();
         for k in used {
             let data = images.get(k).ok_or("a new picture without its image")?;
-            media.push((format!("{k}"), data.clone()));
+            media.push((format!("{}", k.0), data.to_vec()));
             // An SVG is written as Word writes one: the blip shows a PNG of it, its `asvg:svgBlip` the SVG.
             if super::image::is_svg(data)
                 && let Some((png, patched)) = svg_blips(&xml, k, data)
             {
                 xml = patched;
-                media.push((format!("{k}f"), png));
+                media.push((format!("{}f", k.0), png));
             }
         }
         // Relationship ids the part has: each new image takes one it doesn't.
@@ -6114,8 +6114,8 @@ fn add_images(package: &[u8], images: &[Vec<u8>], parts: &mut Vec<(String, Vec<u
 /// A part's XML with each new blip of SVG image `k` (`a:blip r:embed="rIdCeImg{k}"`) showing its PNG fallback
 /// (`rIdCeImg{k}f`) and naming the SVG in an `asvg:svgBlip` extension, and that PNG: drawn at the first picture's
 /// size at 96 dpi. `None` when the SVG can't be drawn.
-fn svg_blips(xml: &str, k: usize, svg: &[u8]) -> Option<(Vec<u8>, String)> {
-    let attr = format!("r:embed=\"{NEW_IMAGE}{k}\"");
+fn svg_blips(xml: &str, k: ResourceId, svg: &[u8]) -> Option<(Vec<u8>, String)> {
+    let attr = format!("r:embed=\"{NEW_IMAGE}{}\"", k.0);
     let first = xml.match_indices(&attr).map(|(at, _)| at).find(|&at| xml[..at].rfind('<').is_some_and(|t| xml[t..].starts_with("<a:blip")))?;
     // The drawing's extent, the last before the blip.
     let extent = xml[..first].rfind("<wp:extent ").map(|e| &xml[e..]).and_then(|t| {
@@ -6136,7 +6136,7 @@ fn svg_blips(xml: &str, k: usize, svg: &[u8]) -> Option<(Vec<u8>, String)> {
             continue;
         }
         out.push_str(&rest[..at]);
-        out.push_str(&format!("r:embed=\"{NEW_IMAGE}{k}f\""));
+        out.push_str(&format!("r:embed=\"{NEW_IMAGE}{}f\"", k.0));
         rest = &rest[at + attr.len()..];
         let end = rest.find('>')?;
         if rest[..end].ends_with('/') {
@@ -6242,7 +6242,7 @@ struct Placement {
     /// Lock aspect ratio (`a:graphicFrameLocks/@noChangeAspect`).
     lock: Option<bool>,
     /// A new picture (an image of [`Document::images`]): the blip names it ([`NEW_IMAGE`]).
-    blip: Option<usize>,
+    blip: Option<ResourceId>,
     /// The distance from the text (`distT`, `distB`, `distL`, `distR`), `allowOverlap` and `layoutInCell`.
     dist: Option<[f64; 4]>,
     /// An inline picture's effect extents (`wp:effectExtent`: left, top, right, bottom).
@@ -6475,7 +6475,7 @@ impl Placement {
             let stop = if s[start..end].ends_with("/>") { Some(end) } else { s[end..].find(&close).map(|c| end + c + close.len()) };
             if let Some(stop) = stop {
                 // Its own relationship namespace: the old blip may have declared it.
-                s.replace_range(start..stop, &format!(r#"<{prefix}blip xmlns:r="{R}" r:embed="{NEW_IMAGE}{k}"/>"#));
+                s.replace_range(start..stop, &format!(r#"<{prefix}blip xmlns:r="{R}" r:embed="{NEW_IMAGE}{}"/>"#, k.0));
             }
         }
         if let Some((w, h)) = self.size {
@@ -7224,6 +7224,15 @@ mod tests {
         s
     }
 
+    /// `doc`'s page fill, its picture named by its place in the document's images (each read gives new ids).
+    fn fill_by_place(doc: &Document) -> Option<crate::drawing::paint::Fill> {
+        let mut f = doc.page_fill.clone();
+        if let Some(crate::drawing::paint::Fill::Blip(b)) = &mut f {
+            b.image = b.image.and_then(|k| doc.images.iter().position(|(i, _)| i == k)).map(|p| ResourceId(p as u64));
+        }
+        f
+    }
+
     #[test]
     fn an_untouched_page_background_keeps_its_markup_and_a_changed_one_is_written() {
         let (bytes, mut doc) = render_fixture("page-pattern.docx");
@@ -7238,7 +7247,10 @@ mod tests {
         assert!(xml.contains(&format!(r#"<w:background w:color="123456">{fill}</w:background>"#)), "{xml}");
         assert!(!part_text(&saved, "word/settings.xml").contains("displayBackgroundShape"));
         let again = crate::docx::read(&saved).expect("reads again");
-        assert_eq!((again.page_colour, again.page_fill == doc.page_fill, again.settings.display_background_shape), (Some(0x12_3456), true, false));
+        assert_eq!(
+            (again.page_colour, fill_by_place(&again) == fill_by_place(&doc), again.settings.display_background_shape),
+            (Some(0x12_3456), true, false)
+        );
         // No colour and no fill: no background.
         doc.page_colour = None;
         doc.page_fill = None;
@@ -7307,7 +7319,7 @@ mod tests {
         let saved = save(&doc).expect("saves");
         let again = crate::docx::read(&saved).expect("reads again");
         let Some(Fill::Blip(b)) = &again.page_fill else { panic!("{:?}", again.page_fill) };
-        assert_eq!(again.images[b.image.expect("its picture")], picture.images[0]);
+        assert_eq!(again.images.get(b.image.expect("its picture")).unwrap(), picture.images.iter().next().unwrap().1);
     }
 
     /// A blank document's body as `body`, read for editing.
@@ -7390,7 +7402,7 @@ mod tests {
     fn a_new_blip_declares_its_relationship_namespace() {
         let a = super::super::xml::A;
         let src = r#"<w:drawing><a:graphic><a:blip xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:embed="rId1"/></a:graphic></w:drawing>"#;
-        let out = Placement { blip: Some(2), ..Placement::default() }.apply(src);
+        let out = Placement { blip: Some(ResourceId(2)), ..Placement::default() }.apply(src);
         let xml = format!(r#"<x xmlns:w="{W}" xmlns:a="{a}">{out}</x>"#);
         let dom = roxmltree::Document::parse(&xml).unwrap_or_else(|e| panic!("well formed: {e}: {out}"));
         let blip = dom.descendants().find(|n| n.tag_name().name() == "blip").expect("a blip");
@@ -7400,10 +7412,10 @@ mod tests {
     #[test]
     fn a_vml_picture_named_by_its_relid_takes_its_new_image() {
         let src = r#"<w:pict><v:shape style="width:1pt;height:1pt"><v:imagedata o:relid="rId3" o:title=""/></v:shape></w:pict>"#;
-        let out = picture_patched(src, Placement::default(), Some(0), Some(1));
+        let out = picture_patched(src, Placement::default(), Some(ResourceId(0)), Some(ResourceId(1)));
         assert!(out.contains(&format!(r#"o:relid="{NEW_IMAGE}1""#)), "{out}");
         let src = r#"<w:pict><v:shape style="width:1pt;height:1pt"><v:imagedata r:id="rId3" o:relid="rId4"/></v:shape></w:pict>"#;
-        let out = picture_patched(src, Placement::default(), Some(0), Some(1));
+        let out = picture_patched(src, Placement::default(), Some(ResourceId(0)), Some(ResourceId(1)));
         assert!(out.contains(&format!(r#"r:id="{NEW_IMAGE}1""#)) && out.contains(r#"o:relid="rId4""#), "{out}");
     }
 
@@ -7419,7 +7431,8 @@ mod tests {
             r#"<w:document xmlns:w="{W}" xmlns:wp="{wp}" xmlns:a="{a}" xmlns:r="{R}"><wp:docPr id="1" descr="{NEW_IMAGE}0"/><a:blip r:embed="{NEW_IMAGE}0"/></w:document>"#
         );
         let mut parts = vec![("word/document.xml".to_string(), xml.into_bytes())];
-        add_images(&package, &[crate::render::svg::png(1, 1, &[0, 0, 0, 255])], &mut parts).expect("adds the image");
+        add_images(&package, &[(ResourceId(0), crate::render::svg::png(1, 1, &[0, 0, 0, 255]))].into_iter().collect(), &mut parts)
+            .expect("adds the image");
         let out = String::from_utf8(parts[0].1.clone()).expect("text");
         assert!(out.contains(&format!(r#"descr="{NEW_IMAGE}0""#)) && out.contains(r#"r:embed="rIdCeImg1""#), "{out}");
     }
@@ -7528,7 +7541,7 @@ mod tests {
         let out = part_text(&saved, "word/document.xml");
         roxmltree::Document::parse(&out).expect("well formed");
         assert!(out.contains(r#"xmlns:v1="urn:schemas-microsoft-com:vml""#) && out.contains("<v1:background"), "{out}");
-        assert_eq!(crate::docx::read(&saved).expect("reads again").page_fill, doc.page_fill);
+        assert_eq!(fill_by_place(&crate::docx::read(&saved).expect("reads again")), fill_by_place(&doc));
         // VML declared on the `w:background` alone: a colour change keeps the fill, and its declaration.
         let (bytes, read) = render_fixture("page-picture.docx");
         let xml = part_text(&bytes, "word/document.xml");
@@ -7543,7 +7556,7 @@ mod tests {
         let out = part_text(&saved, "word/document.xml");
         roxmltree::Document::parse(&out).expect("well formed");
         assert!(out.contains(&format!("<w:background w:color=\"FFFFEF\"{decl}><v:background")), "{out}");
-        assert_eq!(crate::docx::read(&saved).expect("reads again").page_fill, doc.page_fill);
+        assert_eq!(fill_by_place(&crate::docx::read(&saved).expect("reads again")), fill_by_place(&doc));
     }
 
     #[test]
@@ -7569,7 +7582,7 @@ mod tests {
             roxmltree::Document::parse(&out).expect("well formed");
             assert!(out.contains(r#"xmlns:w="urn:example:other""#), "{out}");
             let again = crate::docx::read(&saved).expect("reads again");
-            assert_eq!((again.page_colour, &again.page_fill), (doc.page_colour, &doc.page_fill), "{out}");
+            assert_eq!((again.page_colour, fill_by_place(&again)), (doc.page_colour, fill_by_place(&doc)), "{out}");
         }
     }
 
@@ -7579,13 +7592,12 @@ mod tests {
         let (_, mut doc) = render_fixture("page-picture.docx");
         let Some(Fill::Blip(mut b)) = doc.page_fill.clone() else { panic!("{:?}", doc.page_fill) };
         let png = crate::render::svg::png(2, 2, &[0, 128, 255, 255].repeat(4));
-        doc.images.push(png.clone());
-        b.image = Some(doc.images.len() - 1);
+        b.image = Some(doc.images.add(png.clone()));
         doc.page_fill = Some(Fill::Blip(b));
         let saved = save(&doc).expect("saves");
         let again = crate::docx::read(&saved).expect("reads again");
         let Some(Fill::Blip(b)) = &again.page_fill else { panic!("{:?}", again.page_fill) };
-        assert_eq!(again.images[b.image.expect("its picture")], png);
+        assert_eq!(again.images.get(b.image.expect("its picture")).unwrap(), png);
     }
 
     #[test]

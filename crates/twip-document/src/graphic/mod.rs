@@ -262,7 +262,7 @@ impl<S: Default> Shape<S> {
     }
 
     /// A new picture of image `image`, `w` by `h`, stretched over its box.
-    pub fn picture(image: usize, w: Emu, h: Emu) -> Shape<S> {
+    pub fn picture(image: crate::ident::ResourceId, w: Emu, h: Emu) -> Shape<S> {
         let blip = paint::BlipFill {
             image: Some(image),
             src: [units::Pct(0); 4],
@@ -286,36 +286,6 @@ impl<S: Default> Shape<S> {
 }
 
 impl<S> Shape<S> {
-    /// Moves every image index in the shape tree (blips, blip fills, line fills) up by `base`.
-    pub fn rebase_images(&mut self, base: usize) {
-        fn blip(b: &mut BlipFill, base: usize) {
-            b.image = b.image.map(|k| k + base);
-        }
-        fn fill(f: Option<&mut Fill>, base: usize) {
-            if let Some(Fill::Blip(b)) = f {
-                blip(b, base);
-            }
-        }
-        fn line(l: Option<&mut Line>, base: usize) {
-            fill(l.and_then(|l| l.fill.as_mut()), base);
-        }
-        match &mut self.kind {
-            ShapeKind::Sp(s) => {
-                fill(s.fill.as_mut(), base);
-                line(s.line.as_mut(), base);
-            }
-            ShapeKind::Pic(p) => {
-                blip(&mut p.blip, base);
-                line(p.line.as_mut(), base);
-            }
-            ShapeKind::Group(g) => {
-                fill(g.fill.as_mut(), base);
-                g.children.iter_mut().for_each(|c| c.rebase_images(base));
-            }
-            ShapeKind::Raw(_) => {}
-        }
-    }
-
     /// The shape drawn from a geometry it is.
     pub fn sp(&self) -> Option<&SpShape> {
         match &self.kind {

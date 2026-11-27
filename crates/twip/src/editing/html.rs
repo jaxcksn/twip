@@ -843,13 +843,13 @@ impl Editor {
                 self.commit(tx, None, fonts);
             }
             let Some(res) = self.doc.resolver.clone() else { break 'paste Outcome::Unchanged("no styles") };
-            let mut images = Vec::new();
+            let mut images = crate::docx::Resources::default();
             let blocks = self.html_blocks(&read, &res, &nums, &template, width, &mut images);
             // A last paragraph of a kind or alignment of its own is pasted with its mark; plain text joins the caret's.
             let open_end = matches!(read.last(), Some(HBlock::Para(p)) if p.kind == Kind::Body && p.align.is_none());
             let mut f = Fragment { id: 0, blocks, open_end, ..Default::default() };
             if !images.is_empty() {
-                // Its pictures, by their index in `images`, become this document's as another document's do.
+                // Its pictures, by their id in `images`, become this document's as another document's do.
                 let o =
                     super::import::Origin { key: super::import::next_key(), images, resolver: None, people: Default::default(), main: String::new() };
                 f.origin = Some(std::rc::Rc::new(o));
@@ -874,7 +874,7 @@ impl Editor {
         nums: &[(usize, i64)],
         template: &Paragraph,
         width: f64,
-        images: &mut Vec<(usize, Vec<u8>)>,
+        images: &mut crate::docx::Resources,
     ) -> Vec<Block> {
         let mut out = Vec::new();
         for b in blocks {
@@ -1091,7 +1091,7 @@ impl Editor {
                 let mut f = Fragment { id: 0, open_end: false, ..Default::default() };
                 let mut blocks: Vec<Block> = match read {
                     Chunk::Html(read) => {
-                        let mut images = Vec::new();
+                        let mut images = crate::docx::Resources::default();
                         let blocks =
                             self.html_blocks(read, &res, &nums[j], template, width, &mut images).iter().map(super::clipboard::fresh).collect();
                         if !images.is_empty() {
@@ -1141,7 +1141,7 @@ impl Editor {
 
     /// An HTML picture in line: its own size, or the width and height it is given (one of them keeping its shape),
     /// no wider than `width`; its bytes go in `images` under the index it shows.
-    fn html_picture(&mut self, img: &Image, width: f64, images: &mut Vec<(usize, Vec<u8>)>, run: &crate::docx::Run) -> Inline {
+    fn html_picture(&mut self, img: &Image, width: f64, images: &mut crate::docx::Resources, run: &crate::docx::Run) -> Inline {
         let (pw, ph, dx, dy) = crate::docx::image::image_info(&img.data).unwrap_or((96.0, 96.0, 96.0, 96.0));
         let natural = (pw * 72.0 / if dx > 1.0 { dx } else { 96.0 }, ph * 72.0 / if dy > 1.0 { dy } else { 96.0 });
         let pt = 72.0 / 96.0;
@@ -1159,8 +1159,7 @@ impl Editor {
         let k = (MAX_PICTURE_SIDE / w.max(h)).min(1.0);
         let side = |v: f64| ((v * k * 20.0).round() / 20.0).clamp(1.0, MAX_PICTURE_SIDE);
         let (w, h) = (side(w), side(h));
-        let k = images.len();
-        images.push((k, img.data.clone()));
+        let k = images.add(img.data.clone());
         let emu = crate::drawing::units::Emu::from_pt;
         let mut shape = crate::drawing::Shape::picture(k, emu(w), emu(h));
         shape.nv.name = self.new_object_name("Picture");
