@@ -1,7 +1,7 @@
 //! The definitions a document resolves with: the typed cascade and the XML path's resolver, kept in step
 //!
 //! Edits change the typed definitions first and the XML path's tables are derived from them. Where the XML path's
-//! tables change by themselves (the reader's, a test's), the typed side is brought in step on its next use from what
+//! tables are read apart (the reader's), the typed side is brought in step on its next use from what
 //! changed: each style, definition, list and picture bullet whose XML differs from the one its holder was read from
 //! is read again, the read-order rule is worked out again over the styles, and the cascade is built again over the
 //! definitions, the unchanged ones shared.
@@ -463,8 +463,7 @@ fn lists_of(numbering: &NumberingXml, n: &Numbering, was: Option<(&Lists, &Gloss
 }
 
 /// The XML path's resolver and the typed definitions a document resolves with. Edits go to the typed definitions
-/// first, the resolver's tables derived from them; tests' mutable access to the resolver leaves the typed
-/// definitions to be brought in step on their next use.
+/// first, the resolver's tables derived from them.
 #[derive(Clone)]
 pub struct Resolvers {
     frozen: Resolver,
@@ -536,15 +535,6 @@ impl std::ops::Deref for Resolvers {
     type Target = Resolver;
     fn deref(&self) -> &Resolver {
         &self.frozen
-    }
-}
-
-// Tests change the XML path's tables directly
-#[cfg(test)]
-impl std::ops::DerefMut for Resolvers {
-    fn deref_mut(&mut self) -> &mut Resolver {
-        self.stale.set(true);
-        &mut self.frozen
     }
 }
 
@@ -766,6 +756,28 @@ impl Resolvers {
         });
         self.edit_typed(|part, _, _| part.sheet.defaults = Some(none));
         (self.frozen.styles.doc_rpr, self.frozen.styles.doc_ppr) = Default::default();
+        self.edited();
+    }
+
+    /// Replaces the numbering part whole with `xml`'s definitions, lists and picture bullets.
+    #[cfg(test)]
+    pub fn set_numbering_part(&mut self, xml: &str) {
+        let part = NumberingXml::parse(Some(xml));
+        self.edit_typed(|_, numbering, lists| {
+            *lists = part.lists();
+            *numbering = part;
+        });
+        self.frozen.numbering = Numbering::parse(Some(xml), &self.frozen.styles.colours);
+        self.frozen.compute_style_links();
+        self.edited();
+    }
+
+    /// Follows the document settings `rules`, as the reader takes them from the settings part.
+    #[cfg(test)]
+    pub fn set_rules(&mut self, rules: Rules) {
+        let s = &mut self.frozen.styles;
+        (s.compat, s.word2002_rules, s.cell_size_rules, s.open_type) = (rules.compat, rules.word2002_rules, rules.cell_size_rules, rules.open_type);
+        self.edit_typed(|_, _, _| ());
         self.edited();
     }
 

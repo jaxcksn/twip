@@ -550,8 +550,7 @@ fn built() -> Document {
     use crate::format::{ListChoice, ParaBorders, ParaFlag, ParaProps as Typed, Shading, TabStop, TextBorder};
     let new = crate::docx::read(&with_strong_style("<w:p/>")).expect("reads");
     let mut res = (**new.resolver.as_ref().expect("styles")).clone();
-    res.numbering = Numbering::parse(Some(NUMBERING), &res.styles.colours);
-    res.compute_style_links();
+    res.set_numbering_part(NUMBERING);
     let res = Rc::new(res);
     let mut flags = crate::format::ParaFlags::default();
     flags.put(ParaFlag::KEEP_NEXT, true);
@@ -821,9 +820,7 @@ fn a_document_with_no_styles_generates_the_application_defaults() {
     let fonts = fonts();
     let new = built();
     let mut res = bare_resolver();
-    let rules = &new.resolver.as_ref().expect("styles").styles;
-    (res.styles.compat, res.styles.word2002_rules, res.styles.cell_size_rules, res.styles.open_type) =
-        (rules.compat, rules.word2002_rules, rules.cell_size_rules, rules.open_type);
+    res.set_rules(new.resolver.as_ref().expect("styles").cascade().rules);
     let mut doc = sourceless(vec![typed(&res, None, vec![(Piece::Text("Bold at the defaults"), on(Toggle::BOLD))])], &res);
     doc.settings = new.settings;
     let mut e = Editor::with_document(doc, fonts);

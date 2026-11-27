@@ -73,9 +73,9 @@ fn fixture_bytes() -> Vec<u8> {
     std::fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-STYLES.docx")).expect("FX-STYLES")
 }
 
-fn edit(doc: &mut Document, f: impl FnOnce(&mut Styles)) {
+fn edit(doc: &mut Document, f: impl FnOnce(&mut crate::docx::resolvers::StyleEdits)) {
     let res = doc.resolver.as_mut().expect("a resolver");
-    f(&mut std::rc::Rc::make_mut(res).styles);
+    f(&mut std::rc::Rc::make_mut(res).style_edits());
 }
 
 fn styles_part(bytes: &[u8]) -> String {
