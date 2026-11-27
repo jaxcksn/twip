@@ -1733,6 +1733,27 @@ pub fn other_regions(s: &Style) -> bool {
         .any(|c| reread(c, |x| x.first_element_child().and_then(|r| attr(r, "type")).is_some_and(|t| region_kind(Some(t)).is_none())) == Some(true))
 }
 
+/// The character properties of `s`'s conditional regions of the types not modelled: the last of each type.
+pub fn other_region_chars(s: &Style) -> Vec<CharProps> {
+    let mut by_type: HashMap<String, CharProps> = HashMap::new();
+    for c in s.foreign.as_deref().map_or(&[][..], |f| &f.children) {
+        if &*c.name.ns != W || &*c.name.local != "tblStylePr" {
+            continue;
+        }
+        let other = reread(c, |x| {
+            let r = x.first_element_child()?;
+            let t = attr(r, "type").filter(|t| region_kind(Some(t)).is_none())?;
+            let mut f = StyleFormat::default();
+            region_children(&mut f, r, &mut ForeignProps::default());
+            Some((t.to_string(), f.char))
+        });
+        if let Some((t, c)) = other.flatten() {
+            by_type.insert(t, c);
+        }
+    }
+    by_type.into_values().collect()
+}
+
 /// A level as the XML path holds it, a theme colour's value as `colours` resolve it.
 fn frozen_region(f: &StyleFormat, colours: &ThemeColours) -> styles::Region {
     let mut tc = tp::tc_props(&f.cell, colours);

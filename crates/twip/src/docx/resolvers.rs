@@ -243,53 +243,81 @@ impl TypedDefs {
         defs
     }
 
-    /// These definitions with `rename` applied as [`super::font_table::rename_tables`] applies it to the XML path's
-    /// tables (`f`, the resolver it renamed): in each style's and region's, the defaults' and each definition's
-    /// levels' character properties. The holders keep the elements as they are: saving renames the family in them.
-    fn renamed(&self, rename: &FontRename, f: &Resolver) -> TypedDefs {
+    /// These definitions with `rename` applied: in each style's and region's, the defaults' (Word's where the part
+    /// writes none) and each definition's levels' character properties, the theme's fonts and the fonts' categories;
+    /// and the places that changed. The holders keep the elements as they are: saving renames the family in them.
+    fn renamed(&self, rename: &FontRename) -> (TypedDefs, u32) {
+        let c = &*self.cascade;
+        let mut n = 0;
+        let mut place = |k: u32| n += u32::from(k > 0);
         let mut part = (*self.styles).clone();
-        let style = |s: &crate::format::Style| -> Option<crate::format::Style> {
-            let mut s = s.clone();
-            let mut n = rename_char(&mut s.format.char, rename);
-            for r in &mut s.regions {
-                n += rename_char(&mut r.format.char, rename);
-            }
-            (n > 0).then_some(s)
-        };
+        // The document defaults
+        let defaults = part.sheet.defaults.as_deref().cloned().unwrap_or_default();
+        let mut char = defaults.char.clone().unwrap_or_else(crate::format::Defaults::word_char);
+        let k = rename_char(&mut char, rename);
+        place(k);
+        if k > 0 {
+            part.sheet.defaults = Some(Rc::new(crate::format::Defaults { char: Some(char), ..defaults }));
+        }
+        // Styles: Word's built-in default table style holds no character properties
         let ids: Vec<Rc<str>> = part.sheet.styles.keys().cloned().collect();
         for id in ids {
             let Some(e) = part.sheet.styles.get_mut(&id) else { continue };
-            if let Some(s) = style(&e.style) {
+            let mut s = (*e.style).clone();
+            let mut k = rename_char(&mut s.format.char, rename);
+            for r in &mut s.regions {
+                k += rename_char(&mut r.format.char, rename);
+            }
+            let others: u32 = super::style_xml::other_region_chars(&s).iter_mut().map(|c| rename_char(c, rename)).sum();
+            place(if s.word_default_table() { 0 } else { k + others });
+            if k > 0 {
                 e.style = Rc::new(s);
             }
         }
-        if let Some(d) = &part.sheet.defaults {
+        // Definitions' levels
+        let mut lists = (*c.lists).clone();
+        for d in lists.defs.values_mut() {
             let mut v = (**d).clone();
-            if v.char.as_mut().is_some_and(|c| rename_char(c, rename) > 0) {
-                part.sheet.defaults = Some(Rc::new(v));
-            }
-        }
-        let def = |d: &ListDef| -> Option<ListDef> {
-            let mut d = d.clone();
-            let mut n = 0;
-            for l in d.levels.iter_mut().flatten() {
-                let mut v = (**l).clone();
-                let k = rename_char(&mut v.char, rename);
+            let mut any = false;
+            for l in v.levels.iter_mut().flatten() {
+                let mut x = (**l).clone();
+                let k = rename_char(&mut x.char, rename);
+                place(k);
                 if k > 0 {
-                    *l = Rc::new(v);
-                    n += k;
+                    *l = Rc::new(x);
+                    any = true;
                 }
             }
-            (n > 0).then_some(d)
-        };
-        let mut lists = (*self.cascade.lists).clone();
-        for d in lists.defs.values_mut() {
-            if let Some(v) = def(d) {
+            if any {
                 *d = Rc::new(v);
             }
         }
-        let c = cascade(Rc::new(part.sheet.clone()), Rc::new(lists), f);
-        TypedDefs { cascade: Rc::new(c), styles: Rc::new(part), numbering: self.numbering.clone(), glossary: self.glossary.clone() }
+        // Theme fonts and categories
+        let mut theme = c.theme.clone();
+        for slot in [&mut theme.major, &mut theme.minor] {
+            if slot.eq_ignore_ascii_case(&rename.from) {
+                *slot = rename.to.clone();
+                place(1);
+            }
+        }
+        for slot in [&mut theme.major_ea, &mut theme.minor_ea, &mut theme.major_cs, &mut theme.minor_cs].into_iter().flatten() {
+            if slot.eq_ignore_ascii_case(&rename.from) {
+                *slot = rename.to.clone();
+                place(1);
+            }
+        }
+        let from = rename.from.to_lowercase();
+        let mut categories = c.categories.clone();
+        if let Some(category) = categories.get(&from).copied() {
+            let mut m = (*categories).clone();
+            m.remove(&from);
+            m.entry(rename.to.to_lowercase()).or_insert(category);
+            categories = Rc::new(m);
+        }
+        let mut next = Cascade::new(Rc::new(part.sheet.clone()), Rc::new(lists), theme, c.colours, c.rules);
+        (next.categories, next.divisions) = (categories, c.divisions.clone());
+        let defs = TypedDefs { cascade: Rc::new(next), styles: Rc::new(part), numbering: self.numbering.clone(), glossary: self.glossary.clone() };
+        (defs, n)
     }
 
     /// In a debug build, that the typed definitions are in step with `f`: the same styles, in the same order and
@@ -476,13 +504,15 @@ impl Resolvers {
         self.typed().cascade.clone()
     }
 
-    /// Renames `rename.from` to `rename.to` in the tables below the text, on both sides; returns the places that
-    /// changed, as [`super::font_table::rename_tables`] counts them.
+    /// Renames `rename.from` to `rename.to` in the definitions below the text: the typed ones, then the XML path's
+    /// tables alike. Returns the places that changed: styles, document defaults, numbering levels and theme slots.
     pub fn rename_fonts(&mut self, rename: &FontRename) -> u32 {
-        let typed = self.typed();
-        let n = super::font_table::rename_tables(&mut self.frozen, rename);
-        *self.typed.borrow_mut() = Rc::new(typed.renamed(rename, &self.frozen));
+        let (typed, n) = self.typed().renamed(rename);
+        *self.typed.borrow_mut() = Rc::new(typed);
+        let frozen = super::font_table::rename_tables(&mut self.frozen, rename);
+        debug_assert_eq!(frozen, n, "the XML path's tables renamed alike");
         self.stale.set(false);
+        self.edited();
         n
     }
 
