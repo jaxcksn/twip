@@ -6,7 +6,7 @@ use std::rc::Rc;
 use crate::api::command::{ApplicationFieldTypes, ReferenceRule, SubTemplateRules, SubTemplateView};
 use crate::document::paragraph::ListId;
 use crate::docx::fields::{self, FieldCode};
-use crate::docx::resolvers::TypedDefs;
+use crate::docx::resolvers::{Resolvers, TypedDefs};
 use crate::docx::{Block, Document, ElementId, FieldId, FieldKind, Gallery, Inline, Paragraph, Section};
 use crate::font::Fonts;
 use crate::layout::expansion::{Expansion, Expansions};
@@ -741,10 +741,7 @@ impl Editor {
     /// The lists `im`'s paragraphs (its notes' and comments' too) name, added to the document's numbering under new
     /// ids, the paragraphs' `w:numId`s moved to them.
     fn import_lists(&mut self, tx: &mut super::Tx, im: &mut Imported) -> Result<(), &'static str> {
-        use crate::docx::write::props::Props;
         let Some(res) = self.doc.resolver.clone() else { return Ok(()) };
-        let cx = self.cx();
-        let w = cx.w.clone();
         let num_of = |p: &Paragraph| -> Option<i64> {
             match p.style.direct.get().list {
                 Some(crate::format::ListChoice::In(id)) => Some(id.0),
@@ -763,44 +760,18 @@ impl Editor {
         if used.is_empty() {
             return Ok(());
         }
-        // A list's definition id: -1 when it names none
-        let def_of = |t: &TypedDefs, n: i64| t.cascade.lists.lists.get(&ListId(n)).map(|l| l.def.map_or(-1, |d| d.0));
         let mut next = res.clone();
         let r = Rc::make_mut(&mut next);
         let ours = r.cascade();
-        let mut next_num = ours.lists.lists.keys().map(|k| k.0).chain(self.doc.added_lists.iter().map(|l| l.num_id)).max().unwrap_or(0).max(0) + 1;
-        let mut next_abstract =
+        let next_num = ours.lists.lists.keys().map(|k| k.0).chain(self.doc.added_lists.iter().map(|l| l.num_id)).max().unwrap_or(0).max(0) + 1;
+        let next_abstract =
             ours.lists.defs.keys().map(|k| k.0).chain(self.doc.added_lists.iter().map(|l| l.abstract_id)).max().unwrap_or(-1).max(-1) + 1;
-        let (mut nums, mut abstracts): (HashMap<i64, i64>, HashMap<i64, i64>) = (HashMap::new(), HashMap::new());
-        for n in used {
-            let Some(num_def) = def_of(&theirs, n) else { continue };
-            let (Some(num), Some(a)) = (theirs.list_xml(n), theirs.def_xml(num_def)) else { continue };
-            // The document's own list, as a copy of its content names it
-            let ours = r.typed();
-            let own = ours.list_xml(n).is_some_and(|h| h == num) && def_of(&ours, n).and_then(|ha| ours.def_xml(ha)).is_some_and(|ha| ha == a);
-            if own {
-                continue;
-            }
-            let to_abstract = match abstracts.get(&num_def) {
-                Some(&id) => id,
-                None => {
-                    let id = next_abstract;
-                    next_abstract += 1;
-                    let mut el = Props::parse(Some(&a), "abstractNum", &cx);
-                    el.set_own("abstractNumId", &id.to_string(), &cx);
-                    r.set_abstract_xml(el.xml().unwrap_or_else(|| a.to_string()));
-                    abstracts.insert(num_def, id);
-                    id
-                }
-            };
-            let to = next_num;
-            next_num += 1;
-            let mut el = Props::parse(Some(&num), "num", &cx);
-            el.set_own("numId", &to.to_string(), &cx);
-            el.set("abstractNumId", format!("<{w}abstractNumId {w}val=\"{to_abstract}\"/>"));
-            r.set_num_xml(el.xml().unwrap_or_else(|| num.to_string()));
-            nums.insert(n, to);
-        }
+        #[cfg(test)]
+        let was = r.clone();
+        let nums = copy_lists(r, &theirs, &used, (next_abstract, next_num));
+        #[cfg(test)]
+        xml_route::check(was, r, &theirs, &used, (next_abstract, next_num), &self.cx(), &nums);
+        let nums = nums.0;
         if nums.is_empty() {
             return Ok(());
         }
@@ -1178,6 +1149,54 @@ fn changes_environment(steps: &[Step]) -> bool {
     steps.iter().any(|s| matches!(s, Step::DefaultTab(_) | Step::Hyphenation(_) | Step::PageSettings(_)))
 }
 
+/// List `n`'s definition id in `t`: -1 when it names none.
+fn def_of(t: &TypedDefs, n: i64) -> Option<i64> {
+    t.cascade.lists.lists.get(&ListId(n)).map(|l| l.def.map_or(-1, |d| d.0))
+}
+
+/// Whether list `n` of an imported document, written as `num` with its definition as `def`, is `r`'s own, as a copy of
+/// its content names it: the same list and definition, written alike, under its id here.
+fn own_list(r: &Resolvers, n: i64, num: &str, def: &str) -> bool {
+    let ours = r.typed();
+    ours.list_xml(n).is_some_and(|h| h == num) && def_of(&ours, n).and_then(|ha| ours.def_xml(ha)).is_some_and(|ha| ha == def)
+}
+
+/// Lists `used` of `theirs` (an imported document's definitions) added to `r` under the definition and list ids from
+/// `free` on, each definition once; a list `r` has as its own ([`own_list`], as `r` stands as each comes) stays. Each
+/// is written as read where that reads the same in this document's numbering part, else from its definition. The list
+/// and definition ids they took, by their ids there.
+fn copy_lists(r: &mut Resolvers, theirs: &TypedDefs, used: &[i64], free: (i64, i64)) -> (HashMap<i64, i64>, HashMap<i64, i64>) {
+    let (mut next_abstract, mut next_num) = free;
+    let ncx = r.typed().numbering.cx();
+    let (mut nums, mut abstracts) = (HashMap::new(), HashMap::new());
+    for &n in used {
+        let Some(num_def) = def_of(theirs, n) else { continue };
+        let (Some(num), Some(a)) = (theirs.list_xml(n), theirs.def_xml(num_def)) else { continue };
+        if own_list(r, n, &num, &a) {
+            continue;
+        }
+        let to_abstract = match abstracts.get(&num_def) {
+            Some(&id) => id,
+            None => {
+                let id = next_abstract;
+                next_abstract += 1;
+                if let Some((held, v)) = super::import::copied_def(theirs, num_def, id, &ncx) {
+                    r.set_list_def(held.edited(v, &[]));
+                }
+                abstracts.insert(num_def, id);
+                id
+            }
+        };
+        let to = next_num;
+        next_num += 1;
+        if let Some(held) = super::import::copied_list(theirs, n, to, to_abstract, &ncx) {
+            r.set_list(held);
+        }
+        nums.insert(n, to);
+    }
+    (nums, abstracts)
+}
+
 /// The kind a field with `code` has under the editor's settings: a sub-template reference; none, as a MERGEFIELD, for
 /// an application type (it keeps its result and shows its label); else its code's own.
 fn field_kind(rules: &[Rule], types: &[String], code: &FieldCode) -> Option<FieldKind> {
@@ -1195,4 +1214,78 @@ pub fn rules(field_type: &str, category: &str) -> crate::api::command::Command {
     crate::api::command::Command::SetSubTemplateRules(SubTemplateRules {
         rules: vec![ReferenceRule { field_type: field_type.into(), argument: None, category: category.into(), gallery: None }],
     })
+}
+
+/// Copying an imported document's lists by rewriting their XML, as they were copied before they were copied typed:
+/// each copy made typed is made this way too and the two compared.
+#[cfg(test)]
+mod xml_route {
+    use super::*;
+    use crate::docx::write::props::{Cx, Props};
+
+    /// [`copy_lists`] over the definitions' XML, the document's main part's namespaces `cx` reading it; with `rebind`,
+    /// their own part's reading it, and each element declaring the namespaces it has there that this document's
+    /// numbering part lacks.
+    fn apply(r: &mut Resolvers, theirs: &TypedDefs, used: &[i64], free: (i64, i64), cx: &Cx, rebind: bool) -> (HashMap<i64, i64>, HashMap<i64, i64>) {
+        let (there, here) = (theirs.numbering.cx(), r.typed().numbering.cx());
+        let cx = if rebind { &there } else { cx };
+        let w = cx.w.clone();
+        let rebound = |raw: String| if rebind { super::super::import::xml_route::rebound(&raw, &there, &here).unwrap_or(raw) } else { raw };
+        let (mut next_abstract, mut next_num) = free;
+        let (mut nums, mut abstracts) = (HashMap::new(), HashMap::new());
+        for &n in used {
+            let Some(num_def) = def_of(theirs, n) else { continue };
+            let (Some(num), Some(a)) = (theirs.list_xml(n), theirs.def_xml(num_def)) else { continue };
+            if own_list(r, n, &num, &a) {
+                continue;
+            }
+            let to_abstract = match abstracts.get(&num_def) {
+                Some(&id) => id,
+                None => {
+                    let id = next_abstract;
+                    next_abstract += 1;
+                    let mut el = Props::parse(Some(&a), "abstractNum", cx);
+                    el.set_own("abstractNumId", &id.to_string(), cx);
+                    r.set_abstract_xml(rebound(el.xml().unwrap_or_else(|| a.to_string())));
+                    abstracts.insert(num_def, id);
+                    id
+                }
+            };
+            let to = next_num;
+            next_num += 1;
+            let mut el = Props::parse(Some(&num), "num", cx);
+            el.set_own("numId", &to.to_string(), cx);
+            el.set("abstractNumId", format!("<{w}abstractNumId {w}val=\"{to_abstract}\"/>"));
+            r.set_num_xml(rebound(el.xml().unwrap_or_else(|| num.to_string())));
+            nums.insert(n, to);
+        }
+        (nums, abstracts)
+    }
+
+    /// The copy made over the XML from `was`, the definitions before it, set against `r` and `typed`, the typed
+    /// route's: the same ids taken, and each definition and list compared.
+    pub(super) fn check(
+        was: Resolvers,
+        r: &Resolvers,
+        theirs: &TypedDefs,
+        used: &[i64],
+        free: (i64, i64),
+        cx: &Cx,
+        typed: &(HashMap<i64, i64>, HashMap<i64, i64>),
+    ) {
+        use super::super::import::xml_route;
+        // Elements whose XML doesn't read under the main part's or this document's numbering part's namespaces: the XML
+        // route set a definition under its id there, or none, its lists numbering with none
+        let here = r.typed().numbering.cx();
+        let reads = |x: &str| cx.parse(x, |_, _| ()).is_some() && here.parse(x, |_, _| ()).is_some();
+        let xml = |n: i64| [theirs.list_xml(n), def_of(theirs, n).and_then(|d| theirs.def_xml(d))].into_iter().flatten();
+        let unread: Vec<String> = used.iter().flat_map(|n| xml(*n)).filter(|x| !reads(x)).map(|x| x.into_owned()).collect();
+        if let Some(first) = unread.first() {
+            xml_route::refused(&format!("elements ({})", unread.len()), first.clone());
+        }
+        let mut old = was;
+        let got = apply(&mut old, theirs, used, free, cx, !unread.is_empty());
+        assert_eq!(&got, typed, "the same ids taken");
+        xml_route::compare_parts(&old, r, &[], &got.0, &got.1);
+    }
 }
