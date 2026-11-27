@@ -181,11 +181,11 @@ fn a_linked_style_makes_its_character_half_and_shares_its_character_formatting()
     e.execute(Command::Redo(Default::default()), fonts());
     assert_eq!(colors(&e), [red, red], "redone");
     // Linked to nothing: refused, nothing written.
-    let (depth, styles) = (e.history().undo_depth(), e.document().resolver.as_ref().expect("styles").styles.by_id.len());
+    let (depth, styles) = (e.history().undo_depth(), e.document().resolver.as_ref().expect("styles").cascade().styles.styles.len());
     let change = StyleChange { name: Some("Loose".into()), link: Some(None), ..Default::default() };
     let (out, made) = e.create_style(NewStyle { category: StyleCategory::Linked, change, ..Default::default() }, fonts());
     assert!(refused(&out) && made.is_none(), "{out:?}");
-    assert_eq!((e.history().undo_depth(), e.document().resolver.as_ref().expect("styles").styles.by_id.len()), (depth, styles));
+    assert_eq!((e.history().undo_depth(), e.document().resolver.as_ref().expect("styles").cascade().styles.styles.len()), (depth, styles));
 }
 
 #[test]

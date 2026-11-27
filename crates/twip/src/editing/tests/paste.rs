@@ -602,7 +602,7 @@ fn text_from_file_inserts_another_document_s_body_with_its_styles() {
     let out = e.insert_file(&other, fonts());
     assert!(changed(&out), "{out:?}");
     assert_eq!(texts(&e), ["afirst", "secondb"]);
-    assert!(e.document().resolver.as_ref().is_some_and(|r| r.styles.get("Quote").is_some()), "its style comes");
+    assert!(e.document().resolver.as_ref().is_some_and(|r| r.has_style("Quote")), "its style comes");
     assert_eq!(e.history().next_undo(), Some("Insert File"));
     e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(texts(&e), ["ab"]);

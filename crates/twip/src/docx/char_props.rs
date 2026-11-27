@@ -1442,7 +1442,7 @@ pub(crate) mod tests {
     fn fixture(name: &str, to: Option<&Cx>) -> Vec<(CharProps, RprRevisions, String)> {
         let d = model(name);
         let src = &d.source.as_ref().expect("a source").xml;
-        let colours = d.resolver.as_ref().expect("a resolver").styles.colours;
+        let colours = d.resolver.as_ref().expect("a resolver").colours();
         let own = Cx::of_xml(src);
         let doc = roxmltree::Document::parse(src).expect("parses");
         let rprs =

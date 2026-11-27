@@ -9,7 +9,7 @@ fn styles() -> Styles {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-STYLES.docx");
     let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     let doc = read_editable(&bytes).unwrap_or_else(|e| panic!("FX-STYLES: {e}"));
-    doc.resolver.expect("a resolver").styles.clone()
+    crate::docx::baseline::Baseline::as_read(&doc).frozen.styles
 }
 
 #[test]
@@ -99,7 +99,7 @@ fn a_changed_added_and_deleted_style_are_written_and_the_rest_kept() {
     let before = styles_part(&bytes);
     let mut doc = read_editable(&bytes).expect("reads");
     edit(&mut doc, |s| {
-        let callout = s.get("Callout").expect("Callout").raw.replace("<w:sz w:val=\"24\"/>", "<w:sz w:val=\"28\"/>");
+        let callout = s.typed().style_xml("Callout").expect("Callout").replace("<w:sz w:val=\"24\"/>", "<w:sz w:val=\"28\"/>");
         s.set_xml(callout).expect("changes Callout");
         s.set_xml("<w:style w:type=\"character\" w:customStyle=\"1\" w:styleId=\"Code\"><w:name w:val=\"Code\"/></w:style>".into())
             .expect("adds Code");
@@ -111,7 +111,8 @@ fn a_changed_added_and_deleted_style_are_written_and_the_rest_kept() {
     let kept = |xml: &str| xml[xml.find("w:styleId=\"Quote\"").expect("Quote")..].split("</w:style>").next().map(str::to_string);
     assert_eq!(kept(&after), kept(&before), "an untouched style is byte for byte the same");
     let again = read_editable(&write::save(&doc).expect("saves")).expect("reads again");
-    let s = &again.resolver.expect("a resolver").styles;
+    let baseline = crate::docx::baseline::Baseline::as_read(&again);
+    let s = &baseline.styles;
     assert_eq!(s.chain_rpr(Some("Callout")).size, Some(14.0));
     assert!(s.get("Code").is_some() && s.get("Draft").is_none());
 }

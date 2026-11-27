@@ -1,6 +1,8 @@
 //! Reading DOCX into the layout engine's model.
 
 pub(crate) mod anchor;
+#[cfg(test)]
+pub mod baseline;
 pub mod binding;
 pub mod blank;
 pub mod char_props;
@@ -27,6 +29,7 @@ mod prop_xml;
 pub mod properties;
 pub mod props;
 mod reader;
+#[cfg(test)]
 pub mod resolve;
 pub mod resolvers;
 pub mod review;

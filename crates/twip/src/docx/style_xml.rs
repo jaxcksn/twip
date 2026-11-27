@@ -29,8 +29,11 @@ use roxmltree::Node;
 use super::char_props::{self, RprRevisions};
 use super::para_props::{self, Owned};
 use super::prop_xml::{Compare, Out, Sink, foreign_child, props_key, reread, strip, with_attr};
-use super::props::{self as xml_props, ThemeColours};
-use super::styles::{self, StyleEditError};
+use super::props::ThemeColours;
+#[cfg(test)]
+use super::props::{self as xml_props};
+#[cfg(test)]
+use super::styles;
 use super::table_props::{self as tp, CellDirect, RowDirect, TableDirect};
 use super::write::props::{Cx, STYLE};
 use super::xml::{W, attr, child, children, is_w, on_off, on_off_str, val};
@@ -1477,6 +1480,28 @@ impl Expansions {
     }
 }
 
+/// Why a style edit is refused.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StyleEditError {
+    /// The XML isn't one `w:style` element with a `w:styleId`.
+    Malformed,
+    /// It would be based on itself, through its chain.
+    Loop,
+    /// No such style.
+    Missing,
+}
+
+#[cfg(test)]
+impl From<styles::StyleEditError> for StyleEditError {
+    fn from(e: styles::StyleEditError) -> StyleEditError {
+        match e {
+            styles::StyleEditError::Malformed => StyleEditError::Malformed,
+            styles::StyleEditError::Loop => StyleEditError::Loop,
+            styles::StyleEditError::Missing => StyleEditError::Missing,
+        }
+    }
+}
+
 /// A styles part read: its definitions, each style's, the defaults' and the latent styles' holders, and its root start
 /// tag.
 #[derive(Clone, Debug, Default)]
@@ -1754,6 +1779,7 @@ pub fn other_region_chars(s: &Style) -> Vec<CharProps> {
     by_type.into_values().collect()
 }
 
+#[cfg(test)]
 /// A level as the XML path holds it, a theme colour's value as `colours` resolve it.
 fn frozen_region(f: &StyleFormat, colours: &ThemeColours) -> styles::Region {
     let mut tc = tp::tc_props(&f.cell, colours);
@@ -1780,6 +1806,7 @@ fn frozen_region(f: &StyleFormat, colours: &ThemeColours) -> styles::Region {
     }
 }
 
+#[cfg(test)]
 /// Style entry `e` of a sheet read from a styles part, written `raw`, as the XML path's reader holds it after reading
 /// the part: theme colours resolved by `colours`, a table style's run properties from Word's built-in table defaults
 /// where it takes them, and Word's built-in default table style's fixed properties in place of its own.
@@ -1859,6 +1886,7 @@ pub fn frozen_style(e: &StyleEntry, raw: &str, colours: &ThemeColours) -> styles
     }
 }
 
+#[cfg(test)]
 /// The document's run and paragraph defaults as the XML path holds them: the defaults' own, else Word's.
 pub fn frozen_defaults(d: Option<&Defaults>, colours: &ThemeColours) -> (xml_props::RunProps, xml_props::ParaProps) {
     let run = d
@@ -1870,6 +1898,7 @@ pub fn frozen_defaults(d: Option<&Defaults>, colours: &ThemeColours) -> (xml_pro
     (run, para)
 }
 
+#[cfg(test)]
 /// Latent styles as the XML path holds them, written `raw`.
 pub fn frozen_latent(l: Option<&LatentStyles>, raw: Option<&str>) -> styles::LatentStyles {
     let Some(l) = l else { return styles::LatentStyles::default() };

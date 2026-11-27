@@ -9,11 +9,9 @@ use roxmltree::Node;
 use super::char_props::{self, RunDirect};
 use super::diagnostics::{Diagnostics, WarningCode};
 use super::model::*;
-use super::numbering::Numbering;
 use super::para_props::{self, ParaDirect};
 use super::para_xml;
 use super::props::*;
-use super::resolve::{Resolver, div_chain};
 use super::resolvers::Resolvers;
 use super::review::{
     AuthorId, CellMarkKind, CellRevisions, Comment, CommentId, FormatChange, GridChange, IdCounter, Identity, MarkKind, ParaChange, People,
@@ -21,11 +19,12 @@ use super::review::{
     TableChange, Timestamp,
 };
 use super::run_xml;
-use super::styles::{Styles, ThemeFonts};
+use super::styles::ThemeFonts;
 use super::table_props::{self, CellDirect, ExceptionsDirect, PreviousDirect, RowDirect, TableDirect};
 use super::xml::*;
 use crate::format::CharProps;
 use crate::format::cascade::TableRegion;
+use crate::format::cascade::div_chain;
 use crate::format::counters::Counters;
 
 struct Package {
@@ -335,6 +334,46 @@ impl Base {
     }
 }
 
+/// The XML path's resolver of the package `bytes`, read from its parts apart from the typed definitions: the
+/// baseline the typed cascade is checked against.
+#[cfg(test)]
+pub fn frozen_resolver(bytes: &[u8]) -> Option<super::resolve::Resolver> {
+    use super::numbering::Numbering;
+    use super::styles::Styles;
+    let zip = zip::ZipArchive::new(Cursor::new(bytes.to_vec())).ok()?;
+    let mut pkg = Package { zip, budget: PACKAGE_BUDGET };
+    let root_rels = pkg.rels("");
+    let main = root_rels.values().find(|(k, _)| k == "officeDocument").map(|(_, t)| t.clone()).unwrap_or_else(|| "word/document.xml".into());
+    let rels = pkg.rels(&main);
+    let part_of = |kind: &str| rels.values().find(|(k, _)| k == kind).map(|(_, t)| t.clone());
+    let theme_xml = part_of("theme").and_then(|p| pkg.read_str(&p));
+    let theme = ThemeFonts::parse(theme_xml.as_deref());
+    let drawing_theme = crate::drawing::theme::Theme::parse(theme_xml.as_deref());
+    let settings_xml = part_of("settings").and_then(|p| pkg.read_str(&p));
+    let settings = read_settings(settings_xml.as_deref());
+    let settings_tree = settings_xml.as_deref().and_then(|x| roxmltree::Document::parse(x).ok());
+    let colour_map = crate::drawing::theme::ColourMap::parse(settings_tree.as_ref().map(|d| d.root_element()));
+    let colours = ThemeColours::new(&drawing_theme, &colour_map);
+    let mut styles = Styles::parse(part_of("styles").and_then(|p| pkg.read_str(&p)).as_deref(), colours);
+    let mut numbering = Numbering::parse(part_of("numbering").and_then(|p| pkg.read_str(&p)).as_deref(), &colours);
+    if let Some(path) = part_of("glossaryDocument") {
+        let grels = pkg.rels(&path);
+        let mut gpart = |kind: &str| grels.values().find(|(k, _)| k == kind).and_then(|(_, t)| pkg.read_str(t));
+        let (gs, gn) = (gpart("styles"), gpart("numbering"));
+        let gstyles = gs.as_deref().map_or_else(Styles::default, |x| Styles::parse(Some(x), colours));
+        super::glossary::merge_tables(&mut styles, &mut numbering, gstyles, Numbering::parse(gn.as_deref(), &colours));
+    }
+    styles.compat = settings.compat();
+    styles.word2002_rules = styles.compat == Compat::Legacy && settings.policy.use_word2002_table_style_rules;
+    styles.open_type = styles.compat == Compat::Generic || settings.policy.enable_open_type_features;
+    styles.cell_size_rules = styles.compat == Compat::Legacy && !settings.policy.override_table_style_font_size_and_justification;
+    let fonts = part_of("fontTable").and_then(|p| pkg.read_str(&p)).map(|x| super::font_table::parse(&x)).unwrap_or_default();
+    let mut res = super::resolve::Resolver::new(styles, numbering, theme);
+    res.categories = Rc::new(super::font_table::categories(&fonts));
+    res.divisions = Rc::new(read_divs(part_of("webSettings").and_then(|p| pkg.read_str(&p)).as_deref(), &colours));
+    Some(res)
+}
+
 fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String> {
     read_nested(bytes, editable, now, &mut PACKAGE_BUDGET.clone(), 0)
 }
@@ -385,24 +424,20 @@ fn read_package(bytes: &[u8], pkg: &mut Package, editable: bool, now: i64, depth
     let colours = ThemeColours::new(&drawing_theme, &colour_map);
     let styles_xml = part_of("styles").and_then(|p| pkg.read_str(&p));
     let numbering_xml = part_of("numbering").and_then(|p| pkg.read_str(&p));
-    let mut styles = Styles::parse(styles_xml.as_deref(), colours);
-    let mut numbering = Numbering::parse(numbering_xml.as_deref(), &colours);
-    // The glossary's styles and lists join the document's tables before anything resolves with them.
+    // The glossary's styles and lists join the document's before anything resolves with them.
     let glossary_part = part_of("glossaryDocument");
-    let mut glossary_xml = None;
-    let glossary_map = glossary_part.as_deref().map(|path| {
+    let glossary_xml = glossary_part.as_deref().map(|path| {
         let grels = pkg.rels(path);
         let mut gpart = |kind: &str| grels.values().find(|(k, _)| k == kind).and_then(|(_, t)| pkg.read_str(t));
-        let (gs, gn) = (gpart("styles"), gpart("numbering"));
-        let gstyles = gs.as_deref().map_or_else(Styles::default, |x| Styles::parse(Some(x), colours));
-        let gnumbering = Numbering::parse(gn.as_deref(), &colours);
-        glossary_xml = Some((gs, gn));
-        super::glossary::merge_tables(&mut styles, &mut numbering, gstyles, gnumbering)
+        (gpart("styles"), gpart("numbering"))
     });
-    styles.compat = settings.compat();
-    styles.word2002_rules = styles.compat == Compat::Legacy && settings.policy.use_word2002_table_style_rules;
-    styles.open_type = styles.compat == Compat::Generic || settings.policy.enable_open_type_features;
-    styles.cell_size_rules = styles.compat == Compat::Legacy && !settings.policy.override_table_style_font_size_and_justification;
+    let compat = settings.compat();
+    let rules = crate::format::cascade::Rules {
+        compat,
+        word2002_rules: compat == Compat::Legacy && settings.policy.use_word2002_table_style_rules,
+        cell_size_rules: compat == Compat::Legacy && !settings.policy.override_table_style_font_size_and_justification,
+        open_type: compat == Compat::Generic || settings.policy.enable_open_type_features,
+    };
     let xml = pkg.read_str(&main).ok_or("no main document part, or one too large or nested too deeply")?;
 
     // New revision, comment and paragraph ids go past every id in the parts read, so ids are seeded before reading.
@@ -425,12 +460,16 @@ fn read_package(bytes: &[u8], pkg: &mut Package, editable: bool, now: i64, depth
     let people_part = super::comments::people(people_xml.as_deref());
 
     let font_descriptions = part_of("fontTable").and_then(|p| pkg.read_str(&p)).map(|x| super::font_table::parse(&x)).unwrap_or_default();
-    let mut res = Resolver::new(styles, numbering, theme);
-    res.categories = Rc::new(super::font_table::categories(&font_descriptions));
-    res.divisions = Rc::new(read_divs(part_of("webSettings").and_then(|p| pkg.read_str(&p)).as_deref(), &colours));
+    let env = super::resolvers::Surroundings {
+        theme,
+        colours,
+        rules,
+        categories: Rc::new(super::font_table::categories(&font_descriptions)),
+        divisions: Rc::new(read_divs(part_of("webSettings").and_then(|p| pkg.read_str(&p)).as_deref(), &colours)),
+    };
     let glossary = glossary_xml.as_ref().map(|(s, n)| (s.as_deref(), n.as_deref()));
-    let typed = super::resolvers::TypedDefs::read(styles_xml.as_deref(), numbering_xml.as_deref(), glossary, &res);
-    let res = super::resolvers::Resolvers::new(res, typed);
+    let (typed, glossary_map) = super::resolvers::TypedDefs::read(styles_xml.as_deref(), numbering_xml.as_deref(), glossary, env);
+    let res = super::resolvers::Resolvers::new(typed);
     let numbering_part = part_of("numbering");
     let mut r = Reader {
         res,

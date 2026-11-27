@@ -21,7 +21,6 @@ use crate::format::{
     CellProp, CharProps, LatentStyle, LatentStyles, ListChoice, MarginSide, ParaProps, RegionKind, RowProp, Shading, Style, StyleFormat, StyleKind,
     StyleProp, StyleSet, StyleSheet, TableProp, TableSide, TextBorder,
 };
-use crate::services::styles::typed_kind;
 use crate::services::styles::{NameRefusal, builtin, check_name, describe};
 
 use super::Editor;
@@ -432,7 +431,7 @@ impl Editor {
         match typed.cascade.styles.get(&id.0) {
             Some(s) if s.kind == kind => Ok(None),
             Some(_) => Err(Error::invalid(format!("the {what} is a style of another type"))),
-            None => match builtin::BUILT_IN.iter().find(|b| b.id == id.0 && typed_kind(b.kind) == kind) {
+            None => match builtin::BUILT_IN.iter().find(|b| b.id == id.0 && b.kind == kind) {
                 Some(b) => Ok(Some(StyleDef::typed(Rc::new(builtin::definition(b))))),
                 None => Err(Error::invalid(format!("the {what} doesn't exist"))),
             },
@@ -1048,7 +1047,7 @@ impl Editor {
                 BuiltInStyle {
                     id: StyleId(b.id.to_string()),
                     name,
-                    category: category(typed_kind(b.kind)),
+                    category: category(b.kind),
                     defined: false,
                     priority,
                     visibility: visibility(semi, unhide),

@@ -463,7 +463,7 @@ fn paste_callout(style: &str, ns: &str) -> Editor {
         |name, x| if name == "word/styles.xml" { x.replacen("<w:styles ", &format!("<w:styles {ns} "), 1) } else { x },
     );
     let mut a = Editor::open(&src, fonts()).unwrap();
-    assert!(a.document().resolver.as_ref().is_some_and(|r| r.styles.get("Callout").is_some()), "the source has the style");
+    assert!(a.document().resolver.as_ref().is_some_and(|r| r.has_style("Callout")), "the source has the style");
     select(&mut a, (0, 0), (2, 0));
     let frag = a.copy().expect("copies");
     let mut b = ed(&format!("<w:p>{}</w:p>", t("Target")));
@@ -476,7 +476,7 @@ fn paste_callout(style: &str, ns: &str) -> Editor {
 fn a_style_written_under_its_parts_own_prefix_comes_with_a_paste() {
     let style = r#"<s:style s:type="paragraph" s:customStyle="1" s:styleId="Callout"><s:name s:val="Callout"/><s:pPr><s:jc s:val="center"/></s:pPr></s:style>"#;
     let b = paste_callout(style, &format!("xmlns:s=\"{W_NS}\""));
-    assert!(b.document().resolver.as_ref().is_some_and(|r| r.styles.get("Callout").is_some()), "the style came with it");
+    assert!(b.document().resolver.as_ref().is_some_and(|r| r.has_style("Callout")), "the style came with it");
     let again = saved(&b);
     let p = &paras(&again)[1];
     assert_eq!((p.style.style_id.as_deref(), p.style.jc), (Some("Callout"), crate::docx::props::Jc::Center), "and saves");
@@ -487,8 +487,8 @@ fn a_pasted_default_style_is_not_the_default_here() {
     let style = r#"<w:style w:type="paragraph" w:default="1" w:customStyle="1" w:styleId="Callout"><w:name w:val="Callout"/><w:pPr><w:jc w:val="center"/></w:pPr></w:style>"#;
     let b = paste_callout(style, "");
     let res = b.document().resolver.clone().expect("styles");
-    assert!(res.styles.get("Callout").is_some(), "the style came");
-    assert_eq!(res.styles.default_paragraph.as_deref(), Some("Normal"), "this document's default stays");
+    assert!(res.has_style("Callout"), "the style came");
+    assert_eq!(res.cascade().styles.default_paragraph.as_deref(), Some("Normal"), "this document's default stays");
     assert_eq!(paras(&b)[1].style.style_id.as_deref(), Some("Callout"));
 }
 
@@ -512,7 +512,7 @@ fn a_list_from_a_document_writing_its_own_prefix_comes_with_a_paste() {
     let mut b = ed(&format!("<w:p>{}</w:p>", t("Target")));
     caret(&mut b, (0, 0));
     b.paste_fragment(&frag, fonts());
-    let nums: Vec<i64> = b.document().resolver.as_ref().map(|r| r.numbering.nums.keys().copied().collect()).unwrap_or_default();
+    let nums: Vec<i64> = b.document().resolver.as_ref().map(|r| r.cascade().lists.lists.keys().map(|k| k.0).collect()).unwrap_or_default();
     assert_eq!(nums.len(), 1, "the list's definition came: {nums:?}");
     let direct = paras(&b)[1].style.direct.origin_xml().map(|x| x.to_string()).unwrap_or_default();
     assert!(direct.contains(&format!("numId v:val=\"{}\"", nums[0])), "the pasted paragraph is in it: {direct}");
@@ -526,12 +526,12 @@ fn content_pasted_in_another_document_brings_the_styles_it_uses() {
     select(&mut a, (0, 0), (2, 0));
     let frag = a.copy().expect("copies");
     let mut b = ed(&format!("<w:p>{}</w:p>", t("Target")));
-    assert!(b.document().resolver.as_ref().is_some_and(|r| r.styles.get("Callout").is_none()));
+    assert!(b.document().resolver.as_ref().is_some_and(|r| !r.has_style("Callout")));
     caret(&mut b, (0, 0));
     b.paste_fragment(&frag, fonts());
     // The first paragraph's text goes into the paragraph at the caret; the styled one is pasted whole.
     assert_eq!(paras(&b)[1].style.style_id.as_deref(), Some("Callout"));
-    assert!(b.document().resolver.as_ref().is_some_and(|r| r.styles.get("Callout").is_some()), "the style came with it");
+    assert!(b.document().resolver.as_ref().is_some_and(|r| r.has_style("Callout")), "the style came with it");
     let again = saved(&b);
     let p = &paras(&again)[1];
     assert_eq!((p.style.style_id.as_deref(), p.style.jc), (Some("Callout"), crate::docx::props::Jc::Center), "and saves");
@@ -550,7 +550,10 @@ fn a_list_pasted_in_another_document_brings_its_definition() {
     b.paste_fragment(&frag, fonts());
     // The first paragraph's text goes into the paragraph at the caret; the second is pasted whole.
     let ListRef { list: ListId(n), level: _ } = paras(&b)[1].style.num.expect("the pasted paragraph is in a list");
-    assert!(b.document().resolver.as_ref().is_some_and(|r| r.numbering.nums.contains_key(&n)), "its list is defined here");
+    assert!(
+        b.document().resolver.as_ref().is_some_and(|r| r.cascade().lists.lists.contains_key(&crate::document::paragraph::ListId(n))),
+        "its list is defined here"
+    );
     let again = saved(&b);
     assert_eq!(super::super::text::UnitText::of(paras(&again)[1]).text, "Two");
     assert!(paras(&again)[1].list.is_some(), "and saves numbered");
@@ -581,7 +584,7 @@ fn cells_pasted_over_a_larger_block_in_another_document_share_their_lists() {
     assert!(!source.is_empty(), "the cells are numbered");
     let frag = a.copy().expect("a fragment");
     let mut b = grid_table(&[&["w", "x"], &["y", "z"]]);
-    let nums = |e: &Editor| e.document().resolver.as_ref().map_or(0, |r| r.numbering.nums.len());
+    let nums = |e: &Editor| e.document().resolver.as_ref().map_or(0, |r| r.cascade().lists.lists.len());
     let before = nums(&b);
     rect(&mut b, 0, 0, 1, 1, CellShape::Rect);
     b.paste_fragment(&frag, fonts());

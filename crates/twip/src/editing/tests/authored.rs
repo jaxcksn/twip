@@ -12,7 +12,7 @@ use crate::api::value::{Alignment, Points};
 use crate::docx::char_props::RunDirect;
 use crate::docx::model::ThemeColourRef;
 use crate::docx::numbering::Numbering;
-use crate::docx::props::{Jc, ParaProps, RunProps, ThemeColours, toggle};
+use crate::docx::props::{Jc, ParaProps, RunProps, toggle};
 use crate::docx::resolve::Resolver;
 use crate::docx::styles::{Styles, ThemeFonts};
 use crate::docx::write::GenerateError;
@@ -61,11 +61,22 @@ fn section(blocks: Vec<Block>) -> Section {
 
 /// A resolver with no styles, numbering or theme part: the application defaults.
 fn bare_resolver() -> crate::docx::resolvers::Resolvers {
-    Resolver::new(Styles::parse(None, ThemeColours::default()), Numbering::default(), ThemeFonts::parse(None)).into()
+    let env = crate::docx::resolvers::Surroundings { theme: ThemeFonts::parse(None), ..Default::default() };
+    crate::docx::resolvers::Resolvers::new(crate::docx::resolvers::TypedDefs::read(None, None, None, env).0)
 }
 
-/// A paragraph from authored properties alone; the resolver gives the effective formatting.
-fn paragraph(res: &crate::docx::resolvers::Resolvers, ppr: &ParaProps, runs: &[(&str, RunProps)], id: u64) -> Paragraph {
+/// A paragraph from authored properties alone; the XML path's resolver of the styles `defs` writes gives the
+/// effective formatting.
+fn paragraph(defs: &crate::docx::resolvers::Resolvers, ppr: &ParaProps, runs: &[(&str, RunProps)], id: u64) -> Paragraph {
+    let t = defs.typed();
+    let (cx, colours) = (t.styles.cx(), defs.colours());
+    let root =
+        if t.styles.root.is_empty() { format!("<w:styles xmlns:w=\"{}\">", crate::docx::write::props::W_NS) } else { t.styles.root.to_string() };
+    let mut xml = root;
+    xml.extend(t.styles.defaults.iter().map(|d| d.xml(&colours, &cx).into_owned()));
+    xml.extend(t.styles.styles.values().map(|d| d.xml(&colours, &cx).into_owned()));
+    xml.push_str(&format!("</{}styles>", cx.w));
+    let res = Resolver::new(Styles::parse(Some(&xml), colours), Numbering::default(), t.cascade.theme.clone());
     let p = res.paragraph(ppr, None);
     let inlines = runs.iter().map(|(t, rpr)| Inline::Text((*t).into(), res.run_style(&res.run_props(&p.base, rpr)))).collect();
     Paragraph { mark: res.run_style(&p.base), style: Rc::new(p.style), list: None, inlines, src: None, id, controls: Vec::new(), div: None }

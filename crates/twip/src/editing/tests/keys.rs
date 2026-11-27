@@ -287,7 +287,7 @@ fn list_bullet_comes_with_its_bullet() {
     assert_eq!(p.list.as_ref().map(|l| l.text.as_str()), Some("\u{F0B7}"));
     assert_eq!(p.style.ind_left, 18.0);
     e.execute(C::Undo(Default::default()), fonts());
-    assert!(!e.document().resolver.as_ref().expect("styles").styles.by_id.contains_key("ListBullet"), "one undo step");
+    assert!(!e.document().resolver.as_ref().expect("styles").has_style("ListBullet"), "one undo step");
 }
 
 #[test]

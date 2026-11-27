@@ -12,8 +12,11 @@ use std::ops::Range;
 use roxmltree::Node;
 
 use super::model::Gallery;
+#[cfg(test)]
 use super::numbering::Numbering;
+#[cfg(test)]
 use super::props::{ParaProps, RunProps};
+#[cfg(test)]
 use super::styles::{StyleKind, StyleOrigin, Styles};
 use super::xml::*;
 use crate::document::paragraph::ListId;
@@ -72,6 +75,7 @@ impl GlossaryMap {
         remap_xml(xml, |s| self.styles.glossary(&s.to_string()), |n| self.nums.glossary(&n))
     }
 
+    #[cfg(test)]
     fn map_ppr(&self, p: &mut ParaProps) {
         if let Some(s) = &mut p.style {
             *s = self.styles.view(s);
@@ -82,6 +86,7 @@ impl GlossaryMap {
         }
     }
 
+    #[cfg(test)]
     fn map_rpr(&self, p: &mut RunProps) {
         if let Some(s) = &mut p.style {
             *s = self.styles.view(s);
@@ -123,6 +128,7 @@ fn remap_xml<'a>(xml: &'a str, style: impl Fn(&str) -> String, num: impl Fn(i64)
     Cow::Owned(out)
 }
 
+#[cfg(test)]
 /// Adds the glossary's styles and lists to the document's tables and returns how their ids map.
 pub fn merge_tables(styles: &mut Styles, numbering: &mut Numbering, glossary_styles: Styles, glossary_numbering: Numbering) -> GlossaryMap {
     let mut map = GlossaryMap::default();
@@ -278,7 +284,6 @@ pub(super) fn part_props(part: Node) -> Option<(String, String, Gallery, Option<
 #[cfg(test)]
 mod tests {
     use super::super::model::*;
-    use super::super::styles::StyleOrigin;
 
     fn fixture() -> Vec<u8> {
         let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-SUBTEMPLATES.docx");
@@ -342,14 +347,15 @@ mod tests {
         // Notice is only the glossary's: its own definition, kept under its id.
         assert_eq!(body[1].style.style_id.as_deref(), Some("Notice"));
         assert!(first_run(body[1]).italic);
-        assert_eq!(res.styles.by_id["Notice"].origin, StyleOrigin::Glossary);
-        assert_eq!(res.styles.by_id["Heading1"].origin, StyleOrigin::Document);
+        let sheet = &res.cascade().styles;
+        assert_eq!(sheet.styles["Notice"].origin, crate::format::Origin::Glossary);
+        assert_eq!(sheet.styles["Heading1"].origin, crate::format::Origin::Document);
         // The glossary's Header is another style than the document's Header: it moves to a free id.
         assert_eq!(g.map.styles.view(&"Header".to_string()), "~g~Header");
         assert_eq!(g.map.styles.glossary(&"~g~Header".to_string()), "Header");
         let fee = paras(&g.parts[1].body);
         assert_eq!(fee[1].style.style_id.as_deref(), Some("~g~Header"));
-        assert_eq!(res.styles.by_id["Header"].name, "header");
+        assert_eq!(sheet.get("Header").and_then(|s| s.name.as_deref()), Some("header"));
     }
 
     #[test]

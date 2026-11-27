@@ -1128,7 +1128,7 @@ fn xml_formatting(id: &str) -> (String, String) {
 
 /// `b`'s `w:style` as the XML route wrote it.
 fn xml_definition(b: &crate::services::styles::builtin::BuiltIn) -> String {
-    use crate::docx::styles::StyleKind as K;
+    use crate::format::StyleKind as K;
     let base = match (b.kind, b.id) {
         (_, "Normal" | "DefaultParagraphFont" | "TableNormal" | "NoList") => None,
         (_, "TOCHeading") => Some("Heading1"),
@@ -1240,7 +1240,7 @@ fn xml_referable(e: &Editor, id: &StyleId, kind: StyleKind, what: &str) -> Resul
     match typed.cascade.styles.get(&id.0) {
         Some(s) if s.kind == kind => Ok(None),
         Some(_) => Err(Error::invalid(format!("the {what} is a style of another type"))),
-        None => match builtin::BUILT_IN.iter().find(|b| b.id == id.0 && crate::services::styles::typed_kind(b.kind) == kind) {
+        None => match builtin::BUILT_IN.iter().find(|b| b.id == id.0 && b.kind == kind) {
             Some(b) => Ok(Some(xml_definition(b))),
             None => Err(Error::invalid(format!("the {what} doesn't exist"))),
         },

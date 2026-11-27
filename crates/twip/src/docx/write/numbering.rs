@@ -4,7 +4,6 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use super::super::model::Document;
 use super::super::package;
-use super::super::styles::StyleOrigin;
 use super::super::xml::{attr, int, is_w};
 use super::Splice;
 
@@ -24,17 +23,6 @@ pub(super) fn numbering(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> R
     let abstracts: BTreeMap<i64, String> = n.defs.iter().map(|(k, d)| (k.0, d.xml(&colours, &cx).into_owned())).collect();
     let nums: BTreeMap<i64, String> = n.lists.iter().map(|(k, d)| (k.0, d.xml(&colours, &cx).into_owned())).collect();
     let pics: BTreeMap<i64, String> = n.pictures.iter().map(|(k, d)| (*k, d.xml(&colours, &cx).into_owned())).collect();
-    if cfg!(debug_assertions) {
-        // Written as the XML path's tables hold them
-        let f = &res.frozen().numbering;
-        let doc = |o: StyleOrigin| o == StyleOrigin::Document;
-        let theirs: BTreeMap<i64, &str> = f.abstracts.iter().filter(|(_, a)| doc(a.origin)).map(|(k, a)| (*k, a.raw.as_str())).collect();
-        assert_eq!(abstracts.iter().map(|(k, v)| (*k, v.as_str())).collect::<BTreeMap<_, _>>(), theirs, "the definitions written alike");
-        let theirs: BTreeMap<i64, &str> = f.nums.iter().filter(|(_, m)| doc(m.origin)).map(|(k, m)| (*k, m.raw.as_str())).collect();
-        assert_eq!(nums.iter().map(|(k, v)| (*k, v.as_str())).collect::<BTreeMap<_, _>>(), theirs, "the lists written alike");
-        let theirs: BTreeMap<i64, &str> = f.pic_bullets.iter().map(|(k, p)| (*k, p.raw.as_str())).collect();
-        assert_eq!(pics.iter().map(|(k, v)| (*k, v.as_str())).collect::<BTreeMap<_, _>>(), theirs, "the picture bullets written alike");
-    }
     let name = package::related(&src.package, parts, &src.main, NUMBERING_REL)?;
     let Some(xml) = (match &name {
         Some(p) => package::read(&src.package, parts, p)?,

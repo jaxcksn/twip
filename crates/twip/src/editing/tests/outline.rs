@@ -96,10 +96,10 @@ fn heading_9_stays_and_missing_heading_styles_join_the_document() {
     caret(&mut e, "C");
     assert!(changed(&e.change_outline(OutlineChange::Demote, false, fonts())));
     assert_eq!(style(&e, "C").as_deref(), Some("Heading4"), "the built-in style is added");
-    assert!(e.document().resolver.as_ref().is_some_and(|r| r.styles.by_id.contains_key("Heading4")));
+    assert!(e.document().resolver.as_ref().is_some_and(|r| r.has_style("Heading4")));
     e.execute(C::Undo(Default::default()), fonts());
     assert_eq!(style(&e, "C").as_deref(), Some("Heading3"));
-    assert!(!e.document().resolver.as_ref().is_some_and(|r| r.styles.by_id.contains_key("Heading4")), "the style with it, one step");
+    assert!(!e.document().resolver.as_ref().is_some_and(|r| r.has_style("Heading4")), "the style with it, one step");
     for _ in 0..10 {
         e.change_outline(OutlineChange::Demote, false, fonts());
     }

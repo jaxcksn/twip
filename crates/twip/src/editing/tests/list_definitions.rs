@@ -432,7 +432,7 @@ fn a_picture_bullet_definition_adds_its_image_once() {
     assert_eq!(e.document().images.len(), images + 1, "the picture, once");
     e.execute(Command::Undo(Default::default()), fonts());
     e.execute(Command::Undo(Default::default()), fonts());
-    assert!(e.document().resolver.as_ref().unwrap().numbering.pic_bullets.is_empty(), "undone");
+    assert!(e.document().resolver.as_ref().unwrap().typed().numbering.pictures.is_empty(), "undone");
 }
 
 #[test]

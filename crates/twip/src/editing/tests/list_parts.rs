@@ -40,7 +40,7 @@ fn parts() -> Vec<Part> {
         if names.is_empty() {
             continue;
         }
-        let colours = crate::docx::read_editable(&bytes).ok().and_then(|d| d.resolver.as_deref().map(|r| r.styles.colours)).unwrap_or_default();
+        let colours = crate::docx::read_editable(&bytes).ok().and_then(|d| d.resolver.as_deref().map(|r| r.colours())).unwrap_or_default();
         let mut text = |name: &str| -> Option<String> { crate::docx::package::text(zip.by_name(name).ok()?, name).ok() };
         for name in names {
             let Some(xml) = text(&name) else { continue };

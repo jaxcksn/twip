@@ -52,17 +52,6 @@ fn style_type(kind: StyleKind) -> StyleType {
     }
 }
 
-/// The typed kind of a built-in style of `kind`.
-pub fn typed_kind(kind: crate::docx::styles::StyleKind) -> StyleKind {
-    use crate::docx::styles::StyleKind as K;
-    match kind {
-        K::Paragraph => StyleKind::Paragraph,
-        K::Character => StyleKind::Character,
-        K::Table => StyleKind::Table,
-        K::Numbering => StyleKind::Numbering,
-    }
-}
-
 /// A gallery preview of a run whose levels fold to `p`.
 fn preview(c: &crate::format::cascade::Cascade, p: &CharProps) -> StylePreview {
     let run = c.run_style(&c.run_props(p, &CharProps::default()));
@@ -125,7 +114,7 @@ pub fn list(doc: &Document, kind: Option<StyleType>, glossary: bool) -> Vec<Styl
         .collect();
     // The gallery's built-in styles the document doesn't define yet: applying one adds it.
     for b in builtin::BUILT_IN.iter().filter(|b| b.quick && !styles.styles.contains_key(b.id)) {
-        let t = style_type(typed_kind(b.kind));
+        let t = style_type(b.kind);
         if kind.is_some_and(|k| k != t) {
             continue;
         }

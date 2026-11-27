@@ -6,11 +6,12 @@ use crate::api::command::Command;
 use crate::api::error::Error;
 use crate::docx::props::{Tab, TabKind};
 use crate::docx::resolvers::{Resolvers, TypedDefs};
+use crate::docx::style_xml::StyleEditError;
 use crate::docx::style_xml::{DefaultsDef, StyleDef};
-use crate::docx::styles::{StyleEditError, StyleKind};
 use crate::docx::write::props::Cx;
 use crate::docx::{Paragraph, RunStyle};
 use crate::font::Fonts;
+use crate::format::StyleKind;
 use crate::format::{CellEdit, DefaultsSet, ParaEdit, ParaProps, Region, RegionKind, RowEdit, Style, StyleFormat, StyleProp, StyleSet, TableEdit};
 
 use super::Editor;

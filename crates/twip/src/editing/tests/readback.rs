@@ -375,7 +375,7 @@ fn document_defaults_take_a_theme_font_and_colour() {
         ..Default::default()
     };
     assert!(matches!(e.execute(Command::SetDocumentDefaults(d), fonts()), Outcome::Changed(_)));
-    let raw = e.document().resolver.as_ref().and_then(|r| r.styles.defaults_raw.clone()).expect("defaults");
+    let raw = e.document().resolver.as_ref().and_then(|r| r.defaults_xml()).expect("defaults");
     assert!(
         raw.contains(r#"w:asciiTheme="minorHAnsi""#) && raw.contains(r#"w:themeColor="accent1""#) && raw.contains(r#"w:themeTint="66""#),
         "{raw}"

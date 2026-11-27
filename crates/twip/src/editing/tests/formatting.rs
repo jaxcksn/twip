@@ -228,7 +228,7 @@ fn tab_stops_in_a_style_that_updates_itself_change_the_style() {
     let undo = e.history().undo_depth();
     let out = e.execute(C::AddTabStop(AddTabStop { position: Points(144.0), alignment: None, leader: None }), fonts());
     assert!(matches!(out, super::super::commands::Outcome::Changed(_)), "{out:?}");
-    let raw = &e.document().resolver.as_ref().expect("styles").styles.get("Auto").expect("Auto").raw;
+    let raw = &e.document().resolver.as_ref().expect("styles").style_xml("Auto").expect("Auto");
     assert!(raw.contains("w:pos=\"2880\""), "{raw}");
     assert_eq!(e.history().undo_depth(), undo + 1);
     assert!(first_para(&e).style.tabs.iter().any(|t| (t.pos - 144.0).abs() < 0.01), "the paragraph takes it");
@@ -249,7 +249,7 @@ fn a_font_size_past_words_limit_is_refused_wherever_it_comes_from() {
     let mut e = edit("<w:p><w:r><w:t>x</w:t></w:r></w:p>");
     let d = crate::api::command::DocumentDefaults { size: Some(Points(1e30)), ..Default::default() };
     assert!(matches!(e.execute(C::SetDocumentDefaults(d), fonts()), super::super::commands::Outcome::Refused(_)));
-    let normal = e.document().resolver.as_ref().expect("styles").styles.get("Normal").expect("Normal").raw.clone();
+    let normal = e.document().resolver.as_ref().expect("styles").style_xml("Normal").expect("Normal");
     assert!(e.format_style_xml(&normal, vec![C::SetFontSize(Points(1e12))], fonts()).is_err());
     let line = crate::api::command::Border {
         style: crate::api::command::BorderStyle::Single,
@@ -388,7 +388,7 @@ fn a_built_in_style_not_applied_is_not_added() {
     let undo = e.history().undo_depth();
     let out = e.execute(C::SetTableStyle(crate::api::value::StyleId("TableGrid1".into())), fonts());
     assert!(matches!(out, super::super::commands::Outcome::Unchanged(_)), "{out:?}");
-    assert!(!e.document().resolver.as_ref().expect("styles").styles.by_id.contains_key("TableGrid1"), "not in a table");
+    assert!(!e.document().resolver.as_ref().expect("styles").has_style("TableGrid1"), "not in a table");
     assert_eq!(e.history().undo_depth(), undo);
 }
 

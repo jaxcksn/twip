@@ -10,7 +10,7 @@ use crate::docx::para_props::ParaDirect;
 use crate::docx::resolvers::{Resolvers, TypedDefs};
 use crate::docx::review::{AuthorId, FormatChange, People, RevisionMark, TableChange};
 use crate::docx::style_xml::StyleDef;
-use crate::docx::styles::StyleEditError;
+use crate::docx::style_xml::StyleEditError;
 use crate::docx::write::props::Cx;
 use crate::docx::{Block, Inline, Opaque, Paragraph, Raw, Run, RunStyle};
 use crate::drawing::paint::Fill;

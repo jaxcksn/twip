@@ -486,7 +486,11 @@ fn table_styles_read_in_any_order_work_out_alike_after_edits() {
             let raw = t.styles[id.as_str()].xml(&colours, &t.cx()).into_owned();
             let frozen_set = f.set_xml(raw.clone());
             let typed_set = t.set(StyleDef::from_xml(&raw, &t.cx()), &colours);
-            assert_eq!(typed_set.err(), frozen_set.err().filter(|e| *e == super::styles::StyleEditError::Loop), "{xml}: {id} set: refused alike");
+            assert_eq!(
+                typed_set.err(),
+                frozen_set.err().filter(|e| *e == super::styles::StyleEditError::Loop).map(Into::into),
+                "{xml}: {id} set: refused alike"
+            );
             if typed_set.is_ok() {
                 sheet_matches(&f, &t, &colours, &format!("{xml}: {id} set"));
                 cascades_alike(&f, &t, &colours, &format!("{xml}: {id} set"));
@@ -555,13 +559,13 @@ pub(crate) fn written(p: &StylesPart, colours: &ThemeColours) -> String {
 
 /// `styles` (a part's `w:style` elements) with style `id` set from `xml`: the typed set and the XML path's agree on
 /// refusing it, and a refused one leaves the part as it was.
-fn set_alike(styles: &str, xml: &str) -> Result<(), super::styles::StyleEditError> {
+fn set_alike(styles: &str, xml: &str) -> Result<(), crate::docx::style_xml::StyleEditError> {
     let colours = ThemeColours::default();
     let (mut frozen, mut typed) = both(&part(styles), &colours);
     let before = written(&typed, &colours);
     let frozen_set = frozen.set_xml(xml.to_string());
     let typed_set = typed.set(StyleDef::from_xml(xml, &typed.cx()), &colours);
-    assert_eq!(typed_set, frozen_set.map(|_| ()), "{xml}: refused alike");
+    assert_eq!(typed_set, frozen_set.map(|_| ()).map_err(Into::into), "{xml}: refused alike");
     match typed_set {
         Ok(()) => sheet_matches(&frozen, &typed, &colours, xml),
         Err(_) => {
@@ -579,7 +583,7 @@ fn para(id: &str, base: Option<&str>) -> String {
 
 #[test]
 fn a_style_based_on_itself_is_refused() {
-    use super::styles::StyleEditError::Loop;
+    use crate::docx::style_xml::StyleEditError::Loop;
     assert_eq!(set_alike(&para("A", None), &para("A", Some("A"))), Err(Loop));
     assert_eq!(set_alike(&(para("A", None) + &para("B", Some("A"))), &para("A", Some("B"))), Err(Loop), "two styles");
     let three = para("A", None) + &para("B", Some("A")) + &para("C", Some("B"));
@@ -591,7 +595,7 @@ fn a_style_based_on_itself_is_refused() {
 
 #[test]
 fn a_chain_past_32_bases_is_refused() {
-    use super::styles::StyleEditError::Loop;
+    use crate::docx::style_xml::StyleEditError::Loop;
     let chain = |n: usize| (0..n).map(|k| para(&format!("S{k}"), (k > 0).then(|| format!("S{}", k - 1)).as_deref())).collect::<String>();
     // The new style's base, then 32 more
     assert_eq!(set_alike(&chain(33), &para("New", Some("S32"))), Ok(()));

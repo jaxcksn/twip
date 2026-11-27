@@ -22,10 +22,14 @@ use std::rc::Rc;
 use roxmltree::Node;
 
 use super::char_props::{self, RprRevisions};
+#[cfg(test)]
 use super::numbering::{AbstractNum, Level, Num, Numbering, PicBullet};
 use super::para_props::{self, Owned};
 use super::prop_xml::{Compare, Out, Sink, Twips, foreign_child, push_esc, read_attr, strip, with_attr};
-use super::props::{ParaProps as XmlParaProps, RunProps, ThemeColours};
+use super::props::ThemeColours;
+#[cfg(test)]
+use super::props::{ParaProps as XmlParaProps, RunProps};
+#[cfg(test)]
 use super::styles::StyleOrigin;
 use super::write::props::{Cx, W_NS};
 use super::xml::{R, W, attr, attr_twips, child, children, int, on_off, on_off_str, val};
@@ -1519,6 +1523,7 @@ impl NumberingXml {
         }
     }
 
+    #[cfg(test)]
     /// The XML path's numbering of the part: each element as this part writes it, read as that path reads it.
     pub fn to_numbering(&self, colours: &ThemeColours) -> Numbering {
         let cx = self.cx();
@@ -1533,6 +1538,7 @@ impl NumberingXml {
 
 // Conversion to the XML path's numbering
 
+#[cfg(test)]
 fn origin_of(o: Origin) -> StyleOrigin {
     match o {
         Origin::Document => StyleOrigin::Document,
@@ -1540,6 +1546,7 @@ fn origin_of(o: Origin) -> StyleOrigin {
     }
 }
 
+#[cfg(test)]
 /// `l` as the XML path's level: each value as that path gives it, its paragraph and run properties as that path reads
 /// them from the `w:pPr` and `w:rPr` the level is written with.
 pub fn to_level(l: &ListLevel, colours: &ThemeColours, cx: &Cx) -> Level {
@@ -1567,6 +1574,7 @@ pub fn to_level(l: &ListLevel, colours: &ThemeColours, cx: &Cx) -> Level {
     }
 }
 
+#[cfg(test)]
 /// A definition as the XML path's, with the element it writes.
 pub fn to_abstract_num(d: &ListDefDirect, colours: &ThemeColours, cx: &Cx) -> AbstractNum {
     let v = d.get();
@@ -1582,6 +1590,7 @@ pub fn to_abstract_num(d: &ListDefDirect, colours: &ThemeColours, cx: &Cx) -> Ab
     }
 }
 
+#[cfg(test)]
 /// A list as the XML path's, with the element it writes.
 pub fn to_num(n: &ListDirect, colours: &ThemeColours, cx: &Cx) -> Num {
     let v = n.get();
@@ -1594,6 +1603,7 @@ pub fn to_num(n: &ListDirect, colours: &ThemeColours, cx: &Cx) -> Num {
     }
 }
 
+#[cfg(test)]
 /// A picture bullet as the XML path's, with the element it writes.
 pub fn to_pic_bullet(p: &PictureDirect, colours: &ThemeColours, cx: &Cx) -> PicBullet {
     let v = p.get();

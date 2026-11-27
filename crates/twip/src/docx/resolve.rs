@@ -567,10 +567,11 @@ mod tests {
         let mut checked = 0;
         for f in docs() {
             let Ok(doc) = super::super::read_editable(&std::fs::read(&f).expect("readable")) else { continue };
-            let (Some(res), Some(src)) = (&doc.resolver, &doc.source) else { panic!("{}: no resolver", f.display()) };
+            let (Some(_), Some(src)) = (&doc.resolver, &doc.source) else { panic!("{}: no resolver", f.display()) };
+            let res = crate::docx::baseline::Baseline::as_read(&doc);
             let cx = Cx::of_xml(&src.xml);
             for s in &doc.sections {
-                check(res, &cx, &s.blocks, None, &f.display().to_string(), &mut checked);
+                check(&res, &cx, &s.blocks, None, &f.display().to_string(), &mut checked);
             }
         }
         assert!(checked > 10_000, "only {checked} runs checked");

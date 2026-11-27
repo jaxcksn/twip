@@ -191,45 +191,6 @@ pub fn rename_char(p: &mut crate::format::CharProps, rename: &FontRename) -> u32
     n
 }
 
-/// Renames `from` to `to` in the style, numbering and theme tables a resolver holds, and in its categories. Returns
-/// the places that changed: styles, document defaults, numbering levels and theme slots.
-pub fn rename_tables(res: &mut super::resolve::Resolver, rename: &FontRename) -> u32 {
-    let mut n = 0;
-    let mut place = |changed: u32| n += u32::from(changed > 0);
-    place(rename_props(&mut res.styles.doc_rpr, rename));
-    for style in res.styles.by_id.values_mut() {
-        let mut k = rename_props(&mut style.base.rpr, rename);
-        for region in style.regions.values_mut() {
-            k += rename_props(&mut region.rpr, rename);
-        }
-        place(k);
-    }
-    for level in res.numbering.abstracts.values_mut().flat_map(|a| a.levels.iter_mut().flatten()) {
-        place(rename_props(&mut level.rpr, rename));
-    }
-    let t = &mut res.theme;
-    for slot in [&mut t.major, &mut t.minor] {
-        if slot.eq_ignore_ascii_case(&rename.from) {
-            *slot = rename.to.clone();
-            place(1);
-        }
-    }
-    for slot in [&mut t.major_ea, &mut t.minor_ea, &mut t.major_cs, &mut t.minor_cs].into_iter().flatten() {
-        if slot.eq_ignore_ascii_case(&rename.from) {
-            *slot = rename.to.clone();
-            place(1);
-        }
-    }
-    let from = rename.from.to_lowercase();
-    if let Some(category) = res.categories.get(&from).copied() {
-        let mut categories = (*res.categories).clone();
-        categories.remove(&from);
-        categories.entry(rename.to.to_lowercase()).or_insert(category);
-        res.categories = std::rc::Rc::new(categories);
-    }
-    n
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

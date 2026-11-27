@@ -4,7 +4,6 @@ use std::collections::HashMap;
 
 use super::super::model::Document;
 use super::super::package;
-use super::super::styles::StyleOrigin;
 use super::super::xml::{attr, is_w};
 use super::Splice;
 use crate::format::Origin;
@@ -30,19 +29,6 @@ pub(super) fn styles(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Resu
         .collect();
     let defaults_raw = part.defaults.as_ref().map(|d| d.xml(&colours, &cx).into_owned());
     let latent_raw = part.latent.as_ref().map(|d| d.xml(&colours, &cx).into_owned());
-    if cfg!(debug_assertions) {
-        // Written as the XML path's tables hold them
-        let frozen = &res.frozen().styles;
-        let theirs: HashMap<&str, &str> =
-            frozen.by_id.values().filter(|s| s.origin == StyleOrigin::Document).map(|s| (s.id.as_str(), s.raw.as_str())).collect();
-        let ours: HashMap<&str, &str> = written.iter().map(|(k, v)| (*k, v.as_str())).collect();
-        assert_eq!(ours, theirs, "the styles written alike");
-        assert_eq!(
-            (defaults_raw.as_ref(), latent_raw.as_ref()),
-            (frozen.defaults_raw.as_ref(), frozen.latent.raw.as_ref()),
-            "the defaults and latent styles written alike"
-        );
-    }
     let name = package::related(&src.package, parts, &src.main, STYLES_REL)?;
     let Some(xml) = (match &name {
         Some(n) => package::read(&src.package, parts, n)?,

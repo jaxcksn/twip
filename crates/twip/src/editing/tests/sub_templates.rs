@@ -805,9 +805,9 @@ fn lists_and_notes(doc: &crate::docx::Document) -> (Vec<(String, String)>, Vec<S
     for b in doc.sections.iter().flat_map(|s| &s.blocks) {
         let Block::Para(p) = b else { continue };
         if let Some(ListRef { list: ListId(id), level: ilvl }) = p.style.num.filter(|n| n.list.0 != 0)
-            && let Some(l) = res.numbering.level(id, ilvl, &res.styles)
+            && let Some(l) = res.cascade().level(ListId(id), ilvl)
         {
-            lists.push((l.fmt.clone(), l.text.clone()));
+            lists.push((crate::docx::list_xml::format_name(l.format.as_ref()).to_string(), l.text.as_deref().unwrap_or_default().to_string()));
         }
         for i in &p.inlines {
             if let Inline::NoteRef { kind: crate::docx::NoteKind::Foot, id, .. } = i {
@@ -877,14 +877,17 @@ fn comments_and_anchors(doc: &crate::docx::Document) -> Vec<(String, String)> {
 fn a_sub_template_from_another_docx_takes_lists_of_its_own_and_no_notes() {
     use super::super::commands::Outcome;
     let (mut e, _) = expanded();
-    let nums: Vec<i64> = e.document().resolver.as_ref().expect("styles").numbering.nums.keys().copied().collect();
+    let nums: Vec<i64> = e.document().resolver.as_ref().expect("styles").cascade().lists.lists.keys().map(|k| k.0).collect();
     assert!(matches!(create(&mut e, "Lists", Some(fixture_bytes("FX-CUSTOM-LISTS.docx"))), Outcome::Changed(_)));
     let res = e.document().resolver.as_ref().expect("styles");
     let part = e.document().glossary.as_ref().expect("a glossary").parts.iter().find(|b| b.name == "Lists").expect("made");
     let used: Vec<i64> =
         part.body.iter().filter_map(|b| if let Block::Para(p) = b { p.style.num.map(|n| n.list.0) } else { None }).filter(|n| *n != 0).collect();
     assert!(!used.is_empty());
-    assert!(used.iter().all(|n| !nums.contains(n) && res.numbering.nums.contains_key(n)), "{used:?} past {nums:?}");
+    assert!(
+        used.iter().all(|n| !nums.contains(n) && res.cascade().lists.lists.contains_key(&crate::document::paragraph::ListId(*n))),
+        "{used:?} past {nums:?}"
+    );
     assert!(matches!(create(&mut e, "Notes", Some(fixture_bytes("FX-A11Y-STRUCTURE.docx"))), Outcome::Refused(_)));
 }
 
@@ -986,9 +989,9 @@ fn a_replaced_body_brings_the_lists_of_its_group_shapes_text() {
                 let Inline::Float(f, _) = i else { continue };
                 for q in f.parts.iter().filter_map(|g| g.text_box.as_ref()).flat_map(|t| &t.blocks) {
                     let Block::Para(q) = q else { continue };
-                    out.extend(
-                        q.style.num.and_then(|ListRef { list: ListId(n), level: l }| res.numbering.level(n, l, &res.styles)).map(|l| l.fmt.clone()),
-                    );
+                    out.extend(q.style.num.and_then(|ListRef { list, level }| {
+                        res.cascade().level(list, level).map(|l| crate::docx::list_xml::format_name(l.format.as_ref()).to_string())
+                    }));
                 }
             }
         }

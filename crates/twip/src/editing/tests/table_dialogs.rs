@@ -108,7 +108,7 @@ fn a_table_style_takes_cell_and_table_shading_in_its_own_xml_and_the_document_st
     let mut e = open();
     select(&mut e, 0, 0);
     let (revision, before) = (e.revision(), tables(&e)[0].rows[0].cells[0].shading);
-    let raw = e.document().resolver.as_ref().expect("styles").styles.get("Striped").expect("the style").raw.clone();
+    let raw = e.document().resolver.as_ref().expect("styles").style_xml("Striped").expect("the style");
     let xml =
         e.format_style_xml(&raw, vec![shade(ShadingTarget::Cell, 0x00B050), shade(ShadingTarget::Table, 0x112233)], fonts()).expect("formats it");
     assert!(xml.contains("00B050") && xml.contains("112233") && xml.contains("<w:tblPr>"), "{xml}");
@@ -124,7 +124,7 @@ fn a_table_style_takes_cell_and_table_shading_in_its_own_xml_and_the_document_st
         assert!(xml.contains("00B050"), "{xml}");
     }
     assert_eq!((e.revision(), tables(&e)[0].rows[0].cells[0].shading), (revision, before), "the document's table didn't change");
-    let para = e.document().resolver.as_ref().expect("styles").styles.get("Normal").expect("Normal").raw.clone();
+    let para = e.document().resolver.as_ref().expect("styles").style_xml("Normal").expect("Normal");
     assert!(e.format_style_xml(&para, vec![shade(ShadingTarget::Cell, 0x00B050)], fonts()).is_err(), "a paragraph style has no cell shading");
     assert_eq!(e.revision(), revision);
 }

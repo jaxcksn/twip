@@ -92,7 +92,7 @@ fn eviction_keeps_the_fewest_edits_between_view_changes() {
 #[test]
 fn a_style_edit_counts_the_tables_it_keeps() {
     let mut e = opened();
-    let id = e.document().resolver.as_ref().and_then(|r| r.styles.by_id.keys().next().cloned()).expect("a style");
+    let id = e.document().resolver.as_ref().and_then(|r| r.cascade().styles.styles.keys().next().map(|k| k.to_string())).expect("a style");
     let base = e.history().bytes();
     let change = StyleMetaChange { id: crate::api::value::StyleId(id), visibility: None, priority: Some(5), quick: None, locked: None };
     assert!(matches!(e.execute(Command::SetStyleMeta(change), fonts()), Outcome::Changed(_)));

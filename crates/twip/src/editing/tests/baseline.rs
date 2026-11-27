@@ -2,6 +2,7 @@
 //! gives the format the document holds, after each representative edit, its undo and its redo; the edit's authored
 //! result is what a hand-written patch of the property XML as read gives
 
+use crate::docx::baseline::Baseline;
 use std::rc::Rc;
 
 use super::super::Editor;
@@ -38,14 +39,15 @@ fn cx(d: &Document) -> Cx {
 
 /// A run's `w:rPr` as the document writes it: as read while its authored properties are those, else written from
 /// them (a typed command's result, whose properties the edit's own check holds against the hand-written patch).
-fn written(res: &crate::docx::resolvers::Resolvers, cx: &Cx, r: &RunStyle) -> Option<String> {
+fn written(res: &Baseline, cx: &Cx, r: &RunStyle) -> Option<String> {
     r.direct.xml(&res.styles.colours, cx).map(std::borrow::Cow::into_owned)
 }
 
 /// Every body paragraph, mark and text run resolved again from its own property XML gives the format it holds.
 /// Paragraphs joined through vanished marks are skipped, as the as-read harness skips them (`docx::resolve`).
 fn check(d: &Document, what: &str) -> usize {
-    let res = d.resolver.as_deref().expect("a resolver");
+    let b = Baseline::of(d);
+    let res = &b;
     let cx = cx(d);
     let mut checked = 0;
     for s in &d.sections {
@@ -58,11 +60,12 @@ fn check(d: &Document, what: &str) -> usize {
 /// The document's carried typed definitions cascade as its carried resolver does: every definition, and every
 /// paragraph, run, label and cell of it.
 fn carried_matches(d: &Document, what: &str) -> CascadeCounts {
-    let res = d.resolver.as_deref().expect("a resolver");
+    let b = Baseline::of(d);
+    let res = &b;
     let typed = res.typed();
     let mut n = CascadeCounts::default();
     let what = format!("{what}: carried");
-    definitions_match(res, &typed.cascade, &typed.numbering, &what, &mut n);
+    definitions_match(res, &typed.cascade, &typed.numbering, false, &what, &mut n);
     let (cx, mut counters) = (cx(d), Default::default());
     for s in &d.sections {
         document_matches(res, &typed.cascade, &cx, &s.blocks, None, &mut counters, &what, &mut n);
@@ -70,7 +73,7 @@ fn carried_matches(d: &Document, what: &str) -> CascadeCounts {
     n
 }
 
-fn check_blocks(res: &crate::docx::resolvers::Resolvers, cx: &Cx, blocks: &[Block], region: Option<&Region>, what: &str, checked: &mut usize) {
+fn check_blocks(res: &Baseline, cx: &Cx, blocks: &[Block], region: Option<&Region>, what: &str, checked: &mut usize) {
     for b in blocks {
         match b {
             Block::Para(p) => {
@@ -108,7 +111,7 @@ fn check_blocks(res: &crate::docx::resolvers::Resolvers, cx: &Cx, blocks: &[Bloc
 type Authored = Vec<(u64, Option<Rc<str>>, Option<Rc<str>>, Vec<Option<Rc<str>>>)>;
 
 fn authored(d: &Document) -> Authored {
-    fn walk(res: &crate::docx::resolvers::Resolvers, cx: &Cx, blocks: &[Block], out: &mut Authored) {
+    fn walk(res: &Baseline, cx: &Cx, blocks: &[Block], out: &mut Authored) {
         let rpr = |r: &RunStyle| written(res, cx, r).map(|x| Rc::from(x.as_str()));
         for b in blocks {
             match b {
@@ -122,7 +125,8 @@ fn authored(d: &Document) -> Authored {
             }
         }
     }
-    let (res, cx) = (d.resolver.as_deref().expect("a resolver"), cx(d));
+    let b = Baseline::of(d);
+    let (res, cx) = (&b, cx(d));
     let mut out = Vec::new();
     d.sections.iter().for_each(|s| walk(res, &cx, &s.blocks, &mut out));
     out
@@ -379,7 +383,7 @@ fn select(e: &mut Editor, at: At) -> u64 {
 }
 
 /// The run properties at each character of the paragraph's text, parsed from their XML (after `patch`).
-fn run_props(res: &crate::docx::resolvers::Resolvers, cx: &Cx, p: &Paragraph, patch: Option<Patch>) -> Vec<RunProps> {
+fn run_props(res: &Baseline, cx: &Cx, p: &Paragraph, patch: Option<Patch>) -> Vec<RunProps> {
     let parse = |raw: Option<&str>| raw.and_then(|x| cx.parse(x, |_, el| RunProps::parse(Some(el), &res.styles.colours))).unwrap_or_default();
     p.inlines
         .iter()
@@ -398,7 +402,7 @@ fn run_props(res: &crate::docx::resolvers::Resolvers, cx: &Cx, p: &Paragraph, pa
         .collect()
 }
 
-fn para_props(res: &crate::docx::resolvers::Resolvers, cx: &Cx, p: &Paragraph, patch: Option<Patch>) -> ParaProps {
+fn para_props(res: &Baseline, cx: &Cx, p: &Paragraph, patch: Option<Patch>) -> ParaProps {
     let raw = match patch {
         Some(f) => {
             let mut props = Props::parse(p.style.direct.as_read().map(|x| &**x), "pPr", cx);
@@ -430,7 +434,8 @@ fn run(edit: &Edit) {
     check(e.document(), &format!("{what}: edited"));
     let edited = authored(e.document());
     let d = e.document();
-    let (res, cx) = (d.resolver.as_deref().expect("a resolver"), cx(d));
+    let b = Baseline::of(d);
+    let (res, cx) = (&b, cx(d));
     if edit.runs.is_some() || edit.para.is_some() {
         let after = find(d, target).expect("the target");
         if edit.runs.is_some() {
@@ -489,7 +494,8 @@ fn runs_pasted_from_another_prefix_are_written_in_this_ones() {
     dst.select_range(first, Unit(0), Unit(0), fonts());
     assert!(matches!(dst.paste_fragment(&frag, fonts()), Outcome::Changed(_)), "pasted");
     let d = dst.document();
-    let (res, cx) = (d.resolver.as_deref().expect("a resolver"), cx(d));
+    let b = Baseline::of(d);
+    let (res, cx) = (&b, cx(d));
     let mut styled = 0;
     for p in d.sections.iter().flat_map(|s| &s.blocks).filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None }) {
         for r in std::iter::once(&p.mark).chain(p.inlines.iter().filter_map(Inline::run)) {
@@ -637,7 +643,8 @@ fn typed_ppr_round_trip(ppr: roxmltree::Node, cx: &Cx, colours: &ThemeColours, w
 fn page_border_xml_round_trips_through_the_typed_writer() {
     let mut n = 0;
     for (path, d) in fixtures() {
-        let res = d.resolver.as_deref().expect("a resolver");
+        let b = Baseline::as_read(&d);
+        let res = &b;
         let cx = cx(&d);
         let colours = &res.styles.colours;
         let src = &d.source.as_ref().expect("a source").xml;
@@ -674,7 +681,8 @@ fn page_border_xml_round_trips_through_the_typed_writer() {
 fn paragraph_property_xml_round_trips_through_the_typed_writer() {
     let mut n = 0;
     for (path, d) in fixtures() {
-        let res = d.resolver.as_deref().expect("a resolver");
+        let b = Baseline::as_read(&d);
+        let res = &b;
         let cx = cx(&d);
         let colours = &res.styles.colours;
         let what = |raw: &str| format!("{}: {raw}", path.display());
@@ -788,7 +796,8 @@ fn table_property_xml_round_trips_through_the_typed_writer() {
     let mut counts = TableCounts::default();
     let table = |n: &roxmltree::Node| ["tblPr", "tblPrEx", "trPr", "tcPr"].iter().any(|name| crate::docx::xml::is_w(*n, name));
     for (path, d) in fixtures() {
-        let res = d.resolver.as_deref().expect("a resolver");
+        let b = Baseline::as_read(&d);
+        let res = &b;
         let cx = cx(&d);
         let colours = &res.styles.colours;
         let what = |raw: &str| format!("{}: {raw}", path.display());
@@ -823,7 +832,8 @@ fn table_property_xml_round_trips_through_the_typed_writer() {
 fn typed_table_resolution_gives_what_reading_resolved() {
     let mut n = [0usize; 4];
     for (path, d) in fixtures() {
-        let res = d.resolver.as_deref().expect("a resolver");
+        let b = Baseline::as_read(&d);
+        let res = &b;
         let cx = cx(&d);
         for s in &d.sections {
             resolve_tables(res, &cx, &s.blocks, &path.display().to_string(), &mut n);
@@ -837,7 +847,7 @@ fn typed_table_resolution_gives_what_reading_resolved() {
     );
 }
 
-fn resolve_tables(res: &crate::docx::resolvers::Resolvers, cx: &Cx, blocks: &[Block], what: &str, n: &mut [usize; 4]) {
+fn resolve_tables(res: &Baseline, cx: &Cx, blocks: &[Block], what: &str, n: &mut [usize; 4]) {
     use crate::docx::props::{TblProps, TcProps, TrProps};
     use crate::docx::table_props::{self as tp, CellDirect, ExceptionsDirect, RowDirect, TableDirect};
     let colours = &res.styles.colours;
@@ -904,7 +914,8 @@ fn property_xml_round_trips_through_the_writer() {
     assert_eq!(char_props::tests::lost(had.root_element(), has.root_element()).len(), 1, "a value left out is lost");
     let (mut ppr, mut rpr) = (0, 0);
     for (path, d) in fixtures() {
-        let res = d.resolver.as_deref().expect("a resolver");
+        let b = Baseline::as_read(&d);
+        let res = &b;
         let cx = cx(&d);
         let colours = &res.styles.colours;
         let what = |raw: &str| format!("{}: {raw}", path.display());
@@ -973,7 +984,8 @@ fn each_rpr(d: &Document, f: &mut dyn FnMut(&str)) {
 fn typed_resolution_gives_what_reading_resolved() {
     let (mut runs, mut marks, mut changes) = (0, 0, 0);
     for (path, d) in fixtures() {
-        let res = d.resolver.as_deref().expect("a resolver");
+        let b = Baseline::as_read(&d);
+        let res = &b;
         let cx = cx(&d);
         let env = RunEnv { colours: &res.styles.colours, fonts: &res.theme, categories: &res.categories, open_type: res.styles.open_type };
         let mut counts = (&mut runs, &mut marks, &mut changes);
@@ -985,7 +997,7 @@ fn typed_resolution_gives_what_reading_resolved() {
 }
 
 fn resolve_blocks(
-    res: &crate::docx::resolvers::Resolvers,
+    res: &Baseline,
     env: &RunEnv,
     cx: &Cx,
     blocks: &[Block],
@@ -1052,7 +1064,8 @@ fn resolve_blocks(
 fn typed_paragraph_resolution_gives_what_reading_resolved() {
     let (mut paras, mut changes) = (0, 0);
     for (path, d) in fixtures() {
-        let res = d.resolver.as_deref().expect("a resolver");
+        let b = Baseline::as_read(&d);
+        let res = &b;
         let cx = cx(&d);
         for s in &d.sections {
             resolve_paras(res, &cx, &s.blocks, None, &path.display().to_string(), &mut (&mut paras, &mut changes));
@@ -1061,14 +1074,7 @@ fn typed_paragraph_resolution_gives_what_reading_resolved() {
     assert!(paras > 10_000 && changes >= 2, "only {paras} paragraphs and {changes} property changes checked");
 }
 
-fn resolve_paras(
-    res: &crate::docx::resolvers::Resolvers,
-    cx: &Cx,
-    blocks: &[Block],
-    region: Option<&TableRegion>,
-    what: &str,
-    counts: &mut (&mut usize, &mut usize),
-) {
+fn resolve_paras(res: &Baseline, cx: &Cx, blocks: &[Block], region: Option<&TableRegion>, what: &str, counts: &mut (&mut usize, &mut usize)) {
     for b in blocks {
         match b {
             Block::Para(p) => {
@@ -1080,7 +1086,7 @@ fn resolve_paras(
                     let mark = raw.and_then(|x| {
                         cx.parse(x, |_, el| crate::docx::xml::child(el, "rPr").map(|r| char_props::parse(r).0)).flatten().and_then(|m| m.size)
                     });
-                    para_xml::resolve(res, &direct, mark, region).style
+                    para_xml::resolve(&res.typed, &direct, mark, region).style
                 };
                 let mut again = typed(p.style.direct.as_read().map(|x| &**x));
                 (again.change, again.in_frame) = (p.style.change.clone(), p.style.in_frame);
@@ -1209,7 +1215,8 @@ fn bold_on_a_run_under_a_locally_bound_prefix_keeps_its_underline() {
 /// parts and the glossary's, merged as the reader merges them; picture bullets' images, the theme, the settings'
 /// rules, the font categories and the divisions as the reader's resolver holds them.
 fn typed_cascade(d: &Document) -> (Cascade, StylesPart, NumberingXml) {
-    let res = d.resolver.as_deref().expect("a resolver");
+    let b = Baseline::as_read(d);
+    let res = &b;
     let src = d.source.as_ref().expect("a source");
     let pkg = &src.package;
     let read = |name: Option<String>| name.and_then(|n| crate::docx::package::read(pkg, &[], &n).ok().flatten());
@@ -1252,7 +1259,7 @@ struct CascadeCounts {
 
 /// The definitions: every style's chain and its folds, its dependants, every table style's base and single regions
 /// and what it defines, every list's definition and levels, the style links.
-fn definitions_match(res: &crate::docx::resolvers::Resolvers, c: &Cascade, numbering: &NumberingXml, what: &str, n: &mut CascadeCounts) {
+fn definitions_match(res: &Baseline, c: &Cascade, numbering: &NumberingXml, as_read: bool, what: &str, n: &mut CascadeCounts) {
     let colours = &res.styles.colours;
     let mut ids: Vec<&String> = res.styles.by_id.keys().collect();
     ids.sort();
@@ -1272,7 +1279,10 @@ fn definitions_match(res: &crate::docx::resolvers::Resolvers, c: &Cascade, numbe
         assert_eq!(c.table_style(id), res.styles.table_style(id), "{what}: {id:?}: as a table style");
         let (e, f) = (&c.styles.styles[key], &res.styles.by_id[key]);
         let origin = matches!(e.origin, crate::format::Origin::Glossary) == (f.origin == crate::docx::styles::StyleOrigin::Glossary);
-        assert!(origin && e.order == f.order && e.frozen == f.frozen, "{what}: {id:?}: origin, order and frozen");
+        // A style's place in the part as read: an edited document's is the part it was read from, the XML path's the
+        // part it is saved as
+        let placed = !as_read || e.order == f.order;
+        assert!(origin && placed && e.frozen == f.frozen, "{what}: {id:?}: origin, order and frozen");
         n.styles += 1;
         if c.styles.styles[key].style.kind != StyleKind::Table {
             continue;
@@ -1327,9 +1337,7 @@ fn definitions_match(res: &crate::docx::resolvers::Resolvers, c: &Cascade, numbe
     }
     let mut links: Vec<((i64, i64), String)> = c.style_links.iter().map(|((a, l), s)| ((a.0, *l), s.to_string())).collect();
     links.sort();
-    let mut current = res.frozen().clone();
-    current.compute_style_links();
-    let mut frozen: Vec<((i64, i64), String)> = current.style_links.iter().map(|(k, s)| (*k, s.clone())).collect();
+    let mut frozen: Vec<((i64, i64), String)> = res.style_links.iter().map(|(k, s)| (*k, s.clone())).collect();
     frozen.sort();
     assert_eq!(links, frozen, "{what}: style links");
     n.links += links.len();
@@ -1339,7 +1347,7 @@ fn definitions_match(res: &crate::docx::resolvers::Resolvers, c: &Cascade, numbe
 /// properties give what reading resolved; its lists' labels counted in order give the XML path's.
 #[allow(clippy::too_many_arguments)]
 fn document_matches(
-    res: &crate::docx::resolvers::Resolvers,
+    res: &Baseline,
     c: &Cascade,
     cx: &Cx,
     blocks: &[Block],
@@ -1423,10 +1431,11 @@ fn document_matches(
 fn typed_cascade_gives_what_the_resolver_gives() {
     let mut n = CascadeCounts::default();
     for (path, d) in fixtures() {
-        let res = d.resolver.as_deref().expect("a resolver");
+        let b = Baseline::as_read(&d);
+        let res = &b;
         let (c, _, numbering) = typed_cascade(&d);
         let what = path.display().to_string();
-        definitions_match(res, &c, &numbering, &what, &mut n);
+        definitions_match(res, &c, &numbering, true, &what, &mut n);
         let cx = cx(&d);
         let mut counters = Default::default();
         for s in &d.sections {
@@ -1477,7 +1486,7 @@ fn style_edits_work_the_read_order_rule_out_again_alike() {
             let before = style_xml_tests::written(&typed, &colours);
             let frozen_set = frozen.set_xml(raw);
             let typed_set = typed.set(edited, &colours);
-            assert_eq!(typed_set, frozen_set.map(|_| ()), "{what}: {id} based on {dependant}");
+            assert_eq!(typed_set, frozen_set.map(|_| ()).map_err(Into::into), "{what}: {id} based on {dependant}");
             assert!(typed_set.is_err(), "{what}: {id} based on {dependant} loops");
             assert_eq!(style_xml_tests::written(&typed, &colours), before, "{what}: a refused set changes nothing");
             loops += 1;

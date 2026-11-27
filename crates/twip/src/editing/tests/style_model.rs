@@ -32,8 +32,8 @@ fn first_para(e: &Editor) -> &crate::docx::Paragraph {
     e.document().sections[0].blocks.iter().find_map(|b| if let Block::Para(p) = b { Some(p) } else { None }).expect("a paragraph")
 }
 
-fn styles(e: &Editor) -> &Styles {
-    &e.document().resolver.as_ref().expect("styles").styles
+fn styles(e: &Editor) -> Styles {
+    crate::docx::baseline::Baseline::of(e.document()).frozen.styles
 }
 
 fn colours() -> crate::docx::props::ThemeColours {
@@ -322,7 +322,8 @@ fn a_new_style_made_a_character_style_takes_a_character_base() {
     let v = e.style_dialog_update(&was, now, fonts()).expect("updates");
     assert_eq!(v.based_on.as_ref().map(|b| b.0.as_str()), Some("DefaultParagraphFont"));
     e.style_dialog_apply(v, fonts());
-    let accent = styles(&e).get("Accent").expect("made");
+    let sheet = styles(&e);
+    let accent = sheet.get("Accent").expect("made");
     assert_eq!((accent.kind, accent.based_on.as_deref()), (crate::docx::styles::StyleKind::Character, Some("DefaultParagraphFont")));
 }
 
@@ -473,7 +474,8 @@ fn a_built_in_style_the_document_lacks_opens_in_the_style_dialog_and_saves_with_
     now.size = Points(30.0);
     let v = e.style_dialog_update(&was, now, fonts()).expect("updates");
     e.style_dialog_apply(v, fonts());
-    let h4 = styles(&e).get("Heading4").expect("added");
+    let sheet = styles(&e);
+    let h4 = sheet.get("Heading4").expect("added");
     assert_eq!((h4.name.as_str(), h4.base.rpr.size, h4.based_on.as_deref()), ("heading 4", Some(30.0), Some("Normal")));
 }
 

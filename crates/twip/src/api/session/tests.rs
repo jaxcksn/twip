@@ -2587,7 +2587,8 @@ fn style_options_and_document_defaults_change_and_save() {
     assert_eq!(s.state().formatting.size, Tri::Uniform(Points(14.0)), "text with no other size takes the default");
     let saved = s.export(&ExportOptions::Docx).expect("exports").bytes.0;
     let doc = crate::docx::read_editable(&saved).expect("reads again");
-    let styles = &doc.resolver.expect("styles").styles;
+    let baseline = crate::docx::baseline::Baseline::as_read(&doc);
+    let styles = &baseline.styles;
     assert_eq!(styles.doc_rpr.size, Some(14.0));
     assert!(styles.get("Draft").is_some_and(|d| d.meta.locked && !d.meta.semi_hidden && d.quick));
 }
@@ -2626,7 +2627,7 @@ fn manage_styles_lists_sorts_and_applies_visibility_priority_and_defaults() {
     s.dialog_apply(m).expect("applies");
     let draft = s.styles(None).into_iter().find(|st| st.id.0 == "Draft").expect("Draft");
     assert_eq!((draft.visibility, draft.priority), (StyleVisibility::Show, 3));
-    assert_eq!(s.editor.document().resolver.as_ref().and_then(|r| r.styles.doc_rpr.size), Some(13.0));
+    assert_eq!(crate::docx::baseline::Baseline::of(s.editor.document()).styles.doc_rpr.size, Some(13.0));
 }
 
 #[test]
@@ -3074,7 +3075,7 @@ fn the_list_dialogs_open_on_the_selections_list_and_apply_their_commands() {
         .expect("updates");
     s.dialog_apply(m).expect("applies");
     let res = s.editor.document().resolver.clone().expect("lists");
-    assert!(res.numbering.abstracts.values().any(|a| a.name.as_deref() == Some("Legal")));
+    assert!(res.cascade().lists.defs.values().any(|a| a.name.as_deref() == Some("Legal")));
     // Define New Bullet outside a list makes one.
     caret(s, 0);
     let m = s.dialog_open(DialogKind::DefineBullet).expect("opens");
@@ -3215,7 +3216,7 @@ fn table_styles_format_their_parts_and_relay_the_tables_using_them() {
     assert_eq!(header_fill(s), Some(0xD9E2F3), "the table takes the new style");
     let saved = s.export(&ExportOptions::Docx).expect("saves").bytes.0;
     let doc = crate::docx::read_editable(&saved).expect("reads again");
-    let st = doc.resolver.as_ref().expect("styles").styles.get("GridAccent2").expect("the new style").raw.clone();
+    let st = doc.resolver.as_ref().expect("styles").style_xml("GridAccent2").expect("the new style");
     assert!(st.contains("w:type=\"table\"") && st.contains("firstRow") && st.contains("D9E2F3") && st.contains("band1Horz"), "{st}");
 }
 
@@ -3264,7 +3265,7 @@ fn list_styles_define_their_list_and_number_the_paragraphs() {
     let saved = s.export(&ExportOptions::Docx).expect("saves").bytes.0;
     let doc = crate::docx::read_editable(&saved).expect("reads again");
     let res = doc.resolver.as_ref().expect("styles");
-    assert!(res.numbering.abstracts.values().any(|a| a.style_link.as_deref() == Some("OutlineSteps")), "the definition is the style's");
+    assert!(res.cascade().lists.defs.values().any(|a| a.style_link.as_deref() == Some("OutlineSteps")), "the definition is the style's");
 }
 
 #[test]

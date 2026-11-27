@@ -266,7 +266,7 @@ fn check_accessibility_skips_decorative_pictures_and_lists_floating_ones() {
 #[test]
 fn set_defaults_writes_only_what_changed() {
     with_session(&package(&p("x"), "", ""), |s| {
-        let raw = |s: &mut Session| s.with_editor(|e| e.document().resolver.as_ref().and_then(|r| r.styles.defaults_raw.clone()).unwrap_or_default());
+        let raw = |s: &mut Session| s.with_editor(|e| e.document().resolver.as_ref().and_then(|r| r.defaults_xml()).unwrap_or_default());
         let before = raw(s);
         assert!(!before.contains("w:color") && !before.contains("w:ind"), "no colour or indents set: {before}");
         let m = s.dialog_open(DialogKind::ManageStyles).expect("opens");

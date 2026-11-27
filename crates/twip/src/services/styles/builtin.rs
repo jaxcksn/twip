@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use crate::document::format::{Jc, Leader, LineRule, TabKind, VertAlign};
 use crate::document::line::{BorderStyle, Underline};
-use crate::docx::styles::StyleKind;
+use crate::format::StyleKind;
 use crate::format::{
     CharProps, Color, FontRef, ListChoice, ParaBorders, ParaFlag, ParaProps, ScriptClass, ScriptFonts, Style, StyleFormat, StyleMeta, TabStop,
     TableBorders, TableProps, TextBorder, ThemeFace, Toggle, UnderlineProps,
@@ -550,7 +550,7 @@ pub fn definition(b: &BuiltIn) -> Style {
     }
     Style {
         id: b.id.into(),
-        kind: super::typed_kind(b.kind),
+        kind: b.kind,
         name: Some(b.name.into()),
         based_on: base.map(Rc::from),
         next: next.then(|| Rc::from("Normal")),
