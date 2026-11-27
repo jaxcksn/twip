@@ -2,11 +2,10 @@
 
 use std::collections::VecDeque;
 
-use crate::docx::numbering::{AbstractNum, Level as NumLevel, Num};
-use crate::docx::resolve::Resolver;
 use crate::docx::resolvers::Resolvers;
-use crate::docx::styles::Style;
 use crate::docx::{Block, Inline};
+use crate::format::cascade::Cascade;
+use crate::format::{List, ListDef, ListLevel, Style, StyleEntry};
 use crate::layout::{ParaId, Unit};
 
 use super::index::Level;
@@ -350,63 +349,24 @@ pub fn step_bytes(s: &Step) -> usize {
     }
 }
 
-/// What a retained style, numbering and theme table holds: its entries, the XML each is written as, and the
-/// style links as they are now.
+/// What retained definitions hold: each style, definition, list and picture bullet with the XML it is written as,
+/// and the style links.
 fn resolver_bytes(r: &Resolvers) -> usize {
     use std::mem::size_of;
     let t = r.typed();
     let (c, n) = (&*t.cascade, &*t.numbering);
     let len = |x: Option<std::borrow::Cow<'_, str>>| x.map_or(0, |x| x.len());
-    let styles = c.styles.styles.keys().map(|id| size_of::<Style>() + len(t.style_xml(id))).sum::<usize>();
-    let abstracts = c.lists.defs.keys().map(|id| size_of::<AbstractNum>() + len(t.def_xml(id.0)) + 9 * size_of::<Option<NumLevel>>()).sum::<usize>();
+    let styles = c.styles.styles.keys().map(|id| size_of::<StyleEntry>() + size_of::<Style>() + len(t.style_xml(id))).sum::<usize>();
+    let abstracts = c.lists.defs.keys().map(|id| size_of::<ListDef>() + len(t.def_xml(id.0)) + 9 * size_of::<Option<ListLevel>>()).sum::<usize>();
     let nums = c
         .lists
         .lists
         .iter()
-        .map(|(id, l)| size_of::<Num>() + len(t.list_xml(id.0)) + l.overrides.iter().filter(|o| o.def.is_some()).count() * size_of::<NumLevel>())
+        .map(|(id, l)| size_of::<List>() + len(t.list_xml(id.0)) + l.overrides.iter().filter(|o| o.def.is_some()).count() * size_of::<ListLevel>())
         .sum::<usize>();
     let cx = n.cx();
     let bullets = n.pictures.values().map(|b| 64 + b.xml(&c.colours, &cx).len()).sum::<usize>();
-    let bytes = size_of::<Resolver>() + styles + abstracts + nums + bullets + n.root.len() + c.style_links.len() * 48;
-    debug_assert_eq!(
-        bytes - c.style_links.len() * 48,
-        frozen_bytes(r.frozen()) - r.frozen().style_links.len() * 48,
-        "the definitions count alike from the XML path's tables, its style links as last worked out"
-    );
-    bytes
-}
-
-/// [`resolver_bytes`] as the XML path's tables count.
-fn frozen_bytes(r: &Resolver) -> usize {
-    use std::mem::size_of;
-    let styles = r.styles.by_id.values().map(|s| size_of::<Style>() + s.raw.len()).sum::<usize>();
-    let n = &r.numbering;
-    let abstracts =
-        n.abstracts.values().map(|a| size_of::<AbstractNum>() + a.raw.len() + a.levels.len() * size_of::<Option<NumLevel>>()).sum::<usize>();
-    let nums = n.nums.values().map(|m| size_of::<Num>() + m.raw.len() + m.level_overrides.len() * size_of::<NumLevel>()).sum::<usize>();
-    let bullets = n.pic_bullets.values().map(|b| 64 + b.raw.len()).sum::<usize>();
-    size_of::<Resolver>() + styles + abstracts + nums + bullets + n.root.len() + r.style_links.len() * 48
-}
-
-#[test]
-fn every_fixture_counts_alike_towards_the_budget() {
-    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
-    let mut stack = vec![dir];
-    let mut checked = 0;
-    while let Some(d) = stack.pop() {
-        for e in std::fs::read_dir(&d).expect("reads the fixtures").flatten() {
-            let path = e.path();
-            if path.is_dir() {
-                stack.push(path);
-            } else if path.extension().is_some_and(|x| x == "docx") {
-                let Ok(doc) = crate::docx::read_editable(&std::fs::read(&path).expect("reads")) else { continue };
-                let Some(r) = doc.resolver.as_deref() else { continue };
-                assert_eq!(resolver_bytes(r), frozen_bytes(r.frozen()), "{}", path.display());
-                checked += 1;
-            }
-        }
-    }
-    assert!(checked > 100, "{checked} fixtures");
+    size_of::<Cascade>() + styles + abstracts + nums + bullets + n.root.len() + c.style_links.len() * 48
 }
 
 #[test]
