@@ -4,6 +4,7 @@ use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use crate::document::paragraph::ListId;
 use crate::docx::para_props::ParaDirect;
 use crate::docx::resolvers::Resolvers;
 use crate::docx::review::{AuthorId, FormatChange, People, RevisionMark, TableChange};
@@ -11,6 +12,7 @@ use crate::docx::write::props::Cx;
 use crate::docx::{Block, Inline, Opaque, Paragraph, Raw, Run, RunStyle};
 use crate::drawing::paint::Fill;
 use crate::drawing::{Shape, ShapeKind};
+use crate::format::ListDefId;
 use crate::layout::{ParaId, TableId};
 
 use super::clipboard::{Fragment, Refs};
@@ -571,7 +573,10 @@ impl Editor {
     /// `main`: how the paragraphs' own XML is written there (`None`: as its styles are).
     fn import_styles(&mut self, tx: &mut Tx, blocks: &mut [Block], refs: &mut Refs, from: &Resolvers, main: Option<&Cx>, brought: &mut Lists) {
         let Some(res) = self.doc.resolver.clone() else { return };
-        let (scx, ncx) = (from.styles.cx(), from.numbering.cx());
+        let theirs = from.typed();
+        let (scx, ncx) = (theirs.styles.cx(), theirs.numbering.cx());
+        let (their_styles, their_lists) = (&theirs.cascade.styles, &theirs.cascade.lists);
+        let def_of = |n: i64| their_lists.lists.get(&ListId(n)).map(|l| l.def.map_or(-1, |d| d.0));
         let pcx = main.unwrap_or(&scx);
         let mut want: Vec<String> = Vec::new();
         let mut nums: Vec<i64> = Vec::new();
@@ -598,22 +603,25 @@ impl Editor {
         let mut lists: Vec<i64> = Vec::new();
         while !want.is_empty() || !nums.is_empty() {
             while let Some(id) = want.pop() {
-                if res.styles.by_id.contains_key(&id) || !seen.insert(id.clone()) {
+                if res.has_style(&id) || !seen.insert(id.clone()) {
                     continue;
                 }
-                let Some(s) = from.styles.get(&id) else { continue };
-                want.extend([&s.based_on, &s.link, &s.next].into_iter().flatten().cloned());
-                nums.extend(num_ids(&s.raw, &scx));
+                let Some(s) = their_styles.get(&id) else { continue };
+                let based_on = s.based_on.as_ref().filter(|_| !s.word_default_table());
+                want.extend([based_on, s.link.as_ref(), s.next.as_ref()].into_iter().flatten().map(|x| x.to_string()));
+                if let Some(raw) = theirs.style_xml(&id) {
+                    nums.extend(num_ids(&raw, &scx));
+                }
                 styles.push(id);
             }
             while let Some(n) = nums.pop() {
                 if n == 0 || lists.contains(&n) || brought.nums.contains_key(&n) {
                     continue;
                 }
-                let Some(num) = from.numbering.nums.get(&n) else { continue };
+                let Some(a) = def_of(n) else { continue };
                 lists.push(n);
-                if let Some(a) = from.numbering.abstracts.get(&num.abstract_id) {
-                    want.extend([&a.num_style_link, &a.style_link].into_iter().flatten().cloned());
+                if let Some(d) = their_lists.defs.get(&ListDefId(a)) {
+                    want.extend([&d.num_style_link, &d.style_link].into_iter().flatten().map(|x| x.to_string()));
                 }
             }
         }
@@ -623,7 +631,7 @@ impl Editor {
             return;
         }
         let mut next = (*res).clone();
-        let (mut free_abstract, mut free_num) = next.numbering.free_ids();
+        let (ListDefId(mut free_abstract), ListId(mut free_num)) = next.cascade().lists.free_ids();
         for l in &self.doc.added_lists {
             free_abstract = free_abstract.max(l.abstract_id + 1);
             free_num = free_num.max(l.num_id + 1);
@@ -631,12 +639,11 @@ impl Editor {
         // Each list's `w:num` and its `w:abstractNum` (one per definition), under new ids; a picture bullet's
         // reference goes (the bullet's picture isn't brought), so the level shows its text.
         for n in lists {
-            let num = &from.numbering.nums[&n];
-            let a = num.abstract_id;
+            let Some(a) = def_of(n) else { continue };
             let new_a = match abstract_map.get(&a) {
                 Some(&x) => Some(x),
-                None => from.numbering.abstracts.get(&a).and_then(|abs| {
-                    let raw = rewrite(&abs.raw, &ncx, &|e| {
+                None => theirs.def_xml(a).and_then(|abs| {
+                    let raw = rewrite(&abs, &ncx, &|e| {
                         if is_w(e, "abstractNum") {
                             attr_range(e, "abstractNumId").map(|(r, _)| (r, free_abstract.to_string()))
                         } else if is_w(e, "lvlPicBulletId") {
@@ -655,7 +662,8 @@ impl Editor {
                 num_map.insert(n, 0);
                 continue;
             };
-            let raw = rewrite(&num.raw, &ncx, &|e| {
+            let Some(num) = theirs.list_xml(n) else { continue };
+            let raw = rewrite(&num, &ncx, &|e| {
                 if is_w(e, "num") {
                     attr_range(e, "numId").map(|(r, _)| (r, free_num.to_string()))
                 } else if is_w(e, "abstractNumId") {
@@ -677,10 +685,10 @@ impl Editor {
         // Each style under this document's namespaces, not its default (this document's stays). One based on itself
         // through its chain comes without its base; one that isn't a style doesn't come, and what uses it shows as
         // the default style does.
-        let dcx = next.styles.cx();
+        let dcx = next.cx();
         for id in &styles {
-            let raw = &from.styles.by_id[id].raw;
-            let raw = if num_map.is_empty() { Some(raw.clone()) } else { renumber(raw, &scx, num_map) };
+            let Some(raw) = theirs.style_xml(id) else { continue };
+            let raw = if num_map.is_empty() { Some(raw.into_owned()) } else { renumber(&raw, &scx, num_map) };
             let Some(raw) = raw.and_then(|r| rewrite(&r, &scx, &not_default)).and_then(|r| rebound(&r, &scx, &dcx)) else { continue };
             if let Err(crate::docx::styles::StyleEditError::Loop) = next.set_style_xml(raw.clone())
                 && let Some(raw) = rewrite(&raw, &dcx, &|n| is_w(n, "basedOn").then(|| (n.range(), String::new())))
