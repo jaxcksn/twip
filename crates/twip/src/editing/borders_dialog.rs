@@ -22,21 +22,21 @@ impl Editor {
     /// Borders and Shading's values for a table style's part (`region`, none for the whole table): its cells' edges,
     /// inside lines and shading.
     pub fn table_part_borders(&self, raw: &str, region: Option<&str>) -> Option<BordersShadingDialog> {
-        let res = self.doc.resolver.as_ref()?;
-        let mut next = (**res).clone();
-        next.styles.set_xml(raw.to_string()).ok()?;
-        let id = next.styles.by_id.values().find(|s| s.raw == raw)?.id.clone();
-        let r = next.styles.table_region(Some(&id), &region.into_iter().collect::<Vec<_>>());
+        use crate::docx::table_props::{tbl_props, tc_props};
+        let (next, id) = self.doc.resolver.as_ref()?.with_style_xml(raw)?;
+        let c = next.cascade();
+        let f = c.table_region(Some(&id), &crate::docx::style_xml::region_kinds(region)).format;
+        let (tbl, tc) = (tbl_props(&f.table, &c.colours), tc_props(&f.cell, &c.colours));
         // The whole table's edges are the table's; a part's, its cells'.
-        let b = if region.is_none() { &r.tbl.borders } else { &r.tc.borders };
-        let shd = r.tc.shd.clone();
+        let b = if region.is_none() { &tbl.borders } else { &tc.borders };
+        let shd = tc.shd.clone();
         let mut v = self.borders_shading_values(None, false)?;
         (v.top, v.bottom, v.left, v.right) = (line(&b.top), line(&b.bottom), line(&b.left), line(&b.right));
         (v.between, v.inside_vertical) = (line(&b.inside_h), line(&b.inside_v));
-        (v.diagonal_down, v.diagonal_up) = (line(&r.tc.borders.tl2br), line(&r.tc.borders.tr2bl));
+        (v.diagonal_down, v.diagonal_up) = (line(&tc.borders.tl2br), line(&tc.borders.tr2bl));
         v.apply_to = ShadingTarget::Cell;
         let shd = shd.filter(|s| s.pattern != crate::docx::props::ShadingPattern::Nil);
-        v.fill = shd.as_ref().map_or(r.tc.shading.flatten(), |s| s.fill).map_or(NoneOr::None, |c| NoneOr::Value(Color(c)));
+        v.fill = shd.as_ref().map_or(tc.shading.flatten(), |s| s.fill).map_or(NoneOr::None, |c| NoneOr::Value(Color(c)));
         v.pattern = shd.as_ref().map_or(ShadingPattern::Clear, |s| ShadingPattern::of_val(&crate::docx::line_style::shading_val(s.pattern)));
         v.pattern_color = shd.as_ref().and_then(|s| s.color).map_or(AutoOr::Auto, |c| AutoOr::Value(Color(c)));
         v.setting = crate::services::dialogs::border_setting(&v, false);

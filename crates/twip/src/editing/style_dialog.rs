@@ -7,7 +7,7 @@ use crate::api::error::Error;
 use crate::api::services::{StyleDialog, StyleDialogType, StyleOpen, TableStylePart};
 use crate::api::state::{CharacterFormatting, ParagraphFormatting, Tri};
 use crate::api::value::{AutoOr, NoneOr, StyleId};
-use crate::docx::resolvers::{Resolvers, TypedDefs};
+use crate::docx::resolvers::TypedDefs;
 use crate::docx::write::props::{Cx, Props, STYLE, esc};
 use crate::font::Fonts;
 use crate::format::{StyleKind, StyleSheet};
@@ -22,14 +22,6 @@ fn one<T: Clone + Default>(t: &Tri<T>) -> T {
         Tri::Uniform(v) => v.clone(),
         _ => T::default(),
     }
-}
-
-/// The definitions with the style a style's XML holds set among them, and its id.
-fn with_pending(res: &Resolvers, raw: &str) -> Option<(Resolvers, Rc<str>)> {
-    let id = res.typed().styles.style_from_xml(raw)?.id;
-    let mut next = res.clone();
-    next.set_style_xml(raw.to_string()).ok()?;
-    Some((next, id))
 }
 
 /// The XML's style element with one child set, or removed when `xml` is none.
@@ -204,7 +196,7 @@ impl Editor {
     fn style_values(&self, pending: &str, open: StyleOpen, part: TableStylePart) -> Result<StyleDialog, Error> {
         use crate::docx::table_props::{tbl_props, tc_props};
         let res = self.doc.resolver.as_ref().ok_or_else(|| Error::unavailable("no styles"))?;
-        let (next, id) = with_pending(res, pending).ok_or_else(|| Error::invalid("not a style"))?;
+        let (next, id) = res.with_style_xml(pending).ok_or_else(|| Error::invalid("not a style"))?;
         let cascade = next.cascade();
         let entry = cascade.styles.styles.get(&id).ok_or_else(|| Error::invalid("not a style"))?;
         let style = &*entry.style;
@@ -378,7 +370,7 @@ impl Editor {
             }
             let kind = kind_of(now.kind);
             let sheet = &*typed.cascade.styles;
-            let base_of = with_pending(&res, &pending).and_then(|(n, id)| {
+            let base_of = res.with_style_xml(&pending).and_then(|(n, id)| {
                 let c = n.cascade();
                 c.styles.styles.get(&id).and_then(|e| c.based_on(e).map(Rc::<str>::from))
             });
@@ -411,7 +403,7 @@ impl Editor {
         let c = &*typed.cascade;
         let styles = &*c.styles;
         let xml = |id: &str| typed.style_xml(id).map(std::borrow::Cow::into_owned);
-        let Some((next, pending_id)) = with_pending(&res, &v.pending) else { return Outcome::invalid("not a style") };
+        let Some((next, pending_id)) = res.with_style_xml(&v.pending) else { return Outcome::invalid("not a style") };
         let pending = next.cascade();
         let Some(entry) = pending.styles.styles.get(&pending_id) else { return Outcome::invalid("not a style") };
         let style = &*entry.style;
@@ -582,7 +574,7 @@ impl Editor {
         part: Option<&str>,
     ) -> Option<(crate::docx::props::TblProps, crate::docx::props::TcProps, crate::docx::props::TrProps)> {
         use crate::docx::table_props::{tbl_props, tc_props, tr_props};
-        let (next, id) = with_pending(self.doc.resolver.as_ref()?, raw)?;
+        let (next, id) = self.doc.resolver.as_ref()?.with_style_xml(raw)?;
         let c = next.cascade();
         let f = c.table_region(Some(&id), &crate::docx::style_xml::region_kinds(part)).format;
         Some((tbl_props(&f.table, &c.colours), tc_props(&f.cell, &c.colours), tr_props(&f.row)))

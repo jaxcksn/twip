@@ -181,26 +181,25 @@ impl Editor {
     /// A style's XML as text in it resolves: a paragraph in it (or, for a character style, in the default paragraph
     /// style) and a run of that paragraph, from the styles table with that XML in it.
     pub(super) fn style_formatting(&self, raw: &str) -> Option<(Paragraph, crate::docx::Run, Cx)> {
-        let raw = &raw.to_string();
         let res = self.doc.resolver.as_ref()?;
-        let mut next = (**res).clone();
+        let mut under = (**res).clone();
         // The defaults formatted as a style: alone, not over themselves.
         if self.defaults_target {
-            (next.styles.doc_rpr, next.styles.doc_ppr) = Default::default();
+            under.without_defaults();
         }
-        next.styles.set_xml(raw.clone()).ok()?;
-        let style = next.styles.by_id.values().find(|s| s.raw == *raw)?;
-        let cx = next.styles.cx();
-        let (ppr, direct) = match style.kind {
-            StyleKind::Character => {
-                (None, RunDirect::typed(Some(Rc::new(CharProps { style: Some(style.id.as_str().into()), ..Default::default() }))))
+        let (next, id) = under.with_style_xml(raw)?;
+        let kind = next.style_kind(&id)?;
+        let cx = next.typed().styles.cx();
+        let (ppr, direct) = match kind {
+            crate::format::StyleKind::Character => {
+                (None, RunDirect::typed(Some(Rc::new(CharProps { style: Some(id.clone()), ..Default::default() }))))
             }
-            StyleKind::Table => (None, RunDirect::default()),
-            _ => (Some(style.id.as_str()), RunDirect::default()),
+            crate::format::StyleKind::Table => (None, RunDirect::default()),
+            _ => (Some(&*id), RunDirect::default()),
         };
         // A table style's text: in the part being formatted, else the whole table.
-        let region = (style.kind == StyleKind::Table)
-            .then(|| next.cascade().table_region(Some(&style.id), &crate::docx::style_xml::region_kinds(self.style_part.iter().copied())));
+        let region = (kind == crate::format::StyleKind::Table)
+            .then(|| next.cascade().table_region(Some(&id), &crate::docx::style_xml::region_kinds(self.style_part.iter().copied())));
         let ppr = crate::format::ParaProps { style: ppr.map(Into::into), ..Default::default() };
         let para = crate::docx::para_xml::resolve(&next, &ppr, None, region.as_ref());
         let run = Rc::new(run_xml::resolve(&next, &para.base, direct, false));

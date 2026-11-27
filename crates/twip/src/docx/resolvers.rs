@@ -1,10 +1,10 @@
-//! The definitions a document resolves with: the XML path's resolver and the typed cascade, kept in step
+//! The definitions a document resolves with: the typed cascade and the XML path's resolver, kept in step
 //!
-//! The typed side follows the XML path's: an edit changes the resolver (through [`Resolvers`]' mutable access, which
-//! marks the typed side stale), and the typed side is brought in step on its next use from what changed: each style,
-//! definition, list and picture bullet whose XML differs from the one its holder was read from is read again, the
-//! read-order rule is worked out again over the styles, and the cascade is built again over the definitions, the
-//! unchanged ones shared.
+//! Edits change the typed definitions first and the XML path's tables are derived from them. Where the XML path's
+//! tables change by themselves (the reader's, a test's), the typed side is brought in step on its next use from what
+//! changed: each style, definition, list and picture bullet whose XML differs from the one its holder was read from
+//! is read again, the read-order rule is worked out again over the styles, and the cascade is built again over the
+//! definitions, the unchanged ones shared.
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -434,8 +434,9 @@ fn lists_of(numbering: &NumberingXml, n: &Numbering, was: Option<(&Lists, &Gloss
     lists
 }
 
-/// The XML path's resolver and the typed definitions a document resolves with. Mutable access is to the resolver,
-/// and leaves the typed definitions to be brought in step on their next use.
+/// The XML path's resolver and the typed definitions a document resolves with. Edits go to the typed definitions
+/// first, the resolver's tables derived from them; tests' mutable access to the resolver leaves the typed
+/// definitions to be brought in step on their next use.
 #[derive(Clone)]
 pub struct Resolvers {
     frozen: Resolver,
@@ -508,6 +509,8 @@ impl std::ops::Deref for Resolvers {
     }
 }
 
+// Tests change the XML path's tables directly
+#[cfg(test)]
 impl std::ops::DerefMut for Resolvers {
     fn deref_mut(&mut self) -> &mut Resolver {
         self.stale.set(true);
@@ -712,6 +715,27 @@ impl Resolvers {
                 p.image = Some(image);
             }
         }
+        self.edited();
+    }
+
+    /// These definitions with the style `raw` (a `w:style`) holds set among them, and its id: `None` when it isn't
+    /// one, or would be based on itself.
+    pub fn with_style_xml(&self, raw: &str) -> Option<(Resolvers, Rc<str>)> {
+        let id = self.typed().styles.style_from_xml(raw)?.id;
+        let mut next = self.clone();
+        next.set_style_xml(raw.to_string()).ok()?;
+        Some((next, id))
+    }
+
+    /// Takes the document defaults out from under the styles: text resolves over no defaults at all.
+    pub fn without_defaults(&mut self) {
+        let none = Rc::new(crate::format::Defaults {
+            char: Some(crate::format::CharProps::default()),
+            para: Some(crate::format::ParaProps::default()),
+            foreign: None,
+        });
+        self.edit_typed(|part, _, _| part.sheet.defaults = Some(none));
+        (self.frozen.styles.doc_rpr, self.frozen.styles.doc_ppr) = Default::default();
         self.edited();
     }
 

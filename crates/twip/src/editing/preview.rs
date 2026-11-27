@@ -3,8 +3,8 @@
 use std::rc::Rc;
 
 use crate::docx::para_props::ParaDirect;
-use crate::docx::styles::StyleKind;
 use crate::docx::{Block, Inline, Paragraph, RunStyle, next_para_id};
+use crate::format::StyleKind;
 
 use super::Editor;
 use crate::docx::run_xml;
@@ -43,13 +43,12 @@ impl Editor {
     /// A table style's preview: a 5 by 5 sample table in the style, with every part on.
     pub fn table_style_preview(&self, raw: &str) -> Option<Vec<Block>> {
         use crate::docx::model::{Cell, Row, Table, VMerge};
-        let res = self.doc.resolver.as_ref()?;
-        let mut next = (**res).clone();
-        next.styles.set_xml(raw.to_string()).ok()?;
-        let id = next.styles.by_id.values().find(|s| s.raw == raw)?.id.clone();
+        use crate::docx::table_props::{tbl_props, tc_props};
+        let (next, id) = self.doc.resolver.as_ref()?.with_style_xml(raw)?;
+        let c = next.cascade();
         let look = crate::docx::props::Look { first_row: true, last_row: true, first_col: true, last_col: true, no_h_band: false, no_v_band: false };
-        let whole = next.styles.table_region(Some(&id), &[]);
-        let bands = (whole.tbl.row_band.unwrap_or(1).max(1), whole.tbl.col_band.unwrap_or(1).max(1));
+        let whole = tbl_props(&c.table_region(Some(&id), &[]).format.table, &c.colours);
+        let bands = (whole.row_band.unwrap_or(1).max(1), whole.col_band.unwrap_or(1).max(1));
         let width = 54.0;
         let rows = TABLE_SAMPLE
             .iter()
@@ -78,11 +77,10 @@ impl Editor {
                     .iter()
                     .enumerate()
                     .map(|(ci, t)| {
-                        let region = next.cell_region(Some(&id), look, bands, (ri, ci), (5, 5), 1);
-                        let typed = next.cascade().cell_region(Some(&id), look, bands, (ri, ci), (5, 5), 1);
+                        let typed = c.cell_region(Some(&id), look, bands, (ri, ci), (5, 5), 1);
                         let para = crate::docx::para_xml::resolve(&next, &Default::default(), None, Some(&typed));
                         let run = run_xml::plain(&next, &para.base);
-                        let tc = &region.tc;
+                        let tc = &tc_props(&typed.format.cell, &c.colours);
                         Cell {
                             width: Some(crate::docx::props::Width::Dxa(width)),
                             span: 1,
@@ -115,9 +113,9 @@ impl Editor {
                 rev: Default::default(),
             })
             .collect();
-        let b = &whole.tbl.borders;
+        let b = &whole.borders;
         let table = Table {
-            style_id: Some(id),
+            style_id: Some(id.to_string()),
             width: crate::docx::props::Width::Auto,
             jc: crate::docx::props::Jc::Left,
             own_jc: None,
@@ -127,7 +125,7 @@ impl Editor {
             borders: [b.top.clone(), b.left.clone(), b.bottom.clone(), b.right.clone(), b.inside_h.clone(), b.inside_v.clone()],
             fixed: true,
             cell_spacing: 0.0,
-            shd: whole.tbl.shd.clone(),
+            shd: whole.shd.clone(),
             look: Some(look),
             bands,
             alt: None,
@@ -160,17 +158,15 @@ impl Editor {
     /// What a style's preview shows: its gallery tile (`tile`), or the style dialog's preview box: a greyed previous
     /// paragraph, text in the style, a greyed following paragraph.
     pub fn style_preview(&self, raw: &str, tile: bool) -> Option<Vec<Block>> {
-        let res = self.doc.resolver.as_ref()?;
-        let mut next = (**res).clone();
-        next.styles.set_xml(raw.to_string()).ok()?;
-        let style = next.styles.by_id.values().find(|s| s.raw == raw)?;
-        let (ppr, direct) = match style.kind {
+        let (next, id) = self.doc.resolver.as_ref()?.with_style_xml(raw)?;
+        let kind = next.style_kind(&id)?;
+        let (ppr, direct) = match kind {
             StyleKind::Character => {
-                let mut e = crate::format::CharEdit::new(crate::format::CharProps { style: Some(style.id.as_str().into()), ..Default::default() });
+                let mut e = crate::format::CharEdit::new(crate::format::CharProps { style: Some(id.clone()), ..Default::default() });
                 e.whole(crate::format::Prop::Style);
                 (ParaProps::default(), crate::docx::char_props::RunDirect::default().edit(e))
             }
-            _ => (ParaProps { style: Some(style.id.as_str().into()), ..ParaProps::default() }, Default::default()),
+            _ => (ParaProps { style: Some(id.clone()), ..ParaProps::default() }, Default::default()),
         };
         let para = crate::docx::para_xml::with(&next, ParaDirect::typed(Rc::new(ppr)), None, None);
         let run = run_xml::run_of(&next, &para.base, direct);
