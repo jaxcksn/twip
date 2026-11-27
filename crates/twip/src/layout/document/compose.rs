@@ -199,7 +199,7 @@ fn page_chapter(cx: &PassCx, run: &PassRun, i: usize) -> Option<String> {
     Some(format!("{}{sep}", h.2))
 }
 
-pub(crate) fn hf_parts<'d>(run: &PassRun, cx: &PassCx<'d>, i: usize) -> [Option<&'d String>; 2] {
+pub(crate) fn hf_parts(run: &PassRun, cx: &PassCx, i: usize) -> [Option<HeaderFooterId>; 2] {
     let pg = &run.pages[i];
     if pg.blank {
         return [None, None];
@@ -210,7 +210,7 @@ pub(crate) fn hf_parts<'d>(run: &PassRun, cx: &PassCx<'d>, i: usize) -> [Option<
             .hf_sources
             .story_ref(&cx.doc.sections, cx.ctx.env.text.review.view, cx.ctx.env.even_and_odd, pg.section, pis, pg.number, footer)
             .1
-            .filter(|p| cx.doc.stories.contains_key(*p))
+            .filter(|p| cx.doc.stories.contains_key(p))
     };
     [part(false), part(true)]
 }
@@ -247,7 +247,7 @@ pub(super) fn compose_page(run: &mut PassRun, cx: &PassCx, i: usize, memos: &mut
     let mut boxes: [Option<BoxFragment>; 2] = [None, None];
     for (slot, footer) in [false, true].into_iter().enumerate() {
         let Some(part) = parts[slot] else { continue };
-        let blocks: Vec<&Block> = cx.doc.stories[part].iter().collect();
+        let blocks: Vec<&Block> = cx.doc.stories[&part].iter().collect();
         let cap = if clip { reserved[slot].map_or(limit, |r| limit.min(r)) } else { limit };
         let story_fields = crate::layout::page::fields_used(&fields, blocks.iter().copied());
         if footer {
@@ -258,9 +258,9 @@ pub(super) fn compose_page(run: &mut PassRun, cx: &PassCx, i: usize, memos: &mut
             let at = at.max(foot - cap);
             let (mut children, _) = stack_limited(&l, left, at, cap);
             children.extend(crate::layout::story::hf_floats(&blocks, &l, &frames, at, &env, memos)?);
-            records[1] = Some(HfRecord { part: part.clone(), fields: story_fields, height });
+            records[1] = Some(HfRecord { part, fields: story_fields, height });
             boxes[1] = Some(BoxFragment {
-                kind: BoxKind::Footer { story: part.clone() },
+                kind: BoxKind::Footer { story: part },
                 id: None,
                 offset: (0.0, 0.0),
                 size: (width, height),
@@ -280,9 +280,9 @@ pub(super) fn compose_page(run: &mut PassRun, cx: &PassCx, i: usize, memos: &mut
                 stack_limited(&l, left, s.header, cap)
             };
             children.extend(crate::layout::story::hf_floats(&blocks, &l, &frames, s.header, &env, memos)?);
-            records[0] = Some(HfRecord { part: part.clone(), fields: story_fields, height: if clip { height } else { full[0].unwrap_or(height) } });
+            records[0] = Some(HfRecord { part, fields: story_fields, height: if clip { height } else { full[0].unwrap_or(height) } });
             boxes[0] = Some(BoxFragment {
-                kind: BoxKind::Header { story: part.clone() },
+                kind: BoxKind::Header { story: part },
                 id: None,
                 offset: (0.0, 0.0),
                 size: (width, if clip { height } else { l.height }),

@@ -147,8 +147,8 @@ fn page(s: &Section, blank: &Section, blocks: Vec<Block>) -> Result<Section, Gen
     Ok(Section {
         blocks,
         page_borders_direct: borders,
-        headers: blank.headers.clone(),
-        footers: blank.footers.clone(),
+        headers: blank.headers,
+        footers: blank.footers,
         change: None,
         read: Some(Rc::new(blank.page())),
         ..s.clone()

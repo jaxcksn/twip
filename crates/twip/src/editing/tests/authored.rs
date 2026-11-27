@@ -812,7 +812,7 @@ fn generating_names_what_it_cannot_write() {
     assert_eq!(unsupported(&doc), GenerateError::Unsupported("a tracked change"));
 
     let mut doc = built();
-    doc.sections[0].headers[0] = Some("word/header1.xml".into());
+    doc.sections[0].headers[0] = Some(crate::docx::HeaderFooterId::next());
     assert_eq!(unsupported(&doc), GenerateError::Unsupported("a header or footer"));
 
     // A picture bullet's image isn't written

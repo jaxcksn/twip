@@ -267,11 +267,10 @@ fn integrity_finds_repeated_ids_in_an_inline_shapes_text() {
 fn inspect_names_header_and_footer_stories_as_the_index_does() {
     let mut e = open("FX-STORIES.docx");
     e.complete(fonts());
-    let (name, removed) = ("word/header2.xml", "word/footer1.xml");
-    assert!(e.document().stories.contains_key(name) && e.document().stories.contains_key(removed));
-    e.doc.stories.remove(removed);
+    let (name, removed) = (super::parts_named(&e, "word/header2.xml")[0], super::parts_named(&e, "word/footer1.xml")[0]);
+    e.doc.stories.remove(&removed);
     let story = e.index().header_footer(name).expect("indexed");
-    let Some(Block::Para(p)) = e.document().stories[name].first() else { panic!("para") };
+    let Some(Block::Para(p)) = e.document().stories[&name].first() else { panic!("para") };
     let para = ParaId(p.id);
     e.set_caret_for_benchmark(Selection::Caret(Position::text(story, para, Unit(0))));
     let st = inspect(&mut e, "caret,dump", true);

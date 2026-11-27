@@ -529,7 +529,7 @@ pub struct SpatialTree<'a> {
 }
 
 pub struct SpatialStory<'a> {
-    pub story: StoryRef<'a>,
+    pub story: StoryRef,
     pub rect: [f64; 4],
     /// A float's rotation on the page, which turns `rect` about the float's centre; none for other stories.
     pub turn: Turn,
@@ -539,10 +539,10 @@ pub struct SpatialStory<'a> {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum StoryRef<'a> {
+pub enum StoryRef {
     Body,
-    Header(&'a str),
-    Footer(&'a str),
+    Header(super::ids::HeaderFooterId),
+    Footer(super::ids::HeaderFooterId),
     Note { kind: NoteKind, id: i64 },
     Float { float: FloatId, anchor: ParaId },
 }
@@ -627,12 +627,12 @@ pub fn spatial_tree(page: &PageFragment, provisional: bool) -> Option<SpatialTre
     for c in page.children.iter() {
         match c {
             PageChild::Header(b) => {
-                if let BoxKind::Header { story } = &b.kind {
+                if let BoxKind::Header { story } = b.kind {
                     w.story(StoryRef::Header(story), b, 0.0, 0.0);
                 }
             }
             PageChild::Footer(b) => {
-                if let BoxKind::Footer { story } = &b.kind {
+                if let BoxKind::Footer { story } = b.kind {
                     w.story(StoryRef::Footer(story), b, 0.0, 0.0);
                 }
             }
@@ -745,7 +745,7 @@ impl<'a> SpatialWalk<'a> {
         }
     }
 
-    fn story(&mut self, story: StoryRef<'a>, b: &'a BoxFragment, dx: f64, dy: f64) {
+    fn story(&mut self, story: StoryRef, b: &'a BoxFragment, dx: f64, dy: f64) {
         let (x, y) = (dx + b.offset.0, dy + b.offset.1);
         let mut nodes = Vec::new();
         self.children(&b.children, x, y, &mut nodes);
@@ -977,7 +977,7 @@ mod tests {
             borders_behind: false,
             children: Box::new([
                 PageChild::Body(Rc::new(body.finish(BoxKind::Body, (0.0, 0.0), (612.0, 792.0)))),
-                PageChild::Header(header.finish(BoxKind::Header { story: "header1.xml".into() }, (0.0, 36.0), (612.0, 12.0))),
+                PageChild::Header(header.finish(BoxKind::Header { story: crate::layout::ids::HeaderFooterId(1) }, (0.0, 36.0), (612.0, 12.0))),
             ]),
         }
     }

@@ -242,11 +242,12 @@ fn review(doc: &Document) -> Vec<String> {
         out.push(format!("section {}", s.change.as_ref().map_or(String::new(), |c| mark_key(doc, &Some(c.mark.clone())))));
         blocks_review(doc, &s.blocks, &mut out);
     }
-    let mut stories: Vec<&String> = doc.stories.keys().collect();
-    stories.sort();
-    for n in stories {
+    let names = crate::docx::write::story_parts(doc);
+    let mut stories: Vec<(&String, &Vec<crate::docx::Block>)> = doc.stories.iter().filter_map(|(id, b)| Some((names.get(id)?, b))).collect();
+    stories.sort_by_key(|(n, _)| *n);
+    for (n, b) in stories {
         out.push(format!("story {n}"));
-        blocks_review(doc, &doc.stories[n], &mut out);
+        blocks_review(doc, b, &mut out);
     }
     for (kind, notes) in [("footnote", &doc.footnotes), ("endnote", &doc.endnotes)] {
         let mut ids: Vec<&i64> = notes.keys().collect();

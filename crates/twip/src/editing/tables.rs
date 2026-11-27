@@ -1165,10 +1165,10 @@ impl Editor {
     fn story_section(&self, container: Container) -> usize {
         use super::position::StoryId;
         match container {
-            Container::Story(StoryId::HeaderFooter(k)) => {
-                let name = self.index.part_name(k);
-                self.doc.sections.iter().position(|s| s.headers.iter().chain(s.footers.iter()).flatten().any(|n| Some(n.as_str()) == name))
-            }
+            Container::Story(StoryId::HeaderFooter(k)) => self
+                .index
+                .part(k)
+                .and_then(|part| self.doc.sections.iter().position(|s| s.headers.contains(&Some(part)) || s.footers.contains(&Some(part)))),
             Container::Story(StoryId::Footnote(id)) => self.note_reference(crate::docx::NoteKind::Foot, id).and_then(|(p, _)| self.section_at(&p)),
             Container::Story(StoryId::Endnote(id)) => self.note_reference(crate::docx::NoteKind::End, id).and_then(|(p, _)| self.section_at(&p)),
             _ => None,

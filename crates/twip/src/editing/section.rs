@@ -55,16 +55,16 @@ impl Editor {
     /// The section header or footer part `k` is edited for: the shown page's when that page shows it, else the first
     /// that refers to it.
     fn part_section(&self, k: u32) -> Option<usize> {
-        let name = self.index.part_name(k)?;
+        let part = self.index.part(k)?;
         let sections = &self.doc.sections;
         if let Some(i) = self.snapshot().info().get(self.near).filter(|i| i.section < sections.len()) {
             let shown =
                 |footer| crate::layout::page::story_ref(sections, self.doc.settings.even_and_odd, i.section, i.section_page, i.number, footer).1;
-            if [false, true].into_iter().any(|footer| shown(footer).is_some_and(|n| n == name)) {
+            if [false, true].into_iter().any(|footer| shown(footer) == Some(part)) {
                 return Some(i.section);
             }
         }
-        sections.iter().position(|s| s.headers.iter().chain(s.footers.iter()).flatten().any(|n| n == name))
+        sections.iter().position(|s| s.headers.contains(&Some(part)) || s.footers.contains(&Some(part)))
     }
 
     /// A section's `gutter` on a `pw` × `ph` page, where layout puts it: its share of the width and of the height.

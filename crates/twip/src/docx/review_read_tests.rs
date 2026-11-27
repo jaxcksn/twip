@@ -284,7 +284,8 @@ fn stories_carry_revisions_and_comments() {
             .map(|m| m.kind)
             .collect::<Vec<_>>()
     };
-    let story = |part: &str| doc.stories.iter().find(|(k, _)| k.contains(part)).map(|(_, b)| b.as_slice()).expect("a story");
+    let names = crate::docx::write::story_parts(&doc);
+    let story = |part: &str| doc.stories.iter().find(|(k, _)| names[*k].contains(part)).map(|(_, b)| b.as_slice()).expect("a story");
     assert_eq!(kinds(story("header")), [MarkKind::Insert]);
     assert_eq!(kinds(story("footer")), [MarkKind::Delete]);
     let note = doc.footnotes.values().find(|b| !kinds(b).is_empty()).expect("a footnote with a revision");

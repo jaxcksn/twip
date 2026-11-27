@@ -458,8 +458,8 @@ fn delete_of_several_ranges_redoes() {
 #[test]
 fn ranges_in_a_header_and_another_story_starting_over() {
     let mut e = super::open("FX-STORIES.docx");
-    let header = e.document().stories.keys().min().cloned().expect("a header");
-    let story = e.index().header_footer(&header).unwrap();
+    let header = *super::parts_named(&e, "").first().expect("a header");
+    let story = e.index().header_footer(header).unwrap();
     let para = e.document().stories[&header]
         .iter()
         .find_map(|b| if let crate::docx::Block::Para(p) = b { (crate::editing::step::para_len(p).0 >= 6).then_some(ParaId(p.id)) } else { None })

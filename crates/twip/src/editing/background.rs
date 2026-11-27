@@ -4,7 +4,7 @@ use crate::api::command::{PictureWatermark, TextWatermark, Watermark, WatermarkL
 use crate::api::drawing::{ColourValue, FillValue};
 use crate::api::value::{Bytes, Color, Points};
 use crate::docx::watermark::{self as wm, PictureMark, TextMark};
-use crate::docx::{Block, Float, Inline, ThemeColourRef};
+use crate::docx::{Block, Float, HeaderFooterId, Inline, ThemeColourRef};
 use crate::drawing::paint::{BlipAdjust, BlipMode, Fill, PatternPreset};
 use crate::drawing::patterns;
 use crate::font::Fonts;
@@ -219,9 +219,9 @@ impl Editor {
         };
         let mut tx = self.begin("Watermark");
         let mut changed = false;
-        for (name, section) in self.header_parts() {
+        for (part, section) in self.header_parts() {
             let Some(f) = make(self, section) else { continue };
-            let Some(steps) = self.restyled(&name, Some(f), language.as_deref()) else { continue };
+            let Some(steps) = self.restyled(part, Some(f), language.as_deref()) else { continue };
             for s in steps {
                 if self.step(&mut tx, s).is_err() {
                     self.abort(tx);
@@ -240,7 +240,7 @@ impl Editor {
                 std::rc::Rc::make_mut(&mut run).lang.clone_from(l);
             }
             para.inlines.push(Inline::Float(Box::new(f), run));
-            let step = Step::HeaderPart { name: self.new_story_name(false), section: 0, footer: false, slot, blocks: Some(vec![Block::Para(para)]) };
+            let step = Step::HeaderPart { id: HeaderFooterId::next(), section: 0, footer: false, slot, blocks: Some(vec![Block::Para(para)]) };
             if self.step(&mut tx, step).is_err() {
                 self.abort(tx);
                 return Outcome::Unchanged("the header can't change");
@@ -257,9 +257,9 @@ impl Editor {
     /// Takes the watermarks out of every header.
     pub(super) fn remove_watermark(&mut self, fonts: &Fonts) -> Outcome {
         let mut tx = self.begin("Remove Watermark");
-        let names: Vec<String> = self.doc.stories.keys().cloned().collect();
-        for name in names {
-            for s in self.restyled(&name, None, None).unwrap_or_default() {
+        let parts: Vec<HeaderFooterId> = self.doc.stories.keys().copied().collect();
+        for part in parts {
+            for s in self.restyled(part, None, None).unwrap_or_default() {
                 if self.step(&mut tx, s).is_err() {
                     self.abort(tx);
                     return Outcome::Unchanged("the header can't change");
@@ -344,13 +344,13 @@ impl Editor {
     }
 
     /// Each header part a section shows, once, with the first section that has it as its own.
-    fn header_parts(&self) -> Vec<(String, usize)> {
+    fn header_parts(&self) -> Vec<(HeaderFooterId, usize)> {
         let mut seen = std::collections::HashSet::new();
-        let mut out: Vec<(String, usize)> = Vec::new();
+        let mut out: Vec<(HeaderFooterId, usize)> = Vec::new();
         for (k, s) in self.doc.sections.iter().enumerate() {
-            for name in s.headers.iter().flatten() {
-                if self.doc.stories.contains_key(name) && seen.insert(name.as_str()) {
-                    out.push((name.clone(), k));
+            for &part in s.headers.iter().flatten() {
+                if self.doc.stories.contains_key(&part) && seen.insert(part) {
+                    out.push((part, k));
                 }
             }
         }
@@ -365,9 +365,9 @@ impl Editor {
             .map_or([468.0, 648.0], |s| [(s.page_w - s.left - s.right - s.gutter).max(36.0), (s.page_h - s.top - s.bottom).max(36.0)])
     }
 
-    /// The steps that take the watermarks out of header part `name`, putting `with` at the start of its first
-    /// paragraph; `None` when nothing changes.
-    fn restyled(&self, name: &str, with: Option<Float>, language: Option<&str>) -> Option<Vec<Step>> {
+    /// The steps that take the watermarks out of header `part`, putting `with` at the start of its first paragraph;
+    /// `None` when nothing changes.
+    fn restyled(&self, part: HeaderFooterId, with: Option<Float>, language: Option<&str>) -> Option<Vec<Step>> {
         fn paras<'b>(blocks: &'b [Block], out: &mut Vec<&'b crate::docx::Paragraph>) {
             for b in blocks {
                 match b {
@@ -376,7 +376,7 @@ impl Editor {
                 }
             }
         }
-        let blocks = self.doc.stories.get(name)?;
+        let blocks = self.doc.stories.get(&part)?;
         let mut all = Vec::new();
         paras(blocks, &mut all);
         let first = blocks.iter().find_map(|b| if let Block::Para(p) = b { Some(p.id) } else { None }).or(all.first().map(|p| p.id));

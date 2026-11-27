@@ -288,7 +288,7 @@ impl PageGeometry {
         for s in &tree.stories {
             let (story, float) = match s.story {
                 StoryRef::Body => (StoryId::Body, None),
-                StoryRef::Header(name) | StoryRef::Footer(name) => match idx.header_footer(name) {
+                StoryRef::Header(part) | StoryRef::Footer(part) => match idx.header_footer(part) {
                     Some(id) => (id, None),
                     None => continue,
                 },

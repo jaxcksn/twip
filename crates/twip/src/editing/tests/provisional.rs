@@ -26,7 +26,7 @@ fn state(e: &Editor) -> (Vec<String>, bool, usize, usize) {
 }
 
 fn headers_and_footers(e: &Editor) -> usize {
-    e.document().stories.keys().filter(|k| k.contains("header") || k.contains("footer")).count()
+    super::parts_named(e, "header").len() + super::parts_named(e, "footer").len()
 }
 
 fn editing_header_footer(e: &Editor) -> bool {

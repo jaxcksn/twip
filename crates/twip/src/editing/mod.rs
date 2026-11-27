@@ -1963,22 +1963,23 @@ impl Editor {
     fn merge_section(&mut self, tx: &mut Tx, section: usize) -> Result<(), StepError> {
         let secs = &self.doc.sections;
         let s = secs.get(section).ok_or(StepError::Missing)?;
-        let elsewhere =
-            |name: &str| secs.iter().enumerate().any(|(k, o)| k != section && o.headers.iter().chain(&o.footers).flatten().any(|n| n == name));
-        let mut own: Vec<(String, bool, usize)> = Vec::new();
+        let elsewhere = |id: crate::docx::HeaderFooterId| {
+            secs.iter().enumerate().any(|(k, o)| k != section && (o.headers.contains(&Some(id)) || o.footers.contains(&Some(id))))
+        };
+        let mut own: Vec<(crate::docx::HeaderFooterId, bool, usize)> = Vec::new();
         for (footer, refs) in [(false, &s.headers), (true, &s.footers)] {
-            for (slot, name) in refs.iter().enumerate() {
-                if let Some(name) = name
-                    && self.doc.stories.contains_key(name)
-                    && !elsewhere(name)
-                    && !own.iter().any(|(n, ..)| n == name)
+            for (slot, id) in refs.iter().enumerate() {
+                if let Some(id) = *id
+                    && self.doc.stories.contains_key(&id)
+                    && !elsewhere(id)
+                    && !own.iter().any(|(n, ..)| *n == id)
                 {
-                    own.push((name.clone(), footer, slot));
+                    own.push((id, footer, slot));
                 }
             }
         }
-        for (name, footer, slot) in own {
-            self.step(tx, Step::HeaderPart { name, section, footer, slot, blocks: None })?;
+        for (id, footer, slot) in own {
+            self.step(tx, Step::HeaderPart { id, section, footer, slot, blocks: None })?;
         }
         self.step(tx, Step::SectionBreak { section, back: None }).map(|_| ())
     }

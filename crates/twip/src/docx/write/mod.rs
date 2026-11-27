@@ -53,8 +53,9 @@ pub fn edited_parts(doc: &Document) -> Result<Vec<(String, Vec<u8>)>, String> {
     if let Some(xml) = main_xml(doc)? {
         parts.push((src.main.clone(), xml.into_bytes()));
     }
-    for (name, (xml, orig)) in &src.stories {
-        let now = doc.stories.get(name).map_or(&[][..], Vec::as_slice);
+    for (id, (xml, orig)) in &src.stories {
+        let Some(name) = src.story_parts.get(id) else { continue };
+        let now = doc.stories.get(id).map_or(&[][..], Vec::as_slice);
         if let Some(xml) = part_xml(xml, &boxes(&[orig], &[now]), &[(orig, now)], &doc.controls, &gone_controls(doc), &doc.people, &colours_of(doc))?
         {
             parts.push((name.clone(), xml.into_bytes()));
@@ -134,7 +135,7 @@ fn unique_ids(src: &Source, parts: &mut [(String, Vec<u8>)]) -> Result<(), Strin
     };
     // The parts kept as read: those the source holds, else from the package.
     let mut held: HashMap<&str, &str> = HashMap::from([(src.main.as_str(), src.xml.as_str())]);
-    held.extend(src.stories.iter().map(|(n, (x, _))| (n.as_str(), x.as_str())));
+    held.extend(src.stories.iter().filter_map(|(id, (x, _))| Some((src.story_parts.get(id)?.as_str(), x.as_str()))));
     held.extend(src.notes.iter().map(|(n, x, _)| (n.as_str(), x.as_str())));
     if let Some(g) = &src.glossary {
         held.insert(g.part.as_str(), g.xml.as_str());
@@ -1354,7 +1355,7 @@ fn filled_placeholders(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Re
     let all: Vec<&Vec<Block>> = doc.sections.iter().map(|s| &s.blocks).chain(doc.stories.values()).collect();
     let mut types = read(parts, "[Content_Types].xml")?.ok_or("no content types")?;
     let mut xml_parts: Vec<String> = vec![src.main.clone()];
-    xml_parts.extend(src.stories.keys().cloned());
+    xml_parts.extend(src.stories.keys().filter_map(|id| src.story_parts.get(id)).cloned());
     let mut filled: Vec<usize> = doc.filled.iter().copied().collect();
     filled.sort_unstable();
     for idx in filled {
@@ -1439,24 +1440,73 @@ fn filled_placeholders(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Re
     Ok(())
 }
 
+/// The part name of header or footer `id`: as read, else [`story_parts`]'s.
+pub fn story_part(doc: &Document, id: HeaderFooterId) -> Option<String> {
+    match doc.source.as_ref().and_then(|s| s.story_parts.get(&id)) {
+        Some(name) => Some(name.clone()),
+        None => story_parts(doc).remove(&id),
+    }
+}
+
+/// Each header's and footer's part name. A part read keeps its own; one made since reading (a footer when a section
+/// shows it as one) is named beside the main part, in id order, with a number no other part's name has: no part
+/// made before it, read, a section referred to as read (a part that didn't load), or the package holds (a removed
+/// part's name names that part's relationship).
+pub fn story_parts(doc: &Document) -> HashMap<HeaderFooterId, String> {
+    let src = doc.source.as_deref();
+    let mut out: HashMap<HeaderFooterId, String> = src.map(|s| s.story_parts.clone()).unwrap_or_default();
+    let refs = || doc.sections.iter().flat_map(|s| s.headers.iter().chain(&s.footers)).flatten();
+    let mut made: Vec<HeaderFooterId> = doc.stories.keys().chain(refs()).filter(|id| !out.contains_key(id)).copied().collect();
+    if made.is_empty() {
+        return out;
+    }
+    made.sort_unstable();
+    made.dedup();
+    let dir = src.and_then(|s| s.main.rsplit_once('/')).map_or(String::new(), |(d, _)| format!("{d}/"));
+    let package = src.and_then(|s| zip::ZipArchive::new(Cursor::new(&s.package[..])).ok());
+    let mut taken: std::collections::HashSet<String> = out.values().cloned().collect();
+    let free = |taken: &std::collections::HashSet<String>, name: &str| {
+        !taken.contains(name) && package.as_ref().is_none_or(|z| z.index_for_name(name).is_none())
+    };
+    let mut from = 1usize;
+    for id in made {
+        let footer = doc.sections.iter().any(|s| s.footers.contains(&Some(id)));
+        let kind = if footer { "footer" } else { "header" };
+        let n = (from..).find(|n| free(&taken, &format!("{dir}header{n}.xml")) && free(&taken, &format!("{dir}footer{n}.xml"))).unwrap_or(from);
+        from = n + 1;
+        let name = format!("{dir}{kind}{n}.xml");
+        taken.insert(name.clone());
+        out.insert(id, name);
+    }
+    out
+}
+
 /// Headers and footers made since reading: each part, its relationship from the main part, its content type, and
 /// the section references to it (inserted first in their sections' `w:sectPr`, where CT_SectPr has them). A section
 /// whose slot shows another part read than it did gets a reference to that part's relationship too.
 // shortcut: its relationship and content-type edits are its own; they move to `package::add_part` when next changed.
 fn new_stories(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
     let src = doc.source.as_ref().ok_or("the document was not read for editing")?;
-    let made: Vec<&String> = doc.stories.keys().filter(|n| !src.stories.contains_key(*n)).collect();
+    let names = story_parts(doc);
+    // In part name order
+    let mut made: Vec<(HeaderFooterId, &String)> =
+        doc.stories.keys().filter(|id| !src.stories.contains_key(*id)).filter_map(|id| Some((*id, names.get(id)?))).collect();
+    made.sort_unstable_by_key(|(_, name)| *name);
     // Each slot that needs a reference written: one showing a part made, or a part read it didn't show as read.
-    fn wants<'d>(src: &Source, s: &'d Section, footer: bool, slot: usize) -> Option<&'d String> {
-        let now = if footer { &s.footers } else { &s.headers }[slot].as_ref()?;
+    fn wants(src: &Source, s: &Section, footer: bool, slot: usize) -> Option<HeaderFooterId> {
+        let now = if footer { &s.footers } else { &s.headers }[slot]?;
         match s.read.as_deref() {
-            _ if !src.stories.contains_key(now) => Some(now),
-            Some(r) => (if footer { &r.footers } else { &r.headers }[slot].as_ref() != Some(now)).then_some(now),
+            _ if !src.stories.contains_key(&now) => Some(now),
+            Some(r) => (if footer { &r.footers } else { &r.headers }[slot] != Some(now)).then_some(now),
             None => None,
         }
     }
-    let relinked: Vec<&String> =
-        doc.sections.iter().flat_map(|s| (0..6).filter_map(move |k| wants(src, s, k >= 3, k % 3))).filter(|n| src.stories.contains_key(*n)).collect();
+    let relinked: Vec<HeaderFooterId> = doc
+        .sections
+        .iter()
+        .flat_map(|s| (0..6).filter_map(move |k| wants(src, s, k >= 3, k % 3)))
+        .filter(|id| src.stories.contains_key(id))
+        .collect();
     if made.is_empty() && relinked.is_empty() {
         return Ok(());
     }
@@ -1473,19 +1523,19 @@ fn new_stories(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(),
     let mut rels = read(parts, &rels_name)?;
     let mut types = read(parts, "[Content_Types].xml")?;
     let mut xml = read(parts, &main)?;
-    let mut ids: HashMap<&String, String> = HashMap::new();
+    let mut ids: HashMap<HeaderFooterId, String> = HashMap::new();
     const NS: &str = r#"xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships""#;
-    for name in &made {
-        let footer = doc.sections.iter().any(|s| s.footers.iter().flatten().any(|f| f == *name));
+    for &(id, name) in &made {
+        let footer = doc.sections.iter().any(|s| s.footers.contains(&Some(id)));
         let (tag, kind) = if footer { ("ftr", "footer") } else { ("hdr", "header") };
         let shell = format!(
             r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:{tag} {NS}></w:{tag}>"#
         );
-        let body = new_blocks_xml(&shell, &doc.stories[*name], &doc.controls, &doc.people, &colours_of(doc))?;
+        let body = new_blocks_xml(&shell, &doc.stories[&id], &doc.controls, &doc.people, &colours_of(doc))?;
         let end = shell.rfind("</").ok_or("story shell")?;
-        parts.retain(|(n, _)| n != *name);
-        parts.push(((*name).clone(), format!("{}{body}{}", &shell[..end], &shell[end..]).into_bytes()));
+        parts.retain(|(n, _)| n != name);
+        parts.push((name.clone(), format!("{}{body}{}", &shell[..end], &shell[end..]).into_bytes()));
         let mut k = 1;
         while rels.contains(&format!("Id=\"rId{k}\"")) {
             k += 1;
@@ -1504,14 +1554,15 @@ fn new_stories(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(),
             close,
             &format!(r#"<Override PartName="/{name}" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.{kind}+xml"/>"#),
         );
-        ids.insert(name, format!("rId{k}"));
+        ids.insert(id, format!("rId{k}"));
     }
     if !relinked.is_empty() {
         let dom = roxmltree::Document::parse(&rels).map_err(|e| e.to_string())?;
-        for name in relinked {
+        for story in relinked {
+            let Some(name) = names.get(&story) else { continue };
             let id = dom.root_element().children().find(|r| r.attribute("Target").is_some_and(|t| crate::docx::package::resolve(&main, t) == *name));
             if let Some(id) = id.and_then(|r| r.attribute("Id")) {
-                ids.insert(name, id.to_string());
+                ids.insert(story, id.to_string());
             }
         }
     }
@@ -1535,7 +1586,7 @@ fn new_stories(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(),
         let mut refs = String::new();
         for footer in [false, true] {
             for slot in 0..3 {
-                if let Some(id) = wants(src, s, footer, slot).and_then(|n| ids.get(n)) {
+                if let Some(id) = wants(src, s, footer, slot).and_then(|n| ids.get(&n)) {
                     let t = ["default", "first", "even"][slot];
                     let el = if footer { "footerReference" } else { "headerReference" };
                     refs.push_str(&format!(
@@ -7319,7 +7370,7 @@ mod tests {
     fn a_header_reference_goes_by_its_parsed_slot() {
         let doc = body_doc("<w:p/>");
         let mut was = doc.sections[0].page();
-        was.headers = [Some("rId1".into()), Some("rId2".into()), None];
+        was.headers = [Some(HeaderFooterId::next()), Some(HeaderFooterId::next()), None];
         let mut now = was.clone();
         now.headers[0] = None;
         let sect = r#"<w:sectPr><w:headerReference w:type = 'default' r:id="rId1"/><w:headerReference w:type="first" r:id="rId2"/></w:sectPr>"#;

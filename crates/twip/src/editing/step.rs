@@ -4,7 +4,7 @@ use std::collections::HashSet;
 use std::ops::Range;
 use std::rc::Rc;
 
-use crate::docx::{Block, Document, Inline, Paragraph, Row, Run};
+use crate::docx::{Block, Document, HeaderFooterId, Inline, Paragraph, Row, Run};
 use crate::layout::{Change, ParaId, TableId, Unit};
 
 use super::index::{Container, DocIndex};
@@ -66,7 +66,7 @@ pub enum Step {
         filled: bool,
     },
     HeaderPart {
-        name: String,
+        id: HeaderFooterId,
         section: usize,
         footer: bool,
         slot: usize,
@@ -224,8 +224,8 @@ pub struct SectionBack {
 /// before one join back into it, and the stories they take out.
 #[derive(Clone, Debug)]
 pub enum Split {
-    Apart { backs: Vec<SectionBack>, stories: Vec<(String, Vec<Block>)> },
-    Joined { count: usize, stories: Vec<String> },
+    Apart { backs: Vec<SectionBack>, stories: Vec<(HeaderFooterId, Vec<Block>)> },
+    Joined { count: usize, stories: Vec<HeaderFooterId> },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -951,29 +951,29 @@ impl Step {
                 }
                 Ok(Applied { inverse: Step::BuildingBlock { k, part: old }, map: Map::Same, hint: None })
             }
-            Step::HeaderPart { name, section, footer, slot, blocks } => {
+            Step::HeaderPart { id, section, footer, slot, blocks } => {
                 let sec = doc.sections.get_mut(section).ok_or(StepError::Missing)?;
                 let refs = if footer { &mut sec.footers } else { &mut sec.headers };
                 let r = refs.get_mut(slot).ok_or(StepError::OutOfRange)?;
                 match blocks {
-                    Some(_) if r.is_some() || doc.stories.contains_key(&name) => return Err(StepError::OutOfRange),
-                    None if r.as_deref() != Some(name.as_str()) || !doc.stories.contains_key(&name) => return Err(StepError::Missing),
+                    Some(_) if r.is_some() || doc.stories.contains_key(&id) => return Err(StepError::OutOfRange),
+                    None if *r != Some(id) || !doc.stories.contains_key(&id) => return Err(StepError::Missing),
                     _ => {}
                 }
                 // Its `w:sectPr` loses the reference of a header it no longer has.
                 doc.edited_sections.insert(section);
                 match blocks {
                     Some(b) => {
-                        *r = Some(name.clone());
-                        doc.stories.insert(name.clone(), b);
-                        idx.added_part(doc, &name);
-                        Ok(Applied { inverse: Step::HeaderPart { name, section, footer, slot, blocks: None }, map: Map::Same, hint: None })
+                        *r = Some(id);
+                        doc.stories.insert(id, b);
+                        idx.added_part(doc, id);
+                        Ok(Applied { inverse: Step::HeaderPart { id, section, footer, slot, blocks: None }, map: Map::Same, hint: None })
                     }
                     None => {
                         *r = None;
-                        let b = doc.stories.remove(&name).ok_or(StepError::Missing)?;
+                        let b = doc.stories.remove(&id).ok_or(StepError::Missing)?;
                         idx.removed_part(&b);
-                        Ok(Applied { inverse: Step::HeaderPart { name, section, footer, slot, blocks: Some(b) }, map: Map::Same, hint: None })
+                        Ok(Applied { inverse: Step::HeaderPart { id, section, footer, slot, blocks: Some(b) }, map: Map::Same, hint: None })
                     }
                 }
             }
@@ -1306,7 +1306,12 @@ impl Split {
 
 // Section splits
 
-fn split_sections(doc: &mut Document, section: usize, backs: Vec<SectionBack>, stories: Vec<(String, Vec<Block>)>) -> Result<Split, StepError> {
+fn split_sections(
+    doc: &mut Document,
+    section: usize,
+    backs: Vec<SectionBack>,
+    stories: Vec<(HeaderFooterId, Vec<Block>)>,
+) -> Result<Split, StepError> {
     let (blocks, sources) = backs.iter().fold((0, 0), |(b, s), x| (b + x.blocks, s + x.sources));
     let next = doc.sections.get_mut(section).ok_or(StepError::Missing)?;
     if backs.is_empty()
@@ -1335,15 +1340,15 @@ fn split_sections(doc: &mut Document, section: usize, backs: Vec<SectionBack>, s
     doc.section_sources.splice(section..section, made_sources);
     doc.sections.splice(section..section, made);
     doc.edited_sections = doc.edited_sections.iter().map(|&k| if k >= section { k + count } else { k }).chain(edited).collect();
-    let names = stories.iter().map(|(k, _)| k.clone()).collect();
+    let ids = stories.iter().map(|(k, _)| *k).collect();
     doc.stories.extend(stories);
-    Ok(Split::Joined { count, stories: names })
+    Ok(Split::Joined { count, stories: ids })
 }
 
-fn join_sections(doc: &mut Document, section: usize, count: usize, names: Vec<String>) -> Result<Split, StepError> {
+fn join_sections(doc: &mut Document, section: usize, count: usize, ids: Vec<HeaderFooterId>) -> Result<Split, StepError> {
     let end = section + count;
     // Into a section with blocks: splitting them back leaves it some.
-    if count == 0 || end >= doc.sections.len() || doc.sections[end].blocks.is_empty() || names.iter().any(|k| !doc.stories.contains_key(k)) {
+    if count == 0 || end >= doc.sections.len() || doc.sections[end].blocks.is_empty() || ids.iter().any(|k| !doc.stories.contains_key(k)) {
         return Err(StepError::OutOfRange);
     }
     let mut blocks = Vec::new();
@@ -1356,7 +1361,7 @@ fn join_sections(doc: &mut Document, section: usize, count: usize, names: Vec<St
     doc.sections[section].blocks.splice(0..0, blocks);
     doc.section_sources[section] += backs.iter().map(|b| b.sources).sum::<usize>();
     doc.edited_sections = doc.edited_sections.iter().filter(|&&k| k < section || k >= end).map(|&k| if k >= end { k - count } else { k }).collect();
-    let stories = names.into_iter().filter_map(|k| doc.stories.remove(&k).map(|b| (k, b))).collect();
+    let stories = ids.into_iter().filter_map(|k| doc.stories.remove(&k).map(|b| (k, b))).collect();
     Ok(Split::Apart { backs, stories })
 }
 

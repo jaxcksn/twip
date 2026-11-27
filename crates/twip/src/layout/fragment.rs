@@ -7,7 +7,7 @@ use crate::font::Face;
 
 use crate::docx::VMerge;
 
-use super::ids::{FloatId, FragmentId, ParaId, TableId, Unit};
+use super::ids::{FloatId, FragmentId, HeaderFooterId, ParaId, TableId, Unit};
 use super::units::EPS;
 
 #[derive(Clone, Debug)]
@@ -506,10 +506,10 @@ pub enum BoxKind {
         layer: Layer,
     },
     Header {
-        story: String,
+        story: HeaderFooterId,
     },
     Footer {
-        story: String,
+        story: HeaderFooterId,
     },
     /// A vertical section's body, drawn turned: its children are laid out unturned, their items already turned.
     Turned(super::vertical::Turning),

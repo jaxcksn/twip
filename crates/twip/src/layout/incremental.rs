@@ -94,7 +94,7 @@ type Shadow = Vec<Vec<Option<Block>>>;
 
 struct Extras {
     sections: Vec<Section>,
-    stories: std::collections::BTreeMap<String, Vec<Block>>,
+    stories: std::collections::BTreeMap<HeaderFooterId, Vec<Block>>,
     footnotes: HashMap<i64, Vec<Block>>,
     endnotes: HashMap<i64, Vec<Block>>,
     separators: HashMap<String, Vec<Block>>,
@@ -185,7 +185,7 @@ impl Extras {
     }
 
     /// The header and footer parts that changed, when nothing else did.
-    fn changed_parts(&self, doc: &Document, fonts: &Fonts, env: &LayoutEnv) -> Option<Vec<String>> {
+    fn changed_parts(&self, doc: &Document, fonts: &Fonts, env: &LayoutEnv) -> Option<Vec<HeaderFooterId>> {
         let rest = self.fonts == fonts.revision()
             && self.endnotes_sect_end == doc.settings.endnotes_sect_end
             && self.sections.len() == doc.sections.len()
@@ -204,7 +204,7 @@ impl Extras {
                 return None;
             }
             if was != now {
-                changed.push(name.clone());
+                changed.push(*name);
             }
         }
         Some(changed)
@@ -409,7 +409,7 @@ pub struct Reuse {
     span: Option<Span>,
     restart: usize,
     /// The header and footer parts that changed: pages showing one compose them again.
-    parts: Vec<String>,
+    parts: Vec<HeaderFooterId>,
     keys: Vec<(usize, usize, u8, usize, usize)>,
     renumbered: std::collections::HashSet<(NoteKind, i64)>,
 }
@@ -578,9 +578,7 @@ impl Reuse {
         for (part, h) in parts.iter().zip(&b.hf) {
             let same = match (*part, h) {
                 (None, None) => true,
-                (Some(part), Some(h)) => {
-                    *part == h.part && !self.parts.iter().any(|p| p == part) && fields_used(&fields, &cx.doc.stories[part]) == h.fields
-                }
+                (Some(part), Some(h)) => part == h.part && !self.parts.contains(&part) && fields_used(&fields, &cx.doc.stories[&part]) == h.fields,
                 _ => false,
             };
             if !same {

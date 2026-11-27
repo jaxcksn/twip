@@ -651,8 +651,8 @@ fn a_page_number_in_the_first_pages_own_header_can_t_be_left_off_the_first_page(
     let mut e = Editor::open(&build("<w:p><w:r><w:t>Body</w:t></w:r></w:p>", sect, &parts), fonts()).expect("opens");
     e.complete(fonts());
     let caret_in = |e: &mut Editor, slot: usize| {
-        let name = e.document().sections[0].headers[slot].clone().expect("a header");
-        let story = e.index().header_footer(&name).expect("its story");
+        let name = e.document().sections[0].headers[slot].expect("a header");
+        let story = e.index().header_footer(name).expect("its story");
         let Some(crate::docx::Block::Para(p)) = e.document().stories[&name].first() else { panic!("a paragraph") };
         e.selection = Selection::Caret(Position::text(story, crate::layout::ParaId(p.id), crate::layout::Unit(0)));
     };
@@ -669,7 +669,7 @@ fn a_page_number_in_the_first_pages_own_header_can_t_be_left_off_the_first_page(
     caret_in(&mut e, 1);
     let out = e.insert_page_number_shown(PageNumberFormat::Page, PageNumberSpot::Caret, None, true, fonts());
     assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
-    let first = e.document().sections[0].headers[1].clone().expect("the first page's header");
+    let first = e.document().sections[0].headers[1].expect("the first page's header");
     let (depth, kept) = (e.history().undo_depth(), e.document().stories[&first].clone());
     let out = e.insert_page_number_shown(PageNumberFormat::Page, PageNumberSpot::Header, None, false, fonts());
     assert!(matches!(out, Outcome::Refused(_)), "{out:?}");
@@ -719,8 +719,8 @@ fn a_header_place_is_never_inside_a_body_selection() {
     let paras = super::texts_ids(&e);
     let at = |k: usize, u: u32| Position::text(StoryId::Body, paras[k], crate::layout::Unit(u));
     e.selection = Selection::range(at(0, 0), at(2, 2), crate::editing::selection::Granularity::Char);
-    let name = e.document().sections[0].headers[0].clone().expect("a header");
-    let story = e.index().header_footer(&name).expect("its story");
+    let name = e.document().sections[0].headers[0].expect("a header");
+    let story = e.index().header_footer(name).expect("its story");
     let Some(crate::docx::Block::Para(p)) = e.document().stories[&name].first() else { panic!("a paragraph") };
     let there = Position::text(story, crate::layout::ParaId(p.id), crate::layout::Unit(1));
     assert!(e.inside_selection(&at(1, 1)), "the body's middle");

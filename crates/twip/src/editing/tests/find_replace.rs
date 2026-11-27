@@ -36,7 +36,8 @@ fn find_from_a_header_goes_on_past_the_body() {
     let sec = r#"<w:sectPr><w:headerReference w:type="default" r:id="rIdH"/><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr>"#;
     let header = format!("<w:p>{}</w:p>", t("a header line long enough"));
     let mut e = super::stories::package(&format!("<w:p>{}</w:p><w:p>{}</w:p>{sec}", t("apple pie"), t("apple")), Some(Some(&header)));
-    let k = e.document().stories.keys().position(|n| n.ends_with("header1.xml")).expect("the header part");
+    let header = *super::parts_named(&e, "header1.xml").first().expect("the header part");
+    let k = e.document().stories.keys().position(|n| *n == header).expect("the header part");
     let Some(crate::docx::Block::Para(p)) = e.document().stories.values().nth(k).and_then(|b| b.first()) else { panic!("a header paragraph") };
     let in_header = Position::text(StoryId::HeaderFooter(k as u32), ParaId(p.id), Unit(20));
     e.set_caret_for_benchmark(Selection::Caret(in_header));

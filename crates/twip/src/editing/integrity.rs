@@ -388,10 +388,8 @@ fn elements(doc: &Document, idx: &DocIndex, out: &mut Vec<Violation>) {
     for (k, s) in doc.sections.iter().enumerate() {
         walk(&s.blocks, &format!("section {k}"), doc, &mut seen_fields, &mut used, &mut members, out);
     }
-    let mut stories: Vec<(&String, &Vec<Block>)> = doc.stories.iter().collect();
-    stories.sort_by_key(|(k, _)| *k);
-    for (name, b) in stories {
-        walk(b, name, doc, &mut seen_fields, &mut used, &mut members, out);
+    for (id, b) in &doc.stories {
+        walk(b, &format!("header or footer {}", id.0), doc, &mut seen_fields, &mut used, &mut members, out);
     }
     for (kind, notes) in [("footnote", &doc.footnotes), ("endnote", &doc.endnotes)] {
         for (id, b) in notes {

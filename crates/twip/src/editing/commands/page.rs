@@ -424,17 +424,16 @@ impl Editor {
         // Text's own number shows on its page; only a header or footer's first-page version can leave it out.
         // The first page's own header or footer, its section's or one before it goes on from
         let si = self.focus_section();
-        let first = |footer: bool| {
-            (0..=si).rev().find_map(|j| self.doc.sections.get(j).and_then(|s| (if footer { &s.footers } else { &s.headers })[1].as_deref()))
-        };
+        let first =
+            |footer: bool| (0..=si).rev().find_map(|j| self.doc.sections.get(j).and_then(|s| (if footer { &s.footers } else { &s.headers })[1]));
         if place == PageNumberSpot::Caret {
             let Some(crate::editing::position::StoryId::HeaderFooter(k)) = self.selection.focus().map(|p| p.story) else {
                 return Outcome::unavailable("a number in the text shows on the first page too");
             };
-            if self.index.part_name(k).is_some_and(|n| first(false) == Some(n) || first(true) == Some(n)) {
+            if self.index.part(k).is_some_and(|n| first(false) == Some(n) || first(true) == Some(n)) {
                 return Outcome::unavailable("a number in the first page's header or footer shows on the first page");
             }
-        } else if first(place == PageNumberSpot::Footer).and_then(|n| self.doc.stories.get(n)).is_some_and(|b| shows_page(b)) {
+        } else if first(place == PageNumberSpot::Footer).and_then(|n| self.doc.stories.get(&n)).is_some_and(|b| shows_page(b)) {
             // Its number would show there, the first page's header or footer kept
             return Outcome::unavailable("the first page's header or footer already shows a number");
         }

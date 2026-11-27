@@ -23,7 +23,7 @@ struct Order {
 fn stories(e: &Editor) -> Vec<(StoryId, &[Block])> {
     let d = e.document();
     let idx = e.index();
-    let mut out: Vec<(StoryId, &[Block])> = d.stories.iter().filter_map(|(name, b)| Some((idx.header_footer(name)?, b.as_slice()))).collect();
+    let mut out: Vec<(StoryId, &[Block])> = d.stories.iter().filter_map(|(id, b)| Some((idx.header_footer(*id)?, b.as_slice()))).collect();
     let mut notes: Vec<_> = d.footnotes.iter().collect();
     notes.sort_by_key(|(id, _)| **id);
     out.extend(notes.into_iter().map(|(id, b)| (StoryId::Footnote(*id), b.as_slice())));

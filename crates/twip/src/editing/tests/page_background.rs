@@ -54,20 +54,18 @@ fn refused(e: &mut Editor, c: Command) {
     assert!(matches!(out, Outcome::Refused(_)), "{c:?}: {out:?}");
 }
 
-/// Each header part's watermarks: its name and how many.
+/// Each header part's watermarks: its name and how many, in name order.
 fn marks(e: &Editor) -> Vec<(String, usize)> {
-    e.document()
-        .stories
-        .iter()
-        .filter(|(n, _)| n.contains("header"))
-        .map(|(n, b)| {
-            let count = b
+    super::parts_named(e, "header")
+        .into_iter()
+        .map(|id| {
+            let count = e.document().stories[&id]
                 .iter()
                 .filter_map(|b| if let crate::docx::Block::Para(p) = b { Some(p) } else { None })
                 .flat_map(|p| p.inlines.iter())
                 .filter(|i| matches!(i, Inline::Float(f, _) if crate::docx::watermark::is(f)))
                 .count();
-            (n.clone(), count)
+            (super::part_name(e, id), count)
         })
         .collect()
 }
@@ -96,8 +94,8 @@ fn a_watermark_goes_in_every_header_of_every_section_and_undoes_whole() {
 
     let saved = crate::docx::write::save(e.document()).expect("saves");
     let mut spids = Vec::new();
-    for name in d.stories.keys().filter(|n| n.contains("header")) {
-        let xml = part(&saved, name);
+    for name in super::parts_named(&e, "header").into_iter().map(|id| super::part_name(&e, id)) {
+        let xml = part(&saved, &name);
         roxmltree::Document::parse(&xml).unwrap_or_else(|err| panic!("{name}: {err}"));
         assert!(xml.contains(r#"id="PowerPlusWaterMarkObject"#) && xml.contains(r##"type="#_x0000_t136""##), "{xml}");
         assert!(xml.contains("rotation:315") && xml.contains("mso-position-horizontal-relative:margin") && xml.contains(r#"fillcolor="silver""#));
@@ -408,7 +406,8 @@ fn shape_numbers_past_the_largest_start_again_from_word_s_first() {
         .document()
         .stories
         .keys()
-        .flat_map(|n| part(&saved, n).match_indices("o:spid=\"").map(|(k, _)| k).collect::<Vec<_>>().into_iter().map(move |k| (n.clone(), k)))
+        .map(|id| super::part_name(&e, *id))
+        .flat_map(|n| part(&saved, &n).match_indices("o:spid=\"").map(|(k, _)| k).collect::<Vec<_>>().into_iter().map(move |k| (n.clone(), k)))
         .map(|(n, k)| part(&saved, &n)[k + 8..].split('"').next().unwrap_or_default().to_string())
         .collect();
     let n = spids.len();
@@ -543,11 +542,10 @@ fn snapshot_png(page: u8) -> Vec<u8> {
 /// The pictures the sections' headers show, per header part.
 fn shown(e: &Editor) -> Vec<(String, Vec<u8>)> {
     let d = e.document();
-    d.stories
-        .iter()
-        .filter(|(n, _)| n.contains("header"))
-        .filter_map(|(n, b)| {
-            let f = b.iter().find_map(|b| match b {
+    super::parts_named(e, "header")
+        .into_iter()
+        .filter_map(|id| {
+            let f = d.stories[&id].iter().find_map(|b| match b {
                 crate::docx::Block::Para(p) => p.inlines.iter().find_map(|i| match i {
                     Inline::Float(f, _) if crate::docx::watermark::is(f) => Some(f.clone()),
                     _ => None,
@@ -555,7 +553,7 @@ fn shown(e: &Editor) -> Vec<(String, Vec<u8>)> {
                 _ => None,
             })?;
             let crate::docx::watermark::Watermark::Picture(p) = crate::docx::watermark::of(&f)? else { return None };
-            Some((n.clone(), d.images[p.image?].clone()))
+            Some((super::part_name(e, id), d.images[p.image?].clone()))
         })
         .collect()
 }
@@ -608,7 +606,7 @@ fn typing_over_everything_keeps_the_last_sections_watermark_through_a_save() {
         assert_eq!(before.len(), 2, "{fx}: {before:?}");
         e.execute(Command::SelectAll, fonts());
         run(&mut e, Command::InsertText("Replaced".into()));
-        let kept = e.document().sections[0].headers[0].clone().expect("the last section's header");
+        let kept = super::part_name(&e, e.document().sections[0].headers[0].expect("the last section's header"));
         assert_eq!(marks(&e), vec![(kept.clone(), 1)], "{fx}: the first section's header goes with it");
 
         let saved = crate::docx::write::save(e.document()).expect("saves");
@@ -671,7 +669,7 @@ fn in_its_header_a_watermark_is_selected_resized_and_deleted() {
     };
     let before = sorted(&e);
     assert!(before.len() == 3 && before.iter().all(|(_, n)| *n == 1), "default, first and even headers: {before:?}");
-    let default = e.document().sections[0].headers[0].clone().expect("a default header");
+    let default = super::part_name(&e, e.document().sections[0].headers[0].expect("a default header"));
     run(&mut e, Command::DeleteObject);
     let after = sorted(&e);
     let names = |m: &[(String, usize)]| m.iter().map(|(n, _)| n.clone()).collect::<Vec<_>>();

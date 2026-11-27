@@ -85,10 +85,11 @@ impl Element {
     }
 }
 
-pub(super) fn story_name(s: StoryId, idx: &DocIndex) -> String {
+/// A story's name: a header's or footer's is its part's.
+pub(super) fn story_name(s: StoryId, doc: &Document, idx: &DocIndex) -> String {
     match s {
         StoryId::Body => "body".into(),
-        StoryId::HeaderFooter(k) => idx.part_name(k).unwrap_or("header").to_string(),
+        StoryId::HeaderFooter(k) => idx.part(k).and_then(|id| crate::docx::write::story_part(doc, id)).unwrap_or_else(|| "header".into()),
         StoryId::Footnote(id) => format!("footnote {id}"),
         StoryId::Endnote(id) => format!("endnote {id}"),
         StoryId::TextBox(f) => format!("text box {}", f.0),
@@ -104,9 +105,9 @@ pub struct Filter {
 }
 
 impl Filter {
-    fn keeps(&self, e: &Element, idx: &DocIndex) -> bool {
+    fn keeps(&self, e: &Element, doc: &Document, idx: &DocIndex) -> bool {
         self.kind.as_deref().is_none_or(|k| k == e.kind())
-            && self.story.as_deref().is_none_or(|s| s == story_name(e.story, idx))
+            && self.story.as_deref().is_none_or(|s| s == story_name(e.story, doc, idx))
             && self.matching.as_ref().is_none_or(|(field, text)| {
                 let v = match field.as_str() {
                     "code" => e.code.as_deref(),
@@ -129,12 +130,12 @@ pub(super) fn stories<'d>(doc: &'d Document, idx: &DocIndex) -> Vec<(StoryId, &'
     let mut seen = Vec::new();
     for s in &doc.sections {
         for refs in [&s.headers, &s.footers] {
-            for name in refs.iter().flatten() {
-                if seen.contains(name) {
+            for &part in refs.iter().flatten() {
+                if seen.contains(&part) {
                     continue;
                 }
-                seen.push(name.clone());
-                if let (Some(b), Some(id)) = (doc.stories.get(name), idx.header_footer(name)) {
+                seen.push(part);
+                if let (Some(b), Some(id)) = (doc.stories.get(&part), idx.header_footer(part)) {
                     out.push((id, b));
                 }
             }
@@ -327,7 +328,7 @@ pub fn enumerate(doc: &Document, idx: &DocIndex, filter: &Filter) -> Vec<Element
         }
     }
     boxes(&mut w, &mut k);
-    w.out.into_iter().filter(|e| filter.keeps(e, idx)).collect()
+    w.out.into_iter().filter(|e| filter.keeps(e, doc, idx)).collect()
 }
 
 pub fn context(doc: &Document, idx: &DocIndex, sel: &Selection) -> Vec<(ElementId, bool)> {

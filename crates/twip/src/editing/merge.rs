@@ -1280,8 +1280,8 @@ impl Editor {
         let n = doc.sections.len();
         let mut breaks = FileBreaks::default();
         let mut blocks: Vec<Block> = Vec::new();
-        // Each header or footer part once, however many sections show it
-        let mut seen: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        // Each header or footer once, however many sections show it
+        let mut seen: std::collections::HashMap<crate::docx::HeaderFooterId, usize> = std::collections::HashMap::new();
         for (k, mut s) in std::mem::take(&mut doc.sections).into_iter().enumerate() {
             blocks.append(&mut s.blocks);
             if !sections || k + 1 >= n || blocks.is_empty() {
@@ -1289,16 +1289,16 @@ impl Editor {
             }
             let mut refs = Vec::new();
             for (footer, slots) in [(false, &s.headers), (true, &s.footers)] {
-                for (slot, name) in slots.iter().enumerate() {
-                    let Some(name) = name.as_ref() else { continue };
-                    let part = match seen.get(name) {
+                for (slot, id) in slots.iter().enumerate() {
+                    let Some(id) = *id else { continue };
+                    let part = match seen.get(&id) {
                         Some(&part) => part,
                         None => {
-                            let Some(b) = doc.stories.get(name) else { continue };
+                            let Some(b) = doc.stories.get(&id) else { continue };
                             let at = breaks.parts.len();
                             breaks.parts.extend(b.iter().cloned());
                             breaks.stories.push((footer, at..breaks.parts.len()));
-                            seen.insert(name.clone(), breaks.stories.len() - 1);
+                            seen.insert(id, breaks.stories.len() - 1);
                             breaks.stories.len() - 1
                         }
                     };
@@ -1362,7 +1362,7 @@ impl Editor {
                 order.push((*part, *footer));
             }
         }
-        let names = self.new_story_names(order.iter().map(|&(_, footer)| footer));
+        let ids: Vec<crate::docx::HeaderFooterId> = order.iter().map(|_| crate::docx::HeaderFooterId::next()).collect();
         let hf = super::clipboard::Fragment {
             origin: f.origin.clone(),
             look: f.look,
@@ -1373,10 +1373,10 @@ impl Editor {
         let mut taken = super::clipboard::Taken::default();
         let mut tx = self.begin("Insert File");
         let mut stories = Vec::with_capacity(order.len());
-        for (&(part, _), name) in order.iter().zip(&names) {
+        for (&(part, _), &id) in order.iter().zip(&ids) {
             let mut blocks: Vec<Block> = breaks.parts[breaks.stories[part].1.clone()].iter().map(super::clipboard::fresh).collect();
             self.take_in(&mut tx, &mut blocks, &hf, &mut taken);
-            stories.push((name.clone(), blocks));
+            stories.push((id, blocks));
         }
         let backs = kept
             .into_iter()
@@ -1385,7 +1385,7 @@ impl Editor {
                 for (footer, slot, part) in b.refs {
                     let slots = if footer { &mut shell.footers } else { &mut shell.headers };
                     if let (Some(r), Some(k)) = (slots.get_mut(slot), used[part]) {
-                        *r = Some(names[k].clone());
+                        *r = Some(ids[k]);
                     }
                 }
                 super::step::SectionBack { blocks, section: shell, sources: 0, edited: true }

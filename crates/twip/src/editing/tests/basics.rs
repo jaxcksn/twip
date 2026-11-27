@@ -361,14 +361,14 @@ fn edits_in_every_story_save_and_reopen() {
     }
     let text = |p: &crate::docx::Paragraph| super::super::text::UnitText::of(p).text;
     let mut e = open("FX-STORIES.docx");
-    let header = e.document().stories.keys().min().cloned().expect("a header");
+    let header = *super::parts_named(&e, "").first().expect("a header");
     let targets: Vec<(StoryId, crate::layout::ParaId)> = {
         let d = e.document();
         let fid = *d.footnotes.keys().min().unwrap();
         let eid = *d.endnotes.keys().min().unwrap();
         let (tb, tbb) = text_box(d).expect("a text box");
         vec![
-            (e.index().header_footer(&header).unwrap(), crate::layout::ParaId(first_para(&d.stories[&header]).unwrap().id)),
+            (e.index().header_footer(header).unwrap(), crate::layout::ParaId(first_para(&d.stories[&header]).unwrap().id)),
             (StoryId::Footnote(fid), crate::layout::ParaId(first_para(&d.footnotes[&fid]).unwrap().id)),
             (StoryId::Endnote(eid), crate::layout::ParaId(first_para(&d.endnotes[&eid]).unwrap().id)),
             (StoryId::TextBox(crate::layout::FloatId(tb)), crate::layout::ParaId(first_para(tbb).unwrap().id)),
@@ -381,7 +381,8 @@ fn edits_in_every_story_save_and_reopen() {
     let snap = |d: &crate::docx::Document| {
         let mut f: Vec<String> = d.footnotes.values().chain(d.endnotes.values()).filter_map(|b| first_para(b)).map(text).collect();
         f.sort();
-        (text(first_para(&d.stories[&header]).unwrap()), f, text(first_para(text_box(d).unwrap().1).unwrap()))
+        // The first part by name, which a read numbers first
+        (text(first_para(d.stories.values().next().unwrap()).unwrap()), f, text(first_para(text_box(d).unwrap().1).unwrap()))
     };
     let edited = snap(e.document());
     assert!(edited.0.contains('Q') && edited.2.contains('Q') && edited.1.iter().filter(|t| t.contains('Q')).count() == 2, "{edited:?}");
@@ -1356,8 +1357,8 @@ fn an_inserted_picture_saves_with_its_image() {
         e.execute(Command::InsertPicture(crate::api::command::Picture { data: crate::api::value::Bytes(data.clone()), alt_text: None }), fonts());
     assert!(matches!(out, super::super::Outcome::Changed(_)), "{out:?}");
     assert!(matches!(e.selection(), Selection::Object(ObjectRef::Inline { .. })), "{:?}", e.selection());
-    let header = e.document().stories.keys().filter(|n| n.contains("header")).min().cloned().expect("a header");
-    let story = e.index().header_footer(&header).expect("its story");
+    let header = *super::parts_named(&e, "header").first().expect("a header");
+    let story = e.index().header_footer(header).expect("its story");
     let para =
         e.index().para_ids().find(|id| e.index().para_slot(*id).is_some_and(|s| e.index().story(s.container) == story)).expect("a header paragraph");
     e.set_caret_for_benchmark(Selection::Caret(super::super::position::Position::text(story, para, Unit(0))));
@@ -1568,19 +1569,22 @@ fn a_table_style_and_its_options_restyle_the_cells() {
 }
 
 fn story_texts(e: &super::super::Editor) -> Vec<(String, String)> {
-    e.document()
+    let mut out: Vec<(String, String)> = e
+        .document()
         .stories
         .iter()
-        .map(|(n, b)| {
+        .map(|(id, b)| {
             (
-                n.clone(),
+                super::part_name(e, *id),
                 b.iter()
                     .filter_map(|b| if let crate::docx::Block::Para(p) = b { Some(super::super::text::UnitText::of(p).text) } else { None })
                     .collect::<Vec<_>>()
                     .join("|"),
             )
         })
-        .collect()
+        .collect();
+    out.sort();
+    out
 }
 
 #[test]
@@ -2361,7 +2365,7 @@ fn select_all_delete_across_sections() {
     let bytes = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/docx-feature-showcase.docx")).unwrap();
     let mut e = super::super::Editor::open(&bytes, fonts()).unwrap();
     let before = texts(&e);
-    let pages = |e: &super::super::Editor| e.document().sections.iter().map(|s| s.page()).collect::<Vec<_>>();
+    let pages = super::named_pages;
     let was = pages(&e);
     assert!(was.len() > 1);
     e.execute(Command::SelectAll, fonts());
@@ -2385,7 +2389,7 @@ fn backspace_and_delete_take_a_section_break() {
     use crate::docx::Block;
     let bytes = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/docx-feature-showcase.docx")).unwrap();
     let mut e = super::super::Editor::open(&bytes, fonts()).unwrap();
-    let pages = |e: &super::super::Editor| e.document().sections.iter().map(|s| s.page()).collect::<Vec<_>>();
+    let pages = super::named_pages;
     let para = |e: &super::super::Editor, k: usize, last: bool| {
         let bl = &e.document().sections[k].blocks;
         match if last { bl.last() } else { bl.first() } {
@@ -2633,8 +2637,8 @@ fn a_delete_across_a_locked_paragraph_is_refused() {
 fn a_list_made_in_a_header_is_numbered() {
     use super::super::position::Position;
     let mut e = open("FX-STORIES.docx");
-    let header = e.document().stories.keys().filter(|n| n.contains("header")).min().cloned().expect("a header");
-    let story = e.index().header_footer(&header).expect("its story");
+    let header = *super::parts_named(&e, "header").first().expect("a header");
+    let story = e.index().header_footer(header).expect("its story");
     let para =
         e.index().para_ids().find(|id| e.index().para_slot(*id).is_some_and(|s| e.index().story(s.container) == story)).expect("a header paragraph");
     e.set_caret_for_benchmark(Selection::Caret(Position::text(story, para, Unit(0))));
@@ -2651,8 +2655,8 @@ fn a_paragraph_cut_and_pasted_in_a_header_or_note_is_a_tracked_move() {
     use crate::docx::review::MarkKind;
     let mut r = super::scenarios::Run::open("review/FX-REVIEW-MOVES-STORIES.docx", "story-moves");
     r.e.execute(Command::SetTrackChanges(true), fonts());
-    let header = r.e.document().stories.keys().find(|n| n.contains("header")).cloned().expect("a header");
-    let stories = [StoryId::Body, r.e.index().header_footer(&header).expect("its story"), StoryId::Footnote(1)];
+    let header = *super::parts_named(&r.e, "header").first().expect("a header");
+    let stories = [StoryId::Body, r.e.index().header_footer(header).expect("its story"), StoryId::Footnote(1)];
     for story in stories {
         let container = if story == StoryId::Body { Container::Section(0) } else { Container::Story(story) };
         let paras: Vec<_> =
@@ -2684,6 +2688,7 @@ fn a_paragraph_cut_and_pasted_in_a_header_or_note_is_a_tracked_move() {
         std::fs::write(std::path::Path::new(&d).join("FX-REVIEW-MOVES-STORIES.moved.docx"), &bytes).expect("writes");
     }
     let mut z = zip::ZipArchive::new(std::io::Cursor::new(bytes)).expect("a package");
+    let header = super::part_name(&r.e, header);
     for part in ["word/document.xml", header.trim_start_matches('/'), "word/footnotes.xml"] {
         let mut xml = String::new();
         std::io::Read::read_to_string(&mut z.by_name(part).expect("the part"), &mut xml).expect("text");

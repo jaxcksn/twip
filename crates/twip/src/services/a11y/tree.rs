@@ -560,9 +560,9 @@ impl Builder<'_> {
             for (role, refs, word) in [(AccessibleRole::Header, &section.headers, "header"), (AccessibleRole::Footer, &section.footers, "footer")] {
                 // HfRefs: default, first page, even pages.
                 for (kind, name) in ["", "First page ", "Even page "].into_iter().zip(refs.iter()) {
-                    let Some(name) = name.as_ref().filter(|n| seen.insert(n.to_string())) else { continue };
-                    let Some(blocks) = doc.stories.get(name) else { continue };
-                    let index = doc.stories.keys().position(|k| k == name).unwrap_or(0) as u64;
+                    let Some(id) = name.filter(|n| seen.insert(*n)) else { continue };
+                    let Some(blocks) = doc.stories.get(&id) else { continue };
+                    let index = doc.stories.keys().position(|k| *k == id).unwrap_or(0) as u64;
                     let children = self.blocks(blocks, 0);
                     if children.is_empty() {
                         continue;

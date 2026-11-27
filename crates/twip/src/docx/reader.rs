@@ -517,6 +517,7 @@ fn read_package(bytes: &[u8], pkg: &mut Package, editable: bool, now: i64, depth
         alt_docs: Vec::new(),
         alt_depth: depth,
         theme: drawing_theme.clone(),
+        story_ids: HashMap::new(),
     };
     // The picture bullets' images, from the numbering part's relationships.
     if let Some(part) = &numbering_part {
@@ -560,33 +561,45 @@ fn read_package(bytes: &[u8], pkg: &mut Package, editable: bool, now: i64, depth
             doc.page_fill =
                 crate::docx::drawing::vml::background_fill(b, doc.page_colour, &mut |rid| crate::docx::drawing::read::Source::image(&mut src, rid));
         }
+        // Header and footer ids in part name order
+        let mut names: Vec<String> = body
+            .descendants()
+            .filter(|n| n.tag_name().namespace() == Some(W) && matches!(n.tag_name().name(), "headerReference" | "footerReference"))
+            .filter_map(|n| r.rels.get(n.attribute((R, "id"))?).map(|(_, t)| t.clone()))
+            .collect();
+        names.sort_unstable();
+        names.dedup();
+        r.story_ids.extend(names.into_iter().map(|n| (n, HeaderFooterId::next())));
         r.record = editable;
         doc.sections = r.read_body(body, &mut *pkg);
         shift_connector_text(&mut doc.sections);
         r.record = false;
     }
 
-    // Headers and footers are keyed by part path.
-    let mut wanted: Vec<String> = Vec::new();
+    // Headers and footers, by the part each id names.
+    let named: HashMap<HeaderFooterId, String> = r.story_ids.iter().map(|(n, id)| (*id, n.clone())).collect();
+    let mut wanted: Vec<HeaderFooterId> = Vec::new();
     for s in &doc.sections {
         for p in s.headers.iter().chain(s.footers.iter()).flatten() {
             if !wanted.contains(p) {
-                wanted.push(p.clone());
+                wanted.push(*p);
             }
         }
     }
     // Editable reads keep each header's and footer's XML and where its paragraphs came from, as the body's.
     let mut story_xml = HashMap::new();
-    for path in wanted {
+    for id in &wanted {
+        let Some(path) = named.get(id) else { continue };
         r.record = editable;
-        if let Some(blocks) = r.read_story(&path, &mut *pkg, |root| Some(root)) {
+        if let Some(blocks) = r.read_story(path, &mut *pkg, |root| Some(root)) {
             if editable {
-                story_xml.insert(path.clone(), pkg.read_str(&path).unwrap_or_default());
+                story_xml.insert(*id, pkg.read_str(path).unwrap_or_default());
             }
-            doc.stories.insert(path, blocks);
+            doc.stories.insert(*id, blocks);
         }
         r.record = false;
     }
+    let story_parts: HashMap<HeaderFooterId, String> = wanted.iter().filter_map(|id| Some((*id, named.get(id)?.clone()))).collect();
     let mut note_parts = Vec::new();
     for (kind, tag, map) in [("footnotes", "footnote", &mut doc.footnotes), ("endnotes", "endnote", &mut doc.endnotes)] {
         let Some(path) = part_of(kind) else { continue };
@@ -759,7 +772,7 @@ fn read_package(bytes: &[u8], pkg: &mut Package, editable: bool, now: i64, depth
     }
     if editable {
         let blocks = doc.sections.iter().map(|s| s.blocks.clone()).collect();
-        let stories = story_xml.into_iter().map(|(name, x)| (name.clone(), (x, doc.stories[&name].clone()))).collect();
+        let stories = story_xml.into_iter().map(|(id, x)| (id, (x, doc.stories[&id].clone()))).collect();
         let (footnotes, endnotes) = (doc.footnotes.clone(), doc.endnotes.clone());
         let controls = doc.controls.clone();
         doc.source = Some(Rc::new(Source {
@@ -768,6 +781,7 @@ fn read_package(bytes: &[u8], pkg: &mut Package, editable: bool, now: i64, depth
             xml,
             blocks,
             stories,
+            story_parts,
             image_parts,
             notes: note_parts,
             footnotes,
@@ -1357,6 +1371,8 @@ struct Reader {
     alt_docs: Vec<(u64, String, bool)>,
     /// How many `w:altChunk` documents in this package is.
     alt_depth: u8,
+    /// The header and footer parts the sections refer to, by name, with their ids.
+    story_ids: HashMap<String, HeaderFooterId>,
 }
 
 /// Units added to `out` since `before` (its length and last inline's units then): text may grow the last inline.
@@ -2075,6 +2091,7 @@ impl Reader {
                     _ => 0,
                 };
                 let target = r.attribute((R, "id")).and_then(|id| self.rels.get(id)).map(|(_, t)| t.clone());
+                let target = target.map(|t| *self.story_ids.entry(t).or_insert_with(HeaderFooterId::next));
                 if slot == 0 {
                     sec.headers[idx] = target;
                 } else {

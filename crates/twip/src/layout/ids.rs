@@ -2,7 +2,7 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-pub use crate::document::ident::{FloatId, ParaId, TableId, Unit};
+pub use crate::document::ident::{FloatId, HeaderFooterId, ParaId, TableId, Unit};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct FragmentId(u64);

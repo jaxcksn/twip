@@ -256,7 +256,7 @@ fn linking_a_section_to_the_previous_keeps_a_header_part_another_section_shares(
     assert!(matches!(e.execute(Command::SetHeaderFooterLinked(link), fonts()), Outcome::Changed(_)));
     let doc = e.document();
     assert!(doc.sections[1].headers[0].is_none(), "the second section takes the first's");
-    let name = doc.sections[2].headers[0].clone().expect("the third keeps its header");
+    let name = doc.sections[2].headers[0].expect("the third keeps its header");
     assert!(doc.stories.contains_key(&name), "the part the third shows stays");
     let again = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
     assert!(again.document().sections[2].headers[0].is_some() && again.document().sections[1].headers[0].is_none());

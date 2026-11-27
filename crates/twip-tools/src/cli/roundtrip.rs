@@ -118,8 +118,8 @@ fn story_starts(e: &Editor) -> Vec<Position> {
     let first = |b: &[Block]| b.iter().find_map(|b| if let Block::Para(p) = b { Some(ParaId(p.id)) } else { None });
     let d = e.document();
     let mut out = Vec::new();
-    for (name, b) in &d.stories {
-        if let (Some(s), Some(p)) = (e.index().header_footer(name), first(b)) {
+    for (id, b) in &d.stories {
+        if let (Some(s), Some(p)) = (e.index().header_footer(*id), first(b)) {
             out.push(Position::text(s, p, Unit(0)));
         }
     }

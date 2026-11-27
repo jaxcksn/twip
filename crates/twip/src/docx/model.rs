@@ -2,7 +2,7 @@
 
 pub use crate::document::anchor::{FloatWrap, HorizontalAlign, HorizontalRelation, VerticalAlign, VerticalRelation, WrapText};
 pub use crate::document::content::{BreakKind, NoteKind};
-pub use crate::document::ident::{ControlId, FieldId, next_para_id};
+pub use crate::document::ident::{ControlId, FieldId, HeaderFooterId, next_para_id};
 pub use crate::document::line::Underline;
 pub use crate::document::paragraph::{ListId, ListJc, ListRef, ListSuffix, TextAlignment};
 pub use crate::document::policy::{Compat, LayoutPolicy};
@@ -1291,8 +1291,10 @@ pub struct Source {
     pub xml: String,
     /// Each section's blocks as read (what saving compares the edited document with).
     pub blocks: Vec<Vec<Block>>,
-    /// Each header's and footer's part (by name, as [`Document::stories`]): its XML and its blocks as read.
-    pub stories: HashMap<String, (String, Vec<Block>)>,
+    /// Each header's and footer's part read (as [`Document::stories`]): its XML and its blocks as read.
+    pub stories: HashMap<HeaderFooterId, (String, Vec<Block>)>,
+    /// The part name of each header and footer the sections referred to as read, those that didn't load among them.
+    pub story_parts: HashMap<HeaderFooterId, String>,
     /// Each read image's part name, by index in [`Document::images`] (what a filled placeholder's image replaces).
     pub image_parts: Vec<String>,
     /// The footnotes and endnotes parts: name, XML, and whether it holds footnotes.
@@ -1895,7 +1897,7 @@ pub struct SectionPage {
     pub footnote_columns: u32,
     /// `w:formProt`: filling-in-forms protection covers the section (Word writes it only when off).
     pub form_protected: bool,
-    /// The parts of its headers and footers (default, first, even); `None`: the section before's.
+    /// Its headers and footers (default, first, even); `None`: the section before's.
     pub headers: HfRefs,
     pub footers: HfRefs,
 }
@@ -1958,8 +1960,8 @@ impl Section {
             no_endnote: self.no_endnote,
             footnote_columns: self.footnote_columns,
             form_protected: self.form_protected,
-            headers: self.headers.clone(),
-            footers: self.footers.clone(),
+            headers: self.headers,
+            footers: self.footers,
         }
     }
 
@@ -1983,8 +1985,8 @@ impl Section {
             gutter: self.gutter,
             columns: self.columns.clone(),
             title_pg: self.title_pg,
-            headers: self.headers.clone(),
-            footers: self.footers.clone(),
+            headers: self.headers,
+            footers: self.footers,
             pg_start: self.pg_start,
             pg_fmt: self.pg_fmt.clone(),
             chapter: self.chapter.clone(),
@@ -2078,7 +2080,7 @@ pub struct PageBorders {
 }
 
 /// Header/footer references per variant: default, first, even.
-pub type HfRefs = [Option<String>; 3];
+pub type HfRefs = [Option<HeaderFooterId>; 3];
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Section {
@@ -2244,8 +2246,8 @@ pub struct Document {
     pub page_fill: Option<crate::drawing::paint::Fill>,
     /// The theme colour `page_colour` is, when it is one.
     pub page_colour_theme: Option<ThemeColourRef>,
-    /// Headers and footers by part name, in name order (the editor addresses them by place in it).
-    pub stories: std::collections::BTreeMap<String, Vec<Block>>,
+    /// Headers and footers, in id order.
+    pub stories: std::collections::BTreeMap<HeaderFooterId, Vec<Block>>,
     pub footnotes: HashMap<i64, Vec<Block>>,
     pub endnotes: HashMap<i64, Vec<Block>>,
     /// Footnote separator / continuation separator stories, when the document defines them.

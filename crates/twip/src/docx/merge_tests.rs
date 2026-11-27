@@ -21,10 +21,8 @@ fn paras(blocks: &[Block], out: &mut Vec<Paragraph>) {
 fn all_paras(d: &Document) -> Vec<Paragraph> {
     let mut out = Vec::new();
     d.sections.iter().for_each(|s| paras(&s.blocks, &mut out));
-    let mut stories: Vec<&String> = d.stories.keys().collect();
-    stories.sort();
-    for s in stories {
-        paras(&d.stories[s], &mut out);
+    for s in d.stories.values() {
+        paras(s, &mut out);
     }
     for n in d.footnotes.values() {
         paras(n, &mut out);

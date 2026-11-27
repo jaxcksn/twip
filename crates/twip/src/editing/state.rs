@@ -995,9 +995,9 @@ impl Editor {
 
     pub fn header_footer_info(&mut self, page: u32) -> Option<HeaderFooterInfo> {
         let StoryId::HeaderFooter(k) = self.selection.focus()?.story else { return None };
-        let name = self.index.part_name(k)?.to_string();
+        let part = self.index.part(k)?;
         let (section, kind, variant) = self.doc.sections.iter().enumerate().find_map(|(i, s)| {
-            let at = |refs: &crate::docx::HfRefs| refs.iter().position(|r| r.as_deref() == Some(name.as_str()));
+            let at = |refs: &crate::docx::HfRefs| refs.iter().position(|r| *r == Some(part));
             at(&s.headers).map(|v| (i, HeaderFooterKind::Header, v)).or_else(|| at(&s.footers).map(|v| (i, HeaderFooterKind::Footer, v)))
         })?;
         let pages = [HeaderFooterType::Default, HeaderFooterType::First, HeaderFooterType::Even][variant.min(2)];
