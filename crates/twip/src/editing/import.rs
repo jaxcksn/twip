@@ -1053,6 +1053,99 @@ mod tests {
         assert_eq!(Rebind::between(&from, &from).element("<w:pPr/>"), None, "the same root");
     }
 
+    fn fixture(name: &str) -> Vec<u8> {
+        std::fs::read(crate::layout::tests::output::root().join("fixtures").join(name)).expect("reads")
+    }
+
+    /// The body's paragraphs, top level.
+    fn body(e: &Editor) -> Vec<&Paragraph> {
+        e.document().sections.iter().flat_map(|s| &s.blocks).filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None }).collect()
+    }
+
+    /// The numbered paragraphs of the body whose list is defined, with a definition, in the document.
+    fn numbered(e: &Editor) -> usize {
+        let lists = e.document().resolver.as_ref().expect("a resolver").cascade().lists.clone();
+        let defined = |n: ListId| lists.lists.get(&n).and_then(|l| l.def).is_some_and(|d| lists.defs.contains_key(&d));
+        body(e).iter().filter(|p| p.list.is_some() && p.style.num.is_some_and(|r| defined(r.list))).count()
+    }
+
+    /// All of `from` copied and pasted at the start of `into`, and what was copied.
+    fn paste_whole(from: &mut Editor, into: &[u8]) -> (Editor, Fragment) {
+        use crate::editing::tests::{fonts, texts_ids};
+        from.execute(crate::editing::commands::Command::SelectAll, fonts());
+        let frag = from.copy().expect("copies");
+        let mut e = Editor::open(into, fonts()).expect("opens");
+        let first = texts_ids(&e)[0];
+        e.select_range(first, crate::layout::Unit(0), crate::layout::Unit(0), fonts());
+        e.paste_fragment(&frag, fonts());
+        (e, frag)
+    }
+
+    /// A Word document's numbered paragraphs pasted in one with no numbering part stay numbered, in lists defined
+    /// there, though their definitions name namespaces that document doesn't declare.
+    #[test]
+    fn word_lists_pasted_in_a_document_without_numbering_stay_numbered() {
+        use crate::editing::tests::{blank_body, fonts};
+        let mut src = Editor::open(&fixture("lists.docx"), fonts()).expect("opens");
+        let want = numbered(&src);
+        assert!(want > 0, "the source is numbered");
+        let (e, _) = paste_whole(&mut src, &blank_body("<w:p/>"));
+        assert_eq!(numbered(&e), want, "each numbered paragraph stays numbered");
+    }
+
+    /// A sub-template made from a Word document's body, in a document with a list of its own and no namespaces
+    /// beyond the main one: each of its lists numbers with a definition that exists, and the document's own
+    /// definition stays as it was.
+    #[test]
+    fn a_sub_template_s_lists_have_their_definitions() {
+        use crate::api::command::{Command as C, CreateSubTemplate, ListKind};
+        use crate::api::value::Bytes;
+        use crate::editing::tests::{blank_with, fonts, texts_ids};
+        let mut e = Editor::open(&blank_with("One"), fonts()).expect("opens");
+        let first = texts_ids(&e)[0];
+        e.select_range(first, crate::layout::Unit(0), crate::layout::Unit(1), fonts());
+        e.execute(C::SetList(Some(ListKind::Numbered)), fonts());
+        e.execute(crate::editing::sub_templates::rules("SUBTEMPLATE", "Sub-templates"), fonts());
+        let defs = |e: &Editor| e.document().resolver.as_ref().expect("a resolver").typed();
+        let before = defs(&e);
+        let own: Vec<(ListDefId, String)> = before.numbering.defs.keys().map(|k| (*k, before.def_xml(k.0).expect("written").into_owned())).collect();
+        assert!(!own.is_empty(), "a list of its own");
+        let c = CreateSubTemplate { name: "Lists".into(), category: None, from: Some(Bytes(fixture("lists.docx"))), copy_of: None };
+        assert!(matches!(e.execute(C::CreateSubTemplate(c), fonts()), crate::editing::commands::Outcome::Changed(_)), "created");
+        let after = defs(&e);
+        let lists = &after.cascade.lists;
+        assert!(lists.lists.len() > 1, "its lists came");
+        for (id, l) in &lists.lists {
+            assert!(l.def.is_some_and(|d| lists.defs.contains_key(&d)), "list {} numbers with a definition that exists", id.0);
+        }
+        for (k, x) in &own {
+            assert_eq!(after.def_xml(k.0).as_deref(), Some(x.as_str()), "definition {} as it was", k.0);
+        }
+    }
+
+    /// A sub-template's body copied where it is edited, its paragraphs in a glossary style read under another id
+    /// (the document has one of that id), pasted in another document: each style the copied paragraphs name is there.
+    #[test]
+    fn a_renamed_glossary_style_comes_under_its_name() {
+        use crate::api::command::{Command as C, SubTemplateName};
+        use crate::editing::tests::{blank_body, fonts};
+        let mut src = Editor::open(&fixture("editor/FX-SUBTEMPLATES.docx"), fonts()).expect("opens");
+        src.execute(crate::editing::sub_templates::rules("SUBTEMPLATE", "Sub-templates"), fonts());
+        src.execute(C::EditSubTemplate(SubTemplateName { name: "FeeRow".into(), category: None }), fonts());
+        let (e, frag) = paste_whole(&mut src, &blank_body("<w:p/>"));
+        let res = e.document().resolver.as_ref().expect("a resolver");
+        let mut styled = Vec::new();
+        each_block(&mut frag.blocks.clone(), &mut |b| {
+            if let Block::Para(p) = b {
+                styled.extend(p.style.style_id.clone());
+            }
+        });
+        assert!(styled.iter().any(|s| s == "~g~Header"), "a paragraph in the renamed style: {styled:?}");
+        for s in &styled {
+            assert!(res.has_style(s), "style {s} exists");
+        }
+    }
+
     /// `docx` with its styles part's main namespace bound to prefix `x`.
     fn with_x_prefix(docx: &[u8]) -> Vec<u8> {
         use std::io::{Read, Write};
