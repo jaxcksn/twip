@@ -139,7 +139,7 @@ impl TypedDefs {
         part.sheet.paragraph_order = f.styles.paragraph_order.iter().map(|s| Rc::from(s.as_str())).collect();
         set_defaults(&mut part, &f.styles, &cx);
         part.refinish(&f.styles.colours, None);
-        let numbering = numbering_of(&f.numbering, None);
+        let numbering = numbering_of(&f.numbering, None, &f.styles.colours);
         let lists = lists_of(&numbering, &f.numbering, None);
         let c = cascade(Rc::new(part.sheet.clone()), Rc::new(lists), f);
         let defs = TypedDefs { cascade: Rc::new(c), styles: Rc::new(part), numbering: Rc::new(numbering), glossary: Rc::new(glossary_xml(f)) };
@@ -161,7 +161,10 @@ impl TypedDefs {
             match s.origin {
                 StyleOrigin::Document => {
                     let same = part.sheet.styles.get(&id).is_some_and(|e| e.origin == Origin::Document)
-                        && part.styles.get(&id).and_then(|d| d.origin_xml()).is_some_and(|x| **x == *s.raw);
+                        && part
+                            .styles
+                            .get(&id)
+                            .is_some_and(|d| d.origin_xml().is_some_and(|x| **x == *s.raw) || d.xml(&colours, &cx) == s.raw.as_str());
                     if !same {
                         let d = StyleDef::from_xml(&s.raw, &cx);
                         let entry =
@@ -200,7 +203,7 @@ impl TypedDefs {
         let defaults_were = (part.sheet.defaults.clone(), part.sheet.latent.clone());
         set_defaults(&mut part, &f.styles, &cx);
         changed |= !same_rc(&defaults_were.0, &part.sheet.defaults) || !same_rc(&defaults_were.1, &part.sheet.latent);
-        let numbering = numbering_of(&f.numbering, Some(&self.numbering));
+        let numbering = numbering_of(&f.numbering, Some(&self.numbering), &f.styles.colours);
         let lists = lists_of(&numbering, &f.numbering, Some((&self.cascade.lists, &self.glossary)));
         let lists_changed = *self.cascade.lists != lists;
         let sheet = if changed { Rc::new(part.sheet.clone()) } else { self.cascade.styles.clone() };
@@ -318,16 +321,23 @@ fn glossary_xml(f: &Resolver) -> GlossaryXml {
 
 /// The defaults and latent styles of `part` as `styles` holds their XML: those that changed read again.
 fn set_defaults(part: &mut StylesPart, styles: &Styles, cx: &Cx) {
-    let same = |held: Option<&Rc<str>>, raw: Option<&String>| match (held, raw) {
-        (Some(h), Some(r)) => **h == **r,
+    let colours = &styles.colours;
+    let held = |o: Option<&Rc<str>>, x: std::borrow::Cow<'_, str>, raw: &String| o.is_some_and(|o| **o == **raw) || *x == **raw;
+    let defaults_same = match (&part.defaults, &styles.defaults_raw) {
+        (Some(d), Some(r)) => held(d.origin_xml(), d.xml(colours, cx), r),
         (None, None) => true,
         _ => false,
     };
-    if !same(part.defaults.as_ref().and_then(|d| d.origin_xml()), styles.defaults_raw.as_ref()) {
+    if !defaults_same {
         part.defaults = styles.defaults_raw.as_deref().map(|x| DefaultsDef::from_xml(x, cx));
         part.sheet.defaults = part.defaults.as_ref().map(|d| d.get().clone());
     }
-    if !same(part.latent.as_ref().and_then(|d| d.origin_xml()), styles.latent.raw.as_ref()) {
+    let latent_same = match (&part.latent, &styles.latent.raw) {
+        (Some(d), Some(r)) => held(d.origin_xml(), d.xml(colours, cx), r),
+        (None, None) => true,
+        _ => false,
+    };
+    if !latent_same {
         part.latent = styles.latent.raw.as_deref().map(|x| LatentDef::from_xml(x, cx));
         part.sheet.latent = part.latent.as_ref().map(|d| d.get().clone());
     }
@@ -335,24 +345,29 @@ fn set_defaults(part: &mut StylesPart, styles: &Styles, cx: &Cx) {
 
 /// The holders of the document's own definitions, lists and picture bullets `n` holds: `was`'s where the XML is the
 /// same.
-fn numbering_of(n: &Numbering, was: Option<&NumberingXml>) -> NumberingXml {
+fn numbering_of(n: &Numbering, was: Option<&NumberingXml>, colours: &super::props::ThemeColours) -> NumberingXml {
     let cx = n.cx();
     let mut out = NumberingXml { root: n.root.clone(), ..NumberingXml::default() };
     let doc = |o: StyleOrigin| o == StyleOrigin::Document;
     for (k, a) in n.abstracts.iter().filter(|(_, a)| doc(a.origin)) {
-        let held = was.and_then(|w| w.defs.get(&ListDefId(*k))).filter(|d| d.origin_xml().is_some_and(|x| **x == *a.raw));
+        let held = was
+            .and_then(|w| w.defs.get(&ListDefId(*k)))
+            .filter(|d| d.origin_xml().is_some_and(|x| **x == *a.raw) || d.xml(colours, &cx) == a.raw.as_str());
         if let Some(d) = held.cloned().or_else(|| ListDefDirect::from_xml(&a.raw, &cx)) {
             out.defs.insert(ListDefId(*k), d);
         }
     }
     for (k, m) in n.nums.iter().filter(|(_, m)| doc(m.origin)) {
-        let held = was.and_then(|w| w.lists.get(&ListId(*k))).filter(|d| d.origin_xml().is_some_and(|x| **x == *m.raw));
+        let held = was
+            .and_then(|w| w.lists.get(&ListId(*k)))
+            .filter(|d| d.origin_xml().is_some_and(|x| **x == *m.raw) || d.xml(colours, &cx) == m.raw.as_str());
         if let Some(d) = held.cloned().or_else(|| ListDirect::from_xml(&m.raw, &cx)) {
             out.lists.insert(ListId(*k), d);
         }
     }
     for (k, p) in &n.pic_bullets {
-        let held = was.and_then(|w| w.pictures.get(k)).filter(|d| d.origin_xml().is_some_and(|x| **x == *p.raw));
+        let held =
+            was.and_then(|w| w.pictures.get(k)).filter(|d| d.origin_xml().is_some_and(|x| **x == *p.raw) || d.xml(colours, &cx) == p.raw.as_str());
         if let Some(d) = held.cloned().or_else(|| PictureDirect::from_xml(&p.raw, &cx)) {
             out.pictures.insert(*k, d);
         }
@@ -461,5 +476,256 @@ impl std::ops::DerefMut for Resolvers {
 impl From<Resolver> for Resolvers {
     fn from(frozen: Resolver) -> Resolvers {
         Resolvers::of(frozen)
+    }
+}
+
+// Edits: the typed definitions first, the XML path's derived from them
+
+/// Whether `n` is its parent's only child (but for whitespace): an element alone.
+fn alone(n: roxmltree::Node) -> bool {
+    n.parent().is_some_and(|x| x.children().all(|c| c == n || c.is_text() && c.text().is_some_and(|t| t.trim().is_empty())))
+}
+
+impl Resolvers {
+    /// The typed definitions as an edit leaves them, `edit` given a copy of them (in step) to change; the XML path's
+    /// then changed by `derive` to hold what they hold.
+    fn edit_typed<T>(&mut self, edit: impl FnOnce(&mut StylesPart, &mut NumberingXml, &mut Lists) -> T) -> T {
+        let typed = self.typed();
+        let (mut part, mut numbering, mut lists) = ((*typed.styles).clone(), (*typed.numbering).clone(), (*typed.cascade.lists).clone());
+        let out = edit(&mut part, &mut numbering, &mut lists);
+        let c = cascade(Rc::new(part.sheet.clone()), Rc::new(lists), &self.frozen);
+        let defs = TypedDefs { cascade: Rc::new(c), styles: Rc::new(part), numbering: Rc::new(numbering), glossary: typed.glossary.clone() };
+        *self.typed.borrow_mut() = Rc::new(defs);
+        self.stale.set(false);
+        out
+    }
+
+    /// After an edit, the glossary's XML as the XML path holds it, and in a debug build the two sides checked.
+    fn edited(&mut self) {
+        let typed = self.typed.borrow().clone();
+        let defs = TypedDefs { glossary: Rc::new(glossary_xml(&self.frozen)), ..(*typed).clone() };
+        defs.check(&self.frozen);
+        *self.typed.borrow_mut() = Rc::new(defs);
+    }
+
+    /// The styles that changed with style `id`: its dependants before and after, and the default styles when they
+    /// moved, as [`Styles::set_xml`] gives them.
+    fn changed_with(before: &Cascade, after: &Cascade, id: &str, existed: bool) -> Vec<String> {
+        let mut changed: Vec<String> = if existed { before.dependants(id).iter().map(|s| s.to_string()).collect() } else { Vec::new() };
+        changed.extend(after.dependants(id).iter().map(|s| s.to_string()));
+        let defaults = |c: &Cascade| (c.styles.default_paragraph.clone(), c.styles.default_table.clone());
+        let (was, now) = (defaults(before), defaults(after));
+        if was != now {
+            changed.extend([was.0, was.1, now.0, now.1].into_iter().flatten().map(|s| s.to_string()));
+        }
+        changed.sort();
+        changed.dedup();
+        changed
+    }
+
+    /// Adds or replaces a style from its `w:style` XML: the typed style set (refused when it would be based on
+    /// itself), then the XML path's. Returns the styles whose properties changed.
+    pub fn set_style_xml(&mut self, raw: String) -> Result<Vec<String>, styles::StyleEditError> {
+        let cx = self.frozen.styles.cx();
+        let style = cx.parse(&raw, |_, el| (alone(el) && super::xml::is_w(el, "style")).then(|| super::style_xml::parse(el)).flatten()).flatten();
+        let style = style.ok_or(styles::StyleEditError::Malformed)?;
+        let id = style.id.clone();
+        let colours = self.frozen.styles.colours;
+        let before = self.cascade();
+        let existed = before.styles.styles.contains_key(&id);
+        let def = StyleDef::read(style, raw.as_str().into());
+        self.edit_typed(|part, _, _| part.set(def, &colours))?;
+        let changed = Self::changed_with(&before, &self.cascade(), &id, existed);
+        let frozen = self.frozen.styles.set_xml(raw);
+        debug_assert_eq!(frozen.as_ref(), Ok(&changed), "style {id}: the XML path set alike");
+        self.edited();
+        Ok(changed)
+    }
+
+    /// Removes style `id`: the styles based on it take its base, references to it from a next style or a link go;
+    /// the typed styles first, then the XML path's, each style it rewrote written as the typed one is. Returns the
+    /// styles whose properties changed.
+    pub fn delete_style(&mut self, id: &str) -> Result<Vec<String>, styles::StyleEditError> {
+        let before = self.cascade();
+        if !before.styles.styles.contains_key(id) {
+            return Err(styles::StyleEditError::Missing);
+        }
+        let mut frozen = self.frozen.styles.clone();
+        frozen.delete(id)?;
+        let changed: Vec<String> = before.dependants(id).iter().map(|s| s.to_string()).collect();
+        let colours = self.frozen.styles.colours;
+        self.edit_typed(|part, _, _| part.delete(id, &colours));
+        let typed = self.typed();
+        let cx = typed.styles.cx();
+        for (rid, d) in &typed.styles.styles {
+            if let Some(s) = frozen.by_id.get_mut(&**rid)
+                && d.as_read().is_none()
+            {
+                let xml = d.xml(&colours, &cx).into_owned();
+                debug_assert_eq!(xml, s.raw, "style {rid}: rewritten alike");
+                s.raw = xml;
+            }
+        }
+        self.frozen.styles = frozen;
+        self.edited();
+        Ok(changed)
+    }
+
+    /// Replaces the document defaults from their `w:docDefaults` XML: a level it doesn't write keeps the one before,
+    /// as [`Styles::set_defaults_xml`] keeps it. Returns every style, by id.
+    pub fn set_defaults_xml(&mut self, raw: String) -> Result<Vec<String>, styles::StyleEditError> {
+        let cx = self.frozen.styles.cx();
+        let parsed = cx.parse(&raw, |_, el| super::style_xml::parse_defaults(el)).ok_or(styles::StyleEditError::Malformed)?;
+        let was = self.cascade().styles.defaults.clone();
+        let merged = crate::format::Defaults {
+            char: parsed.char.clone().or_else(|| was.as_ref().and_then(|d| d.char.clone())),
+            para: parsed.para.clone().or_else(|| was.as_ref().and_then(|d| d.para.clone())),
+            foreign: parsed.foreign.clone(),
+        };
+        let def = DefaultsDef::read(merged, raw.as_str().into());
+        self.edit_typed(|part, _, _| {
+            part.sheet.defaults = Some(def.get().clone());
+            part.defaults = Some(def);
+        });
+        let all = self.frozen.styles.set_defaults_xml(raw);
+        self.edited();
+        all
+    }
+
+    /// Replaces the latent styles from their `w:latentStyles` XML.
+    pub fn set_latent_xml(&mut self, raw: String) -> Result<(), styles::StyleEditError> {
+        let cx = self.frozen.styles.cx();
+        let parsed =
+            cx.parse(&raw, |_, el| (alone(el) && super::xml::is_w(el, "latentStyles")).then(|| super::style_xml::parse_latent(el))).flatten();
+        let def = LatentDef::read(parsed.ok_or(styles::StyleEditError::Malformed)?, raw.as_str().into());
+        self.edit_typed(|part, _, _| {
+            part.sheet.latent = Some(def.get().clone());
+            part.latent = Some(def);
+        });
+        let out = self.frozen.styles.set_latent_xml(raw);
+        self.edited();
+        out
+    }
+
+    /// Adds or replaces a list definition from its `w:abstractNum` XML: the typed one, then the XML path's. Its id,
+    /// or `None` when it isn't one.
+    pub fn set_abstract_xml(&mut self, raw: String) -> Option<i64> {
+        let d = ListDefDirect::from_xml(&raw, &self.frozen.numbering.cx())?;
+        let id = d.get().id;
+        self.edit_typed(|_, numbering, lists| {
+            lists.defs.insert(id, d.get().clone());
+            numbering.defs.insert(id, d);
+        });
+        let colours = self.frozen.styles.colours;
+        let frozen = self.frozen.numbering.set_abstract_xml(raw, &colours);
+        debug_assert_eq!(frozen, Some(id.0), "definition {}: the XML path set alike", id.0);
+        self.edited();
+        Some(id.0)
+    }
+
+    /// Adds or replaces a list from its `w:num` XML, as [`Self::set_abstract_xml`].
+    pub fn set_num_xml(&mut self, raw: String) -> Option<i64> {
+        let d = ListDirect::from_xml(&raw, &self.frozen.numbering.cx())?;
+        let id = d.get().id;
+        self.edit_typed(|_, numbering, lists| {
+            lists.lists.insert(id, d.get().clone());
+            numbering.lists.insert(id, d);
+        });
+        let colours = self.frozen.styles.colours;
+        let frozen = self.frozen.numbering.set_num_xml(raw, &colours);
+        debug_assert_eq!(frozen, Some(id.0), "list {}: the XML path set alike", id.0);
+        self.edited();
+        Some(id.0)
+    }
+
+    /// Adds picture bullet `id` from its `w:numPicBullet` XML, its image read through relationship `rel` at `image`.
+    pub fn add_picture(&mut self, id: i64, raw: String, rel: String, image: usize) {
+        if let Some(d) = PictureDirect::from_xml(&raw, &self.frozen.numbering.cx()) {
+            let mut v = (**d.get()).clone();
+            v.image = Some(image);
+            let d = PictureDirect::read(v, raw.as_str().into());
+            self.edit_typed(|_, numbering, lists| {
+                lists.pictures.insert(id, d.get().clone());
+                numbering.pictures.insert(id, d);
+            });
+        }
+        self.frozen.numbering.pic_bullets.insert(id, super::numbering::PicBullet { raw, rel: Some(rel), image: Some(image) });
+        self.edited();
+    }
+
+    /// Works the style links out again on the XML path's side, from its definitions; the typed side's are worked out
+    /// with its cascade.
+    pub fn compute_style_links(&mut self) {
+        self.frozen.compute_style_links();
+    }
+
+    /// The styles, to edit: reads are the XML path's, edits the typed side's first.
+    pub fn style_edits(&mut self) -> StyleEdits<'_> {
+        StyleEdits(self)
+    }
+
+    /// The numbering, to edit: reads are the XML path's, edits the typed side's first.
+    pub fn numbering_edits(&mut self) -> NumberingEdits<'_> {
+        NumberingEdits(self)
+    }
+}
+
+/// A document's styles being edited: reads are the XML path's tables, edits go to the typed side first and the XML
+/// path's follows.
+pub struct StyleEdits<'a>(&'a mut Resolvers);
+
+impl std::ops::Deref for StyleEdits<'_> {
+    type Target = Styles;
+    fn deref(&self) -> &Styles {
+        &self.0.frozen.styles
+    }
+}
+
+impl StyleEdits<'_> {
+    /// [`Resolvers::set_style_xml`].
+    pub fn set_xml(&mut self, raw: String) -> Result<Vec<String>, styles::StyleEditError> {
+        self.0.set_style_xml(raw)
+    }
+
+    /// [`Resolvers::delete_style`].
+    pub fn delete(&mut self, id: &str) -> Result<Vec<String>, styles::StyleEditError> {
+        self.0.delete_style(id)
+    }
+
+    /// [`Resolvers::set_defaults_xml`].
+    pub fn set_defaults_xml(&mut self, raw: String) -> Result<Vec<String>, styles::StyleEditError> {
+        self.0.set_defaults_xml(raw)
+    }
+
+    /// [`Resolvers::set_latent_xml`].
+    pub fn set_latent_xml(&mut self, raw: String) -> Result<(), styles::StyleEditError> {
+        self.0.set_latent_xml(raw)
+    }
+}
+
+/// A document's numbering being edited, as [`StyleEdits`].
+pub struct NumberingEdits<'a>(&'a mut Resolvers);
+
+impl std::ops::Deref for NumberingEdits<'_> {
+    type Target = Numbering;
+    fn deref(&self) -> &Numbering {
+        &self.0.frozen.numbering
+    }
+}
+
+impl NumberingEdits<'_> {
+    /// [`Resolvers::set_abstract_xml`].
+    pub fn set_abstract_xml(&mut self, raw: String, _colours: &super::props::ThemeColours) -> Option<i64> {
+        self.0.set_abstract_xml(raw)
+    }
+
+    /// [`Resolvers::set_num_xml`].
+    pub fn set_num_xml(&mut self, raw: String, _colours: &super::props::ThemeColours) -> Option<i64> {
+        self.0.set_num_xml(raw)
+    }
+
+    /// [`Resolvers::add_picture`].
+    pub fn add_picture(&mut self, id: i64, raw: String, rel: String, image: usize) {
+        self.0.add_picture(id, raw, rel, image);
     }
 }

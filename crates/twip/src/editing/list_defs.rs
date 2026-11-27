@@ -7,9 +7,8 @@ use crate::api::command::{
     FollowNumber, LevelAlignment, ListApplyTo, ListDefinitionChange, ListIndents, ListLevel, NumberFormat, NumberingMode, NumberingValue,
 };
 use crate::api::value::{AutoOr, Color, HighlightColor, NoneOr, Points, StyleId, UnderlineStyle};
-use crate::docx::numbering::{Level, Numbering};
+use crate::docx::numbering::Level;
 use crate::docx::props::TabKind;
-use crate::docx::resolve::Resolver;
 use crate::docx::write::props::{Cx, Props, esc};
 use crate::font::Fonts;
 use crate::layout::ParaId;
@@ -524,12 +523,21 @@ impl Editor {
     pub(super) fn edit_numbering(
         &mut self,
         label: &'static str,
-        edit: impl FnOnce(&mut Numbering, &Cx, &crate::docx::props::ThemeColours) -> Option<()>,
+        edit: impl FnOnce(&mut crate::docx::resolvers::NumberingEdits, &Cx, &crate::docx::props::ThemeColours) -> Option<()>,
         assign: &[(ParaId, i64)],
         fresh: bool,
         fonts: &Fonts,
     ) -> Outcome {
-        self.edit_lists(label, |r, cx| edit(&mut r.numbering, cx, &r.styles.colours).map(|_| Vec::new()), assign, fresh, fonts)
+        self.edit_lists(
+            label,
+            |r, cx| {
+                let colours = r.styles.colours;
+                edit(&mut r.numbering_edits(), cx, &colours).map(|_| Vec::new())
+            },
+            assign,
+            fresh,
+            fonts,
+        )
     }
 
     /// [`Self::edit_numbering`] with the styles too: `edit` answers the styles it changed, whose paragraphs are
@@ -537,7 +545,7 @@ impl Editor {
     fn edit_lists(
         &mut self,
         label: &'static str,
-        edit: impl FnOnce(&mut Resolver, &Cx) -> Option<Vec<String>>,
+        edit: impl FnOnce(&mut crate::docx::resolvers::Resolvers, &Cx) -> Option<Vec<String>>,
         assign: &[(ParaId, i64)],
         fresh: bool,
         fonts: &Fonts,
@@ -680,14 +688,11 @@ impl Editor {
             return self.edit_lists(
                 "Define List",
                 |r, cx| {
-                    add_pictures(&mut r.numbering, &new_pics, cx);
+                    add_pictures(&mut r.numbering_edits(), &new_pics, cx);
                     let a = abstract_xml(abstract_id, None, Levels::Full(&levels), d.name.as_deref(), &pics, &[], cx, &r.styles.colours);
-                    r.numbering.set_abstract_xml(a, &r.styles.colours)?;
+                    r.set_abstract_xml(a)?;
                     let w = &cx.w;
-                    r.numbering.set_num_xml(
-                        format!("<{w}num {w}numId=\"{num_id}\"><{w}abstractNumId {w}val=\"{abstract_id}\"/></{w}num>"),
-                        &r.styles.colours,
-                    )?;
+                    r.set_num_xml(format!("<{w}num {w}numId=\"{num_id}\"><{w}abstractNumId {w}val=\"{abstract_id}\"/></{w}num>"))?;
                     link_styles(r, &links, abstract_id, cx)
                 },
                 &assign,
@@ -709,11 +714,11 @@ impl Editor {
             return self.edit_lists(
                 "Define List",
                 |r, cx| {
-                    add_pictures(&mut r.numbering, &new_pics, cx);
+                    add_pictures(&mut r.numbering_edits(), &new_pics, cx);
                     let a = abstract_xml(abstract_id, old.as_deref(), Levels::Full(&defs), d.name.as_deref(), &pics, &over, cx, &r.styles.colours);
-                    r.numbering.set_abstract_xml(a, &r.styles.colours)?;
+                    r.set_abstract_xml(a)?;
                     if let Some(m) = num_xml(&num_raw, Levels::Full(&defs), &pics, &over, cx) {
-                        r.numbering.set_num_xml(m, &r.styles.colours)?;
+                        r.set_num_xml(m)?;
                     }
                     link_styles(r, &links, abstract_id, cx)
                 },
@@ -746,18 +751,15 @@ impl Editor {
         self.edit_lists(
             "Define List",
             |r, cx| {
-                add_pictures(&mut r.numbering, &new_pics, cx);
+                add_pictures(&mut r.numbering_edits(), &new_pics, cx);
                 let a = abstract_xml(new_abstract, old.as_deref(), Levels::Full(&defs), d.name.as_deref(), &pics, &over, cx, &r.styles.colours);
-                r.numbering.set_abstract_xml(a, &r.styles.colours)?;
+                r.set_abstract_xml(a)?;
                 let w = &cx.w;
                 let starts: String = starts
                     .iter()
                     .map(|(k, v)| format!("<{w}lvlOverride {w}ilvl=\"{k}\"><{w}startOverride {w}val=\"{v}\"/></{w}lvlOverride>"))
                     .collect();
-                r.numbering.set_num_xml(
-                    format!("<{w}num {w}numId=\"{new_num}\"><{w}abstractNumId {w}val=\"{new_abstract}\"/>{starts}</{w}num>"),
-                    &r.styles.colours,
-                )?;
+                r.set_num_xml(format!("<{w}num {w}numId=\"{new_num}\"><{w}abstractNumId {w}val=\"{new_abstract}\"/>{starts}</{w}num>"))?;
                 link_styles(r, &links, new_abstract, cx)
             },
             &assign,
@@ -843,7 +845,7 @@ impl Editor {
 }
 
 /// Adds picture bullets: each a `w:numPicBullet` of its image, which the writer gives its part.
-fn add_pictures(n: &mut Numbering, pics: &[(i64, usize)], cx: &Cx) {
+fn add_pictures(n: &mut crate::docx::resolvers::NumberingEdits, pics: &[(i64, usize)], cx: &Cx) {
     let w = &cx.w;
     for &(id, image) in pics {
         let rel = format!("{}{image}", crate::docx::write::NEW_IMAGE);
@@ -864,7 +866,7 @@ fn add_pictures(n: &mut Numbering, pics: &[(i64, usize)], cx: &Cx) {
             shape = 1025 + id,
             rel = rel,
         );
-        n.pic_bullets.insert(id, crate::docx::numbering::PicBullet { raw, rel: Some(rel), image: Some(image) });
+        n.add_picture(id, raw, rel, image);
     }
 }
 
@@ -936,7 +938,7 @@ pub(super) fn linkable(styles: &crate::docx::styles::Styles, id: &str) -> Option
 
 /// Makes and ends the style links of the list `abstract_id`: a linked style is numbered with its level, and no other
 /// level of any list links to it; an unlinked one numbered with the list no longer is. Answers the styles changed.
-fn link_styles(r: &mut Resolver, links: &[Link], abstract_id: i64, cx: &Cx) -> Option<Vec<String>> {
+fn link_styles(r: &mut crate::docx::resolvers::Resolvers, links: &[Link], abstract_id: i64, cx: &Cx) -> Option<Vec<String>> {
     let scx = r.styles.cx();
     let sw = scx.w.clone();
     let mut changed = Vec::new();
@@ -950,7 +952,7 @@ fn link_styles(r: &mut Resolver, links: &[Link], abstract_id: i64, cx: &Cx) -> O
             Some((num, k)) => p.set("numPr", format!("<{sw}numPr><{sw}ilvl {sw}val=\"{k}\"/><{sw}numId {sw}val=\"{num}\"/></{sw}numPr>")),
             None => p.remove("numPr"),
         });
-        changed.extend(r.styles.set_xml(raw).ok()?);
+        changed.extend(r.set_style_xml(raw).ok()?);
         let Some((num, k)) = to else { continue };
         let others: Vec<(i64, String)> = r
             .numbering
@@ -963,7 +965,7 @@ fn link_styles(r: &mut Resolver, links: &[Link], abstract_id: i64, cx: &Cx) -> O
             .collect();
         for (a, raw) in others {
             let keep = (a == abstract_id).then_some(*k);
-            r.numbering.set_abstract_xml(unlinked(&raw, id, keep, cx), &r.styles.colours)?;
+            r.set_abstract_xml(unlinked(&raw, id, keep, cx))?;
         }
         // The instances' own levels
         let nums: Vec<(i64, String)> = r
@@ -975,7 +977,7 @@ fn link_styles(r: &mut Resolver, links: &[Link], abstract_id: i64, cx: &Cx) -> O
             .collect();
         for (n, raw) in nums {
             let keep = (n == *num).then_some(*k);
-            r.numbering.set_num_xml(unlinked_num(&raw, id, keep, cx), &r.styles.colours)?;
+            r.set_num_xml(unlinked_num(&raw, id, keep, cx))?;
         }
     }
     changed.sort();

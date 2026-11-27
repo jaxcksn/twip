@@ -761,41 +761,41 @@ impl Editor {
             return Ok(());
         }
         let mut next = res.clone();
-        let numbering = &mut Rc::make_mut(&mut next).numbering;
-        let mut next_num = numbering.nums.keys().copied().chain(self.doc.added_lists.iter().map(|l| l.num_id)).max().unwrap_or(0).max(0) + 1;
+        let r = Rc::make_mut(&mut next);
+        let mut next_num = r.numbering.nums.keys().copied().chain(self.doc.added_lists.iter().map(|l| l.num_id)).max().unwrap_or(0).max(0) + 1;
         let mut next_abstract =
-            numbering.abstracts.keys().copied().chain(self.doc.added_lists.iter().map(|l| l.abstract_id)).max().unwrap_or(-1).max(-1) + 1;
+            r.numbering.abstracts.keys().copied().chain(self.doc.added_lists.iter().map(|l| l.abstract_id)).max().unwrap_or(-1).max(-1) + 1;
         let (mut nums, mut abstracts): (HashMap<i64, i64>, HashMap<i64, i64>) = (HashMap::new(), HashMap::new());
         for n in used {
             let Some(num) = im.numbering.nums.get(&n) else { continue };
             let Some(a) = im.numbering.abstracts.get(&num.abstract_id) else { continue };
             // The document's own list, as a copy of its content names it
-            let own =
-                numbering.nums.get(&n).is_some_and(|h| h.raw == num.raw && numbering.abstracts.get(&h.abstract_id).is_some_and(|ha| ha.raw == a.raw));
+            let own = r
+                .numbering
+                .nums
+                .get(&n)
+                .is_some_and(|h| h.raw == num.raw && r.numbering.abstracts.get(&h.abstract_id).is_some_and(|ha| ha.raw == a.raw));
             if own {
                 continue;
             }
-            let to_abstract = *abstracts.entry(num.abstract_id).or_insert_with(|| {
-                let id = next_abstract;
-                next_abstract += 1;
-                let mut el = Props::parse(Some(&a.raw), "abstractNum", &cx);
-                el.set_own("abstractNumId", &id.to_string(), &cx);
-                let raw = el.xml().unwrap_or_else(|| a.raw.clone());
-                numbering
-                    .abstracts
-                    .insert(id, crate::docx::numbering::AbstractNum { raw, origin: crate::docx::styles::StyleOrigin::Document, ..a.clone() });
-                id
-            });
+            let to_abstract = match abstracts.get(&num.abstract_id) {
+                Some(&id) => id,
+                None => {
+                    let id = next_abstract;
+                    next_abstract += 1;
+                    let mut el = Props::parse(Some(&a.raw), "abstractNum", &cx);
+                    el.set_own("abstractNumId", &id.to_string(), &cx);
+                    r.set_abstract_xml(el.xml().unwrap_or_else(|| a.raw.clone()));
+                    abstracts.insert(num.abstract_id, id);
+                    id
+                }
+            };
             let to = next_num;
             next_num += 1;
             let mut el = Props::parse(Some(&num.raw), "num", &cx);
             el.set_own("numId", &to.to_string(), &cx);
             el.set("abstractNumId", format!("<{w}abstractNumId {w}val=\"{to_abstract}\"/>"));
-            let raw = el.xml().unwrap_or_else(|| num.raw.clone());
-            numbering.nums.insert(
-                to,
-                crate::docx::numbering::Num { abstract_id: to_abstract, origin: crate::docx::styles::StyleOrigin::Document, raw, ..num.clone() },
-            );
+            r.set_num_xml(el.xml().unwrap_or_else(|| num.raw.clone()));
             nums.insert(n, to);
         }
         if nums.is_empty() {

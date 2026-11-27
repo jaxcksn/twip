@@ -6,7 +6,7 @@ use crate::api::command::Command;
 use crate::api::error::Error;
 use crate::docx::props::{Tab, TabKind};
 use crate::docx::resolvers::Resolvers;
-use crate::docx::styles::{StyleEditError, StyleKind, Styles};
+use crate::docx::styles::{StyleEditError, StyleKind};
 use crate::docx::write::props::{Cx, Props, STYLE};
 use crate::docx::{Paragraph, RunStyle};
 use crate::font::Fonts;
@@ -875,7 +875,7 @@ impl Editor {
     pub(crate) fn edit_styles(
         &mut self,
         label: &'static str,
-        edit: impl FnOnce(&mut Styles) -> Result<Vec<String>, StyleEditError>,
+        edit: impl FnOnce(&mut crate::docx::resolvers::StyleEdits) -> Result<Vec<String>, StyleEditError>,
         fonts: &Fonts,
     ) -> Outcome {
         self.edit_styles_relabel(label, edit, false, fonts)
@@ -886,13 +886,13 @@ impl Editor {
     pub(crate) fn edit_styles_relabel(
         &mut self,
         label: &'static str,
-        edit: impl FnOnce(&mut Styles) -> Result<Vec<String>, StyleEditError>,
+        edit: impl FnOnce(&mut crate::docx::resolvers::StyleEdits) -> Result<Vec<String>, StyleEditError>,
         relabel: bool,
         fonts: &Fonts,
     ) -> Outcome {
         let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
         let mut next = (*res).clone();
-        let changed = match edit(&mut next.styles) {
+        let changed = match edit(&mut next.style_edits()) {
             Ok(c) => c,
             Err(StyleEditError::Missing) => return Outcome::Refused(Error::unavailable("no such style")),
             Err(StyleEditError::Loop) => return Outcome::Refused(Error::invalid("a style can't be based on itself")),

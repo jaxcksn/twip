@@ -623,7 +623,6 @@ impl Editor {
             return;
         }
         let mut next = (*res).clone();
-        let colours = next.styles.colours;
         let (mut free_abstract, mut free_num) = next.numbering.free_ids();
         for l in &self.doc.added_lists {
             free_abstract = free_abstract.max(l.abstract_id + 1);
@@ -646,7 +645,7 @@ impl Editor {
                             None
                         }
                     })?;
-                    let id = next.numbering.set_abstract_xml(raw, &colours)?;
+                    let id = next.set_abstract_xml(raw)?;
                     abstract_map.insert(a, id);
                     free_abstract += 1;
                     Some(id)
@@ -665,7 +664,7 @@ impl Editor {
                     None
                 }
             });
-            match raw.and_then(|raw| next.numbering.set_num_xml(raw, &colours)) {
+            match raw.and_then(|raw| next.set_num_xml(raw)) {
                 Some(id) => {
                     num_map.insert(n, id);
                     free_num += 1;
@@ -683,10 +682,10 @@ impl Editor {
             let raw = &from.styles.by_id[id].raw;
             let raw = if num_map.is_empty() { Some(raw.clone()) } else { renumber(raw, &scx, num_map) };
             let Some(raw) = raw.and_then(|r| rewrite(&r, &scx, &not_default)).and_then(|r| rebound(&r, &scx, &dcx)) else { continue };
-            if let Err(crate::docx::styles::StyleEditError::Loop) = next.styles.set_xml(raw.clone())
+            if let Err(crate::docx::styles::StyleEditError::Loop) = next.set_style_xml(raw.clone())
                 && let Some(raw) = rewrite(&raw, &dcx, &|n| is_w(n, "basedOn").then(|| (n.range(), String::new())))
             {
-                let _ = next.styles.set_xml(raw);
+                let _ = next.set_style_xml(raw);
             }
         }
         renumber_blocks(blocks, refs, pcx, num_map);

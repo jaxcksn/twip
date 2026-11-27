@@ -206,7 +206,7 @@ impl Editor {
         let cx = next.numbering.cx();
         let w = cx.w.clone();
         let colours = next.styles.colours;
-        next.numbering.set_abstract_xml(
+        next.numbering_edits().set_abstract_xml(
             super::list_defs::abstract_xml(
                 abstract_id,
                 None,
@@ -219,7 +219,8 @@ impl Editor {
             ),
             &colours,
         )?;
-        next.numbering.set_num_xml(format!("<{w}num {w}numId=\"{num_id}\"><{w}abstractNumId {w}val=\"{abstract_id}\"/></{w}num>"), &colours)?;
+        next.numbering_edits()
+            .set_num_xml(format!("<{w}num {w}numId=\"{num_id}\"><{w}abstractNumId {w}val=\"{abstract_id}\"/></{w}num>"), &colours)?;
         let c = next.cascade();
         let mut counters = crate::format::counters::Counters::default();
         let ilvls: [i64; 3] = if multilevel { [0, 1, 2] } else { [0, 0, 0] };
