@@ -241,7 +241,6 @@ impl Editor {
     }
 
     pub(in crate::editing) fn apply_character_style(&mut self, id: Option<StyleId>, fonts: &Fonts) -> Outcome {
-        use crate::docx::styles::StyleKind;
         let unstyle = |e: &mut CharEdit, _: &RunStyle| {
             e.style = None;
             e.whole(Prop::Style);
@@ -249,11 +248,12 @@ impl Editor {
         let Some(id) = id else { return self.format_runs_typed("Style", &unstyle, fonts) };
         let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
         // A linked paragraph style's character half.
-        let id = match res.styles.by_id.get(&id.0) {
-            Some(s) if s.kind == StyleKind::Character => id.0,
-            Some(s) if s.kind == StyleKind::Paragraph => {
-                match s.link.as_ref().filter(|l| res.styles.by_id.get(*l).is_some_and(|c| c.kind == StyleKind::Character)) {
-                    Some(l) => l.clone(),
+        let c = res.cascade();
+        let id = match c.styles.get(&id.0) {
+            Some(s) if s.kind == crate::format::StyleKind::Character => id.0,
+            Some(s) if s.kind == crate::format::StyleKind::Paragraph => {
+                match s.link.as_ref().filter(|l| c.styles.get(l).is_some_and(|c| c.kind == crate::format::StyleKind::Character)) {
+                    Some(l) => l.to_string(),
                     None => return Outcome::invalid("a paragraph style with no linked character style"),
                 }
             }
@@ -661,7 +661,8 @@ impl Editor {
     /// holds a whole paragraph or is collapsed, as Word's format painter does.
     pub(in crate::editing) fn copy_formatting(&mut self) -> Outcome {
         let Some(res) = self.doc.resolver.clone() else { return Outcome::unavailable("no styles") };
-        let cx = res.styles.cx();
+        let typed = res.typed();
+        let cx = typed.styles.cx();
         let ranges = self.selected_ranges();
         let collapsed = self.selection.is_collapsed();
         let (para, run) = match (collapsed, ranges.first()) {
@@ -678,7 +679,7 @@ impl Editor {
         // Formatting, not what the text is: its revisions, section and mark
         let mut own = run.as_ref().and_then(|r| r.direct.props()).map_or_else(CharProps::default, |p| (**p).clone());
         if !whole && own.style.is_none() {
-            own = paragraph_style_props(&res.styles, p.style.style_id.as_deref(), own, &cx);
+            own = paragraph_style_props(&typed, p.style.style_id.as_deref(), own, &cx);
         }
         let ppr = whole.then(|| p.style.direct.get().clone());
         self.painter = Some((std::rc::Rc::new(own), ppr));
@@ -750,17 +751,25 @@ impl Editor {
 
 /// Paragraph style `style`'s character formatting under the direct formatting `own`: its linked character style, else
 /// the run properties of it and its bases.
-fn paragraph_style_props(styles: &crate::docx::styles::Styles, style: Option<&str>, own: CharProps, cx: &crate::docx::write::props::Cx) -> CharProps {
-    use crate::docx::styles::StyleKind;
-    let style = styles.paragraph_style(style);
+fn paragraph_style_props(
+    typed: &crate::docx::resolvers::TypedDefs,
+    style: Option<&str>,
+    own: CharProps,
+    cx: &crate::docx::write::props::Cx,
+) -> CharProps {
+    use crate::format::StyleKind;
+    let c = &*typed.cascade;
+    let styles = &*c.styles;
+    let style = c.paragraph_style(style);
     let linked = style.and_then(|id| styles.get(id)?.link.as_deref()).filter(|l| styles.get(l).is_some_and(|c| c.kind == StyleKind::Character));
     if let Some(l) = linked {
         return CharProps { style: Some(l.into()), ..own };
     }
     // Nearer styles over their bases
     let mut under = CharProps::default();
-    for s in styles.chain(style) {
-        let rpr = cx.parse(&s.raw, |_, el| crate::docx::xml::child(el, "rPr").map(|r| crate::docx::char_props::parse(r).0));
+    for s in c.chain(style) {
+        let Some(raw) = typed.style_xml(&s.style.id) else { continue };
+        let rpr = cx.parse(&raw, |_, el| crate::docx::xml::child(el, "rPr").map(|r| crate::docx::char_props::parse(r).0));
         if let Some(q) = rpr.flatten() {
             under = crate::docx::char_props::over(&q, &under);
         }

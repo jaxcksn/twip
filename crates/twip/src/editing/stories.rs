@@ -164,7 +164,7 @@ impl Editor {
     pub(super) fn empty_story_para(&self, footer: bool) -> Option<crate::docx::Paragraph> {
         let res = self.doc.resolver.clone()?;
         let style = if footer { "Footer" } else { "Header" };
-        let props = crate::format::ParaProps { style: res.styles.by_id.contains_key(style).then(|| style.into()), ..Default::default() };
+        let props = crate::format::ParaProps { style: res.has_style(style).then(|| style.into()), ..Default::default() };
         let r = crate::docx::para_xml::with(&res, crate::docx::para_props::ParaDirect::typed(std::rc::Rc::new(props)), None, None);
         let run = run_xml::plain(&res, &r.base);
         Some(crate::docx::Paragraph {

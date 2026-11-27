@@ -702,7 +702,7 @@ impl Editor {
                 super::table_format::set_width(&mut props, Width::Dxa(new_sum));
             }
             if indent_by != 0.0 {
-                let compat = self.doc.resolver.as_ref().map_or(crate::docx::Compat::Generic, |r| r.styles.compat);
+                let compat = self.doc.resolver.as_ref().map_or(crate::docx::Compat::Generic, |r| r.cascade().rules.compat);
                 let nested = self.index.table_slot(d.table).is_some_and(|s| matches!(s.container, Container::Cell { .. }));
                 let from = if nested { t.ind } else { crate::layout::table::placed_indent(t, compat) };
                 super::table_format::set_indent(&mut props, from + indent_by);

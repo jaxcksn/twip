@@ -316,11 +316,12 @@ fn break_kind(kind: Option<&str>, clear: Option<&str>) -> BreakKind {
 
 /// The run line numbers draw with: the document defaults and the LineNumber character style.
 pub(crate) fn line_number_run(res: &Resolvers) -> super::model::Run {
-    let mut p = res.cascade().doc_char().clone();
-    if res.styles.get("LineNumber").is_some() {
+    let c = res.cascade();
+    let mut p = c.doc_char().clone();
+    if c.styles.styles.contains_key("LineNumber") {
         p.merge_level(&run_xml::character_style(res, "LineNumber"));
     }
-    Rc::new(crate::format::resolve::run_style(&run_xml::env(res), &p))
+    Rc::new(crate::format::resolve::run_style(&c.env(), &p))
 }
 
 /// A paragraph's run base, typed.
@@ -481,7 +482,9 @@ fn read_package(bytes: &[u8], pkg: &mut Package, editable: bool, now: i64, depth
     // The picture bullets' images, from the numbering part's relationships.
     if let Some(part) = &numbering_part {
         let rels = pkg.rels(part);
-        let wanted: Vec<(i64, String)> = r.res.numbering.pic_bullets.iter().filter_map(|(id, p)| Some((*id, p.rel.clone()?))).collect();
+        let wanted: Vec<(i64, String)> =
+            r.res.cascade().lists.pictures.iter().filter_map(|(id, p)| Some((*id, p.rel.as_deref()?.to_string()))).collect();
+        let mut found = Vec::new();
         for (id, rel) in wanted {
             let Some((_, target)) = rels.get(&rel).cloned() else { continue };
             let index = match r.image_index.get(&target) {
@@ -497,10 +500,9 @@ fn read_package(bytes: &[u8], pkg: &mut Package, editable: bool, now: i64, depth
                     r.images.len() - 1
                 }
             };
-            if let Some(p) = r.res.numbering.pic_bullets.get_mut(&id) {
-                p.image = Some(index);
-            }
+            found.push((id, index));
         }
+        r.res.set_picture_images(&found);
     }
     for (name, identity) in &people_part {
         if let Some(i) = identity {
@@ -710,7 +712,7 @@ fn read_package(bytes: &[u8], pkg: &mut Package, editable: bool, now: i64, depth
     super::fields::evaluate(&mut doc, now);
     super::frames::convert(&mut doc);
     doc.derive_image_sets();
-    let divs = doc.resolver.as_ref().map(|r| r.divisions.clone()).unwrap_or_default();
+    let divs = doc.resolver.as_ref().map(|r| r.cascade().divisions.clone()).unwrap_or_default();
     if !divs.is_empty() {
         doc.sections.iter_mut().for_each(|s| fold_divs(&mut s.blocks, &divs, false));
         doc.stories.values_mut().chain(doc.footnotes.values_mut()).chain(doc.endnotes.values_mut()).for_each(|b| fold_divs(b, &divs, false));
@@ -2083,7 +2085,7 @@ impl Reader {
         if let Some(b) = child(s, "pgBorders") {
             sec.page_borders_direct = super::page_borders::PageBordersDirect::read(super::page_borders::parse(b), raw(b));
             let (header, footer) = (!self.settings.borders_do_not_surround_header, !self.settings.borders_do_not_surround_footer);
-            sec.page_borders = Some(Rc::new(super::page_borders::effective(b, &self.res.styles.colours, header, footer)));
+            sec.page_borders = Some(Rc::new(super::page_borders::effective(b, &self.res.cascade().colours, header, footer)));
         }
         if let Some(c) = child(s, "sectPrChange") {
             let mark = self.mark(c, MarkKind::Format);
@@ -2278,7 +2280,8 @@ impl Reader {
             // character (a line starting at a vanished mark is the mark's).
             Some(mut prev) => {
                 let at = prev.inlines.iter().map(Inline::units).sum::<usize>() as u32;
-                let style = super::resolve::joined_style(&prev.style, &para.style, at, spec.as_deref(), self.res.styles.compat == Compat::Legacy);
+                let style =
+                    super::resolve::joined_style(&prev.style, &para.style, at, spec.as_deref(), self.res.cascade().rules.compat == Compat::Legacy);
                 prev.inlines.extend(para.inlines);
                 let src = match (prev.src, para.src) {
                     (Some(a), Some(b)) => Some(Rc::new(ParaSrc {
@@ -2307,7 +2310,7 @@ impl Reader {
         if mark.hidden {
             let spec_vanish = mark_rpr_node.and_then(|r| child(r, "specVanish")).is_some_and(on_off);
             let empty = para.inlines.iter().map(Inline::units).sum::<usize>() == 0;
-            if spec_vanish && empty && self.res.styles.compat == Compat::Generic {
+            if spec_vanish && empty && self.res.cascade().rules.compat == Compat::Generic {
                 self.pending_spec = Some(spec.unwrap_or_else(|| para.style.clone()));
             }
             let end = para.inlines.iter().map(Inline::units).sum::<usize>() as u32;
@@ -2750,7 +2753,7 @@ impl Reader {
         let rpr = content.descendants().find(|x| is_w(*x, "r")).and_then(|r| child(r, "rPr"));
         let own = rpr.map(|n| char_props::parse(n).0);
         let props = run_xml::folded(&self.res, &base.typed, own.as_ref(), false);
-        let shown = crate::format::resolve::run_style(&run_xml::env(&self.res), &props);
+        let shown = crate::format::resolve::run_style(&self.res.cascade().env(), &props);
         let checked = pr
             .and_then(|p| p.descendants().find(|x| is(*x, W14, "checked")))
             .and_then(|x| x.attribute((W14, "val")))
@@ -2775,7 +2778,7 @@ impl Reader {
         };
         let mut plain = props;
         (plain.fonts, plain.hint) = (base.typed.fonts.clone(), base.typed.hint);
-        let mut run = crate::format::resolve::run_style(&run_xml::env(&self.res), &plain);
+        let mut run = crate::format::resolve::run_style(&self.res.cascade().env(), &plain);
         run.hint_east_asia = shown.hint_east_asia && sym_ch.is_none_or(|_| !text.is_empty());
         if self.record {
             // What new runs in this formatting are written with: the control's `w:rPr` without its `w:rFonts`.
@@ -3123,7 +3126,7 @@ impl Reader {
         let dflt = [0.0, 0.0, 9.0, 9.0];
         let dist = std::array::from_fn(|i| (st.wrap_dist[i].unwrap_or(dflt[i]) * 20.0).round() / 20.0);
         // Compat 15: a VML float is behind the text only without wrapping.
-        let behind = st.z < 0 && (self.res.styles.compat != Compat::Generic || wrap == FloatWrap::None);
+        let behind = st.z < 0 && (self.res.cascade().rules.compat != Compat::Generic || wrap == FloatWrap::None);
         let poly = v.wrap_coords.filter(|_| matches!(wrap, FloatWrap::Tight | FloatWrap::Through)).map(|p| Rc::from(super::bounded_polygon(p)));
         let line = shape.sp().and_then(|s| s.line.as_ref()).or_else(|| shape.pic().and_then(|p| p.line.as_ref()));
         let pen = line.filter(|l| !matches!(l.fill, Some(crate::drawing::paint::Fill::None))).map(|l| l.width.map_or(15.0, |w| w.0 as f64 / 635.0));
@@ -3439,7 +3442,8 @@ impl Reader {
         let kind = |t: Node| {
             let direct = child(t, "tblPr").map(TableDirect::parse).unwrap_or_default();
             let style = self.res.cascade().table_style(direct.style.as_deref()).map(str::to_string);
-            let tbl = table_props::table_on(&self.res.cascade().table_region(style.as_deref(), &[]).format.table, &direct, &self.res.styles.colours);
+            let tbl =
+                table_props::table_on(&self.res.cascade().table_region(style.as_deref(), &[]).format.table, &direct, &self.res.cascade().colours);
             (tbl.floating, style, tbl.bidi_visual.unwrap_or(false))
         };
         let grids: Vec<Vec<f64>> = run.iter().copied().chain([m]).map(table_grid).collect();
@@ -3451,14 +3455,14 @@ impl Reader {
     /// rows in order.
     fn read_table(&mut self, ts: &[Node], pkg: &mut Package) -> Table {
         let t = ts[0];
-        let colours = self.res.styles.colours;
+        let colours = self.res.cascade().colours;
         let held = self.table_direct(child(t, "tblPr"));
         let direct = held.get().clone();
         let style_id = self.res.cascade().table_style(direct.style.as_deref()).map(str::to_string);
         let style_region = self.res.cascade().table_region(style_id.as_deref(), &[]);
         let mut tbl = table_props::table_on(&style_region.format.table, &direct, &colours);
         // Compat ≤ 14: a floating table at vertical position 0 stands in the flow, whatever it is anchored to.
-        if self.res.styles.compat == Compat::Legacy
+        if self.res.cascade().rules.compat == Compat::Legacy
             && let Some(fp) = tbl.floating.as_mut()
             && fp.y == 0.0
             && fp.y_spec.is_none()
@@ -3585,7 +3589,7 @@ impl Reader {
             let first_of = |k: usize| row_table.iter().position(|&t| t == k);
             let moves: Vec<i64> = (0..ts.len())
                 .map(|k| match (k, first_of(0), first_of(k)) {
-                    (1.., Some(a), Some(b)) if self.res.styles.compat == Compat::Legacy => pull(a) - pull(b) + 5,
+                    (1.., Some(a), Some(b)) if self.res.cascade().rules.compat == Compat::Legacy => pull(a) - pull(b) + 5,
                     _ => 0,
                 })
                 .collect();
@@ -3594,7 +3598,7 @@ impl Reader {
         // Compat ≤ 14: a joined table whose rows' left cell margins differ from the first row's by more than 5 twips
         // has every column edge 5 twips right, but the left edge of the rows with the largest margin.
         let widest = left_margins.iter().copied().max().unwrap_or(0);
-        if ts.len() > 1 && self.res.styles.compat == Compat::Legacy && left_margins.iter().any(|m| (m - left_margins[0]).abs() > 5) {
+        if ts.len() > 1 && self.res.cascade().rules.compat == Compat::Legacy && left_margins.iter().any(|m| (m - left_margins[0]).abs() > 5) {
             for (r, m) in rows.iter_mut().zip(&left_margins) {
                 r.nudge = Some(*m == widest);
             }
@@ -3604,7 +3608,7 @@ impl Reader {
             style_id,
             width: first_row_width.or(tbl.width).unwrap_or(Width::Auto),
             jc: first_row_jc
-                .filter(|_| self.res.styles.compat == Compat::Generic && tbl.floating.is_none())
+                .filter(|_| self.res.cascade().rules.compat == Compat::Generic && tbl.floating.is_none())
                 .or(tbl.jc)
                 .or(row_jc.flatten())
                 .unwrap_or(Jc::Left),
@@ -3652,7 +3656,7 @@ impl Reader {
         rev: CellRevisions,
     ) -> Cell {
         let tc_pr = child(cn, "tcPr");
-        let tcp = table_props::cell_on(base, direct.get(), &self.res.styles.colours);
+        let tcp = table_props::cell_on(base, direct.get(), &self.res.cascade().colours);
         let mut c = Cell {
             width: tcp.width,
             span: tcp.grid_span.unwrap_or(1).max(1) as usize,
@@ -3777,7 +3781,7 @@ impl Reader {
             (self.mark(e, mark_kind), kind)
         });
         let change = self.table_change(tc_pr, "tcPrChange", |r, before| {
-            let tcp = table_props::cell_on(base, &before.map(CellDirect::parse).unwrap_or_default(), &r.res.styles.colours);
+            let tcp = table_props::cell_on(base, &before.map(CellDirect::parse).unwrap_or_default(), &r.res.cascade().colours);
             let b = &tcp.borders;
             Some(PreviousProps::Cell {
                 width: tcp.width,

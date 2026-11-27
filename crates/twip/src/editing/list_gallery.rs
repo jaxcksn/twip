@@ -86,6 +86,7 @@ impl Editor {
             ListGallerySection { kind: ListGallerySectionKind::RecentlyUsed, entries: recent },
         ];
         let Some(res) = self.doc.resolver.as_ref() else { return out };
+        let c = res.cascade();
         let mut nums: Vec<i64> = self.list_paras().into_iter().map(|(_, n, _)| n).collect();
         nums.dedup();
         let mut seen = std::collections::HashSet::new();
@@ -94,24 +95,24 @@ impl Editor {
             .filter(|n| seen.insert(*n))
             .filter_map(|n| {
                 let levels = self.list_levels(n)?;
-                let multi = res
-                    .numbering
-                    .abstract_of(n, &res.styles)
-                    .and_then(|a| res.numbering.abstracts.get(&a))
-                    .is_some_and(|a| a.multi_level_type.as_deref() == Some("multilevel"));
+                let multi = c
+                    .abstract_of(crate::document::paragraph::ListId(n))
+                    .and_then(|a| c.lists.defs.get(&a))
+                    .is_some_and(|a| crate::docx::list_xml::multi_level_name(a.multi_level_type.as_ref()) == Some("multilevel"));
                 (gallery_of(&levels, multi) == k).then(|| entry(format!("document:{n}"), levels))
             })
             .collect();
         out.push(ListGallerySection { kind: ListGallerySectionKind::Document, entries: document });
         if k == ListGalleryKind::Multilevel {
-            let mut styles: Vec<_> = res.styles.by_id.values().filter(|s| s.kind == crate::docx::styles::StyleKind::Numbering).collect();
-            styles.sort_by(|a, b| a.name.cmp(&b.name));
+            let name = |s: &crate::format::Style| s.name.as_deref().unwrap_or_default().to_string();
+            let mut styles: Vec<_> = c.styles.styles.values().map(|e| &*e.style).filter(|s| s.kind == crate::format::StyleKind::Numbering).collect();
+            styles.sort_by_key(|s| name(s));
             let entries = styles
                 .into_iter()
                 .filter_map(|s| {
-                    let num = res.styles.chain_ppr(Some(&s.id)).num_id?;
+                    let num = crate::docx::para_props::num_id(c.chain_para(Some(&s.id)).list)?;
                     let levels = self.list_levels(num)?;
-                    Some(ListEntry { id: ListEntryId(format!("style:{}", s.id)), label: s.name.clone(), levels })
+                    Some(ListEntry { id: ListEntryId(format!("style:{}", s.id)), label: name(s), levels })
                 })
                 .collect();
             out.push(ListGallerySection { kind: ListGallerySectionKind::ListStyles, entries });
@@ -134,8 +135,7 @@ impl Editor {
                 Some((gallery_of(&levels, false), levels, Some(n)))
             }
             ("style", s, None) => {
-                let res = self.doc.resolver.as_ref()?;
-                let num = res.styles.chain_ppr(Some(s)).num_id?;
+                let num = crate::docx::para_props::num_id(self.doc.resolver.as_ref()?.cascade().chain_para(Some(s)).list)?;
                 Some((ListGalleryKind::Multilevel, self.list_levels(num)?, Some(num)))
             }
             _ => None,
@@ -202,10 +202,12 @@ impl Editor {
     pub fn list_preview(&self, levels: &[ListLevel], multilevel: bool) -> Option<Vec<Block>> {
         let res = self.doc.resolver.as_ref()?;
         let mut next = (**res).clone();
-        let (abstract_id, num_id) = next.numbering.free_ids();
-        let cx = next.numbering.cx();
+        let typed = next.typed();
+        let (abstract_id, num_id) = typed.cascade.lists.free_ids();
+        let (abstract_id, num_id) = (abstract_id.0, num_id.0);
+        let cx = typed.numbering.cx();
         let w = cx.w.clone();
-        let colours = next.styles.colours;
+        let colours = typed.cascade.colours;
         next.numbering_edits().set_abstract_xml(
             super::list_defs::abstract_xml(
                 abstract_id,

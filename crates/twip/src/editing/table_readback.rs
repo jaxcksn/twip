@@ -312,14 +312,14 @@ impl Editor {
         let margin = |side: usize| fold(cells.iter().map(|&(r, k, ..)| Points(cell(r, k).margins[side])));
         let res = self.doc.resolver.as_ref();
         let parse_tbl = |p: &crate::format::TableProps| -> TblProps {
-            res.map_or_else(TblProps::default, |res| crate::docx::table_props::tbl_props(p, &res.styles.colours))
+            res.map_or_else(TblProps::default, |res| crate::docx::table_props::tbl_props(p, &res.cascade().colours))
         };
         let tbl = res
             .map(|res| {
                 crate::docx::table_props::table_on(
                     &res.cascade().table_region(t.style_id.as_deref(), &[]).format.table,
                     t.direct.get(),
-                    &res.styles.colours,
+                    &res.cascade().colours,
                 )
             })
             .unwrap_or_default();

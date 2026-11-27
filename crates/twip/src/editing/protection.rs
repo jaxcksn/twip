@@ -456,7 +456,7 @@ impl Editor {
         let p = self.enforced_protection()?;
         if p.formatting
             && let Some(s) = applied_style(command)
-            && self.doc.resolver.as_ref().and_then(|r| r.styles.get(&s.0)).is_some_and(|st| st.meta.locked)
+            && self.doc.resolver.as_ref().is_some_and(|r| r.cascade().styles.get(&s.0).is_some_and(|st| st.meta.locked == Some(true)))
         {
             return Some(Error::new(ErrorCode::NotAllowed, "the style is restricted"));
         }
@@ -466,7 +466,9 @@ impl Editor {
             return None;
         }
         if p.formatting
-            && references_styles(command).iter().any(|s| self.doc.resolver.as_ref().and_then(|r| r.styles.get(s)).is_some_and(|st| st.meta.locked))
+            && references_styles(command)
+                .iter()
+                .any(|s| self.doc.resolver.as_ref().is_some_and(|r| r.cascade().styles.get(s).is_some_and(|st| st.meta.locked == Some(true))))
         {
             return Some(Error::new(ErrorCode::NotAllowed, "the style is restricted"));
         }
@@ -653,8 +655,16 @@ impl Editor {
         for b in d.sections.iter().map(|s| &s.blocks).chain(d.stories.values()).chain(d.footnotes.values()).chain(d.endnotes.values()) {
             walk(b, &mut used);
         }
-        let mut out: Vec<String> =
-            res.styles.by_id.values().filter(|st| st.default || !st.hidden() || used.contains(&st.id)).map(|st| st.id.clone()).collect();
+        let c = res.cascade();
+        let on = |v: Option<bool>| v == Some(true);
+        let mut out: Vec<String> = c
+            .styles
+            .styles
+            .values()
+            .map(|e| &*e.style)
+            .filter(|st| on(st.default) || !(on(st.meta.semi_hidden) || on(st.meta.hidden)) || used.contains(&*st.id))
+            .map(|st| st.id.to_string())
+            .collect();
         out.sort_unstable();
         out
     }

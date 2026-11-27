@@ -196,8 +196,9 @@ impl Editor {
     /// Gives the caret's paragraph the Click and Type `style` (`None`: the default paragraph style) and none of its
     /// direct paragraph formatting but its mark's and its section's.
     fn click_and_type_paragraph(&mut self, style: Option<&str>, fonts: &Fonts) -> bool {
-        let styles = self.doc.resolver.as_ref().map(|r| &r.styles);
-        let paragraph = |id: &str| styles.and_then(|s| s.by_id.get(id)).is_some_and(|s| s.kind == crate::docx::styles::StyleKind::Paragraph);
+        let cascade = self.doc.resolver.as_ref().map(|r| r.cascade());
+        let styles = cascade.as_deref().map(|c| &*c.styles);
+        let paragraph = |id: &str| styles.and_then(|s| s.get(id)).is_some_and(|s| s.kind == crate::format::StyleKind::Paragraph);
         let style = style.filter(|s| paragraph(s) && styles.and_then(|st| st.default_paragraph.as_deref()) != Some(*s));
         let style: Option<std::rc::Rc<str>> = style.map(Into::into);
         let edit = |e: &mut crate::format::ParaEdit, _: &crate::docx::Paragraph| {

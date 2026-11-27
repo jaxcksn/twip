@@ -138,12 +138,11 @@ impl Editor {
     }
 
     pub(in crate::editing) fn set_paragraph_style(&mut self, id: StyleId, fonts: &Fonts) -> Outcome {
-        match self.doc.resolver.as_ref().and_then(|r| r.styles.by_id.get(&id.0)) {
+        let kind = self.doc.resolver.as_ref().and_then(|r| r.cascade().styles.get(&id.0).map(|s| s.kind));
+        match kind {
             None => return Outcome::invalid("no such style"),
-            Some(s) if s.kind == crate::docx::styles::StyleKind::Character => {
-                return Outcome::invalid("a character style; applyCharacterStyle applies it");
-            }
-            Some(s) if s.kind != crate::docx::styles::StyleKind::Paragraph => return Outcome::invalid("not a paragraph style"),
+            Some(crate::format::StyleKind::Character) => return Outcome::invalid("a character style; applyCharacterStyle applies it"),
+            Some(k) if k != crate::format::StyleKind::Paragraph => return Outcome::invalid("not a paragraph style"),
             Some(_) => {}
         }
         self.format(&Format::ParaStyle(id.0), fonts)
@@ -152,8 +151,8 @@ impl Editor {
     pub(crate) fn para_list(&self, para: ParaId) -> Option<bool> {
         let p = self.index.para(&self.doc, para)?;
         let ListRef { list: ListId(id), level: ilvl } = p.style.num.filter(|ListRef { list: ListId(id), level: _ }| *id != 0)?;
-        let r = self.doc.resolver.as_ref()?;
-        Some(r.numbering.level(id, ilvl, &r.styles)?.fmt == "bullet")
+        let c = self.doc.resolver.as_ref()?.cascade();
+        Some(crate::docx::list_xml::format_name(c.level(ListId(id), ilvl)?.format.as_ref()) == "bullet")
     }
 
     pub(in crate::editing) fn set_list(&mut self, kind: Option<ListKind>, fonts: &Fonts) -> Outcome {

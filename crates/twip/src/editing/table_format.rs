@@ -883,7 +883,7 @@ impl Editor {
             TableFormat::TableStyle(_) | TableFormat::TableLook(_) => {
                 let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
                 if let TableFormat::TableStyle(id) = f {
-                    if !res.styles.by_id.get(id).is_some_and(|s| s.kind == crate::docx::styles::StyleKind::Table) {
+                    if res.style_kind(id) != Some(crate::format::StyleKind::Table) {
                         return Outcome::Unchanged("no such table style");
                     }
                     props.style_id = Some(id.clone());

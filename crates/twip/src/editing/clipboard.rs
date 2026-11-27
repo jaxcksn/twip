@@ -765,8 +765,11 @@ impl Editor {
             let here = self.cx();
             super::import::write_runs_here(blocks, &mut refs, &here);
             // Its stored XML read under this document's root
-            let from =
-                if o.main.is_empty() { o.resolver.as_deref().map(|r| r.styles.cx()) } else { Some(crate::docx::write::props::Cx::of_xml(&o.main)) };
+            let from = if o.main.is_empty() {
+                o.resolver.as_deref().map(|r| r.typed().styles.cx())
+            } else {
+                Some(crate::docx::write::props::Cx::of_xml(&o.main))
+            };
             let rebind = from.map(|from| super::import::Rebind::between(&from, &here)).filter(|r| !r.is_empty());
             if let Some(r) = rebind {
                 r.blocks(blocks, &mut refs);

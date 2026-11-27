@@ -140,7 +140,7 @@ impl TextEnv {
             breaking_rules: s.policy.mode >= 14 || s.policy.apply_breaking_rules,
             dash_breaks: s.policy.mode >= 14,
             strict_kinsoku: s.strict_kinsoku,
-            default_style: doc.resolver.as_ref().and_then(|r| r.styles.default_paragraph.as_deref().map(Into::into)),
+            default_style: doc.resolver.as_ref().and_then(|r| r.cascade().styles.default_paragraph.as_deref().map(Into::into)),
             grow_autofit: s.compat() == Compat::Legacy && s.policy.grow_autofit,
             balance_spaces: s.policy.balance_single_byte_double_byte_width,
             ul_trail_space: s.policy.ul_trail_space,

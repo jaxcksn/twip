@@ -865,20 +865,20 @@ pub struct StyleQuery {
 }
 
 impl StyleQuery {
-    pub fn new(code: &str, styles: Option<&super::styles::Styles>) -> StyleQuery {
+    pub fn new(code: &str, styles: Option<&crate::format::StyleSheet>) -> StyleQuery {
         let c = parse(code);
         let arg = c.args.first().cloned().unwrap_or_default();
         let key = style_key(&match arg.parse::<u8>() {
             Ok(n @ 1..=9) => format!("heading {n}"),
             _ => arg.clone(),
         });
-        let all = || styles.into_iter().flat_map(|s| s.by_id.values());
-        let style = all()
-            .find(|s| style_key(&s.id) == key)
-            .or_else(|| all().find(|s| std::iter::once(&s.name).chain(&s.aliases).any(|n| style_key(n) == key)));
+        let all = || styles.into_iter().flat_map(|s| s.styles.values().map(|e| &*e.style));
+        let style = all().find(|s| style_key(&s.id) == key).or_else(|| {
+            all().find(|s| std::iter::once(s.name.as_deref().unwrap_or_default()).chain(s.aliases.iter().map(|a| &**a)).any(|n| style_key(n) == key))
+        });
         StyleQuery {
             key: style.map_or(key, |s| style_key(&s.id)),
-            char: style.is_some_and(|s| s.kind == super::styles::StyleKind::Character),
+            char: style.is_some_and(|s| s.kind == crate::format::StyleKind::Character),
             last: c.switches.iter().any(|s| s.flag == 'l'),
             number: NumberContext::of(&words(code)),
             error: match style {
@@ -1018,7 +1018,8 @@ pub(crate) fn field_changes(doc: &Document, now: i64) -> (Vec<FieldChange>, Vec<
     let properties = doc.properties.clone();
     let variables = doc.settings.variables.clone();
     let resolver = doc.resolver.clone();
-    let styles = resolver.as_deref().map(|r| &r.styles);
+    let cascade = resolver.as_ref().map(|r| r.cascade());
+    let styles = cascade.as_deref().map(|c| &*c.styles);
     // The bookmarks fields read (REF, NOTEREF, a bookmark's own name, a formula's names), without case: only theirs
     // are found.
     let mut wanted: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -1239,8 +1240,8 @@ pub(crate) fn field_changes(doc: &Document, now: i64) -> (Vec<FieldChange>, Vec<
 /// The fields of the other stories: headers and footers number their sequences apart, footnotes and endnotes in the
 /// order the body refers to them; a header's or footer's `STYLEREF` that finds nothing in `order` shows its error.
 fn stories_fields(doc: &mut Document, order: &[Vec<(String, bool, String)>]) {
-    let resolver = doc.resolver.clone();
-    let styles = resolver.as_deref().map(|r| &r.styles);
+    let cascade = doc.resolver.as_ref().map(|r| r.cascade());
+    let styles = cascade.as_deref().map(|c| &*c.styles);
     // Every other story (headers, footers) numbers its sequences apart; footnotes are one story, endnotes another, in
     // the order the body refers to them (those it doesn't after, by id).
     for b in doc.stories.values_mut() {

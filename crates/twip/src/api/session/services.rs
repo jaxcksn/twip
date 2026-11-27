@@ -286,7 +286,10 @@ impl Session {
         v.styles = styles;
         let res = self.editor.document().resolver.clone();
         v.description = match (&res, &v.selected) {
-            (Some(r), Some(id)) => r.styles.get(&id.0).map(|s| crate::services::styles::describe::describe(s, &r.styles)).unwrap_or_default(),
+            (Some(r), Some(id)) => {
+                let c = r.cascade();
+                c.styles.styles.get(&*id.0).map(|e| crate::services::styles::describe::describe(e, &c)).unwrap_or_default()
+            }
             _ => String::new(),
         };
         v
@@ -297,10 +300,12 @@ impl Session {
         use crate::api::command::{DocumentDefaults, Indents, ParagraphSpacing};
         use crate::api::value::{AutoOr, Color, LineSpacing, Points};
         let Some(r) = self.editor.document().resolver.as_ref() else { return DocumentDefaults::default() };
-        let (rpr, ppr) = (&r.styles.doc_rpr, &r.styles.doc_ppr);
+        let c = r.cascade();
+        let (rpr, ppr) =
+            (&crate::docx::char_props::to_run_props(c.doc_char(), &c.colours), &crate::docx::para_props::to_para_props(c.doc_para(), &c.colours));
         let font = rpr.ascii.as_ref().map(|f| match f {
             crate::docx::props::FontRef::Name(n) => n.clone(),
-            crate::docx::props::FontRef::Theme(t) => r.theme.resolve(t),
+            crate::docx::props::FontRef::Theme(t) => c.theme.resolve(t),
         });
         DocumentDefaults {
             font: font.map(crate::api::command::FontChoice::Name),
@@ -435,8 +440,7 @@ impl Session {
             .document()
             .resolver
             .as_ref()
-            .and_then(|r| r.styles.get(&id.0))
-            .map(|s| s.raw.clone())
+            .and_then(|r| r.typed().style_xml(&id.0).map(std::borrow::Cow::into_owned))
             .ok_or_else(|| Error::unavailable("no such style"))?;
         let blocks = self.editor.style_preview(&raw, true).ok_or_else(|| Error::invalid("not a style"))?;
         self.picture(blocks, size, true)

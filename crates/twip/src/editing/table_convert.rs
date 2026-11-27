@@ -217,7 +217,8 @@ impl Editor {
         p.style.num.filter(|&ListRef { list: ListId(id), level: _ }| id != 0)?;
         let res = self.doc.resolver.clone()?;
         let cx = self.cx();
-        let styled = res.styles.chain_ppr(res.styles.paragraph_style(p.style.style_id.as_deref())).num_id.is_some_and(|n| n != 0);
+        let c = res.cascade();
+        let styled = matches!(c.chain_para(c.paragraph_style(p.style.style_id.as_deref())).list, Some(crate::format::ListChoice::In(n)) if n.0 != 0);
         let mut e = crate::format::ParaEdit::new((**p.style.direct.get()).clone());
         if styled {
             super::lists::in_list(&mut e, 0, 0);

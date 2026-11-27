@@ -884,7 +884,7 @@ impl Editor {
                     match p.kind {
                         Kind::Heading(n) => {
                             let id = format!("Heading{n}");
-                            if res.styles.by_id.contains_key(&id) {
+                            if res.has_style(&id) {
                                 pp.style = Some(id.into());
                             }
                         }
@@ -918,7 +918,7 @@ impl Editor {
                         } else if f.sub {
                             q.vertical = Some(crate::docx::props::VertAlign::Subscript);
                         }
-                        if r.link.is_some() && res.styles.by_id.contains_key("Hyperlink") {
+                        if r.link.is_some() && res.has_style("Hyperlink") {
                             q.underline = None;
                             q.style = Some("Hyperlink".into());
                         }

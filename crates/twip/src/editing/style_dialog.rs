@@ -7,9 +7,10 @@ use crate::api::error::Error;
 use crate::api::services::{StyleDialog, StyleDialogType, StyleOpen, TableStylePart};
 use crate::api::state::{CharacterFormatting, ParagraphFormatting, Tri};
 use crate::api::value::{AutoOr, NoneOr, StyleId};
-use crate::docx::styles::{Style, StyleKind, Styles};
+use crate::docx::resolvers::{Resolvers, TypedDefs};
 use crate::docx::write::props::{Cx, Props, STYLE, esc};
 use crate::font::Fonts;
+use crate::format::{StyleKind, StyleSheet};
 use crate::services::styles::{NameRefusal, check_name, describe, next_new_name};
 
 use super::Editor;
@@ -23,11 +24,12 @@ fn one<T: Clone + Default>(t: &Tri<T>) -> T {
     }
 }
 
-/// The style a style's XML holds, read with the rest of `styles` around it.
-fn parsed(styles: &Styles, raw: &str) -> Option<Style> {
-    let mut s = styles.clone();
-    s.set_xml(raw.to_string()).ok()?;
-    s.by_id.into_values().find(|st| st.raw == raw)
+/// The definitions with the style a style's XML holds set among them, and its id.
+fn with_pending(res: &Resolvers, raw: &str) -> Option<(Resolvers, Rc<str>)> {
+    let id = res.typed().styles.style_from_xml(raw)?.id;
+    let mut next = res.clone();
+    next.set_style_xml(raw.to_string()).ok()?;
+    Some((next, id))
 }
 
 /// The XML's style element with one child set, or removed when `xml` is none.
@@ -47,12 +49,12 @@ fn with_start(raw: &str, start: &str) -> String {
 }
 
 /// Built-in style `id`'s definition, when the document doesn't define it.
-fn built_in_definition(styles: &Styles, id: &str) -> Option<String> {
-    if styles.by_id.contains_key(id) {
+fn built_in_definition(typed: &TypedDefs, id: &str) -> Option<String> {
+    if typed.cascade.styles.styles.contains_key(id) {
         return None;
     }
     let b = crate::services::styles::builtin::BUILT_IN.iter().find(|b| b.id == id)?;
-    Some(crate::services::styles::builtin::definition(b, &styles.cx().w))
+    Some(crate::services::styles::builtin::definition(b, &typed.styles.cx().w))
 }
 
 /// The kind of style a dialog type makes.
@@ -67,11 +69,11 @@ fn kind_of(kind: StyleDialogType) -> StyleKind {
 
 /// The style a new style of `kind` is based on when its base is of another kind: the default paragraph, character
 /// or table style; none for a list style.
-fn default_base(styles: &Styles, kind: StyleKind) -> Option<String> {
+fn default_base(styles: &StyleSheet, kind: StyleKind) -> Option<String> {
     let id = match kind {
-        StyleKind::Paragraph => styles.default_paragraph.clone(),
+        StyleKind::Paragraph => styles.default_paragraph.as_deref().map(str::to_string),
         StyleKind::Character => Some("DefaultParagraphFont".to_string()),
-        StyleKind::Table => styles.default_table.clone(),
+        StyleKind::Table => styles.default_table.as_deref().map(str::to_string),
         StyleKind::Numbering => None,
     }?;
     styles.get(&id).is_some_and(|s| s.kind == kind).then_some(id)
@@ -148,10 +150,10 @@ fn table_style_edits(raw: &str, was: &StyleDialog, now: &StyleDialog, region: Op
 }
 
 /// A style id from a name: its letters and digits.
-fn id_for(name: &str, styles: &Styles) -> String {
+fn id_for(name: &str, styles: &StyleSheet) -> String {
     let base: String = name.chars().filter(char::is_ascii_alphanumeric).collect();
     let base = if base.is_empty() { "Style".to_string() } else { base };
-    (0..).map(|n| if n == 0 { base.clone() } else { format!("{base}{n}") }).find(|id| !styles.by_id.contains_key(id)).unwrap_or(base)
+    (0..).map(|n| if n == 0 { base.clone() } else { format!("{base}{n}") }).find(|id| !styles.styles.contains_key(id.as_str())).unwrap_or(base)
 }
 
 impl Editor {
@@ -167,18 +169,19 @@ impl Editor {
     /// Opens the style dialog: on a style, or on a new style from the selection's formatting.
     pub fn style_dialog_open(&self, open: StyleOpen) -> Result<StyleDialog, Error> {
         let res = self.doc.resolver.as_ref().ok_or_else(|| Error::unavailable("no styles"))?;
-        let styles = &res.styles;
-        let cx = styles.cx();
+        let typed = res.typed();
+        let styles = &*typed.cascade.styles;
+        let cx = typed.styles.cx();
         let w = &cx.w;
         let pending = match &open {
-            StyleOpen::Modify(id) => match styles.get(&id.0) {
-                Some(s) => s.raw.clone(),
-                None => built_in_definition(styles, &id.0).ok_or_else(|| Error::unavailable("no such style"))?,
+            StyleOpen::Modify(id) => match typed.style_xml(&id.0) {
+                Some(x) => x.into_owned(),
+                None => built_in_definition(&typed, &id.0).ok_or_else(|| Error::unavailable("no such style"))?,
             },
             StyleOpen::Create => {
                 let name = next_new_name(styles);
                 let para = self.selection.focus().and_then(|p| p.para_offset()).and_then(|(p, _)| self.index.para(&self.doc, p));
-                let base = para.and_then(|p| p.style.style_id.clone()).or_else(|| styles.default_paragraph.clone());
+                let base = para.and_then(|p| p.style.style_id.clone()).or_else(|| styles.default_paragraph.as_deref().map(str::to_string));
                 let (ppr, rpr) = self.selection_formatting();
                 let base = base.map_or(String::new(), |b| format!("<{w}basedOn {w}val=\"{}\"/>", esc(&b)));
                 format!(
@@ -191,25 +194,28 @@ impl Editor {
             }
         };
         let short_form = open == StyleOpen::Create;
-        let mut v = self.style_values(&pending, open, styles, TableStylePart::WholeTable)?;
+        let mut v = self.style_values(&pending, open, TableStylePart::WholeTable)?;
         v.short_form = short_form;
         Ok(v)
     }
 
     /// The dialog's values for a style's XML: its name, type and flags, its formatting as text in it resolves, and
     /// its description.
-    fn style_values(&self, pending: &str, open: StyleOpen, styles: &Styles, part: TableStylePart) -> Result<StyleDialog, Error> {
-        let style = parsed(styles, pending).ok_or_else(|| Error::invalid("not a style"))?;
+    fn style_values(&self, pending: &str, open: StyleOpen, part: TableStylePart) -> Result<StyleDialog, Error> {
+        use crate::docx::table_props::{tbl_props, tc_props};
         let res = self.doc.resolver.as_ref().ok_or_else(|| Error::unavailable("no styles"))?;
-        let mut next = (**res).clone();
-        let _ = next.styles.set_xml(pending.to_string());
+        let (next, id) = with_pending(res, pending).ok_or_else(|| Error::invalid("not a style"))?;
+        let cascade = next.cascade();
+        let entry = cascade.styles.styles.get(&id).ok_or_else(|| Error::invalid("not a style"))?;
+        let style = &*entry.style;
+        let colours = &cascade.colours;
         // A table style shows its part's formatting: the whole table's, with the part's over it.
-        let region =
-            (style.kind == StyleKind::Table).then(|| next.styles.table_region(Some(&style.id), &part.region().into_iter().collect::<Vec<_>>()));
-        let (c, p): (CharacterFormatting, ParagraphFormatting) = match &region {
-            Some(_) => {
-                let typed = next.cascade().table_region(Some(&style.id), &crate::docx::style_xml::region_kinds(part.region()));
-                let para = crate::docx::para_xml::resolve(&next, &Default::default(), None, Some(&typed));
+        let typed =
+            (style.kind == StyleKind::Table).then(|| cascade.table_region(Some(&style.id), &crate::docx::style_xml::region_kinds(part.region())));
+        let region = typed.as_ref().map(|t| tc_props(&t.format.cell, colours));
+        let (c, p): (CharacterFormatting, ParagraphFormatting) = match &typed {
+            Some(typed) => {
+                let para = crate::docx::para_xml::resolve(&next, &Default::default(), None, Some(typed));
                 let run = Rc::new(run_xml::resolve(&next, &para.base, Default::default(), false));
                 (super::state::character(&[&run]), super::state::paragraph(&[(&para.style, None)]))
             }
@@ -218,16 +224,19 @@ impl Editor {
                 (super::state::character(&[&run]), super::state::paragraph(&[(&para.style, None)]))
             }
         };
-        let whole = (style.kind == StyleKind::Table).then(|| next.styles.table_region(Some(&style.id), &[]));
+        let whole = (style.kind == StyleKind::Table).then(|| tbl_props(&cascade.table_region(Some(&style.id), &[]).format.table, colours));
         let line = |b: &Option<crate::docx::props::Border>| super::borders_dialog::line(b);
         let border = match (&region, part) {
-            (Some(_), TableStylePart::WholeTable) => whole.as_ref().and_then(|r| line(&r.tbl.borders.top)),
-            (Some(r), _) => line(&r.tc.borders.top),
+            (Some(_), TableStylePart::WholeTable) => whole.as_ref().and_then(|t| line(&t.borders.top)),
+            (Some(tc), _) => line(&tc.borders.top),
             _ => None,
         };
         let list_levels = match style.kind {
             StyleKind::Numbering => {
-                let num = next.styles.chain_ppr(Some(&style.id)).num_id.filter(|n| *n != 0);
+                let num = match cascade.chain_para(Some(&style.id)).list {
+                    Some(crate::format::ListChoice::In(n)) if n.0 != 0 => Some(n.0),
+                    _ => None,
+                };
                 num.and_then(|n| self.list_levels(n)).unwrap_or_else(|| super::list_defs::complete(&[]))
             }
             _ => Vec::new(),
@@ -236,13 +245,12 @@ impl Editor {
             Tri::Uniform(AutoOr::Value(v)) => *v,
             _ => crate::api::value::Points(0.0),
         };
-        let mut with = styles.clone();
-        let _ = with.set_xml(pending.to_string());
+        let on = |v: Option<bool>| v.unwrap_or(false);
         Ok(StyleDialog {
             open,
             short_form: false,
-            name: std::iter::once(crate::services::styles::describe::display_name(&style))
-                .chain(style.aliases.iter().cloned())
+            name: std::iter::once(crate::services::styles::describe::display_name(style))
+                .chain(style.aliases.iter().map(|a| a.to_string()))
                 .collect::<Vec<_>>()
                 .join(","),
             kind: match style.kind {
@@ -252,8 +260,8 @@ impl Editor {
                 StyleKind::Table => StyleDialogType::Table,
                 StyleKind::Numbering => StyleDialogType::List,
             },
-            based_on: style.based_on.clone().map(StyleId),
-            next: style.next.clone().map(StyleId),
+            based_on: cascade.based_on(entry).map(|b| StyleId(b.to_string())),
+            next: style.next.as_deref().map(|n| StyleId(n.to_string())),
             font: one(&c.font),
             size: one(&c.size),
             bold: one(&c.bold),
@@ -265,17 +273,17 @@ impl Editor {
             space_before: points(&p.space_before),
             space_after: points(&p.space_after),
             left_indent: one(&p.indents.left),
-            quick: style.quick,
-            auto_update: style.meta.auto_redefine,
+            quick: on(style.quick),
+            auto_update: on(style.meta.auto_redefine),
             table_part: part,
-            fill: region.as_ref().and_then(|r| r.tc.shading.flatten()).map(crate::api::value::Color),
-            cell_alignment: super::table_format::api_cell_alignment(region.as_ref().and_then(|r| r.tc.v_align)),
+            fill: region.as_ref().and_then(|tc| tc.shading.flatten()).map(crate::api::value::Color),
+            cell_alignment: super::table_format::api_cell_alignment(region.as_ref().and_then(|tc| tc.v_align)),
             border,
-            row_band: whole.as_ref().and_then(|r| r.tbl.row_band).unwrap_or(1).max(1) as u32,
-            column_band: whole.as_ref().and_then(|r| r.tbl.col_band).unwrap_or(1).max(1) as u32,
+            row_band: whole.as_ref().and_then(|t| t.row_band).unwrap_or(1).max(1) as u32,
+            column_band: whole.as_ref().and_then(|t| t.col_band).unwrap_or(1).max(1) as u32,
             list_levels,
             list_level: 0,
-            description: with.by_id.values().find(|s| s.raw == pending).map(|s| describe::describe(s, &with)).unwrap_or_default(),
+            description: describe::describe(entry, &cascade),
             pending: pending.to_string(),
         })
     }
@@ -284,7 +292,8 @@ impl Editor {
     /// name, base, following style and flags written into it, and the values read again.
     pub fn style_dialog_update(&mut self, was: &StyleDialog, now: StyleDialog, fonts: &Fonts) -> Result<StyleDialog, Error> {
         let res = self.doc.resolver.clone().ok_or_else(|| Error::unavailable("no styles"))?;
-        let cx = res.styles.cx();
+        let typed = res.typed();
+        let cx = typed.styles.cx();
         let w = cx.w.clone();
         if now.border != was.border {
             super::commands::bounds::border(now.border.as_ref())?;
@@ -358,7 +367,7 @@ impl Editor {
             pending = set_child(&pending, &cx, "name", Some(format!("<{w}name {w}val=\"{}\"/>", esc(now.name.trim()))));
         }
         if now.kind != was.kind && was.open == StyleOpen::Create {
-            let id = parsed(&res.styles, &pending).map(|s| s.id).unwrap_or_default();
+            let id = typed.styles.style_from_xml(&pending).map(|s| s.id.to_string()).unwrap_or_default();
             pending =
                 with_start(&pending, &format!("<{w}style {w}type=\"{}\" {w}customStyle=\"1\" {w}styleId=\"{}\">", xml_type(now.kind), esc(&id)));
             if now.kind != StyleDialogType::Paragraph && now.kind != StyleDialogType::Linked {
@@ -368,13 +377,18 @@ impl Editor {
                 pending = set_child(&pending, &cx, "pPr", None);
             }
             let kind = kind_of(now.kind);
-            if parsed(&res.styles, &pending).and_then(|s| s.based_on).is_some_and(|b| res.styles.get(&b).is_none_or(|b| b.kind != kind)) {
-                let base = default_base(&res.styles, kind).map(|b| format!("<{w}basedOn {w}val=\"{}\"/>", esc(&b)));
+            let sheet = &*typed.cascade.styles;
+            let base_of = with_pending(&res, &pending).and_then(|(n, id)| {
+                let c = n.cascade();
+                c.styles.styles.get(&id).and_then(|e| c.based_on(e).map(Rc::<str>::from))
+            });
+            if base_of.is_some_and(|b| sheet.get(&b).is_none_or(|b| b.kind != kind)) {
+                let base = default_base(sheet, kind).map(|b| format!("<{w}basedOn {w}val=\"{}\"/>", esc(&b)));
                 pending = set_child(&pending, &cx, "basedOn", base);
             }
         }
         let part = if now.kind == StyleDialogType::Table { now.table_part } else { TableStylePart::WholeTable };
-        let mut v = self.style_values(&pending, now.open.clone(), &res.styles, part)?;
+        let mut v = self.style_values(&pending, now.open.clone(), part)?;
         v.short_form = now.short_form;
         v.kind = now.kind;
         // A list style's levels are the dialog's until it applies.
@@ -389,12 +403,19 @@ impl Editor {
     pub fn style_dialog_apply(&mut self, v: StyleDialog, fonts: &Fonts) -> Outcome {
         let Some(mut res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
         if let StyleOpen::Modify(id) = &v.open
-            && let Some(def) = built_in_definition(&res.styles, &id.0)
+            && let Some(def) = built_in_definition(&res.typed(), &id.0)
         {
-            let _ = std::rc::Rc::make_mut(&mut res).styles.set_xml(def);
+            let _ = std::rc::Rc::make_mut(&mut res).set_style_xml(def);
         }
-        let styles = &res.styles;
-        let Some(style) = parsed(styles, &v.pending) else { return Outcome::invalid("not a style") };
+        let typed = res.typed();
+        let c = &*typed.cascade;
+        let styles = &*c.styles;
+        let xml = |id: &str| typed.style_xml(id).map(std::borrow::Cow::into_owned);
+        let Some((next, pending_id)) = with_pending(&res, &v.pending) else { return Outcome::invalid("not a style") };
+        let pending = next.cascade();
+        let Some(entry) = pending.styles.styles.get(&pending_id) else { return Outcome::invalid("not a style") };
+        let style = &*entry.style;
+        let style_base = pending.based_on(entry);
         let except = match &v.open {
             StyleOpen::Modify(id) => Some(id.0.as_str()),
             StyleOpen::Create => None,
@@ -410,15 +431,15 @@ impl Editor {
         }
         // The style the dialog opened on, as it was
         if let StyleOpen::Modify(id) = &v.open
-            && styles.get(&id.0).is_none_or(|s| s.id != style.id || s.kind != style.kind || s.kind != kind_of(v.kind))
+            && styles.get(&id.0).is_none_or(|s| *s.id != *style.id || s.kind != style.kind || s.kind != kind_of(v.kind))
         {
             return Outcome::invalid("the style's id and type are the ones the dialog opened on");
         }
         // A base the dialog set: an existing style of the same type
-        let open = except.and_then(|e| styles.get(e));
-        let kind = open.map_or(kind_of(v.kind), |o| o.kind);
-        if let Some(b) = &style.based_on
-            && open.is_none_or(|o| o.based_on.as_ref() != Some(b))
+        let open = except.and_then(|e| styles.styles.get(e));
+        let kind = open.map_or(kind_of(v.kind), |o| o.style.kind);
+        if let Some(b) = style_base
+            && open.is_none_or(|o| c.based_on(o) != Some(b))
             && styles.get(b).is_none_or(|b| b.kind != kind)
         {
             return Outcome::invalid("the base style doesn't exist or is of another type");
@@ -429,16 +450,19 @@ impl Editor {
         {
             return Outcome::invalid("the following style doesn't exist");
         }
-        let cx = styles.cx();
+        let cx = typed.styles.cx();
         let w = cx.w.clone();
         let mut raw = v.pending.clone();
         // A built-in style keeps its name: the new one is an alias.
         if let StyleOpen::Modify(id) = &v.open
             && let Some(s) = styles.get(&id.0)
-            && !s.custom
+            && !s.custom.unwrap_or(false)
             && !first.eq_ignore_ascii_case(&crate::services::styles::describe::display_name(s))
         {
-            let names: Vec<String> = std::iter::once(s.name.clone()).chain(std::iter::once(first.clone())).chain(s.aliases.iter().cloned()).collect();
+            let names: Vec<String> = std::iter::once(s.name.as_deref().unwrap_or_default().to_string())
+                .chain(std::iter::once(first.clone()))
+                .chain(s.aliases.iter().map(|a| a.to_string()))
+                .collect();
             raw = set_child(&raw, &cx, "name", Some(format!("<{w}name {w}val=\"{}\"/>", esc(&names.join(",")))));
         }
         let creating = v.open == StyleOpen::Create;
@@ -446,12 +470,12 @@ impl Editor {
         let id = if creating {
             let id = id_for(&first, styles);
             raw = with_start(&raw, &format!("<{w}style {w}type=\"{}\" {w}customStyle=\"1\" {w}styleId=\"{}\">", xml_type(v.kind), esc(&id)));
-            if style.next.as_deref() == Some(style.id.as_str()) {
+            if style.next.as_deref() == Some(&*style.id) {
                 raw = set_child(&raw, &cx, "next", Some(format!("<{w}next {w}val=\"{}\"/>", esc(&id))));
             }
             id
         } else {
-            style.id.clone()
+            style.id.to_string()
         };
         let linked = v.kind == StyleDialogType::Linked && creating;
         let character = v.kind == StyleDialogType::Character;
@@ -460,7 +484,7 @@ impl Editor {
         let label = if creating { "New Style" } else { "Modify Style" };
         let char_id = (0..)
             .map(|n| if n == 0 { format!("{id}Char") } else { format!("{id}Char{n}") })
-            .find(|c| !styles.by_id.contains_key(c))
+            .find(|c| !styles.styles.contains_key(c.as_str()))
             .unwrap_or_default();
         if linked {
             raw = set_child(&raw, &cx, "link", Some(format!("<{w}link {w}val=\"{}\"/>", esc(&char_id))));
@@ -476,11 +500,13 @@ impl Editor {
         });
         // A linked style's character half takes its character formatting.
         let char_xml = char_xml.or_else(|| {
-            let half =
-                style.link.as_deref().and_then(|l| styles.get(l)).filter(|c| c.kind == StyleKind::Character && c.link.as_deref() == Some(&id))?;
+            let half = style
+                .link
+                .as_deref()
+                .filter(|l| styles.get(l).is_some_and(|c| c.kind == StyleKind::Character && c.link.as_deref() == Some(id.as_str())))?;
             let rpr = Props::parse(Some(&raw), "style", &cx).get("rPr").map(str::to_string);
-            let was = styles.get(&id).and_then(|s| Props::parse(Some(&s.raw), "style", &cx).get("rPr").map(str::to_string));
-            (!creating && style.kind == StyleKind::Paragraph && rpr != was).then(|| set_child(&half.raw, &cx, "rPr", rpr))
+            let was = xml(&id).and_then(|x| Props::parse(Some(&x), "style", &cx).get("rPr").map(str::to_string));
+            (!creating && style.kind == StyleKind::Paragraph && rpr != was).then(|| set_child(&xml(half).unwrap_or_default(), &cx, "rPr", rpr))
         });
         self.joined(label, fonts, |e| {
             let out = e.edit_styles(
@@ -526,8 +552,8 @@ impl Editor {
         let formatted = self.format_style(&v.pending, commands, fonts);
         self.style_part = None;
         let pending = formatted?;
-        let res = self.doc.resolver.clone().ok_or_else(|| Error::unavailable("no styles"))?;
-        let mut out = self.style_values(&pending, v.open.clone(), &res.styles, v.table_part)?;
+        self.doc.resolver.as_ref().ok_or_else(|| Error::unavailable("no styles"))?;
+        let mut out = self.style_values(&pending, v.open.clone(), v.table_part)?;
         (out.short_form, out.kind, out.name) = (v.short_form, v.kind, v.name.clone());
         if v.kind == StyleDialogType::List && !v.list_levels.is_empty() {
             (out.list_levels, out.list_level) = (v.list_levels.clone(), v.list_level);
@@ -538,49 +564,53 @@ impl Editor {
     /// The style dialog with its style's paragraphs in list `num`, or in none.
     pub fn style_dialog_numbering(&mut self, v: &StyleDialog, num: Option<i64>) -> Result<StyleDialog, Error> {
         let res = self.doc.resolver.clone().ok_or_else(|| Error::unavailable("no styles"))?;
-        let cx = res.styles.cx();
+        let cx = res.typed().styles.cx();
         let w = cx.w.clone();
         let pending = super::styles::edit_child(&v.pending, "pPr", &cx, |p| match num {
             Some(n) => p.set("numPr", format!("<{w}numPr><{w}numId {w}val=\"{n}\"/></{w}numPr>")),
             None => p.remove("numPr"),
         });
-        let mut out = self.style_values(&pending, v.open.clone(), &res.styles, v.table_part)?;
+        let mut out = self.style_values(&pending, v.open.clone(), v.table_part)?;
         (out.short_form, out.kind, out.name) = (v.short_form, v.kind, v.name.clone());
         Ok(out)
     }
 
-    /// A table style's region (`w:tblStylePr`), or its whole table.
-    fn table_region_of(&self, raw: &str, part: Option<&str>) -> Option<crate::docx::styles::Region> {
-        let res = self.doc.resolver.as_ref()?;
-        let mut next = (**res).clone();
-        next.styles.set_xml(raw.to_string()).ok()?;
-        let id = next.styles.by_id.values().find(|s| s.raw == raw)?.id.clone();
-        Some(next.styles.table_region(Some(&id), &part.into_iter().collect::<Vec<_>>()))
+    /// A table style's table, cell and row properties: its region (`w:tblStylePr`)'s, or its whole table's.
+    fn table_region_of(
+        &self,
+        raw: &str,
+        part: Option<&str>,
+    ) -> Option<(crate::docx::props::TblProps, crate::docx::props::TcProps, crate::docx::props::TrProps)> {
+        use crate::docx::table_props::{tbl_props, tc_props, tr_props};
+        let (next, id) = with_pending(self.doc.resolver.as_ref()?, raw)?;
+        let c = next.cascade();
+        let f = c.table_region(Some(&id), &crate::docx::style_xml::region_kinds(part)).format;
+        Some((tbl_props(&f.table, &c.colours), tc_props(&f.cell, &c.colours), tr_props(&f.row)))
     }
 
     /// Table Properties' values for a table style: its alignment, indent, cell margins, row breaking and cell
     /// alignment (what a style holds; the rest unavailable).
     pub fn style_table_properties(&self, raw: &str) -> Option<crate::api::services::TablePropertiesDialog> {
         use crate::api::value::{HorizontalAlignment, Points, TableWidth};
-        let r = self.table_region_of(raw, None)?;
-        let m = &r.tbl.margins;
+        let (tbl, tc, tr) = self.table_region_of(raw, None)?;
+        let m = &tbl.margins;
         Some(crate::api::services::TablePropertiesDialog {
-            width: match r.tbl.width {
+            width: match tbl.width {
                 Some(crate::docx::props::Width::Dxa(v)) => TableWidth::Points { value: Points(v) },
                 Some(crate::docx::props::Width::Pct(f)) => TableWidth::Percent { value: f * 100.0 },
                 _ => TableWidth::Auto,
             },
-            alignment: match r.tbl.jc {
+            alignment: match tbl.jc {
                 Some(crate::docx::props::Jc::Center) => HorizontalAlignment::Center,
                 Some(crate::docx::props::Jc::Right) => HorizontalAlignment::Right,
                 _ => HorizontalAlignment::Left,
             },
-            indent: Points(r.tbl.ind.map_or(0.0, crate::docx::props::Width::dxa)),
+            indent: Points(tbl.ind.map_or(0.0, crate::docx::props::Width::dxa)),
             row_height: Tri::Unavailable,
-            row_can_break: Tri::Uniform(!r.tr.cant_split.unwrap_or(false)),
+            row_can_break: Tri::Uniform(!tr.cant_split.unwrap_or(false)),
             header_row: Tri::Unavailable,
             column_width: Tri::Unavailable,
-            cell_alignment: Tri::Uniform(super::table_format::api_cell_alignment(r.tc.v_align)),
+            cell_alignment: Tri::Uniform(super::table_format::api_cell_alignment(tc.v_align)),
             cell_margins: crate::api::services::CellMarginValues {
                 top: Points(m.top.unwrap_or(0.0)),
                 bottom: Points(m.bottom.unwrap_or(0.0)),
@@ -593,10 +623,10 @@ impl Editor {
 
     /// Banding's values for a table style.
     pub fn style_banding(&self, raw: &str) -> Option<crate::api::services::BandingDialog> {
-        let r = self.table_region_of(raw, None)?;
+        let (tbl, _, _) = self.table_region_of(raw, None)?;
         Some(crate::api::services::BandingDialog {
-            row_band: r.tbl.row_band.unwrap_or(1).max(1) as u32,
-            column_band: r.tbl.col_band.unwrap_or(1).max(1) as u32,
+            row_band: tbl.row_band.unwrap_or(1).max(1) as u32,
+            column_band: tbl.col_band.unwrap_or(1).max(1) as u32,
         })
     }
 
@@ -611,7 +641,7 @@ impl Editor {
         use crate::api::services::DialogValues;
         use crate::docx::write::props::{TBLPR, TC_BORDERS, TCPR, TRPR};
         let res = self.doc.resolver.clone().ok_or_else(|| Error::unavailable("no styles"))?;
-        let cx = res.styles.cx();
+        let cx = res.typed().styles.cx();
         let w = cx.w.clone();
         let region = v.table_part.region();
         let root = |raw: &str, child: &str, order: &'static [&'static str], edit: &dyn Fn(&mut Props)| {
@@ -768,7 +798,7 @@ impl Editor {
             }
             _ => {}
         }
-        let mut out = self.style_values(&raw, v.open.clone(), &res.styles, v.table_part)?;
+        let mut out = self.style_values(&raw, v.open.clone(), v.table_part)?;
         (out.short_form, out.kind, out.name) = (v.short_form, v.kind, v.name.clone());
         Ok(out)
     }

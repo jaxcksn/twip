@@ -156,22 +156,23 @@ impl Editor {
 
     pub(super) fn toggle_list(&mut self, bullet: bool, fonts: &Fonts) -> Outcome {
         let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
+        let c = res.cascade();
         let paras = self.selected_paras();
         let Some(&first) = paras.first() else { return Outcome::Unchanged("no paragraph") };
         let kind = |e: &Self, para: ParaId| -> Option<(bool, (i64, i64))> {
             let p = e.index.para(&e.doc, para)?;
             let ListRef { list: ListId(id), level: ilvl } = p.style.num.filter(|ListRef { list: ListId(id), level: _ }| *id != 0)?;
-            let r = e.doc.resolver.as_ref()?;
-            let level = r.numbering.level(id, ilvl, &r.styles)?;
-            Some((level.fmt == "bullet", (id, ilvl)))
+            let c = e.doc.resolver.as_ref()?.cascade();
+            let level = c.level(ListId(id), ilvl)?;
+            Some((crate::docx::list_xml::format_name(level.format.as_ref()) == "bullet", (id, ilvl)))
         };
         let label = if bullet { "Bullets" } else { "Numbering" };
         if paras.iter().all(|&p| kind(self, p).is_some_and(|(b, _)| b == bullet)) {
             let mut tx = self.begin(label);
             for &para in &paras {
                 let Some((_, (id, ilvl))) = kind(self, para) else { continue };
-                let lvl = res.numbering.level(id, ilvl, &res.styles);
-                let left = lvl.and_then(|l| l.ppr.ind_left).unwrap_or(36.0) + lvl.and_then(|l| l.ppr.ind_first).unwrap_or(-18.0).min(0.0);
+                let lvl = c.level(ListId(id), ilvl);
+                let left = lvl.and_then(|l| l.para.indent_left).unwrap_or(36.0) + lvl.and_then(|l| l.para.indent_first).unwrap_or(-18.0).min(0.0);
                 let style_id = self.index.para(&self.doc, para).and_then(|p| p.style.style_id.clone());
                 let ok = self.repara(&mut tx, para, &|e| {
                     let list_paragraph = e.style.as_deref() == Some("ListParagraph");
@@ -180,8 +181,8 @@ impl Editor {
                         e.whole(ParaProp::Style);
                     }
                     let styled = !list_paragraph && (e.style.is_some() || written(e, "pStyle"));
-                    let style = res.styles.paragraph_style(if styled { style_id.as_deref() } else { None });
-                    let numbered = res.styles.chain_ppr(style).num_id.is_some_and(|n| n != 0);
+                    let style = c.paragraph_style(if styled { style_id.as_deref() } else { None });
+                    let numbered = matches!(c.chain_para(style).list, Some(ListChoice::In(n)) if n.0 != 0);
                     if (e.list.is_some() || e.list_level.is_some() || written(e, "numPr")) && !numbered {
                         (e.list, e.list_level) = (None, None);
                         e.whole(ParaProp::List);
@@ -209,10 +210,10 @@ impl Editor {
             Some((_, n)) => n,
             None => (self.new_list(&mut tx, bullet), 0),
         };
-        let list_style = res.styles.by_id.contains_key("ListParagraph");
+        let list_style = c.styles.styles.contains_key("ListParagraph");
         for &para in &paras {
             // A paragraph in a list keeps its level, where the list has it.
-            let defined = |l: i64| self.doc.resolver.as_ref().is_some_and(|r| r.numbering.level(num, l, &r.styles).is_some());
+            let defined = |l: i64| self.doc.resolver.as_ref().is_some_and(|r| r.cascade().level(ListId(num), l).is_some());
             let ilvl = kind(self, para).map(|(_, (_, own))| own.clamp(0, 8)).filter(|&own| defined(own)).unwrap_or(ilvl);
             let ok = self.repara(&mut tx, para, &|e| {
                 in_list(e, num, ilvl);
@@ -268,18 +269,18 @@ impl Editor {
     /// Adds a list of `levels` (`w:lvl` elements), returning its number id; 0 when it couldn't be added.
     fn add_list_xml(&mut self, tx: &mut Tx, multi: &str, levels: &str) -> i64 {
         let Some(res) = self.doc.resolver.clone() else { return 0 };
-        let abstract_id = res.numbering.abstracts.keys().copied().chain(self.doc.added_lists.iter().map(|l| l.abstract_id)).max().unwrap_or(-1) + 1;
-        let num_id = res.numbering.nums.keys().copied().chain(self.doc.added_lists.iter().map(|l| l.num_id)).max().unwrap_or(0) + 1;
+        let lists = res.cascade().lists.clone();
+        let abstract_id = lists.defs.keys().map(|k| k.0).chain(self.doc.added_lists.iter().map(|l| l.abstract_id)).max().unwrap_or(-1) + 1;
+        let num_id = lists.lists.keys().map(|k| k.0).chain(self.doc.added_lists.iter().map(|l| l.num_id)).max().unwrap_or(0) + 1;
         let abstract_xml = format!(
             r#"<w:abstractNum xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" w:abstractNumId="{abstract_id}"><w:multiLevelType w:val="{multi}"/>{levels}</w:abstractNum>"#
         );
-        let part = format!(
-            r#"<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">{abstract_xml}<w:num xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" w:numId="{num_id}"><w:abstractNumId w:val="{abstract_id}"/></w:num></w:numbering>"#
+        let num_xml = format!(
+            r#"<w:num xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" w:numId="{num_id}"><w:abstractNumId w:val="{abstract_id}"/></w:num>"#
         );
-        let parsed = crate::docx::numbering::Numbering::parse(Some(&part), &res.styles.colours);
         let mut r = (*res).clone();
-        r.numbering.abstracts.extend(parsed.abstracts);
-        r.numbering.nums.extend(parsed.nums);
+        r.set_abstract_xml(abstract_xml.clone());
+        r.set_num_xml(num_xml);
         let mut added = self.doc.added_lists.clone();
         added.push(crate::docx::AddedList { abstract_id, num_id, abstract_xml });
         if self.step(tx, Step::Resolver { resolver: Some(Rc::new(r)), added }).is_err() {
@@ -332,11 +333,11 @@ impl Editor {
     /// The labels that change: those whose text changed, or, for the paragraphs `full` names, any part of them.
     pub(super) fn labels_changed(&self, full: impl Fn(ParaId) -> bool) -> Vec<(ParaId, Option<ListLabel>)> {
         let Some(res) = self.doc.resolver.clone() else { return Vec::new() };
-        if res.numbering.nums.is_empty() {
+        let c = res.cascade();
+        if c.lists.lists.is_empty() {
             return Vec::new();
         }
         let cx = self.cx();
-        let c = res.cascade();
         let mut counters = Counters::default();
         let mut changes: Vec<(ParaId, Option<ListLabel>)> = Vec::new();
         for (p, uncounted) in numbered_paras(&self.doc, &self.index) {

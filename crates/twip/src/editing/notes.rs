@@ -49,7 +49,7 @@ fn restyled_ref(res: &Resolvers, base: &crate::format::CharProps, run: &Run, fro
     if e.style.as_deref() != Some(old) {
         return None;
     }
-    if res.styles.by_id.contains_key(new) {
+    if res.has_style(new) {
         e.style = Some(new.into());
     } else {
         e.style = None;
@@ -67,7 +67,7 @@ fn restyle_note_para(res: &Resolvers, cx: &Cx, p: &mut Paragraph, from: NoteKind
     let mut changed = false;
     if p.style.style_id.as_deref() == Some(old) {
         let mut e = ParaEdit::new((**p.style.direct.get()).clone());
-        e.style = res.styles.by_id.contains_key(new).then(|| new.into());
+        e.style = res.has_style(new).then(|| new.into());
         e.whole(ParaProp::Style);
         let direct = p.style.direct.edit(e);
         p.style = Rc::new(crate::docx::para_xml::of(res, &direct, None, cx).style);
@@ -147,7 +147,7 @@ impl Editor {
         let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
         let cx = self.cx();
         let (ref_style, text_style) = note_styles(kind);
-        let has = |s: &str| res.styles.by_id.contains_key(s);
+        let has = |s: &str| res.has_style(s);
         let mark_prop = |e: &mut CharEdit| {
             if has(ref_style) {
                 e.style = Some(ref_style.into());

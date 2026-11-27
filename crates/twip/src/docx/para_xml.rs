@@ -7,7 +7,6 @@ use super::list_xml::{format_name, jc_name, legacy_of, suffix_name};
 use super::model::ListLabel;
 use super::model::{ListId, ListJc, ListRef, ParaStyle};
 use super::para_props::ParaDirect;
-use super::resolve::Resolver;
 use super::resolvers::Resolvers;
 use super::review::ParaChange;
 use super::write::props::Cx;
@@ -87,7 +86,7 @@ pub fn resolve(res: &Resolvers, direct: &ParaProps, mark_size: Option<f64>, regi
     }
     ppr.merge(direct);
     ppr.style = style_id.as_deref().map(Into::into);
-    let mut style = para_style(&res.styles.colours, &ppr);
+    let mut style = para_style(&c.colours, &ppr);
     if let Some(l) = &level {
         // A legacy level places its number itself, in the label.
         style.list_jc = if legacy_of(l).is_some() { ListJc::Left } else { super::paragraph::list_jc(jc_name(l.jc.as_ref())) };
@@ -115,12 +114,12 @@ pub fn resolve(res: &Resolvers, direct: &ParaProps, mark_size: Option<f64>, regi
     }
     // The margins of the paragraph's division and its ancestors add to its indents; in a table cell only its own
     // division's.
-    let mut chain = crate::format::cascade::div_chain(&res.divisions, style.div);
+    let mut chain = crate::format::cascade::div_chain(&c.divisions, style.div);
     if region.is_some() {
         chain.truncate(1);
     }
     if !chain.is_empty() {
-        let sum = |i: usize| chain.iter().map(|id| res.divisions[id].margins[i]).sum::<f64>();
+        let sum = |i: usize| chain.iter().map(|id| c.divisions[id].margins[i]).sum::<f64>();
         style.ind_left += sum(0);
         style.ind_right += sum(1);
     }
@@ -149,8 +148,8 @@ pub fn with(res: &Resolvers, direct: ParaDirect, mark_size: Option<f64>, region:
 
 /// Authored paragraph properties `d` as the `w:pPr` written in the part `cx` describes, a theme colour's value as
 /// `res`'s theme resolves it.
-pub fn ppr<'d>(res: Option<&Resolver>, d: &'d ParaDirect, cx: &Cx) -> Option<std::borrow::Cow<'d, str>> {
-    d.xml(&res.map_or_else(Default::default, |r| r.styles.colours), cx)
+pub fn ppr<'d>(res: Option<&Resolvers>, d: &'d ParaDirect, cx: &Cx) -> Option<std::borrow::Cow<'d, str>> {
+    d.xml(&res.map_or_else(Default::default, |r| r.cascade().colours), cx)
 }
 
 /// The mark size a paragraph's `w:pPr` as written (in the part `cx` describes) sets.

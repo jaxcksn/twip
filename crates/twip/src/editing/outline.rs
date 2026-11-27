@@ -449,7 +449,7 @@ impl Editor {
         let mut styles: [Option<String>; 9] = Default::default();
         for n in wanted {
             let id = format!("Heading{n}");
-            let found = |e: &Editor| e.doc.resolver.as_ref().and_then(|r| super::list_defs::linkable(&r.styles, &id));
+            let found = |e: &Editor| e.doc.resolver.as_ref().and_then(|r| super::list_defs::linkable(&r.cascade().styles, &id));
             if found(self).is_none()
                 && let Some(b) = crate::services::styles::builtin::built_in(&id)
             {
@@ -462,7 +462,7 @@ impl Editor {
             }
         }
         let res = self.doc.resolver.clone().unwrap_or(res);
-        let body = res.styles.default_paragraph.clone();
+        let body = res.cascade().styles.default_paragraph.as_deref().map(str::to_string);
         let mut tx = self.begin(label);
         for (para, t) in plan {
             let Some(p) = self.index.para(&self.doc, para) else { continue };

@@ -15,13 +15,9 @@ impl Editor {
     fn list_here(&mut self) -> Option<(i64, usize, Vec<ListLevel>, String, u32)> {
         let (para, num, ilvl) = self.selection_list()?;
         let levels = self.list_levels(num)?;
-        let res = self.doc.resolver.as_ref()?;
-        let name = res
-            .numbering
-            .abstract_of(num, &res.styles)
-            .and_then(|a| res.numbering.abstracts.get(&a))
-            .and_then(|a| a.name.clone())
-            .unwrap_or_default();
+        let c = self.doc.resolver.as_ref()?.cascade();
+        let name =
+            c.abstract_of(ListId(num)).and_then(|a| c.lists.defs.get(&a)).and_then(|a| a.name.as_deref().map(str::to_string)).unwrap_or_default();
         let value = self.list_value(para).unwrap_or(1);
         Some((num, ilvl.clamp(0, 8) as usize, levels, name, value))
     }
@@ -165,7 +161,8 @@ impl Editor {
     /// Makes a list of `levels` (one undo step), for a style to number with; its `numId`.
     pub fn add_list(&mut self, levels: &[ListLevel], fonts: &crate::font::Fonts) -> (super::commands::Outcome, i64) {
         let Some(res) = self.doc.resolver.clone() else { return (super::commands::Outcome::Unchanged("no styles"), 0) };
-        let (abstract_id, num_id) = res.numbering.free_ids();
+        let (abstract_id, num_id) = res.cascade().lists.free_ids();
+        let (abstract_id, num_id) = (abstract_id.0, num_id.0);
         let levels = super::list_defs::complete(levels);
         let out = self.edit_numbering(
             "Define List",
@@ -190,14 +187,16 @@ impl Editor {
     pub(super) fn define_style_list(&mut self, id: &str, levels: &[ListLevel], fonts: &crate::font::Fonts) -> super::commands::Outcome {
         use super::commands::Outcome;
         let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
-        let cx = res.numbering.cx();
+        let typed = res.typed();
+        let c = &*typed.cascade;
+        let cx = typed.numbering.cx();
         let w = cx.w.clone();
-        let num = res.styles.chain_ppr(Some(id)).num_id.filter(|n| *n != 0 && res.numbering.nums.contains_key(n));
+        let num = crate::docx::para_props::num_id(c.chain_para(Some(id)).list).filter(|n| *n != 0 && c.lists.lists.contains_key(&ListId(*n)));
         let levels = super::list_defs::complete(levels);
         let esc = crate::docx::write::props::esc;
-        match num.and_then(|n| res.numbering.abstract_of(n, &res.styles).map(|a| (n, a))) {
+        match num.and_then(|n| c.abstract_of(ListId(n)).map(|a| (n, a.0))) {
             Some((_, abstract_id)) => {
-                let old = res.numbering.abstracts.get(&abstract_id).map(|a| a.raw.clone());
+                let old = typed.def_xml(abstract_id).map(std::borrow::Cow::into_owned);
                 self.edit_numbering(
                     "Modify Style",
                     |n, cx, colours| {
@@ -222,7 +221,8 @@ impl Editor {
                 )
             }
             None => {
-                let (abstract_id, num_id) = res.numbering.free_ids();
+                let (abstract_id, num_id) = c.lists.free_ids();
+                let (abstract_id, num_id) = (abstract_id.0, num_id.0);
                 let style_id = id.to_string();
                 let out = self.edit_numbering(
                     "New Style",
@@ -245,8 +245,9 @@ impl Editor {
                 if matches!(out, Outcome::Refused(_) | Outcome::Unchanged(_)) {
                     return out;
                 }
-                let Some(style) = self.doc.resolver.as_ref().and_then(|r| r.styles.get(id)).map(|s| s.raw.clone()) else { return out };
-                let scx = self.doc.resolver.as_ref().map(|r| r.styles.cx()).unwrap_or(cx);
+                let typed = self.doc.resolver.as_ref().map(|r| r.typed());
+                let Some(style) = typed.as_ref().and_then(|t| t.style_xml(id)).map(std::borrow::Cow::into_owned) else { return out };
+                let scx = typed.as_ref().map(|t| t.styles.cx()).unwrap_or(cx);
                 let sw = scx.w.clone();
                 let raw = super::styles::edit_child(&style, "pPr", &scx, |p| {
                     p.set("numPr", format!("<{sw}numPr><{sw}numId {sw}val=\"{num_id}\"/></{sw}numPr>"))

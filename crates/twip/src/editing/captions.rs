@@ -249,7 +249,7 @@ impl Editor {
         let Some(item) = item.or_else(|| self.caption_item()) else { return Outcome::unavailable("nothing to caption") };
         let position = c.position.unwrap_or(if matches!(item, Item::Table(_)) { CaptionPosition::Above } else { CaptionPosition::Below });
         self.begin_batch(Some("Insert Caption".into()));
-        if !self.doc.resolver.as_ref().is_some_and(|r| r.styles.by_id.contains_key("Caption"))
+        if !self.doc.resolver.as_ref().is_some_and(|r| r.has_style("Caption"))
             && let Some(b) = crate::services::styles::builtin::built_in("Caption")
         {
             self.add_built_in(b, fonts);

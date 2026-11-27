@@ -122,8 +122,8 @@ impl Found {
 /// level text's literal text before the first and after the last number.
 fn chapter_of(r: &crate::docx::resolvers::Resolvers, p: &Paragraph) -> Option<(i64, String)> {
     let (label, ListRef { list: ListId(num), level: ilvl }, id) = (p.list.as_ref()?, p.style.num?, p.style.style_id.as_deref()?);
-    let level = r.styles.by_id.get(id)?.name.to_lowercase().strip_prefix("heading ")?.parse().ok()?;
     let c = r.cascade();
+    let level = c.styles.get(id)?.name.as_deref()?.to_lowercase().strip_prefix("heading ")?.parse().ok()?;
     if c.chain_para(Some(id)).list.map(|l| match l {
         crate::format::ListChoice::None => 0,
         crate::format::ListChoice::In(id) => id.0,

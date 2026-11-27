@@ -163,6 +163,11 @@ fn literal_name<'a, T: Copy + PartialEq>(l: &'a Literal<T>, table: &[(&'static s
     }
 }
 
+/// A definition's `w:multiLevelType` as written.
+pub fn multi_level_name(m: Option<&Literal<MultiLevelType>>) -> Option<&str> {
+    m.map(|m| literal_name(m, &MULTI))
+}
+
 /// The name a level's number format is written as; `decimal`, the reader's, when it sets none.
 pub fn format_name(f: Option<&Literal<NumberFormat>>) -> &str {
     f.map_or("decimal", |f| literal_name(f, &FORMATS))

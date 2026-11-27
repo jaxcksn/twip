@@ -179,6 +179,11 @@ fn foreign_of(f: ForeignProps) -> Option<Rc<ForeignProps>> {
 
 // Parse
 
+/// Whether `n` is its parent's only child (but for whitespace): an element alone.
+pub fn alone(n: Node) -> bool {
+    n.parent().is_some_and(|x| x.children().all(|c| c == n || c.is_text() && c.text().is_some_and(|t| t.trim().is_empty())))
+}
+
 /// A `w:style` as a typed style; `None` without a `w:styleId`, which the reader skips.
 pub fn parse(el: Node) -> Option<Style> {
     attr(el, "styleId")?;
@@ -1565,6 +1570,14 @@ impl StylesPart {
         self.put(def);
         self.refinish(colours, Some(&[&id]));
         Ok(())
+    }
+
+    /// The style `raw` (one `w:style` alone) holds, as [`Self::set`] would take it: `None` when it isn't one, or
+    /// would be based on itself.
+    pub fn style_from_xml(&self, raw: &str) -> Option<Style> {
+        let cx = self.cx();
+        let s = cx.parse(raw, |_, el| (alone(el) && is_w(el, "style")).then(|| parse(el)).flatten()).flatten()?;
+        (!self.loops(&s)).then_some(s)
     }
 
     /// Whether `s` would be based on itself: its bases through the sheet's styles (Word's built-in default table

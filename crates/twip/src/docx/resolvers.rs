@@ -14,7 +14,7 @@ use super::font_table::{FontRename, rename_char};
 use super::list_xml::{ListDefDirect, ListDirect, NumberingXml, PictureDirect};
 use super::numbering::{AbstractNum, Num, Numbering};
 use super::resolve::Resolver;
-use super::style_xml::{DefaultsDef, LatentDef, StyleDef, StylesPart};
+use super::style_xml::{DefaultsDef, LatentDef, StyleDef, StylesPart, alone};
 use super::styles::{self, StyleOrigin, Styles};
 use super::write::props::Cx;
 use crate::document::paragraph::ListId;
@@ -43,7 +43,12 @@ pub struct TypedDefs {
 }
 
 fn rules(f: &Resolver) -> Rules {
-    Rules { word2002_rules: f.styles.word2002_rules, cell_size_rules: f.styles.cell_size_rules, open_type: f.styles.open_type }
+    Rules {
+        compat: f.styles.compat,
+        word2002_rules: f.styles.word2002_rules,
+        cell_size_rules: f.styles.cell_size_rules,
+        open_type: f.styles.open_type,
+    }
 }
 
 fn origin(o: StyleOrigin) -> Origin {
@@ -102,6 +107,30 @@ fn glossary_list(id: i64, n: &Num, cx: &Cx) -> Option<crate::format::List> {
 }
 
 impl TypedDefs {
+    /// The `w:style` of style `id` as it is written: a glossary style's as the glossary holds it.
+    pub fn style_xml(&self, id: &str) -> Option<std::borrow::Cow<'_, str>> {
+        match self.styles.styles.get(id) {
+            Some(d) => Some(d.xml(&self.cascade.colours, &self.styles.cx())),
+            None => self.glossary.styles.get(id).map(|x| std::borrow::Cow::Borrowed(x.as_str())),
+        }
+    }
+
+    /// The `w:abstractNum` of list definition `id` as it is written: a glossary one's as the glossary holds it.
+    pub fn def_xml(&self, id: i64) -> Option<std::borrow::Cow<'_, str>> {
+        match self.numbering.defs.get(&ListDefId(id)) {
+            Some(d) => Some(d.xml(&self.cascade.colours, &self.numbering.cx())),
+            None => self.glossary.defs.get(&id).map(|x| std::borrow::Cow::Borrowed(x.as_str())),
+        }
+    }
+
+    /// The `w:num` of list `id` as it is written, as [`Self::def_xml`].
+    pub fn list_xml(&self, id: i64) -> Option<std::borrow::Cow<'_, str>> {
+        match self.numbering.lists.get(&ListId(id)) {
+            Some(d) => Some(d.xml(&self.cascade.colours, &self.numbering.cx())),
+            None => self.glossary.lists.get(&id).map(|x| std::borrow::Cow::Borrowed(x.as_str())),
+        }
+    }
+
     /// The typed definitions of the styles part `styles` and numbering part `numbering` (and the glossary's), read
     /// beside `f`, the XML path's resolver of the same parts: the glossary's merged as the reader merges them.
     pub fn read(styles: Option<&str>, numbering: Option<&str>, glossary: Option<(Option<&str>, Option<&str>)>, f: &Resolver) -> TypedDefs {
@@ -456,6 +485,16 @@ impl Resolvers {
         n
     }
 
+    /// Whether the document defines style `id`.
+    pub fn has_style(&self, id: &str) -> bool {
+        self.cascade().styles.styles.contains_key(id)
+    }
+
+    /// The kind of style `id`, when the document defines it.
+    pub fn style_kind(&self, id: &str) -> Option<crate::format::StyleKind> {
+        self.cascade().styles.get(id).map(|s| s.kind)
+    }
+
     /// The XML path's resolver.
     pub fn frozen(&self) -> &Resolver {
         &self.frozen
@@ -483,11 +522,6 @@ impl From<Resolver> for Resolvers {
 }
 
 // Edits: the typed definitions first, the XML path's derived from them
-
-/// Whether `n` is its parent's only child (but for whitespace): an element alone.
-fn alone(n: roxmltree::Node) -> bool {
-    n.parent().is_some_and(|x| x.children().all(|c| c == n || c.is_text() && c.text().is_some_and(|t| t.trim().is_empty())))
-}
 
 impl Resolvers {
     /// The typed definitions as an edit leaves them, `edit` given a copy of them (in step) to change; the XML path's
@@ -653,6 +687,31 @@ impl Resolvers {
             });
         }
         self.frozen.numbering.pic_bullets.insert(id, super::numbering::PicBullet { raw, rel: Some(rel), image: Some(image) });
+        self.edited();
+    }
+
+    /// Gives picture bullets their images as read: each id with its image's index in the document's images.
+    pub fn set_picture_images(&mut self, images: &[(i64, usize)]) {
+        if images.is_empty() {
+            return;
+        }
+        let cx = self.frozen.numbering.cx();
+        self.edit_typed(|_, numbering, lists| {
+            for &(id, image) in images {
+                let Some(d) = numbering.pictures.get(&id) else { continue };
+                let mut v = (**d.get()).clone();
+                v.image = Some(image);
+                let xml = d.origin_xml().cloned().unwrap_or_else(|| d.xml(&Default::default(), &cx).into());
+                let d = PictureDirect::read(v, xml);
+                lists.pictures.insert(id, d.get().clone());
+                numbering.pictures.insert(id, d);
+            }
+        });
+        for &(id, image) in images {
+            if let Some(p) = self.frozen.numbering.pic_bullets.get_mut(&id) {
+                p.image = Some(image);
+            }
+        }
         self.edited();
     }
 

@@ -192,15 +192,18 @@ impl Editor {
         }
         let Some(p) = self.index.para(&self.doc, para) else { return Outcome::unavailable("no such paragraph") };
         let base = self.label_base(para, p, &res, &self.cx());
-        let ncx = res.numbering.cx();
+        let typed = res.typed();
+        let c = &*typed.cascade;
+        let ncx = typed.numbering.cx();
         let level = level.clamp(0, 8);
-        let Some(m) = res.numbering.nums.get(&list) else { return Outcome::unavailable("no such list") };
-        let own = m.level_overrides.contains_key(&level);
-        let Some(abstract_id) = res.numbering.abstract_of(list, &res.styles) else { return Outcome::unavailable("no such list") };
-        let abstract_raw = res.numbering.abstracts.get(&abstract_id).map(|a| a.raw.clone()).unwrap_or_default();
-        let raw = if own { m.raw.clone() } else { abstract_raw.clone() };
+        let (Some(m), Some(num_raw)) = (c.lists.lists.get(&ListId(list)), typed.list_xml(list)) else { return Outcome::unavailable("no such list") };
+        let num_raw = num_raw.into_owned();
+        let own = m.override_of(level).is_some_and(|o| o.def.is_some());
+        let Some(abstract_id) = c.abstract_of(ListId(list)) else { return Outcome::unavailable("no such list") };
+        let abstract_raw = typed.def_xml(abstract_id.0).map(std::borrow::Cow::into_owned).unwrap_or_default();
+        let raw = if own { num_raw.clone() } else { abstract_raw.clone() };
         // A level other lists share stays theirs: this list's formatting goes in an override of its own.
-        let write_own = own || res.numbering.nums.keys().any(|&n| n != list && res.numbering.abstract_of(n, &res.styles) == Some(abstract_id));
+        let write_own = own || c.lists.lists.keys().any(|&n| n != ListId(list) && c.abstract_of(n) == Some(abstract_id));
         let Some(lvl) = level_in(&raw, level, own, &ncx) else { return Outcome::unavailable("the list doesn't define that level") };
         let mut lp = Props::parse(Some(&lvl), "lvl", &ncx);
         let rpr = lp.get("rPr").map(str::to_string);
@@ -220,7 +223,7 @@ impl Editor {
             None => lp.remove("rPr"),
         }
         let Some(lvl) = lp.xml() else { return Outcome::Unchanged("no level") };
-        let replaced = with_level(if write_own { &m.raw } else { &raw }, level, write_own, &lvl, &ncx);
+        let replaced = with_level(if write_own { &num_raw } else { &raw }, level, write_own, &lvl, &ncx);
         self.edit_numbering(
             "Font",
             |n, _, colours| {
@@ -240,7 +243,7 @@ impl Editor {
     ) -> Outcome {
         let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
         let Some(t) = self.label_target.as_deref_mut() else { return Outcome::Unchanged("no list number") };
-        let (colours, cx) = (res.styles.colours, t.cx.clone());
+        let (colours, cx) = (res.cascade().colours, t.cx.clone());
         let run = t.run(&res, t.rpr.as_deref());
         let edited = edit_rpr_xml(t.rpr.as_deref(), &colours, &cx, |e| {
             edit(e, &run);

@@ -50,7 +50,7 @@ impl RichText {
     }
 
     pub fn to_blocks(&self, res: &Resolvers) -> Vec<Block> {
-        let props = ParaProps { style: res.styles.by_id.contains_key("CommentText").then(|| "CommentText".into()), ..ParaProps::default() };
+        let props = ParaProps { style: res.has_style("CommentText").then(|| "CommentText".into()), ..ParaProps::default() };
         let para = crate::docx::para_xml::with(res, ParaDirect::typed(Rc::new(props)), None, None);
         let style = Rc::new(para.style);
         let base = para.base.clone();
@@ -73,7 +73,7 @@ impl RichText {
                     }
                     // A link to follow; any other address shows as text.
                     let link = r.link.as_deref().and_then(crate::editing::html::web_address);
-                    if link.is_some() && res.styles.by_id.contains_key("Hyperlink") {
+                    if link.is_some() && res.has_style("Hyperlink") {
                         q.style = Some("Hyperlink".into());
                     }
                     let direct = RunDirect::typed((q != CharProps::default()).then(|| Rc::new(q)));

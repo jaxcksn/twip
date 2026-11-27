@@ -260,8 +260,8 @@ impl Again {
 fn table_again(t: &Table, res: &Resolvers) -> Option<(TableProps, Option<Vec<Row>>)> {
     use crate::docx::props::Borders;
     use crate::docx::table_props::{cell_on, row_on, table_on, tbl_props};
-    let colours = &res.styles.colours;
     let c = res.cascade();
+    let colours = &c.colours;
     let style_id = c.table_style(t.direct.get().style.as_deref()).map(str::to_string);
     let style_region = c.table_region(style_id.as_deref(), &[]);
     let tbl = table_on(&style_region.format.table, t.direct.get(), colours);
@@ -273,7 +273,7 @@ fn table_again(t: &Table, res: &Resolvers) -> Option<(TableProps, Option<Vec<Row
     props.bands = (tbl.row_band.unwrap_or(0), tbl.col_band.unwrap_or(0));
     props.fixed = tbl.fixed.unwrap_or(false);
     props.cell_spacing = tbl.cell_spacing.unwrap_or(0.0);
-    let generic = res.styles.compat == Compat::Generic;
+    let generic = c.rules.compat == Compat::Generic;
     // Joined tables' rows carry the shading of their own table: their first row's alignment came from that table.
     let joined = t.rows.iter().any(|r| r.table_shading.is_some());
     if !joined {
@@ -357,7 +357,7 @@ pub(super) fn ruby_again(r: &Ruby, base: &CharProps, edit: Option<(&RubyEdit, bo
                     && let Some((_, old)) = old.get(parts[k].len()).or(old.last())
                     && let Some(d) = edit(&direct, old)
                 {
-                    let now = d.xml(&res.styles.colours, cx);
+                    let now = d.xml(&res.cascade().colours, cx);
                     if now.as_deref() != xml {
                         let at = match rpr {
                             Some(n) => n.range().start - off..n.range().end - off,
@@ -482,7 +482,8 @@ impl Editor {
         let res = self.doc.resolver.clone()?;
         let p = self.index.para(&self.doc, para)?;
         let id = p.style.style_id.as_deref()?;
-        let next = res.styles.by_id.get(id)?.next.clone().filter(|n| n != id && res.styles.by_id.contains_key(n))?;
+        let c = res.cascade();
+        let next = c.styles.get(id)?.next.as_deref().filter(|n| *n != id && c.styles.styles.contains_key(*n))?.to_string();
         let cx = self.cx();
         let mut e = ParaEdit::new((**p.style.direct.get()).clone());
         e.style = Some(next.as_str().into());
@@ -494,12 +495,12 @@ impl Editor {
 
     /// Authored paragraph properties `d` as the `w:pPr` written in the part `cx` describes.
     pub(super) fn ppr<'d>(&self, d: &'d ParaDirect, cx: &Cx) -> Option<std::borrow::Cow<'d, str>> {
-        para_xml::ppr(self.doc.resolver.as_deref().map(|r| r.frozen()), d, cx)
+        para_xml::ppr(self.doc.resolver.as_deref(), d, cx)
     }
 
     /// The theme colours a theme colour's value is written as.
     pub(super) fn colours(&self) -> crate::docx::props::ThemeColours {
-        self.doc.resolver.as_ref().map_or_else(Default::default, |r| r.styles.colours)
+        self.doc.resolver.as_ref().map_or_else(Default::default, |r| r.cascade().colours)
     }
 
     pub(super) fn cx(&self) -> Cx {
@@ -512,7 +513,7 @@ impl Editor {
     pub(super) fn formatted_part_cx(&self) -> Cx {
         match (&self.label_target, &self.style_target, &self.doc.resolver) {
             (Some(t), _, _) => t.cx.clone(),
-            (None, Some(_), Some(r)) => r.styles.cx(),
+            (None, Some(_), Some(r)) => r.typed().styles.cx(),
             _ => self.cx(),
         }
     }
@@ -541,7 +542,8 @@ impl Editor {
             let style = crate::docx::para_xml::again(res, &p.style, last.style, region.as_ref(), cx);
             return Some(Again { style, bases: vec![(0, last.base)] });
         }
-        let (legacy, generic) = (res.styles.compat == Compat::Legacy, res.styles.compat == Compat::Generic);
+        let compat = res.cascade().rules.compat;
+        let (legacy, generic) = (compat == Compat::Legacy, compat == Compat::Generic);
         let len = super::step::para_len(p).0;
         let mut bases = Vec::with_capacity(parts.len() + 1);
         let (mut joined, mut spec): (Option<Rc<ParaStyle>>, Option<Rc<ParaStyle>>) = (None, None);
@@ -989,7 +991,7 @@ impl Editor {
             }
             Format::ParaStyle(id) => {
                 let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
-                if !res.styles.by_id.get(id).is_some_and(|s| s.kind == crate::docx::styles::StyleKind::Paragraph) {
+                if !res.cascade().styles.get(id).is_some_and(|s| s.kind == crate::format::StyleKind::Paragraph) {
                     return Outcome::Unchanged("no such paragraph style");
                 }
                 let id: Rc<str> = id.as_str().into();

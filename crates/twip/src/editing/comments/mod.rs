@@ -525,7 +525,7 @@ impl Editor {
     }
 
     fn reference_run(&self, para: ParaId, at: Unit, res: &Resolvers, cx: &Cx) -> Option<Run> {
-        if res.styles.by_id.contains_key("CommentReference") {
+        if res.has_style("CommentReference") {
             let base = self.run_base(para, at, res, cx)?;
             let p = crate::format::CharProps { style: Some("CommentReference".into()), ..Default::default() };
             let direct = crate::docx::char_props::RunDirect::typed(Some(Rc::new(p)));

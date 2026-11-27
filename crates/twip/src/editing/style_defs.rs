@@ -11,10 +11,13 @@ pub use crate::api::styles::{
     TablePartFormatting, TableStyleDefinition,
 };
 use crate::api::value::{Color, HorizontalAlignment, Points, StyleId};
+use crate::docx::char_props::to_run_props;
+use crate::docx::para_props::to_para_props;
 use crate::docx::props::{ParaProps, RunProps, toggle};
-use crate::docx::styles::{Style, StyleKind, Styles};
 use crate::docx::write::props::{Cx, Props, STYLE, TBLPR, TC_BORDERS, TCPR, TRPR, esc};
 use crate::font::Fonts;
+use crate::format::{Style, StyleKind, StyleSheet};
+use crate::services::styles::typed_kind;
 use crate::services::styles::{NameRefusal, builtin, check_name, describe};
 
 use super::Editor;
@@ -187,10 +190,10 @@ fn set_child(raw: &str, cx: &Cx, name: &str, xml: Option<String>) -> String {
 }
 
 /// A style id from a name: its ASCII letters and digits, numbered past the ids taken.
-pub(super) fn id_for(name: &str, styles: &Styles) -> String {
+pub(super) fn id_for(name: &str, styles: &StyleSheet) -> String {
     let base: String = name.chars().filter(char::is_ascii_alphanumeric).collect();
     let base = if base.is_empty() { "Style".to_string() } else { base };
-    let free = |id: &String| !styles.by_id.contains_key(id) && builtin::BUILT_IN.iter().all(|b| b.id != id);
+    let free = |id: &String| !styles.styles.contains_key(id.as_str()) && builtin::BUILT_IN.iter().all(|b| b.id != id);
     (0..).map(|n| if n == 0 { base.clone() } else { format!("{base}{n}") }).find(free).unwrap_or(base)
 }
 
@@ -347,12 +350,9 @@ impl Editor {
             para.style.tabs.iter().filter(|t| t.kind != crate::docx::props::TabKind::Clear).map(|t| super::commands::tabs::info(t, false)).collect();
         // Its list, its own or a base style's: bulleted or numbered
         let res = self.doc.resolver.as_ref()?;
-        let list = para
-            .style
-            .num
-            .filter(|ListRef { list: ListId(n), level: _ }| *n != 0)
-            .and_then(|ListRef { list: ListId(n), level: l }| res.numbering.level(n, l, &res.styles))
-            .map(|l| l.fmt == "bullet");
+        let list = para.style.num.filter(|ListRef { list: ListId(n), level: _ }| *n != 0).and_then(|ListRef { list, level }| {
+            res.cascade().level(list, level).map(|l| crate::docx::list_xml::format_name(l.format.as_ref()) == "bullet")
+        });
         let mut paragraph = super::state::paragraph(&[(&para.style, list)]);
         paragraph.tabs = Tri::Uniform(tabs.clone());
         Some((super::state::character(&[&run]), paragraph, tabs))
@@ -372,24 +372,26 @@ impl Editor {
         self.refuse_like(&Command::UpdateStyleToSelection(StyleId::default()))
     }
 
-    /// The document's style `id`, or the built-in style it names when the document doesn't define it (`false`).
-    fn style_or_built_in(&self, id: &str) -> Option<(Style, bool)> {
-        let styles = &self.doc.resolver.as_ref()?.styles;
-        if let Some(s) = styles.get(id) {
-            return Some((s.clone(), true));
+    /// The document's style `id` and its XML, or the built-in style it names when the document doesn't define it
+    /// (`false`).
+    fn style_or_built_in(&self, id: &str) -> Option<(Rc<Style>, String, bool)> {
+        let typed = self.doc.resolver.as_ref()?.typed();
+        if let (Some(s), Some(x)) = (typed.cascade.styles.get(id), typed.style_xml(id)) {
+            return Some((s.clone(), x.into_owned(), true));
         }
         let b = builtin::BUILT_IN.iter().find(|b| b.id == id)?;
-        Some((styles.style_from_xml(&builtin::definition(b, &styles.cx().w))?, false))
+        let raw = builtin::definition(b, &typed.styles.cx().w);
+        Some((Rc::new(typed.styles.style_from_xml(&raw)?), raw, false))
     }
 
     /// A style of kind `kind` a change may refer to: the document's, or a built-in one it adds (`Some(xml)`).
     fn referable(&self, id: &StyleId, kind: StyleKind, what: &str) -> Result<Option<String>, Error> {
-        let styles = &self.doc.resolver.as_ref().ok_or_else(|| Error::unavailable("no styles"))?.styles;
-        match styles.get(&id.0) {
+        let typed = self.doc.resolver.as_ref().ok_or_else(|| Error::unavailable("no styles"))?.typed();
+        match typed.cascade.styles.get(&id.0) {
             Some(s) if s.kind == kind => Ok(None),
             Some(_) => Err(Error::invalid(format!("the {what} is a style of another type"))),
-            None => match builtin::BUILT_IN.iter().find(|b| b.id == id.0 && b.kind == kind) {
-                Some(b) => Ok(Some(builtin::definition(b, &styles.cx().w))),
+            None => match builtin::BUILT_IN.iter().find(|b| b.id == id.0 && typed_kind(b.kind) == kind) {
+                Some(b) => Ok(Some(builtin::definition(b, &typed.styles.cx().w))),
                 None => Err(Error::invalid(format!("the {what} doesn't exist"))),
             },
         }
@@ -405,7 +407,7 @@ impl Editor {
         commands: &[Command],
         fonts: &Fonts,
     ) -> Result<String, Error> {
-        let cx = self.doc.resolver.as_ref().ok_or_else(|| Error::unavailable("no styles"))?.styles.cx();
+        let cx = self.doc.resolver.as_ref().ok_or_else(|| Error::unavailable("no styles"))?.typed().styles.cx();
         for c in commands {
             super::commands::bounds::bounds(c)?;
             let table = table_command(c)
@@ -445,9 +447,10 @@ impl Editor {
     /// A style's XML with `change` written into it: `raw` is the style as it is (or as made), `kind` its kind.
     /// Also answers the other styles to write with it.
     fn changed_style(&mut self, raw: String, kind: StyleKind, change: &StyleChange, fonts: &Fonts) -> Result<(String, Written), Error> {
-        let res = self.doc.resolver.clone().ok_or_else(|| Error::unavailable("no styles"))?;
-        let styles = &res.styles;
-        let cx = styles.cx();
+        let typed = self.doc.resolver.as_ref().ok_or_else(|| Error::unavailable("no styles"))?.typed();
+        let (part, styles) = (&*typed.styles, &*typed.cascade.styles);
+        let xml = |id: &str| typed.style_xml(id).map(std::borrow::Cow::into_owned).unwrap_or_default();
+        let cx = part.cx();
         let w = cx.w.clone();
         let mut also: Written = Vec::new();
         let para = kind == StyleKind::Paragraph;
@@ -496,7 +499,7 @@ impl Editor {
                 });
             }
         }
-        let id = styles.style_from_xml(&raw).map(|s| s.id).ok_or_else(|| Error::invalid("not a style"))?;
+        let id = part.style_from_xml(&raw).map(|s| s.id.to_string()).ok_or_else(|| Error::invalid("not a style"))?;
         let val = |name: &str, v: &str| format!("<{w}{name} {w}val=\"{}\"/>", esc(v));
         if let Some(b) = &change.based_on {
             if let Some(b) = b {
@@ -521,7 +524,7 @@ impl Editor {
         }
         if let Some(l) = &change.list {
             if let Some(l) = l {
-                if !res.numbering.nums.contains_key(&l.list) || l.list == 0 {
+                if !typed.cascade.lists.lists.contains_key(&ListId(l.list)) || l.list == 0 {
                     return Err(Error::invalid("no such list"));
                 }
                 if l.level > 8 {
@@ -539,20 +542,22 @@ impl Editor {
         }
         if let Some(name) = &change.name {
             let first = name.trim();
-            let cur = styles.style_from_xml(&raw).ok_or_else(|| Error::invalid("not a style"))?;
+            let cur = part.style_from_xml(&raw).ok_or_else(|| Error::invalid("not a style"))?;
             if !describe::display_name(&cur).eq_ignore_ascii_case(first) {
                 check_name(styles, first, Some(&id)).map_err(name_error)?;
                 // A built-in style keeps its name: the new one is an alias.
-                let names: Vec<String> = if cur.custom {
-                    std::iter::once(first.to_string()).chain(cur.aliases.iter().cloned()).collect()
+                let aliases = cur.aliases.iter().map(|a| a.to_string());
+                let names: Vec<String> = if cur.custom.unwrap_or(false) {
+                    std::iter::once(first.to_string()).chain(aliases).collect()
                 } else {
-                    [cur.name.clone(), first.to_string()].into_iter().chain(cur.aliases.iter().cloned()).collect()
+                    [cur.name.as_deref().unwrap_or_default().to_string(), first.to_string()].into_iter().chain(aliases).collect()
                 };
                 raw = set_child(&raw, &cx, "name", Some(val("name", &names.join(","))));
             }
         }
         // Links: this style and its new partner name each other; their old partners name neither.
-        let was_link = styles.get(&id).and_then(|s| s.link.clone());
+        let link_of = |id: &str| styles.get(id).and_then(|s| s.link.as_deref().map(str::to_string));
+        let was_link = link_of(&id);
         let mut link = was_link.clone();
         if let Some(l) = &change.link {
             let other = match kind {
@@ -571,33 +576,33 @@ impl Editor {
             raw = set_child(&raw, &cx, "link", link.as_ref().map(|l| val("link", l)));
             let unlink = |raw: &str| set_child(raw, &cx, "link", None);
             if let Some(old) = was_link.as_ref().filter(|o| Some(*o) != link.as_ref())
-                && let Some(s) = styles.get(old).filter(|s| s.link.as_deref() == Some(&id))
+                && styles.get(old).is_some_and(|s| s.link.as_deref() == Some(&*id))
             {
-                also.push(unlink(&s.raw));
+                also.push(unlink(&xml(old)));
             }
             if let Some(new) = &link
                 && let Some(s) = styles.get(new)
-                && s.link.as_deref() != Some(&id)
+                && s.link.as_deref() != Some(&*id)
             {
-                if let Some(partner) = s.link.as_deref().filter(|p| *p != id)
-                    && let Some(p) = styles.get(partner).filter(|p| p.link.as_deref() == Some(new.as_str()))
+                if let Some(partner) = s.link.as_deref().filter(|p| **p != *id)
+                    && styles.get(partner).is_some_and(|p| p.link.as_deref() == Some(new.as_str()))
                 {
-                    also.push(unlink(&p.raw));
+                    also.push(unlink(&xml(partner)));
                 }
-                also.push(set_child(&s.raw, &cx, "link", Some(val("link", &id))));
+                also.push(set_child(&xml(new), &cx, "link", Some(val("link", &id))));
             }
         }
         // A linked style's other half takes its character formatting.
         let rpr = |x: &str| Props::parse(Some(x), "style", &cx).get("rPr").map(str::to_string);
-        let before = styles.get(&id).map(|s| rpr(&s.raw)).unwrap_or_default();
+        let before = typed.style_xml(&id).map(|x| rpr(&x)).unwrap_or_default();
         if let Some(l) = &link
             && rpr(&raw) != before
             && matches!(kind, StyleKind::Paragraph | StyleKind::Character)
         {
-            let half = also.iter().position(|x| styles.style_from_xml(x).is_some_and(|s| s.id == *l));
+            let half = also.iter().position(|x| part.style_from_xml(x).is_some_and(|s| *s.id == **l));
             let base = match half {
                 Some(i) => Some(also.remove(i)),
-                None => styles.get(l).filter(|s| s.link.as_deref() == Some(&id)).map(|s| s.raw.clone()),
+                None => styles.get(l).filter(|s| s.link.as_deref() == Some(&*id)).map(|_| xml(l)),
             };
             if let Some(base) = base {
                 also.push(set_child(&base, &cx, "rPr", rpr(&raw)));
@@ -608,12 +613,13 @@ impl Editor {
 
     /// Writes a style and the styles with it as one undo step, then a list style's levels in the same step.
     fn write_style(&mut self, label: &'static str, raw: String, also: Written, kind: StyleKind, change: &StyleChange, fonts: &Fonts) -> Outcome {
-        let id = self.doc.resolver.as_ref().and_then(|r| r.styles.style_from_xml(&raw)).map(|s| s.id).unwrap_or_default();
+        let typed = self.doc.resolver.as_ref().map(|r| r.typed());
+        let id = typed.as_ref().and_then(|t| t.styles.style_from_xml(&raw)).map(|s| s.id.to_string()).unwrap_or_default();
         let relabel = change.list.is_some();
         let levels = change.list_levels.clone();
         // Styles it adds go first (a built-in base is there when it is read), then it, then those it changes.
         let (fresh, rest): (Vec<String>, Vec<String>) = also.into_iter().partition(|x| {
-            self.doc.resolver.as_ref().is_some_and(|r| r.styles.style_from_xml(x).is_some_and(|st| !r.styles.by_id.contains_key(&st.id)))
+            typed.as_ref().is_some_and(|t| t.styles.style_from_xml(x).is_some_and(|st| !t.cascade.styles.styles.contains_key(&st.id)))
         });
         self.joined(label, fonts, |e| {
             let out = e.edit_styles_relabel(
@@ -649,16 +655,15 @@ impl Editor {
     /// Changes style `id` (a built-in one the document doesn't define joins it): its name, base, following style,
     /// link, flags, list, and formatting, as one undo step. Every paragraph, run and table in it lays out again.
     pub fn modify_style(&mut self, id: &StyleId, change: StyleChange, fonts: &Fonts) -> Outcome {
-        let Some((style, defined)) = self.style_or_built_in(&id.0) else { return Outcome::Refused(Error::unavailable("no such style")) };
-        let raw = style.raw.clone();
+        let Some((style, was, defined)) = self.style_or_built_in(&id.0) else { return Outcome::Refused(Error::unavailable("no such style")) };
         if let Some(o) = self.refuse_style_edit() {
             return o;
         }
-        let (raw, also) = match self.changed_style(raw.clone(), style.kind, &change, fonts) {
+        let (raw, also) = match self.changed_style(was.clone(), style.kind, &change, fonts) {
             Ok(x) => x,
             Err(e) => return Outcome::Refused(e),
         };
-        if defined && raw == style.raw && also.is_empty() && change.list_levels.is_none() {
+        if defined && raw == was && also.is_empty() && change.list_levels.is_none() {
             return Outcome::Unchanged("the style already is so");
         }
         self.write_style("Modify Style", raw, also, style.kind, &change, fonts)
@@ -670,8 +675,9 @@ impl Editor {
             return (o, None);
         }
         let Some(res) = self.doc.resolver.clone() else { return (Outcome::Unchanged("no styles"), None) };
-        let styles = &res.styles;
-        let cx = styles.cx();
+        let typed = res.typed();
+        let (part, styles) = (&*typed.styles, &*typed.cascade.styles);
+        let cx = part.cx();
         let w = cx.w.clone();
         let name = match &new.change.name {
             Some(n) => n.trim().to_string(),
@@ -691,12 +697,14 @@ impl Editor {
         // Based on the selection's paragraph style (a paragraph style), or the default one of its type.
         let para = self.selection.focus().and_then(|p| p.para_offset()).and_then(|(p, _)| self.index.para(&self.doc, p));
         let base = match kind {
-            StyleKind::Paragraph if new.from_selection => para.and_then(|p| p.style.style_id.clone()).or_else(|| styles.default_paragraph.clone()),
-            StyleKind::Paragraph => styles.default_paragraph.clone(),
+            StyleKind::Paragraph if new.from_selection => {
+                para.and_then(|p| p.style.style_id.clone()).or_else(|| styles.default_paragraph.as_deref().map(str::to_string))
+            }
+            StyleKind::Paragraph => styles.default_paragraph.as_deref().map(str::to_string),
             StyleKind::Character => {
                 Some("DefaultParagraphFont".to_string()).filter(|d| styles.get(d).is_some_and(|s| s.kind == StyleKind::Character))
             }
-            StyleKind::Table => styles.default_table.clone(),
+            StyleKind::Table => styles.default_table.as_deref().map(str::to_string),
             StyleKind::Numbering => None,
         };
         let (ppr, rpr) = if new.from_selection { self.selection_formatting() } else { (None, None) };
@@ -714,7 +722,7 @@ impl Editor {
             i = esc(&id),
             n = esc(&name)
         );
-        let mut raw = match styles.style_from_xml(&raw) {
+        let mut raw = match part.style_from_xml(&raw) {
             Some(_) => raw,
             None => return (Outcome::Refused(Error::invalid("not a style")), None),
         };
@@ -728,7 +736,7 @@ impl Editor {
         if new.category == StyleCategory::Linked && change.link.is_none() {
             let char_id = (0..)
                 .map(|n| if n == 0 { format!("{id}Char") } else { format!("{id}Char{n}") })
-                .find(|c| !styles.by_id.contains_key(c))
+                .find(|c| !styles.styles.contains_key(c.as_str()))
                 .unwrap_or_default();
             raw = set_child(&raw, &cx, "link", Some(format!("<{w}link {w}val=\"{}\"/>", esc(&char_id))));
             half = Some(char_id);
@@ -776,7 +784,7 @@ impl Editor {
                 _ => e.format(&super::format::Format::ParaStyle(id.clone()), fonts),
             }
         });
-        let made = self.doc.resolver.as_ref().is_some_and(|r| r.styles.by_id.contains_key(&id));
+        let made = self.doc.resolver.as_ref().is_some_and(|r| r.cascade().styles.styles.contains_key(id.as_str()));
         (out, made.then(|| StyleId(id.clone())))
     }
 
@@ -785,17 +793,22 @@ impl Editor {
     /// reads as it would be once used.
     pub fn style_definition(&self, id: &StyleId) -> Option<StyleDefinition> {
         let res = self.doc.resolver.as_ref()?;
-        let (style, defined) = self.style_or_built_in(&id.0)?;
-        let mut styles = res.styles.clone();
-        if !defined {
-            styles.set_xml(style.raw.clone()).ok()?;
-        }
-        let style = styles.get(&id.0)?.clone();
+        let (_, raw, defined) = self.style_or_built_in(&id.0)?;
+        let next = if defined {
+            res.clone()
+        } else {
+            let mut next = (**res).clone();
+            next.set_style_xml(raw.clone()).ok()?;
+            Rc::new(next)
+        };
+        let c = next.cascade();
+        let e = c.styles.styles.get(id.0.as_str())?;
+        let style = &*e.style;
+        let colours = &c.colours;
+        let format = c.format_of(e);
         let (character, paragraph, tabs) = match style.kind {
             StyleKind::Table => {
-                let mut next = (**res).clone();
-                next.styles = styles.clone();
-                let region = next.cascade().table_region(Some(&style.id), &[]);
+                let region = c.table_region(Some(&style.id), &[]);
                 let para = crate::docx::para_xml::resolve(&next, &Default::default(), None, Some(&region));
                 let run = Rc::new(run_xml::resolve(&next, &para.base, Default::default(), false));
                 let tabs = para
@@ -807,61 +820,62 @@ impl Editor {
                     .collect();
                 (super::state::character(&[&run]), super::state::paragraph(&[(&para.style, None)]), tabs)
             }
-            _ => self.style_formatting_state(&style.raw)?,
+            _ => self.style_formatting_state(&raw)?,
         };
-        let own_character = own_character(&style.base.rpr, &character);
-        let own_paragraph =
-            if style.kind == StyleKind::Character { ParagraphFormatting::default() } else { own_paragraph(&style.base.ppr, &paragraph) };
-        let list = style
-            .base
-            .ppr
+        let ppr = to_para_props(&format.para, colours);
+        let own_character = own_character(&to_run_props(&format.char, colours), &character);
+        let own_paragraph = if style.kind == StyleKind::Character { ParagraphFormatting::default() } else { own_paragraph(&ppr, &paragraph) };
+        let list = ppr
             .num_id
             .filter(|n| *n != 0 && style.kind == StyleKind::Paragraph)
-            .map(|list| StyleList { list, level: style.base.ppr.ilvl.unwrap_or(0).clamp(0, 8) as u8 });
+            .map(|list| StyleList { list, level: ppr.ilvl.unwrap_or(0).clamp(0, 8) as u8 });
         let list_levels = match style.kind {
-            StyleKind::Numbering => {
-                styles.chain_ppr(Some(&style.id)).num_id.filter(|n| *n != 0).and_then(|n| self.list_levels(n)).unwrap_or_default()
-            }
+            StyleKind::Numbering => match c.chain_para(Some(&style.id)).list {
+                Some(crate::format::ListChoice::In(ListId(n))) if n != 0 => self.list_levels(n).unwrap_or_default(),
+                _ => Vec::new(),
+            },
             _ => Vec::new(),
         };
-        let table = (style.kind == StyleKind::Table).then(|| self.table_style_definition(&styles, &style.id)).flatten();
+        let table = (style.kind == StyleKind::Table).then(|| self.table_style_definition(&next, &style.id)).flatten();
+        let on = |v: Option<bool>| v.unwrap_or(false);
+        let text = |v: &Option<Rc<str>>| v.as_deref().map(str::to_string);
         Some(StyleDefinition {
-            id: StyleId(style.id.clone()),
-            name: describe::display_name(&style),
-            aliases: style.aliases.clone(),
-            category: StyleCategory::of(&style),
-            built_in: !style.custom,
+            id: StyleId(style.id.to_string()),
+            name: describe::display_name(style),
+            aliases: style.aliases.iter().map(|a| a.to_string()).collect(),
+            category: StyleCategory::of(style),
+            built_in: !on(style.custom),
             defined,
-            based_on: style.based_on.clone().map(StyleId),
-            next: style.next.clone().filter(|n| *n != style.id).map(StyleId),
-            link: style.link.clone().filter(|l| styles.by_id.contains_key(l)).map(StyleId),
-            auto_update: style.meta.auto_redefine,
-            quick: style.quick,
-            visibility: match (style.meta.semi_hidden || style.meta.hidden, style.meta.unhide_when_used) {
+            based_on: c.based_on(e).map(|b| StyleId(b.to_string())),
+            next: text(&style.next).filter(|n| **n != *style.id).map(StyleId),
+            link: text(&style.link).filter(|l| c.styles.styles.contains_key(l.as_str())).map(StyleId),
+            auto_update: on(style.meta.auto_redefine),
+            quick: on(style.quick),
+            visibility: match (on(style.meta.semi_hidden) || on(style.meta.hidden), on(style.meta.unhide_when_used)) {
                 (true, true) => StyleVisibility::HideUntilUsed,
                 (true, false) => StyleVisibility::Hide,
                 (false, _) => StyleVisibility::Show,
             },
             priority: style.priority.unwrap_or(99),
-            locked: style.meta.locked,
+            locked: on(style.meta.locked),
             list,
             character,
             paragraph,
             tabs,
             own_character,
             own_paragraph,
-            description: describe::describe(&style, &styles),
+            description: describe::describe(e, &c),
             table,
             list_levels,
         })
     }
 
-    /// A table style's table formatting and its parts, read with `styles` (which holds it).
-    fn table_style_definition(&self, styles: &Styles, id: &str) -> Option<TableStyleDefinition> {
-        let res = self.doc.resolver.as_ref()?;
-        let mut next = (**res).clone();
-        next.styles = styles.clone();
-        let whole = next.styles.table_region(Some(id), &[]);
+    /// A table style's table formatting and its parts, read with `res` (which holds it).
+    fn table_style_definition(&self, res: &crate::docx::resolvers::Resolvers, id: &str) -> Option<TableStyleDefinition> {
+        use crate::docx::table_props::{tbl_props, tc_props, tr_props};
+        let c = res.cascade();
+        let colours = &c.colours;
+        let whole = tbl_props(&c.table_region(Some(id), &[]).format.table, colours);
         let line = |b: &Option<crate::docx::props::Border>| super::borders_dialog::line(b);
         let borders = |b: &crate::docx::props::Borders| TableBorders {
             top: line(&b.top),
@@ -883,37 +897,38 @@ impl Editor {
             .iter()
             .map(|&part| {
                 let region = part.region();
-                let r = next.styles.table_region(Some(id), &region.into_iter().collect::<Vec<_>>());
-                let typed = next.cascade().table_region(Some(id), &crate::docx::style_xml::region_kinds(region));
-                let para = crate::docx::para_xml::resolve(&next, &Default::default(), None, Some(&typed));
-                let run = Rc::new(run_xml::resolve(&next, &para.base, Default::default(), false));
-                let mut b = borders(&r.tc.borders);
+                let typed = c.table_region(Some(id), &crate::docx::style_xml::region_kinds(region));
+                let (tc, tr) = (tc_props(&typed.format.cell, colours), tr_props(&typed.format.row));
+                let para = crate::docx::para_xml::resolve(res, &Default::default(), None, Some(&typed));
+                let run = Rc::new(run_xml::resolve(res, &para.base, Default::default(), false));
+                let mut b = borders(&tc.borders);
                 if region.is_none() {
-                    b = TableBorders { diagonal_down: b.diagonal_down, diagonal_up: b.diagonal_up, ..borders(&whole.tbl.borders) };
+                    b = TableBorders { diagonal_down: b.diagonal_down, diagonal_up: b.diagonal_up, ..borders(&whole.borders) };
                 }
+                let defines = |g: &str| crate::docx::style_xml::region_kind(Some(g)).is_some_and(|k| c.table_defines(Some(id), k));
                 TablePartDefinition {
                     part,
-                    defined: region.is_none_or(|g| next.styles.table_defines(Some(id), g)),
+                    defined: region.is_none_or(defines),
                     character: super::state::character(&[&run]),
                     paragraph: super::state::paragraph(&[(&para.style, None)]),
-                    fill: r.tc.shading.flatten().map(Color),
-                    cell_alignment: super::table_format::api_cell_alignment(r.tc.v_align),
+                    fill: tc.shading.flatten().map(Color),
+                    cell_alignment: super::table_format::api_cell_alignment(tc.v_align),
                     borders: b,
-                    cell_margins: if region.is_none() { margins(&whole.tbl.margins) } else { margins(&r.tc.margins) },
-                    row_can_break: !r.tr.cant_split.unwrap_or(false),
+                    cell_margins: if region.is_none() { margins(&whole.margins) } else { margins(&tc.margins) },
+                    row_can_break: !tr.cant_split.unwrap_or(false),
                 }
             })
             .collect();
         Some(TableStyleDefinition {
-            alignment: match whole.tbl.jc {
+            alignment: match whole.jc {
                 Some(crate::docx::props::Jc::Center) => HorizontalAlignment::Center,
                 Some(crate::docx::props::Jc::Right) => HorizontalAlignment::Right,
                 _ => HorizontalAlignment::Left,
             },
-            indent: Points(whole.tbl.ind.map_or(0.0, crate::docx::props::Width::dxa)),
-            fill: whole.tbl.shd.as_ref().and_then(crate::docx::props::Shd::flat).map(Color),
-            row_band: whole.tbl.row_band.unwrap_or(1).clamp(1, u32::MAX as i64) as u32,
-            column_band: whole.tbl.col_band.unwrap_or(1).clamp(1, u32::MAX as i64) as u32,
+            indent: Points(whole.ind.map_or(0.0, crate::docx::props::Width::dxa)),
+            fill: whole.shd.as_ref().and_then(crate::docx::props::Shd::flat).map(Color),
+            row_band: whole.row_band.unwrap_or(1).clamp(1, u32::MAX as i64) as u32,
+            column_band: whole.col_band.unwrap_or(1).clamp(1, u32::MAX as i64) as u32,
             parts,
         })
     }
@@ -922,8 +937,10 @@ impl Editor {
     /// for those it defines, its latent styles' for the rest (Word's defaults when it has none).
     pub fn built_in_styles(&self) -> Vec<BuiltInStyle> {
         let Some(res) = self.doc.resolver.as_ref() else { return Vec::new() };
-        let styles = &res.styles;
-        let latent = &styles.latent;
+        let c = res.cascade();
+        let styles = &*c.styles;
+        let none = crate::format::LatentStyles::default();
+        let latent = styles.latent.as_deref().unwrap_or(&none);
         let category = |k: StyleKind| match k {
             StyleKind::Paragraph => StyleCategory::Paragraph,
             StyleKind::Character => StyleCategory::Character,
@@ -931,7 +948,7 @@ impl Editor {
             StyleKind::Numbering => StyleCategory::List,
         };
         // The exceptions by name, once: a document may list any number.
-        let exceptions: std::collections::HashMap<String, &crate::docx::styles::LatentStyle> =
+        let exceptions: std::collections::HashMap<String, &crate::format::LatentStyle> =
             latent.exceptions.iter().map(|e| (e.name.to_ascii_lowercase(), e)).collect();
         let visibility = |semi: bool, unhide: bool| match (semi, unhide) {
             (true, true) => StyleVisibility::HideUntilUsed,
@@ -942,15 +959,16 @@ impl Editor {
             .iter()
             .map(|b| {
                 if let Some(s) = styles.get(b.id) {
+                    let on = |v: Option<bool>| v.unwrap_or(false);
                     return BuiltInStyle {
                         id: StyleId(b.id.to_string()),
                         name: describe::display_name(s),
                         category: StyleCategory::of(s),
                         defined: true,
                         priority: s.priority.unwrap_or(99),
-                        visibility: visibility(s.meta.semi_hidden || s.meta.hidden, s.meta.unhide_when_used),
-                        quick: s.quick,
-                        locked: s.meta.locked,
+                        visibility: visibility(on(s.meta.semi_hidden) || on(s.meta.hidden), on(s.meta.unhide_when_used)),
+                        quick: on(s.quick),
+                        locked: on(s.meta.locked),
                     };
                 }
                 let name = if b.name.chars().any(char::is_uppercase) {
@@ -962,23 +980,24 @@ impl Editor {
                         .collect::<Vec<_>>()
                         .join(" ")
                 };
-                let (priority, semi, unhide, quick, locked) = match &latent.raw {
+                let (priority, semi, unhide, quick, locked) = match &styles.latent {
                     None => (b.priority, b.semi_hidden, b.unhide_when_used, b.quick, false),
                     Some(_) => {
                         let e = exceptions.get(&b.name.to_ascii_lowercase()).copied();
+                        let on = |v: Option<bool>| v.unwrap_or(false);
                         (
                             e.and_then(|e| e.priority).or(latent.priority).unwrap_or(99),
-                            e.and_then(|e| e.semi_hidden).unwrap_or(latent.semi_hidden),
-                            e.and_then(|e| e.unhide_when_used).unwrap_or(latent.unhide_when_used),
-                            e.and_then(|e| e.quick).unwrap_or(latent.quick),
-                            e.and_then(|e| e.locked).unwrap_or(latent.locked),
+                            e.and_then(|e| e.semi_hidden).unwrap_or(on(latent.semi_hidden)),
+                            e.and_then(|e| e.unhide_when_used).unwrap_or(on(latent.unhide_when_used)),
+                            e.and_then(|e| e.quick).unwrap_or(on(latent.quick)),
+                            e.and_then(|e| e.locked).unwrap_or(on(latent.locked)),
                         )
                     }
                 };
                 BuiltInStyle {
                     id: StyleId(b.id.to_string()),
                     name,
-                    category: category(b.kind),
+                    category: category(typed_kind(b.kind)),
                     defined: false,
                     priority,
                     visibility: visibility(semi, unhide),
@@ -994,9 +1013,11 @@ impl Editor {
     pub(super) fn set_latent_meta(&mut self, m: &crate::api::command::StyleMetaChange, fonts: &Fonts) -> Outcome {
         let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
         let Some(b) = builtin::BUILT_IN.iter().find(|b| b.id == m.id.0) else { return Outcome::Refused(Error::unavailable("no such style")) };
-        let cx = res.styles.cx();
+        let typed = res.typed();
+        let cx = typed.styles.cx();
         let w = cx.w.clone();
-        let raw = res.styles.latent.raw.clone().unwrap_or_else(|| {
+        let held = typed.styles.latent.as_ref().map(|d| d.xml(&typed.cascade.colours, &cx).into_owned());
+        let raw = held.clone().unwrap_or_else(|| {
             let exceptions: String = builtin::BUILT_IN
                 .iter()
                 .map(|b| {
@@ -1058,7 +1079,7 @@ impl Editor {
             None => el.add("lsdException", x),
         }
         let Some(now) = el.xml() else { return Outcome::Unchanged("no latent styles") };
-        if res.styles.latent.raw.as_deref() == Some(now.as_str()) {
+        if held.as_deref() == Some(now.as_str()) {
             return Outcome::Unchanged("already so");
         }
         self.edit_styles(

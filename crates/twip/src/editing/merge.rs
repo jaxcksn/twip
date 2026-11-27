@@ -3169,7 +3169,7 @@ impl Editor {
                 crate::api::value::NoneOr::None => None,
                 crate::api::value::NoneOr::Value(id) => {
                     let p = CharProps { style: Some(id.0.as_str().into()), ..Default::default() };
-                    let colours = self.doc.resolver.as_deref().map_or_else(Default::default, |r| r.styles.colours);
+                    let colours = self.doc.resolver.as_deref().map_or_else(Default::default, |r| r.cascade().colours);
                     Some(crate::docx::char_props::serialize(&p, &Default::default(), &colours, &self.cx()))
                 }
             };

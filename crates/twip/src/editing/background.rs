@@ -288,7 +288,7 @@ impl Editor {
                         return Err("a watermark's font name has no quotes, commas, semicolons, backslashes or outer spaces".into());
                     }
                     Some(f) => f,
-                    None => self.doc.resolver.as_ref().map_or_else(|| "Calibri".to_string(), |r| r.theme.minor.clone()),
+                    None => self.doc.resolver.as_ref().map_or_else(|| "Calibri".to_string(), |r| r.cascade().theme.minor.clone()),
                 };
                 if t.language.as_deref().is_some_and(|l| l.is_empty() || l.len() > 35 || !l.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')) {
                     return Err("a language is a tag such as en-US".into());

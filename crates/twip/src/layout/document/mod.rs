@@ -177,7 +177,8 @@ impl DocFacts {
         }
         let mut wanted = Vec::new();
         doc.stories.values().for_each(|b| codes(b, &mut wanted));
-        let styles = doc.resolver.as_deref().map(|r| &r.styles);
+        let cascade = doc.resolver.as_ref().map(|r| r.cascade());
+        let styles = cascade.as_deref().map(|c| &*c.styles);
         let wanted: Vec<_> = wanted.into_iter().map(|code| (code.clone(), crate::docx::fields::StyleQuery::new(&code, styles))).collect();
         let mut paras = HashMap::new();
         if !wanted.is_empty() {

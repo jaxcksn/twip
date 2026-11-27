@@ -1224,7 +1224,12 @@ fn typed_cascade(d: &Document) -> (Cascade, StylesPart, NumberingXml) {
     for (id, p) in lists.pictures.iter_mut() {
         Rc::make_mut(p).image = res.numbering.pic_bullets.get(id).and_then(|b| b.image);
     }
-    let rules = Rules { word2002_rules: res.styles.word2002_rules, cell_size_rules: res.styles.cell_size_rules, open_type: res.styles.open_type };
+    let rules = Rules {
+        compat: res.styles.compat,
+        word2002_rules: res.styles.word2002_rules,
+        cell_size_rules: res.styles.cell_size_rules,
+        open_type: res.styles.open_type,
+    };
     let mut c = Cascade::new(Rc::new(sheet), Rc::new(lists), res.theme.clone(), res.styles.colours, rules);
     (c.categories, c.divisions) = (res.categories.clone(), res.divisions.clone());
     (c, styles, numbering)

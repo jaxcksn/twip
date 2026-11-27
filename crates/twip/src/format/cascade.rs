@@ -29,6 +29,8 @@ pub const REGION_ORDER: [RegionKind; 12] = {
 /// The document settings the cascade follows.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Rules {
+    /// The generation of Word's layout the document asks for.
+    pub compat: crate::document::policy::Compat,
     /// Word 2002's table style rules: a corner region doesn't turn on its row's or column's look bit.
     pub word2002_rules: bool,
     /// A 12pt Normal gives way to a table style's size in cells, and an 11pt cell mark takes its paragraph's.

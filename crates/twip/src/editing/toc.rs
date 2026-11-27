@@ -719,8 +719,10 @@ impl Editor {
     /// The entries a table with options `o` collects from the body, in document order.
     pub fn toc_entries(&self, o: &TocOptions) -> Vec<TocEntry> {
         let skip = self.toc_paras();
-        let styles = self.doc.resolver.as_ref().map(|r| &r.styles);
-        let name_of = |p: &Paragraph| -> Option<String> { styles?.by_id.get(p.style.style_id.as_deref()?).map(|s| s.name.clone()) };
+        let cascade = self.doc.resolver.as_ref().map(|r| r.cascade());
+        let name_of = |p: &Paragraph| -> Option<String> {
+            cascade.as_ref()?.styles.get(p.style.style_id.as_deref()?).map(|s| s.name.as_deref().unwrap_or_default().to_string())
+        };
         let review = crate::docx::review::ReviewView { view: self.doc.review.view, ..Default::default() };
         // `\t`'s levels by style id, its names and aliases mapped as the readback maps them; a style's first pair wins.
         let mut style_levels: HashMap<String, u8> = HashMap::with_capacity(o.styles.len());
@@ -1547,14 +1549,14 @@ impl Editor {
             ids.push("TOCHeading".into());
         }
         for id in ids {
-            let has = |e: &Editor| e.doc.resolver.as_ref().is_some_and(|r| r.styles.by_id.contains_key(&id));
+            let has = |e: &Editor| e.doc.resolver.as_ref().is_some_and(|r| r.has_style(&id));
             if has(self) {
                 continue;
             }
             let Some(b) = crate::services::styles::builtin::built_in(&id) else { return false };
             // TOC Heading is based on Heading 1.
             if id == "TOCHeading"
-                && !self.doc.resolver.as_ref().is_some_and(|r| r.styles.by_id.contains_key("Heading1"))
+                && !self.doc.resolver.as_ref().is_some_and(|r| r.has_style("Heading1"))
                 && let Some(h) = crate::services::styles::builtin::built_in("Heading1")
             {
                 self.add_built_in(h, fonts);

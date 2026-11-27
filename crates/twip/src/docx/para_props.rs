@@ -520,6 +520,14 @@ pub fn from_para_props(r: &xml_props::ParaProps) -> ParaProps {
 }
 
 /// Typed properties of one level as the XML path holds them, a theme colour's value as `colours` resolve it; the
+/// A list choice as the `w:numId` it is written as: 0 for none.
+pub fn num_id(list: Option<ListChoice>) -> Option<i64> {
+    list.map(|c| match c {
+        ListChoice::None => 0,
+        ListChoice::In(id) => id.0,
+    })
+}
+
 /// mark's size from the last `w:rPr` kept among the unmodelled children.
 pub fn to_para_props(p: &ParaProps, colours: &ThemeColours) -> xml_props::ParaProps {
     use super::table_props::{xml_colour, xml_shd};
@@ -564,10 +572,7 @@ pub fn to_para_props(p: &ParaProps, colours: &ThemeColours) -> xml_props::ParaPr
         bidi: flag(ParaFlag::BIDI),
         div_id: p.division,
         tabs: p.tabs.iter().map(|t| xml_props::Tab { pos: t.pos, kind: t.kind, leader: t.leader }).collect(),
-        num_id: p.list.map(|c| match c {
-            ListChoice::None => 0,
-            ListChoice::In(id) => id.0,
-        }),
+        num_id: num_id(p.list),
         ilvl: p.list_level,
         border_top: side(&p.borders.top),
         border_bottom: side(&p.borders.bottom),

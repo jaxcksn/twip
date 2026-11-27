@@ -5,17 +5,11 @@ use std::rc::Rc;
 
 use super::char_props::RunDirect;
 use super::model::{Run, RunStyle};
-use super::resolve::Resolver;
 use super::resolvers::Resolvers;
 use super::review::{FormatChange, RunRevisions};
 use crate::format::CharProps;
 use crate::format::cascade::Cascade;
-use crate::format::resolve::{self, RunEnv};
-
-/// What resolving a run in `res`'s document needs.
-pub fn env(res: &Resolver) -> RunEnv<'_> {
-    RunEnv { colours: &res.styles.colours, fonts: &res.theme, categories: &res.categories, open_type: res.styles.open_type }
-}
+use crate::format::resolve;
 
 /// Character style `id`'s chain, folded.
 pub fn character_style(res: &Resolvers, id: &str) -> CharProps {
@@ -39,7 +33,7 @@ pub fn folded(res: &Resolvers, base: &CharProps, own: Option<&CharProps>, toc: b
 /// without the Hyperlink character style. No revisions.
 pub fn resolve(res: &Resolvers, base: &CharProps, direct: RunDirect, toc: bool) -> RunStyle {
     let p = folded(res, base, direct.props().map(|p| &**p), toc);
-    let mut s = resolve::run_style(&env(res), &p);
+    let mut s = resolve::run_style(&res.cascade().env(), &p);
     s.direct = direct;
     s.toc = toc;
     s
@@ -51,7 +45,7 @@ pub fn label(res: &Resolvers, under: &CharProps, level: Option<&CharProps>) -> R
     if let Some(l) = level {
         p.merge(l);
     }
-    Rc::new(resolve::run_style(&env(res), &p))
+    Rc::new(resolve::run_style(&res.cascade().env(), &p))
 }
 
 /// A run with no authored properties of its own over `base`.
