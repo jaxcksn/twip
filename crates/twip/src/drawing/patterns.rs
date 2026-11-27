@@ -1,7 +1,7 @@
 //! Preset patterns
 
 use super::paint::PatternPreset;
-use crate::docx::props::Stripe;
+use crate::document::format::Stripe;
 
 pub fn tile(p: PatternPreset) -> [u8; 8] {
     use PatternPreset::*;
@@ -148,29 +148,6 @@ pub fn of_tile(bits: [u8; 8]) -> Option<PatternPreset> {
     WORD.iter().map(|(p, _)| *p).chain(PatternPreset::ALL.iter().copied()).find(|p| tile(*p) == bits)
 }
 
-/// The preset a pattern fill's tile picture draws: an opaque 8×8 picture in black and white, black its foreground
-/// (any other colours show blends of the pattern's two).
-pub fn of_picture(data: &[u8]) -> Option<PatternPreset> {
-    let (w, h, _, _) = crate::docx::image::image_info(data)?;
-    if (w, h) != (8.0, 8.0) {
-        return None;
-    }
-    let (_, _, px) = twip_graphics::image::pixels_straight(data).ok()?;
-    let px = px.as_chunks::<4>().0;
-    if px.len() != 64 {
-        return None;
-    }
-    let mut bits = [0u8; 8];
-    for (k, p) in px.iter().enumerate() {
-        match p {
-            [0, 0, 0, 255] => bits[k / 8] |= 0x80 >> (k % 8),
-            [255, 255, 255, 255] => {}
-            _ => return None,
-        }
-    }
-    of_tile(bits)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -197,28 +174,5 @@ mod tests {
         seen.dedup();
         assert_eq!(seen.len(), 48);
         assert_eq!(title(PatternPreset::WdUpDiag), "Wide upward diagonal");
-    }
-
-    #[test]
-    fn only_an_opaque_black_and_white_tile_is_a_preset() {
-        let png = |f: &dyn Fn(usize, bool) -> [u8; 4]| {
-            let bits = tile(PatternPreset::Pct50);
-            let rgba: Vec<u8> = (0..64).flat_map(|k| f(k, bits[k / 8] & (0x80 >> (k % 8)) != 0)).collect();
-            crate::render::svg::png(8, 8, &rgba)
-        };
-        assert_eq!(of_picture(&png(&|_, on| if on { [0, 0, 0, 255] } else { [255, 255, 255, 255] })), Some(PatternPreset::Pct50));
-        // Other colours, a third tone, or a clear pixel, is a picture.
-        assert_eq!(of_picture(&png(&|_, on| if on { [0, 0, 0xFF, 255] } else { [0xFF, 0xFF, 0, 255] })), None);
-        assert_eq!(
-            of_picture(&png(&|k, on| if on {
-                [0, 0, 0, 255]
-            } else if k == 1 {
-                [200, 200, 200, 255]
-            } else {
-                [255, 255, 255, 255]
-            })),
-            None
-        );
-        assert_eq!(of_picture(&png(&|k, on| if on { [0, 0, 0, 255] } else { [255, 255, 255, if k == 1 { 0 } else { 255 }] })), None);
     }
 }

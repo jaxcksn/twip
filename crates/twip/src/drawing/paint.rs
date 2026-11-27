@@ -713,7 +713,7 @@ pub enum Paint {
     },
     /// A `w:shd` stripe or cross: Word's tile, a 300 dpi pixel a bit, from a pixel above and left of the shape.
     Hatch {
-        stripe: crate::docx::props::Stripe,
+        stripe: crate::document::format::Stripe,
         fg: Rgba,
         bg: Rgba,
     },

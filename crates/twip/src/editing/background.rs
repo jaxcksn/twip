@@ -5,7 +5,8 @@ use crate::api::drawing::{ColourValue, FillValue};
 use crate::api::value::{Bytes, Color, Points};
 use crate::docx::watermark::{self as wm, PictureMark, TextMark};
 use crate::docx::{Block, Float, Inline, ThemeColourRef};
-use crate::drawing::paint::{BlipAdjust, BlipMode, Fill};
+use crate::drawing::paint::{BlipAdjust, BlipMode, Fill, PatternPreset};
+use crate::drawing::patterns;
 use crate::font::Fonts;
 use crate::layout::ParaId;
 
@@ -99,7 +100,7 @@ impl Editor {
             if let Fill::Blip(b) = f
                 && matches!(b.mode, BlipMode::Tile { .. })
                 && let Some(BlipAdjust::Duotone([fg, bg])) = b.adjust.iter().find(|a| matches!(a, BlipAdjust::Duotone(_)))
-                && let Some(p) = b.image.and_then(|i| self.doc.images.get(i)).and_then(|d| crate::drawing::patterns::of_picture(d))
+                && let Some(p) = b.image.and_then(|i| self.doc.images.get(i)).and_then(|d| pattern_of_picture(d))
             {
                 return Some(FillValue::Pattern {
                     preset: p.name().into(),
@@ -528,4 +529,55 @@ fn ink_em(text: &str, family: &str, bold: bool, italic: bool, fonts: &Fonts) -> 
         return estimate;
     }
     (((x1 - x0) * em).max(0.05), ((top - low) * em).max(0.05))
+}
+
+/// The preset a pattern fill's tile picture draws: an opaque 8×8 picture in black and white, black its foreground
+/// (any other colours show blends of the pattern's two).
+fn pattern_of_picture(data: &[u8]) -> Option<PatternPreset> {
+    let (w, h, _, _) = crate::docx::image::image_info(data)?;
+    if (w, h) != (8.0, 8.0) {
+        return None;
+    }
+    let (_, _, px) = twip_graphics::image::pixels_straight(data).ok()?;
+    let px = px.as_chunks::<4>().0;
+    if px.len() != 64 {
+        return None;
+    }
+    let mut bits = [0u8; 8];
+    for (k, p) in px.iter().enumerate() {
+        match p {
+            [0, 0, 0, 255] => bits[k / 8] |= 0x80 >> (k % 8),
+            [255, 255, 255, 255] => {}
+            _ => return None,
+        }
+    }
+    patterns::of_tile(bits)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_an_opaque_black_and_white_tile_is_a_preset() {
+        let png = |f: &dyn Fn(usize, bool) -> [u8; 4]| {
+            let bits = patterns::tile(PatternPreset::Pct50);
+            let rgba: Vec<u8> = (0..64).flat_map(|k| f(k, bits[k / 8] & (0x80 >> (k % 8)) != 0)).collect();
+            crate::render::svg::png(8, 8, &rgba)
+        };
+        assert_eq!(pattern_of_picture(&png(&|_, on| if on { [0, 0, 0, 255] } else { [255, 255, 255, 255] })), Some(PatternPreset::Pct50));
+        // Other colours, a third tone, or a clear pixel, is a picture.
+        assert_eq!(pattern_of_picture(&png(&|_, on| if on { [0, 0, 0xFF, 255] } else { [0xFF, 0xFF, 0, 255] })), None);
+        assert_eq!(
+            pattern_of_picture(&png(&|k, on| if on {
+                [0, 0, 0, 255]
+            } else if k == 1 {
+                [200, 200, 200, 255]
+            } else {
+                [255, 255, 255, 255]
+            })),
+            None
+        );
+        assert_eq!(pattern_of_picture(&png(&|k, on| if on { [0, 0, 0, 255] } else { [255, 255, 255, if k == 1 { 0 } else { 255 }] })), None);
+    }
 }
