@@ -205,24 +205,10 @@ impl Editor {
         let typed = next.typed();
         let (abstract_id, num_id) = typed.cascade.lists.free_ids();
         let (abstract_id, num_id) = (abstract_id.0, num_id.0);
-        let cx = typed.numbering.cx();
-        let w = cx.w.clone();
         let colours = typed.cascade.colours;
-        next.numbering_edits().set_abstract_xml(
-            super::list_defs::abstract_xml(
-                abstract_id,
-                None,
-                super::list_defs::Levels::Shown(&super::list_defs::complete(levels)),
-                None,
-                &[],
-                &[],
-                &cx,
-                &colours,
-            ),
-            &colours,
-        )?;
-        next.numbering_edits()
-            .set_num_xml(format!("<{w}num {w}numId=\"{num_id}\"><{w}abstractNumId {w}val=\"{abstract_id}\"/></{w}num>"), &colours)?;
+        let levels = super::list_defs::complete(levels);
+        next.set_list_def(super::list_defs::definition(abstract_id, None, super::list_defs::Levels::Shown(&levels), None, &[], &[], &colours));
+        next.set_list(super::list_defs::new_list(num_id, abstract_id, &[]));
         let c = next.cascade();
         let mut counters = crate::format::counters::Counters::default();
         let ilvls: [i64; 3] = if multilevel { [0, 1, 2] } else { [0, 0, 0] };

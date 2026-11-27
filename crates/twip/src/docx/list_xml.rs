@@ -854,6 +854,27 @@ pub fn parse_picture(p: Node) -> Option<PictureBullet> {
     Some(b)
 }
 
+/// A new `w:numPicBullet` `id` in the part `cx` describes: a 9 pt picture of the image relationship `rel` names.
+pub fn new_picture_xml(id: i64, rel: &str, cx: &Cx) -> String {
+    format!(
+        concat!(
+            r#"<{w}numPicBullet xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office" "#,
+            r#"xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" {w}numPicBulletId="{id}"><{w}pict>"#,
+            r#"<v:shapetype id="_x0000_t75" coordsize="21600,21600" o:spt="75" o:preferrelative="t" path="m@4@5l@4@11@9@11@9@5xe" filled="f" stroked="f">"#,
+            r#"<v:stroke joinstyle="miter"/><v:formulas><v:f eqn="if lineDrawn pixelLineWidth 0"/><v:f eqn="sum @0 1 0"/><v:f eqn="sum 0 0 @1"/>"#,
+            r#"<v:f eqn="prod @2 1 2"/><v:f eqn="prod @3 21600 pixelWidth"/><v:f eqn="prod @3 21600 pixelHeight"/><v:f eqn="sum @0 0 1"/>"#,
+            r#"<v:f eqn="prod @6 1 2"/><v:f eqn="prod @7 21600 pixelWidth"/><v:f eqn="sum @8 21600 0"/><v:f eqn="prod @7 21600 pixelHeight"/>"#,
+            r#"<v:f eqn="sum @10 21600 0"/></v:formulas><v:path o:extrusionok="f" gradientshapeok="t" o:connecttype="rect"/>"#,
+            r##"<o:lock v:ext="edit" aspectratio="t"/></v:shapetype><v:shape id="_x0000_i{shape}" type="#_x0000_t75" style="width:9pt;height:9pt" o:bullet="t">"##,
+            r#"<v:imagedata r:id="{rel}" o:title=""/></v:shape></{w}pict></{w}numPicBullet>"#
+        ),
+        w = cx.w,
+        id = id,
+        shape = 1025 + id,
+        rel = rel,
+    )
+}
+
 fn picture_attrs(b: &PictureBullet, s: &mut dyn Sink) {
     s.attr(W, "numPicBulletId", &b.id);
 }
