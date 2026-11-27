@@ -2,24 +2,30 @@
 
 use std::ops::{Add, Neg, Sub};
 
+/// English metric units in a point.
 pub const EMU_PER_PT: i64 = 12700;
 
+/// A length in English metric units: 914,400 to the inch.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Emu(pub i64);
 
 impl Emu {
+    /// `pt` points, to the nearest unit.
     pub fn from_pt(pt: f64) -> Emu {
         Emu((pt * EMU_PER_PT as f64).round() as i64)
     }
 
+    /// In points.
     pub fn to_pt(self) -> f64 {
         self.0 as f64 / EMU_PER_PT as f64
     }
 
+    /// In twips, rounded half away from zero.
     pub fn to_twips_rounded(self) -> i64 {
         (self.0 * 1440 + 457_200 * self.0.signum()) / 914_400
     }
 
+    /// In twips, truncated toward zero.
     pub fn to_twips_truncated(self) -> i64 {
         self.0 / 635
     }
@@ -27,6 +33,8 @@ impl Emu {
     /// `ST_Coordinate`'s bound: any sum of a few coordinates from the file stays within `i64`.
     pub const MAX: i64 = 27_273_042_316_900;
 
+    /// A coordinate attribute's value (`ST_Coordinate`): units, or a number with `mm`, `cm`, `in`, `pt`, `pc` or `pi`,
+    /// bounded to [`Emu::MAX`].
     pub fn parse(s: &str) -> Option<Emu> {
         let s = s.trim();
         let bound = |v: i64| Emu(v.clamp(-Self::MAX, Self::MAX));
@@ -68,47 +76,59 @@ impl Neg for Emu {
     }
 }
 
+/// An angle in 60,000ths of a degree, clockwise.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Angle(pub i32);
 
 impl Angle {
+    /// A full turn.
     pub const FULL: i32 = 21_600_000;
 
+    /// `deg` degrees, to the nearest unit.
     pub fn from_degrees(deg: f64) -> Angle {
         Angle((deg * 60000.0).round() as i32)
     }
 
+    /// In degrees.
     pub fn degrees(self) -> f64 {
         f64::from(self.0) / 60000.0
     }
 
+    /// In radians.
     pub fn radians(self) -> f64 {
         self.degrees().to_radians()
     }
 
+    /// The same angle within one turn, from 0 up to [`Angle::FULL`].
     pub fn normalized(self) -> Angle {
         Angle(self.0.rem_euclid(Self::FULL))
     }
 
+    /// An angle attribute's value (`ST_Angle`), bounded to `i32`.
     pub fn parse(s: &str) -> Option<Angle> {
         s.trim().parse::<i64>().ok().map(|v| Angle(v.clamp(i32::MIN.into(), i32::MAX.into()) as i32))
     }
 }
 
+/// A percentage in 1,000ths of a percent.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Pct(pub i32);
 
 impl Pct {
+    /// 100%.
     pub const ONE: Pct = Pct(100_000);
 
+    /// As a fraction: 1 is 100%.
     pub fn fraction(self) -> f64 {
         f64::from(self.0) / 100_000.0
     }
 
+    /// The fraction `f` (1 is 100%), to the nearest unit.
     pub fn from_fraction(f: f64) -> Pct {
         Pct((f * 100_000.0).round() as i32)
     }
 
+    /// A percentage attribute's value (`ST_Percentage`): units, or a number of percent with `%`, bounded to `i32`.
     pub fn parse(s: &str) -> Option<Pct> {
         let s = s.trim();
         if let Some(p) = s.strip_suffix('%') {
@@ -118,6 +138,7 @@ impl Pct {
     }
 }
 
+/// A percentage in 10ths of a percent.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Pct1000(pub i32);
 

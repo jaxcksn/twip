@@ -13,28 +13,47 @@ pub use presets::Preset;
 
 use super::units::Emu;
 
+/// A guide's formula (`ST_GeomGuideFormula`), of its arguments `x`, `y` and `z`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Formula {
+    /// `x * y / z`.
     MulDiv,
+    /// `x + y - z`.
     AddSub,
+    /// `(x + y) / z`.
     AddDiv,
+    /// `y` if `x` is over 0, else `z`.
     IfElse,
+    /// `|x|`.
     Abs,
+    /// The angle of the point (`x`, `y`).
     At2,
+    /// `x * cos(atan2(z, y))`.
     Cat2,
+    /// `x * cos(y)`.
     Cos,
+    /// The greater of `x` and `y`.
     Max,
+    /// The lesser of `x` and `y`.
     Min,
+    /// The length of (`x`, `y`, `z`).
     Mod,
+    /// `y` held between `x` and `z`.
     Pin,
+    /// `x * sin(atan2(z, y))`.
     Sat2,
+    /// `x * sin(y)`.
     Sin,
+    /// The square root of `x`.
     Sqrt,
+    /// `x * tan(y)`.
     Tan,
+    /// `x`.
     Val,
 }
 
 impl Formula {
+    /// The formula named `s`.
     pub fn parse(s: &str) -> Option<Formula> {
         use Formula::*;
         Some(match s {
@@ -60,22 +79,35 @@ impl Formula {
     }
 }
 
+/// A value of the shape's box a guide can name.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Var {
+    /// Its width.
     W,
+    /// Its height.
     H,
+    /// Its right edge.
     R,
+    /// Its bottom edge.
     B,
+    /// Its horizontal centre.
     Hc,
+    /// Its vertical centre.
     Vc,
+    /// Its shorter side.
     Ss,
+    /// Its longer side.
     Ls,
+    /// Its width divided by this.
     Wd(u8),
+    /// Its height divided by this.
     Hd(u8),
+    /// Its shorter side divided by this.
     Ssd(u8),
 }
 
 impl Var {
+    /// The argument a built-in name `s` is: a value of the box, or a constant (`l`, `t`, the `cd` angles).
     pub fn parse(s: &str) -> Option<Arg> {
         use Var::*;
         let n = |p: &str| s.strip_prefix(p).and_then(|d| d.parse::<u8>().ok());
@@ -104,45 +136,82 @@ impl Var {
     }
 }
 
+/// A formula's or a path's argument.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Arg {
+    /// A number.
     Const(i32),
+    /// A value of the box.
     Var(Var),
+    /// An adjust value, by its index.
     Adj(u8),
+    /// A guide's value, by its index.
     Guide(u16),
 }
 
+/// A guide: a formula of three arguments.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Op {
+    /// The formula.
     pub f: Formula,
+    /// Its arguments.
     pub a: [Arg; 3],
 }
 
+/// A point: its x and y.
 pub type Pt = [Arg; 2];
 
+/// An adjust handle: the adjust values it moves, each with its least and greatest, and where it is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum HandleDef {
-    Xy { x: Option<(u8, Option<Arg>, Option<Arg>)>, y: Option<(u8, Option<Arg>, Option<Arg>)>, pos: Pt },
-    Polar { r: Option<(u8, Option<Arg>, Option<Arg>)>, ang: Option<(u8, Option<Arg>, Option<Arg>)>, pos: Pt },
+    /// Moved across and down.
+    Xy {
+        /// The adjust value it moves across, with its limits.
+        x: Option<(u8, Option<Arg>, Option<Arg>)>,
+        /// The adjust value it moves down, with its limits.
+        y: Option<(u8, Option<Arg>, Option<Arg>)>,
+        /// Where it is.
+        pos: Pt,
+    },
+    /// Moved out from and round a centre.
+    Polar {
+        /// The adjust value its distance moves, with its limits.
+        r: Option<(u8, Option<Arg>, Option<Arg>)>,
+        /// The adjust value its angle moves, with its limits.
+        ang: Option<(u8, Option<Arg>, Option<Arg>)>,
+        /// Where it is.
+        pos: Pt,
+    },
 }
 
+/// A connection site: where a connector can join the shape, and the way it leaves.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct CxnDef {
+    /// The way a connector leaves.
     pub ang: Arg,
+    /// Where it is.
     pub pos: Pt,
 }
 
+/// A path command.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Cmd {
+    /// Moves to a point.
     MoveTo,
+    /// A line to a point.
     LineTo,
+    /// An arc: its width and height radii, start angle and sweep.
     ArcTo,
+    /// A quadratic curve: its control point and end.
     QuadTo,
+    /// A cubic curve: its two control points and end.
     CubicTo,
+    /// Closes the subpath.
     Close,
 }
 
 impl Cmd {
+    /// How many arguments it takes.
     pub fn arity(self) -> usize {
         match self {
             Cmd::MoveTo | Cmd::LineTo => 2,
@@ -153,51 +222,88 @@ impl Cmd {
     }
 }
 
+/// How a path is filled.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum PathFill {
+    /// Not filled.
     None,
+    /// With the shape's fill.
     #[default]
     Norm,
+    /// With the shape's fill lightened.
     Lighten,
+    /// With the shape's fill lightened a little.
     LightenLess,
+    /// With the shape's fill darkened.
     Darken,
+    /// With the shape's fill darkened a little.
     DarkenLess,
 }
 
+/// A path of a geometry's definition.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct PathDef<'a> {
+    /// The width its coordinates span; 0 for the box's own.
     pub w: i64,
+    /// The height its coordinates span; 0 for the box's own.
     pub h: i64,
+    /// How it is filled.
     pub fill: PathFill,
+    /// It is stroked with the shape's line.
     pub stroke: bool,
+    /// Its commands.
     pub cmds: &'a [Cmd],
+    /// Its commands' arguments, in order.
     pub args: &'a [Arg],
 }
 
+/// A geometry's definition: its adjust values, guides, handles, connection sites, text rectangle and paths.
 #[derive(Clone, Copy, Debug)]
 pub struct GeomDef<'a> {
+    /// Its adjust values, by name, with their defaults.
     pub av: &'a [(&'a str, i64)],
+    /// Its guides, in order: each may name those before it.
     pub gd: &'a [Op],
+    /// Its handles.
     pub ah: &'a [HandleDef],
+    /// Its connection sites.
     pub cxn: &'a [CxnDef],
+    /// Its text rectangle: left, top, right, bottom; the box when `None`.
     pub rect: Option<[Arg; 4]>,
+    /// Its paths.
     pub paths: &'a [PathDef<'a>],
 }
 
+/// A custom geometry: a definition of its own.
 #[derive(Debug, PartialEq)]
 pub struct CustomGeom {
+    /// Its adjust values' names.
     pub av_names: Vec<String>,
+    /// Its adjust values, in the order of their names.
     pub av: Vec<i64>,
+    /// Its guides, in order.
     pub gd: Vec<Op>,
+    /// Its handles.
     pub ah: Vec<HandleDef>,
+    /// Its connection sites.
     pub cxn: Vec<CxnDef>,
+    /// Its text rectangle: left, top, right, bottom; the box when `None`.
     pub rect: Option<[Arg; 4]>,
+    /// Its paths: width, height, fill, stroke, commands and their arguments, as [`PathDef`]'s.
     pub paths: Vec<(i64, i64, PathFill, bool, Vec<Cmd>, Vec<Arg>)>,
 }
 
+/// A shape's geometry.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Geometry {
-    Preset { preset: Preset, adj: Vec<(String, i64)> },
+    /// A preset, with the adjust values set by name.
+    Preset {
+        /// The preset.
+        preset: Preset,
+        /// Its adjust values set, by name.
+        adj: Vec<(String, i64)>,
+    },
+    /// A custom geometry.
     Custom(Rc<CustomGeom>),
 }
 
@@ -207,37 +313,56 @@ impl Default for Geometry {
     }
 }
 
+/// A segment of an evaluated path, in points.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Seg {
+    /// Moves to a point, starting a subpath.
     Move([f64; 2]),
+    /// A line to a point.
     Line([f64; 2]),
+    /// A quadratic curve: its control point and end.
     Quad([f64; 2], [f64; 2]),
+    /// A cubic curve: its two control points and end.
     Cubic([f64; 2], [f64; 2], [f64; 2]),
+    /// Closes the subpath.
     Close,
 }
 
+/// An evaluated path.
 #[derive(Clone, Debug, PartialEq)]
 pub struct GeomPath {
+    /// Its segments.
     pub segs: Vec<Seg>,
+    /// How it is filled.
     pub fill: PathFill,
+    /// It is stroked.
     pub stroke: bool,
 }
 
+/// An adjust handle, evaluated.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct HandlePos {
+    /// Where it is, in points.
     pub at: [f64; 2],
+    /// Its index among the definition's handles.
     pub def_index: usize,
 }
 
+/// A geometry evaluated at a size, in points from the box's top left.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Geom {
+    /// Its paths.
     pub paths: Vec<GeomPath>,
+    /// Its text rectangle: left, top, right, bottom.
     pub text_rect: [f64; 4],
+    /// Its handles.
     pub handles: Vec<HandlePos>,
+    /// Its connection sites.
     pub cxn: Vec<[f64; 2]>,
 }
 
 impl Geom {
+    /// Whether `p` is on it: inside a filled path with `filled`, or within `reach` of a stroked one.
     pub fn hit(&self, p: [f64; 2], filled: bool, reach: Option<f64>) -> bool {
         self.paths.iter().any(|gp| {
             let subs = flatten(&gp.segs);
@@ -361,6 +486,7 @@ impl Geometry {
         }
     }
 
+    /// The geometry evaluated at `w` by `h`.
     pub fn evaluate(&self, w: Emu, h: Emu) -> Rc<Geom> {
         self.with_def(|def, adj| Rc::new(eval::evaluate_def(def, adj, w, h)))
     }
@@ -370,6 +496,7 @@ impl Geometry {
         !matches!(self.preset(), Some(Preset::ChartPlus | Preset::ChartStar | Preset::ChartX | Preset::LineInv))
     }
 
+    /// The preset it is.
     pub fn preset(&self) -> Option<Preset> {
         match self {
             Geometry::Preset { preset, .. } => Some(*preset),
@@ -377,24 +504,29 @@ impl Geometry {
         }
     }
 
+    /// Its adjust values, each set one or its default, in its definition's order.
     pub fn adjust_values(&self) -> Vec<i64> {
         self.with_def(|_, adj| adj.to_vec())
     }
 
+    /// Its adjust handles.
     pub fn handles(&self) -> Vec<HandleDef> {
         self.with_def(|def, _| def.ah.to_vec())
     }
 
+    /// Its adjust values' names, in its definition's order.
     pub fn adjust_names(&self) -> Vec<String> {
         self.with_def(|def, _| def.av.iter().map(|(n, _)| n.to_string()).collect())
     }
 
+    /// The preset with its adjust values set to `vals`, in its definition's order; `None` for a custom geometry.
     pub fn with_values(&self, vals: &[i64]) -> Option<Geometry> {
         let Geometry::Preset { preset, .. } = self else { return None };
         let adj = self.adjust_names().into_iter().zip(vals.iter().copied()).collect();
         Some(Geometry::Preset { preset: *preset, adj })
     }
 
+    /// The preset at `w` by `h` with its handle `i` dragged as near `to` (points) as its limits let it go.
     pub fn drag_handle(&self, i: usize, w: Emu, h: Emu, to: [f64; 2]) -> Option<Geometry> {
         let axes: Vec<(u8, Option<Arg>, Option<Arg>)> = match self.handles().get(i)? {
             HandleDef::Xy { x, y, .. } => [*x, *y],

@@ -3,9 +3,10 @@
 use std::f64::consts::{FRAC_PI_2, PI, TAU};
 
 use super::{Arg, Cmd, CustomGeom, Formula, Geom, GeomDef, GeomPath, HandleDef, HandlePos, PathDef, Pt, Seg, Var};
-use crate::drawing::units::{EMU_PER_PT, Emu};
+use crate::graphic::units::{EMU_PER_PT, Emu};
 
 impl CustomGeom {
+    /// Its definition packed as the preset table packs one.
     #[cfg(not(target_family = "wasm"))]
     pub fn to_bytes(&self) -> Vec<u8> {
         let names: Vec<(&str, i64)> = self.av_names.iter().zip(&self.av).map(|(n, v)| (n.as_str(), *v)).collect();

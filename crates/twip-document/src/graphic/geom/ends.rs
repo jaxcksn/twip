@@ -1,17 +1,29 @@
 //! Line ends
 
-use crate::drawing::paint::{EndKind, EndSize, LineEnd};
+use crate::graphic::paint::{EndKind, EndSize, LineEnd};
 
+/// A line end drawn at a line's end, its tip at the origin and the line running along +x.
 #[derive(Clone, Debug, PartialEq)]
 pub struct EndShape {
+    /// What is drawn.
     pub outline: EndOutline,
+    /// How far the line is cut back from its end, so it stops inside the end.
     pub cut: f64,
 }
 
+/// A line end's outline, in points.
 #[derive(Clone, Debug, PartialEq)]
 pub enum EndOutline {
+    /// A filled polygon.
     Polygon(Vec<[f64; 2]>),
-    Oval { rx: f64, ry: f64 },
+    /// A filled oval about the origin.
+    Oval {
+        /// Its radius along the line.
+        rx: f64,
+        /// Its radius across the line.
+        ry: f64,
+    },
+    /// An open polyline, stroked as the line is.
     Open(Vec<[f64; 2]>),
 }
 
@@ -23,6 +35,7 @@ fn size(s: EndSize) -> f64 {
     }
 }
 
+/// The end `e` on a line `w` points wide.
 pub fn end_shape(e: LineEnd, w: f64) -> EndShape {
     let w = w.max(2.0);
     let (l, hw) = (size(e.length) * w, size(e.width) * w / 2.0);

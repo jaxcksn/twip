@@ -6,90 +6,169 @@ use super::units::{Angle, Emu, Pct};
 
 // Fills
 
+/// How an area is filled.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Fill {
+    /// Not filled.
     None,
+    /// One colour.
     Solid(Colour),
+    /// A gradient.
     Gradient(Gradient),
-    Pattern { preset: PatternPreset, fg: Colour, bg: Colour },
+    /// A preset pattern in two colours.
+    Pattern {
+        /// The pattern.
+        preset: PatternPreset,
+        /// Its foreground, the tile's set bits.
+        fg: Colour,
+        /// Its background.
+        bg: Colour,
+    },
+    /// A picture.
     Blip(BlipFill),
+    /// The fill of the group the shape is in.
     Group,
 }
 
+/// The shape a path gradient spreads in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum GradientPath {
+    /// A circle.
     Circle,
+    /// A rectangle.
     Rect,
+    /// The shape's own outline.
     Shape,
 }
 
+/// The way a gradient runs.
 #[derive(Clone, Copy, Debug, PartialEq, Hash)]
 pub enum GradientKind {
-    Linear { angle: Angle, scaled: bool },
-    Path { path: GradientPath, focus: [Pct; 4] },
+    /// Along a line at `angle`, clockwise from left to right; `scaled` turns it with the box's aspect ratio.
+    Linear {
+        /// Its direction.
+        angle: Angle,
+        /// The angle is scaled with the fill's box.
+        scaled: bool,
+    },
+    /// Out from a focus.
+    Path {
+        /// The shape it spreads in.
+        path: GradientPath,
+        /// Its focus rectangle, as insets from the box's left, top, right and bottom.
+        focus: [Pct; 4],
+    },
 }
 
+/// How a tiled fill mirrors its tiles.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum TileFlip {
+    /// Not at all.
     #[default]
     None,
+    /// Every other tile across.
     X,
+    /// Every other tile down.
     Y,
+    /// Every other tile across and down.
     Xy,
 }
 
+/// A gradient fill.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Gradient {
+    /// Its colours, each at its place along the gradient.
     pub stops: Vec<(Pct, Colour)>,
+    /// The way it runs.
     pub kind: GradientKind,
+    /// The tile it fills, as insets from the box's left, top, right and bottom, repeated over the rest.
     pub tile: [Pct; 4],
+    /// How its tiles mirror.
     pub flip: TileFlip,
+    /// It turns with the shape.
     pub rot_with_shape: bool,
 }
 
+/// How a picture fills its box.
 #[derive(Clone, Debug, PartialEq)]
 pub enum BlipMode {
+    /// Stretched over the box, inset from its left, top, right and bottom by these.
     Stretch([Pct; 4]),
-    Tile { tx: Emu, ty: Emu, sx: Pct, sy: Pct, flip: TileFlip, align: RectAlign },
+    /// Tiled.
+    Tile {
+        /// The tiles' offset across.
+        tx: Emu,
+        /// The tiles' offset down.
+        ty: Emu,
+        /// The tiles' scale across.
+        sx: Pct,
+        /// The tiles' scale down.
+        sy: Pct,
+        /// How the tiles mirror.
+        flip: TileFlip,
+        /// Where the tiling starts in the box.
+        align: RectAlign,
+    },
 }
 
+/// A change to a picture's colours.
 #[derive(Clone, Debug, PartialEq)]
 pub enum BlipAdjust {
+    /// Its alpha scaled by this.
     AlphaModFix(Pct),
+    /// Greys.
     Grayscale,
+    /// Brightness and contrast.
     Lum {
+        /// The brightness, from -100% to 100%.
         bright: Pct,
+        /// The contrast, from -100% to 100%.
         contrast: Pct,
     },
+    /// Black and white, split at this luminance.
     BiLevel(Pct),
+    /// Recoloured between two colours by its luminance: dark to the first, light to the second.
     Duotone([Colour; 2]),
     /// Set Transparent Colour (`a:clrChange`): `from` is drawn as `to`. With `use_a` (`useA`, on by default) alpha
     /// counts in the match and the result; without it the pixel keeps its own alpha.
     ClrChange {
+        /// The colour changed.
         from: Colour,
+        /// What it is drawn as.
         to: Colour,
+        /// Alpha counts.
         use_a: bool,
     },
 }
 
+/// A picture fill.
 #[derive(Clone, Debug, PartialEq)]
 pub struct BlipFill {
+    /// The picture, an index into the document's images; `None` for one that couldn't be read.
     pub image: Option<usize>,
+    /// The crop, as insets from the picture's left, top, right and bottom (negative ones pad it).
     pub src: [Pct; 4],
+    /// How it fills its box.
     pub mode: BlipMode,
+    /// Changes to its colours, in order.
     pub adjust: Vec<BlipAdjust>,
+    /// It turns with the shape.
     pub rot_with_shape: bool,
 }
 
 macro_rules! names {
-    ($ty:ident { $($v:ident = $s:literal),* $(,)? }) => {
+    ($(#[$meta:meta])* $ty:ident { $($v:ident = $s:literal),* $(,)? }) => {
+        $(#[$meta])*
         #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-        pub enum $ty { $($v),* }
+        pub enum $ty { $(#[doc = concat!("`", $s, "`.")] $v),* }
         impl $ty {
+            /// Every value, in the schema's order.
             pub const ALL: &'static [$ty] = &[$($ty::$v),*];
+            /// The value named `s`.
             pub fn parse(s: &str) -> Option<$ty> {
                 match s { $($s => Some($ty::$v),)* _ => None }
             }
+            /// Its name.
             pub fn name(self) -> &'static str {
                 match self { $($ty::$v => $s),* }
             }
@@ -97,7 +176,9 @@ macro_rules! names {
     };
 }
 
-names!(PatternPreset {
+names!(
+    /// A preset pattern, by its ECMA-376 name (`ST_PresetPatternVal`).
+    PatternPreset {
     Pct5 = "pct5", Pct10 = "pct10", Pct20 = "pct20", Pct25 = "pct25", Pct30 = "pct30", Pct40 = "pct40", Pct50 = "pct50",
     Pct60 = "pct60", Pct70 = "pct70", Pct75 = "pct75", Pct80 = "pct80", Pct90 = "pct90", Horz = "horz", Vert = "vert",
     LtHorz = "ltHorz", LtVert = "ltVert", DkHorz = "dkHorz", DkVert = "dkVert", NarHorz = "narHorz", NarVert = "narVert",
@@ -110,78 +191,124 @@ names!(PatternPreset {
     ZigZag = "zigZag",
 });
 
-names!(PresetDash {
+names!(
+    /// A preset dash, by its ECMA-376 name (`ST_PresetLineDashVal`).
+    PresetDash {
     Solid = "solid", Dot = "dot", Dash = "dash", LgDash = "lgDash", DashDot = "dashDot", LgDashDot = "lgDashDot",
     LgDashDotDot = "lgDashDotDot", SysDash = "sysDash", SysDot = "sysDot", SysDashDot = "sysDashDot", SysDashDotDot = "sysDashDotDot",
 });
 
-names!(RectAlign { Tl = "tl", T = "t", Tr = "tr", L = "l", Ctr = "ctr", R = "r", Bl = "bl", B = "b", Br = "br" });
+names!(
+    /// A place in a box: a corner, an edge's middle or the centre, by its ECMA-376 name (`ST_RectAlignment`).
+    RectAlign { Tl = "tl", T = "t", Tr = "tr", L = "l", Ctr = "ctr", R = "r", Bl = "bl", B = "b", Br = "br" }
+);
 
 // Lines
 
+/// A line's dashes.
 #[derive(Clone, Debug, PartialEq, Hash)]
 pub enum Dash {
+    /// A preset dash.
     Preset(PresetDash),
+    /// Dashes and the spaces after them, in line widths.
     Custom(Vec<(Pct, Pct)>),
 }
 
+/// A line drawn as more than one.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum Compound {
+    /// One line.
     #[default]
     Single,
+    /// Two of a width.
     Double,
+    /// A thick line and a thin one.
     ThickThin,
+    /// A thin line and a thick one.
     ThinThick,
+    /// Three: thin, thick, thin.
     Triple,
 }
 
+/// A line's ends where it has no line end.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Cap {
+    /// Round.
     Round,
+    /// Square, past the end by half the width.
     Square,
+    /// Flat, at the end.
     Flat,
 }
 
+/// How a line's segments meet.
 #[derive(Clone, Copy, Debug, PartialEq, Hash)]
 pub enum Join {
+    /// Rounded.
     Round,
+    /// Cut off.
     Bevel,
+    /// Pointed, up to this limit of the width.
     Miter(Pct),
 }
 
+/// The shape of a line end.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EndKind {
+    /// A filled triangle.
     Triangle,
+    /// A filled arrowhead notched at its back.
     Stealth,
+    /// A filled diamond.
     Diamond,
+    /// A filled oval.
     Oval,
+    /// An open arrowhead: two strokes.
     Arrow,
 }
 
+/// A line end's size, against the line's width.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EndSize {
+    /// Small.
     Small,
+    /// Medium.
     Medium,
+    /// Large.
     Large,
 }
 
+/// An arrowhead or other end on a line.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LineEnd {
+    /// Its shape.
     pub kind: EndKind,
+    /// Its width.
     pub width: EndSize,
+    /// Its length.
     pub length: EndSize,
 }
 
+/// A line or outline, each property unset where it takes its style's.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Line {
+    /// Its width.
     pub width: Option<Emu>,
+    /// Its fill.
     pub fill: Option<Fill>,
+    /// Its dashes.
     pub dash: Option<Dash>,
+    /// Drawn as more than one.
     pub compound: Option<Compound>,
+    /// Its ends' cap.
     pub cap: Option<Cap>,
+    /// How its segments meet.
     pub join: Option<Join>,
+    /// Drawn inside the outline, not on it.
     pub inset: Option<bool>,
+    /// Its start's end.
     pub head: Option<LineEnd>,
+    /// Its end's end.
     pub tail: Option<LineEnd>,
 }
 
@@ -203,39 +330,63 @@ impl Line {
 
 // Effects
 
+/// A shadow behind the shape: its copy, scaled and skewed about `align`, moved `dist` along `dir` and blurred.
 #[derive(Clone, Debug, PartialEq)]
 pub struct OuterShadow {
+    /// Its blur radius.
     pub blur: Emu,
+    /// How far it is from the shape.
     pub dist: Emu,
+    /// Which way it is from the shape.
     pub dir: Angle,
+    /// Its scale across.
     pub sx: Pct,
+    /// Its scale down.
     pub sy: Pct,
+    /// Its skew across.
     pub kx: Angle,
+    /// Its skew down.
     pub ky: Angle,
+    /// What it is scaled and skewed about.
     pub align: RectAlign,
+    /// Its colour.
     pub colour: Colour,
+    /// It turns with the shape.
     pub rot_with_shape: bool,
 }
 
+/// A shadow inside the shape, cast by its edge.
 #[derive(Clone, Debug, PartialEq)]
 pub struct InnerShadow {
+    /// Its blur radius.
     pub blur: Emu,
+    /// How far it is from the edge.
     pub dist: Emu,
+    /// Which way it is from the edge.
     pub dir: Angle,
+    /// Its colour.
     pub colour: Colour,
 }
 
+/// A preset shadow, drawn as an outer one.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PresetShadow {
+    /// Which preset, 1 to 20.
     pub preset: u8,
+    /// How far it is from the shape.
     pub dist: Emu,
+    /// Which way it is from the shape.
     pub dir: Angle,
+    /// Its colour.
     pub colour: Colour,
 }
 
+/// A soft coloured glow around the shape.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Glow {
+    /// How far it reaches.
     pub radius: Emu,
+    /// Its colour.
     pub colour: Colour,
 }
 
@@ -243,35 +394,59 @@ pub struct Glow {
 /// faded from `start_alpha` at `start_pos` to `end_alpha` at `end_pos` along `fade_dir`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Reflection {
+    /// Its blur radius.
     pub blur: Emu,
+    /// How far it is from the shape.
     pub dist: Emu,
+    /// Which way it is from the shape.
     pub dir: Angle,
+    /// The way it fades.
     pub fade_dir: Angle,
+    /// Its scale across.
     pub sx: Pct,
+    /// Its scale down.
     pub sy: Pct,
+    /// Its skew across.
     pub kx: Angle,
+    /// Its skew down.
     pub ky: Angle,
+    /// What it is scaled and skewed about.
     pub align: RectAlign,
+    /// Its alpha where the fade starts.
     pub start_alpha: Pct,
+    /// Where the fade starts.
     pub start_pos: Pct,
+    /// Its alpha where the fade ends.
     pub end_alpha: Pct,
+    /// Where the fade ends.
     pub end_pos: Pct,
+    /// It turns with the shape.
     pub rot_with_shape: bool,
 }
 
+/// A shape's effects.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct EffectList {
+    /// Its shadow.
     pub outer: Option<OuterShadow>,
+    /// Its inner shadow.
     pub inner: Option<InnerShadow>,
+    /// Its preset shadow, drawn when it has no shadow of its own.
     pub preset: Option<PresetShadow>,
+    /// Its glow.
     pub glow: Option<Glow>,
+    /// How far in its edges soften.
     pub soft_edge: Option<Emu>,
+    /// Its blur radius.
     pub blur: Option<Emu>,
+    /// Its reflection.
     pub reflection: Option<Reflection>,
+    /// It has effects kept but not drawn.
     pub kept: bool,
 }
 
 impl EffectList {
+    /// It draws nothing.
     pub fn is_empty(&self) -> bool {
         self.outer.is_none()
             && self.inner.is_none()
@@ -324,19 +499,28 @@ pub fn is_two_colour(g: &Gradient) -> bool {
 
 // Style references
 
+/// The theme's line, fill and effect a shape's style takes, each by its index with the colour its placeholder takes,
+/// and its text's colour. An index of 0 is none.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct StyleRefs {
+    /// Its line.
     pub line: Option<(u32, Option<Colour>)>,
+    /// Its fill: 1 to 1000 a theme fill, from 1001 a background fill.
     pub fill: Option<(u32, Option<Colour>)>,
+    /// Its effects.
     pub effect: Option<(u32, Option<Colour>)>,
+    /// Its text's colour.
     pub font: Option<Colour>,
 }
 
 // Resolution
 
+/// What colours resolve against: a theme and the colour map.
 #[derive(Clone, Copy)]
 pub struct Palette<'a> {
+    /// The theme.
     pub theme: &'a Theme,
+    /// The colour map.
     pub map: &'a ColourMap,
 }
 
@@ -346,62 +530,97 @@ impl Palette<'_> {
     }
 }
 
+/// A change to a picture's colours, its colours resolved and its amounts fractions.
 #[derive(Clone, Debug, PartialEq)]
 pub enum ResolvedBlipAdjust {
+    /// Its alpha scaled by this, 0 to 1.
     Alpha(f64),
+    /// Greys.
     Grayscale,
+    /// Brightness and contrast.
     Lum {
+        /// The brightness, -1 to 1.
         bright: f64,
+        /// The contrast, -1 to 1.
         contrast: f64,
     },
+    /// Black and white, split at this luminance.
     BiLevel(f64),
+    /// Recoloured between two colours by its luminance.
     Duotone([Rgba; 2]),
     /// Pixels within one level of `from` in every channel (alpha too, with `use_a`) are drawn as `to`, keeping their
     /// own alpha without `use_a`.
     ClrChange {
+        /// The colour changed.
         from: Rgba,
+        /// What it is drawn as.
         to: Rgba,
+        /// Alpha counts.
         use_a: bool,
     },
 }
 
+/// A fill, its colours resolved: what is drawn.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Paint {
+    /// Nothing.
     None,
+    /// One colour.
     Solid(Rgba),
+    /// A gradient.
     Gradient {
+        /// Its colours at their places along it, 0 to 1, in order.
         stops: Vec<(f64, Rgba)>,
+        /// The way it runs.
         kind: GradientKind,
+        /// The tile it fills, as insets from the box's left, top, right and bottom.
         tile: [Pct; 4],
+        /// How its tiles mirror.
         flip: TileFlip,
+        /// It turns with the shape.
         rot_with_shape: bool,
     },
+    /// A preset pattern.
     Pattern {
+        /// The pattern.
         preset: PatternPreset,
+        /// Its foreground.
         fg: Rgba,
+        /// Its background.
         bg: Rgba,
     },
-    /// A `w:shd` stripe or cross: Word's tile, a 300 dpi pixel a bit, from a pixel above and left of the shape.
+    /// A shading stripe or cross: Word's tile, a 300 dpi pixel a bit, from a pixel above and left of the shape.
     Hatch {
-        stripe: crate::document::format::Stripe,
+        /// The stripe or cross.
+        stripe: crate::format::Stripe,
+        /// Its foreground.
         fg: Rgba,
+        /// Its background.
         bg: Rgba,
     },
+    /// A picture.
     Picture {
+        /// The picture, an index into the document's images.
         image: Option<usize>,
+        /// The crop, as insets from the picture's left, top, right and bottom.
         src: [Pct; 4],
+        /// How it fills its box.
         mode: BlipMode,
+        /// Changes to its colours, in order.
         adjust: Vec<ResolvedBlipAdjust>,
+        /// It turns with the shape.
         rot_with_shape: bool,
     },
 }
 
 impl Paint {
+    /// It draws nothing.
     pub fn is_none(&self) -> bool {
         matches!(self, Paint::None)
     }
 }
 
+/// `f` resolved in `p`, its placeholder colour `ph`, a group fill taking `group`.
 pub fn paint(f: &Fill, p: Palette, ph: Option<Rgba>, group: &Paint) -> Paint {
     match f {
         Fill::None => Paint::None,
@@ -436,6 +655,7 @@ pub fn paint(f: &Fill, p: Palette, ph: Option<Rgba>, group: &Paint) -> Paint {
     }
 }
 
+/// A theme style list's entry `idx`: 1 to 1000 in `list`, from 1001 in `bg`; 0 is none.
 pub fn style_entry<'a, T>(list: &'a [T], bg: Option<&'a [T]>, idx: u32) -> Option<&'a T> {
     match idx {
         0 => None,
@@ -444,6 +664,7 @@ pub fn style_entry<'a, T>(list: &'a [T], bg: Option<&'a [T]>, idx: u32) -> Optio
     }
 }
 
+/// What a shape's fill draws: its own, else its style's.
 pub fn resolve_fill(own: Option<&Fill>, style: Option<&StyleRefs>, p: Palette, group: &Paint) -> Paint {
     if let Some(f) = own {
         return paint(f, p, None, group);
@@ -453,20 +674,31 @@ pub fn resolve_fill(own: Option<&Fill>, style: Option<&StyleRefs>, p: Palette, g
     style_entry(&p.theme.fills, Some(&p.theme.bg_fills), *idx).map_or(Paint::None, |f| paint(f, p, ph, group))
 }
 
+/// A line as it is drawn: its own properties over its style's, its colours resolved.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ResolvedLine {
+    /// Its width, points.
     pub width: f64,
+    /// Its paint.
     pub paint: Paint,
+    /// Its dashes.
     pub dash: Dash,
+    /// Drawn as more than one.
     pub compound: Compound,
+    /// Its ends' cap.
     pub cap: Cap,
+    /// How its segments meet.
     pub join: Join,
+    /// Drawn inside the outline, not on it.
     pub inset: bool,
+    /// Its start's end.
     pub head: Option<LineEnd>,
+    /// Its end's end.
     pub tail: Option<LineEnd>,
 }
 
 impl ResolvedLine {
+    /// No line.
     pub fn none() -> ResolvedLine {
         ResolvedLine {
             width: 0.0,
@@ -481,11 +713,13 @@ impl ResolvedLine {
         }
     }
 
+    /// It draws something.
     pub fn is_visible(&self) -> bool {
         !self.paint.is_none()
     }
 }
 
+/// What a shape's line draws: its own properties over its style's.
 pub fn resolve_line(own: Option<&Line>, style: Option<&StyleRefs>, p: Palette, group: &Paint) -> ResolvedLine {
     let reference = style.and_then(|s| s.line.as_ref());
     let ph = reference.and_then(|(_, c)| c.as_ref()).map(|c| p.colour(c, None));
@@ -510,44 +744,71 @@ pub fn resolve_line(own: Option<&Line>, style: Option<&StyleRefs>, p: Palette, g
     }
 }
 
+/// A shape's effects as they are drawn, in points, degrees and fractions, their sizes bounded by [`MAX_EFFECT_PT`].
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ResolvedEffects {
+    /// Its shadow, or its preset shadow.
     pub outer: Option<ResolvedShadow>,
+    /// Its inner shadow.
     pub inner: Option<ResolvedShadow>,
+    /// Its glow: its radius and colour.
     pub glow: Option<(f64, Rgba)>,
+    /// How far in its edges soften.
     pub soft_edge: Option<f64>,
+    /// Its blur radius.
     pub blur: Option<f64>,
+    /// Its reflection.
     pub reflection: Option<ResolvedReflection>,
 }
 
 /// A reflection in points, degrees and fractions.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ResolvedReflection {
+    /// Its blur radius.
     pub blur: f64,
+    /// How far it is from the shape.
     pub dist: f64,
+    /// Which way it is from the shape.
     pub dir: f64,
+    /// The way it fades.
     pub fade_dir: f64,
+    /// Its scale across and down.
     pub scale: [f64; 2],
+    /// Its skew across and down.
     pub skew: [f64; 2],
+    /// What it is scaled and skewed about.
     pub align: RectAlign,
+    /// Where the fade starts and its alpha there, 0 to 1.
     pub start: (f64, f64),
+    /// Where the fade ends and its alpha there, 0 to 1.
     pub end: (f64, f64),
+    /// It turns with the shape.
     pub rot_with_shape: bool,
 }
 
+/// A shadow in points, degrees and fractions.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ResolvedShadow {
+    /// Its blur radius.
     pub blur: f64,
+    /// How far it is from the shape.
     pub dist: f64,
+    /// Which way it is from the shape.
     pub dir: f64,
+    /// Its scale across and down.
     pub scale: [f64; 2],
+    /// Its skew across and down.
     pub skew: [f64; 2],
+    /// What it is scaled and skewed about.
     pub align: RectAlign,
+    /// Its colour.
     pub colour: Rgba,
+    /// It turns with the shape.
     pub rot_with_shape: bool,
 }
 
 impl ResolvedEffects {
+    /// They draw nothing.
     pub fn is_empty(&self) -> bool {
         self.outer.is_none()
             && self.inner.is_none()
@@ -571,6 +832,7 @@ fn offset(e: Emu) -> f64 {
     e.to_pt().clamp(-MAX_EFFECT_PT, MAX_EFFECT_PT)
 }
 
+/// What a shape's effects draw: its own, else its style's.
 pub fn resolve_effects(own: Option<&EffectList>, style: Option<&StyleRefs>, p: Palette) -> ResolvedEffects {
     let (list, ph) = match own {
         Some(e) => (Some(e), None),

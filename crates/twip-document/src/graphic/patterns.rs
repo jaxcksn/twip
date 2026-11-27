@@ -1,8 +1,9 @@
 //! Preset patterns
 
 use super::paint::PatternPreset;
-use crate::document::format::Stripe;
+use crate::format::Stripe;
 
+/// A preset pattern's 8×8 tile, a row a byte from the top, its high bit the left: a set bit is the foreground.
 pub fn tile(p: PatternPreset) -> [u8; 8] {
     use PatternPreset::*;
     match p {
@@ -63,7 +64,7 @@ pub fn tile(p: PatternPreset) -> [u8; 8] {
     }
 }
 
-/// A `w:shd` stripe's or cross's tile, as Word draws it.
+/// A shading stripe's or cross's tile, as Word draws it.
 pub fn stripe(s: Stripe) -> [u8; 8] {
     use Stripe::*;
     match s {

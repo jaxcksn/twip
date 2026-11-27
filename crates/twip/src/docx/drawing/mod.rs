@@ -11,6 +11,8 @@ pub mod vml;
 
 use std::ops::Range;
 
+use crate::document::graphic;
+
 /// Where a shape's parts are in its source part, as byte ranges: what saving an edited shape replaces.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Spans {
@@ -26,3 +28,10 @@ pub struct Spans {
     pub body: Option<Range<usize>>,
     pub style: Option<Range<usize>>,
 }
+
+/// A shape as read, with its parts' [`Spans`].
+pub type Shape = graphic::Shape<Spans>;
+/// What a shape read is.
+pub type ShapeKind = graphic::ShapeKind<Spans>;
+/// A group read, its children with their parts' [`Spans`].
+pub type GroupShape = graphic::GroupShape<Spans>;

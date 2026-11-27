@@ -4,12 +4,18 @@ use super::colour::{Colour, ColourBase, ColourMod, Rgba, SchemeSlot};
 use super::paint::{Cap, Compound, Dash, EffectList, Fill, Gradient, GradientKind, Join, Line, OuterShadow, PresetDash, RectAlign, TileFlip};
 use super::units::{Angle, Emu, Pct};
 
+/// A document's theme: its colours, and the fills, lines and effects shape styles take from it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Theme {
+    /// Its colours: dark 1, light 1, dark 2, light 2, accents 1 to 6, hyperlink and followed hyperlink.
     pub colours: [Rgba; 12],
+    /// Its fills, subtle to intense: a style's fill references 1 to 1000.
     pub fills: Vec<Fill>,
+    /// Its lines, subtle to intense.
     pub lines: Vec<Line>,
+    /// Its effects, subtle to intense.
     pub effects: Vec<EffectList>,
+    /// Its background fills: a style's fill references from 1001.
     pub bg_fills: Vec<Fill>,
 }
 
@@ -84,19 +90,28 @@ impl Default for Theme {
 }
 
 impl Theme {
+    /// Its colour in `slot`; black for a slot the colour map names (background, text, the placeholder).
     pub fn colour(&self, slot: SchemeSlot) -> Rgba {
         slot.theme_index().map_or(Rgba::BLACK, |i| self.colours[i])
     }
 }
 
+/// Which theme colour each colour role takes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ColourMap {
+    /// Background 1's.
     pub bg1: SchemeSlot,
+    /// Text 1's.
     pub tx1: SchemeSlot,
+    /// Background 2's.
     pub bg2: SchemeSlot,
+    /// Text 2's.
     pub tx2: SchemeSlot,
+    /// Accents 1 to 6's.
     pub accents: [SchemeSlot; 6],
+    /// The hyperlink's.
     pub hlink: SchemeSlot,
+    /// The followed hyperlink's.
     pub fol_hlink: SchemeSlot,
 }
 
@@ -116,6 +131,7 @@ impl Default for ColourMap {
 }
 
 impl ColourMap {
+    /// The theme colour role `s` takes.
     pub fn map(&self, s: SchemeSlot) -> SchemeSlot {
         use SchemeSlot::*;
         match s {

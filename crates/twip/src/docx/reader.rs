@@ -3448,7 +3448,7 @@ impl Reader {
     }
 
     fn group_parts(&mut self, g: Node, map: &Map, path: &mut crate::drawing::ChildPath, pkg: &mut Package, out: &mut Vec<GroupPart>) {
-        // The children the shape tree keeps, in its order (drawing/read.rs `child`).
+        // The children the shape tree keeps, in its order (docx/drawing/read.rs `child`).
         let kept = |c: &Node| matches!(c.tag_name().name(), "wsp" | "sp" | "cxnSp" | "pic" | "grpSp" | "graphicFrame");
         for (i, c) in g.children().filter(|c| c.is_element()).filter(kept).enumerate() {
             path.push(i as u16);

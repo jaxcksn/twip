@@ -3,48 +3,72 @@
 use super::theme::{ColourMap, Theme};
 use super::units::{Angle, Pct};
 
+/// A resolved colour: sRGB with straight alpha.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Rgba {
+    /// Red.
     pub r: u8,
+    /// Green.
     pub g: u8,
+    /// Blue.
     pub b: u8,
+    /// Alpha: 255 is opaque.
     pub a: u8,
 }
 
 impl Rgba {
+    /// Opaque black.
     pub const BLACK: Rgba = Rgba { r: 0, g: 0, b: 0, a: 255 };
+    /// Opaque white.
     pub const WHITE: Rgba = Rgba { r: 255, g: 255, b: 255, a: 255 };
 
+    /// The opaque colour `0xRRGGBB`.
     pub fn rgb(v: u32) -> Rgba {
         Rgba { r: (v >> 16) as u8, g: (v >> 8) as u8, b: v as u8, a: 255 }
     }
 
+    /// As `0xRRGGBB`, without its alpha.
     pub fn to_rgb(self) -> u32 {
         (u32::from(self.r) << 16) | (u32::from(self.g) << 8) | u32::from(self.b)
     }
 
+    /// Its alpha scaled by `alpha` (0 to 1).
     pub fn faded(self, alpha: f64) -> Rgba {
         Rgba { a: (f64::from(self.a) * alpha.clamp(0.0, 1.0)).round() as u8, ..self }
     }
 }
 
+/// A theme colour, or a colour role the colour map gives one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SchemeSlot {
+    /// Background 1, a role.
     Bg1,
+    /// Text 1, a role.
     Tx1,
+    /// Background 2, a role.
     Bg2,
+    /// Text 2, a role.
     Tx2,
+    /// Dark 1.
     Dk1,
+    /// Light 1.
     Lt1,
+    /// Dark 2.
     Dk2,
+    /// Light 2.
     Lt2,
+    /// Accent 1 to 6.
     Accent(u8),
+    /// Hyperlink.
     Hlink,
+    /// Followed hyperlink.
     FolHlink,
+    /// The placeholder: the colour a style reference gives the theme's fill, line or effect.
     Placeholder,
 }
 
 impl SchemeSlot {
+    /// The slot named `s` (`ST_SchemeColorVal`).
     pub fn parse(s: &str) -> Option<SchemeSlot> {
         use SchemeSlot::*;
         Some(match s {
@@ -63,6 +87,7 @@ impl SchemeSlot {
         })
     }
 
+    /// Its name.
     pub fn name(self) -> String {
         use SchemeSlot::*;
         match self {
@@ -81,6 +106,7 @@ impl SchemeSlot {
         }
     }
 
+    /// Its index in a theme's colours; `None` for a role and the placeholder.
     pub fn theme_index(self) -> Option<usize> {
         use SchemeSlot::*;
         Some(match self {
@@ -96,68 +122,128 @@ impl SchemeSlot {
     }
 }
 
+/// The colour a colour starts from, before its changes.
 #[derive(Clone, Debug, PartialEq)]
 pub enum ColourBase {
+    /// `0xRRGGBB`.
     Srgb(u32),
+    /// Red, green and blue in linear light.
     ScRgb([Pct; 3]),
-    Hsl { hue: Angle, sat: Pct, lum: Pct },
-    Sys { name: String, last: u32 },
-    Preset { name: String, value: u32 },
+    /// Hue, saturation and luminance.
+    Hsl {
+        /// The hue.
+        hue: Angle,
+        /// The saturation.
+        sat: Pct,
+        /// The luminance.
+        lum: Pct,
+    },
+    /// A system colour, by name, with the value it last had (`0xRRGGBB`).
+    Sys {
+        /// Its name.
+        name: String,
+        /// Its last value.
+        last: u32,
+    },
+    /// A preset colour, by name, with its value (`0xRRGGBB`).
+    Preset {
+        /// Its name.
+        name: String,
+        /// Its value.
+        value: u32,
+    },
+    /// A theme colour or colour role.
     Scheme(SchemeSlot),
 }
 
+/// A change to a colour, applied in order.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ColourMod {
+    /// Toward white: the share of the colour kept, in linear light.
     Tint(Pct),
+    /// Toward black: the share of the colour kept, in linear light.
     Shade(Pct),
+    /// Its complement: the hue turned half round.
     Comp,
+    /// Its inverse, in linear light.
     Inv,
+    /// Its grey of the same luminance.
     Gray,
+    /// The alpha set.
     Alpha(Pct),
+    /// The alpha moved by this.
     AlphaOff(Pct),
+    /// The alpha scaled by this.
     AlphaMod(Pct),
+    /// The hue set.
     Hue(Angle),
+    /// The hue turned by this.
     HueOff(Angle),
+    /// The hue scaled by this.
     HueMod(Pct),
+    /// The saturation set.
     Sat(Pct),
+    /// The saturation moved by this.
     SatOff(Pct),
+    /// The saturation scaled by this.
     SatMod(Pct),
+    /// The luminance set.
     Lum(Pct),
+    /// The luminance moved by this.
     LumOff(Pct),
+    /// The luminance scaled by this.
     LumMod(Pct),
+    /// The red set, in linear light.
     Red(Pct),
+    /// The red moved by this, in linear light.
     RedOff(Pct),
+    /// The red scaled by this, in linear light.
     RedMod(Pct),
+    /// The green set, in linear light.
     Green(Pct),
+    /// The green moved by this, in linear light.
     GreenOff(Pct),
+    /// The green scaled by this, in linear light.
     GreenMod(Pct),
+    /// The blue set, in linear light.
     Blue(Pct),
+    /// The blue moved by this, in linear light.
     BlueOff(Pct),
+    /// The blue scaled by this, in linear light.
     BlueMod(Pct),
+    /// Gamma encoded: the channels taken from linear light to sRGB.
     Gamma,
+    /// Gamma decoded: the channels taken from sRGB to linear light.
     InvGamma,
 }
 
+/// A colour: where it starts, and its changes.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Colour {
+    /// Where it starts.
     pub base: ColourBase,
+    /// Its changes, in order.
     pub mods: Vec<ColourMod>,
 }
 
 impl Colour {
+    /// The colour `0xRRGGBB`.
     pub fn srgb(v: u32) -> Colour {
         Colour { base: ColourBase::Srgb(v), mods: Vec::new() }
     }
 
+    /// The theme colour or role `slot`.
     pub fn scheme(slot: SchemeSlot) -> Colour {
         Colour { base: ColourBase::Scheme(slot), mods: Vec::new() }
     }
 
+    /// With the change `m` after its own.
     pub fn with(mut self, m: ColourMod) -> Colour {
         self.mods.push(m);
         self
     }
 
+    /// The colour it is in `theme` through `map`, the placeholder taking `placeholder` (black when `None`).
     pub fn resolve(&self, theme: &Theme, map: &ColourMap, placeholder: Option<Rgba>) -> Rgba {
         let base = match &self.base {
             ColourBase::Srgb(v) | ColourBase::Sys { last: v, .. } | ColourBase::Preset { value: v, .. } => Rgba::rgb(*v),
@@ -184,10 +270,12 @@ fn unit(v: f64) -> u8 {
 pub const TWO_STOP_BLEND: [f64; 17] =
     [0.0, 0.018, 0.0472, 0.0843, 0.1404, 0.209, 0.2927, 0.3873, 0.4934, 0.5922, 0.6913, 0.778, 0.8485, 0.9054, 0.949, 0.9779, 1.0];
 
+/// An sRGB channel (0 to 1) in linear light.
 pub fn srgb_to_linear(c: f64) -> f64 {
     if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) }
 }
 
+/// A channel in linear light (0 to 1) in sRGB.
 pub fn linear_to_srgb(c: f64) -> f64 {
     if c <= 0.003_130_8 { c * 12.92 } else { 1.055 * c.powf(1.0 / 2.4) - 0.055 }
 }
@@ -323,6 +411,8 @@ fn apply(base: Rgba, mods: &[ColourMod]) -> Rgba {
     Rgba { r: unit(c[0]), g: unit(c[1]), b: unit(c[2]), a: unit(a) }
 }
 
+/// The preset colour named `name` (`ST_PresetColorVal`, its CSS names with `dk`, `lt` and `med` for dark, light
+/// and medium), as `0xRRGGBB`.
 pub fn preset_colour(name: &str) -> Option<u32> {
     let full = match name {
         n if n.starts_with("dk") => format!("dark{}", &n[2..]),

@@ -4,198 +4,387 @@
 
 use super::GeomDef;
 
+/// A preset shape geometry, by its ECMA-376 name (`ST_ShapeType`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Preset {
+    /// `accentBorderCallout1`.
     AccentBorderCallout1,
+    /// `accentBorderCallout2`.
     AccentBorderCallout2,
+    /// `accentBorderCallout3`.
     AccentBorderCallout3,
+    /// `accentCallout1`.
     AccentCallout1,
+    /// `accentCallout2`.
     AccentCallout2,
+    /// `accentCallout3`.
     AccentCallout3,
+    /// `actionButtonBackPrevious`.
     ActionButtonBackPrevious,
+    /// `actionButtonBeginning`.
     ActionButtonBeginning,
+    /// `actionButtonBlank`.
     ActionButtonBlank,
+    /// `actionButtonDocument`.
     ActionButtonDocument,
+    /// `actionButtonEnd`.
     ActionButtonEnd,
+    /// `actionButtonForwardNext`.
     ActionButtonForwardNext,
+    /// `actionButtonHelp`.
     ActionButtonHelp,
+    /// `actionButtonHome`.
     ActionButtonHome,
+    /// `actionButtonInformation`.
     ActionButtonInformation,
+    /// `actionButtonMovie`.
     ActionButtonMovie,
+    /// `actionButtonReturn`.
     ActionButtonReturn,
+    /// `actionButtonSound`.
     ActionButtonSound,
+    /// `arc`.
     Arc,
+    /// `bentArrow`.
     BentArrow,
+    /// `bentConnector2`.
     BentConnector2,
+    /// `bentConnector3`.
     BentConnector3,
+    /// `bentConnector4`.
     BentConnector4,
+    /// `bentConnector5`.
     BentConnector5,
+    /// `bentUpArrow`.
     BentUpArrow,
+    /// `bevel`.
     Bevel,
+    /// `blockArc`.
     BlockArc,
+    /// `borderCallout1`.
     BorderCallout1,
+    /// `borderCallout2`.
     BorderCallout2,
+    /// `borderCallout3`.
     BorderCallout3,
+    /// `bracePair`.
     BracePair,
+    /// `bracketPair`.
     BracketPair,
+    /// `callout1`.
     Callout1,
+    /// `callout2`.
     Callout2,
+    /// `callout3`.
     Callout3,
+    /// `can`.
     Can,
+    /// `chartPlus`.
     ChartPlus,
+    /// `chartStar`.
     ChartStar,
+    /// `chartX`.
     ChartX,
+    /// `chevron`.
     Chevron,
+    /// `chord`.
     Chord,
+    /// `circularArrow`.
     CircularArrow,
+    /// `cloud`.
     Cloud,
+    /// `cloudCallout`.
     CloudCallout,
+    /// `corner`.
     Corner,
+    /// `cornerTabs`.
     CornerTabs,
+    /// `cube`.
     Cube,
+    /// `curvedConnector2`.
     CurvedConnector2,
+    /// `curvedConnector3`.
     CurvedConnector3,
+    /// `curvedConnector4`.
     CurvedConnector4,
+    /// `curvedConnector5`.
     CurvedConnector5,
+    /// `curvedDownArrow`.
     CurvedDownArrow,
+    /// `curvedLeftArrow`.
     CurvedLeftArrow,
+    /// `curvedRightArrow`.
     CurvedRightArrow,
+    /// `curvedUpArrow`.
     CurvedUpArrow,
+    /// `decagon`.
     Decagon,
+    /// `diagStripe`.
     DiagStripe,
+    /// `diamond`.
     Diamond,
+    /// `dodecagon`.
     Dodecagon,
+    /// `donut`.
     Donut,
+    /// `doubleWave`.
     DoubleWave,
+    /// `downArrow`.
     DownArrow,
+    /// `downArrowCallout`.
     DownArrowCallout,
+    /// `ellipse`.
     Ellipse,
+    /// `ellipseRibbon`.
     EllipseRibbon,
+    /// `ellipseRibbon2`.
     EllipseRibbon2,
+    /// `flowChartAlternateProcess`.
     FlowChartAlternateProcess,
+    /// `flowChartCollate`.
     FlowChartCollate,
+    /// `flowChartConnector`.
     FlowChartConnector,
+    /// `flowChartDecision`.
     FlowChartDecision,
+    /// `flowChartDelay`.
     FlowChartDelay,
+    /// `flowChartDisplay`.
     FlowChartDisplay,
+    /// `flowChartDocument`.
     FlowChartDocument,
+    /// `flowChartExtract`.
     FlowChartExtract,
+    /// `flowChartInputOutput`.
     FlowChartInputOutput,
+    /// `flowChartInternalStorage`.
     FlowChartInternalStorage,
+    /// `flowChartMagneticDisk`.
     FlowChartMagneticDisk,
+    /// `flowChartMagneticDrum`.
     FlowChartMagneticDrum,
+    /// `flowChartMagneticTape`.
     FlowChartMagneticTape,
+    /// `flowChartManualInput`.
     FlowChartManualInput,
+    /// `flowChartManualOperation`.
     FlowChartManualOperation,
+    /// `flowChartMerge`.
     FlowChartMerge,
+    /// `flowChartMultidocument`.
     FlowChartMultidocument,
+    /// `flowChartOfflineStorage`.
     FlowChartOfflineStorage,
+    /// `flowChartOffpageConnector`.
     FlowChartOffpageConnector,
+    /// `flowChartOnlineStorage`.
     FlowChartOnlineStorage,
+    /// `flowChartOr`.
     FlowChartOr,
+    /// `flowChartPredefinedProcess`.
     FlowChartPredefinedProcess,
+    /// `flowChartPreparation`.
     FlowChartPreparation,
+    /// `flowChartProcess`.
     FlowChartProcess,
+    /// `flowChartPunchedCard`.
     FlowChartPunchedCard,
+    /// `flowChartPunchedTape`.
     FlowChartPunchedTape,
+    /// `flowChartSort`.
     FlowChartSort,
+    /// `flowChartSummingJunction`.
     FlowChartSummingJunction,
+    /// `flowChartTerminator`.
     FlowChartTerminator,
+    /// `foldedCorner`.
     FoldedCorner,
+    /// `frame`.
     Frame,
+    /// `funnel`.
     Funnel,
+    /// `gear6`.
     Gear6,
+    /// `gear9`.
     Gear9,
+    /// `halfFrame`.
     HalfFrame,
+    /// `heart`.
     Heart,
+    /// `heptagon`.
     Heptagon,
+    /// `hexagon`.
     Hexagon,
+    /// `homePlate`.
     HomePlate,
+    /// `horizontalScroll`.
     HorizontalScroll,
+    /// `irregularSeal1`.
     IrregularSeal1,
+    /// `irregularSeal2`.
     IrregularSeal2,
+    /// `leftArrow`.
     LeftArrow,
+    /// `leftArrowCallout`.
     LeftArrowCallout,
+    /// `leftBrace`.
     LeftBrace,
+    /// `leftBracket`.
     LeftBracket,
+    /// `leftCircularArrow`.
     LeftCircularArrow,
+    /// `leftRightArrow`.
     LeftRightArrow,
+    /// `leftRightArrowCallout`.
     LeftRightArrowCallout,
+    /// `leftRightCircularArrow`.
     LeftRightCircularArrow,
+    /// `leftRightRibbon`.
     LeftRightRibbon,
+    /// `leftRightUpArrow`.
     LeftRightUpArrow,
+    /// `leftUpArrow`.
     LeftUpArrow,
+    /// `lightningBolt`.
     LightningBolt,
+    /// `line`.
     Line,
+    /// `lineInv`.
     LineInv,
+    /// `mathDivide`.
     MathDivide,
+    /// `mathEqual`.
     MathEqual,
+    /// `mathMinus`.
     MathMinus,
+    /// `mathMultiply`.
     MathMultiply,
+    /// `mathNotEqual`.
     MathNotEqual,
+    /// `mathPlus`.
     MathPlus,
+    /// `moon`.
     Moon,
+    /// `noSmoking`.
     NoSmoking,
+    /// `nonIsoscelesTrapezoid`.
     NonIsoscelesTrapezoid,
+    /// `notchedRightArrow`.
     NotchedRightArrow,
+    /// `octagon`.
     Octagon,
+    /// `parallelogram`.
     Parallelogram,
+    /// `pentagon`.
     Pentagon,
+    /// `pie`.
     Pie,
+    /// `pieWedge`.
     PieWedge,
+    /// `plaque`.
     Plaque,
+    /// `plaqueTabs`.
     PlaqueTabs,
+    /// `plus`.
     Plus,
+    /// `quadArrow`.
     QuadArrow,
+    /// `quadArrowCallout`.
     QuadArrowCallout,
+    /// `rect`.
     Rect,
+    /// `ribbon`.
     Ribbon,
+    /// `ribbon2`.
     Ribbon2,
+    /// `rightArrow`.
     RightArrow,
+    /// `rightArrowCallout`.
     RightArrowCallout,
+    /// `rightBrace`.
     RightBrace,
+    /// `rightBracket`.
     RightBracket,
+    /// `round1Rect`.
     Round1Rect,
+    /// `round2DiagRect`.
     Round2DiagRect,
+    /// `round2SameRect`.
     Round2SameRect,
+    /// `roundRect`.
     RoundRect,
+    /// `rtTriangle`.
     RtTriangle,
+    /// `smileyFace`.
     SmileyFace,
+    /// `snip1Rect`.
     Snip1Rect,
+    /// `snip2DiagRect`.
     Snip2DiagRect,
+    /// `snip2SameRect`.
     Snip2SameRect,
+    /// `snipRoundRect`.
     SnipRoundRect,
+    /// `squareTabs`.
     SquareTabs,
+    /// `star10`.
     Star10,
+    /// `star12`.
     Star12,
+    /// `star16`.
     Star16,
+    /// `star24`.
     Star24,
+    /// `star32`.
     Star32,
+    /// `star4`.
     Star4,
+    /// `star5`.
     Star5,
+    /// `star6`.
     Star6,
+    /// `star7`.
     Star7,
+    /// `star8`.
     Star8,
+    /// `straightConnector1`.
     StraightConnector1,
+    /// `stripedRightArrow`.
     StripedRightArrow,
+    /// `sun`.
     Sun,
+    /// `swooshArrow`.
     SwooshArrow,
+    /// `teardrop`.
     Teardrop,
+    /// `trapezoid`.
     Trapezoid,
+    /// `triangle`.
     Triangle,
+    /// `upArrow`.
     UpArrow,
+    /// `upArrowCallout`.
     UpArrowCallout,
+    /// `upDownArrow`.
     UpDownArrow,
+    /// `upDownArrowCallout`.
     UpDownArrowCallout,
+    /// `uturnArrow`.
     UturnArrow,
+    /// `verticalScroll`.
     VerticalScroll,
+    /// `wave`.
     Wave,
+    /// `wedgeEllipseCallout`.
     WedgeEllipseCallout,
+    /// `wedgeRectCallout`.
     WedgeRectCallout,
+    /// `wedgeRoundRectCallout`.
     WedgeRoundRectCallout,
 }
 
 impl Preset {
+    /// Every preset, in name order.
     pub const ALL: &'static [Preset] = &[
         Preset::AccentBorderCallout1,
         Preset::AccentBorderCallout2,
@@ -386,6 +575,7 @@ impl Preset {
         Preset::WedgeRoundRectCallout,
     ];
 
+    /// Its ECMA-376 name.
     pub fn name(self) -> &'static str {
         match self {
             Preset::AccentBorderCallout1 => "accentBorderCallout1",
@@ -578,6 +768,7 @@ impl Preset {
         }
     }
 
+    /// The preset named `s`.
     pub fn from_name(s: &str) -> Option<Preset> {
         Some(match s {
             "accentBorderCallout1" => Preset::AccentBorderCallout1,

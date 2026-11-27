@@ -1,7 +1,7 @@
 //! Geometry evaluator tests
 
 use super::{Geom, Geometry, Preset, Seg};
-use crate::drawing::units::Emu;
+use crate::graphic::units::Emu;
 
 fn preset(name: &str, adj: &[(String, i64)]) -> Geometry {
     Geometry::Preset { preset: Preset::from_name(name).expect("a preset"), adj: adj.to_vec() }
