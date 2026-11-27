@@ -7,6 +7,7 @@ use super::super::package;
 use super::super::styles::StyleOrigin;
 use super::super::xml::{attr, is_w};
 use super::Splice;
+use crate::format::Origin;
 
 const STYLES_REL: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles";
 const STYLES_TYPE: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml";
@@ -15,22 +16,47 @@ const STYLES_TYPE: &str = "application/vnd.openxmlformats-officedocument.wordpro
 /// were, deleted ones spliced out and new ones added at the end; `w:latentStyles` and `w:docDefaults` the same.
 pub(super) fn styles(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
     let src = doc.source.as_ref().ok_or("the document was not read for editing")?;
-    let Some(styles) = doc.resolver.as_ref().map(|r| &r.styles) else { return Ok(()) };
-    let ours: Vec<_> = styles.by_id.values().filter(|s| s.origin == StyleOrigin::Document).collect();
+    let Some(res) = doc.resolver.as_ref() else { return Ok(()) };
+    let typed = res.typed();
+    let part = &typed.styles;
+    let (colours, cx) = (res.styles.colours, part.cx());
+    // Each of the document's own styles as its holder writes it
+    let written: HashMap<&str, String> = part
+        .sheet
+        .styles
+        .values()
+        .filter(|e| e.origin == Origin::Document)
+        .filter_map(|e| Some((&*e.style.id, part.styles.get(&e.style.id)?.xml(&colours, &cx).into_owned())))
+        .collect();
+    let defaults_raw = part.defaults.as_ref().map(|d| d.xml(&colours, &cx).into_owned());
+    let latent_raw = part.latent.as_ref().map(|d| d.xml(&colours, &cx).into_owned());
+    if cfg!(debug_assertions) {
+        // Written as the XML path's tables hold them
+        let frozen = &res.styles;
+        let theirs: HashMap<&str, &str> =
+            frozen.by_id.values().filter(|s| s.origin == StyleOrigin::Document).map(|s| (s.id.as_str(), s.raw.as_str())).collect();
+        let ours: HashMap<&str, &str> = written.iter().map(|(k, v)| (*k, v.as_str())).collect();
+        assert_eq!(ours, theirs, "the styles written alike");
+        assert_eq!(
+            (defaults_raw.as_ref(), latent_raw.as_ref()),
+            (frozen.defaults_raw.as_ref(), frozen.latent.raw.as_ref()),
+            "the defaults and latent styles written alike"
+        );
+    }
     let name = package::related(&src.package, parts, &src.main, STYLES_REL)?;
     let Some(xml) = (match &name {
         Some(n) => package::read(&src.package, parts, n)?,
         None => None,
     }) else {
-        if ours.is_empty() && styles.defaults_raw.is_none() && styles.latent.raw.is_none() {
+        if written.is_empty() && defaults_raw.is_none() && latent_raw.is_none() {
             return Ok(());
         }
         // A document without a styles part: one, with every style and the defaults and latent styles set.
-        let mut sorted = ours;
-        sorted.sort_by(|a, b| a.id.cmp(&b.id));
-        let root = if styles.root.is_empty() { format!("<w:styles xmlns:w=\"{}\">", super::props::W_NS) } else { styles.root.clone() };
-        let close = format!("</{}styles>", styles.cx().w);
-        let body: String = styles.defaults_raw.iter().chain(styles.latent.raw.iter()).cloned().chain(sorted.iter().map(|s| s.raw.clone())).collect();
+        let mut sorted: Vec<(&&str, &String)> = written.iter().collect();
+        sorted.sort_by(|a, b| a.0.cmp(b.0));
+        let root = if part.root.is_empty() { format!("<w:styles xmlns:w=\"{}\">", super::props::W_NS) } else { part.root.to_string() };
+        let close = format!("</{}styles>", cx.w);
+        let body: String = defaults_raw.iter().chain(latent_raw.iter()).cloned().chain(sorted.iter().map(|s| s.1.clone())).collect();
         let xml = format!("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n{root}{body}{close}");
         let part = match src.main.rsplit_once('/') {
             Some((dir, _)) => format!("{dir}/styles.xml"),
@@ -58,12 +84,12 @@ pub(super) fn styles(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Resu
     let open = root.range().start + crate::docx::binding::tag_end(&xml[root.range().start..]).ok_or("a styles part without its start tag")? + 1;
     let defaults = root.children().find(|n| is_w(*n, "docDefaults"));
     if defaults.is_none()
-        && let Some(d) = &styles.defaults_raw
+        && let Some(d) = &defaults_raw
     {
         splices.push((open..open, d.clone()));
     }
     if !root.children().any(|n| is_w(n, "latentStyles"))
-        && let Some(l) = &styles.latent.raw
+        && let Some(l) = &latent_raw
     {
         let at = defaults.map_or(open, |d| d.range().end);
         splices.push((at..at, l.clone()));
@@ -72,28 +98,27 @@ pub(super) fn styles(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Resu
         let was = &xml[n.range()];
         if is_w(n, "style") {
             let Some(id) = attr(n, "styleId") else { continue };
-            let own = styles.by_id.get(id).filter(|s| s.origin == StyleOrigin::Document);
-            match own {
+            match written.get(id) {
                 Some(_) if last.get(id) != Some(&n.range().start) => {}
-                Some(s) if s.raw == was => {}
-                Some(s) => splices.push((n.range(), s.raw.clone())),
+                Some(raw) if raw == was => {}
+                Some(raw) => splices.push((n.range(), raw.clone())),
                 None => splices.push((n.range(), String::new())),
             }
         } else if is_w(n, "latentStyles")
-            && let Some(now) = styles.latent.raw.as_deref().filter(|now| *now != was)
+            && let Some(now) = latent_raw.as_deref().filter(|now| *now != was)
         {
             splices.push((n.range(), now.to_string()));
         } else if is_w(n, "docDefaults")
-            && let Some(now) = styles.defaults_raw.as_deref().filter(|now| *now != was)
+            && let Some(now) = defaults_raw.as_deref().filter(|now| *now != was)
         {
             splices.push((n.range(), now.to_string()));
         }
     }
-    let mut added: Vec<_> = ours.iter().filter(|s| !last.contains_key(s.id.as_str())).collect();
-    added.sort_by(|a, b| a.id.cmp(&b.id));
+    let mut added: Vec<(&&str, &String)> = written.iter().filter(|(id, _)| !last.contains_key(**id)).collect();
+    added.sort_by(|a, b| a.0.cmp(b.0));
     if !added.is_empty() {
         let at = xml.rfind("</").ok_or("a styles part without its end tag")?;
-        splices.push((at..at, added.iter().map(|s| s.raw.as_str()).collect()));
+        splices.push((at..at, added.iter().map(|s| s.1.as_str()).collect()));
     }
     if splices.is_empty() {
         return Ok(());

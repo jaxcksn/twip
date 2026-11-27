@@ -204,7 +204,7 @@ impl TypedDefs {
         set_defaults(&mut part, &f.styles, &cx);
         changed |= !same_rc(&defaults_were.0, &part.sheet.defaults) || !same_rc(&defaults_were.1, &part.sheet.latent);
         let numbering = numbering_of(&f.numbering, Some(&self.numbering), &f.styles.colours);
-        let lists = lists_of(&numbering, &f.numbering, Some((&self.cascade.lists, &self.glossary)));
+        let lists = lists_of(&numbering, &f.numbering, Some((&self.cascade.lists, &self.glossary, &self.numbering)));
         let lists_changed = *self.cascade.lists != lists;
         let sheet = if changed { Rc::new(part.sheet.clone()) } else { self.cascade.styles.clone() };
         let lists = if lists_changed { Rc::new(lists) } else { self.cascade.lists.clone() };
@@ -216,7 +216,7 @@ impl TypedDefs {
 
     /// These definitions with `rename` applied as [`super::font_table::rename_tables`] applies it to the XML path's
     /// tables (`f`, the resolver it renamed): in each style's and region's, the defaults' and each definition's
-    /// levels' character properties; the holders keep the elements they were read from.
+    /// levels' character properties. The holders keep the elements as they are: saving renames the family in them.
     fn renamed(&self, rename: &FontRename, f: &Resolver) -> TypedDefs {
         let mut part = (*self.styles).clone();
         let style = |s: &crate::format::Style| -> Option<crate::format::Style> {
@@ -230,22 +230,14 @@ impl TypedDefs {
         let ids: Vec<Rc<str>> = part.sheet.styles.keys().cloned().collect();
         for id in ids {
             let Some(e) = part.sheet.styles.get_mut(&id) else { continue };
-            let Some(s) = style(&e.style) else { continue };
-            match part.styles.get(&id) {
-                Some(d) => {
-                    let d = d.edited(s, &[]);
-                    e.style = d.get().clone();
-                    part.styles.insert(id, d);
-                }
-                None => e.style = Rc::new(s),
+            if let Some(s) = style(&e.style) {
+                e.style = Rc::new(s);
             }
         }
-        if let Some(d) = &part.defaults {
-            let mut v = (**d.get()).clone();
+        if let Some(d) = &part.sheet.defaults {
+            let mut v = (**d).clone();
             if v.char.as_mut().is_some_and(|c| rename_char(c, rename) > 0) {
-                let d = d.edited(v, &[]);
-                part.sheet.defaults = Some(d.get().clone());
-                part.defaults = Some(d);
+                part.sheet.defaults = Some(Rc::new(v));
             }
         }
         let def = |d: &ListDef| -> Option<ListDef> {
@@ -261,12 +253,6 @@ impl TypedDefs {
             }
             (n > 0).then_some(d)
         };
-        let mut numbering = (*self.numbering).clone();
-        for d in numbering.defs.values_mut() {
-            if let Some(v) = def(d.get()) {
-                *d = d.edited(v, &[]);
-            }
-        }
         let mut lists = (*self.cascade.lists).clone();
         for d in lists.defs.values_mut() {
             if let Some(v) = def(d) {
@@ -274,7 +260,7 @@ impl TypedDefs {
             }
         }
         let c = cascade(Rc::new(part.sheet.clone()), Rc::new(lists), f);
-        TypedDefs { cascade: Rc::new(c), styles: Rc::new(part), numbering: Rc::new(numbering), glossary: self.glossary.clone() }
+        TypedDefs { cascade: Rc::new(c), styles: Rc::new(part), numbering: self.numbering.clone(), glossary: self.glossary.clone() }
     }
 
     /// In a debug build, that the typed definitions are in step with `f`: the same styles, in the same order and
@@ -377,18 +363,35 @@ fn numbering_of(n: &Numbering, was: Option<&NumberingXml>, colours: &super::prop
 
 /// The typed lists: the document's own from `numbering`, the glossary's as `n` holds them (`was`'s where the XML is
 /// the same), each picture bullet's image as `n` holds it.
-fn lists_of(numbering: &NumberingXml, n: &Numbering, was: Option<(&Lists, &GlossaryXml)>) -> Lists {
+fn lists_of(numbering: &NumberingXml, n: &Numbering, was: Option<(&Lists, &GlossaryXml, &NumberingXml)>) -> Lists {
     let cx = n.cx();
     let mut lists = numbering.lists();
+    // The document's own, as they were while their holders are
+    if let Some((l, _, held)) = was {
+        for (k, d) in &numbering.defs {
+            if held.defs.get(k).is_some_and(|h| Rc::ptr_eq(h.get(), d.get()))
+                && let Some(v) = l.defs.get(k)
+            {
+                lists.defs.insert(*k, v.clone());
+            }
+        }
+        for (k, d) in &numbering.lists {
+            if held.lists.get(k).is_some_and(|h| Rc::ptr_eq(h.get(), d.get()))
+                && let Some(v) = l.lists.get(k)
+            {
+                lists.lists.insert(*k, v.clone());
+            }
+        }
+    }
     let glossary = |o: StyleOrigin| o == StyleOrigin::Glossary;
     for (k, a) in n.abstracts.iter().filter(|(_, a)| glossary(a.origin)) {
-        let held = was.filter(|(_, g)| g.defs.get(k) == Some(&a.raw)).and_then(|(l, _)| l.defs.get(&ListDefId(*k)).cloned());
+        let held = was.filter(|(_, g, _)| g.defs.get(k) == Some(&a.raw)).and_then(|(l, _, _)| l.defs.get(&ListDefId(*k)).cloned());
         if let Some(d) = held.or_else(|| glossary_def(*k, a, &cx).map(Rc::new)) {
             lists.defs.insert(ListDefId(*k), d);
         }
     }
     for (k, m) in n.nums.iter().filter(|(_, m)| glossary(m.origin)) {
-        let held = was.filter(|(_, g)| g.lists.get(k) == Some(&m.raw)).and_then(|(l, _)| l.lists.get(&ListId(*k)).cloned());
+        let held = was.filter(|(_, g, _)| g.lists.get(k) == Some(&m.raw)).and_then(|(l, _, _)| l.lists.get(&ListId(*k)).cloned());
         if let Some(l) = held.or_else(|| glossary_list(*k, m, &cx).map(Rc::new)) {
             lists.lists.insert(ListId(*k), l);
         }

@@ -16,11 +16,25 @@ const NUMBERING_TYPE: &str = "application/vnd.openxmlformats-officedocument.word
 /// has them (picture bullets first, then the definitions, then the `w:num`s).
 pub(super) fn numbering(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
     let src = doc.source.as_ref().ok_or("the document was not read for editing")?;
-    let Some(n) = doc.resolver.as_ref().map(|r| &r.numbering) else { return Ok(()) };
-    let abstracts: BTreeMap<i64, &str> =
-        n.abstracts.iter().filter(|(_, a)| a.origin == StyleOrigin::Document).map(|(k, a)| (*k, a.raw.as_str())).collect();
-    let nums: BTreeMap<i64, &str> = n.nums.iter().filter(|(_, m)| m.origin == StyleOrigin::Document).map(|(k, m)| (*k, m.raw.as_str())).collect();
-    let pics: BTreeMap<i64, &str> = n.pic_bullets.iter().map(|(k, p)| (*k, p.raw.as_str())).collect();
+    let Some(res) = doc.resolver.as_ref() else { return Ok(()) };
+    let typed = res.typed();
+    let n = &typed.numbering;
+    let (colours, cx) = (res.styles.colours, n.cx());
+    // Each of the document's own definitions, lists and picture bullets as its holder writes it
+    let abstracts: BTreeMap<i64, String> = n.defs.iter().map(|(k, d)| (k.0, d.xml(&colours, &cx).into_owned())).collect();
+    let nums: BTreeMap<i64, String> = n.lists.iter().map(|(k, d)| (k.0, d.xml(&colours, &cx).into_owned())).collect();
+    let pics: BTreeMap<i64, String> = n.pictures.iter().map(|(k, d)| (*k, d.xml(&colours, &cx).into_owned())).collect();
+    if cfg!(debug_assertions) {
+        // Written as the XML path's tables hold them
+        let f = &res.numbering;
+        let doc = |o: StyleOrigin| o == StyleOrigin::Document;
+        let theirs: BTreeMap<i64, &str> = f.abstracts.iter().filter(|(_, a)| doc(a.origin)).map(|(k, a)| (*k, a.raw.as_str())).collect();
+        assert_eq!(abstracts.iter().map(|(k, v)| (*k, v.as_str())).collect::<BTreeMap<_, _>>(), theirs, "the definitions written alike");
+        let theirs: BTreeMap<i64, &str> = f.nums.iter().filter(|(_, m)| doc(m.origin)).map(|(k, m)| (*k, m.raw.as_str())).collect();
+        assert_eq!(nums.iter().map(|(k, v)| (*k, v.as_str())).collect::<BTreeMap<_, _>>(), theirs, "the lists written alike");
+        let theirs: BTreeMap<i64, &str> = f.pic_bullets.iter().map(|(k, p)| (*k, p.raw.as_str())).collect();
+        assert_eq!(pics.iter().map(|(k, v)| (*k, v.as_str())).collect::<BTreeMap<_, _>>(), theirs, "the picture bullets written alike");
+    }
     let name = package::related(&src.package, parts, &src.main, NUMBERING_REL)?;
     let Some(xml) = (match &name {
         Some(p) => package::read(&src.package, parts, p)?,
@@ -31,8 +45,8 @@ pub(super) fn numbering(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> R
         }
         // A document without a numbering part: one, with every list.
         let root = if n.root.is_empty() { format!("<w:numbering xmlns:w=\"{}\">", super::props::W_NS) } else { n.root.clone() };
-        let close = format!("</{}numbering>", n.cx().w);
-        let body: String = pics.values().chain(abstracts.values()).chain(nums.values()).copied().collect();
+        let close = format!("</{}numbering>", cx.w);
+        let body: String = pics.values().chain(abstracts.values()).chain(nums.values()).map(String::as_str).collect();
         let xml = format!("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n{root}{body}{close}");
         let part = match src.main.rsplit_once('/') {
             Some((dir, _)) => format!("{dir}/numbering.xml"),
@@ -75,7 +89,7 @@ pub(super) fn numbering(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> R
         seen[*kind].insert(*id);
         match tables[*kind].get(id) {
             Some(_) if last[&(*kind, *id)] != i => {}
-            Some(raw) if *raw == &xml[range.clone()] => {}
+            Some(raw) if raw.as_str() == &xml[range.clone()] => {}
             Some(raw) => splices.push((range.clone(), raw.to_string())),
             None => splices.push((range.clone(), String::new())),
         }
@@ -84,7 +98,9 @@ pub(super) fn numbering(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> R
     let (open, end) = (root.range().start, root.range().end);
     let empty = xml[open..end].ends_with("/>");
     let close = if empty { end } else { xml.rfind("</").ok_or("a numbering part without its end tag")? };
-    let new = |now: &BTreeMap<i64, &str>, seen: &HashSet<i64>| -> String { now.iter().filter(|(k, _)| !seen.contains(k)).map(|(_, r)| *r).collect() };
+    let new = |now: &BTreeMap<i64, String>, seen: &HashSet<i64>| -> String {
+        now.iter().filter(|(k, _)| !seen.contains(k)).map(|(_, r)| r.as_str()).collect()
+    };
     let (new_pics, new_abstracts, new_nums) = (new(&pics, &seen[0]), new(&abstracts, &seen[1]), new(&nums, &seen[2]));
     // The `w:num`s end before a `w:numIdMacAtCleanup`.
     let tail = cleanup.unwrap_or(close);
