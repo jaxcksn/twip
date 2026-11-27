@@ -4,7 +4,9 @@ use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use crate::api::command::{ApplicationFieldTypes, ReferenceRule, SubTemplateRules, SubTemplateView};
+use crate::document::paragraph::ListId;
 use crate::docx::fields::{self, FieldCode};
+use crate::docx::resolvers::TypedDefs;
 use crate::docx::{Block, Document, ElementId, FieldId, FieldKind, Gallery, Inline, Paragraph, Section};
 use crate::font::Fonts;
 use crate::layout::expansion::{Expansion, Expansions};
@@ -132,7 +134,7 @@ struct Imported {
     blocks: Vec<Block>,
     controls: Vec<(crate::docx::ControlId, crate::docx::Control)>,
     refs: super::clipboard::Refs,
-    numbering: crate::docx::numbering::Numbering,
+    defs: Option<Rc<crate::docx::resolvers::TypedDefs>>,
 }
 
 /// Each paragraph of `blocks`: in tables and text boxes too.
@@ -691,8 +693,8 @@ impl Editor {
             blocks.extend(empty_para(&self.doc).map(Block::Para));
         }
         let refs = super::clipboard::refs_of(&read, &blocks);
-        let numbering = read.resolver.as_ref().map(|r| r.numbering.clone()).unwrap_or_default();
-        Some(Imported { blocks, controls: std::mem::take(&mut read.controls).into_iter().collect(), refs, numbering })
+        let defs = read.resolver.as_ref().map(|r| r.typed());
+        Some(Imported { blocks, controls: std::mem::take(&mut read.controls).into_iter().collect(), refs, defs })
     }
 
     /// Makes `im`'s references the document's, in `tx`: its lists join the document's under ids of their own, its
@@ -756,46 +758,47 @@ impl Editor {
         im.refs.comments.iter_mut().for_each(|c| note(&mut c.body));
         used.sort_unstable();
         used.dedup();
-        used.retain(|n| im.numbering.nums.contains_key(n));
+        let Some(theirs) = im.defs.clone() else { return Ok(()) };
+        used.retain(|n| theirs.cascade.lists.lists.contains_key(&ListId(*n)));
         if used.is_empty() {
             return Ok(());
         }
+        // A list's definition id: -1 when it names none
+        let def_of = |t: &TypedDefs, n: i64| t.cascade.lists.lists.get(&ListId(n)).map(|l| l.def.map_or(-1, |d| d.0));
         let mut next = res.clone();
         let r = Rc::make_mut(&mut next);
-        let mut next_num = r.numbering.nums.keys().copied().chain(self.doc.added_lists.iter().map(|l| l.num_id)).max().unwrap_or(0).max(0) + 1;
+        let ours = r.cascade();
+        let mut next_num = ours.lists.lists.keys().map(|k| k.0).chain(self.doc.added_lists.iter().map(|l| l.num_id)).max().unwrap_or(0).max(0) + 1;
         let mut next_abstract =
-            r.numbering.abstracts.keys().copied().chain(self.doc.added_lists.iter().map(|l| l.abstract_id)).max().unwrap_or(-1).max(-1) + 1;
+            ours.lists.defs.keys().map(|k| k.0).chain(self.doc.added_lists.iter().map(|l| l.abstract_id)).max().unwrap_or(-1).max(-1) + 1;
         let (mut nums, mut abstracts): (HashMap<i64, i64>, HashMap<i64, i64>) = (HashMap::new(), HashMap::new());
         for n in used {
-            let Some(num) = im.numbering.nums.get(&n) else { continue };
-            let Some(a) = im.numbering.abstracts.get(&num.abstract_id) else { continue };
+            let Some(num_def) = def_of(&theirs, n) else { continue };
+            let (Some(num), Some(a)) = (theirs.list_xml(n), theirs.def_xml(num_def)) else { continue };
             // The document's own list, as a copy of its content names it
-            let own = r
-                .numbering
-                .nums
-                .get(&n)
-                .is_some_and(|h| h.raw == num.raw && r.numbering.abstracts.get(&h.abstract_id).is_some_and(|ha| ha.raw == a.raw));
+            let ours = r.typed();
+            let own = ours.list_xml(n).is_some_and(|h| h == num) && def_of(&ours, n).and_then(|ha| ours.def_xml(ha)).is_some_and(|ha| ha == a);
             if own {
                 continue;
             }
-            let to_abstract = match abstracts.get(&num.abstract_id) {
+            let to_abstract = match abstracts.get(&num_def) {
                 Some(&id) => id,
                 None => {
                     let id = next_abstract;
                     next_abstract += 1;
-                    let mut el = Props::parse(Some(&a.raw), "abstractNum", &cx);
+                    let mut el = Props::parse(Some(&a), "abstractNum", &cx);
                     el.set_own("abstractNumId", &id.to_string(), &cx);
-                    r.set_abstract_xml(el.xml().unwrap_or_else(|| a.raw.clone()));
-                    abstracts.insert(num.abstract_id, id);
+                    r.set_abstract_xml(el.xml().unwrap_or_else(|| a.to_string()));
+                    abstracts.insert(num_def, id);
                     id
                 }
             };
             let to = next_num;
             next_num += 1;
-            let mut el = Props::parse(Some(&num.raw), "num", &cx);
+            let mut el = Props::parse(Some(&num), "num", &cx);
             el.set_own("numId", &to.to_string(), &cx);
             el.set("abstractNumId", format!("<{w}abstractNumId {w}val=\"{to_abstract}\"/>"));
-            r.set_num_xml(el.xml().unwrap_or_else(|| num.raw.clone()));
+            r.set_num_xml(el.xml().unwrap_or_else(|| num.to_string()));
             nums.insert(n, to);
         }
         if nums.is_empty() {
