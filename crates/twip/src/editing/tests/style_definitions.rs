@@ -603,3 +603,17 @@ fn a_document_with_many_latent_exceptions_lists_built_ins_in_one_pass() {
     let h5 = e.built_in_styles().into_iter().find(|b| b.id.0 == "Heading5").expect("heading 5");
     assert_eq!((h5.priority, h5.visibility), (4, StyleVisibility::Show), "matched without case");
 }
+
+#[test]
+fn the_defaults_formatted_as_a_style_resolve_alone() {
+    // Defaults that turn a toggle on, which would turn it off again over themselves
+    let styles = STYLES.replace(r#"<w:rPr><w:sz w:val="22"/></w:rPr></w:rPrDefault>"#, r#"<w:rPr><w:b/><w:sz w:val="22"/></w:rPr></w:rPrDefault>"#);
+    let mut e = open_pkg(&pkg(&styles, r#"<w:p><w:r><w:t>one</w:t></w:r></w:p>"#));
+    let stand_in = r#"<w:style w:type="paragraph" w:styleId="DocumentDefaults"><w:name w:val="Document Defaults"/><w:rPr><w:b/><w:sz w:val="22"/></w:rPr></w:style>"#;
+    let (_, over, _) = e.style_formatting(stand_in).expect("resolves");
+    e.defaults_target = true;
+    let alone = e.style_formatting(stand_in).expect("resolves");
+    e.defaults_target = false;
+    assert!(!over.bold, "a style's bold over bold defaults turns it off");
+    assert!(alone.1.bold, "the defaults' own bold, not over themselves");
+}

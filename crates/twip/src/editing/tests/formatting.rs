@@ -441,3 +441,25 @@ fn bold_over_a_ruby_leaves_an_empty_run_in_its_base_alone() {
     assert!(xml.contains("<w:r/></w:rubyBase>"), "no properties beside the empty run: {xml}");
     assert!(r.base.iter().all(|(_, run)| run.bold), "the base text is bold");
 }
+
+#[test]
+fn a_font_the_built_in_defaults_name_is_replaced_where_the_part_writes_none() {
+    use crate::api::command::CommandResult;
+    let styles = r#"<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>"#;
+    let mut e = Editor::open(&super::style_model::pkg(styles, "<w:p><w:r><w:t>one</w:t></w:r></w:p>"), fonts()).expect("opens");
+    e.complete(fonts());
+    let part = |e: &Editor| {
+        let bytes = crate::docx::write::save(e.document()).expect("saves");
+        let mut z = zip::ZipArchive::new(std::io::Cursor::new(bytes)).expect("a package");
+        let mut xml = String::new();
+        z.by_name("word/styles.xml").expect("styles").read_to_string(&mut xml).expect("reads");
+        xml
+    };
+    let font = |e: &Editor| first_para(e).inlines.iter().find_map(|i| if let Inline::Text(_, r) = i { Some(r.ascii.clone()) } else { None });
+    assert_eq!(font(&e).as_deref(), Some("Aptos"), "Word's defaults");
+    let before = part(&e);
+    e.execute(replace_font("Aptos", "Courier New", None), fonts());
+    assert_eq!(e.made, Some(CommandResult::FontReplaced { changed: 1, skipped: 0 }), "the defaults, once");
+    assert_eq!(font(&e).as_deref(), Some("Courier New"), "text over the defaults takes the new font");
+    assert_eq!(part(&e), before, "the styles part writes no defaults still");
+}
