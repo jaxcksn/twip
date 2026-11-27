@@ -4,13 +4,15 @@ use std::collections::HashSet;
 use std::ops::ControlFlow;
 use std::rc::Rc;
 
+use crate::document::paragraph::ListJc;
+use crate::docx::list_xml::ListDefDirect;
 use crate::docx::props::ParaProps;
 use crate::docx::resolvers::Resolvers;
 use crate::docx::write::props::Cx;
 use crate::docx::{Block, Document, Inline, ListLabel, Paragraph};
 use crate::font::Fonts;
 use crate::format::counters::Counters;
-use crate::format::{ListChoice, ParaEdit, ParaProp};
+use crate::format::{FontHint, FontRef, ListChoice, ListDef, ListDefId, ListLevel, Literal, MultiLevelType, NumberFormat, ParaEdit, ParaProp};
 use crate::layout::{ParaId, Unit};
 
 use super::commands::Outcome;
@@ -232,55 +234,25 @@ impl Editor {
     }
 
     pub(super) fn new_list(&mut self, tx: &mut Tx, bullet: bool) -> i64 {
-        let mut levels = String::new();
-        for k in 0..9 {
-            let left = 720 * (k + 1);
-            let (fmt, text, jc, hanging, font) = if bullet {
-                match k % 3 {
-                    0 => ("bullet", "\u{F0B7}".to_string(), "left", 360, Some("Symbol")),
-                    1 => ("bullet", "o".to_string(), "left", 360, Some("Courier New")),
-                    _ => ("bullet", "\u{F0A7}".to_string(), "left", 360, Some("Wingdings")),
-                }
-            } else {
-                match k % 3 {
-                    0 => ("decimal", format!("%{}.", k + 1), "left", 360, None),
-                    1 => ("lowerLetter", format!("%{}.", k + 1), "left", 360, None),
-                    _ => ("lowerRoman", format!("%{}.", k + 1), "right", 180, None),
-                }
-            };
-            let rpr = font.map_or(String::new(), |f| format!(r#"<w:rPr><w:rFonts w:ascii="{f}" w:hAnsi="{f}" w:hint="default"/></w:rPr>"#));
-            levels.push_str(&format!(
-                r#"<w:lvl w:ilvl="{k}"><w:start w:val="1"/><w:numFmt w:val="{fmt}"/><w:lvlText w:val="{text}"/><w:lvlJc w:val="{jc}"/><w:pPr><w:ind w:left="{left}" w:hanging="{hanging}"/></w:pPr>{rpr}</w:lvl>"#
-            ));
-        }
-        self.add_list_xml(tx, "hybridMultilevel", &levels)
+        self.add_new_list(tx, MultiLevelType::HybridMultilevel, new_list_levels(bullet))
     }
 
     /// The single-level bullet list Word gives the List Bullet style, linked to style `style`.
     pub(super) fn new_style_bullets(&mut self, tx: &mut Tx, style: &str) -> i64 {
-        let level = format!(
-            r#"<w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="bullet"/><w:pStyle w:val="{}"/><w:lvlText w:val="{}"/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="360" w:hanging="360"/></w:pPr><w:rPr><w:rFonts w:ascii="Symbol" w:hAnsi="Symbol" w:hint="default"/></w:rPr></w:lvl>"#,
-            crate::docx::write::props::esc(style),
-            '\u{F0B7}'
-        );
-        self.add_list_xml(tx, "singleLevel", &level)
+        self.add_new_list(tx, MultiLevelType::SingleLevel, style_bullets_levels(style))
     }
 
-    /// Adds a list of `levels` (`w:lvl` elements), returning its number id; 0 when it couldn't be added.
-    fn add_list_xml(&mut self, tx: &mut Tx, multi: &str, levels: &str) -> i64 {
+    /// Adds a list of `levels`, returning its number id; 0 when it couldn't be added.
+    fn add_new_list(&mut self, tx: &mut Tx, multi: MultiLevelType, levels: [Option<Rc<ListLevel>>; 9]) -> i64 {
         let Some(res) = self.doc.resolver.clone() else { return 0 };
         let lists = res.cascade().lists.clone();
         let abstract_id = lists.defs.keys().map(|k| k.0).chain(self.doc.added_lists.iter().map(|l| l.abstract_id)).max().unwrap_or(-1) + 1;
         let num_id = lists.lists.keys().map(|k| k.0).chain(self.doc.added_lists.iter().map(|l| l.num_id)).max().unwrap_or(0) + 1;
-        let abstract_xml = format!(
-            r#"<w:abstractNum xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" w:abstractNumId="{abstract_id}"><w:multiLevelType w:val="{multi}"/>{levels}</w:abstractNum>"#
-        );
-        let num_xml = format!(
-            r#"<w:num xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" w:numId="{num_id}"><w:abstractNumId w:val="{abstract_id}"/></w:num>"#
-        );
+        let def = added_definition(abstract_id, multi, levels);
         let mut r = (*res).clone();
-        r.set_abstract_xml(abstract_xml.clone());
-        r.set_num_xml(num_xml);
+        let abstract_xml = def.xml(&r.colours(), &r.typed().numbering.cx()).into_owned();
+        r.set_list_def(def);
+        r.set_list(super::list_defs::new_list(num_id, abstract_id, &[]));
         let mut added = self.doc.added_lists.clone();
         added.push(crate::docx::AddedList { abstract_id, num_id, abstract_xml });
         if self.step(tx, Step::Resolver { resolver: Some(Rc::new(r)), added }).is_err() {
@@ -370,6 +342,60 @@ pub(super) fn in_list(e: &mut ParaEdit, num: i64, ilvl: i64) {
     e.list = Some(if num == 0 { ListChoice::None } else { ListChoice::In(ListId(num)) });
     e.list_level = Some(ilvl);
     e.whole(ParaProp::List);
+}
+
+/// The nine levels of a new list of bullets or numbers.
+pub(super) fn new_list_levels(bullet: bool) -> [Option<Rc<ListLevel>>; 9] {
+    std::array::from_fn(|k| {
+        let left = 36.0 * (k + 1) as f64;
+        let level = if bullet {
+            match k % 3 {
+                0 => new_level(NumberFormat::Bullet, "\u{F0B7}", ListJc::Left, left, 18.0, Some("Symbol")),
+                1 => new_level(NumberFormat::Bullet, "o", ListJc::Left, left, 18.0, Some("Courier New")),
+                _ => new_level(NumberFormat::Bullet, "\u{F0A7}", ListJc::Left, left, 18.0, Some("Wingdings")),
+            }
+        } else {
+            let text = format!("%{}.", k + 1);
+            match k % 3 {
+                0 => new_level(NumberFormat::Decimal, &text, ListJc::Left, left, 18.0, None),
+                1 => new_level(NumberFormat::LowerLetter, &text, ListJc::Left, left, 18.0, None),
+                _ => new_level(NumberFormat::LowerRoman, &text, ListJc::Right, left, 9.0, None),
+            }
+        };
+        Some(Rc::new(level))
+    })
+}
+
+/// The level of the single-level bullet list Word gives the List Bullet style, linked to style `style`.
+pub(super) fn style_bullets_levels(style: &str) -> [Option<Rc<ListLevel>>; 9] {
+    let mut level = new_level(NumberFormat::Bullet, "\u{F0B7}", ListJc::Left, 18.0, 18.0, Some("Symbol"));
+    level.style = Some(style.into());
+    let mut levels: [Option<Rc<ListLevel>>; 9] = Default::default();
+    levels[0] = Some(Rc::new(level));
+    levels
+}
+
+/// A new definition `id` of `levels`, related as `multi` says.
+pub(super) fn added_definition(id: i64, multi: MultiLevelType, levels: [Option<Rc<ListLevel>>; 9]) -> ListDefDirect {
+    ListDefDirect::typed(Rc::new(ListDef { id: ListDefId(id), multi_level_type: Some(Literal::Known(multi)), levels, ..ListDef::default() }))
+}
+
+/// A new list level starting at 1: its number `format` and label `text` aligned by `jc`, its start indent `left` and
+/// the first line `hanging` (points), its label in `font`.
+fn new_level(format: NumberFormat, text: &str, jc: ListJc, left: f64, hanging: f64, font: Option<&str>) -> ListLevel {
+    let mut l = ListLevel {
+        start: Some(1),
+        format: Some(Literal::Known(format)),
+        text: Some(text.into()),
+        jc: Some(Literal::Known(jc)),
+        ..ListLevel::default()
+    };
+    (l.para.indent_left, l.para.indent_first) = (Some(left), Some(-hanging));
+    if let Some(f) = font {
+        let f = Some(FontRef::Family(f.into()));
+        (l.char.fonts.latin, l.char.fonts.latin_extended, l.char.hint) = (f.clone(), f, Some(FontHint::Default));
+    }
+    l
 }
 
 /// Sets a paragraph's indents whole: its start and first line's, no end indent.
