@@ -559,7 +559,6 @@ impl Editor {
         let mut next = (*res).clone();
         let cx = next.typed().numbering.cx();
         let Some(styles) = edit(&mut next, &cx) else { return Outcome::Unchanged("the list didn't change") };
-        next.compute_style_links();
         let mut tx = self.begin(label);
         let added = self.doc.added_lists.clone();
         if self.step(&mut tx, Step::Resolver { resolver: Some(Rc::new(next)), added }).is_err() {

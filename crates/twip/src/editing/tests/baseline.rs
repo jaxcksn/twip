@@ -1327,7 +1327,9 @@ fn definitions_match(res: &crate::docx::resolvers::Resolvers, c: &Cascade, numbe
     }
     let mut links: Vec<((i64, i64), String)> = c.style_links.iter().map(|((a, l), s)| ((a.0, *l), s.to_string())).collect();
     links.sort();
-    let mut frozen: Vec<((i64, i64), String)> = res.style_links.iter().map(|(k, s)| (*k, s.clone())).collect();
+    let mut current = res.frozen().clone();
+    current.compute_style_links();
+    let mut frozen: Vec<((i64, i64), String)> = current.style_links.iter().map(|(k, s)| (*k, s.clone())).collect();
     frozen.sort();
     assert_eq!(links, frozen, "{what}: style links");
     n.links += links.len();

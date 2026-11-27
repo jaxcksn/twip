@@ -781,12 +781,6 @@ impl Resolvers {
         self.edited();
     }
 
-    /// Works the style links out again on the XML path's side, from its definitions; the typed side's are worked out
-    /// with its cascade.
-    pub fn compute_style_links(&mut self) {
-        self.frozen.compute_style_links();
-    }
-
     /// The styles, to edit: reads are the XML path's, edits the typed side's first.
     pub fn style_edits(&mut self) -> StyleEdits<'_> {
         StyleEdits(self)

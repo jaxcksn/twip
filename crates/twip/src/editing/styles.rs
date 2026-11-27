@@ -897,7 +897,6 @@ impl Editor {
             Err(StyleEditError::Loop) => return Outcome::Refused(Error::invalid("a style can't be based on itself")),
             Err(StyleEditError::Malformed) => return Outcome::Refused(Error::invalid("not a style")),
         };
-        next.compute_style_links();
         let mut tx = self.begin(label);
         let added = self.doc.added_lists.clone();
         if self.step(&mut tx, Step::Resolver { resolver: Some(Rc::new(next)), added }).is_err() {
