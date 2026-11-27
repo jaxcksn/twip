@@ -30,12 +30,14 @@ impl Editor {
     fn list_value(&self, para: crate::layout::ParaId) -> Option<u32> {
         let res = self.doc.resolver.as_ref()?;
         let cx = self.cx();
-        let mut counters = crate::docx::numbering::Counters::default();
+        let c = res.cascade();
+        let mut counters = crate::format::counters::Counters::default();
         for (p, uncounted) in super::lists::numbered_paras(&self.doc, &self.index) {
             let Some((num, ilvl)) = super::lists::counted(res, p, uncounted, &cx) else { continue };
-            counters.next(&res.numbering, &res.styles, num, ilvl);
+            let list = crate::document::paragraph::ListId(num);
+            counters.next(&c, list, ilvl);
             if p.id == para.0 {
-                return counters.value(&res.numbering, &res.styles, num, ilvl).map(|v| v.max(0) as u32);
+                return counters.value(&c, list, ilvl).map(|v| v.max(0) as u32);
             }
         }
         None

@@ -4,13 +4,12 @@ use std::collections::HashSet;
 use std::ops::ControlFlow;
 use std::rc::Rc;
 
-use crate::docx::char_props::from_run_props;
-use crate::docx::numbering::Counters;
 use crate::docx::props::ParaProps;
 use crate::docx::resolvers::Resolvers;
 use crate::docx::write::props::Cx;
 use crate::docx::{Block, Document, Inline, ListLabel, Paragraph};
 use crate::font::Fonts;
+use crate::format::counters::Counters;
 use crate::format::{ListChoice, ParaEdit, ParaProp};
 use crate::layout::{ParaId, Unit};
 
@@ -337,28 +336,20 @@ impl Editor {
             return Vec::new();
         }
         let cx = self.cx();
+        let c = res.cascade();
         let mut counters = Counters::default();
         let mut changes: Vec<(ParaId, Option<ListLabel>)> = Vec::new();
         for (p, uncounted) in numbered_paras(&self.doc, &self.index) {
             let para = ParaId(p.id);
-            let label = counted(&res, p, uncounted, &cx)
-                .and_then(|(id, ilvl)| counters.next(&res.numbering, &res.styles, id, ilvl).map(|text| (id, ilvl, text)));
+            let label = counted(&res, p, uncounted, &cx).and_then(|(id, ilvl)| counters.next(&c, ListId(id), ilvl).map(|text| (id, ilvl, text)));
             let want = match (&label, &p.list) {
                 (None, None) => continue,
                 (Some((_, _, text)), Some(have)) if *text == have.text && !full(para) => continue,
                 (None, Some(_)) => None,
                 (Some((id, ilvl, text)), _) => {
-                    let Some(level) = res.numbering.level(*id, *ilvl, &res.styles).cloned() else { continue };
+                    let Some(level) = c.level(ListId(*id), *ilvl).cloned() else { continue };
                     let under = self.label_base(para, p, &res, &cx);
-                    let picture = res.numbering.bullet_image(&level);
-                    let label = ListLabel {
-                        text: text.clone(),
-                        run: run_xml::label(&res, &under, Some(&from_run_props(&level.rpr))),
-                        jc: crate::docx::paragraph::list_jc(&level.jc),
-                        suff: crate::docx::paragraph::list_suffix(&level.suff),
-                        picture,
-                        legacy: level.legacy,
-                    };
+                    let label = crate::docx::para_xml::label(&res, text.clone(), &under, &level);
                     if p.list.as_ref() == Some(&label) {
                         continue;
                     }
@@ -404,7 +395,7 @@ pub(super) fn written(p: &crate::format::ParaProps, local: &str) -> bool {
 pub(super) fn counted(res: &Resolvers, p: &Paragraph, uncounted: bool, cx: &Cx) -> Option<(i64, i64)> {
     let ListRef { list: ListId(id), level: ilvl } = p.style.num.filter(|ListRef { list: ListId(id), level: _ }| *id != 0 && !uncounted)?;
     let from_style = !direct_num(crate::docx::para_xml::ppr(Some(res), &p.style.direct, cx).as_deref(), cx);
-    res.label_shows(id, ilvl, from_style, p.style.style_id.as_deref()).then_some((id, ilvl))
+    res.cascade().label_shows(ListId(id), ilvl, from_style, p.style.style_id.as_deref()).then_some((id, ilvl))
 }
 
 /// Whether a paragraph's direct `w:pPr` sets a `w:numId` itself (one in its tracked earlier properties doesn't).

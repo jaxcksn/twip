@@ -896,7 +896,7 @@ impl StyleQuery {
 
     /// What it shows from a paragraph with text `text` and list number `n` (of [`para_numbers`]): the number when it
     /// asks for one (no paragraph before it to be relative to, so `\r` is in full context), else the text.
-    pub(crate) fn shown(&self, text: String, n: Option<&ParaNumber>, r: Option<&super::resolve::Resolver>) -> String {
+    pub(crate) fn shown(&self, text: String, n: Option<&ParaNumber>, r: Option<&super::resolvers::Resolvers>) -> String {
         match (self.number, n, r) {
             (Some(cx), Some(n), Some(r)) => n.text(cx, None, None, r),
             _ => text,
@@ -913,7 +913,7 @@ impl StyleQuery {
 pub(crate) fn para_numbers(doc: &Document) -> HashMap<u64, ParaNumber> {
     let mut out = HashMap::new();
     let Some(r) = doc.resolver.as_deref() else { return out };
-    let mut counters = super::numbering::Counters::default();
+    let mut counters = crate::format::counters::Counters::default();
     for s in &doc.sections {
         each_para(&s.blocks, false, &mut |p, _| {
             if let Some(n) = ParaNumber::next(p, &mut counters, r) {
@@ -1056,7 +1056,7 @@ pub(crate) fn field_changes(doc: &Document, now: i64) -> (Vec<FieldChange>, Vec<
     let mut notes: HashMap<String, (NoteKind, i64)> = HashMap::new();
     // Each paragraph's list number (by its place in `order`), and each bookmark's paragraph.
     let mut numbers: Vec<Option<ParaNumber>> = Vec::new();
-    let mut counters = super::numbering::Counters::default();
+    let mut counters = crate::format::counters::Counters::default();
     let mut mark_at: HashMap<String, usize> = HashMap::new();
     // Each such bookmark's end's paragraph.
     let mut mark_end: HashMap<String, usize> = HashMap::new();
@@ -1320,27 +1320,29 @@ impl NumberContext {
 
 impl ParaNumber {
     /// Paragraph `p`'s number, counting it in `counters` (read in document order), when it shows a list number.
-    fn next(p: &Paragraph, counters: &mut super::numbering::Counters, r: &super::resolve::Resolver) -> Option<ParaNumber> {
+    fn next(p: &Paragraph, counters: &mut crate::format::counters::Counters, r: &super::resolvers::Resolvers) -> Option<ParaNumber> {
         let ListRef { list: ListId(num_id), level: ilvl } = p.style.num?;
         p.list.as_ref()?;
-        counters.next(&r.numbering, &r.styles, num_id, ilvl)?;
-        let values = counters.values(&r.numbering, &r.styles, num_id)?;
-        let list = r.numbering.abstract_of(num_id, &r.styles)?;
+        let c = r.cascade();
+        counters.next(&c, ListId(num_id), ilvl)?;
+        let values = counters.values(&c, ListId(num_id))?;
+        let list = c.abstract_of(ListId(num_id))?.0;
         Some(ParaNumber { num_id, list, ilvl: ilvl.clamp(0, 8) as usize, values })
     }
 
     /// Its number as `cx` asks: the level's own text (`n`), from the first level that differs from `near`'s (`r`), or
     /// every level's own number (`w`), without trailing periods; `suppress`: the level texts' words left out; `sep`
     /// (`\d`): in place of what the level texts put between two numbers.
-    fn text(&self, cx: NumberContext, near: Option<&ParaNumber>, sep: Option<&str>, r: &super::resolve::Resolver) -> String {
-        let Some(levels) = r.numbering.levels(self.num_id, &r.styles) else { return String::new() };
-        let value = |k: usize| self.values[k].unwrap_or_else(|| levels[k].map_or(1, |l| l.start));
+    fn text(&self, cx: NumberContext, near: Option<&ParaNumber>, sep: Option<&str>, r: &super::resolvers::Resolvers) -> String {
+        let c = r.cascade();
+        let Some(levels) = c.levels(ListId(self.num_id)) else { return String::new() };
+        let value = |k: usize| self.values[k].unwrap_or_else(|| levels[k].map_or(1, |l| l.start.unwrap_or(0)));
         // A level's text, each `%n` its number; `own`: the other levels' numbers (and what leads to them) left out.
         // Pieces: numbers and the literal text between them.
         let piece = |k: usize, own: bool, out: &mut Vec<(bool, String)>| {
             let Some(l) = levels[k] else { return };
             let from = out.len();
-            let mut chars = l.text.chars().peekable();
+            let mut chars = l.text.as_deref().unwrap_or_default().chars().peekable();
             while let Some(c) = chars.next() {
                 if c == '%'
                     && let Some(d) = chars.peek().and_then(|d| d.to_digit(10))
@@ -1351,8 +1353,8 @@ impl ParaNumber {
                         out.truncate(from);
                         continue;
                     }
-                    let fmt = levels[j].map_or("decimal", |l| l.fmt.as_str());
-                    let fmt = if l.is_lgl && fmt != "decimalZero" { "decimal" } else { fmt };
+                    let fmt = levels[j].map_or("decimal", |l| super::list_xml::format_name(l.format.as_ref()));
+                    let fmt = if l.legal == Some(true) && fmt != "decimalZero" { "decimal" } else { fmt };
                     out.push((true, super::numbering::format_number(value(j), fmt)));
                     continue;
                 }

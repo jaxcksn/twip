@@ -173,6 +173,16 @@ pub fn jc_name(j: Option<&Literal<ListJc>>) -> &str {
     j.map_or("left", |j| literal_name(j, &JCS))
 }
 
+/// The name what follows a level's label is written as; `tab`, the reader's, when it sets none.
+pub fn suffix_name(v: Option<&Literal<ListSuffix>>) -> &str {
+    v.map_or("tab", |v| literal_name(v, &SUFFIXES))
+}
+
+/// A legacy level's space and indent (points), as the reader gives them: when its placement is on.
+pub fn legacy_of(l: &ListLevel) -> Option<(f64, f64)> {
+    l.legacy.filter(|g| g.on == Some(true)).map(|g| (g.space.unwrap_or(0.0), g.indent.unwrap_or(0.0)))
+}
+
 /// An ST_LongHexNumber.
 fn hex(v: &str) -> Option<u32> {
     u32::from_str_radix(v.trim(), 16).ok()
@@ -1510,12 +1520,12 @@ pub fn to_level(l: &ListLevel, colours: &ThemeColours, cx: &Cx) -> Level {
         fmt: format_name(l.format.as_ref()).to_string(),
         text: l.text.as_deref().unwrap_or_default().to_string(),
         jc: jc_name(l.jc.as_ref()).to_string(),
-        suff: l.suffix.as_ref().map_or("tab", |s| literal_name(s, &SUFFIXES)).to_string(),
+        suff: suffix_name(l.suffix.as_ref()).to_string(),
         is_lgl: l.legal.unwrap_or(false),
         restart: l.restart,
         pstyle: name(&l.style),
         pic_bullet: l.pic_bullet,
-        legacy: l.legacy.filter(|g| g.on == Some(true)).map(|g| (g.space.unwrap_or(0.0), g.indent.unwrap_or(0.0))),
+        legacy: legacy_of(l),
         ppr,
         rpr,
     }

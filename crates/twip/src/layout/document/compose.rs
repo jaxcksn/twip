@@ -59,7 +59,7 @@ mod scanned {
 
     pub(super) fn style_refs(cx: &PassCx, pages: &[PageRecord], i: usize) -> Vec<(String, String)> {
         let on = |k: usize| pages.get(k).map(|p| &p.effects.paras[..]).unwrap_or(&[]);
-        let resolver = cx.doc.resolver.as_deref().map(|r| r.frozen());
+        let resolver = cx.doc.resolver.as_deref();
         cx.facts
             .wanted
             .iter()
@@ -120,13 +120,18 @@ impl Found {
 
 /// A heading's level and chapter number: a "heading N" paragraph numbered through its style, its label without the
 /// level text's literal text before the first and after the last number.
-fn chapter_of(r: &crate::docx::resolve::Resolver, p: &Paragraph) -> Option<(i64, String)> {
+fn chapter_of(r: &crate::docx::resolvers::Resolvers, p: &Paragraph) -> Option<(i64, String)> {
     let (label, ListRef { list: ListId(num), level: ilvl }, id) = (p.list.as_ref()?, p.style.num?, p.style.style_id.as_deref()?);
     let level = r.styles.by_id.get(id)?.name.to_lowercase().strip_prefix("heading ")?.parse().ok()?;
-    if r.styles.chain_ppr(Some(id)).num_id != Some(num) {
+    let c = r.cascade();
+    if c.chain_para(Some(id)).list.map(|l| match l {
+        crate::format::ListChoice::None => 0,
+        crate::format::ListChoice::In(id) => id.0,
+    }) != Some(num)
+    {
         return None;
     }
-    let text = &r.numbering.level(num, ilvl, &r.styles)?.text;
+    let text = c.level(ListId(num), ilvl)?.text.as_deref().unwrap_or_default();
     let before = &text[..text.find('%').unwrap_or(0)];
     let after = text.rfind('%').and_then(|k| text.get(k + 2..)).unwrap_or("");
     let t = label.text.strip_prefix(before).unwrap_or(&label.text);
@@ -352,7 +357,7 @@ pub(crate) fn finish_page(pg: &PageRecord, section_page: usize) -> (Rc<PageFragm
 fn style_refs(cx: &PassCx, run: &PassRun, i: usize) -> Vec<(String, String)> {
     let pages = &run.pages;
     let on = |k: usize| pages.get(k).map(|p| &p.effects.paras[..]).unwrap_or(&[]);
-    let resolver = cx.doc.resolver.as_deref().map(|r| r.frozen());
+    let resolver = cx.doc.resolver.as_deref();
     cx.facts
         .wanted
         .iter()

@@ -5,7 +5,7 @@ use std::rc::Rc;
 
 use crate::api::command::{ListApplyTo, ListDefinitionChange, ListLevel, NumberFormat};
 use crate::api::services::{ListEntry, ListEntryId, ListGalleryKind, ListGallerySection, ListGallerySectionKind};
-use crate::docx::{Block, Inline, ListLabel, Paragraph, RunStyle, next_para_id};
+use crate::docx::{Block, Inline, Paragraph, RunStyle, next_para_id};
 use crate::font::Fonts;
 use crate::layout::ParaId;
 use crate::services::lists;
@@ -220,7 +220,8 @@ impl Editor {
             &colours,
         )?;
         next.numbering.set_num_xml(format!("<{w}num {w}numId=\"{num_id}\"><{w}abstractNumId {w}val=\"{abstract_id}\"/></{w}num>"), &colours)?;
-        let mut counters = crate::docx::numbering::Counters::default();
+        let c = next.cascade();
+        let mut counters = crate::format::counters::Counters::default();
         let ilvls: [i64; 3] = if multilevel { [0, 1, 2] } else { [0, 0, 0] };
         let mut out = Vec::new();
         for ilvl in ilvls {
@@ -230,18 +231,11 @@ impl Editor {
                 ..Default::default()
             };
             let para = crate::docx::para_xml::resolve(&next, &ppr, None, None);
-            let text = counters.next(&next.numbering, &next.styles, num_id, ilvl)?;
-            let level = next.numbering.level(num_id, ilvl, &next.styles)?.clone();
+            let list = crate::document::paragraph::ListId(num_id);
+            let text = counters.next(&c, list, ilvl)?;
+            let level = c.level(list, ilvl)?.clone();
             let under = run_xml::folded(&next, &para.base, None, false);
-            let picture = next.numbering.bullet_image(&level);
-            let label = ListLabel {
-                text,
-                run: run_xml::label(&next, &under, Some(&crate::docx::char_props::from_run_props(&level.rpr))),
-                jc: crate::docx::paragraph::list_jc(&level.jc),
-                suff: crate::docx::paragraph::list_suffix(&level.suff),
-                picture,
-                legacy: level.legacy,
-            };
+            let label = crate::docx::para_xml::label(&next, text, &under, &level);
             let base = Rc::new(run_xml::resolve(&next, &para.base, Default::default(), false));
             let grey = Rc::new(RunStyle { color: Some(0x80_8080), ..(*base).clone() });
             out.push(Block::Para(Paragraph {

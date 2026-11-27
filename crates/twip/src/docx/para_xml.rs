@@ -3,16 +3,17 @@
 
 use std::rc::Rc;
 
+use super::list_xml::{format_name, jc_name, legacy_of, suffix_name};
+use super::model::ListLabel;
 use super::model::{ListId, ListJc, ListRef, ParaStyle};
-use super::numbering::Level;
-use super::para_props::{ParaDirect, from_para_props};
+use super::para_props::ParaDirect;
 use super::resolve::Resolver;
 use super::resolvers::Resolvers;
 use super::review::ParaChange;
 use super::write::props::Cx;
 use crate::format::cascade::{Cascade, ParaCascade, TableRegion};
 use crate::format::resolve::para_style;
-use crate::format::{CharProps, ListChoice, ParaProps};
+use crate::format::{CharProps, ListChoice, ListLevel, ParaProps};
 
 /// The size (points) a `w:pPr`'s mark sets, from its `w:rPr`.
 pub fn mark_size(ppr: roxmltree::Node) -> Option<f64> {
@@ -35,7 +36,7 @@ pub struct Resolved {
     /// Its runs' levels below their own: the defaults, the region's, the paragraph style chain's.
     pub base: CharProps,
     /// The list level it is at.
-    pub level: Option<Level>,
+    pub level: Option<Rc<ListLevel>>,
     /// Its list.
     pub num_id: Option<i64>,
     /// Its level in the list.
@@ -62,7 +63,7 @@ pub fn resolve(res: &Resolvers, direct: &ParaProps, mark_size: Option<f64>, regi
         },
     };
     let num_id = num_id.filter(|&id| id != 0);
-    let level = num_id.and_then(|id| res.numbering.level(id, ilvl, &res.styles)).cloned();
+    let level = num_id.and_then(|id| c.level(ListId(id), ilvl)).cloned();
 
     let mut ppr = c.doc_para().clone();
     if let Some(t) = region {
@@ -70,13 +71,13 @@ pub fn resolve(res: &Resolvers, direct: &ParaProps, mark_size: Option<f64>, regi
     }
     match (&level, from_style) {
         (Some(l), true) => {
-            ppr.merge(&from_para_props(&l.ppr));
+            ppr.merge(&l.para);
             ppr.merge(&style_ppr);
         }
         _ => {
             ppr.merge(&style_ppr);
             if let Some(l) = &level {
-                ppr.merge(&from_para_props(&l.ppr));
+                ppr.merge(&l.para);
             } else if direct_list == Some(0) {
                 // No list over a style's still sets a level's indents: start 0, first line 0 over the style chain's
                 // (the end indent stays).
@@ -89,10 +90,10 @@ pub fn resolve(res: &Resolvers, direct: &ParaProps, mark_size: Option<f64>, regi
     let mut style = para_style(&res.styles.colours, &ppr);
     if let Some(l) = &level {
         // A legacy level places its number itself, in the label.
-        style.list_jc = if l.legacy.is_some() { ListJc::Left } else { super::paragraph::list_jc(&l.jc) };
+        style.list_jc = if legacy_of(l).is_some() { ListJc::Left } else { super::paragraph::list_jc(jc_name(l.jc.as_ref())) };
         style.num = num_id.map(|id| ListRef { list: ListId(id), level: ilvl });
-        style.list_fmt = Some(l.fmt.clone());
-        style.list = num_id.and_then(|id| res.numbering.abstract_of(id, &res.styles));
+        style.list_fmt = Some(format_name(l.format.as_ref()).to_string());
+        style.list = num_id.and_then(|id| c.abstract_of(ListId(id))).map(|a| a.0);
     }
 
     let mut base = c.doc_char().clone();
@@ -124,6 +125,19 @@ pub fn resolve(res: &Resolvers, direct: &ParaProps, mark_size: Option<f64>, regi
         style.ind_right += sum(1);
     }
     Resolved { style, base, level, num_id, ilvl, from_style, style_id }
+}
+
+/// A list label with text `text` at level `level`, its run the level's character properties over `under`, what its
+/// paragraph mark's levels fold to.
+pub fn label(res: &Resolvers, text: String, under: &CharProps, level: &ListLevel) -> ListLabel {
+    ListLabel {
+        text,
+        run: super::run_xml::label(res, under, Some(&level.char)),
+        jc: super::paragraph::list_jc(jc_name(level.jc.as_ref())),
+        suff: super::paragraph::list_suffix(suffix_name(level.suffix.as_ref())),
+        picture: res.cascade().bullet_image(level),
+        legacy: legacy_of(level),
+    }
 }
 
 /// A paragraph with authored properties `direct` (its mark's size `mark_size`), in `region` when it is in a cell.

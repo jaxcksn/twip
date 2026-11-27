@@ -9,7 +9,7 @@ use roxmltree::Node;
 use super::char_props::{self, RunDirect};
 use super::diagnostics::{Diagnostics, WarningCode};
 use super::model::*;
-use super::numbering::{Counters, Numbering};
+use super::numbering::Numbering;
 use super::para_props::{self, ParaDirect};
 use super::para_xml;
 use super::props::*;
@@ -26,6 +26,7 @@ use super::table_props::{self, CellDirect, ExceptionsDirect, PreviousDirect, Row
 use super::xml::*;
 use crate::format::CharProps;
 use crate::format::cascade::TableRegion;
+use crate::format::counters::Counters;
 
 struct Package {
     zip: zip::ZipArchive<Cursor<Vec<u8>>>,
@@ -2234,18 +2235,11 @@ impl Reader {
         // List label
         let list = match (&level, num_id) {
             (Some(l), Some(id)) => {
-                if !self.uncounted && self.res.label_shows(id, ilvl, from_style, style_id.as_deref()) {
-                    self.counters.next(&self.res.numbering, &self.res.styles, id, ilvl).map(|text| {
+                let c = self.res.cascade();
+                if !self.uncounted && c.label_shows(ListId(id), ilvl, from_style, style_id.as_deref()) {
+                    self.counters.next(&c, ListId(id), ilvl).map(|text| {
                         let under = run_xml::folded(&self.res, &base.typed, mark_own.as_deref(), false);
-                        let picture = self.res.numbering.bullet_image(l);
-                        ListLabel {
-                            text,
-                            run: run_xml::label(&self.res, &under, Some(&char_props::from_run_props(&l.rpr))),
-                            jc: super::paragraph::list_jc(&l.jc),
-                            suff: super::paragraph::list_suffix(&l.suff),
-                            picture,
-                            legacy: l.legacy,
-                        }
+                        para_xml::label(&self.res, text, &under, l)
                     })
                 } else {
                     None
