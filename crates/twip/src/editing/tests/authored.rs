@@ -815,6 +815,14 @@ fn generating_names_what_it_cannot_write() {
     doc.sections[0].headers[0] = Some("word/header1.xml".into());
     assert_eq!(unsupported(&doc), GenerateError::Unsupported("a header or footer"));
 
+    // A picture bullet's image isn't written
+    let mut doc = built();
+    let mut res = (**doc.resolver.as_ref().expect("styles")).clone();
+    let xml = crate::docx::list_xml::new_picture_xml(0, "rId99", &res.typed().numbering.cx());
+    res.add_picture(0, xml, "rId99".into(), 0);
+    doc.resolver = Some(Rc::new(res));
+    assert_eq!(unsupported(&doc), GenerateError::Unsupported("a picture bullet"));
+
     // Formatting with nothing authored behind it: a centred paragraph, a bold run.
     let res = doc.resolver.clone().expect("styles");
     let centred = paragraph(&res, &ParaProps { jc: Some(Jc::Center), ..Default::default() }, &[("centred", RunProps::default())], next_para_id());

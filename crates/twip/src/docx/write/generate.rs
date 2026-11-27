@@ -257,6 +257,9 @@ fn covered(doc: &Document, blank: &Document, res: &Resolvers, new_res: &Resolver
         return fail("a page background");
     }
     let (c, new) = (res.cascade(), new_res.cascade());
+    if !c.lists.pictures.is_empty() {
+        return fail("a picture bullet");
+    }
     if c.colours != new.colours || c.theme != new.theme {
         return fail("a theme");
     }
