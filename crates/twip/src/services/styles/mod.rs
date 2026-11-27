@@ -40,7 +40,6 @@ pub fn next_new_name(styles: &StyleSheet) -> String {
 use crate::api::services::{StyleInfo, StylePreview, StyleType, StyleVisibility};
 use crate::api::value::{AutoOr, Color, Points, StyleId};
 use crate::docx::Document;
-use crate::docx::style_xml::StyleDef;
 use crate::format::CharProps;
 
 /// The style type of a style of `kind`.
@@ -125,14 +124,12 @@ pub fn list(doc: &Document, kind: Option<StyleType>, glossary: bool) -> Vec<Styl
         })
         .collect();
     // The gallery's built-in styles the document doesn't define yet: applying one adds it.
-    let cx = typed.styles.cx();
     for b in builtin::BUILT_IN.iter().filter(|b| b.quick && !styles.styles.contains_key(b.id)) {
         let t = style_type(typed_kind(b.kind));
         if kind.is_some_and(|k| k != t) {
             continue;
         }
-        let def = StyleDef::from_xml(&builtin::definition(b, &cx.w), &cx);
-        let s = def.get();
+        let s = &builtin::definition(b);
         let mut base = c.doc_char().clone();
         base.merge_level(&c.chain_char(s.based_on.as_deref()));
         base.merge_level(&s.format.char);

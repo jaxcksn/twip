@@ -380,7 +380,7 @@ impl Editor {
             return Some((s.clone(), x.into_owned(), true));
         }
         let b = builtin::BUILT_IN.iter().find(|b| b.id == id)?;
-        let raw = builtin::definition(b, &typed.styles.cx().w);
+        let raw = crate::docx::style_xml::serialize(&builtin::definition(b), &typed.cascade.colours, &typed.styles.cx());
         Some((Rc::new(typed.styles.style_from_xml(&raw)?), raw, false))
     }
 
@@ -391,7 +391,7 @@ impl Editor {
             Some(s) if s.kind == kind => Ok(None),
             Some(_) => Err(Error::invalid(format!("the {what} is a style of another type"))),
             None => match builtin::BUILT_IN.iter().find(|b| b.id == id.0 && typed_kind(b.kind) == kind) {
-                Some(b) => Ok(Some(builtin::definition(b, &typed.styles.cx().w))),
+                Some(b) => Ok(Some(crate::docx::style_xml::serialize(&builtin::definition(b), &typed.cascade.colours, &typed.styles.cx()))),
                 None => Err(Error::invalid(format!("the {what} doesn't exist"))),
             },
         }

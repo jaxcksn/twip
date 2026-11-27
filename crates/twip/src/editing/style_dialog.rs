@@ -46,7 +46,7 @@ fn built_in_definition(typed: &TypedDefs, id: &str) -> Option<String> {
         return None;
     }
     let b = crate::services::styles::builtin::BUILT_IN.iter().find(|b| b.id == id)?;
-    Some(crate::services::styles::builtin::definition(b, &typed.styles.cx().w))
+    Some(crate::docx::style_xml::serialize(&crate::services::styles::builtin::definition(b), &typed.cascade.colours, &typed.styles.cx()))
 }
 
 /// The kind of style a dialog type makes.

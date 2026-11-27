@@ -22,8 +22,10 @@ pub(super) fn doc_with(body: &str, styles: &[&str]) -> Vec<u8> {
 
 /// [`doc_with`], with a numbering part holding `numbering` (its `w:abstractNum` and `w:num` elements).
 pub(super) fn doc_with_numbering(body: &str, styles: &[&str], numbering: Option<&str>) -> Vec<u8> {
+    use crate::services::styles::builtin::{built_in, definition};
+    let cx = crate::docx::write::props::Cx::of_xml(&format!("<w:styles xmlns:w=\"{}\">", crate::docx::write::props::W_NS));
     let defs: String =
-        styles.iter().map(|id| crate::services::styles::builtin::definition(crate::services::styles::builtin::built_in(id).unwrap(), "w:")).collect();
+        styles.iter().map(|id| crate::docx::style_xml::serialize(&definition(built_in(id).unwrap()), &Default::default(), &cx)).collect();
     doc_from(body, &defs, numbering)
 }
 

@@ -155,6 +155,13 @@ fn with_child(raw: &str, child: &str, cx: &Cx, edit: impl FnOnce(Option<&str>) -
     el.xml().unwrap_or_else(|| raw.to_string())
 }
 
+/// List Bullet `s` in its own bullet list `num`, its paragraphs without space between them.
+pub(super) fn bulleted(s: &mut crate::format::Style, num: i64) {
+    let p = &mut s.format.para;
+    p.list = Some(crate::format::ListChoice::In(crate::document::paragraph::ListId(num)));
+    p.flags.put(crate::format::ParaFlag::CONTEXTUAL, true);
+}
+
 impl Editor {
     /// Runs formatting commands on a style's XML instead of the selection, and returns the XML after them. Only
     /// character and paragraph formatting is taken; the document doesn't change.
@@ -363,12 +370,12 @@ impl Editor {
 
     /// Adds built-in style `b` from its definition, as one undo step.
     pub(super) fn add_built_in(&mut self, b: &crate::services::styles::builtin::BuiltIn, fonts: &Fonts) -> Outcome {
-        let Some(cx) = self.doc.resolver.as_ref().map(|r| r.cx()) else { return Outcome::Unchanged("no styles") };
-        let w = cx.w.clone();
-        let mut raw = crate::services::styles::builtin::definition(b, &w);
+        if self.doc.resolver.is_none() {
+            return Outcome::Unchanged("no styles");
+        }
+        let mut style = crate::services::styles::builtin::definition(b);
         // List Bullet comes with its own bullet list.
         if b.id == "ListBullet" {
-            use crate::docx::write::props::Props;
             let mut tx = self.begin("New Style");
             let num = self.new_style_bullets(&mut tx, b.id);
             if num == 0 {
@@ -376,18 +383,10 @@ impl Editor {
                 return Outcome::Unchanged("the list couldn't be added");
             }
             self.commit(tx, None, fonts);
-            let mut style = Props::parse(Some(&raw), "style", &cx);
-            let mut ppr = Props::parse(style.get("pPr"), "pPr", &cx);
-            ppr.set("numPr", format!("<{w}numPr><{w}numId {w}val=\"{num}\"/></{w}numPr>"));
-            ppr.set("contextualSpacing", format!("<{w}contextualSpacing/>"));
-            if let Some(x) = ppr.xml() {
-                style.set("pPr", x);
-            }
-            if let Some(x) = style.xml() {
-                raw = x;
-            }
+            bulleted(&mut style, num);
         }
-        self.edit_styles("New Style", |s| s.set_xml(raw), fonts)
+        let def = crate::docx::style_xml::StyleDef::typed(Rc::new(style));
+        self.edit_styles("New Style", |s| s.set(def), fonts)
     }
 
     /// Changes a style to the selection's formatting.
