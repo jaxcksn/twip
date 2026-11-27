@@ -198,6 +198,7 @@ impl Separator {
 
 /// `xml`, a definition's `w:rPr` (a style's, a list level's) in the part `cx` describes, with a typed edit of its
 /// properties, written again as an edit of it; as it is when `edit` changes nothing.
+#[cfg(test)]
 pub(super) fn edit_rpr_xml(
     xml: Option<&str>,
     colours: &crate::docx::props::ThemeColours,

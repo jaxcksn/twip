@@ -8,7 +8,7 @@ use crate::docx::props::{Tab, TabKind};
 use crate::docx::resolvers::{Resolvers, TypedDefs};
 use crate::docx::style_xml::{DefaultsDef, StyleDef};
 use crate::docx::styles::{StyleEditError, StyleKind};
-use crate::docx::write::props::{Cx, Props};
+use crate::docx::write::props::Cx;
 use crate::docx::{Paragraph, RunStyle};
 use crate::font::Fonts;
 use crate::format::{CellEdit, DefaultsSet, ParaEdit, ParaProps, Region, RegionKind, RowEdit, Style, StyleFormat, StyleProp, StyleSet, TableEdit};
@@ -104,18 +104,6 @@ pub fn formats_a_style_id(id: crate::api::command::CommandId) -> bool {
             | C::DeleteTabStop
             | C::ClearTabStops
     )
-}
-
-/// A style's XML with `child` (a `w:pPr`) edited by `edit` as XML; the list commands' patch of a style's list.
-pub(super) fn edit_child(raw: &str, child: &str, cx: &Cx, edit: impl FnOnce(&mut Props)) -> String {
-    let mut el = Props::parse(Some(raw), "style", cx);
-    let mut props = Props::parse(el.get(child), child, cx);
-    edit(&mut props);
-    match props.xml() {
-        Some(x) => el.set(child, x),
-        None => el.remove(child),
-    }
-    el.xml().unwrap_or_else(|| raw.to_string())
 }
 
 // Typed edits of a style

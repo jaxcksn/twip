@@ -685,6 +685,7 @@ impl Resolvers {
 
     /// Replaces the document defaults from their `w:docDefaults` XML: a level it doesn't write keeps the one before,
     /// as [`Styles::set_defaults_xml`] keeps it. Returns every style, by id.
+    #[cfg(test)]
     pub fn set_defaults_xml(&mut self, raw: String) -> Result<Vec<String>, styles::StyleEditError> {
         let cx = self.frozen.styles.cx();
         let parsed = cx.parse(&raw, |_, el| super::style_xml::parse_defaults(el)).ok_or(styles::StyleEditError::Malformed)?;
@@ -711,6 +712,7 @@ impl Resolvers {
     }
 
     /// Replaces the latent styles from their `w:latentStyles` XML.
+    #[cfg(test)]
     pub fn set_latent_xml(&mut self, raw: String) -> Result<(), styles::StyleEditError> {
         let cx = self.frozen.styles.cx();
         let parsed =
@@ -732,6 +734,7 @@ impl Resolvers {
 
     /// Adds or replaces a list definition from its `w:abstractNum` XML: the typed one, then the XML path's. Its id,
     /// or `None` when it isn't one.
+    #[cfg(test)]
     pub fn set_abstract_xml(&mut self, raw: String) -> Option<i64> {
         let d = ListDefDirect::from_xml(&raw, &self.frozen.numbering.cx())?;
         Some(self.set_list_def(d).0)
@@ -753,6 +756,7 @@ impl Resolvers {
     }
 
     /// Adds or replaces a list from its `w:num` XML, as [`Self::set_abstract_xml`].
+    #[cfg(test)]
     pub fn set_num_xml(&mut self, raw: String) -> Option<i64> {
         let d = ListDirect::from_xml(&raw, &self.frozen.numbering.cx())?;
         Some(self.set_list(d).0)
@@ -901,6 +905,7 @@ impl StyleEdits<'_> {
     }
 
     /// [`Resolvers::set_style_xml`].
+    #[cfg(test)]
     pub fn set_xml(&mut self, raw: String) -> Result<Vec<String>, styles::StyleEditError> {
         self.0.set_style_xml(raw)
     }
@@ -911,11 +916,13 @@ impl StyleEdits<'_> {
     }
 
     /// [`Resolvers::set_defaults_xml`].
+    #[cfg(test)]
     pub fn set_defaults_xml(&mut self, raw: String) -> Result<Vec<String>, styles::StyleEditError> {
         self.0.set_defaults_xml(raw)
     }
 
     /// [`Resolvers::set_latent_xml`].
+    #[cfg(test)]
     pub fn set_latent_xml(&mut self, raw: String) -> Result<(), styles::StyleEditError> {
         self.0.set_latent_xml(raw)
     }
@@ -949,11 +956,13 @@ impl NumberingEdits<'_> {
     }
 
     /// [`Resolvers::set_abstract_xml`].
+    #[cfg(test)]
     pub fn set_abstract_xml(&mut self, raw: String, _colours: &super::props::ThemeColours) -> Option<i64> {
         self.0.set_abstract_xml(raw)
     }
 
     /// [`Resolvers::set_num_xml`].
+    #[cfg(test)]
     pub fn set_num_xml(&mut self, raw: String, _colours: &super::props::ThemeColours) -> Option<i64> {
         self.0.set_num_xml(raw)
     }
