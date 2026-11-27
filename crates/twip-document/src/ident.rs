@@ -54,8 +54,20 @@ impl HeaderFooterId {
     }
 }
 
-/// A new paragraph id (unique in the process). Fields, controls, headers and footers, tables and floats draw from the
-/// same counter.
+/// A resource's identity (an image a picture, fill, bullet or background shows): process-local, kept through edits,
+/// undo and redo; new on every read, and on every paste from another document. Later ones are greater.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct ResourceId(pub u64);
+
+impl ResourceId {
+    /// A new id (unique in the process, greater than every earlier one).
+    pub fn next() -> ResourceId {
+        ResourceId(next_para_id())
+    }
+}
+
+/// A new paragraph id (unique in the process). Fields, controls, headers and footers, tables, floats and resources
+/// draw from the same counter.
 pub fn next_para_id() -> u64 {
     static NEXT: AtomicU64 = AtomicU64::new(1);
     NEXT.fetch_add(1, Ordering::Relaxed)
@@ -63,11 +75,11 @@ pub fn next_para_id() -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{ControlId, FieldId, HeaderFooterId, next_para_id};
+    use super::{ControlId, FieldId, HeaderFooterId, ResourceId, next_para_id};
 
     #[test]
     fn ids_come_from_one_counter_and_are_never_reused() {
-        let (a, f, c, h, b) = (next_para_id(), FieldId::next(), ControlId::next(), HeaderFooterId::next(), next_para_id());
-        assert!(a < f.0 && f.0 < c.0 && c.0 < h.0 && h.0 < b);
+        let (a, f, c, h, r, b) = (next_para_id(), FieldId::next(), ControlId::next(), HeaderFooterId::next(), ResourceId::next(), next_para_id());
+        assert!(a < f.0 && f.0 < c.0 && c.0 < h.0 && h.0 < r.0 && r.0 < b);
     }
 }

@@ -14,4 +14,5 @@ pub mod line;
 pub mod paragraph;
 pub mod policy;
 pub mod position;
+pub mod resource;
 pub mod section;
