@@ -275,10 +275,7 @@ fn definitions(part: Part) -> Compared {
         }
     }
     if part == Part::Lists {
-        let blank = crate::docx::read_editable(&crate::docx::blank::blank_docx()).expect("reads");
-        let mut r = (**blank.resolver.as_ref().expect("a resolver")).clone();
-        r.set_numbering_part(OVERRIDES);
-        list_edits(&mut n, "lists overriding their levels", &r.typed(), 9);
+        list_edits(&mut n, "lists overriding their levels", &numbering(OVERRIDES), 9);
     }
     n
 }
@@ -526,4 +523,129 @@ fn label_formatting_writes_what_the_patches_wrote() {
         }
     }
     n.alike(1_000, &[Unlike::Copied]);
+}
+
+/// The typed definitions of a blank document with the numbering part `xml`.
+fn numbering(xml: &str) -> Rc<TypedDefs> {
+    let blank = crate::docx::read_editable(&crate::docx::blank::blank_docx()).expect("reads");
+    let mut r = (**blank.resolver.as_ref().expect("a resolver")).clone();
+    r.set_numbering_part(xml);
+    r.typed()
+}
+
+/// A numbering part of `inner`, its root binding the main namespace to `w`.
+fn part(inner: &str) -> String {
+    format!(r#"<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">{inner}</w:numbering>"#)
+}
+
+/// The label texts of every `w:lvl` in `xml` (an element in the part `cx` describes), in document order.
+fn texts(xml: &str, cx: &Cx) -> Vec<String> {
+    cx.parse(xml, |_, el| {
+        el.descendants().filter(|n| crate::docx::xml::is_w(*n, "lvlText")).map(|n| crate::docx::xml::val(n).unwrap_or_default().to_string()).collect()
+    })
+    .unwrap_or_default()
+}
+
+/// The list's levels in full: its own where it overrides them, else its definition's.
+fn shown(t: &TypedDefs, num: ListId) -> Vec<LevelDefinition> {
+    (0..9).map(|k| t.cascade.level(num, k).map_or_else(LevelDefinition::default, |l| level_definition(l, &t.cascade.colours))).collect()
+}
+
+/// The overrides of list `num` that define a level, by level.
+fn overrides(t: &TypedDefs, num: ListId) -> Vec<super::Override> {
+    let list = t.cascade.lists.lists.get(&num).expect("the list");
+    (0..9).map(|k| list.override_of(k)?.def.clone().map(|l| (l.clone(), level_definition(&l, &t.cascade.colours)))).collect()
+}
+
+/// The levels `over` names as the XML patches took them: each with the `w:lvl` of `raw` (a `w:num`) for it.
+fn patch_overrides(raw: &str, over: &[super::Override], cx: &Cx) -> Vec<xml::Override> {
+    xml::override_levels(raw, cx).into_iter().zip(over).map(|(x, o)| Some((x?, o.as_ref()?.1.clone()))).collect()
+}
+
+/// A list written with single-quoted attributes: a whole-list edit of a level it overrides reaches the override, which
+/// the XML patches missed (they read only double-quoted level indexes).
+#[test]
+fn a_whole_list_edit_reaches_a_single_quoted_override() {
+    let t = numbering(&part(concat!(
+        "<w:abstractNum w:abstractNumId='0'><w:lvl w:ilvl='0'><w:start w:val='1'/><w:lvlText w:val='%1.'/></w:lvl>",
+        "<w:lvl w:ilvl='1'><w:start w:val='1'/><w:lvlText w:val='%2.'/></w:lvl></w:abstractNum>",
+        "<w:num w:numId='1'><w:abstractNumId w:val='0'/><w:lvlOverride w:ilvl='1'><w:lvl w:ilvl='1'><w:start w:val='1'/><w:lvlText w:val='o'/></w:lvl></w:lvlOverride></w:num>",
+    )));
+    let (colours, cx) = (t.cascade.colours, t.numbering.cx());
+    let mut levels = shown(&t, ListId(1));
+    assert_eq!(levels[1].level.text, "o", "the list's own level");
+    levels[1].level.text = "(%2)".into();
+    let over = overrides(&t, ListId(1));
+    let held = &t.numbering.lists[&ListId(1)];
+    let edited = overridden(held, Levels::Full(&levels[..2]), &[], &over).expect("the override edited");
+    let level = edited.get().override_of(1).and_then(|o| o.def.clone()).expect("its level");
+    assert_eq!(level.text.as_deref(), Some("(%2)"));
+    assert_eq!(texts(&edited.xml(&colours, &cx), &cx), ["(%2)"]);
+    let raw = held.xml(&colours, &cx).into_owned();
+    let patched = xml::num_xml(&raw, Levels::Full(&levels[..2]), &[], &patch_overrides(&raw, &over, &cx), &cx);
+    assert_eq!(patched, None, "the patches left the override as it was");
+}
+
+/// A single-quoted definition copied for a list's later paragraphs: the copy, under the new id, keeps what the
+/// definition holds beyond the levels the dialogs show (how its levels relate, a level's template code, its levels past
+/// the ones edited), where the XML patches (reading no id) wrote a new definition in its place.
+#[test]
+fn a_copied_single_quoted_definition_keeps_what_it_holds() {
+    let t = numbering(&part(concat!(
+        "<w:abstractNum w:abstractNumId='0'><w:nsid w:val='1A2B3C4D'/><w:multiLevelType w:val='singleLevel'/>",
+        "<w:lvl w:ilvl='0' w:tplc='0409000F'><w:start w:val='1'/><w:lvlText w:val='%1.'/></w:lvl>",
+        "<w:lvl w:ilvl='1'><w:start w:val='1'/><w:lvlText w:val='%2)'/></w:lvl></w:abstractNum>",
+        "<w:num w:numId='1'><w:abstractNumId w:val='0'/></w:num>",
+    )));
+    let (colours, cx) = (t.cascade.colours, t.numbering.cx());
+    let held = &t.numbering.defs[&ListDefId(0)];
+    let levels = shown(&t, ListId(1));
+    let copy = definition(5, Some(held), Levels::Full(&levels[..1]), None, &[], &[], &colours);
+    let written = copy.xml(&colours, &cx).into_owned();
+    let read = |x: &str| crate::docx::list_xml::ListDefDirect::from_xml(x, &cx).expect("a definition").get().clone();
+    let (now, single) = (read(&written), Some(crate::format::Literal::Known(MultiLevelType::SingleLevel)));
+    assert_eq!((now.id, now.nsid), (ListDefId(5), None), "a new list");
+    assert_eq!(now.multi_level_type, single);
+    assert_eq!(now.levels[0].as_ref().and_then(|l| l.template), Some(0x0409_000F));
+    assert_eq!(texts(&written, &cx), ["%1.", "%2)"]);
+    let raw = held.xml(&colours, &cx).into_owned();
+    let patched = read(&xml::abstract_xml(5, Some(&raw), Levels::Full(&levels[..1]), None, &[], &[], &cx, &colours));
+    assert_eq!(patched.multi_level_type, Some(crate::format::Literal::Known(MultiLevelType::HybridMultilevel)), "the patches wrote a new one");
+    assert_eq!(patched.levels[0].as_ref().and_then(|l| l.template), None);
+    assert!(patched.levels[1].is_none());
+}
+
+/// A definition and a list with two elements for one level: an edit of the level changes only the one that counts (the
+/// last), where the XML patches changed the first of the definition's and every override of the level.
+#[test]
+fn an_edit_of_a_duplicated_level_changes_only_the_one_that_counts() {
+    let t = numbering(&part(concat!(
+        r#"<w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:lvlText w:val="first"/></w:lvl>"#,
+        r#"<w:lvl w:ilvl="0"><w:start w:val="1"/><w:lvlText w:val="%1."/></w:lvl></w:abstractNum>"#,
+        r#"<w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>"#,
+        r#"<w:num w:numId="2"><w:abstractNumId w:val="0"/><w:lvlOverride w:ilvl="0"><w:lvl w:ilvl="0"><w:lvlText w:val="early"/></w:lvl></w:lvlOverride>"#,
+        r#"<w:lvlOverride w:ilvl="0"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:lvlText w:val="%1)"/></w:lvl></w:lvlOverride></w:num>"#,
+    )));
+    let (colours, cx) = (t.cascade.colours, t.numbering.cx());
+    // The definition
+    let held = &t.numbering.defs[&ListDefId(0)];
+    let mut levels = shown(&t, ListId(1));
+    assert_eq!(levels[0].level.text, "%1.", "the last counts");
+    levels[0].level.text = "%1:".into();
+    let typed = definition(0, Some(held), Levels::Full(&levels[..1]), None, &[], &[], &colours);
+    assert_eq!(texts(&typed.xml(&colours, &cx), &cx), ["first", "%1:"]);
+    let raw = held.xml(&colours, &cx).into_owned();
+    let patched = xml::abstract_xml(0, Some(&raw), Levels::Full(&levels[..1]), None, &[], &[], &cx, &colours);
+    assert_eq!(texts(&patched, &cx), ["%1:", "%1."], "the patches changed the first");
+    // The list's override
+    let list = &t.numbering.lists[&ListId(2)];
+    let over = overrides(&t, ListId(2));
+    let mut levels = shown(&t, ListId(2));
+    assert_eq!(levels[0].level.text, "%1)", "the last counts");
+    levels[0].level.text = "(%1)".into();
+    let typed = overridden(list, Levels::Full(&levels[..1]), &[], &over).expect("the override edited");
+    assert_eq!(texts(&typed.xml(&colours, &cx), &cx), ["early", "(%1)"]);
+    let raw = list.xml(&colours, &cx).into_owned();
+    let patched = xml::num_xml(&raw, Levels::Full(&levels[..1]), &[], &patch_overrides(&raw, &over, &cx), &cx).expect("edited");
+    assert_eq!(texts(&patched, &cx), ["(%1)", "(%1)"], "the patches changed every override of the level");
 }
