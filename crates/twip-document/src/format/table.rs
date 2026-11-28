@@ -3,11 +3,11 @@
 
 use std::rc::Rc;
 
+use super::Look;
 use super::{ForeignProps, Shading, TextBorder};
-use crate::document::authored::Empty;
-use crate::document::format::{Jc, Width};
-use crate::document::section::{HeightRule, VerticalAlignment};
-use crate::docx::props::Look;
+use super::{Jc, Width};
+use crate::authored::{Authored, Empty};
+use crate::section::{HeightRule, VerticalAlignment};
 
 /// Authored table properties at one level: a table's, or a row's exceptions to its table's. `None` means "not set
 /// here". Its `==` is authored equality.
@@ -689,3 +689,31 @@ impl CellProps {
         self.margins.merge(&o.margins);
     }
 }
+
+/// A table's authored properties: typed, with where they were read from in their origin.
+///
+/// The written form stands for the properties only while they are the ones it was read as. Its `==` is always true,
+/// as a container's derived equality (layout equivalence) does not compare authored properties: use
+/// [`Authored::authored_eq`] for that.
+pub type TableDirect = Authored<Rc<TableProps>, TableSet>;
+
+/// A row's exceptions to its table's properties: typed, with where they were read from in their origin.
+///
+/// The written form stands for the properties only while they are the ones it was read as. Its `==` is always true,
+/// as a container's derived equality (layout equivalence) does not compare authored properties: use
+/// [`Authored::authored_eq`] for that.
+pub type ExceptionsDirect = Authored<Rc<TableProps>, TableSet, RowExceptions>;
+
+/// A row's authored properties: typed, with where they were read from in their origin.
+///
+/// The written form stands for the properties only while they are the ones it was read as. Its `==` is always true,
+/// as a container's derived equality (layout equivalence) does not compare authored properties: use
+/// [`Authored::authored_eq`] for that.
+pub type RowDirect = Authored<Rc<RowProps>, RowSet>;
+
+/// A cell's authored properties: typed, with where they were read from in their origin.
+///
+/// The written form stands for the properties only while they are the ones it was read as. Its `==` is always true,
+/// as a container's derived equality (layout equivalence) does not compare authored properties: use
+/// [`Authored::authored_eq`] for that.
+pub type CellDirect = Authored<Rc<CellProps>, CellSet>;

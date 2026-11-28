@@ -20,7 +20,6 @@ use super::prop_xml::{Compare, FILL, LINE_COLOUR, Out, Sink, Twips, border, bord
 use super::props::{self as xml_props, FramePr, ThemeColours};
 use super::write::props::Cx;
 use super::xml::{W, W15, attr, attr_twips, children, int, num, on_off, on_off_str, val};
-use crate::document::authored::Authored;
 use crate::document::format::{Jc, Leader, LineRule, TabKind};
 use crate::document::origin::Origin;
 use crate::document::paragraph::{ListId, TextAlignment};
@@ -142,10 +141,7 @@ impl<'a> Owned<'a> {
     }
 }
 
-/// A paragraph's authored properties: typed, with the `w:pPr` they were read from (or last written as) in their
-/// origin. The written form stands for the properties only while they are the ones it was read as; never part of
-/// equality.
-pub type ParaDirect = Authored<Rc<ParaProps>, ParaSet>;
+pub use crate::format::ParaDirect;
 
 /// What the WordprocessingML adapter adds to a paragraph's authored properties: the `w:pPr` they were read from, and
 /// the `w:pPr` they are written as.

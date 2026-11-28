@@ -8,8 +8,8 @@ use std::rc::Rc;
 use super::{
     CellProps, CellSet, CharProps, DefinedIn, FontRef, ForeignProps, ParaProps, ParaSet, RowProps, RowSet, ScriptFonts, Set, TableProps, TableSet,
 };
-use crate::document::authored::Empty;
-use crate::document::format::LineRule;
+use crate::authored::{Authored, Empty};
+use crate::format::LineRule;
 
 /// What a style formats.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -370,3 +370,21 @@ impl Empty for LatentStyles {
         Rc::default()
     }
 }
+
+/// A style: typed, with where it was read from in its origin.
+///
+/// The written form stands for the definition only while it is the one it was read as; never part of equality: use
+/// [`Authored::authored_eq`].
+pub type StyleDef = Authored<Rc<Style>, StyleSet>;
+
+/// The document defaults: typed, with where they were read from in their origin.
+///
+/// The written form stands for the definition only while it is the one it was read as; never part of equality: use
+/// [`Authored::authored_eq`].
+pub type DefaultsDef = Authored<Rc<Defaults>, DefaultsSet>;
+
+/// The latent styles: typed, with where they were read from in their origin. An edit replaces them whole.
+///
+/// The written form stands for the definition only while it is the one it was read as; never part of equality: use
+/// [`Authored::authored_eq`].
+pub type LatentDef = Authored<Rc<LatentStyles>, std::convert::Infallible>;

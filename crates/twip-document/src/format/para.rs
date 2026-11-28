@@ -3,11 +3,11 @@
 
 use std::rc::Rc;
 
+use super::FramePr;
 use super::{ForeignProps, Shading, TextBorder};
-use crate::document::authored::Empty;
-use crate::document::format::{Jc, Leader, LineRule, Tab, TabKind};
-use crate::document::paragraph::{ListId, TextAlignment};
-use crate::docx::props::FramePr;
+use super::{Jc, Leader, LineRule, Tab, TabKind};
+use crate::authored::{Authored, Empty};
+use crate::paragraph::{ListId, TextAlignment};
 
 /// Authored paragraph properties at one level. `None` means "not set here". Its `==` is authored equality.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -412,3 +412,7 @@ impl ParaProps {
         out
     }
 }
+
+/// A paragraph's authored properties: typed, with where they were read from (or last written as) in their origin. The
+/// written form stands for the properties only while they are the ones it was read as; never part of equality.
+pub type ParaDirect = Authored<Rc<ParaProps>, ParaSet>;

@@ -4,7 +4,7 @@
 use std::rc::Rc;
 
 use super::{ForeignProps, TextBorder};
-use crate::document::section::PageBorderDisplay;
+use crate::section::PageBorderDisplay;
 
 /// A section's page borders as authored: each edge's line, and how the borders are placed. `None` means "not
 /// written". Its `==` is authored equality.

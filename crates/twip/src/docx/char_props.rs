@@ -39,7 +39,6 @@ pub(crate) use super::prop_xml::{strip, with_attr};
 use super::props::{self as xml_props, RunProps, ThemeColours};
 use super::write::props::{Cx, RPR};
 use super::xml::{W, W14, attr, half_points, int, num, on_off, twips, val};
-use crate::document::authored::Authored;
 use crate::document::format::VertAlign;
 use crate::document::origin::Origin;
 use crate::format::{
@@ -78,10 +77,7 @@ impl RprRevisions {
     }
 }
 
-/// A run's authored properties: typed (`None`: none of its own), with the `w:rPr` they were read from (or last written
-/// as) in their origin. The written form stands for the properties only while they are the ones it was read as; never
-/// part of equality.
-pub type RunDirect = Authored<Option<Rc<CharProps>>, Set>;
+pub use crate::format::RunDirect;
 
 /// What the WordprocessingML adapter adds to a run's authored properties: the `w:rPr` they were read from, and the
 /// `w:rPr` they are written as.

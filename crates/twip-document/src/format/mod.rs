@@ -1,4 +1,19 @@
-//! Formatting values
+//! Formatting, independent of any file format: plain values, and what one level (a run, a paragraph, a table, a
+//! style, a list level, the document defaults) sets of its own, unset kept apart from set
+
+mod list;
+mod para;
+mod run;
+mod section;
+mod style;
+mod table;
+
+pub use list::*;
+pub use para::*;
+pub use run::*;
+pub use section::*;
+pub use style::*;
+pub use table::*;
 
 use std::rc::Rc;
 

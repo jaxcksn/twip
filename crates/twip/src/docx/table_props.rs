@@ -25,15 +25,15 @@ use super::prop_xml::{Compare, FILL, LINE_COLOUR, Out, Sink, Twips, border, colo
 use super::props::{self as xml_props, Look, TableAnchor, TablePos, TblProps, TcProps, ThemeColours, TrProps};
 use super::write::props::{Cx, Props};
 use super::xml::{W, attr, attr_twips, child, int, on_off, twips, val};
-use crate::document::authored::Authored;
 use crate::document::format::{Jc, ShadingPattern, Width};
 use crate::document::line::BorderStyle;
 use crate::document::origin::Origin;
 use crate::document::section::HeightRule;
+pub use crate::format::{CellDirect, ExceptionsDirect, RowDirect, TableDirect};
 use crate::format::{
     CellEdit, CellMargins, CellProp, CellProps, CellSet, Color, FloatAnchor, FloatX, FloatY, ForeignProps, MarginSide, MergeRole, QName, RowEdit,
-    RowExceptions, RowHeight, RowProp, RowProps, RowSet, Shading, TableBorders, TableEdit, TableFloat, TableLayout, TableOverlap, TableProp,
-    TableProps, TableSet, TableSide, TextBorder,
+    RowHeight, RowProp, RowProps, RowSet, Shading, TableBorders, TableEdit, TableFloat, TableLayout, TableOverlap, TableProp, TableProps, TableSet,
+    TableSide, TextBorder,
 };
 
 // Kinds
@@ -1197,14 +1197,7 @@ pub trait TableXml: Sized {
 
 /// A holder of one kind's typed properties, with its parse, serializer and writer over the XML read.
 macro_rules! holder {
-    ($(#[$doc:meta])* $name:ident, $kind:ty, $props:ty, $set:ty, $edit:ty, $of:ty) => {
-        $(#[$doc])*
-        ///
-        /// The written form stands for the properties only while they are the ones it was read as. Its `==` is
-        /// always true, as a container's derived equality (layout equivalence) does not compare authored
-        /// properties: use [`Authored::authored_eq`] for that.
-        pub type $name = Authored<Rc<$props>, $set, $of>;
-
+    ($name:ident, $kind:ty, $props:ty, $set:ty, $edit:ty) => {
         impl TableXml for $name {
             type Props = $props;
             type Set = $set;
@@ -1292,22 +1285,10 @@ macro_rules! holder {
     };
 }
 
-holder!(
-    /// A table's authored properties: typed, with the `w:tblPr` they were read from in their origin.
-    TableDirect, Tbl, TableProps, TableSet, TableEdit, ()
-);
-holder!(
-    /// A row's exceptions to its table's properties: typed, with the `w:tblPrEx` they were read from in their origin.
-    ExceptionsDirect, TblEx, TableProps, TableSet, TableEdit, RowExceptions
-);
-holder!(
-    /// A row's authored properties: typed, with the `w:trPr` they were read from in their origin.
-    RowDirect, Tr, RowProps, RowSet, RowEdit, ()
-);
-holder!(
-    /// A cell's authored properties: typed, with the `w:tcPr` they were read from in their origin.
-    CellDirect, Tc, CellProps, CellSet, CellEdit, ()
-);
+holder!(TableDirect, Tbl, TableProps, TableSet, TableEdit);
+holder!(ExceptionsDirect, TblEx, TableProps, TableSet, TableEdit);
+holder!(RowDirect, Tr, RowProps, RowSet, RowEdit);
+holder!(CellDirect, Tc, CellProps, CellSet, CellEdit);
 
 /// What the WordprocessingML adapter adds to a tracked change's earlier properties: their change element's parse, the
 /// element they are written as, and the element they were read from.

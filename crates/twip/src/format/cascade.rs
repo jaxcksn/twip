@@ -10,12 +10,10 @@ use super::{
     CellMargins, CellProps, CharProps, Color, ListChoice, ListDefId, ListLevel, Lists, ParaProps, RegionKind, Style, StyleEntry, StyleFormat,
     StyleKind, StyleSheet, TableBorders, TableProps,
 };
-use crate::document::format::Width;
+use crate::document::format::{Look, ThemeColours, ThemeFonts, Width};
 use crate::document::paragraph::{ListId, ListJc};
 use crate::docx::font_table::GenericFamily;
 use crate::docx::model::{Division, ListRef, ParaStyle, Run, RunStyle, Table};
-use crate::docx::props::{Look, ThemeColours};
-use crate::docx::styles::ThemeFonts;
 
 /// How far a style chain is followed: a chain longer than this is cut, as the reader cuts it.
 const MAX_CHAIN: usize = 32;
@@ -429,7 +427,7 @@ impl Cascade {
     }
 
     /// The image a bullet level draws: its picture bullet's.
-    pub fn bullet_image(&self, level: &ListLevel) -> Option<crate::docx::ResourceId> {
+    pub fn bullet_image(&self, level: &ListLevel) -> Option<crate::document::ident::ResourceId> {
         self.lists.bullet_image(level)
     }
 

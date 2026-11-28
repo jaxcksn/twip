@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
 
 use super::{CharProps, DefinedIn, ForeignProps, ParaProps, ParaSet, Set};
-use crate::document::paragraph::{ListId, ListJc, ListSuffix};
+use crate::paragraph::{ListId, ListJc, ListSuffix};
 
 /// A list definition, by the id its source format gives it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -301,7 +301,7 @@ pub struct PictureBullet {
     /// The relationship its image is read through, as its picture names it.
     pub rel: Option<Rc<str>>,
     /// Its image in the document's images, once read.
-    pub image: Option<crate::docx::ResourceId>,
+    pub image: Option<crate::ident::ResourceId>,
     /// The picture, as the source format wrote it. Owned by the adapter that read it.
     pub foreign: Option<Rc<ForeignProps>>,
 }
@@ -349,7 +349,7 @@ impl Lists {
     }
 
     /// The image a bullet level draws: its picture bullet's.
-    pub fn bullet_image(&self, level: &ListLevel) -> Option<crate::docx::ResourceId> {
+    pub fn bullet_image(&self, level: &ListLevel) -> Option<crate::ident::ResourceId> {
         (level.format.as_ref().and_then(Literal::known) == Some(NumberFormat::Bullet)).then_some(())?;
         self.pictures.get(&level.pic_bullet?)?.image
     }

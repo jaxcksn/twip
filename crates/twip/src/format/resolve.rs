@@ -4,13 +4,13 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use super::{CharProps, Color, FontHint, FontRef, ParaFlag, ParaProps, ScriptClass, TextBorder, ThemeFace, TightWrap, Toggle};
-use crate::document::format::{Emphasis, Jc, LineRule, ShadingPattern, VertAlign};
+use crate::document::format::{
+    Border, Emphasis, Jc, LineRule, ShadingPattern, Shd, TextEffects, ThemeColourRef, ThemeColours, ThemeFonts, VertAlign,
+};
 use crate::document::line::{BorderStyle, Underline};
 use crate::document::paragraph::{ListJc, TextAlignment};
 use crate::docx::font_table::GenericFamily;
-use crate::docx::model::{ParaStyle, RunStyle, TextEffects, ThemeColourRef, ThemeFont, Typography};
-use crate::docx::props::{Border, Shd, ThemeColours};
-use crate::docx::styles::ThemeFonts;
+use crate::docx::model::{ParaStyle, RunStyle, ThemeFont, Typography};
 
 /// What resolving a run needs from its document.
 #[derive(Clone, Copy)]

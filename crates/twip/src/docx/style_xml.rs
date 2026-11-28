@@ -38,12 +38,12 @@ use super::styles;
 use super::table_props::{self as tp, CellDirect, RowDirect, TableDirect};
 use super::write::props::{Cx, STYLE};
 use super::xml::{W, attr, child, children, is_w, on_off, on_off_str, val};
-use crate::document::authored::Authored;
 use crate::docx::table_props::TableXml;
 use crate::format::{
     CellSet, CharProps, Defaults, DefaultsSet, DefinedIn, ForeignChild, ForeignProps, LatentStyle, LatentStyles, ParaProps, ParaSet, QName, Region,
     RegionKind, RowSet, Set, Style, StyleEntry, StyleFormat, StyleKind, StyleProp, StyleSet, StyleSheet, TableSet,
 };
+pub use crate::format::{DefaultsDef, LatentDef, StyleDef};
 
 // Names
 
@@ -1320,13 +1320,7 @@ pub trait StyleXml: Sized {
 
 /// A holder of one kind of definition, with its parse and writer over the XML read.
 macro_rules! holder {
-    ($(#[$doc:meta])* $name:ident, $t:ty, $set:ty) => {
-        $(#[$doc])*
-        ///
-        /// The written form stands for the definition only while it is the one it was read as; never part of
-        /// equality: use [`Authored::authored_eq`].
-        pub type $name = Authored<Rc<$t>, $set>;
-
+    ($name:ident, $t:ty, $set:ty) => {
         impl StyleXml for $name {
             type Def = $t;
             type Set = $set;
@@ -1372,19 +1366,9 @@ macro_rules! holder {
     };
 }
 
-holder!(
-    /// A style: typed, with the `w:style` it was read from in its origin.
-    StyleDef, Style, StyleSet
-);
-holder!(
-    /// The document defaults: typed, with the `w:docDefaults` they were read from in their origin.
-    DefaultsDef, Defaults, DefaultsSet
-);
-holder!(
-    /// The latent styles: typed, with the `w:latentStyles` they were read from in their origin. An edit replaces them
-    /// whole.
-    LatentDef, LatentStyles, std::convert::Infallible
-);
+holder!(StyleDef, Style, StyleSet);
+holder!(DefaultsDef, Defaults, DefaultsSet);
+holder!(LatentDef, LatentStyles, std::convert::Infallible);
 
 // A whole styles part
 
