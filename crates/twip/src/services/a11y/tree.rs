@@ -67,7 +67,7 @@ pub fn tree_with(e: &Editor, spelling: &Spellers, language: &str, cache: &mut Tr
     let lang = document_language(doc, language);
     let context = {
         let mut h = DefaultHasher::new();
-        (&lang, spelling.signature(), std::mem::discriminant(&doc.review.view), &*doc.review.markup, doc.comments.by_id.len()).hash(&mut h);
+        (&lang, spelling.signature(), std::mem::discriminant(&e.review().view), &*e.review().markup, doc.comments.by_id.len()).hash(&mut h);
         h.finish()
     };
     let mut b = Builder { e, doc, spelling, language, lang, open: Vec::new(), notes: Vec::new(), cache, context, seen: Vec::new() };
@@ -496,7 +496,7 @@ impl Builder<'_> {
                         (None, Alt::Decorative | Alt::Missing) => {}
                     }
                 }
-                Inline::Float(_, fr) if super::unread(&self.doc.review, &fr.rev) => {}
+                Inline::Float(_, fr) if super::unread(self.e.review(), &fr.rev) => {}
                 Inline::Float(f, _) => match (&f.text_box, alt(&f.alt, f.shape.as_deref())) {
                     (Some(tb), _) => floats.push(self.text_box(AccessibleId(f.id), &tb.blocks, depth)),
                     (None, Alt::Text(alt)) => floats.push(image(AccessibleId(f.id), alt)),
@@ -607,7 +607,7 @@ impl Builder<'_> {
             .comments
             .threads()
             .into_iter()
-            .filter(|(root, _)| doc.comments.by_id.get(root).is_some_and(|c| doc.review.shows_comment(c.author)))
+            .filter(|(root, _)| doc.comments.by_id.get(root).is_some_and(|c| self.e.review().shows_comment(c.author)))
             .filter_map(|(root, replies)| {
                 let mut node = self.comment(root)?;
                 node.children.extend(replies.into_iter().filter_map(|r| self.comment(r)));

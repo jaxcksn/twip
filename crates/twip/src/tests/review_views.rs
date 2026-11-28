@@ -5,7 +5,7 @@ use std::path::Path;
 
 use serde_json::Value;
 
-use crate::docx::review::{AuthorPalette, MarkupView};
+use crate::docx::review::{AuthorPalette, MarkupView, ReviewView};
 use crate::docx::{Block, Document, Inline, Paragraph};
 use crate::font::Fonts;
 use crate::layout::Snapshot;
@@ -17,15 +17,59 @@ fn fixture(name: &str) -> Document {
     crate::docx::read(&std::fs::read(&p).unwrap_or_else(|e| panic!("{}: {e}", p.display()))).expect("a review fixture")
 }
 
-fn in_view(mut d: Document, view: MarkupView) -> Document {
-    d.review.view = view;
+/// What a test lays out: a document in a view.
+trait Shown {
+    fn doc(&self) -> &Document;
+    fn view(&self) -> ReviewView;
+}
+
+/// A document in the view it opens in.
+impl Shown for Document {
+    fn doc(&self) -> &Document {
+        self
+    }
+
+    fn view(&self) -> ReviewView {
+        crate::layout::tests::view(self)
+    }
+}
+
+/// A document in a view of its own.
+struct Viewed {
+    doc: Document,
+    view: ReviewView,
+}
+
+impl Shown for Viewed {
+    fn doc(&self) -> &Document {
+        &self.doc
+    }
+
+    fn view(&self) -> ReviewView {
+        self.view.clone()
+    }
+}
+
+impl From<Document> for Viewed {
+    fn from(doc: Document) -> Viewed {
+        Viewed { view: crate::layout::tests::view(&doc), doc }
+    }
+}
+
+fn in_view(d: impl Into<Viewed>, view: MarkupView) -> Viewed {
+    let mut d = d.into();
+    d.view.view = view;
     d
+}
+
+fn layout(d: &dyn Shown, fonts: &Fonts) -> Snapshot {
+    crate::layout::layout(d.doc(), &d.view(), fonts)
 }
 
 /// Per page, each drawn line's baseline, start and text (to 0.01 pt): what a line box is, without the decorations and
 /// change bars drawn beside it.
-fn lines(d: &Document, fonts: &Fonts) -> Vec<Vec<(i64, i64, String)>> {
-    snapshot_lines(&crate::layout::tests::layout(d, fonts))
+fn lines(d: &dyn Shown, fonts: &Fonts) -> Vec<Vec<(i64, i64, String)>> {
+    snapshot_lines(&layout(d, fonts))
 }
 
 fn snapshot_lines(snapshot: &Snapshot) -> Vec<Vec<(i64, i64, String)>> {
@@ -151,7 +195,7 @@ fn views_match_expected_layouts() {
             let e = &expected["views"][key];
             let Some(pages) = e["pages"].as_u64() else { continue };
             let d = in_view(fixture(name), view);
-            let snapshot = crate::layout::tests::layout(&d, &fonts);
+            let snapshot = layout(&d, &fonts);
             assert_eq!(snapshot.pages().len() as u64, pages, "{name} in {view:?}: pages");
             let mut lines: HashMap<u64, std::collections::HashSet<(usize, u32)>> = HashMap::new();
             for (pi, page) in snapshot.pages().iter().enumerate() {
@@ -164,7 +208,7 @@ fn views_match_expected_layouts() {
                 });
             }
             let mut ours = Vec::new();
-            for s in &d.sections {
+            for s in &d.doc.sections {
                 paragraphs(&s.blocks, &mut ours);
             }
             let mut at = 0;
@@ -188,8 +232,8 @@ fn views_match_expected_layouts() {
 }
 
 /// Every filled rectangle drawn on page 1.
-fn rects(d: &Document, fonts: &Fonts) -> Vec<([f64; 4], u32)> {
-    let snapshot = crate::layout::tests::layout(d, fonts);
+fn rects(d: &dyn Shown, fonts: &Fonts) -> Vec<([f64; 4], u32)> {
+    let snapshot = layout(d, fonts);
     let mut out = Vec::new();
     paint(&snapshot.pages()[0], &mut |p| {
         if let Item::Rect { rect, colour, .. } = p.absolute() {
@@ -199,8 +243,8 @@ fn rects(d: &Document, fonts: &Fonts) -> Vec<([f64; 4], u32)> {
     out
 }
 
-fn glyph_colours(d: &Document, fonts: &Fonts) -> Vec<Option<u32>> {
-    snapshot_colours(&crate::layout::tests::layout(d, fonts))
+fn glyph_colours(d: &dyn Shown, fonts: &Fonts) -> Vec<Option<u32>> {
+    snapshot_colours(&layout(d, fonts))
 }
 
 fn snapshot_colours(snapshot: &Snapshot) -> Vec<Option<u32>> {
@@ -311,15 +355,16 @@ fn view_commands_relayout_without_editing() {
     run(&mut e, Command::SetMarkupView(MarkupView::All));
     let name = e.document().people.persons[0].name.to_string();
     assert_eq!(run(&mut e, color(&name)), Outcome::Moved);
-    assert_eq!(e.document().review.palette.color(crate::docx::review::AuthorId(0)), 0x112233);
+    assert_eq!(e.review().palette.color(crate::docx::review::AuthorId(0)), 0x112233);
     e.complete(&fonts);
     assert!(snapshot_colours(&e.snapshot()).contains(&Some(0x112233)), "the author's revisions in the chosen colour");
     assert!(matches!(run(&mut e, color("Nobody")), Outcome::Refused(_)));
 }
 
 /// `d` with its markup's view settings changed.
-fn with_markup(mut d: Document, change: impl FnOnce(&mut crate::docx::review::Markup)) -> Document {
-    change(std::rc::Rc::make_mut(&mut d.review.markup));
+fn with_markup(d: impl Into<Viewed>, change: impl FnOnce(&mut crate::docx::review::Markup)) -> Viewed {
+    let mut d = d.into();
+    change(std::rc::Rc::make_mut(&mut d.view.markup));
     d
 }
 
@@ -355,8 +400,8 @@ fn hidden_reviewers_show_their_revisions_as_accepted() {
         let hidden = with_markup(d.clone(), |m| m.show.hidden_reviewers = everyone.clone());
         let accepted = in_view(d.clone(), MarkupView::NoMarkup);
         assert_eq!(lines(&hidden, &fonts), lines(&accepted, &fonts), "{name}: every reviewer hidden lays out as accepted");
-        let marks = |d: &Document| {
-            let palette = &d.review.palette;
+        let marks = |d: &dyn Shown| {
+            let palette = &d.view().palette;
             let tint = |colour: u32| {
                 let m = |s: u32| ((((colour >> s) & 0xFF) + 3 * 0xFF) / 4) << s;
                 m(16) | m(8) | m(0)
@@ -394,7 +439,7 @@ fn show_markup_commands_are_view_settings() {
     assert_eq!(snapshot_lines(&e.snapshot()), lines(&fixture("FX-REVIEW-RUNS-ACCEPTED"), &fonts));
     assert!(matches!(e.set_hidden_reviewers(&["Nobody"]), Outcome::Refused(_)));
     assert_eq!(e.set_hidden_reviewers(&[]), Outcome::Moved);
-    assert!(e.document().review.markup.show.hidden_reviewers.is_empty());
+    assert!(e.review().markup.show.hidden_reviewers.is_empty());
 }
 
 /// Balloons: deletions leave the line for their balloons, insertions stay marked in place.
@@ -440,7 +485,7 @@ fn markup_style_draws_each_kind_as_set() {
     let hidden = with_markup(d.clone(), |m| m.style.deletions.mark = TextMark::Hidden);
     assert_eq!(lines(&hidden, &fonts), lines(&in_view(d.clone(), MarkupView::Simple), &fonts));
     let caret = with_markup(d.clone(), |m| m.style.deletions.mark = TextMark::Caret);
-    let text = |d: &Document| lines(d, &fonts).concat().into_iter().map(|l| l.2).collect::<String>();
+    let text = |d: &dyn Shown| lines(d, &fonts).concat().into_iter().map(|l| l.2).collect::<String>();
     let carets = text(&caret).matches('^').count() - text(&d).matches('^').count();
     assert!(carets > 0, "a caret for each deletion");
     assert_eq!(text(&caret).replace('^', ""), text(&hidden).replace('^', ""), "the deleted text gone");
@@ -457,7 +502,7 @@ fn markup_style_draws_each_kind_as_set() {
     // Outside: the right of an odd page with mirrored margins.
     let mut mirrored = d.clone();
     mirrored.settings.mirror_margins = true;
-    let auto_bars = |d: &Document, colour: u32| {
+    let auto_bars = |d: &dyn Shown, colour: u32| {
         rects(d, &fonts).into_iter().filter(|(r, c)| *c == colour && (r[2] - r[0] - 0.72).abs() < 1e-9).map(|(r, _)| r).collect::<Vec<_>>()
     };
     let outside = auto_bars(&mirrored, crate::docx::review::ReviewView::MARKUP_BAR);
@@ -475,7 +520,7 @@ fn markup_style_draws_each_kind_as_set() {
     let t = with_markup(fixture("FX-REVIEW-TABLES"), |m| (m.style.inserted_cells, m.style.deleted_cells) = (MarkColor::Auto, MarkColor::Auto));
     let base = fixture("FX-REVIEW-TABLES");
     let by = base.people.persons.len() as u32;
-    let tints: Vec<u32> = (0..by).map(|a| base.review.palette.color(crate::docx::review::AuthorId(a))).collect();
+    let tints: Vec<u32> = (0..by).map(|a| base.view().palette.color(crate::docx::review::AuthorId(a))).collect();
     let tint = |colour: u32| {
         let m = |s: u32| ((((colour >> s) & 0xFF) + 3 * 0xFF) / 4) << s;
         m(16) | m(8) | m(0)
@@ -498,7 +543,7 @@ fn split_cells_have_their_own_highlight() {
     use crate::docx::review::{CellMarkKind, MarkColor, MarkupStyle as S};
     let fonts = Fonts::system_recommended();
     let merged = fixture("FX-REVIEW-CELLS");
-    let has = |d: &Document, colour: u32| rects(d, &fonts).iter().any(|(_, c)| *c == colour);
+    let has = |d: &dyn Shown, colour: u32| rects(d, &fonts).iter().any(|(_, c)| *c == colour);
     assert!(has(&merged, S::LIGHT_YELLOW) && !has(&merged, S::LIGHT_ORANGE), "a merged cell in Light Yellow");
     let mut split = merged.clone();
     let mut found = 0;
@@ -570,7 +615,7 @@ fn the_caret_walks_text_with_stand_in_deletions() {
     let fonts = Fonts::system_recommended();
     let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/review/FX-REVIEW-RUNS.docx");
     let mut e = Editor::open(&std::fs::read(p).expect("the fixture"), &fonts).expect("opens");
-    let mut style = e.document().review.markup.style.clone();
+    let mut style = e.review().markup.style.clone();
     for mark in [TextMark::Hidden, TextMark::Caret, TextMark::Pound] {
         let mut wrong = style.clone();
         wrong.insertions.mark = mark;
@@ -631,7 +676,7 @@ fn with_settings(settings: &str) -> Vec<u8> {
 #[test]
 fn show_markup_opens_as_the_document_saved_it() {
     let shown = |settings: &str| {
-        let m = &crate::docx::read(&with_settings(settings)).expect("reads").review.markup.show;
+        let m = ReviewView::opening(&crate::docx::read(&with_settings(settings)).expect("reads").settings).markup.show.clone();
         (m.insertions_deletions, m.formatting, m.comments)
     };
     assert_eq!(shown(""), (true, true, true), "no revisionView: all shows");

@@ -236,14 +236,14 @@ impl Editor {
     /// Whether the unit at `u` is a space the markup view shows (not a tab, break, object, or hidden or deleted text).
     pub fn space_at(&self, para: ParaId, u: Unit) -> bool {
         let Some(p) = self.index.para(&self.doc, para) else { return false };
-        let review = &self.doc.review;
+        let review = &self.review;
         let t = UnitText::masked(p, |rev| rev.del.is_some() || review.hides(rev));
         !t.is_hidden(u) && t.char_at(u) == Some(' ')
     }
 
     /// A paragraph's text as Find reads it: what the markup view shows, fields as they show, values aside.
     pub(crate) fn find_text(&self, para: ParaId) -> Seen {
-        let review = &self.doc.review;
+        let review = &self.review;
         self.index.para(&self.doc, para).map_or_else(Seen::default, |p| Seen::of(p, |r| !review.hides(&r.rev), false))
     }
 
@@ -378,7 +378,7 @@ impl Editor {
             return any(live);
         }
         // Nothing in it is deleted: whatever the view shows is live.
-        let view = self.doc.review.view;
+        let view = self.review.view;
         self.index.para(&self.doc, p).is_some_and(|q| any(&Seen::of(q, |r| !view.hides(&r.rev), false)))
     }
 
@@ -399,7 +399,7 @@ impl Editor {
             Some(k) => k,
             None => {
                 let q = self.index.para(&self.doc, p)?;
-                let view = self.doc.review.view;
+                let view = self.review.view;
                 let read = q
                     .inlines
                     .iter()

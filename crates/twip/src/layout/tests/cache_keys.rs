@@ -48,11 +48,10 @@ fn markup_view_is_in_the_keys() {
     use crate::docx::review::MarkupView;
     use crate::layout::env::TextEnv;
     use crate::layout::text::{FieldValues, shape_space};
-    let Some(mut doc) = plain_doc(&[words(3)]) else { return };
+    let Some(doc) = plain_doc(&[words(3)]) else { return };
     let Block::Para(p) = doc.sections[0].blocks[0].clone() else { unreachable!() };
     let all = TextEnv::new(&doc, &crate::layout::tests::view(&doc), None);
-    doc.review.view = MarkupView::NoMarkup;
-    let none = TextEnv::new(&doc, &crate::layout::tests::view(&doc), None);
+    let none = TextEnv::new(&doc, &crate::docx::review::ReviewView { view: MarkupView::NoMarkup, ..crate::layout::tests::view(&doc) }, None);
     assert_ne!(all, none);
     let notes = Default::default();
     assert_ne!(shape_space(&p, &FieldValues::default(), &notes, &all, None), shape_space(&p, &FieldValues::default(), &notes, &none, None));

@@ -755,9 +755,8 @@ fn read_package(bytes: &[u8], pkg: &mut Package, editable: bool, now: i64, depth
     doc.theme = drawing_theme;
     doc.colour_map = colour_map;
     doc.settings = r.settings;
-    if let Some((show, hides_white_space)) = opening {
-        doc.review.markup = Rc::new(super::review::Markup { show, ..Default::default() });
-        doc.hides_white_space = hides_white_space;
+    if let Some((show, hides)) = opening {
+        (doc.settings.revision_view, doc.settings.hides_page_boundaries) = (show, hides);
     }
     doc.people = r.people;
     doc.review_ids = r.ids;

@@ -714,7 +714,7 @@ impl Editor {
                     (in_group, (None, None))
                 }
                 (C::SetTrackChanges, _) => (editable && !(locked && tracking), (Some(tracking), None)),
-                (C::SetMarkupView, _) => (true, (None, Some(CommandValue::MarkupView(self.doc.review.view)))),
+                (C::SetMarkupView, _) => (true, (None, Some(CommandValue::MarkupView(self.review.view)))),
                 (C::SetTrackOptions | C::AcceptAllAndStopTracking, _) => (editable && !locked, (None, None)),
                 (C::DeleteAllComments, _) => (editable && comments, (None, None)),
                 (C::PromoteOutline | C::DemoteOutline | C::PromoteToHeading1 | C::DemoteToBodyText, _) => {

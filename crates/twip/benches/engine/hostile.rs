@@ -4,6 +4,7 @@
 use std::cell::RefCell;
 
 use divan::Bencher;
+use twip::internal::docx::review::ReviewView;
 use twip::internal::docx::{Block, Document, Inline};
 use twip::internal::layout::ids::Revision;
 use twip::internal::layout::{Budget, Change, DocumentLayout, Step, Target, layout};
@@ -63,7 +64,8 @@ fn sections(n: usize) -> Document {
 #[divan::bench(sample_count = 10)]
 fn spaces(bencher: Bencher) {
     let (fonts, doc) = (crate::fonts(), docx(&format!(r#"<w:p><w:r><w:t xml:space="preserve">{}</w:t></w:r></w:p>"#, " ".repeat(40_000)), "", &[]));
-    bencher.bench_local(|| layout(&doc, &doc.review, &fonts));
+    let view = ReviewView::opening(&doc.settings);
+    bencher.bench_local(|| layout(&doc, &view, &fonts));
 }
 
 /// 10 000 sections: laid out whole; page by page, as an editor opens a document; and a paragraph halfway edited,
@@ -71,16 +73,17 @@ fn spaces(bencher: Bencher) {
 #[divan::bench(args = ["full", "through", "edit"], sample_count = 10, sample_size = 1)]
 fn many_sections(bencher: Bencher, how: &str) {
     let (fonts, doc) = (crate::fonts(), RefCell::new(sections(SECTIONS)));
+    let view = ReviewView::opening(&doc.borrow().settings);
     match how {
-        "full" => bencher.bench_local(|| layout(&doc.borrow(), &doc.borrow().review, &fonts)),
+        "full" => bencher.bench_local(|| layout(&doc.borrow(), &view, &fonts)),
         "through" => bencher.bench_local(|| {
-            let mut dl = DocumentLayout::new(doc.borrow().review.clone());
+            let mut dl = DocumentLayout::new(view.clone());
             dl.edit(Revision(1), None);
             dl.through(&doc.borrow(), &fonts, Target::Page(usize::MAX));
             dl
         }),
         _ => {
-            let mut dl = DocumentLayout::new(doc.borrow().review.clone());
+            let mut dl = DocumentLayout::new(view.clone());
             let mut rev = 1;
             dl.edit(Revision(rev), None);
             dl.complete(&doc.borrow(), &fonts);
@@ -132,7 +135,8 @@ fn chapter_headers(bencher: Bencher) {
         ],
     );
     let fonts = crate::fonts();
-    bencher.bench_local(|| layout(&doc, &doc.review, &fonts));
+    let view = ReviewView::opening(&doc.settings);
+    bencher.bench_local(|| layout(&doc, &view, &fonts));
 }
 
 /// 8 000 pages with a footnote each, numbered from each page, in compat 12 and 15.
@@ -153,7 +157,8 @@ fn page_numbered_notes(bencher: Bencher, compat: u32) {
         ],
     );
     let fonts = crate::fonts();
-    bencher.bench_local(|| layout(&doc, &doc.review, &fonts));
+    let view = ReviewView::opening(&doc.settings);
+    bencher.bench_local(|| layout(&doc, &view, &fonts));
 }
 
 /// 8 000 pages laid out a page a run, each run composing and publishing what it laid out, as an editor's idle time
@@ -162,7 +167,7 @@ fn page_numbered_notes(bencher: Bencher, compat: u32) {
 fn idle_composing(bencher: Bencher) {
     let (fonts, doc) = (crate::fonts(), docx(&pages(8_000, |k| format!("<w:p><w:r><w:t>Page {k}</w:t></w:r></w:p>")), "", &[]));
     bencher.bench_local(|| {
-        let mut dl = DocumentLayout::new(doc.review.clone());
+        let mut dl = DocumentLayout::new(ReviewView::opening(&doc.settings));
         dl.edit(Revision(1), None);
         while dl.run(&doc, &fonts, Budget::Pages(1)) != Step::Done {}
         dl

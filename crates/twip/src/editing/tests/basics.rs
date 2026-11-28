@@ -2496,7 +2496,7 @@ fn reformatting_a_paragraph_in_a_division_keeps_the_divisions_margins() {
     let mut e = super::super::Editor::open(&out.finish().unwrap().into_inner(), fonts()).unwrap();
     let margins = |e: &super::super::Editor| {
         let crate::docx::Block::Para(p) = &e.document().sections[0].blocks[1] else { panic!("a paragraph") };
-        let s = p.para_style_in(e.document().review.view);
+        let s = p.para_style_in(e.review().view);
         (s.ind_left, s.ind_right, s.space_before, s.jc)
     };
     let read = margins(&e);

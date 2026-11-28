@@ -48,10 +48,12 @@ pub(crate) fn convert(
     crate::api::session::documents::unsupported_package(docx)?;
     let (doc, read) = crate::docx::read_reported(docx).map_err(|e| Error::new(ErrorCode::ImportFailed, e))?;
     // Its imported HTML drawn as a session draws it
-    let mut doc = crate::editing::opened(doc, fonts);
-    doc.review.view = crate::docx::review::MarkupView::NoMarkup;
-    doc.review.show_hidden = options.hidden_text.unwrap_or(false);
-    let view = doc.review.clone();
+    let doc = crate::editing::opened(doc, fonts);
+    let view = ReviewView {
+        view: crate::docx::review::MarkupView::NoMarkup,
+        show_hidden: options.hidden_text.unwrap_or(false),
+        ..ReviewView::opening(&doc.settings)
+    };
     let snapshot = crate::layout::layout_until(&doc, &view, fonts, || cancel.is_some_and(|c| c.load(Ordering::Relaxed))).ok_or_else(aborted)?;
     let (bytes, written) = export_with(&doc, &view, &snapshot, "", options, cancel, Some(fonts))?;
     let mut warnings = read.diagnostics.warnings;
@@ -239,7 +241,7 @@ mod tests {
             };
             let mut e = crate::editing::Editor::open(&bytes, &fonts).unwrap();
             e.complete(&fonts);
-            let (pdf, _) = export(e.document(), &e.document().review, &e.snapshot(), "Fixture", &PdfOptions::default(), None).expect("exports");
+            let (pdf, _) = export(e.document(), e.review(), &e.snapshot(), "Fixture", &PdfOptions::default(), None).expect("exports");
             let text = String::from_utf8_lossy(&pdf);
             assert!(pdf.starts_with(b"%PDF-") && text.contains("%%EOF"), "{}", f.display());
             assert!(text.contains("/StructTreeRoot") && text.contains("/MarkInfo"), "{}: untagged", f.display());

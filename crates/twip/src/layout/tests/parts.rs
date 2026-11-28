@@ -15,11 +15,14 @@ use super::fonts;
 const ARIAL_12: &str = r#"<w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="24"/>"#;
 const HIDDEN: &str = r#"<w:rPr><w:vanish/></w:rPr>"#;
 
-/// `body` read as the editor reads it, hidden text shown; `None` without Arial.
+/// `body` read as the editor reads it; `None` without Arial.
 fn doc(body: &str) -> Option<crate::docx::Document> {
-    let (mut doc, _) = crate::docx::read_editable(&super::breaking::test_package("", ARIAL_12, body, "")?).expect("reads");
-    doc.review.show_hidden = true;
-    Some(doc)
+    Some(crate::docx::read_editable(&super::breaking::test_package("", ARIAL_12, body, "")?).expect("reads").0)
+}
+
+/// The view `doc` opens in, hidden text shown.
+fn shown_hidden(doc: &crate::docx::Document) -> crate::docx::review::ReviewView {
+    crate::docx::review::ReviewView { show_hidden: true, ..super::view(doc) }
 }
 
 /// The first paragraph of `body` broken from piece `start` in shown part `part`, `width` points wide.
@@ -27,7 +30,7 @@ fn shown(body: &str, (start, part): (usize, usize), width: f64) -> Option<ParaLi
     let doc = doc(body)?;
     let Block::Para(p) = &doc.sections[0].blocks[0] else { panic!("a paragraph") };
     let fonts = fonts();
-    let env = LayoutEnv::new(&doc, &crate::layout::tests::view(&doc), None);
+    let env = LayoutEnv::new(&doc, &shown_hidden(&doc), None);
     let (mut cache, mut meter) = (LayoutCache::new(), Meter::unlimited());
     let mut memos = Memos { cache: &mut cache, meter: &mut meter };
     let space = shape_space(p, &FieldValues::default(), &Default::default(), &env.text, None);
@@ -169,7 +172,7 @@ fn a_page_break_between_an_empty_part_and_the_next_keeps_each_line_once() {
         let doc = doc(&body)?;
         let Block::Para(p) = &doc.sections[0].blocks[1] else { panic!("a paragraph") };
         let id = ParaId(p.id);
-        let snap = crate::layout::tests::layout(&doc, &fonts());
+        let snap = crate::layout::layout(&doc, &shown_hidden(&doc), &fonts());
         let counts = snap
             .pages()
             .iter()
@@ -220,7 +223,7 @@ fn pages_of(body: &str, block: usize) -> Option<Vec<Vec<crate::layout::fragment:
             _ => panic!("a cell paragraph"),
         },
     };
-    let snap = crate::layout::tests::layout(&doc, &fonts());
+    let snap = crate::layout::layout(&doc, &shown_hidden(&doc), &fonts());
     let pages = snap.pages().iter().map(|pg| {
         let mut out = Vec::new();
         for c in pg.children.iter() {

@@ -140,7 +140,7 @@ pub fn next_para(e: &Editor, para: ParaId) -> Option<(ParaId, Sep)> {
 /// joins the two paragraphs as they read, so no match crosses it.
 fn shown_next(e: &Editor, para: ParaId) -> Option<(ParaId, Sep)> {
     let p = e.index().para(e.document(), para)?;
-    if e.document().review.hides(&p.mark.rev) {
+    if e.review().hides(&p.mark.rev) {
         return None;
     }
     next_para(e, para)

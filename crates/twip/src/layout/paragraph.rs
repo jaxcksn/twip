@@ -187,13 +187,14 @@ mod tests {
         use crate::docx::review::{Markup, MarkupView, TextMark};
         let del = r#"w:id="1" w:author="A" w:date="2026-01-01T00:00:00Z""#;
         let body = format!(r#"<w:p><w:pPr><w:rPr><w:del {del}/></w:rPr></w:pPr><w:del {del}><w:r><w:delText>gone</w:delText></w:r></w:del></w:p>"#);
-        let Some(mut doc) = crate::layout::tests::shapes::bytes(&body).and_then(|b| crate::docx::read(&b).ok()) else { return };
+        let Some(doc) = crate::layout::tests::shapes::bytes(&body).and_then(|b| crate::docx::read(&b).ok()) else { return };
         let crate::docx::Block::Para(p) = doc.sections[0].blocks[0].clone() else { panic!("a paragraph") };
-        doc.review.view = MarkupView::NoMarkup;
-        assert!(super::shows_nothing(&p, &doc.review), "deleted, out of the view");
+        let mut review = crate::layout::tests::view(&doc);
+        review.view = MarkupView::NoMarkup;
+        assert!(super::shows_nothing(&p, &review), "deleted, out of the view");
         let mut caret = Markup::default();
         caret.style.deletions.mark = TextMark::Caret;
-        (doc.review.view, doc.review.markup) = (MarkupView::All, std::rc::Rc::new(caret));
-        assert!(!super::shows_nothing(&p, &doc.review), "a caret stands in for it");
+        (review.view, review.markup) = (MarkupView::All, std::rc::Rc::new(caret));
+        assert!(!super::shows_nothing(&p, &review), "a caret stands in for it");
     }
 }

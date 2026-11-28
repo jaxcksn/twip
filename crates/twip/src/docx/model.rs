@@ -18,8 +18,8 @@ use std::rc::Rc;
 
 use super::props::{Border, FramePr, Jc, Leader, LineRule, Look, Tab, TabKind, TablePos, VertAlign, Width};
 use super::review::{
-    CellRevisions, CommentId, Comments, GridChange, IdCounter, ParaChange, People, Protection, RangeMark, ReviewView, RowRevisions, RunRevisions,
-    SectionChange, TableChange,
+    CellRevisions, CommentId, Comments, GridChange, IdCounter, ParaChange, People, Protection, RangeMark, RowRevisions, RunRevisions, SectionChange,
+    TableChange,
 };
 
 /// Effective character formatting of a run. Its `==` is [`RunStyle::layout_eq`].
@@ -2220,6 +2220,10 @@ pub struct Settings {
     pub protection: Option<Protection>,
     /// `w:revisionView` as written, kept for saving.
     pub revision_view_raw: Raw,
+    /// `w:revisionView`: the markup the document shows when it opens.
+    pub revision_view: super::review::ShowMarkup,
+    /// `w:doNotDisplayPageBoundaries`: the white space between pages is hidden when the document opens.
+    pub hides_page_boundaries: bool,
     /// `w:displayBackgroundShape`: the page background shows (Word shows none without it).
     pub display_background_shape: bool,
 }
@@ -2326,11 +2330,6 @@ pub struct Document {
     /// Who made the document's revisions and comments.
     pub people: People,
     pub comments: Comments,
-    /// How the review shows (markup view, author colours): a view setting, never saved.
-    pub review: ReviewView,
-    /// The white space between pages hidden when the document opens (`w:doNotDisplayPageBoundaries`): a view
-    /// setting, never saved.
-    pub hides_white_space: bool,
     /// New revision, comment and paragraph ids, past those read.
     pub review_ids: IdCounter,
 }

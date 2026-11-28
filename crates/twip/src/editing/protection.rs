@@ -521,7 +521,7 @@ impl Editor {
         let caret = self.selection.focus()?;
         let Some((para, u)) = caret.para_offset() else { return Some((caret, caret)) };
         let p = self.index.para(&self.doc, para)?;
-        let t = super::text::UnitText::in_review(p, &self.doc.review);
+        let t = super::text::UnitText::in_review(p, &self.review);
         let word = d.unit == Some(DeleteUnit::Word);
         let slot = self.index.para_slot(para)?;
         let blocks = self.index.blocks(&self.doc, slot.container).map_or(&[][..], Vec::as_slice);

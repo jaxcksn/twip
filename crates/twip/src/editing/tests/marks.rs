@@ -198,7 +198,7 @@ fn a_deletions_stand_in_is_no_space() {
     let del = r#"w:id="1" w:author="A" w:date="2026-01-01T00:00:00Z""#;
     let mut e =
         lay(&format!(r#"<w:p><w:r><w:t>ab</w:t></w:r><w:del {del}><w:r><w:delText>g</w:delText></w:r></w:del><w:r><w:t>cd</w:t></w:r></w:p>"#));
-    let mut style = e.document().review.markup.style.clone();
+    let mut style = e.review().markup.style.clone();
     style.deletions.mark = TextMark::Caret;
     e.set_markup_style(style);
     e.complete(fonts());

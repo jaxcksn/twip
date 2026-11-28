@@ -41,7 +41,7 @@ fn caret_marks(e: &Editor) -> Vec<ReviewMark> {
     let Some((para, u)) = e.selection().focus().and_then(|p| p.para_offset()) else { return Vec::new() };
     // shortcut: the body's marks are found again per announcement, up to the caret's paragraph; keep them with the
     // layout if it shows in typing profiles.
-    marks_of(e.document(), para).into_iter().filter(|s| s.0 <= u.0 && u.0 < s.1).map(|s| s.2).collect()
+    marks_of(e.document(), e.review(), para).into_iter().filter(|s| s.0 <= u.0 && u.0 < s.1).map(|s| s.2).collect()
 }
 
 /// The caret paragraph's list and level, and how many items at its level the list has around it (in its container,

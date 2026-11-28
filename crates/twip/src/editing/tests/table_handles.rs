@@ -819,7 +819,7 @@ fn a_text_box_tables_border_drag_lays_it_out_live() {
 #[test]
 fn a_live_table_preview_is_not_the_document_as_printed() {
     let mut e = page();
-    e.doc.review.view = crate::docx::review::MarkupView::NoMarkup;
+    e.set_markup_view(crate::docx::review::MarkupView::NoMarkup);
     assert!(e.lays_out_as_printed(false));
     let d = Drawn::of(&mut e);
     let from = (d.edges[1], (d.rows[1][1] + d.rows[1][3]) / 2.0);

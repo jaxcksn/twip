@@ -52,7 +52,12 @@ use crate::layout::{DocumentLayout, Snapshot};
 
 /// The view `doc` opens in: what it is laid out in without an editor.
 pub fn view(doc: &Document) -> ReviewView {
-    doc.review.clone()
+    ReviewView::opening(&doc.settings)
+}
+
+/// The view `doc` opens in, with no markup.
+pub fn no_markup(doc: &Document) -> ReviewView {
+    ReviewView { view: crate::docx::review::MarkupView::NoMarkup, ..view(doc) }
 }
 
 /// [`crate::layout::layout`] in the view `doc` opens in.
@@ -172,7 +177,15 @@ pub fn page_chars(doc: &Document) -> Vec<Vec<(char, f64, f64)>> {
 
 /// [`page_chars`] with the host's hyphenation patterns.
 pub fn page_chars_with(doc: &Document, hyphenation: Option<&crate::layout::hyphenate::Hyphenation>) -> Vec<Vec<(char, f64, f64)>> {
-    let snap = layout_hyphenated(doc, &fonts(), hyphenation);
+    chars_of(&layout_hyphenated(doc, &fonts(), hyphenation))
+}
+
+/// [`page_chars`] in `view`.
+pub fn page_chars_in(doc: &Document, view: &ReviewView) -> Vec<Vec<(char, f64, f64)>> {
+    chars_of(&crate::layout::layout(doc, view, &fonts()))
+}
+
+fn chars_of(snap: &Snapshot) -> Vec<Vec<(char, f64, f64)>> {
     snap.pages()
         .iter()
         .map(|page| {

@@ -7,12 +7,13 @@ use std::rc::Rc;
 
 use crate::docx::model::next_para_id;
 use crate::docx::props::Border;
+use crate::docx::review::ReviewView;
 use crate::docx::{Block, BreakKind, Document, Inline, Paragraph};
 use crate::font::Fonts;
 use crate::layout::ids::Revision;
 use crate::layout::incremental::{FORCE_FIRST_PAGE, FULL_JOBS, REUSED_PAGES};
 use crate::layout::tests::layout;
-use crate::layout::{Budget, Change, LayoutStatus, Step, dump};
+use crate::layout::{Budget, Change, DocumentLayout, LayoutStatus, Step, dump};
 
 use super::{doc, fonts};
 
@@ -230,13 +231,16 @@ fn run_edits(name: &str, d: Document, fonts: &Fonts, seed: u64, steps: usize) {
 }
 
 pub(super) fn run_edits_with(name: &str, d: Document, fonts: &Fonts, seed: u64, steps: usize, budget: Budget) {
-    run(name, d, fonts, seed, steps, budget, false);
+    let view = super::view(&d);
+    run(name, d, &view, fonts, seed, steps, budget, false);
 }
 
-/// `every_kind`: attempt the kinds in turn (each once per `KINDS` attempts) rather than at random.
-fn run(name: &str, mut d: Document, fonts: &Fonts, seed: u64, steps: usize, budget: Budget, every_kind: bool) {
+/// Edits laid out in `view`. `every_kind`: attempt the kinds in turn (each once per `KINDS` attempts) rather than at
+/// random.
+#[allow(clippy::too_many_arguments)]
+fn run(name: &str, mut d: Document, view: &ReviewView, fonts: &Fonts, seed: u64, steps: usize, budget: Budget, every_kind: bool) {
     let mut rng = Rng::new(seed);
-    let mut dl = crate::layout::tests::document_layout(&d);
+    let mut dl = DocumentLayout::new(view.clone());
     dl.edit(Revision(1), None);
     dl.complete(&d, fonts);
     let mut rev = 1;
@@ -264,7 +268,7 @@ fn run(name: &str, mut d: Document, fonts: &Fonts, seed: u64, steps: usize, budg
             assert_eq!(s.info().len(), s.pages().len());
         }
         let got = dl.snapshot();
-        let want = layout(&d, fonts);
+        let want = crate::layout::layout(&d, view, fonts);
         let (a, b) = (dump::page_text(&got, &d), dump::page_text(&want, &d));
         if a != b || got.status() != want.status() {
             let line = a.lines().zip(b.lines()).position(|(x, y)| x != y).unwrap_or(0);
@@ -315,7 +319,8 @@ pub(super) fn documents() -> Vec<(String, Document)> {
 fn random_edits_equal_full_layout() {
     let fonts = fonts();
     for (name, d) in documents() {
-        run(&name, d, &fonts, 1, KINDS, Budget::Unlimited, true);
+        let view = super::view(&d);
+        run(&name, d, &view, &fonts, 1, KINDS, Budget::Unlimited, true);
     }
 }
 
@@ -387,9 +392,8 @@ fn random_edits_in_every_markup_view() {
     for name in ["FX-REVIEW-RUNS", "FX-REVIEW-MARKS", "FX-REVIEW-TABLES", "FX-REVIEW-SECTIONS", "FX-REVIEW-MOVES", "FX-REVIEW-CELLS"] {
         let Some(d) = doc(&dir.join(format!("{name}.docx"))) else { continue };
         for view in [MarkupView::All, MarkupView::Simple, MarkupView::NoMarkup, MarkupView::Original] {
-            let mut d = d.clone();
-            d.review.view = view;
-            run_edits(&format!("{name} in {view:?}"), d, &fonts, 3, 6);
+            let review = ReviewView { view, ..super::view(&d) };
+            run(&format!("{name} in {view:?}"), d.clone(), &review, &fonts, 3, 6, Budget::Unlimited, false);
         }
     }
 }
@@ -558,21 +562,19 @@ fn edits_inside_joined_paragraphs() {
     let views = [MarkupView::Simple, MarkupView::Original].map(|v| (v, Markup::default()));
     for (view, markup) in views.into_iter().chain(markups.map(|m| (MarkupView::All, m))) {
         let mut d = base.clone();
-        d.review.view = view;
-        d.review.markup = Rc::new(markup.clone());
+        let review = ReviewView { view, markup: Rc::new(markup.clone()), ..super::view(&d) };
         for i in [2, 3, 10, 11, 12, 13] {
             set_mark(&mut d, i, true, true);
         }
         set_mark(&mut d, 7, false, true);
-        let mut runs =
-            [(Budget::Unlimited, crate::layout::tests::document_layout(&d)), (Budget::Pages(1), crate::layout::tests::document_layout(&d))];
+        let mut runs = [(Budget::Unlimited, DocumentLayout::new(review.clone())), (Budget::Pages(1), DocumentLayout::new(review.clone()))];
         for (_, dl) in &mut runs {
             dl.edit(Revision(1), None);
             dl.complete(&d, &fonts);
         }
         for (k, (what, edit)) in edits.iter().enumerate() {
             let Some((i, old, new)) = edit(&mut d) else { continue };
-            let b = dump::page_text(&layout(&d, &fonts), &d);
+            let b = dump::page_text(&crate::layout::layout(&d, &review, &fonts), &d);
             for (budget, dl) in &mut runs {
                 let budget = *budget;
                 dl.edit(Revision(k as u64 + 2), if k % 2 == 0 { hint(i, old, new) } else { None });

@@ -407,7 +407,7 @@ impl Editor {
         }
         path.pop();
         let nested = (!nested.paras.is_empty()).then_some(&nested);
-        let (height, content) = crate::layout::expansion::lay(&self.doc, &self.doc.review, body, width, fonts, nested, self.layout.hyphenation());
+        let (height, content) = crate::layout::expansion::lay(&self.doc, &self.review, body, width, fonts, nested, self.layout.hyphenation());
         Some(Rc::new(Expansion { field: f, part, size: (width, height), content }))
     }
 
@@ -500,7 +500,6 @@ impl Editor {
         std::mem::swap(&mut s.doc.settings, &mut self.doc.settings);
         std::mem::swap(&mut s.doc.line_number_run, &mut self.doc.line_number_run);
         s.doc.resolver = self.doc.resolver.clone();
-        s.doc.review = self.doc.review.clone();
         s.doc.theme = self.doc.theme.clone();
         s.doc.colour_map = self.doc.colour_map;
         if let Some(entry) = self.doc.sections.get(s.section)
@@ -550,7 +549,6 @@ impl Editor {
             settings: d.settings.clone(),
             line_number_run: d.line_number_run.clone(),
             resolver: d.resolver.clone(),
-            review: d.review.clone(),
             people: d.people.clone(),
             ..Document::default()
         };
@@ -559,7 +557,7 @@ impl Editor {
             None => (std::mem::take(&mut self.layout), std::mem::take(&mut self.pages), self.expansions.take(), self.selection),
         };
         let hyphenation = template.hyphenation().cloned();
-        self.layout = DocumentLayout::new(self.doc.review.clone());
+        self.layout = DocumentLayout::new(self.review.clone());
         self.layout.set_hyphenation(hyphenation);
         self.pages = Pages::default();
         self.pages.shows = Some(part);
@@ -910,6 +908,7 @@ impl Editor {
         let hyphenation = self.layout.hyphenation().cloned();
         self.layout = template;
         self.layout.set_hyphenation(hyphenation);
+        self.layout.set_view(self.review.clone());
         self.pages = pages;
         self.pages.shows = None;
         self.index.flow = None;

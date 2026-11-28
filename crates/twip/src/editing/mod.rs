@@ -109,6 +109,7 @@ use std::time::Duration;
 use crate::clock::Instant;
 
 use crate::api::record::Origin;
+use crate::docx::review::ReviewView;
 use crate::docx::{Block, BreakKind, Document, Inline, Paragraph, Run};
 use crate::font::Fonts;
 use crate::layout::{Budget, Change, DocumentLayout, ParaId, Revision, Snapshot, Step as LayoutStep, TableId, Target, Unit};
@@ -180,6 +181,8 @@ pub struct Editor {
     doc: Document,
     /// The DOCX session the document was read with: what saving it needs.
     docx: crate::docx::Session,
+    /// How the document shows: the markup view and options, hidden text and optional hyphens. The layout's view.
+    review: ReviewView,
     layout: DocumentLayout,
     index: DocIndex,
     history: History,
@@ -476,11 +479,13 @@ impl Editor {
     /// An editor of a document read with its DOCX session.
     pub fn with_session(doc: Document, docx: crate::docx::Session, fonts: &Fonts) -> Editor {
         let index = DocIndex::build(&doc);
-        let doc_hides_white_space = doc.hides_white_space;
-        let layout = DocumentLayout::new(doc.review.clone());
+        let review = ReviewView::opening(&doc.settings);
+        let white_space_hidden = doc.settings.hides_page_boundaries;
+        let layout = DocumentLayout::new(review.clone());
         let mut e = Editor {
             doc,
             docx,
+            review,
             layout,
             index,
             history: History::default(),
@@ -549,7 +554,7 @@ impl Editor {
             text_drag_off: false,
             mark_options: view::MarkOptions::default(),
             click_and_type_off: false,
-            white_space_hidden: doc_hides_white_space,
+            white_space_hidden,
             click_and_type_style: None,
             tab_stop: None,
             mode: Mode::Editing,
@@ -735,22 +740,22 @@ impl Editor {
     }
 
     pub fn set_markup_view(&mut self, view: crate::docx::review::MarkupView) -> Outcome {
-        if self.doc.review.view == view {
+        if self.review.view == view {
             return Outcome::Unchanged("already in that view");
         }
-        self.doc.review.view = view;
+        self.review.view = view;
         self.relayout_review();
         Outcome::Moved
     }
 
     /// Sets the markup's view settings past the markup view, laying the document out again when they change.
     fn set_markup(&mut self, change: impl FnOnce(&mut crate::docx::review::Markup), unchanged: &'static str) -> Outcome {
-        let mut m = (*self.doc.review.markup).clone();
+        let mut m = (*self.review.markup).clone();
         change(&mut m);
-        if m == *self.doc.review.markup {
+        if m == *self.review.markup {
             return Outcome::Unchanged(unchanged);
         }
-        self.doc.review.markup = Rc::new(m);
+        self.review.markup = Rc::new(m);
         self.relayout_review();
         Outcome::Moved
     }
@@ -800,8 +805,8 @@ impl Editor {
         }
         self.mark_options = o;
         let (hidden, hyphens) = (o.shows_hidden_text(), o.shows_optional_hyphens());
-        if (self.doc.review.show_hidden, self.doc.review.show_optional_hyphens) != (hidden, hyphens) {
-            (self.doc.review.show_hidden, self.doc.review.show_optional_hyphens) = (hidden, hyphens);
+        if (self.review.show_hidden, self.review.show_optional_hyphens) != (hidden, hyphens) {
+            (self.review.show_hidden, self.review.show_optional_hyphens) = (hidden, hyphens);
             self.relayout_review();
         }
         Outcome::Moved
@@ -810,7 +815,7 @@ impl Editor {
     /// Whether the editor's own layout is the document as printed: no markup, hidden text and optional hyphens as
     /// `hidden_text` (Word's Print hidden text option) has them, no shown sub-templates.
     pub fn lays_out_as_printed(&self, hidden_text: bool) -> bool {
-        let r = &self.doc.review;
+        let r = &self.review;
         r.view == crate::docx::review::MarkupView::NoMarkup
             && r.show_hidden == hidden_text
             && !r.show_optional_hyphens
@@ -819,13 +824,18 @@ impl Editor {
             && self.table_preview.is_empty()
     }
 
-    /// The document as printed, to lay out on its own when [`Editor::lays_out_as_printed`] is false: no markup, hidden
-    /// text only with `hidden_text`, optional hyphens only where a line breaks at them.
-    pub fn printed_document(&self, hidden_text: bool) -> crate::docx::Document {
-        let mut doc = self.doc.clone();
-        doc.review.view = crate::docx::review::MarkupView::NoMarkup;
-        (doc.review.show_hidden, doc.review.show_optional_hyphens) = (hidden_text, false);
-        doc
+    /// The view the document prints in, to lay it out in on its own when [`Editor::lays_out_as_printed`] is false: no
+    /// markup, hidden text only with `hidden_text`, optional hyphens only where a line breaks at them.
+    pub fn printed_view(&self, hidden_text: bool) -> ReviewView {
+        let mut view = self.review.clone();
+        view.view = crate::docx::review::MarkupView::NoMarkup;
+        (view.show_hidden, view.show_optional_hyphens) = (hidden_text, false);
+        view
+    }
+
+    /// How the document shows: the markup view and options, hidden text and optional hyphens.
+    pub fn review(&self) -> &ReviewView {
+        &self.review
     }
 
     /// Which formatting marks show.
@@ -839,10 +849,10 @@ impl Editor {
     }
 
     pub fn set_author_color(&mut self, author: crate::docx::review::AuthorId, color: u32) -> Outcome {
-        if self.doc.review.palette.color(author) == color {
+        if self.review.palette.color(author) == color {
             return Outcome::Unchanged("already that colour");
         }
-        Rc::make_mut(&mut self.doc.review.palette).chosen.insert(author, color);
+        Rc::make_mut(&mut self.review.palette).chosen.insert(author, color);
         self.relayout_review();
         Outcome::Moved
     }
@@ -854,7 +864,7 @@ impl Editor {
     }
 
     fn relayout_review(&mut self) {
-        self.layout.set_view(self.doc.review.clone());
+        self.layout.set_view(self.review.clone());
         self.relayout([None]);
     }
 
@@ -1023,7 +1033,7 @@ impl Editor {
     fn nav(&mut self) -> Nav<'_> {
         let snapshot = self.layout.snapshot();
         self.pages.sync(&snapshot);
-        Nav { doc: &self.doc, idx: &self.index, pages: &mut self.pages, near: self.near }
+        Nav { doc: &self.doc, review: &self.review, idx: &self.index, pages: &mut self.pages, near: self.near }
     }
 
     // Layout coordination
@@ -2720,7 +2730,7 @@ impl Editor {
             }
             return Outcome::Unchanged("row end");
         };
-        let Some(t) = self.index.para(&self.doc, para).map(|q| UnitText::in_review(q, &self.doc.review)) else {
+        let Some(t) = self.index.para(&self.doc, para).map(|q| UnitText::in_review(q, &self.review)) else {
             return Outcome::Unchanged("no paragraph");
         };
         let typing = |at| TypingRun { para, at, kind: if dir == Dir::Back { Typing::Backspace } else { Typing::Delete } };
@@ -3719,14 +3729,14 @@ impl Editor {
 
     fn word_span(&self, p: Position) -> (Position, Position) {
         let Some((para, off)) = p.para_offset() else { return (p, p) };
-        let Some(t) = self.index.para(&self.doc, para).map(|q| UnitText::in_review(q, &self.doc.review)) else { return (p, p) };
+        let Some(t) = self.index.para(&self.doc, para).map(|q| UnitText::in_review(q, &self.review)) else { return (p, p) };
         let (a, b) = t.word_at(off);
         (Position::text(p.story, para, a), Position::text(p.story, para, b))
     }
 
     fn sentence_span(&self, p: Position) -> (Position, Position) {
         let Some((para, off)) = p.para_offset() else { return (p, p) };
-        let Some(t) = self.index.para(&self.doc, para).map(|q| UnitText::in_review(q, &self.doc.review)) else { return (p, p) };
+        let Some(t) = self.index.para(&self.doc, para).map(|q| UnitText::in_review(q, &self.review)) else { return (p, p) };
         let (a, b) = t.sentence_at(off);
         (Position::text(p.story, para, a), Position::text(p.story, para, b))
     }
@@ -4088,7 +4098,7 @@ impl Editor {
                         std::collections::hash_map::Entry::Occupied(e) => e.into_mut(),
                         std::collections::hash_map::Entry::Vacant(e) => {
                             let Some(p) = self.index.para(&self.doc, para) else { continue };
-                            e.insert(UnitText::of_review(p, &self.doc.review))
+                            e.insert(UnitText::of_review(p, &self.review))
                         }
                     };
                     let stops: Vec<&geometry::Stop> = line.stops.iter().filter(|s| s.para == para).collect();
@@ -4125,7 +4135,7 @@ impl Editor {
                                     .para(&self.doc, para)
                                     .and_then(|q| stories::inline_at(q, u))
                                     .and_then(crate::docx::Inline::run)
-                                    .is_some_and(|r| self.doc.review.hides(&r.rev))
+                                    .is_some_and(|r| self.review.hides(&r.rev))
                         };
                         match text.char_at(a.unit) {
                             Some(' ') if spaces && !stand_in(a.unit) => mark(MarkKind::Space, a.x, b.x),
@@ -4140,7 +4150,7 @@ impl Editor {
                     if !paragraphs {
                         continue;
                     }
-                    if let Some(last) = stops.last().filter(|s| s.unit != text.len() && self.doc.review.show_hidden && o.shows_hidden_text())
+                    if let Some(last) = stops.last().filter(|s| s.unit != text.len() && self.review.show_hidden && o.shows_hidden_text())
                         && self.index.para(&self.doc, para).is_some_and(|q| shown_join_at(q, last.unit))
                     {
                         out.push(FormattingMark { page, kind: MarkKind::HiddenParagraph, at: line.strip(last.x, last.x) });
@@ -4161,10 +4171,7 @@ impl Editor {
                             MarkKind::CellEnd
                         }
                         // A hidden mark shown apart
-                        _ if self.doc.review.show_hidden
-                            && o.shows_hidden_text()
-                            && self.index.para(&self.doc, para).is_some_and(|q| q.mark.hidden) =>
-                        {
+                        _ if self.review.show_hidden && o.shows_hidden_text() && self.index.para(&self.doc, para).is_some_and(|q| q.mark.hidden) => {
                             MarkKind::HiddenParagraph
                         }
                         _ => MarkKind::Paragraph,
@@ -4337,7 +4344,7 @@ impl Editor {
     #[cfg(test)]
     pub(crate) fn read_text(&self, para: ParaId, a: Unit, b: Unit) -> String {
         let Some(p) = self.index.para(&self.doc, para) else { return String::new() };
-        seen_text(p, &self.doc.review).text_in(a, b).map(plain_char).collect()
+        seen_text(p, &self.review).text_in(a, b).map(plain_char).collect()
     }
 
     pub fn selected_text_within(&mut self, limit: usize) -> Option<String> {
@@ -4368,7 +4375,7 @@ impl Editor {
                         std::collections::hash_map::Entry::Occupied(o) => o.into_mut(),
                         std::collections::hash_map::Entry::Vacant(v) => {
                             let Some(p) = self.index.para(&self.doc, para) else { break };
-                            v.insert(seen_text(p, &self.doc.review))
+                            v.insert(seen_text(p, &self.review))
                         }
                     };
                     let end = match b.para_offset() {

@@ -139,7 +139,7 @@ fn a11y_key(e: &crate::editing::Editor) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
     (e.revision(), e.references().revision, e.editing_sub_template()).hash(&mut h);
-    let review = &e.document().review;
+    let review = e.review();
     (review.view, &*review.markup, review.show_hidden).hash(&mut h);
     let mut shown: Vec<u64> = e.references().by_field.keys().filter(|f| e.reference_expanded(**f)).map(|f| f.0).collect();
     shown.sort_unstable();
@@ -1110,7 +1110,7 @@ fn api_tooltip(
     let rect = ClientRect { left, top, width, height };
     let mut out = Tooltip { kind, text: t.text.clone(), at: ClientPoint { client_x: left, client_y: top + height }, rect, ..Tooltip::default() };
     if let Some(d) = detail {
-        out.author = Some(super::review::person(e.document(), d.author));
+        out.author = Some(super::review::person(e.document(), e.review(), d.author));
         out.time = d.time.as_ref().and_then(|t| t.utc).map(crate::api::record::Timestamp);
         out.change = d.change.map(super::review::revision_kind);
         out.body = Some(d.body.clone());

@@ -971,7 +971,7 @@ impl Editor {
             div: None,
         };
         let (_, children) =
-            crate::layout::expansion::lay(&self.doc, &self.doc.review, &[Block::Para(para)], DRAW_WIDTH, fonts, None, self.layout.hyphenation());
+            crate::layout::expansion::lay(&self.doc, &self.review, &[Block::Para(para)], DRAW_WIDTH, fonts, None, self.layout.hyphenation());
         let items = crate::layout::traverse::clipped_items_of(&children);
         if items.is_empty() {
             return None;

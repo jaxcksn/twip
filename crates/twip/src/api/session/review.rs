@@ -10,21 +10,21 @@ use crate::api::review::{Comment, CommentAnchor, CommentThread, Person, Revision
 use crate::api::services::ContentPoint;
 use crate::api::state::State;
 use crate::api::value::{Color, Story};
-use crate::docx::review::AuthorId;
+use crate::docx::review::{AuthorId, ReviewView};
 use crate::docx::{Block, Document, Inline};
 use crate::editing::comments::rich;
 use crate::editing::position::StoryId;
 use crate::editing::revisions::index::{self, RevisionKind as Kind};
 
 /// A person of the document, with the colour they show in.
-pub(super) fn person(doc: &Document, id: AuthorId) -> Person {
+pub(super) fn person(doc: &Document, review: &ReviewView, id: AuthorId) -> Person {
     let p = doc.people.get(id);
     Person {
         name: p.map_or_else(String::new, |p| p.name.to_string()),
         initials: p.and_then(|p| p.initials.as_deref().map(str::to_string)),
         identity: p.and_then(|p| p.identity.clone()),
-        color: Color(doc.review.palette.color(id)),
-        visible: doc.review.markup.show.shows_reviewer(id),
+        color: Color(review.palette.color(id)),
+        visible: review.markup.show.shows_reviewer(id),
     }
 }
 
@@ -248,14 +248,14 @@ impl Session {
                 RevisionInfo {
                     id: first_id(r),
                     kind,
-                    author: person(doc, r.author),
+                    author: person(doc, e.review(), r.author),
                     time: time(&r.date),
                     text,
                     description,
                     page,
                     story: story(e, r.story),
                     pair: pair.filter(|_| matches!(r.kind, Kind::MovedFrom | Kind::MovedTo)),
-                    shown: r.shown(&doc.review.markup.show),
+                    shown: r.shown(&e.review().markup.show),
                 }
             })
             .collect()
@@ -273,7 +273,7 @@ impl Session {
             let body = rich::RichText::from_blocks(&c.body);
             Some(Comment {
                 id: comment_id(id),
-                author: person(doc, c.author),
+                author: person(doc, self.editor.review(), c.author),
                 time: time(&c.date_utc).or_else(|| time(&c.date)),
                 plain_text: body.to_plain(),
                 body: rich_text(&body),
@@ -296,7 +296,7 @@ impl Session {
     /// Everyone with revisions or comments in the document.
     pub fn people(&self) -> Vec<Person> {
         let doc = self.editor.document();
-        (0..doc.people.persons.len() as u32).map(|i| person(doc, AuthorId(i))).collect()
+        (0..doc.people.persons.len() as u32).map(|i| person(doc, self.editor.review(), AuthorId(i))).collect()
     }
 
     /// The events a committed transaction's review changes call for: `revisionsChanged`, `commentsChanged`.
@@ -379,7 +379,7 @@ pub(super) fn fill_state(s: &mut Session, state: &mut State) {
     r.tracking_locked = e.document().settings.protection.as_ref().is_some_and(|p| p.forces_tracking());
     let author = s.author.name.clone();
     r.protection = e.protection_state(&author);
-    r.markup_view = e.document().review.view;
+    r.markup_view = e.review().view;
     let (all, shown) = e.review_counts();
     let counts = |c: index::Counts| crate::api::review::MarkupCounts {
         insertions: c.insertions,
@@ -392,7 +392,7 @@ pub(super) fn fill_state(s: &mut Session, state: &mut State) {
     r.revisions = all.revisions();
     (r.track_moves, r.track_formatting) = e.track_options();
     let doc = e.document();
-    let m = &doc.review.markup;
+    let m = &e.review().markup;
     let mut hidden: Vec<String> = Vec::new();
     for id in &m.show.hidden_reviewers {
         if let Some(p) = doc.people.get(*id)

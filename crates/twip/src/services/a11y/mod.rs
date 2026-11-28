@@ -130,18 +130,18 @@ pub(super) fn unread(review: &ReviewView, rev: &RunRevisions) -> bool {
 }
 
 /// The review marks of the body paragraph `para`, with the comments open before it followed from the start.
-pub(super) fn marks_of(doc: &Document, para: ParaId) -> Vec<MarkSpan> {
-    fn walk(doc: &Document, list: &[Block], para: ParaId, open: &mut Vec<CommentId>) -> Option<Vec<MarkSpan>> {
+pub(super) fn marks_of(doc: &Document, review: &ReviewView, para: ParaId) -> Vec<MarkSpan> {
+    fn walk(doc: &Document, review: &ReviewView, list: &[Block], para: ParaId, open: &mut Vec<CommentId>) -> Option<Vec<MarkSpan>> {
         for b in list {
             match b {
                 Block::Para(p) => {
-                    let spans = para_marks(doc, p, &doc.review, open);
+                    let spans = para_marks(doc, p, review, open);
                     if p.id == para.0 {
                         return Some(spans);
                     }
                 }
                 Block::Table(t) => {
-                    if let Some(s) = t.rows.iter().flat_map(|r| &r.cells).find_map(|c| walk(doc, &c.blocks, para, open)) {
+                    if let Some(s) = t.rows.iter().flat_map(|r| &r.cells).find_map(|c| walk(doc, review, &c.blocks, para, open)) {
                         return Some(s);
                     }
                 }
@@ -150,7 +150,7 @@ pub(super) fn marks_of(doc: &Document, para: ParaId) -> Vec<MarkSpan> {
         None
     }
     let mut open = Vec::new();
-    doc.sections.iter().find_map(|s| walk(doc, &s.blocks, para, &mut open)).unwrap_or_default()
+    doc.sections.iter().find_map(|s| walk(doc, review, &s.blocks, para, &mut open)).unwrap_or_default()
 }
 
 pub(super) fn author(doc: &Document, id: AuthorId) -> &str {
@@ -229,9 +229,9 @@ impl<'a> Reading<'a> {
         doc_lang: &'a str,
         open: &mut Vec<CommentId>,
     ) -> Reading<'a> {
-        let doc = e.document();
-        let spans = para_marks(doc, p, &doc.review, open);
-        let text = UnitText::masked(p, |rev| unread(&doc.review, rev));
+        let (doc, review) = (e.document(), e.review());
+        let spans = para_marks(doc, p, review, open);
+        let text = UnitText::masked(p, |rev| unread(review, rev));
         let chars: Vec<char> = text.text.chars().collect();
         let errors = spelling.errors(e, ParaId(p.id), language).unwrap_or_default();
         let codes = crate::docx::fields::hidden_codes(&p.inlines);

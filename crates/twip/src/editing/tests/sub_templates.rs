@@ -323,10 +323,8 @@ fn incremental_layout_with_shown_bodies_equals_a_full_one() {
         e.complete(fonts());
         let shown = e.expansions.clone().unwrap_or_default();
         let ours = crate::layout::dump::page_text(&e.snapshot(), e.document());
-        let fresh = crate::layout::dump::page_text(
-            &crate::layout::document::layout_expanded(e.document(), &e.document().review, fonts(), &shown),
-            e.document(),
-        );
+        let fresh =
+            crate::layout::dump::page_text(&crate::layout::document::layout_expanded(e.document(), e.review(), fonts(), &shown), e.document());
         assert!(ours == fresh, "{step}: incremental layout differs from a full one");
     };
     check(&mut e, "expanded");

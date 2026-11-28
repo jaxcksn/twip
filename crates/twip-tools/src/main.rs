@@ -35,12 +35,11 @@ fn main() {
             };
             let fonts = cli::system_fonts();
             let result = cli::dump::run(std::path::Path::new(out), paths, |doc| {
-                let mut doc = doc.clone();
-                doc.review.view = twip::internal::docx::review::MarkupView::NoMarkup;
-                twip::internal::layout::dump::page_text(
-                    &twip::internal::layout::layout_hyphenated(&doc, &doc.review, &fonts, hyphenation.as_ref()),
-                    &doc,
-                )
+                let view = twip::internal::docx::review::ReviewView {
+                    view: twip::internal::docx::review::MarkupView::NoMarkup,
+                    ..twip::internal::docx::review::ReviewView::opening(&doc.settings)
+                };
+                twip::internal::layout::dump::page_text(&twip::internal::layout::layout_hyphenated(doc, &view, &fonts, hyphenation.as_ref()), doc)
             });
             return exit_on_error(result.map(|n| println!("dumped {n} documents into {out}")));
         }

@@ -917,9 +917,8 @@ fn an_empty_deleted_mark_paragraph_before_a_table_isnt_laid_out() {
         r#"<w:tbl><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>Row</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#;
     let top = r#"<w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>Top</w:t></w:r></w:p>"#;
     let gap = |mid: &str| {
-        let mut doc = test_doc("", ARIAL_12, &format!("{top}{mid}{table}"), "")?;
-        doc.review.view = crate::docx::review::MarkupView::NoMarkup;
-        let snap = layout(&doc, &fonts());
+        let doc = test_doc("", ARIAL_12, &format!("{top}{mid}{table}"), "")?;
+        let snap = crate::layout::layout(&doc, &super::no_markup(&doc), &fonts());
         let mut y = std::collections::HashMap::new();
         paint(&snap.pages()[0], &mut |p| {
             if let Item::Glyphs(r) = p.absolute() {
@@ -934,9 +933,8 @@ fn an_empty_deleted_mark_paragraph_before_a_table_isnt_laid_out() {
 
 /// Each line's text and (x, baseline) on page 1 of `body` with deletions hidden.
 fn hidden_view(settings: &str, body: &str) -> Option<std::collections::HashMap<String, (f64, f64)>> {
-    let mut doc = test_doc(settings, ARIAL_12, body, "")?;
-    doc.review.view = crate::docx::review::MarkupView::NoMarkup;
-    let snap = layout(&doc, &fonts());
+    let doc = test_doc(settings, ARIAL_12, body, "")?;
+    let snap = crate::layout::layout(&doc, &super::no_markup(&doc), &fonts());
     let mut y = std::collections::HashMap::new();
     paint(&snap.pages()[0], &mut |p| {
         if let Item::Glyphs(r) = p.absolute() {

@@ -199,7 +199,7 @@ impl Session {
                     self.editor.complete(&fonts);
                     crate::pdf::export::export_with(
                         self.editor.document(),
-                        &self.editor.document().review,
+                        self.editor.review(),
                         &self.editor.snapshot(),
                         "",
                         pdf,
@@ -207,16 +207,8 @@ impl Session {
                         Some(&fonts),
                     )?
                 } else {
-                    let doc = self.editor.printed_document(hidden);
-                    crate::pdf::export::export_with(
-                        &doc,
-                        &doc.review,
-                        &crate::layout::layout(&doc, &doc.review, &fonts),
-                        "",
-                        pdf,
-                        None,
-                        Some(&fonts),
-                    )?
+                    let (doc, view) = (self.editor.document(), self.editor.printed_view(hidden));
+                    crate::pdf::export::export_with(doc, &view, &crate::layout::layout(doc, &view, &fonts), "", pdf, None, Some(&fonts))?
                 };
                 let state = super::fonts::document_fonts(self.editor.document(), self.editor.index(), &fonts);
                 let mut warnings = fallback_warnings(&state);

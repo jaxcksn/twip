@@ -751,7 +751,7 @@ impl Editor {
             Command::SetTrackChanges(on) => self.set_track_changes(on),
             Command::SetMarkupView(v) => self.set_markup_view(v),
             Command::SetShowMarkup(c) => {
-                let s = &self.doc.review.markup.show;
+                let s = &self.review.markup.show;
                 let (i, f, k) = (
                     c.insertions_deletions.unwrap_or(s.insertions_deletions),
                     c.formatting.unwrap_or(s.formatting),
@@ -761,7 +761,7 @@ impl Editor {
             }
             Command::SetHiddenReviewers(r) => self.set_hidden_reviewers(&r.hidden.iter().map(String::as_str).collect::<Vec<_>>()),
             Command::SetBalloonMode(m) => self.set_balloon_mode(m.model()),
-            Command::SetMarkupStyle(c) => self.set_markup_style(crate::api::review::MarkupStyle::changed(&self.doc.review.markup.style, &c)),
+            Command::SetMarkupStyle(c) => self.set_markup_style(crate::api::review::MarkupStyle::changed(&self.review.markup.style, &c)),
             Command::SetTrackOptions(t) => {
                 let (moves, formatting) = self.track_options();
                 self.set_track_options(t.moves.unwrap_or(moves), t.formatting.unwrap_or(formatting))

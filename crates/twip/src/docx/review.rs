@@ -1128,6 +1128,11 @@ pub struct ReviewView {
 }
 
 impl ReviewView {
+    /// The view a document with `settings` opens in: its Show Markup, the rest as by default.
+    pub fn opening(settings: &super::model::Settings) -> ReviewView {
+        ReviewView { markup: Rc::new(Markup { show: settings.revision_view.clone(), ..Default::default() }), ..Default::default() }
+    }
+
     /// Whether a run with `rev` leaves the line.
     pub fn hides(&self, rev: &RunRevisions) -> bool {
         self.markup.hides(self.view, rev)

@@ -140,7 +140,7 @@ fn delete_before_a_hidden_deletion_cant_take_the_protected_text_after_it() {
     let body =
         format!(r#"<w:p><w:permStart w:id="1" w:edGrp="everyone"/><w:r><w:t>ab</w:t></w:r>{del}<w:permEnd w:id="1"/><w:r><w:t>d</w:t></w:r></w:p>"#);
     let mut e = protected(&body);
-    e.doc.review.view = crate::docx::review::MarkupView::NoMarkup;
+    e.set_markup_view(crate::docx::review::MarkupView::NoMarkup);
     e.selection = Selection::Caret(at(&e, 0, 2));
     e.execute(forward(), fonts());
     assert!(texts(&e)[0].ends_with('d'), "{:?}", texts(&e));

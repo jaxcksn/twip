@@ -408,7 +408,7 @@ impl Session {
         let width = size.width * 72.0 / 96.0;
         let (height, children) = crate::layout::expansion::lay(
             self.editor.document(),
-            &self.editor.document().review,
+            self.editor.review(),
             &blocks,
             if fit { f64::MAX / 4.0 } else { width },
             &fonts,

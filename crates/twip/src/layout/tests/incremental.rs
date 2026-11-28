@@ -244,7 +244,7 @@ fn laying_out_to_a_block_stops_where_laying_out_to_its_paragraph_does() {
         Block::Table(_) => panic!("a paragraph"),
     };
     let shown = |d: &Document, t: Target| {
-        let mut dl = crate::layout::tests::document_layout(&d);
+        let mut dl = crate::layout::tests::document_layout(d);
         dl.edit(Revision(1), None);
         dl.through(d, &fonts, t);
         dl.snapshot().pages().len()

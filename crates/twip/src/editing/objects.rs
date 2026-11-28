@@ -1499,8 +1499,8 @@ impl Editor {
         let sec = self.doc.sections.get(body.and_then(|a| self.para_section(a)).unwrap_or(info.section))?;
         let set = &self.doc.settings;
         let facing = Facing { mirror: set.mirror_margins, gutter_at_top: set.gutter_at_top, book_fold: set.book_fold };
-        let (left, right, top) = margins_in(sec, self.doc.review.view, facing, info.number);
-        let s = sec.section_in(self.doc.review.view);
+        let (left, right, top) = margins_in(sec, self.review.view, facing, info.number);
+        let s = sec.section_in(self.review.view);
         let width = s.page_w - left - right;
         let mut fr = crate::layout::float::Frames {
             page_w: s.page_w,

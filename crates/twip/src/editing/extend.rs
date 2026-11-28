@@ -100,7 +100,7 @@ impl Editor {
             if let Some((para, mut u)) = p.para_offset()
                 && let Some(q) = self.index.para(&self.doc, para)
             {
-                let t = super::text::UnitText::in_review(q, &self.doc.review);
+                let t = super::text::UnitText::in_review(q, &self.review);
                 while u < t.len() {
                     let v = t.next_grapheme(u);
                     if v <= u {
@@ -202,7 +202,7 @@ impl Editor {
         for &(_, _, para, a, b) in &pieces {
             if !matches!(&cur, Some((p, _)) if *p == para) {
                 let Some(p) = self.index.para(&self.doc, para) else { continue };
-                cur = Some((para, crate::prof::time("block:paragraph", || super::seen_text(p, &self.doc.review))));
+                cur = Some((para, crate::prof::time("block:paragraph", || super::seen_text(p, &self.review))));
             }
             let Some((_, seen)) = &cur else { continue };
             let (lo, hi) = (seen.units.partition_point(|&u| u < a.0), seen.units.partition_point(|&u| u < b.0));

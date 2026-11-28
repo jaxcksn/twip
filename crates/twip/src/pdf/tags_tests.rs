@@ -295,18 +295,11 @@ fn tracked_deletions_stay_out_of_titles_outlines_and_links() {
         del("Dropheading"),
         field(&code, &format!(r#"<w:r><w:t xml:space="preserve">Kept link </w:t></w:r>{}"#, del("Droplink")))
     );
-    let mut doc = crate::docx::read(&package(&body, &[("styles.xml", "styles", styles)])).expect("reads");
-    doc.review.view = crate::docx::review::MarkupView::NoMarkup;
+    let doc = crate::docx::read(&package(&body, &[("styles.xml", "styles", styles)])).expect("reads");
     let fonts = bundled_fonts();
-    let (pdf, _) = super::super::export::export(
-        &doc,
-        &crate::layout::tests::view(&doc),
-        &crate::layout::tests::layout(&doc, &fonts),
-        "",
-        &PdfOptions::default(),
-        None,
-    )
-    .expect("exports");
+    let view = crate::layout::tests::no_markup(&doc);
+    let (pdf, _) =
+        super::super::export::export(&doc, &view, &crate::layout::layout(&doc, &view, &fonts), "", &PdfOptions::default(), None).expect("exports");
     for kept in ["Kept title", "Kept heading", "Kept link"] {
         assert!(holds(&pdf, kept), "{kept} is written");
     }

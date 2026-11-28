@@ -724,7 +724,7 @@ impl Editor {
         let name_of = |p: &Paragraph| -> Option<String> {
             cascade.as_ref()?.styles.get(p.style.style_id.as_deref()?).map(|s| s.name.as_deref().unwrap_or_default().to_string())
         };
-        let review = crate::docx::review::ReviewView { view: self.doc.review.view, ..Default::default() };
+        let review = crate::docx::review::ReviewView { view: self.review.view, ..Default::default() };
         // `\t`'s levels by style id, its names and aliases mapped as the readback maps them; a style's first pair wins.
         let mut style_levels: HashMap<String, u8> = HashMap::with_capacity(o.styles.len());
         if !o.styles.is_empty() {

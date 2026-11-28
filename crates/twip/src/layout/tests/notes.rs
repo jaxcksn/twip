@@ -1008,9 +1008,8 @@ fn a_note_ending_in_a_deleted_mark_joins_the_next_notes_first_paragraph() {
             r#"<w:{tag} w:id="10"><w:p><w:pPr><w:rPr><w:del {del}/></w:rPr></w:pPr><w:r><w:t>Tail</w:t></w:r></w:p></w:{tag}><w:{tag} w:id="11"><w:p><w:r><w:t>Second</w:t></w:r></w:p></w:{tag}>"#
         );
         let body = para("Text", &refs) + &sect("", true);
-        let mut doc = notes_doc_with(&body, "", &extra)?;
-        doc.review.view = crate::docx::review::MarkupView::NoMarkup;
-        let text: String = super::page_chars(&doc).iter().flatten().map(|c| c.0).collect();
+        let doc = notes_doc_with(&body, "", &extra)?;
+        let text: String = super::page_chars_in(&doc, &super::no_markup(&doc)).iter().flatten().map(|c| c.0).collect();
         Some((text.matches("Second").count(), text.contains("TailSecond")))
     };
     let Some(foot) = count("footnote", ["f10", "f11"]) else { return };
@@ -1026,9 +1025,8 @@ fn a_run_of_endnotes_ending_in_deleted_marks_goes_on_as_one_paragraph() {
     };
     let extra = format!(r#"{}{}<w:endnote w:id="12"><w:p><w:r><w:t>Third</w:t></w:r></w:p></w:endnote>"#, gone(10, "One"), gone(11, "Two"));
     let body = para("Text", &["e10", "e11", "e12"]) + &sect("", true);
-    let Some(mut doc) = notes_doc_with(&body, "", &extra) else { return };
-    doc.review.view = crate::docx::review::MarkupView::NoMarkup;
-    let chars: Vec<(char, f64, f64)> = super::page_chars(&doc).into_iter().flatten().collect();
+    let Some(doc) = notes_doc_with(&body, "", &extra) else { return };
+    let chars: Vec<(char, f64, f64)> = super::page_chars_in(&doc, &super::no_markup(&doc)).into_iter().flatten().collect();
     let text: String = chars.iter().map(|c| c.0).collect();
     assert_eq!(text.matches("Third").count(), 1, "the third once: {text}");
     let at = |word: &str| text.find(word).map(|k| chars[text[..k].chars().count()].2).expect("drawn");
@@ -1040,9 +1038,8 @@ fn an_empty_paragraph_with_a_deleted_mark_ending_a_notes_story_isnt_laid_out() {
     let del = r#"w:id="1" w:author="A" w:date="2026-01-01T00:00:00Z""#;
     let note_y = |last: &str| {
         let extra = format!(r#"<w:footnote w:id="10"><w:p><w:r><w:t>Note text</w:t></w:r></w:p>{last}</w:footnote>"#);
-        let mut doc = notes_doc_with(&(para("Text", &["f10"]) + &sect("", true)), "", &extra)?;
-        doc.review.view = crate::docx::review::MarkupView::NoMarkup;
-        let page = &super::page_chars(&doc)[0];
+        let doc = notes_doc_with(&(para("Text", &["f10"]) + &sect("", true)), "", &extra)?;
+        let page = &super::page_chars_in(&doc, &super::no_markup(&doc))[0];
         page.windows(4).find(|w| w.iter().map(|c| c.0).eq("Note".chars())).map(|w| w[0].2)
     };
     let Some(alone) = note_y("") else { return };
@@ -1056,9 +1053,8 @@ fn text_with_a_deleted_mark_ending_a_notes_story_takes_the_normal_styles_propert
     let extra = format!(
         r#"<w:footnote w:id="10"><w:p><w:pPr><w:jc w:val="right"/><w:rPr><w:del {del}/></w:rPr></w:pPr><w:r><w:t>Tail</w:t></w:r></w:p></w:footnote>"#
     );
-    let Some(mut doc) = notes_doc_with(&(para("Text", &["f10"]) + &sect("", true)), "", &extra) else { return };
-    doc.review.view = crate::docx::review::MarkupView::NoMarkup;
-    let page = &super::page_chars(&doc)[0];
+    let Some(doc) = notes_doc_with(&(para("Text", &["f10"]) + &sect("", true)), "", &extra) else { return };
+    let page = &super::page_chars_in(&doc, &super::no_markup(&doc))[0];
     let x = page.windows(4).find(|w| w.iter().map(|c| c.0).eq("Tail".chars())).map(|w| w[0].1).expect("the note");
     assert!(x < 100.0, "left-aligned as Normal: {x}");
 }

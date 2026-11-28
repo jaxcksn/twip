@@ -83,8 +83,8 @@ impl Editor {
         }
         let set = &self.doc.settings;
         let facing = crate::layout::page::Facing { mirror: set.mirror_margins, gutter_at_top: set.gutter_at_top, book_fold: set.book_fold };
-        let (l, right, _) = crate::layout::page::margins_in(sec, self.doc.review.view, facing, number);
-        let r = sec.section_in(self.doc.review.view).page_w - right;
+        let (l, right, _) = crate::layout::page::margins_in(sec, self.review.view, facing, number);
+        let r = sec.section_in(self.review.view).page_w - right;
         let (top, bottom) = geo.body_area?;
         let body = geo.stories.iter().position(|s| s.story == StoryId::Body && s.float.is_none())?;
         if py < top || py > bottom || px < l || px > r || geo.in_notes(px, py) {

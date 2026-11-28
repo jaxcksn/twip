@@ -337,7 +337,7 @@ impl Editor {
                 base(Who::Author(a)).with_moves(&f, |it| it.mark.author == a)
             }
             Scope::Shown => {
-                let show = self.doc.review.markup.show.clone();
+                let show = self.review.markup.show.clone();
                 if !f.items.iter().any(|it| show.shows(&it.mark)) {
                     return None;
                 }
@@ -787,7 +787,7 @@ impl Editor {
         for r in revisions(&self.doc, &self.index) {
             listed.add(r.kind, 1);
         }
-        let (all, _) = m.counts(&self.doc.review.markup.show);
+        let (all, _) = m.counts(&self.review.markup.show);
         if all != listed {
             return Err(format!("counts {all:?} != the list's {listed:?}"));
         }
@@ -798,7 +798,7 @@ impl Editor {
     /// kind and reviewer shown; deletions in Balloons mode, formatting changes in either.
     pub fn in_balloon(&self, kind: RevisionKind, author: crate::docx::review::AuthorId) -> bool {
         use crate::docx::review::{BalloonMode, MarkupView};
-        let review = &self.doc.review;
+        let review = &self.review;
         let mode = review.markup.balloons;
         if review.view != MarkupView::All || mode == BalloonMode::Inline || !review.markup.show.shows_change(kind.is_formatting(), author) {
             return false;
@@ -810,7 +810,7 @@ impl Editor {
     /// The revisions in balloons beside `visible` pages, by page and line: those starting on the pages' paragraphs.
     pub(in crate::editing) fn revision_balloons(&mut self, visible: std::ops::Range<usize>) -> Vec<super::super::view::RevisionBalloon> {
         use crate::docx::review::{BalloonMode, MarkupView};
-        let review = &self.doc.review;
+        let review = &self.review;
         if visible.is_empty() || review.view != MarkupView::All || review.markup.balloons == BalloonMode::Inline {
             return Vec::new();
         }
@@ -902,7 +902,7 @@ impl Editor {
     /// Whether paragraph `p` shows nothing, its mark hidden too: layout leaves it out before a table and at a story's
     /// end, or joins it to the next. A cell's last paragraph keeps its line.
     fn blank(&self, p: ParaId) -> bool {
-        let review = &self.doc.review;
+        let review = &self.review;
         let at_cell_end = |s: super::super::index::Slot| {
             matches!(s.container, super::super::index::Container::Cell { .. })
                 && self.index.blocks(&self.doc, s.container).is_some_and(|b| s.block + 1 == b.len())

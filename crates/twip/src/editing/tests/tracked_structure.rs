@@ -309,7 +309,7 @@ fn accepting_the_shown_changes_leaves_hidden_moves_alone() {
     };
     assert_eq!(marks(&e), (true, true));
     e.set_show_markup(false, true, true);
-    assert!(!e.document().review.markup.show.insertions_deletions, "insertions and deletions hidden");
+    assert!(!e.review().markup.show.insertions_deletions, "insertions and deletions hidden");
     assert!(matches!(e.resolve_shown(true, fonts()), Outcome::Changed(_)));
     assert_eq!(marks(&e), (true, false), "the shown formatting change is accepted, the hidden move stays");
 }

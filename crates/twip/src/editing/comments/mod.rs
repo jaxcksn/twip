@@ -469,7 +469,7 @@ impl Editor {
     /// (a thread draws whole or not at all).
     pub fn comment_shown(&self, id: CommentId) -> bool {
         let comments = &self.doc.comments;
-        comments.by_id.contains_key(&id) && comments.by_id.get(&comments.root(id)).is_some_and(|c| self.doc.review.shows_comment(c.author))
+        comments.by_id.contains_key(&id) && comments.by_id.get(&comments.root(id)).is_some_and(|c| self.review.shows_comment(c.author))
     }
 
     pub(super) fn comment_views(&mut self, visible: std::ops::Range<usize>) -> (Vec<CommentView>, Vec<(CommentId, usize, [f64; 2])>) {
@@ -656,8 +656,8 @@ impl Editor {
     pub fn review_counts(&mut self) -> (crate::editing::revisions::index::Counts, crate::editing::revisions::index::Counts) {
         self.review_marks();
         let marks = &self.review_marks.as_ref().expect("just found").2;
-        let (mut all, mut shown) = marks.counts(&self.doc.review.markup.show);
-        let markup = self.doc.review.markup.clone();
+        let (mut all, mut shown) = marks.counts(&self.review.markup.show);
+        let markup = self.review.markup.clone();
         let threads = match &self.counted {
             Some((edits, m, n)) if *edits == self.comment_edits && Rc::ptr_eq(m, &markup) => *n,
             _ => {
@@ -676,7 +676,7 @@ impl Editor {
     pub fn delete_all_comments(&mut self, shown_only: bool, fonts: &Fonts) -> Outcome {
         let comments = &self.doc.comments;
         let roots = if shown_only { comments.roots() } else { HashMap::new() };
-        let shown = |id: &CommentId| roots.get(id).and_then(|r| comments.by_id.get(r)).is_some_and(|c| self.doc.review.shows_comment(c.author));
+        let shown = |id: &CommentId| roots.get(id).and_then(|r| comments.by_id.get(r)).is_some_and(|c| self.review.shows_comment(c.author));
         let ids: Vec<CommentId> = comments.by_id.keys().copied().filter(|id| !shown_only || shown(id)).collect();
         if ids.is_empty() {
             return self.comment_refused(if shown_only { "no comment shown" } else { "no comment" });
