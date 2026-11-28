@@ -41,7 +41,7 @@ impl Rule {
             field_type: r.field_type.trim().to_uppercase(),
             argument: r.argument.unwrap_or(0) as usize,
             category: r.category.clone(),
-            gallery: r.gallery.as_deref().map(Gallery::parse),
+            gallery: r.gallery.as_deref().map(crate::docx::glossary::gallery),
             api: r,
         }
     }

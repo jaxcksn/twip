@@ -68,7 +68,7 @@ fn part_xml_of(w: &str, b: &BuildingBlock, n: usize, body: &str) -> String {
          <{w}behaviors><{w}behavior {w}val=\"content\"/></{w}behaviors><{w}guid {w}val=\"{}\"/></{w}docPartPr><{w}docPartBody>{body}</{w}docPartBody></{w}docPart>",
         esc(&b.name),
         esc(&b.category),
-        esc(&b.gallery.xml()),
+        esc(&crate::docx::glossary::gallery_xml(&b.gallery)),
         esc(&guid)
     )
 }

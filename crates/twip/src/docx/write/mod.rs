@@ -30,7 +30,7 @@ use crate::docx::para_props::ParaXml;
 use crate::docx::table_props::TableXml;
 
 mod comments;
-mod controls;
+pub(crate) mod controls;
 pub(crate) mod drawing;
 mod fonts;
 mod generate;
@@ -7215,7 +7215,7 @@ pub(crate) fn control_open(w: &str, id: ControlId, c: &Control) -> String {
         // Word's `w:id`: a signed 32-bit number, unique in the document.
         None => pr.push_str(&format!("<{w}id {w}val=\"{}\"/>", (id.0 % 0x7fff_ffff) as i64 + 1)),
     }
-    if let Some(v) = p.lock.val() {
+    if let Some(v) = controls::lock_val(p.lock) {
         pr.push_str(&format!("<{w}lock {w}val=\"{v}\"/>"));
     }
     // `w:placeholder` and `w:dataBinding` as read (the last of each) while they are, else as set
@@ -7253,7 +7253,7 @@ pub(crate) fn control_open(w: &str, id: ControlId, c: &Control) -> String {
     // `w15:appearance` and `w15:color` as read while they are, else as set, after the rest
     let appearance = match c.read() {
         Some(r) => r.appearance != p.appearance,
-        None => first("appearance").and_then(controls::val).as_deref().and_then(ControlAppearance::parse) != p.appearance,
+        None => first("appearance").and_then(controls::val).as_deref().and_then(crate::docx::reader::control_appearance) != p.appearance,
     };
     let color = match c.read() {
         Some(r) => r.color != p.color,
@@ -7266,7 +7266,7 @@ pub(crate) fn control_open(w: &str, id: ControlId, c: &Control) -> String {
         }
     }
     if let Some(a) = p.appearance.filter(|_| appearance) {
-        pr.push_str(&format!(r#"<w15:appearance xmlns:w15="{w15}" w15:val="{}"/>"#, a.xml()));
+        pr.push_str(&format!(r#"<w15:appearance xmlns:w15="{w15}" w15:val="{}"/>"#, controls::appearance_val(a)));
     }
     // A colour this doesn't read is never set, only kept.
     if let Some(Some(k)) = p.color.filter(|_| color) {

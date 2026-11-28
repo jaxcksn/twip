@@ -255,6 +255,9 @@ pub(crate) trait PictureOrigin {
 
     /// The program id of the embedded object it was read as (`w:object`'s first `ProgID`), when it is one.
     fn prog_id(&self) -> Option<&str>;
+
+    /// Equal but for the text story's blocks.
+    fn same_but_story(&self, o: &Picture) -> bool;
 }
 
 impl PictureOrigin for Picture {
@@ -264,6 +267,21 @@ impl PictureOrigin for Picture {
 
     fn prog_id(&self) -> Option<&str> {
         prog_id(self.origin_xml()?)
+    }
+
+    fn same_but_story(&self, o: &Picture) -> bool {
+        let Picture { w, h, image, alt, lock_aspect, effect, shape, text, origin: _ } = self;
+        let text = match (text, &o.text) {
+            (Some(a), Some(b)) => a.id == b.id && a.text_box.same_box(&b.text_box),
+            (a, b) => a.is_none() && b.is_none(),
+        };
+        text && *w == o.w
+            && *h == o.h
+            && *image == o.image
+            && *alt == o.alt
+            && *lock_aspect == o.lock_aspect
+            && *effect == o.effect
+            && crate::docx::drawing::same_shape(shape.as_deref(), o.shape.as_deref())
     }
 }
 

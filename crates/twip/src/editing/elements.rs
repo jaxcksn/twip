@@ -77,7 +77,7 @@ impl Element {
         (self.locked, self.showing_code, self.dirty, &self.date).hash(&mut h);
         self.parent.hash(&mut h);
         if let Some(p) = &self.props {
-            (kind_name(&p.kind), &p.tag, &p.alias, p.lock.val(), p.showing_placeholder, &p.binding).hash(&mut h);
+            (kind_name(&p.kind), &p.tag, &p.alias, crate::docx::write::controls::lock_val(p.lock), p.showing_placeholder, &p.binding).hash(&mut h);
             // Its kind's settings: a gallery's gallery and category, a date's calendar and storage, a list's items
             (&p.kind, &p.items, p.combo, &p.kept, p.temporary).hash(&mut h);
         }

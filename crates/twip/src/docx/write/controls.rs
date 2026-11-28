@@ -1,8 +1,36 @@
 //! Content control kind elements
 
 use super::super::binding::{tag_attrs, tag_end, unescape};
-use super::super::model::{ControlBinding, ControlKind, ControlProps, DateStorage, KindXml};
+use super::super::model::{ControlAppearance, ControlBinding, ControlKind, ControlProps, DateStorage, KindXml, Lock};
 use super::props::esc;
+
+/// The `w:lock` value of `l`, `None` for no lock.
+pub(crate) fn lock_val(l: Lock) -> Option<&'static str> {
+    match l {
+        Lock::None => None,
+        Lock::ControlLocked => Some("sdtLocked"),
+        Lock::ContentLocked => Some("contentLocked"),
+        Lock::Both => Some("sdtContentLocked"),
+    }
+}
+
+/// The `w15:appearance` value of `a`.
+pub(super) fn appearance_val(a: ControlAppearance) -> &'static str {
+    match a {
+        ControlAppearance::BoundingBox => "boundingBox",
+        ControlAppearance::Tags => "tags",
+        ControlAppearance::Hidden => "hidden",
+    }
+}
+
+/// The `w:storeMappedDataAs` value of `s`.
+fn storage_val(s: DateStorage) -> &'static str {
+    match s {
+        DateStorage::Text => "text",
+        DateStorage::Date => "date",
+        DateStorage::DateTime => "dateTime",
+    }
+}
 
 /// A date control's `w:date`: as read while its settings are; else the element as read with the settings that changed
 /// set in it, or (for one not read) one from its settings.
@@ -117,7 +145,7 @@ fn date_storage_xml(xml: Option<&str>, format: &str, lid: Option<&str>, calendar
     );
     let after_lid = if x.contains("lid") { "lid" } else { "dateFormat" };
     if let Some(s) = storage {
-        x = with_child_val(&x, "storeMappedDataAs", s.xml(), w, Some(after_lid));
+        x = with_child_val(&x, "storeMappedDataAs", storage_val(s), w, Some(after_lid));
     }
     if let Some(cal) = calendar {
         let after = if x.contains("storeMappedDataAs") { "storeMappedDataAs" } else { after_lid };

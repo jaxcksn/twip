@@ -230,13 +230,63 @@ pub fn merge_definitions(styles: &mut StyleSheet, lists: &mut Lists, glossary_st
     map
 }
 
+/// The gallery a `w:gallery` value names.
+pub fn gallery(v: &str) -> Gallery {
+    match v {
+        "placeholder" => Gallery::Placeholder,
+        "autoTxt" => Gallery::AutoText,
+        _ => match v.strip_prefix("custom").and_then(|n| n.parse::<u8>().ok()) {
+            Some(n @ 1..=5) => Gallery::Custom(n),
+            _ => Gallery::Other(v.to_string()),
+        },
+    }
+}
+
+/// The `w:gallery` value of `g`.
+pub fn gallery_xml(g: &Gallery) -> String {
+    match g {
+        Gallery::Placeholder => "placeholder".into(),
+        Gallery::AutoText => "autoTxt".into(),
+        Gallery::Custom(n) => format!("custom{n}"),
+        Gallery::Other(v) => v.clone(),
+    }
+}
+
+/// Whether a gallery control naming gallery `name` (as Word's Content Control Properties name it: `Quick
+/// Parts`, `AutoText`, `Cover Pages`, ..., `Custom 1`) offers building blocks of gallery `g`: its built-in and
+/// custom ones, `Custom 1` to `Custom 5` their own.
+pub fn gallery_named(g: &Gallery, name: &str) -> bool {
+    let v = gallery_xml(g);
+    let base = v.strip_prefix("cust").filter(|_| !matches!(g, Gallery::Custom(_))).map_or(v.as_str(), |b| b);
+    let want: &[&str] = match name.trim() {
+        "Quick Parts" => &["docParts", "QuickParts"],
+        "AutoText" => &["autoTxt", "AutoTxt"],
+        "Cover Pages" => &["coverPg", "CoverPg"],
+        "Equations" => &["eq", "Eq"],
+        "Footers" => &["ftrs", "Ftrs"],
+        "Headers" => &["hdrs", "Hdrs"],
+        "Page Numbers" => &["pgNum", "PgNum"],
+        "Page Numbers (Top of Page)" => &["pgNumT", "PgNumT"],
+        "Page Numbers (Bottom of Page)" => &["pgNumB", "PgNumB"],
+        "Page Numbers (Margins)" => &["pgNumMargins", "PgNumMargins"],
+        "Tables" => &["tbls", "Tbls"],
+        "Table of Contents" => &["tblOfContents", "TblOfContents"],
+        "Text Boxes" => &["txtBox", "TxtBox"],
+        "Watermarks" => &["watermarks", "Watermarks"],
+        "Bibliographies" => &["bib", "Bib"],
+        "" => return true,
+        other => return other.strip_prefix("Custom ").and_then(|n| n.parse::<u8>().ok()).is_some_and(|n| *g == Gallery::Custom(n)),
+    };
+    want.contains(&base)
+}
+
 /// A `w:docPart`'s properties: name, category, gallery and guid. `None` when it has no name.
 pub(super) fn part_props(part: Node) -> Option<(String, String, Gallery, Option<String>)> {
     let pr = child(part, "docPartPr")?;
     let name = child(pr, "name").and_then(val)?.to_string();
     let category = child(pr, "category");
     let category_name = category.and_then(|c| child(c, "name")).and_then(val).unwrap_or("").to_string();
-    let gallery = Gallery::parse(category.and_then(|c| child(c, "gallery")).and_then(val).unwrap_or(""));
+    let gallery = self::gallery(category.and_then(|c| child(c, "gallery")).and_then(val).unwrap_or(""));
     let guid = child(pr, "guid").and_then(val).map(str::to_string);
     Some((name, category_name, gallery, guid))
 }

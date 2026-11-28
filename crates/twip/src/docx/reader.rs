@@ -4106,6 +4106,36 @@ fn checkbox_kind(n: Node) -> ControlKind {
     }
 }
 
+/// The lock a `w:lock` value names; no lock for one this doesn't know.
+fn lock(v: &str) -> Lock {
+    match v {
+        "sdtLocked" => Lock::ControlLocked,
+        "contentLocked" => Lock::ContentLocked,
+        "sdtContentLocked" => Lock::Both,
+        _ => Lock::None,
+    }
+}
+
+/// The appearance a `w15:appearance` value names; `None` for one this doesn't know.
+pub(super) fn control_appearance(v: &str) -> Option<ControlAppearance> {
+    match v {
+        "boundingBox" => Some(ControlAppearance::BoundingBox),
+        "tags" => Some(ControlAppearance::Tags),
+        "hidden" => Some(ControlAppearance::Hidden),
+        _ => None,
+    }
+}
+
+/// The storage a `w:storeMappedDataAs` value names; `None` for one this doesn't know.
+fn date_storage(v: &str) -> Option<DateStorage> {
+    match v {
+        "text" => Some(DateStorage::Text),
+        "date" => Some(DateStorage::Date),
+        "dateTime" => Some(DateStorage::DateTime),
+        _ => None,
+    }
+}
+
 /// A `w:sdtPr` as [`ControlProps`]: what the editor reads and changes, typed; every
 /// other child kept as its XML.
 fn control_props(pr: Option<Node>, xml: &str) -> ControlProps {
@@ -4121,7 +4151,7 @@ fn control_props(pr: Option<Node>, xml: &str) -> ControlProps {
         match name {
             "tag" => p.tag = attr(c, "val").map(str::to_string),
             "alias" => p.alias = attr(c, "val").map(str::to_string),
-            "lock" => p.lock = attr(c, "val").map_or(Lock::None, Lock::parse),
+            "lock" => p.lock = attr(c, "val").map_or(Lock::None, lock),
             "showingPlcHdr" => p.showing_placeholder = attr(c, "val").is_none_or(|v| v != "0" && v != "false"),
             // The last of each, typed and written as read.
             "placeholder" => {
@@ -4148,7 +4178,7 @@ fn control_props(pr: Option<Node>, xml: &str) -> ControlProps {
                         format: v("dateFormat").unwrap_or("").to_string(),
                         lid: v("lid").map(str::to_string),
                         calendar: v("calendar").map(str::to_string),
-                        storage: v("storeMappedDataAs").and_then(DateStorage::parse),
+                        storage: v("storeMappedDataAs").and_then(date_storage),
                         full_date: attr(c, "fullDate").map(str::to_string),
                     },
                     raw(),
@@ -4199,7 +4229,7 @@ fn control_props(pr: Option<Node>, xml: &str) -> ControlProps {
                 if !p.rest.iter().any(|(n, _)| n == name) {
                     let val = c.attributes().find(|a| a.name() == "val").map(|a| a.value());
                     match name {
-                        "appearance" => p.appearance = val.and_then(ControlAppearance::parse),
+                        "appearance" => p.appearance = val.and_then(control_appearance),
                         "color" => p.color = Some(val.and_then(|v| u32::from_str_radix(v, 16).ok())),
                         "rPr" => p.run = Some(ControlRun { props: Rc::new(char_props::parse(c).0), xml: raw().into() }),
                         _ => p.id = attr(c, "val").and_then(|v| v.trim().parse().ok()),

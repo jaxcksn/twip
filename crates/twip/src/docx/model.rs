@@ -661,24 +661,6 @@ pub struct Picture {
     pub origin: Origin,
 }
 
-impl Picture {
-    /// Equal but for the text story's blocks.
-    pub fn same_but_story(&self, o: &Picture) -> bool {
-        let Picture { w, h, image, alt, lock_aspect, effect, shape, text, origin: _ } = self;
-        let text = match (text, &o.text) {
-            (Some(a), Some(b)) => a.id == b.id && a.text_box.same_box(&b.text_box),
-            (a, b) => a.is_none() && b.is_none(),
-        };
-        text && *w == o.w
-            && *h == o.h
-            && *image == o.image
-            && *alt == o.alt
-            && *lock_aspect == o.lock_aspect
-            && *effect == o.effect
-            && crate::docx::drawing::same_shape(shape.as_deref(), o.shape.as_deref())
-    }
-}
-
 impl Inline {
     /// The story this inline holds and the id it goes by: a float's text box, or an inline shape's text.
     pub fn story(&self) -> Option<(u64, &TextBox)> {
@@ -1125,22 +1107,18 @@ pub enum NoteSeparator {
 }
 
 impl NoteSeparator {
-    /// Its note `w:type`.
-    pub fn xml_type(self) -> &'static str {
-        match self {
-            NoteSeparator::Separator => "separator",
-            NoteSeparator::Continuation => "continuationSeparator",
-            NoteSeparator::Notice => "continuationNotice",
-        }
-    }
-
     /// Its key in [`Document::separators`] for notes of `kind`.
     pub fn key(self, kind: NoteKind) -> String {
         let tag = match kind {
             NoteKind::Foot => "footnote",
             NoteKind::End => "endnote",
         };
-        format!("{tag}:{}", self.xml_type())
+        let name = match self {
+            NoteSeparator::Separator => "separator",
+            NoteSeparator::Continuation => "continuationSeparator",
+            NoteSeparator::Notice => "continuationNotice",
+        };
+        format!("{tag}:{name}")
     }
 }
 
@@ -1218,57 +1196,6 @@ pub enum Gallery {
     /// `custom1` to `custom5`.
     Custom(u8),
     Other(String),
-}
-
-impl Gallery {
-    /// Whether a gallery control naming gallery `name` (as Word's Content Control Properties name it: `Quick
-    /// Parts`, `AutoText`, `Cover Pages`, ..., `Custom 1`) offers building blocks of this gallery: its built-in and
-    /// custom ones, `Custom 1` to `Custom 5` their own.
-    pub fn named(&self, name: &str) -> bool {
-        let v = self.xml();
-        let base = v.strip_prefix("cust").filter(|_| !matches!(self, Gallery::Custom(_))).map_or(v.as_str(), |b| b);
-        let want: &[&str] = match name.trim() {
-            "Quick Parts" => &["docParts", "QuickParts"],
-            "AutoText" => &["autoTxt", "AutoTxt"],
-            "Cover Pages" => &["coverPg", "CoverPg"],
-            "Equations" => &["eq", "Eq"],
-            "Footers" => &["ftrs", "Ftrs"],
-            "Headers" => &["hdrs", "Hdrs"],
-            "Page Numbers" => &["pgNum", "PgNum"],
-            "Page Numbers (Top of Page)" => &["pgNumT", "PgNumT"],
-            "Page Numbers (Bottom of Page)" => &["pgNumB", "PgNumB"],
-            "Page Numbers (Margins)" => &["pgNumMargins", "PgNumMargins"],
-            "Tables" => &["tbls", "Tbls"],
-            "Table of Contents" => &["tblOfContents", "TblOfContents"],
-            "Text Boxes" => &["txtBox", "TxtBox"],
-            "Watermarks" => &["watermarks", "Watermarks"],
-            "Bibliographies" => &["bib", "Bib"],
-            "" => return true,
-            other => return other.strip_prefix("Custom ").and_then(|n| n.parse::<u8>().ok()).is_some_and(|n| *self == Gallery::Custom(n)),
-        };
-        want.contains(&base)
-    }
-
-    pub fn parse(v: &str) -> Gallery {
-        match v {
-            "placeholder" => Gallery::Placeholder,
-            "autoTxt" => Gallery::AutoText,
-            _ => match v.strip_prefix("custom").and_then(|n| n.parse::<u8>().ok()) {
-                Some(n @ 1..=5) => Gallery::Custom(n),
-                _ => Gallery::Other(v.to_string()),
-            },
-        }
-    }
-
-    /// The `w:gallery` value.
-    pub fn xml(&self) -> String {
-        match self {
-            Gallery::Placeholder => "placeholder".into(),
-            Gallery::AutoText => "autoTxt".into(),
-            Gallery::Custom(n) => format!("custom{n}"),
-            Gallery::Other(v) => v.clone(),
-        }
-    }
 }
 
 /// Whether a building block is as read, added since, or removed since (kept so undo can bring it back).
@@ -1400,27 +1327,6 @@ pub enum ControlAppearance {
     Hidden,
 }
 
-impl ControlAppearance {
-    /// The appearance a `w15:appearance` value names; `None` for one this doesn't know.
-    pub fn parse(v: &str) -> Option<ControlAppearance> {
-        match v {
-            "boundingBox" => Some(ControlAppearance::BoundingBox),
-            "tags" => Some(ControlAppearance::Tags),
-            "hidden" => Some(ControlAppearance::Hidden),
-            _ => None,
-        }
-    }
-
-    /// The `w15:appearance` value.
-    pub fn xml(self) -> &'static str {
-        match self {
-            ControlAppearance::BoundingBox => "boundingBox",
-            ControlAppearance::Tags => "tags",
-            ControlAppearance::Hidden => "hidden",
-        }
-    }
-}
-
 /// A content control's run properties (`w:sdtPr/w:rPr`): typed, with the `w:rPr` they are written as.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ControlRun {
@@ -1450,27 +1356,6 @@ pub enum DateStorage {
     DateTime,
 }
 
-impl DateStorage {
-    /// The storage a `w:storeMappedDataAs` value names; `None` for one this doesn't know.
-    pub fn parse(v: &str) -> Option<DateStorage> {
-        match v {
-            "text" => Some(DateStorage::Text),
-            "date" => Some(DateStorage::Date),
-            "dateTime" => Some(DateStorage::DateTime),
-            _ => None,
-        }
-    }
-
-    /// The `w:storeMappedDataAs` value.
-    pub fn xml(self) -> &'static str {
-        match self {
-            DateStorage::Text => "text",
-            DateStorage::Date => "date",
-            DateStorage::DateTime => "dateTime",
-        }
-    }
-}
-
 /// `w:lock`: what the user may not do to a control.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum Lock {
@@ -1485,25 +1370,6 @@ pub enum Lock {
 }
 
 impl Lock {
-    pub fn parse(v: &str) -> Lock {
-        match v {
-            "sdtLocked" => Lock::ControlLocked,
-            "contentLocked" => Lock::ContentLocked,
-            "sdtContentLocked" => Lock::Both,
-            _ => Lock::None,
-        }
-    }
-
-    /// The `w:lock` value, `None` for no lock.
-    pub fn val(self) -> Option<&'static str> {
-        match self {
-            Lock::None => None,
-            Lock::ControlLocked => Some("sdtLocked"),
-            Lock::ContentLocked => Some("contentLocked"),
-            Lock::Both => Some("sdtContentLocked"),
-        }
-    }
-
     pub fn deletable(self) -> bool {
         matches!(self, Lock::None | Lock::ContentLocked)
     }

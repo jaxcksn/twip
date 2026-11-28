@@ -1205,7 +1205,7 @@ impl Editor {
             b.state != crate::docx::PartState::Removed
                 && b.editable
                 && category.is_none_or(|c| b.category == c)
-                && gallery.is_none_or(|g| b.gallery.named(g))
+                && gallery.is_none_or(|g| crate::docx::glossary::gallery_named(&b.gallery, g))
         })
     }
 
