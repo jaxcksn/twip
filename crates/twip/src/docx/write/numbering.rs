@@ -6,6 +6,7 @@ use super::super::model::Document;
 use super::super::package;
 use super::super::xml::{attr, int, is_w};
 use super::Splice;
+use crate::docx::list_xml::ListXml;
 
 const NUMBERING_REL: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering";
 const NUMBERING_TYPE: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml";

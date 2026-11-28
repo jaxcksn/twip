@@ -10,6 +10,7 @@ use crate::api::command::{
 use crate::api::value::{AutoOr, Color, HighlightColor, NoneOr, Points, StyleId, UnderlineStyle};
 use crate::document::format::{Leader, TabKind};
 use crate::document::paragraph::{ListJc, ListSuffix};
+use crate::docx::list_xml::ListXml;
 use crate::docx::list_xml::{ListDefDirect, ListDirect};
 use crate::docx::props::ThemeColours;
 use crate::docx::resolvers::{Resolvers, TypedDefs};

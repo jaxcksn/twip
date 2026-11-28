@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::document::paragraph::ListId;
 use crate::docx::char_props::RunXml;
+use crate::docx::list_xml::ListXml;
 use crate::docx::list_xml::{ListDefDirect, ListDirect};
 use crate::docx::para_props::ParaDirect;
 use crate::docx::para_props::ParaXml;

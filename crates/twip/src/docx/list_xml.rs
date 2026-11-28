@@ -21,6 +21,7 @@ use std::rc::Rc;
 
 use roxmltree::Node;
 
+use super::as_read;
 use super::char_props::{self, RprRevisions};
 #[cfg(test)]
 use super::numbering::{AbstractNum, Level, Num, Numbering, PicBullet};
@@ -33,6 +34,7 @@ use super::props::{ParaProps as XmlParaProps, RunProps};
 use super::styles::StyleOrigin;
 use super::write::props::{Cx, W_NS};
 use super::xml::{R, W, attr, attr_twips, child, children, int, on_off, on_off_str, val};
+use crate::document::authored::Authored;
 use crate::document::paragraph::{ListId, ListJc, ListSuffix};
 use crate::format::{
     CharProps, ForeignChild, ForeignProps, LegacyLabel, LevelOverride, LevelProp, List, ListDef, ListDefId, ListDefProp, ListLevel, ListProp, Lists,
@@ -1285,7 +1287,7 @@ fn list_over(read: &List, now: &List, xml: &str, set: &[ListProp], colours: &The
 // Holders
 
 /// A numbering part element's typed value, as its holder reads and writes it.
-pub trait Element: Clone + std::fmt::Debug + PartialEq {
+pub trait Element: Clone + std::fmt::Debug + PartialEq + 'static {
     /// What an edit sets, written again over the element as read.
     type Set: Copy + std::fmt::Debug + PartialEq;
 
@@ -1374,15 +1376,9 @@ impl Element for PictureBullet {
     }
 }
 
-/// A definition, list or picture bullet: typed, with the element it was read from (or last written as) beside it. The
-/// written form stands for the value only while it is written alike; never part of equality.
-#[derive(Clone, Debug)]
-pub struct Direct<T: Element> {
-    value: Rc<T>,
-    origin: Option<(Rc<T>, Rc<str>)>,
-    /// What edits since reading set, in order: written again over the element as read.
-    set: Vec<T::Set>,
-}
+/// A definition, list or picture bullet: typed, with the element it was read from (or last written as) in its origin.
+/// The written form stands for the value only while it is written alike; never part of equality.
+pub type Direct<T> = Authored<Rc<T>, <T as Element>::Set>;
 
 /// A `w:abstractNum`'s holder.
 pub type ListDefDirect = Direct<ListDef>;
@@ -1393,73 +1389,80 @@ pub type ListDirect = Direct<List>;
 /// A `w:numPicBullet`'s holder.
 pub type PictureDirect = Direct<PictureBullet>;
 
-impl<T: Element> Direct<T> {
-    /// A value read from `xml`, the element it was parsed from.
-    pub fn read(value: T, xml: Rc<str>) -> Direct<T> {
-        let value = Rc::new(value);
-        Direct { origin: Some((value.clone(), xml)), value, set: Vec::new() }
-    }
+/// What the WordprocessingML adapter adds to a definition, list or picture bullet: the element it was read from, and
+/// the element it is written as.
+pub trait ListXml: Sized {
+    /// The typed value.
+    type Value;
+    /// What an edit sets.
+    type Set;
 
-    /// A typed value with no written form.
-    pub fn typed(value: Rc<T>) -> Direct<T> {
-        Direct { value, origin: None, set: Vec::new() }
-    }
+    /// A value read from `xml`, the element it was parsed from.
+    fn read(value: Self::Value, xml: Rc<str>) -> Self;
 
     /// The value `xml` (an element in the part `cx` describes) holds; `None` when it isn't one.
-    pub fn from_xml(xml: &str, cx: &Cx) -> Option<Direct<T>> {
+    fn from_xml(xml: &str, cx: &Cx) -> Option<Self>;
+
+    /// The element it was read from (or last written as), whatever the value is now.
+    fn origin_xml(&self) -> Option<&Rc<str>>;
+
+    /// The element as read, while the value is written alike.
+    fn as_read(&self) -> Option<&Rc<str>>;
+
+    /// The element to write in the part `cx` describes: as read while the value is written alike, else written over
+    /// it (or from the value, with none), a theme colour's value as `colours` resolve it.
+    fn xml(&self, colours: &ThemeColours, cx: &Cx) -> Cow<'_, str>;
+
+    /// `value` in place of this one, set by an edit that set `set`, in order: the element it was read from kept to
+    /// write it over, what was set written again.
+    fn edited(&self, value: Self::Value, set: &[Self::Set]) -> Self;
+
+    /// This value where `cx` describes the part it is written in: `None` while the element it was read from reads the
+    /// same there, else without it, to be written from the value.
+    fn moved_to(&self, cx: &Cx) -> Option<Self>;
+}
+
+impl<T: Element> ListXml for Direct<T> {
+    type Value = T;
+    type Set = T::Set;
+
+    fn read(value: T, xml: Rc<str>) -> Direct<T> {
+        as_read::read(Rc::new(value), xml)
+    }
+
+    fn from_xml(xml: &str, cx: &Cx) -> Option<Direct<T>> {
         let v = cx.parse(xml, |_, el| T::parse(el)).flatten()?;
         Some(Direct::read(v, xml.into()))
     }
 
-    /// The typed value.
-    pub fn get(&self) -> &Rc<T> {
-        &self.value
+    fn origin_xml(&self) -> Option<&Rc<str>> {
+        as_read::origin_xml(self)
     }
 
-    /// The element it was read from (or last written as), whatever the value is now.
-    pub fn origin_xml(&self) -> Option<&Rc<str>> {
-        self.origin.as_ref().map(|(_, x)| x)
+    fn as_read(&self) -> Option<&Rc<str>> {
+        as_read::as_read(self, T::written_alike)
     }
 
-    /// The element as read, while the value is written alike.
-    pub fn as_read(&self) -> Option<&Rc<str>> {
-        let (read, xml) = self.origin.as_ref()?;
-        (Rc::ptr_eq(read, &self.value) || read.written_alike(&self.value)).then_some(xml)
-    }
-
-    /// The element to write in the part `cx` describes: as read while the value is written alike, else written over
-    /// it (or from the value, with none), a theme colour's value as `colours` resolve it.
-    pub fn xml(&self, colours: &ThemeColours, cx: &Cx) -> Cow<'_, str> {
+    fn xml(&self, colours: &ThemeColours, cx: &Cx) -> Cow<'_, str> {
         if let Some(x) = self.as_read() {
             return Cow::Borrowed(x);
         }
-        match &self.origin {
-            Some((read, xml)) => Cow::Owned(self.value.written_over(colours, cx, (read, xml), &self.set)),
-            None => Cow::Owned(self.value.serialize(colours, cx)),
+        match as_read::record(self) {
+            Some(origin) => Cow::Owned(self.get().written_over(colours, cx, origin, self.set())),
+            None => Cow::Owned(self.get().serialize(colours, cx)),
         }
     }
 
-    /// `value` in place of this one, set by an edit that set `set`, in order: the element it was read from kept to
-    /// write it over, what was set written again.
-    pub fn edited(&self, value: T, set: &[T::Set]) -> Direct<T> {
-        let mut all = self.set.clone();
-        all.extend_from_slice(set);
-        Direct { value: Rc::new(value), origin: self.origin.clone(), set: all }
+    fn edited(&self, value: T, set: &[T::Set]) -> Direct<T> {
+        self.edited_with(set, |_, _| Rc::new(value))
     }
 
-    /// This value where `cx` describes the part it is written in: `None` while the element it was read from reads the
-    /// same there, else without it, to be written from the value.
-    pub fn moved_to(&self, cx: &Cx) -> Option<Direct<T>> {
-        let (read, xml) = self.origin.as_ref()?;
-        if cx.parse(xml, |_, el| T::parse(el)).flatten().is_some_and(|v| v == **read) {
+    fn moved_to(&self, cx: &Cx) -> Option<Direct<T>> {
+        let (read, xml) = as_read::record(self)?;
+        if cx.parse(xml, |_, el| T::parse(el)).flatten().is_some_and(|v| v == *read) {
             return None;
         }
-        Some(Direct { value: self.value.clone(), origin: None, set: self.set.clone() })
-    }
-
-    /// Authored equality: the typed values.
-    pub fn authored_eq(&self, o: &Direct<T>) -> bool {
-        Rc::ptr_eq(&self.value, &o.value) || self.value == o.value
+        Some(self.with_origin(crate::document::origin::Origin::NONE))
     }
 }
 

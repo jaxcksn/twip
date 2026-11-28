@@ -3,6 +3,7 @@
 use crate::api::command::Command;
 use crate::docx::char_props::RunDirect;
 use crate::docx::char_props::RunXml;
+use crate::docx::list_xml::ListXml;
 use crate::docx::list_xml::{ListDefDirect, ListDirect};
 use crate::docx::resolvers::Resolvers;
 use crate::docx::write::props::Cx;

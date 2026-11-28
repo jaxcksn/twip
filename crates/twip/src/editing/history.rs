@@ -2,6 +2,7 @@
 
 use std::collections::VecDeque;
 
+use crate::docx::list_xml::ListXml;
 use crate::docx::resolvers::Resolvers;
 use crate::docx::{Block, Inline};
 use crate::format::cascade::Cascade;

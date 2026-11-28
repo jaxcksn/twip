@@ -6,6 +6,7 @@ use std::io::Cursor;
 use roxmltree::Node;
 
 use crate::document::paragraph::ListId;
+use crate::docx::list_xml::ListXml;
 use crate::docx::list_xml::tests::{abstract_diff, level_diff, num_diff};
 use crate::docx::list_xml::{
     self, Element, ListDefDirect, ListDirect, NumberingXml, PictureDirect, to_abstract_num, to_level, to_num, to_pic_bullet,
