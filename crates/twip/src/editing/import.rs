@@ -95,6 +95,20 @@ fn each_block(blocks: &mut [Block], f: &mut dyn FnMut(&mut Block)) {
     }
 }
 
+/// Foreign content in `blocks` and the bodies `refs` holds that refers to the package it was read from (a
+/// relationship, a package-scoped id) taken out: it names nothing in another document. How many went.
+pub(super) fn drop_package_bound(blocks: &mut [Block], refs: &mut Refs) -> usize {
+    let mut gone = 0;
+    each_block_of(blocks, refs, &mut |b| {
+        if let Block::Para(p) = b {
+            let before = p.inlines.len();
+            p.inlines.retain(|i| !matches!(i, Inline::Foreign(f) if f.package_bound));
+            gone += before - p.inlines.len();
+        }
+    });
+    gone
+}
+
 /// [`each_block`] over a fragment's blocks and its notes' and comments' bodies.
 fn each_block_of(blocks: &mut [Block], refs: &mut Refs, f: &mut dyn FnMut(&mut Block)) {
     each_block(blocks, f);

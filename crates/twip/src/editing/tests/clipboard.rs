@@ -817,3 +817,38 @@ fn a_whole_paragraph_copies_what_ends_it() {
     e.execute(Command::Paste(Default::default()), fonts());
     assert_eq!(count(&e.document().sections[0].blocks), 1, "pasted back");
 }
+
+#[test]
+fn content_referring_to_its_package_is_left_out_of_another_document() {
+    let body = r#"<w:p><w:r><w:t>a</w:t></w:r><w:subDoc r:id="rId99"/><w:r><w:t>b</w:t></w:r></w:p>"#;
+    let foreign = |e: &Editor| {
+        let mut n = 0;
+        for b in &e.document().sections[0].blocks {
+            if let Block::Para(p) = b {
+                n += p.inlines.iter().filter(|i| matches!(i, crate::docx::Inline::Foreign(f) if f.package_bound)).count();
+            }
+        }
+        n
+    };
+    let mut a = Editor::open(&super::blank_body(body), fonts()).unwrap();
+    assert_eq!(foreign(&a), 1, "read as package-bound foreign content");
+    let p = para_id(&a, 0);
+    a.select_range(p, Unit(0), Unit(2), fonts());
+    let frag = a.copy().expect("a fragment");
+    // Within its own document it stays
+    a.select_range(p, Unit(2), Unit(2), fonts());
+    a.paste_fragment(&frag, fonts());
+    assert_eq!(foreign(&a), 2, "pasted in its own document");
+    // In another it goes, with a warning
+    let mut b = Editor::open(&blank_with("Target"), fonts()).unwrap();
+    let q = para_id(&b, 0);
+    b.select_range(q, Unit(6), Unit(6), fonts());
+    b.take_notices();
+    b.paste_fragment(&frag, fonts());
+    assert!(texts(&b)[0].ends_with("ab"), "the text comes: {:?}", texts(&b));
+    assert_eq!(foreign(&b), 0, "the reference doesn't");
+    let warned = b.take_notices().into_iter().any(|n| {
+        matches!(n, crate::editing::input::Notice::Warning(crate::docx::diagnostics::WarningCode::UnsupportedElement, m) if m.contains("left out"))
+    });
+    assert!(warned, "a warning says so");
+}

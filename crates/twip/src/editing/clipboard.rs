@@ -758,6 +758,11 @@ impl Editor {
         let mut controls = std::borrow::Cow::Borrowed(&f.controls);
         if let Some(o) = f.origin.as_deref().filter(|o| o.key != self.key) {
             let here = self.cx();
+            let gone = super::import::drop_package_bound(blocks, &mut refs);
+            if gone > 0 {
+                let what = format!("{gone} pasted element(s) referring to the document they came from were left out");
+                self.events.push(super::input::Notice::Warning(crate::docx::diagnostics::WarningCode::UnsupportedElement, what));
+            }
             super::import::write_runs_here(blocks, &mut refs, &here);
             // Its stored XML read under this document's root
             let from = if o.main.is_empty() {
