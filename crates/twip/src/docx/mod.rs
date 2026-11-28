@@ -22,6 +22,7 @@ pub mod line_style;
 pub mod list_xml;
 pub mod model;
 pub mod numbering;
+mod origin;
 pub mod package;
 pub mod page_borders;
 pub mod para_props;
@@ -44,6 +45,8 @@ pub mod watermark;
 pub mod xml;
 
 pub use model::*;
+#[cfg(test)]
+pub(crate) use origin::read_range;
 #[cfg(test)]
 pub(crate) use reader::MAX_CELL_HEADERS;
 pub(crate) use reader::header_list;

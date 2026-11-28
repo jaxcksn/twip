@@ -208,7 +208,7 @@ impl Editor {
                 },
                 Inline::Text(" ".into(), text_run),
             ],
-            src: None,
+            origin: crate::docx::Origin::NONE,
             id: pid,
             div: None,
             controls: Vec::new(),
@@ -279,7 +279,7 @@ impl Editor {
             }
         };
         // The same paragraphs, whatever their ids
-        let bare = |p: &crate::docx::Paragraph| crate::docx::Paragraph { id: 0, src: None, ..p.clone() };
+        let bare = |p: &crate::docx::Paragraph| crate::docx::Paragraph { id: 0, origin: crate::docx::Origin::NONE, ..p.clone() };
         let same = |a: &[Block], b: &[Block]| {
             a.len() == b.len()
                 && a.iter().zip(b).all(|(x, y)| match (x, y) {

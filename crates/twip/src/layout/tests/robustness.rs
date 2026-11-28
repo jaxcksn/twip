@@ -32,7 +32,7 @@ fn para_with(template: &Paragraph, inlines: Vec<Inline>) -> Block {
     let mut p = template.clone();
     p.inlines = inlines;
     p.id = next_para_id();
-    p.src = None;
+    p.origin = crate::docx::Origin::NONE;
     Block::Para(p)
 }
 

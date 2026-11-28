@@ -55,7 +55,7 @@ fn row_split_three_pages() {
             let mut p = template.clone();
             p.inlines = vec![Inline::Text(format!("Line {i} of the tall cell."), run.clone())];
             p.id = next_para_id();
-            p.src = None;
+            p.origin = crate::docx::Origin::NONE;
             tall.push(ParaId(p.id));
             Block::Para(p)
         })

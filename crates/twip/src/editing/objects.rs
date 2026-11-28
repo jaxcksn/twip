@@ -826,7 +826,7 @@ impl Editor {
             mark: text_run,
             list: None,
             inlines: Vec::new(),
-            src: None,
+            origin: crate::docx::Origin::NONE,
             id: pid,
             div: None,
             controls: Vec::new(),

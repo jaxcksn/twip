@@ -24,7 +24,7 @@ fn deep_document() -> Document {
         let Some(Block::Para(p)) = outer.rows[0].cells[0].blocks.first().cloned() else { panic!("a first paragraph") };
         let mut p = p;
         p.id = crate::docx::next_para_id();
-        p.src = None;
+        p.origin = crate::docx::Origin::NONE;
         let run = p.mark.clone();
         p.inlines = vec![crate::docx::Inline::Text(text.to_string(), run)];
         p
@@ -35,7 +35,7 @@ fn deep_document() -> Document {
         t.rows[0].cells.truncate(1);
         t.rows[0].cells[0].span = 1;
         t.rows[0].cells[0].blocks = content;
-        t.src = None;
+        t.origin = crate::docx::Origin::NONE;
         t.id = crate::docx::next_para_id();
         t
     };

@@ -612,21 +612,19 @@ fn cut(inlines: &mut Vec<Inline>, u: Unit, after_markers: bool) -> usize {
 /// Moves the ends of the paragraphs a vanished mark joined onto `p`'s start past a splice of `range` with `added`
 /// units, or to `exact`: their ends before, when that moved them.
 fn shift_parts(p: &mut Paragraph, range: &Range<Unit>, added: u32, exact: Option<&[u32]>) -> Option<Rc<[u32]>> {
-    let src = p.src.as_mut().filter(|s| !s.joined.is_empty())?;
+    let joined = Some(p.joined_parts()).filter(|j| !j.is_empty())?;
     let (start, end) = (range.start.0, range.end.0);
-    let exact = exact.filter(|e| e.len() == src.joined.len());
+    let exact = exact.filter(|e| e.len() == joined.len());
     let moved = |k: usize, at: u32| match exact {
         Some(e) => e[k],
         None if at > start => at.max(end) - end + start + added,
         None => at,
     };
-    if src.joined.iter().enumerate().all(|(k, j)| moved(k, j.end) == j.end) {
+    if joined.iter().enumerate().all(|(k, j)| moved(k, j.end) == j.end) {
         return None;
     }
-    let before = src.joined.iter().map(|j| j.end).collect();
-    for (k, j) in Rc::make_mut(src).joined.iter_mut().enumerate() {
-        j.end = moved(k, j.end);
-    }
+    let before = joined.iter().map(|j| j.end).collect();
+    p.move_joined(moved);
     Some(before)
 }
 

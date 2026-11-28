@@ -1653,7 +1653,16 @@ impl Editor {
         if inlines.is_empty() {
             inlines.push(Inline::Text(String::new(), mark.clone()));
         }
-        Paragraph { style, mark, list: None, inlines, src: None, id: crate::docx::next_para_id(), controls: Vec::new(), div: None }
+        Paragraph {
+            style,
+            mark,
+            list: None,
+            inlines,
+            origin: crate::docx::Origin::NONE,
+            id: crate::docx::next_para_id(),
+            controls: Vec::new(),
+            div: None,
+        }
     }
 
     /// A run of a new paragraph (authored properties `ppr`, in `container`) hidden in a web view (`w:webHidden`).

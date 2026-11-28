@@ -499,7 +499,7 @@ impl Editor {
             mark: run.clone(),
             list: None,
             inlines: inlines(&run),
-            src: None,
+            origin: crate::docx::Origin::NONE,
             id: crate::docx::next_para_id(),
             div: None,
             controls: Vec::new(),

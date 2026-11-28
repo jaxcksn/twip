@@ -532,7 +532,7 @@ mod tests {
         for b in blocks {
             match b {
                 Block::Para(p) => {
-                    if p.src.as_ref().is_some_and(|s| s.ranges.len() > 1) {
+                    if p.read_parts() > 1 {
                         continue;
                     }
                     // Revisions aren't formatting: they come from the elements around the direct XML, so they're

@@ -5,6 +5,7 @@ pub use crate::document::content::{BreakKind, NoteKind};
 pub use crate::document::foreign::{Foreign, FormatId};
 pub use crate::document::ident::{ControlId, FieldId, HeaderFooterId, ResourceId, next_para_id};
 pub use crate::document::line::Underline;
+pub use crate::document::origin::Origin;
 pub use crate::document::paragraph::{ListId, ListJc, ListRef, ListSuffix, TextAlignment};
 pub use crate::document::policy::{Compat, LayoutPolicy};
 pub use crate::document::resource::Resources;
@@ -1202,8 +1203,8 @@ pub struct Paragraph {
     pub mark: Run,
     pub list: Option<ListLabel>,
     pub inlines: Vec<Inline>,
-    /// Where the paragraph was read from (editable reads of the main body only; new paragraphs have none).
-    pub src: Option<Rc<ParaSrc>>,
+    /// Where the paragraph was read from (editable reads only; new paragraphs have none).
+    pub origin: Origin,
     /// Identity across edits and layouts ([`next_para_id`]); a clone keeps it, so a copied or split-off paragraph
     /// needs a fresh one. Layout tags drawn glyphs with it, and incremental layout reuses pages by it.
     pub id: u64,
@@ -1223,26 +1224,7 @@ impl Paragraph {
     }
 }
 
-/// A body paragraph's place in the main part's XML ([`Source::xml`] byte offsets), for lossless saving.
-#[derive(Clone, Debug, PartialEq)]
-pub struct ParaSrc {
-    pub ranges: Vec<std::ops::Range<usize>>,
-    /// The elements that produced its units, in order, with how many units each did: `w:t`, `w:tab`, a drawing, a
-    /// whole complex field (from its `begin` run to its `end` run), ...
-    pub segs: Vec<(std::ops::Range<usize>, usize)>,
-    /// The elements inside each simple field and hyperlink seg (by its start) that produced its result's units.
-    pub simple: Vec<(usize, Vec<(std::ops::Range<usize>, usize)>)>,
-    /// Content that can't be mapped back (a field whose runs don't share a parent): edits rewrite it from the model.
-    pub lossy: bool,
-    /// Made by the reader to close a story that ends without a paragraph: no element, `ranges[0]` is where its XML
-    /// goes, an empty range before the story's end tag or the story's whole element when it is written empty.
-    pub closing: bool,
-    /// The paragraphs a vanished mark joined onto this one's start, in order (the last of [`Self::ranges`] is its own).
-    pub joined: Vec<JoinedPart>,
-}
-
-/// A paragraph joined onto the next one's start through its vanished mark, as read. Its `==` leaves its authored
-/// properties out, as a source anchor's are.
+/// A paragraph joined onto the next one's start through its vanished mark, as read ([`Paragraph::joined_parts`]).
 #[derive(Clone, Debug)]
 pub struct JoinedPart {
     /// The unit its content ends at in the joined paragraph.
@@ -1251,12 +1233,6 @@ pub struct JoinedPart {
     pub ppr: super::para_props::ParaDirect,
     /// Its mark is a style separator (`w:specVanish`).
     pub spec_vanish: bool,
-}
-
-impl PartialEq for JoinedPart {
-    fn eq(&self, o: &JoinedPart) -> bool {
-        self.end == o.end && self.spec_vanish == o.spec_vanish
-    }
 }
 
 /// The package an editable document was read from ([`super::read_editable`]).
@@ -1839,9 +1815,9 @@ pub struct Row {
     pub cells: Vec<Cell>,
     /// The controls wrapping the row, outermost first.
     pub controls: Vec<ControlId>,
-    /// The `w:tr` element's byte range in [`Source::xml`] (editable reads only): saving keeps a row it still has. A
-    /// copied row needs `None`, or it would be written as the row it was copied from.
-    pub src: Option<Rc<std::ops::Range<usize>>>,
+    /// Where the row was read from (editable reads only): saving keeps a row it still has. A copied row needs none, or
+    /// it would be written as the row it was copied from.
+    pub origin: Origin,
     /// The row's authored properties and its exceptions to its table's (its `w:trPr` and `w:tblPrEx`; editable reads
     /// only): what a rewritten row's properties are written from.
     pub direct: super::table_props::RowDirect,
@@ -1881,8 +1857,8 @@ pub struct Table {
     pub bidi_visual: bool,
     pub grid: Vec<f64>,
     pub rows: Vec<Row>,
-    /// The `w:tbl` element's byte range in [`Source::xml`] (editable reads only).
-    pub src: Option<Rc<std::ops::Range<usize>>>,
+    /// Where the table was read from (editable reads only).
+    pub origin: Origin,
     /// Identity in layouts ([`next_para_id`]): drawn rows name their table (table handles, border dragging).
     pub id: u64,
     /// The table's authored properties (its `w:tblPr` as read): what re-resolution merges over a new table style's

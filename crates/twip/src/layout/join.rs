@@ -185,7 +185,7 @@ impl Joined {
             mark: last.mark.clone(),
             list,
             inlines,
-            src: None,
+            origin: crate::docx::Origin::NONE,
             id: last.id,
             div: last.div.clone(),
             controls: last.controls.clone(),

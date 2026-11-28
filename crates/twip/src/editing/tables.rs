@@ -44,7 +44,7 @@ pub(super) fn blank_para(p: &Paragraph) -> Paragraph {
         inlines: vec![Inline::Text(String::new(), mark.clone())],
         mark,
         list: None,
-        src: None,
+        origin: crate::docx::Origin::NONE,
         id: crate::docx::next_para_id(),
         div: None,
         controls: Vec::new(),
@@ -519,7 +519,7 @@ impl Editor {
         let template = &t.rows[at];
         let g = Grid::of(t);
         let mut row = template.clone();
-        row.src = None;
+        row.origin = crate::docx::Origin::NONE;
         row.rev = Default::default();
         for (k, cell) in row.cells.iter_mut().enumerate() {
             let col = g.rows[at][k].0;
@@ -568,7 +568,7 @@ impl Editor {
         grid.splice(at..at, widths.iter().copied());
         let mut rows = t.rows.clone();
         for (r, row) in rows.iter_mut().enumerate() {
-            row.src = None;
+            row.origin = crate::docx::Origin::NONE;
             if row.cells.is_empty() {
                 continue;
             }
@@ -630,7 +630,7 @@ impl Editor {
             }
         }
         rows.drain(tg.rows.0..=tg.rows.1);
-        rows.iter_mut().for_each(|r| r.src = None);
+        rows.iter_mut().for_each(|r| r.origin = crate::docx::Origin::NONE);
         let grid = t.grid.clone();
         let at = tg.rows.0.min(rows.len().saturating_sub(1));
         let first = rows.get(at).map_or(0, |r| r.grid_before);
@@ -649,7 +649,7 @@ impl Editor {
         let mut rows: Vec<Row> = Vec::new();
         for (r, row) in t.rows.iter().enumerate() {
             let mut row = row.clone();
-            row.src = None;
+            row.origin = crate::docx::Origin::NONE;
             let cut = |a: usize, b: usize| b.min(c1 + 1).saturating_sub(a.max(c0));
             row.grid_before -= cut(0, row.grid_before);
             row.grid_after -= cut(g.cols.saturating_sub(row.grid_after), g.cols);
@@ -771,7 +771,7 @@ impl Editor {
         for (r, ks) in &picked {
             let (r, ks) = (*r, ks.clone());
             let row = &mut rows[r];
-            row.src = None;
+            row.origin = crate::docx::Origin::NONE;
             for k in ks.clone() {
                 let cell = &t.rows[r].cells[k];
                 let empty = cell.blocks.len() == 1 && matches!(&cell.blocks[0], Block::Para(p) if para_len(p) == Unit(0));
@@ -828,7 +828,7 @@ impl Editor {
             return Outcome::Unchanged("no cell");
         }
         let mut rows = t.rows.clone();
-        rows.iter_mut().for_each(|r| r.src = None);
+        rows.iter_mut().for_each(|r| r.origin = crate::docx::Origin::NONE);
         let mut grid = full_grid(t, g.cols);
         if nrows > 1 {
             let chains: Vec<Vec<(usize, usize)>> = targets.iter().map(|&(r, k)| merge_chain(&g, r, k)).collect();
@@ -1060,14 +1060,14 @@ impl Editor {
                         let pad = (n..ncols).map(|_| vec![Block::Para(blank_para(like))]);
                         cells.into_iter().chain(pad).map(|b| cell(w, b)).collect()
                     },
-                    src: None,
+                    origin: crate::docx::Origin::NONE,
                     direct: Default::default(),
                     exceptions: Default::default(),
                     controls: Vec::new(),
                     rev: Default::default(),
                 })
                 .collect(),
-            src: None,
+            origin: crate::docx::Origin::NONE,
             id: crate::docx::next_para_id(),
             direct,
             controls: Vec::new(),
@@ -1218,7 +1218,7 @@ impl Editor {
         let n = t.rows.len();
         let mut lower = t.clone();
         lower.rows = t.rows[level.row..].to_vec();
-        lower.src = None;
+        lower.origin = crate::docx::Origin::NONE;
         lower.id = crate::docx::next_para_id();
         let g = Grid::of(&t);
         for (k, c) in lower.rows[0].cells.iter_mut().enumerate() {

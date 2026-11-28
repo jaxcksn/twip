@@ -4,7 +4,7 @@ use crate::docx::resolvers::Resolvers;
 use std::fmt;
 use std::rc::Rc;
 
-use super::super::model::{Block, Cell, Document, Inline, Paragraph, Row, Run, RunStyle, Section, Table};
+use super::super::model::{Block, Cell, Document, Inline, Origin, Paragraph, Row, Run, RunStyle, Section, Table};
 use super::super::para_props::ParaDirect;
 use super::super::review::RangeKind;
 use super::super::run_xml;
@@ -98,7 +98,7 @@ fn table(t: &Table, res: &Resolvers, cx: &Cx) -> Result<Table, GenerateError> {
     if own.style.is_none() {
         own.style = t.style_id.as_deref().map(Into::into);
     }
-    let mut out = Table { src: None, direct: TableDirect::typed(Rc::new(own)), ..t.clone() };
+    let mut out = Table { origin: Origin::NONE, direct: TableDirect::typed(Rc::new(own)), ..t.clone() };
     for (ri, row) in out.rows.iter_mut().enumerate() {
         if row.rev.ins.is_some() || row.rev.del.is_some() || row.rev.change.is_some() || row.rev.ex_change.is_some() {
             return fail("a tracked change");
@@ -110,7 +110,7 @@ fn table(t: &Table, res: &Resolvers, cx: &Cx) -> Result<Table, GenerateError> {
             return fail("an HTML division");
         }
         *row = Row {
-            src: None,
+            origin: Origin::NONE,
             direct: RowDirect::typed(row.direct.get().clone()),
             exceptions: ExceptionsDirect::typed(row.exceptions.get().clone()),
             ..row.clone()
@@ -204,12 +204,12 @@ fn definitions_read_back(ours: Option<&Resolvers>, back: Option<&Resolvers>) -> 
 /// written.
 fn same_tables(a: &[Block], b: &[Block]) -> bool {
     let bare = |t: &Table| Table {
-        src: None,
+        origin: Origin::NONE,
         id: 0,
         rows: t
             .rows
             .iter()
-            .map(|r| Row { src: None, cells: r.cells.iter().map(|c| Cell { blocks: Vec::new(), ..c.clone() }).collect(), ..r.clone() })
+            .map(|r| Row { origin: Origin::NONE, cells: r.cells.iter().map(|c| Cell { blocks: Vec::new(), ..c.clone() }).collect(), ..r.clone() })
             .collect(),
         ..t.clone()
     };
@@ -319,7 +319,7 @@ fn paragraph(p: &Paragraph, res: &Resolvers, cx: &Cx, region: Option<&TableRegio
         mark: run(&p.mark, res, &base, cx)?,
         list: p.list.clone(),
         inlines,
-        src: None,
+        origin: Origin::NONE,
         id: p.id,
         controls: Vec::new(),
         div: None,

@@ -86,7 +86,7 @@ fn joined_runs(e: &Editor) -> (String, f64) {
 fn joined() -> Editor {
     let body = r#"<w:p><w:pPr><w:pStyle w:val="Heading1"/><w:rPr><w:vanish/></w:rPr></w:pPr><w:r><w:t>Head </w:t></w:r></w:p><w:p><w:r><w:t>Body</w:t></w:r></w:p>"#;
     let e = open_pkg(&pkg(JOIN_STYLES, body));
-    assert_eq!(first_para(&e).src.as_ref().map(|s| s.ranges.len()), Some(2), "joined");
+    assert_eq!(first_para(&e).read_parts(), 2, "joined");
     e
 }
 
@@ -558,7 +558,7 @@ fn a_paragraph_joined_by_a_hidden_mark_keeps_its_parts_after_its_first_part_is_e
 
 #[test]
 fn a_paragraph_joined_by_a_hidden_mark_keeps_its_parts_through_an_undone_delete_across_them() {
-    let ends = |e: &Editor| first_para(e).src.as_ref().map(|s| s.joined.iter().map(|j| j.end).collect::<Vec<_>>());
+    let ends = |e: &Editor| first_para(e).origin.is_some().then(|| first_para(e).joined_parts().iter().map(|j| j.end).collect::<Vec<_>>());
     let mut e = joined();
     let read = ends(&e);
     let para = crate::layout::ParaId(first_para(&e).id);

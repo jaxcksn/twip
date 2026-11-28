@@ -357,7 +357,7 @@ pub(super) fn fresh(b: &Block) -> Block {
         Block::Para(p) => {
             let mut p = p.clone();
             p.id = crate::docx::next_para_id();
-            p.src = None;
+            p.origin = crate::docx::Origin::NONE;
             for i in &mut p.inlines {
                 let story = match i {
                     Inline::Float(f, _) => {
@@ -379,9 +379,9 @@ pub(super) fn fresh(b: &Block) -> Block {
         Block::Table(t) => {
             let mut t = t.clone();
             t.id = crate::docx::next_para_id();
-            t.src = None;
+            t.origin = crate::docx::Origin::NONE;
             for r in &mut t.rows {
-                r.src = None;
+                r.origin = crate::docx::Origin::NONE;
                 for c in &mut r.cells {
                     c.blocks = c.blocks.iter().map(fresh).collect();
                 }

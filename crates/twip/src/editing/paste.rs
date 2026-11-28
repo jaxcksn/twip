@@ -964,7 +964,7 @@ impl Editor {
             mark: run,
             list: None,
             inlines: vec![obj],
-            src: None,
+            origin: crate::docx::Origin::NONE,
             id: crate::docx::next_para_id(),
             controls: Vec::new(),
             div: None,

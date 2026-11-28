@@ -91,7 +91,7 @@ fn reflow(bencher: Bencher) {
             }
             let Block::Para(mut copy) = d.sections[0].blocks[2].clone() else { panic!("a paragraph on page 1") };
             copy.id = twip::internal::docx::model::next_para_id();
-            copy.src = None;
+            copy.origin = twip::internal::docx::model::Origin::NONE;
             d.sections[0].blocks.insert(3, Block::Para(copy));
             rev += 1;
             dl.edit(Revision(rev), Some(Change { section: 0, first: 2, old_end: 3, new_end: 4, row: None }));

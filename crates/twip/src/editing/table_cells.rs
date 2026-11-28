@@ -139,7 +139,7 @@ impl Editor {
                         let nw: Vec<i64> = picked.map(|j| w[j]).collect();
                         row.cells.splice(k..k, new);
                         w.splice(k..k, nw);
-                        row.src = None;
+                        row.origin = crate::docx::Origin::NONE;
                     }
                     widths.push((tw(0, row.grid_before), w));
                 }
@@ -197,7 +197,7 @@ impl Editor {
                 let mut added: Vec<Row> = Vec::with_capacity(n);
                 for _ in 0..n {
                     let mut r = rows[last].clone();
-                    r.src = None;
+                    r.origin = crate::docx::Origin::NONE;
                     r.rev = Default::default();
                     r.cells.iter_mut().for_each(|c| *c = empty_cell(c));
                     added.push(r);

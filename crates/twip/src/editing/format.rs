@@ -532,7 +532,7 @@ impl Editor {
         let p = self.index.para(&self.doc, para)?;
         let region = self.region_of_para(para, res);
         let last = para_xml::of(res, direct.as_ref().unwrap_or(&p.style.direct), region.as_ref(), cx);
-        let parts = p.src.as_ref().filter(|s| s.joined.len() + 1 == s.ranges.len()).map_or(&[][..], |s| &s.joined[..]);
+        let parts = p.joined_before();
         if parts.is_empty() {
             let style = crate::docx::para_xml::again(res, &p.style, last.style, region.as_ref(), cx);
             return Some(Again { style, bases: vec![(0, last.base)] });
@@ -1097,7 +1097,7 @@ impl Editor {
 
 /// The hidden paragraph marks of `p`, as [`Editor::hidden_marks`] gives them.
 pub fn hidden_marks_of(p: &crate::docx::Paragraph) -> Vec<(Unit, bool)> {
-    let parts = p.src.as_ref().filter(|s| s.joined.len() + 1 == s.ranges.len()).map_or(&[][..], |s| &s.joined[..]);
+    let parts = p.joined_before();
     let own = p.mark.hidden.then(|| (super::step::para_len(p), p.mark.direct.spec_vanish()));
     parts.iter().map(|j| (Unit(j.end), j.spec_vanish)).chain(own).collect()
 }

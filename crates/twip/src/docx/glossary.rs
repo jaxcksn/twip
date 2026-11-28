@@ -374,7 +374,7 @@ mod tests {
         assert!(inserted, "the tracked insertion is a revision");
         // The comment is the glossary's own: its markers aren't orphans, and they stay in the paragraph's source.
         assert_eq!(doc.diagnostics.count(super::super::diagnostics::WarningCode::CommentReferenceOrphan), 0);
-        let src = body[1].src.as_ref().expect("a source");
+        let src = body[1].src().expect("a source");
         let xml = &doc.source.as_ref().unwrap().glossary.as_ref().unwrap().xml;
         assert!(src.ranges.iter().any(|r| xml[r.clone()].contains("commentReference")));
     }

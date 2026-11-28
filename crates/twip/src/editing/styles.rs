@@ -520,7 +520,7 @@ impl Editor {
             mark: run.clone(),
             list: None,
             inlines: Vec::new(),
-            src: None,
+            origin: crate::docx::Origin::NONE,
             id: 0,
             div: None,
             controls: Vec::new(),

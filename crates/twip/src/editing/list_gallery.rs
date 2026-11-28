@@ -232,7 +232,7 @@ impl Editor {
                 mark: grey.clone(),
                 list: Some(label),
                 inlines: vec![Inline::Text("\u{2014}".repeat(10), grey)],
-                src: None,
+                origin: crate::docx::Origin::NONE,
                 id: next_para_id(),
                 div: None,
                 controls: Vec::new(),

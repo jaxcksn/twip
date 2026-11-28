@@ -28,7 +28,7 @@ impl Editor {
         let mut rows = Vec::new();
         for r in r0..=r1.min(t.rows.len().saturating_sub(1)) {
             let mut row: Row = t.rows[r].clone();
-            row.src = None;
+            row.origin = crate::docx::Origin::NONE;
             row.grid_before = 0;
             row.grid_after = 0;
             row.cells = t.rows[r]
@@ -47,8 +47,13 @@ impl Editor {
         }
         let whole_rows = shape == CellShape::Rows || (c0 == 0 && c1 + 1 >= g.cols);
         let whole_table = whole_rows && r0 == 0 && r1 + 1 >= t.rows.len();
-        let sub =
-            Table { grid: super::tables::full_grid(t, g.cols)[c0..=c1].to_vec(), rows, src: None, id: crate::docx::next_para_id(), ..t.clone() };
+        let sub = Table {
+            grid: super::tables::full_grid(t, g.cols)[c0..=c1].to_vec(),
+            rows,
+            origin: crate::docx::Origin::NONE,
+            id: crate::docx::next_para_id(),
+            ..t.clone()
+        };
         Some(Fragment { id, blocks: vec![Block::Table(sub)], cells: Some(CellCopy { whole_rows, whole_table }), ..Default::default() })
     }
 
@@ -226,7 +231,7 @@ impl Editor {
                     self.abort(tx);
                     return None;
                 };
-                add.src = None;
+                add.origin = crate::docx::Origin::NONE;
                 add.rev = Default::default();
                 add.cells.iter_mut().for_each(|c| *c = empty_cell(c));
                 rows.push(add);
@@ -305,7 +310,7 @@ fn merged_rows(new: &[Row], like: &Row) -> Vec<Row> {
     new.iter()
         .map(|r| {
             let mut row = like.clone();
-            row.src = None;
+            row.origin = crate::docx::Origin::NONE;
             (row.controls, row.rev) = (r.controls.clone(), r.rev.clone());
             for (k, c) in row.cells.iter_mut().enumerate() {
                 c.v_merge = crate::docx::VMerge::None;

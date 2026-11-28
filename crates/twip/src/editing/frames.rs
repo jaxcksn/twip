@@ -327,17 +327,14 @@ impl Editor {
         let Some(slot) = self.index.para_slot(anchor) else { return Outcome::Unchanged("no anchor") };
         let Some(p) = self.index.para(&self.doc, anchor) else { return Outcome::Unchanged("no anchor") };
         let is_it = |i: &Inline| matches!(i, Inline::Float(fl, _) if FloatId(fl.id) == f);
-        let Some((k, frame_src)) = p.inlines.iter().enumerate().find_map(|(k, i)| match i {
-            Inline::Float(fl, _) if FloatId(fl.id) == f => Some((k, fl.frame_src.as_ref())),
+        let Some((k, read_after)) = p.inlines.iter().enumerate().find_map(|(k, i)| match i {
+            Inline::Float(fl, _) if FloatId(fl.id) == f => Some((k, fl.read_after(p))),
             _ => None,
         }) else {
             return Outcome::Unchanged("no anchor");
         };
         // Anchored after the paragraph: read before a table or the end
-        let after = match (frame_src, p.src.as_ref().and_then(|s| s.ranges.first())) {
-            (Some(r), Some(at)) => r.start > at.start,
-            _ => p.inlines[..k].iter().any(|i| i.units() > 0),
-        };
+        let after = read_after.unwrap_or_else(|| p.inlines[..k].iter().any(|i| i.units() > 0));
         let inlines: Vec<Inline> = p.inlines.iter().filter(|i| !is_it(i)).cloned().collect();
         let Some(first) = blocks.iter().find_map(|b| if let Block::Para(p) = b { Some(p.id) } else { None }) else {
             return Outcome::Unchanged("no frame");
@@ -356,7 +353,7 @@ impl Editor {
         // The paragraphs are written as new ones: their source is the frame's, which goes.
         for b in &mut blocks {
             if let Block::Para(p) = b {
-                p.src = None;
+                p.origin = crate::docx::Origin::NONE;
             }
         }
         let mut tx = self.begin("Remove Frame");

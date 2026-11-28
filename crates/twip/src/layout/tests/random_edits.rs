@@ -118,7 +118,7 @@ fn random_edit(d: &mut Document, rng: &mut Rng, kind: Option<usize>) -> Option<E
             let Block::Para(p) = &d.sections[si].blocks[bi] else { unreachable!() };
             let mut second = p.clone();
             second.id = next_para_id();
-            second.src = None;
+            second.origin = crate::docx::Origin::NONE;
             d.sections[si].blocks.insert(bi + 1, Block::Para(second));
             Some(Edit { hint: change(si, bi, bi + 1, bi + 2), forces_full: false, what: format!("split block {bi}") })
         }
@@ -141,7 +141,7 @@ fn random_edit(d: &mut Document, rng: &mut Rng, kind: Option<usize>) -> Option<E
                 for j in 0..k {
                     let mut q = p.clone();
                     q.id = next_para_id();
-                    q.src = None;
+                    q.origin = crate::docx::Origin::NONE;
                     d.sections[si].blocks.insert(bi + 1 + j, Block::Para(q));
                 }
                 Some(Edit { hint: change(si, bi + 1, bi + 1, bi + 1 + k), forces_full: false, what: format!("insert {k} after block {bi}") })
@@ -498,7 +498,7 @@ fn edits_inside_joined_paragraphs() {
             let Block::Para(p) = d.sections[0].blocks.get(11)? else { return None };
             let mut q = p.clone();
             q.id = next_para_id();
-            q.src = None;
+            q.origin = crate::docx::Origin::NONE;
             d.sections[0].blocks.insert(12, Block::Para(q));
             Some((12, 12, 13))
         }),

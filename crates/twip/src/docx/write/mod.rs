@@ -1,6 +1,6 @@
 //! Lossless save: the package as read, with only the edited paragraphs of the main part, headers and footers rewritten.
 //!
-//! Every body paragraph and table remembers where it was read from ([`ParaSrc`], [`Table::src`]). Saving compares the
+//! Every body paragraph and table remembers where it was read from (its [`Origin`]). Saving compares the
 //! edited body with the body as read ([`Source::blocks`]), block list by block list: a paragraph or table still there
 //! anchors a group with the new paragraphs after it and the vanished ones it absorbed. Unchanged groups keep their
 //! bytes. A changed group's units (and paragraph marks) are diffed against its source's, and the source XML is walked
@@ -16,6 +16,7 @@ use std::rc::Rc;
 
 use roxmltree::Node;
 
+use super::origin::ParaSrc;
 use super::review::{CommentId, People, RangeKind, RangeMark, RevisionMark, SectionChange};
 use super::xml::{MC, W, W14, attr, child, is, is_w};
 use super::*;
@@ -1988,10 +1989,10 @@ fn filled(el: &str, text: &str) -> Option<String> {
 }
 
 /// Takes the paragraphs the reader made to close their story out of `qs`, with the place of the last
-/// ([`ParaSrc::closing`]).
+/// (`ParaSrc::closing`).
 fn take_closing(qs: &mut Vec<&Paragraph>) -> Option<Range<usize>> {
     let mut at = None;
-    qs.retain(|q| match q.src.as_deref() {
+    qs.retain(|q| match q.src() {
         Some(s) if s.closing => {
             at = s.ranges.first().cloned();
             false
@@ -2256,15 +2257,15 @@ type Bookmarks = Rc<std::cell::RefCell<Option<HashMap<String, i64>>>>;
 
 fn block_src(b: &Block) -> Option<*const ()> {
     match b {
-        Block::Para(p) => p.src.as_ref().map(|s| Rc::as_ptr(s) as *const ()),
-        Block::Table(t) => t.src.as_ref().map(|s| Rc::as_ptr(s) as *const ()),
+        Block::Para(p) => p.src().map(|s| s as *const ParaSrc as *const ()),
+        Block::Table(t) => t.src().map(|s| s as *const Range<usize> as *const ()),
     }
 }
 
 fn block_range(b: &Block) -> Option<Range<usize>> {
     match b {
-        Block::Para(p) => p.src.as_ref().map(|s| s.ranges[0].start..s.ranges.last().unwrap().end),
-        Block::Table(t) => t.src.as_deref().cloned(),
+        Block::Para(p) => p.src().map(|s| s.ranges[0].start..s.ranges.last().unwrap().end),
+        Block::Table(t) => t.src().cloned(),
     }
 }
 
@@ -2358,7 +2359,7 @@ impl<'a, 'i> Saver<'a, 'i> {
             && block_src(&q[0]) == block_src(&p[0])
         {
             self.table(a, b)?;
-            return self.paragraphs(&q[1..], &p[1..], a.src.as_ref().map(|r| r.end));
+            return self.paragraphs(&q[1..], &p[1..], a.src().map(|r| r.end));
         }
         self.paragraphs(q, p, at)
     }
@@ -2385,7 +2386,7 @@ impl<'a, 'i> Saver<'a, 'i> {
                 x.cells.len() == y.cells.len()
                     && x.controls == y.controls
                     && x.cells.iter().zip(&y.cells).all(|(c, d)| c.controls == d.controls)
-                    && same_src(&x.src, &y.src)
+                    && same_src(x.src(), y.src())
                     && x.height == y.height
                     && (x.header, x.cant_split, x.hidden, x.jc) == (y.header, y.cant_split, y.hidden, y.jc)
                     && x.direct.authored_eq(&y.direct)
@@ -2411,10 +2412,10 @@ impl<'a, 'i> Saver<'a, 'i> {
             && (&a.style_id, a.look, a.jc, a.ind, a.ind_pct, a.floating) == (&b.style_id, b.look, b.jc, b.ind, b.ind_pct, b.floating)
             && (a.fixed, a.cell_spacing, &a.alt) == (b.fixed, b.cell_spacing, &b.alt);
         // Tables read as one (nothing between them) are written as one.
-        let joined = a.src.as_ref().is_some_and(|r| self.tables.get(&r.start).is_some_and(|n| n.range().end != r.end));
+        let joined = a.src().is_some_and(|r| self.tables.get(&r.start).is_some_and(|n| n.range().end != r.end));
         if !same_rows || joined {
             // Rows or cells came or went: the table is written again, its kept rows from their source.
-            let range = (**a.src.as_ref().ok_or("a table without its source")?).clone();
+            let range = a.src().ok_or("a table without its source")?.clone();
             let text = self.table_xml(Some(a), b)?;
             self.splices.push((range, text));
             return Ok(());
@@ -2435,7 +2436,7 @@ impl<'a, 'i> Saver<'a, 'i> {
             match b {
                 Block::Para(x) => qs.push(x),
                 Block::Table(t) => {
-                    let r = (**t.src.as_ref().ok_or("a table without its source")?).clone();
+                    let r = t.src().ok_or("a table without its source")?.clone();
                     at = Some(at.map_or(r.start, |a| a.min(r.start)));
                     self.splices.push((r, String::new()));
                 }
@@ -2477,7 +2478,7 @@ impl<'a, 'i> Saver<'a, 'i> {
             }
         }
         let closing = take_closing(&mut qs);
-        let srcs: Vec<&ParaSrc> = qs.iter().map(|x| x.src.as_deref().ok_or("a paragraph without its source")).collect::<Result<_, _>>()?;
+        let srcs: Vec<&ParaSrc> = qs.iter().map(|x| x.src().ok_or("a paragraph without its source")).collect::<Result<_, _>>()?;
         if ps.is_empty() {
             // Every paragraph of the group went (with the blocks around them).
             for r in srcs.iter().flat_map(|s| s.ranges.iter()) {
@@ -2534,7 +2535,7 @@ impl<'a, 'i> Saver<'a, 'i> {
             .collect();
         let block = |n: &Node| is_w(*n, "p") || is_w(*n, "tbl") || is_w(*n, "sdt") || is_w(*n, "customXml") || is(*n, MC, "AlternateContent");
         let mut gone = Vec::new();
-        for s in qs.iter().filter_map(|q| q.src.as_ref()) {
+        for s in qs.iter().filter_map(|q| q.src()) {
             let first = s.ranges.first().and_then(|r| self.paras.get(&r.start)).copied();
             let last = s.ranges.last().and_then(|r| self.paras.get(&r.start)).copied();
             let before = first.into_iter().flat_map(|n| n.prev_siblings().skip(1).filter(Node::is_element).take_while(|n| !block(n)));
@@ -2561,10 +2562,10 @@ impl<'a, 'i> Saver<'a, 'i> {
     /// read, its placeholder taken out of `ps`.
     fn take_chunks(&mut self, qs: &mut Vec<&Paragraph>, mut ps: Option<&mut Vec<&Paragraph>>) -> Option<Range<usize>> {
         let mut chunks = Vec::new();
-        qs.retain(|q| match q.src.as_ref().filter(|s| !s.closing).and_then(|s| Some((s, s.ranges.first()?))) {
+        qs.retain(|q| match q.src().filter(|s| !s.closing).and_then(|s| Some((s, s.ranges.first()?))) {
             Some((s, r)) if !self.paras.contains_key(&r.start) => {
                 let held = ps.as_deref_mut().and_then(|ps| {
-                    let k = ps.iter().position(|x| x.inlines.is_empty() && x.src.as_ref().is_some_and(|x| Rc::ptr_eq(x, s)))?;
+                    let k = ps.iter().position(|x| x.inlines.is_empty() && x.src().is_some_and(|x| std::ptr::eq(x, s)))?;
                     Some(ps.remove(k))
                 });
                 if held.is_none() {
@@ -2626,9 +2627,8 @@ impl<'a, 'i> Saver<'a, 'i> {
                 Block::Table(_) => runs.push(Vec::new()),
             }
         }
-        let run_of = |q: &Paragraph| {
-            runs.iter().position(|r| r.iter().any(|x| x.src.as_ref().zip(q.src.as_ref()).is_some_and(|(a, b)| Rc::ptr_eq(a, b)))).unwrap_or(0)
-        };
+        let run_of =
+            |q: &Paragraph| runs.iter().position(|r| r.iter().any(|x| x.src().zip(q.src()).is_some_and(|(a, b)| std::ptr::eq(a, b)))).unwrap_or(0);
         let mut text = String::new();
         let mut k = 0;
         for b in p.iter().map(Some).chain(std::iter::once(None)) {
@@ -2636,8 +2636,7 @@ impl<'a, 'i> Saver<'a, 'i> {
                 Some(Block::Para(_)) => continue,
                 _ => {
                     let mine: Vec<&Paragraph> = qs.iter().copied().filter(|q| run_of(q) == k).collect();
-                    let srcs: Vec<&ParaSrc> =
-                        mine.iter().map(|x| x.src.as_deref().ok_or("a paragraph without its source")).collect::<Result<_, _>>()?;
+                    let srcs: Vec<&ParaSrc> = mine.iter().map(|x| x.src().ok_or("a paragraph without its source")).collect::<Result<_, _>>()?;
                     if !runs[k].is_empty() || !mine.is_empty() {
                         text.push_str(&emit(self, &mine, &srcs, &runs[k])?);
                     }
@@ -2655,7 +2654,7 @@ impl<'a, 'i> Saver<'a, 'i> {
                 text.push_str(&closes);
             }
         }
-        let mut ranges = qs.iter().filter_map(|q| q.src.as_ref()).flat_map(|s| s.ranges.iter().cloned());
+        let mut ranges = qs.iter().filter_map(|q| q.src()).flat_map(|s| s.ranges.iter().cloned());
         match ranges.next() {
             Some(first) => {
                 self.splices.push((first, text));
@@ -2673,7 +2672,7 @@ impl<'a, 'i> Saver<'a, 'i> {
     /// paragraphs from their sources where they have one.
     fn table_xml(&mut self, orig: Option<&Table>, t: &Table) -> Result<String, String> {
         let w = self.w.clone();
-        let node = orig.and_then(|a| a.src.as_ref()).and_then(|r| self.tables.get(&r.start).copied());
+        let node = orig.and_then(|a| a.src()).and_then(|r| self.tables.get(&r.start).copied());
         let mut out = String::new();
         let close = match node {
             Some(n) => {
@@ -2800,7 +2799,7 @@ impl<'a, 'i> Saver<'a, 'i> {
         // What the source tables (those read as one) hold between their rows besides rows: bookmarks, permissions and
         // the like, written again before the kept row they came before.
         let mut loose: Vec<Range<usize>> = Vec::new();
-        if let (Some(n), Some(end)) = (node, orig.and_then(|a| a.src.as_ref()).map(|r| r.end)) {
+        if let (Some(n), Some(end)) = (node, orig.and_then(|a| a.src()).map(|r| r.end)) {
             let tables = std::iter::successors(Some(n), |t| t.next_sibling_element()).take_while(|t| is_w(*t, "tbl") && t.range().end <= end);
             for tbl in tables {
                 self.loose(tbl, &["tblPr", "tblGrid", "tr"], &|_| true, &mut loose);
@@ -2833,11 +2832,11 @@ impl<'a, 'i> Saver<'a, 'i> {
             }
         };
         for row in &t.rows {
-            let kept = row.src.as_ref().and_then(|r| old_rows.iter().find(|o| o.src.as_ref().is_some_and(|s| Rc::ptr_eq(s, r))).copied());
+            let kept = row.src().and_then(|r| old_rows.iter().find(|o| o.src().is_some_and(|s| std::ptr::eq(s, r))).copied());
             // The source row it was read as (by its cells' paragraphs when a structural edit made it again), its
             // markup written once.
             let from = kept
-                .and_then(|k| k.src.as_ref())
+                .and_then(|k| k.src())
                 .and_then(|r| self.tables.get(&r.start).copied())
                 .or_else(|| row.cells.iter().find_map(|c| self.cell_node(c)).and_then(|tc| tc.ancestors().skip(1).find(|a| is_w(*a, "tr"))));
             let from = from.filter(|tr| rows_seen.insert(tr.range().start));
@@ -2848,7 +2847,7 @@ impl<'a, 'i> Saver<'a, 'i> {
                 }
             }
             wrap(&mut out, &row.controls, &mut open, self);
-            let row_node = kept.and_then(|k| k.src.as_ref()).and_then(|r| self.tables.get(&r.start).copied());
+            let row_node = kept.and_then(|k| k.src()).and_then(|r| self.tables.get(&r.start).copied());
             match (kept, row_node) {
                 (Some(k), Some(n)) if k.cells.len() == row.cells.len() => {
                     let outer = std::mem::take(&mut self.splices);
@@ -2939,8 +2938,8 @@ impl<'a, 'i> Saver<'a, 'i> {
     fn cell_node(&self, c: &Cell) -> Option<Node<'a, 'i>> {
         fn first(blocks: &[Block]) -> Option<usize> {
             blocks.iter().find_map(|b| match b {
-                Block::Para(p) => p.src.as_ref().map(|s| s.ranges[0].start),
-                Block::Table(t) => t.src.as_ref().map(|r| r.start),
+                Block::Para(p) => p.src().map(|s| s.ranges[0].start),
+                Block::Table(t) => t.src().map(|r| r.start),
             })
         }
         let at = first(&c.blocks)?;
@@ -3010,9 +3009,9 @@ impl<'a, 'i> Saver<'a, 'i> {
     fn carriers<'p>(&self, paras: impl Iterator<Item = &'p Paragraph>) -> HashMap<(u8, i64), *const ParaSrc> {
         let mut out = HashMap::new();
         for q in paras {
-            let Some(s) = &q.src else { continue };
+            let Some(s) = q.src() else { continue };
             for k in q.inlines.iter().filter_map(|i| self.mark_key(i)) {
-                out.insert(k, Rc::as_ptr(s));
+                out.insert(k, s as *const ParaSrc);
             }
         }
         out
@@ -3028,8 +3027,8 @@ impl<'a, 'i> Saver<'a, 'i> {
     ) -> std::collections::HashSet<(u8, i64)> {
         let mut out = std::collections::HashSet::new();
         for p in paras {
-            let Some(s) = &p.src else { continue };
-            out.extend(p.inlines.iter().filter_map(|i| self.mark_key(i)).filter(|k| carriers.get(k) == Some(&Rc::as_ptr(s))));
+            let Some(s) = p.src() else { continue };
+            out.extend(p.inlines.iter().filter_map(|i| self.mark_key(i)).filter(|k| carriers.get(k) == Some(&(s as *const ParaSrc))));
         }
         out
     }
@@ -3038,16 +3037,16 @@ impl<'a, 'i> Saver<'a, 'i> {
     /// as [`Saver::table_xml`]; each in the block-level controls read around it (tables in their new ones too), and
     /// `loose` (the source markup between the blocks, in order) before the block it came before.
     fn blocks_xml(&mut self, orig: Option<&Table>, blocks: &[Block], loose: &[Range<usize>]) -> Result<String, String> {
-        fn find<'t>(blocks: &'t [Block], src: &Rc<ParaSrc>) -> Option<&'t Paragraph> {
+        fn find<'t>(blocks: &'t [Block], src: &ParaSrc) -> Option<&'t Paragraph> {
             blocks.iter().find_map(|b| match b {
-                Block::Para(p) => p.src.as_ref().is_some_and(|s| Rc::ptr_eq(s, src)).then_some(p),
+                Block::Para(p) => p.src().is_some_and(|s| std::ptr::eq(s, src)).then_some(p),
                 Block::Table(t) => t.rows.iter().flat_map(|r| r.cells.iter()).find_map(|c| find(&c.blocks, src)),
             })
         }
-        fn find_table<'t>(blocks: &'t [Block], src: &Rc<Range<usize>>) -> Option<&'t Table> {
+        fn find_table<'t>(blocks: &'t [Block], src: &Range<usize>) -> Option<&'t Table> {
             blocks.iter().find_map(|b| match b {
                 Block::Para(_) => None,
-                Block::Table(t) if t.src.as_ref().is_some_and(|s| Rc::ptr_eq(s, src)) => Some(t),
+                Block::Table(t) if t.src().is_some_and(|s| std::ptr::eq(s, src)) => Some(t),
                 Block::Table(t) => t.rows.iter().flat_map(|r| r.cells.iter()).find_map(|c| find_table(&c.blocks, src)),
             })
         }
@@ -3061,8 +3060,8 @@ impl<'a, 'i> Saver<'a, 'i> {
         let mut open: Vec<ControlId> = Vec::new();
         for b in blocks {
             let (controls, at) = match b {
-                Block::Para(p) => (&p.controls, p.src.as_ref().map(|s| s.ranges[0].start)),
-                Block::Table(t) => (&t.controls, t.src.as_ref().map(|r| r.start)),
+                Block::Para(p) => (&p.controls, p.src().map(|s| s.ranges[0].start)),
+                Block::Table(t) => (&t.controls, t.src().map(|r| r.start)),
             };
             let want: Vec<ControlId> = match b {
                 Block::Para(_) => controls.iter().copied().filter(|c| self.controls.get(c).is_some_and(|k| !k.open.is_empty())).collect(),
@@ -3086,17 +3085,17 @@ impl<'a, 'i> Saver<'a, 'i> {
                 open.push(*c);
             }
             match b {
-                Block::Para(p) => match p.src.as_ref().and_then(|s| cells().find_map(|c| find(&c.blocks, s))) {
+                Block::Para(p) => match p.src().and_then(|s| cells().find_map(|c| find(&c.blocks, s))) {
                     Some(q) => {
                         out.push_str(&emit(self, &[], &[], &std::mem::take(&mut new))?);
-                        let src = q.src.as_deref().ok_or("a paragraph without its source")?;
+                        let src = q.src().ok_or("a paragraph without its source")?;
                         out.push_str(&emit(self, &[q], &[src], &[p])?);
                     }
                     None => new.push(p),
                 },
                 Block::Table(t) => {
                     out.push_str(&emit(self, &[], &[], &std::mem::take(&mut new))?);
-                    let o = t.src.as_ref().and_then(|s| cells().find_map(|c| find_table(&c.blocks, s))).cloned();
+                    let o = t.src().and_then(|s| cells().find_map(|c| find_table(&c.blocks, s))).cloned();
                     out.push_str(&self.table_xml(o.as_ref(), t)?);
                 }
             }
@@ -4542,7 +4541,7 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                 let last = m + 1 == ps.len();
                 // The paragraph it continues: same formatting, else the one it came from, else the group's first.
                 let by_style = qs.iter().position(|q| Rc::ptr_eq(&q.style, &p.style));
-                let by_src = qs.iter().position(|q| q.src.as_ref().zip(p.src.as_ref()).is_some_and(|(a, b)| Rc::ptr_eq(a, b)));
+                let by_src = qs.iter().position(|q| q.src().zip(p.src()).is_some_and(|(a, b)| std::ptr::eq(a, b)));
                 let sect = s.made.get(&p.id).map(String::as_str).or(sect.filter(|_| last));
                 match by_style.or(by_src).or((!qs.is_empty()).then_some(0)) {
                     Some(k) => {
@@ -5616,9 +5615,9 @@ fn emit(s: &Saver, qs: &[&Paragraph], srcs: &[&ParaSrc], ps: &[&Paragraph]) -> R
     Emit::group(s, qs, srcs, ps)
 }
 
-fn same_src(a: &Option<Rc<Range<usize>>>, b: &Option<Rc<Range<usize>>>) -> bool {
+fn same_src(a: Option<&Range<usize>>, b: Option<&Range<usize>>) -> bool {
     match (a, b) {
-        (Some(a), Some(b)) => Rc::ptr_eq(a, b),
+        (Some(a), Some(b)) => std::ptr::eq(a, b),
         (None, None) => true,
         _ => false,
     }

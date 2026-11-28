@@ -90,7 +90,7 @@ fn detach(blocks: &mut [Block]) {
     for b in blocks {
         match b {
             Block::Para(p) => {
-                p.src = None;
+                p.origin = crate::docx::Origin::NONE;
                 for i in &mut p.inlines {
                     if let Inline::Float(f, _) = i {
                         for tb in f.parts.iter_mut().filter_map(|part| part.text_box.as_mut()) {
@@ -103,7 +103,7 @@ fn detach(blocks: &mut [Block]) {
                 }
             }
             Block::Table(t) => {
-                t.src = None;
+                t.origin = crate::docx::Origin::NONE;
                 t.rows.iter_mut().flat_map(|r| r.cells.iter_mut()).for_each(|c| detach(&mut c.blocks));
             }
         }
@@ -150,7 +150,7 @@ fn empty_para(doc: &Document) -> Option<Paragraph> {
         mark,
         list: None,
         inlines: Vec::new(),
-        src: None,
+        origin: crate::docx::Origin::NONE,
         id: crate::docx::next_para_id(),
         div: None,
         controls: Vec::new(),

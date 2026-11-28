@@ -2482,7 +2482,7 @@ impl Editor {
             mark: p.mark.clone(),
             list: p.list.clone(),
             inlines: Vec::new(),
-            src: None,
+            origin: crate::docx::Origin::NONE,
             id: crate::docx::next_para_id(),
             div: None,
             controls: p.controls.clone(),
@@ -2890,7 +2890,7 @@ impl Editor {
     fn add_row(&mut self, table: TableId, after: usize, story: StoryId, fonts: &Fonts) -> Outcome {
         let Some(t) = self.index.table(&self.doc, table) else { return Outcome::Unchanged("no table") };
         let Some(mut row) = t.rows.get(after).cloned() else { return Outcome::Unchanged("no row") };
-        row.src = None;
+        row.origin = crate::docx::Origin::NONE;
         for cell in &mut row.cells {
             let Some(p) = cell.blocks.iter().find_map(|b| match b {
                 Block::Para(p) => Some(p),
@@ -2903,7 +2903,7 @@ impl Editor {
                 mark: p.mark.clone(),
                 list: None,
                 inlines: vec![Inline::Text(String::new(), p.mark.clone())],
-                src: None,
+                origin: crate::docx::Origin::NONE,
                 id: crate::docx::next_para_id(),
                 div: None,
                 controls: Vec::new(),
@@ -4420,8 +4420,11 @@ fn seen_text(p: &Paragraph, review: &crate::docx::review::ReviewView) -> text::S
 /// Whether a paragraph joined to `p` through its vanished mark ends at `u`, its parts showing on their own lines while
 /// hidden text shows.
 fn shown_join_at(p: &Paragraph, u: Unit) -> bool {
-    let Some(src) = &p.src else { return false };
-    p.style.parts.len() == src.joined.len() + 1 && src.joined.iter().any(|j| j.end == u.0)
+    if p.origin.is_none() {
+        return false;
+    }
+    let joined = p.joined_parts();
+    p.style.parts.len() == joined.len() + 1 && joined.iter().any(|j| j.end == u.0)
 }
 
 /// The deepest nesting an edit may make, in table levels. The reader refuses parts nested deeper than

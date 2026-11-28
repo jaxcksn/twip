@@ -94,8 +94,8 @@ fn paragraph_to_edit(doc: &Document) -> (usize, usize) {
     for (s, sec) in doc.sections.iter().enumerate() {
         for (b, block) in sec.blocks.iter().enumerate() {
             let Block::Para(p) = block else { continue };
-            let (Some(ps), true) = (&p.src, p.inlines.iter().any(|i| matches!(i, Inline::Text(..)))) else { continue };
-            let xml = &src.xml[ps.ranges[0].start..ps.ranges[ps.ranges.len() - 1].end];
+            let (Some(range), true) = (crate::docx::read_range(block), p.inlines.iter().any(|i| matches!(i, Inline::Text(..)))) else { continue };
+            let xml = &src.xml[range];
             let marked = ["<w:ins ", "<w:del ", "<w:moveFrom ", "<w:moveTo ", "PrChange", "commentRange", "commentReference", "<w:sectPr"]
                 .iter()
                 .any(|m| xml.contains(m));
@@ -132,7 +132,7 @@ fn an_unrelated_edit_keeps_every_other_paragraph_and_part() {
         let mut doc = read_editable(&bytes).unwrap_or_else(|e| panic!("{name}: {e}"));
         let at = paragraph_to_edit(&doc);
         let edited = match &doc.sections[at.0].blocks[at.1] {
-            Block::Para(p) => p.src.as_ref().map(|s| s.ranges[0].start..s.ranges[s.ranges.len() - 1].end).expect("a source"),
+            Block::Para(_) => crate::docx::read_range(&doc.sections[at.0].blocks[at.1]).expect("a source"),
             Block::Table(_) => unreachable!("a paragraph was chosen"),
         };
         edit(&mut doc, at);
@@ -526,7 +526,7 @@ fn commented(doc: &mut Document) -> Vec<u8> {
             Block::Para(p) => p.clone(),
             Block::Table(_) => unreachable!("a paragraph"),
         };
-        p.src = None;
+        p.origin = crate::docx::Origin::NONE;
         p.inlines = vec![Inline::Text(text.into(), base.clone())];
         vec![Block::Para(p)]
     };
@@ -692,7 +692,7 @@ fn a_reviewed_paragraph_rewritten_from_the_model_reads_back() {
         .expect("a moved paragraph");
     let author = doc.people.author("Author A", None);
     let Block::Para(body) = &doc.sections[0].blocks[0] else { panic!("a paragraph") };
-    let body = vec![Block::Para(Paragraph { src: None, ..body.clone() })];
+    let body = vec![Block::Para(Paragraph { origin: crate::docx::Origin::NONE, ..body.clone() })];
     let comment = Comment {
         id: CommentId(500),
         author,

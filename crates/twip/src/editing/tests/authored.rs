@@ -79,7 +79,16 @@ fn paragraph(defs: &crate::docx::resolvers::Resolvers, ppr: &ParaProps, runs: &[
     let res = Resolver::new(Styles::parse(Some(&xml), colours), Numbering::default(), t.cascade.theme.clone());
     let p = res.paragraph(ppr, None);
     let inlines = runs.iter().map(|(t, rpr)| Inline::Text((*t).into(), res.run_style(&res.run_props(&p.base, rpr)))).collect();
-    Paragraph { mark: res.run_style(&p.base), style: Rc::new(p.style), list: None, inlines, src: None, id, controls: Vec::new(), div: None }
+    Paragraph {
+        mark: res.run_style(&p.base),
+        style: Rc::new(p.style),
+        list: None,
+        inlines,
+        origin: crate::docx::Origin::NONE,
+        id,
+        controls: Vec::new(),
+        div: None,
+    }
 }
 
 fn sourceless(paras: Vec<Paragraph>, res: &crate::docx::resolvers::Resolvers) -> Document {
@@ -535,7 +544,7 @@ fn typed_para(res: &crate::docx::resolvers::Resolvers, props: crate::format::Par
         style: Rc::new(p.style),
         list: None,
         inlines,
-        src: None,
+        origin: crate::docx::Origin::NONE,
         id: next_para_id(),
         controls: Vec::new(),
         div: None,
@@ -728,9 +737,12 @@ fn first_table(d: &Document) -> &crate::docx::Table {
 /// A table's fields as laid out: every one but the identity of what it was read from and of its paragraphs.
 fn bare(t: &crate::docx::Table) -> crate::docx::Table {
     use crate::docx::{Cell, Row, Table};
-    let rows =
-        t.rows.iter().map(|r| Row { src: None, cells: r.cells.iter().map(|c| Cell { blocks: Vec::new(), ..c.clone() }).collect(), ..r.clone() });
-    Table { src: None, id: 0, rows: rows.collect(), ..t.clone() }
+    let rows = t.rows.iter().map(|r| Row {
+        origin: crate::docx::Origin::NONE,
+        cells: r.cells.iter().map(|c| Cell { blocks: Vec::new(), ..c.clone() }).collect(),
+        ..r.clone()
+    });
+    Table { origin: crate::docx::Origin::NONE, id: 0, rows: rows.collect(), ..t.clone() }
 }
 
 /// A table built through the table commands, with no XML behind it (a header row, row heights, cell widths and a

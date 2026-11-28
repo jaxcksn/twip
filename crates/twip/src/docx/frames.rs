@@ -80,8 +80,8 @@ fn anchor_before(out: &mut Vec<Block>, groups: Vec<Vec<Paragraph>>, legacy: bool
 /// The float of a frame's paragraphs, placed by the first's `w:framePr`.
 pub(crate) fn float(group: Vec<Paragraph>, legacy: bool) -> Float {
     let fr = group[0].style.frame.clone().unwrap();
-    let start = group.first().and_then(|p| p.src.as_ref()).and_then(|s| s.ranges.first()).map(|r| r.start);
-    let end = group.last().and_then(|p| p.src.as_ref()).and_then(|s| s.ranges.last()).map(|r| r.end);
+    let start = group.first().and_then(|p| p.src()).and_then(|s| s.ranges.first()).map(|r| r.start);
+    let end = group.last().and_then(|p| p.src()).and_then(|s| s.ranges.last()).map(|r| r.end);
     let frame_src = start.zip(end).map(|(a, b)| a..b);
     let apart = group.iter().any(|p| p.style.suppress_overlap);
     let flow = group[0].style.text_flow;

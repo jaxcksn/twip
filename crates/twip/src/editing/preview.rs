@@ -23,7 +23,7 @@ fn paragraph(style: Rc<crate::docx::ParaStyle>, run: Rc<RunStyle>, text: String)
         mark: run.clone(),
         list: None,
         inlines: vec![Inline::Text(text, run)],
-        src: None,
+        origin: crate::docx::Origin::NONE,
         id: next_para_id(),
         div: None,
         controls: Vec::new(),
@@ -106,7 +106,7 @@ impl Editor {
                         }
                     })
                     .collect(),
-                src: None,
+                origin: crate::docx::Origin::NONE,
                 direct: Default::default(),
                 exceptions: Default::default(),
                 controls: Vec::new(),
@@ -133,7 +133,7 @@ impl Editor {
             bidi_visual: false,
             grid: vec![width; 5],
             rows,
-            src: None,
+            origin: crate::docx::Origin::NONE,
             id: next_para_id(),
             direct: Default::default(),
             controls: Vec::new(),

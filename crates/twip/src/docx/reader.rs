@@ -9,6 +9,7 @@ use roxmltree::Node;
 use super::char_props::{self, RunDirect};
 use super::diagnostics::{Diagnostics, WarningCode};
 use super::model::*;
+use super::origin::ParaSrc;
 use super::para_props::{self, ParaDirect};
 use super::para_xml;
 use super::props::*;
@@ -1758,15 +1759,17 @@ impl Reader {
         }
         let r = para_xml::resolve(&self.res, &Default::default(), None, None);
         let mark = self.typed_run(&Base::new(r.base), RunDirect::default(), false);
-        let src = self
-            .record
-            .then(|| Rc::new(ParaSrc { ranges: vec![at], segs: Vec::new(), simple: Vec::new(), lossy: false, closing: true, joined: Vec::new() }));
+        let origin = if self.record {
+            Origin::new(ParaSrc { ranges: vec![at], segs: Vec::new(), simple: Vec::new(), lossy: false, closing: true, joined: Vec::new() })
+        } else {
+            Origin::NONE
+        };
         blocks.push(Block::Para(Paragraph {
             style: Rc::new(r.style),
             mark,
             list: None,
             inlines: Vec::new(),
-            src,
+            origin,
             id: next_para_id(),
             div: None,
             controls: Vec::new(),
@@ -1777,7 +1780,7 @@ impl Reader {
     /// without a final paragraph closed again where the last went ([`Reader::close_story`]).
     fn drop_paras(&mut self, blocks: &mut Vec<Block>, ids: &HashSet<u64>, story: bool) {
         let end = match blocks.last() {
-            Some(Block::Para(p)) if ids.contains(&p.id) => Some(p.src.as_ref().and_then(|s| s.ranges.first()).map_or(0..0, |r| r.end..r.end)),
+            Some(Block::Para(p)) if ids.contains(&p.id) => Some(p.src().and_then(|s| s.ranges.first()).map_or(0..0, |r| r.end..r.end)),
             _ => None,
         };
         blocks.retain(|b| !matches!(b, Block::Para(p) if ids.contains(&p.id)));
@@ -1966,10 +1969,12 @@ impl Reader {
         let r = para_xml::resolve(&self.res, &Default::default(), None, None);
         let mark = self.typed_run(&Base::new(r.base), RunDirect::default(), false);
         // Written from the model in its place once it holds the content; kept as read while it doesn't.
-        let src = self.record.then(|| {
-            Rc::new(ParaSrc { ranges: vec![n.range()], segs: Vec::new(), simple: Vec::new(), lossy: true, closing: false, joined: Vec::new() })
-        });
-        Some(Paragraph { style: Rc::new(r.style), mark, list: None, inlines: Vec::new(), src, id, div: None, controls: Vec::new() })
+        let origin = if self.record {
+            Origin::new(ParaSrc { ranges: vec![n.range()], segs: Vec::new(), simple: Vec::new(), lossy: true, closing: false, joined: Vec::new() })
+        } else {
+            Origin::NONE
+        };
+        Some(Paragraph { style: Rc::new(r.style), mark, list: None, inlines: Vec::new(), origin, id, div: None, controls: Vec::new() })
     }
 
     /// The documents `w:altChunk`s import ([`Reader::alt_docs`]): each part read once, from this package's budget,
@@ -2337,8 +2342,12 @@ impl Reader {
         self.para_no = outer_para;
         let (segs, lossy, simple) =
             (std::mem::replace(&mut self.segs, outer.0), std::mem::replace(&mut self.lossy, outer.1), std::mem::replace(&mut self.simple, outer.2));
-        let src = self.record.then(|| Rc::new(ParaSrc { ranges: vec![n.range()], segs, simple, lossy, closing: false, joined: Vec::new() }));
-        let para = Paragraph { style: para_style, mark: mark.clone(), list, inlines, src, id: next_para_id(), div: None, controls: Vec::new() };
+        let origin = if self.record {
+            Origin::new(ParaSrc { ranges: vec![n.range()], segs, simple, lossy, closing: false, joined: Vec::new() })
+        } else {
+            Origin::NONE
+        };
+        let para = Paragraph { style: para_style, mark: mark.clone(), list, inlines, origin, id: next_para_id(), div: None, controls: Vec::new() };
 
         let spec = self.pending_spec.take();
         let mut para = match self.pending_hidden.take() {
@@ -2356,24 +2365,25 @@ impl Reader {
                     spec.as_deref(),
                     self.res.cascade().rules.compat == Compat::Legacy,
                 );
-                prev.inlines.extend(para.inlines);
-                let src = match (prev.src, para.src) {
-                    (Some(a), Some(b)) => Some(Rc::new(ParaSrc {
+                let origin = match (prev.src(), para.src()) {
+                    (Some(a), Some(b)) => Origin::new(ParaSrc {
                         ranges: [a.ranges.clone(), b.ranges.clone()].concat(),
                         segs: [a.segs.clone(), b.segs.clone()].concat(),
                         simple: [a.simple.clone(), b.simple.clone()].concat(),
                         lossy: a.lossy || b.lossy,
                         closing: false,
                         joined: [a.joined.clone(), b.joined.clone()].concat(),
-                    })),
-                    (a, b) => a.or(b),
+                    }),
+                    _ if prev.origin.is_some() => prev.origin,
+                    _ => para.origin,
                 };
+                prev.inlines.extend(para.inlines);
                 Paragraph {
                     style: Rc::new(style),
                     mark: para.mark,
                     list: prev.list.or(para.list),
                     inlines: prev.inlines,
-                    src,
+                    origin,
                     id: prev.id,
                     div: None,
                     controls: para.controls,
@@ -2388,8 +2398,10 @@ impl Reader {
                 self.pending_spec = Some(spec.unwrap_or_else(|| para.style.clone()));
             }
             let end = para.inlines.iter().map(Inline::units).sum::<usize>() as u32;
-            if let Some(src) = para.src.as_mut().and_then(Rc::get_mut) {
+            if let Some(src) = para.src() {
+                let mut src = src.clone();
                 src.joined.push(JoinedPart { end, ppr: para.style.direct.clone(), spec_vanish });
+                para.origin = Origin::new(src);
             }
             para.mark = mark;
             self.pending_hidden = Some(para);
@@ -3695,7 +3707,7 @@ impl Reader {
             bidi_visual: tbl.bidi_visual.unwrap_or(false),
             grid,
             rows,
-            src: self.record.then(|| Rc::new(t.range().start..ts[ts.len() - 1].range().end)),
+            origin: if self.record { Origin::new(t.range().start..ts[ts.len() - 1].range().end) } else { Origin::NONE },
             id: next_para_id(),
             direct: held,
             controls: Vec::new(),
@@ -3813,7 +3825,7 @@ impl Reader {
             controls,
             direct,
             exceptions,
-            src: self.record.then(|| Rc::new(rn.range())),
+            origin: if self.record { Origin::new(rn.range()) } else { Origin::NONE },
             rev,
         }
     }

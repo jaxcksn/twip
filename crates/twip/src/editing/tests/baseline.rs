@@ -77,7 +77,7 @@ fn check_blocks(res: &Baseline, cx: &Cx, blocks: &[Block], region: Option<&Regio
     for b in blocks {
         match b {
             Block::Para(p) => {
-                if p.src.as_ref().is_some_and(|s| s.ranges.len() > 1) {
+                if p.read_parts() > 1 {
                     continue;
                 }
                 let mut r = res.para_from_xml(p.style.direct.xml(&res.styles.colours, cx).as_deref(), region, cx);
@@ -1008,7 +1008,7 @@ fn resolve_blocks(
     for b in blocks {
         match b {
             Block::Para(p) => {
-                if p.src.as_ref().is_some_and(|s| s.ranges.len() > 1) {
+                if p.read_parts() > 1 {
                     continue;
                 }
                 let base = char_props::from_run_props(&res.para_from_xml(p.style.direct.xml(&res.styles.colours, cx).as_deref(), region, cx).base);
@@ -1078,7 +1078,7 @@ fn resolve_paras(res: &Baseline, cx: &Cx, blocks: &[Block], region: Option<&Tabl
     for b in blocks {
         match b {
             Block::Para(p) => {
-                if p.src.as_ref().is_some_and(|s| s.ranges.len() > 1) {
+                if p.read_parts() > 1 {
                     continue;
                 }
                 let typed = |raw: Option<&str>| {
@@ -1376,7 +1376,7 @@ fn document_matches(
                         n.counted += 1;
                     }
                 }
-                if p.src.as_ref().is_some_and(|s| s.ranges.len() > 1) {
+                if p.read_parts() > 1 {
                     continue;
                 }
                 let typed = para_xml::of_typed(c, &p.style.direct, region, cx);

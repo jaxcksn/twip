@@ -1952,11 +1952,11 @@ fn continues_after_break(para: &Paragraph, space: &ShapeSpace) -> bool {
 }
 
 /// While hidden text shows, the paragraphs vanished marks joined into `para` ([`crate::docx::ParaStyle::parts`]), with
-/// where each starts (as editing keeps them, [`crate::docx::ParaSrc::joined`]) and the space between each and the next.
+/// where each starts (as editing keeps them, [`Paragraph::joined_parts`]) and the space between each and the next.
 fn shown_parts(para: &Paragraph, text: &TextEnv) -> Option<Parts> {
     use super::paragraph::{gap, space_after, space_before};
     let styles = &para.para_style_in(text.review.view).parts;
-    let ends = &para.src.as_ref()?.joined;
+    let ends = para.joined_parts();
     if !text.review.show_hidden || styles.len() < 2 || ends.len() + 1 != styles.len() {
         return None;
     }
