@@ -4,12 +4,10 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::rc::Rc;
 
-use crate::document::format::{Jc, Width};
+use crate::document::format::{Border, CellDirect, ExceptionsDirect, Jc, Look, RowDirect, TableDirect, Width};
 use crate::docx::model::{
     Block, Cell, HeightRule, Origin, PageSetup, ParaStyle, Paragraph, Raw, Row, Run, RunStyle, Section, SectionPage, Table, VMerge, VerticalAlignment,
 };
-use crate::docx::props::{Border, Look};
-use crate::docx::table_props::{CellDirect, ExceptionsDirect, RowDirect, TableDirect};
 
 /// The people who made revisions and comments, in order of first appearance: an [`AuthorId`] is an index here.
 #[derive(Clone, Debug, Default, PartialEq)]
