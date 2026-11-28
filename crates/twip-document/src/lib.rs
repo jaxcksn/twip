@@ -6,6 +6,7 @@
 #![warn(missing_docs)]
 
 pub mod anchor;
+pub mod authored;
 pub mod content;
 pub mod foreign;
 pub mod format;
