@@ -4,17 +4,19 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::rc::Rc;
 
-use crate::document::format::{Border, CellDirect, ExceptionsDirect, Jc, Look, RowDirect, TableDirect, Width};
-use crate::docx::model::{
+use crate::format::{Border, CellDirect, ExceptionsDirect, Jc, Look, RowDirect, TableDirect, Width};
+use crate::model::{
     Block, Cell, HeightRule, Origin, PageSetup, ParaStyle, Paragraph, Raw, Row, Run, RunStyle, Section, SectionPage, Table, VMerge, VerticalAlignment,
 };
 
 /// The people who made revisions and comments, in order of first appearance: an [`AuthorId`] is an index here.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct People {
+    /// The people, in order.
     pub persons: Vec<Person>,
 }
 
+/// A person who made revisions or comments.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Person {
     /// `w:author`: the name revisions and comments are attributed to.
@@ -29,10 +31,13 @@ pub struct Person {
 #[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Identity {
+    /// The identity provider.
     pub provider: Rc<str>,
+    /// The person's id with the provider.
     pub user_id: Rc<str>,
 }
 
+/// A person, by their index in [`People::persons`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct AuthorId(pub u32);
 
@@ -60,12 +65,13 @@ impl People {
         AuthorId(i as u32)
     }
 
+    /// Person `id`.
     pub fn get(&self, id: AuthorId) -> Option<&Person> {
         self.persons.get(id.0 as usize)
     }
 
     /// The authors a comment or a revision in `doc` names.
-    pub fn named(doc: &crate::docx::model::Document) -> std::collections::HashSet<AuthorId> {
+    pub fn named(doc: &crate::model::Document) -> std::collections::HashSet<AuthorId> {
         fn run(r: &RunStyle, out: &mut std::collections::HashSet<AuthorId>) {
             out.extend([&r.rev.ins, &r.rev.del].into_iter().flatten().map(|m| m.author));
             out.extend(r.rev.fmt.as_ref().map(|f| f.mark.author));
@@ -121,6 +127,7 @@ pub struct RevisionId(pub i64);
 /// A `w:date` (ISO 8601). The text as written is kept so an unchanged date saves exactly as read.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Timestamp {
+    /// The date as written.
     pub raw: Rc<str>,
     /// Seconds since 1970-01-01 UTC; `None` when the text isn't a date this reads.
     pub utc: Option<i64>,
@@ -169,7 +176,7 @@ fn parse_iso(s: &str) -> Option<i64> {
 }
 
 /// Days since 1970-01-01 of a proleptic Gregorian date.
-pub(crate) fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
+pub fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
     let y = if m <= 2 { y - 1 } else { y };
     let era = y.div_euclid(400);
     let yoe = y - era * 400;
@@ -179,7 +186,7 @@ pub(crate) fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
 }
 
 /// The civil date (year, month, day) `z` days after 1970-01-01 (Howard Hinnant's algorithm).
-pub(crate) fn civil_from_days(z: i64) -> (i64, i64, i64) {
+pub fn civil_from_days(z: i64) -> (i64, i64, i64) {
     let z = z + 719_468;
     let era = z.div_euclid(146_097);
     let doe = z - era * 146_097;
@@ -191,11 +198,16 @@ pub(crate) fn civil_from_days(z: i64) -> (i64, i64, i64) {
     (yoe + era * 400 + i64::from(m <= 2), m, d)
 }
 
+/// What a tracked change does.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum MarkKind {
+    /// Inserts.
     Insert,
+    /// Deletes.
     Delete,
+    /// Moves away from here.
     MoveFrom,
+    /// Moves to here.
     MoveTo,
     /// A change of properties (`w:rPrChange`, `w:pPrChange`, a table, row, section or cell change, a merge): the
     /// element holding it says what changed.
@@ -205,9 +217,13 @@ pub enum MarkKind {
 /// One tracked change's identity: shared by every run, mark or row it covers.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RevisionMark {
+    /// Its id.
     pub id: RevisionId,
+    /// Who made it.
     pub author: AuthorId,
+    /// When.
     pub date: Option<Timestamp>,
+    /// What it does.
     pub kind: MarkKind,
     /// The move range a `MoveFrom` / `MoveTo` belongs to: its two ends share it.
     pub move_name: Option<Rc<str>>,
@@ -217,12 +233,16 @@ pub struct RevisionMark {
 /// an insertion), and a formatting change.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct RunRevisions {
+    /// The insertion.
     pub ins: Option<Rc<RevisionMark>>,
+    /// The deletion.
     pub del: Option<Rc<RevisionMark>>,
+    /// The formatting change.
     pub fmt: Option<Rc<FormatChange>>,
 }
 
 impl RunRevisions {
+    /// Whether there are none.
     pub fn is_empty(&self) -> bool {
         self.ins.is_none() && self.del.is_none() && self.fmt.is_none()
     }
@@ -231,6 +251,7 @@ impl RunRevisions {
 /// `w:rPrChange`: the run's formatting before the change.
 #[derive(Clone, Debug, PartialEq)]
 pub struct FormatChange {
+    /// The change.
     pub mark: Rc<RevisionMark>,
     /// The formatting before, its authored properties ([`RunStyle::direct`]) the earlier `w:rPr`.
     pub previous: Rc<RunStyle>,
@@ -239,6 +260,7 @@ pub struct FormatChange {
 /// `w:pPrChange`: the paragraph's properties before the change.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ParaChange {
+    /// The change.
     pub mark: Rc<RevisionMark>,
     /// The formatting before the change; its authored properties are those the change records.
     pub previous: Rc<ParaStyle>,
@@ -258,8 +280,11 @@ impl ParaChange {
 /// `w:sectPrChange`: the section's page before the change.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SectionChange {
+    /// The change.
     pub mark: Rc<RevisionMark>,
+    /// The page before the change.
     pub previous: SectionPage,
+    /// The earlier `w:sectPr` as written.
     pub previous_raw: Raw,
 }
 
@@ -273,6 +298,7 @@ impl SectionChange {
 /// `w:tblPrChange`, `w:tblPrExChange`, `w:trPrChange` or `w:tcPrChange`: the properties before the change.
 #[derive(Clone, Debug, PartialEq)]
 pub struct TableChange {
+    /// The change.
     pub mark: Rc<RevisionMark>,
     /// The earlier authored properties, for saving.
     pub previous_direct: PreviousDirect,
@@ -286,26 +312,49 @@ pub struct TableChange {
 pub enum PreviousProps {
     /// `w:tblPrChange`: the table's own properties.
     Table {
+        /// The table style.
         style_id: Option<String>,
+        /// Its preferred width.
         width: Width,
+        /// Alignment.
         jc: Jc,
+        /// Indent, points.
         ind: f64,
+        /// Borders, as [`Table::borders`].
         borders: [Option<Border>; 6],
+        /// Fixed layout.
         fixed: bool,
+        /// Cell spacing, points.
         cell_spacing: f64,
+        /// Which table style regions apply.
         look: Option<Look>,
+        /// The banding.
         bands: (i64, i64),
     },
     /// `w:trPrChange`.
-    Row { height: Option<(f64, HeightRule)>, cant_split: bool, header: bool },
+    Row {
+        /// Its height and how it applies.
+        height: Option<(f64, HeightRule)>,
+        /// It can't break across pages.
+        cant_split: bool,
+        /// A header row.
+        header: bool,
+    },
     /// `w:tcPrChange`: borders and margins top, left, bottom, right.
     Cell {
+        /// Width.
         width: Option<Width>,
+        /// Borders.
         borders: [Option<Border>; 4],
+        /// The shading's colour.
         shading: Option<u32>,
+        /// Margins, points.
         margins: [f64; 4],
+        /// Vertical alignment.
         v_align: VerticalAlignment,
+        /// Text direction, as written.
         text_direction: String,
+        /// No wrapping.
         no_wrap: bool,
     },
 }
@@ -354,44 +403,64 @@ impl PreviousProps {
 /// `w:tblGridChange`: the column widths before the change, points.
 #[derive(Clone, Debug, PartialEq)]
 pub struct GridChange {
+    /// The change.
     pub mark: Rc<RevisionMark>,
+    /// The column widths before, points.
     pub previous: Vec<f64>,
 }
 
+/// A row's tracked changes.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct RowRevisions {
     /// `w:trPr/w:ins`, `w:trPr/w:del`: the row was inserted or deleted.
     pub ins: Option<Rc<RevisionMark>>,
+    /// The deletion.
     pub del: Option<Rc<RevisionMark>>,
+    /// A change of its properties (`w:trPrChange`).
     pub change: Option<Rc<TableChange>>,
     /// `w:tblPrEx/w:tblPrExChange`.
     pub ex_change: Option<Rc<TableChange>>,
 }
 
+/// What a cell's structural change does.
 #[derive(Clone, Debug, PartialEq)]
 pub enum CellMarkKind {
+    /// Inserts the cell.
     Insert,
+    /// Deletes the cell.
     Delete,
     /// `w:cellMerge`: a vertical merge changed (`w:vMerge`, `w:vMergeOrig`).
     Merge {
+        /// The merge now.
         v_merge: Option<VMerge>,
+        /// The merge before.
         v_merge_orig: Option<VMerge>,
     },
 }
 
+/// A cell's tracked changes.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct CellRevisions {
+    /// An insertion, deletion or merge of the cell.
     pub structural: Option<(Rc<RevisionMark>, CellMarkKind)>,
+    /// A change of its properties (`w:tcPrChange`).
     pub change: Option<Rc<TableChange>>,
 }
 
+/// What a range marker marks.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum RangeKind {
+    /// A comment's range starts.
     CommentStart,
+    /// A comment's range ends.
     CommentEnd,
+    /// A move's source starts.
     MoveFromStart,
+    /// A move's source ends.
     MoveFromEnd,
+    /// A move's destination starts.
     MoveToStart,
+    /// A move's destination ends.
     MoveToEnd,
     /// `w:bookmarkStart`.
     BookmarkStart,
@@ -406,6 +475,7 @@ pub enum RangeKind {
 /// Where a comment's, move's, bookmark's or editing permission's range starts or ends: no units.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RangeMark {
+    /// What it marks.
     pub kind: RangeKind,
     /// The comment's id, or the move range's or editing permission's `w:id`; 0 for a bookmark, which is known by its
     /// name (the writer numbers bookmarks).
@@ -475,14 +545,20 @@ pub enum RangeEditor {
     User(String),
 }
 
+/// A comment, by its id.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct CommentId(pub i64);
 
+/// A comment.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Comment {
+    /// Its id.
     pub id: CommentId,
+    /// Who wrote it.
     pub author: AuthorId,
+    /// Its author's initials, as written.
     pub initials: Option<Rc<str>>,
+    /// When.
     pub date: Option<Timestamp>,
     /// `w16cex:dateUtc` in the extensible comments part.
     pub date_utc: Option<Timestamp>,
@@ -500,8 +576,10 @@ pub struct Comment {
     pub extensible: Raw,
 }
 
+/// A document's comments.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Comments {
+    /// By id.
     pub by_id: BTreeMap<CommentId, Comment>,
 }
 
@@ -582,12 +660,16 @@ impl Comments {
 /// What `w:documentProtection` allows (`w:edit`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ProtectionKind {
+    /// No protection.
     #[default]
     None,
+    /// Read only.
     ReadOnly,
+    /// Comments only.
     Comments,
     /// Every edit is tracked, and tracking can't be turned off.
     TrackedChanges,
+    /// Filling in forms only.
     Forms,
 }
 
@@ -595,12 +677,15 @@ pub enum ProtectionKind {
 /// (with its password hash) for saving.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Protection {
+    /// What it allows.
     pub edit: ProtectionKind,
+    /// It is enforced.
     pub enforced: bool,
     /// `w:formatting`: formatting is limited to the styles that aren't locked.
     pub formatting: bool,
     /// The password's hash, salt, spin count and algorithm (`w:cryptAlgorithmSid` or `w:algorithmName`).
     pub password: Option<Password>,
+    /// The element as written.
     pub raw: Raw,
 }
 
@@ -611,7 +696,9 @@ pub struct Password {
     pub algorithm: String,
     /// Base64.
     pub hash: String,
+    /// Base64.
     pub salt: String,
+    /// How many times it is hashed again.
     pub spin: u32,
 }
 
@@ -710,6 +797,7 @@ impl ShowMarkup {
     }
 }
 
+/// `run` as `view` shows it: a formatting change's earlier formatting in the original.
 pub fn run_in(run: &Run, view: MarkupView) -> &Run {
     match (&run.rev.fmt, view) {
         (Some(f), MarkupView::Original) => &f.previous,
@@ -718,6 +806,7 @@ pub fn run_in(run: &Run, view: MarkupView) -> &Run {
 }
 
 impl Paragraph {
+    /// The paragraph's style as `view` shows it.
     pub fn para_style_in(&self, view: MarkupView) -> &Rc<ParaStyle> {
         match (&self.style.change, view) {
             (Some(c), MarkupView::Original) => &c.previous,
@@ -725,12 +814,14 @@ impl Paragraph {
         }
     }
 
+    /// The mark's formatting as `view` shows it.
     pub fn mark_in(&self, view: MarkupView) -> &Run {
         run_in(&self.mark, view)
     }
 }
 
 impl Section {
+    /// The section's page as `view` shows it.
     pub fn section_in(&self, view: MarkupView) -> PageSetup<'_> {
         match (&self.change, view) {
             (Some(c), MarkupView::Original) => PageSetup::from(&c.previous),
@@ -740,6 +831,7 @@ impl Section {
 }
 
 impl Cell {
+    /// The cell's place in a vertical merge as `view` shows it.
     pub fn v_merge_in(&self, view: MarkupView) -> VMerge {
         match (&self.rev.structural, view) {
             (Some((_, CellMarkKind::Merge { v_merge_orig, .. })), MarkupView::Original) => v_merge_orig.unwrap_or(VMerge::None),
@@ -749,6 +841,7 @@ impl Cell {
 }
 
 impl Table {
+    /// The table's column grid as `view` shows it.
     pub fn table_grid_in(&self, view: MarkupView) -> &[f64] {
         match (&self.grid_change, view) {
             (Some(c), MarkupView::Original) => &c.previous,

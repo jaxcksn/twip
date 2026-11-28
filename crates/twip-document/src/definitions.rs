@@ -3,13 +3,13 @@
 use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
 
-use crate::document::origin::Origin;
-use crate::document::paragraph::ListId;
 use crate::format::cascade::Cascade;
 use crate::format::{
     CharProps, Defaults, DefaultsDef, LatentDef, ListDefDirect, ListDefId, ListDirect, Lists, ParaProps, PictureDirect, Style, StyleDef, StyleKind,
     StyleSheet, ThemeColours,
 };
+use crate::origin::Origin;
+use crate::paragraph::ListId;
 
 /// Why a style edit is refused.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

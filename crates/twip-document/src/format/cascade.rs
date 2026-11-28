@@ -10,10 +10,10 @@ use super::{
     CellMargins, CellProps, CharProps, Color, ListChoice, ListDefId, ListLevel, Lists, ParaProps, RegionKind, Style, StyleEntry, StyleFormat,
     StyleKind, StyleSheet, TableBorders, TableProps,
 };
-use crate::document::format::{Look, ThemeColours, ThemeFonts, Width};
-use crate::document::paragraph::{ListId, ListJc};
-use crate::docx::font_table::GenericFamily;
-use crate::docx::model::{Division, ListRef, ParaStyle, Run, RunStyle, Table};
+use crate::fonts::GenericFamily;
+use crate::format::{Look, ThemeColours, ThemeFonts, Width};
+use crate::model::{Division, ListRef, ParaStyle, Run, RunStyle, Table};
+use crate::paragraph::{ListId, ListJc};
 
 /// How far a style chain is followed: a chain longer than this is cut, as the reader cuts it.
 const MAX_CHAIN: usize = 32;
@@ -28,7 +28,7 @@ pub const REGION_ORDER: [RegionKind; 12] = {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Rules {
     /// The generation of Word's layout the document asks for.
-    pub compat: crate::document::policy::Compat,
+    pub compat: crate::policy::Compat,
     /// Word 2002's table style rules: a corner region doesn't turn on its row's or column's look bit.
     pub word2002_rules: bool,
     /// A 12pt Normal gives way to a table style's size in cells, and an 11pt cell mark takes its paragraph's.
@@ -204,7 +204,7 @@ impl Cascade {
     }
 
     /// A style and its base styles, root first: a frozen table style's chain stops at it, a style met again or a chain
-    /// past [`MAX_CHAIN`] ends it.
+    /// past `MAX_CHAIN` ends it.
     pub fn chain(&self, id: Option<&str>) -> Vec<&StyleEntry> {
         let mut out: Vec<&StyleEntry> = Vec::new();
         let mut cur = id.and_then(|i| self.styles.styles.get(i));
@@ -434,7 +434,7 @@ impl Cascade {
     }
 
     /// The image a bullet level draws: its picture bullet's.
-    pub fn bullet_image(&self, level: &ListLevel) -> Option<crate::document::ident::ResourceId> {
+    pub fn bullet_image(&self, level: &ListLevel) -> Option<crate::ident::ResourceId> {
         self.lists.bullet_image(level)
     }
 

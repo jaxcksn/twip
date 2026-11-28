@@ -1,5 +1,6 @@
 # The model types whose equality reaches a run format, a paragraph format or raw property XML, by file.
-crates/twip/src/docx/model.rs RunStyle ParaStyle Inline Paragraph Block Table Row Cell Float Picture TextBox GroupPart InlineText Ruby FormField ListLabel DivEdge Section BuildingBlock Glossary GlossarySource Control FieldEdge
-crates/twip/src/docx/review/data.rs FormatChange ParaChange TableChange SectionChange RunRevisions RowRevisions CellRevisions Comment Comments Protection PreviousDirect
+crates/twip-document/src/model.rs RunStyle ParaStyle Inline Paragraph Block Table Row Cell Float Picture TextBox GroupPart InlineText Ruby FormField ListLabel DivEdge Section BuildingBlock Glossary Control FieldEdge
+crates/twip/src/docx/model.rs GlossarySource
+crates/twip-document/src/review.rs FormatChange ParaChange TableChange SectionChange RunRevisions RowRevisions CellRevisions Comment Comments Protection PreviousDirect
 crates/twip-document/src/authored.rs Authored
 crates/twip-document/src/foreign.rs Foreign

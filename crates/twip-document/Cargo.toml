@@ -13,7 +13,7 @@ include = ["src/**/*", "Cargo.toml", "README.md"]
 # No XML, archive or layout dependency: what a document holds, independent of any file format. Serde for the types
 # the API carries as they are (font descriptions, identities).
 [dependencies]
-serde = { version = "1", features = ["derive"] }
+serde = { version = "1", features = ["derive", "rc"] }
 
 # The preset geometry tests' reference outlines (src/graphic/geom/reference-outlines.json).
 [dev-dependencies]

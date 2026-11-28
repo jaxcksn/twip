@@ -1,5 +1,11 @@
 //! Formatting, independent of any file format: plain values, and what one level (a run, a paragraph, a table, a
-//! style, a list level, the document defaults) sets of its own, unset kept apart from set
+//! style, a list level, the document defaults) sets of its own, unset kept apart from set; and resolving it:
+//! [`resolve`] folds levels into the effective [`crate::model::RunStyle`] and [`crate::model::ParaStyle`], [`cascade`]
+//! follows style chains, table style regions and list levels, [`counters`] numbers lists.
+
+pub mod cascade;
+pub mod counters;
+pub mod resolve;
 
 mod list;
 mod para;

@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 
 use super::cascade::Cascade;
 use super::{ListDefId, NumberFormat};
-use crate::document::paragraph::ListId;
+use crate::paragraph::ListId;
 
 /// The numbers lists are at, by definition (lists numbering with the same definition count together), as a story's
 /// paragraphs are read in order.
@@ -72,7 +72,7 @@ impl Counters {
                 let v = vals[k].unwrap_or(1);
                 let fmt = levels[k].map_or("decimal", |l| format_name(l.format.as_ref()));
                 let fmt = if level.legal == Some(true) && fmt != "decimalZero" { "decimal" } else { fmt };
-                out.push_str(&crate::document::numbers::format_number(v, fmt));
+                out.push_str(&crate::numbers::format_number(v, fmt));
                 continue;
             }
             out.push(ch);

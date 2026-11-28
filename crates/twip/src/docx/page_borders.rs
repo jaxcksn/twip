@@ -6,7 +6,6 @@
 //! duplicates of an edge (the first one counts) whole, and an edge with content whole beside its typed value.
 
 use std::borrow::Cow;
-use std::convert::Infallible;
 use std::fmt::Write as _;
 use std::rc::Rc;
 
@@ -29,9 +28,7 @@ const EDGES: [&str; 4] = ["top", "left", "bottom", "right"];
 /// The modelled attributes of the element and of an edge, in the order they are written.
 const WRITTEN: [&str; 11] = ["offsetFrom", "display", "zOrder", "val", "sz", "space", "color", "themeColor", "themeTint", "themeShade", "shadow"];
 
-/// A section's authored page borders: typed (`None`: no `w:pgBorders`), with the `w:pgBorders` they were read from
-/// in their origin's [`AsRead`] record. Nothing records what edits set: an edit sets the borders whole.
-pub type PageBordersDirect = Authored<Option<Rc<PageBorderProps>>, Infallible>;
+pub use crate::format::PageBordersDirect;
 
 /// What the WordprocessingML adapter adds to a section's authored page borders: the `w:pgBorders` they were read from
 /// and are written as. The written form stands for the borders only while they are the ones it was read as.

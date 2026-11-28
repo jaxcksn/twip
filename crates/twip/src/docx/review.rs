@@ -6,9 +6,7 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
-mod data;
-
-pub use data::*;
+pub use crate::document::review::*;
 
 /// A protection password's hashing, as Word hashes it.
 pub trait PasswordHash: Sized {

@@ -14,7 +14,8 @@ listed as well.
     derive   a derived `PartialEq` on a containing type; its users are listed under that type
 
 A site is keyed by file, enclosing function, compared type and source line, so it survives edits elsewhere in the
-file. The check fails when a site is new, gone, or unclassified (`?`), or when a type in FORBIDDEN is compared.
+file. The document model (twip-document) is checked as a module of twip, so that its own comparisons, which no longer
+compile once stripped, don't stop the build before twip's are reported. The check fails when a site is new, gone, or unclassified (`?`), or when a type in FORBIDDEN is compared.
 
 Run: python3 -I crates/twip/tests/equality/audit.py [--write]
 `--write` rewrites sites.txt, keeping the relation of every site it still finds and marking new ones `?`.
@@ -30,6 +31,7 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+MODEL = "crates/twip-document"
 REPO = HERE.parents[3]
 WORK = REPO / "target" / "equality-audit"
 COPY = WORK / "workspace"
@@ -63,6 +65,35 @@ def sync():
     for name in ("crates", ".cargo"):
         shutil.rmtree(COPY / name, ignore_errors=True)
         shutil.copytree(REPO / name, COPY / name, ignore=skip)
+    inline_model()
+
+
+def inline_model():
+    """Makes the scratch copy's document model a module of twip: its `crate::` paths become `crate::document::`, and
+    twip includes its sources in place of depending on the crate."""
+    for f in (COPY / MODEL / "src").rglob("*.rs"):
+        f.write_text(f.read_text(encoding="utf-8").replace("crate::", "crate::document::"), encoding="utf-8")
+    lib = COPY / "crates/twip/src/lib.rs"
+    text = lib.read_text(encoding="utf-8")
+    for a, b in (
+        ("pub(crate) use twip_document as document;", '#[path = "../../twip-document/src/lib.rs"]\npub(crate) mod document;'),
+        ("pub use twip_document::*;", "pub use crate::document::*;"),
+    ):
+        if a not in text:
+            sys.exit(f"crates/twip/src/lib.rs no longer has `{a}`; update inline_model")
+        text = text.replace(a, b)
+    lib.write_text(text, encoding="utf-8")
+    manifest = COPY / "crates/twip/Cargo.toml"
+    lines = manifest.read_text(encoding="utf-8").split("\n")
+    manifest.write_text("\n".join(l for l in lines if not l.startswith("twip-document =")), encoding="utf-8")
+
+
+def source_lines(path):
+    """The lines of the scratch copy's `path`, a document model file's with its paths as they are in the workspace."""
+    text = (COPY / path).read_text(encoding="utf-8")
+    if path.startswith(MODEL + "/"):
+        text = text.replace("crate::document::", "crate::")
+    return text.split("\n")
 
 
 def strip(types):
@@ -117,8 +148,8 @@ def from_derive(span):
     exp = span.get("expansion")
     while exp is not None:
         if exp.get("macro_decl_name") in ("#[derive(PartialEq)]", "#[derive(Eq)]"):
-            path = exp["span"]["file_name"]
-            lines = (COPY / path).read_text(encoding="utf-8").split("\n")
+            path = os.path.normpath(exp["span"]["file_name"])
+            lines = source_lines(path)
             for line in lines[exp["span"]["line_start"] - 1:]:
                 m = ITEM.match(line)
                 if m:
@@ -172,17 +203,23 @@ def check():
             if primary is None:
                 continue
             item = from_derive(primary)
-            if item:
-                derived.add(item)
             span = local(primary)
             if span is None:
+                if item:
+                    derived.add(item)
                 continue
-            path = span["file_name"].removeprefix(str(COPY) + "/")
-            lines = (COPY / path).read_text(encoding="utf-8").split("\n")
+            path = os.path.normpath(span["file_name"].removeprefix(str(COPY) + "/"))
+            lines = source_lines(path)
             at = span["line_start"]
             ty = item[1] if item else compared(m["message"])
             func = "-" if item else enclosing_fn(lines, at)
-            found.append((path, func, ty, " ".join(lines[at - 1].split()), "derive" if item else None))
+            site = (path, func, ty, " ".join(lines[at - 1].split()), "derive" if item else None)
+            # The model's own tests are its crate's, not twip's: only its library sites count
+            if target == ["--tests"] and path.startswith(MODEL + "/") and site not in found:
+                continue
+            if item:
+                derived.add(item)
+            found.append(site)
     return found, derived
 
 

@@ -1,14 +1,14 @@
 # relation	file	function	type	line (see audit.py for the relations)
 none	crates/twip/src/docx/merge_tests.rs	controls_read_with_their_properties	Inline	assert!(p.iter().any(|p| p.inlines.contains(&Inline::ControlStart(name)) && p.inlines.contains(&Inline::ControlEnd(name))));
-derive	crates/twip/src/docx/model.rs	-	Edge	#[derive(PartialEq)]
-derive	crates/twip/src/docx/model.rs	-	SectionPage	#[derive(PartialEq)]
-A	crates/twip/src/docx/model.rs	authored_eq	&Section	self == o
-A	crates/twip/src/docx/model.rs	authored_eq	&SectionPage	self == o && self.page_borders_direct.authored_eq(&o.page_borders_direct)
-A	crates/twip/src/docx/model.rs	authored_eq	(&Option<Rc<TableChange>>, &Option<Rc<GridChange>>)	&& (&self.change, &self.grid_change) == (&o.change, &o.grid_change)
-A	crates/twip/src/docx/model.rs	authored_eq	CellRevisions	&& self.rev == o.rev
-A	crates/twip/src/docx/model.rs	authored_eq	RowRevisions	&& self.rev == o.rev
-L	crates/twip/src/docx/model.rs	layout_eq	Option<Rc<ParaChange>>	&& *change == o.change
-L	crates/twip/src/docx/model.rs	layout_eq	RunRevisions	&& *rev == o.rev
+derive	crates/twip-document/src/model.rs	-	Edge	#[derive(PartialEq)]
+derive	crates/twip-document/src/model.rs	-	SectionPage	#[derive(PartialEq)]
+A	crates/twip-document/src/model.rs	authored_eq	&Section	self == o
+A	crates/twip-document/src/model.rs	authored_eq	&SectionPage	self == o && self.page_borders_direct.authored_eq(&o.page_borders_direct)
+A	crates/twip-document/src/model.rs	authored_eq	(&Option<Rc<TableChange>>, &Option<Rc<GridChange>>)	&& (&self.change, &self.grid_change) == (&o.change, &o.grid_change)
+A	crates/twip-document/src/model.rs	authored_eq	CellRevisions	&& self.rev == o.rev
+A	crates/twip-document/src/model.rs	authored_eq	RowRevisions	&& self.rev == o.rev
+L	crates/twip-document/src/model.rs	layout_eq	Option<Rc<ParaChange>>	&& *change == o.change
+L	crates/twip-document/src/model.rs	layout_eq	RunRevisions	&& *rev == o.rev
 L	crates/twip/src/docx/origin.rs	same_but_story	Vec<GroupPart>	&& *parts == o.parts
 L	crates/twip/src/docx/resolve.rs	check	ParaStyle	assert_eq!(*p.style, r.style, "{what}: paragraph {:?}", p.id);
 L	crates/twip/src/docx/resolve.rs	check	RunStyle	assert_eq!(**run, *res.rerun(&r.base, run, cx), "{what}: run {t:?} of {:?}", p.id);

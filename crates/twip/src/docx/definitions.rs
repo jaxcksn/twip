@@ -7,9 +7,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-mod data;
-
-pub use data::*;
+pub use crate::document::definitions::*;
 
 use super::font_table::{FontRename, rename_char};
 use super::list_xml::{ListDefDirect, ListDirect, NumberingXml, PictureDirect};

@@ -48,3 +48,7 @@ pub enum PageBorderZOrder {
     /// Behind them.
     Back,
 }
+
+/// A section's authored page borders: typed (`None`: none written), with where they were read from in their origin.
+/// Nothing records what edits set: an edit sets the borders whole.
+pub type PageBordersDirect = crate::authored::Authored<Option<Rc<PageBorderProps>>, std::convert::Infallible>;
