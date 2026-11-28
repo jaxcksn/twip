@@ -1851,6 +1851,46 @@ pub struct Table {
     pub grid_change: Option<Rc<GridChange>>,
 }
 
+impl Cell {
+    /// Authored equality of the cell's own state: its width, span and merge, its authored properties, its revisions
+    /// and its ids. Its blocks are compared as blocks.
+    pub fn authored_eq(&self, o: &Cell) -> bool {
+        self.width == o.width
+            && self.span == o.span
+            && self.v_merge == o.v_merge
+            && self.direct.authored_eq(&o.direct)
+            && self.rev == o.rev
+            && self.ids == o.ids
+    }
+}
+
+impl Row {
+    /// Authored equality of the row's own state: its grid offsets, authored properties and exceptions, its revisions
+    /// and its cells' own state. Resolved values (height, header, can't split) are not compared.
+    pub fn authored_eq(&self, o: &Row) -> bool {
+        (self.grid_before, self.grid_after) == (o.grid_before, o.grid_after)
+            && self.direct.authored_eq(&o.direct)
+            && self.exceptions.authored_eq(&o.exceptions)
+            && self.rev == o.rev
+            && self.cells.len() == o.cells.len()
+            && self.cells.iter().zip(&o.cells).all(|(c, d)| c.authored_eq(d))
+    }
+}
+
+impl Table {
+    /// Authored equality of the table's own state: its authored properties, look, position, alternative text, grid
+    /// and tracked changes. Resolved values (style, width, alignment, indent, layout, spacing) and rows are not
+    /// compared.
+    pub fn authored_eq(&self, o: &Table) -> bool {
+        self.direct.authored_eq(&o.direct)
+            && self.look == o.look
+            && self.floating == o.floating
+            && self.alt == o.alt
+            && self.grid == o.grid
+            && (&self.change, &self.grid_change) == (&o.change, &o.grid_change)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 #[allow(clippy::large_enum_variant, reason = "paragraphs dominate; boxing them costs an allocation each")]
 pub enum Block {

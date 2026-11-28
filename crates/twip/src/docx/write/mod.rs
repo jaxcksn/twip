@@ -2388,24 +2388,13 @@ impl<'a, 'i> Saver<'a, 'i> {
     fn table(&mut self, a: &Table, b: &Table) -> Result<(), String> {
         let same_rows = a.rows.len() == b.rows.len()
             && a.rows.iter().zip(&b.rows).all(|(x, y)| {
-                x.cells.len() == y.cells.len()
+                x.authored_eq(y)
                     && x.controls == y.controls
                     && x.cells.iter().zip(&y.cells).all(|(c, d)| c.controls == d.controls)
                     && same_src(x.src(), y.src())
+                    && (x.hidden, x.jc) == (y.hidden, y.jc)
                     && x.height == y.height
-                    && (x.header, x.cant_split, x.hidden, x.jc) == (y.header, y.cant_split, y.hidden, y.jc)
-                    && x.direct.authored_eq(&y.direct)
-                    && x.exceptions.authored_eq(&y.exceptions)
-                    && (x.grid_before, x.grid_after) == (y.grid_before, y.grid_after)
-                    && x.rev == y.rev
-                    && x.cells.iter().zip(&y.cells).all(|(c, d)| {
-                        c.width == d.width
-                            && c.span == d.span
-                            && c.direct.authored_eq(&d.direct)
-                            && c.v_merge == d.v_merge
-                            && c.rev == d.rev
-                            && c.ids == d.ids
-                    })
+                    && (x.header, x.cant_split) == (y.header, y.cant_split)
             })
             && a.grid == b.grid
             && (&a.change, &a.grid_change) == (&b.change, &b.grid_change)
