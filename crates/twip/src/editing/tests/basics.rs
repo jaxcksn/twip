@@ -883,7 +883,7 @@ fn a_row_inserted_in_a_repeating_section_saves_as_its_own_item() {
     type_text(&mut e, "Item 2b");
     let edited = shape(&e);
     assert_eq!(edited.len(), 6);
-    assert_eq!(edited[3], vec!["Some(RepeatingSection)".to_string(), "Some(RepeatingItem)".to_string()]);
+    assert_eq!(edited[3], vec!["Some(RepeatingSection { title: None, fixed: false })".to_string(), "Some(RepeatingItem)".to_string()]);
     assert_eq!(distinct_items(&e), 4);
     let bytes = crate::docx::write::save(e.document()).expect("saves");
     if let Some(d) = std::env::var_os("RT_KEEP") {

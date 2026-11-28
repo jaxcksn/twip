@@ -271,10 +271,10 @@ fn elements(doc: &Document, idx: &DocIndex, out: &mut Vec<Violation>) {
                 let kind = doc.controls.get(c).map(|c| &c.props.kind);
                 let next = list.get(k + 1).and_then(|n| doc.controls.get(n)).map(|c| &c.props.kind);
                 let prev = k.checked_sub(1).and_then(|p| doc.controls.get(&list[p])).map(|c| &c.props.kind);
-                if kind == Some(&ControlKind::RepeatingItem) && prev != Some(&ControlKind::RepeatingSection) {
+                if kind == Some(&ControlKind::RepeatingItem) && !matches!(prev, Some(ControlKind::RepeatingSection { .. })) {
                     out.push(Violation { invariant: "C3 item in a section", detail: format!("{what}: item {c:?} not directly in a section") });
                 }
-                if kind == Some(&ControlKind::RepeatingSection) && next != Some(&ControlKind::RepeatingItem) {
+                if matches!(kind, Some(ControlKind::RepeatingSection { .. })) && next != Some(&ControlKind::RepeatingItem) {
                     out.push(Violation { invariant: "C3 item in a section", detail: format!("{what}: section {c:?} without an item") });
                 }
             }

@@ -491,7 +491,8 @@ impl Editor {
         let mut mine = 0;
         let fills = |c: &crate::docx::ControlId| {
             self.doc.controls.get(c).is_some_and(|k| {
-                k.props.lock.editable() && !matches!(k.props.kind, ControlKind::Group | ControlKind::RepeatingSection | ControlKind::RepeatingItem)
+                k.props.lock.editable()
+                    && !matches!(k.props.kind, ControlKind::Group | ControlKind::RepeatingSection { .. } | ControlKind::RepeatingItem)
             })
         };
         let mut seen = std::collections::HashSet::new();

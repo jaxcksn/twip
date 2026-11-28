@@ -7245,13 +7245,17 @@ pub(crate) fn control_open(w: &str, id: ControlId, c: &Control) -> String {
         (_, ControlKind::Date { .. }) => controls::date_xml(w, p),
         (Some(x), _) if x.kind == p.kind => x.xml.clone(),
         (_, ControlKind::Checkbox { value, .. }) => controls::checkbox_edited(p, value.unwrap_or(false)).unwrap_or_default(),
-        (Some(x), ControlKind::RepeatingSection) => x.xml.clone(),
         (_, ControlKind::PlainText { multi_line: true }) => format!("<{w}text {w}multiLine=\"1\"/>"),
         (_, ControlKind::PlainText { .. }) => format!("<{w}text/>"),
         (_, ControlKind::RichText) => format!("<{w}richText/>"),
         (_, ControlKind::Picture) => format!("<{w}picture/>"),
         (_, ControlKind::Group) => format!("<{w}group/>"),
-        (_, ControlKind::RepeatingSection) => format!("<w15:repeatingSection xmlns:w15=\"{w15}\"/>"),
+        (None, ControlKind::RepeatingSection { title: None, fixed: false }) => format!("<w15:repeatingSection xmlns:w15=\"{w15}\"/>"),
+        (_, ControlKind::RepeatingSection { title, fixed }) => {
+            let title = title.as_ref().map_or(String::new(), |t| format!(r#"<w15:sectionTitle w15:val="{}"/>"#, esc(t)));
+            let fixed = if *fixed { "<w15:doNotAllowInsertDeleteSection/>" } else { "" };
+            format!(r#"<w15:repeatingSection xmlns:w15="{w15}">{title}{fixed}</w15:repeatingSection>"#)
+        }
         (_, ControlKind::RepeatingItem) => format!("<w15:repeatingSectionItem xmlns:w15=\"{w15}\"/>"),
     };
     format!("<{w}sdt><{w}sdtPr>{pr}{kind}</{w}sdtPr><{w}sdtContent>")

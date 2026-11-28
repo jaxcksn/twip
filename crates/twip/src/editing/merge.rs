@@ -547,7 +547,7 @@ impl Editor {
     /// Control `c` and, for a repeating section, its own items (those right inside it: a nested section's stay).
     fn with_items<'l>(&self, c: ControlId, lists: impl Iterator<Item = &'l Vec<ControlId>>) -> Vec<ControlId> {
         let mut gone = vec![c];
-        if self.doc.controls.get(&c).is_some_and(|k| k.props.kind == ControlKind::RepeatingSection) {
+        if self.doc.controls.get(&c).is_some_and(|k| matches!(k.props.kind, ControlKind::RepeatingSection { .. })) {
             for list in lists {
                 let item = list.iter().position(|x| *x == c).and_then(|k| list.get(k + 1));
                 if let Some(x) = item
@@ -568,7 +568,8 @@ impl Editor {
 
     fn region_wrap(&mut self, r: RepeatingSection, fonts: &Fonts) -> Result<Outcome, Refused> {
         self.editable_target()?;
-        let section = ControlProps { kind: ControlKind::RepeatingSection, tag: r.tag, alias: r.title, ..Default::default() };
+        let section =
+            ControlProps { kind: ControlKind::RepeatingSection { title: None, fixed: false }, tag: r.tag, alias: r.title, ..Default::default() };
         let item = || Control::new(ControlProps { kind: ControlKind::RepeatingItem, ..Default::default() });
         let s = ControlId::next();
         let made = CommandResult::Element { id: api_id(ElementId::Control(s)) };
@@ -711,7 +712,7 @@ impl Editor {
         let (e, w) = self.element(section)?;
         let ElementId::Control(s) = e else { return Err(bad("id")) };
         let props = self.doc.controls.get(&s).map(|c| c.props.clone()).ok_or_else(no_element)?;
-        if props.kind != ControlKind::RepeatingSection {
+        if !matches!(props.kind, ControlKind::RepeatingSection { .. }) {
             return Err(bad("id"));
         }
         // The section's own lock and those of the controls around it
@@ -722,7 +723,7 @@ impl Editor {
                 .skip(1)
                 .any(|(x, _)| matches!(x, ElementId::Control(c) if self.doc.controls.get(c).is_some_and(|k| !k.props.lock.editable())))
         });
-        if props.kind_xml.as_ref().is_some_and(|k| items_fixed(&k.xml)) || !props.lock.editable() || around_locked {
+        if matches!(props.kind, ControlKind::RepeatingSection { fixed: true, .. }) || !props.lock.editable() || around_locked {
             return Err(locked());
         }
         if props.binding.is_some() || props.rest.iter().any(|(n, _)| n == "dataBinding") {
@@ -864,7 +865,7 @@ impl Editor {
                 let props = &self.doc.controls.get(&c)?.props;
                 let hidden = props.rest.iter().any(|(n, xml)| n == "appearance" && xml.contains("\"hidden\""));
                 match props.kind {
-                    ControlKind::RepeatingSection => Some(x),
+                    ControlKind::RepeatingSection { .. } => Some(x),
                     ControlKind::RepeatingItem | ControlKind::Other => None,
                     _ if hidden || inner => None,
                     _ => {
@@ -948,7 +949,7 @@ impl Editor {
                     }
                 }
                 let props = self.doc.controls.get(&c).map(|k| k.props.clone()).unwrap_or_default();
-                let fallback = (props.kind == ControlKind::RepeatingSection).then(|| "Repeating section".to_string());
+                let fallback = matches!(props.kind, ControlKind::RepeatingSection { .. }).then(|| "Repeating section".to_string());
                 props.alias.or(props.tag).or(fallback).unwrap_or_default()
             }
         };
@@ -3059,23 +3060,11 @@ impl Editor {
                         (*checked_font, *unchecked_font, *value) = (Some(f_on), Some(f_off), Some(on));
                     }
                 }
-                (ControlKind::RepeatingSection, ControlOptions::RepeatingSection(o)) => {
-                    let was = p.kind_xml.as_ref().map(|k| k.xml.clone()).unwrap_or_default();
-                    let title = o.section_title.clone().or_else(|| {
-                        let at = was.find("sectionTitle ")?;
-                        let v = was[at..].find("val=\"")? + at + 5;
-                        Some(was[v..v + was[v..].find('"')?].to_string())
-                    });
-                    let fixed = o.allow_insert_delete.map_or(items_fixed(&was), |a| !a);
-                    let w15 = crate::docx::xml::W15;
-                    let title = title
-                        .filter(|t| !t.is_empty())
-                        .map_or(String::new(), |t| format!(r#"<w15:sectionTitle w15:val="{}"/>"#, crate::docx::write::props::esc(&t)));
-                    let fixed = if fixed { "<w15:doNotAllowInsertDeleteSection/>" } else { "" };
-                    p.kind_xml = Some(crate::docx::KindXml {
-                        kind: ControlKind::Other,
-                        xml: format!(r#"<w15:repeatingSection xmlns:w15="{w15}">{title}{fixed}</w15:repeatingSection>"#),
-                    });
+                (ControlKind::RepeatingSection { title, fixed }, ControlOptions::RepeatingSection(o)) => {
+                    *title = o.section_title.clone().or_else(|| title.take()).filter(|t| !t.is_empty());
+                    if let Some(a) = o.allow_insert_delete {
+                        *fixed = !a;
+                    }
                 }
                 (ControlKind::Picture, ControlOptions::Picture(o)) => resize = Some(o.clone()),
                 (ControlKind::Other, ControlOptions::Gallery(o)) => {
@@ -3092,7 +3081,7 @@ impl Editor {
                 ControlKind::DropDown
                     | ControlKind::Checkbox { .. }
                     | ControlKind::Picture
-                    | ControlKind::RepeatingSection
+                    | ControlKind::RepeatingSection { .. }
                     | ControlKind::Date { .. }
                     | ControlKind::Other
             ) {
@@ -3473,15 +3462,6 @@ fn new_item_id(xml: &str, n: usize) -> String {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn items_are_fixed_by_the_element_not_its_name_in_text() {
-        use super::items_fixed;
-        assert!(items_fixed(r#"<w15:repeatingSection><w15:doNotAllowInsertDeleteSection/></w15:repeatingSection>"#));
-        assert!(items_fixed(r#"<w15:repeatingSection><w15:doNotAllowInsertDeleteSection w15:val="1"/></w15:repeatingSection>"#));
-        assert!(!items_fixed(r#"<w15:repeatingSection><w15:doNotAllowInsertDeleteSection w15:val="0"/></w15:repeatingSection>"#));
-        assert!(!items_fixed(r#"<w15:repeatingSection><w15:sectionTitle w15:val="doNotAllowInsertDeleteSection"/></w15:repeatingSection>"#));
-    }
-
-    #[test]
     fn an_underscored_us_locale_lists_us_formats() {
         assert_eq!(super::date_formats("en_US"), super::date_formats("en-US"));
         assert_eq!(super::date_formats("en_GB")[0], "dd/MM/yyyy");
@@ -3638,20 +3618,4 @@ pub fn date_formats(locale: &str) -> &'static [&'static str] {
         "zh" => ZH,
         _ => crate::services::fields::DATE_PICTURES,
     }
-}
-
-/// Whether a repeating section's `w15:doNotAllowInsertDeleteSection` is on: present, and not given a false value.
-pub(super) fn items_fixed(kind_xml: &str) -> bool {
-    let mut from = 0;
-    while let Some(k) = kind_xml[from..].find('<').map(|k| from + k) {
-        let Some(end) = crate::docx::binding::tag_end(&kind_xml[k..]).map(|e| k + e) else { return false };
-        let tag = &kind_xml[k..end];
-        let name = tag[1..].split(|c: char| c.is_whitespace() || c == '/').next().unwrap_or_default();
-        if name.rsplit(':').next() == Some("doNotAllowInsertDeleteSection") {
-            let val = crate::docx::binding::tag_attrs(tag).find(|(n, ..)| n.rsplit(':').next() == Some("val"));
-            return val.is_none_or(|(_, v, _)| !matches!(v, "0" | "false" | "off"));
-        }
-        from = end + 1;
-    }
-    false
 }

@@ -1663,8 +1663,9 @@ pub enum ControlKind {
     DropDown,
     /// `w:group`.
     Group,
-    /// `w15:repeatingSection`.
-    RepeatingSection,
+    /// `w15:repeatingSection`: its title (`w15:sectionTitle`), and whether its items are fixed
+    /// (`w15:doNotAllowInsertDeleteSection`: none added or removed).
+    RepeatingSection { title: Option<String>, fixed: bool },
     /// `w15:repeatingSectionItem`: one item (usually a row) of a repeating section.
     RepeatingItem,
     /// A kind the editor doesn't know, or a `w:customXml` wrapper.

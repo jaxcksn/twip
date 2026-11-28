@@ -57,7 +57,7 @@ pub fn kind_name(k: &ControlKind) -> &'static str {
         ControlKind::Date { .. } => "date",
         ControlKind::DropDown => "drop_down",
         ControlKind::Group => "group",
-        ControlKind::RepeatingSection => "repeating_section",
+        ControlKind::RepeatingSection { .. } => "repeating_section",
         ControlKind::RepeatingItem => "repeating_item",
         ControlKind::Other => "other",
     }

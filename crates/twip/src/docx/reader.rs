@@ -4122,7 +4122,15 @@ fn control_props(pr: Option<Node>, xml: &str) -> ControlProps {
                 kind = Some((ControlKind::DropDown, raw()));
             }
             "group" => kind = Some((ControlKind::Group, raw())),
-            "repeatingSection" if c.tag_name().namespace() == Some(W15) => kind = Some((ControlKind::RepeatingSection, raw())),
+            "repeatingSection" if c.tag_name().namespace() == Some(W15) => {
+                let el = |name: &str| c.children().find(|x| is(*x, W15, name));
+                fn val<'a>(x: Node<'a, '_>) -> Option<&'a str> {
+                    x.attributes().find(|a| a.name() == "val").map(|a| a.value())
+                }
+                let title = el("sectionTitle").and_then(val).map(str::to_string);
+                let fixed = el("doNotAllowInsertDeleteSection").is_some_and(|x| on_off_str(val(x)));
+                kind = Some((ControlKind::RepeatingSection { title, fixed }, raw()));
+            }
             "repeatingSectionItem" if c.tag_name().namespace() == Some(W15) => kind = Some((ControlKind::RepeatingItem, raw())),
             // Kinds the editor doesn't know (bibliography, citation, equation, document part galleries, ...).
             "docPartObj" | "docPartList" | "bibliography" | "citation" | "equation" => {

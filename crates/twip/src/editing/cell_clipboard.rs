@@ -260,7 +260,8 @@ impl Editor {
         let is = |defs: &std::collections::HashMap<ControlId, crate::docx::Control>, c: &ControlId, kind: ControlKind| {
             defs.get(c).is_some_and(|k| k.props.kind == kind)
         };
-        let in_section = inside.iter().any(|c| is(&self.doc.controls, c, ControlKind::RepeatingSection));
+        let in_section =
+            inside.iter().any(|c| self.doc.controls.get(c).is_some_and(|k| matches!(k.props.kind, ControlKind::RepeatingSection { .. })));
         let in_item = inside.iter().any(|c| is(&self.doc.controls, c, ControlKind::RepeatingItem));
         let copied: Vec<Row> = src
             .rows

@@ -126,7 +126,7 @@ fn regions_read_as_repeating_sections() {
     let kind = |id: &ControlId| d.controls[id].props.kind.clone();
     let tables: Vec<&Table> = d.sections[0].blocks.iter().filter_map(|b| if let Block::Table(t) = b { Some(t) } else { None }).collect();
     let charges = id("Statement.Details");
-    assert_eq!(kind(&charges), ControlKind::RepeatingSection);
+    assert!(matches!(kind(&charges), ControlKind::RepeatingSection { .. }));
     for r in &tables[0].rows[1..] {
         assert_eq!(r.controls[0], charges);
         assert_eq!(kind(&r.controls[1]), ControlKind::RepeatingItem);

@@ -1145,7 +1145,7 @@ pub fn control_kind(p: &crate::docx::ControlProps) -> ElementKind {
         K::DropDown if p.combo => ElementKind::ComboBox,
         K::DropDown => ElementKind::DropDown,
         K::Group => ElementKind::Group,
-        K::RepeatingSection => ElementKind::RepeatingSection,
+        K::RepeatingSection { .. } => ElementKind::RepeatingSection,
         K::RepeatingItem => ElementKind::RepeatingItem,
         K::RichText => ElementKind::RichText,
         K::Other => match p.kept {
@@ -1182,10 +1182,8 @@ pub fn control_info(p: &crate::docx::ControlProps) -> crate::api::state::Control
         crate::docx::ControlKind::Checkbox { checked, unchecked, .. } => {
             (info.checked_symbol, info.unchecked_symbol) = (Some(checked.to_string()), Some(unchecked.to_string()));
         }
-        crate::docx::ControlKind::RepeatingSection => {
-            let x = p.kind_xml.as_ref().map_or("", |k| k.xml.as_str());
-            info.section_title = x.find("sectionTitle").and_then(|at| val(&x[at..], "val=\""));
-            info.allow_insert_delete = Some(!super::merge::items_fixed(x));
+        crate::docx::ControlKind::RepeatingSection { title, fixed } => {
+            (info.section_title, info.allow_insert_delete) = (title.clone(), Some(!fixed));
         }
         crate::docx::ControlKind::Date { .. } => {
             if let Some(d) = super::merge::date_settings(p) {
