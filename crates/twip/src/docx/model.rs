@@ -731,7 +731,7 @@ impl Picture {
             && *alt == o.alt
             && *lock_aspect == o.lock_aspect
             && *effect == o.effect
-            && *shape == o.shape
+            && crate::docx::drawing::same_shape(shape.as_deref(), o.shape.as_deref())
     }
 }
 
@@ -806,7 +806,7 @@ impl Float {
             && self.frame_src() == o.frame_src()
             && *in_note == o.in_note
             && *parts == o.parts
-            && *shape == o.shape
+            && crate::docx::drawing::same_shape(shape.as_deref(), o.shape.as_deref())
     }
 
     /// A frame (`w:framePr` paragraphs made a float): read from one, or made since.

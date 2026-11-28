@@ -73,7 +73,7 @@ pub(super) fn story_added(was: &Float, now: &Float) -> Option<usize> {
     let (a, b, src) = (was.shape.as_deref()?, now.shape.as_deref()?, was.src()?);
     let had = matches!(a.sp()?.text, ShapeText::None | ShapeText::Linked { .. });
     let added = was.text_box.is_none() && now.text_box.is_some() && had && b.sp()?.text == ShapeText::Story;
-    added.then(|| a.spans.body.as_ref().map(|r| r.start - src.start)).flatten()
+    added.then(|| Spans::of(a).body.as_ref().map(|r| r.start - src.start)).flatten()
 }
 
 /// A story's `wps:txbx` start tag: with its chain's id when it is a chain's first box.
@@ -128,7 +128,7 @@ pub(super) fn vml_says(a: &Shape, b: &Shape) -> bool {
                 // A picture's outline isn't patched
                 && x.line == y.line
         }
-        (x, y) => x == y,
+        (x, y) => crate::docx::drawing::same_kind(x, y),
     }
 }
 
@@ -360,7 +360,10 @@ pub(super) fn shape_changed(a: &Shape, b: &Shape, base: usize, text: &str) -> Op
 
 pub(super) fn differs(was: &Float, now: &Float) -> bool {
     match (was.shape.as_deref(), now.shape.as_deref()) {
-        (Some(a), Some(b)) => (a.xfrm.rot, a.xfrm.flip_h, a.xfrm.flip_v, &a.kind) != (b.xfrm.rot, b.xfrm.flip_h, b.xfrm.flip_v, &b.kind),
+        (Some(a), Some(b)) => {
+            (a.xfrm.rot, a.xfrm.flip_h, a.xfrm.flip_v) != (b.xfrm.rot, b.xfrm.flip_h, b.xfrm.flip_v)
+                || !crate::docx::drawing::same_kind(&a.kind, &b.kind)
+        }
         _ => false,
     }
 }
@@ -385,7 +388,7 @@ fn shape_edits(a: &Shape, b: &Shape, base: usize, text: &str, out: &mut Vec<Edit
 
 fn shape_edits_in(a: &Shape, b: &Shape, base: usize, text: &str, is_child: bool, out: &mut Vec<Edit>) {
     let rel = |r: &Range<usize>| r.start.saturating_sub(base)..r.end.saturating_sub(base);
-    let sp = &a.spans;
+    let sp = Spans::of(a);
     let frame = |s: &Shape| (s.xfrm.off, s.xfrm.ext, s.group().map(|g| (g.child_off, g.child_ext)));
     if frame(a) != frame(b)
         && let Some(x) = &sp.xfrm

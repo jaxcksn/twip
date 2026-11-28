@@ -1085,7 +1085,7 @@ impl Editor {
     fn group_floats(&mut self, ids: &[FloatId], label: &'static str, fonts: &crate::font::Fonts) -> super::commands::Outcome {
         use super::commands::Outcome;
         use crate::drawing::units::Emu;
-        use crate::drawing::{GroupShape, NonVisual, Shape, ShapeKind, Spans, Xfrm};
+        use crate::drawing::{GroupShape, NonVisual, Shape, ShapeKind, Xfrm};
         if ids.len() < 2 {
             return Outcome::unavailable("select two or more objects to group");
         }
@@ -1135,7 +1135,7 @@ impl Editor {
             nv: NonVisual { name: self.new_object_name("Group"), ..NonVisual::default() },
             xfrm: Xfrm { ext: [emu(gw), emu(gh)], ..Xfrm::default() },
             kind: ShapeKind::Group(GroupShape { child_off: [Emu(0), Emu(0)], child_ext: [emu(gw), emu(gh)], fill: None, children, canvas: false }),
-            spans: Spans::default(),
+            spans: crate::document::origin::Origin::NONE,
         };
         let g = crate::docx::Float {
             id: crate::docx::next_para_id(),

@@ -8,6 +8,7 @@ use super::Spans;
 use super::geom::custom_geom;
 use super::paint;
 use super::text::body_props;
+use crate::document::origin::Origin;
 use crate::docx::xml::{A, R, W, WP};
 use crate::drawing::geom::{Geometry, Preset};
 use crate::drawing::paint::{EffectList, Fill, Line};
@@ -171,7 +172,7 @@ fn sp(n: Node, ctx: &mut Ctx) -> Shape {
             kept_3d,
             text_path: None,
         })),
-        spans,
+        spans: Origin::new(spans),
     }
 }
 
@@ -192,7 +193,7 @@ fn pic(n: Node, ctx: &mut Ctx) -> Shape {
     let mut nonvisual = nv_of(nv.and_then(|v| named(v, "cNvPr")));
     nonvisual.lock_aspect =
         nv.and_then(|v| named(v, "cNvPicPr")).and_then(|c| named(c, "picLocks")).is_some_and(|l| on(l.attribute("noChangeAspect")));
-    Shape { nv: nonvisual, xfrm, kind: ShapeKind::Pic(Box::new(PicShape { geom, blip, line, effects, kept_3d })), spans }
+    Shape { nv: nonvisual, xfrm, kind: ShapeKind::Pic(Box::new(PicShape { geom, blip, line, effects, kept_3d })), spans: Origin::new(spans) }
 }
 
 fn group(n: Node, canvas: bool, ctx: &mut Ctx) -> Shape {
@@ -204,9 +205,9 @@ fn group(n: Node, canvas: bool, ctx: &mut Ctx) -> Shape {
     let spans = Spans { shape: Some(n.range()), sp_pr: gp.map(|p| p.range()), xfrm: x.map(|e| e.range()), ..Spans::default() };
     let nv = nv_of(named(n, "cNvPr"));
     if children.is_empty() {
-        return Shape { nv, xfrm, kind: ShapeKind::Raw(RawGraphic { uri: "group".into() }), spans };
+        return Shape { nv, xfrm, kind: ShapeKind::Raw(RawGraphic { uri: "group".into() }), spans: Origin::new(spans) };
     }
-    Shape { nv, xfrm, kind: ShapeKind::Group(GroupShape { child_off, child_ext, fill, children, canvas }), spans }
+    Shape { nv, xfrm, kind: ShapeKind::Group(GroupShape { child_off, child_ext, fill, children, canvas }), spans: Origin::new(spans) }
 }
 
 fn child(c: Node, ctx: &mut Ctx) -> Option<Shape> {
@@ -221,7 +222,7 @@ fn child(c: Node, ctx: &mut Ctx) -> Option<Shape> {
                 nv: nv_of(named(c, "cNvPr")),
                 xfrm,
                 kind: ShapeKind::Raw(RawGraphic { uri: "graphicFrame".into() }),
-                spans: Spans { shape: Some(c.range()), ..Spans::default() },
+                spans: Origin::new(Spans { shape: Some(c.range()), ..Spans::default() }),
             }
         }
         _ => return None,
@@ -263,7 +264,7 @@ fn raw(uri: &str, n: Node) -> Shape {
         nv: NonVisual::default(),
         xfrm: Xfrm::default(),
         kind: ShapeKind::Raw(RawGraphic { uri: uri.to_string() }),
-        spans: Spans { shape: Some(n.range()), ..Spans::default() },
+        spans: Origin::new(Spans { shape: Some(n.range()), ..Spans::default() }),
     }
 }
 
@@ -275,7 +276,7 @@ pub fn diagram_drawing(xml: &str, ctx: &mut Ctx) -> Option<Shape> {
         .filter(|c| c.is_element())
         .filter_map(|c| child(c, ctx))
         .map(|mut s| {
-            s.spans = Spans::default();
+            s.spans = Origin::NONE;
             s
         })
         .collect();
@@ -291,7 +292,7 @@ pub fn diagram_drawing(xml: &str, ctx: &mut Ctx) -> Option<Shape> {
         nv: NonVisual::default(),
         xfrm: Xfrm::default(),
         kind: ShapeKind::Group(GroupShape { child_off: [Emu(0); 2], child_ext: [cx, cy], fill: None, children, canvas: true }),
-        spans: Spans::default(),
+        spans: Origin::NONE,
     })
 }
 
@@ -338,7 +339,7 @@ mod tests {
         assert!(matches!(sp.fill, Some(Fill::Solid(_))));
         assert_eq!(sp.line.as_ref().and_then(|l| l.width), Some(Emu(12700)));
         assert!(sp.kept_3d);
-        assert!(s.spans.shape.is_some() && s.spans.fill.is_some() && s.spans.line.is_some());
+        assert!(Spans::of(&s).shape.is_some() && Spans::of(&s).fill.is_some() && Spans::of(&s).line.is_some());
     }
 
     #[test]

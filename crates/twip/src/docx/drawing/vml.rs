@@ -4,9 +4,9 @@ use std::fmt::Write;
 
 use roxmltree::Node;
 
-use super::Spans;
 use super::geom::custom_geom;
 use super::read::Ctx;
+use crate::document::origin::Origin;
 use crate::drawing::colour::{Colour, ColourBase, ColourMod, darken, lighten, preset_colour};
 use crate::drawing::geom::{Geometry, Preset};
 use crate::drawing::paint::{self, Fill, Line, two_colour};
@@ -1014,7 +1014,7 @@ fn element(el: Node, ctx: &mut Ctx) -> Option<Shape> {
                         effects: shadow(el),
                         kept_3d: false,
                     })),
-                    spans: Spans::default(),
+                    spans: Origin::NONE,
                 });
             }
             let spt = el.attribute((O, "spt")).or_else(|| t.and_then(|t| t.attribute((O, "spt"))));
@@ -1083,7 +1083,7 @@ fn element(el: Node, ctx: &mut Ctx) -> Option<Shape> {
                     children,
                     canvas: false,
                 }),
-                spans: Spans::default(),
+                spans: Origin::NONE,
             });
         }
         _ => return None,
@@ -1137,7 +1137,7 @@ fn finish(
         },
         xfrm: xfrm(st, rect),
         kind: ShapeKind::Sp(Box::new(sp)),
-        spans: Spans::default(),
+        spans: Origin::NONE,
     })
 }
 

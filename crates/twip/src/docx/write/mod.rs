@@ -5465,7 +5465,7 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
     /// control), in source ranges: an edited shape's `mc:AlternateContent` becomes its Choice's drawing, as in a run.
     fn contained_shape_edits(&self, r: Range<usize>, was: Option<&PicState>, now: &PicState) -> Vec<drawing::Edit> {
         let (Some(a), Some(b)) = (was.and_then(|s| s.0.shape.as_deref()), now.0.shape.as_deref()) else { return Vec::new() };
-        let Some(at) = a.spans.shape.as_ref().map(|x| x.start) else { return Vec::new() };
+        let Some(at) = crate::drawing::Spans::of(a).shape.as_ref().map(|x| x.start) else { return Vec::new() };
         match self.s.choice_around(r.clone(), at) {
             Some((ac, d)) => {
                 let text = self.s.src_text(d.clone());
