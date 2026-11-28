@@ -39,6 +39,7 @@ pub mod resolvers;
 pub mod review;
 pub mod run_xml;
 pub mod section;
+mod session;
 pub mod style_xml;
 pub mod styles;
 pub mod table_props;
@@ -57,6 +58,7 @@ pub(crate) use reader::local_offset;
 pub(crate) use reader::set_option;
 pub(crate) use reader::style_cell;
 pub use reader::{now_local, now_utc, read, read_at, read_editable};
+pub use session::Session;
 #[cfg(test)]
 mod cascade_tests;
 #[cfg(test)]
