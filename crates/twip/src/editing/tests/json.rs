@@ -318,8 +318,10 @@ impl Editor {
         match q {
             "elements" => {
                 let matching = args.get("match").and_then(|m| Some((m.get("in")?.as_str()?.to_string(), m.get("text")?.as_str()?.to_string())));
-                let f = elements::Filter { kind: s("kind"), matching, story: s("story") };
-                json!(elements::enumerate(&self.doc, &self.index, &f).iter().map(|e| element(e, &self.doc, &self.index)).collect::<Vec<_>>())
+                let (f, story) = (elements::Filter { kind: s("kind"), matching }, s("story"));
+                let all = elements::enumerate(&self.doc, &self.index, &f);
+                let kept = all.iter().filter(|e| story.as_deref().is_none_or(|s| s == elements::story_name(e.story, &self.doc, &self.index)));
+                json!(kept.map(|e| element(e, &self.doc, &self.index)).collect::<Vec<_>>())
             }
             "element" => {
                 let Some(id) = s("id").as_deref().and_then(elements::parse_id) else { return json!({ "error": "bad estimate: id" }) };

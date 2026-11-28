@@ -86,6 +86,7 @@ impl Element {
 }
 
 /// A story's name: a header's or footer's is its part's.
+#[cfg(test)]
 pub(super) fn story_name(s: StoryId, doc: &Document, idx: &DocIndex) -> String {
     match s {
         StoryId::Body => "body".into(),
@@ -101,13 +102,11 @@ pub(super) fn story_name(s: StoryId, doc: &Document, idx: &DocIndex) -> String {
 pub struct Filter {
     pub kind: Option<String>,
     pub matching: Option<(String, String)>,
-    pub story: Option<String>,
 }
 
 impl Filter {
-    fn keeps(&self, e: &Element, doc: &Document, idx: &DocIndex) -> bool {
+    fn keeps(&self, e: &Element) -> bool {
         self.kind.as_deref().is_none_or(|k| k == e.kind())
-            && self.story.as_deref().is_none_or(|s| s == story_name(e.story, doc, idx))
             && self.matching.as_ref().is_none_or(|(field, text)| {
                 let v = match field.as_str() {
                     "code" => e.code.as_deref(),
@@ -328,7 +327,7 @@ pub fn enumerate(doc: &Document, idx: &DocIndex, filter: &Filter) -> Vec<Element
         }
     }
     boxes(&mut w, &mut k);
-    w.out.into_iter().filter(|e| filter.keeps(e, doc, idx)).collect()
+    w.out.into_iter().filter(|e| filter.keeps(e)).collect()
 }
 
 pub fn context(doc: &Document, idx: &DocIndex, sel: &Selection) -> Vec<(ElementId, bool)> {
